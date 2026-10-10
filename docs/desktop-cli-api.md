@@ -44,7 +44,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
-             "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop"],
+             "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -124,6 +124,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results, with one exception: a document with an unsafe mapping key or value is refused under its own name, `unsafe-config-key` or `unsafe-config-value`, by these commands as by every other; `error.details.cause` on an error that has a code which is not a kernel code (`{code, syscall}`) and on a defect of the kernel (`{name}`), and none on a refusal that has no code, which is answered with the command's general code and its message alone ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
 | `schedule-run-warnings` | a schedule run's record (`lastRun`, `recentRuns[]`) and a trigger fire's record and `lastRun` carry `warnings?`, the launch answer's warnings, when it had some; OATS 0.52.0 ([schedules and triggers](#schedules-and-triggers)) | |
 | `lifecycle-claim-stop` | `oats instance stop --apply` holds the claim of every target (the file one retire of a home at a time is ordered by), so a stop is refused beside a retire in flight (`E_INSTANCE_RETIRING`) or another stop (`E_LIFECYCLE_BUSY`), a retire beside a stop (`E_LIFECYCLE_BUSY`), and `oats worktree add` beside a retire (`E_INSTANCE_RETIRING`), each before any effect ([Commands that meet on one home](#lifecycle-pairs)); a stop that was killed refuses nothing afterwards, and `<home>/.oats-stop-pending.json` is no longer written or read: a client's own handling of a stale stop marker is not needed for a kernel that lists this; `error.details.action` (the holder's verb) on those refusals, and `error.details.holder` on every `E_LIFECYCLE_BUSY` ([`details.holder`](#busy-holder)); the codes a stop and a retire answer only before any effect, as one list ([the list](#before-effect-codes)), with two retire answers that came after an effect given codes outside it (`E_WORK_PRESERVATION_FAILED`, `E_RUNTIME_QUIESCE_FAILED`), OATS 0.52.0. Gate on the probe; routed with `--server`, on the host's list | |
+| `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"`; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -1760,47 +1761,71 @@ the result with `oats inspect --soul <name> --json`.
 
 ## Launch prompt results
 
-Spawn preview adds `launchPromptAnswers` with the strict effective boolean
-`awebDevelopmentChannel` and `consentSource` (a config-file
-JSON pointer or `null`). This is a policy report, not a terminal observation
-or readiness assertion. Only the aweb development-channel confirmation is
-covered, restricted to the qualified Claude executable digest, platform and
-geometry documented under [launch consent](configuration.md#exact-home-launch-prompt-consent).
-Folder-trust prompts remain unexpected and blocked.
+A launch engages the development-channel confirmation exactly when it starts
+Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
+in its argv ([configuration](configuration.md#the-development-channel-confirmation)).
+There is no policy field: no preview carries `launchPromptAnswers`. Instead,
+`launch-config preview`, the spawn apply's `warnings` and `session start|restart`'s
+`warnings` carry one statement, a fixed string beginning `This start passes
+--dangerously-load-development-channels`, when the start engages it. `spawn
+--preview` does not: the argv comes from the provider's spawn hook, which a
+preview does not run. Folder-trust prompts remain unexpected and blocked.
 
-An observed launch has `launchPrompts: {status, answers, reason, receipt}`.
+The home's `instance.json` `launchPrompts` always describes the last start
+(spawn, start or restart):
+
+- `{status: "not-engaged", startId, at}` for a start that did not engage it, with
+  no `launchPromptTarget`;
+- otherwise the observed result `{status, answers, reason, receipt}`, `status`
+  one of `completed`, `blocked`, `incomplete`; a `blocked` result also carries
+  `differed: {nearest, firstDifference: {index, expected, found}}` (the nearest
+  tolerance entry and at most 40 characters of each normalized text at the first
+  difference). `launchPromptTarget` is the pane.
+
+A `--no-launch` spawn records no `launchPrompts`. Readers must treat
+`not-engaged` like an absent value: retire and replay act only on `blocked` and
+`incomplete`.
+
 `receipt` carries the actual checked launch-prompt event-write results,
 including partial log availability; it is not a receive-readiness receipt.
-The `launch-prompt` event records the launch start and pane/PID identity,
-consent provenance, signature identifier/digest, action and outcome. Intent is
-durable before input; submission (`submitted`, `failed`, `uncertain`) and an
-observed screen transition are distinct. Unexpected raw screen text is never
-included in the receipt.
+The `launch-prompt` event records the launch start and pane/PID identity, the
+Claude version read from the executable's real path (`claudeVersion`, a semver
+or `"unknown"`; `claudeVersionSource`, `"executable-path"` or `"unknown"`), the
+matched entry (`signatureId`) and digest, action and outcome; a miss adds
+`differed`. It carries no `consentSource`. Intent is durable before input;
+submission (`submitted`, `failed`, `uncertain`) and an observed screen
+transition are distinct. Beyond `differed`'s bounded snippets, raw screen text
+is never included in the receipt.
 
 Spawn and start both reuse `E_SPAWN_INCOMPLETE` for retained prompt outcomes,
 with `launchPrompts.status` set to `blocked` or `incomplete`. Error details
 preserve `instance`, `home`, `launched:"unknown"`, `unconfirmed:true` and add
 `retained:true`, `target`,
 `parentLineageCommitted`, and `launchPrompts`. Unknown prompts report
-`blocked: unexpected prompt`. An incomplete audit can follow a possible key;
-clients must not offer automatic key retry. `launched:false` in retained
-metadata does not mean there is no process or that another harness may be
-allocated. Use runtime inspection and the existing start/restart lifecycle.
-Same-key spawn replay cannot convert a blocked outcome to successful spawn.
+`blocked: unexpected prompt`. A start whose answer was submitted but whose
+completion was not observed within the bound reports `incomplete` with reason
+`launch prompt completion not observed`. An incomplete audit can follow a
+possible key; clients must not offer automatic key retry. `launched:false` in
+retained metadata does not mean there is no process or that another harness
+may be allocated. Use runtime inspection and the existing start/restart
+lifecycle. Same-key spawn replay cannot convert a blocked outcome to successful
+spawn.
 
 `answers` can contain a `submitted` answer even when the final status is
-`blocked`: even after exact or structural completion recognition is qualified,
-unsupported input/footer shapes and known question markers can block after Enter
-while the actual pane is active. Consumers must preserve that submitted receipt
-and never translate this outcome into “nothing started” or automatic retry.
-The [completion limitation](configuration.md#exact-home-launch-prompt-consent)
-is part of the shipping contract. Structural completion closes observation only;
-unknown dialogs retaining the recognized composer/footer can be misclassified.
-Mandatory structural evidence-save failure reports checked `incomplete` with the
-same answer and target preserved. Private receipt v2 adds no public DTO fields.
+`blocked`: a known question marker after the Enter, or the confirmation coming
+back, blocks while the actual pane is active. Consumers must preserve that
+submitted receipt and never translate this outcome into “nothing started” or
+automatic retry. The [completion rule](launch-prompt-completion.md) closes
+observation only; an unknown dialog without a marker can be reported completed.
+A private evidence-save failure on completion reports checked `incomplete` with
+the same answer and target preserved. Private receipt v2 adds no public DTO fields.
 
-Strict Desktop/pi readers must accept these additive fields and the new event
-kind before a writer containing them ships. For operator recovery, see
+Readiness of a home whose last start recorded `blocked` carries a `launch-prompt`
+warning (`required: false`, `producer: "launch prompt"`) naming what differed and
+both remedies; it clears when a later start records anything else.
+
+Strict Desktop/pi readers must accept these additive fields before a writer
+containing them ships. For operator recovery, see
 [launch prompt outcomes](execution-targets.md#launch-prompt-outcomes).
 
 ## Spawn
@@ -1865,7 +1890,7 @@ it to a temporary copy (`soulFetched: true`).
   none` ([the worktree event](capabilities.md#the-worktree-event)).
 - `subject` echoes `{soul, agentsRoot, dir}` byte-exact.
 - `warnings`, present only when there is one, is an array of strings: the
-  launch-prompt notice, and (0.49.0) the message of each
+  `launchPromptAnswers` notice when the host file still has that key, and (0.49.0) the message of each
   [capability warning](#capability-warnings-hook-event-unsupported-oats-0490)
   of the resolved modules. The apply's `warnings` carries the same messages.
 

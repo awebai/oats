@@ -125,8 +125,9 @@ delivery. With `claudeChannelMode: approved`, oats.aweb starts Claude with
 `--channels plugin:aweb-channel@awebai-marketplace` and Claude shows no
 “WARNING: Loading development channels” prompt: it admits the plugin when a
 root-owned managed-settings file on the machine lists it. The route does not
-depend on the Claude version and needs no launch-prompt consent
-(`launchPromptAnswers` applies only to development mode). Contract:
+depend on the Claude version, and there is no prompt for OATS to confirm
+(development mode's prompt is confirmed by OATS itself, see
+`docs/configuration.md`, “The development-channel confirmation”). Contract:
 `docs/configuration.md`, “Claude channel delivery: the approved route”;
 provider behaviour and receive proof: `/oats-aweb` §4.
 
