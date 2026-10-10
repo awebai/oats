@@ -11,8 +11,8 @@
    Overlay chrome + fuzzy machinery live in overlay-picker.mjs (shared with
    Quick Open); this module owns only the palette's row semantics. */
 import { runtimeState } from "../../client/instance-presentation.mjs";
-import { filterInstanceTree } from "./instance-tree.mjs";
-import { rosterSections, splitByDeployment, isMultiDeployment } from "./view-deployments.mjs";
+import { filterInstanceTree } from "../../client/instance-tree.mjs";
+import { rosterSections, splitByDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
 import { createOverlayPicker, subsequenceScore } from "./overlay-picker.mjs";
 
 /** Commands listed at most (after every instance row; the instance list scrolls). */

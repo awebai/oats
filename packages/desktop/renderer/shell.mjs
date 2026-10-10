@@ -66,18 +66,16 @@ import { createRosterTip, rosterTipFacts, rosterTipCSS } from "./roster-tip.mjs"
 import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
-import {
-  collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree, waitingRollup,
-  captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
-  instanceId, rosterParentId, terminalKey, resolveTerminalOpen,
-  createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE, heldHome,
-} from "./instance-tree.mjs";
+import { collapseKey, hasInstanceChildren, instanceRepoLabel, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
+import { treeConnectors, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
+  terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE } from "./instance-tree-view.mjs";
 import {
   tabVisibleInContext, canActivateTab,
   fallbackTabForContext, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
-import { notePanel, panelDeployments, rosterSections, deploymentHeading, rowStale, splitByDeployment } from "./view-deployments.mjs";
+import { notePanel, panelDeployments, deploymentHeading } from "./view-deployments.mjs";
+import { rosterSections, rowStale, splitByDeployment } from "../../client/roster-sections.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "./roster-cadence.mjs";
 import { scopedRequest } from "./workspace-routes.mjs";

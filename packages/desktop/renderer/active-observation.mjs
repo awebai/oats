@@ -1,5 +1,5 @@
 /** Presentation of the existing /api/panel roster, not an activity/Git resolver. */
-import { instanceId, distinguishingRootTags } from './instance-tree.mjs';
+import { instanceId, distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { eventsTimestamp } from '../../client/instance-events-contract.mjs';
 import { canAddressRemote } from '../../client/remote-address.mjs';
 

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { registerAction, setActiveContexts, getBinding, formatChord, setBinding, resetBinding, runAction, handleKeydown, onKeymapChange } from '../renderer/keybindings.mjs';
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
-import { markStaleControl, ROSTER_STALE_TITLE } from "../renderer/instance-tree.mjs";
+import { markStaleControl, ROSTER_STALE_TITLE } from "../renderer/instance-tree-view.mjs";
 import { cliRetire, parseRetireEnvelope } from "../../client/cli-adapter.mjs";
 
 // jsdom has no top-layer API. Model only its open/close events here; native

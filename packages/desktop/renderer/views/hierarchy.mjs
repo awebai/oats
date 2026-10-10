@@ -49,7 +49,7 @@ import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts, unsupportedSession } from "../../../client/instance-presentation.mjs";
 import { serverLabel } from "../../../client/remote-address.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
-import { instanceId, resolveLinkId, heldHome } from "../instance-tree.mjs";
+import { instanceId, resolveLinkId, heldHome } from "../../../client/instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
 import {
   apiJson, ensureTheme,
@@ -61,7 +61,8 @@ import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedErr
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
-import { attachDeployments, isMultiDeployment, splitByDeployment, rowStale } from "../view-deployments.mjs";
+import { attachDeployments } from "../view-deployments.mjs";
+import { isMultiDeployment, splitByDeployment, rowStale } from "../../../client/roster-sections.mjs";
 import { deploymentLabel } from "../../../client/deployment-label.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
 import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";

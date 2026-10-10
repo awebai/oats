@@ -1,5 +1,5 @@
 /** Keyboard-accessible lifecycle actions, independent of terminal liveness. */
-import { instanceId, heldHome } from "./instance-tree.mjs";
+import { instanceId, heldHome } from "../../client/instance-tree.mjs";
 import { iconElement } from "./shell-icons.mjs";
 import { unsupportedSession } from "../../client/instance-presentation.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";

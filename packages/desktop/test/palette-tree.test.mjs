@@ -6,8 +6,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { paletteRows, createPalette, PALETTE_COMMAND_CAP } from "../renderer/palette.mjs";
-import { rosterGroups } from "../renderer/instance-tree.mjs";
-import { rosterSections } from "../renderer/view-deployments.mjs";
+import { rosterGroups } from "../../client/instance-tree.mjs";
+import { rosterSections } from "../../client/roster-sections.mjs";
 import { pickerCycleDirection, setBinding, resetBinding, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
 
 const at = (instance, extra = {}) => ({ instance, agent: "dev", home: `/w/${instance}`, agentsRoot: "/w", running: true, ...extra });
@@ -202,7 +202,7 @@ test("the shell wires the cycle to the live app.palette chord; Quick Open (⌘P)
 });
 
 test("filterInstanceTree takes the palette's matcher and keeps the sidebar's default; rosterGroups is the sidebar's grouping", async () => {
-  const { filterInstanceTree, instanceMatchesFilter } = await import("../renderer/instance-tree.mjs");
+  const { filterInstanceTree, instanceMatchesFilter } = await import("../../client/instance-tree.mjs");
   const names = list => list.map(i => i.instance);
   // Default (sidebar): substring over name/soul/repo/task, with ancestor paths, in source order.
   assert.deepEqual(names(filterInstanceTree(ROSTER, "grandchild")), ["grandchild", "lead", "child-a"]);

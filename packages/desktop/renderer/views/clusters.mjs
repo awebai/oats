@@ -11,7 +11,7 @@
    first, unique cross-root allowed, ambiguous → no edge (fail safe).
    Malformed data must never break the overview: unknown names are ignored,
    self-links are ignored, and cycles are harmless to a union-find. */
-import { instanceId, resolveLinkId } from "../instance-tree.mjs";
+import { instanceId, resolveLinkId } from "../../../client/instance-tree.mjs";
 import { runtimeCounts } from "../../../client/instance-presentation.mjs";
 
 /** Sibling links of a roster instance, as an array of instance names.

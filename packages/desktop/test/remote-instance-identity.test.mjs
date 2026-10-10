@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { instanceId, terminalKey, findRosterInstance, resolveLinkId, clusterInstances } from "../renderer/instance-tree.mjs";
+import { instanceId, findRosterInstance, resolveLinkId, clusterInstances } from "../../client/instance-tree.mjs";
+import { terminalKey } from "../renderer/instance-tree-view.mjs";
 import { instanceApiPath } from "../renderer/views/common.mjs";
 
 const local = { instance: "dev-one", home: "/work/agents/dev/instances/dev-one", agentsRoot: "/work/agents" };
