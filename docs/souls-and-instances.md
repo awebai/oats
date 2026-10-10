@@ -452,10 +452,30 @@ parent has not reaped (a zombie) is gone too: nothing waits for that reap. The c
 retire left running: one of its retire hooks may still be running when the
 next retire takes the claim over and runs the hooks again (#865). A holder whose start time cannot be
 read is never taken for gone; the refusal names the pid, the file and the
-way out. The claim orders retires only: `oats instance stop`, `oats session
-start` and `oats worktree add` do not take it, and `oats status` does not
-show it (#866). The refusals are in
-[desktop-cli-api.md](desktop-cli-api.md#retire).
+way out.
+
+A stop holds the same claim (OATS 0.52.0, #866, #890). `oats instance stop
+<instance> --apply` takes the claim of the instance and of every recorded
+child it would stop before it stops the first one, and holds them until it
+has written its receipt. So a stop and a retire of one instance never run
+together: a stop that meets a retire is refused with `E_INSTANCE_RETIRING`, a
+retire or a stop that meets a stop with `E_LIFECYCLE_BUSY`, at once and
+before anything is stopped, run, copied or written. A stop that is killed
+leaves its claim files, and they refuse nothing: the next stop or retire
+takes them over. Before 0.52.0 a stop marked the home with a file inside it,
+`.oats-stop-pending.json`, that named no holder: a killed stop left every
+later stop of that instance refused until the file was removed by hand, and
+a stop wrote into a home that a retire was inspecting or removing. That
+name stays reserved: a file an older OATS left there refuses nothing and is
+removed by the next stop. A retire does not hold the claims of its recorded
+children: it stops each one, and that stop takes the child's claim for as
+long as it lasts; a child held by someone else's stop or retire is a child
+that did not stop (below). `oats worktree add` reads the claim and is
+refused while a retire of the home runs (`E_INSTANCE_RETIRING`). `oats
+session start` and `restart` do not read it yet, and `oats status` does not
+show it. Who answers what to whom is one table in
+[desktop-cli-api.md](desktop-cli-api.md#lifecycle-pairs); the refusals of a
+retire are in [desktop-cli-api.md](desktop-cli-api.md#retire).
 
 Recorded children (the instances whose recorded parent chain reaches this
 one) are stopped first, never escalated, and kept: their homes stay. If one is
@@ -1153,10 +1173,11 @@ the new path.
 with each, and they are part of the plan's revision: a tree created, removed,
 dirtied or cleaned between the plan and a guarded apply, or a new target for
 it, refuses the apply with `E_PLAN_STALE` before anything runs. The retire
-checks the trees again at the step itself and refuses with `E_PLAN_STALE`,
-keeping the home, rather than move or remove a tree in a way the plan did
-not say. The retire hooks have run by then, and no tree was moved or
-removed. The fields are in
+checks the trees again at the step itself and refuses with
+`E_WORK_PRESERVATION_FAILED`, keeping the home, rather than move or remove a
+tree in a way the plan did not say. The retire hooks have run by then, and
+no tree was moved or removed; that is why the code is not `E_PLAN_STALE`,
+which says that nothing happened (it was, before OATS 0.52.0). The fields are in
 [the CLI API](desktop-cli-api.md#retire).
 
 #### After a retire: inspect, restore, dispose
@@ -1503,7 +1524,9 @@ A claim left by a command that was killed is taken over by the next one,
 once its holder (pid and start time) is verified gone. Any git step the
 killed command left running is ended first, so it cannot finish late on
 the new tree. A quarantined
-home or one being retired is refused (`E_INSTANCE_RETIRING`).
+home or one being retired is refused (`E_INSTANCE_RETIRING`): one for which
+a self-retire is scheduled, and, from OATS 0.52.0, one whose retire is
+running (the add reads the home's claim and takes nothing).
 
 **`remove`** runs `git worktree remove` (without `--force`) and `git worktree
 prune` on a tree `add` recorded, then drops the record. It keeps the branch

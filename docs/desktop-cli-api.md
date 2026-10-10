@@ -44,7 +44,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
-             "lifecycle-kernel-codes"],
+             "lifecycle-kernel-codes","lifecycle-claim-stop"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -122,6 +122,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 | `session-attach-detach-key` | `oats session attach … --detach-key <key>`, local and `--server`: the one key that detaches that viewer, and exit status 20 when it did, OATS 0.51.0 ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe and never try: a kernel without it ignores the flag and opens a viewer with no exit. A routed attach refuses a host without it (`E_REMOTE_INCOMPATIBLE`, `details: {"feature":"session-attach-detach-key"}`) | |
 | `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results, with one exception: a document with an unsafe mapping key or value is refused under its own name, `unsafe-config-key` or `unsafe-config-value`, by these commands as by every other; `error.details.cause` on an error that has a code which is not a kernel code (`{code, syscall}`) and on a defect of the kernel (`{name}`), and none on a refusal that has no code, which is answered with the command's general code and its message alone ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
+| `lifecycle-claim-stop` | `oats instance stop --apply` holds the claim of every target (the file one retire of a home at a time is ordered by), so a stop is refused beside a retire in flight (`E_INSTANCE_RETIRING`) or another stop (`E_LIFECYCLE_BUSY`), a retire beside a stop (`E_LIFECYCLE_BUSY`), and `oats worktree add` beside a retire (`E_INSTANCE_RETIRING`), each before any effect ([Commands that meet on one home](#lifecycle-pairs)); a stop that was killed refuses nothing afterwards, and `<home>/.oats-stop-pending.json` is no longer written or read: a client's own handling of a stale stop marker is not needed for a kernel that lists this; `error.details.action` (the holder's verb) on those refusals, and `error.details.holder` on every `E_LIFECYCLE_BUSY` ([`details.holder`](#busy-holder)); the codes a stop and a retire answer only before any effect, as one list ([the list](#before-effect-codes)), with two retire answers that came after an effect given codes outside it (`E_WORK_PRESERVATION_FAILED`, `E_RUNTIME_QUIESCE_FAILED`), OATS 0.52.0. Gate on the probe; routed with `--server`, on the host's list | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -174,7 +175,10 @@ stdout (progress goes to stderr):
     `"Error"` (`TypeError`, `ReferenceError`, `RangeError`, `SyntaxError`, …),
     or a thrown value that is no error at all (`name` is then `"Error"`; it
     has no stack, and one line on stderr shows the value instead). It is
-    answered as one envelope like the rest.
+    answered as one envelope like the rest. One defect has a name of the
+    kernel's own, `LateRefusal`: a stop or a retire met, after its first
+    effect, an error whose code says that nothing happened
+    ([the list](#before-effect-codes)).
   - **A refusal without a code** (the kernel words some of its refusals that
     way, and a `tmux` or `git` command that fails is reported that way) gets
     neither: the general code and its message alone, no `details.cause`, no
@@ -2130,7 +2134,8 @@ Every `add` or `remove` that reads a record it may act on holds the
 purpose's claim, `<home>/.oats/trees/<purpose>.lock`. The claim is a file
 that names its holder by pid and start time. A second command waits up to
 3 s for a live holder, then answers `E_LIFECYCLE_BUSY` (`details.lock`,
-`details.pid`). A claim whose holder has died, for example one killed in the
+`details.pid`, and [`details.holder`](#busy-holder) on this and on every
+other `E_LIFECYCLE_BUSY` of these commands: OATS 0.52.0). A claim whose holder has died, for example one killed in the
 middle of a recovery, is taken over by the next command. So a killed `add`
 or `remove` can always be run again. A holder that has exited or was killed
 and that its parent has not reaped (a zombie) has died: its claim is taken
@@ -2146,8 +2151,8 @@ message names (for the claim of a takeover, `<lock>.reclaim-<nonce>`):
 
 - A path that is no readable claim: a file that does not parse, a directory,
   or a path that exists and cannot be read, such as a dangling symbolic link.
-  `<file> is not a readable claim; inspect it and remove it if no oats
-  worktree command holds it; nothing was done`.
+  `<file> is not a readable claim; nothing was done — inspect it and remove
+  it if no oats worktree command holds it, then retry`.
 - A claim whose holder is gone and that this kernel cannot take over: its
   `nonce` is not the 32 hexadecimal digits a claim carries (a file written
   or damaged by hand); or it is the claim of a takeover that died, at the
@@ -2197,13 +2202,13 @@ A failed `add` reports the same facts about its rollback in `details`:
 | Code | When |
 |---|---|
 | `E_BAD_ARGS` | not run from an instance home; `--dir`, `--home` or `--server`; a missing value; a value starting with `-`; an invalid purpose, branch or base; `remove` of a purpose with no record (a tree made with raw Git is removed with `git worktree remove`) |
-| `E_INSTANCE_RETIRING` | `add` in a quarantined home, or one being retired |
+| `E_INSTANCE_RETIRING` | `add` in a quarantined home; in one for which a self-retire is scheduled; or in one whose retire is running (OATS 0.52.0: `add` reads the home's claim and takes nothing; `<instance> is being retired (pid <pid>, since <at>); no tree was made`, `details: {instance, home, lock, pid, since, action: "retire"}`; [Commands that meet on one home](#lifecycle-pairs)) |
 | `E_CLONE_MISSING` | the repository is not found, or is not a Git repository |
 | `E_CLONE_MISMATCH` | the path is a linked worktree, or the clone has no `origin` |
 | `E_BRANCH_EXISTS` | the branch exists in the clone (before the tree is made, or made by another `add` at the same moment); `details.remedy` is `<instance>/<branch>` |
 | `E_GIT_FAILED` | a Git step failed on its own (`git worktree add`, or `git switch` while the branch does not exist), with Git's message: `git <sub> failed in <dir>: …`; the tree is removed |
 | `E_PLACEMENT_TAKEN` | a `ready` record with another clone, branch or base (`details.differ`); `.work-<p>` with no record, or a file or symbolic link there; an unreadable record |
-| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified); another add or remove of that purpose holds its claim (`details.lock`); a file at the claim's path is no claim this kernel can read or take over (`details.lock`); or an interrupted add's rollback could not be completed (`details.owed`) |
+| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified); another add or remove of that purpose holds its claim (`details.lock`); a file at the claim's path is no claim this kernel can read or take over (`details.lock`); an interrupted add's rollback could not be completed (`details.owed`; the message says what to deal with and to run `oats worktree remove --purpose <purpose>`, which finishes the rollback); or, `add` only (OATS 0.52.0), the home's claim is held by a retire whose liveness cannot be read, or is a file that is no readable claim (`no tree was made`; [Commands that meet on one home](#lifecycle-pairs)). Every one carries [`details.holder`](#busy-holder) |
 | `E_REMOTE_UNREADABLE` | the fetch of `<base>` from `origin` failed; the tree is removed |
 | `E_BASE_UNKNOWN` | the new HEAD is not the fetched commit; the message names both |
 | `E_REQUIRED_HOOK_FAILED`, `E_HOOK_ENVIRONMENT_CONTRACT` | a required `worktree` hook failed or timed out, or a hook answered `env`; the tree is removed (`details.hooks`, `details.rolledBack`) |
@@ -3079,6 +3084,17 @@ oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>]
   cannot look into, where whether it has a `work/` cannot be told; OATS
   0.52.0).
 - `midTask`: `true`, `false` or `"unknown"`.
+- `retiring` and `stopPending`, booleans on every target, say who holds the
+  target's home when the plan is read (OATS 0.52.0, feature
+  `lifecycle-claim-stop`). `retiring`: a self-retire is scheduled for it
+  (its pending marker is there), or a retire holds its
+  [claim](#retire-one-at-a-time). `stopPending`: a stop apply holds its
+  claim. A holder counts while it is not known to be gone: alive, or of a
+  liveness that cannot be read. `retiring` is one of the facts
+  `planRevision` is hashed from, as it was; `stopPending` is not. The
+  plan's `notes` say in a line that an apply will refuse either. Before
+  0.52.0 `retiring` read the pending marker alone and `stopPending` read a
+  file inside the home ([below](#stop-claim)).
 
 ```text
 oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key> [--no-recursive] [--grace-ms <n>] [--home <abs>] --json
@@ -3088,6 +3104,63 @@ Children first: SIGTERM to the harness processes and a bounded wait
 (`--grace-ms`, 1–300000, default 20000), never escalated. Home, work,
 transcript and launch configuration are kept; `oats session restart` brings
 the instance back.
+
+<a id="stop-claim"></a>
+**A stop holds the claim of every target** (OATS 0.52.0, feature
+`lifecycle-claim-stop`; #866, #890). It is the file that orders the retires
+of a home ([One retire of a home at a time](#retire-one-at-a-time)):
+`<instances>/.oats-retirement/claims/<instance>.lock`, beside the homes, its
+record naming the holder by pid and start time and by its verb (`action:
+"stop"`). With `--server` it is taken on the host. An apply does this, in
+this order:
+
+1. It refuses bad arguments (`E_BAD_ARGS`), `--grace-ms` among them.
+2. It reads the plan, for its targets.
+3. It replays a receipt stored under the same key (below). No claim is
+   taken for that.
+4. It takes the claim of every target, in one fixed order (by the claim's
+   path), so that two overlapping stops never each hold half: one takes the
+   first file both want, and the other is refused at once and releases what
+   it took. **A holder is answered here, before a stale plan**, as a guarded
+   retire answers it: `E_INSTANCE_RETIRING` beside a retire,
+   `E_LIFECYCLE_BUSY` beside another stop
+   ([Commands that meet on one home](#lifecycle-pairs)). A stop never waits
+   for a holder.
+5. It reads the plan again, under the claims, and compares its revision
+   with the one sent, once: `E_PLAN_STALE` with the fresh `details.plan`
+   (the claims this apply holds are not reported in it as `stopPending`). A
+   home that was retired since the plan was shown answers
+   `E_SESSION_UNKNOWN`; one whose `instance.json` can no longer be read,
+   `E_UNIDENTIFIED_INSTANCE_HOME`; a child in that state is no longer a
+   target, which is a changed plan.
+6. It refuses a target for which a self-retire is scheduled
+   (`E_INSTANCE_RETIRING`, with `details.plan`).
+7. It stops each target, writes the receipt and releases the claims.
+
+Everything through step 6 is before any effect: nothing was signalled, and
+nothing was written into a home. From step 7 on a target's failure is a row
+of the receipt, and no answer of the apply carries a code of
+[the list](#before-effect-codes). A target that was never launched, or is
+idle, is claimed and released like any other; its row says `alreadyIdle`.
+
+A stop that is killed (SIGKILL, SIGTERM, SIGINT or SIGHUP) leaves its claim
+files, and they refuse nothing: the next stop or retire of that home takes
+over the claim of a holder that is gone. Before 0.52.0 a stop marked each
+target with `<home>/.oats-stop-pending.json`, a file that named no holder,
+so a killed stop left every later stop of that instance refused
+(`E_LIFECYCLE_BUSY`) until someone removed the file (#890).
+**`.oats-stop-pending.json` stays a reserved name.** This kernel neither
+writes nor reads it. One that an older kernel left refuses nothing, does not
+make `stopPending` true, and is removed by the next stop apply of that home
+once it holds the claim; a removal that fails is a warning on stderr (`oats:
+warning: …`, in both modes) and the stop goes on.
+
+Two kernel versions acting on one deployment at once are not covered: a
+kernel before 0.52.0 takes no claim for a stop and does not read a stop's
+claim. A machine has one installed CLI, and a command routed with `--server`
+runs with the host's own, so the only overlap is a command of the old
+version still running across an upgrade: upgrade with no lifecycle command
+in flight.
 
 - The receipt is `{lifecycleApi: 1, action: "stop", instance, home,
   idempotencyKey, planRevision, at, ok, results, retained: ["home", "work",
@@ -3118,15 +3191,192 @@ the instance back.
   `lifecycle-kernel-codes` can hold the system's code in a failed target's
   `code`; a replay answers `E_SESSION_STOP_FAILED` there (the `message` keeps
   the system's text), so the rule holds for a replay too. The stored file is
-  not rewritten.
+  not rewritten. A replay takes no claim. The same key sent again while the
+  first apply still holds its claims is refused on the claim
+  (`E_LIFECYCLE_BUSY`): the receipt is not written yet. Once the first apply
+  has ended, the key replays.
 - Refusals: `E_BAD_ARGS` (no `--plan-revision`, a bad key, not exactly one of
-  `--plan`/`--apply`), `E_PLAN_STALE`, `E_INSTANCE_RETIRING` and
-  `E_LIFECYCLE_BUSY` (each with `details.plan`), `E_SESSION_UNKNOWN`,
+  `--plan`/`--apply`, a `--grace-ms` that is not 1–300000: answered before
+  the plan is read and before the key is used. Before 0.52.0 a bad grace was
+  one `E_BAD_ARGS` row per target, in a receipt stored under the key),
+  `E_INSTANCE_RETIRING` and `E_LIFECYCLE_BUSY` (a target's claim is held:
+  the holder's [`details`](#lifecycle-pairs), with `details.plan`, the plan
+  read before the claims), `E_PLAN_STALE` (`details.plan`, the fresh one),
+  `E_INSTANCE_RETIRING` for a scheduled self-retire (`details.plan`),
+  `E_SESSION_UNKNOWN`,
   `E_AMBIGUOUS_INSTANCE`, `E_HOME_MISMATCH`, `E_UNIDENTIFIED_INSTANCE_HOME`
   (the home's `instance.json` [cannot be read](#unreadable-record); `--plan`
   and `--apply`, nothing was done), `E_LIFECYCLE_FAILED` (any error
-  that is not the kernel's, with [`details.cause`](#kernel-codes)). A stop
-  never answers `E_WORK_INSPECTION_FAILED`.
+  that is not the kernel's, with [`details.cause`](#kernel-codes) when it
+  has one; among them a claim that cannot be taken for a reason of the
+  system's: `the claim <path> could not be taken (…); nothing was done`). A
+  stop never answers `E_WORK_INSPECTION_FAILED`.
+
+<a id="lifecycle-pairs"></a>
+### Commands that meet on one home
+
+Feature `lifecycle-claim-stop`, OATS 0.52.0 (#866). A retire and a stop apply
+hold the home's claim for their whole run, and `oats worktree add` reads it.
+Each cell is the answer of the command that **arrives**. It is given at once
+and before any effect: that command stopped, ran, copied, made and removed
+nothing, and the command already on the home is not disturbed.
+
+| On the home ↓ / arrives → | `oats retire` | `oats instance stop --apply` | `oats worktree add` |
+|---|---|---|---|
+| a retire is running | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
+| a self-retire is scheduled | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
+| a stop apply is running | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
+| a retire whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
+| a stop whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
+| the claim file is no readable claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
+| the holder of the claim is gone | not refused | not refused | not refused |
+
+- **A holder is answered before a stale plan, by both verbs.** A guarded
+  retire and a stop apply compare the revision they were sent only once
+  they hold the claim, so beside a holder the answer is the cell above
+  whatever the plan would read by then.
+- **A scheduled self-retire holds no claim** until its completion runs: it
+  is its pending marker. A retire reads the marker under the claim, while
+  the completion lives (`E_LIFECYCLE_BUSY`, [below](#retire-one-at-a-time)).
+  A stop apply reads it in the plan it makes under its claims: a plan that
+  showed `retiring: true` is answered `E_INSTANCE_RETIRING`, and an apply
+  whose plan was shown before the retire was scheduled is answered
+  `E_PLAN_STALE` first, with the fresh plan.
+- **A holder that is gone** (it exited or was killed, a zombie too) refuses
+  nothing: a retire or a stop takes its claim over and runs, and a `worktree
+  add` takes nothing and runs. One file of a gone holder still refuses the
+  two verbs that must take the claim: one this kernel
+  [cannot take over](#retire-one-at-a-time) (a `nonce` that is not a
+  claim's, written or damaged by hand) answers `E_LIFECYCLE_BUSY`, `holder:
+  "none"`, to a retire and to a stop; a `worktree add` reads the same file
+  as a holder that is gone, and runs.
+- **A stop does not refuse a `worktree add`:** a tree does not depend on the
+  session.
+- `--plan` of either verb takes no claim and is never refused by one; a
+  stop plan reports the holder (`retiring`, `stopPending`). `oats worktree
+  remove` does not read the home's claim. `oats session start` and `restart`
+  do not read it yet: they are refused only beside a scheduled self-retire
+  (`E_INSTANCE_RETIRING`). `oats status` does not show a held claim.
+
+Several targets:
+
+1. **A stop of a parent whose recorded child is being retired** answers
+   `E_INSTANCE_RETIRING` before the first target is stopped, never after:
+   the claim of every target is taken first, and the claims already taken
+   are released.
+2. **Two overlapping stops of one parent:** one stops everything, and the
+   other is refused whole with `E_LIFECYCLE_BUSY`.
+3. **A retire whose recorded child is held by someone else.** A retire does
+   not hold its children's claims. It stops each child, and that stop takes
+   the child's claim for its own span. A child whose claim is held is a row
+   of `childrenStopped` with `ok: false`, `stillRunning: null` and the code
+   of the cell above for an arriving stop (`E_LIFECYCLE_BUSY` beside a stop,
+   `E_INSTANCE_RETIRING` beside a retire), and the retire answers
+   **`E_CHILDREN_RUNNING`**, whether or not it had already stopped another
+   child ([`reached.sessionStopAttempted`](#retire-reached) says whether a
+   signal was sent). A stop of a child beside its parent's retire is not
+   refused.
+
+**`error.details` of a claim's refusal** is `{instance, home, lock, pid,
+since, action}`, with `holder` on `E_LIFECYCLE_BUSY`:
+
+- `instance` and `home`: the home whose claim refused. **In a recursive
+  stop this may be a child of the instance asked for.**
+- `lock`: the file that names the holder. `pid` and `since`: the holder's
+  pid and when it took the claim.
+- **`action`: the holder's verb**, `"retire"` or `"stop"`. A claim written
+  by a kernel before this feature has no verb and reads as `"retire"`. A
+  reader treats a value it does not know as busy.
+- A refusal that names no holder has no `pid`, no `since` and no `action`:
+  a claim file that is no readable claim, and a command that cannot read
+  its own start time.
+- **A scheduled self-retire is no claim.** A retire's refusal beside one
+  has the same keys, with `lock` the pending marker and `pid` the
+  completion's. A stop apply's has `details.plan` alone, and a `worktree
+  add`'s has no `details`; their message is `<instance> is being retired;
+  nothing was stopped` (`no tree was made`), with no pid.
+- A stop apply's refusal carries `details.plan` beside them: the plan it
+  read before it took the claims.
+- A holder whose liveness cannot be read: `details.unknown` is the reason,
+  and the message names the recorded verb, the pid, its recorded start and
+  the way out (check that pid by hand; if it is not that command, remove
+  `<lock>`, then retry).
+
+The messages: `<instance> is being retired (pid <pid>, since <at>); nothing
+was stopped` (a `worktree add`: `no tree was made`); `a stop of <instance>
+is already running (pid <pid>, since <at>); nothing was done — wait for it
+to finish` (an arriving stop: `nothing was stopped`). A client shows the
+message and never parses it.
+
+<a id="busy-holder"></a>
+**`error.details.holder`, on every `E_LIFECYCLE_BUSY`** of `oats retire`,
+`oats instance stop` and `oats worktree add|remove`, for a claim or for
+anything else the code is answered for (a tree record, a spawn's marker, a
+scheduled completion, an owed rollback). It says, as data, whether waiting
+ends the refusal:
+
+| `details.holder` | It means | What ends it |
+|---|---|---|
+| `"running"` | the kernel established that another `oats` command is alive (a retire, a stop, a worktree command, a spawn, a scheduled completion) | waiting |
+| `"unknown"` | whether one still runs cannot be read | a person checks what the message names (the process, the file) |
+| `"none"` | nobody is running: something that a dead command left, or that this host lacks, has to be dealt with | what the message says (a file to inspect and remove, a group to end, a command to run) |
+
+A reader treats a value it does not know, or the field's absence (a kernel
+without the feature), as **do not promise that waiting ends it**. For
+`"unknown"` and `"none"` the message always names the step that ends it,
+after ` — `.
+
+<a id="before-effect-codes"></a>
+**The codes a stop and a retire answer only before any effect.** The kernel
+holds one list, by verb. A code in it means *refused, nothing happened*: no
+process was signalled, no hook ran, and nothing of a home was written, copied
+or removed. For a retire that is `reached.phase: "before-effects"`, or no
+[`reached`](#retire-reached) at all; for a stop apply, that no target's stop
+had begun.
+
+| Code | `oats instance stop` | `oats retire` |
+|---|---|---|
+| `E_BAD_ARGS` | yes | yes |
+| `E_PLAN_STALE` | yes | yes |
+| `E_INSTANCE_RETIRING` | yes | yes |
+| `E_LIFECYCLE_BUSY` | yes | yes |
+| `E_HOME_MISMATCH` | yes | yes |
+| `E_SESSION_UNKNOWN` | yes | yes |
+| `E_AMBIGUOUS_INSTANCE` | yes | yes |
+| `E_UNIDENTIFIED_INSTANCE_HOME` | yes | yes |
+| `E_REMOTE_INCOMPATIBLE` | yes | yes |
+| `E_AMBIGUOUS` | yes | yes |
+| `E_SNAPSHOT_UNKNOWN` | yes | yes |
+
+The last three are the router's (`--server`): they are answered before the
+command is sent to the host. The list is about the envelope's `error.code`.
+A row of a result (a stop receipt's `results[].code`, a retire's
+`childrenStopped[].code`) says why that one target was not stopped, and
+other rows may say that theirs was. Every other code may come after an
+effect: `E_CHILDREN_RUNNING`, `E_SESSION_STOP_FAILED`,
+`E_RUNTIME_QUIESCE_FAILED`, `E_WORK_PRESERVATION_FAILED`,
+`E_WORK_INSPECTION_FAILED`, `E_LIFECYCLE_FAILED` and the rest; for a retire
+`reached` says how far it got.
+
+The rule holds by construction. Each verb knows how far it got at one place
+(a retire: the `phase` it reports in `reached`; a stop apply: whether a
+target's stop had begun), and an error that would leave that place with a
+listed code after the first effect is not answered with it. It is a
+[defect of the kernel](#kernel-codes): `E_LIFECYCLE_FAILED`,
+`details.cause: {name: "LateRefusal"}`, its other details kept, and its
+stack on stderr.
+
+Two answers of a retire that came after an effect had a listed code before
+0.52.0 and have another now (#895):
+
+- A guarded retire whose extra trees no longer read as its plan said, found
+  at the step that moves them, after the hooks: `E_WORK_PRESERVATION_FAILED`
+  (it was `E_PLAN_STALE`). The home and its work are kept.
+- The worktree hook process group that an interrupted spawn left, when it
+  survives SIGTERM and SIGKILL: `E_RUNTIME_QUIESCE_FAILED`, naming the group
+  (it was `E_LIFECYCLE_BUSY`, "nothing was retired", after two signals).
+  `reached.phase` is `"before-hooks"`; no session was stopped, no retire
+  hook was run and nothing was removed.
 
 <a id="retire"></a>
 ### Retire
@@ -3347,7 +3597,9 @@ A first retire prints the **raw receipt**, not an envelope:
   stops it at the step, after the hooks. `--force` does not bypass either;
   the home and `work/` are kept, and trees already handled stay handled. A tree
   that no longer matches what the applied plan said refuses with
-  `E_PLAN_STALE`, the home kept, rather than be moved or removed unplanned.
+  `E_WORK_PRESERVATION_FAILED`, the home kept, rather than be moved or
+  removed unplanned (OATS 0.52.0; it was `E_PLAN_STALE`, a code that says
+  nothing happened, answered after the hooks: #895).
   The key is additive.
 - `workRecovery`: `{path, classes, bytes, home, outputs?, repoCopy?,
   notCopied?, afterHooks?}`, present when a recovery was written. One retire
@@ -3433,7 +3685,7 @@ deepest first, as `{instance, home, ok: true, stopped, alreadyIdle}` or
 `--self` receipt carries it only when there are children; a guarded receipt
 always does (`[]` when there are none). One child still running after the
 grace, or whose stop could not be established (`E_SESSION_UNAVAILABLE`,
-`E_INSTANCE_RETIRING`, …), refuses everything: nothing is retired, exit 1,
+`E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY`, …), refuses everything: nothing is retired, exit 1,
 `E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
 `code`, always a [kernel code](#kernel-codes)). **`--force` does not bypass it**: `--force` covers incomplete
 cleanup, not a running child. A `--self` retirement stops the children
@@ -3464,14 +3716,18 @@ retry}` to `resultPath`. Before 0.48.0 only a guarded apply stopped children.
   `idempotencyKey` and `replayed: false`.
 
 <a id="retire-one-at-a-time"></a>
-**One retire of a home at a time** (0.51.0, #863). Every retire that applies (plain,
+**One retire of a home at a time** (0.51.0, #863), **and one retire or stop**
+(0.52.0, #866: a stop apply holds the same claim,
+[above](#stop-claim)). Every retire that applies (plain,
 guarded, `--self` and its detached completion; with `--server`, on the host)
 holds the home's claim,
 `<instances>/.oats-retirement/claims/<instance>.lock`, from the moment it
 has resolved the home until it ends, by success or by any refusal or failure.
-The claim is a file that names its holder by pid and start time. It lies
+The claim is a file that names its holder by pid and start time, and by its
+verb (`action`: `"retire"` or `"stop"`; 0.52.0). It lies
 beside the homes, never inside one: a home's bytes are what its retire
-observes, copies and removes. A second retire of that home does not wait: it
+observes, copies and removes. A second retire of that home, or a retire that
+meets a stop of it, does not wait: it
 answers `E_LIFECYCLE_BUSY` at once (exit 1; the text form prints the
 message), before it stops a session or a child, writes a recovery, runs a
 hook or changes a file of the home. **`--force` does not bypass it**, and
@@ -3491,24 +3747,31 @@ that name is retired again its claim file stays where it is, and it is safe
 to remove once its pid is gone. A retire that ends removes its claim file;
 the `claims/` directory itself stays, empty.
 
-`details` is `{instance, home, lock, pid, since}`: `lock` is the file that
-names the holder, `since` when the holder took it. Every message is one
+`details` is `{instance, home, lock, pid, since, action, holder}`: `lock` is
+the file that names the holder, `since` when the holder took it, `action`
+the holder's verb and [`holder`](#busy-holder) whether waiting ends it (both
+0.52.0, feature `lifecycle-claim-stop`;
+[Commands that meet on one home](#lifecycle-pairs)). Every message is one
 line and says that nothing was done:
 
-- A live holder: `a retire of <name> is already running (pid <pid>, since
-  <at>); nothing was done — wait for it to finish`.
+- A live holder (`holder: "running"`): `a retire of <name> is already
+  running (pid <pid>, since <at>); nothing was done — wait for it to
+  finish`; beside a stop, `a stop of <name> is already running …`, with
+  `action: "stop"`.
 - A holder whose start time cannot be read (where `ps` fails, or a claim
   that records none) is never taken for gone, and its claim is never taken
-  over. `details.unknown` is the reason. The message names the pid, its
-  recorded start, the reason and the way out: check that pid by hand, and if
-  it is not an `oats retire`, remove `<lock>`, then retry.
+  over (`holder: "unknown"`). `details.unknown` is the reason. The message
+  names the holder's verb, the pid, its recorded start, the reason and the
+  way out: check that pid by hand, and if it is not that command (`oats
+  retire`, `oats instance stop`), remove `<lock>`, then retry.
 - A claim file that is not a readable claim is never removed: a file that
   does not parse, a directory, or a path that exists and cannot be read, such
   as a dangling symbolic link (0.52.0, #874: that one made the retire spin
   without end; it is now refused once its retries are spent, a quarter of a
   second for a retire, which does not wait).
-  `details` is `{instance, home, lock}`; the message names the file and says
-  to inspect it and remove it if no `oats retire` holds it.
+  `details` is `{instance, home, lock, holder: "unknown"}`; the message is
+  `<lock> is not a readable claim; nothing was done — inspect it and remove
+  it if no oats retire or oats instance stop holds it, then retry`.
 - A claim whose holder is gone and that this kernel cannot take over is
   never removed either: its `nonce` is not the 32 hexadecimal digits a claim
   carries (a file written or damaged by hand); or it is the claim of a
@@ -3516,18 +3779,23 @@ line and says that nothing was done:
   them so long that the system will not name the claim of one more (each
   adds 41 bytes to the file's name: three to five on a file system whose
   names are 255 bytes at most). `details` is `{instance, home, lock, pid,
-  since}`, `lock` being the file the message names. The message is `the
+  since, action, holder: "none"}`, `lock` being the file the message names.
+  The message is `the
   process that held <lock> (pid <pid>) is gone, and this file is not a claim
   this kernel can take over (<why>); nothing was done — inspect <lock> and
-  remove it if no oats retire holds it, then retry` (0.52.0, #874; before,
+  remove it if no oats retire or oats instance stop holds it, then retry` (0.52.0, #874; before,
   the first was answered as a live holder, to wait for, and the second as
   `E_LIFECYCLE_FAILED` with the system's `ENAMETOOLONG` about a file that
   does not exist). Removing that one file lets the next retire take the
   rest over. A retire of a name that has no home leaves a file whose nonce
   is not a claim's as it is.
 - The retire's own start time cannot be read, so it could not hold the claim
-  verifiably: `details` is `{instance, home, lock}`, and the message gives
-  the reader's own reason (the `/proc` read, or what `ps` answered).
+  verifiably: `details` is `{instance, home, lock, holder: "none"}`, and the
+  message gives the reader's own reason (the `/proc` read, or what `ps`
+  answered) and the check to run by hand in a shell on that host: `cat
+  /proc/$$/stat` where there is a `/proc`; elsewhere `PATH=/usr/bin:/bin ps
+  -o lstart= -o stat= -p $$`, which must print a start time and a state.
+  Then the command again.
 
 A scheduled self-retire counts from the moment it is scheduled. Its pending
 marker (`pendingMarker`) records the completion process as `completionPid`
@@ -3577,14 +3845,24 @@ being taken …; nothing was done — retry`, `details: {instance, home, lock}`)
 A retire of a name that has no home also removes a claim of that name whose
 holder is gone, left by a retire that was killed after it removed the home.
 
-The claim orders retires only. `oats instance stop`, `oats session start`
-and `oats worktree add` do not take it and are not refused by it, and `oats
-status` does not show a held claim (#866).
+The claim orders the retires and the stops of a home (0.52.0, #866): `oats
+instance stop --apply` takes it, and `oats worktree add` reads it
+([Commands that meet on one home](#lifecycle-pairs)). `oats session start`
+and `restart` do not read it yet, and `oats status` does not show a held
+claim. Before 0.52.0 the claim ordered retires only: a stop was not refused
+beside a retire in flight, and wrote into the home that the retire was
+inspecting or removing.
 
-Refusals (envelopes): `E_PLAN_STALE`, `E_CHILDREN_RUNNING`,
+Refusals (envelopes): `E_PLAN_STALE` (a guarded apply's revision, checked
+under the claim: before any effect), `E_CHILDREN_RUNNING`,
 `E_WORK_PRESERVATION_FAILED` (the home is kept; retry, or
 `--discard-worktree` when it is `work/` that could not be re-homed: it does
-not apply to an extra tree), `E_WORK_INSPECTION_FAILED` (the home is kept; the
+not apply to an extra tree; also a guarded retire whose extra trees no
+longer read as its plan said, after the hooks: review the fresh plan and
+apply again), `E_RUNTIME_QUIESCE_FAILED` (the session's window could not be
+shown gone; or the worktree hook process group an interrupted spawn left
+survived SIGTERM and SIGKILL: end that group by hand, then retire again),
+`E_WORK_INSPECTION_FAILED` (the home is kept; the
 message names the entry or the state that could not be read, or the directory
 Git reads as the top level of a `work/` whose `core.worktree` names another
 one),
@@ -3594,12 +3872,15 @@ descriptor, or a rollback marker that cannot drive a retry, until `--force`;
 a home whose `instance.json` [cannot be read](#unreadable-record), `--plan`
 and `--force` included),
 `E_NO_ROOT`, `E_LIFECYCLE_FAILED`, `E_LIFECYCLE_BUSY` (another retire of the
-home is running or scheduled, `--force` included: one retire of a home at a
-time, above; or, feature
+home is running or scheduled, or a stop of it is running, `--force`
+included: one retire or stop of a home at a time, above; or, feature
 `worktree-event`: the home is a spawn still running its `worktree` hooks, a
 row with `spawnInProgress: true`, `--force` included; or one whose start time
 cannot be read, a `rollbackIncomplete` row, until `--force`; or a hook or git
-group whose leader's start cannot be read, until `--force`). A recovery whose Git status disagrees with
+group whose leader's start cannot be read, until `--force`; every one is
+answered before any effect and carries [`details.holder`](#busy-holder)). The
+codes a retire answers only before any effect are
+[one list](#before-effect-codes). A recovery whose Git status disagrees with
 the source's carries `details: {home, statusDisagreement: {repo, rows: [{path,
 source, recovery}], total}}` (the first 10 paths). Usage errors are text on
 stderr, not envelopes.
@@ -3652,7 +3933,10 @@ says nothing.
     its `recovery.json` holds on disk when the error is answered
     (`"before-hooks"` or `"complete"`). A removal that fails after a complete
     recovery therefore names where the work is.
-- Three points where a step was reached and its outcome is not established:
+- Four points where a step was reached and its outcome is not established:
+  the hook process group an interrupted spawn left was signalled and did not
+  end (`E_RUNTIME_QUIESCE_FAILED`; `phase: "before-hooks"`, and
+  `sessionStopAttempted: false`: that group is no session);
   the kill of the session's window was sent and the check that the window is
   gone failed (`E_RUNTIME_QUIESCE_FAILED`; `sessionStopAttempted: true`, and
   the harness may still run); a child's stop that signalled its harness and

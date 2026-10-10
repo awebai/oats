@@ -772,7 +772,11 @@ SIGTERM. Restart the instance later with `oats session start` or
 `oats session restart`. An instance whose recorded tmux socket file is
 missing while a process works in its home, or the process scan cannot run,
 is not reported idle: its result is `E_SESSION_UNAVAILABLE` and nothing is
-stopped ([missing socket file](#missing-socket)).
+stopped ([missing socket file](#missing-socket)). A stop apply holds the
+claim of every instance it stops, the one a retire holds (OATS 0.52.0): one
+that meets a retire of any of them answers `E_INSTANCE_RETIRING`, one that
+meets another stop `E_LIFECYCLE_BUSY`, before anything is stopped
+([the table](desktop-cli-api.md#lifecycle-pairs)).
 
 ### Inspect, input and attach
 
