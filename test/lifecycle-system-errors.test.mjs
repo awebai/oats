@@ -20,11 +20,13 @@ import cp, { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { ensureOatsSocketDir, waitUntil } from "./helpers/host-fixture.mjs";
-import { stopInstanceSession } from "../lib/core.mjs";
+import { retireFailure, stopInstanceSession } from "../lib/core.mjs";
+import { oatsError } from "../lib/errors.mjs";
 
 /** A mode no longer keeps root out: the shapes that rest on one are skipped for root. */
 const ROOT = process.getuid?.() === 0;
@@ -542,7 +544,72 @@ test("retire of a home whose removal the system refuses: E_LIFECYCLE_FAILED at t
   assert.equal(events.filter((event) => event.kind === "retired").length, 1, "its retired event is recorded in the workspace log");
 });
 
-// ---- 6. the wrapping never answers a code that says nothing happened ----
+// ---- 6. no answer of a retire without `reached` once the retire of the home has begun ----
+
+// An answer of a retire without `reached` says that the retire of the home had not begun and that
+// nothing was done. So the function that makes a retire's error (lib/core.mjs retireFailure, the
+// whole handler of retireClaimed) must give one WITH `reached` whatever goes wrong while it makes
+// it: a sentence that throws, an error that cannot carry details, a read from disk that cannot be
+// made. Nothing in the kernel throws there today; the test forces each, with a tracker of its own.
+test("retireFailure never answers without reached: when the sentence throws, when the error cannot carry details, and when the disk cannot be read, the answer is the error's own message with reached", () => {
+  const tracker = (more = {}) => ({ phase: "after-hooks", sessionTouched: true, hooksStarted: true, removing: false, recoveryPath: null, said: () => "The retire hooks have run", lead: null, ...more });
+  const REACHED = { phase: "after-hooks", sessionStopAttempted: true, hooksStarted: true, home: "kept", recovery: null };
+  const systemError = () => Object.assign(new Error("EACCES: permission denied, open '/x'"), { code: "EACCES", syscall: "open" });
+  const gone = join(tmpdir(), `oats-door-no-such-home-${process.pid}`);
+  /** What `fn` returns, and what it wrote on stderr. */
+  const withStderr = (fn) => {
+    const write = process.stderr.write;
+    let written = "";
+    process.stderr.write = (chunk) => { written += String(chunk); return true; };
+    try { return [fn(), written]; } finally { process.stderr.write = write; }
+  };
+
+  // The ordinary case, for contrast: the sentence of the point, the cause, reached.
+  const [ordinary, quiet] = withStderr(() => retireFailure(systemError(), tracker(), gone));
+  assert.equal(ordinary.code, "E_LIFECYCLE_FAILED");
+  assert.equal(ordinary.message, "EACCES: permission denied, open '/x'. The retire hooks have run.");
+  assert.deepEqual(ordinary.details, { cause: { code: "EACCES", syscall: "open" }, reached: REACHED });
+  assert.equal(quiet, "");
+
+  // The sentence throws: the error's own message, with its cause and reached; the sentence's own
+  // failure is a defect, and its stack is printed.
+  for (const broken of [{ said: () => { throw new TypeError("the sentence broke"); } }, { lead: () => { throw new TypeError("the sentence broke"); } }, { said: undefined }]) {
+    const [failure, stderr] = withStderr(() => retireFailure(systemError(), tracker(broken), gone));
+    assert.equal(failure.code, "E_LIFECYCLE_FAILED");
+    assert.equal(failure.message, "EACCES: permission denied, open '/x'");
+    assert.deepEqual(failure.details, { cause: { code: "EACCES", syscall: "open" }, reached: REACHED });
+    assert.match(stderr, /^TypeError: /, "what broke the sentence is reported");
+  }
+
+  // A kernel error that cannot carry details (frozen): its code, its message, its details, and reached.
+  const frozen = Object.freeze(Object.assign(oatsError("E_PLAN_STALE", "the plan changed"), { details: { plan: { planRevision: "abc" } } }));
+  const [stale] = withStderr(() => retireFailure(frozen, tracker(), gone));
+  assert.notEqual(stale, frozen);
+  assert.equal(stale.code, "E_PLAN_STALE");
+  assert.equal(stale.message, "the plan changed");
+  assert.deepEqual(stale.details, { plan: { planRevision: "abc" }, reached: REACHED });
+
+  // The disk cannot be read: the conservative value. No recovery is named; a home whose removal
+  // began and that cannot be looked at is "partial", never "kept" and never "removed".
+  const [unread] = withStderr(() => retireFailure(systemError(), tracker({ phase: "removal", removing: true, recoveryPath: { not: "a path" } }), { not: "a path" }));
+  assert.deepEqual(unread.details.reached, { phase: "removal", sessionStopAttempted: true, hooksStarted: true, home: "partial", recovery: null });
+  // And what the disk says when it can be read: nothing there is "removed", something there is "partial".
+  const [removed] = withStderr(() => retireFailure(systemError(), tracker({ phase: "removal", removing: true }), gone));
+  assert.equal(removed.details.reached.home, "removed");
+  const [partial] = withStderr(() => retireFailure(systemError(), tracker({ phase: "removal", removing: true }), tmpdir()));
+  assert.equal(partial.details.reached.home, "partial");
+
+  // Whatever was thrown: a refusal without a code has no cause; a thrown undefined is a defect.
+  const [plain] = withStderr(() => retireFailure(new Error("session no longer exists"), tracker(), gone));
+  assert.equal(plain.code, "E_LIFECYCLE_FAILED");
+  assert.equal(plain.message, "session no longer exists. The retire hooks have run.");
+  assert.deepEqual(plain.details, { reached: REACHED });
+  const [nothing] = withStderr(() => retireFailure(undefined, tracker(), gone));
+  assert.equal(nothing.code, "E_LIFECYCLE_FAILED");
+  assert.deepEqual(nothing.details, { cause: { name: "Error" }, reached: REACHED });
+});
+
+// ---- 7. the wrapping never answers a code that says nothing happened ----
 
 test("no answer to a system error carries a code that says nothing happened, and every code is a kernel code", async (t) => {
   // Two of the shapes above again, so that this holds when the test runs alone; then every error

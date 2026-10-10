@@ -121,7 +121,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 | `session-attach-detach-key` | `oats session attach … --detach-key <key>`, local and `--server`: the one key that detaches that viewer, and exit status 20 when it did, OATS 0.51.0 ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe and never try: a kernel without it ignores the flag and opens a viewer with no exit. A routed attach refuses a host without it (`E_REMOTE_INCOMPATIBLE`, `details: {"feature":"session-attach-detach-key"}`) | |
-| `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results; `error.details.cause` on an error that is not the kernel's ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
+| `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results, with one exception: a document with an unsafe mapping key or value is refused under its own name, `unsafe-config-key` or `unsafe-config-value`, by these commands as by every other; `error.details.cause` on an error that has a code which is not a kernel code (`{code, syscall}`) and on a defect of the kernel (`{name}`), and none on a refusal that has no code, which is answered with the command's general code and its message alone ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -160,15 +160,34 @@ stdout (progress goes to stderr):
   neither the system (`ENOENT`) nor Node (`ERR_…`) gives a code of that shape.
   An error that is not the kernel's is answered with the command's general
   code (`E_LIFECYCLE_FAILED`, `E_SESSION_FAILED`, or the one its section
-  names) and **`error.details.cause`**, added beside the command's other
-  details: `{code, syscall}` for a system or Node error (`code` is theirs;
-  `syscall` only when the error has one), `{name}` for an exception without a
-  code. `cause` holds nothing else: no message, no path, no stack. An
-  exception without a code is a kernel defect: it is answered as one envelope
-  like the rest, and its stack goes to stderr. The same holds for a `code`
-  inside a result of these commands (a stop receipt's `results[].code`, a
-  retire's `childrenStopped[].code`, a plan's `session.reason` and
-  `work.reason`). Elsewhere an `error.code` may still be the system's.
+  names). What the answer adds depends on the error:
+  - **One that has a code which is not a kernel code** gets
+    **`error.details.cause`**, beside the command's other details:
+    `{code, syscall}`. `code` is the system's (`ENOENT`), Node's (`ERR_…`),
+    or one of the kernel's own lower-case names, which these commands wrap
+    like the rest (`invalid-declaration`, `resource-limit`,
+    `integrity-drift`, `invalid-source`); `syscall` only when the error has
+    one.
+  - **A defect of the kernel** gets `details.cause: {name}`, and its stack
+    goes to stderr, in JSON and in text mode. A defect is an error without a
+    code that is one of the language's own kinds, whose `name` is not
+    `"Error"` (`TypeError`, `ReferenceError`, `RangeError`, `SyntaxError`, …),
+    or a thrown value that is no error at all (`name` is then `"Error"`). It
+    is answered as one envelope like the rest.
+  - **A refusal without a code** (the kernel words some of its refusals that
+    way, and a `tmux` or `git` command that fails is reported that way) gets
+    neither: the general code and its message alone, no `details.cause`, no
+    stack. Text mode prints `oats: <message>`, as a kernel without the
+    feature does.
+
+  `cause` holds nothing else: no message, no path, no stack. The same rule
+  holds for a `code` inside a result of these commands (a stop receipt's
+  `results[].code`, a retire's `childrenStopped[].code`, a plan's
+  `session.reason` and `work.reason`). **The one exception:** an OATS
+  document with an unsafe mapping key or value is refused under its own name,
+  `unsafe-config-key` or `unsafe-config-value`, by these commands as by every
+  other; neither is wrapped. Elsewhere an `error.code` may still be the
+  system's.
 - Either envelope may carry `warnings: [ … ]`, only when there is something
   to say. The one warning is `deprecated-runtime-name`
   ([Harness input spellings](#the-harness-rename-feature-harness-oats-0270));
@@ -2985,9 +3004,10 @@ the instance back.
   is not known`, or `its harness was not signalled`. `stillRunning` is what
   the stop established by then: the pids still alive, `[]` when it
   established that none is, `null` when it established nothing. A stop that
-  fails on an exception without a code (a defect of the kernel) is that same
-  row, and the exception's stack is printed on stderr; the same holds for a
-  child's stop in a retire's `childrenStopped`.
+  fails on a [defect of the kernel](#kernel-codes) is that same row, and the
+  defect's stack is printed on stderr; a stop that fails on a refusal without
+  a code (a `tmux` command that failed) is that row and prints no stack. The
+  same holds for a child's stop in a retire's `childrenStopped`.
 - `ok: false`: at least one target still runs (text mode exits 1).
 - A replay is the stored receipt (`<home>/.oats-stop-receipt.<key>.json`)
   with `replayed: true`. A receipt stored by a kernel from before feature
@@ -3389,6 +3409,16 @@ as any retire does; one that meets another retire still running is refused,
 and records that at `resultPath` like any failed completion. The `error`
 recorded there has the code and the message the same failure has as an
 envelope: a kernel code, and what the retire had done by then.
+
+A `--self` that cannot finish scheduling (the completion's log cannot be
+opened, no process is created, the marker cannot be written) answers
+`E_SELF_RETIRE_SCHEDULE_FAILED`, with `reached.phase: "before-effects"`. That
+stays true after the answer: a completion this command had started is not
+running when it answers (it is ended, unless it had gone by itself; a
+completion does nothing to the instance before it holds the home's claim,
+which the retire that scheduled it holds until it has answered), and its
+result and its log are removed. The instance is still live and can be
+retired externally.
 
 The home is resolved again once the claim is held. One that another retire
 removed in between answers `E_SESSION_UNKNOWN`, as a retire of a retired
