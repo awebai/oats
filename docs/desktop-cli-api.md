@@ -43,7 +43,8 @@ see the [official catalog](official-catalog.md) for current pins.
              "preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file",
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
-             "server-probe-features","worktree-event","session-attach-detach-key"],
+             "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
+             "lifecycle-kernel-codes"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -120,6 +121,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 | `session-attach-detach-key` | `oats session attach … --detach-key <key>`, local and `--server`: the one key that detaches that viewer, and exit status 20 when it did, OATS 0.51.0 ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe and never try: a kernel without it ignores the flag and opens a viewer with no exit. A routed attach refuses a host without it (`E_REMOTE_INCOMPATIBLE`, `details: {"feature":"session-attach-detach-key"}`) | |
+| `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results; `error.details.cause` on an error that is not the kernel's ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -145,7 +147,11 @@ stdout (progress goes to stderr):
   command has details.
 - <a id="kernel-codes"></a>**The lifecycle commands answer kernel codes only**
   (`oats retire`, `oats instance stop`, `oats session …`, `oats worktree
-  add|remove`). A kernel code is `E_` followed by upper-case letters, digits
+  add|remove`; feature `lifecycle-kernel-codes`, OATS 0.52.0). A kernel
+  whose probe does not list the feature can answer one of these commands with
+  the system's own code (`ENOENT`, `EACCES`, `ENOTEMPTY`) and has no
+  `details.cause`: a client keeps its guard for such a code there. A kernel
+  code is `E_` followed by upper-case letters, digits
   and underscores (`^E_[A-Z0-9_]+$`). The kernel tests that shape, not a list
   of known codes, and the shape is enough: the kernel has no dependency, and
   neither the system (`ENOENT`) nor Node (`ERR_…`) gives a code of that shape.
@@ -3410,10 +3416,15 @@ source, recovery}], total}}` (the first 10 paths). Usage errors are text on
 stderr, not envelopes.
 
 <a id="retire-reached"></a>
-**What a failed retire had done: `error.details.reached`.** Every error a
+**What a failed retire had done: `error.details.reached`** (feature
+`lifecycle-kernel-codes`, OATS 0.52.0). Every error a
 retire apply answers once it has resolved the home and holds its claim, a
 typed refusal or not, carries it beside its other details. A client shows the
-message and never parses it; this is the same statement as data.
+message and never parses it; this is the same statement as data. Gate on the
+probe, never on the field: from a kernel that lists the feature an absent
+`reached` means the error was answered before the retire of the home began
+and nothing was done (below); from a kernel without it an absent `reached`
+says nothing.
 
 ```json
 {"phase":"after-hooks","sessionStopAttempted":true,"hooksStarted":true,"home":"kept",
