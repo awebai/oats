@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const HOME = new URL("../packages/client/", import.meta.url);
 const ENTRIES = ["liveness-main.mjs", "own-environment.mjs"];
+const SPLIT = ["instance-tree.mjs", "roster-sections.mjs", "instance-acts.mjs", "workspace-admission.mjs", "kernel-environment.mjs"];
 const files = readdirSync(HOME).sort();
 
 test("every module of packages/client, its two entries apart, loads by import under plain Node", async (t) => {
@@ -22,11 +23,17 @@ test("every module of packages/client, its two entries apart, loads by import un
   const modules = files.filter((name) => name.endsWith(".mjs") && !ENTRIES.includes(name));
   assert.equal(modules.length, files.length - ENTRIES.length, "the shared home holds .mjs modules and nothing else");
   assert.ok(modules.length > 0);
+  // No DOM here: a module that needed `window` or `document` to load would fail. (The modules use those two
+  // words as ordinary local names, so reading the sources for them proves nothing; loading does.)
+  for (const name of ["window", "document", "HTMLElement"]) assert.equal(typeof globalThis[name], "undefined", `this process has no ${name}`);
   const environment = JSON.stringify(process.env);
   for (const name of modules) {
     const loaded = await import(new URL(name, HOME).href);
     assert.ok(Object.keys(loaded).length > 0, `${name} loads and exports something`);
   }
+  // The halves cut out of four Desktop files that also built DOM or kept the Desktop's stores (#855, 1b),
+  // and the one list two callers shared: each is here, and loaded above with no document to build in.
+  for (const name of SPLIT) assert.ok(modules.includes(name), `${name} is in the shared home`);
   assert.equal(JSON.stringify(process.env), environment, "loading the libraries changes nothing in the environment of the process that loads them");
   t.diagnostic(`${modules.length} modules loaded`);
 });
