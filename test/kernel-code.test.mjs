@@ -5,16 +5,20 @@
 // Now an answer carries a kernel code (`^E_[A-Z0-9_]+$`) or nothing: isKernelCode tests that shape,
 // kernelCode chooses between the error's code and a fallback, asKernelError wraps what is not the
 // kernel's, errorCause is the little of the original the answer keeps (`details.cause`: a code and a
-// syscall, or a name; never a message, a path or a stack), and defectOf finds the exception without
-// a code, whose stack an answer must not swallow.
+// syscall, or a name; never a message, a path or a stack), and defectOf finds the defect, whose
+// stack an answer must not swallow. A defect (isDefect) is one of the language's own error kinds
+// without a code (a TypeError and its like), or a thrown value that is no Error. A plain Error
+// without a code is not one: the kernel writes refusals that way, and a child process that exits
+// non-zero is reported that way; it is answered with the general code and its message alone.
 //
 // Pure unit tests: no fixture. The system's and Node's errors are real ones, thrown by Node here.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { asKernelError, defectOf, errorCause, isKernelCode, kernelCode, oatsError, reportDefect } from "../lib/errors.mjs";
+import { asKernelError, defectOf, errorCause, isDefect, isKernelCode, kernelCode, oatsError, reportDefect } from "../lib/errors.mjs";
 
 /** What `fn` throws. */
 function thrownBy(fn) {
@@ -27,6 +31,8 @@ const missingFile = () => thrownBy(() => readFileSync(join(tmpdir(), `oats-kerne
 const invalidUrl = () => thrownBy(() => new URL("x"));
 /** Another one: ERR_INVALID_ARG_TYPE (a TypeError), from a path that is no path. */
 const invalidArgument = () => thrownBy(() => readFileSync({}));
+/** A real error of a child process that exits non-zero: a plain Error with a status and no code. */
+const failedChild = () => thrownBy(() => execFileSync(process.execPath, ["-e", "process.exit(3)"], { stdio: "ignore" }));
 
 test("the fixtures are what they are named: a real ENOENT of open, and two real Node ERR_ codes", () => {
   const fsError = missingFile();
@@ -38,6 +44,10 @@ test("the fixtures are what they are named: a real ENOENT of open, and two real 
   assert.equal(invalidUrl().syscall, undefined);
   assert.ok(invalidUrl() instanceof TypeError);
   assert.equal(invalidArgument().code, "ERR_INVALID_ARG_TYPE");
+  const child = failedChild();
+  assert.equal(child.status, 3);
+  assert.equal(child.code, undefined, "a child that exits non-zero has a status and no code");
+  assert.equal(child.name, "Error");
 });
 
 // ---- isKernelCode ----
@@ -115,18 +125,44 @@ test("errorCause of a Node error that has a code is that code alone: no syscall 
   assert.deepEqual(errorCause(invalidArgument()), { code: "ERR_INVALID_ARG_TYPE" });
 });
 
-test("errorCause of an exception without a code is its name alone", () => {
+test("errorCause of a defect is its name alone", () => {
   assert.deepEqual(errorCause(new TypeError("x")), { name: "TypeError" });
   assert.deepEqual(errorCause(new RangeError("x")), { name: "RangeError" });
-  assert.deepEqual(errorCause(new Error("x")), { name: "Error" });
+  assert.deepEqual(errorCause(thrownBy(() => JSON.parse("{"))), { name: "SyntaxError" });
 });
 
-test("errorCause of a thrown string, of undefined, and of an error whose code is no string is the name Error", () => {
+test("errorCause of a thrown value that is no Error is the name Error", () => {
   assert.deepEqual(errorCause(thrownBy(() => { throw "a thrown string"; })), { name: "Error" });
   assert.deepEqual(errorCause(undefined), { name: "Error" });
   assert.deepEqual(errorCause(null), { name: "Error" });
-  assert.deepEqual(errorCause(Object.assign(new Error("x"), { code: 13 })), { name: "Error" });
-  assert.deepEqual(errorCause(Object.assign(new Error("x"), { code: "" })), { name: "Error" });
+});
+
+test("errorCause of a plain Error without a code is nothing: a refusal has no cause to name", () => {
+  assert.equal(errorCause(new Error("session no longer exists")), undefined);
+  assert.equal(errorCause(failedChild()), undefined);
+  assert.equal(errorCause(new (class HookEnvironmentContractError extends Error {})("x")), undefined);
+  assert.equal(errorCause(Object.assign(new Error("x"), { code: 13 })), undefined, "a code that is no string is no code");
+  assert.equal(errorCause(Object.assign(new Error("x"), { code: "" })), undefined);
+});
+
+// ---- isDefect ----
+
+test("isDefect: the language's own error kinds, and a thrown value that is no Error, are defects", () => {
+  for (const e of [new TypeError("x"), new RangeError("x"), new ReferenceError("x"), new SyntaxError("x"), thrownBy(() => undefined.x), thrownBy(() => JSON.parse("{"))]) assert.equal(isDefect(e), true, e.name);
+  for (const value of ["a thrown string", 42, undefined, null, { message: "an object" }]) assert.equal(isDefect(value), true, JSON.stringify(value) ?? String(value));
+});
+
+test("isDefect: a plain Error without a code is not a defect, whoever threw it: a refusal the kernel wrote, a child process that failed", () => {
+  assert.equal(isDefect(new Error("session no longer exists")), false);
+  assert.equal(isDefect(failedChild()), false);
+  assert.equal(isDefect(new (class HookEnvironmentContractError extends Error {})("x")), false, "a class of the kernel's that names itself Error");
+});
+
+test("isDefect: an error that has a code is never a defect: a kernel error, a system error, a Node ERR_ TypeError", () => {
+  assert.equal(isDefect(oatsError("E_BAD_ARGS", "usage")), false);
+  assert.equal(isDefect(missingFile()), false);
+  assert.equal(isDefect(invalidUrl()), false);
+  assert.ok(invalidUrl() instanceof TypeError);
 });
 
 // ---- asKernelError ----
@@ -165,7 +201,7 @@ test("asKernelError wraps with the message it is given, and the same code, detai
   assert.equal(wrapped.cause, fsError);
 });
 
-test("asKernelError wraps a Node ERR_ error and an exception without a code the same way", () => {
+test("asKernelError wraps a Node ERR_ error and a defect (a TypeError without a code) the same way", () => {
   const url = invalidUrl();
   const wrappedUrl = asKernelError(url, "E_SESSION_FAILED");
   assert.equal(wrappedUrl.code, "E_SESSION_FAILED");
@@ -180,6 +216,18 @@ test("asKernelError wraps a Node ERR_ error and an exception without a code the 
   assert.equal(wrappedType.cause, typeError);
 });
 
+test("asKernelError wraps a plain Error without a code with the fallback and its message alone: no details", () => {
+  for (const original of [new Error("session no longer exists"), failedChild()]) {
+    const wrapped = asKernelError(original, "E_SESSION_FAILED");
+    assert.equal(wrapped.code, "E_SESSION_FAILED");
+    assert.equal(wrapped.message, original.message);
+    assert.equal(wrapped.details, undefined, "no details.cause for a refusal");
+    assert.equal("details" in wrapped, false);
+    assert.equal(wrapped.cause, original);
+    assert.equal(defectOf(wrapped), undefined);
+  }
+});
+
 test("asKernelError wraps a thrown string: the string is the message and the cause", () => {
   const wrapped = asKernelError(thrownBy(() => { throw "a thrown string"; }), "E_LIFECYCLE_FAILED");
   assert.equal(wrapped.code, "E_LIFECYCLE_FAILED");
@@ -190,7 +238,7 @@ test("asKernelError wraps a thrown string: the string is the message and the cau
 
 // ---- defectOf ----
 
-test("defectOf: an exception without a code is the defect itself", () => {
+test("defectOf: a TypeError without a code is the defect itself", () => {
   const typeError = new TypeError("x");
   assert.equal(defectOf(typeError), typeError);
 });
@@ -200,6 +248,12 @@ test("defectOf: wrapped by asKernelError, the defect is the original exception, 
   const defect = defectOf(asKernelError(typeError, "E_X"));
   assert.equal(defect, typeError);
   assert.match(defect.stack, /^TypeError: x\n\s+at /);
+});
+
+test("defectOf: a plain Error without a code is no defect, alone or wrapped", () => {
+  assert.equal(defectOf(new Error("session no longer exists")), undefined);
+  assert.equal(defectOf(failedChild()), undefined);
+  assert.equal(defectOf(asKernelError(failedChild(), "E_X")), undefined);
 });
 
 test("defectOf: a kernel error, a system error and a wrapped system error are no defect", () => {
@@ -228,14 +282,14 @@ function stderrOf(fn) {
   return written;
 }
 
-test("reportDefect prints the stack of an exception without a code, alone or wrapped, on stderr", () => {
+test("reportDefect prints the stack of a defect, alone or wrapped, on stderr", () => {
   const typeError = new TypeError("x");
   assert.equal(stderrOf(() => reportDefect(typeError)), `${typeError.stack}\n`);
   assert.equal(stderrOf(() => reportDefect(asKernelError(typeError, "E_X"))), `${typeError.stack}\n`);
 });
 
-test("reportDefect prints nothing for a kernel error, a system error, a Node ERR_ error, wrapped or not", () => {
-  for (const e of [oatsError("E_BAD_ARGS", "usage"), missingFile(), asKernelError(missingFile(), "E_X"), invalidUrl(), asKernelError(invalidUrl(), "E_X"), undefined]) {
+test("reportDefect prints nothing for a kernel error, a system error, a Node ERR_ error or a plain Error without a code, wrapped or not", () => {
+  for (const e of [oatsError("E_BAD_ARGS", "usage"), missingFile(), asKernelError(missingFile(), "E_X"), invalidUrl(), asKernelError(invalidUrl(), "E_X"), new Error("a refusal"), failedChild(), asKernelError(failedChild(), "E_X")]) {
     assert.equal(stderrOf(() => reportDefect(e)), "");
   }
 });

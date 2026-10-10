@@ -16,10 +16,17 @@
 // The one answer that is not an envelope is documented (docs/desktop-cli-api.md, "Not an envelope"):
 // a first `oats retire --json` that retires prints the raw retire receipt, one JSON document on
 // several lines. The walk admits it for that command alone and holds it to the same rules.
+//
+// The one answer whose code is not a kernel code is documented too (docs/desktop-cli-api.md, "The
+// envelope and dispatch errors"): a document with the mapping key `__proto__` is refused under its
+// own name, `unsafe-config-key`, by these commands as by every other, and is not wrapped
+// (bin/oats.mjs TYPED_CLI_FAILURES). The walk's checker refuses that name like any other that is
+// not a kernel code, and stays so: the last tests of this file name it, and pin its answer in both
+// modes, command by command.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -129,6 +136,16 @@ function doorAnswer(r, where, { retires, defect = false } = {}) {
   const rest = JSON.stringify(withoutCausesAndMessages(doc));
   for (const code of SYSTEM_CODES) assert.equal(rest.includes(code), false, `${code} is in the answer outside every cause and every message: ${said}`);
   return { ok: receipt ? !doc.rollbackIncomplete : doc.ok, code: receipt ? "receipt" : doc.ok ? "ok" : doc.error.code, doc };
+}
+
+/** Spawn an instance of `soul` in the fixture (no launch). An in-process spawn finds its harness on
+ *  THIS process's PATH and records it as the home's launch executable, which `oats session start`
+ *  then runs: so the fixture's inert harnesses must be first on it, or the walk would start whatever
+ *  harness this host has installed. */
+async function inertSpawn(fx, soul, name) {
+  const hostPath = process.env.PATH;
+  process.env.PATH = fx.env.PATH;
+  try { return await fx.spawn(soul, { name }); } finally { process.env.PATH = hostPath; }
 }
 
 // ---- the commands ----
@@ -246,7 +263,7 @@ test("every lifecycle command, in JSON mode, answers a broken home with exactly 
       const instances = [];
       for (const command of COMMANDS) {
         const name = `${shape.key}-${command.key}`;
-        const made = await fx.spawn(soul, { name });
+        const made = await inertSpawn(fx, soul, name);
         assert.equal(made.home, join(fx.root, soul, "instances", name), "fixture premise: where a spawned home is");
         const i = { name, home: made.home };
         command.before?.(fx, i);
@@ -288,7 +305,7 @@ test("an exception without a code, thrown inside the retire's walk of the home, 
   const fx = v2Deployment({ t, souls: { dev: { soul: { work: "worktree" } } } });
   fx.beforeCleanup(() => makeRemovable(fx.base));
   const name = "defect";
-  const { home } = await fx.spawn("dev", { name });
+  const { home } = await inertSpawn(fx, "dev", name);
   // A directory of the home that only the retire's walk reads (lib/core.mjs fingerprintTrees, through
   // lib/tree-copy.mjs entriesAsBytes: readdirSync of node:fs).
   const probe = join(home, "notes");
@@ -351,4 +368,122 @@ syncBuiltinESMExports();
   const plain = doorAnswer(fx.cli(["retire", name, "--json"]), `\`oats retire ${name} --json\` without the preload`, { retires: name });
   assert.equal(plain.code, "receipt", JSON.stringify(plain.doc));
   assert.equal(existsSync(home), false, "the home is removed");
+});
+
+// ---- the one answer whose code is not a kernel code ----
+//
+// `unsafe-config-key` (lib/core.mjs assertSafeConfigKey) is raised by the kernel's own YAML readers
+// (parseYamlFlat, parseYamlNested) when a document has the mapping key `__proto__`, and the reader
+// that holds the file names it (withConfigFile). Two documents are read that way by a lifecycle
+// command:
+//   - the soul of an agent, `<agents root>/<agent>/soul/soul.yaml` (readSoul: listAgents, findAgent),
+//     which a stop and a retire read to find the instance they were given by name;
+//   - the soul copy an instance records, `<agents root>/<agent>/souls/<commit>/soul.yaml`
+//     (homeLaunchLayers), which `session start|restart --reselect-launch` reads.
+// `oats worktree add|remove` and the other `oats session` subcommands read neither. The
+// deployment's oats-local.yaml is not read by these readers: the same key there is answered
+// E_WORKSPACE_SCHEMA, a kernel code. `unsafe-config-value`, the other name of bin/oats.mjs
+// TYPED_CLI_FAILURES, is raised nowhere in the kernel today: no command can answer it, so nothing
+// here can pin it.
+//
+// The answer is the same whichever way it leaves the CLI: through the first branch of lifecycleFail
+// (instance stop --plan and --apply, retire --plan, session start|restart) or through the handler
+// at the end of bin/oats.mjs, to which a retire apply rethrows it.
+
+const UNSAFE_KEY = "unsafe-config-key";
+/** The refusal as the reader that holds `file` words it. */
+const unsafeKeyMessage = (file) => `unsupported mapping key "__proto__" in ${file} — "__proto__" cannot be a mapping key in an OATS document (it rewrites the parsed object's prototype instead of becoming data)`;
+
+/** A deployment with one spawned instance, its stop plan and its retire plan made, and then the
+ *  mapping key `__proto__` written into its soul's `soul.yaml`. `restore()` takes the key out again. */
+async function instanceOfAPoisonedSoul(t, name) {
+  const fx = v2Deployment({ t });
+  // The launch executable a spawn records is the one on this process's PATH: the fixture's inert
+  // harness, so that a start which was not refused would start nothing of the host's.
+  const hostPath = process.env.PATH;
+  process.env.PATH = fx.env.PATH;
+  let home;
+  try { ({ home } = await fx.spawn("dev", { name })); } finally { process.env.PATH = hostPath; }
+  const i = { name, home };
+  const stopRevision = stopPlanRevision(fx, i, "before its soul is poisoned");
+  const planned = fx.cli(["retire", name, "--plan", "--json"]);
+  assert.equal(planned.status, 0, `fixture premise: a retire plan of ${name} before its soul is poisoned\n${planned.stdout}\n${planned.stderr}`);
+  const retireRevision = planned.json().result.planRevision;
+
+  // The agent's soul is a link to the copy the instance records: one file, read under two names.
+  const agentSoul = join(fx.root, "dev", "soul", "soul.yaml");
+  const recordedSoul = join(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).soulDir, "soul.yaml");
+  assert.notEqual(agentSoul, recordedSoul, "fixture premise: the two readers name the document differently");
+  assert.equal(realpathSync(agentSoul), realpathSync(recordedSoul), "fixture premise: the agent's soul is the copy the instance records");
+  const bytes = readFileSync(agentSoul);
+  appendFileSync(agentSoul, "__proto__: poisoned\n");
+  return { fx, i, stopRevision, retireRevision, agentSoul, recordedSoul, restore: () => writeFileSync(agentSoul, bytes) };
+}
+
+/** Run `argv` in JSON mode and in text mode and hold both to the typed refusal of `file`: its own
+ *  name and nothing beside it, exit 1, no stack. */
+function refusedAsUnsafeKey(fx, argv, file) {
+  const message = unsafeKeyMessage(file);
+  const run = (mode) => {
+    const all = [...argv, ...(mode === "json" ? ["--json"] : [])];
+    const r = fx.cli(all);
+    const said = `\`oats ${all.join(" ")}\` over a soul.yaml with the mapping key __proto__\n  exit status: ${r.status}${r.signal ? ` (signal ${r.signal})` : ""}\n  stdout: ${r.stdout}\n  stderr: ${r.stderr}`;
+    assert.equal(r.error, undefined, said);
+    assert.equal(r.signal, null, `the CLI was ended by a signal: ${said}`);
+    assert.equal(r.status, 1, `it is refused with exit status 1: ${said}`);
+    assert.equal(hasStack(r.stderr), false, `a refusal prints no stack: ${said}`);
+    return { r, said };
+  };
+
+  // JSON mode: one envelope, the code is the refusal's own name, and there are no details.
+  const json = run("json");
+  assert.equal(json.r.stdout.trim().split("\n").length, 1, `exactly one envelope on stdout: ${json.said}`);
+  const doc = JSON.parse(json.r.stdout);
+  assert.deepEqual(doc, { schemaVersion: 1, ok: false, error: { code: UNSAFE_KEY, message } }, json.said);
+  assert.equal(json.r.stderr, "", `nothing on stderr: ${json.said}`);
+  // It is the exception, and the walk's checker is not made to admit it: it is named here instead.
+  assert.doesNotMatch(doc.error.code, KERNEL_CODE, json.said);
+  assert.deepEqual(codeProblems(doc), [`error.code is ${JSON.stringify(UNSAFE_KEY)}: not a kernel code`], `the walk's rule on codes still refuses this name: ${json.said}`);
+
+  // Text mode: the same message as the one line of stderr, and nothing on stdout.
+  const text = run("text");
+  assert.equal(text.r.stdout, "", `nothing on stdout: ${text.said}`);
+  assert.equal(text.r.stderr, `oats: ${message}\n`, `stderr is that line and nothing else: ${text.said}`);
+}
+
+test("a document with the mapping key __proto__ is refused under its own name, unsafe-config-key, by the lifecycle commands that read it (retire --plan, a guarded retire, instance stop --plan and --apply, session start and restart --reselect-launch): one envelope without details in JSON mode, the same message as one line in text mode, exit 1, no stack", async (t) => {
+  const { fx, i, stopRevision, retireRevision, agentSoul, recordedSoul, restore } = await instanceOfAPoisonedSoul(t, "typed");
+  const before = snapshot(i.home);
+
+  // A stop and a retire find the instance among the agents: they read the agent's soul.
+  refusedAsUnsafeKey(fx, ["retire", i.name, "--plan"], agentSoul);
+  refusedAsUnsafeKey(fx, ["retire", i.name, "--plan-revision", retireRevision, "--idempotency-key", "k1"], agentSoul);
+  refusedAsUnsafeKey(fx, ["instance", "stop", i.name, "--plan"], agentSoul);
+  refusedAsUnsafeKey(fx, ["instance", "stop", i.name, "--apply", "--plan-revision", stopRevision, "--idempotency-key", "k1"], agentSoul);
+  // A start that chooses its launch again reads the soul copy the instance records.
+  refusedAsUnsafeKey(fx, ["session", "start", "--home", i.home, "--reselect-launch"], recordedSoul);
+  refusedAsUnsafeKey(fx, ["session", "restart", "--home", i.home, "--reselect-launch"], recordedSoul);
+
+  // Nothing was done: the home is what it was, no receipt of the refused apply was kept, and no session was started.
+  assert.deepEqual(snapshot(i.home), before, "the home is byte for byte what it was");
+  assert.deepEqual(readdirSync(dirname(i.home)).filter((entry) => entry.startsWith(".oats-retire-receipt.")), [], "no receipt of the guarded retire was written");
+  // The key is the whole cause: without it the same commands answer under the walk's rules, and the stop plan is the one made before.
+  restore();
+  const inspected = doorAnswer(fx.cli(["session", "inspect", "--home", i.home, "--json"]), "`oats session inspect --json` once the key is gone");
+  assert.equal(inspected.doc.result.state, "not-launched", "no session was started");
+  const planned = doorAnswer(fx.cli(["instance", "stop", i.name, "--plan", "--json"]), "`oats instance stop --plan --json` once the key is gone");
+  assert.equal(planned.code, "ok", JSON.stringify(planned.doc));
+  assert.equal(planned.doc.result.planRevision, stopRevision, "the stop plan is the one made before the key was written");
+});
+
+test("a retire that is not guarded by a plan revision (oats retire <name>, with or without --home) refuses a document with the mapping key __proto__ under its own name too, unsafe-config-key, as origin/main does, and does nothing", async (t) => {
+  const { fx, i, agentSoul } = await instanceOfAPoisonedSoul(t, "typed-retire");
+  const before = snapshot(i.home);
+
+  refusedAsUnsafeKey(fx, ["retire", i.name], agentSoul);
+  refusedAsUnsafeKey(fx, ["retire", i.name, "--home", i.home], agentSoul);
+
+  assert.deepEqual(snapshot(i.home), before, "the home is byte for byte what it was");
+  const recovery = join(dirname(i.home), ".oats-retirement", "recovery");
+  assert.deepEqual(existsSync(recovery) ? readdirSync(recovery) : [], [], "no recovery copy, and no staging of one, was left");
 });

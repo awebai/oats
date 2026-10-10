@@ -25,7 +25,7 @@ import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
-import { errorCause, herdrSettingRemoved, isKernelCode, kernelCode, reportDefect } from "../lib/errors.mjs";
+import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect } from "../lib/errors.mjs";
 import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
@@ -179,16 +179,19 @@ const withLocalWarnings = (envelope) => {
 const jsonFail = (code, message, details, exit = 1) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) }, ...envelopeWarnings() })); process.exit(exit); };
 /** The door of the lifecycle verbs (retire, instance stop, session, worktree; awebai/oats#892): the
  *  answer to an error `e` of one of them. Its code is the error's own only when that is a kernel
- *  code (lib/errors.mjs isKernelCode); any other error (the system's, Node's, an exception without
- *  a code) is answered as `fallback`, with `details.cause` beside the command's `details`. The
- *  stack of an exception without a code goes to stderr, in both modes: it is a defect, and the
- *  answer must not swallow it. A typed failure that is not a code (TYPED_CLI_FAILURES) keeps its
- *  name, as before. Text mode prints the same message, with the same exit status. */
+ *  code (lib/errors.mjs isKernelCode); any other error is answered as `fallback`. One that has a
+ *  code (the system's, Node's) and a defect (isDefect: a TypeError and its kind) get
+ *  `details.cause` beside the command's `details`, and a defect's stack goes to stderr, in both
+ *  modes: the answer must not swallow it. A plain Error without a code is a refusal the kernel
+ *  wrote without one, or a child process that failed: the fallback and its message, nothing more.
+ *  A typed failure that is not a code (TYPED_CLI_FAILURES) keeps its name, as before. Text mode
+ *  prints the same message, with the same exit status. */
 const lifecycleFail = (e, fallback, details, exit) => {
   const message = String(e?.message ?? e);
   if (TYPED_CLI_FAILURES.has(e?.code)) return JSON_MODE ? jsonFail(e.code, message, details, exit) : die(message, exit);
   reportDefect(e);
-  const all = isKernelCode(e?.code) ? details : { ...details, cause: errorCause(e) };
+  const cause = isAnswerCode(e?.code) ? undefined : errorCause(e);
+  const all = cause ? { ...details, cause } : details;
   return JSON_MODE ? jsonFail(kernelCode(e, fallback), message, all, exit) : die(message, exit);
 };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result, ...envelopeWarnings() })); };
@@ -2848,6 +2851,8 @@ function failedSpawnBranchLine(r, items, { local = false, host } = {}) {
   return r.retainedHome ? `  branch: the "branch" recorded in ${join(r.retainedHome, "instance.json")}${host ? ` on ${host}` : ""}` : null;
 }
 
+/** Whether this process's retire (retireCmd) has returned from the kernel: set once, read by the dispatch. */
+let retireReturned = false;
 function retireCmd() {
   const name = args[1];
   // Refused before anything else: before --plan, a replay, a plan revision or a recorded child is stopped.
@@ -2934,6 +2939,9 @@ function retireCmd() {
     // retire had done by then (`details.reached`).
     return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { ...e.details, candidates: e.candidates } : e.details);
   }
+  // The retire has answered. Whatever throws from here on is not an answer of the retire and is
+  // not given one (the dispatch): an error envelope without `reached` would say that nothing was done.
+  retireReturned = true;
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
   // A retired home's wake jobs are forgotten (definitions only; nothing is
   // stopped by this); a deferred self-retire keeps them until the home is gone.
@@ -4254,7 +4262,7 @@ async function serverRouteCmd() {
 // keeping it at column 0 makes the whole command table one reviewable diff of
 // added lines rather than ~150 lines of pure whitespace churn, and keeps `git
 // blame` pointing at the commit that last changed each command.
-const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
+const TYPED_CLI_FAILURES = OWN_NAME_FAILURES; // one list: lib/errors.mjs
 /** Removed 0.24 verbs → their v2 replacement (workspace model v2, decision 5). Checked before capability dispatch. */
 const REMOVED_VERBS = { prepare: "`oats onboard` / `oats sync` to set up a workspace, and `oats spawn <soul> --preview` to see what a spawn would resolve (the captured/portable path was removed in 0.26)", create: "author souls/<name>/soul.yaml + AGENTS.md in a member repository, then `oats sync`", type: "the soul's own soul.yaml in its member repository (agent types were a classic config block)", install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "declaring the package in packages: (package approval was removed; oats sync locks commit + integrity)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)", inject: "injection overrides are not part of the workspace model yet; edit the capability inject in its member repo" };
 try {
@@ -4342,7 +4350,9 @@ else if (cmd === "trigger") await triggerCmd();
 else if (cmd === "automations") await automationsCmd();
 else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e, e.details?.unconfirmed === true ? e.details : undefined); throw e; } }
 // What a retire throws outside its own answers (the root, a replay's read) goes through the same door.
-else if (cmd === "retire") { try { retireCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; lifecycleFail(e, "E_LIFECYCLE_FAILED", e.details); } }
+// An exception after the retire has returned (retireReturned) is rethrown: a crash is read as "not
+// confirmed", which is the truth, where an error answer without `reached` would read as "nothing was done".
+else if (cmd === "retire") { try { retireCmd(); } catch (e) { if (retireReturned || TYPED_CLI_FAILURES.has(e?.code)) throw e; lifecycleFail(e, "E_LIFECYCLE_FAILED", e.details); } }
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
 else if (cmd === "experimental") await experimentalCmd();
 // `!HELP_WORDS.has(cmd)`: usage NEVER depends on deployment state. `help` is a
