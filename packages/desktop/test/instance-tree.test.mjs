@@ -1,11 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import {
-  collapseKey, hasInstanceChildren, instanceRepoLabel, treeGuideSegments, filterInstanceTree, instanceVisibleInTree,
-  captureTreeRenderState, clusterSeparator, treeConnectors, clusterInstances, rosterResponseOwns,
-  ROSTER_SORTS, rosterRank, groupRosterFamilies, rosterGroupKey,
-} from "../renderer/instance-tree.mjs";
+import { collapseKey, hasInstanceChildren, instanceRepoLabel, filterInstanceTree, instanceVisibleInTree, clusterInstances,
+  ROSTER_SORTS, rosterRank, groupRosterFamilies, rosterGroupKey } from "../../client/instance-tree.mjs";
+import { treeGuideSegments, captureTreeRenderState, clusterSeparator, treeConnectors, rosterResponseOwns } from "../renderer/instance-tree-view.mjs";
 
 const instances = [
   { instance: "root" },
@@ -168,7 +166,7 @@ test("a stale dispatch selection owns both completion orders like an empty one; 
 /* ── agent clusters (feature/agent-relations) ── */
 
 test("clusterInstances: connected components over parent + sibling links; unrelated are single-node clusters", async () => {
-  const { clusterInstances, instanceLinks } = await import("../renderer/instance-tree.mjs");
+  const { clusterInstances, instanceLinks } = await import("../../client/instance-tree.mjs");
   const roster = [
     { instance: "coord-1", running: true },
     { instance: "dev-a", parentInstance: "coord-1", running: true },
@@ -200,7 +198,7 @@ test("clusterInstances: connected components over parent + sibling links; unrela
 });
 
 test("clusterInstances: malformed parent cycles keep every member visible", async () => {
-  const { clusterInstances } = await import("../renderer/instance-tree.mjs");
+  const { clusterInstances } = await import("../../client/instance-tree.mjs");
   const roster = [
     { instance: "a", parentInstance: "b", running: false },
     { instance: "b", parentInstance: "a", running: false },
@@ -211,7 +209,7 @@ test("clusterInstances: malformed parent cycles keep every member visible", asyn
 });
 
 test("clusterInstances: edges to instances outside the roster do not join or crash", async () => {
-  const { clusterInstances } = await import("../renderer/instance-tree.mjs");
+  const { clusterInstances } = await import("../../client/instance-tree.mjs");
   const clusters = clusterInstances([
     { instance: "x", parentInstance: "ghost", siblingInstance: "phantom", running: true },
     { instance: "y", running: true },
@@ -220,7 +218,7 @@ test("clusterInstances: edges to instances outside the roster do not join or cra
 });
 
 test("clusterInstances: cluster key is deterministic under liveness changes (review f921f7d nit)", async () => {
-  const { clusterInstances } = await import("../renderer/instance-tree.mjs");
+  const { clusterInstances } = await import("../../client/instance-tree.mjs");
   const pair = (aRunning, bRunning) => [
     { instance: "b-peer", siblingInstance: "a-peer", running: bRunning },
     { instance: "a-peer", running: aRunning },
@@ -310,7 +308,7 @@ test("groupRosterFamilies tolerates malformed workspace-controlled metadata (non
 });
 
 test("clusterInstances: duplicate instance NAMES across repos render as distinct nodes (merged-state review f7c5769)", async () => {
-  const { clusterInstances, instanceId } = await import("../renderer/instance-tree.mjs");
+  const { clusterInstances, instanceId } = await import("../../client/instance-tree.mjs");
   // two live instances named "dev-1" in different agents roots — bare-name
   // keying would silently drop one of them
   const roster = [
@@ -334,7 +332,7 @@ test("clusterInstances: duplicate instance NAMES across repos render as distinct
 });
 
 test("clusterInstances: ambiguous cross-root relation names fail safe (no merge, no hidden node)", async () => {
-  const { clusterInstances } = await import("../renderer/instance-tree.mjs");
+  const { clusterInstances } = await import("../../client/instance-tree.mjs");
   // parent name matches TWO foreign instances and none in the child's root:
   // the edge must resolve to nothing rather than guess
   const roster = [
@@ -355,14 +353,14 @@ test("clusterInstances: ambiguous cross-root relation names fail safe (no merge,
 });
 
 test("instanceId: home wins, agentsRoot+name fallback, bare name last", async () => {
-  const { instanceId } = await import("../renderer/instance-tree.mjs");
+  const { instanceId } = await import("../../client/instance-tree.mjs");
   assert.equal(instanceId({ instance: "a", home: "/h/a", agentsRoot: "/r" }), "/h/a");
   assert.equal(instanceId({ instance: "a", agentsRoot: "/r" }), "/r\u0000a");
   assert.equal(instanceId({ instance: "a" }), "a");
 });
 
 test("resolveLinkId (shared resolver contract): same-root first, unique cross-root, ambiguous → null", async () => {
-  const { resolveLinkId, instanceId } = await import("../renderer/instance-tree.mjs");
+  const { resolveLinkId, instanceId } = await import("../../client/instance-tree.mjs");
   const a1 = { instance: "x", agentsRoot: "/a/agents", home: "/a/x" };
   const b1 = { instance: "x", agentsRoot: "/b/agents", home: "/b/x" };
   const u = { instance: "uniq", agentsRoot: "/b/agents", home: "/b/u" };
@@ -378,7 +376,7 @@ test("resolveLinkId (shared resolver contract): same-root first, unique cross-ro
 /* ── identity propagation past cluster construction (review 46f3fdc) ── */
 
 test("findRosterInstance: exact identity wins; bare duplicate names refuse to guess", async () => {
-  const { findRosterInstance } = await import("../renderer/instance-tree.mjs");
+  const { findRosterInstance } = await import("../../client/instance-tree.mjs");
   const roster = [
     { instance: "dev-1", agentsRoot: "/ws1/agents", home: "/ws1/h", tmux: { session: "s1", window: "dev-1" } },
     { instance: "dev-1", agentsRoot: "/ws2/agents", home: "/ws2/h", tmux: { session: "s2", window: "dev-1" } },
@@ -398,7 +396,7 @@ test("findRosterInstance: exact identity wins; bare duplicate names refuse to gu
 });
 
 test("terminalKey: same-named instances from different roots are DIFFERENT terminals", async () => {
-  const { terminalKey } = await import("../renderer/instance-tree.mjs");
+  const { terminalKey } = await import("../renderer/instance-tree-view.mjs");
   const a = { instance: "dev-1", home: "/ws1/h", agentsRoot: "/ws1/agents" };
   const b = { instance: "dev-1", home: "/ws2/h", agentsRoot: "/ws2/agents" };
   assert.notEqual(terminalKey("w", a), terminalKey("w", b), "duplicate names dedupe separately");
@@ -408,7 +406,7 @@ test("terminalKey: same-named instances from different roots are DIFFERENT termi
 });
 
 test("collapse state keys by identity: collapsing one duplicate never hides the other's subtree", async () => {
-  const m = await import("../renderer/instance-tree.mjs");
+  const m = { ...await import("../../client/instance-tree.mjs"), ...await import("../renderer/instance-tree-view.mjs") };
   const roster = [
     { instance: "coord", agentsRoot: "/ws1/agents", home: "/ws1/c" },
     { instance: "kid", agentsRoot: "/ws1/agents", home: "/ws1/k", parentInstance: "coord" },
@@ -424,7 +422,7 @@ test("collapse state keys by identity: collapsing one duplicate never hides the 
 });
 
 test("instanceVisibleInTree with sections: a collapse hides only rows of its own section (#551's symptom); without them, unchanged", async () => {
-  const m = await import("../renderer/instance-tree.mjs");
+  const m = { ...await import("../../client/instance-tree.mjs"), ...await import("../renderer/instance-tree-view.mjs") };
   // /d2's own lead is gone: kid2's parent name resolves cross-root to /d1's lead, painted in /d1's section.
   const lead = { instance: "lead", agentsRoot: "/d1/agents", home: "/d1/lead" };
   const kid = { instance: "kid", agentsRoot: "/d1/agents", home: "/d1/kid", parentInstance: "lead" };
@@ -442,7 +440,7 @@ test("instanceVisibleInTree with sections: a collapse hides only rows of its own
 });
 
 test("distinguishingRootTags: colliding single-segment tags grow to a unique suffix (review cbd5bb3)", async () => {
-  const { distinguishingRootTags } = await import("../renderer/instance-tree.mjs");
+  const { distinguishingRootTags } = await import("../../client/instance-tree.mjs");
   // the naive one-segment tag would be "project" for BOTH
   const tags = distinguishingRootTags(["/a/project/agents", "/b/project/agents"]);
   assert.notEqual(tags.get("/a/project/agents"), tags.get("/b/project/agents"),
@@ -458,7 +456,7 @@ test("distinguishingRootTags: colliding single-segment tags grow to a unique suf
 });
 
 test("hasInstanceChildren by identity: a childless duplicate-name parent gets NO disclosure (review 7d740f9)", async () => {
-  const m = await import("../renderer/instance-tree.mjs");
+  const m = { ...await import("../../client/instance-tree.mjs"), ...await import("../renderer/instance-tree-view.mjs") };
   const roster = [
     { instance: "coord", agentsRoot: "/ws1/agents", home: "/ws1/c" },                       // has a child
     { instance: "kid", agentsRoot: "/ws1/agents", home: "/ws1/k", parentInstance: "coord" },
@@ -473,7 +471,7 @@ test("hasInstanceChildren by identity: a childless duplicate-name parent gets NO
 });
 
 test("resolveTerminalOpen: string and object refs of one identity mint ONE key; ambiguity refuses before any key exists (review 7d740f9)", async () => {
-  const m = await import("../renderer/instance-tree.mjs");
+  const m = { ...await import("../../client/instance-tree.mjs"), ...await import("../renderer/instance-tree-view.mjs") };
   const uniqueRoster = [
     { instance: "dev-1", agentsRoot: "/ws1/agents", home: "/ws1/h", running: true, tmux: { session: "s1" } },
     { instance: "solo", agentsRoot: "/ws1/agents", home: "/ws1/s", running: true },
@@ -499,7 +497,7 @@ test("resolveTerminalOpen: string and object refs of one identity mint ONE key; 
 });
 
 test("resolveLinkId: intra-root duplicate names are inherently ambiguous — no first-candidate edge (merged-state review @7dd1e7b)", async () => {
-  const m = await import("../renderer/instance-tree.mjs");
+  const m = { ...await import("../../client/instance-tree.mjs"), ...await import("../renderer/instance-tree-view.mjs") };
   const from = { instance: "child-1", agentsRoot: "/ws/agents", home: "/ws/agents/c/instances/child-1" };
   const dupA = { instance: "coord", agentsRoot: "/ws/agents", home: "/ws/agents/coord/instances/coord" };
   const dupB = { instance: "coord", agentsRoot: "/ws/agents", home: "/ws/agents/local~coord/instances/coord" };
@@ -519,7 +517,7 @@ test("resolveLinkId: intra-root duplicate names are inherently ambiguous — no 
 });
 
 test("filterInstanceTree: identity-aware — same-named twins don't leak into each other's filters; ambiguous ancestors include nothing (merged-state review @3e76616)", async () => {
-  const m = await import("../renderer/instance-tree.mjs");
+  const m = { ...await import("../../client/instance-tree.mjs"), ...await import("../renderer/instance-tree-view.mjs") };
   const parentA = { instance: "coord", agentsRoot: "/A/agents", home: "/A/agents/c/instances/coord" };
   const parentB = { instance: "coord", agentsRoot: "/B/agents", home: "/B/agents/c/instances/coord" };
   const childA = { instance: "dev-child", agentsRoot: "/A/agents", home: "/A/agents/d/instances/dev-child", parentInstance: "coord" };
@@ -541,7 +539,7 @@ test("filterInstanceTree: identity-aware — same-named twins don't leak into ea
 });
 
 test("visibleClusters: clusters computed on the FULL roster, projected to visible — filtering never forges an edge from a globally ambiguous name (merged-state review @3e76616)", async () => {
-  const m = await import("../renderer/instance-tree.mjs");
+  const m = { ...await import("../../client/instance-tree.mjs"), ...await import("../renderer/instance-tree-view.mjs") };
   const dupA = { instance: "coord", agentsRoot: "/A/agents", home: "/A/c1/coord" };
   const dupB = { instance: "coord", agentsRoot: "/A/agents", home: "/A/c2/coord" };
   const child = { instance: "dev-child", agentsRoot: "/A/agents", home: "/A/d/dev-child", parentInstance: "coord" };
@@ -563,7 +561,7 @@ test("visibleClusters: clusters computed on the FULL roster, projected to visibl
 });
 
 test("rosterParentId: ArrowLeft parent focus is identity-aware — composite row ids resolve, duplicate parents refuse (review 96b037b)", async () => {
-  const m = await import("../renderer/instance-tree.mjs");
+  const m = { ...await import("../../client/instance-tree.mjs"), ...await import("../renderer/instance-tree-view.mjs") };
   const parentA = { instance: "coord", agentsRoot: "/A/agents", home: "/A/agents/c/instances/coord" };
   const parentB = { instance: "coord", agentsRoot: "/B/agents", home: "/B/agents/c/instances/coord" };
   const child = { instance: "kid", agentsRoot: "/A/agents", home: "/A/agents/k/instances/kid", parentInstance: "coord" };

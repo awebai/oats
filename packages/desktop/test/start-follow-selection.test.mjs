@@ -11,7 +11,7 @@ import { JSDOM } from "jsdom";
 import { createInstanceStarter } from "../renderer/start-instance.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { setWorkspace, currentWorkspace, workspaceGeneration } from "../renderer/views/common.mjs";
-import { terminalKey } from "../renderer/instance-tree.mjs";
+import { terminalKey } from "../renderer/instance-tree-view.mjs";
 
 const shellSource = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const flowSource = shellSource.match(/async function openTerminalTabFlow\(ref, notify, options = \{\}\) \{[\s\S]*?\n\}/)?.[0];

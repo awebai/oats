@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { instanceId, treeGuideSegments, visibleClusters } from "../renderer/instance-tree.mjs";
+import { instanceId, visibleClusters } from "../../client/instance-tree.mjs";
+import { treeGuideSegments } from "../renderer/instance-tree-view.mjs";
 
 const row = (instance, root, extra = {}) => ({
   instance, agentsRoot: `/${root}/agents`, home: `/${root}/${instance}`, ...extra,

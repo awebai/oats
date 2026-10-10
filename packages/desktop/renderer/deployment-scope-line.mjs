@@ -7,7 +7,8 @@
  * Surfaces do not read the panel themselves: the line follows the view store that every panel the
  * shell reads feeds (view-deployments.mjs `notePanel`). */
 import { deploymentLabel } from '../../client/deployment-label.mjs';
-import { isMultiDeployment, primaryDeployment, panelDeployments, viewDeployments, onViewDeployments } from './view-deployments.mjs';
+import { isMultiDeployment, primaryDeployment } from '../../client/roster-sections.mjs';
+import { panelDeployments, viewDeployments, onViewDeployments } from './view-deployments.mjs';
 import { currentWorkspace, onWorkspaceChange } from './views/common.mjs';
 
 /** The line's label for a panel (or a deployments list): the primary deployment's label when the

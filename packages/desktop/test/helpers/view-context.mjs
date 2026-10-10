@@ -3,10 +3,11 @@
 // as before views), the roster sections and headings, and the re-homing seam. A test about
 // re-homing passes its own `rehomeWorkspaceState`. Spec D's needs-input gate, roll-up and sentence are
 // pure and shared the same way, with the tab sync's last-painted-roster state (#558).
-import { rosterSections, deploymentHeading, notePanel, panelDeployments, rowStale, splitByDeployment } from "../../renderer/view-deployments.mjs";
+import { rosterSections, rowStale, splitByDeployment } from "../../../client/roster-sections.mjs";
+import { deploymentHeading, notePanel, panelDeployments } from "../../renderer/view-deployments.mjs";
 import { createViewMembership, rehomeMap } from "../../renderer/workspace-rehome.mjs";
 import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../../client/waiting-on-you.mjs";
-import { waitingRollup } from "../../renderer/instance-tree.mjs";
+import { waitingRollup } from "../../../client/instance-tree.mjs";
 
 export const viewContext = () => ({
   contextDeployments: [], rosterSections, deploymentHeading, notePanel, panelDeployments, rowStale,

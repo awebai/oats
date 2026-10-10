@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitedText, waitingClock, waitingNames,
   waitingBelowText, waitingSentence } from '../../client/waiting-on-you.mjs';
 import { EVENTS_WITHHELD, eventsDetail } from '../../client/instance-events-contract.mjs';
-import { collapseKey, instanceId, waitingRollup } from '../renderer/instance-tree.mjs';
+import { collapseKey, instanceId, waitingRollup } from '../../client/instance-tree.mjs';
 
 const since = '2026-10-03T10:00:00.000Z';
 const claim = (extra = {}) => ({ since, producer: 'claude-hook', reason: 'permission', message: 'Allow Bash(rm -rf build)?', ...extra });
