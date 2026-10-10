@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { capabilitiesData } from '../deployment-data.mjs';
+import { capabilitiesData } from '../../client/deployment-data.mjs';
 import { renderCapabilityPage } from '../renderer/capability-page.mjs';
 import { renderCapabilities } from '../renderer/workspace-catalog.mjs';
 

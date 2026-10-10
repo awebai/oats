@@ -34,7 +34,7 @@
  *
  * `read(deployment, cli, { maxAge })` is the catalog's kernel read; it resolves
  * `{ value, reason, observedAt }` (value null on failure) and must not throw. */
-import { OBSERVE_MAX_AGE_FEATURE } from '../renderer/deployment-contract.mjs';
+import { OBSERVE_MAX_AGE_FEATURE } from '../../client/deployment-contract.mjs';
 
 /** How long a held result may be served (catalogs and inspections alike): the background
  * max-age, so nothing held is older than what a background poll would accept from the kernel. */

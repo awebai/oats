@@ -16,11 +16,11 @@ import { APPROVED_HOOKS } from "../lib/capability-contract.mjs";
 import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
-import { capabilityShowData, capabilityFileData } from "../packages/desktop/renderer/capability-show-contract.mjs";
-import { inspectData } from "../packages/desktop/renderer/inspect-contract.mjs";
-import { readinessData } from "../packages/desktop/renderer/readiness-contract.mjs";
-import { previewData } from "../packages/desktop/renderer/spawn-preview-contract.mjs";
-import { spawnCreationReceipt } from "../packages/desktop/renderer/spawn-apply-contract.mjs";
+import { capabilityShowData, capabilityFileData } from "../packages/client/capability-show-contract.mjs";
+import { inspectData } from "../packages/client/inspect-contract.mjs";
+import { readinessData } from "../packages/client/readiness-contract.mjs";
+import { previewData } from "../packages/client/spawn-preview-contract.mjs";
+import { spawnCreationReceipt } from "../packages/client/spawn-apply-contract.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-hook-events-")));
 const session = "h";

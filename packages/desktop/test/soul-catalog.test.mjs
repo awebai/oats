@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { soulsData } from '../deployment-data.mjs';
+import { soulsData } from '../../client/deployment-data.mjs';
 import { createSoulCatalog, soulCatalogKey, SOUL_CATALOG_RETRY_MS } from '../server/soul-catalog.mjs';
 import { HELD_TTL_MS } from '../server/keyed-catalog.mjs';
 

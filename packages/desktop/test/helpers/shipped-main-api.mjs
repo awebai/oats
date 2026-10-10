@@ -11,7 +11,7 @@ import { apiUrl, apiInit, classifyApiRoute, servedSelectors } from '../../api-ur
 import { workspaceHash } from '../../renderer/window-binding.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../../forge-proxy.mjs';
 import { forgeFailure } from '../../renderer/forge-contract.mjs';
-import { lifecycleFailure } from '../../renderer/lifecycle-contract.mjs';
+import { lifecycleFailure } from '../../../client/lifecycle-contract.mjs';
 
 export const RENDERER = 'file:///fixture/renderer/index.html';
 

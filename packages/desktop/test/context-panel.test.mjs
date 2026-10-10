@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createContextPanel, contextPanelCSS } from '../renderer/context-panel.mjs';
-import { remotePanel } from '../server/remote-roster.mjs';
+import { remotePanel } from '../../client/remote-roster.mjs';
 import { kernelRemoteRow, kernelGoneRow, kernelRemoteGroup } from './helpers/kernel-remote-row.mjs';
 
 const panelAPI = ['setContext', 'attach', 'release', 'toggle', 'setCollapsed', 'setFocusMode', 'toggleFocusMode', 'isFocusMode', 'dispose'];

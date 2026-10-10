@@ -33,10 +33,10 @@
  * /api/spawn request and the reply it checks). Without a deployment the view id addresses it, as before.
  * A created spawn records its deployment as the view's last used (the spawn dialog's default).
  * `rehome(map)` moves owners onto views (workspace-rehome.mjs); a job's address never changes. */
-import { retainedSpawnMessage } from './launch-prompt-outcome.mjs';
-import { spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from './spawn-apply-contract.mjs';
-import { sameSpawnDecision } from './spawn-decision.mjs';
-import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from './spawn-messages.mjs';
+import { retainedSpawnMessage } from '../../client/launch-prompt-outcome.mjs';
+import { spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
+import { sameSpawnDecision } from '../../client/spawn-decision.mjs';
+import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
 import { rememberSpawnDeployment } from './spawn-deployment-field.mjs';
 
 /** How long a created instance may take to appear in the roster before the row goes and the

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { launchPromptOutcome, retainedSpawnDetails, retainedSpawnMessage } from '../renderer/launch-prompt-outcome.mjs';
+import { launchPromptOutcome, retainedSpawnDetails, retainedSpawnMessage } from '../../client/launch-prompt-outcome.mjs';
 import { launchPrompts, retained } from './helpers/launch-prompt-fixture.mjs';
 const d = { instance: 'dev-one', home: '/example/dev-one' };
 test('optional/partial target and diagnostics never turn retention into success or input authority', () => {

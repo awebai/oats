@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment, CLI } from "./helpers/v2-deployment.mjs";
-import { cliTeams, cliSoulTeams } from "../packages/desktop/cli-adapter.mjs";
+import { cliTeams, cliSoulTeams } from "../packages/client/cli-adapter.mjs";
 
 function deployment(t, { workspace = {}, localTeams } = {}) {
   const fx = v2Deployment({ workspace: { teams: { global: { team: "global:acme.aweb.ai" } }, defaultTeam: "global", ...workspace } });

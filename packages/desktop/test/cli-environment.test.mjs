@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFileSync, readdirSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { cliEnvironment } from "../cli-environment.mjs";
+import { cliEnvironment } from "../../client/cli-environment.mjs";
 import { forgeEnvironment } from "../forge-cli.mjs";
 import { PATH_BEGIN, PATH_END, resolveLoginPath } from "../login-path.mjs";
 import { desktopEnvironment, assertUserEnvironment, mountEntries, LAUNCHER_DATA_DIRS, USER_PATH } from "./helpers/desktop-environment.mjs";
@@ -155,25 +155,28 @@ function requests(source) {
   };
 }
 
-test("scan 1: the first statement of each Node-mode entry module is the import of ./own-environment.mjs", () => {
-  // Reads: server/oats-web.mjs and server/liveness-main.mjs, from their first statement.
-  assert.ok(fromFirstStatement(read("server/oats-web.mjs")).startsWith('import { launchEnvironment } from "./own-environment.mjs";\n'), "server/oats-web.mjs");
-  assert.ok(fromFirstStatement(read("server/liveness-main.mjs")).startsWith('import "./own-environment.mjs";\n'), "server/liveness-main.mjs");
+// The collector's entry, own-environment.mjs and its leaf are in the shared home (packages/client,
+// ../client/ from here); the backend's entry is here and imports own-environment.mjs from there.
+test("scan 1: the first statement of each Node-mode entry module is the import of own-environment.mjs", () => {
+  // Reads: server/oats-web.mjs and ../client/liveness-main.mjs, from their first statement.
+  assert.ok(fromFirstStatement(read("server/oats-web.mjs")).startsWith('import { launchEnvironment } from "../../client/own-environment.mjs";\n'), "server/oats-web.mjs");
+  assert.ok(fromFirstStatement(read("../client/liveness-main.mjs")).startsWith('import "./own-environment.mjs";\n'), "../client/liveness-main.mjs");
 });
 
-test("scan 2: own-environment.mjs imports only ../cli-environment.mjs", () => {
-  // Reads: every import statement, re-export and dynamic load of server/own-environment.mjs.
-  assert.deepEqual(requests(read("server/own-environment.mjs")), { specifiers: ["../cli-environment.mjs"], dynamic: false });
+test("scan 2: own-environment.mjs imports only ./cli-environment.mjs", () => {
+  // Reads: every import statement, re-export and dynamic load of ../client/own-environment.mjs.
+  assert.deepEqual(requests(read("../client/own-environment.mjs")), { specifiers: ["./cli-environment.mjs"], dynamic: false });
 });
 
 test("scan 3: cli-environment.mjs imports nothing", () => {
-  // Reads: the same, of cli-environment.mjs.
-  assert.deepEqual(requests(read("cli-environment.mjs")), { specifiers: [], dynamic: false });
+  // Reads: the same, of ../client/cli-environment.mjs.
+  assert.deepEqual(requests(read("../client/cli-environment.mjs")), { specifiers: [], dynamic: false });
 });
 
 test("scan 4: the launch environment goes to the collector and to nothing else", () => {
   // Reads: every .mjs, .cjs and .js file of the package outside test/, node_modules/, dist/ and
-  // renderer/vendor/, for the identifier; then its occurrences in server/oats-web.mjs.
+  // renderer/vendor/, and of the shared home, for the identifier; then its occurrences in
+  // server/oats-web.mjs.
   const holders = [];
   const walk = dir => {
     for (const entry of readdirSync(new URL(dir, PKG), { withFileTypes: true })) {
@@ -182,17 +185,18 @@ test("scan 4: the launch environment goes to the collector and to nothing else",
     }
   };
   walk("");
-  assert.deepEqual(holders.sort(), ["server/oats-web.mjs", "server/own-environment.mjs"]);
+  walk("../client/");
+  assert.deepEqual(holders.sort(), ["../client/own-environment.mjs", "server/oats-web.mjs"]);
   const backend = read("server/oats-web.mjs");
   assert.equal(backend.match(/\blaunchEnvironment\b/g).length, 2, "in the backend: its import and one use");
   // assert.ok, not assert.match: a failure must not print the whole server source.
   assert.ok(/execFile\(process\.execPath, \[LIVENESS\], \{[^{}]*\benv: launchEnvironment\b[^{}]*\}/.test(backend), "the one use is the collector's env");
-  assert.ok(/^const LIVENESS = join\(HERE, "liveness-main\.mjs"\);$/m.test(backend), "the collector is the entry module");
+  assert.ok(/^const LIVENESS = join\(HERE, "\.\.", "\.\.", "client", "liveness-main\.mjs"\);$/m.test(backend), "the collector is the entry module");
 });
 
 test("scan 5: liveness.mjs is a library: it has no program block", () => {
-  // Reads: server/liveness.mjs, for what the block used (argv, stdin, stdout).
-  assert.doesNotMatch(read("server/liveness.mjs"), /process\.argv|process\.stdout|readFileSync|fileURLToPath/);
+  // Reads: ../client/liveness.mjs, for what the block used (argv, stdin, stdout).
+  assert.doesNotMatch(read("../client/liveness.mjs"), /process\.argv|process\.stdout|readFileSync|fileURLToPath/);
 });
 
 // ── 5. The login shell's PATH is not assumed clean ──────────────────────────

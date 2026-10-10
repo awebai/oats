@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import * as remote from '../server/remote-roster.mjs';
+import * as remote from '../../client/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
-import { deploymentStatusData, soulsData } from '../deployment-data.mjs';
+import { deploymentStatusData, soulsData } from '../../client/deployment-data.mjs';
 
 // Exercise the actual response projection without starting the backend, CLI or
 // tmux. Local souls are the kernel's `oats status --json` rows, captured from a

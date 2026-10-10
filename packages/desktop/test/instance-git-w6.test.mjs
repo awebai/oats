@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createInstanceGitPanel, instanceGitCSS, changeLetter } from '../renderer/instance-git.mjs';
-import { gitTargetKey } from '../renderer/instance-git-contract.mjs';
+import { gitTargetKey } from '../../client/instance-git-contract.mjs';
 
 const capture = name => JSON.parse(readFileSync(new URL(`./fixtures/instance-git/w6-${name}.json`, import.meta.url), 'utf8')).result;
 const tick = () => new Promise(resolve => setImmediate(resolve));

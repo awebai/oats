@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { readinessData } from "../packages/desktop/renderer/readiness-contract.mjs";
+import { readinessData } from "../packages/client/readiness-contract.mjs";
 import * as T from "../lib/triggers.mjs";
 import { ITEM_TEXT, readinessDocument } from "../lib/instance-inspect.mjs";
 

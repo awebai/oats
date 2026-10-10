@@ -9,7 +9,7 @@ import {
 } from "../scripts/check-package-dry-runs.mjs";
 import { EXPERT_PATH, checkKnowledgeTheoryPackage, treeFiles } from "../scripts/check-knowledge-theory-package.mjs";
 import { MIRROR_PATHS } from "../scripts/check-okf-mirror.mjs";
-import { acceptProbe } from "../packages/desktop/cli-locator.mjs";
+import { acceptProbe } from "../packages/client/cli-locator.mjs";
 
 function scratch(t) {
   const root = mkdtempSync(join(tmpdir(), "oats-release-packaging-"));
@@ -60,14 +60,14 @@ test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", ()
 test("syntax inventory recurses through new capability libs, record and package scripts without Git", (t) => {
   const root = scratch(t);
   write(join(root, "package.json"), '{"type":"module"}\n');
-  const files = ["bin/oats.mjs", "lib/core.mjs", "capabilities/provider/lib/nested/io.mjs", "capabilities/provider/scripts/nested/check.js", "mirrors/provider/lib/nested/io.mjs", "oats-package/capabilities/theory/lib/deep/entry.mjs", "oats-package/prepare.cjs", "packages/record/lib/capture/deep.mjs", "packages/record/bin/recall.mjs", "packages/pi/extension/core-loader.mjs", "scripts/pack/new-gate.mjs"];
+  const files = ["bin/oats.mjs", "lib/core.mjs", "capabilities/provider/lib/nested/io.mjs", "capabilities/provider/scripts/nested/check.js", "mirrors/provider/lib/nested/io.mjs", "oats-package/capabilities/theory/lib/deep/entry.mjs", "oats-package/prepare.cjs", "packages/record/lib/capture/deep.mjs", "packages/record/bin/recall.mjs", "packages/pi/extension/core-loader.mjs", "packages/client/reader.mjs", "scripts/pack/new-gate.mjs"];
   for (const file of files) write(join(root, file), "console.log('valid');\n");
   for (const file of [".agents/ignored.mjs", "agents/fixture/state.mjs", "capabilities/provider/node_modules/dep/broken.mjs", "oats-package/.agents/scratch.mjs"]) write(join(root, file), "export const = broken;\n");
   const outside = join(root, "outside"); write(join(outside, "broken.mjs"), "export const = broken;\n");
   symlinkSync(outside, join(root, "capabilities/link"));
   assert.deepEqual(shippedJavaScript(root), files.sort());
   assert.equal(checkJavaScript(root), files.length);
-  for (const file of files.filter((f) => /capabilities|mirrors|record|scripts/.test(f))) {
+  for (const file of files.filter((f) => /capabilities|mirrors|record|client|scripts/.test(f))) {
     write(join(root, file), "export const = broken;\n");
     assert.throws(() => checkJavaScript(root), (error) => error.message.includes(`syntax error in ${file}`), `must check ${file}`);
     write(join(root, file), "console.log('valid');\n");

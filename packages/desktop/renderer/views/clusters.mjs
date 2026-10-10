@@ -12,7 +12,7 @@
    Malformed data must never break the overview: unknown names are ignored,
    self-links are ignored, and cycles are harmless to a union-find. */
 import { instanceId, resolveLinkId } from "../instance-tree.mjs";
-import { runtimeCounts } from "../instance-presentation.mjs";
+import { runtimeCounts } from "../../../client/instance-presentation.mjs";
 
 /** Sibling links of a roster instance, as an array of instance names.
     ADAPTER: kernel contract (final, relayed by dev-coordinator-parallel) is

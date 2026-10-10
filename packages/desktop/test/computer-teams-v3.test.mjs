@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createComputerTeams, computerTeamsCSS, LOCAL_TEAMS_CLOSED, whoMayJoin } from '../renderer/computer-teams.mjs';
 import { setupCSS } from '../renderer/workspace-setup.mjs';
-import { teamsData } from '../deployment-data.mjs';
+import { teamsData } from '../../client/deployment-data.mjs';
 
 const BASE = '/fixture/base', DEP = `${BASE}/northwind-workspace`;
 const capture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/team-model-3/${name}.json`, import.meta.url), 'utf8').split('<base>').join(BASE));

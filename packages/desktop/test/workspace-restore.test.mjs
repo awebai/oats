@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, mkdirSync, existsSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createAddExecutor, startupOpenSet } from "../workspace-registry.mjs";
-import { buildViews } from "../server/workspace-views.mjs";
+import { buildViews } from "../../client/workspace-views.mjs";
 
 const validate = (p) => {
   if (p === "/missing") throw new Error("ENOENT");

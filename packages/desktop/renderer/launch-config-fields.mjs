@@ -1,4 +1,4 @@
-import { harnessOf, HARNESS_NAMES } from './harness-names.mjs';
+import { harnessOf, HARNESS_NAMES } from '../../client/harness-names.mjs';
 import { postJson, currentWorkspace, workspaceGeneration } from "./views/common.mjs";
 
 /** Shared launch configuration selector/editor. The kernel resolves every preview. */

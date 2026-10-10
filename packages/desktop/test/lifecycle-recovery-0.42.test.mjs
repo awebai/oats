@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lifecyclePlan, lifecycleReceipt } from '../renderer/lifecycle-contract.mjs';
+import { lifecyclePlan, lifecycleReceipt } from '../../client/lifecycle-contract.mjs';
 import { target, retirePlan, retireReceipt, options } from './helpers/lifecycle-fixture.mjs';
 
 // What an OATS 0.42 kernel adds to a retire plan and to a retire receipt: two

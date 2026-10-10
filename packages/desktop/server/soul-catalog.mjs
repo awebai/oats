@@ -7,8 +7,8 @@
  * On a cold cycle the server starts this read alongside status/workspace status
  * (`prefetch`) and binds it to the key that cycle's workspace status produces
  * (`settle`); the holding rules are keyed-catalog.mjs's. */
-import { cliWorkspace } from '../workspace-cli.mjs';
-import { soulsData, observationData } from '../deployment-data.mjs';
+import { cliWorkspace } from '../../client/workspace-cli.mjs';
+import { soulsData, observationData } from '../../client/deployment-data.mjs';
 import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const SOUL_CATALOG_RETRY_MS = 60_000;

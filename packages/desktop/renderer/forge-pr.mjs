@@ -1,5 +1,5 @@
 /** Read-only, observation-bound PR card. Never constructs a gh argument. */
-import { gitTargetKey } from './instance-git-contract.mjs';
+import { gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { FORGE_API, ref, forgeReason, projectedPullRequest, hostName } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';

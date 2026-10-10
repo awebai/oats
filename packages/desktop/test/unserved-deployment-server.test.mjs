@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { startLoadPathServer } from './helpers/load-path-server.mjs';
-import { MAX_DEPLOYMENT_OBSERVATIONS } from '../server/deployment-observer.mjs';
+import { MAX_DEPLOYMENT_OBSERVATIONS } from '../../client/deployment-observer.mjs';
 
 const dirOf = call => call.argv[call.argv.indexOf('--dir') + 1];
 

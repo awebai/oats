@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { eventLabel, firedEntry, testResult, triggerStatus, onSummary } from '../renderer/automation-rows.mjs';
-import { DETAIL_WITHHELD } from '../renderer/display-text.mjs';
+import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 
 // OATS 0.49 (#669) trigger fields: an event's `subject`, `wouldFire[].instance`/`nameCut`, and the
 // `status` row's pending, live, lastPoll and lastError, projected for display (docs/desktop-cli-api.md

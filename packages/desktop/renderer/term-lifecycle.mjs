@@ -3,7 +3,7 @@
 // is permitted only by a confirmed close (not a timeout or transport failure).
 // reopen acquires a further lease for the same target once the previous one is
 // forgotten (its cleanup confirmed); it never runs after a close request.
-import { terminalHandle, terminalSameHandle, terminalFailure, terminalSuccess } from './terminal-contract.mjs';
+import { terminalHandle, terminalSameHandle, terminalFailure, terminalSuccess } from '../../client/terminal-contract.mjs';
 
 export function createTermLifecycle(io, onError = () => {}) {
   let held = null, closing = false, started = false, flight = null, disposed = false;

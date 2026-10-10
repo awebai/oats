@@ -5,8 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { teamsData, soulTeamsData } from '../deployment-data.mjs';
-import { defaultTeamOf, teamRowsOf } from '../renderer/team-rows.mjs';
+import { teamsData, soulTeamsData } from '../../client/deployment-data.mjs';
+import { defaultTeamOf, teamRowsOf } from '../../client/team-rows.mjs';
 
 const BASE = '/fixture/base';
 const DEP = `${BASE}/northwind-workspace`;
@@ -91,7 +91,7 @@ test('a DefaultTeam may come from the workspace (0.38); rows with via still read
 });
 
 test('readiness (real 0.38): team-unmapped and team-soul-unknown items read, the kernel\'s reason and remedy kept', async () => {
-  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const { readinessData } = await import('../../client/readiness-contract.mjs');
   // The Desktop asks readiness by soul name; the kernel's subject names the soul so.
   const t = { workspace: 'northwind', context: DEP, observedAs: 'soul', selector: { kind: 'soul', soul: 'release-manager', agentsRoot: `${DEP}/agents` } };
   const r = readinessData(structuredClone(capture('readiness-soul').result), t);

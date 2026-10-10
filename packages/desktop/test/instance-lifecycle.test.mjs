@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
-import { cliLifecycle, lifecycleArgv } from '../lifecycle-cli.mjs';
-import { lifecycleOptions, lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../renderer/lifecycle-contract.mjs';
-import { displayLine } from '../renderer/display-text.mjs';
-import { discover } from '../cli-locator.mjs';
+import { cliLifecycle, lifecycleArgv } from '../../client/lifecycle-cli.mjs';
+import { lifecycleOptions, lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
+import { displayLine } from '../../client/display-text.mjs';
+import { discover } from '../../client/cli-locator.mjs';
 import { cli, target, instance, context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 function fixture(overrides = {}) {
   const ctx = context(), calls = [];

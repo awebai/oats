@@ -26,6 +26,9 @@ function files({ tests = false, docs = false } = {}) {
     }
   };
   walk(".");
+  // The kernel readers the Desktop shares with other clients (packages/client): shipped Desktop
+  // source too, placed beside app.asar, and held to the same boundary.
+  walk(join("..", "client"));
   return out.map((f) => [f, readFileSync(join(PKG, f), "utf8")]);
 }
 /** Source text with // and block comments removed (code only). */

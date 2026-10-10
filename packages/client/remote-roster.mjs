@@ -1,6 +1,6 @@
-import { harnessOf } from "../renderer/harness-names.mjs";
-import { unsupportedSession } from "../renderer/instance-presentation.mjs";
-import { waitingOnYouData } from "../renderer/waiting-on-you.mjs";
+import { harnessOf } from "./harness-names.mjs";
+import { unsupportedSession } from "./instance-presentation.mjs";
+import { waitingOnYouData } from "./waiting-on-you.mjs";
 /** Projection of the installed CLI's remote roster. Never reads remote paths locally. */
 export function remoteWorkspace(group) {
   return {

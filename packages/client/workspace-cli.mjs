@@ -15,8 +15,8 @@
  * the probe declares the feature; cliWorkspace drops it otherwise. */
 import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
-import { OBSERVE_MAX_AGE_FEATURE, validMaxAge } from './renderer/deployment-contract.mjs';
-import { capabilityShowSupported, validCapabilityName, validPackageId, validRelativePath, validRepoKey } from './renderer/capability-show-contract.mjs';
+import { OBSERVE_MAX_AGE_FEATURE, validMaxAge } from './deployment-contract.mjs';
+import { capabilityShowSupported, validCapabilityName, validPackageId, validRelativePath, validRepoKey } from './capability-show-contract.mjs';
 import { cliEnvironment } from './cli-environment.mjs';
 
 export const WORKSPACE_READ_TIMEOUT = 60_000;

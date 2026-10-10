@@ -3,7 +3,7 @@
 // reported it, so `runtimeState` is null on a running row (#582). Hand-built on purpose: Desktop tests
 // never import the kernel (#577). The kernel's own suite feeds real rosterGroups output through
 // remotePanel and waitingClaim; keep this shape equal to it.
-import { remotePanel } from "../../server/remote-roster.mjs";
+import { remotePanel } from "../../../client/remote-roster.mjs";
 
 const AGENTS_ROOT = "/remote/project/agents";
 const REMOTE_ROW_FACTS = ["identity", "identityAddress", "teams", "startedAt", "createdAt", "model", "runtimeState",

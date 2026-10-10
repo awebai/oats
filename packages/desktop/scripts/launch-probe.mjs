@@ -20,6 +20,9 @@ export const PHASE_BUDGET_MS = {
   backendReady: 90_000,
   backendExit: 15_000,
   collector: 60_000,
+  // Phase 4b (smoke-probes.mjs runMainImportsProbe): one more start of the
+  // packaged executable as Node, loading what main imports.
+  mainImports: 60_000,
   launchReady: 90_000,
   cdpEvaluate: 20_000,
 };

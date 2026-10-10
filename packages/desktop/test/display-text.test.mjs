@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { displayLine, cleanLine, NOT_NOTE_TEXT, UNSAFE, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../renderer/display-text.mjs';
+import { displayLine, cleanLine, NOT_NOTE_TEXT, UNSAFE, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
 
 const at = cp => String.fromCodePoint(cp);
 const REPLACEMENT = at(0xFFFD);
@@ -87,7 +87,7 @@ test('cleanLine: a string the filter would return unchanged, and nothing else', 
 
 test('the set has one definition; the withholding pattern is the one remote reasons use today; both are stateless', () => {
   assert.equal(NOT_NOTE_TEXT.global, false); assert.equal(UNSAFE.global, false);
-  const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), 'utf8');
+  const read = name => readFileSync(new URL(`../../client/${name}`, import.meta.url), 'utf8');
   assert.match(read('waiting-on-you.mjs'), /import \{ NOT_NOTE_TEXT \} from '\.\/display-text\.mjs'/);
   assert.doesNotMatch(read('waiting-on-you.mjs'), /\\p\{Cc\}/, 'waiting-on-you.mjs defines no set of its own');
   assert.equal(UNSAFE.flags, 'i');

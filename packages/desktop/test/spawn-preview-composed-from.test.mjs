@@ -7,12 +7,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
+import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
-import { previewData, previewComposedFrom } from '../renderer/spawn-preview-contract.mjs';
+import { previewData, previewComposedFrom } from '../../client/spawn-preview-contract.mjs';
 import { composePreviewModules, moduleWhyText, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
-import { harnessList } from '../renderer/harness-names.mjs';
+import { harnessList } from '../../client/harness-names.mjs';
 import { TEXT_PAIRS } from '../renderer/contrast-inventory.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/composed-from/${name}.json`, import.meta.url), 'utf8'));

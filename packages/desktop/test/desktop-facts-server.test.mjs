@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, resolve } from 'node:path';
-import * as remote from '../server/remote-roster.mjs';
+import * as remote from '../../client/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
-import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData } from '../deployment-data.mjs';
+import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
 
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/desktop-facts/${name}.json`, import.meta.url), 'utf8'));
 const old = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));

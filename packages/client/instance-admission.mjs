@@ -1,8 +1,8 @@
 /** Shared qualified roster authority. No filesystem, kernel import or process.
  * Individual operations negotiate their own CLI feature/API after admission. */
 import { isAbsolute, basename } from 'node:path';
-import { gitTarget } from '../renderer/instance-git-contract.mjs';
-import { canAddressRemote, unaddressableSentence, unroutableReason } from '../renderer/remote-address.mjs';
+import { gitTarget } from './instance-git-contract.mjs';
+import { canAddressRemote, unaddressableSentence, unroutableReason } from './remote-address.mjs';
 export { canAddressRemote };
 export const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
 export const absolute = v => typeof v === 'string' && isAbsolute(v) && !v.includes('\0');

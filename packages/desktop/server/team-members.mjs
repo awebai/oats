@@ -4,7 +4,7 @@
  * read is the only source for other machines. A member is a row whose identity.team is a non-empty
  * string; the renderer groups them by team, and by deployment within a team (`deployment`, labelled
  * by machine). `workspace` is the member's DEPLOYMENT id: every action on a member is addressed to it. */
-import { canAddressRemote, rowReason } from '../renderer/remote-address.mjs';
+import { canAddressRemote, rowReason } from '../../client/remote-address.mjs';
 
 const text = v => typeof v === 'string' && v ? v : null;
 const team = row => text(row?.identity?.team);
