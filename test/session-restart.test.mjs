@@ -77,7 +77,8 @@ const homeOf = (name, soul = "dev") => join(fx.root, soul, "instances", name);
 // Homes are SPAWNED through the workspace path (fx.spawn), then given the recorded launch a test
 // starts from: the private tmux socket, and a recipe (or the command alone).
 async function makeHome(name, { soul = "dev", command, launch, harness = "claude", model, providers, ...spawn } = {}) {
-  const { home } = await fx.spawn(soul, { name, work: "checkout", launch: false, harness, providers, ...spawn });
+  // The bare harness unless a test names a configuration: this deployment declares several claude configurations.
+  const { home } = await fx.spawn(soul, { name, work: "checkout", launch: false, harness, providers, launchConfig: "none", ...spawn });
   assert.equal(home, homeOf(name, soul));
   const meta = { ...readJson(join(home, "instance.json")), harness, ...(model ? { model } : {}), tmux: { session, window: name, socket }, launched: true };
   if (command !== undefined) meta.command = command;
