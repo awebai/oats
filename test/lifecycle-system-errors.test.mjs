@@ -26,7 +26,7 @@ import { pathToFileURL } from "node:url";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { ensureOatsSocketDir, waitUntil } from "./helpers/host-fixture.mjs";
 import { retireFailure, stopInstanceSession } from "../lib/core.mjs";
-import { oatsError } from "../lib/errors.mjs";
+import { oatsError, reportDefect } from "../lib/errors.mjs";
 
 /** A mode no longer keeps root out: the shapes that rest on one are skipped for root. */
 const ROOT = process.getuid?.() === 0;
@@ -607,6 +607,10 @@ test("retireFailure never answers without reached: when the sentence throws, whe
   const [nothing] = withStderr(() => retireFailure(undefined, tracker(), gone));
   assert.equal(nothing.code, "E_LIFECYCLE_FAILED");
   assert.deepEqual(nothing.details, { cause: { name: "Error" }, reached: REACHED });
+  // The answer still holds what was thrown, so that the door prints the defect: a value that is not truthy too.
+  assert.equal(Object.hasOwn(nothing, "cause"), true);
+  const [, reported] = withStderr(() => reportDefect(nothing));
+  assert.equal(reported, "A value that is no Error was thrown: undefined\n");
 });
 
 // ---- 7. the wrapping never answers a code that says nothing happened ----

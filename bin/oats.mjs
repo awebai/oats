@@ -4350,8 +4350,9 @@ else if (cmd === "trigger") await triggerCmd();
 else if (cmd === "automations") await automationsCmd();
 else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e, e.details?.unconfirmed === true ? e.details : undefined); throw e; } }
 // What a retire throws outside its own answers (the root, a replay's read) goes through the same door.
-// An exception after the retire has returned (retireReturned) is rethrown: a crash is read as "not
-// confirmed", which is the truth, where an error answer without `reached` would read as "nothing was done".
+// An exception after the retire has returned (retireReturned) is rethrown, here and by the handler
+// of typed failures below: a crash is read as "not confirmed", which is the truth, where an error
+// answer without `reached` would read as "nothing was done".
 else if (cmd === "retire") { try { retireCmd(); } catch (e) { if (retireReturned || TYPED_CLI_FAILURES.has(e?.code)) throw e; lifecycleFail(e, "E_LIFECYCLE_FAILED", e.details); } }
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
 else if (cmd === "experimental") await experimentalCmd();
@@ -4697,7 +4698,8 @@ Observation reuse (feature observe-max-age):
 Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspace-module-contracts.md.`;
 }
 } catch (e) {
-  if (!TYPED_CLI_FAILURES.has(e?.code)) throw e;
+  // After a retire has returned, nothing is answered as an error, a typed failure included (the dispatch).
+  if (retireReturned || !TYPED_CLI_FAILURES.has(e?.code)) throw e;
   // Same two renderings as every other typed failure: one envelope on stdout in
   // --json mode, one `oats: <message>` line on stderr otherwise. The message
   // already names the offending file — the readers re-raise it with one.

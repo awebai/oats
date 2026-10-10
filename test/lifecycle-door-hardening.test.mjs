@@ -405,8 +405,9 @@ test("instance stop --apply whose tmux call exits non-zero: the target is E_SESS
 /** A preload that throws a TypeError from something `oats retire <name>` does once the kernel's
  *  retire has returned: the print of its receipt (`console.log` of the receipt's JSON, or of the
  *  text mode's `Retired <name> …`). `console.log` itself is replaced: Node's console swallows what
- *  the stream's write throws. → its path. */
-function throwsAfterTheRetire(fx, name) {
+ *  the stream's write throws. `thrown` is the source of what it throws (default: that TypeError).
+ *  → its path. */
+function throwsAfterTheRetire(fx, name, thrown = 'new TypeError("boom after the retire")') {
   const preload = join(fx.base, `throws-after-the-retire-of-${name}.mjs`);
   writeFileSync(preload, `// Written by test/lifecycle-door-hardening.test.mjs.
 const name = ${JSON.stringify(name)};
@@ -414,7 +415,7 @@ const log = console.log;
 const isReceipt = (text) => { try { return JSON.parse(text).retired === name; } catch { return false; } };
 console.log = function (...args) {
   const [first] = args;
-  if (typeof first === "string" && (first.startsWith("Retired " + name + " ") || isReceipt(first))) throw new TypeError("boom after the retire");
+  if (typeof first === "string" && (first.startsWith("Retired " + name + " ") || isReceipt(first))) throw ${thrown};
   return log.apply(this, args);
 };
 `);
@@ -438,7 +439,7 @@ syncBuiltinESMExports();
   return preload;
 }
 
-test("an exception thrown after the retire has returned is not answered through the door: the home is retired, stdout holds no error envelope, and the process ends as an uncaught exception, in JSON mode and in text mode; thrown before the retire returns, it is one envelope with a kernel code and reached", async (t) => {
+test("an exception thrown after the retire has returned is not answered through the door, nor, when it is one of the two typed failures (unsafe-config-key, unsafe-config-value), under its own name: the home is retired, stdout holds no error envelope, and the process ends as an uncaught exception, in JSON mode and in text mode; thrown before the retire returns, it is one envelope with a kernel code and reached", async (t) => {
   const { fx, add } = deployment(t);
   const AFTER = /^TypeError: boom after the retire\n(?: {4}at .+\n)+/m;
 
@@ -460,6 +461,27 @@ test("an exception thrown after the retire has returned is not answered through 
     assert.match(r.stderr, AFTER, `the exception and its stack are on stderr: ${said}`);
     assert.match(r.stderr, /^ {4}at retireCmd /m, `thrown from the retire command, after the kernel's retire: ${said}`);
     assert.doesNotMatch(r.stderr, /^oats: /m, `the door did not answer it: ${said}`);
+  }
+
+  // An error the CLI answers under its own name wherever it comes from (unsafe-config-key,
+  // unsafe-config-value) is no exception to that: after the retire has returned it is a crash too,
+  // not `{"ok":false,"error":{"code":"unsafe-config-key",…}}` of a home that is gone.
+  let n = 0;
+  for (const code of ["unsafe-config-key", "unsafe-config-value"]) {
+    for (const [mode, flags] of [["JSON mode", ["--json"]], ["text mode", []]]) {
+      const w = await add(`own${++n}`);
+      const thrown = `Object.assign(new Error("a typed refusal after the retire"), { code: ${JSON.stringify(code)} })`;
+      const r = cliWith(fx, throwsAfterTheRetire(fx, w.name, thrown), ["retire", w.name, ...flags]);
+      const said = `${code}, ${mode}\n  exit status: ${r.status}\n  stdout: ${r.stdout}\n  stderr: ${r.stderr}`;
+      assert.equal(existsSync(w.home), false, `the home is removed: ${said}`);
+      assert.equal(w.hookRuns(), 1, `its retire hook ran, once: ${said}`);
+      assert.equal(r.stdout, "", `no envelope, of any code, on stdout: ${said}`);
+      assert.notEqual(r.status, 0, said);
+      assert.equal(r.signal, null, said);
+      assert.match(r.stderr, /^Error: a typed refusal after the retire\n(?: {4}at .+\n)+/m, `the exception and its stack are on stderr: ${said}`);
+      assert.match(r.stderr, /^ {4}at retireCmd /m, `thrown from the retire command, after the kernel's retire: ${said}`);
+      assert.doesNotMatch(r.stderr, /^oats: /m, `no handler of typed failures answered it: ${said}`);
+    }
   }
 
   // The counter-case: the same exception from the last step of the kernel's retire, before it has
