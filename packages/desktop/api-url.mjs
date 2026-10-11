@@ -12,7 +12,8 @@ export { workspaceScoped };
 export function classifyApiRoute(pathname, base) {
   if (typeof pathname !== 'string') return null;
   try {
-    switch (new URL(pathname, base).pathname) {
+    const path = new URL(pathname, base).pathname;
+    switch (path) {
       case '/api/workspace-readiness': return 'readiness';
       case '/api/workspace-spawn-preview': return 'spawn-preview';
       case '/api/spawn': return 'spawn-apply';
@@ -33,7 +34,11 @@ export function classifyApiRoute(pathname, base) {
       case '/api/servers':
       case '/api/server-check':
       case '/api/server-remove': return 'machines';
-      default: return null;
+      default:
+        // A start or restart of an instance (`/api/start/<instance>`): the kernel may watch a launch prompt
+        // for 30 s before it answers. Exactly the paths the server routes: one segment of its own characters,
+        // so an encoded slash, a trailing slash or a longer path is no start.
+        return /^\/api\/(?:start|restart)\/[A-Za-z0-9._-]+$/.test(path) ? 'instance-start' : null;
     }
   } catch { return null; }
 }
