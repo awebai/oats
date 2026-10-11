@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, realpathSync, rmSync, renameSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createLaunchPromptController } from "../lib/launch-prompts.mjs";
+import { createLaunchPromptController, neverSettled } from "../lib/launch-prompts.mjs";
 import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES } from "../lib/launch-prompt-fixtures.mjs";
 import { raw296, linux296, trustPrompts, sessions, flagIgnored, flagIgnoredHidden, logoAnimating, rendererFallback, edit } from "./helpers/dev-channel-screens.mjs";
 
@@ -474,5 +474,19 @@ test("an unknown frame that changes before the settle window restarts it", t => 
   const result = controller.observeNew(target);
   assert.equal(result.status, "blocked");
   assert.ok(io.time >= 3500, `the second frame held its own 2 s: blocked at ${io.time} ms`);
+  assert.deepEqual(io.sends, []);
+});
+
+test("a reason says the screen never settled with or without the evidence-failure suffix, and never for a prompt", () => {
+  assert.equal(neverSettled("blocked: observation timeout"), true);
+  assert.equal(neverSettled("blocked: observation timeout; private launch evidence retention failed"), true);
+  for (const reason of ["blocked: unexpected prompt", "blocked: unexpected prompt; private launch evidence retention failed", "launch prompt completion not observed", undefined, null]) assert.equal(neverSettled(reason), false, String(reason));
+});
+
+test("a never-settled screen whose evidence write fails is still an observation timeout", t => {
+  const { controller, io } = setup(t, { configure({ args, io }) { args.retainFrame = () => ({ ok: false }); io.snapshotHook = s => ({ ...s, text: `SYNTHETIC spinner ${io.captures}\n` }); } });
+  const result = controller.observeNew(target);
+  assert.equal(result.reason, "blocked: observation timeout; private launch evidence retention failed");
+  assert.equal(neverSettled(result.reason), true);
   assert.deepEqual(io.sends, []);
 });

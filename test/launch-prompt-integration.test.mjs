@@ -359,4 +359,11 @@ test('a screen that never settles is an observation timeout: the error and readi
   assert.match(warning.remedy, /no prompt/);
   assert.doesNotMatch(warning.remedy, /read the prompt|press Enter/);
   assert.deepEqual(keys(h), []);
+  // The same start whose private evidence write failed carries a suffix on its reason: still no prompt.
+  const record = meta(h);
+  record.launchPrompts = { ...record.launchPrompts, reason: 'blocked: observation timeout; private launch evidence retention failed' };
+  writeFileSync(join(h, 'instance.json'), JSON.stringify(record, null, 2) + '\n');
+  const [suffixed] = readinessItems(fx, h);
+  assert.match(suffixed.reason, /never settled/);
+  assert.doesNotMatch(suffixed.remedy, /read the prompt|press Enter/);
 });
