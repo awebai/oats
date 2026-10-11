@@ -192,8 +192,9 @@ entry of the tolerance list: the confirmation's own text, exactly one channel
 (`plugin:aweb-channel@awebai-marketplace`), the affirmative option
 `1. I am using this for local development` with `❯` before it, option `2. Exit`
 without it, and nothing else on the screen. Matching does not depend on the pane
-width, the Claude binary or the platform: one entry covers Claude 2.1.288,
-2.1.289 and 2.1.296 on macOS and Linux. A pane too narrow for Claude to wrap at word
+width, the Claude binary or the platform: one entry covers Claude 2.1.289 and
+2.1.296 on macOS and Linux, from committed captures, and a release review
+reports the same match for 2.1.288 on linux-x64. A pane too narrow for Claude to wrap at word
 boundaries (about 40 columns for this prompt) does not match.
 
 **What it never does.** It sends one `Enter`, never another key, never a retry,

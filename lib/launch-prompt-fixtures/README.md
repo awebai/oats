@@ -30,10 +30,11 @@ whose `❯` does not occur exactly once immediately before `1. `, whose
 fails the tests.
 
 One entry today, `aweb-dev-channel-confirmation-1`: Claude 2.1.289 and 2.1.296
-on darwin-arm64, 2.1.296 on linux-arm64 and 2.1.288 on linux-x64 render the same
-text. The raw captures and their provenance are in
-`test/fixtures/launch-prompts/` (`dev-channel-provenance.json`); the 2.1.288
-frames are the reviewer's, cited in the entry (oats#917 review 5481510495).
+on darwin-arm64 and 2.1.296 on linux-arm64 render the same text. The raw
+captures and their provenance are in `test/fixtures/launch-prompts/`
+(`dev-channel-provenance.json`), each tested against the entry. The entry's
+2.1.288 linux-x64 row is reported coverage, not a committed capture: the
+oats#917 release review (5481510495) matched its own frames, which it keeps.
 
 ## Adding a wording
 
