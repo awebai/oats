@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createInstanceStarter } from "../renderer/start-instance.mjs";
 import { setWorkspace } from "../renderer/views/common.mjs";
-import { cliStart } from "../cli-adapter.mjs";
+import { cliStart } from "../../client/cli-adapter.mjs";
 
 const tick = () => new Promise((r) => setImmediate(r));
 function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start, ready = true, restart = false, server } = {}) {

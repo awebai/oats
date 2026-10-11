@@ -8,7 +8,7 @@ import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, apiInit, classifyApiRoute } from '../api-url.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
-import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleFailure } from '../../client/lifecycle-contract.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope } from './helpers/lifecycle-fixture.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';

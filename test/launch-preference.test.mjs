@@ -14,7 +14,7 @@ import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { launchLayers, selectionFrom, soulLaunchAt } from "../lib/launch-preference.mjs";
 import { homeLaunchLayers, planLaunch } from "../lib/core.mjs";
 // The Desktop's released decoder is the consumer: every Launch the kernel emits must decode under it.
-import { launchOf, PREVIEW_FROM, RECORD_FROM, REPORT_FROM } from "../packages/desktop/renderer/launch-contract.mjs";
+import { launchOf, PREVIEW_FROM, RECORD_FROM, REPORT_FROM } from "../packages/client/launch-contract.mjs";
 const decodes = (launch, from = REPORT_FROM) => assert.notEqual(launchOf(launch, from), undefined, `the Desktop refuses ${JSON.stringify(launch)}`);
 
 const OPUS = { harness: "claude", model: "claude-opus-5-5" };

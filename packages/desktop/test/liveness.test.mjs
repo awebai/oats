@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { observeLiveness } from '../server/liveness.mjs';
-import { HERDR_REMOVED } from '../renderer/terminal-contract.mjs';
+import { observeLiveness } from '../../client/liveness.mjs';
+import { HERDR_REMOVED } from '../../client/terminal-contract.mjs';
 
 const sessionTarget = { backend: 'herdr', protocol: 20, socket: '/memory/herdr.sock', paneId: 'w1:pA', terminalId: 'term_ABC' };
 const kernelText = `E_HERDR_REMOVED: ${HERDR_REMOVED}`;

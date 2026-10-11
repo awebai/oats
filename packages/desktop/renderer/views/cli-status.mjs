@@ -30,7 +30,7 @@
    is a no-op end to end instead of a flash of re-fetched views. */
 import { escapeHtml } from "./common.mjs";
 import { icon } from "../shell-icons.mjs";
-import { probeChanged } from "../cli-probe-contract.mjs";
+import { probeChanged } from "../../../client/cli-probe-contract.mjs";
 
 /** Recovery command when the backend could not tell us which version to
  * pin — version-LESS on purpose: it names the package without restating any

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createSoulTeamsHere, soulTeamsHereCSS, viaText } from '../renderer/soul-teams-here.mjs';
-import { soulTeamsData, teamsData } from '../deployment-data.mjs';
+import { soulTeamsData, teamsData } from '../../client/deployment-data.mjs';
 
 const capture = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
 const soulTeams = name => soulTeamsData(capture(name));

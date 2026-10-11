@@ -4,9 +4,9 @@
  * only, never a control. */
 import { prText } from './roster-pr.mjs';
 import { createRuntimeBadge, harnessName } from './identity-marks.mjs';
-import { runtimeState } from './instance-presentation.mjs';
+import { runtimeState } from '../../client/instance-presentation.mjs';
 import { instanceRepoLabel, heldHome } from './instance-tree.mjs';
-import { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from './waiting-on-you.mjs';
+import { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from '../../client/waiting-on-you.mjs';
 
 export const rosterTipCSS = `
 .ctx-tip { position:fixed; z-index:60; width:320px; max-width:calc(100vw - 24px); box-sizing:border-box; display:flex; flex-direction:column; gap:8px;

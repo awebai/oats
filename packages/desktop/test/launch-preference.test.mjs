@@ -6,11 +6,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { launchOf, REPORT_FROM, PREVIEW_FROM, RECORD_FROM } from '../renderer/launch-contract.mjs';
-import { soulsData, deploymentStatusData } from '../deployment-data.mjs';
-import { previewData } from '../renderer/spawn-preview-contract.mjs';
-import { inspectData } from '../renderer/inspect-contract.mjs';
-import * as remote from '../server/remote-roster.mjs';
+import { launchOf, REPORT_FROM, PREVIEW_FROM, RECORD_FROM } from '../../client/launch-contract.mjs';
+import { soulsData, deploymentStatusData } from '../../client/deployment-data.mjs';
+import { previewData } from '../../client/spawn-preview-contract.mjs';
+import { inspectData } from '../../client/inspect-contract.mjs';
+import * as remote from '../../client/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
@@ -84,7 +84,7 @@ test('inspect --soul / --home (derived on the real 0.30 captures): launch, launc
 });
 
 test('readiness launch-changed (--home; derived on the real instance readiness capture): recorded, current and from kept', async () => {
-  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const { readinessData } = await import('../../client/readiness-contract.mjs');
   const { data, instanceTarget } = await import('./helpers/readiness-fixture.mjs');
   const item = { subject: 'launch', status: 'fail', required: false, producer: 'launch preference', code: 'launch-changed', evidence: null,
     reason: 'this home launches pi; the current preference is claude', remedy: '`oats session restart --reselect-launch`, or respawn',
@@ -125,7 +125,7 @@ test('real: the preview carries launch (and a flag), and its refusal\'s fix reac
   assert.equal(previewData(structuredClone(p), t).launch.from, 'soul');
   const flag = previewData(real('preview-dev-flag').result, t);
   assert.deepEqual([flag.launch.from, flag.launch.effective.harness, flag.harness], ['flag', 'pi', 'pi']);
-  const { previewFailure } = await import('../renderer/spawn-preview-contract.mjs');
+  const { previewFailure } = await import('../../client/spawn-preview-contract.mjs');
   const e = real('preview-dev-unavailable').error;
   assert.deepEqual(previewFailure(e.code, null, e.message, e.details.fix).reason, { code: 'E_HARNESS_UNAVAILABLE', message: e.message, fix: e.details.fix });
 });
@@ -137,7 +137,7 @@ test('real: inspect --soul and --home (the record, launchCurrent, and a drift); 
   for (const name of ['inspect-home', 'inspect-home-drift']) { const h = real(name).result; assert.ok(inspectData(h, { instance: {}, selector: { home: h.subject.home } }), name); }
   const drift = real('inspect-home-drift').result;
   assert.deepEqual([drift.launch.from, drift.launch.effective.harness, drift.launchCurrent.from, drift.launchCurrent.effective.harness], ['soul', 'claude', 'local', 'codex']);
-  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const { readinessData } = await import('../../client/readiness-contract.mjs');
   const r = real('readiness-home-drift').result, s = r.subject;
   const target = { workspace: 'w', context: LP, observedAs: 'instance', home: s.home, selector: { kind: 'instance', instance: s.instance, agent: s.soul, agentsRoot: r.selector.agentsRoot } };
   const item = readinessData(r, target).checks.configured.items.find(i => i.code === 'launch-changed');
@@ -154,7 +154,7 @@ const readinessOf = name => {
 const itemsOf = doc => doc.checks.configured.items;
 
 test('real readiness: launch-changed forward (a layer, at a string), reverse (host, at null), and default-team-changed (DefaultTeam objects) all read', async () => {
-  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const { readinessData } = await import('../../client/readiness-contract.mjs');
   const forward = readinessOf('readiness-home-drift'), f = itemsOf(readinessData(forward.r, forward.target)).find(i => i.code === 'launch-changed');
   assert.deepEqual([f.from, f.at, f.recorded, f.current], ['local', 'oats-local.yaml#/souls/launch/dev',
     { harness: 'claude', model: 'claude-opus-5-5', launchConfig: null }, { harness: 'codex', model: null, launchConfig: null }]);
@@ -170,7 +170,7 @@ test('real readiness: launch-changed forward (a layer, at a string), reverse (ho
 });
 
 test('real readiness mutants: each code decodes its own recorded/current; another code\'s are not read', async () => {
-  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const { readinessData } = await import('../../client/readiness-contract.mjs');
   const mutate = (name, change) => { const { r, target } = readinessOf(name); const v = structuredClone(r); change(v.checks.configured.items.find(i => /-changed$/.test(i.code ?? ''))); return readinessData(v, target); };
   for (const [what, change] of [['launch recorded a DefaultTeam', i => { i.recorded = { label: 'mine', team: null, from: 'deployment' }; }],
     ['launch current null', i => { i.current = null; }], ['launch from missing', i => { delete i.from; }], ['launch from flag', i => { i.from = 'flag'; }],

@@ -1,7 +1,7 @@
 import { createWorkspaceMark } from "./identity-marks.mjs";
 import { iconElement } from "./shell-icons.mjs";
 import { deploymentMark } from "./view-deployments.mjs";
-import { pathTail } from "./deployment-label.mjs";
+import { pathTail } from "../../client/deployment-label.mjs";
 import { requestDeploymentTab } from "./deployment-tabs.mjs";
 
 // A choice id that is this computer's folder (a deployment from an older server, an unattached

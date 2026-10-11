@@ -514,7 +514,7 @@ test("Git-owned home placement still fails closed when Git is unavailable even f
 });
 
 test("the Desktop work-mode schema forwards explicit directory mode without loosening argv validation", async () => {
-  const { spawnArgv } = await import("../packages/desktop/cli-adapter.mjs");
+  const { spawnArgv } = await import("../packages/client/cli-adapter.mjs");
   const argv = spawnArgv("worker", "/context", "/task", { work: "directory" });
   assert.equal(argv[argv.indexOf("--work") + 1], "directory");
   assert.throws(() => spawnArgv("worker", "/context", "/task", { work: "directory --work-dir /source" }), /invalid/);

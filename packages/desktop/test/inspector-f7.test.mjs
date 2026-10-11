@@ -208,7 +208,7 @@ test('Core capabilities say why each slot is filled in the soul page\'s words, o
 // place of the 0.29 read-only Teams card; without the feature, the 0.29 card stays.
 test('soul page: team-model-2 shows "Teams here" from the soul teams route; without it, the 0.29 Teams card', async t => {
   // The REAL 0.30 kernel's `oats soul teams release-manager` (K1 @bba0a9b8, test/fixtures/team-model-v2/soul-teams-show, #269).
-  const { soulTeamsData } = await import('../deployment-data.mjs');
+  const { soulTeamsData } = await import('../../client/deployment-data.mjs');
   const soulTeamsDoc = soulTeamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/soul-teams-show.json', import.meta.url), 'utf8')));
   const urls = [];
   // The roster row carries the kernel's soul key (#275): the bare name for a member soul.

@@ -4,7 +4,7 @@
 import { tmuxAttachTarget } from './tmux-target.mjs';
 import { tmuxSocketArgs } from './local-tmux-io.mjs';
 import { remoteTargetKey } from './remote-target.mjs';
-import { HERDR_REMOVED, terminalGeometry } from './renderer/terminal-contract.mjs';
+import { HERDR_REMOVED, terminalGeometry } from '../client/terminal-contract.mjs';
 
 const invalid = () => { throw new Error('Invalid terminal target'); };
 const closed = (v, keys) => {

@@ -6,7 +6,7 @@
  * Other surfaces (the switcher's "Not matched" entries) open a deployment's tab through
  * requestDeploymentTab(): it records the choice and tells the listeners (the shell shows the
  * Deployments stage; the page re-reads its tab). */
-import { machineLabels } from './deployment-label.mjs';
+import { machineLabels } from '../../client/deployment-label.mjs';
 import { validWorkspaceId as validId } from './workspace-id.mjs';
 
 export const DEPLOYMENT_TAB_KEY = 'oats.desktop.deploymentTab';

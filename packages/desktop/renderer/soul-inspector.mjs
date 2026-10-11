@@ -16,19 +16,19 @@
  * `inspect` instead of after it. Focus across a repaint: actionable controls carry
  * `data-focus-key` and are re-found by key only (loading.mjs captureFocusState);
  * a control that vanished hands focus to Refresh. */
-import { teamModelOf } from './team-rows.mjs';
-import { harnessOf } from './harness-names.mjs';
+import { teamModelOf } from '../../client/team-rows.mjs';
+import { harnessOf } from '../../client/harness-names.mjs';
 import { postJson, wsQuery, workspaceGeneration, rowDeployment } from './views/common.mjs';
-import { runtimeState } from './instance-presentation.mjs';
+import { runtimeState } from '../../client/instance-presentation.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { inspectData, inspectFacts, originText } from './inspect-contract.mjs';
+import { inspectData, inspectFacts, originText } from '../../client/inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, teamsCSS, soulTeams, teamLabels } from './teams-panel.mjs';
 import { createSoulTeamsHere, soulTeamsHereCSS } from './soul-teams-here.mjs';
 import { teamsAnswer } from './computer-teams.mjs';
-import { relayedFailure, serverLabel } from './remote-address.mjs';
+import { relayedFailure, serverLabel } from '../../client/remote-address.mjs';
 import { ageText } from './age-text.mjs';
 import { pageBar, pageCard, pageSection, isCoreCapability, compositionEntries, coreEntries, coreNote, whyElement, renderSoulCore, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
@@ -37,7 +37,7 @@ import { createDataState, skeletonBlock, skeleton, captureFocusState } from './l
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { createSoulInstructions } from './soul-instructions.mjs';
 import { composedSupported, routedComposedSupported } from './composed-gate.mjs';
-import { warningsOf } from './capability-warnings-contract.mjs';
+import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, WARNINGS_COPY } from './capability-warnings.mjs';
 
 

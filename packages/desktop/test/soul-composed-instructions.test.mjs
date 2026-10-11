@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { cliCapability } from '../cli-adapter.mjs';
+import { cliCapability } from '../../client/cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 import { createInspectCache, inspectKey } from '../server/inspect-cache.mjs';
 import { createSoulInstructions, composedOf, blockText, sourceLabels, composedSupported, SOUL_INSTRUCTIONS_COPY, COMPOSED, OWN } from '../renderer/soul-instructions.mjs';

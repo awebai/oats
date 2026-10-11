@@ -5,7 +5,7 @@
  * Pure: no I/O. The identity is the kernel's `workspace` object, read as reported; nothing is
  * derived from a path, a ref or a host name, and `ref` is never compared. */
 import { createHash } from 'node:crypto';
-import { THIS_MACHINE } from '../renderer/deployment-label.mjs';
+import { THIS_MACHINE } from './deployment-label.mjs';
 
 const TEXT_MAX = 2048;
 const text = v => typeof v === 'string' && v.length > 0 && v.length <= TEXT_MAX && !v.includes('\0');

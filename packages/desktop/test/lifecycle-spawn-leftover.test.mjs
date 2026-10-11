@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
-import { lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, spawnCompensationOf } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, spawnCompensationOf } from '../../client/lifecycle-contract.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { context, envelope, instance, retirePlan, retireReceipt, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';

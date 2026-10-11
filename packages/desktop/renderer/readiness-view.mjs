@@ -14,10 +14,10 @@
  * own `.readiness-summary` line so an announcement never overwrites it. */
 import { postJson, workspaceGeneration } from './views/common.mjs';
 import { createDataState, skeletonBlock, captureFocusState } from './loading.mjs';
-import { CHECKS, readinessSelector, readinessSupported, readinessTarget, readinessData, readinessFailure } from './readiness-contract.mjs';
-import { originText } from './inspect-contract.mjs';
+import { CHECKS, readinessSelector, readinessSupported, readinessTarget, readinessData, readinessFailure } from '../../client/readiness-contract.mjs';
+import { originText } from '../../client/inspect-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { readingFrom, remoteReason } from './remote-address.mjs';
+import { readingFrom, remoteReason } from '../../client/remote-address.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 export const readinessCSS = `
 ${capabilityWarningsCSS}

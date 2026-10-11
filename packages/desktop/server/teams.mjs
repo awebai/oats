@@ -5,8 +5,8 @@
  * verb (argv only), decodes the document, and passes kernel refusals through with their details. Local
  * workspaces only. */
 import { isAbsolute } from 'node:path';
-import { cliTeams, cliSoulTeams } from '../cli-adapter.mjs';
-import { teamsData, soulTeamsData } from '../deployment-data.mjs';
+import { cliTeams, cliSoulTeams } from '../../client/cli-adapter.mjs';
+import { teamsData, soulTeamsData } from '../../client/deployment-data.mjs';
 
 // The answer shape is the lead's (0.30 D2 review): {status: 'ok', teams | soulTeams: <the decoded
 // kernel result>}; a refusal is {status: 'refused', reason: {code, message, details?}}, the

@@ -46,8 +46,8 @@
    selected activity from the guarded K7 POST /api/instance-events boundary. */
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "../roster-cadence.mjs";
 import { computeClusters, siblingEdges } from "./clusters.mjs";
-import { runtimeState, runtimeCounts, unsupportedSession } from "../instance-presentation.mjs";
-import { serverLabel } from "../remote-address.mjs";
+import { runtimeState, runtimeCounts, unsupportedSession } from "../../../client/instance-presentation.mjs";
+import { serverLabel } from "../../../client/remote-address.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId, heldHome } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
@@ -62,7 +62,7 @@ import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
 import { attachDeployments, isMultiDeployment, splitByDeployment, rowStale } from "../view-deployments.mjs";
-import { deploymentLabel } from "../deployment-label.mjs";
+import { deploymentLabel } from "../../../client/deployment-label.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
 import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";
 

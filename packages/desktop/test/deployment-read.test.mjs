@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import { cliDeploymentRead, DEPLOYMENT_READ_MAX_BUFFER, DEPLOYMENT_READ_TIMEOUT } from '../deployment-read-cli.mjs';
-import { deploymentReadGate, DEPLOYMENT_FEATURES, remoteFailureCause, panelErrorCause } from '../renderer/deployment-contract.mjs';
-import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
+import { cliDeploymentRead, DEPLOYMENT_READ_MAX_BUFFER, DEPLOYMENT_READ_TIMEOUT } from '../../client/deployment-read-cli.mjs';
+import { deploymentReadGate, DEPLOYMENT_FEATURES, remoteFailureCause, panelErrorCause } from '../../client/deployment-contract.mjs';
+import { deploymentStatusData, workspaceStatusData } from '../../client/deployment-data.mjs';
 import builder from '../electron-builder.config.cjs';
 
 const file = name => new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url);
@@ -168,7 +168,7 @@ test('an agent key is a soul key or null: a string still decodes, any other type
 });
 
 test('the locator carries only an integer workspaceApi 2 from the probe into the accepted CLI state', async () => {
-  const { discover } = await import('../cli-locator.mjs');
+  const { discover } = await import('../../client/cli-locator.mjs');
   const run = async payload => discover({ persisted: () => '/fixture/bin/oats', env: {}, isExecutableFile: () => true },
     async () => ({ stdout: JSON.stringify(payload) }));
   assert.equal((await run(probe)).workspaceApi, 2, 'the captured probe advertises workspaceApi 2');

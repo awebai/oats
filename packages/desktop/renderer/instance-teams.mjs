@@ -24,12 +24,12 @@
  * deployment, server and home; a row that can't be routed from here sends
  * nothing and claims the place to say why, as a failure does, and a host's
  * refusal is shown as relayed (remote-address.mjs). */
-import { inspectData, inspectSupported } from './inspect-contract.mjs';
+import { inspectData, inspectSupported } from '../../client/inspect-contract.mjs';
 import { createTeamsPanel, teamsCSS, teamsOperations } from './teams-panel.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { createDataState, statusLine } from './loading.mjs';
 import { instanceStatusIdentity } from './instance-status-identity.mjs';
-import { relayedFailure, remoteInspectBlock, serverLabel } from './remote-address.mjs';
+import { relayedFailure, remoteInspectBlock, serverLabel } from '../../client/remote-address.mjs';
 
 export { teamsCSS };
 

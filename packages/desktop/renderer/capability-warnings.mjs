@@ -7,7 +7,7 @@
  * The host owns the heading (each surface titles its sections its own way) and the repaint barrier: build
  * the list again only when the warnings changed. Every control carries `data-focus-key`, so a host's
  * captureFocusState (loading.mjs) finds it again after a repaint. All text is set as text, never markup. */
-import { warningsShown } from './capability-warnings-contract.mjs';
+import { warningsShown } from '../../client/capability-warnings-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 
 export const WARNINGS_COPY = Object.freeze({

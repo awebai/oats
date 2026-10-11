@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { discover } from '../cli-locator.mjs';
-import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
+import { discover } from '../../client/cli-locator.mjs';
+import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
-import { previewChoices, previewData } from '../renderer/spawn-preview-contract.mjs';
+import { previewChoices, previewData } from '../../client/spawn-preview-contract.mjs';
 import { cli, target, selector, anchor, context, request, data, envelope, deferred, tick, kernel, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 test('locator forwards exactly API2; old advertised API1 stays unavailable', async () => {
   for (const spawnPreviewApi of [undefined, 1, '2', true, 3, 2]) {

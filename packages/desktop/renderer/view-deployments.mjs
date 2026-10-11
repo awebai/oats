@@ -10,7 +10,7 @@
  * last deployments seen per view, for surfaces that do not read the panel themselves (the "On …"
  * line, deployment-scope-line.mjs). */
 import { rosterGroups } from './instance-tree.mjs';
-import { machineLabelParts, THIS_MACHINE } from './deployment-label.mjs';
+import { machineLabelParts, THIS_MACHINE } from '../../client/deployment-label.mjs';
 import { iconElement } from './shell-icons.mjs';
 
 const text = (v, max = 4096) => typeof v === 'string' && v.length > 0 && v.length <= max;

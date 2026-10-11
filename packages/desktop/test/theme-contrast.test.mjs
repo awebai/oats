@@ -9,7 +9,7 @@ import { TEXT_PAIRS as pairs, GRAPHIC_PAIRS, PAINTED_OVER, HOST_UNADJUSTED_PAIRS
 import { deriveHostTokens } from "../renderer/host-theme.mjs";
 import { hostState } from "./helpers/host-theme-fixture.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
-import { workspaceStatusData, syncData } from "../deployment-data.mjs";
+import { workspaceStatusData, syncData } from "../../client/deployment-data.mjs";
 import { renderCapabilities, renderCapabilitySections, capabilitySections, renderRepoPills, repoChoices, hostKeyOf, memberNames, sourceChip } from "../renderer/workspace-catalog.mjs";
 import { renderSetup, teamsBox } from "../renderer/workspace-setup.mjs";
 import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
@@ -29,7 +29,7 @@ import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialo
 import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
 import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
 import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture, stopReceipt, retireReceipt } from './helpers/lifecycle-fixture.mjs';
-import { lifecycleReceipt } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleReceipt } from '../../client/lifecycle-contract.mjs';
 import { createSchedulesView } from '../renderer/views/schedules.mjs';
 import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mjs';
 import { readinessCSS as readinessViewCSS } from '../renderer/readiness-view.mjs';
@@ -1207,7 +1207,7 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
   for (const source of [css, setupCSS, pageCardCSS, computerTeamsCSS, soulTeamsHereCSS, inspectorCSS, teamsCSS, spawnDialogCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   // The REAL 0.30 kernel (K1 @bba0a9b8, test/fixtures/team-model-v2, #269): shared teams with no id
   // yet (warnings) and release-manager's own unmapped default (the soul page's blocking notice).
-  const { teamsData, soulTeamsData } = await import('../deployment-data.mjs');
+  const { teamsData, soulTeamsData } = await import('../../client/deployment-data.mjs');
   const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
   const teams = teamsData(v2('teams-after'), '/fixture/base/northwind-workspace'), soulTeams = soulTeamsData(v2('soul-teams-default'));
   teams.defaultTeam = 'engineering'; for (const r of teams.teams) r.default = r.label === 'engineering'; for (const p of teams.problems) if (p.label === 'engineering') p.default = true; // DERIVED: a blocking default

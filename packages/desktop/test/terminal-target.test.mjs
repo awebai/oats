@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { admitTerminalTarget } from '../terminal-target.mjs';
-import { HERDR_REMOVED } from '../renderer/terminal-contract.mjs';
+import { HERDR_REMOVED } from '../../client/terminal-contract.mjs';
 
 const tmux = { session: 'agents', window: 'dev-1', socket: '/memory/tmux.sock' };
 const herdr = { sessionTarget: { backend: 'herdr', protocol: 20, socket: '/memory/herdr.sock', paneId: 'w1:pA', terminalId: 'term_ABC' } };

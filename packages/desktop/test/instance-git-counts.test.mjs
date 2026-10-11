@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { gitState, gitFile } from '../renderer/instance-git-contract.mjs';
+import { gitState, gitFile } from '../../client/instance-git-contract.mjs';
 import { target } from './helpers/forge-fixture.mjs';
 
 const doc = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/instance-git-counts/instance-git.json', import.meta.url), 'utf8')).result;

@@ -8,7 +8,7 @@
  * The file is written atomically (a temporary file in the same directory, then rename) with mode
  * 0600. A missing, unreadable or malformed file is an empty memory; a malformed entry is skipped. */
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
-import { readIdentity, attachment, viewId } from './workspace-views.mjs';
+import { readIdentity, attachment, viewId } from '../../client/workspace-views.mjs';
 
 export const REMOTE_IDENTITY_VERSION = 1;
 const MAX_ENTRIES = 256;

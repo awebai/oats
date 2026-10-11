@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { previewData } from '../renderer/spawn-preview-contract.mjs';
+import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { data, target, envelope, request, context } from './helpers/spawn-preview-fixture.mjs';
 import { mountSpawn, kernel } from './helpers/spawn-dialog-host.mjs';

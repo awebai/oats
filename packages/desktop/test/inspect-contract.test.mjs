@@ -3,8 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { discover } from '../cli-locator.mjs';
-import { inspectData, inspectSupported, inspectFacts, originText } from '../renderer/inspect-contract.mjs';
+import { discover } from '../../client/cli-locator.mjs';
+import { inspectData, inspectSupported, inspectFacts, originText } from '../../client/inspect-contract.mjs';
 import { JSDOM } from 'jsdom';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { coreEntries } from '../renderer/capability-page.mjs';

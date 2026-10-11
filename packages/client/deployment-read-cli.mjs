@@ -2,7 +2,7 @@
  * projected by the owning observer, never forwarded wholesale to a renderer. */
 import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
-import { deploymentReadGate, deploymentFailure, deploymentRecord, validMaxAge, maxAgeArgv, remoteFailureCause } from './renderer/deployment-contract.mjs';
+import { deploymentReadGate, deploymentFailure, deploymentRecord, validMaxAge, maxAgeArgv, remoteFailureCause } from './deployment-contract.mjs';
 
 export const DEPLOYMENT_READ_TIMEOUT = 30_000;
 export const DEPLOYMENT_READ_MAX_BUFFER = 4 * 1024 * 1024;

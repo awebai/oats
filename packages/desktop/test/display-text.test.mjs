@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { displayLine, cleanLine, NOT_NOTE_TEXT, UNSAFE, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../renderer/display-text.mjs';
+import { displayLine, cleanLine, NOT_NOTE_TEXT, UNSAFE, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
 
 const at = cp => String.fromCodePoint(cp);
 const REPLACEMENT = at(0xFFFD);

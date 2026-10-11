@@ -2,12 +2,12 @@
  * It does not resolve a deployment, read metadata, infer drift, or reproduce
  * any kernel lifecycle/trust logic. Producer shapes remain command-specific. */
 import { dirname, basename, join, isAbsolute, resolve } from 'node:path';
-import { deploymentRecord as record } from './renderer/deployment-contract.mjs';
-import { harnessOf } from './renderer/harness-names.mjs';
-import { teamRow, teamRowsOf, defaultTeamOf, TEAM_ID } from './renderer/team-rows.mjs';
-import { launchOf, REPORT_FROM } from './renderer/launch-contract.mjs';
-import { readIdentity } from './server/workspace-views.mjs';
-import { waitingOnYouData } from './renderer/waiting-on-you.mjs';
+import { deploymentRecord as record } from './deployment-contract.mjs';
+import { harnessOf } from './harness-names.mjs';
+import { teamRow, teamRowsOf, defaultTeamOf, TEAM_ID } from './team-rows.mjs';
+import { launchOf, REPORT_FROM } from './launch-contract.mjs';
+import { readIdentity } from './workspace-views.mjs';
+import { waitingOnYouData } from './waiting-on-you.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);

@@ -21,7 +21,7 @@
 // discovery matrix and acceptance rules are unit-testable and
 // mutation-checkable without a real CLI.
 import { delimiter, isAbsolute, join } from "node:path";
-import { harnessList } from "./renderer/harness-names.mjs";
+import { harnessList } from "./harness-names.mjs";
 
 export const DESKTOP_API = 1;
 // The accepted band is per-minor and widened DELIBERATELY, once per kernel
