@@ -1,6 +1,6 @@
 # #917 live runs: a real Claude, at the fixed head
 
-Merge condition 2 of PR #917 (Pepe's review 5481510495, refined in comment
+Merge condition 2 of PR #917 (the release lane's review 5481510495, refined in comment
 6107369947). There are two runs, both at the head that merges, and both on a
 host with a real Claude:
 
@@ -255,7 +255,7 @@ For each start (`spawn`, `restart`) it writes:
 `failed`, as a hidden-notice spawn does.
 
 **Frame not sampled.** The witness polls every 50 ms, and the kernel can act on
-a frame sooner. In one of Pepe's plain runs, the kernel answered the confirmation
+a frame sooner. In one of the release lane's plain runs, the kernel answered the confirmation
 12 ms after auditing it, and the witness never captured that frame. When a
 start's rows show the expected outcome (status, launched, the entry, the key
 count, the warnings) but no witnessed frame has the audited `signatureDigest`,
