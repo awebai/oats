@@ -160,7 +160,7 @@ test("a failure Desktop raises itself never carries a detail, whatever the envel
     assert.doesNotMatch(JSON.stringify([applied, planned]), new RegExp(`TEXT FROM|${code}|This window`), code);
   }
   // The codes the kernel raises and Desktop has a sentence for.
-  for (const code of ['E_BAD_ARGS', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_HOME_MISMATCH', 'E_PLAN_STALE', 'E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING',
+  for (const code of ['E_BAD_ARGS', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_HOME_MISMATCH', 'E_UNIDENTIFIED_INSTANCE_HOME', 'E_PLAN_STALE', 'E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING',
     'E_SESSION_STOP_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_WORK_INSPECTION_FAILED', 'E_RETIRE_INCOMPLETE', 'E_RUNTIME_QUIESCE_FAILED']) assert.equal(lifecycleDetailCode(code), true, code);
   for (const none of [undefined, null, '', 7, {}]) assert.equal(lifecycleDetailCode(none), false);
 });
@@ -403,11 +403,11 @@ test('a Herdr-recorded instance still plans and applies Retire: the kernel decid
   assert.equal((await f.apply(plan.planRef)).status, 'complete');
   assert.deepEqual(f.calls.map(c => [c.args.operation, c.args.phase]), [['retire', 'plan'], ['retire', 'apply']]);
 });
-test('BEFORE_EFFECT_CODES is a frozen list of ten codes, and it is the set an apply reads as "refused, nothing happened"', async () => {
+test('BEFORE_EFFECT_CODES is a frozen list of eleven codes, and it is the set an apply reads as "refused, nothing happened"', async () => {
   assert.deepEqual(BEFORE_EFFECT_CODES, ['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
-    'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
+    'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_UNIDENTIFIED_INSTANCE_HOME', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
   assert.equal(Object.isFrozen(BEFORE_EFFECT_CODES), true); assert.throws(() => BEFORE_EFFECT_CODES.push('E_OTHER'), TypeError);
-  assert.equal(new Set(BEFORE_EFFECT_CODES).size, 10); assert.ok(BEFORE_EFFECT_CODES.every(code => typeof code === 'string'));
+  assert.equal(new Set(BEFORE_EFFECT_CODES).size, 11); assert.ok(BEFORE_EFFECT_CODES.every(code => typeof code === 'string'));
   const applied = async (operation, code) => {
     const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(operation === 'stop' ? stopPlan() : retirePlan())
       : { schemaVersion: 1, ok: false, error: { code, message: 'a stand-in for the kernel message' } } });
@@ -417,7 +417,7 @@ test('BEFORE_EFFECT_CODES is a frozen list of ten codes, and it is the set an ap
     // E_PLAN_STALE without its fresh plan is no answer Desktop can read: its own branch, before the set.
     for (const code of BEFORE_EFFECT_CODES) assert.equal(await applied(operation, code), code === 'E_PLAN_STALE' ? 'unknown' : 'refused', `${operation} ${code}`);
     // Outside the list, whatever the kernel's own list says: an unknown outcome.
-    for (const code of ['E_UNIDENTIFIED_INSTANCE_HOME', 'E_WORK_INSPECTION_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_LIFECYCLE_FAILED', 'E_NOT_IN_THE_TABLE'])
+    for (const code of ['E_WORK_INSPECTION_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_LIFECYCLE_FAILED', 'E_NOT_IN_THE_TABLE'])
       assert.equal(await applied(operation, code), 'unknown', `${operation} ${code}`);
   }
 });

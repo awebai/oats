@@ -1,5 +1,6 @@
 // An answer the kernel gave never reads as "OATS couldn't be run for this." (#866): a kernel code without a
-// sentence keeps its own code under the fallback sentence, E_RUNTIME_QUIESCE_FAILED has its own, and a code
+// sentence keeps its own code under the fallback sentence, E_RUNTIME_QUIESCE_FAILED and
+// E_UNIDENTIFIED_INSTANCE_HOME have their own (the second one is a refusal, nothing was done), and a code
 // Desktop raises itself always has its own and never reaches the fallback. Its own is the shared table's, but
 // for main's frame code, whose sentence is the Desktop's alone (renderer/lifecycle-frame.mjs).
 // Every kernel message in a fixture is a stand-in: nothing here reads one.
@@ -22,6 +23,7 @@ const UNDESCRIBED = 'OATS answered with an error that Desktop has no description
 const NOT_RUN = "OATS couldn't be run for this.";
 const QUIESCE = "OATS tried to end a session or a process and couldn't confirm that it ended.";
 const UNKNOWN = "OATS didn't confirm the result. Check again before assuming nothing happened.";
+const UNREADABLE_HOME = "OATS couldn't find or read what it needs in this instance's home folder, so nothing was done.";
 const SAID = 'a stand-in for the kernel message';
 /** The kernel's error envelope as the adapter passes it on (`origin: 'kernel'`), and one that does not say so. */
 const answered = (code, ...message) => ({ schemaVersion: 1, ok: false, origin: 'kernel', error: { code, message: message.length ? message[0] : SAID } });
@@ -80,8 +82,9 @@ test("E_RUNTIME_QUIESCE_FAILED answered to an apply: an unknown outcome, its sen
 });
 
 test("a kernel's error answer whose code has no sentence keeps its own code under the fallback sentence, with the kernel's message as its detail", async () => {
-  // E_UNIDENTIFIED_INSTANCE_HOME: answered to a Stop or a Retire of a row a person can click (#905).
-  for (const code of ['E_UNIDENTIFIED_INSTANCE_HOME', 'E_LIFECYCLE_FAILED', 'E_NOT_IN_THE_TABLE']) {
+  // E_LIFECYCLE_FAILED: the kernel's code for a failure it has no other code for. It never gets a sentence
+  // here, nor a place in the list: the code alone does not say that nothing happened.
+  for (const code of ['E_LIFECYCLE_FAILED', 'E_NOT_IN_THE_TABLE']) {
     assert.deepEqual(undescribedAnswer(code, DESKTOP_TERMS), { code, message: UNDESCRIBED }, code);
     assert.deepEqual(lifecycleReason(code, DESKTOP_TERMS), { code: 'E_CLI_FAILED', message: NOT_RUN }, 'lifecycleReason knows no origin and keeps its reply');
     for (const operation of ['stop', 'retire']) {
@@ -202,14 +205,14 @@ test("a failed row's code still goes through the table's own lookup (lifecycleCo
 });
 
 test('undescribedRefusal re-validates a relayed reason: a kernel code without a sentence, the fixed fallback sentence, a detail that is a display line', () => {
-  assert.deepEqual(undescribedRefusal({ code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNDESCRIBED, detail: SAID }, DESKTOP_TERMS), { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNDESCRIBED, detail: SAID });
-  assert.deepEqual(undescribedRefusal({ code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNDESCRIBED, detail: SAID, remote: true }, DESKTOP_TERMS), { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNDESCRIBED, detail: SAID });
+  assert.deepEqual(undescribedRefusal({ code: 'E_LIFECYCLE_FAILED', message: UNDESCRIBED, detail: SAID }, DESKTOP_TERMS), { code: 'E_LIFECYCLE_FAILED', message: UNDESCRIBED, detail: SAID });
+  assert.deepEqual(undescribedRefusal({ code: 'E_LIFECYCLE_FAILED', message: UNDESCRIBED, detail: SAID, remote: true }, DESKTOP_TERMS), { code: 'E_LIFECYCLE_FAILED', message: UNDESCRIBED, detail: SAID });
   // A detail that is not a display line is not shown; the reason still reads by the sentence, with its code.
   for (const detail of [undefined, null, 'UNSHOWN two\nlines', 'UNSHOWN two  spaces', 'UNSHOWN token=abc123', 7])
     assert.deepEqual(undescribedRefusal({ code: 'E_NOT_IN_THE_TABLE', message: UNDESCRIBED, detail }, DESKTOP_TERMS), { code: 'E_NOT_IN_THE_TABLE', message: UNDESCRIBED, detail: null }, JSON.stringify(detail));
   // Not it: a code that has its own sentence, a code outside the kernel's shape, and any other sentence, whatever
   // else the reply claims. The dialog decides from the reason it is given; it trusts no `origin` of a reply.
-  for (const reason of [{ code: 'E_WORK_INSPECTION_FAILED', message: UNDESCRIBED }, { code: 'E_CLI_FAILED', message: UNDESCRIBED }, { code: 'ENOENT', message: UNDESCRIBED },
+  for (const reason of [{ code: 'E_WORK_INSPECTION_FAILED', message: UNDESCRIBED }, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNDESCRIBED }, { code: 'E_CLI_FAILED', message: UNDESCRIBED }, { code: 'ENOENT', message: UNDESCRIBED },
     { code: 'E_NOT_IN_THE_TABLE', message: 'A HEADLINE FROM THE REPLY' }, { code: 'E_NOT_IN_THE_TABLE', message: `${UNDESCRIBED} ` }, { code: 'E_NOT_IN_THE_TABLE', message: NOT_RUN, origin: 'kernel' },
     { code: 'E_NOT_IN_THE_TABLE', origin: 'kernel' }, { message: UNDESCRIBED }, null, UNDESCRIBED, [{ code: 'E_NOT_IN_THE_TABLE', message: UNDESCRIBED }]])
     assert.equal(undescribedRefusal(reason, DESKTOP_TERMS), null, JSON.stringify(reason));
@@ -217,18 +220,18 @@ test('undescribedRefusal re-validates a relayed reason: a kernel code without a 
 
 test('the dialog: a refused plan and an apply answered with a code nothing describes show the fallback sentence, and the code with the kernel message in Details', async t => {
   for (const ctx of [context, routedContext]) {
-    const planned = mount(t, { ctx: ctx(), planAnswer: answered('E_UNIDENTIFIED_INSTANCE_HOME', MESSY) });
+    const planned = mount(t, { ctx: ctx(), planAnswer: answered('E_LIFECYCLE_FAILED', MESSY) });
     await planned.open();
     assert.equal(planned.title(), "Couldn't check what retiring dev-1 will do"); assert.equal(planned.status(), UNDESCRIBED);
     assert.equal(planned.details().querySelector('summary').textContent, 'Details');
-    assertIsolatedDetail(planned.details().querySelector('p'), { before: 'E_UNIDENTIFIED_INSTANCE_HOME: ', detail: MESSY_LINE });
+    assertIsolatedDetail(planned.details().querySelector('p'), { before: 'E_LIFECYCLE_FAILED: ', detail: MESSY_LINE });
     assert.deepEqual(planned.footer(), ['Review again', 'Close']);
     assert.equal(planned.doc.body.textContent.includes(NOT_RUN), false);
 
-    const applied = mount(t, { ctx: ctx(), operation: 'stop', answer: answered('E_UNIDENTIFIED_INSTANCE_HOME', MESSY) });
+    const applied = mount(t, { ctx: ctx(), operation: 'stop', answer: answered('E_LIFECYCLE_FAILED', MESSY) });
     await applied.confirm();
     assert.equal(applied.title(), 'Result not confirmed'); assert.equal(applied.status(), UNKNOWN); assert.equal(applied.note(), UNDESCRIBED);
-    assertIsolatedDetail(applied.details().querySelector('p'), { before: 'E_UNIDENTIFIED_INSTANCE_HOME: ', detail: MESSY_LINE });
+    assertIsolatedDetail(applied.details().querySelector('p'), { before: 'E_LIFECYCLE_FAILED: ', detail: MESSY_LINE });
     assert.equal(applied.doc.body.textContent.split(MESSY_LINE).length, 2, 'the kernel message is in Details only');
     assert.deepEqual(applied.footer(), ['Check again', 'Close']);
     assert.equal(applied.doc.body.textContent.includes(NOT_RUN), false);
@@ -270,51 +273,76 @@ test("the dialog decides from the reason it is given: a reply that only claims t
   assert.deepEqual(await shown({ code: 'E_WORK_INSPECTION_FAILED', message: UNDESCRIBED, detail: 'one line' }), { note: lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS).message, details: 'E_WORK_INSPECTION_FAILED: one line' });
 });
 
-test("E_UNIDENTIFIED_INSTANCE_HOME as the installed CLI prints it for a home whose record cannot be read: the fallback sentence and the kernel's own in Details, from the adapter to the dialog", async t => {
-  // The answer's shape: the code, a message, and no `details`; a guarded retire whose record became unreadable
-  // after it took the claim also carries `details.reached`. The message is a stand-in in the form of the
-  // kernel's (a path, a reason in brackets, the remedy): nothing reads its words.
-  const said = `${instance.home}/instance.json cannot be read (a stand-in for the reason); a stand-in for what was done and the remedy.`;
+test("E_UNIDENTIFIED_INSTANCE_HOME at each place the kernel raises it for a Stop or a Retire: a refusal with its own sentence and the kernel's in Details, from the adapter to the dialog, local and routed", async t => {
+  // The three places (lib/core.mjs), each message in the form the kernel writes it. Nothing reads its words:
+  // the sentence shown is the code's, and the kernel's is one line in Details.
+  const home = instance.home, withForce = 'Inspect it, then re-run with `--force` to remove it anyway.';
+  const SITES = [
+    { what: 'the record is there and cannot be read', operations: ['stop', 'retire'], phases: ['plan', 'apply'],
+      said: `${home}/instance.json cannot be read (Unexpected end of JSON input); nothing was done. Restoring the file from a copy makes the home usable again; removing such a home through OATS is not possible yet.` },
+    { what: 'a rollback marker that cannot drive a retry', operations: ['retire'], phases: ['apply'],
+      said: `${home} carries a rollback marker that cannot drive a retry (unreadable, or missing the cleanup descriptor fields the retry consumes), so OATS cannot tell what external state still depends on this home. ${withForce}` },
+    { what: 'no instance.json and no cleanup descriptor', operations: ['retire'], phases: ['apply'],
+      said: `${home} has no instance.json and no cleanup descriptor, so OATS cannot tell whether external state (identities, worktrees) still depends on it. Retiring it would delete whatever it holds without running any cleanup. ${withForce}` },
+  ];
+  // The answer's shape: the code, a message, and no `details`; a retire that refused under its claim also
+  // carries `details.reached`, and nothing of `details` is read or relayed.
   const reached = { phase: 'before-effects', sessionStopAttempted: false, hooksStarted: false, home: 'kept', recovery: null };
-  const printed = details => JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: said, ...(details ? { details } : {}) } });
+  const printed = (said, details) => JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: said, ...(details ? { details } : {}) } });
   // The real adapter over a CLI that exits 1 with that envelope on stdout; `refuse` says which phase it refuses.
-  const kernel = (operation, refuse, details) => (bin, args) => cliLifecycle(bin, args, { exec: (_b, argv, _o, done) => argv.includes('--plan') !== (refuse === 'plan')
-    ? done(null, JSON.stringify(envelope(planOf(operation))), '') : done(Object.assign(new Error('exit 1'), { code: 1 }), printed(details), '') });
-  const reason = { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNDESCRIBED, detail: said };
-  for (const operation of ['stop', 'retire']) {
-    const ask = async (refuse, details) => {
-      const service = createLifecycleBoundary({ invoke: kernel(operation, refuse, details) });
-      const planned = await service({ action: 'plan', operation, selector: selectorOf(context()), options: optionsOf(operation) }, context);
-      return { planned, applied: planned.status === 'plan' ? await service({ action: 'apply', planRef: planned.planRef }, context) : null };
-    };
-    const { planned } = await ask('plan');
-    assert.equal(planned.status, 'unavailable', operation); assert.deepEqual(planned.reason, reason, operation);
-    // An apply: the code is outside BEFORE_EFFECT_CODES, so the outcome reads as unknown and the answer is its cause.
-    for (const details of operation === 'retire' ? [undefined, { reached }] : [undefined]) {
-      const { applied } = await ask('apply', details);
-      assert.equal(applied.status, 'unknown', operation); assert.deepEqual(applied.reason, { code: 'E_OUTCOME_UNKNOWN', message: UNKNOWN });
-      assert.deepEqual(applied.cause, reason, `${operation} ${JSON.stringify(details)}`);
-      assert.doesNotMatch(JSON.stringify(applied), /before-effects|sessionStopAttempted/, 'nothing of details is relayed');
-    }
-  }
-  assert.equal(BEFORE_EFFECT_CODES.includes('E_UNIDENTIFIED_INSTANCE_HOME'), false);
-
-  // What the person reads: a refused review, and a Stop that was confirmed.
-  const dialogOver = (operation, refuse) => {
+  const kernel = (operation, refuse, said, details) => (bin, args) => cliLifecycle(bin, args, { exec: (_b, argv, _o, done) => argv.includes('--plan') !== (refuse === 'plan')
+    ? done(null, JSON.stringify(envelope(planOf(operation))), '') : done(Object.assign(new Error('exit 1'), { code: 1 }), printed(said, details), '') });
+  assert.equal(BEFORE_EFFECT_CODES.includes('E_UNIDENTIFIED_INSTANCE_HOME'), true); assert.equal(lifecycleDetailCode('E_UNIDENTIFIED_INSTANCE_HOME'), true);
+  assert.deepEqual(lifecycleReason('E_UNIDENTIFIED_INSTANCE_HOME', DESKTOP_TERMS), { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME });
+  assert.equal(undescribedAnswer('E_UNIDENTIFIED_INSTANCE_HOME', DESKTOP_TERMS), null);
+  /** The dialog over the real adapter and the boundary. */
+  const dialogOver = (ctx, operation, invoke) => {
     const dom = new JSDOM('<!doctype html><button id="opener">Actions</button>', { pretendToBeVisual: true }), doc = dom.window.document;
-    const service = createLifecycleBoundary({ invoke: kernel(operation, refuse) });
-    const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, context) });
+    const service = createLifecycleBoundary({ invoke }), c = ctx();
+    const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => c) });
     t.after(() => { dialog.dispose(); dom.window.close(); });
-    dialog.open({ operation, instance, workspace: 'team' });
+    const row = c.workspace.server ? { ...instance, server: c.workspace.server, repoName: c.workspace.name, addressable: true } : instance;
+    dialog.open({ operation, instance: row, workspace: 'team' });
     return doc;
   };
-  const review = dialogOver('retire', 'plan'); await tick(); await tick();
-  assert.equal(review.querySelector('.lifecycle-dialog [role=status]').textContent, UNDESCRIBED);
-  assertIsolatedDetail(review.querySelector('.lifecycle-details p'), { before: 'E_UNIDENTIFIED_INSTANCE_HOME: ', detail: said });
-  assert.equal(review.body.textContent.includes(NOT_RUN), false);
-  const stop = dialogOver('stop', 'apply'); await tick(); await tick(); stop.querySelector('.lifecycle-confirm').click(); await tick(); await tick();
-  assert.equal(stop.querySelector('.lifecycle-dialog h2').textContent, 'Result not confirmed'); assert.equal(stop.querySelector('.lifecycle-dialog [role=status]').textContent, UNKNOWN);
-  assert.equal(stop.querySelector('.lifecycle-result .lifecycle-note').textContent, UNDESCRIBED);
-  assertIsolatedDetail(stop.querySelector('.lifecycle-details p'), { before: 'E_UNIDENTIFIED_INSTANCE_HOME: ', detail: said });
-  assert.equal(stop.body.textContent.includes(NOT_RUN), false);
+  for (const { what, operations, phases, said } of SITES) for (const operation of operations) for (const ctx of [context, routedContext]) {
+    const where = `${what}, ${operation}, ${ctx === context ? 'local' : 'routed'}`;
+    // The kernel's sentence passes the display filter whole, as one line.
+    const reason = { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME, detail: said, ...(ctx === routedContext ? { remote: true } : {}) };
+    const ask = async (refuse, details) => {
+      const service = createLifecycleBoundary({ invoke: kernel(operation, refuse, said, details) }), c = ctx();
+      const planned = await service({ action: 'plan', operation, selector: selectorOf(c), options: optionsOf(operation) }, () => c);
+      return { planned, applied: planned.status === 'plan' ? await service({ action: 'apply', planRef: planned.planRef }, () => c) : null };
+    };
+    if (phases.includes('plan')) {
+      const { planned } = await ask('plan');
+      assert.equal(planned.status, 'unavailable', where); assert.deepEqual(planned.reason, reason, where);
+      const review = dialogOver(ctx, operation, kernel(operation, 'plan', said)); await tick(); await tick();
+      assert.equal(review.querySelector('.lifecycle-dialog [role=status]').textContent, UNREADABLE_HOME, where);
+      assertIsolatedDetail(review.querySelector('.lifecycle-details p'), { before: 'E_UNIDENTIFIED_INSTANCE_HOME: ', detail: said });
+      assert.equal(review.querySelector('.lifecycle-confirm').hidden, true, where);
+      for (const other of [UNDESCRIBED, NOT_RUN, UNKNOWN]) assert.equal(review.body.textContent.includes(other), false, where);
+    }
+    // An apply: refused, never unknown. The reason is the answer; there is no cause.
+    for (const details of operation === 'retire' ? [undefined, { reached }] : [undefined]) {
+      const { applied } = await ask('apply', details);
+      assert.equal(applied.status, 'refused', where); assert.deepEqual(applied.reason, reason, where); assert.equal(Object.hasOwn(applied, 'cause'), false, where);
+      assert.doesNotMatch(JSON.stringify(applied), /before-effects|sessionStopAttempted/, 'nothing of details is relayed');
+    }
+    const confirmed = dialogOver(ctx, operation, kernel(operation, 'apply', said, operation === 'retire' ? { reached } : undefined)); await tick(); await tick();
+    confirmed.querySelector('.lifecycle-confirm').click(); await tick(); await tick();
+    assert.equal(confirmed.querySelector('.lifecycle-dialog h2').textContent, `dev-1 wasn't ${operation === 'retire' ? 'retired' : 'stopped'}`, where);
+    assert.equal(confirmed.querySelector('.lifecycle-dialog [role=status]').textContent, UNREADABLE_HOME, where);
+    assertIsolatedDetail(confirmed.querySelector('.lifecycle-details p'), { before: 'E_UNIDENTIFIED_INSTANCE_HOME: ', detail: said });
+    assert.equal(confirmed.body.textContent.split(said).length, 2, 'the kernel message is in Details only');
+    for (const other of [UNDESCRIBED, NOT_RUN, UNKNOWN, 'Result not confirmed']) assert.equal(confirmed.body.textContent.includes(other), false, where);
+  }
+  // A message the display filter withholds, and no message: Details as for any other code with its own sentence.
+  const withheld = await createLifecycleBoundary({ invoke: kernel('retire', 'plan', `${home}/instance.json cannot be read (token=abc123)`) })({ action: 'plan', operation: 'retire', selector: selectorOf(context()), options: optionsOf('retire') }, context);
+  assert.deepEqual(withheld.reason, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME, detail: '[Detail withheld]' });
+  const silent = await createLifecycleBoundary({ invoke: kernel('retire', 'plan', undefined) })({ action: 'plan', operation: 'retire', selector: selectorOf(context()), options: optionsOf('retire') }, context);
+  assert.deepEqual(silent.reason, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME });
+  // An envelope that does not say the kernel answered carries no detail, as for every code: the sentence alone.
+  const { planned } = await replies(context(), 'retire', { planAnswer: unmarked('E_UNIDENTIFIED_INSTANCE_HOME') });
+  assert.deepEqual(planned.reason, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME });
 });

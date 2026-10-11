@@ -28,7 +28,7 @@ export function supportsLifecycle(cli, operation, apply = false) {
  * E_REMOTE_INCOMPATIBLE, E_AMBIGUOUS and E_SNAPSHOT_UNKNOWN before sending, and the host's own resolution
  * refuses them (and E_HOME_MISMATCH) before any effect. */
 export const BEFORE_EFFECT_CODES = Object.freeze(['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
-  'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
+  'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_UNIDENTIFIED_INSTANCE_HOME', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
 const beforeEffect = new Set(BEFORE_EFFECT_CODES);
 /** The installed CLI printed this error envelope: the kernel answered. Said by the adapter where it builds
  * the envelope (`origin`), never inferred from the envelope's shape: the adapter's own failures and this
