@@ -29,8 +29,8 @@ test("the sentences that name the Desktop are the Desktop's strings, byte for by
   assert.deepEqual(lifecycleFailure('E_PLAN_LIMIT', T, { target: null }), { lifecycleApi: 1, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null,
     reason: { code: 'E_PLAN_LIMIT', message: 'This would act on more instances than Desktop can show. Nothing was submitted.' } });
   const undescribed = 'OATS answered with an error that Desktop has no description for.';
-  assert.deepEqual(undescribedAnswer('E_UNIDENTIFIED_INSTANCE_HOME', T), { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: undescribed });
-  assert.deepEqual(undescribedRefusal({ code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: undescribed, detail: 'one line' }, T), { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: undescribed, detail: 'one line' });
+  assert.deepEqual(undescribedAnswer('E_LIFECYCLE_FAILED', T), { code: 'E_LIFECYCLE_FAILED', message: undescribed });
+  assert.deepEqual(undescribedRefusal({ code: 'E_LIFECYCLE_FAILED', message: undescribed, detail: 'one line' }, T), { code: 'E_LIFECYCLE_FAILED', message: undescribed, detail: 'one line' });
   // workspace-cli.mjs
   const older = 'The installed OATS CLI is older than this Desktop (it does not advertise workspace-v2 and packages-no-approval). Update OATS and retry.';
   const old = { ok: true, bin: '/usr/local/bin/oats', workspaceApi: 1, features: [] };

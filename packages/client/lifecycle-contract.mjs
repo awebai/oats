@@ -20,6 +20,9 @@ const messages = {
   E_BAD_ARGS: 'Invalid lifecycle request.', E_WORKSPACE_UNKNOWN: 'Choose an advertised workspace.',
   E_SESSION_UNKNOWN: 'This instance is no longer in the current roster.', E_AMBIGUOUS_INSTANCE: 'Select an exact instance home.',
   E_HOME_MISMATCH: 'The instance home no longer matches this selection.',
+  // The kernel's, for a home it cannot work from: a record that is there and cannot be read, a rollback
+  // marker that cannot drive a retry, or neither a record nor a cleanup descriptor. Answered only before any effect.
+  E_UNIDENTIFIED_INSTANCE_HOME: "OATS couldn't find or read what it needs in this instance's home folder, so nothing was done.",
   'cli-unavailable': 'Choose a compatible installed OATS CLI.',
   E_LIFECYCLE_UNAVAILABLE: terms => `This OATS can't stop or retire instances from ${terms.name}. Update OATS.`,
   'unsupported-remote-operation': "This computer's OATS can't route this to the server. Update OATS here.",

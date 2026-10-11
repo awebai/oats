@@ -224,6 +224,18 @@ status; it does not cancel the dispatched operation or signal its process.
   outcome** with its own fixed sentence as the cause: "OATS tried to end a
   session or a process and couldn't confirm that it ended." The kernel's
   message is in Details.
+- `E_UNIDENTIFIED_INSTANCE_HOME` (a home the kernel cannot work from: its
+  record is there and cannot be read
+  ([desktop-cli-api.md](../../../docs/desktop-cli-api.md#unreadable-record)),
+  its rollback marker cannot drive a retry, or it has neither a record nor a
+  cleanup descriptor) is a **refusal** with its own fixed sentence: "OATS
+  couldn't find or read what it needs in this instance's home folder, so
+  nothing was done." The kernel answers it only before any effect, so it is in
+  `BEFORE_EFFECT_CODES`: a plan read and an apply answered with it both read
+  as refused, never as an unknown outcome. The kernel's message (it names the
+  file or the folder, and the remedy where there is one) is in Details, for a
+  local answer and a routed one. Where that message offers `--force`, it is
+  the kernel's own word: Desktop offers none and adds nothing about it.
 - Malformed receipts and timeouts are closed local messages.
   An error envelope's `message` renders only through the display filter
   (`packages/client/display-text.mjs`; see
@@ -247,13 +259,10 @@ status; it does not cancel the dispatched operation or signal its process.
   gave.** A code the kernel answered that has no sentence here keeps its own
   code and reads "OATS answered with an error that Desktop has no description
   for.", with the code and the kernel's message in Details (the code alone
-  when there is no message), for a local answer and a routed one.
-  `E_UNIDENTIFIED_INSTANCE_HOME` is such a code: the kernel answers it to a
-  Stop or a Retire of a home whose record it cannot read
-  ([desktop-cli-api.md](../../../docs/desktop-cli-api.md#unreadable-record)), and its
-  sentence, which names the file and the remedy, is what Details shows. The
-  code is outside `BEFORE_EFFECT_CODES`, so an apply answered with it reads as
-  an unknown outcome with that answer as its cause. The fallback is chosen
+  when there is no message), for a local answer and a routed one. A code
+  without a sentence is never in `BEFORE_EFFECT_CODES`, so an apply answered
+  with one reads as an unknown outcome with that answer as its cause. The
+  fallback is chosen
   by where the code came from, so by the boundary (`failureReason`):
   `lifecycleReason(code)` is given codes of every origin and keeps
   `E_CLI_FAILED` ("OATS couldn't be run for this.") for one it does not know.
