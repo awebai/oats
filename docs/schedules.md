@@ -110,7 +110,8 @@ refuses the key on a trigger.
   scheduler keeps the unknown attempt and its slot until reconciliation.
 - **wake** `{…, home, message}` — every due minute inspects the instance at
   `home`. Running: `message` is delivered once as terminal input (bracketed
-  paste plus Enter), never an interrupt. Not running: the home is started with
+  paste plus Enter), never an interrupt. Not running (its harness exited, or
+  its tmux server is gone after a reboot): the home is started with
   `session start` and the message becomes the job's one pending delivery,
   completed on a later tick once the session is active; the home is started
   again only at due minutes, so a harness that keeps exiting is not restarted
@@ -667,6 +668,21 @@ home whose retirement is pending still counts), `ended` (its home is gone),
 `stopped` (home present, nothing running: needs attention, never removed for
 you), `launch-failed`, `unknown`, and for wake jobs `delivered`, `started` or
 `skipped`. The kernel never claims a task succeeded.
+
+A home whose recorded tmux server is gone, after a reboot or a crash, is
+`stopped` too, with the note `its tmux server is gone`. Gone means that no
+server listens on its socket, or that its socket file is missing and no
+process works in the home. When a process still works there, the home stays
+`unknown`, with that reason
+([missing socket](execution-targets.md#missing-socket)). A spawn job keeps
+its slot while its instance's home exists, a stopped one included (its harness
+exited, or its tmux server is gone), so its due minutes are skipped with
+`previous instance stopped: retire it (oats retire <instance>) or start it
+again (oats session start --home <home>)`, and
+`oats schedule run-now` refuses with the same words (`E_SCHEDULE_RUNNING`).
+While the instance runs, they are skipped as `still running`. After a reboot, a wake job
+starts its instance's session at its next due minute, and a spawn job shows
+`stopped` with the command to retire or start its instance.
 
 `unknown` means the launch's side effects are unconfirmed: a command timed out
 or answered no envelope, or an attempt was never recorded. A job with a

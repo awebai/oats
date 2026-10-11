@@ -9,25 +9,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { linkExecutables, waitUntil } from "./helpers/host-fixture.mjs";
+import { linkExecutables } from "./helpers/host-fixture.mjs";
+import { SESSION, alive, endServers, killServer, recordLaunch, startServer, tmuxOn as tmux, windows } from "./helpers/recorded-tmux-server.mjs";
 import { processScanAvailability } from "../lib/core.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
-const SESSION = "oats-agents";
 const temporaryDirectories = [];
-// Every server a test started: { socket, pid }. A server still alive after its test is ended by its own pid.
-const servers = [];
 
 function write(path, content, options) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content, options);
 }
-const tmux = (socket, ...args) => execFileSync("tmux", ["-f", "/dev/null", "-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
-const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 /** A workspace deployment whose soul dev works in a worktree of the member clone and declares a
  *  capability with a retire hook, which leaves a file beside the home it retired. */
@@ -54,31 +49,8 @@ function launchedHome(f, purpose, socket) {
   const spawn = cli(f, ["spawn", "dev", "--purpose", purpose, "--no-launch", "--json"]);
   assert.equal(spawn.status, 0, `${spawn.stderr}\n${spawn.stdout}`);
   const { home, instance } = JSON.parse(spawn.stdout).result;
-  const endpoint = { session: SESSION, window: instance, socket };
-  const metaPath = join(home, "instance.json");
-  write(metaPath, JSON.stringify({ ...JSON.parse(readFileSync(metaPath, "utf8")), launched: true, tmux: endpoint }, null, 2) + "\n");
-  const baselinePath = join(dirname(home), ".oats-retirement", "baselines", `${createHash("sha256").update(home).digest("hex")}.json`);
-  write(baselinePath, JSON.stringify({ ...JSON.parse(readFileSync(baselinePath, "utf8")), runtime: { launched: true, tmux: endpoint } }, null, 2) + "\n", { mode: 0o600 });
+  recordLaunch(home, instance, socket);
   return { home, instance };
-}
-/** Start a server on `socket` whose session holds a keeper window and the instance's window, which
- *  runs `command` (a shell command), in `cwd` when one is given. Returns the server's process id. */
-function startServer(socket, instance, { cwd, command = "sleep 600" } = {}) {
-  mkdirSync(dirname(socket), { recursive: true });
-  tmux(socket, "new-session", "-d", "-s", SESSION, "-n", "keeper", "sleep 600");
-  const pid = Number(tmux(socket, "display-message", "-p", "#{pid}"));
-  servers.push({ socket, pid });
-  tmux(socket, "new-window", "-d", "-t", `${SESSION}:`, "-n", instance, ...(cwd ? ["-c", cwd] : []), command);
-  assert.ok(windows(socket).includes(instance), "the instance's window runs");
-  return pid;
-}
-const windows = (socket) => tmux(socket, "list-windows", "-t", `=${SESSION}`, "-F", "#{window_name}").split("\n").filter(Boolean);
-/** Kill the server on `socket` and wait until its process is gone, so that what a later tmux
- *  client reads is the lost server, never a server that is still exiting. */
-async function killServer(socket) {
-  const { pid } = servers.find((s) => s.socket === socket);
-  tmux(socket, "kill-server");
-  await waitUntil(() => !alive(pid), `the tmux server on ${socket} to exit`);
 }
 function retired(f, { home, instance }) {
   const r = cli(f, ["retire", instance, "--json"]);
@@ -99,10 +71,7 @@ function refused(f, { home, instance }, message) {
 }
 
 test.afterEach(() => {
-  for (const { socket, pid } of servers.splice(0)) {
-    try { tmux(socket, "kill-server"); } catch { /* gone, or its socket is */ }
-    if (alive(pid)) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
-  }
+  endServers();
   for (const dir of temporaryDirectories.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
