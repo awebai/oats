@@ -1416,7 +1416,11 @@ only what the briefing names, keep commits small and attributable. Retiring
 an attached instance never removes the shared tree. When its owner retires
 and its `work/` is re-homed, the `work` link of an instance attached to it is
 repointed to the tree's new path ([retire](#retire)); its AGENTS.md and
-TASK.md still name the old one. The packaged
+TASK.md still name the old one. An instance attached to one of the owner's
+extra trees is not repointed: the retire removes that tree or re-homes it
+([extra trees at retire](#extra-trees-at-retire)), and the instance's `work`
+link then points at a path that is gone, with no note in the plan and no
+warning in the receipt (awebai/oats#964). The packaged
 `work-attached` instruction source carries this discipline into each generated instance AGENTS.md.
 
 ### `directory` — independent execution
