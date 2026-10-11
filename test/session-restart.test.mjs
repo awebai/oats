@@ -665,7 +665,10 @@ test("#778 T4: a deferred --self retirement stops recorded children before it re
   assert.equal(result.ok, false); assert.equal(result.error.code, "E_CHILDREN_RUNNING");
   assert.deepEqual(result.childrenStopped.map(({ instance, ok, stillRunning }) => ({ instance, ok, stillRunning })), [{ instance: "c778-k5", ok: false, stillRunning: [k5Pid] }]);
   assert.match(result.retry, /^oats retire c778-p5/);
-  assert.ok(existsSync(p5.home) && existsSync(pendingMarker), "the home and the pending marker are kept");
+  assert.ok(existsSync(p5.home), "the home is kept");
+  // Refused before a hook was started or anything of the home was removed: the caller is not being
+  // retired, and the completion takes its pending marker away (awebai/oats#954).
+  assert.equal(existsSync(pendingMarker), false, "the pending marker is removed: nothing of the home was changed");
   assert.ok(runningPid(p5.home) !== null, "the caller was not quiesced");
   process.kill(k5Pid, "SIGKILL"); await waitFor(() => runningPid(k5.home) === null, "test cleanup");
   assert.equal(oats(["retire", "c778-p5", "--dir", repo]).status, 0, "an external retry completes it");
