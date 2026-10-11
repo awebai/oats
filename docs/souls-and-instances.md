@@ -1106,6 +1106,54 @@ attached children in one note that covers both cases. Only the link changes:
 the child's `instance.json` is not rewritten, and its AGENTS.md and TASK.md
 still name the old path.
 
+#### What `work/` is at retire
+
+The retire and its plan read what is at `<home>/work` once, by one rule
+(0.53.0, #962), and the plan says what the retire will do.
+
+- **The instance's own tree.** When the spawn's receipt says the instance
+  was given a tree, a real directory at `work/` is that tree. A home without a valid receipt
+  goes by its record: `worktree` is the own tree, and a record with no work
+  mode (or one the kernel does not know) has it when Git confirms that
+  `work/` is a registered linked worktree whose top level it is, by the test
+  of an extra tree below. The retire re-homes it, or removes it through Git
+  with `--discard-worktree`, after copying what is uncommitted to recovery.
+  When the record names no repository, the retire uses the one Git names for
+  the tree and does not write it into the record; the plan's note and the
+  receipt's `warnings` name it. An own tree for which there is no repository
+  at all, recorded or read, is never removed with the home: the retire
+  refuses with `E_WORK_PRESERVATION_FAILED` before it stops, runs or removes
+  anything, `--force` included, and says to move the directory out or delete
+  it by hand.
+- **A directory of the home.** A real directory at `work/` that is not the
+  instance's own tree: one found where the work mode has a link (an
+  attached, a checkout or a workspace instance, or a record with no work
+  mode), or under a valid receipt that says no tree was given, whatever the
+  record says now. The home's recovery leaves `work/` out, so when the
+  directory holds anything the retire copies it to recovery on its own
+  (`workRecovery.path/work`, class `directory work bytes`), checks the copy
+  against what it inspected, and removes the directory with the home, as it
+  does a directory instance's work. Whatever it holds goes into the copy, a
+  `.git` directory included.
+  It is never read as a tree to move, never removed through Git, and
+  `--discard-worktree` and `--force` change none of this. An entry the copy
+  cannot take (a FIFO, a socket, a device node) refuses the retire with
+  `E_WORK_INSPECTION_FAILED` before anything is stopped, run or removed:
+  remove or move that entry, then retire again. When Git confirms that the
+  directory is a registered worktree of a repository, its entry stays in
+  that repository until a prune; the receipt's `warnings` name the
+  repository and give the command (`git -C <repository> worktree prune`).
+  Its branch and its commits are not touched.
+- **A link** goes with the home, and what it leads to is not touched.
+- **A directory instance's `work/`** is held against the spawn's receipt as
+  before: a record that says `directory` where the receipt does not, or the
+  other way round, refuses the retire.
+
+Before 0.53.0 a real directory in the second case was read as a worktree.
+Most retires of such a home were refused, and one shape was not: under a
+record that named no repository, the directory was removed with the home
+and nothing of it was copied.
+
 #### Extra trees at retire
 
 An instance can hold [extra trees](#extra-trees) in its home beside `work/`.
