@@ -241,12 +241,11 @@ the screen shows no question (none of the
 succeeds. A notice beside a question blocks like any unknown screen. It records `launchPrompts: {status:
 "flag-ignored", reason: "channels-unavailable", signatureId, startId, at}` (the
 entry's id, no screen text), and the start's warnings say, in place of the
-statement that OATS confirms the prompt, `Claude ignored
---dangerously-load-development-channels: channels are not available for this
-Claude account, so this instance gets no channel delivery: mail and chat will not
-wake it; set settings.oats.aweb.delivery: session (the host wake broker) and
-respawn the instance to restore wakes.` Every start says so until delivery
-changes. The kernel's readiness shows no `launch-prompt` warning for it; the
+statement that OATS confirms the prompt:
+
+> Claude reported that channels are not currently available and ignored the development-channel flag, so this instance gets no channel delivery: mail and chat will not wake it. Check first for a telemetry opt-out in the launch environment (DISABLE_TELEMETRY, DO_NOT_TRACK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: Claude Code disables channels when one is set), then whether this Claude account offers channels; otherwise change the messaging provider's delivery (its readiness warning says where the setting is). See docs/configuration.md#the-development-channel-confirmation.
+
+Every start says so until the cause is removed or delivery changes. The kernel's readiness shows no `launch-prompt` warning for it; the
 messaging provider's readiness reports the missing channel. A notice in a wording
 no entry holds is an unknown screen and blocks.
 
@@ -256,10 +255,11 @@ default) can take the slot and keep this one behind `1 more notice hidden`,
 typically on an instance's first spawn. OATS cannot see a hidden notice, so that
 start stays `blocked: unexpected prompt` (no key, the home retained). When the
 blocked screen starts with Claude's running-session banner (`Claude Code
-v<semver>` after the logo, which may be caught mid-animation), the error and the readiness remedy add: "Claude may
-have ignored the development-channel flag (channels unavailable for this
-account); look at the pane. If the session is running, restart the instance, and
-the notice will then show." A restart where the notice shows records `flag-ignored`.
+v<semver>` after the logo, which may be caught mid-animation), the error and the readiness remedy add:
+
+> Claude may have reported that channels are not currently available and ignored the development-channel flag, its notice hidden behind another one: look at the pane. If the session is running, restart the instance, and the notice will then show. Check first for a telemetry opt-out in the launch environment (DISABLE_TELEMETRY, DO_NOT_TRACK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC), then whether this Claude account offers channels; otherwise change the messaging provider's delivery (its readiness warning says where the setting is). See docs/configuration.md#the-development-channel-confirmation.
+
+A restart where the notice shows records `flag-ignored`.
 
 **The two settings that stop it.** OATS confirms the prompt only because the
 deployment launches Claude with the development-channel flag. To keep the prompt

@@ -1793,16 +1793,15 @@ The home's `instance.json` `launchPrompts` always describes the last start
   equalled the `flag-ignored` tolerance entry `signatureId`, Claude showed no
   confirmation and no key was sent. No screen text is recorded. The start
   succeeds (`launched: true`) and its `warnings` carry, in place of the statement
-  beginning `This start passes`, a fixed string beginning `Claude ignored
-  --dangerously-load-development-channels: channels are not available for this
-  Claude account`. `launchPromptTarget` is the pane. Claude Code disables channels when telemetry is opted out (`DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), so a launch
+  beginning `This start passes`, a fixed string beginning `Claude reported
+  that channels are not currently available and ignored the development-channel
+  flag`. `launchPromptTarget` is the pane. Claude Code disables channels when telemetry is opted out (`DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), so a launch
   environment with any of them set gets this status too;
 - otherwise the observed result `{status, answers, reason, receipt}`, `status`
   one of `completed`, `blocked`, `incomplete`. After the Enter, no complete
   clean `SETTLE` window within the 30 s bound is `status: "blocked"` with
-  `reason: "blocked: observation timeout"` and the submitted Enter in `answers`
-  (before 0.52 it was `incomplete` with `launch prompt completion not
-  observed`); `incomplete` now means an audit, input or evidence failure. A
+  `reason: "blocked: observation timeout"` and the submitted Enter in `answers`;
+  `incomplete` means an audit, input or evidence failure. A
   `blocked` result also carries
   `differed: {nearest, firstDifference: {index, expected, found}}` (the nearest
   tolerance entry and at most 40 characters of each normalized text at the first
@@ -2058,6 +2057,14 @@ with `--expect-decision` records the key and decision in `instance.json`.
   model, parent,
   sibling, relation, spawnOrigin (operator | instance), attach, launchConfig,
   launch` (the redacted recipe).
+- `launchPrompts` (0.52.0), on a launched spawn: the value its start recorded in
+  `instance.json`, in exactly the shape a start's answer carries it (see `oats
+  session start`'s result below and [Launch prompt results](#launch-prompt-results)):
+  `{status: "not-engaged", startId, at}`, `{status: "flag-ignored", reason:
+  "channels-unavailable", signatureId, startId, at}`, or the observed
+  `{status: "completed", answers, reason, receipt}`. A `blocked` or
+  `incomplete` outcome is `E_SPAWN_INCOMPLETE` instead. A `--no-launch` spawn
+  has none.
 - `tmux.socket` is the absolute socket of the tmux server the window was
   created on; a launched spawn has it, a `--no-launch` one does not. It is
   the OATS tmux server's
