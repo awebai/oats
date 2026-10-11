@@ -34,7 +34,12 @@ test("a scheduled spawn that starts the server unscoped inside a service records
   const io = { oatsBin: inService(fx, empty) };
   const spec = { kind: "spawn", cron: "* * * * *", tz: "UTC", agent: "dev", harness: "claude", task: "fixture task" };
   answer(fx.cli(["schedule", "add", "nightly", `--spec-json=${JSON.stringify(spec)}`, "--json"]));
-  const tick = () => fx.inEnv(() => S.withHostLock(() => S.tickWorkspace(fx.dep, { io, reg: S.readRegistry(), wsList: [fx.dep] })));
+  // The fixture's PATH (its inert harnesses), never this test runner's: a host's own claude must not decide the launch.
+  const tick = () => fx.inEnv(() => {
+    const path = process.env.PATH;
+    process.env.PATH = fx.env.PATH;
+    try { return S.withHostLock(() => S.tickWorkspace(fx.dep, { io, reg: S.readRegistry(), wsList: [fx.dep] })); } finally { process.env.PATH = path; }
+  });
 
   const first = await tick();
   assert.equal(first.find((x) => x.id === "nightly")?.action, "launched", JSON.stringify(first));
