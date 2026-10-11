@@ -666,7 +666,8 @@ own shell, not from an instance home:
   neither exists, `install` keeps the node's own path and its answer carries a
   warning that the path is not stable.
 - **oats**: the `oats.mjs` of the oats that runs `install`. When that is inside
-  `$OATS_INSTANCE_HOME` (a clone in an instance's work tree), `install` and
+  `$OATS_INSTANCE_HOME` or its `work` (a clone in an instance's work tree,
+  an attached instance's included), `install` and
   `--print` warn: the timer would stop when that instance retires. Run
   `install` with the operator's installed oats.
 
