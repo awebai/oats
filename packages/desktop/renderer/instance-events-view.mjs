@@ -2,11 +2,11 @@
  * no cross-selection/server cache, no background reads, no lifecycle authority. */
 import { postJson, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, onCliChange } from './views/cli-status.mjs';
-import { absolute } from './readiness-contract.mjs';
-import { eventsSelector, eventsSupported, eventsTarget, eventsFailure, eventsTimestamp } from './instance-events-contract.mjs';
-import { codeLineNodes, readingFrom, remoteReason } from './remote-address.mjs';
+import { absolute } from '../../client/readiness-contract.mjs';
+import { eventsSelector, eventsSupported, eventsTarget, eventsFailure, eventsTimestamp } from '../../client/instance-events-contract.mjs';
+import { codeLineNodes, readingFrom, remoteReason } from '../../client/remote-address.mjs';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from './instance-events-data.mjs';
-import { displayLine } from './display-text.mjs';
+import { displayLine } from '../../client/display-text.mjs';
 export const instanceEventsCSS = `
 .events-view { color:var(--fg); margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; line-height:1.5; }
 .events-view h3 { font-size:12px; margin:0 0 6px; }

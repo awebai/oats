@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMachines } from '../server/machines.mjs';
-import { machinesGated } from '../renderer/machine-contract.mjs';
+import { machinesGated } from '../../client/machine-contract.mjs';
 import { loadServer, loadViews, juanState, identity, observed, A, L, V_OATS, V_LAB, OATS } from './helpers/workspace-views-fixture.mjs';
 
 const GATED = { ok: true, bin: '/oats', features: ['workspace-identity', 'servers-per-workspace', 'server-connect', 'capability-route'], remote: ['roster'] };

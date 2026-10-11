@@ -39,7 +39,7 @@
 // FIRST, above every other import: this process drops what the Desktop and its packaging added
 // to its environment (own-environment.mjs), so each module below, and every program this
 // process starts, sees the user's. Nothing here passes the cleaning function to a child.
-import { launchEnvironment } from "./own-environment.mjs";
+import { launchEnvironment } from "../../client/own-environment.mjs";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, realpathSync, accessSync, constants as fsConstants } from "node:fs";
@@ -48,39 +48,39 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
-import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "./deployment-observer.mjs";
+import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
 import { createMachines } from "./machines.mjs";
-import { machinesGated } from "../renderer/machine-contract.mjs";
+import { machinesGated } from "../../client/machine-contract.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
 import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
 import { createInspectCache } from "./inspect-cache.mjs";
-import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "./refresh-loop.mjs";
+import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "../../client/refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
 import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
-import { readinessFailure } from '../renderer/readiness-contract.mjs';
+import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { spawnPreviewCachedRequest, spawnPreviewCache } from './spawn-preview.mjs';
 import { teamsRequest, soulTeamsRequest, teamsFailure } from './teams.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
-import { eventsFailure } from '../renderer/instance-events-contract.mjs';
+import { eventsFailure } from '../../client/instance-events-contract.mjs';
 import { spawnApplyRequest } from './spawn-apply.mjs';
-import { spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
-import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
+import { spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
+import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { teamMembers } from "./team-members.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
-import { canAddressRemote, unaddressableSentence } from "../renderer/remote-address.mjs";
-import { harnessFlag, HARNESSES } from "../renderer/harness-names.mjs";
-import { probeChanged } from "../renderer/cli-probe-contract.mjs";
+import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
+import { harnessFlag, HARNESSES } from "../../client/harness-names.mjs";
+import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed, deploymentUnavailableText } from "../renderer/deployment-header.mjs";
-import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts } from "./workspace-views.mjs";
+import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts } from "../../client/workspace-views.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
-import { THIS_MACHINE, shortPath, deploymentLabel } from "../renderer/deployment-label.mjs";
+import { THIS_MACHINE, shortPath, deploymentLabel } from "../../client/deployment-label.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -93,7 +93,7 @@ const flag = (name) => {
 const flagAll = (name) => args.flatMap((a, i) => (a === `--${name}` && args[i + 1] && !args[i + 1].startsWith("--") ? [args[i + 1]] : []));
 
 // "collect" is retired: the kernel owns roster collection and the CLI read is
-// asynchronous. Terminal liveness runs in server/liveness-main.mjs children.
+// asynchronous. Terminal liveness runs in packages/client/liveness-main.mjs children.
 if (sub !== "start") {
   console.error("usage: oats-web.mjs start [--port <n>] [--dir <deployment>]...  (repeat --dir for multiple deployments)");
   process.exit(1);
@@ -101,9 +101,11 @@ if (sub !== "start") {
 
 // The packaged app never imports the framework checkout's kernel module and
 // accepts no framework-root override; reads and mutations use the installed CLI.
-const locator = await import(pathToFileURL(join(HERE, "..", "cli-locator.mjs")).href);
-const adapter = await import(pathToFileURL(join(HERE, "..", "cli-adapter.mjs")).href);
-const remote = await import(pathToFileURL(join(HERE, "remote-roster.mjs")).href);
+// These three are in the shared home (packages/client), which the package places beside app.asar
+// (electron-builder.config.cjs: extraResources), at the same relative position as here.
+const locator = await import(pathToFileURL(join(HERE, "..", "..", "client", "cli-locator.mjs")).href);
+const adapter = await import(pathToFileURL(join(HERE, "..", "..", "client", "cli-adapter.mjs")).href);
+const remote = await import(pathToFileURL(join(HERE, "..", "..", "client", "remote-roster.mjs")).href);
 let remoteGroups = [];
 let remoteCollecting = false;
 
@@ -777,7 +779,7 @@ const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || 
    Every local deployment fact is one bounded `oats status --json` plus one
    `oats workspace status --json` (deployment-observer.mjs). Terminal liveness for
    the kernel-reported targets is observed in a separate short-lived child
-   (server/liveness-main.mjs) so tmux latency cannot stall request handling.
+   (packages/client/liveness-main.mjs) so tmux latency cannot stall request handling.
    Local roster Git is null; only the on-demand K1 route observes Git.
 
    Observation reuse (kernel feature observe-max-age): a background cycle lets the kernel reuse
@@ -786,7 +788,8 @@ const servedCliStatus = () => ({ ...cliStatus(), probePath: process.env.PATH || 
    pass no flag at all to a kernel that does not declare the feature. */
 let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances, generatedAt, observedAt } | remote panel
 const BACKGROUND_MAX_AGE = 60;
-const LIVENESS = join(HERE, "liveness-main.mjs");
+// The collector's entry is in the shared home too, beside app.asar in the package.
+const LIVENESS = join(HERE, "..", "..", "client", "liveness-main.mjs");
 const soulCatalog = createSoulCatalog();
 const capabilityCatalog = createCapabilityCatalog();
 const inspectCache = createInspectCache();

@@ -5,8 +5,8 @@
  * deployment, last good table kept with the failure next to it, retry after
  * RETRY_MS, unbound prefetch bound by the same cycle's settle) are
  * keyed-catalog.mjs's; this module is the kernel read, the key and the shape. */
-import { cliWorkspace } from '../workspace-cli.mjs';
-import { capabilitiesData, observationData } from '../deployment-data.mjs';
+import { cliWorkspace } from '../../client/workspace-cli.mjs';
+import { capabilitiesData, observationData } from '../../client/deployment-data.mjs';
 import { soulCatalogKey } from './soul-catalog.mjs';
 import { createKeyedCatalog } from './keyed-catalog.mjs';
 

@@ -46,11 +46,15 @@ export function createHarnessServer(api) {
     }
     // static files: the renderer dir, plus /node_modules/* pinned to the
     // package's node_modules (browser-ready ESM deps — marked, dompurify —
-    // resolve through the importmap; still traversal-guarded).
+    // resolve through the importmap; still traversal-guarded), plus /client/*
+    // pinned to the shared home (packages/client). The renderer is this
+    // server's root, so a module's `../../client/x.mjs` cannot climb above it:
+    // the browser clamps it to /client/x.mjs, which is served from there.
     const NM = join(HERE, "..", "node_modules");
-    const base = url.pathname.startsWith("/node_modules/") ? NM : HERE;
-    const rel = url.pathname === "/" ? "/harness.html"
-      : url.pathname.startsWith("/node_modules/") ? url.pathname.slice("/node_modules".length) : url.pathname;
+    const CLIENT = join(HERE, "..", "..", "client");
+    const mount = [["/node_modules", NM], ["/client", CLIENT]].find(([prefix]) => url.pathname.startsWith(`${prefix}/`));
+    const base = mount ? mount[1] : HERE;
+    const rel = url.pathname === "/" ? "/harness.html" : mount ? url.pathname.slice(mount[0].length) : url.pathname;
     const file = normalize(join(base, rel));
     if (!(file === base || file.startsWith(base + sep)) || !existsSync(file)) { res.writeHead(404); res.end("not found"); return; }
     const ext = file.slice(file.lastIndexOf("."));

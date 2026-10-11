@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createComputerTeams, computerTeamsCSS } from '../renderer/computer-teams.mjs';
 import { identityCSS } from '../renderer/identity-marks.mjs';
-import { teamsData } from '../deployment-data.mjs';
+import { teamsData } from '../../client/deployment-data.mjs';
 
 const css = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8');
 const capture = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));

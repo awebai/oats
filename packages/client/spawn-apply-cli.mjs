@@ -1,13 +1,13 @@
 /** Private K6e transport. Only the server broker supplies an admitted immutable intent.
  * started is conservative dispatch evidence, NOT a creation/rollback receipt.
  * The broker must qualify a success receipt before exposing it or handing off. */
-import { retainedSpawnDetails } from './renderer/launch-prompt-outcome.mjs';
+import { retainedSpawnDetails } from './launch-prompt-outcome.mjs';
 import { execFile } from 'node:child_process';
 import { parseEnvelope, writeTaskFile } from './cli-adapter.mjs';
-import { absolute, record, previewTarget, choiceArgv } from './renderer/spawn-preview-contract.mjs';
-import { spawnDecision } from './renderer/spawn-decision.mjs';
+import { absolute, record, previewTarget, choiceArgv } from './spawn-preview-contract.mjs';
+import { spawnDecision } from './spawn-decision.mjs';
 import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spawnReference, spawnApplyReason, spawnApplyDeadline,
-  SPAWN_APPLY_MS, ROLLED_BACK_CODES } from './renderer/spawn-apply-contract.mjs';
+  SPAWN_APPLY_MS, ROLLED_BACK_CODES } from './spawn-apply-contract.mjs';
 const failure = (code, started = false) => ({ started, envelope: { schemaVersion: 1, ok: false, error: spawnApplyReason(code) } });
 const named = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
 const worktreeEvent = cli => Array.isArray(cli?.features) && cli.features.includes('worktree-event');

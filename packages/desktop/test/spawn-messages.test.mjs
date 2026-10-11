@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { spawnProblem, catalogProblem } from '../renderer/spawn-messages.mjs';
+import { spawnProblem, catalogProblem } from '../../client/spawn-messages.mjs';
 
 // Every code the preview and apply contracts can report, read from their tables.
 const codes = file => {
-  const source = readFileSync(new URL(`../renderer/${file}`, import.meta.url), 'utf8'), start = source.indexOf('const errors = {');
+  const source = readFileSync(new URL(`../../client/${file}`, import.meta.url), 'utf8'), start = source.indexOf('const errors = {');
   const table = source.slice(start, source.indexOf('\n};', start));
   return [...table.matchAll(/'?(E_[A-Z0-9_]+|unsupported-remote-operation)'?:\s*'/g)].map(m => m[1]);
 };

@@ -1,10 +1,10 @@
-import { servedIdentityText } from './deployment-facts.mjs';
+import { servedIdentityText } from '../../client/deployment-facts.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
-import { unsupportedSession } from './instance-presentation.mjs';
+import { unsupportedSession } from '../../client/instance-presentation.mjs';
 import { heldHome } from './instance-tree.mjs';
-import { canAddressRemote, serverLabel, shownLabel, unaddressableSentence } from './remote-address.mjs';
+import { canAddressRemote, serverLabel, shownLabel, unaddressableSentence } from '../../client/remote-address.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `

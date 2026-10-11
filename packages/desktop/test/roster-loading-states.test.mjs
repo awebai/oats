@@ -19,14 +19,14 @@ import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, AGE_TICK_MS } from '../renderer/
 import { instanceActions, captureInstanceActionMenu } from '../renderer/instance-actions.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceSplitPlan } from '../renderer/instance-split.mjs';
-import { runtimeState, unsupportedSession } from '../renderer/instance-presentation.mjs';
-import { canAddressRemote, rowReason } from '../renderer/remote-address.mjs';
+import { runtimeState, unsupportedSession } from '../../client/instance-presentation.mjs';
+import { canAddressRemote, rowReason } from '../../client/remote-address.mjs';
 import { createRuntimeBadge } from '../renderer/identity-marks.mjs';
 import { iconElement, mountShellIcons } from '../renderer/shell-icons.mjs';
 import { rosterTipFacts } from '../renderer/roster-tip.mjs';
 import { prChip, prText } from '../renderer/roster-pr.mjs';
 import { deploymentUnavailableText, createPendingWatch, unservedError, NOT_SERVED_CODE, NO_ANSWER_CODE, PENDING_LIMIT_MS } from '../renderer/deployment-header.mjs';
-import { panelErrorCause } from '../renderer/deployment-contract.mjs';
+import { panelErrorCause } from '../../client/deployment-contract.mjs';
 import { staleWorkspaceSelection } from '../renderer/views/common.mjs';
 import { createWorkspaceTabMemory } from '../renderer/workspace-tab-memory.mjs';
 

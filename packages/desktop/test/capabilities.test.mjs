@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { cliCapability } from '../cli-adapter.mjs';
+import { cliCapability } from '../../client/cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
@@ -144,7 +144,7 @@ test('a remote home is inspected when the kernel reports it addressable, never o
 // renderer error paths, which keep it only once re-validated (remoteReason).
 import { apiJson, httpError } from '../renderer/views/common.mjs';
 import { MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
-import { DETAIL_WITHHELD } from '../renderer/display-text.mjs';
+import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 const spawnErrorPayload = (() => {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('function spawnErrorPayload(e)'), end = source.indexOf('/* OATSWEB_SPAWNERR_END */', start);

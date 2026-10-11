@@ -2,8 +2,8 @@
 // across machines" and "Matching teams across machines"), one case per rule, and the reason sentences.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readIdentity, attachment, viewId, deploymentReason, deploymentReasonParts, buildViews } from '../server/workspace-views.mjs';
-import { THIS_MACHINE } from '../renderer/deployment-label.mjs';
+import { readIdentity, attachment, viewId, deploymentReason, deploymentReasonParts, buildViews } from '../../client/workspace-views.mjs';
+import { THIS_MACHINE } from '../../client/deployment-label.mjs';
 
 const KEY = 'github.com/awebai/oats';
 const identity = (over = {}) => ({ key: KEY, ref: 'git:github.com/awebai/oats', keyFrom: 'workspace', standalone: false,

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { machinesGated, awebConnectGated, machineName, machineFolder, machineFieldProblem, connectOutcome,
-  registerReached, stepCommands, STEP_LABELS, followBackfill } from '../renderer/machine-contract.mjs';
+  registerReached, stepCommands, STEP_LABELS, followBackfill } from '../../client/machine-contract.mjs';
 
 const CLI = { ok: true, features: ['workspace-identity', 'servers-per-workspace', 'server-connect', 'capability-route'] };
 

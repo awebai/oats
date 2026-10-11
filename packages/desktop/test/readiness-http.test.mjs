@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { proxyReadiness } from '../readiness-proxy.mjs';
-import { readinessFailure } from '../renderer/readiness-contract.mjs';
+import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { createReadinessBoundary } from '../server/readiness.mjs';
 import { context, selector, target, data, view, envelope, deferred, tick } from './helpers/readiness-fixture.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';

@@ -1,5 +1,5 @@
 import { createDataState, statusLine, skeleton, skeletonBlock, ROSTER_STALE_TITLE } from './loading.mjs';
-import { waitingClaim } from './waiting-on-you.mjs';
+import { waitingClaim } from '../../client/waiting-on-you.mjs';
 
 export function collapseKey(workspace, instance) {
   return `${workspace || ""}\u0000${instance}`;

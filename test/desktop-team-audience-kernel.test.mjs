@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { soulTeams, teamModel } from "../lib/teams.mjs";
 import { teamsDocument } from "../lib/teams-verbs.mjs";
-import { teamsData } from "../packages/desktop/deployment-data.mjs";
+import { teamsData } from "../packages/client/deployment-data.mjs";
 import { teamAudience } from "../packages/desktop/renderer/computer-teams.mjs";
 
 const DEP = "/fixture/deployment";

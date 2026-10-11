@@ -60,7 +60,7 @@ test('the kernel\'s local-teams-closed refusal keeps its reason, path and keys',
 });
 
 test('the renderer\'s team gates: either team model shows the live views, never the 0.29 fallback', async () => {
-  const { teamModelOf } = await import('../renderer/team-rows.mjs');
+  const { teamModelOf } = await import('../../client/team-rows.mjs');
   assert.equal(teamModelOf(['team-model-3']), 3); assert.equal(teamModelOf(['team-model-2']), 2);
   assert.equal(teamModelOf(['team-model-2', 'team-model-3']), 3); assert.equal(teamModelOf(['teams']), null); assert.equal(teamModelOf(undefined), null);
   const { readFileSync } = await import('node:fs');

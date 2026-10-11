@@ -11,7 +11,7 @@ import { JSDOM } from 'jsdom';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData, deploymentStatusData, syncData } from '../deployment-data.mjs';
+import { workspaceStatusData, deploymentStatusData, syncData } from '../../client/deployment-data.mjs';
 import { repoChoices, capabilityUse, memberNames, capabilitySections, hostKeyOf } from '../renderer/workspace-catalog.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { syncStateText } from '../renderer/workspace-sync-view.mjs';
@@ -465,7 +465,7 @@ test('a failed catalog read names the failure and offers an explicit retry', asy
 // Team model v2 (0.30, D2): the Workspace's Teams tab, first (human, 2026-09-28), holds "Teams on this
 // computer" from the kernel's `oats teams` (K1's example document, feat/030-team-model 8dd82158);
 // its problems light the tab's dot. A workspace on another computer keeps its teams there.
-const { teamsData } = await import('../deployment-data.mjs');
+const { teamsData } = await import('../../client/deployment-data.mjs');
 // The REAL 0.30 kernel's `oats teams` (K1 @bba0a9b8, test/fixtures/team-model-v2/teams-after, #269), decoded as the route answers it.
 const K1_TEAMS = () => teamsData(JSON.parse(readFileSync(new URL('./fixtures/team-model-v2/teams-after.json', import.meta.url), 'utf8')), dir);
 test('Teams tab (team-model-2): first, before Souls; the Teams page from oats teams; its problems light the dot; Setup has no teams', async t => {

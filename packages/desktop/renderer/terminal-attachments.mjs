@@ -1,6 +1,6 @@
 // A drop belongs to the pane under the pointer, including an unfocused split.
 // Clipboard text remains xterm's job; clipboard images use the same file path.
-import { terminalHandle, terminalSameHandle, terminalFailure } from './terminal-contract.mjs';
+import { terminalHandle, terminalSameHandle, terminalFailure } from '../../client/terminal-contract.mjs';
 export function attachmentText(paths) {
   return paths.map(path => `'${path.replace(/'/g, `'\\''`)}'`).join(" ") + " ";
 }

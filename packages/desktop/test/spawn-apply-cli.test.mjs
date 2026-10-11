@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cliSpawnApply } from '../spawn-apply-cli.mjs';
+import { cliSpawnApply } from '../../client/spawn-apply-cli.mjs';
 import { execFile } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnDecision } from '../renderer/spawn-decision.mjs';
+import { spawnDecision } from '../../client/spawn-decision.mjs';
 import { cli, target, anchor, data, tick, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 const capable = () => ({ ...structuredClone(cli), spawnApplyApi: 1, features: [...cli.features, 'spawn-apply-2', 'spawn-idempotency-2', 'schedule'] });
 function options(changes = {}) {

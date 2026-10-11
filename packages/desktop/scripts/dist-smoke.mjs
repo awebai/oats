@@ -5,7 +5,9 @@
 // platform/arch:
 //   1. inventory: dist/ contains exactly the expected oats-desktop-*
 //      distributables for this platform (DMG+ZIP on mac, AppImage+DEB on
-//      linux) and they are non-trivially sized;
+//      linux) and they are non-trivially sized; and the packaged shared
+//      home (client/, beside app.asar) holds exactly the module files the
+//      repository's packages/client has;
 //   2. (macOS, unconditional) the packaged .app bundle passes strict deep
 //      code-signature verification — a complete ad-hoc bundle signature;
 //      rejects the v0.18.2 partial/absent-signature class;
@@ -15,25 +17,30 @@
 //   4. headless, as Node under the packaged executable: the bundled backend
 //      (app.asar/server/oats-web.mjs) started through main's own spawn spec
 //      answers GET /api/cli and exits when its stdin closes (#698's
-//      lifeline), and the liveness collector (app.asar/server/
-//      liveness-main.mjs) answers [] to [] — their whole import graphs, from
-//      the asar. No GUI, and on Linux not the AppImage's launcher or runtime;
+//      lifeline), and the liveness collector (client/liveness-main.mjs,
+//      beside app.asar) answers [] to [] — their whole import graphs, from
+//      the asar and the shared home (packages/client, which the builder
+//      places beside the asar as client/). Then (4b) every module main
+//      imports, loaded from where main names it. No GUI, and on Linux not
+//      the AppImage's launcher or runtime;
 //   5. the packaged app bundle launches and its renderer reaches the shell
 //      (CDP probe), which also proves main spawned the bundled server and it
 //      answered — i.e. no source-checkout dependency.
 //
-// CI runs phases 1–4: both installer workflows (build-installers.yml and
-// release.yml's desktop-build) set OATS_SMOKE_SKIP_LAUNCH=1 with
-// OATS_SMOKE_BUILD_VERIFY=1, which skips phase 5 (it needs a display). Phase 5
-// runs only on a run without OATS_SMOKE_SKIP_LAUNCH, where a display is
-// available (on linux under xvfb-run).
+// CI runs phases 1–4 on every installer leg: both installer workflows
+// (build-installers.yml and release.yml's desktop-build) set
+// OATS_SMOKE_SKIP_LAUNCH=1 with OATS_SMOKE_BUILD_VERIFY=1, which skips phase 5
+// (it needs a display). Phase 5 runs only on a run without
+// OATS_SMOKE_SKIP_LAUNCH, where a display is available: both workflows run the
+// smoke a second time that way on the Linux leg, under xvfb-run. No macOS leg
+// runs it (the workflows say why).
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, statSync, readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createReaper } from "./proc-reaper.mjs";
-import { runAbiProbe, runBackendProbe } from "./smoke-probes.mjs";
+import { runAbiProbe, runBackendProbe, runMainImportsProbe, sharedHomeInventory } from "./smoke-probes.mjs";
 import { verifyAppSignature } from "./codesign-verify.mjs";
 import { WATCHDOG_MS, PHASE_BUDGET_MS, boundedTail, readDevToolsPort, awaitClose } from "./launch-probe.mjs";
 
@@ -94,6 +101,17 @@ const app = unpackedAppPath();
 if (!app) fail("no unpacked app found in dist/");
 if (!existsSync(app.exe)) fail(`packaged executable missing: ${app.exe}`);
 
+// ---- 1 (continued). the shared home, beside app.asar ------------------------
+// The app imports packages/client by a relative path, and the builder places
+// that directory beside app.asar as client/ (electron-builder.config.cjs:
+// extraResources). A module the package lacks is a module the app cannot
+// load; a file the repository's directory does not have is not ours.
+{
+  const r = sharedHomeInventory(join(app.resources, "client"), join(PKG, "..", "client"), { readdirSync, existsSync });
+  if (!r.ok) fail(r.detail);
+  ok(r.detail);
+}
+
 // ---- 2. macOS bundle signature: strict deep codesign (MANDATORY on darwin) --
 // The packaged .app must carry a COMPLETE valid ad-hoc bundle signature —
 // every nested helper/framework signed, resources sealed. v0.18.2 shipped
@@ -139,17 +157,19 @@ if (process.platform === "darwin") {
   ok(r.detail);
 }
 
-// ---- 4. the backend and its collector, headless, from app.asar --------------
+// ---- 4. the backend and its collector, headless, from the package -----------
 // The packaged executable runs as Node (ELECTRON_RUN_AS_NODE, through Rosetta
 // on the macOS x64 cross-build, as phase 3) against the asar's server entries:
 // the backend started exactly as main starts it (serverSpawnSpec), with no CLI
 // discoverable, then its stdin closed as when main ends; then the collector the
-// backend starts (oats-web.mjs: LIVENESS). The runner (scripts/smoke-probes.mjs)
-// goes through the reaper only and reaps every process on every path.
+// backend starts (oats-web.mjs: LIVENESS), which is in the shared home beside the
+// asar, where the backend's own ../../client/ leads. The runner
+// (scripts/smoke-probes.mjs) goes through the reaper only and reaps every
+// process on every path.
 {
   const server = join(app.resources, "app.asar", "server");
   const r = await runBackendProbe(reaper, app.exe, {
-    bin: join(server, "oats-web.mjs"), collector: join(server, "liveness-main.mjs"),
+    bin: join(server, "oats-web.mjs"), collector: join(app.resources, "client", "liveness-main.mjs"),
     readyMs: PHASE_BUDGET_MS.backendReady, exitMs: PHASE_BUDGET_MS.backendExit, collectorMs: PHASE_BUDGET_MS.collector,
     targetArch: process.env.OATS_SMOKE_TARGET_ARCH || process.arch,
   });
@@ -157,10 +177,29 @@ if (process.platform === "darwin") {
   for (const line of r.lines) ok(line);
 }
 
+// ---- 4b. what main loads, from app.asar's top level -------------------------
+// The backend and the collector above reach the shared home from
+// app.asar/server (../../client/). Main reaches it from the asar's top level
+// (../client/) and cannot run without a display, so every module it imports
+// by a relative path is loaded as Node under the packaged executable, from
+// where main names it, with the names main takes from it. The list is read
+// from the packaged main.mjs. Only main.mjs's own body, which needs electron,
+// is left to phase 5.
+{
+  const r = await runMainImportsProbe(reaper, app.exe, join(app.resources, "app.asar", "main.mjs"), {
+    timeout: PHASE_BUDGET_MS.mainImports, targetArch: process.env.OATS_SMOKE_TARGET_ARCH || process.arch,
+  });
+  if (!r.ok) fail(r.detail);
+  ok(r.detail);
+}
+
 // ---- 5. packaged app launches and the renderer reaches the shell ------------
-// (CI does not run this phase: both installer workflows skip it, see the
-// header. On operator machines skip it too — the soul's no-GUI-launches
-// policy; OATS_SMOKE_SKIP_LAUNCH=1 skips this.)
+// (CI runs this phase on the Linux leg only, in a second run of the smoke
+// under xvfb-run: see the header. On operator machines skip it — the soul's
+// no-GUI-launches policy; OATS_SMOKE_SKIP_LAUNCH=1 skips this.) The page
+// imports the shared home from app.asar/renderer (../../client/), over file://
+// under its CSP: a module graph with one file that does not load does not run
+// at all, so `SHELL_OK` is also the proof that the window loads it.
 if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
   // The guard (review ee04a44-r2) stops a RELEASE CI run from silently
   // degrading the smoke by skipping the launch. But the packaged GUI launch
@@ -173,7 +212,7 @@ if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
   // rejected (the accidental-release-degradation case the guard exists for).
   if (process.env.GITHUB_ACTIONS === "true" && process.env.OATS_SMOKE_BUILD_VERIFY !== "1")
     fail("OATS_SMOKE_SKIP_LAUNCH must not be set in a release CI run — set OATS_SMOKE_BUILD_VERIFY=1 for the build-only installer workflow");
-  ok("launch phase (5) skipped (OATS_SMOKE_SKIP_LAUNCH=1) — build + inventory + node-pty ABI + headless backend and collector verified; the GUI launch needs a display and was not run");
+  ok("launch phase (5) skipped (OATS_SMOKE_SKIP_LAUNCH=1) — build + inventory + node-pty ABI + headless backend and collector + main's imports verified; the GUI launch needs a display and was not run");
 } else {
   // Readiness probing (review ee04a44 + r2). The port is obtained race-free
   // and IDENTITY-BOUND: launch with --remote-debugging-port=0 and read the

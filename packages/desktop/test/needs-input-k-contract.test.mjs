@@ -8,8 +8,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { deploymentStatusData } from '../deployment-data.mjs';
-import { waitingClaim, waitingLabel } from '../renderer/waiting-on-you.mjs';
+import { deploymentStatusData } from '../../client/deployment-data.mjs';
+import { waitingClaim, waitingLabel } from '../../client/waiting-on-you.mjs';
 import { eventsData } from '../renderer/instance-events-data.mjs';
 
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/needs-input-k/${name}.json`, import.meta.url), 'utf8'));

@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { createTerminalIo } from "../terminal-io.mjs";
 import { resolveLoginPath } from "../login-path.mjs";
 import { forgeEnvironment } from "../forge-cli.mjs";
-import { cliWorkspace } from "../workspace-cli.mjs";
+import { cliWorkspace } from "../../client/workspace-cli.mjs";
 import { serverSpawnSpec } from "../server-host.mjs";
 import { desktopEnvironment, assertUserEnvironment, USER_PATH } from "./helpers/desktop-environment.mjs";
 

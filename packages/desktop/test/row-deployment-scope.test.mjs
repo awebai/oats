@@ -77,7 +77,9 @@ const source = (path) => readFileSync(new URL(`../renderer/${path}`, import.meta
 
 test('source pin: no instance-addressed route is composed with the view selector anywhere in the renderer', () => {
   const files = [...readdirSync(new URL('../renderer/', import.meta.url)).filter(f => f.endsWith('.mjs')),
-    ...readdirSync(new URL('../renderer/views/', import.meta.url)).filter(f => f.endsWith('.mjs')).map(f => `views/${f}`)];
+    ...readdirSync(new URL('../renderer/views/', import.meta.url)).filter(f => f.endsWith('.mjs')).map(f => `views/${f}`),
+    // The renderer modules that moved to the shared home (packages/client); `source` resolves from renderer/.
+    ...readdirSync(new URL('../../client/', import.meta.url)).filter(f => f.endsWith('.mjs')).map(f => `../../client/${f}`)];
   for (const file of files) {
     for (const [index, line] of source(file).split('\n').entries()) {
       if (!INSTANCE_ROUTES.test(line)) continue;

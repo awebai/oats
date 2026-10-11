@@ -7,8 +7,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { capabilityShowRequest, createCapabilityShowCache, capabilityShowKey } from '../server/capability-show.mjs';
-import { cliWorkspace, WORKSPACE_READ_TIMEOUT } from '../workspace-cli.mjs';
-import { CAPABILITY_SHOW_UNREADABLE, capabilityShowData } from '../renderer/capability-show-contract.mjs';
+import { cliWorkspace, WORKSPACE_READ_TIMEOUT } from '../../client/workspace-cli.mjs';
+import { CAPABILITY_SHOW_UNREADABLE, capabilityShowData } from '../../client/capability-show-contract.mjs';
 import { startLoadPathServer } from './helpers/load-path-server.mjs';
 
 const deployment = '/fixture/base/northwind-workspace';

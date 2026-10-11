@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { capabilityShowData, capabilityFileData, capabilityShowSupported, capabilitySelector, selectorOf, sameSelector, validRelativePath,
-  listedFiles, skillFilePath, triggerSourcesOf, triggerSourceProblemsOf, triggerSourcesView, FILE_TEXT_MAX_BYTES, LIMITS } from '../renderer/capability-show-contract.mjs';
+  listedFiles, skillFilePath, triggerSourcesOf, triggerSourceProblemsOf, triggerSourcesView, FILE_TEXT_MAX_BYTES, LIMITS } from '../../client/capability-show-contract.mjs';
 
 const commit = 'a'.repeat(40);
 const show = (over = {}) => ({

@@ -11,8 +11,8 @@ import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
 import { LAUNCH_FROM, launchFromText, launchModelText, declaredText, launchAtText, shownLaunch } from '../renderer/launch-view.mjs';
 import { launchHint } from '../renderer/spawn-dialog.mjs';
-import { spawnProblem } from '../renderer/spawn-messages.mjs';
-import { previewData } from '../renderer/spawn-preview-contract.mjs';
+import { spawnProblem } from '../../client/spawn-messages.mjs';
+import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
 const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));

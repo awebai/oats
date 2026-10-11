@@ -30,16 +30,11 @@ module.exports = {
     "single-instance.mjs",
     "window-activity.mjs",
     "window-set.mjs", "window-records.mjs",
-    "cli-adapter.mjs",
-    "cli-locator.mjs",
-    "cli-environment.mjs",
     "forge-cli.mjs", "forge-auth.mjs", "forge-auth-output.mjs", "forge-proxy.mjs",
-    "lifecycle-cli.mjs",
     "instance-events-cli.mjs", "instance-events-proxy.mjs",
-    "deployment-read-cli.mjs", "deployment-data.mjs", "workspace-cli.mjs",
     "readiness-cli.mjs", "readiness-proxy.mjs",
-    "spawn-preview-cli.mjs", "spawn-preview-proxy.mjs",
-    "spawn-apply-cli.mjs", "spawn-apply-proxy.mjs",
+    "spawn-preview-proxy.mjs",
+    "spawn-apply-proxy.mjs",
     "server-compat.mjs",
     "server-host.mjs",
     "tmux-target.mjs",
@@ -68,6 +63,13 @@ module.exports = {
     "!**/*.test.mjs",
     "!**/.DS_Store",
   ],
+  // The shared home (packages/client: the kernel readers the Desktop shares with other clients)
+  // is placed BESIDE app.asar, as <resources>/client. From inside the asar `../client/` is then
+  // the same relative path as from this directory in the repository, so shipped modules import
+  // it by one plain relative specifier and no copy or install step exists. It is outside the
+  // asar: README.md ("The shared home") says what that costs. `from`, `to` and the filter are
+  // pinned by test/inventory.test.mjs: change none alone.
+  extraResources: [{ from: "../client", to: "client", filter: ["**/*.mjs"] }],
   // node-pty is a native dep: electron-builder runs its own beforeBuild
   // rebuild against the bundled Electron ABI (npmRebuild default true);
   // asarUnpack keeps the prebuilt spawn-helper executable on disk where

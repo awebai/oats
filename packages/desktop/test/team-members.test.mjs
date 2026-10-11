@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { teamMembers } from '../server/team-members.mjs';
-import { remotePanel } from '../server/remote-roster.mjs';
+import { remotePanel } from '../../client/remote-roster.mjs';
 import { apiUrl } from '../api-url.mjs';
 import { loadServer, juanState, A, B, R, V, V_OATS, V_LAB, tag } from './helpers/workspace-views-fixture.mjs';
 

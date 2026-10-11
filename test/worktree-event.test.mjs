@@ -564,7 +564,7 @@ test("spawn --preview lists the worktree hooks (null outside worktree mode); Des
   const text = fx.cli(["spawn", "dev", "--name", "dev-pv", "--work", "worktree", "--preview"]);
   assert.match(text.stdout, /worktree hooks: test\.setup \(required\)/);
   assert.equal(runs(fx).length, 0, "a preview runs nothing");
-  const { previewData } = await import("../packages/desktop/renderer/spawn-preview-contract.mjs");
+  const { previewData } = await import("../packages/client/spawn-preview-contract.mjs");
   const { data, target } = await import("../packages/desktop/test/helpers/spawn-preview-fixture.mjs");
   const captured = data();
   assert.ok(previewData(structuredClone(captured), target), "the captured preview reads");
@@ -753,7 +753,7 @@ test("killed parent, spawn: the plan/apply retire receipt reports the compensati
   assert.equal(receipt.branchDeleted, false);
   assert.deepEqual(receipt.spawnCompensation, { branch: "agents/dev-dk", branchDeleted: true });
   assert.equal(tipOf(fx, "agents/dev-dk"), null);
-  const { lifecycleReceipt } = await import("../packages/desktop/renderer/lifecycle-contract.mjs");
+  const { lifecycleReceipt } = await import("../packages/client/lifecycle-contract.mjs");
   const read = lifecycleReceipt(receipt, plan, "k-dk");
   assert.ok(read, "Desktop's reader accepts a receipt carrying spawnCompensation.branchDeleted: true");
   assert.equal(read.removedDir, true);

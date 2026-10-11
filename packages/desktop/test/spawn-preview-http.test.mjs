@@ -7,8 +7,8 @@ import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
 import { createSpawnPreviewBoundary, createSpawnPreviewCache } from '../server/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
-import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
-import { spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
+import { previewFailure } from '../../client/spawn-preview-contract.mjs';
+import { spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
 import { context, request, target, data, envelope, view, deferred } from './helpers/spawn-preview-fixture.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 function http() {

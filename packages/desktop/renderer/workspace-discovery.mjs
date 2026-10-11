@@ -6,21 +6,21 @@
  *     capability table.
  * Sync is the kernel's `oats sync` (workspace-sync-view.mjs); there is no
  * package approval. Souls stay the host view's own grid. */
-import { teamModelOf } from './team-rows.mjs';
+import { teamModelOf } from '../../client/team-rows.mjs';
 import { apiJson, postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
 import { deploymentUnavailableText } from './deployment-header.mjs';
 import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
 import { createWorkspaceMachines, machinesCSS } from './workspace-machines.mjs';
-import { machinesGated } from './machine-contract.mjs';
+import { machinesGated } from '../../client/machine-contract.mjs';
 import { computerTeamsCSS, createComputerTeams, teamsAnswer } from './computer-teams.mjs';
 import { catalogCSS, renderCapabilitySections, capabilitySections, renderRepoPills, rovePill, repoChoices, filterCapabilities, matchCapabilities, hostKeyOf, memberNames, deploymentNotes, syncCapabilityNav, soulsComposition } from './workspace-catalog.mjs';
 import { createWorkspaceSync, syncCSS, reasonText } from './workspace-sync-view.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { createDataState, skeleton, statusLine, captureFocusState } from './loading.mjs';
-import { warningOf } from './capability-warnings-contract.mjs';
+import { warningOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, capabilityWarningsCSS } from './capability-warnings.mjs';
-import { displayLine } from './display-text.mjs';
+import { displayLine } from '../../client/display-text.mjs';
 import { trackStickyTop, trackScrolledEdge } from './sticky-top.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 

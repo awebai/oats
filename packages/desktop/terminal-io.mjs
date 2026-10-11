@@ -7,7 +7,7 @@ import { localTmuxIo, tmuxSocketArgs } from './local-tmux-io.mjs';
 import { prepareRemoteTerm, remoteTerminalEnvironment } from './remote-target.mjs';
 import { copyTerminalAttachments, prepareTerminalAttachments } from './terminal-attachments.mjs';
 import { runTerminalCommand } from './terminal-exec.mjs';
-import { cliEnvironment } from './cli-environment.mjs';
+import { cliEnvironment } from '../client/cli-environment.mjs';
 
 const changed = code => Object.assign(new Error('Terminal context changed'), { code });
 const cliKey = cli => JSON.stringify([cli.bin, cli.version, [...(cli.remote || [])].sort(), [...(cli.features || [])].sort()]);

@@ -1,7 +1,7 @@
 /** Privileged offline readiness IPC: domain failures resolve, never reject. */
 import { apiUrl, apiInit } from './api-url.mjs';
 import { trustedForgeFrame } from './forge-proxy.mjs';
-import { readinessFailure, readinessTarget, readinessData } from './renderer/readiness-contract.mjs';
+import { readinessFailure, readinessTarget, readinessData } from '../client/readiness-contract.mjs';
 /** A read may be routed to a server (a 45 s CLI deadline): 50 s lets it report itself. */
 export const READINESS_PROXY_TIMEOUT = 50_000;
 export async function proxyReadiness(event, path, opts, { rendererURL, connection, fetch: fetcher = globalThis.fetch } = {}) {

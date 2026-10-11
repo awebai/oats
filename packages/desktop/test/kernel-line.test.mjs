@@ -6,9 +6,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acceptProbe } from '../cli-locator.mjs';
-import { workspaceGate } from '../workspace-cli.mjs';
-import { deploymentReadGate } from '../renderer/deployment-contract.mjs';
+import { acceptProbe } from '../../client/cli-locator.mjs';
+import { workspaceGate } from '../../client/workspace-cli.mjs';
+import { deploymentReadGate } from '../../client/deployment-contract.mjs';
 
 const released = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f2/version.json', import.meta.url), 'utf8'));
 const probe = (version, features) => ({ ...released, version, features });

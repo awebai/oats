@@ -7,7 +7,7 @@ import { performance } from 'node:perf_hooks';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { hostName, loginName, object, PR_FIELDS, pullRequest, repoPath, branchName } from './renderer/forge-contract.mjs';
-import { cliEnvironment } from './cli-environment.mjs';
+import { cliEnvironment } from '../client/cli-environment.mjs';
 
 const nativeKeys = ['HOME', 'USER', 'LOGNAME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PATH',
   'GH_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS',

@@ -9,9 +9,9 @@
  * the kernel no longer makes is refused there (E_DECISION_STALE), never applied. */
 import { dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
-import { admitInstance } from './instance-admission.mjs';
-import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData, previewComposedFrom } from '../renderer/spawn-preview-contract.mjs';
+import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
+import { admitInstance } from '../../client/instance-admission.mjs';
+import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData, previewComposedFrom } from '../../client/spawn-preview-contract.mjs';
 const flights = new Set(), byInvoker = new WeakMap();
 // A monotonic clock orders flight starts against invalidations: a flight that
 // started before its workspace was invalidated never fills the cache, even when

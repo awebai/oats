@@ -11,7 +11,7 @@ import { JSDOM } from 'jsdom';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData, teamsData } from '../deployment-data.mjs';
+import { workspaceStatusData, teamsData } from '../../client/deployment-data.mjs';
 import { discoveryCSS } from '../renderer/workspace-discovery.mjs';
 import { createComputerTeams } from '../renderer/computer-teams.mjs';
 import { trackStickyTop, trackScrolledEdge } from '../renderer/sticky-top.mjs';

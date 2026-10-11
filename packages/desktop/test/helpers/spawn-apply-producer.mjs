@@ -5,8 +5,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createSpawnApplyBoundary } from '../../server/spawn-apply.mjs';
-import { cliSpawnApply } from '../../spawn-apply-cli.mjs';
-import { spawnApplyView } from '../../renderer/spawn-apply-contract.mjs';
+import { cliSpawnApply } from '../../../client/spawn-apply-cli.mjs';
+import { spawnApplyView } from '../../../client/spawn-apply-contract.mjs';
 import { cli, kernel, DEPLOYMENT, ROOT } from './spawn-preview-fixture.mjs';
 const provenance = JSON.parse(readFileSync(new URL('../fixtures/workspace-v2/f3/provenance.json', import.meta.url), 'utf8'));
 export const APPLY_CASES = {

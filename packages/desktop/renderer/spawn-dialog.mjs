@@ -16,17 +16,17 @@
  * idempotency key). If the world moved, the dialog shows the new values and
  * asks again. An unknown outcome is checked on the same intent, never retried
  * under a new one. */
-import { retainedSpawnMessage } from './launch-prompt-outcome.mjs';
-import { harnessOf } from './harness-names.mjs';
-import { displayLine } from './display-text.mjs';
+import { retainedSpawnMessage } from '../../client/launch-prompt-outcome.mjs';
+import { harnessOf } from '../../client/harness-names.mjs';
+import { displayLine } from '../../client/display-text.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from './instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
-import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX } from './spawn-preview-contract.mjs';
-import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from './spawn-apply-contract.mjs';
-import { sameSpawnDecision } from './spawn-decision.mjs';
-import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from './spawn-messages.mjs';
+import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX } from '../../client/spawn-preview-contract.mjs';
+import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
+import { sameSpawnDecision } from '../../client/spawn-decision.mjs';
+import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
 import { RECOVER_POLL_MS, FOLLOW_MARGIN_MS } from './spawn-jobs.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
@@ -34,7 +34,7 @@ import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capa
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
 import { createSpawnDeploymentField, spawnDeployments } from './spawn-deployment-field.mjs';
 import { openAddMachineDialog } from './add-machine-dialog.mjs';
-import { followBackfill, BACKFILL_POLL_MS } from './machine-contract.mjs';
+import { followBackfill, BACKFILL_POLL_MS } from '../../client/machine-contract.mjs';
 
 export const PREVIEW_DEBOUNCE_MS = 250;
 /** Where to run's last entry: opens Add a machine (never a registration id, which is [a-z0-9-]). */
@@ -43,7 +43,7 @@ const ADD_MACHINE = '+add-machine';
  * lands, else after this delay, for about the CLI's 30 s timeout before it shows as a failure. */
 export const PREVIEW_BUSY_RETRY_MS = 400;
 const BUSY_RETRIES = 75;
-import { HARNESS_NAMES as RUNTIME_NAMES } from './harness-names.mjs';
+import { HARNESS_NAMES as RUNTIME_NAMES } from '../../client/harness-names.mjs';
 export { RUNTIME_NAMES };
 const PURPOSE = /^[a-z0-9][a-z0-9-]*$/i;
 

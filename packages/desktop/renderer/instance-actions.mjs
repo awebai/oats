@@ -1,8 +1,8 @@
 /** Keyboard-accessible lifecycle actions, independent of terminal liveness. */
 import { instanceId, heldHome } from "./instance-tree.mjs";
 import { iconElement } from "./shell-icons.mjs";
-import { unsupportedSession } from "./instance-presentation.mjs";
-import { canAddressRemote, rowReason } from "./remote-address.mjs";
+import { unsupportedSession } from "../../client/instance-presentation.mjs";
+import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
 const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove' });
 

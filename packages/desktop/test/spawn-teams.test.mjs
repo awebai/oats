@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { previewChoices, previewData, choiceArgv } from '../renderer/spawn-preview-contract.mjs';
+import { previewChoices, previewData, choiceArgv } from '../../client/spawn-preview-contract.mjs';
 import { mountSpawn, settle } from './helpers/spawn-dialog-host.mjs';
 import { cli as CLI, target } from './helpers/spawn-preview-fixture.mjs';
 

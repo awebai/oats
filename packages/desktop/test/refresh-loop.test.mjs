@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from '../server/refresh-loop.mjs';
+import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from '../../client/refresh-loop.mjs';
 
 const flush = () => new Promise(r => setImmediate(r));
 

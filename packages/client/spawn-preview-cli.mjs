@@ -1,7 +1,7 @@
 /** Fixed read-only API2 argv. Never dispatch API1 or fall back to spawn. */
 import { execFile } from 'node:child_process';
 import { parseEnvelope } from './cli-adapter.mjs';
-import { previewChoices, previewTarget, previewSupported, previewFailure, choiceArgv } from './renderer/spawn-preview-contract.mjs';
+import { previewChoices, previewTarget, previewSupported, previewFailure, choiceArgv } from './spawn-preview-contract.mjs';
 const failure = (code, message) => ({ schemaVersion: 1, ok: false, error: previewFailure(code, null, message).reason });
 export function cliSpawnPreview(cli, options = {}, io = {}) {
   // Defense at the actual exec owner as well as at HTTP admission.

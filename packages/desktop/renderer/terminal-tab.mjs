@@ -5,7 +5,7 @@
 // never touches the server: each lease ends only its local ssh child.
 import { createTermLifecycle } from './term-lifecycle.mjs';
 import { wireTerminalAttachments } from './terminal-attachments.mjs';
-import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from './terminal-contract.mjs';
+import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../../client/terminal-contract.mjs';
 
 // Shift+Enter writes pi's raw Ctrl+J alias exactly once. Suppress all three key
 // phases, otherwise xterm's subsequent keypress writes CR and submits the draft.

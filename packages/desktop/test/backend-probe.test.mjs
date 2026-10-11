@@ -1,6 +1,7 @@
 // The smoke's headless backend phase (scripts/smoke-probes.mjs runBackendProbe, #634), run
 // against the SOURCE tree under plain Node: process.execPath stands in for the packaged
-// executable, server/oats-web.mjs and server/liveness-main.mjs for the asar's entries. The
+// executable, server/oats-web.mjs for the asar's entry and ../client/liveness-main.mjs for the
+// collector beside it (the shared home, packages/client). The
 // backend is started through the real serverSpawnSpec, with no CLI discoverable. Failure paths
 // use tiny fixture servers started through the same spec (they read --port from its argv), or
 // the real server with the lifeline flag dropped from the spec. Every process goes through a
@@ -8,17 +9,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createReaper } from "../scripts/proc-reaper.mjs";
-import { runBackendProbe, packagedNode, NO_CLI_ENV } from "../scripts/smoke-probes.mjs";
+import { runBackendProbe, runMainImportsProbe, relativeImportsOf, sharedHomeInventory, packagedNode, NO_CLI_ENV } from "../scripts/smoke-probes.mjs";
 import { serverSpawnSpec, LIFELINE_FLAG } from "../server-host.mjs";
 
 const SERVER = fileURLToPath(new URL("../server/", import.meta.url));
 const BIN = join(SERVER, "oats-web.mjs");
-const COLLECTOR = join(SERVER, "liveness-main.mjs");
+const COLLECTOR = fileURLToPath(new URL("../../client/liveness-main.mjs", import.meta.url));
 const EXE = process.execPath;
 
 /** A pid that is running: signal 0 reaches it and (on Linux) it is not a zombie awaiting its reaper. */
@@ -210,6 +211,132 @@ test("dist-smoke runs the phase after the ABI probe and before the launch skip, 
   const abi = src.indexOf("await runAbiProbe(reaper"), backend = src.indexOf("await runBackendProbe(reaper"), skip = src.indexOf("process.env.OATS_SMOKE_SKIP_LAUNCH");
   assert.ok(abi > 0 && backend > 0 && skip > 0, "all three are present");
   assert.ok(abi < backend && backend < skip, "ABI probe, then the backend phase, then the launch skip");
-  assert.match(src, /bin: join\(server, "oats-web\.mjs"\), collector: join\(server, "liveness-main\.mjs"\)/, "the asar's backend and collector entries");
+  assert.match(src, /bin: join\(server, "oats-web\.mjs"\), collector: join\(app\.resources, "client", "liveness-main\.mjs"\)/, "the asar's backend entry, and the collector's in the shared home beside the asar");
   assert.match(src, /const server = join\(app\.resources, "app\.asar", "server"\);/, "from app.asar");
+});
+
+// ── Phase 4b: what main loads, and phase 1's check of the shared home ────────
+
+test("relativeImportsOf: each relative import of a source, with the names taken from it", () => {
+  const source = [
+    'import { app } from "electron";',
+    'import { join } from "node:path";',
+    'import { a, b as c } from "./one.mjs";',
+    "import d, { e } from '../client/two.mjs';",
+    'import * as all from "./three.mjs";',
+    'import "./four.mjs";',
+    'import { f,',
+    '  g } from "../client/five.mjs";',
+    '// import { no } from "./comment.mjs";',
+    'const text = `import { no } from "./string.mjs"`;',
+  ].join("\n");
+  assert.deepEqual(relativeImportsOf(source), [
+    { specifier: "./one.mjs", names: ["a", "b"] },
+    { specifier: "../client/two.mjs", names: ["e", "default"] },
+    { specifier: "./three.mjs", names: [] },
+    { specifier: "./four.mjs", names: [] },
+    { specifier: "../client/five.mjs", names: ["f", "g"] },
+  ]);
+});
+
+test("the main-imports probe reads main.mjs: every module it imports loads from where main names it, the shared home among them", async (t) => {
+  // The source tree stands in for the asar: its top level is where main and these modules are.
+  const reaper = reaperFor(t), main = fileURLToPath(new URL("../main.mjs", import.meta.url));
+  const r = await runMainImportsProbe(reaper, EXE, main);
+  assert.equal(r.ok, true, r.detail);
+  // The probe's list is main's own: every relative import statement of main.mjs, and nothing else.
+  const source = readFileSync(main, "utf8");
+  const stated = [...source.matchAll(/^import\b[^;]*?\bfrom\s*["'](\.{1,2}\/[^"']+)["']/gm)].map((m) => m[1]);
+  assert.deepEqual(r.imports, stated);
+  assert.ok(r.imports.length >= 25, `main's imports were found (${r.imports.length})`);
+  const shared = r.imports.filter((specifier) => specifier.startsWith("../client/"));
+  assert.ok(shared.includes("../client/workspace-cli.mjs") && shared.includes("../client/cli-environment.mjs"), "main imports the shared home directly");
+  assert.match(r.detail, new RegExp(`^the ${r.imports.length} modules main imports by a relative path load, .* as Node under the packaged executable: ${shared.length} directly from the shared home \\(`));
+  assert.equal(reaper.pendingGroups().size, 0, "no process group left retained");
+});
+
+test("the main-imports probe fails on a module that is not where main names it, on a missing export, and on a main that names no shared module", async (t) => {
+  const reaper = reaperFor(t);
+  const tree = (files) => {
+    const at = fixtures(t, {}), top = join(at("."), "app"), home = join(at("."), "client");
+    mkdirSync(top); mkdirSync(home);
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(name.startsWith("client/") ? at(".") : top, name), text);
+    return join(top, "main.mjs");
+  };
+  const good = await runMainImportsProbe(reaper, EXE, tree({
+    "main.mjs": 'import { app } from "electron";\nimport { a } from "./a.mjs";\nimport { b } from "../client/b.mjs";\n',
+    "a.mjs": 'export { b as a } from "../client/b.mjs";\n', "client/b.mjs": "export const b = 1;\n",
+  }));
+  assert.equal(good.ok, true, good.detail);
+  assert.deepEqual(good.imports, ["./a.mjs", "../client/b.mjs"], "electron, which only main needs, is not loaded");
+
+  const absent = await runMainImportsProbe(reaper, EXE, tree({ "main.mjs": 'import { b } from "../client/b.mjs";\n' }));
+  assert.equal(absent.ok, false);
+  assert.match(absent.detail, /^main-imports probe failed \(exit 1\): .*Cannot find module .*client\/b\.mjs/s);
+
+  // A module of the shared home that the package lacks fails the module that imports it, too.
+  const behind = await runMainImportsProbe(reaper, EXE, tree({
+    "main.mjs": 'import { a } from "./a.mjs";\nimport { c } from "../client/c.mjs";\n',
+    "a.mjs": 'export { b as a } from "../client/b.mjs";\n', "client/c.mjs": "export const c = 1;\n",
+  }));
+  assert.equal(behind.ok, false);
+  assert.match(behind.detail, /Cannot find module .*client\/b\.mjs/);
+
+  const noExport = await runMainImportsProbe(reaper, EXE, tree({
+    "main.mjs": 'import { b, gone } from "../client/b.mjs";\n', "client/b.mjs": "export const b = 1;\n",
+  }));
+  assert.equal(noExport.ok, false);
+  assert.match(noExport.detail, /^main-imports probe failed \(exit 1\): \.\.\/client\/b\.mjs has no export gone/);
+
+  const none = await runMainImportsProbe(reaper, EXE, tree({ "main.mjs": 'import { a } from "./a.mjs";\n', "a.mjs": "export const a = 1;\n" }));
+  assert.equal(none.ok, false);
+  assert.match(none.detail, /names no module under \.\.\/client\/, so this phase does not load the shared home as main does$/);
+
+  assert.equal((await runMainImportsProbe({}, EXE, "/nowhere/main.mjs")).ok, false, "a reaper without runTracked is refused");
+  assert.equal(reaper.pendingGroups().size, 0, "no process group left retained");
+});
+
+test("the macOS x64 cross-build runs the main-imports probe through Rosetta", async () => {
+  const calls = [];
+  const reaper = { runTracked: async (exe, args, options) => { calls.push({ exe, args, options }); return { code: 0, stdout: 'MAIN_IMPORTS_OK ["./a.mjs","../client/b.mjs"]\n', stderr: "" }; } };
+  const r = await runMainImportsProbe(reaper, "/A", "/R/app.asar/main.mjs", { platform: "darwin", hostArch: "arm64", targetArch: "x64", env: {} });
+  assert.equal(r.ok, true, r.detail);
+  assert.equal(calls[0].exe, "/usr/bin/arch");
+  assert.deepEqual(calls[0].args.slice(0, 3), ["-x86_64", "/A", "-e"]);
+  assert.equal(calls[0].options.env.ELECTRON_RUN_AS_NODE, "1");
+  assert.match(r.detail, /under the packaged executable under Rosetta x86_64: 1 directly from the shared home \(\.\.\/client\/b\.mjs\)/);
+  const late = await runMainImportsProbe({ runTracked: async () => ({ timedOut: true, stdout: "", stderr: "" }) }, "/A", "/R/app.asar/main.mjs");
+  assert.deepEqual(late, { ok: false, detail: "main-imports probe timed out (group killed)" });
+});
+
+test("sharedHomeInventory: the packaged client/ holds exactly the repository's modules", (t) => {
+  const at = fixtures(t, {}), fs = { readdirSync, existsSync };
+  const dir = (name, files) => { mkdirSync(at(name)); for (const file of files) writeFileSync(join(at(name), file), ""); return at(name); };
+  const source = dir("source", ["a.mjs", "b.mjs"]);
+  assert.deepEqual(sharedHomeInventory(dir("same", ["b.mjs", "a.mjs"]), source, fs),
+    { ok: true, detail: "the packaged shared home (client/, beside app.asar) holds exactly the repository's 2 modules" });
+  const missing = sharedHomeInventory(dir("short", ["a.mjs"]), source, fs);
+  assert.equal(missing.ok, false);
+  assert.match(missing.detail, /does not hold exactly the repository's 2 modules: missing b\.mjs$/);
+  const extra = sharedHomeInventory(dir("long", ["a.mjs", "b.mjs", "c.mjs", "notes.md"]), source, fs);
+  assert.equal(extra.ok, false);
+  assert.match(extra.detail, /: not in the repository's directory: c\.mjs, notes\.md$/);
+  const both = sharedHomeInventory(dir("other", ["a.mjs", "z.mjs"]), source, fs);
+  assert.match(both.detail, /: missing b\.mjs; not in the repository's directory: z\.mjs$/);
+  const absent = sharedHomeInventory(at("nowhere"), source, fs);
+  assert.deepEqual(absent, { ok: false, detail: `the package has no shared home: ${at("nowhere")} does not exist` });
+  assert.equal(sharedHomeInventory(at("same"), dir("empty", ["README.md"]), fs).ok, false, "a source with no module proves nothing");
+  // And the real directory against itself: what the smoke compares the package with.
+  const home = fileURLToPath(new URL("../../client/", import.meta.url));
+  assert.equal(sharedHomeInventory(home, home, fs).ok, true);
+});
+
+test("dist-smoke checks the shared home with the inventory, and runs main's imports after the backend phase and before the launch skip", () => {
+  const src = readFileSync(new URL("../scripts/dist-smoke.mjs", import.meta.url), "utf8");
+  const inventory = src.indexOf('sharedHomeInventory(join(app.resources, "client"), join(PKG, "..", "client"), { readdirSync, existsSync })');
+  const codesign = src.indexOf("await verifyAppSignature(reaper"), backend = src.indexOf("await runBackendProbe(reaper");
+  const main = src.indexOf('await runMainImportsProbe(reaper, app.exe, join(app.resources, "app.asar", "main.mjs")'), skip = src.indexOf("process.env.OATS_SMOKE_SKIP_LAUNCH");
+  assert.ok(inventory > 0 && codesign > 0 && backend > 0 && main > 0 && skip > 0, "all are present");
+  assert.ok(inventory < codesign, "the shared home's inventory is part of phase 1, before anything is run");
+  assert.ok(backend < main && main < skip, "the backend phase, then main's imports, then the launch skip: CI's build-verify runs reach it");
 });

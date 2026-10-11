@@ -1,7 +1,7 @@
 // #517: the CLI calls behind a workspace's own machines — fixed argv, the deployment's cwd, bounded time.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cliServerCheck, cliServerRemove, cliServerConnect, cliAwebConnect } from "../cli-adapter.mjs";
+import { cliServerCheck, cliServerRemove, cliServerConnect, cliAwebConnect } from "../../client/cli-adapter.mjs";
 
 const OK = (result) => JSON.stringify({ schemaVersion: 1, ok: true, result });
 function recorder(stdout = OK({})) {
