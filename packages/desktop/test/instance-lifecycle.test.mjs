@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../server/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../../client/lifecycle-cli.mjs';
 import { lifecycleOptions, lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
 import { displayLine } from '../../client/display-text.mjs';
@@ -382,4 +382,22 @@ test('a Herdr-recorded instance still plans and applies Retire: the kernel decid
   assert.equal(plan.status, 'plan');
   assert.equal((await f.apply(plan.planRef)).status, 'complete');
   assert.deepEqual(f.calls.map(c => [c.args.operation, c.args.phase]), [['retire', 'plan'], ['retire', 'apply']]);
+});
+test('BEFORE_EFFECT_CODES is a frozen list of ten codes, and it is the set an apply reads as "refused, nothing happened"', async () => {
+  assert.deepEqual(BEFORE_EFFECT_CODES, ['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
+    'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
+  assert.equal(Object.isFrozen(BEFORE_EFFECT_CODES), true); assert.throws(() => BEFORE_EFFECT_CODES.push('E_OTHER'), TypeError);
+  assert.equal(new Set(BEFORE_EFFECT_CODES).size, 10); assert.ok(BEFORE_EFFECT_CODES.every(code => typeof code === 'string'));
+  const applied = async (operation, code) => {
+    const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(operation === 'stop' ? stopPlan() : retirePlan())
+      : { schemaVersion: 1, ok: false, error: { code, message: 'a stand-in for the kernel message' } } });
+    return (await f.apply((await f.plan(operation)).planRef)).status;
+  };
+  for (const operation of ['stop', 'retire']) {
+    // E_PLAN_STALE without its fresh plan is no answer Desktop can read: its own branch, before the set.
+    for (const code of BEFORE_EFFECT_CODES) assert.equal(await applied(operation, code), code === 'E_PLAN_STALE' ? 'unknown' : 'refused', `${operation} ${code}`);
+    // Outside the list, whatever the kernel's own list says: an unknown outcome.
+    for (const code of ['E_UNIDENTIFIED_INSTANCE_HOME', 'E_WORK_INSPECTION_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_LIFECYCLE_FAILED', 'E_NOT_IN_THE_TABLE'])
+      assert.equal(await applied(operation, code), 'unknown', `${operation} ${code}`);
+  }
 });

@@ -18,10 +18,17 @@ export function supportsLifecycle(cli, operation, apply = false) {
     && cli.features.includes('lifecycle-plans')
     && (!apply || operation !== 'retire' || cli.features.includes('retire-retention') && cli.features.includes('retire-home'));
 }
-// A routed command's router refuses E_REMOTE_INCOMPATIBLE, E_AMBIGUOUS and E_SNAPSHOT_UNKNOWN before
-// sending, and the host's own resolution refuses them (and E_HOME_MISMATCH) before any effect.
-const beforeEffect = new Set(['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
+/** The codes of an apply's error answer that Desktop reads as "refused, nothing was done to the instance",
+ * for a stop and for a retire alike. Every other code is an unknown outcome. Exported so that the kernel's
+ * tests can hold this list inside the kernel's own list of the codes it answers only before any effect: a
+ * code joins here only once the kernel promises that of it. The promise is about the instance (its sessions,
+ * its home), not about the workspace log: a guarded retire may have appended its plan's event there by then,
+ * so no sentence built on this list says that nothing was recorded. A routed command's router refuses
+ * E_REMOTE_INCOMPATIBLE, E_AMBIGUOUS and E_SNAPSHOT_UNKNOWN before sending, and the host's own resolution
+ * refuses them (and E_HOME_MISMATCH) before any effect. */
+export const BEFORE_EFFECT_CODES = Object.freeze(['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
   'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
+const beforeEffect = new Set(BEFORE_EFFECT_CODES);
 /** A failed command's reason. Remote: the host's code and message under its headline. Local: the fixed
  * sentence for `code`, and the CLI's own message beside it as `detail`, through the display filter, only
  * when the installed CLI answered with an error envelope and the code may show one (lifecycleDetailCode:
