@@ -148,10 +148,23 @@ test("a start where Claude ignored the flag: the kernel's record and its own war
     launchPrompts: { status: "flag-ignored", reason: "channels-unavailable", signatureId: result.signatureId, startId: "start-desktop-test", at: "2026-10-11T00:00:00.000Z" } };
   // The kernel's two fixed strings pass the display filter whole: nothing of them is withheld or folded.
   assert.equal(displayLine(FLAG_IGNORED_WARNING), FLAG_IGNORED_WARNING); assert.equal(displayLine(DEV_CHANNEL_STATEMENT), DEV_CHANNEL_STATEMENT);
-  assert.deepEqual(launchFlagIgnored(answer), { reason: "channels-unavailable", warnings: answer.warnings });
-  assert.deepEqual(flagIgnoredNotice(NAME, answer), {
+  assert.deepEqual(launchFlagIgnored(answer), { reason: "channels-unavailable", warnings: answer.warnings, omitted: 0 });
+  assert.deepEqual(flagIgnoredNotice(NAME, launchFlagIgnored(answer)), {
     headline: `${NAME} started. Claude Code reported that channels are not available and ignored the channel option, so mail and chat will not wake this instance.`,
     detail: `OATS says:\na launch hook's own warning\n${FLAG_IGNORED_WARNING}` });
+  // The kernel appends its own sentence last (`flagIgnoredWarnings`), and the cut is by position: warnings that
+  // fill the bound before it leave it out first. The fact is not lost, because the headline says it from the
+  // status and the reason; what a person does not see then is the kernel's advice on what to check, and the last
+  // line says that something was left out. The Desktop neither keeps the last warning nor looks for this one.
+  const hook = (letter) => `a launch hook's long warning ${letter.repeat(2000)}`;
+  const filled = { ...answer, warnings: [hook("a"), hook("b"), FLAG_IGNORED_WARNING] };
+  assert.deepEqual(launchFlagIgnored(filled), { reason: "channels-unavailable", warnings: [hook("a"), hook("b")], omitted: 1 });
+  const cut = flagIgnoredNotice(NAME, launchFlagIgnored(filled));
+  assert.equal(cut.headline, `${NAME} started. Claude Code reported that channels are not available and ignored the channel option, so mail and chat will not wake this instance.`);
+  assert.equal(cut.detail, `OATS says:\n${hook("a")}\n${hook("b")}\n1 more not shown.`);
+  assert.equal(cut.detail.includes(FLAG_IGNORED_WARNING), false);
+  // Seven of the kernel's own sentence fit the bound on the total; the eighth does not.
+  assert.equal(launchFlagIgnored({ ...answer, warnings: Array(8).fill(FLAG_IGNORED_WARNING) }).warnings.length, Math.floor(4096 / FLAG_IGNORED_WARNING.length));
   // The controller's own result is not the start's answer: a kept-session reader that met it reads it as unknown.
   assert.equal(launchPromptOutcome(result).status, "unknown");
   // Its one row in Activity: the notice is the screen OATS recognised.

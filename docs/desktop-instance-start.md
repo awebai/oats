@@ -45,19 +45,29 @@ That start worked, so the dialog closes and the terminal opens as for any
 start. A notice then says that the instance started and that Claude Code
 ignored the channel option, so mail and chat will not wake it; with the reason
 `channels-unavailable` it adds that Claude Code reported channels are not
-available. Behind the notice's Details: "OATS says:" and every warning of that
-answer, whole and in the order given, each as one display line. No warning is
-picked, matched or dropped by its words: the kernel's own sentence is one
-string among them, and Desktop does not look for it. The notice is also shown
-when the dialog was closed while the start ran, as long as the workspace it was
-started from is still on screen.
+available. Behind the notice's Details: "OATS says:" and the warnings of that
+answer, whole and in the order given, each as one display line. It shows at
+most 16 warnings, and at most 4096 characters of them: lines are taken in
+order while both bounds hold, and no line is cut inside. With more, a last
+line says how many are left out ("3 more not shown."). The cut is by
+position. No warning is picked, matched or dropped by its words: the kernel's
+own sentence is one string among them, and Desktop does not look for it. The
+kernel puts that sentence last, so warnings that fill the bound before it
+leave it out: the headline still says what happened, a person then does not
+see OATS's own advice on what to check, and the last line says that something
+was left out. The notice is also shown when the dialog was closed while the
+start ran, as long as the workspace it was started from is still on screen.
 
-The reader is `flagIgnoredNotice` (`packages/client/launch-prompt-outcome.mjs`).
-It takes an answer's `launchPrompts` and `warnings`, gives the headline and the
-lines, and knows nothing of the act that was answered. It is tolerant: an
-answer it cannot read, or any other status, gives no notice, and the start
-reads as any start that worked. Only the start dialog calls it: the Desktop
-does not yet read `launchPrompts` on a spawn's answer.
+The reader is `launchFlagIgnored` (`packages/client/launch-prompt-outcome.mjs`).
+It takes an answer's `launchPrompts` and `warnings` and gives the fact
+`{reason, warnings, omitted}`: the lines it keeps, bounded by
+`FLAG_IGNORED_WARNINGS` lines and `FLAG_IGNORED_UNITS` UTF-16 units in total,
+and how many lines the cut left out. It knows nothing of the act that was
+answered. `flagIgnoredNotice` makes the headline and the
+detail from that fact, and from nothing else. Both are tolerant: an answer the
+reader cannot read, or any other status, gives no fact and no notice, and the
+start reads as any start that worked. Only the start dialog calls them: the
+Desktop does not yet read `launchPrompts` on a spawn's answer.
 
 If an ordinary Start dialog finds the instance already running, its action becomes
 **Open terminal**. A failed or timed-out start requires **Refresh status** before

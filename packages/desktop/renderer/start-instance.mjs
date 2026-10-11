@@ -5,7 +5,7 @@ import { waitForInstanceInPanel } from "./views/spawn.mjs";
 import { launchConfigFields } from "./launch-config-fields.mjs";
 import { captureFocusReturn } from "./focus-return.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
-import { retainedStartMessage, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
+import { retainedStartMessage, launchFlagIgnored, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 import { displayLine } from "../../client/display-text.mjs";
 import { sourceQuoteCSS } from "./source-quote.mjs";
 import { launchDiffered, launchDifferedCSS } from "./launch-differed.mjs";
@@ -176,7 +176,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         // a notice says so once the dialog is gone, also when the person closed it while the start ran. The
         // view it was started from must still be on screen, as for every notice of this dialog. Never a
         // failure: the terminal opens as for any start that worked.
-        const ignored = flagIgnoredNotice(instance.instance, result);
+        const ignored = flagIgnoredNotice(instance.instance, launchFlagIgnored(result));
         if (ignored && ws === currentWorkspace() && generation === workspaceGeneration()) ctx.notify?.(ignored.headline, ignored.detail ? { detail: ignored.detail } : undefined);
         if (!open) return;
         // Taken after the focus return: any explicit choice from now on (another terminal, tab, view or
