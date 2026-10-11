@@ -58,3 +58,11 @@ test("the warning names the unit, the consequence, the fixes and the reason", ()
   assert.equal(serverScopeWarning({ unit: "oats-schedule-tick.service", reason: "Failed to connect to bus: No medium found" }),
     "the OATS tmux server was started inside oats-schedule-tick.service: it ends when that unit stops; start the OATS tmux server from your own shell, or enable the user systemd bus (Failed to connect to bus: No medium found)");
 });
+
+test("a launch configuration cannot set the #915 test seams: reserved, so no launch chooses the systemd-run the kernel runs or where it judges itself", async () => {
+  const { validateLaunchConfig, RESERVED_LAUNCH_ENV } = await import("../lib/core.mjs");
+  for (const name of ["OATS_TEST_CGROUP", "OATS_TEST_SYSTEM_TOOL_DIRS"]) {
+    assert.ok(RESERVED_LAUNCH_ENV.has(name), name);
+    assert.throws(() => validateLaunchConfig("seam", { harness: "claude", env: { [name]: "/fixture" } }), (e) => e.code === "E_LAUNCH_CONFIG_INVALID" && e.message.includes(name));
+  }
+});
