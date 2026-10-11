@@ -301,8 +301,7 @@ on tmux 3.7c, `reset` brought back the cursor and autowrap, and the pane
 stayed in the alternate screen until `tput rmcup`. Nothing else is left in
 tmux: `oats tui` creates no session, window, option or key binding.
 Nor can it end a read after SIGKILL: nothing of the TUI runs any more, so a
-read that was in flight runs to its own end, within the limits above. It
-only reads.
+read that was in flight runs to its own end. It only reads.
 
 ## What it never does
 
