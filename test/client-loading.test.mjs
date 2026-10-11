@@ -17,7 +17,7 @@ const HOME = new URL("../packages/client/", import.meta.url);
 const ENTRIES = ["liveness-main.mjs", "own-environment.mjs"];
 const SPLIT = ["instance-tree.mjs", "roster-sections.mjs", "instance-acts.mjs", "workspace-admission.mjs", "kernel-environment.mjs"];
 /** The modules 3a made (#855): the rule of a store or of a menu that the Desktop kept, cut out of it. */
-const RULES = ["remote-identity-memory.mjs"];
+const RULES = ["remote-identity-memory.mjs", "workspace-choices.mjs"];
 const files = readdirSync(HOME).sort();
 
 test("every module of packages/client, its two entries apart, loads by import under plain Node", async (t) => {

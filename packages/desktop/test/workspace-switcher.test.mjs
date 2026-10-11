@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { workspaceChoiceLabels, createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
+import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
+import { workspaceChoiceLabels } from "../../client/workspace-choices.mjs";
 import { createAddExecutor } from "../workspace-registry.mjs";
 
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
