@@ -326,6 +326,8 @@ export const runtimeName = value => Object.hasOwn(RUNTIME_NAMES, value) ? RUNTIM
 // Where the bound identity's mode came from (settingsOrigins, feature settings-origins).
 const ORIGIN_NAMES = { workspace: 'the workspace', soul: 'the soul', host: 'this host', spawn: 'this spawn' };
 const originName = kind => ORIGIN_NAMES[kind] ?? kind;
+/** The Launch configuration select's first entry while the kernel refuses the spawn for want of a default. */
+export const NO_DEFAULT_CONFIG = 'No default: choose one';
 /** The identity select's Default option: the mode only when the kernel reported
  * it — a manifest default, or another origin it names. Never a mode it did not report. */
 function identityDefaultLabel(data, chosen, origins) {
@@ -1112,7 +1114,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // Advanced defaults.
     yolo.options[0].textContent = data ? `Default · ${permissionText(data.yolo)}` : 'Default';
     backend.options[0].textContent = data ? `Default · ${data.backend}` : 'Default';
-    config.options[0].textContent = data?.launchConfig ? `Default · ${data.launchConfig}` : 'Default';
+    // E_LAUNCH_CONFIG_AMBIGUOUS (0.52.0): while the answer for the choices on screen is that refusal, there is
+    // no default to name. The entry stays the selected one (it is the state the dialog is in), and reads
+    // Default again as soon as the answer for the choices on screen is anything else.
+    const noDefault = shown?.failure?.code === 'E_LAUNCH_CONFIG_AMBIGUOUS' && shown.key === choiceKey(draftChoice.value);
+    config.options[0].textContent = noDefault ? NO_DEFAULT_CONFIG : data?.launchConfig ? `Default · ${data.launchConfig}` : 'Default';
     branch.placeholder = data?.branch && !branch.value ? data.branch : `agents/${soul.name}-…`;
     base.placeholder = data?.base ? `${data.base.ref} · ${short(data.base.oid)}` : 'HEAD';
     // Messaging identity: what the kernel bound for this spawn, and the choice.

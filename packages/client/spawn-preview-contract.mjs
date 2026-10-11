@@ -216,6 +216,9 @@ const errors = {
   E_REQUIREMENT_INACTIVE: 'A declared soul requirement is not active.', E_LAUNCH_ENV_MISSING: 'Required launch environment references are unavailable.',
   E_LAUNCH_EXECUTABLE: 'The selected launch executable is unavailable.', E_LAUNCH_PROBE_UNSUPPORTED: 'The selected launch cannot be preflighted safely.',
   E_LAUNCH_CONFIG_UNKNOWN: 'The selected launch configuration is unavailable.', E_MODEL_UNKNOWN: 'The selected model could not be resolved.',
+  // 0.52.0: several launch configurations for the harness, no default, and the spawn names none. Listed so the
+  // code survives where the kernel's own message cannot travel (the apply's reason; a message over the bound).
+  E_LAUNCH_CONFIG_AMBIGUOUS: 'More than one launch configuration is declared for this harness and none is the default.',
   E_CLONE_MISSING: 'This soul works in a member repository that is not cloned on this machine.',
   E_INSTANCE_NAME_INVALID: 'That name is not a valid instance name (a lowercase slug of at most 64 characters that is not a soul name).',
   E_INSTANCE_NAME_TAKEN: 'An instance with that name already exists in this deployment.',
