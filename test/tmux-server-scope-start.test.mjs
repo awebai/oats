@@ -5,12 +5,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureOatsTmuxSession } from "../lib/core.mjs";
 import { serverScopeUnit, serverScopeWarning } from "../lib/tmux-server-scope.mjs";
-import { isolateSessionEnvironment, oatsSocket } from "./helpers/host-fixture.mjs";
+import { isolateSessionEnvironment, oatsSocket, systemExecutable } from "./helpers/host-fixture.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-scope-start-")));
 const restoreEnvironment = isolateSessionEnvironment(base);
@@ -24,18 +24,24 @@ const PANE_SCOPE = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/t
 const V1 = "12:cpu,cpuacct:/\n1:name=systemd:/user.slice/user-1000.slice/user@1000.service/app.slice/oats-schedule-tick.service\n";
 
 let n = 0;
-/** A fake system directory; `systemdRun` is the body of its systemd-run (none when null). */
-function systemDir(systemdRun) {
+const ENV = systemExecutable("env"); // the host's own env, linked into each fake system directory
+/** A fake system directory; `systemdRun` is the body of its systemd-run (none when null), with the
+ *  host's env beside it unless `env` is false. */
+function systemDir(systemdRun, { env = true } = {}) {
   const dir = join(base, `system-${++n}`), log = join(dir, "systemd-run.args");
   mkdirSync(dir, { recursive: true });
+  if (env) symlinkSync(ENV, join(dir, "env"));
   if (systemdRun !== null) {
     writeFileSync(join(dir, "systemd-run"), `#!/bin/sh\nprintf '%s\\n' "$@" > '${log}'\n${systemdRun}\n`);
     chmodSync(join(dir, "systemd-run"), 0o755);
   }
   return { dir, log, args: () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").slice(0, -1) : null) };
 }
-/** As a scope does: run what follows `--`. */
-const RUNS_COMMAND = `while [ "$1" != "--" ]; do shift; done; shift\nexec "$@"`;
+/** As a scope does: run what follows `--`, with the scope's INVOCATION_ID exported to it. */
+const SCOPE_ID = "f00dfeed0123456789abcdef00000915";
+const RUNS_COMMAND = `while [ "$1" != "--" ]; do shift; done; shift\nINVOCATION_ID=${SCOPE_ID}; export INVOCATION_ID\nexec "$@"`;
+/** The server's own global environment, names and values. */
+const serverEnvironment = () => execFileSync(TMUX, ["-u", "-S", OATS, "show-environment", "-g"], { encoding: "utf8" });
 const killServer = () => { try { execFileSync(TMUX, ["-u", "-S", OATS, "kill-server"], { stdio: "ignore" }); } catch { /* none */ } };
 const sessions = () => { try { return execFileSync(TMUX, ["-u", "-S", OATS, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8" }).split("\n").filter(Boolean); } catch { return []; } };
 /** Every call ensureOatsTmuxSession makes, run for real. */
@@ -69,15 +75,18 @@ test("inside a service on Linux: the server starts under systemd-run --user --sc
   assert.match(unit, /^oats-tmux-[0-9a-f]{12}-[0-9a-f]{8}$/);
   assert.equal(unit.slice(0, 22), serverScopeUnit({ socket: null, env: start.options.env }).slice(0, 22), "under this address's prefix");
   assert.equal(start.bin, join(sys.dir, "systemd-run"), "from the system directories");
-  assert.deepEqual(start.args, ["--user", "--scope", "--collect", "--quiet", "--unit", unit, "--", TMUX, ...plainArgs("scoped")]);
+  assert.deepEqual(start.args, ["--user", "--scope", "--collect", "--quiet", "--unit", unit, "--", join(sys.dir, "env"), "-u", "INVOCATION_ID", TMUX, ...plainArgs("scoped")]);
   assert.deepEqual(sys.args(), start.args, "what systemd-run received");
+  // The scope's INVOCATION_ID never reaches the server (condition 4): what the server holds of it is
+  // what the environment handed to tmux holds, and we add none.
+  assert.equal(serverEnvironment().includes(SCOPE_ID), false, "the scope's id is not in the server's environment");
   // The same environment object and options as an unwrapped start of the same server (condition 4).
   killServer();
   const plain = spy({ platform: "linux", cgroup: SESSION_SCOPE, systemToolDirs: [sys.dir] });
   ensureOatsTmuxSession("scoped", base, plain.io);
   const [unwrapped] = starts(plain.calls);
   assert.deepEqual(unwrapped.args, plainArgs("scoped"));
-  assert.deepEqual(start.options, unwrapped.options);
+  assert.deepEqual(start.options, unwrapped.options, "the same options and environment object as an unwrapped start: none added, INVOCATION_ID included");
   killServer();
 });
 
@@ -117,6 +126,8 @@ test("the old or hybrid hierarchy: today's start, with the warning only when INV
 test("no systemd-run in the system directories, or one that fails: today's start, and the warning says why", () => {
   for (const [sys, reason] of [
     [systemDir(null), (s) => `no executable systemd-run in ${s.dir}`],
+    // The scope's INVOCATION_ID can only be kept out by the system's env: without it, no scope.
+    [systemDir(RUNS_COMMAND, { env: false }), (s) => `no executable env in ${s.dir}`],
     [systemDir(`echo 'Failed to connect to bus: No medium found' >&2\nexit 1`), () => "Failed to connect to bus: No medium found"],
   ]) {
     killServer();

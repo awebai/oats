@@ -5,10 +5,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { oatsSocket } from "./helpers/host-fixture.mjs";
+import { oatsSocket, systemExecutable } from "./helpers/host-fixture.mjs";
 import { serverScopeWarning } from "../lib/tmux-server-scope.mjs";
 
 const TICK = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/oats-schedule-tick.service\n";
@@ -21,9 +21,11 @@ function deployment(t) {
   const sessions = () => { try { return execFileSync("tmux", ["-S", socket, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8" }).split("\n").filter(Boolean); } catch { return []; } };
   return { fx, socket, killServer, sessions };
 }
+/** A fake system directory with the host's env and, unless `body` is null, a systemd-run running `body`. */
 function systemDir(fx, name, body) {
   const dir = join(fx.base, name);
   mkdirSync(dir, { recursive: true });
+  symlinkSync(systemExecutable("env"), join(dir, "env"));
   if (body !== null) { writeFileSync(join(dir, "systemd-run"), `#!/bin/sh\nprintf '%s\\n' "$@" > '${join(dir, "args")}'\n${body}\n`); chmodSync(join(dir, "systemd-run"), 0o755); }
   return dir;
 }
@@ -54,7 +56,7 @@ test("with the system's systemd-run, the spawn starts the server through it and 
   assert.ok(sessions().length > 0);
   const args = readFileSync(join(dir, "args"), "utf8").split("\n");
   assert.deepEqual(args.slice(0, 5), ["--user", "--scope", "--collect", "--quiet", "--unit"]);
-  assert.match(args[5], /^oats-tmux-[0-9a-f]{12}-[0-9a-f]{8}$/); assert.equal(args[6], "--");
+  assert.match(args[5], /^oats-tmux-[0-9a-f]{12}-[0-9a-f]{8}$/); assert.deepEqual(args.slice(6, 10), ["--", join(dir, "env"), "-u", "INVOCATION_ID"]);
   assert.ok(args.includes("new-session"));
 });
 

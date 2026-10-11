@@ -140,22 +140,28 @@ on Linux, when OATS starts the `oats` server (no server answered) from inside
 a service, it starts it in a transient scope of its own:
 
 ```text
-systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> -- tmux -u -L oats new-session -d …
+systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> -- env -u INVOCATION_ID tmux -u -L oats new-session -d …
 ```
 
 - **Only what changes.** The tmux command, its arguments and the environment
-  the server starts with are the same as without the scope. There is one
+  the server starts with are the same as without the scope. `systemd-run`
+  exports the scope's own `INVOCATION_ID` to what it runs, and the system's
+  `env -u INVOCATION_ID` removes it, so neither the server nor its panes get
+  it. There is one
   scope per start that starts the server: `<hash>` is the first 12 hex digits
   of the SHA-256 of the server's address, and `<random>` 8 random hex digits.
-  `systemd-run` is the system's own (`/usr/bin`, `/bin`), never one found on
-  `PATH`.
+  `systemd-run` and `env` are the system's own (`/usr/bin`, `/bin`), never
+  ones found on `PATH`.
 - **The server outlives the service.** It is a sibling of the service, not
   part of it: the service can end, stop or restart, and the server and its
   agents go on. The scope ends when its last process does, and `--collect`
   removes it then. That is usually the server. On a tmux without systemd
   support the panes are in the scope too, so a process that outlives the
   server (one an agent started in the background) keeps the scope until it
-  exits. A later start never reuses that scope: it gets one of its own.
+  exits. On a tmux with systemd support each pane has a scope of its own,
+  but the dead server's scope still stays listed (`loaded inactive dead`)
+  while a process from one of its panes lives. Either way, a later start
+  never reuses that scope: it gets one of its own.
 - **See it:** `systemctl --user status 'oats-tmux-<hash>-*.scope'` (or
   `'oats-tmux-*.scope'` for every OATS server), or
   `systemd-cgls --user`. A tmux built with systemd support also puts each
@@ -171,7 +177,9 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
     creator is a systemd service, the answer warns that the server lives in
     that service.
   - The scope needs the user's systemd manager and its bus
-    (`XDG_RUNTIME_DIR`). A system service (one outside the user's manager) is
+    (`XDG_RUNTIME_DIR`), and `systemd-run` and `env` in `/usr/bin` or `/bin`:
+    a host without them gets the warning below at every start from a
+    service. A system service (one outside the user's manager) is
     wrapped the same way, and without a user bus it gets the warning below.
   - When `systemd-run` is missing or fails, and no other creator's server
     answers in the meantime, the server starts as before. The answer's
