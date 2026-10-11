@@ -69,10 +69,11 @@ test('remote plan refused by the host: the kernel\'s code and message verbatim u
     E_HOME_MISMATCH: 'Build box answered for a different instance. Nothing was changed.',
     E_AMBIGUOUS: 'Build box answered for a different instance. Nothing was changed.',
     E_SSH: "Couldn't reach Build box.",
-    E_REMOTE_ENVELOPE: "OATS couldn't be run for this.",
+    // A code nothing here describes, in an answer OATS gave: never "OATS couldn't be run for this."
+    E_REMOTE_ENVELOPE: 'OATS answered with an error that Desktop has no description for.',
   };
   for (const [code, headline] of Object.entries(cases)) {
-    const f = fixture({ plan: () => ({ schemaVersion: 1, ok: false, error: { code, message: `host says ${code}` } }) });
+    const f = fixture({ plan: () => ({ schemaVersion: 1, ok: false, origin: 'kernel', error: { code, message: `host says ${code}` } }) });
     const result = await f.plan('stop');
     assert.equal(result.status, 'unavailable');
     assert.deepEqual(result.reason, { code, message: headline, detail: `host says ${code}`, remote: true });

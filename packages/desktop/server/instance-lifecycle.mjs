@@ -8,7 +8,7 @@ import { gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { hostReason } from '../../client/remote-address.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { object, lifecycleOptions, lifecyclePlan, lifecycleReceipt, stoppedTargets, planReference, lifecycleChoicesApplicable,
-  lifecycleFailure, lifecycleReason, lifecycleDetailCode, answeringFeatures, busyHolder, busyHeadline, busyAbout } from '../../client/lifecycle-contract.mjs';
+  lifecycleFailure, lifecycleReason, lifecycleDetailCode, answeringFeatures, busyHolder, busyHeadline, busyAbout, undescribedAnswer } from '../../client/lifecycle-contract.mjs';
 const clone = value => structuredClone(value);
 const cliIdentity = cli => JSON.stringify([cli?.bin, cli?.version, cli?.lifecycleApi,
   Array.isArray(cli?.features) ? [...cli.features].sort() : null]);
@@ -34,19 +34,23 @@ const beforeEffect = new Set(BEFORE_EFFECT_CODES);
  * boundary's have the same shape, and no origin. */
 const kernelAnswered = envelope => envelope?.origin === 'kernel' && envelope.schemaVersion === 1 && envelope.ok === false;
 /** A failed command's reason. Remote: the host's code and message under its headline. Local: the fixed
- * sentence for `code`, and the CLI's own message beside it as `detail`, through the display filter, only
- * when the installed CLI answered with an error envelope and the code may show one (lifecycleDetailCode:
- * it has its own sentence and is not one Desktop raises). Otherwise the reason is `{code, message}` alone.
+ * sentence for `code`, and the kernel's own message beside it as `detail`, through the display filter, only
+ * when the kernel answered (kernelAnswered) and the code may show one (lifecycleDetailCode: it has its own
+ * sentence and is not one Desktop raises). Otherwise the reason is `{code, message}` alone.
+ * A code the kernel answered that has no sentence keeps its own code and reads by the fallback sentence
+ * (undescribedAnswer), with the kernel's message as its detail: "OATS couldn't be run for this." is never
+ * the sentence for an answer the kernel gave. A code that did not come from the kernel never reaches it.
  * A kernel's E_LIFECYCLE_BUSY whose kernel (`features`: the answering kernel's) says who holds the claim
  * reads by that (`holder`, busyHolder), local or remote, and names the target of `plan` the refusal is
  * about when that is not the instance acted on (`about`). */
 function failureReason(envelope, remote, { code = envelope?.error?.code, features = null, plan = null } = {}) {
-  const reason = lifecycleReason(code), details = envelope?.error?.details;
-  const holder = kernelAnswered(envelope) ? busyHolder(code, details, features) : null, about = holder ? busyAbout(plan, details?.home) : null;
+  const kernel = kernelAnswered(envelope), undescribed = kernel ? undescribedAnswer(code) : null;
+  const reason = undescribed || lifecycleReason(code), details = envelope?.error?.details;
+  const holder = kernel ? busyHolder(code, details, features) : null, about = holder ? busyAbout(plan, details?.home) : null;
   const busy = holder ? { holder, ...(about ? { about } : {}) } : {};
   const message = holder ? busyHeadline(holder) : reason.message;
   if (remote) { const host = hostReason({ ...envelope?.error, code }, remote.label, message); return host ? { ...host, ...busy } : reason; }
-  const detail = envelope?.schemaVersion === 1 && envelope.ok === false && lifecycleDetailCode(code) ? displayLine(envelope.error?.message) : null;
+  const detail = kernel && (undescribed || lifecycleDetailCode(code)) ? displayLine(envelope.error?.message) : null;
   return { ...reason, message, ...(detail ? { detail } : {}), ...busy };
 }
 export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), mint = () => randomBytes(32).toString('hex') } = {}) {

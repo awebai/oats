@@ -1,6 +1,7 @@
 /** K3 projection/validation only. No IO, kernel decisions or executable paths. */
 import { gitRevision } from './instance-git-contract.mjs';
 import { displayLine, cleanLine, DETAIL_WITHHELD } from './display-text.mjs';
+import { kernelCode } from './remote-address.mjs';
 export const LIFECYCLE_API = 1;
 export const MAX_LIFECYCLE_TARGETS = 128;
 export const object = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -34,12 +35,32 @@ const messages = {
   E_WORK_PRESERVATION_FAILED: "Its work couldn't be saved safely, so the home folder is kept. Earlier retirement steps may have run.",
   E_WORK_INSPECTION_FAILED: "Retirement was refused: OATS couldn't inspect the instance's home or work. The home folder is kept; its session may already have been stopped, and earlier retirement steps may have run.",
   E_RETIRE_INCOMPLETE: "Retirement didn't finish cleaning up. Check what was kept before trying again.",
+  // True of both things the kernel answers it for: a session window it could not show gone, and the hook
+  // group an interrupted spawn left that survived both signals. The outcome is unknown; this is its cause.
+  E_RUNTIME_QUIESCE_FAILED: "OATS tried to end a session or a process and couldn't confirm that it ended.",
   E_CLI_TIMEOUT: "OATS didn't answer in time.", E_CLI_OUTPUT_LIMIT: "OATS's answer was larger than Desktop reads safely.",
   E_CLI_PROTOCOL: "OATS answered in a form Desktop can't read.", E_CLI_FAILED: "OATS couldn't be run for this.",
   E_OUTCOME_UNKNOWN: "OATS didn't confirm the result. Check again before assuming nothing happened.",
   E_FORBIDDEN_FRAME: 'This window cannot request a lifecycle operation.',
 };
 export const lifecycleReason = code => ({ code: Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED', message: messages[code] || messages.E_CLI_FAILED });
+/** A kernel's error answer whose code has no sentence here. It says "OATS answered", so it is chosen only
+ * for a code read out of the kernel's own error envelope: by where the code came from, which only the caller
+ * knows, never by the code's shape. lifecycleReason is given codes of every origin and keeps E_CLI_FAILED
+ * ("OATS couldn't be run for this.") for one it does not know; that sentence is never shown for an answer
+ * the kernel gave. */
+const UNDESCRIBED = 'OATS answered with an error that Desktop has no description for.';
+/** The reason for a code the KERNEL answered and no sentence describes: its own code and the fallback
+ * sentence, or null when the code has a sentence, or is not in the kernel's code shape (an older kernel's
+ * system code, `ENOENT`, which keeps E_CLI_FAILED's sentence). The caller vouches for the origin. */
+export const undescribedAnswer = code => kernelCode(code) && !Object.hasOwn(messages, code) ? { code, message: UNDESCRIBED } : null;
+/** Re-validate a relayed reason (server → main → renderer) that reads by the fallback sentence, or null:
+ * a kernel code without a sentence, the fixed fallback sentence, and a detail that is a display line (else
+ * none). The reply's sentence is the server's word that the kernel answered; nothing else of it is shown. */
+export function undescribedRefusal(reason) {
+  return object(reason) && reason.message === UNDESCRIBED && undescribedAnswer(reason.code)
+    ? { code: reason.code, message: UNDESCRIBED, detail: cleanLine(reason.detail) ? reason.detail : null } : null;
+}
 /** Codes only Desktop raises (its CLI adapter, its lifecycle boundary, main): the kernel never answers with
  * one. A new entry of `messages` that the kernel does not raise is listed here too. */
 const desktopCodes = new Set(['E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'E_LIFECYCLE_UNAVAILABLE', 'unsupported-remote-operation',

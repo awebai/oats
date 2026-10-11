@@ -370,7 +370,8 @@ function localServer(respond = {}) {
     ?? envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan() : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args)) });
   return (_workspace, body) => service(body, () => ctx);
 }
-const localError = (code, message) => () => ({ schemaVersion: 1, ok: false, error: { code, message } });
+/** The kernel's error envelope as the adapter passes it on: it says the kernel answered. */
+const localError = (code, message) => () => ({ schemaVersion: 1, ok: false, origin: 'kernel', error: { code, message } });
 test("from the server: a local Retire refused by inspection shows Desktop's sentence and, in Details, the code and the CLI's message as one line alone in its <bdi>", async () => {
   const f = fixture({ request: localServer({ apply: localError('E_WORK_INSPECTION_FAILED', MESSY) }) });
   try {
@@ -670,7 +671,7 @@ test('Check again in review keeps the facts on screen, says why confirm waits, a
 test('no user-visible "Remove" for retirement, in any phase or in the contract messages', async () => {
   const codes = ['E_BAD_ARGS', 'E_WORKSPACE_UNKNOWN', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_HOME_MISMATCH', 'cli-unavailable', 'E_LIFECYCLE_UNAVAILABLE',
     'unsupported-remote-operation', 'E_PLAN_REQUIRED', 'E_PLAN_EXPIRED', 'E_PLAN_CHANGED', 'E_OPTION_UNAVAILABLE', 'E_PLAN_STALE', 'E_PLAN_LIMIT', 'E_LIFECYCLE_BUSY',
-    'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING', 'E_SESSION_STOP_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_WORK_INSPECTION_FAILED', 'E_RETIRE_INCOMPLETE',
+    'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING', 'E_SESSION_STOP_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_WORK_INSPECTION_FAILED', 'E_RETIRE_INCOMPLETE', 'E_RUNTIME_QUIESCE_FAILED',
     'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN', 'E_FORBIDDEN_FRAME'];
   for (const code of codes) {
     assert.equal(lifecycleReason(code).code, code, `${code} has its own sentence`);

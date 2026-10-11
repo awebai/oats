@@ -119,7 +119,7 @@ test('without spawnCompensation the retire result has no branch line', async t =
   assert.equal(u.lines().some(line => line.startsWith('Branch ')), false, u.lines().join('|'));
 });
 
-const busy = message => () => ({ schemaVersion: 1, ok: false, error: { code: 'E_LIFECYCLE_BUSY', message } });
+const busy = message => () => ({ schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_LIFECYCLE_BUSY', message } });
 
 test('a kernel E_LIFECYCLE_BUSY on a quarantined row says the spawn may still run, with the kernel\'s message under it', async t => {
   const u = mount(t, { apply: busy(KERNEL_BUSY), row: { ...instance, rollbackIncomplete: true } });

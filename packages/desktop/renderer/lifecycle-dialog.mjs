@@ -1,7 +1,7 @@
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowKind, stoppedRowText,
-  stopResultWords, childrenRefusedMessage, busyRefusal, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
+  stopResultWords, childrenRefusedMessage, busyRefusal, undescribedRefusal, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { codeLineNodes, readingFrom, remoteReason, serverLabel } from '../../client/remote-address.mjs';
@@ -146,9 +146,10 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   const localDetail = reason => reason && typeof reason === 'object' && !Object.hasOwn(reason, 'remote')
     && lifecycleDetailCode(reason.code) && cleanLine(reason.detail) ? { code: reason.code, detail: reason.detail } : null;
   /** A reason's code and the kernel's message, behind a Details disclosure (keyboard and screen reader
-   * reachable). The code is text; the message is alone in its <bdi> (remote-address.mjs codeLineNodes). */
-  function details(parent, reason) {
-    if (!reason.detail) return;
+   * reachable). The code is text; the message is alone in its <bdi> (remote-address.mjs codeLineNodes).
+   * `bare`: shown for the code alone when there is no message (a headline that does not name its code). */
+  function details(parent, reason, bare = false) {
+    if (!reason.detail && !bare) return;
     const more = node('details', undefined, 'lifecycle-details'), line = node('p'); line.append(...codeLineNodes(doc, reason));
     more.append(node('summary', 'Details'), line);
     parent.append(more);
@@ -166,14 +167,15 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       if (busy.details) details(ui.result, busy.details);
       return;
     }
-    const remote = remoteReason(reason), shownReason = remote || localDetail(reason);
+    // An error the kernel answered that Desktop has no sentence for: the fallback sentence, and its code in Details.
+    const remote = remoteReason(reason), undescribed = undescribedRefusal(remote || reason), shownReason = remote || undescribed || localDetail(reason);
     // The kernel's own busy refusal (it carries the kernel's message; Desktop's own busy does not) for a home
     // a spawn left: its sentence, and the kernel's message, which names the process, shown under it.
     if (!remote && shownReason && reason.code === 'E_LIFECYCLE_BUSY' && retire() && leftover) {
       say(LEFTOVER_BUSY); const p = node('p'); p.append(node('bdi', shownReason.detail)); ui.result.append(p); return;
     }
-    say(remote ? remote.message : lifecycleReason(reason?.code).message);
-    if (shownReason) details(ui.result, shownReason);
+    say(remote ? remote.message : undescribed ? undescribed.message : lifecycleReason(reason?.code).message);
+    if (shownReason) details(ui.result, shownReason, !!undescribed);
   }
   /** One line of a list, with an optional path as a muted, selectable second line. */
   const line = (text, path, cls) => { const li = node('li', undefined, cls); li.append(node('span', text)); if (path) li.append(node('span', path, 'lifecycle-path')); return li; };
@@ -404,10 +406,11 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         // Why the outcome is unknown: a remote transport or host cause keeps its headline and Details; a
         // local one says its fixed sentence, with the CLI's own message in Details when it carries one.
         const cause = result.cause && remoteReason(result.cause);
-        if (cause) { ui.result.append(node('p', cause.message, 'lifecycle-note')); details(ui.result, cause); }
+        const undescribed = result.cause && undescribedRefusal(cause || result.cause);
+        if (cause) { ui.result.append(node('p', cause.message, 'lifecycle-note')); details(ui.result, cause, !!undescribed); }
         else if (result.cause) {
-          ui.result.append(node('p', lifecycleReason(result.cause.code).message, 'lifecycle-note'));
-          const local = localDetail(result.cause); if (local) details(ui.result, local);
+          ui.result.append(node('p', undescribed ? undescribed.message : lifecycleReason(result.cause.code).message, 'lifecycle-note'));
+          const local = undescribed || localDetail(result.cause); if (local) details(ui.result, local, !!undescribed);
         }
         if (children) ui.result.append(node('p', 'Child instances:', 'lifecycle-note'), stopped(children));
         settle('result', submission.uncertain ? unconfirmed : didNot);
