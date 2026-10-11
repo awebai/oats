@@ -18,7 +18,9 @@ state, account admission, channel readiness or task success.
 
 Before the Enter, an unknown screen is a verdict only once it has held
 unchanged for the settle window, `SETTLE` (2 s, in `lib/launch-prompts.mjs`),
-because Claude paints transient frames while it starts; see
+because Claude paints transient frames while it starts: then it is `blocked:
+unexpected prompt`. A screen still changing at the 30 s bound never settled, and
+is `blocked: observation timeout`, never a prompt; see
 [configuration](configuration.md#the-development-channel-confirmation). After
 the Enter, completion follows this rule:
 

@@ -702,12 +702,14 @@ with `▎`, each row's `▎` dropped, then the same normalization) that equals a
 `flag-ignored` entry, on a screen with no question marker, means Claude ignored
 the flag and shows no confirmation: the start ends `flag-ignored`, reason `channels-unavailable`, with no key, and
 succeeds. An unknown screen that holds still for the settle window (`SETTLE`,
-2 s; a transient frame Claude paints while starting is waited out), or the last
-unknown screen when the bound is reached, permanently closes authority with
-`blocked: unexpected prompt`; when that screen starts with Claude's
+2 s; a transient frame Claude paints while starting is waited out) permanently
+closes authority with `blocked: unexpected prompt`. The last unknown screen when
+the bound is reached, still changing, closes it with `blocked: observation
+timeout` (with `differed` and that screen as evidence; no prompt was
+established). When either screen starts with Claude's
 running-session banner (`Claude Code v<semver>`, after only the logo's block
 elements U+2580–U+259F and spaces), the result carries
-`claudeSessionShown: true`. A screen blank for the whole bound reports
+`claudeSessionShown: true`. A screen blank for the whole bound also reports
 `blocked: observation timeout`. Folder-trust and API-key prompts
 are unexpected and block; no multi-prompt sequence is authorized. The controller
 never resizes the pane. Uncertain submission is never retried. Ordinary

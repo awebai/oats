@@ -17,7 +17,8 @@ const ENTRY = DEV_CHANNEL_ENTRIES[0].id;
 // launched programs here are these stubs; no real harness or default server is used.
 // `confirm-stub` is SYNTHETIC: it draws the real confirmation's text word-wrapped
 // to its pane width, logs every key it reads, and on Enter shows a session screen.
-// `question-stub` shows a question no entry matches. `ignored-stub` and `hidden-stub`
+// `question-stub` shows a question no entry matches. `restless-stub` repaints a counter every
+// 10 ms, so its screen never settles. `ignored-stub` and `hidden-stub`
 // draw the real Claude 2.1.296 screens of a start that ignored the flag (its notice
 // visible, and hidden behind another notice), log every key, and keep running.
 const capture = name => fileURLToPath(new URL(`./fixtures/launch-prompts/${name}`, import.meta.url));
@@ -25,7 +26,8 @@ function fixture(t) {
   const fx = v2Deployment();
   t.after(() => fx.cleanup());
   const confirm = join(fx.base, 'confirm-stub'), question = join(fx.base, 'question-stub');
-  const ignored = join(fx.base, 'ignored-stub'), hidden = join(fx.base, 'hidden-stub');
+  const ignored = join(fx.base, 'ignored-stub'), hidden = join(fx.base, 'hidden-stub'), restless = join(fx.base, 'restless-stub');
+  writeFileSync(restless, `#!${process.execPath}\nlet n = 0; setInterval(() => process.stdout.write('\\x1b[2J\\x1b[HSYNTHETIC still starting ' + (n++)), 10);\n`);
   const paragraphs = JSON.stringify(['WARNING: Loading development channels',
     '--dangerously-load-development-channels is for local channel development only. Do not use this option to run channels you have downloaded off the internet.',
     'Please use --channels to run a list of approved channels.', 'Channels: plugin:aweb-channel@awebai-marketplace',
@@ -47,13 +49,14 @@ process.stdin.setRawMode(true); process.stdin.resume();
 process.stdin.on('data', d => fs.appendFileSync('stub-keys.log', JSON.stringify(d.toString()) + '\\n'));
 `);
   }
-  for (const f of [confirm, question, ignored, hidden]) chmodSync(f, 0o755);
+  for (const f of [confirm, question, ignored, hidden, restless]) chmodSync(f, 0o755);
   const local = YAML.parse(readFileSync(join(fx.dep, 'oats-local.yaml'), 'utf8'));
   local['launch-configs'] = {
     confirm: { harness: 'claude', executable: confirm, args: [...DEV] },
     question: { harness: 'claude', executable: question, args: [...DEV] },
     ignored: { harness: 'claude', executable: ignored, args: [...DEV] },
     hidden: { harness: 'claude', executable: hidden, args: [...DEV] },
+    restless: { harness: 'claude', executable: restless, args: [...DEV] },
     plain: { harness: 'claude', executable: confirm },
     codex: { harness: 'codex', executable: confirm, args: [...DEV] },
   };
@@ -334,4 +337,26 @@ test('a running session with the notice hidden stays blocked, and the error and 
   await assert.rejects(fx.inEnv(() => startInstanceSession(q)), e => { foreign = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
   assert.ok(!foreign.message.includes(CLAUDE_SESSION_HINT));
   assert.ok(!readinessItems(fx, q)[0].remedy.includes(CLAUDE_SESSION_HINT));
+});
+
+test('a screen that never settles is an observation timeout: the error and readiness say no prompt was established', async t => {
+  const { fx, home } = fixture(t);
+  await fx.spawn('dev', { name: 'dev-restless', launchConfig: 'restless', launch: false });
+  const h = home('dev-restless');
+  // A fake clock reaches the 30 s bound quickly; every capture is still real.
+  let now = 0;
+  let error;
+  await assert.rejects(fx.inEnv(() => startInstanceSession(h, { io: { now: () => now, sleep: ms => { now += ms; } } })), e => { error = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
+  const recorded = meta(h).launchPrompts;
+  assert.equal(recorded.status, 'blocked');
+  assert.equal(recorded.reason, 'blocked: observation timeout');
+  assert.ok(recorded.differed, 'what differed is kept as evidence');
+  assert.match(error.message, /never settled/);
+  assert.doesNotMatch(error.message, /read the prompt|press Enter/);
+  const [warning] = readinessItems(fx, h);
+  assert.match(warning.reason, /never settled/);
+  assert.doesNotMatch(warning.reason, /stopped at a prompt/);
+  assert.match(warning.remedy, /no prompt/);
+  assert.doesNotMatch(warning.remedy, /read the prompt|press Enter/);
+  assert.deepEqual(keys(h), []);
 });

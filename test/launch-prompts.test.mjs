@@ -135,10 +135,11 @@ test("a prompt painted in two steps is answered once", t => {
   assert.deepEqual(io.sends, ["Enter"]);
 });
 
-test("a screen that never settles is a loud miss at the bound: no key, what differed, the last screen kept", t => {
+test("a screen that never settles is an observation timeout at the bound, never a prompt: no key, what differed, the last screen kept", t => {
   const { controller, io } = setup(t, { configure({ io }) { io.snapshotHook = s => ({ ...s, text: `SYNTHETIC spinner ${io.captures}\n` }); } });
   const result = controller.observeNew(target);
-  assert.equal(result.reason, "blocked: unexpected prompt");
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "blocked: observation timeout");
   assert.equal(result.differed.nearest, ENTRY);
   assert.equal(io.time, 30000);
   assert.deepEqual(io.sends, []);

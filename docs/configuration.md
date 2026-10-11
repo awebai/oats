@@ -205,10 +205,13 @@ are unexpected and block. While the screen keeps changing it waits, within 30 s
 at 100 ms. An unknown screen is no verdict until it has held unchanged for the
 settle window (`SETTLE`, 2 s): Claude paints transient frames while it starts (a
 logo mid-animation, a renderer notice) and can hold one for a second or more
-under load. An unknown screen that holds still for `SETTLE`, or one still
-changing when the bound is reached, blocks with no key, `blocked: unexpected prompt`, and
-the receipt says what `differed` from the nearest entry (a screen blank for the
-whole bound is `blocked: observation timeout`). The instance then waits for a person: the spawn is retained
+under load. An unknown screen that holds still for `SETTLE` blocks with no key,
+`blocked: unexpected prompt`, and the receipt says what `differed` from the
+nearest entry. A screen still changing when the 30 s bound is reached, or blank
+for the whole bound, never settled into a prompt: it blocks with no key,
+`blocked: observation timeout`, keeping what `differed` and the last screen as
+evidence, and its error and readiness remedy say no prompt was established (look
+at the pane; restart a running session) rather than to read and answer one. The instance then waits for a person: the spawn is retained
 (`E_SPAWN_INCOMPLETE`), the home records `launchPrompts.status: "blocked"`, and
 readiness shows the `launch-prompt` warning. Every attempt and outcome is a
 `launch-prompt` event carrying the Claude version read from the executable's
