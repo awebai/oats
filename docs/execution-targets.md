@@ -697,8 +697,10 @@ captured twice, identical, around the durable intent.
 Observation is bounded to 30 seconds with 100 ms intervals. A blank screen, or
 one that keeps changing (a prompt still being painted), keeps observing. Only a
 screen whose normalized text equals a tolerance entry can be answered, once,
-with one Enter. An unknown screen that holds still for 200 ms permanently closes
-authority with `blocked: unexpected prompt`. Folder-trust and API-key prompts
+with one Enter. An unknown screen that holds still for 200 ms, or the last
+unknown screen when the bound is reached, permanently closes authority with
+`blocked: unexpected prompt`; a screen blank for the whole bound reports
+`blocked: observation timeout`. Folder-trust and API-key prompts
 are unexpected and block; no multi-prompt sequence is authorized. The controller
 never resizes the pane. Uncertain submission is never retried. Ordinary
 `session input` and wake delivery do not enter this controller. A launch with any
