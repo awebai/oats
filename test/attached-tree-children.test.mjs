@@ -289,7 +289,7 @@ function assertRefused(d, owner, purpose, tree, children, said) {
   assert.equal(existsSync(join(owner.home, ".oats", "trees", `${purpose}.json`)), true, "and its record is kept");
 }
 
-test("oats worktree remove refuses under an attached instance whose session cannot be read, and never calls it running; an instance of ambiguous lineage is read too, which the retire of its owner does not act on (#964)", async (t) => {
+test("oats worktree remove refuses under an attached instance whose session cannot be read, and never calls it running; an instance of ambiguous lineage is read too (#964)", async (t) => {
   const d = deployment(t);
   const owner = await d.owner("dev-owner");
   const tree = d.added(owner.home, "unread");
@@ -326,18 +326,49 @@ test("oats worktree remove refuses under an attached instance whose session cann
   assertRefused(d, twin, "twins", twinTree, [{ instance: orphan.instance, home: orphan.home, session: "unknown" }],
     `${twinTree} is the work of an attached instance: ${orphan.instance} (whether its session is running could not be read); nothing was removed (the record is kept). To remove the tree, stop it (\`oats instance stop ${orphan.instance}\`) or retire it, then remove again`);
 
-  // The retire of that owner does not act on it, as on no instance of ambiguous lineage: it is not
-  // asked to stop, so it is not among the children whose link the retire repoints, or names.
-  writeFileSync(join(twinTree, "uncommitted.txt"), "work in the tree\n");
-  const twinNote = d.fx.cli(["retire", basename(twin.home), "--home", twin.home, "--plan", "--json"]).json().result.notes.filter((n) => n.startsWith(`extra worktree ${twinTree} `));
-  assert.equal(twinNote.length, 1);
-  assert.doesNotMatch(twinNote[0], /attached child/, "the plan's note names recorded children only");
-  const receipt = d.retired(basename(twin.home), ["--home", twin.home]);
-  assert.deepEqual(receipt.extraWorktrees.map((row) => [row.path, row.outcome]), [[twinTree, "retained"]]);
-  assert.equal((receipt.warnings || []).some((w) => w.includes(orphan.instance)), false, "the receipt says nothing of it");
-  assert.equal(d.link(orphan), twinTree, "its link is as it was");
-  assert.equal(dangles(join(orphan.home, "work")), true, "and points at the path the tree has left");
 });
+
+for (const guarded of [false, true]) {
+  test(`the retire does not act on an attached instance of ambiguous lineage, and says what it leaves it with: in each tree's note of the plan and in the receipt, ${guarded ? "a guarded apply" : "a plain retire"} (#964)`, async (t) => {
+    const d = deployment(t);
+    // Three instances attached to trees of an owner: to a tree that is re-homed, to one that is
+    // removed, and to its work/. Then a second home takes the owner's name, so that no plan follows
+    // their parent edge: they are listed under `ambiguous`, and never stopped.
+    const twin = await d.owner("dev-twin-1");
+    const work = join(twin.home, "work");
+    const dirty = d.tree(twin.home, "dirty", { dirty: true }), clean = d.tree(twin.home, "clean");
+    const onDirty = d.attach("on-dirty", dirty), onClean = d.attach("on-clean", clean), onWork = d.attach("on-work", work);
+    const other = await d.owner("dev-twin-1", "dev-twin");
+    assert.equal(basename(other.home), basename(twin.home), "fixture premise: two homes of one name under the root");
+    const name = basename(twin.home), at = ["--home", twin.home];
+    const planned = d.fx.cli(["retire", name, ...at, "--plan", "--json"]).json();
+    assert.equal(planned.ok, true, JSON.stringify(planned.error));
+    const plan = planned.result;
+    assert.deepEqual(plan.facts.children, [], "fixture premise: no plan lists them as children");
+    assert.deepEqual(plan.facts.ambiguous.map((c) => c.instance).sort(), [onClean.instance, onDirty.instance, onWork.instance].sort(), "fixture premise: they are listed as ambiguous");
+    const movedTo = plan.facts.extraWorktrees.find((row) => row.path === dirty).movedTo;
+    const noteOf = (path) => { const notes = plan.notes.filter((n) => n.startsWith(`extra worktree ${path} `)); assert.equal(notes.length, 1, path); return notes[0]; };
+    assert.ok(noteOf(dirty).endsWith(`; attached instance(s) ${onDirty.instance}, listed under ambiguous, use it as their work: the retire neither stops them nor repoints their work link, which would then point at a path that is gone (the tree would be at ${movedTo})`), noteOf(dirty));
+    assert.ok(noteOf(clean).endsWith(`; attached instance(s) ${onClean.instance}, listed under ambiguous, use it as their work: the retire does not stop them, and their work link would then point at a path that is gone`), noteOf(clean));
+    assert.deepEqual(plan.notes.filter((n) => n.startsWith("attached ")), [`attached instance(s) ${onWork.instance}, listed under ambiguous, use this home's work/ as their work: the retire neither stops them nor repoints their work link, which will then point at a path that is gone, whether the worktree is retained (the receipt names where) or removed with --discard-worktree`],
+      "work/ has a note of its own for them, and the note for recorded children is not given where there is none");
+
+    const receipt = d.retired(name, [...at, ...(guarded ? ["--plan-revision", plan.planRevision, "--idempotency-key", "ambiguous-1"] : [])]);
+    assert.equal(receipt.removedDir, true);
+    const NOT_STOPPED = "it records this instance as its parent under a name that is not unique, so the retire did not stop it";
+    const link = (kid) => join(kid.home, "work");
+    assert.deepEqual(receipt.warnings, [
+      `${onClean.instance}: its work was ${clean}, which this retire removed (${REMOVED_TREE}); its work link ${link(onClean)} now points at a path that is gone (${NOT_STOPPED})`,
+      `${onDirty.instance}: its work was ${dirty}, which this retire re-homed to ${movedTo}; its work link ${link(onDirty)} was not repointed and now points at a path that is gone (${NOT_STOPPED}); to repoint it by hand: ln -sfn '${movedTo}' '${link(onDirty)}'`,
+      `${onWork.instance}: its work was ${work}, which this retire re-homed to ${receipt.retention.movedTo}; its work link ${link(onWork)} was not repointed and now points at a path that is gone (${NOT_STOPPED}); to repoint it by hand: ln -sfn '${receipt.retention.movedTo}' '${link(onWork)}'`,
+    ]);
+    // Nothing of theirs was written: each link is as it was, and leads nowhere.
+    for (const [kid, tree] of [[onDirty, dirty], [onClean, clean], [onWork, work]]) {
+      assert.equal(d.link(kid), tree, kid.instance);
+      assert.equal(dangles(link(kid)), true, kid.instance);
+    }
+  });
+}
 
 test("oats worktree remove refuses under an attached instance whose session is running, removes nothing, and removes once it is stopped (#964)", { skip: NO_TMUX }, async (t) => {
   const d = deployment(t);

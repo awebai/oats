@@ -17,6 +17,15 @@
     point at a path that is gone, and the receipt's `warnings` (and the
     summary) say so afterwards, naming each child, the tree and the link.
     Before, the plan and the receipt said nothing of them.
+  - **An attached instance the retire does not act on is named too.** An
+    instance that records the owner as its parent under a name that is not
+    unique is listed under the plan's `ambiguous` and is never stopped, so
+    its link is not repointed either. The plan's note for the tree it is
+    attached to (an extra tree, or `work/`) now names it and says that its
+    `work` link would then point at a path that is gone, and the receipt's
+    `warnings` say so for each tree that was moved or removed, with the
+    command to repoint the link by hand where the tree was re-homed. A
+    `--self` retirement's receipt does not carry those warnings.
   - **`oats worktree remove` refuses a tree under a running session.** When
     an instance attached to the tree has a session that is running, or that
     cannot be read, the command answers `E_CHILDREN_RUNNING` before Git is
