@@ -408,6 +408,23 @@ and acts on every existing session through its recorded socket
   `list-windows`, `new-window` (a window id) and `set-option`.
 - A server a test starts is killed by its socket, never by name and never
   with a bare `tmux kill-server`.
+- A test never reaches the host's `systemd-run` (#915). A Linux creator
+  inside a systemd service starts the server through the system's own
+  `systemd-run`, found by absolute path, not on `PATH`, so a fake-free `PATH`
+  does not stop it. The fixtures (`isolateSessionEnvironment`, `fixtureEnv`)
+  therefore set `OATS_TEST_CGROUP` to a scope, never a service, whatever runs
+  the suite. Two test-only seams select where the kernel judges itself and
+  which `systemd-run` it runs:
+  - `OATS_TEST_CGROUP`: the text of a `/proc/self/cgroup`, judged as Linux;
+  - `OATS_TEST_SYSTEM_TOOL_DIRS`: absolute directories separated by `:`, in
+    place of `/usr/bin:/bin`. Any other value means no system tool, never a
+    `PATH` lookup.
+
+  Both are reserved launch names (a launch configuration cannot set them),
+  are removed from a server's environment, and are stripped from the tick's
+  children like every reserved name. In process, `io.cgroup`, `io.platform`,
+  `io.invocationId` and `io.systemToolDirs` do the same for
+  `ensureOatsTmuxSession`.
 - A test that needs a terminal (an attached tmux client, a key press) runs
   the command in a pane of a second private server and types at that pane
   with `send-keys`; the pane's shell records the exit status

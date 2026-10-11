@@ -130,6 +130,52 @@ options and environment, are left exactly as they were.
   earlier kernel failed a start whose recorded tmux server could not be
   reached when a sizing command was refused; this one does not.
 
+#### A server started from inside a systemd service
+
+A tmux server lives in the cgroup of the process that started it. When that
+process runs inside a systemd service, the server and every agent pane in it
+end when the service stops. The schedule tick's oneshot service ends after
+each tick, and a Desktop run as a user service restarts at each upgrade. So,
+on Linux, when OATS starts the `oats` server (no server answered) from inside
+a service, it starts it in a transient scope of its own:
+
+```text
+systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash> -- tmux -u -L oats new-session -d …
+```
+
+- **Only what changes.** The tmux command, its arguments and the environment
+  the server starts with are the same as without the scope. `<hash>` is the
+  first 12 hex digits of the SHA-256 of the server's address: one scope per
+  socket. `systemd-run` is the system's own (`/usr/bin`, `/bin`), never one
+  found on `PATH`.
+- **The server outlives the service.** It is a sibling of the service, not
+  part of it: the service can end, stop or restart, and the server and its
+  agents go on. The scope ends with the server (`--collect` removes it).
+- **See it:** `systemctl --user status 'oats-tmux-*.scope'`, or
+  `systemd-cgls --user`. A tmux built with systemd support also puts each
+  pane in a `tmux-spawn-<id>.scope` of its own.
+- **When the creator is inside a service:** `/proc/self/cgroup` is the
+  unified hierarchy (one `0::<path>` line) and the path's last component ends
+  in `.service`. An operator's shell (`session-N.scope`), an agent's pane, and
+  macOS are not, and start the server as before. A server that already
+  answers is used as it is.
+- **The limits.**
+  - Only the unified cgroup hierarchy is judged. On the old or hybrid
+    hierarchy the server starts as before. When `INVOCATION_ID` shows the
+    creator is a systemd service, the answer warns that the server lives in
+    that service.
+  - The scope needs the user's systemd manager and its bus
+    (`XDG_RUNTIME_DIR`). A system service (one outside the user's manager) is
+    wrapped the same way, and without a user bus it gets the warning below.
+  - When `systemd-run` is missing or fails, and no other creator's server
+    answers in the meantime, the server starts as before. The answer's
+    `warnings` (spawn, session start and restart), and the schedule tick's
+    record of that run, then say `the OATS tmux server was started inside
+    <unit>: it ends when that unit stops; start the OATS tmux server from
+    your own shell, or enable the user systemd bus (<reason>)`.
+  - macOS is not wrapped: launchd lets the server, which leaves the job's
+    process group, outlive the job.
+
 <a id="the-servers-start-environment"></a>
 #### The environment of the server and its panes
 
@@ -327,8 +373,10 @@ operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
 `OATS_TRIGGER_EVENT_FILE`, `OATS_TEST_LOGIN_SHELL` (a test seam that replaces
 the login shell, honoured only for a process whose `HOME` is not your home
 directory; a launch configuration cannot set it),
-`OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS`, `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS`
-and `OATS_TEST_PROCESS_START_PS` (below), a `worktree` hook's tree
+`OATS_TEST_WORKTREE_HOOK_TIMEOUT_MS`, `OATS_TEST_WORKTREE_FETCH_TIMEOUT_MS`,
+`OATS_TEST_PROCESS_START_PS` (below), `OATS_TEST_CGROUP` and
+`OATS_TEST_SYSTEM_TOOL_DIRS` (test seams of the server's
+[own scope](#a-server-started-from-inside-a-systemd-service)), a `worktree` hook's tree
 (`OATS_TREE`, `OATS_TREE_CLONE`, `OATS_TREE_REMOTE`, `OATS_TREE_MEMBER`,
 `OATS_TREE_BASE`, `OATS_TREE_BASE_OID`, `OATS_PURPOSE`, `OATS_TREE_ORIGIN`), `OATS_TEAM_NAME`, `OATS_TEAM_SCOPE`,
 `OATS_TEAM_ID`, `OATS_TEAM_LABEL`, `OATS_TEAM_LABELS`, `OATS_TEAMS`,

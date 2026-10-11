@@ -435,6 +435,32 @@ test("the soul's preview runs once per trigger per tick (not once per event), an
   assert.equal(oats.calls().filter((a) => a.includes("--preview")).length, 1);
 });
 
+/** A stand-in CLI: the real one, whose spawn answers (not previews) carry one more warning. */
+function warningOats(fx, warning) {
+  const bin = join(fx.base, "warning-oats.mjs");
+  const real = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
+  writeFileSync(bin, `import { spawnSync } from "node:child_process";\nconst argv = process.argv.slice(2);\nconst r = spawnSync(process.execPath, [${JSON.stringify(real)}, ...argv], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });\nlet out = r.stdout;\nif (argv[0] === "spawn" && !argv.includes("--preview")) { const doc = JSON.parse(out.trim().split("\\n").pop()); if (doc.ok) doc.result.warnings = [...(doc.result.warnings ?? []), ${JSON.stringify(warning)}]; out = JSON.stringify(doc) + "\\n"; }\nprocess.stdout.write(out);\nprocess.exit(r.status ?? 1);\n`);
+  return bin;
+}
+
+test("a trigger's fire records its spawn's warnings, and the list's lastRun shows them (schedule-run-warnings)", async (t) => {
+  const fx = fixture(); t.after(fx.cleanup);
+  ok(fx.cli(["trigger", "add", "--file", writeJson(fx, definition()), "--json"]), "trigger add");
+  fx.gh.pulls([pr(1)]);
+  const warning = "the OATS tmux server was started inside oats-schedule-tick.service: it ends when that unit stops; start the OATS tmux server from your own shell, or enable the user systemd bus (no executable systemd-run in /usr/bin, /bin)";
+  const fired = await tickWith(fx, "2026-09-26T12:00:10Z", { io: { oatsBin: warningOats(fx, warning) } });
+  assert.equal(fired.filter((r) => r.action === "fired").length, 1, JSON.stringify(fired));
+  const record = Object.values(T.readTriggerState(fx.dep).triggers["local/kb-review"].fired)[0];
+  assert.ok(record.warnings?.includes(warning), JSON.stringify(record));
+  const row = ok(fx.cli(["trigger", "list", "--json"]), "trigger list").triggers.find((r) => r.name === "kb-review");
+  assert.ok(row.lastRun.warnings?.includes(warning), JSON.stringify(row.lastRun));
+  // A fire whose spawn says nothing records none.
+  fx.gh.pulls([pr(1), pr(2)]);
+  await tickWith(fx, "2026-09-26T12:02:10Z");
+  const quiet = Object.entries(T.readTriggerState(fx.dep).triggers["local/kb-review"].fired).find(([key]) => key.includes("#2:"))[1];
+  assert.equal("warnings" in quiet, false, JSON.stringify(quiet));
+});
+
 const LONG_PKG = "acme.knowledge-operations";
 /** A deployment with a package whose souls have long agent names (`<package>--<soul>`):
  *  pull-request-reviewer's stem is acme-knowledge-operations-pull-request-reviewer (47);
