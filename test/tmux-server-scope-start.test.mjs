@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureOatsTmuxSession } from "../lib/core.mjs";
 import { serverScopeUnit, serverScopeWarning } from "../lib/tmux-server-scope.mjs";
-import { isolateSessionEnvironment, oatsSocket, systemExecutable } from "./helpers/host-fixture.mjs";
+import { isolateSessionEnvironment, killTmuxServer, oatsSocket, systemExecutable } from "./helpers/host-fixture.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-scope-start-")));
 const restoreEnvironment = isolateSessionEnvironment(base);
@@ -42,7 +42,7 @@ const SCOPE_ID = "f00dfeed0123456789abcdef00000915";
 const RUNS_COMMAND = `while [ "$1" != "--" ]; do shift; done; shift\nINVOCATION_ID=${SCOPE_ID}; export INVOCATION_ID\nexec "$@"`;
 /** The server's own global environment, names and values. */
 const serverEnvironment = () => execFileSync(TMUX, ["-u", "-S", OATS, "show-environment", "-g"], { encoding: "utf8" });
-const killServer = () => { try { execFileSync(TMUX, ["-u", "-S", OATS, "kill-server"], { stdio: "ignore" }); } catch { /* none */ } };
+const killServer = () => killTmuxServer(OATS, TMUX);
 const sessions = () => { try { return execFileSync(TMUX, ["-u", "-S", OATS, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8" }).split("\n").filter(Boolean); } catch { return []; } };
 /** Every call ensureOatsTmuxSession makes, run for real. */
 function spy(extra = {}) {
@@ -52,18 +52,18 @@ function spy(extra = {}) {
 const plainArgs = (session) => ["-u", "-L", "oats", "new-session", "-d", "-s", session, "-n", "hq", "-c", base, "-P", "-F", "#{socket_path}\t#{window_id}"];
 const starts = (calls) => calls.filter((c) => c.args.includes("new-session"));
 
-test("the session environment's own kernel calls judge themselves outside any service (#915 isolation)", () => {
+test("the session environment's own kernel calls judge themselves outside any service (#915 isolation)", async () => {
   assert.match(process.env.OATS_TEST_CGROUP ?? "", /^0::\/.*\.scope\n$/);
   const warnings = [];
-  killServer();
+  await killServer();
   const { calls, io } = spy();
   ensureOatsTmuxSession("isolated", base, io, undefined, undefined, warnings);
   assert.equal(starts(calls)[0].bin, TMUX); assert.deepEqual(warnings, []);
-  killServer();
+  await killServer();
 });
 
-test("inside a service on Linux: the server starts under systemd-run --user --scope, with today's argv and environment", () => {
-  killServer();
+test("inside a service on Linux: the server starts under systemd-run --user --scope, with today's argv and environment", async () => {
+  await killServer();
   const sys = systemDir(RUNS_COMMAND);
   const { calls, io } = spy({ platform: "linux", cgroup: TICK, systemToolDirs: [sys.dir] });
   const warnings = [];
@@ -81,19 +81,19 @@ test("inside a service on Linux: the server starts under systemd-run --user --sc
   // what the environment handed to tmux holds, and we add none.
   assert.equal(serverEnvironment().includes(SCOPE_ID), false, "the scope's id is not in the server's environment");
   // The same environment object and options as an unwrapped start of the same server (condition 4).
-  killServer();
+  await killServer();
   const plain = spy({ platform: "linux", cgroup: SESSION_SCOPE, systemToolDirs: [sys.dir] });
   ensureOatsTmuxSession("scoped", base, plain.io);
   const [unwrapped] = starts(plain.calls);
   assert.deepEqual(unwrapped.args, plainArgs("scoped"));
   assert.deepEqual(start.options, unwrapped.options, "the same options and environment object as an unwrapped start: none added, INVOCATION_ID included");
-  killServer();
+  await killServer();
 });
 
-test("a session scope, an agent's pane, macOS and a running server: the start is today's, byte for byte", () => {
+test("a session scope, an agent's pane, macOS and a running server: the start is today's, byte for byte", async () => {
   const sys = systemDir(RUNS_COMMAND);
   for (const [platform, cgroup] of [["linux", SESSION_SCOPE], ["linux", PANE_SCOPE], ["darwin", TICK]]) {
-    killServer();
+    await killServer();
     const { calls, io } = spy({ platform, cgroup, systemToolDirs: [sys.dir] });
     const warnings = [];
     assert.equal(ensureOatsTmuxSession("plain", base, io, undefined, undefined, warnings), OATS);
@@ -106,13 +106,13 @@ test("a session scope, an agent's pane, macOS and a running server: the start is
   ensureOatsTmuxSession("plain", base, io, undefined, undefined, []);
   assert.deepEqual(starts(calls), []);
   assert.equal(sys.args(), null, "systemd-run never ran");
-  killServer();
+  await killServer();
 });
 
-test("the old or hybrid hierarchy: today's start, with the warning only when INVOCATION_ID says it is a service", () => {
+test("the old or hybrid hierarchy: today's start, with the warning only when INVOCATION_ID says it is a service", async () => {
   const sys = systemDir(RUNS_COMMAND);
   for (const invocationId of [undefined, "0123abcd"]) {
-    killServer();
+    await killServer();
     const { calls, io } = spy({ platform: "linux", cgroup: V1, invocationId, systemToolDirs: [sys.dir] });
     const warnings = [];
     ensureOatsTmuxSession("legacy", base, io, undefined, undefined, warnings);
@@ -120,17 +120,17 @@ test("the old or hybrid hierarchy: today's start, with the warning only when INV
     assert.deepEqual(warnings, invocationId ? [serverScopeWarning({ unit: "oats-schedule-tick.service", reason: "the cgroup hierarchy is not the unified one, so there is no unified cgroup path to judge" })] : []);
   }
   assert.equal(sys.args(), null);
-  killServer();
+  await killServer();
 });
 
-test("no systemd-run in the system directories, or one that fails: today's start, and the warning says why", () => {
+test("no systemd-run in the system directories, or one that fails: today's start, and the warning says why", async () => {
   for (const [sys, reason] of [
     [systemDir(null), (s) => `no executable systemd-run in ${s.dir}`],
     // The scope's INVOCATION_ID can only be kept out by the system's env: without it, no scope.
     [systemDir(RUNS_COMMAND, { env: false }), (s) => `no executable env in ${s.dir}`],
     [systemDir(`echo 'Failed to connect to bus: No medium found' >&2\nexit 1`), () => "Failed to connect to bus: No medium found"],
   ]) {
-    killServer();
+    await killServer();
     const { calls, io } = spy({ platform: "linux", cgroup: TICK, systemToolDirs: [sys.dir] });
     const warnings = [];
     assert.equal(ensureOatsTmuxSession("fallback", base, io, undefined, undefined, warnings), OATS);
@@ -139,11 +139,11 @@ test("no systemd-run in the system directories, or one that fails: today's start
     assert.equal(plain.length, 1); assert.deepEqual(plain[0].args, plainArgs("fallback"));
     assert.deepEqual(warnings, [serverScopeWarning({ unit: "oats-schedule-tick.service", reason: reason(sys) })]);
   }
-  killServer();
+  await killServer();
 });
 
-test("a wrapped start that fails while another creator's server now answers: success, no warning, no second start", () => {
-  killServer();
+test("a wrapped start that fails while another creator's server now answers: success, no warning, no second start", async () => {
+  await killServer();
   // The other creator wins: the session exists when systemd-run refuses the unit it already holds.
   const sys = systemDir(`while [ "$1" != "--" ]; do shift; done; shift\n"$@" >/dev/null\necho 'Failed to start transient scope unit: Unit oats-tmux-x.scope already exists.' >&2\nexit 1`);
   const { calls, io } = spy({ platform: "linux", cgroup: TICK, systemToolDirs: [sys.dir] });
@@ -152,11 +152,11 @@ test("a wrapped start that fails while another creator's server now answers: suc
   assert.deepEqual(sessions(), ["raced"]);
   assert.deepEqual(warnings, []);
   assert.deepEqual(starts(calls).map((c) => c.bin), [join(sys.dir, "systemd-run")], "no unwrapped start after it");
-  killServer();
+  await killServer();
 });
 
-test("a wrapped start that fails with no server: one unwrapped start; when that fails too, today's error", () => {
-  killServer();
+test("a wrapped start that fails with no server: one unwrapped start; when that fails too, today's error", async () => {
+  await killServer();
   const sys = systemDir(`echo 'tmux: could not start' >&2\nexit 1`);
   const started = [];
   const exec = (bin, args, options) => {
@@ -172,8 +172,8 @@ test("a wrapped start that fails with no server: one unwrapped start; when that 
   assert.deepEqual(sessions(), []);
 });
 
-test("a scope a dead server left behind (a process outlived it) does not block a later wrapped start", () => {
-  killServer();
+test("a scope a dead server left behind (a process outlived it) does not block a later wrapped start", async () => {
+  await killServer();
   // systemd refuses a unit name it has loaded: a scope stays loaded while any process is left in it.
   const sys = systemDir(`name=; prev=; for a do [ "$prev" = "--unit" ] && name=$a; prev=$a; done
 loaded='${join(base, `loaded-${n + 1}`)}'
@@ -182,18 +182,18 @@ echo "$name" >> "$loaded"
 ${RUNS_COMMAND}`);
   const first = spy({ platform: "linux", cgroup: TICK, systemToolDirs: [sys.dir] });
   ensureOatsTmuxSession("left", base, first.io, undefined, undefined, []);
-  killServer(); // its scope stays loaded: the fake never forgets a name
+  await killServer(); // its scope stays loaded: the fake never forgets a name
   const second = spy({ platform: "linux", cgroup: TICK, systemToolDirs: [sys.dir] });
   const warnings = [];
   assert.equal(ensureOatsTmuxSession("left", base, second.io, undefined, undefined, warnings), OATS);
   assert.deepEqual(warnings, [], "started in a scope of its own again, not inside the service");
   assert.deepEqual(starts(second.calls).map((c) => c.bin), [join(sys.dir, "systemd-run")]);
   assert.notEqual(starts(second.calls)[0].args[5], starts(first.calls)[0].args[5]);
-  killServer();
+  await killServer();
 });
 
-test("a creator that loses the start to another one says nothing about the winner's server", () => {
-  killServer();
+test("a creator that loses the start to another one says nothing about the winner's server", async () => {
+  await killServer();
   const sys = systemDir(RUNS_COMMAND);
   const warnings = [], started = [];
   // B looked and found no server; A starts it before B's wrapped start runs. B's tmux then finds the
@@ -209,5 +209,5 @@ test("a creator that loses the start to another one says nothing about the winne
   assert.deepEqual(sessions(), ["raced"]);
   assert.deepEqual(warnings, [], "B started nothing, so B says nothing");
   assert.deepEqual(started, [join(sys.dir, "systemd-run")], "and starts nothing unwrapped after the race");
-  killServer();
+  await killServer();
 });

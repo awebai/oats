@@ -325,3 +325,14 @@ export function zombieSync(pid, { signal = "SIGKILL", timeoutMs = 10000 } = {}) 
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
   }
 }
+
+/** Kill the tmux server on `socket`, when one answers, and wait until its process has exited.
+ *  `kill-server` returns before the server is gone, and a lookup on the socket in between reads
+ *  "server exited unexpectedly", which the kernel reports as an error, not as no server. */
+export async function killTmuxServer(socket, tmux = "tmux", timeoutMs = 5000) {
+  const run = (...args) => execFileSync(tmux, ["-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] });
+  let pid;
+  try { pid = Number(run("display-message", "-p", "#{pid}").trim()); } catch { return; }
+  try { run("kill-server"); } catch { /* it exited meanwhile */ }
+  await waitUntil(() => { try { process.kill(pid, 0); return false; } catch (e) { return e.code === "ESRCH"; } }, `the tmux server on ${socket} to exit`, timeoutMs);
+}

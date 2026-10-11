@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { oatsSocket, systemExecutable } from "./helpers/host-fixture.mjs";
+import { killTmuxServer, oatsSocket, systemExecutable } from "./helpers/host-fixture.mjs";
 import { serverScopeWarning } from "../lib/tmux-server-scope.mjs";
 
 const TICK = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/oats-schedule-tick.service\n";
@@ -16,8 +16,8 @@ const TICK = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/oats-sc
 function deployment(t) {
   const fx = v2Deployment({ t });
   const socket = oatsSocket(fx.env.TMUX_TMPDIR);
-  const killServer = () => { try { execFileSync("tmux", ["-S", socket, "kill-server"], { stdio: "ignore" }); } catch { /* none */ } };
-  fx.beforeCleanup(killServer);
+  const killServer = () => killTmuxServer(socket);
+  fx.beforeCleanup(() => { try { execFileSync("tmux", ["-S", socket, "kill-server"], { stdio: "ignore" }); } catch { /* none */ } });
   const sessions = () => { try { return execFileSync("tmux", ["-S", socket, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8" }).split("\n").filter(Boolean); } catch { return []; } };
   return { fx, socket, killServer, sessions };
 }
@@ -31,7 +31,7 @@ function systemDir(fx, name, body) {
 }
 const answer = (r) => { assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result; };
 
-test("without systemd-run, the spawn and the session start that start the server say it lives inside the service", (t) => {
+test("without systemd-run, the spawn and the session start that start the server say it lives inside the service", async (t) => {
   const { fx, killServer, sessions } = deployment(t);
   const service = { OATS_TEST_CGROUP: TICK, OATS_TEST_SYSTEM_TOOL_DIRS: systemDir(fx, "no-systemd-run", null) };
   const warning = serverScopeWarning({ unit: "oats-schedule-tick.service", reason: `no executable systemd-run in ${join(fx.base, "no-systemd-run")}` });
@@ -39,7 +39,7 @@ test("without systemd-run, the spawn and the session start that start the server
   assert.ok(spawned.warnings?.includes(warning), JSON.stringify(spawned.warnings));
   assert.ok(sessions().length > 0, "the server started all the same");
   // The server goes; the session start that starts it again says the same.
-  killServer();
+  await killServer();
   const started = answer(fx.cli(["session", "start", "--home", spawned.home, "--json"], { env: service }));
   assert.ok(started.warnings?.includes(warning), JSON.stringify(started.warnings));
   // A start that finds the server running starts none, and says nothing.
