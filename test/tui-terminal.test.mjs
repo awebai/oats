@@ -105,6 +105,28 @@ function helpFaults(screen, { cols = 80, rows = 24, rule = UTF8.rule } = {}) {
 // ---- a terminal ---------------------------------------------------------------------------------
 /** The pane's modes, as tmux tracks them. `bracket_paste_flag` is empty on a tmux that has no such
  *  format (it prints nothing for a name it does not know). */
+/** A `stty -g` line as this file compares it: the line itself, but for one bit of macOS's `lflag`.
+ *  That bit, 0x20000000, is PENDIN, and it is state of the terminal driver, not a setting: the
+ *  driver sets it when the terminal goes canonical and clears it when something reads or watches
+ *  the terminal. It changes with no TUI running, in both directions, and no program can put it
+ *  back (the control's output: awebai/oats#935, comment 6108614331). So it is cleared here, in the
+ *  one place a line is read, and every comparison of the file is of everything else.
+ *  Only macOS's format is touched (`gfmt1:cflag=...:lflag=<hex>:...`), and its `lflag` is found by
+ *  name. A Linux line (hex fields with no names) is returned as it is; so is a macOS line whose
+ *  `lflag` is missing, written twice or not hex, which then fails its comparison as it stands. */
+const PENDIN = 0x20000000n;
+function comparableStty(line) {
+  const fields = line.split(":");
+  if (fields[0] !== "gfmt1") return line;
+  const at = fields.flatMap((field, i) => (field.startsWith("lflag=") ? [i] : []));
+  const hex = at.length === 1 ? fields[at[0]].slice("lflag=".length) : "";
+  if (!/^[0-9a-f]+$/i.test(hex)) return line;
+  const lflag = BigInt(`0x${hex}`);
+  if ((lflag & PENDIN) === 0n) return line;
+  fields[at[0]] = `lflag=${(lflag & ~PENDIN).toString(16)}`;
+  return fields.join(":");
+}
+
 const FLAGS = ["alternate_on", "cursor_flag", "wrap_flag", "mouse_any_flag", "keypad_flag", "keypad_cursor_flag", "insert_flag", "origin_flag", "bracket_paste_flag"];
 let opened = 0, started = 0;
 
@@ -158,7 +180,7 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
       await term.command(`${shq(STTY)} -g > ${shq(file)}`, `stty -g ${when}`);
       await until(term, () => existsSync(file) && /\n$/.test(readFileSync(file, "utf8")), `the output of stty -g ${when} in ${id}`);
       await term.prompt(`after stty -g ${when}`);
-      return readFileSync(file, "utf8").trim();
+      return comparableStty(readFileSync(file, "utf8").trim());
     },
     /** Everything a program can leave changed: the line settings, the pane's modes and title, and
      *  every option of the server, the session, the window and the pane. Taken at the prompt. */
@@ -218,6 +240,42 @@ function assertRunningModes(term, why) {
   // The shell's readline switches bracketed paste off before it runs a command: on here, it is the TUI's.
   if (paste !== "") assert.equal(paste, "1", `${why}: bracketed paste is on`);
 }
+
+// ---- the reading of `stty -g` itself: no terminal needed ----------------------------------------
+test("a stty -g line is compared without macOS's PENDIN bit and with everything else: that bit of lflag is cleared in a macOS line and nothing else is; a Linux line is untouched", () => {
+  // Two real lines of one pane on macOS, from the control's output: PENDIN set, and clear.
+  const mac = (lflag, iflag = "6b02") => `gfmt1:cflag=4b00:iflag=${iflag}:lflag=${lflag}:oflag=3:discard=f:dsusp=19:eof=4:eol=ff:eol2=ff:erase=7f:intr=3:kill=15:lnext=16:min=1:quit=1c:reprint=12:start=11:status=14:stop=13:susp=1a:time=0:werase=17:ispeed=9600:ospeed=9600`;
+  assert.equal(comparableStty(mac("200005cb")), mac("5cb"), "that bit is cleared, and no other character of the line changes");
+  assert.equal(comparableStty(mac("5cb")), mac("5cb"), "a line without the bit is returned as it is");
+  assert.equal(comparableStty(mac("200005cb")), comparableStty(mac("5cb")), "two lines that differ only in PENDIN compare equal");
+  assert.equal(comparableStty(mac("a00005cb")), mac("800005cb"), "the bits above it stay (NOFLSH, 0x80000000)");
+  assert.equal(comparableStty(mac("20000000")), mac("0"), "PENDIN alone leaves no bit");
+
+  // Every other difference is still a difference.
+  assert.notEqual(comparableStty(mac("200005c3")), comparableStty(mac("5cb")), "ECHO (0x8) off on one side");
+  assert.notEqual(comparableStty(mac("220005cb")), comparableStty(mac("200005cb")), "NOKERNINFO (0x02000000), the bit next to it in the name");
+  assert.notEqual(comparableStty(mac("200004cb")), comparableStty(mac("200005cb")), "ICANON (0x100) off: raw mode left on");
+  assert.notEqual(comparableStty(mac("200005cb", "6b00")), comparableStty(mac("5cb")), "a bit of iflag");
+  assert.notEqual(comparableStty(mac("5cb").replace("oflag=3", "oflag=20000003")), comparableStty(mac("5cb")), "the same bit in another field is that field's");
+  assert.notEqual(comparableStty(mac("5cb").replace("min=1", "min=0")), comparableStty(mac("5cb")), "a control character");
+
+  // A macOS line it cannot read is returned as it is, and so fails its comparison as it stands.
+  for (const odd of [
+    mac("200005cb").replace("lflag=200005cb:", ""), // no lflag
+    mac("200005cb").replace("lflag=200005cb", "lflag="), // empty
+    mac("200005cb").replace("lflag=200005cb", "lflag=0x200005cb"), // not plain hex
+    mac("200005cb").replace("oflag=3", "lflag=20000003"), // written twice
+    mac("200005cb").replace("lflag=", "xlflag="), // another name that ends the same
+  ]) assert.equal(comparableStty(odd), odd, odd);
+
+  // Linux prints hex fields with no names; the fourth is lflag. Nothing of it is touched, whatever it holds.
+  const linux = "4500:5:f00bf:8a3b:3:1c:7f:15:4:0:1:0:11:13:1a:0:12:f:17:16:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0";
+  assert.equal(comparableStty(linux), linux);
+  const linuxWithThatBit = linux.replace(":8a3b:", ":20008a3b:");
+  assert.equal(comparableStty(linuxWithThatBit), linuxWithThatBit);
+  assert.notEqual(comparableStty(linuxWithThatBit), comparableStty(linux), "on Linux that bit is compared like any other");
+  assert.equal(comparableStty(""), "");
+});
 
 // ---- no terminal at all: plain children ---------------------------------------------------------
 test("without a terminal on stdout `oats tui` prints the E_NO_TERMINAL line on stderr and exits 1 with no escape byte; --json is refused as one JSON envelope, --help prints the usage, and --dir and --server are refused", () => {
