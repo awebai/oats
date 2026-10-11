@@ -12,6 +12,7 @@ import { cliWorkspace, workspaceArgv, validWorkspaceRef, WORKSPACE_READ_TIMEOUT,
 import { syncData, capabilitiesData, onboardData } from '../../client/deployment-data.mjs';
 import { createWorkspaceSyncBoundary } from '../server/workspace-sync.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 const file = name => new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url);
 const raw = name => JSON.parse(readFileSync(file(name), 'utf8'));
@@ -60,7 +61,7 @@ test('argv is fixed per verb; there is no approve verb', () => {
 
 test('exec: bounded, no shell, scrubbed instance selectors, caller env untouched', async () => {
   const env = { KEEP: '1', OATS_INSTANCE_HOME: '/foreign', PI_AGENTS_ROOT: '/foreign', OATS_DEPLOYMENT: '/foreign' };
-  const result = await cliWorkspace(cli(), { action: 'capabilities', context: deployment }, { env, exec(bin, argv, options, done) {
+  const result = await cliWorkspace(cli(), { action: 'capabilities', context: deployment }, DESKTOP_TERMS, { env, exec(bin, argv, options, done) {
     assert.equal(bin, '/fixture/bin/oats'); assert.equal(options.shell, false); assert.equal(options.cwd, deployment);
     assert.equal(options.maxBuffer, WORKSPACE_MAX_BUFFER); assert.deepEqual(options.env, { KEEP: '1' });
     replay('capabilities')(bin, argv, options, done);
@@ -70,11 +71,11 @@ test('exec: bounded, no shell, scrubbed instance selectors, caller env untouched
 });
 
 test('exit semantics: success is exit 0 only (no "pending"); refusals keep only code/message', async () => {
-  const run = (options, name) => cliWorkspace(cli(), options, { exec: replay(name) });
+  const run = (options, name) => cliWorkspace(cli(), options, DESKTOP_TERMS, { exec: replay(name) });
   assert.deepEqual(await run({ action: 'sync', context: deployment }, 'sync-current'), { ok: true, document: fixture('sync-current') });
   for (const action of ['sync', 'capabilities']) {
     const name = action === 'sync' ? 'sync-current' : 'capabilities';
-    const two = await cliWorkspace(cli(), { action, context: deployment }, { exec: (_b, _a, _o, done) => done(exitError(2), JSON.stringify(fixture(name))) });
+    const two = await cliWorkspace(cli(), { action, context: deployment }, DESKTOP_TERMS, { exec: (_b, _a, _o, done) => done(exitError(2), JSON.stringify(fixture(name))) });
     assert.equal(two.reason.code, 'E_CLI_FAILED', `${action}: exit 2 is not a success any more`);
   }
   const integrity = await run({ action: 'sync', context: deployment }, 'sync-integrity');
@@ -84,20 +85,20 @@ test('exit semantics: success is exit 0 only (no "pending"); refusals keep only 
   const rolled = await run({ action: 'onboard', dir: '/fixture/base/other-workspace', workspace: '/fixture/base/fx/remotes/missing.git' }, 'onboard-unreadable');
   assert.deepEqual(rolled.reason, { code: 'E_REMOTE_UNREADABLE', message: fixture('onboard-unreadable').error.message, rolledBack: true });
   // A refusal on a success exit, garbage, timeouts and huge output fail closed.
-  assert.equal((await cliWorkspace(cli(), { action: 'sync', context: deployment }, { exec: (_b, _a, _o, done) => done(null, JSON.stringify(fixture('sync-integrity'))) })).reason.code, 'E_CLI_PROTOCOL');
-  assert.equal((await cliWorkspace(cli(), { action: 'sync', context: deployment }, { exec: (_b, _a, _o, done) => done(null, 'SECRET') })).reason.code, 'E_CLI_PROTOCOL');
-  assert.equal((await cliWorkspace(cli(), { action: 'sync', context: deployment }, { exec: (_b, _a, _o, done) => done({ killed: true }, '') })).reason.code, 'E_CLI_TIMEOUT');
-  assert.equal((await cliWorkspace(cli(), { action: 'sync', context: deployment }, { exec: (_b, _a, _o, done) => done({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, '') })).reason.code, 'E_CLI_OUTPUT_LIMIT');
-  assert.doesNotMatch(JSON.stringify(await cliWorkspace(cli(), { action: 'sync', context: deployment }, { exec: (_b, _a, _o, done) => done(exitError(1), 'SECRET stderr') })), /SECRET/);
+  assert.equal((await cliWorkspace(cli(), { action: 'sync', context: deployment }, DESKTOP_TERMS, { exec: (_b, _a, _o, done) => done(null, JSON.stringify(fixture('sync-integrity'))) })).reason.code, 'E_CLI_PROTOCOL');
+  assert.equal((await cliWorkspace(cli(), { action: 'sync', context: deployment }, DESKTOP_TERMS, { exec: (_b, _a, _o, done) => done(null, 'SECRET') })).reason.code, 'E_CLI_PROTOCOL');
+  assert.equal((await cliWorkspace(cli(), { action: 'sync', context: deployment }, DESKTOP_TERMS, { exec: (_b, _a, _o, done) => done({ killed: true }, '') })).reason.code, 'E_CLI_TIMEOUT');
+  assert.equal((await cliWorkspace(cli(), { action: 'sync', context: deployment }, DESKTOP_TERMS, { exec: (_b, _a, _o, done) => done({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, '') })).reason.code, 'E_CLI_OUTPUT_LIMIT');
+  assert.doesNotMatch(JSON.stringify(await cliWorkspace(cli(), { action: 'sync', context: deployment }, DESKTOP_TERMS, { exec: (_b, _a, _o, done) => done(exitError(1), 'SECRET stderr') })), /SECRET/);
 });
 
 test('gate: API 2, workspace-v2 and packages-no-approval are all required; nothing dispatches otherwise', async () => {
   const older = { ...cli(), features: cli().features.filter(f => f !== 'packages-no-approval') };
   for (const state of [{ ...cli(), ok: false }, { ...cli(), workspaceApi: 1 }, { ...cli(), features: [] }, { ...cli(), bin: 'oats' }, older]) {
-    const result = await cliWorkspace(state, { action: 'sync', context: deployment }, { exec: assert.fail });
+    const result = await cliWorkspace(state, { action: 'sync', context: deployment }, DESKTOP_TERMS, { exec: assert.fail });
     assert.equal(result.ok, false);
   }
-  const refused = await cliWorkspace(older, { action: 'sync', context: deployment }, { exec: assert.fail });
+  const refused = await cliWorkspace(older, { action: 'sync', context: deployment }, DESKTOP_TERMS, { exec: assert.fail });
   assert.equal(refused.reason.code, 'E_WORKSPACE_FEATURE'); assert.match(refused.reason.message, /Update OATS/);
 });
 
@@ -126,7 +127,7 @@ function boundary(script) {
     calls.push(options);
     const step = script.shift();
     if (!step) assert.fail(`unexpected ${options.action}`);
-    return typeof step === 'function' ? step(state, options) : cliWorkspace(state, options, { exec: replay(step) });
+    return typeof step === 'function' ? step(state, options) : cliWorkspace(state, options, DESKTOP_TERMS, { exec: replay(step) });
   };
   return { request: createWorkspaceSyncBoundary({ invoke }), calls };
 }
@@ -157,7 +158,7 @@ test('a refused sync is the kernel refusal, verbatim', async () => {
 
 test('one sync per deployment; a malformed report is a protocol failure', async () => {
   let release;
-  const b = boundary([() => new Promise(done => { release = () => done(cliWorkspace(cli(), { action: 'sync', context: deployment }, { exec: replay('sync-current') })); })]);
+  const b = boundary([() => new Promise(done => { release = () => done(cliWorkspace(cli(), { action: 'sync', context: deployment }, DESKTOP_TERMS, { exec: replay('sync-current') })); })]);
   const first = b.request({ action: 'sync' }, { workspace, cli: cli() });
   await new Promise(r => setImmediate(r));
   assert.equal((await b.request({ action: 'sync' }, { workspace, cli: cli() })).reason.code, 'E_SYNC_BUSY');
@@ -254,14 +255,14 @@ test('capability-show: gated on the feature AND capabilityShowApi 1; nothing dis
   const request = { action: 'capability-show', context: deployment, name: 'nw-house-style', member: MEMBER };
   for (const state of [cli(), showCli({ capabilityShowApi: undefined }), showCli({ capabilityShowApi: 2 }), showCli({ capabilityShowApi: '1' }),
     { ...cli(), capabilityShowApi: 1 }]) {
-    const result = await cliWorkspace(state, request, { exec: assert.fail });
+    const result = await cliWorkspace(state, request, DESKTOP_TERMS, { exec: assert.fail });
     assert.deepEqual(result, { ok: false, reason: { code: 'E_CAPABILITY_SHOW_FEATURE', message: "The installed OATS CLI can't show what a capability ships. Update OATS and retry." } });
   }
   // The workspace line itself still gates first; a bad request is still a bad request.
-  assert.equal((await cliWorkspace({ ...showCli(), workspaceApi: 1 }, request, { exec: assert.fail })).reason.code, 'E_WORKSPACE_FEATURE');
-  assert.equal((await cliWorkspace(showCli(), { ...request, path: '../x' }, { exec: assert.fail })).reason.code, 'E_BAD_ARGS');
+  assert.equal((await cliWorkspace({ ...showCli(), workspaceApi: 1 }, request, DESKTOP_TERMS, { exec: assert.fail })).reason.code, 'E_WORKSPACE_FEATURE');
+  assert.equal((await cliWorkspace(showCli(), { ...request, path: '../x' }, DESKTOP_TERMS, { exec: assert.fail })).reason.code, 'E_BAD_ARGS');
   // The other verbs never needed the feature.
-  assert.equal((await cliWorkspace(cli(), { action: 'capabilities', context: deployment }, { exec: replay('capabilities') })).ok, true);
+  assert.equal((await cliWorkspace(cli(), { action: 'capabilities', context: deployment }, DESKTOP_TERMS, { exec: replay('capabilities') })).ok, true);
 });
 
 test('capability-show: --max-age reaches argv only when the probe declares observe-max-age (it is a read)', async () => {
@@ -269,17 +270,17 @@ test('capability-show: --max-age reaches argv only when the probe declares obser
   for (const declared of [true, false]) {
     const state = showCli(declared ? { features: [...showCli().features, 'observe-max-age'] } : {});
     let argv;
-    const result = await cliWorkspace(state, request, { exec: (_b, a, _o, done) => { argv = a; done(null, JSON.stringify({ schemaVersion: 1, ok: true, result: {} })); } });
+    const result = await cliWorkspace(state, request, DESKTOP_TERMS, { exec: (_b, a, _o, done) => { argv = a; done(null, JSON.stringify({ schemaVersion: 1, ok: true, result: {} })); } });
     assert.equal(result.ok, true);
     assert.equal(argv.includes('--max-age'), declared, `declared ${declared}`);
     assert.equal(argv.at(-1), '--json');
   }
-  assert.equal((await cliWorkspace(showCli(), { ...request, maxAge: -1 }, { exec: assert.fail })).reason.code, 'E_BAD_ARGS');
+  assert.equal((await cliWorkspace(showCli(), { ...request, maxAge: -1 }, DESKTOP_TERMS, { exec: assert.fail })).reason.code, 'E_BAD_ARGS');
 });
 
 test('capability-show: a refusal is the kernel code/message only; never a shell', async () => {
   let seen;
-  const result = await cliWorkspace(showCli(), { action: 'capability-show', context: deployment, name: 'nw-house-style', member: MEMBER, path: 'skills/x/SKILL.md' }, {
+  const result = await cliWorkspace(showCli(), { action: 'capability-show', context: deployment, name: 'nw-house-style', member: MEMBER, path: 'skills/x/SKILL.md' }, DESKTOP_TERMS, {
     exec(bin, argv, options, done) {
       seen = { bin, argv, options };
       done(exitError(1), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_CAPABILITY_FILE_NOT_FOUND', message: 'no such file: skills/x/SKILL.md', details: { secret: 1 } } }));

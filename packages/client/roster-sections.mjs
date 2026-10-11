@@ -7,6 +7,7 @@
  * display label. A view with one deployment has one section and no heading. */
 import { rosterGroups } from './instance-tree.mjs';
 import { machineLabelParts } from './deployment-label.mjs';
+import { requireTerms } from './client-terms.mjs';
 
 const text = (v, max = 4096) => typeof v === 'string' && v.length > 0 && v.length <= max;
 
@@ -48,13 +49,15 @@ export const rowStale = (row, deployments) => {
  * section per deployment, in the panel's order, each with its own clusters (relations are recorded
  * within one deployment); a row without a known deployment (a pending spawn) joins the primary's.
  * Sections with no visible row are left out. Each is labelled by its machine, with the path tail
- * only when one machine holds two (deployment-label.mjs machineLabels). Returns
+ * only when one machine holds two (deployment-label.mjs machineLabels), in the client's terms
+ * (client-terms.mjs: the label of a deployment that names no machine). Returns
  * `[{ deployment|null, label|null, groups }]`, a group being `{ key, label, clusters }` as before. */
-export function rosterSections(instances, visible, deployments) {
+export function rosterSections(instances, visible, deployments, terms) {
+  requireTerms(terms, 'rosterSections');
   const groupsOf = (all, shown) => rosterGroups(all, shown); // the relation groups the palette lists too
   if (!isMultiDeployment(deployments)) return [{ deployment: null, label: null, groups: groupsOf(instances, visible) }];
   const sectionOf = splitByDeployment(deployments);
-  const all = sectionOf(instances), shown = sectionOf(visible), labels = machineLabelParts(deployments);
+  const all = sectionOf(instances), shown = sectionOf(visible), labels = machineLabelParts(deployments, terms);
   const label = ({ machine, tail }) => (tail ? `${machine} · ${tail}` : machine);
   return deployments.map(d => ({ deployment: d, parts: labels.get(d.id), all: all.get(d.id), shown: shown.get(d.id) }))
     .filter(s => s.shown.length)

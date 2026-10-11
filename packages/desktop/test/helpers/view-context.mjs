@@ -4,13 +4,14 @@
 // re-homing passes its own `rehomeWorkspaceState`. Spec D's needs-input gate, roll-up and sentence are
 // pure and shared the same way, with the tab sync's last-painted-roster state (#558).
 import { rosterSections, rowStale, splitByDeployment } from "../../../client/roster-sections.mjs";
+import { DESKTOP_TERMS } from "../../renderer/desktop-terms.mjs";
 import { deploymentHeading, notePanel, panelDeployments } from "../../renderer/view-deployments.mjs";
 import { createViewMembership, rehomeMap } from "../../renderer/workspace-rehome.mjs";
 import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../../client/waiting-on-you.mjs";
 import { waitingRollup } from "../../../client/instance-tree.mjs";
 
 export const viewContext = () => ({
-  contextDeployments: [], rosterSections, deploymentHeading, notePanel, panelDeployments, rowStale,
+  contextDeployments: [], rosterSections, DESKTOP_TERMS, deploymentHeading, notePanel, panelDeployments, rowStale,
   rehomeMap, viewMembership: createViewMembership(), rehomeWorkspaceState() {},
   waitingClaim, waitingRollup, waitingSentence, waitingLabel, waitingClock, splitByDeployment,
   // syncTabNeedsInput's module state (#558): the last painted roster, read when a terminal tab opens.

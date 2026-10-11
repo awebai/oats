@@ -76,6 +76,7 @@ import {
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import { notePanel, panelDeployments, deploymentHeading } from "./view-deployments.mjs";
 import { rosterSections, rowStale, splitByDeployment } from "../../client/roster-sections.mjs";
+import { DESKTOP_TERMS } from "./desktop-terms.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "./roster-cadence.mjs";
 import { scopedRequest } from "./workspace-routes.mjs";
@@ -827,7 +828,7 @@ function renderContextRoster(instances) {
   // ambiguous names (merged-state review @3e76616).
   // Views (#482): with two or more deployments, each deployment's agent groups sit under its heading
   // (rosterSections); with one, the groups are exactly these clusters and no heading is drawn.
-  const groups = rosterSections(instances, visible, contextDeployments)
+  const groups = rosterSections(instances, visible, contextDeployments, DESKTOP_TERMS)
     .flatMap((section) => section.groups.map((group, at) => ({ ...group, heading: at === 0 && section.deployment ? section : null })));
   for (const group of groups) {
     if (group.heading) {

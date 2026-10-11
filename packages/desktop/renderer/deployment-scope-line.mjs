@@ -7,6 +7,7 @@
  * Surfaces do not read the panel themselves: the line follows the view store that every panel the
  * shell reads feeds (view-deployments.mjs `notePanel`). */
 import { deploymentLabel } from '../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { isMultiDeployment, primaryDeployment } from '../../client/roster-sections.mjs';
 import { panelDeployments, viewDeployments, onViewDeployments } from './view-deployments.mjs';
 import { currentWorkspace, onWorkspaceChange } from './views/common.mjs';
@@ -15,7 +16,7 @@ import { currentWorkspace, onWorkspaceChange } from './views/common.mjs';
  * view has two or more deployments, else null. */
 export function deploymentScopeLabel(panelOrDeployments) {
   const deployments = Array.isArray(panelOrDeployments) ? panelOrDeployments : panelDeployments(panelOrDeployments);
-  return isMultiDeployment(deployments) ? deploymentLabel(primaryDeployment(deployments)) : null;
+  return isMultiDeployment(deployments) ? deploymentLabel(primaryDeployment(deployments), DESKTOP_TERMS) : null;
 }
 
 export const deploymentScopeCSS = `

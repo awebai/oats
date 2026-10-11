@@ -12,6 +12,7 @@
  * trust decision (packages-no-approval). */
 import { cliWorkspace, workspaceGate, workspaceFailure } from '../../client/workspace-cli.mjs';
 import { syncData, capabilitiesData, observationData } from '../../client/deployment-data.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 export const WORKSPACE_SYNC_API = 1;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -22,7 +23,7 @@ const MESSAGES = {
 };
 export function syncFailure(code, status = 'unavailable', message) {
   return { workspaceSyncApi: WORKSPACE_SYNC_API, status, report: null, capabilities: null,
-    reason: { code, message: message || MESSAGES[code] || workspaceFailure(code).reason.message } };
+    reason: { code, message: message || MESSAGES[code] || workspaceFailure(code, DESKTOP_TERMS).reason.message } };
 }
 /** A kernel error envelope (its own E_* code), as opposed to a Desktop-side
  * transport/probe failure from workspace-cli.mjs. */
@@ -37,13 +38,13 @@ const observedStamp = (document, now) => observationData(document).observedAt ??
 /** `catalog` is a capability catalog; `observed(deployment)` yields that
  * deployment's projected workspace status (the catalog key) or null; `maxAge`
  * (seconds) is what a non-forced miss may accept from the kernel's cache. */
-export function createWorkspaceSyncBoundary({ invoke = cliWorkspace, catalog = null, observed = () => null, maxAge, now = () => Date.now() } = {}) {
+export function createWorkspaceSyncBoundary({ invoke = (cli, options) => cliWorkspace(cli, options, DESKTOP_TERMS), catalog = null, observed = () => null, maxAge, now = () => Date.now() } = {}) {
   const running = new Set();              // deployments with a sync in flight
   const reads = new Map();                // stamp → pending catalog read (coalesced)
 
   function context(workspace, cli) {
     if (!workspace || workspace.remote || workspace.server || typeof workspace.scope !== 'string') return { failure: syncFailure('E_WORKSPACE_UNKNOWN') };
-    const gate = workspaceGate(cli);
+    const gate = workspaceGate(cli, DESKTOP_TERMS);
     if (gate) return { failure: syncFailure(gate.reason.code) };
     return { deployment: workspace.scope, cli: { ok: true, bin: cli.bin, version: cli.version, workspaceApi: cli.workspaceApi, features: [...cli.features] } };
   }
@@ -81,7 +82,7 @@ export function createWorkspaceSyncBoundary({ invoke = cliWorkspace, catalog = n
     running.add(ctx.deployment);
     try {
       let result;
-      try { result = await invoke(ctx.cli, options); } catch { result = workspaceFailure('E_CLI_FAILED'); }
+      try { result = await invoke(ctx.cli, options); } catch { result = workspaceFailure('E_CLI_FAILED', DESKTOP_TERMS); }
       // The kernel refused (integrity, drift, discovery…): its code/message verbatim.
       if (!result?.ok) return kernelRefusal(result) ? refusal(result) : syncFailure(result?.reason?.code || 'E_CLI_FAILED');
       let report;

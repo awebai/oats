@@ -10,6 +10,7 @@ import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../for
 import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../../client/lifecycle-contract.mjs';
 import { lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope } from './helpers/lifecycle-fixture.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
@@ -46,7 +47,7 @@ test('shipped IPC bounds plan/apply separately and classifies lost mutation tran
     let handler, seen;
     const renderer = 'file:///fixture/index.html', frame = { url: renderer }, owner = { mainFrame: frame, isDestroyed: () => false };
     const c = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, classifyApiRoute, forgeProxyOptions,
-      trustedForgeFrame, FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, lifecycleFrameRefusal, RENDERER_URL: renderer, serverEpoch: 0,
+      trustedForgeFrame, FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, lifecycleFrameRefusal, DESKTOP_TERMS, RENDERER_URL: renderer, serverEpoch: 0,
       currentForgeEpoch: () => 'main:0', unservedRefusal: () => null, serverHost: { inTransition: () => false }, base: () => 'http://127.0.0.1:4820',
       wsId: 'team', allowedWs: new Set(['team']), guard: () => {}, AbortSignal: { timeout: ms => ({ ms }) },
       fetch: async (url, opts) => { seen = { url, opts }; if (fail) throw new Error('PRIVATE transport'); return { ok: true, status: 200, text: async () => '{"lifecycleApi":1}' }; } };

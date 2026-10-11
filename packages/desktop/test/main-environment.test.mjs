@@ -13,6 +13,7 @@ import { forgeEnvironment } from "../forge-cli.mjs";
 import { cliWorkspace } from "../../client/workspace-cli.mjs";
 import { serverSpawnSpec } from "../server-host.mjs";
 import { desktopEnvironment, assertUserEnvironment, USER_PATH } from "./helpers/desktop-environment.mjs";
+import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 
 const MOUNT = "/tmp/.mount_oats-dXyZ789";
 const NESTING = { TMUX: "/tmp/tmux-1000/default,1,0", HERDR_SESSION: "local", HERDR_SOCKET_PATH: "/tmp/herdr.sock" };
@@ -129,7 +130,7 @@ test("`oats workspace` verbs start from the cleaned environment and still lose t
   const cliState = { ok: true, bin: "/fixture/bin/oats", workspaceApi: 2, features: ["workspace-v2", "packages-no-approval"] };
   const env = desktopEnvironment(MOUNT, { OATS_INSTANCE_HOME: "/foreign", PI_AGENTS_ROOT: "/foreign", OATS_DEPLOYMENT: "/foreign", OATS_RESOLUTION: "foreign" });
   const before = JSON.stringify(env), seen = [];
-  const result = await cliWorkspace(cliState, { action: "sync", context: "/fixture/workspace" }, { env,
+  const result = await cliWorkspace(cliState, { action: "sync", context: "/fixture/workspace" }, DESKTOP_TERMS, { env,
     exec: (bin, argv, options, done) => { seen.push(options.env); done(null, '{"schemaVersion":1,"ok":true}'); } });
   assert.equal(result.ok, true); assert.equal(seen.length, 1);
   assertUserEnvironment(seen[0], MOUNT, "oats sync");

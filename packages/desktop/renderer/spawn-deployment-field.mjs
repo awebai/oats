@@ -26,7 +26,8 @@
  *
  * The catalog reads carry a latest-intent token: a reply after dispose() or a newer read is dropped. */
 import { apiJson } from './views/common.mjs';
-import { deploymentLabel, machineLabels, THIS_MACHINE } from '../../client/deployment-label.mjs';
+import { deploymentLabel, machineLabels } from '../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { deploymentState } from '../../client/roster-sections.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { validWorkspaceId as validId } from './workspace-id.mjs';
@@ -118,8 +119,8 @@ export function createSpawnDeploymentField(doc, { ctx, soul, viewId, deployments
   const catalogs = new Map(list.map(d => [d.id, { state: 'pending', row: null }]));
   const lastUsed = validId(preferred) && catalogs.has(preferred) ? preferred : lastSpawnDeployment(viewId, storage);
   let alive = true, serial = 0, touched = validId(preferred) && catalogs.has(preferred);
-  const labels = machineLabels(list);
-  const machine = d => labels.get(d.id) || deploymentLabel(d);
+  const labels = machineLabels(list, DESKTOP_TERMS);
+  const machine = d => labels.get(d.id) || deploymentLabel(d, DESKTOP_TERMS);
   /** The option's words: its machine, then its state when not live (the tag, never colour alone). */
   const spoken = d => [machine(d), stateText(d)].filter(Boolean).join(', ');
   const describe = (host, d) => {
@@ -146,7 +147,7 @@ export function createSpawnDeploymentField(doc, { ctx, soul, viewId, deployments
     for (const d of list) {
       const option = el('label'), input = el('input'), face = el('span');
       input.type = 'radio'; input.name = name; input.value = d.id; input.setAttribute('aria-label', spoken(d));
-      option.title = deploymentLabel(d); describe(face, d); option.append(input, face); seg.append(option);
+      option.title = deploymentLabel(d, DESKTOP_TERMS); describe(face, d); option.append(input, face); seg.append(option);
     }
     field.append(seg);
     const sync = rove(seg, { selects: true }) || (() => {});
@@ -164,7 +165,7 @@ export function createSpawnDeploymentField(doc, { ctx, soul, viewId, deployments
     popup.trigger.classList.add('fdeployment');
     paint = () => {
       const d = deployment(); describe(popup.trigger, d);
-      popup.trigger.setAttribute('aria-label', `Deployment: ${spoken(d)}`); popup.trigger.title = deploymentLabel(d);
+      popup.trigger.setAttribute('aria-label', `Deployment: ${spoken(d)}`); popup.trigger.title = deploymentLabel(d, DESKTOP_TERMS);
       popup.refresh();
     };
   }
@@ -186,7 +187,7 @@ export function createSpawnDeploymentField(doc, { ctx, soul, viewId, deployments
     value: () => deployment().id,
     deployment,
     /** The "Runs on" row's words: the chosen deployment's full label ("altair · ~/Agents/tsm"). */
-    runsOn: () => deploymentLabel(deployment()),
+    runsOn: () => deploymentLabel(deployment(), DESKTOP_TERMS),
     /** The chosen deployment's server ('' for a local one): a remote deployment spawns through it. */
     server: () => serverOf(deployment(), catalogs.get(deployment().id)?.row),
     /** The selector for the chosen deployment: its catalog's row for the soul (the root differs per deployment). */
@@ -198,7 +199,7 @@ export function createSpawnDeploymentField(doc, { ctx, soul, viewId, deployments
     /** Why Spawn is blocked, for the footer (the caller ends the sentence). */
     // A local deployment is never "unreachable": it just hasn't been read yet (the dialog adds the final period).
     blockText: () => deployment().reachable === false
-      ? (deployment().local ? `${deployment().machine || THIS_MACHINE}'s deployment hasn't been read yet. Try again in a moment` : `${machine(deployment())} isn't reachable right now`)
+      ? (deployment().local ? `${deployment().machine || DESKTOP_TERMS.thisMachine}'s deployment hasn't been read yet. Try again in a moment` : `${machine(deployment())} isn't reachable right now`)
       : `${soul.name} isn't available on ${machine(deployment())}`,
     /** Read every deployment's catalog (latest intent: a reply after dispose or a newer start is dropped). */
     start() {

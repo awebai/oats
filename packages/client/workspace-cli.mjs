@@ -19,6 +19,7 @@ import { OBSERVE_MAX_AGE_FEATURE, validMaxAge } from './deployment-contract.mjs'
 import { capabilityShowSupported, validCapabilityName, validPackageId, validRelativePath, validRepoKey } from './capability-show-contract.mjs';
 import { cliEnvironment } from './cli-environment.mjs';
 import { withoutInstanceVariables } from './kernel-environment.mjs';
+import { requireTerms } from './client-terms.mjs';
 
 export const WORKSPACE_READ_TIMEOUT = 60_000;
 export const WORKSPACE_WRITE_TIMEOUT = 300_000; // discovery reads every member remote
@@ -36,25 +37,31 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 export const validWorkspaceRef = ref => typeof ref === 'string' && ref.length > 0 && ref.length <= 2048
   && ref.trim() === ref && !/[\u0000-\u001f\u007f]/.test(ref) && !ref.startsWith('-');
 
-export function workspaceFailure(code, message) {
-  const messages = {
-    E_CLI_UNAVAILABLE: 'Choose a compatible installed OATS CLI first.',
-    E_WORKSPACE_FEATURE: 'The installed OATS CLI is older than this Desktop (it does not advertise workspace-v2 and packages-no-approval). Update OATS and retry.',
-    E_BAD_ARGS: 'The workspace request was not valid.',
-    E_CLI_FAILED: 'The installed OATS CLI could not complete this workspace command.',
-    E_CLI_PROTOCOL: 'The installed OATS CLI returned an invalid workspace result.',
-    E_CLI_TIMEOUT: 'The workspace command exceeded its time limit.',
-    E_CLI_OUTPUT_LIMIT: 'The workspace command exceeded its size limit.',
-    E_CAPABILITY_SHOW_FEATURE: "The installed OATS CLI can't show what a capability ships. Update OATS and retry.",
-  };
-  const known = Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED';
-  return { ok: false, reason: { code: known, message: message || messages[known] } };
+/** The sentence for each failure this adapter raises itself; one names the client, in its terms (client-terms.mjs). */
+const messages = Object.freeze({
+  E_CLI_UNAVAILABLE: 'Choose a compatible installed OATS CLI first.',
+  E_WORKSPACE_FEATURE: terms => `The installed OATS CLI is older than ${terms.self} (it does not advertise workspace-v2 and packages-no-approval). Update OATS and retry.`,
+  E_BAD_ARGS: 'The workspace request was not valid.',
+  E_CLI_FAILED: 'The installed OATS CLI could not complete this workspace command.',
+  E_CLI_PROTOCOL: 'The installed OATS CLI returned an invalid workspace result.',
+  E_CLI_TIMEOUT: 'The workspace command exceeded its time limit.',
+  E_CLI_OUTPUT_LIMIT: 'The workspace command exceeded its size limit.',
+  E_CAPABILITY_SHOW_FEATURE: "The installed OATS CLI can't show what a capability ships. Update OATS and retry.",
+});
+/** Every code workspaceFailure has a sentence for. */
+export const WORKSPACE_FAILURE_CODES = Object.freeze(Object.keys(messages));
+
+export function workspaceFailure(code, terms, message) {
+  requireTerms(terms, 'workspaceFailure');
+  const known = Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED', fixed = messages[known];
+  return { ok: false, reason: { code: known, message: message || (typeof fixed === 'function' ? fixed(terms) : fixed) } };
 }
 
 /** Probe facts only (version --json): the API integer and the feature. */
-export function workspaceGate(cli) {
-  if (cli?.ok !== true || !absolute(cli.bin)) return workspaceFailure('E_CLI_UNAVAILABLE');
-  if (cli.workspaceApi !== 2 || !Array.isArray(cli.features) || !WORKSPACE_FEATURES.every(name => cli.features.includes(name))) return workspaceFailure('E_WORKSPACE_FEATURE');
+export function workspaceGate(cli, terms) {
+  requireTerms(terms, 'workspaceGate');
+  if (cli?.ok !== true || !absolute(cli.bin)) return workspaceFailure('E_CLI_UNAVAILABLE', terms);
+  if (cli.workspaceApi !== 2 || !Array.isArray(cli.features) || !WORKSPACE_FEATURES.every(name => cli.features.includes(name))) return workspaceFailure('E_WORKSPACE_FEATURE', terms);
   return null;
 }
 
@@ -88,24 +95,25 @@ export function workspaceArgv(options) {
   return { argv: ['sync', '--dir', options.context, '--json'], cwd: options.context, timeout: WORKSPACE_WRITE_TIMEOUT };
 }
 
-export function cliWorkspace(cli, options, io = {}) {
-  const gate = workspaceGate(cli);
+export function cliWorkspace(cli, options, terms, io = {}) {
+  requireTerms(terms, 'cliWorkspace');
+  const gate = workspaceGate(cli, terms);
   if (gate) return Promise.resolve(gate);
   // `capabilities show` is its own feature on top of the workspace line (the feature AND the API integer).
-  if (record(options) && options.action === 'capability-show' && !capabilityShowSupported(cli)) return Promise.resolve(workspaceFailure('E_CAPABILITY_SHOW_FEATURE'));
+  if (record(options) && options.action === 'capability-show' && !capabilityShowSupported(cli)) return Promise.resolve(workspaceFailure('E_CAPABILITY_SHOW_FEATURE', terms));
   // An invalid value is a bad request whatever the kernel. A valid one on a kernel without
   // observe-max-age names a flag that does not exist there: drop it (on a copy; the caller's
   // request is not ours to edit) so the read runs flagless. Only the reads take it, so the
   // drop never lets a mutating verb past workspaceArgv's allowlist.
   if (record(options) && Object.hasOwn(options, 'maxAge')) {
-    if (!validMaxAge(options.maxAge)) return Promise.resolve(workspaceFailure('E_BAD_ARGS'));
+    if (!validMaxAge(options.maxAge)) return Promise.resolve(workspaceFailure('E_BAD_ARGS', terms));
     if (!cli.features.includes(OBSERVE_MAX_AGE_FEATURE) && READS.includes(options.action)) { const { maxAge, ...rest } = options; options = rest; }
   }
   const plan = workspaceArgv(options);
-  if (!plan) return Promise.resolve(workspaceFailure('E_BAD_ARGS'));
+  if (!plan) return Promise.resolve(workspaceFailure('E_BAD_ARGS', terms));
   const env = withoutInstanceVariables(cliEnvironment(io.env ?? process.env)); // main's own environment is not cleaned; in the backend this changes nothing
   return new Promise(done => {
-    const fail = code => done(workspaceFailure(code));
+    const fail = code => done(workspaceFailure(code, terms));
     try {
       (io.exec ?? execFile)(cli.bin, plan.argv, { cwd: plan.cwd, env, shell: false, encoding: 'utf8', timeout: plan.timeout, maxBuffer: WORKSPACE_MAX_BUFFER }, (error, stdout) => {
         if (error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return fail('E_CLI_OUTPUT_LIMIT');

@@ -26,7 +26,8 @@
  * souls: alone (`teamAudience`; packages/desktop/docs/desktop-teams.md "The Teams board"). */
 import { iconElement } from './shell-icons.mjs';
 import { createSoulMark } from './identity-marks.mjs';
-import { deploymentLabel, shortPath, THIS_MACHINE } from '../../client/deployment-label.mjs';
+import { deploymentLabel, shortPath } from '../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 
 /** The Desktop's teams routes (#269, packages/desktop/docs/desktop-teams.md): `{status: 'ok',
  * teams}` (/api/workspace-teams) or `{status: 'ok', soulTeams}` (/api/workspace-soul-teams) answer
@@ -352,7 +353,7 @@ export function memberGroups(members, servers = []) {
   const groups = new Map();
   for (const m of members) {
     const deployment = memberDeployment(m), key = deployment ? `deployment:${deployment.id}` : m.server ?? '';
-    const label = deployment ? deploymentLabel({ machine: text(deployment.machine) ?? (m.server ? text(m.serverLabel) ?? m.server : THIS_MACHINE), label: shortPath(deployment.path) })
+    const label = deployment ? deploymentLabel({ machine: text(deployment.machine) ?? (m.server ? text(m.serverLabel) ?? m.server : DESKTOP_TERMS.thisMachine), label: shortPath(deployment.path) }, DESKTOP_TERMS)
       : m.server ? text(m.serverLabel) ?? m.server : 'This computer';
     if (!groups.has(key)) groups.set(key, { key, server: m.server ?? null, deployment: deployment?.id ?? null, label, reached: true, error: null, members: [], sources: new Map() });
     const group = groups.get(key), source = m.server ? byGroup.get(m.workspace) : null;

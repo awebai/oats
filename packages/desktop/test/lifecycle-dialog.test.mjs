@@ -10,6 +10,7 @@ import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { cli, context, envelope, instance, target, options, stopPlan, retirePlan, stopReceipt, retireReceipt, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 import { successorRow } from '../renderer/focus-return.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 const reference = 'd'.repeat(64), newReference = 'e'.repeat(64);
 const planned = (operation = 'stop', planRef = reference, raw) => ({ lifecycleApi: 1, status: 'plan', target,
   planRef, plan: raw || (operation === 'stop' ? stopPlan() : retirePlan()), options: options(operation), receipt: null, reason: null });
@@ -127,7 +128,7 @@ test('transport loss is uncertain: Check again resubmits the same ref; Close can
   } });
   try {
     f.open(); await tick(); f.button('lifecycle-confirm').click(); await tick();
-    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message); assert.doesNotMatch(f.doc.body.textContent, /PRIVATE/);
+    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message); assert.doesNotMatch(f.doc.body.textContent, /PRIVATE/);
     assert.equal(f.title(), 'Result not confirmed'); assert.deepEqual(footer(f), ['Check again', 'Close']);
     assert.equal(f.doc.activeElement, f.button('lifecycle-close'), 'Close, never the resubmitting action'); assertExplained(f, 'uncertain result');
     f.button('lifecycle-retry').click(); await tick(); assert.equal(attempts, 2);
@@ -206,7 +207,7 @@ test('the dialog refuses a receipt that reports a branch deletion or a skip, wha
     const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire', reference, raw) : { lifecycleApi: 1, status, target, receipt } });
     try {
       f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
-      assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message);
+      assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message);
       assert.equal(f.doc.querySelector('.lifecycle-result').textContent, '', 'no row of the refused receipt');
       assert.doesNotMatch(told(f.doc), /UNSHOWN|Home folder deleted|Branch deleted|Branch deletion|dev-1 retired/);
       assert.equal(f.button('lifecycle-retry').hidden, false); assert.equal(f.settled.length, 0);
@@ -235,7 +236,7 @@ test('a deferred Retire is a result, never done, with Check again; one that repo
     r => { r.retention = { worktree: 'removed', branch: 'UNSHOWN-branch', recordedBranch: null, branchDeletionSkipped: { expected: 'feat/work', actual: 'UNSHOWN-branch', reason: 'UNSHOWN reason' } }; }]) {
     const receipt = structuredClone(deferredReceipt); report(receipt);
     const refused = await shown(receipt);
-    assert.equal(refused.status, lifecycleReason('E_OUTCOME_UNKNOWN').message); assert.doesNotMatch(refused.all, /UNSHOWN|background|accepted/);
+    assert.equal(refused.status, lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message); assert.doesNotMatch(refused.all, /UNSHOWN|background|accepted/);
     assert.deepEqual(refused.footer, ['Check again', 'Close']); assert.equal(refused.settled, 0);
   }
 });
@@ -245,7 +246,7 @@ test('the dialog refuses a retire plan whose defaults report a branch deletion; 
     const f = fixture({ request: () => planned('retire', reference, raw) });
     try {
       f.open('retire'); await tick();
-      assert.equal(f.status(), accepted ? '' : lifecycleReason('E_CLI_PROTOCOL').message, String(value));
+      assert.equal(f.status(), accepted ? '' : lifecycleReason('E_CLI_PROTOCOL', DESKTOP_TERMS).message, String(value));
       assert.deepEqual(footer(f), accepted ? ['Cancel', 'Retire instance'] : ['Review again', 'Close'], String(value));
       assert.equal(f.doc.querySelector('.lifecycle-facts').textContent === '', !accepted);
     } finally { f.close(); }
@@ -254,13 +255,13 @@ test('the dialog refuses a retire plan whose defaults report a branch deletion; 
 test('a local Retire refused by inspection shows the inspection sentence under the unknown outcome, never "OATS couldn\'t be run", and no Details when the CLI sent no message', async () => {
   const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire')
     : { lifecycleApi: 1, status: 'unknown', target, planRef: reference, options: options('retire'), plan: null, receipt: null,
-      reason: lifecycleReason('E_OUTCOME_UNKNOWN'), cause: lifecycleReason('E_WORK_INSPECTION_FAILED') } });
+      reason: lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS), cause: lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS) } });
   try {
     f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
-    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message);
+    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message);
     const shown = f.doc.querySelector('.lifecycle-result').textContent;
-    assert.equal(shown, lifecycleReason('E_WORK_INSPECTION_FAILED').message);
-    assert.notEqual(shown, lifecycleReason('E_CLI_FAILED').message);
+    assert.equal(shown, lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS).message);
+    assert.notEqual(shown, lifecycleReason('E_CLI_FAILED', DESKTOP_TERMS).message);
     assert.equal(f.doc.querySelector('.lifecycle-details'), null, 'no message from the CLI, no Details');
     assert.equal(f.button('lifecycle-retry').hidden, false);
   } finally { f.close(); }
@@ -326,7 +327,7 @@ test('a remote apply that lost the link is an unknown outcome with the transport
   try {
     f.dialog.open({ operation: 'stop', instance: remoteInstance, workspace: 'team' }); await tick();
     f.button('lifecycle-confirm').click(); await tick();
-    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message);
+    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message);
     assert.match(f.doc.querySelector('.lifecycle-result').textContent, /Couldn't reach Build box\./);
     assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-details p').textContent, 'E_SSH: ssh: connect to host build-host port 22: Connection refused');
     assert.equal(f.button('lifecycle-retry').hidden, false);
@@ -359,7 +360,7 @@ test('from the server: a host message with line breaks and a character of the se
   try {
     f.dialog.open({ operation: 'stop', instance: remoteInstance, workspace: 'team' }); await tick();
     f.button('lifecycle-confirm').click(); await tick();
-    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message);
+    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message);
     assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, "Couldn't reach Build box.");
     assertIsolatedDetail(f.doc.querySelector('.lifecycle-result .lifecycle-details p'), { before: 'E_SSH: ', detail: MESSY_LINE });
   } finally { f.close(); }
@@ -377,8 +378,8 @@ test("from the server: a local Retire refused by inspection shows Desktop's sent
   const f = fixture({ request: localServer({ apply: localError('E_WORK_INSPECTION_FAILED', MESSY) }) });
   try {
     f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
-    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message);
-    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, lifecycleReason('E_WORK_INSPECTION_FAILED').message, "the headline is Desktop's fixed sentence, in its own element");
+    assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message);
+    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS).message, "the headline is Desktop's fixed sentence, in its own element");
     assert.equal(f.doc.querySelectorAll('.lifecycle-details').length, 1); assert.equal(f.doc.querySelector('.lifecycle-details summary').textContent, 'Details');
     // A line break, a tab, the line separators and a character of the set: one line, the character shown as U+FFFD.
     assertIsolatedDetail(f.doc.querySelector('.lifecycle-result .lifecycle-details p'), { before: 'E_WORK_INSPECTION_FAILED: ', detail: MESSY_LINE });
@@ -396,7 +397,7 @@ test('a local message that looks like a credential shows "[Detail withheld]"; a 
   f = fixture({ request: localServer({ apply: localError('E_CLI_TIMEOUT', 'TEXT FROM THE ENVELOPE') }) });
   try {
     f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
-    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, lifecycleReason('E_CLI_TIMEOUT').message);
+    assert.equal(f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, lifecycleReason('E_CLI_TIMEOUT', DESKTOP_TERMS).message);
     assert.equal(f.doc.querySelector('.lifecycle-details'), null); assert.doesNotMatch(f.doc.body.textContent, /TEXT FROM/);
   } finally { f.close(); }
 });
@@ -404,7 +405,7 @@ test("from the server: a local plan the kernel refuses shows the fixed sentence 
   const f = fixture({ request: localServer({ plan: localError('E_INSTANCE_RETIRING', MESSY) }) });
   try {
     f.open('retire'); await tick();
-    assert.equal(f.status(), lifecycleReason('E_INSTANCE_RETIRING').message);
+    assert.equal(f.status(), lifecycleReason('E_INSTANCE_RETIRING', DESKTOP_TERMS).message);
     assertIsolatedDetail(f.doc.querySelector('.lifecycle-details p'), { before: 'E_INSTANCE_RETIRING: ', detail: MESSY_LINE });
     assert.equal(f.button('lifecycle-confirm').hidden, true); assert.deepEqual(footer(f), ['Review again', 'Close']);
   } finally { f.close(); }
@@ -418,10 +419,10 @@ test("from the server: a Retire whose receipt reports a branch deletion or a ski
     try {
       f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
       assert.equal(replies.length, 2); assert.equal(replies[1].status, 'unknown'); assert.equal(replies[1].receipt, null);
-      assert.deepEqual(replies[1].reason, lifecycleReason('E_OUTCOME_UNKNOWN')); assert.deepEqual(replies[1].cause, lifecycleReason('E_CLI_PROTOCOL'));
+      assert.deepEqual(replies[1].reason, lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS)); assert.deepEqual(replies[1].cause, lifecycleReason('E_CLI_PROTOCOL', DESKTOP_TERMS));
       assert.doesNotMatch(JSON.stringify(replies[1]), /UNSHOWN/);
-      assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message);
-      assert.equal(f.doc.querySelector('.lifecycle-result').textContent, lifecycleReason('E_CLI_PROTOCOL').message, 'the cause sentence alone: no row, no Details');
+      assert.equal(f.status(), lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message);
+      assert.equal(f.doc.querySelector('.lifecycle-result').textContent, lifecycleReason('E_CLI_PROTOCOL', DESKTOP_TERMS).message, 'the cause sentence alone: no row, no Details');
       assert.equal(f.doc.querySelector('.lifecycle-details'), null);
       assert.doesNotMatch(told(f.doc), /UNSHOWN|Home folder deleted|Branch deleted|Branch deletion/);
       assert.equal(f.button('lifecycle-retry').hidden, false);
@@ -429,10 +430,10 @@ test("from the server: a Retire whose receipt reports a branch deletion or a ski
   }
 });
 test("the dialog re-validates a local detail: only a display line, only for a code with its own sentence that Desktop does not raise, and never as the headline", async () => {
-  const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED');
+  const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS);
   const shown = async cause => {
     const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire')
-      : { lifecycleApi: 1, status: 'unknown', target, planRef: reference, options: options('retire'), plan: null, receipt: null, reason: lifecycleReason('E_OUTCOME_UNKNOWN'), cause } });
+      : { lifecycleApi: 1, status: 'unknown', target, planRef: reference, options: options('retire'), plan: null, receipt: null, reason: lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS), cause } });
     try {
       f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
       return { headline: f.doc.querySelector('.lifecycle-result .lifecycle-note').textContent, details: f.doc.querySelector('.lifecycle-details p')?.textContent ?? null, text: f.doc.body.textContent };
@@ -443,14 +444,14 @@ test("the dialog re-validates a local detail: only a display line, only for a co
   assert.equal(kept.headline, fixed.message); assert.equal(kept.details, 'E_WORK_INSPECTION_FAILED: one line'); assert.doesNotMatch(kept.text, /A HEADLINE FROM THE REPLY/);
   // Dropped: not a display line; one of Desktop's own codes; a code without a sentence; a reason that claims to be remote.
   for (const cause of [{ ...fixed, detail: 'UNSHOWN two\nlines' }, { ...fixed, detail: 'UNSHOWN two  spaces' }, { ...fixed, detail: `UNSHOWN a${String.fromCodePoint(0x202E)}b` },
-    { ...fixed, detail: 'UNSHOWN token=abc123' }, { ...fixed, detail: 7 }, { ...lifecycleReason('E_CLI_TIMEOUT'), detail: 'UNSHOWN line' },
-    { ...lifecycleReason('E_OUTCOME_UNKNOWN'), detail: 'UNSHOWN line' }, { ...fixed, detail: 'UNSHOWN line', remote: false }]) {
+    { ...fixed, detail: 'UNSHOWN token=abc123' }, { ...fixed, detail: 7 }, { ...lifecycleReason('E_CLI_TIMEOUT', DESKTOP_TERMS), detail: 'UNSHOWN line' },
+    { ...lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS), detail: 'UNSHOWN line' }, { ...fixed, detail: 'UNSHOWN line', remote: false }]) {
     const view = await shown(cause);
-    assert.equal(view.details, null, JSON.stringify(cause)); assert.equal(view.headline, lifecycleReason(cause.code).message);
+    assert.equal(view.details, null, JSON.stringify(cause)); assert.equal(view.headline, lifecycleReason(cause.code, DESKTOP_TERMS).message);
     assert.doesNotMatch(view.text, /UNSHOWN/, JSON.stringify(cause));
   }
   const unknown = await shown({ code: 'E_NOT_IN_THE_TABLE', message: 'A HEADLINE FROM THE REPLY', detail: 'UNSHOWN line' });
-  assert.equal(unknown.headline, lifecycleReason('E_CLI_FAILED').message); assert.equal(unknown.details, null); assert.doesNotMatch(unknown.text, /UNSHOWN|A HEADLINE/);
+  assert.equal(unknown.headline, lifecycleReason('E_CLI_FAILED', DESKTOP_TERMS).message); assert.equal(unknown.details, null); assert.doesNotMatch(unknown.text, /UNSHOWN|A HEADLINE/);
 });
 test('each dialog shows only its own choices: a hidden choice stays hidden despite the label layout (Stop has no worktree option, Retire no children option)', () => {
   // The label's display:flex beats the user agent's [hidden] rule in Chromium; jsdom's cascade does not model that, so pin the rules.
@@ -528,7 +529,7 @@ test('a stop of several targets: one plain line, children first; "Stop sessions"
 test('option toggle: every fact stays on screen while the new plan is read, the old ref is never submitted, and only the latest plan lands', async () => {
   const gates = [], refs = ['1', '2', '3'].map(c => c.repeat(64));
   const f = fixture({ request: (_ws, body) => {
-    if (body.action === 'apply') return { lifecycleApi: 1, status: 'unknown', target, reason: lifecycleReason('E_OUTCOME_UNKNOWN') };
+    if (body.action === 'apply') return { lifecycleApi: 1, status: 'unknown', target, reason: lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS) };
     const n = gates.length; if (n === 0) { gates.push(null); return planned('retire', refs[0]); } // the first read answers at once
     const gate = deferred(); gates.push(gate); return gate.promise.then(() => ({ ...planned('retire', refs[n]), options: body.options }));
   } });
@@ -587,7 +588,7 @@ test('the worktree option is not offered for an instance without one; if a stale
     f.dialog.close(); mode = 'worktree'; f.open('retire'); await tick();
     f.check(f.doc.querySelectorAll('input')[1], true); await tick();
     mode = 'directory'; f.button('lifecycle-check').click(); assert.equal(f.status(), 'Checking again…'); await tick();
-    assert.equal(f.status(), lifecycleReason('E_OPTION_UNAVAILABLE').message);
+    assert.equal(f.status(), lifecycleReason('E_OPTION_UNAVAILABLE', DESKTOP_TERMS).message);
     assert.equal(f.button('lifecycle-confirm').disabled, true); assert.equal(f.doc.querySelectorAll('input')[1].parentElement.hidden, false);
     assertExplained(f, 'option unavailable');
   } finally { f.close(); }
@@ -629,7 +630,7 @@ test('a refusal after dispatch lists what did happen and offers Review again, wh
   const raw = retirePlan(); raw.facts.children = [{ instance: 'kid', agent: 'dev', home: '/team/agents/dev/instances/kid', session: { state: 'running', present: true, established: true, backend: 'tmux' } }];
   let phase = 'first';
   const f = fixture({ request: (_ws, body) => body.action === 'apply'
-    ? { lifecycleApi: 1, status: 'refused', target, planRef: null, plan: null, receipt: null, reason: lifecycleReason('E_CHILDREN_RUNNING'),
+    ? { lifecycleApi: 1, status: 'refused', target, planRef: null, plan: null, receipt: null, reason: lifecycleReason('E_CHILDREN_RUNNING', DESKTOP_TERMS),
       childrenStopped: [{ instance: 'kid', home: '/team/agents/dev/instances/kid', ok: false, code: 'E_SESSION_STOP_FAILED', stillRunning: [4242] }] }
     : planned('retire', phase === 'first' ? reference : newReference, raw) });
   try {
@@ -650,10 +651,10 @@ test('a refusal after dispatch lists what did happen and offers Review again, wh
 });
 test('a plan read that fails leaves no skeleton: a result with the reason and Review again', async () => {
   let fail = true;
-  const f = fixture({ request: () => fail ? { lifecycleApi: 1, status: 'unavailable', target, reason: lifecycleReason('E_LIFECYCLE_BUSY') } : planned('retire') });
+  const f = fixture({ request: () => fail ? { lifecycleApi: 1, status: 'unavailable', target, reason: lifecycleReason('E_LIFECYCLE_BUSY', DESKTOP_TERMS) } : planned('retire') });
   try {
     f.open('retire'); await tick();
-    assert.equal(f.title(), "Couldn't check what retiring dev-1 will do"); assert.equal(f.status(), lifecycleReason('E_LIFECYCLE_BUSY').message);
+    assert.equal(f.title(), "Couldn't check what retiring dev-1 will do"); assert.equal(f.status(), lifecycleReason('E_LIFECYCLE_BUSY', DESKTOP_TERMS).message);
     assert.equal([...f.doc.querySelectorAll('.skeleton')].some(onScreen), false); assert.deepEqual(footer(f), ['Review again', 'Close']); assertExplained(f, 'plan failed');
     fail = false; f.button('lifecycle-review').click(); await tick(); assert.deepEqual(footer(f), ['Cancel', 'Retire instance']);
   } finally { f.close(); }
@@ -664,7 +665,7 @@ test("main's frame refusal: the plan shows the Desktop's own sentence, the apply
   assert.deepEqual(refused, { lifecycleApi: 1, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null,
     reason: { code: 'E_FORBIDDEN_FRAME', message: 'This window cannot request a lifecycle operation.' } });
   assert.equal(Object.isFrozen(LIFECYCLE_FORBIDDEN_FRAME), true); assert.notEqual(refused.reason, LIFECYCLE_FORBIDDEN_FRAME, 'each answer has its own reason object');
-  assert.equal(lifecycleReason('E_FORBIDDEN_FRAME').code, 'E_CLI_FAILED', 'not a code of the shared table');
+  assert.equal(lifecycleReason('E_FORBIDDEN_FRAME', DESKTOP_TERMS).code, 'E_CLI_FAILED', 'not a code of the shared table');
   const onPlan = fixture({ request: () => lifecycleFrameRefusal() });
   try {
     onPlan.open('retire'); await tick();
@@ -674,7 +675,7 @@ test("main's frame refusal: the plan shows the Desktop's own sentence, the apply
   const onApply = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire') : lifecycleFrameRefusal() });
   try {
     onApply.open('retire'); await tick(); onApply.button('lifecycle-confirm').click(); await tick();
-    assert.equal(onApply.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message);
+    assert.equal(onApply.status(), lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message);
   } finally { onApply.close(); }
 });
 test('Check again in review keeps the facts on screen, says why confirm waits, and revokes the ref on screen', async () => {
@@ -694,8 +695,8 @@ test('no user-visible "Remove" for retirement, in any phase or in the contract m
     'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING', 'E_SESSION_STOP_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_WORK_INSPECTION_FAILED', 'E_RETIRE_INCOMPLETE', 'E_RUNTIME_QUIESCE_FAILED',
     'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN'];
   for (const code of codes) {
-    assert.equal(lifecycleReason(code).code, code, `${code} has its own sentence`);
-    assert.doesNotMatch(lifecycleReason(code).message, /\bRemove\b|kernel|Observe a fresh plan/, code);
+    assert.equal(lifecycleReason(code, DESKTOP_TERMS).code, code, `${code} has its own sentence`);
+    assert.doesNotMatch(lifecycleReason(code, DESKTOP_TERMS).message, /\bRemove\b|kernel|Observe a fresh plan/, code);
   }
   // The frame guard's sentence is the Desktop's own (renderer/lifecycle-frame.mjs), not the shared table's.
   assert.doesNotMatch(LIFECYCLE_FORBIDDEN_FRAME.message, /\bRemove\b|kernel|Observe a fresh plan/);
@@ -718,7 +719,7 @@ test('a replayed result says nothing ran again', async () => {
 test('like Chromium, hiding a focused control blurs it: focus still lands on the control that stays, never <body>', async () => {
   let fail = true;
   const f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire', fail ? reference : newReference)
-    : fail ? { lifecycleApi: 1, status: 'unknown', target, reason: lifecycleReason('E_OUTCOME_UNKNOWN') } : { lifecycleApi: 1, status: 'refused', target, reason: lifecycleReason('E_PLAN_EXPIRED') } });
+    : fail ? { lifecycleApi: 1, status: 'unknown', target, reason: lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS) } : { lifecycleApi: 1, status: 'refused', target, reason: lifecycleReason('E_PLAN_EXPIRED', DESKTOP_TERMS) } });
   // jsdom keeps focus on a control that becomes hidden; Chromium blurs it at once, during the click that hid it.
   const hidden = Object.getOwnPropertyDescriptor(f.dom.window.HTMLElement.prototype, 'hidden');
   Object.defineProperty(f.dom.window.HTMLElement.prototype, 'hidden', { configurable: true, get: hidden.get,

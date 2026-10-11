@@ -9,6 +9,7 @@ import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { busyHolder, busyHeadline, busyAbout, busyRefusal, lifecycleReason } from '../../client/lifecycle-contract.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { cli, context, envelope, instance, stopPlan, retirePlan, stopReceipt, retireReceipt, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 
@@ -78,7 +79,7 @@ test('the boundary, an apply: with the feature the reason carries how the busy a
         `${operation}, ${name}, ${JSON.stringify(details)}`);
     }
   }
-  assert.equal(lifecycleReason('E_LIFECYCLE_BUSY').message, TODAY, 'the code keeps its sentence');
+  assert.equal(lifecycleReason('E_LIFECYCLE_BUSY', DESKTOP_TERMS).message, TODAY, 'the code keeps its sentence');
 });
 
 test("a refused plan read follows the same rule: the kernel builds every E_LIFECYCLE_BUSY one way", async () => {
@@ -101,7 +102,7 @@ test("the field changes nothing outside the kernel's own E_LIFECYCLE_BUSY: anoth
   assert.doesNotMatch(JSON.stringify(failedAnswer.applied), /Nothing was done|no other command/);
   for (const code of ['E_INSTANCE_RETIRING', 'E_SESSION_UNKNOWN']) {
     const { applied } = await replies(strong(), 'stop', { answer: refused(code, SAID, { holder: 'none' }) });
-    assert.deepEqual(applied.reason, { ...lifecycleReason(code), detail: SAID }, code);
+    assert.deepEqual(applied.reason, { ...lifecycleReason(code, DESKTOP_TERMS), detail: SAID }, code);
   }
   // An envelope that does not say the kernel answered (no origin, or another one): today's sentence, whatever it carries.
   for (const origin of [undefined, 'adapter', true]) {

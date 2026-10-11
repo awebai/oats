@@ -3,6 +3,7 @@ import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs'
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowKind, stoppedRowText,
   stopResultWords, childrenRefusedMessage, busyRefusal, undescribedRefusal, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
 import { LIFECYCLE_FORBIDDEN_FRAME } from './lifecycle-frame.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { codeLineNodes, readingFrom, remoteReason, serverLabel } from '../../client/remote-address.mjs';
@@ -131,7 +132,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.confirm.hidden = !before;
     const applicable = !!plan && lifecycleChoicesApplicable(plan, choices);
     ui.confirm.disabled = phase !== 'review' || !planRef || !applicable;
-    if (phase === 'review' && plan && !applicable) say(lifecycleReason('E_OPTION_UNAVAILABLE').message);
+    if (phase === 'review' && plan && !applicable) say(lifecycleReason('E_OPTION_UNAVAILABLE', DESKTOP_TERMS).message);
     ui.status.hidden = !ui.statusText.textContent;
     if (!ui.confirm.hidden && ui.confirm.disabled) ui.confirm.setAttribute('aria-describedby', ui.status.id); else ui.confirm.removeAttribute('aria-describedby');
     ui.retry.hidden = !(phase === 'result' && submission?.uncertain);
@@ -170,13 +171,13 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       return;
     }
     // An error the kernel answered that Desktop has no sentence for: the fallback sentence, and its code in Details.
-    const remote = remoteReason(reason), undescribed = undescribedRefusal(remote || reason), shownReason = remote || undescribed || localDetail(reason);
+    const remote = remoteReason(reason), undescribed = undescribedRefusal(remote || reason, DESKTOP_TERMS), shownReason = remote || undescribed || localDetail(reason);
     // The kernel's own busy refusal (it carries the kernel's message; Desktop's own busy does not) for a home
     // a spawn left: its sentence, and the kernel's message, which names the process, shown under it.
     if (!remote && shownReason && reason.code === 'E_LIFECYCLE_BUSY' && retire() && leftover) {
       say(LEFTOVER_BUSY); const p = node('p'); p.append(node('bdi', shownReason.detail)); ui.result.append(p); return;
     }
-    say(remote ? remote.message : undescribed ? undescribed.message : (reason?.code === LIFECYCLE_FORBIDDEN_FRAME.code ? LIFECYCLE_FORBIDDEN_FRAME : lifecycleReason(reason?.code)).message);
+    say(remote ? remote.message : undescribed ? undescribed.message : (reason?.code === LIFECYCLE_FORBIDDEN_FRAME.code ? LIFECYCLE_FORBIDDEN_FRAME : lifecycleReason(reason?.code, DESKTOP_TERMS)).message);
     if (shownReason) details(ui.result, shownReason, !!undescribed);
   }
   /** One line of a list, with an optional path as a muted, selectable second line. */
@@ -371,13 +372,13 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     try {
       const result = await request(ref.target.workspace, { action: 'apply', planRef: selectedRef });
       if (!owns(ref)) return;
-      if (!validTarget(result, ref)) { say(lifecycleReason('E_OUTCOME_UNKNOWN').message); settle('result', unconfirmed); return; }
+      if (!validTarget(result, ref)) { say(lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message); settle('result', unconfirmed); return; }
       submission.uncertain = ['unknown', 'pending'].includes(result.status);
       if (result.status === 'stale') {
         const fresh = lifecyclePlan(result.plan, ref.target, operation, choices);
         if (!fresh) throw new Error('Invalid fresh plan');
         plan = fresh; planRef = planReference(result.planRef) ? result.planRef : null;
-        renderPlan(fresh, choices); say(lifecycleReason('E_PLAN_STALE').message); phase = 'review'; title(question()); paint(); focusOn(ui.close);
+        renderPlan(fresh, choices); say(lifecycleReason('E_PLAN_STALE', DESKTOP_TERMS).message); phase = 'review'; title(question()); paint(); focusOn(ui.close);
         void overlayForge(capture(), fresh);
       } else if (result.receipt) {
         const receipt = publicLifecycleReceipt(result.receipt, snapshot); if (!receipt) throw new Error('Invalid receipt');
@@ -408,10 +409,10 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         // Why the outcome is unknown: a remote transport or host cause keeps its headline and Details; a
         // local one says its fixed sentence, with the CLI's own message in Details when it carries one.
         const cause = result.cause && remoteReason(result.cause);
-        const undescribed = result.cause && undescribedRefusal(cause || result.cause);
+        const undescribed = result.cause && undescribedRefusal(cause || result.cause, DESKTOP_TERMS);
         if (cause) { ui.result.append(node('p', cause.message, 'lifecycle-note')); details(ui.result, cause, !!undescribed); }
         else if (result.cause) {
-          ui.result.append(node('p', undescribed ? undescribed.message : lifecycleReason(result.cause.code).message, 'lifecycle-note'));
+          ui.result.append(node('p', undescribed ? undescribed.message : lifecycleReason(result.cause.code, DESKTOP_TERMS).message, 'lifecycle-note'));
           const local = undescribed || localDetail(result.cause); if (local) details(ui.result, local, !!undescribed);
         }
         if (children) ui.result.append(node('p', 'Child instances:', 'lifecycle-note'), stopped(children));
@@ -421,7 +422,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         try { Promise.resolve(onSettled(result, ref.target)).catch(() => {}); } catch { /* refresh cannot erase a recorded outcome */ }
       }
     } catch {
-      if (owns(ref)) { submission.uncertain = true; ui.result.replaceChildren(); say(lifecycleReason('E_OUTCOME_UNKNOWN').message); settle('result', unconfirmed); }
+      if (owns(ref)) { submission.uncertain = true; ui.result.replaceChildren(); say(lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message); settle('result', unconfirmed); }
     } finally { if (owns(ref)) { applying = false; paint(); } }
   }
   function open({ operation: next, instance, workspace }) {

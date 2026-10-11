@@ -5,7 +5,8 @@ import { basename } from 'node:path';
 import * as remote from '../../../client/remote-roster.mjs';
 import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts, viewId } from '../../../client/workspace-views.mjs';
 import { createRemoteIdentityStore } from '../../server/remote-identity.mjs';
-import { THIS_MACHINE, shortPath, deploymentLabel } from '../../../client/deployment-label.mjs';
+import { shortPath, deploymentLabel } from '../../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from '../../renderer/desktop-terms.mjs';
 import { deploymentUnavailableText } from '../../renderer/deployment-header.mjs';
 import { teamMembers } from '../../server/team-members.mjs';
 
@@ -21,7 +22,7 @@ export const CLI = { ok: true, bin: '/oats', features: ['workspace-identity'], r
 export function viewDeps(state = {}) {
   return { ctxs: [], snapshot: { byWs: new Map() }, remoteGroups: [], remote, cliState: CLI, observing: new Set(), remoteCollecting: false,
     remoteIdentities: createRemoteIdentityStore({ file: null }), rosterAnswered: true, rosterFailure: null, homedir: () => '/Users/juan', basename,
-    readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts, THIS_MACHINE, shortPath, deploymentLabel, deploymentUnavailableText, teamMembers, ...state };
+    readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts, DESKTOP_TERMS, shortPath, deploymentLabel, deploymentUnavailableText, teamMembers, ...state };
 }
 export function loadViews(state = {}) {
   const deps = viewDeps(state);

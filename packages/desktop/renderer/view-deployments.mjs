@@ -10,7 +10,7 @@
  * Also a small session store fed by every panel the renderer reads (the shell's roster poll): the
  * last deployments seen per view, for surfaces that do not read the panel themselves (the "On …"
  * line, deployment-scope-line.mjs). */
-import { THIS_MACHINE } from '../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { deploymentState } from '../../client/roster-sections.mjs';
 import { iconElement } from './shell-icons.mjs';
 
@@ -20,7 +20,7 @@ const text = (v, max = 4096) => typeof v === 'string' && v.length > 0 && v.lengt
 export function panelDeployments(panel) {
   const list = Array.isArray(panel?.deployments) ? panel.deployments : [];
   return list.filter(d => d && typeof d === 'object' && text(d.id)).map(d => ({
-    id: d.id, machine: text(d.machine, 256) ? d.machine : (d.local === false ? '' : THIS_MACHINE), path: text(d.path) ? d.path : '',
+    id: d.id, machine: text(d.machine, 256) ? d.machine : (d.local === false ? '' : DESKTOP_TERMS.thisMachine), path: text(d.path) ? d.path : '',
     label: text(d.label, 512) ? d.label : '', local: d.local !== false, reachable: d.reachable === true,
     identityFrom: d.identityFrom === 'reported' || d.identityFrom === 'remembered' ? d.identityFrom : null, primary: d.primary === true,
     ...(d.stale === true ? { stale: true } : {}),

@@ -2,6 +2,7 @@
 import { gitRevision } from './instance-git-contract.mjs';
 import { displayLine, cleanLine, DETAIL_WITHHELD } from './display-text.mjs';
 import { kernelCode } from './remote-address.mjs';
+import { requireTerms } from './client-terms.mjs';
 export const LIFECYCLE_API = 1;
 export const MAX_LIFECYCLE_TARGETS = 128;
 export const object = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -20,14 +21,14 @@ const messages = {
   E_SESSION_UNKNOWN: 'This instance is no longer in the current roster.', E_AMBIGUOUS_INSTANCE: 'Select an exact instance home.',
   E_HOME_MISMATCH: 'The instance home no longer matches this selection.',
   'cli-unavailable': 'Choose a compatible installed OATS CLI.',
-  E_LIFECYCLE_UNAVAILABLE: "This OATS can't stop or retire instances from Desktop. Update OATS.",
+  E_LIFECYCLE_UNAVAILABLE: terms => `This OATS can't stop or retire instances from ${terms.name}. Update OATS.`,
   'unsupported-remote-operation': "This computer's OATS can't route this to the server. Update OATS here.",
   E_PLAN_REQUIRED: 'Open a fresh Stop or Retire confirmation; unguarded retirement is unavailable.',
   E_PLAN_EXPIRED: 'This confirmation expired. Review again to check the current state.',
   E_PLAN_CHANGED: 'The instance or OATS changed. Review again before confirming.',
   E_OPTION_UNAVAILABLE: 'Only an instance with its own worktree can delete it. Review the choice again.',
   E_PLAN_STALE: 'Something changed since you opened this. Review it and confirm again.',
-  E_PLAN_LIMIT: 'This would act on more instances than Desktop can show. Nothing was submitted.',
+  E_PLAN_LIMIT: terms => `This would act on more instances than ${terms.name} can show. Nothing was submitted.`,
   E_LIFECYCLE_BUSY: 'Another stop or retire is already running. Wait for it to finish, then review again.',
   E_INSTANCE_RETIRING: 'An instance in this plan is already being retired.',
   E_CHILDREN_RUNNING: "A child instance wouldn't stop, so nothing was retired. Other children may already have stopped.",
@@ -38,27 +39,42 @@ const messages = {
   // True of both things the kernel answers it for: a session window it could not show gone, and the hook
   // group an interrupted spawn left that survived both signals. The outcome is unknown; this is its cause.
   E_RUNTIME_QUIESCE_FAILED: "OATS tried to end a session or a process and couldn't confirm that it ended.",
-  E_CLI_TIMEOUT: "OATS didn't answer in time.", E_CLI_OUTPUT_LIMIT: "OATS's answer was larger than Desktop reads safely.",
-  E_CLI_PROTOCOL: "OATS answered in a form Desktop can't read.", E_CLI_FAILED: "OATS couldn't be run for this.",
+  E_CLI_TIMEOUT: "OATS didn't answer in time.", E_CLI_OUTPUT_LIMIT: terms => `OATS's answer was larger than ${terms.name} reads safely.`,
+  E_CLI_PROTOCOL: terms => `OATS answered in a form ${terms.name} can't read.`, E_CLI_FAILED: "OATS couldn't be run for this.",
   E_OUTCOME_UNKNOWN: "OATS didn't confirm the result. Check again before assuming nothing happened.",
 };
-export const lifecycleReason = code => ({ code: Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED', message: messages[code] || messages.E_CLI_FAILED });
+/** Every code the table has a sentence for. */
+export const LIFECYCLE_CODES = Object.freeze(Object.keys(messages));
+/** The code as the table knows it: itself, or `E_CLI_FAILED` for one it has no sentence for. Needs no terms. */
+export const lifecycleCode = code => (Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED');
+/** The code and its sentence, in the client's terms (client-terms.mjs): a sentence that names the client is
+ * built from them. */
+export function lifecycleReason(code, terms) {
+  requireTerms(terms, 'lifecycleReason');
+  const known = lifecycleCode(code), message = messages[known];
+  return { code: known, message: typeof message === 'function' ? message(terms) : message };
+}
 /** A kernel's error answer whose code has no sentence here. It says "OATS answered", so it is chosen only
  * for a code read out of the kernel's own error envelope: by where the code came from, which only the caller
  * knows, never by the code's shape. lifecycleReason is given codes of every origin and keeps E_CLI_FAILED
  * ("OATS couldn't be run for this.") for one it does not know; that sentence is never shown for an answer
- * the kernel gave. */
-const UNDESCRIBED = 'OATS answered with an error that Desktop has no description for.';
+ * the kernel gave. It names the client that has no description, by the client's own `name`. */
+const undescribed = terms => `OATS answered with an error that ${terms.name} has no description for.`;
 /** The reason for a code the KERNEL answered and no sentence describes: its own code and the fallback
  * sentence, or null when the code has a sentence, or is not in the kernel's code shape (an older kernel's
  * system code, `ENOENT`, which keeps E_CLI_FAILED's sentence). The caller vouches for the origin. */
-export const undescribedAnswer = code => kernelCode(code) && !Object.hasOwn(messages, code) ? { code, message: UNDESCRIBED } : null;
+export function undescribedAnswer(code, terms) {
+  requireTerms(terms, 'undescribedAnswer');
+  return kernelCode(code) && !Object.hasOwn(messages, code) ? { code, message: undescribed(terms) } : null;
+}
 /** Re-validate a relayed reason (server → main → renderer) that reads by the fallback sentence, or null:
  * a kernel code without a sentence, the fixed fallback sentence, and a detail that is a display line (else
- * none). The reply's sentence is the server's word that the kernel answered; nothing else of it is shown. */
-export function undescribedRefusal(reason) {
-  return object(reason) && reason.message === UNDESCRIBED && undescribedAnswer(reason.code)
-    ? { code: reason.code, message: UNDESCRIBED, detail: cleanLine(reason.detail) ? reason.detail : null } : null;
+ * none). The reply's sentence is the server's word that the kernel answered; nothing else of it is shown.
+ * `terms`: the reader's, which are the server's: the sentence compared is the one built from them. */
+export function undescribedRefusal(reason, terms) {
+  const fallback = undescribed(requireTerms(terms, 'undescribedRefusal'));
+  return object(reason) && reason.message === fallback && undescribedAnswer(reason.code, terms)
+    ? { code: reason.code, message: fallback, detail: cleanLine(reason.detail) ? reason.detail : null } : null;
 }
 /** Codes only Desktop raises (its CLI adapter, its lifecycle boundary, main): the kernel never answers with
  * one. A new entry of `messages` that the kernel does not raise is listed here too. */
@@ -118,9 +134,10 @@ export function busyRefusal(reason, plan = null) {
   const main = !!lead && !!detail && detail !== DETAIL_WITHHELD;
   return { headline, about, lead: main ? lead : null, sentence: main ? detail : null, details: !main && detail ? { code: reason.code, detail } : null };
 }
-export function lifecycleFailure(code, extra = {}) {
+export function lifecycleFailure(code, terms, extra = {}) {
+  requireTerms(terms, 'lifecycleFailure');
   return { lifecycleApi: LIFECYCLE_API, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null,
-    reason: lifecycleReason(code), ...extra };
+    reason: lifecycleReason(code, terms), ...extra };
 }
 export function lifecycleOptions(operation, v) {
   if (!object(v)) return null;
@@ -226,7 +243,7 @@ function stoppedRows(value, expected, { withState = false, decoded = false, feat
     if (v.ok) return typeof v.stopped === 'boolean' && typeof v.alreadyIdle === 'boolean' && (!withState || text(v.state, 128))
       ? { instance: v.instance, home: v.home, ok: true, stopped: v.stopped, alreadyIdle: v.alreadyIdle, ...(withState ? { state: v.state } : {}) } : null;
     if (v.stillRunning !== null && (!Array.isArray(v.stillRunning) || v.stillRunning.length > 128 || v.stillRunning.some(p => !Number.isSafeInteger(p) || p <= 0))) return null;
-    const code = lifecycleReason(v.code).code;
+    const code = lifecycleCode(v.code);
     // The row's own sentence is kept for one code only: a child whose home could not be locked, where the
     // sentence is the refusal of that child's stop and names what ends it. One display line, or nothing.
     const detail = code !== 'E_LIFECYCLE_BUSY' ? null : decoded ? cleanLine(v.detail) ? v.detail : null : displayLine(v.message);

@@ -25,6 +25,7 @@ import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
 import { forgeFailure } from "./renderer/forge-contract.mjs";
 import { lifecycleFailure } from '../client/lifecycle-contract.mjs';
 import { lifecycleFrameRefusal } from './renderer/lifecycle-frame.mjs';
+import { DESKTOP_TERMS } from './renderer/desktop-terms.mjs';
 import { sweepViewers } from "./tmux-target.mjs";
 import { tmuxSocketArgs } from "./local-tmux-io.mjs";
 import { createTerminalOwnerBroker, installTerminalHandlers } from './terminal-owner.mjs';
@@ -409,7 +410,7 @@ const onboardExecutor = createOnboardExecutor({
   isDeployment: (p) => !!wsValidate(p),
   // The server's accepted probe: the same binary every other kernel verb uses.
   readCli: async () => (await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(10_000) })).json(),
-  run: (cli, options) => cliWorkspace(cli, options),
+  run: (cli, options) => cliWorkspace(cli, options, DESKTOP_TERMS),
   project: onboardData,
   add: (dir, scope) => performAdd(dir, true, scope),
   validRef: validWorkspaceRef,
@@ -520,7 +521,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   if (route === 'readiness') return proxyReadiness(e, pathname, opts, { rendererURL: RENDERER_URL, connection });
   const lifecycle = route === 'lifecycle';
   const forgeRequest = lifecycle || route === 'forge';
-  const failure = lifecycle ? lifecycleFailure : forgeFailure;
+  const failure = lifecycle ? (code, extra) => lifecycleFailure(code, DESKTOP_TERMS, extra) : forgeFailure;
   const forbidden = () => (lifecycle ? lifecycleFrameRefusal() : forgeFailure('E_FORBIDDEN_FRAME'));
   const mutation = lifecycle && (() => { try { return (typeof opts?.body === 'string' ? JSON.parse(opts.body) : opts?.body)?.action === 'apply'; } catch { return false; } })();
   if (forgeRequest && !trustedForgeFrame(e, RENDERER_URL)) return { ok: false, status: 403, body: forbidden() };

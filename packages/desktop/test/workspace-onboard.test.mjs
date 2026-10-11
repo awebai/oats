@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createOnboardOffers, createOnboardExecutor, MAX_ONBOARD_OFFERS } from '../workspace-registry.mjs';
 import { cliWorkspace, validWorkspaceRef } from '../../client/workspace-cli.mjs';
 import { onboardData } from '../../client/deployment-data.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 // Documents captured from main's kernel (packages-no-approval).
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
@@ -24,7 +25,7 @@ function harness({ document = 'onboard', deployment = () => false, realpath = p 
     take: token => offers.take(token), offer: path => offers.offer(path),
     realpath, isDeployment: path => deployment(path),
     readCli: async () => cli,
-    run: (state, options) => { runs.push(options); return cliWorkspace(state, options, { exec: replay(document) }); },
+    run: (state, options) => { runs.push(options); return cliWorkspace(state, options, DESKTOP_TERMS, { exec: replay(document) }); },
     project: onboardData, add: async path => { adds.push(path); return add(path); }, validRef: validWorkspaceRef,
   });
   return { offers, onboard, runs, adds };

@@ -9,6 +9,7 @@ import { paletteRows, createPalette, PALETTE_COMMAND_CAP } from "../renderer/pal
 import { rosterGroups } from "../../client/instance-tree.mjs";
 import { rosterSections } from "../../client/roster-sections.mjs";
 import { pickerCycleDirection, setBinding, resetBinding, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
+import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 
 const at = (instance, extra = {}) => ({ instance, agent: "dev", home: `/w/${instance}`, agentsRoot: "/w", running: true, ...extra });
 // Two relation clusters and two unrelated instances, deliberately out of order.
@@ -246,7 +247,7 @@ test("several deployments: the palette lists the sidebar's sections in its order
   const roster = { instances: [inD(D2, "alpha"), inD(D1, "zeta"), inD(D1, "lead"), inD(D1, "kid", { parentInstance: "lead" })], deployments: [D1, D2] };
   const rows = instanceRows(paletteRows(roster, [], "", { openTerminal() {} }));
   assert.deepEqual(rows.map(r => r.label), ["lead", "kid", "zeta", "alpha"], "D1's groups first, as the panel lists the deployments: not alphabetical across them");
-  const sidebar = rosterSections(roster.instances, roster.instances, roster.deployments)
+  const sidebar = rosterSections(roster.instances, roster.instances, roster.deployments, DESKTOP_TERMS)
     .flatMap(sec => sec.groups.flatMap(g => g.clusters.flatMap(c => c.instances.map(i => [`${sec.deployment.id}|${g.key}`, `${sec.label} · ${g.label}`, i.instance, i.depth]))));
   assert.deepEqual(rows.map(r => [r.group.key, r.group.label, r.label, r.depth]), sidebar, "the sidebar's own sections, groups and depth");
   const independents = [...new Set(rows.filter(r => r.group.label.endsWith("independent")).map(r => r.group.key))];

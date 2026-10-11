@@ -8,6 +8,7 @@ import { lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, spawnCompens
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { context, envelope, instance, retirePlan, retireReceipt, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 const LEFTOVER_BUSY = "OATS can't confirm that the spawn which left this home has stopped, so it won't retire it yet. Check the process it names, then retire it from the CLI with --force.";
 const KERNEL_BUSY = 'dev-1 is a spawn still running its worktree hooks (pid 4242, started 2026-10-08T10:00:00Z)';
@@ -144,15 +145,15 @@ test('every other E_LIFECYCLE_BUSY keeps today\'s sentence', async t => {
   // An ordinary row, the kernel's busy: today's sentence, its message in Details.
   const u = mount(t, { apply: busy(KERNEL_BUSY) });
   await u.retire();
-  assert.equal(u.status(), lifecycleReason('E_LIFECYCLE_BUSY').message);
+  assert.equal(u.status(), lifecycleReason('E_LIFECYCLE_BUSY', DESKTOP_TERMS).message);
   assert.equal(u.doc.querySelector('.lifecycle-details p').textContent, `E_LIFECYCLE_BUSY: ${KERNEL_BUSY}`);
   // A quarantined row, Desktop's own busy (no kernel message): today's sentence.
   const dom = new JSDOM('<!doctype html>', { pretendToBeVisual: true }), doc = dom.window.document;
   const dialog = createLifecycleDialog({ doc, request: async (_ws, body) => body.action === 'plan'
     ? { lifecycleApi: 1, status: 'plan', target: { ...instance, workspace: 'team', server: null }, planRef: 'd'.repeat(64), plan: retirePlan(), options: { discardWorktree: false }, receipt: null, reason: null }
-    : { lifecycleApi: 1, status: 'refused', target: { ...instance, workspace: 'team', server: null }, planRef: null, plan: null, receipt: null, reason: lifecycleReason('E_LIFECYCLE_BUSY') } });
+    : { lifecycleApi: 1, status: 'refused', target: { ...instance, workspace: 'team', server: null }, planRef: null, plan: null, receipt: null, reason: lifecycleReason('E_LIFECYCLE_BUSY', DESKTOP_TERMS) } });
   t.after(() => { dialog.dispose(); dom.window.close(); });
   dialog.open({ operation: 'retire', instance: { ...instance, rollbackIncomplete: true }, workspace: 'team' }); await tick();
   doc.querySelector('.lifecycle-confirm').click(); await tick();
-  assert.equal(doc.querySelector('.lifecycle-dialog [role=status]').textContent, lifecycleReason('E_LIFECYCLE_BUSY').message);
+  assert.equal(doc.querySelector('.lifecycle-dialog [role=status]').textContent, lifecycleReason('E_LIFECYCLE_BUSY', DESKTOP_TERMS).message);
 });

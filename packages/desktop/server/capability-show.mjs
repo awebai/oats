@@ -18,9 +18,10 @@
  * Identical concurrent requests share one kernel run; failures are never held. */
 import { cliWorkspace, workspaceFailure } from '../../client/workspace-cli.mjs';
 import {
-  CAPABILITY_SHOW_UNREADABLE, capabilityFileData, capabilitySelector, capabilityShowData, capabilityShowSupported,
+  capabilityShowUnreadable, capabilityFileData, capabilitySelector, capabilityShowData, capabilityShowSupported,
   listedFiles, sameSelector, selectorOf, validRelativePath,
 } from '../../client/capability-show-contract.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 export const CAPABILITY_SHOW_CACHE_MAX = 48;
 const MESSAGE_MAX = 4096;
@@ -31,7 +32,7 @@ const MESSAGES = {
   E_CAPABILITY_SHOW_FEATURE: "The installed OATS CLI can't show what a capability ships. Update OATS and retry.",
   E_CAPABILITY_UNKNOWN: "This capability is not in the workspace's capability list. Refresh the list and try again.",
   E_CAPABILITY_FILE_UNKNOWN: 'Not available.',
-  E_CLI_PROTOCOL: CAPABILITY_SHOW_UNREADABLE,
+  E_CLI_PROTOCOL: capabilityShowUnreadable(DESKTOP_TERMS),
 };
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const fail = (code, message = MESSAGES[code]) => { throw Object.assign(new Error(String(message).slice(0, MESSAGE_MAX)), { code }); };
@@ -77,7 +78,7 @@ export function createCapabilityShowCache({ max = CAPABILITY_SHOW_CACHE_MAX } = 
  * `catalog`: the held capability rows for this workspace (array or null), or a function yielding them,
  * called only once the request is otherwise admissible. Resolves with the decoded answer; throws an
  * Error carrying a stable `code`. */
-export async function capabilityShowRequest(request, { workspace, cli, catalog = null, invoke = cliWorkspace, cache = null, maxAge } = {}) {
+export async function capabilityShowRequest(request, { workspace, cli, catalog = null, invoke = (state, options) => cliWorkspace(state, options, DESKTOP_TERMS), cache = null, maxAge } = {}) {
   if (!workspace) fail('E_WORKSPACE_UNKNOWN');
   if (!record(request) || !['show', 'file'].includes(request.action)) fail('E_BAD_ARGS');
   const keys = Object.keys(request).sort().join(',');
@@ -105,12 +106,12 @@ export async function capabilityShowRequest(request, { workspace, cli, catalog =
       ...(path !== null ? { path } : {}), ...(maxAge !== undefined ? { maxAge } : {}) };
     const produce = async () => {
       let result;
-      try { result = await invoke(cli, options); } catch { result = workspaceFailure('E_CLI_FAILED'); }
+      try { result = await invoke(cli, options); } catch { result = workspaceFailure('E_CLI_FAILED', DESKTOP_TERMS); }
       if (result?.ok !== true) {
         // The kernel's (or the adapter's) code and message, verbatim; only a missing message gets the stock one.
         const code = typeof result?.reason?.code === 'string' && result.reason.code ? result.reason.code : 'E_CLI_FAILED';
         const message = result?.reason?.message;
-        fail(code, typeof message === 'string' && message ? message : MESSAGES[code] ?? workspaceFailure(code).reason.message);
+        fail(code, typeof message === 'string' && message ? message : MESSAGES[code] ?? workspaceFailure(code, DESKTOP_TERMS).reason.message);
       }
       const data = path === null ? capabilityShowData(result.document?.result, { selector })
         : capabilityFileData(result.document?.result, { selector, path });

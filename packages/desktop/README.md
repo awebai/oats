@@ -134,6 +134,25 @@ is a deployment (`workspace-admission.mjs`).
   admission). A decision is made there and drawn here: `instanceActs` returns
   verbs and reasons, never a label, an icon or a key, and
   `renderer/instance-actions.mjs` builds the menu from them.
+- **Whose words a sentence uses.** The home also holds the sentence shown for
+  a code, one explanation for every client. Where a sentence names the client
+  that shows it ("this Desktop", "Update OATS Desktop") or the machine it
+  runs on ("This Mac"), the table that builds it takes the client's **terms**
+  as an argument: `clientTerms({ name, self, selfInitial, update,
+  thisMachine })` in `client-terms.mjs`. The home holds no terms of its own
+  and no default: a table throws a `TypeError` when it is not given the
+  object `clientTerms` returned, so a sentence can never be built with a
+  missing word. A shared function that calls such a table takes the terms
+  from its own caller and passes them on. The Desktop says its five terms
+  once, in `renderer/desktop-terms.mjs` (`DESKTOP_TERMS`), which main, the
+  backend and the page import, and every call site passes them itself:
+  nothing re-exports a table with the terms bound, and a table is never
+  handed along uncalled. `test/desktop-terms.test.mjs` writes out the
+  Desktop's sentences and reads every shipped module for a call that forgot
+  the terms; the root test `test/client-terms.test.mjs` builds every sentence
+  of every table with a second client's terms and refuses any that still
+  holds the Desktop's words. A sentence only the Desktop can raise is not in
+  the home at all (`renderer/lifecycle-frame.mjs`).
 - **Who may import what.** `test/client-boundary.test.mjs`, a root test that
   reads sources and imports none, holds the rules: the shared home imports
   only itself and `node:` builtins; `lib/` and `bin/` import nothing from it

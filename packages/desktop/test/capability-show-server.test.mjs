@@ -8,8 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { capabilityShowRequest, createCapabilityShowCache, capabilityShowKey } from '../server/capability-show.mjs';
 import { cliWorkspace, WORKSPACE_READ_TIMEOUT } from '../../client/workspace-cli.mjs';
-import { CAPABILITY_SHOW_UNREADABLE, capabilityShowData } from '../../client/capability-show-contract.mjs';
+import { capabilityShowUnreadable, capabilityShowData } from '../../client/capability-show-contract.mjs';
 import { startLoadPathServer } from './helpers/load-path-server.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 const deployment = '/fixture/base/northwind-workspace';
 const workspace = { id: deployment, scope: deployment, name: 'northwind' };
@@ -66,7 +67,7 @@ test('file: --file travels as path and the answer is decoded against it', async 
   // An answer about another file is not this file.
   const wrong = fake(o => ok(o.path ? fileAnswer('nw-house-style', 'inject.md') : show(o.name, 'member')));
   await rejects(capabilityShowRequest({ action: 'file', capability: member, path: 'skills/oats-operate/SKILL.md' }, { workspace, cli: cli(), catalog: rows(), invoke: wrong.invoke }),
-    'E_CLI_PROTOCOL', CAPABILITY_SHOW_UNREADABLE);
+    'E_CLI_PROTOCOL', capabilityShowUnreadable(DESKTOP_TERMS));
 });
 
 test('a refusal passes its code and message verbatim (bounded); a thrown adapter is E_CLI_FAILED', async () => {
@@ -89,7 +90,7 @@ test('an undecodable answer is E_CLI_PROTOCOL with the unreadable message', asyn
   for (const result of [show('nw-house-style', 'member', C1, { capabilityShowApi: 2 }), show('other-name', 'member'), null, { nope: 1 }]) {
     const f = fake(() => ok(result));
     await rejects(capabilityShowRequest({ action: 'show', capability: member }, { workspace, cli: cli(), catalog: rows(), invoke: f.invoke }),
-      'E_CLI_PROTOCOL', CAPABILITY_SHOW_UNREADABLE);
+      'E_CLI_PROTOCOL', capabilityShowUnreadable(DESKTOP_TERMS));
   }
 });
 
@@ -223,7 +224,7 @@ test('through the real cliWorkspace: fixed argv, no shell, and the failure envel
       JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_FILE_OVERSIZE', message: 'skills/oats-operate/SKILL.md is too large to read', details: { x: 1 } } }));
     return done(null, JSON.stringify({ schemaVersion: 1, ok: true, result: show('nw-house-style', 'member') }));
   };
-  const invoke = (state, options) => cliWorkspace(state, options, { exec, env: {} });
+  const invoke = (state, options) => cliWorkspace(state, options, DESKTOP_TERMS, { exec, env: {} });
   const result = await capabilityShowRequest({ action: 'show', capability: member }, { workspace, cli: cli(), catalog: rows(), invoke, maxAge: 60 });
   assert.equal(result.commit, C1);
   assert.deepEqual(seen[0].argv, ['capabilities', 'show', 'nw-house-style', '--member', REPO, '--dir', deployment, '--json'], 'no observe-max-age feature: no --max-age');
