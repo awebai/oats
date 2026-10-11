@@ -96,6 +96,51 @@ status; it does not cancel the dispatched operation or signal its process.
   `details.childrenStopped` and refuses retirement; **some children may already
   have stopped**, so “nothing retired” is not “nothing happened”. Read a fresh
   plan before a new confirmation; do not compose another Stop in Desktop.
+- **A row is read as data, in one place.** A row of a stop's `results` or of a
+  retire's `childrenStopped` is one of seven kinds (`stoppedRowKind` in
+  `packages/client/lifecycle-contract.mjs`), and every line and every sentence
+  above the rows is chosen from the kinds, never from the row's `message` or
+  from the reply's `reason.message`:
+
+  | Row | Kind | Its line, after the name |
+  |---|---|---|
+  | `ok: true`, `alreadyIdle: true` | `idle` | Was already stopped |
+  | `ok: true` otherwise | `stopped` | Stopped |
+  | `ok: false`, `code: E_INSTANCE_RETIRING` | `retiring` | Not stopped: it is being retired |
+  | `ok: false`, `code: E_LIFECYCLE_BUSY` | `locked` | Not stopped: OATS couldn't lock its home (the kernel's sentence for that row under it) |
+  | `ok: false`, `stillRunning` a non-empty list | `running` | Didn't stop (still running: …) |
+  | `ok: false`, `stillRunning: []` | `unrecorded` | Stopped, but OATS couldn't record it |
+  | `ok: false`, `stillRunning: null` | `unconfirmed` | Didn't stop |
+
+  The two codes decide before `stillRunning` does and need no feature name: the
+  kernel answers both only before any effect, so nothing was tried on that
+  target, and "Didn't stop" would say that something was. A `locked` row is the
+  only one whose kernel sentence is kept (it is the refusal of that child's own
+  stop and names what ends it), through the display filter.
+
+  When every failed row is `unrecorded`, the sentence above the rows says that
+  the sessions stopped and the record failed: a stop reads "<name> stopped, but
+  OATS couldn't record it." (one target) or "Every session stopped, but OATS
+  couldn't record all of them:" (several), under the title "Stopped, but not
+  recorded"; a retire refused with `E_CHILDREN_RUNNING` reads "The child
+  instances stopped, but OATS couldn't record it for all of them, so nothing was
+  retired." Any other mix keeps "Not every session stopped:" and "A child
+  instance wouldn't stop, so nothing was retired. Other children may already
+  have stopped." Either way it is a partial result or a refusal, never done.
+- **`stillRunning: []` means "the harness exited" only from a kernel that says
+  so** (feature `lifecycle-kernel-codes`; the kernel's rule is
+  [`#still-running`](../../../docs/desktop-cli-api.md#still-running)). A kernel
+  without the feature answers `[]` in a failed row for a session it did not
+  see stop. So the server's decoder is told which kernel answered
+  (`answeringFeatures`: the selected CLI's features for a local command; for a
+  routed one the host's own list, known only when this computer's CLI lists
+  `server-probe-features`, the roster group's `probe.ok` is `true` and
+  `probe.features` is an array) and keeps a failed row's `[]` only when that
+  list names the feature. Otherwise the decoded row, and the reply, carry
+  `null`. An unknown list, or a caller that passes none, reads as without: the
+  weaker claim. The dialog re-validates the rows the server decoded
+  (`publicLifecycleReceipt`, `decodedStoppedTargets`) and never decodes a
+  kernel's own row, so from the decoder on `[]` has one meaning.
 - Retire accepts both the documented first raw receipt and enveloped replay,
   checking revision/key/name against the transaction. Home removal, worktree
   retention/removal and recovery are separate facts.
@@ -125,13 +170,46 @@ status; it does not cancel the dispatched operation or signal its process.
   refused receipt) and shown as one result line: "Branch <branch> deleted: an
   interrupted spawn left it, and it held no work." or "Branch <branch> kept:
   <reason>", branch and reason through `displayLine`.
-- `E_LIFECYCLE_BUSY` keeps its sentence, with one exception: a retire the
-  kernel refuses as busy for a row with `rollbackIncomplete` says "OATS can't
-  confirm that the spawn which left this home has stopped, so it won't retire it
-  yet. Check the process it names, then retire it from the CLI with --force.",
-  with the kernel's message (it names the process) under it. Desktop offers no
-  `--force`. Desktop's own busy (an apply slot or the plan cap) carries no kernel
-  message and keeps today's sentence.
+- **`E_LIFECYCLE_BUSY` is read by which kernel answered.** The code's fixed
+  sentence is "Another stop or retire is already running. Wait for it to
+  finish, then review again."
+  - **A kernel that lists `lifecycle-claim-stop`** says in
+    `error.details.holder` whether waiting ends the refusal (the kernel's rule
+    is in `docs/desktop-cli-api.md`), and the headline follows it, for an apply
+    and for a plan read:
+
+    | `holder` | Headline | The kernel's sentence |
+    |---|---|---|
+    | `running` | Another OATS command is already running. Wait for it to finish, then review again. | in Details |
+    | `unknown` | Nothing was done. OATS can't tell whether another command is still running. | under "It says what to check:" |
+    | `none` | Nothing was done, and there is no other command to wait for. | under "OATS says what to do:" |
+    | absent, or any other value | Nothing was done: OATS refused this as busy. | under "It says:" |
+
+    Only `running` promises that waiting ends it. For the others the kernel's
+    sentence names the step that ends the refusal, so it is the main text: one
+    line through the display filter, alone in its `<bdi>`, in the status live
+    region after the headline (a screen reader gets it with the headline). A
+    sentence the filter withholds is not introduced, and Details shows the
+    filter's line. The field is read only under this code. When the refusal's
+    `details.home` is a target of the stop plan other than the instance acted
+    on (a recursive stop refused for a child's claim), one line names it: "This
+    is about <name>, which is in this plan." The name is the plan's and is
+    checked against the dialog's own plan snapshot; `details.instance` is never
+    shown. With this feature the sentence below for a home a spawn left is not
+    shown on any row: `holder` decides, and where the kernel offers `--force`
+    its own sentence names the check and the command. A leftover whose hook
+    group survived both signals is answered `E_RUNTIME_QUIESCE_FAILED` by such
+    a kernel, an unknown outcome.
+  - **A kernel that does not list it, or a host whose features are not known:**
+    the fixed sentence, with one exception: a retire the kernel refuses as busy
+    for a row with `rollbackIncomplete` (a local answer with a message) says
+    "OATS can't confirm that the spawn which left this home has stopped, so it
+    won't retire it yet. Check the process it names, then retire it from the
+    CLI with --force.", with the kernel's message (it names the process) under
+    it.
+  - Desktop offers no `--force` and reads no `details.remedy`. Desktop's own
+    busy (an apply slot or the plan cap) carries no kernel message and keeps
+    the fixed sentence.
 - `E_PLAN_STALE` displays the validated producer's fresh plan and a new reference;
   the operator must explicitly confirm again. It never auto-applies.
 - Preservation/cleanup failure may follow earlier effects. Render retained/partial
@@ -141,24 +219,64 @@ status; it does not cancel the dispatched operation or signal its process.
   any effect: the kernel can raise it after the children stop, the session
   stop and the retire hooks. The kernel's own message (it names the path and
   the remedy) is in Details, for a local refusal and a remote one alike.
-- Unknown errors, malformed receipts and timeouts are closed local messages.
+- `E_RUNTIME_QUIESCE_FAILED` (a session window, or the hook group an
+  interrupted spawn left, that OATS could not show gone) is an **unknown
+  outcome** with its own fixed sentence as the cause: "OATS tried to end a
+  session or a process and couldn't confirm that it ended." The kernel's
+  message is in Details.
+- Malformed receipts and timeouts are closed local messages.
   An error envelope's `message` renders only through the display filter
   (`packages/client/display-text.mjs`; see
   [desktop-deployment-model.md](desktop-deployment-model.md#remote-rows)), in
   the dialog's Details as `CODE: message`, under Desktop's fixed sentence for
-  the code. The headline is never the CLI's text. A local failure carries the
-  message only when both hold:
-  - the installed CLI answered with an error envelope. A failure Desktop's own
+  the code. The headline is never the CLI's text; the one place the kernel's
+  sentence is the main text is a busy answer, above. A local failure carries
+  the message only when both hold:
+  - **the kernel answered.** The adapter says so where it builds the envelope:
+    `origin: 'kernel'` on an error the installed CLI printed
+    (`packages/client/lifecycle-cli.mjs`). The boundary decides by that field
+    (`kernelAnswered`), never by the envelope's shape: a failure Desktop's own
     adapter or boundary raises (`E_CLI_TIMEOUT`, `E_CLI_OUTPUT_LIMIT`,
     `E_CLI_PROTOCOL`, `E_CLI_FAILED`, `E_OUTCOME_UNKNOWN`, the plan and
-    admission codes of the boundary) never carries one, whatever came with it;
-  - the code has its own sentence (`lifecycleDetailCode`). A code without one
-    reads as `E_CLI_FAILED`, with no CLI text.
+    admission codes of the boundary) has the same shape, carries no origin and
+    never carries a message, whatever came with it;
+  - the code has its own sentence and is not one Desktop raises
+    (`lifecycleDetailCode`), or it is a kernel code without a sentence, below.
 
-  The server builds the detail (`failureReason`) and the dialog re-validates it
-  (a display line, the same code rule) before showing it: it is set as text,
-  never parsed, linked or acted on. Raw stderr, exception stacks and every
-  other field of an error still never render.
+  **A sentence about not reaching OATS is never shown for an answer the kernel
+  gave.** A code the kernel answered that has no sentence here keeps its own
+  code and reads "OATS answered with an error that Desktop has no description
+  for.", with the code and the kernel's message in Details (the code alone
+  when there is no message), for a local answer and a routed one.
+  `E_UNIDENTIFIED_INSTANCE_HOME` is such a code: the kernel answers it to a
+  Stop or a Retire of a home whose record it cannot read
+  ([desktop-cli-api.md](../../../docs/desktop-cli-api.md#unreadable-record)), and its
+  sentence, which names the file and the remedy, is what Details shows. The
+  code is outside `BEFORE_EFFECT_CODES`, so an apply answered with it reads as
+  an unknown outcome with that answer as its cause. The fallback is chosen
+  by where the code came from, so by the boundary (`failureReason`):
+  `lifecycleReason(code)` is given codes of every origin and keeps
+  `E_CLI_FAILED` ("OATS couldn't be run for this.") for one it does not know.
+  The kernel's code shape is only the guard for a system code (`ENOENT`) from a
+  kernel that still answers one, which keeps `E_CLI_FAILED`'s sentence. Every
+  code Desktop raises itself has its own sentence and never reaches the
+  fallback; `test/lifecycle-kernel-answers.test.mjs` reads the adapter, the
+  boundary, admission and main for the codes they raise and holds each to the
+  table. It changes no status: `refused` and `unknown` are decided by
+  `BEFORE_EFFECT_CODES` (exported by `server/instance-lifecycle.mjs`, so that
+  the kernel's tests can hold it inside the kernel's own list of codes
+  answered only before any effect). "Before any effect" and the headlines'
+  "Nothing was done." are about the instance: its sessions and its home. A
+  guarded retire that answers one of these codes may already have appended its
+  plan's `retire-planned` event to the workspace log (a stop never does), so
+  Desktop never says that a refused retire recorded nothing.
+
+  The server builds the reason (`failureReason`) and the dialog re-validates it
+  (a display line, the same code rule; for the fallback, the fixed sentence and
+  a kernel code without one: `undescribedRefusal`; for a busy answer,
+  `busyRefusal`) before showing it: a detail is set as text, never parsed,
+  linked or acted on. The dialog reads no `origin` from a reply. Raw stderr,
+  exception stacks and every other field of an error still never render.
 
 The kernel's Stop replay horizon is per key while its home exists. Retire
 receipts live beside the instances directory and survive home removal. Desktop
@@ -254,7 +372,10 @@ its reason in the visible status line (`aria-describedby`).
   Work the kernel did not observe reads "Unknown (couldn't be checked)", its
   reason (a code such as `E_NO_WORKTREE`) only in the row's title; an instance
   without its own worktree has no Uncommitted work row. The
-  fixed sentences live in `lifecycle-contract.mjs`.
+  fixed sentences live in `packages/client/lifecycle-contract.mjs`, with the
+  functions that choose a sentence from an answer's data (a row's kind and
+  line, the sentence above a stop's rows, a refused retire's sentence, a busy
+  answer's headline). The dialog lays them out and words none of them.
 
 Modal lifetime, workspace generation, target and request/operation tickets guard
 success, rejection and cleanup. Old controls cannot close or confirm a new
