@@ -25,6 +25,19 @@ session) is visible there. If the terminal is not ready within the wait, a
 notice says so and the instance's row opens it later. A refused launch keeps
 the dialog open with the kernel's error.
 
+A start or restart that stops at a launch prompt is not a refusal: the kernel
+keeps the session and answers `E_SPAWN_INCOMPLETE` with the outcome it
+observed, as for a spawn. The dialog then says, in Desktop's words, that OATS
+could not confirm the instance finished starting, with the kernel's reason and
+whether input was sent, that its session was kept, and what to do: refresh
+status, then open its terminal to read what it shows, and not start it again
+before that. Under that sentence it shows what the screen differed in from the
+confirmation OATS answers, when the kernel reported it ("OATS expected:" and
+"The terminal showed:", the terminal's text as an attributed quote), and the
+kernel's own message under "OATS says:". It never says the start failed, and
+never that the instance started. An outcome the Desktop cannot read shows the
+kernel's message, as before.
+
 If an ordinary Start dialog finds the instance already running, its action becomes
 **Open terminal**. A failed or timed-out start requires **Refresh status** before
 another attempt, because the launch may have succeeded before the reply was
@@ -69,6 +82,15 @@ clients/hosts receive an update explanation instead of unsupported arguments.
 The installed CLI must advertise `session-start`; remote starting also needs
 the remote operation. The execution host checks the actual saved session
 before launch. Desktop does not scaffold a home or execute a launcher itself.
+
+A failed start answers `{error, code}`: the kernel's message and its code. When
+the code is `E_SPAWN_INCOMPLETE` and its details hold a launch-prompt outcome
+for the instance the route resolved, the answer also carries `incomplete`: the
+details decoded by `retainedSpawnDetails`
+(`packages/client/launch-prompt-outcome.mjs`), the same projection a spawn's
+retained result uses. It is decoded again on the way to the dialog by the two
+places that list the keys an error carries (`apiJson` and `httpError` in
+`renderer/views/common.mjs`), and kept only beside that code.
 
 Status collection reads each instance's recorded tmux socket and session,
 with one query per socket per collection. A launcher shell with a harness

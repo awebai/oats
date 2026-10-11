@@ -53,11 +53,38 @@ bounded and credential/URL-redacted. Raw notes, task/environment/recipe/command
 payloads and PID arrays are not forwarded. Paths and past plan revisions are
 provenance text, not file links, terminal targets or executable confirmations.
 
-`launch-prompt` rows are titled "Launch prompt" and expose only the reported
+`launch-prompt` rows are titled "Launch prompt" and expose the reported
 `status`, prompt `class`, `action`, `consentSource` and `reason`, through the
-same bounded, redacted scalar projection. Pane/PID identity, signature data and
-other receipt payloads are not forwarded. A submitted answer is historical
+same bounded, redacted scalar projection. A submitted answer is historical
 input evidence, not readiness or permission to retry a key.
+
+A row's facts follow the kernel that wrote it, and a log keeps its rows, so one
+log can hold both generations:
+
+| Fact | Label | Written by |
+|---|---|---|
+| `consentSource` | Consent source | 0.44 to 0.51 |
+| `signatureId` | Recognised screen (the entry the screen equalled: the confirmation, or the notice of a start where Claude ignored the flag) | every kernel, on the rows of an answer; 0.52 also on a `flag-ignored` row |
+| `claudeVersion` | Claude version (a version, or `unknown`) | 0.52 |
+| `differed` | the group below | 0.52, on the row of a miss |
+
+`claudeVersion`, `signatureId` and `differed` are read tolerantly (the
+`tolerant` table of `instance-events-data.mjs`): a malformed value drops its own
+fact and never the read. The two texts are shown through `displayLine`; the
+row's older facts are shown as they always were, which is why the view's
+`LINE_KINDS` does not list `launch-prompt`. The pane and PID identity,
+`startId`, `key`, `signatureDigest` and `claudeVersionSource` are not read.
+
+`differed` is what the screen of a blocked launch differed in from the
+confirmation the kernel answers. It is read only on a row whose `status` is
+`blocked`, through the outcome reader's decoder
+(`packages/client/launch-prompt-outcome.mjs` `launchPromptDiffered`), and shown
+under the row's facts by `launch-differed.mjs`: the Desktop's lead-in, then
+"OATS expected:" and "The terminal showed:", each text one display line in the
+quote treatment (`source-quote.mjs`), then the entry it was compared with and
+the position. What the terminal showed is untrusted text: it is an attributed
+quote, never part of a fact or of a Desktop sentence, and nothing is decided
+from it. A side with no text reads "(no visible text)".
 
 `worktree-added` rows (OATS 0.49.0, feature `worktree-event`: `oats worktree
 add` made an extra tree) are titled "Worktree added", with the facts purpose,

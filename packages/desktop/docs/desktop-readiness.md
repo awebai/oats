@@ -62,6 +62,23 @@ caller revalidates its admission and CLI identity after success **or** rejection
   providers**. Items keep requiredness, status, producer, bounded evidence
   (a module's `from` renders as its origin) and a display-only remedy.
   Unknown, fail, optional and not-applicable stay distinct.
+- Two items of `configured` come from the launch (OATS 0.52), neither required:
+  - `harness-trust` (producer "harness folder trust"): whether the configuration
+    file the launch reads trusts the deployment. The kernel names that file in
+    the item's top-level `file`, beside `evidence`, also on a passing item. The
+    contract reads it tolerantly (an absolute path with nothing unsafe in it;
+    anything else drops the fact, never the read) and the view shows it as
+    **Configuration file**. No other top-level key of the item is read.
+  - `launch-prompt` (producer "launch prompt"): the home's last start was
+    blocked, at a screen the kernel does not confirm or with one that never
+    settled. Its `reason` quotes what that terminal
+    showed, so for this code alone it is shown as one `displayLine`; the
+    kernel's sentence says whose text it is ("found …"), and the view attributes
+    the sentence to its producer. The item's own `differed` is not read: the
+    reason says it once. Its remedy is display-only, like every remedy.
+
+  Both are projected in the contract's `item`, so the server, main and the
+  renderer agree, and projecting twice equals projecting once.
 - **member** is the soul's member repository confirmed in the workspace
   (`oats-membership.yaml`), never login or team registration.
 - **providers** relays each bound provider's own binding check **verbatim**:

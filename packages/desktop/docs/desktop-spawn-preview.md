@@ -341,9 +341,10 @@ The column reads top to bottom:
 
    Labels are 11.5px `--muted` and values 12.5px `--fg`. The preview is a size
    container: below 300px of content width the facts stack label-above-value.
-3. **Launch prompts**, when the preview reports them: a full-width muted note
-   after the facts, holding the policy sentence and its consent source verbatim
-   (see Launch-prompt diagnostics).
+3. **Launch prompts**, when the preview reports them (a 0.44 to 0.51 kernel):
+   a full-width muted note after the facts, holding the policy sentence and its
+   consent source verbatim (see Launch-prompt diagnostics). A 0.52 preview
+   reports none, and nothing shows in its place.
 4. **Warnings**, when the preview's `warnings` (OATS 0.49.0: strings, one per
    capability warning such as `hook-event-unsupported`, each at most 32 lines)
    holds any: a list after the launch prompts, each warning marked by the word
@@ -584,8 +585,19 @@ An optional preview `launchPromptAnswers` reports the exact home's
 shows the development-channel confirmation or none, with available provenance.
 Enabled policy also explains that a harness update can block launch until its
 qualified prompt fixtures are refreshed, with no fallback key.
-An older CLI omitting the field makes no policy claim. This is read-only policy,
+A CLI omitting the field makes no policy claim. This is read-only policy,
 not observed input or readiness; workspace-trust prompt answering is not included.
+
+Only a 0.44 to 0.51 kernel sends the field. The note is keyed on the decoded
+field, never on the kernel's version or a feature. On a 0.52 kernel the dialog
+says nothing about the confirmation before a spawn: the kernel now confirms the
+prompt on every start that passes the development-channel flag, `oats spawn
+--preview` cannot report whether this spawn will (the flag comes from the
+provider's spawn hook, which a preview does not run; awebai/oats#912 is where
+that changes), and the Desktop does not invent it. What the Desktop shows comes after a start: a home whose last start
+stopped at a screen the kernel does not confirm carries the `launch-prompt`
+warning in its [Readiness](desktop-readiness.md), and its Activity row says
+what differed.
 
 `E_SPAWN_INCOMPLETE` can carry additive `launchPrompts` diagnostics. The CLI,
 broker and renderer preserve its retained home and incomplete outcome even if
@@ -593,10 +605,72 @@ these optional diagnostics are malformed. A bounded projection keeps blocked or
 incomplete status, submitted answer facts, and audit-write outcomes/paths; raw
 event rows and OS failure text do not cross this projection. Activity owns event
 rendering. Target fields are inspection data only, never terminal input authority.
-Unknown reason strings receive a generic inspection message.
+
+The `reason` is matched whole against a closed set
+(`packages/client/launch-prompt-outcome.mjs`) and shown as the kernel wrote it;
+any other string reads "Launch requires inspection". The set holds every reason
+of 0.44 to 0.52: six no longer occur from 0.52 (the geometry and consent
+reasons) and stay, for the kernels and recorded homes that still send them;
+and the kernel's evidence-retention reason is there alone and as the suffix of
+the three blocked reasons it can follow. An answer that was sent and whose
+completion was not seen is `blocked: observation timeout` with the submitted
+answer in `answers`, from every kernel since 0.44: the sentence then says that
+an answer was submitted.
+
+A blocked result of 0.52 can carry `differed {nearest, firstDifference {index,
+expected, found}}`: the nearest tolerance entry and at most 40 UTF-16 units of
+each normalized text from the first difference. `launchPromptDiffered` decodes
+it to `{nearest, index, expected, found}`, each side one display line or null.
+It is tolerant (a malformed value drops this one fact, never the outcome or the
+retained home) and idempotent (the renderer reads again what the server
+projected), and it is carried only on a `blocked` result. `found` is what a
+terminal showed: untrusted text, shown as an attributed quote and never
+compared, parsed or acted on. `differedLines` gives the words and
+`launch-differed.mjs` the one component: the lead-in "Where the screen first
+differed from the confirmation OATS answers:", then "OATS expected:" and "The
+terminal showed:", each in the quote treatment; a side with no text reads "(no
+visible text)". The dialog shows it under its status, never inside it, and adds
+"Nearest entry <id>, first difference at <index>" to Details. The background
+notice is plain text and cannot attribute a quote: with `differed` it adds "Its
+Activity shows what OATS expected and what the terminal showed.", and none of
+the terminal's text.
 
 Both the dialog and background spawn notice show the reason and direct the
 operator to inspect the existing pane, then use `oats session start --home` for
 that home. No new spawn or key retry is offered. A submitted answer does not
 confirm readiness; empty answers after audit failure do not prove no input was
 sent. Result reads and repeated apply requests keep the same retained result.
+
+### An ambiguous launch configuration
+
+OATS 0.52 refuses a spawn, and its preview, with `E_LAUNCH_CONFIG_AMBIGUOUS`
+when the harness the spawn resolves to has more than one launch configuration
+on this machine, none is `default: true`, and the spawn names none.
+
+- **The sentence** is the dialog's, at both stages (`spawn-messages.mjs`, the
+  shared table): "This machine has more than one launch configuration for this
+  soul's harness, and none is the default. Choose one under Launch
+  configuration in Developer settings." The kernel's message, which ends with
+  its command-line fix, stays in Details with the code.
+- **The first entry of the Launch configuration select** reads "No default:
+  choose one" while the answer for the choices on screen is this refusal. It
+  stays the selected entry, and selectable: it is the state the dialog is in. It
+  reads "Default" (or "Default · <name>") again as soon as the answer for the
+  choices on screen is anything else. Spawn is disabled as for any refused
+  preview. The dialog offers no new choice: not the bare harness, and not
+  marking a default.
+- **The code is in the preview contract's fixed table** beside
+  `E_LAUNCH_CONFIG_UNKNOWN`, so it survives where the kernel's message cannot
+  travel: the apply's reason, and a message over the bound. When the file
+  changed after the preview on screen, prepare's own read is refused and the
+  dialog and the background notice say the same sentence, and that nothing was
+  created.
+- **A refusal from the apply's own CLI call** is an unknown outcome, as every
+  kernel refusal at that stage is (see Apply transport and qualified results):
+  the broker infers no rollback from a code it has no binding contract for.
+- **A spawn routed to a server** reads no preview here and lists no
+  configurations. Its refusal shows as any host refusal does: "Couldn't spawn
+  on <server>: <the host's message>", the code behind Details, never the
+  sentence above.
+- **The soul's page** shows a launch `problem` in the kernel's words, this one
+  included.
