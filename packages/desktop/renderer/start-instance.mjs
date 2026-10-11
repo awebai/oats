@@ -5,7 +5,7 @@ import { waitForInstanceInPanel } from "./views/spawn.mjs";
 import { launchConfigFields } from "./launch-config-fields.mjs";
 import { captureFocusReturn } from "./focus-return.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
-import { retainedStartMessage } from "../../client/launch-prompt-outcome.mjs";
+import { retainedStartMessage, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 import { displayLine } from "../../client/display-text.mjs";
 import { sourceQuoteCSS } from "./source-quote.mjs";
 import { launchDiffered, launchDifferedCSS } from "./launch-differed.mjs";
@@ -165,13 +165,20 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
       runtime.disabled = yolo.disabled = true; launchFields.disabled(true);
       clearOutcome(); status.textContent = restart ? "Checking configuration and restarting…" : "Starting…";
       try {
-        await postJson(ctx, path, body);
+        const result = await postJson(ctx, path, body);
         started = true;
-        if (!owns()) return;
         // Accepted. The harness may stop at something only its terminal shows (Claude Code's channels
         // confirmation, an error), so the dialog never waits on it (#525): it closes, and the terminal
         // opens as soon as the row is ready. Readiness is reported there, or by a notice, never by a modal.
-        close();
+        const open = owns();
+        if (open) close();
+        // The start worked while Claude Code ignored the channel option (the answer's own `launchPrompts`):
+        // a notice says so once the dialog is gone, also when the person closed it while the start ran. The
+        // view it was started from must still be on screen, as for every notice of this dialog. Never a
+        // failure: the terminal opens as for any start that worked.
+        const ignored = flagIgnoredNotice(instance.instance, result);
+        if (ignored && ws === currentWorkspace() && generation === workspaceGeneration()) ctx.notify?.(ignored.headline, ignored.detail ? { detail: ignored.detail } : undefined);
+        if (!open) return;
         // Taken after the focus return: any explicit choice from now on (another terminal, tab, view or
         // the sidebar) keeps the foreground, and this terminal does not take it later.
         void openWhenReady(ctx.watchSelection?.() ?? (() => true));

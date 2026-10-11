@@ -74,7 +74,8 @@ gated on that feature and no older reader is removed: each field is read when
 the answer carries it, because a routed host can run an older kernel and a home
 keeps the rows and outcomes an older kernel recorded. Read from a 0.52 answer:
 `differed` on a blocked `launchPrompts` (the details of `E_SPAWN_INCOMPLETE`,
-from a spawn or a start);
+from a spawn or a start); `launchPrompts` with the status `flag-ignored`, and
+the `warnings` beside it, on a start's or restart's successful answer;
 `claudeVersion`, `signatureId` and `differed` on a `launch-prompt` event; the
 top-level `file` of a `harness-trust` readiness item and the `launch-prompt`
 readiness warning; the refusal `E_LAUNCH_CONFIG_AMBIGUOUS`. The pages that own

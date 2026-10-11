@@ -38,6 +38,27 @@ kernel's own message under "OATS says:". It never says the start failed, and
 never that the instance started. An outcome the Desktop cannot read shows the
 kernel's message, as before.
 
+A start or restart can work while Claude Code ignores the development-channel
+option: the instance runs, and mail and chat will not wake it. From 0.52 the
+kernel's successful answer says so (`launchPrompts.status: "flag-ignored"`).
+That start worked, so the dialog closes and the terminal opens as for any
+start. A notice then says that the instance started and that Claude Code
+ignored the channel option, so mail and chat will not wake it; with the reason
+`channels-unavailable` it adds that Claude Code reported channels are not
+available. Behind the notice's Details: "OATS says:" and every warning of that
+answer, whole and in the order given, each as one display line. No warning is
+picked, matched or dropped by its words: the kernel's own sentence is one
+string among them, and Desktop does not look for it. The notice is also shown
+when the dialog was closed while the start ran, as long as the workspace it was
+started from is still on screen.
+
+The reader is `flagIgnoredNotice` (`packages/client/launch-prompt-outcome.mjs`).
+It takes an answer's `launchPrompts` and `warnings`, gives the headline and the
+lines, and knows nothing of the act that was answered. It is tolerant: an
+answer it cannot read, or any other status, gives no notice, and the start
+reads as any start that worked. Only the start dialog calls it: the Desktop
+does not yet read `launchPrompts` on a spawn's answer.
+
 If an ordinary Start dialog finds the instance already running, its action becomes
 **Open terminal**. A failed or timed-out start requires **Refresh status** before
 another attempt, because the launch may have succeeded before the reply was
@@ -83,7 +104,8 @@ The installed CLI must advertise `session-start`; remote starting also needs
 the remote operation. The execution host checks the actual saved session
 before launch. Desktop does not scaffold a home or execute a launcher itself.
 
-A failed start answers `{error, code}`: the kernel's message and its code. When
+A start that worked answers the kernel's result, whole. A failed start answers
+`{error, code}`: the kernel's message and its code. When
 the code is `E_SPAWN_INCOMPLETE` and its details hold a launch-prompt outcome
 for the instance the route resolved, the answer also carries `incomplete`: the
 details decoded by `retainedSpawnDetails`

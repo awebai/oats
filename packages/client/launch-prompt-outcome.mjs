@@ -134,3 +134,32 @@ export function retainedStartMessage(instance, d) {
   const p = launchPromptOutcome(d?.launchPrompts);
   return `OATS could not confirm that ${instance} finished starting: ${p.reason}.${inputNote(p)} Its session was kept. Refresh status, then open its terminal to read what it shows. Do not start it again before that.`;
 }
+/** A launch that worked while Claude Code ignored the channel option (0.52.0). The kernel's successful
+ * answer then carries `launchPrompts: {status: "flag-ignored", reason, signatureId, startId, at}` and its own
+ * words as one string among `warnings`, never as a field. This reader takes those two fields of an answer
+ * and knows nothing of the act that was answered. Its one caller is the start dialog, for a start's and a
+ * restart's answer; a spawn's answer carries `launchPrompts` too (0.52.0) and is not read yet. It stands
+ * beside the kept-session reader above, which reads a refusal's details and knows no such status.
+ * Tolerant: an answer that does not decode, or any other status, is null, and the launch reads as any
+ * launch that worked.
+ *
+ * `reason` is the one value the notice has a clause for, else null. `warnings` is every warning of that
+ * answer in the order given, each as one display line: the withheld marker for one the filter withholds,
+ * and no line for an entry with nothing to show. None is picked, matched or dropped by its words: no
+ * client looks for the kernel's sentence among them. */
+export function launchFlagIgnored(answer) {
+  if (!record(answer) || !record(answer.launchPrompts) || answer.launchPrompts.status !== 'flag-ignored') return null;
+  const warnings = Array.isArray(answer.warnings) ? answer.warnings.map(w => displayLine(w)).filter(line => line !== null) : [];
+  return { reason: answer.launchPrompts.reason === 'channels-unavailable' ? 'channels-unavailable' : null, warnings };
+}
+/** The notice for it, `{headline, detail?}`, or null. `instance` is the name the caller launched. The launch
+ * worked: the headline never says "failed" or "could not confirm". The detail is the warnings under the
+ * Desktop's lead-in, one per line; there is none without a warning. */
+export function flagIgnoredNotice(instance, answer) {
+  const d = launchFlagIgnored(answer);
+  if (!d) return null;
+  const headline = d.reason === 'channels-unavailable'
+    ? `${instance} started. Claude Code reported that channels are not available and ignored the channel option, so mail and chat will not wake this instance.`
+    : `${instance} started. Claude Code ignored the channel option, so mail and chat will not wake this instance.`;
+  return d.warnings.length ? { headline, detail: ['OATS says:', ...d.warnings].join('\n') } : { headline };
+}
