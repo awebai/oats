@@ -82,7 +82,8 @@ runs.
   reported that were withheld (a home outside its soul's directory, or one
   reported twice). A count of zero is left out. The second row names the
   views; `2 Souls` and `3 Capabilities` are dim because they cannot be
-  opened yet. On the right is the time of the read the screen shows.
+  opened yet. On the right is the time of the read the screen shows: it
+  moves with every read.
 - **The list** is the roster the Desktop draws: the same groups in the same
   order, from the same code. An instance that others were spawned from
   comes first, and the ones below it are indented under it; instances
@@ -113,7 +114,8 @@ Every state has a mark of its own shape, so nothing is told by colour alone.
 **When a read fails,** what the view then shows is one rule, shared with the
 Desktop, and `oats tui` decides none of it. Depending on the failure the
 last rows stay as they were; or they stay and are marked `stale`, with the
-time they were read (a remote that could not be read again); or the
+time of the last read that succeeded (a remote that could not be read
+again); or the
 deployment is `not observed` and no row is drawn. A state that is not live
 is said in words above the list, with the reason on rows of its own, as the
 kernel or the reader gave it.
@@ -222,8 +224,10 @@ with the Desktop (`packages/client/`).
   reported as unknown is not probed and stays unknown.
 - **How often:** 5 seconds after the last read ended; 30 seconds once ten
   minutes have passed without a key; at once on `r` and on the return from a
-  suspend. A read in the background may reuse what the kernel observed of
-  the workspace's remotes in the last 60 seconds; `r` asks for a fresh one.
+  suspend. Every read asks tmux anew and reads the instances anew, and the
+  time in the header is that read's. What a read in the background may reuse
+  is the kernel's own look at the workspace's remotes, for up to 60 seconds;
+  `r` asks the kernel to look again.
 - **Every child runs in a session of its own** and is ended when the TUI
   ends, by any way out. A read that was running when the TUI is suspended is
   dropped, not shown: its answer could arrive cut. The return reads again.

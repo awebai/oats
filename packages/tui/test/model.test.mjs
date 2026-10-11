@@ -289,8 +289,12 @@ test("a stale entry reads stale through the shared panel: every row is held stal
   assert.equal(view(on(folded(live, "lead"), "lead")).list.find((row) => row?.selected).below, 2);
   assert.equal(view(on(folded(state, "lead"), "lead")).list.find((row) => row?.selected).below, 0);
   assert.equal(fact(view(on(folded(state, "lead"), "lead")).detail, "below"), null);
-  assert.deepEqual(view(state).notice, { text: said.text, since: clockTime(entry.observedAt), reason: said.detail });
+  // Since the last good read: the cycle's own time, which a failed read leaves on the entry it
+  // keeps, and not the kernel's older look at the remotes.
+  assert.deepEqual([entry.generatedAt, entry.observedAt], ["2026-10-11T10:00:00.000Z", "2026-10-11T09:59:00.000Z"]);
+  assert.deepEqual(view(state).notice, { text: said.text, since: clockTime(entry.generatedAt), reason: said.detail });
   assert.equal(view(state).notice.since, "10:00:00");
+  assert.equal(sharedPanel(stateOf(failed(entry, UNREADABLE, "2026-10-11T10:07:00.000Z"))).generatedAt, entry.generatedAt, "a later failure does not move it");
   assert.equal(said.detail.includes(UNREADABLE.message), true, "the reason holds the kernel's message");
   assert.deepEqual([view(state).empty, view(state).observed], [null, true]);
   assert.equal(view(live).notice, null, "a live deployment has no notice");
@@ -330,8 +334,10 @@ test("the empty states: reading before the first answer, none for a deployment w
   assert.equal(view(press(stateOf(observed([])), ["/", "z", "enter"]).state).empty, "none");
 });
 
-test("the header's facts of a live deployment: its workspace's name, the time of the observation as a local clock time, and what the store holds of the view", () => {
-  const state = press(stateOf(observed(TREE, { workspace: "lfx-workspace", observedAt: "2026-10-11T14:03:27.000Z" })), ["j", "tab"]).state;
+test("the header's facts of a live deployment: its workspace's name, the time of the read as a local clock time, and what the store holds of the view", () => {
+  // The read's own time, not the kernel's observation of the remotes, which a read in the
+  // background reuses: here it is a minute older, and the header does not show it.
+  const state = press(stateOf(observed(TREE, { workspace: "lfx-workspace", observedAt: "2026-10-11T14:02:27.000Z", at: "2026-10-11T14:03:27.000Z" })), ["j", "tab"]).state;
   const m = view(state);
   assert.equal(m.workspace, "lfx-workspace");
   assert.equal(m.readAt, clockTime("2026-10-11T14:03:27.000Z"));

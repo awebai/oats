@@ -432,10 +432,14 @@ test("a withheld row is counted in the header and never drawn as a row", () => {
   for (const line of d.lines) assert.equal(line.includes("oats-kernel-developer-twin"), false);
 });
 
-test("the second row holds the time of the observation, `read HH:MM:SS`, only when the deployment is live", () => {
-  const at = (iso) => stateOf(observed(ROSTER(), { observedAt: iso }));
-  assert.equal(draw(at("2026-10-11T14:03:27.000Z"), S80).lines[1].endsWith(" read 14:03:27"), true);
-  assert.equal(draw(at("2026-10-11T00:00:09.000Z"), S60).lines[1].endsWith(" read 00:00:09"), true);
+test("the second row holds the time of the read, `read HH:MM:SS`, only when the deployment is live: the cycle's own time, not the older time the kernel observed the remotes at", () => {
+  const at = (iso, observedAt) => stateOf(observed(ROSTER(), { at: iso, observedAt }));
+  assert.equal(draw(at("2026-10-11T14:03:27.000Z", "2026-10-11T14:02:27.000Z"), S80).lines[1].endsWith(" read 14:03:27"), true);
+  assert.equal(draw(at("2026-10-11T00:00:09.000Z", "2026-10-10T23:59:09.000Z"), S60).lines[1].endsWith(" read 00:00:09"), true);
+  // Kept over a failed read, the entry says since when by the same time: its last good read.
+  const kept = stateOf(failed(observed(ROSTER(), { at: "2026-10-11T14:03:27.000Z", observedAt: "2026-10-11T14:02:27.000Z" }), { code: "E_REMOTE_UNREADABLE", message: "no" }, "2026-10-11T14:09:00.000Z"));
+  assert.equal(sharedState(kept).key, "stale");
+  for (const sz of SIZES) assert.equal(cellText(draw(kept, sz), 3).endsWith(" since 14:03:27"), true, `${sz.cols}x${sz.rows}: stale since the last good read`);
   const notLive = [stateOf(), stateOf(failed(entry(), { code: "E_REMOTE_UNREADABLE", message: "no" })), stateOf(failed(entry(), { code: "E_SOMETHING_NEW", message: "no" }))];
   for (const state of notLive) for (const sz of SIZES) {
     assert.notEqual(sharedState(state).key, "live");
@@ -474,7 +478,7 @@ test("the not-observed reason of a stale deployment is the shared state's detail
     const line = textOf(shown(shared.detail)), reason = reasonRows(d, line, glyphsOf(ascii).cut);
     assert.equal(reason.whole, true, `${at}: the rows of the reason, joined with a space, are the detail's display line`);
     assert.equal(reason.rows[0], 4, `${at}: the reason starts on the row under the state`);
-    // The row above: the state in the shared home's word and the time of the last observation.
+    // The row above: the state in the shared home's word and the time of the last good read.
     const above = cellText(d, 3);
     assert.equal(above.startsWith(` ${shared.text}`), true, at);
     assert.equal(above.endsWith("since 10:00:00"), true, at);

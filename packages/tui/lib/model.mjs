@@ -97,11 +97,16 @@ function build(state, at) {
       ...Object.entries(counted).slice(1).map(([word, n]) => ({ n, word, shared: true })),
       { n: withheld, word: "withheld", shared: false },
     ].filter((count) => count.n > 0),
-    readAt: live ? clockTime(panel.observedAt) : null,
+    // The time of the read the screen shows: the cycle's own (`generatedAt`), never
+    // `observedAt`, which is when the kernel last looked at the workspace's remotes and is up
+    // to a minute older on a read in the background. Nothing drawn here comes from the remotes.
+    readAt: live ? clockTime(panel.generatedAt) : null,
     // A deployment that is not live says so above the list, with why. Before the first answer
     // the list holds the TUI's own line instead: the shared sentence for that moment names an
     // installed CLI, and the TUI runs its own kernel.
-    notice: live || status === "pending" ? null : { text: state_.text, since: clockTime(panel.observedAt), reason: state_.detail },
+    // `since`: an entry kept over a failed read carries the time of its last good read. An
+    // unavailable entry carries only the time of the cycle that failed, which is no "since".
+    notice: live || status === "pending" ? null : { text: state_.text, since: status === "observed" ? clockTime(panel.generatedAt) : null, reason: state_.detail },
     empty: status === "pending" ? "reading" : status !== "observed" ? null : !instances.length ? "none" : !items.length ? "nomatch" : null,
     // As wide as the widest word among all the rows of the list, so the column does not move
     // while the list scrolls.
