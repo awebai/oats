@@ -49,6 +49,7 @@ whether an instruction contains “promotion bar.”
 | Correction to a reusable runbook | Maintain the existing procedure through its approval path |
 | Unverified single observation | Do not strengthen; retain uncertainty or decline promotion |
 | Secret, credential, or third-party message transcript | Exclude; never promote verbatim |
+| Personal data about people outside the team (clients, correspondents, any other third party) | Exclude; keep the lesson and leave the person out |
 | Project decision versus task decision with identical wording | Route by jurisdiction; only the future-binding decision may promote |
 | Project-slow roadmap change | Date and maintain under its responsible owner, not a universal expert |
 
