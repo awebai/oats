@@ -3215,12 +3215,17 @@ this order:
    retire answers it: `E_INSTANCE_RETIRING` beside a retire,
    `E_LIFECYCLE_BUSY` beside another stop
    ([Commands that meet on one home](#lifecycle-pairs)). A stop never waits
-   for a holder.
+   for a holder. A claim that cannot be written is
+   [read in its place](#stop-claim-write) (OATS 0.53.0): whoever holds it
+   is answered the same way, here.
 5. It reads the plan again, under the claims: this is the plan it acts on.
    **It holds the claim of every target of this plan before it does
    anything.** A target it does not hold yet (a child recorded, or readable
    again, since step 2) sends it back to step 4 with this plan's targets,
-   every claim released first so that the order of step 4 holds. A stop
+   every claim released first so that the order of step 4 holds. A target
+   whose claim was only read counts as held for this, and its claim is
+   read once more now, before the comparison below: a holder that came
+   since is answered as in step 4. A stop
    whose targets are others under each of three such reads (a constant of
    the kernel: there is no setting for it) gives up:
    `E_LIFECYCLE_BUSY`, `holder: "none"`, `… nothing was stopped — run the
@@ -3253,16 +3258,102 @@ once it holds the claim; a removal that fails is a warning on stderr (`oats:
 warning: …`, in both modes) and the stop goes on.
 
 <a id="stop-claim-write"></a>
-**A stop needs to write its claim.** A stop whose claim cannot be written
-(a full disk is the likely case; a claims directory that cannot be made or
-written) is refused before anything is signalled: `E_LIFECYCLE_FAILED`,
-`the claim <lock> could not be taken (<the system's error>); nothing was
-done`, with the system's code in [`details.cause`](#kernel-codes) and the
-plan it read in `details.plan`. The session runs as before. The way out:
-free space and stop again, or end the session by hand. Before 0.52.0 a stop
-took no claim: it wrote its marker if it could and signalled the harness
-either way, so it could fail afterwards, writing its own record, with the
-signal already sent.
+**A stop whose claim cannot be written reads it instead** (OATS 0.53.0;
+#946). Stop is what a person reaches for when a disk is full, and a stop
+that leaves a session running because it could not write a file protects
+nobody. So `oats instance stop --apply`, and it alone, reads a claim it
+cannot write, for a reason that stops every other writer of this user as
+well, and goes on when nobody holds it. It holds nothing for that target,
+and says so on stderr. A retire, and a retire's stop of a recorded child,
+need their claim as before.
+
+The reasons are five codes of the system's, met at one of the claim's
+writes (its directory, its file, and the same two of a takeover's own
+claim):
+
+| The system's code | It means |
+|---|---|
+| `ENOSPC` | the file system is full |
+| `EDQUOT` | this user's quota is spent |
+| `EROFS` | the file system is read-only |
+| `EACCES`, `EPERM` | the claims directory is not writable by this user |
+
+Each is in the list for one reason: what stops this stop from writing a
+claim in that directory stops a retire or another stop of the same user as
+well, so a claim that reads as held by nobody is held by nobody. `EACCES`
+and `EPERM` are there because every instance of a deployment can change the
+claims directory, and one that takes write permission from it must not take
+Stop from the operator. On a shared deployment that is the likely case of a
+warning below, and its cure is to fix the directory's permissions, not to
+live with the warning. Any other code (`EIO`, `EMFILE`, `EEXIST` from a
+file where the directory belongs) says nothing about who else could write
+there, and is refused as in 0.52.0: `E_LIFECYCLE_FAILED`, `the claim <lock>
+could not be taken (<the system's error>); nothing was done`, with the
+system's code in [`details.cause`](#kernel-codes) and the plan it read in
+`details.plan`; nothing was signalled.
+
+**What the read answers** is what the taking would have answered for what
+is at the claim's path, with one difference:
+
+- **Nobody holds it** (no file there; or a holder that is verifiably gone,
+  whose claim a command that can write would take over): the stop goes on.
+  This is the difference: the dead holder's file is left as it is, for the
+  next command that can write to take over.
+- **A holder that is alive, or whose liveness cannot be read, and a file
+  that is no readable claim:** the cell of
+  [the pair table](#lifecycle-pairs) for an arriving stop, with the same
+  sentence and the same `details`. Nothing was signalled.
+- **A file of a gone holder that no kernel can take over** (no `nonce` of a
+  claim's shape): `E_LIFECYCLE_BUSY`, `holder: "none"`, as for a stop that
+  can write. Its message says to inspect the file and remove it. On a full
+  disk that removal works; in a directory that is not writable the person
+  has to make it writable first.
+- **The claim cannot be read either** (its path cannot be reached): the
+  `E_LIFECYCLE_FAILED` of the write, as above. The read is positive or it
+  is nothing.
+
+The read is made twice: where the claim would have been taken (step 4), and
+again once the plan has been read under the claims (step 5), before the
+revision is compared. A holder that came in between is answered there,
+before a stale plan and before any signal, with the fresh plan in
+`details.plan`.
+
+**What it gives up.** Nothing on the home shows this stop: a plan read
+meanwhile says `stopPending: false`, and a retire or a stop that starts
+while it runs, and that can write its claim, is not refused. That is space
+freed a moment later, or a process of another user, for whom the directory
+is writable. The two commands then work in one home at once, as every stop
+did before 0.52.0. The warning says it, one line per such target, on stderr
+in text and in JSON mode:
+
+```text
+oats: warning: <instance>: stopping without its claim: <lock> could not be written (<CODE>), and nobody holds it. A retire or a stop of <instance> that starts while this one runs will not see it.
+```
+
+`<lock>` is the claim's own path and `<CODE>` the system's code, never its
+message. It is printed only when the apply answers a receipt, also for a
+target whose row is `alreadyIdle`, and never for a replay, which takes no
+claim. It is not part of the receipt, whose fields and values are those of
+any stop. **With `--server` the warning does not reach the caller:** the
+router keeps a remote command's stderr only when the command fails, as for
+every warning of a stop (#952).
+
+**On a full disk the stop cannot write into the home either.** The session
+is stopped, and the apply answers its receipt (exit 0 in JSON mode) with
+that target's row `ok: false`, `E_SESSION_STOP_FAILED`, a `message` that
+ends `its harness was signalled (SIGTERM) and has exited`, and
+[`stillRunning: []`](#still-running): the row of a stop in a home that
+cannot be written, as it was. Read `stillRunning`, not `ok`: `[]` says
+stopped. Text mode prints that row and exits 1, as for any target that
+failed. The receipt cannot be stored either, so **its key cannot be
+replayed**: the same apply again runs, and is answered `E_PLAN_STALE` with
+the fresh plan, in which the session is stopped; an apply with that plan's
+revision answers `alreadyIdle`, and prints the warning again.
+
+In 0.52.0 a stop whose claim could not be written for one of those five
+codes was refused like the others, before anything was signalled
+(`E_LIFECYCLE_FAILED`). Before 0.52.0 a stop took no claim: it wrote its
+marker if it could and signalled the harness either way.
 
 Two kernel versions acting on one deployment at once are not covered: a
 kernel before 0.52.0 takes no claim for a stop and does not read a stop's
@@ -3334,7 +3425,8 @@ in flight.
   that is not the kernel's; with [`details.cause`](#kernel-codes) when it has
   a code of its own or is a defect, and without it when it is a refusal
   without a code; among them a claim that cannot be taken for a reason of
-  the system's: `the claim <path> could not be taken (…); nothing was done`).
+  the system's other than [the five a stop reads it for](#stop-claim-write):
+  `the claim <path> could not be taken (…); nothing was done`).
   A stop never answers `E_WORK_INSPECTION_FAILED`.
 
 <a id="lifecycle-pairs"></a>
@@ -3346,15 +3438,15 @@ Each cell is the answer of the command that **arrives**. It is given at once
 and before any effect: that command stopped, ran, copied, made and removed
 nothing, and the command already on the home is not disturbed.
 
-| On the home ↓ / arrives → | `oats retire` | `oats instance stop --apply` | `oats worktree add` |
-|---|---|---|---|
-| a retire is running | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
-| a self-retire is scheduled | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
-| a stop apply is running | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
-| a retire whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
-| a stop whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
-| the claim file is no readable claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
-| the holder of the claim is gone | not refused | not refused | not refused |
+| On the home ↓ / arrives → | `oats retire` | `oats instance stop --apply` | `oats instance stop --apply` that cannot write its claim | `oats worktree add` |
+|---|---|---|---|---|
+| a retire is running | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
+| a self-retire is scheduled | `E_LIFECYCLE_BUSY` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` | `E_INSTANCE_RETIRING` |
+| a stop apply is running | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
+| a retire whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
+| a stop whose liveness cannot be read holds the claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | not refused |
+| the claim file is no readable claim | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` | `E_LIFECYCLE_BUSY` |
+| the holder of the claim is gone | not refused | not refused | not refused | not refused |
 
 - **A holder is answered before a stale plan, by both verbs.** A guarded
   retire and a stop apply compare the revision they were sent only once
@@ -3387,6 +3479,13 @@ nothing, and the command already on the home is not disturbed.
   `E_LIFECYCLE_BUSY`, `holder: "none"`, with `run the command again`.
 - **A stop does not refuse a `worktree add`:** a tree does not depend on the
   session.
+- **A stop apply that cannot write its claim**
+  ([it reads it instead](#stop-claim-write), OATS 0.53.0) is answered as
+  the stop that can, cell for cell. Beside a holder that is gone it stops
+  like the other, and leaves that holder's file as it is: it takes nothing
+  over. As a command already on the home it has no row: it holds nothing,
+  so nothing on the home shows it, and no command that arrives is refused
+  by it.
 - `--plan` of either verb takes no claim and is never refused by one; a
   stop plan reports the holder (`retiring`, `stopPending`). `oats worktree
   remove` does not read the home's claim. `oats session start` and `restart`
