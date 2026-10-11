@@ -3183,6 +3183,18 @@ make `stopPending` true, and is removed by the next stop apply of that home
 once it holds the claim; a removal that fails is a warning on stderr (`oats:
 warning: …`, in both modes) and the stop goes on.
 
+<a id="stop-claim-write"></a>
+**A stop needs to write its claim.** A stop whose claim cannot be written
+(a full disk is the likely case; a claims directory that cannot be made or
+written) is refused before anything is signalled: `E_LIFECYCLE_FAILED`,
+`the claim <lock> could not be taken (<the system's error>); nothing was
+done`, with the system's code in [`details.cause`](#kernel-codes) and the
+plan it read in `details.plan`. The session runs as before. The way out:
+free space and stop again, or end the session by hand. Before 0.52.0 a stop
+took no claim: it wrote its marker if it could and signalled the harness
+either way, so it could fail afterwards, writing its own record, with the
+signal already sent.
+
 Two kernel versions acting on one deployment at once are not covered: a
 kernel before 0.52.0 takes no claim for a stop and does not read a stop's
 claim. A machine has one installed CLI, and a command routed with `--server`
