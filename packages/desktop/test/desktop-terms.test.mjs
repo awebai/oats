@@ -70,8 +70,10 @@ test("the sentences that name the Desktop are the Desktop's strings, byte for by
 
 const TABLES = ['lifecycleReason', 'lifecycleFailure', 'undescribedAnswer', 'undescribedRefusal', 'workspaceFailure', 'workspaceGate', 'cliWorkspace', 'capabilityShowUnreadable',
   'deploymentReasonParts', 'deploymentReason', 'deploymentLabelParts', 'deploymentLabel', 'machineLabels', 'machineLabelParts', 'rosterSections',
-  // 1d: the sentence for a deployment that is not observed.
-  'deploymentUnavailableText'];
+  // 1d: the sentence for a deployment that is not observed, and the views that reach a sentence or a label
+  // (packages/client/panel-views.mjs): each passes the terms it is given on to the tables above.
+  'deploymentUnavailableText', 'deploymentInfo', 'viewModel', 'viewFor', 'deploymentFor', 'surfaceDeployment', 'viewForgeContext', 'isServed',
+  'teamMembersFor', 'machineScope', 'panelData', 'workspaceChoices'];
 const ROOT = new URL('../', import.meta.url);
 function shippedModules(dir = '') {
   const out = [];

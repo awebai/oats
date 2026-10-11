@@ -177,8 +177,9 @@ kernel's remote roster (id `remote:<server>:<targetKey>`). A **workspace
 view** is what the switcher lists and a window shows: every deployment, on
 this Mac or on a registered server, that reports the same workspace identity.
 Views are built per request from the held observations and the remembered
-remote identities, never by a CLI read (`packages/client/workspace-views.mjs`, the
-`OATSWEB_VIEWS` block of `server/oats-web.mjs`).
+remote identities, never by a CLI read (`packages/client/workspace-views.mjs` and
+`packages/client/panel-views.mjs`, which `server/oats-web.mjs` calls with what it
+holds, `held()`).
 
 A matched identity's view id is `ws:` and 20 hex characters of a hash of its
 key and default team: never a path, so it cannot collide with a deployment

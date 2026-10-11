@@ -8,7 +8,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { pendingEntry, failedEntry } from '../../client/deployment-panel.mjs';
 
-const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+// The server's own functions (observeDeployment) and the shared views it calls (panelData, deploymentPanel).
+const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8') + readFileSync(new URL('../../client/panel-views.mjs', import.meta.url), 'utf8');
 const fn = name => { const found = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`)); assert.ok(found, name); return found[0]; };
 
 function server(result) {

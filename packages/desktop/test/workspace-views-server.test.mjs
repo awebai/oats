@@ -1,5 +1,5 @@
-// The server's workspace views (#482): server/oats-web.mjs, block OATSWEB_VIEWS_BEGIN..END, extracted and
-// run over held observations (no CLI). Views, the union panel, addressing helpers, remembered identities,
+// The server's workspace views (#482): packages/client/panel-views.mjs, called as server/oats-web.mjs calls it
+// (its own `held`, the Desktop's terms) over held observations (no CLI). Views, the union panel, addressing helpers, remembered identities,
 // team members and the forge roster's context.
 import test from 'node:test';
 import assert from 'node:assert/strict';

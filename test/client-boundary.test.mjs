@@ -69,11 +69,13 @@ const SURFACE = Object.freeze({
   "instance-admission.mjs": ["admitInstance", "instanceSelector"],
   "instance-tree.mjs": ["instanceId", "resolveLinkId", "clusterInstances", "rosterGroups", "waitingRollup", "instanceVisibleInTree",
     "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome"],
-  "roster-sections.mjs": ["rosterSections"],
+  "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
   "client-terms.mjs": ["clientTerms"],
   // Firm (1d): what one deployment's observation becomes for the panel. A client calls `panelInstances`, not the row's own projection.
   "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry", "publicDeployment"],
+  // Firm (1d): the deployments a client holds and the views over them. The rest of the module is the Desktop's own composition.
+  "panel-views.mjs": ["deployments", "deploymentInfo", "deploymentTag", "deploymentEntry", "deploymentPanel", "viewModel", "viewFor", "panelData", "workspaceChoices"],
   // Provisional: machines and the switcher.
   "cli-adapter.mjs": ["parseEnvelope", "cliRemoteRoster", "cliStart", "launchChoiceArgv", "cliCapability", "writeTaskFile"],
   "remote-roster.mjs": ["remoteWorkspace", "remotePanel", "remoteAgents", "unavailableGroups"],
@@ -552,13 +554,17 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 40);
+  assert.equal(Object.keys(SURFACE).length, 41);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
   assert.deepEqual(SURFACE["client-terms.mjs"], ["clientTerms"]);
   // 1d: the panel's projection is on it; the projection of one row is not (a client calls `panelInstances`).
   assert.ok(Object.hasOwn(SURFACE, "deployment-panel.mjs") && !SURFACE["deployment-panel.mjs"].includes("panelInstance"));
+  // Of the views, what a second client is meant to use; the Desktop's own composition and the module it calls are not on it.
+  for (const name of ["viewForgeContext", "teamMembersFor", "machineScope", "surfaceDeployment", "deploymentFor", "deploymentRows", "isServed", "rememberedGroups", "workspaceEntry", "reasonFields"])
+    assert.ok(!SURFACE["panel-views.mjs"].includes(name), name);
+  assert.ok(!Object.hasOwn(SURFACE, "team-members.mjs"));
   // Not on it: the Desktop spawn dialog's copy, and the two files nobody imports.
   for (const module of ["spawn-messages.mjs", ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
 });

@@ -1,5 +1,5 @@
 // #517: the window's machine scope (its key, deployment and messaging) and the HTTP routes over
-// server/machines.mjs, through the shipped handler and views block.
+// server/machines.mjs, through the shipped handler and the shared views.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMachines } from '../server/machines.mjs';

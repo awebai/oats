@@ -23,8 +23,8 @@ function http({ remote = false, run, discover, raw = state(), transform = source
   });
   const views = deploymentDoubles(() => [{ ...context.workspace, remote }]), snapshot = { byWs: new Map([['team', { instances: context.instances }]]) };
   // The forge roster reads the VIEW's context (#482); here every deployment is its own one-deployment view.
-  const viewForgeContext = id => {
-    const ws = views.deploymentFor(id), observed = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null;
+  const viewForgeContext = (held, id, terms) => {
+    const ws = views.deploymentFor(held, id, terms), observed = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null;
     return ws ? { workspace: { id: ws.id, name: ws.name, remote: !!ws.remote }, cli: oats, instances: observed?.instances || [], clones: observed?.deployment?.workspaceStatus?.clones || [] }
       : { workspace: undefined, cli: oats, instances: [], clones: [] };
   };

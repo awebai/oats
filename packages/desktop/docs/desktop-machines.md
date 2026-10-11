@@ -17,7 +17,7 @@ no Machines box (`machinesGated`, `awebConnectGated` in
 
 ## The window's key
 
-`machineScope(ws)` (the `OATSWEB_VIEWS` block of `server/oats-web.mjs`) answers
+`machineScope(held, ws, terms)` (`packages/client/panel-views.mjs`) answers
 `{ key, deployment, messaging, reason? }` for a view:
 
 - `key` is the `workspace.key` of the view's **primary local deployment**

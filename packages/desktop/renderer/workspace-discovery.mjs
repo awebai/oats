@@ -489,12 +489,12 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     rovePill(pills, target); target.focus({ preventScroll: true });
   }
   panel.addEventListener('scroll', () => { if (tab === 'capabilities') syncCapabilityNav(body, panel, capLead); }, { passive: true });
-  function updateRoster(agents, panelData) {
+  function updateRoster(agents, panelAnswer) {
     const gen = workspaceGeneration();
     // Another workspace generation is another subject: the table is forgotten. Within one, it is never set to null.
     if (rosterGen !== gen) { catalog = null; failure = ''; repo = null; setupMember = null; serial++; loading = false; loadState.reset(); }
-    rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null; souls = list(agents);
-    instances = list(panelData.instances);
+    rosterGen = gen; workspace = panelAnswer.workspace || null; deployment = panelAnswer.deployment || null; souls = list(agents);
+    instances = list(panelAnswer.instances);
     updateCounts(agents.length); render();
     computerTeams?.syncRoster(); // the Teams page's members follow the roster poll
     // Read once per roster generation on any tab: the tab bar counts it.

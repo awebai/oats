@@ -123,7 +123,7 @@ The shape is the lead's (0.30 D2 review):
 ## Team members
 
 `GET /api/team-members?ws=<view id>` answers who is in each team across the view's deployments
-(`server/team-members.mjs`). A deployment id is read as the view that holds it.
+(`packages/client/team-members.mjs`, called by `teamMembersFor` in `packages/client/panel-views.mjs`). A deployment id is read as the view that holds it.
 
 - **The view's deployments only.** Its local deployments' rosters and its remote groups' panels;
   never another workspace's groups. Any view is answered, a view with no local deployment
