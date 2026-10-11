@@ -701,7 +701,8 @@ with one Enter. A screen with a notice block (a maximal run of rows that begin
 with `▎`, each row's `▎` dropped, then the same normalization) that equals a
 `flag-ignored` entry, on a screen with no question marker, means Claude ignored
 the flag and shows no confirmation: the start ends `flag-ignored`, reason `channels-unavailable`, with no key, and
-succeeds. An unknown screen that holds still for 200 ms, or the last
+succeeds. An unknown screen that holds still for the settle window (`SETTLE`,
+2 s; a transient frame Claude paints while starting is waited out), or the last
 unknown screen when the bound is reached, permanently closes authority with
 `blocked: unexpected prompt`; when that screen starts with Claude's
 running-session banner (`Claude Code v<semver>`, after only the logo's block

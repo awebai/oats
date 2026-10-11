@@ -16,6 +16,12 @@ state, account admission, channel readiness or task success.
 
 ## The rule
 
+Before the Enter, an unknown screen is a verdict only once it has held
+unchanged for the settle window, `SETTLE` (2 s, in `lib/launch-prompts.mjs`),
+because Claude paints transient frames while it starts; see
+[configuration](configuration.md#the-development-channel-confirmation). After
+the Enter, completion follows this rule:
+
 - **completed:** two captures at least 200 ms apart, both non-blank, neither
   equal to a tolerance entry after normalization, neither containing a question
   marker, with no other capture between them. They need not be equal: a session

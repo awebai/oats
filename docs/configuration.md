@@ -202,8 +202,11 @@ and never into a pane it did not create in this start (a respawned pane must
 show a new process and a fresh screen). It confirms no other prompt: folder trust
 (owned by [`oats harness trust`](harness-trust.md)), API-key and login questions
 are unexpected and block. While the screen keeps changing it waits, within 30 s
-at 100 ms; an unknown screen that holds still for 200 ms, or one still changing
-when the bound is reached, blocks with no key, `blocked: unexpected prompt`, and
+at 100 ms. An unknown screen is no verdict until it has held unchanged for the
+settle window (`SETTLE`, 2 s): Claude paints transient frames while it starts (a
+logo mid-animation, a renderer notice) and can hold one for a second or more
+under load. An unknown screen that holds still for `SETTLE`, or one still
+changing when the bound is reached, blocks with no key, `blocked: unexpected prompt`, and
 the receipt says what `differed` from the nearest entry (a screen blank for the
 whole bound is `blocked: observation timeout`). The instance then waits for a person: the spawn is retained
 (`E_SPAWN_INCOMPLETE`), the home records `launchPrompts.status: "blocked"`, and

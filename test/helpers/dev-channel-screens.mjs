@@ -30,3 +30,5 @@ export const flagIgnored = fixture("claude-2.1.296-darwin-arm64-flag-ignored-80x
 export const flagIgnoredHidden = fixture("claude-2.1.296-darwin-arm64-flag-ignored-hidden-80x24.txt");
 /** A real Claude 2.1.296 running session caught with its logo mid-animation, the notice hidden. */
 export const logoAnimating = fixture("claude-2.1.296-darwin-arm64-logo-animating-80x24.txt");
+/** A real Claude 2.1.288 frame printed while it is still starting (its renderer fallback notice). */
+export const rendererFallback = fixture("claude-2.1.288-linux-x64-renderer-fallback-80x24.txt");

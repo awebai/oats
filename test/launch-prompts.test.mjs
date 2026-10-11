@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createLaunchPromptController } from "../lib/launch-prompts.mjs";
 import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES } from "../lib/launch-prompt-fixtures.mjs";
-import { raw296, linux296, trustPrompts, sessions, flagIgnored, flagIgnoredHidden, logoAnimating, edit } from "./helpers/dev-channel-screens.mjs";
+import { raw296, linux296, trustPrompts, sessions, flagIgnored, flagIgnoredHidden, logoAnimating, rendererFallback, edit } from "./helpers/dev-channel-screens.mjs";
 
 // The prompt screens are real captures; the post-answer session screen is
 // SYNTHETIC (any non-blank screen without a question marker completes).
@@ -103,7 +103,7 @@ for (const [label, text] of nearMisses) {
     assert.equal(row.differed.nearest, ENTRY);
     assert.ok(Number.isInteger(row.differed.firstDifference.index));
     assert.ok(row.differed.firstDifference.expected.length <= 40 && row.differed.firstDifference.found.length <= 40);
-    assert.ok(io.time >= 200 && io.time < 1000, "a stable miss blocks within about 200 ms");
+    assert.ok(io.time >= 2000 && io.time < 2500, "a stable miss blocks once it has held for the 2 s settle window");
     assert.deepEqual(io.retained.map(r => [r.outcome, r.recognition, r.text]), [["blocked", "unmatched", text]], "private evidence holds the full screen");
   });
 }
@@ -432,4 +432,46 @@ test("after the Enter, a session screen with a question never says the flag was 
   const result = controller.observeNew(target);
   assert.equal(result.status, "blocked");
   assert.ok(!Object.hasOwn(result, "claudeSessionShown"));
+});
+
+// A3b's settle window: a frame that is neither an entry nor a recognised session is no verdict
+// while it keeps changing or until it has held for SETTLE (2 s). Claude prints transient frames
+// while it starts (here its renderer fallback notice, held about 1 s under load on Linux).
+const after = (ms, first, next) => ({ configure({ io }) { let switched = false; io.text = first;
+  io.snapshotHook = s => { if (!switched && io.time >= ms) { switched = true; io.text = next; } return { ...s, text: io.text }; }; } });
+
+test("a transient starting frame held for 1 s, then the flag-ignored notice, is flag-ignored", t => {
+  const { controller, io } = setup(t, after(1000, rendererFallback, flagIgnored));
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "flag-ignored");
+  assert.deepEqual(io.sends, []);
+  assert.ok(io.time >= 1000);
+});
+
+test("a transient starting frame held for 1 s, then the confirmation, gets exactly one Enter and completes", t => {
+  const { controller, io } = setup(t, after(1000, rendererFallback, raw296));
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "completed");
+  assert.deepEqual(io.sends, ["Enter"]);
+  assert.deepEqual(io.audits.map(a => a.status), ["attempted", "submitted", "completed"]);
+});
+
+test("an unknown frame blocks only once it has held for the settle window, never before", t => {
+  for (const text of [rendererFallback, trust]) {
+    const { controller, io } = setup(t, { configure({ io }) { io.text = text; } });
+    const result = controller.observeNew(target);
+    assert.equal(result.status, "blocked");
+    assert.equal(result.reason, "blocked: unexpected prompt");
+    assert.ok(io.time >= 2000, `blocked at ${io.time} ms`);
+    assert.ok(io.time <= 2200, `blocked at ${io.time} ms`);
+    assert.deepEqual(io.sends, []);
+  }
+});
+
+test("an unknown frame that changes before the settle window restarts it", t => {
+  const { controller, io } = setup(t, after(1500, rendererFallback, trust));
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "blocked");
+  assert.ok(io.time >= 3500, `the second frame held its own 2 s: blocked at ${io.time} ms`);
+  assert.deepEqual(io.sends, []);
 });
