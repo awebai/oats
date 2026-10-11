@@ -57,7 +57,7 @@ function wrapFs(t, name, wrap) {
  *  holder recorded: not this process's child (as at a recovery, where its parent was the killed
  *  command), so that it is reaped when it ends. → its id, which is its leader's pid. */
 function runningStep(t) {
-  const middle = spawnSync(process.execPath, ["-e", 'const c = require("node:child_process").spawn("sleep", ["60"], { detached: true, stdio: "ignore" }); c.unref(); console.log(c.pid);'], { encoding: "utf8" });
+  const middle = spawnSync(process.execPath, ["-e", 'const c = require("node:child_process").spawn("sleep", ["60"], { detached: true, stdio: "ignore" }); c.unref(); process.stdout.write(String(c.pid));'], { encoding: "utf8" });
   const step = Number(middle.stdout.trim());
   assert.ok(Number.isSafeInteger(step) && alive(step), `the step runs: ${JSON.stringify(middle)}`);
   t.after(() => { try { process.kill(-step, "SIGKILL"); } catch { /* gone */ } });
