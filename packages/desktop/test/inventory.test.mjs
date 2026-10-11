@@ -147,9 +147,11 @@ function requestsOf(path, source) {
       ...(map ? Object.values(JSON.parse(map[1]).imports ?? {}) : []),
     ];
   }
+  // A static import or re-export starts a statement, which is not always the start of its line: it may follow a
+  // `;`, a block's `}` or a comment's end on the same line.
   const found = [
-    /^[ \t]*(?:import|export)\b[^;'"`]*?\bfrom\s*["']([^"']+)["']/gm,
-    /^[ \t]*import\s*["']([^"']+)["']/gm,
+    /(?:^|[;}]|\*\/)\s*(?:import|export)\b[^;'"`]*?\bfrom\s*["']([^"']+)["']/gm,
+    /(?:^|[;}]|\*\/)\s*import\s*["']([^"']+)["']/gm,
     /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
     /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
     /\bnew URL\(\s*["'](\.{1,2}\/[^"']+)["']\s*,\s*import\.meta\.url\s*\)/g,
@@ -347,6 +349,18 @@ test("inventory: the reader of the page's graph refuses a Node builtin, at any d
     ['../client/facts.mjs: imports "node:path", a Node builtin: the page is a browser page and cannot load it']);
   assert.match(graph({ "renderer/views/one.mjs": 'import { readFileSync } from "node:fs";\nexport const one = readFileSync;\n' }).problems[0], /^renderer\/views\/one\.mjs: imports "node:fs"/);
   assert.match(graph({ "renderer/shell.mjs": 'export const shell = () => import("node:os");\n' }).problems[0], /^renderer\/shell\.mjs: imports "node:os"/);
+  // A static import that does not start its line is an import all the same: after a statement, after a block's end,
+  // after a comment, and as a re-export. Each is refused where it stands, and the graph is followed through one.
+  assert.match(graph({ "renderer/shell.mjs": 'const one = 1; import { readFileSync } from "node:fs";\nexport const shell = [one, readFileSync];\n' }).problems[0], /^renderer\/shell\.mjs: imports "node:fs"/);
+  assert.match(graph({ "renderer/shell.mjs": 'function one() {} import "node:os";\nexport const shell = one;\n' }).problems[0], /^renderer\/shell\.mjs: imports "node:os"/);
+  assert.match(graph({ "renderer/views/one.mjs": '/* the view */ import { dirname } from "node:path";\nexport const one = dirname;\n' }).problems[0], /^renderer\/views\/one\.mjs: imports "node:path"/);
+  assert.match(graph({ "../client/facts.mjs": 'export const text = 1; export { sep } from "node:path";\n' }).problems[0], /^\.\.\/client\/facts\.mjs: imports "node:path"/);
+  const midLine = graph({ "renderer/shell.mjs": 'export const shell = 1; import { text } from "../../client/facts.mjs"; import "../../client/more.mjs";\n',
+    "../client/more.mjs": 'import { hostname } from "node:os";\nexport const more = hostname;\n' });
+  assert.ok(midLine.seen.has("../client/facts.mjs") && midLine.seen.has("../client/more.mjs"), "a module reached only by an import in the middle of a line is read");
+  assert.deepEqual(midLine.problems, ['../client/more.mjs: imports "node:os", a Node builtin: the page is a browser page and cannot load it']);
+  // A word that only ends in `import`, and a name spelled inside another, is not one.
+  assert.deepEqual(graph({ "renderer/shell.mjs": 'const reimport = 1, from = 2; reimport; from; "node:fs";\nexport const shell = [reimport, from];\n' }).problems, []);
   // A builtin without its prefix, or any package the import map does not name, cannot load either.
   assert.deepEqual(graph({ "renderer/shell.mjs": 'import { dirname } from "path";\nexport const shell = dirname;\n' }).problems, ['renderer/shell.mjs: imports "path", which the page\'s import map does not name']);
   // A module of the shared home that the page does not import may import what it likes.
