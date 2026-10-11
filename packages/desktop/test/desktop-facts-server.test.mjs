@@ -11,7 +11,7 @@ import { dirname, resolve } from 'node:path';
 import * as remote from '../../client/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
 import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
-import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances } from '../../client/deployment-panel.mjs';
+import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry } from '../../client/deployment-panel.mjs';
 
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/desktop-facts/${name}.json`, import.meta.url), 'utf8'));
 const old = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
@@ -129,7 +129,7 @@ function observeWith(features, instance) {
     deploymentObserver: { observe: async () => ({ ok: true, roster, workspaceStatus: { workspace: {} }, observedAt: '2026-10-03T10:00:00.000Z' }) },
     soulCatalogKey: () => null, catalogProjection: () => null, attachCatalog() {},
     // The shared home's functions, as the server imports them; the collector is a double that prints its answers.
-    rosterRows, livenessInput, livenessAnswers, panelInstances,
+    rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry,
     runLivenessCollector: async input => JSON.stringify(input.map(() => ({ running: true, runtimeState: 'running', tmux: null }))), Date, String,
   };
   const run = runInNewContext(`${fn('observeDeployment')}\nobserveDeployment`, context);

@@ -15,6 +15,7 @@ import { capabilityShowUnreadable } from "../packages/client/capability-show-con
 import { deploymentReasonParts, deploymentReason } from "../packages/client/workspace-views.mjs";
 import { deploymentLabelParts, deploymentLabel, machineLabels, machineLabelParts } from "../packages/client/deployment-label.mjs";
 import { rosterSections } from "../packages/client/roster-sections.mjs";
+import { deploymentUnavailableText } from "../packages/client/deployment-facts.mjs";
 
 /** The two clients' values (specs: the Desktop's are its words today; the TUI's are #855's). */
 const DESKTOP = { name: "Desktop", self: "this Desktop", selfInitial: "This Desktop", update: "OATS Desktop", thisMachine: "This Mac" };
@@ -128,6 +129,11 @@ function reasonInputs() {
 const REASON_INPUTS = reasonInputs();
 const DEPLOYMENTS = [undefined, null, {}, { machine: "altair" }, { label: "~/Agents/oats" }, { machine: "altair", label: "~/Agents/tsm" }];
 const DEPLOYMENT_LISTS = [[{ id: "a", path: "/a/oats" }], [{ id: "a", path: "/a/oats" }, { id: "b", path: "/b/oats" }, { id: "c", machine: "altair", path: "/c/tsm" }]];
+/** Every branch of deploymentUnavailableText, by what the deployment is. */
+const UNOBSERVED = { "nothing": undefined, "pending": { status: "pending" }, "observed": { status: "observed" },
+  "feature": { status: "unavailable", reason: { code: "E_DEPLOYMENT_FEATURE", feature: "served-identity" } },
+  "code and message": { status: "unavailable", reason: { code: "E_CLI_FAILED", message: "boom" } },
+  "message": { status: "unavailable", reason: { message: "boom" } }, "no reason": { status: "unavailable" } };
 const ROWS = [{ instance: "dev-1", agent: "dev", home: "/a/oats/agents/dev/instances/dev-1", deployment: { id: "a" } },
   { instance: "dev-2", agent: "dev", home: "/c/tsm/agents/dev/instances/dev-2", deployment: { id: "c" } }];
 
@@ -169,6 +175,7 @@ async function everyAnswer(terms) {
     say(`machineLabels ${n}`, [...machineLabels(list, terms)]); say(`machineLabelParts ${n}`, [...machineLabelParts(list, terms)]);
     say(`rosterSections ${n}`, rosterSections(ROWS, ROWS, list, terms).map(({ label, machine, tail }) => ({ label, machine, tail })));
   });
+  for (const [what, deployment] of Object.entries(UNOBSERVED)) say(`deploymentUnavailableText ${what}`, deploymentUnavailableText(deployment, terms));
   return answers;
 }
 
@@ -219,7 +226,7 @@ test("two clients at once: each answer is in its own client's words, and neither
   assert.deepEqual([...tables].sort(), [
     "capabilityShowUnreadable",
     "cliWorkspace E_WORKSPACE_FEATURE",
-    "deploymentLabel", "deploymentLabelParts", "deploymentReasonParts",
+    "deploymentLabel", "deploymentLabelParts", "deploymentReasonParts", "deploymentUnavailableText feature",
     "lifecycleFailure E_CLI_OUTPUT_LIMIT", "lifecycleFailure E_CLI_PROTOCOL", "lifecycleFailure E_LIFECYCLE_UNAVAILABLE", "lifecycleFailure E_PLAN_LIMIT",
     "lifecycleReason E_CLI_OUTPUT_LIMIT", "lifecycleReason E_CLI_PROTOCOL", "lifecycleReason E_LIFECYCLE_UNAVAILABLE", "lifecycleReason E_PLAN_LIMIT",
     "machineLabelParts", "machineLabels", "rosterSections",
@@ -267,6 +274,7 @@ const TABLES = {
   machineLabels: (terms) => machineLabels([], terms),
   machineLabelParts: (terms) => machineLabelParts([], terms),
   rosterSections: (terms) => rosterSections([], [], [], terms),
+  deploymentUnavailableText: (terms) => deploymentUnavailableText({ status: "pending" }, terms),
 };
 
 test("no terms: every table throws without them, and with an object clientTerms did not make", async () => {
@@ -309,7 +317,8 @@ test("what needs only the code needs no terms", () => {
 
 test("the shared home holds no terms of its own: none of its modules calls clientTerms", () => {
   const home = new URL("../packages/client/", import.meta.url);
-  for (const name of ["lifecycle-contract.mjs", "workspace-cli.mjs", "capability-show-contract.mjs", "workspace-views.mjs", "deployment-label.mjs", "roster-sections.mjs"]) {
+  for (const name of ["lifecycle-contract.mjs", "workspace-cli.mjs", "capability-show-contract.mjs", "workspace-views.mjs", "deployment-label.mjs", "roster-sections.mjs",
+    "deployment-facts.mjs"]) {
     const source = readFileSync(new URL(name, home), "utf8");
     assert.match(source, /import \{ requireTerms \} from '\.\/client-terms\.mjs';/, `${name} checks the terms it is given`);
     assert.doesNotMatch(source, /\bclientTerms\(/, `${name} makes terms of its own`);

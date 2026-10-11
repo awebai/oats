@@ -65,7 +65,7 @@ const SURFACE = Object.freeze({
   "harness-names.mjs": ["HARNESSES", "HARNESS_NAMES", "harnessFeature", "harnessFlag", "harnessKey", "harnessOf", "harnessList"],
   "team-rows.mjs": ["teamRow", "teamRowsOf", "defaultTeamOf", "teamModelOf"],
   "launch-contract.mjs": ["effectiveOf", "launchOf", "REPORT_FROM", "PREVIEW_FROM", "RECORD_FROM"],
-  "deployment-facts.mjs": ["memberLabel", "servedIdentityText"],
+  "deployment-facts.mjs": ["memberLabel", "servedIdentityText", "deploymentUnavailableText"],
   "instance-admission.mjs": ["admitInstance", "instanceSelector"],
   "instance-tree.mjs": ["instanceId", "resolveLinkId", "clusterInstances", "rosterGroups", "waitingRollup", "instanceVisibleInTree",
     "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome"],
@@ -73,7 +73,7 @@ const SURFACE = Object.freeze({
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
   "client-terms.mjs": ["clientTerms"],
   // Firm (1d): what one deployment's observation becomes for the panel. A client calls `panelInstances`, not the row's own projection.
-  "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances"],
+  "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry", "publicDeployment"],
   // Provisional: machines and the switcher.
   "cli-adapter.mjs": ["parseEnvelope", "cliRemoteRoster", "cliStart", "launchChoiceArgv", "cliCapability", "writeTaskFile"],
   "remote-roster.mjs": ["remoteWorkspace", "remotePanel", "remoteAgents", "unavailableGroups"],

@@ -1,10 +1,12 @@
 // Spec D: a remote the kernel could not read (E_REMOTE_UNREADABLE) no longer erases the roster. The shipped
-// observeDeployment (server/oats-web.mjs) keeps the last observation, marked with the kernel's message and
-// its bounded cause; other failures replace it as before, and panelData serves both fields.
+// observeDeployment (server/oats-web.mjs, through packages/client/deployment-panel.mjs `failedEntry`) keeps the
+// last observation, marked with the kernel's message and its bounded cause; other failures replace it as before,
+// and panelData serves both fields.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { pendingEntry, failedEntry } from '../../client/deployment-panel.mjs';
 
 const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
 const fn = name => { const found = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`)); assert.ok(found, name); return found[0]; };
@@ -13,7 +15,8 @@ function server(result) {
   const context = {
     snapshot: { byWs: new Map() }, cliState: { probedAt: 1 }, admitted: new Set(['/d']), BACKGROUND_MAX_AGE: 60, observing: new Set(),
     soulCatalog: { prefetch() {} }, capabilityCatalog: { prefetch() {} }, deploymentObserver: { observe: async () => result() },
-    Date,
+    // What a failed read becomes is the shared home's (deployment-panel.mjs), as the server imports it.
+    pendingEntry, failedEntry, Date,
   };
   const run = runInNewContext(`${fn('observeDeployment')}\nobserveDeployment`, context);
   // Plain copies: values built in the sandbox carry its realm's prototypes.

@@ -78,12 +78,13 @@ import { canAddressRemote, unaddressableSentence } from "../../client/remote-add
 import { retainedSpawnDetails } from "../../client/launch-prompt-outcome.mjs";
 import { harnessFlag, HARNESSES } from "../../client/harness-names.mjs";
 import { probeChanged } from "../../client/cli-probe-contract.mjs";
-import { workspaceNotServed, deploymentUnavailableText } from "../renderer/deployment-header.mjs";
+import { workspaceNotServed } from "../renderer/deployment-header.mjs";
+import { deploymentUnavailableText } from "../../client/deployment-facts.mjs";
 import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts } from "../../client/workspace-views.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { shortPath, deploymentLabel } from "../../client/deployment-label.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
-import { rosterRows, livenessInput, livenessAnswers, panelInstances } from "../../client/deployment-panel.mjs";
+import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry, publicDeployment } from "../../client/deployment-panel.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -175,7 +176,7 @@ function deploymentInfo(d) {
     const identity = read.status === "identity" ? read.identity : null;
     const attach = attachment(identity);
     // Not observed (yet): the reading or unavailable sentence, never a silent empty.
-    const unavailable = live ? null : deploymentUnavailableText(observed || { status: "pending" });
+    const unavailable = live ? null : deploymentUnavailableText(observed || { status: "pending" }, DESKTOP_TERMS);
     return { id: d.id, local: true, machine: DESKTOP_TERMS.thisMachine, path: d.id, label: shortPath(d.id, { home: homedir() }), name: d.name,
       live: live && !readError, reachable: live, ...(readError ? { stale: true } : {}), identityFrom: identity ? "reported" : null, identity, attach,
       teamLabel: identity?.defaultTeam?.label ?? null,
@@ -341,15 +342,6 @@ function panelData(wsId) {
     running: instances.filter((i) => i.running).length,
     instances,
   };
-}
-
-/** The renderer's deployment facts: the header observation, reachability and
- * any unavailable reason. The private soul rows stay server-side. */
-function publicDeployment(deployment) {
-  if (!deployment) return { status: "pending" };
-  if (deployment.status !== "observed") return deployment;
-  const { souls: _souls, catalogKey: _catalogKey, ...rest } = deployment;
-  return rest;
 }
 
 /** The switcher's list: views, not deployments. Each names its deployments (main lets a caller
@@ -797,7 +789,7 @@ function catalogProjection(entry, refreshing) {
 async function observeDeployment(id, { live = false } = {}) {
   const previous = snapshot.byWs.get(id);
   // Before the first CLI probe settles there is no verdict to report.
-  if (!cliState.probedAt) return previous || { deployment: { status: "pending" }, instances: [], generatedAt: new Date().toISOString() };
+  if (!cliState.probedAt) return pendingEntry(previous, new Date().toISOString());
   const cli = cliState, admission = !admitted.has(id);
   const maxAge = live || admission ? 0 : BACKGROUND_MAX_AGE;
   observing.add(id);
@@ -806,18 +798,9 @@ async function observeDeployment(id, { live = false } = {}) {
     // this cycle's key once the workspace status lands. Warm: nothing starts here.
     soulCatalog.prefetch(id, cli, { maxAge }); capabilityCatalog.prefetch(id, cli, { maxAge });
     const result = await deploymentObserver.observe(id, { maxAge });
-    if (!result.ok) {
-      if (previous && ["E_DEPLOYMENT_BUSY", "E_DEPLOYMENT_STALE"].includes(result.reason?.code)) return previous;
-      // A remote the kernel could not read (a cache problem, the network, a timeout) does not erase what
-      // was observed: the last observation stays, marked with the failure (Spec D). The roster shows it
-      // stale with the kernel's message and its bounded cause; other failures replace it as before.
-      if (previous?.deployment?.status === "observed" && result.reason?.code === "E_REMOTE_UNREADABLE") {
-        const { error: _error, errorCause: _cause, ...kept } = previous;
-        const cause = result.reason.cause;
-        return { ...kept, error: result.reason.message, ...(cause ? { errorCause: { code: result.reason.code, ...cause } } : {}) };
-      }
-      return { deployment: { status: "unavailable", reason: result.reason }, instances: [], generatedAt: new Date().toISOString() };
-    }
+    // A busy or stale read keeps the entry held; an unreadable remote keeps the last observation, marked
+    // with the failure; anything else is unavailable (packages/client/deployment-panel.mjs `failedEntry`).
+    if (!result.ok) return failedEntry(previous, result.reason, new Date().toISOString());
     admitted.add(id);
     const { roster, workspaceStatus, observedAt } = result;
     const catalogKey = soulCatalogKey(cli, workspaceStatus);
@@ -830,13 +813,9 @@ async function observeDeployment(id, { live = false } = {}) {
     // (packages/client/deployment-panel.mjs); running the collector is this process's.
     const rows = rosterRows(roster, cli);
     const instances = panelInstances(rows, livenessAnswers(rows, await runLivenessCollector(livenessInput(rows))));
-    const entry = {
-      deployment: { status: "observed", root: roster.root, workspace: workspaceStatus.workspace, workspaceStatus,
-        reachable: roster.workspace ?? null, withheld: roster.withheld,
-        souls: roster.agents.map(({ instances: _instances, ...soul }) => soul),
-        catalog: catalogProjection(catalogEntry, !!pending), catalogKey },
-      instances, generatedAt: new Date().toISOString(), observedAt,
-    };
+    const entry = observedEntry({ roster, workspaceStatus, observedAt }, instances, new Date().toISOString());
+    // The Desktop's own facts of the deployment: its held souls catalog and the key it was read under.
+    Object.assign(entry.deployment, { catalog: catalogProjection(catalogEntry, !!pending), catalogKey });
     // Attach the catalog when it lands: to THIS cycle's entry (it may land before the entry is published —
     // publication still waits on the liveness child and on the other deployments) and to whatever entry is
     // published by then.

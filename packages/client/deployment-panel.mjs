@@ -1,10 +1,15 @@
 /** What one deployment's observation becomes for a client's panel (#855, 1d): the kernel's roster as
- * rows, the liveness collector's input and its answers, and each row as the panel serves it.
+ * rows, the liveness collector's input and its answers, each row as the panel serves it, and the
+ * deployment's entry: before the first probe, after a failed read, and observed.
  *
  * Every function takes what it needs and returns a value. Nothing is kept between calls, and nothing
  * here reads a clock, a file or a process: a client runs the collector itself (liveness-main.mjs, as a
- * child, with its own environment and limits) and gives what it printed to `livenessAnswers`.
- */
+ * child, with its own environment and limits) and gives what it printed to `livenessAnswers`, and it
+ * passes the time of its call as `at`, an ISO string. Each client keeps its own store of entries.
+ *
+ * Not for a page: this module imports `node:path`. What a page shows of a deployment that is not
+ * observed is in deployment-facts.mjs (`deploymentUnavailableText`), and the Desktop's
+ * test/inventory.test.mjs holds that its page reaches no module that imports a Node builtin. */
 import { dirname } from 'node:path';
 
 /** One row per instance of a roster (deployment-data.mjs `deploymentStatusData`): the kernel's row,
@@ -88,4 +93,49 @@ export function panelInstance(i) {
 export function panelInstances(rows, answers) {
   return rows.map((row, index) => panelInstance({ ...row, ...answers[index] }))
     .sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
+}
+
+/** A deployment's entry before the first CLI probe has settled, when there is no verdict to report:
+ * the entry already held, or a pending one. */
+export function pendingEntry(previous, at) {
+  return previous || { deployment: { status: "pending" }, instances: [], generatedAt: at };
+}
+
+/** A deployment's entry after a read that failed with `reason` (deployment-contract.mjs).
+ * A transient busy or stale read keeps the entry held, as it is. A remote the kernel could not read
+ * (a cache problem, the network, a timeout) does not erase what was observed: the last observation
+ * stays, marked with the failure, the kernel's message and its bounded cause (Spec D); an `error` and
+ * an `errorCause` it already carried are replaced, the cause removed when this reason has none.
+ * Every other failure, and each of those without an entry to keep, is shown as unavailable with the
+ * reason, never as an empty roster. */
+export function failedEntry(previous, reason, at) {
+  if (previous && ["E_DEPLOYMENT_BUSY", "E_DEPLOYMENT_STALE"].includes(reason?.code)) return previous;
+  if (previous?.deployment?.status === "observed" && reason?.code === "E_REMOTE_UNREADABLE") {
+    const { error: _error, errorCause: _cause, ...kept } = previous;
+    const cause = reason.cause;
+    return { ...kept, error: reason.message, ...(cause ? { errorCause: { code: reason.code, ...cause } } : {}) };
+  }
+  return { deployment: { status: "unavailable", reason }, instances: [], generatedAt: at };
+}
+
+/** An observed deployment's entry: the observer's answer (deployment-observer.mjs: `roster`,
+ * `workspaceStatus`, `observedAt`) and the panel's rows (`panelInstances`). `souls` are the roster's
+ * souls without their instances. A client adds its own facts to `deployment` after the call. */
+export function observedEntry({ roster, workspaceStatus, observedAt }, instances, at) {
+  return {
+    deployment: { status: "observed", root: roster.root, workspace: workspaceStatus.workspace, workspaceStatus,
+      reachable: roster.workspace ?? null, withheld: roster.withheld,
+      souls: roster.agents.map(({ instances: _instances, ...soul }) => soul) },
+    instances, generatedAt: at, observedAt,
+  };
+}
+
+/** The deployment facts a view may show: the header observation, reachability and any unavailable
+ * reason. Pending when there is none; as it is when not observed; without the private soul rows
+ * (`souls`) and the catalog's key when observed. */
+export function publicDeployment(deployment) {
+  if (!deployment) return { status: "pending" };
+  if (deployment.status !== "observed") return deployment;
+  const { souls: _souls, catalogKey: _catalogKey, ...rest } = deployment;
+  return rest;
 }

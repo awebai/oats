@@ -3,7 +3,7 @@
 // input here is frozen, at every depth, and a function that changed one would throw.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances } from '../../client/deployment-panel.mjs';
+import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry, publicDeployment } from '../../client/deployment-panel.mjs';
 
 /** Frozen at every depth: a function that writes to its input throws (modules are strict). */
 const frozen = value => {
@@ -110,4 +110,114 @@ test('panelInstances: the sort is today\'s, by `running` as it is and then by lo
   assert.deepEqual(order([named('B', true), named('a', true), named('C', true)]), ['a', 'B', 'C'].sort((x, y) => x.localeCompare(y)));
   // Two rows of the same `running` are ordered by name; unknown (null) is not running, and sorts after it.
   assert.deepEqual(order([named('z', null), named('y', null), named('x', true)]), ['x', 'y', 'z']);
+});
+
+// ── The deployment's entry ────────────────────────────────────────────────────
+
+const AT = '2026-10-11T12:00:00.000Z';
+const HELD = () => frozen({
+  deployment: { status: 'observed', root: '/d/agents', workspace: { name: 'd' }, workspaceStatus: { workspace: { name: 'd' } }, reachable: null, withheld: [],
+    souls: [{ name: 'dev' }], catalog: { souls: [] }, catalogKey: 'k' },
+  instances: [{ instance: 'dev-a', running: true }], generatedAt: '2026-10-11T11:00:00.000Z', observedAt: '2026-10-11T10:59:00.000Z' });
+const UNAVAILABLE = () => frozen({ deployment: { status: 'unavailable', reason: { code: 'E_CLI_FAILED', message: 'boom' } }, instances: [], generatedAt: '2026-10-11T11:00:00.000Z' });
+const unreadable = cause => frozen({ code: 'E_REMOTE_UNREADABLE', message: 'the cache is locked by /x/index.lock; remove it', ...(cause ? { cause } : {}) });
+
+test('pendingEntry: the entry held, as it is, or a pending one stamped with the caller\'s time', () => {
+  for (const previous of [HELD(), UNAVAILABLE()]) assert.equal(pendingEntry(previous, AT), previous);
+  for (const none of [undefined, null]) assert.deepEqual(pendingEntry(none, AT), { deployment: { status: 'pending' }, instances: [], generatedAt: AT });
+  assert.notEqual(pendingEntry(undefined, AT), pendingEntry(undefined, AT), 'each call makes its own entry: nothing is kept');
+});
+
+test('failedEntry: a busy or stale read keeps the entry held, as it is; without one it is unavailable', () => {
+  for (const code of ['E_DEPLOYMENT_BUSY', 'E_DEPLOYMENT_STALE']) {
+    const reason = frozen({ code, message: 'try again' });
+    for (const previous of [HELD(), UNAVAILABLE()]) assert.equal(failedEntry(previous, reason, AT), previous, code);
+    for (const none of [undefined, null]) assert.deepEqual(failedEntry(none, reason, AT), { deployment: { status: 'unavailable', reason }, instances: [], generatedAt: AT }, code);
+  }
+});
+
+test('failedEntry: an unreadable remote keeps an observed entry, marked with the kernel\'s message and its bounded cause', () => {
+  const held = HELD(), reason = unreadable({ reason: 'cache' });
+  const kept = failedEntry(held, reason, AT);
+  assert.deepEqual(kept, { ...held, error: reason.message, errorCause: { code: 'E_REMOTE_UNREADABLE', reason: 'cache' } });
+  assert.equal(kept.deployment, held.deployment, 'the observation is the one held');
+  assert.deepEqual([kept.generatedAt, kept.observedAt], [held.generatedAt, held.observedAt], 'its stamps are the old observation\'s: `at` is not used');
+  assert.deepEqual(Object.keys(kept), ['deployment', 'instances', 'generatedAt', 'observedAt', 'error', 'errorCause']);
+  // An entry that already carries an error and a cause: both replaced, and the cause removed when the new reason has none.
+  const again = failedEntry(frozen({ ...kept }), unreadable({ reason: 'network', host: 'github.com' }), AT);
+  assert.deepEqual([again.error, again.errorCause], [reason.message, { code: 'E_REMOTE_UNREADABLE', reason: 'network', host: 'github.com' }]);
+  const bare = failedEntry(frozen({ ...again, error: 'an older message' }), unreadable(null), AT);
+  assert.equal(bare.error, reason.message);
+  assert.equal(Object.hasOwn(bare, 'errorCause'), false, 'a failure without a cause drops the old one');
+  assert.deepEqual(Object.keys(bare), ['deployment', 'instances', 'generatedAt', 'observedAt', 'error']);
+});
+
+test('failedEntry: an unreadable remote over nothing observed, and every other failure, is unavailable with the reason', () => {
+  const reason = unreadable({ reason: 'network', host: 'github.com' });
+  const unavailable = r => ({ deployment: { status: 'unavailable', reason: r }, instances: [], generatedAt: AT });
+  // Nothing held, an unavailable entry, a pending one: there is no observation to keep.
+  for (const previous of [undefined, null, UNAVAILABLE(), frozen({ deployment: { status: 'pending' }, instances: [], generatedAt: AT }), frozen({})]) {
+    assert.deepEqual(failedEntry(previous, reason, AT), unavailable(reason));
+  }
+  assert.equal(failedEntry(undefined, reason, AT).deployment.reason, reason, 'the reason is the one given, cause included');
+  // Another code replaces even an observed entry, as before; so does a reason with no code, and no reason at all.
+  for (const other of [frozen({ code: 'E_WORKSPACE_SCHEMA', message: 'bad' }), frozen({ code: 'E_DEPLOYMENT_FEATURE', feature: 'served-identity' }), frozen({ message: 'no code' }), frozen({}), undefined]) {
+    for (const previous of [HELD(), UNAVAILABLE(), undefined]) assert.deepEqual(failedEntry(previous, other, AT), unavailable(other), JSON.stringify(other));
+  }
+});
+
+test('observedEntry: the deployment\'s facts from the observer\'s answer, the rows as given, the two stamps', () => {
+  const r = roster(), workspaceStatus = frozen({ workspace: { name: 'd', commit: 'abc' }, clones: [] }), instances = frozen([{ instance: 'dev-a' }]);
+  const entry = observedEntry(frozen({ roster: r, workspaceStatus, observedAt: '2026-10-11T11:59:00.000Z' }), instances, AT);
+  assert.deepEqual(entry, {
+    deployment: { status: 'observed', root: '/d/agents', workspace: { name: 'd', commit: 'abc' }, workspaceStatus, reachable: { reachable: true }, withheld: [],
+      souls: [{ name: 'dev', description: 'Writes code', team: 'aweb:oats', dir: '/d/agents/dev' }, { name: 'ops', dir: '/d/agents/ops' }] },
+    instances, generatedAt: AT, observedAt: '2026-10-11T11:59:00.000Z',
+  });
+  // The order of the deployment's keys is the served one; a client's own facts come after them.
+  assert.deepEqual(Object.keys(entry.deployment), ['status', 'root', 'workspace', 'workspaceStatus', 'reachable', 'withheld', 'souls']);
+  assert.deepEqual(Object.keys(entry), ['deployment', 'instances', 'generatedAt', 'observedAt']);
+  assert.equal(entry.instances, instances);
+  // A roster that reports no workspace: reachable is null, never undefined.
+  const silent = observedEntry({ roster: frozen({ root: '/d/agents', agents: [], withheld: [] }), workspaceStatus, observedAt: null }, [], AT);
+  assert.deepEqual([silent.deployment.reachable, silent.deployment.souls, silent.observedAt], [null, [], null]);
+  // The entry is the caller's to add to (the Desktop adds its catalog): it is not frozen, and no input was changed.
+  Object.assign(entry.deployment, { catalog: { souls: null }, catalogKey: 'k' });
+  assert.deepEqual(Object.keys(entry.deployment).slice(-2), ['catalog', 'catalogKey']);
+});
+
+test('publicDeployment: pending when absent, as it is when not observed, without souls and the catalog key when observed', () => {
+  for (const none of [undefined, null]) assert.deepEqual(publicDeployment(none), { status: 'pending' });
+  for (const d of [frozen({ status: 'pending' }), UNAVAILABLE().deployment]) assert.equal(publicDeployment(d), d);
+  const { deployment } = HELD();
+  assert.deepEqual(publicDeployment(deployment), { status: 'observed', root: '/d/agents', workspace: { name: 'd' }, workspaceStatus: { workspace: { name: 'd' } }, reachable: null, withheld: [], catalog: { souls: [] } });
+});
+
+test('composed: a fixture roster becomes the entry the Desktop\'s observeDeployment built before the move', () => {
+  // What the server does between the observer's answer and its own catalog, with the collector's answer given.
+  const r = roster(), workspaceStatus = frozen({ workspace: { name: 'd' } });
+  const rows = rosterRows(r, WAITING);
+  const printed = JSON.stringify(livenessInput(rows).map(input => (input.sessionTarget
+    ? { running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: gone', tmux: null }
+    : { tmux: { session: 'oats', window: input.instance }, running: input.instance === 'dev-a', runtimeState: input.instance === 'dev-a' ? 'running' : 'stopped' })));
+  const entry = observedEntry({ roster: r, workspaceStatus, observedAt: '2026-10-11T11:59:00.000Z' }, panelInstances(rows, livenessAnswers(rows, printed)), AT);
+  const row = (instance, agent, extra) => ({ instance, agent, description: extra.description, repo: undefined, work: undefined, branch: null, harness: null, model: null,
+    running: extra.running, createdAt: undefined, home: `/d/agents/${extra.soul}/instances/${instance}`, agentsRoot: '/d/agents', workspace: '/d', repoName: 'd',
+    parentInstance: null, siblingInstance: null, relation: null, relativeTo: null, ...(extra.sessionTarget ? { sessionTarget: extra.sessionTarget } : {}),
+    runtimeState: extra.runtimeState, runtimeError: extra.runtimeError, tmux: extra.tmux, git: null,
+    ...(Object.hasOwn(extra, 'waitingOnYou') ? { waitingOnYou: extra.waitingOnYou } : {}), team: extra.team });
+  assert.deepEqual(entry, {
+    deployment: { status: 'observed', root: '/d/agents', workspace: { name: 'd' }, workspaceStatus, reachable: { reachable: true }, withheld: [],
+      souls: [{ name: 'dev', description: 'Writes code', team: 'aweb:oats', dir: '/d/agents/dev' }, { name: 'ops', dir: '/d/agents/ops' }] },
+    instances: [
+      row('dev-a', 'dev-renamed', { soul: 'dev', description: 'Writes code', running: true, runtimeState: 'running', runtimeError: 'no server', tmux: { session: 'oats', window: 'dev-a' }, waitingOnYou: null, team: 'aweb:oats' }),
+      row('dev-b', 'dev', { soul: 'dev', description: 'Writes code', running: false, runtimeState: 'stopped', runtimeError: undefined, tmux: { session: 'oats', window: 'dev-b' }, waitingOnYou: claim, team: 'aweb:oats' }),
+      row('ops-a', 'ops', { soul: 'ops', description: '', running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: gone', tmux: null, sessionTarget: { backend: 'herdr' }, team: null }),
+    ],
+    generatedAt: AT, observedAt: '2026-10-11T11:59:00.000Z',
+  });
+  // The collector failed: the same rows, every one unknown, in name order; and before any read, the pending entry.
+  const failed = panelInstances(rows, livenessAnswers(rows, null));
+  assert.deepEqual(failed.map(i => [i.instance, i.running, i.runtimeState]), [['dev-a', null, 'unreachable'], ['dev-b', null, 'unreachable'], ['ops-a', null, 'unreachable']]);
+  assert.deepEqual(publicDeployment(pendingEntry(undefined, AT).deployment), { status: 'pending' });
 });
