@@ -4539,7 +4539,9 @@ and a `completionPid` that is absent, its own, or of a process that is
 gone.
 
 A `--self` that cannot finish scheduling (the completion's log cannot be
-opened, no process is created, the marker cannot be written) answers
+opened, no process is created, the marker cannot be written, or, from
+0.53.0, its completion has already given up waiting for it when the marker
+is written: the marker is then removed again) answers
 `E_SELF_RETIRE_SCHEDULE_FAILED`, with `reached.phase: "before-effects"`. That
 stays true after the answer: a completion this command had started is not
 running when it answers (it is ended, unless it had gone by itself; a
