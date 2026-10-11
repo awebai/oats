@@ -231,6 +231,45 @@ for (const action of ["collapse", "expand", "poll-only"]) for (const outcome of 
   test(`roster ${action} followed by logical row replacement: attachment ${outcome}`, t => rosterAttachment(t, action, outcome));
 }
 
+// #971: a row keeps its group under a collapse. The group is decided on the full roster, so the
+// press moves neither the selected row to another header nor a header to another place.
+test("keyboard collapse and expand of a root leave the selected row under the same header, and the headers in the same order", t => {
+  const s = shell(t);
+  const at = (instance, extra = {}) => ({ instance, agentsRoot: "/team/agents", home: `/team/${instance}`, running: true, ...extra });
+  const lead = at("lead");
+  const list = [at("solo"), at("zeta-kid", { parentInstance: "zeta" }), lead, at("alpha"), at("lead-kid", { parentInstance: "lead" }), at("zeta"), at("alpha-kid", { parentInstance: "alpha" })];
+  s.roster(list);
+  const listEl = s.document.querySelector(".ctx-list");
+  const headers = () => [...listEl.querySelectorAll(":scope > .ctx-group")].map(el => el.getAttribute("aria-label"));
+  // The header a row is drawn under: the nearest group separator before it in the list.
+  const headerOf = control => {
+    let el = control.closest(".ctx-list > *");
+    while (el && !el.matches(".ctx-group")) el = el.previousElementSibling;
+    return el?.dataset.group;
+  };
+  const place = control => [...listEl.querySelectorAll(".ctx-inst")].indexOf(control);
+  const open = ["alpha, 2 instances", "lead, 2 instances", "zeta, 2 instances", "independent, 1 instance"];
+  assert.deepEqual(headers(), open);
+  s.control(lead).focus();
+  assert.equal(headerOf(s.control(lead)), "lead"); assert.equal(place(s.control(lead)), 2);
+
+  assert.equal(s.key("ArrowLeft").defaultPrevented, true);
+  assert.equal(s.control(lead).dataset.rosterCollapsed, "1");
+  assert.equal(s.control(at("lead-kid", { parentInstance: "lead" })), undefined, "the collapse hides the child");
+  assert.equal(s.document.activeElement, s.control(lead), "the selected row keeps focus");
+  assert.equal(headerOf(s.control(lead)), "lead", "collapsed over its whole cluster, the root stays under its own header");
+  assert.equal(place(s.control(lead)), 2, "and at its place among the rows");
+  assert.deepEqual(headers(), ["alpha, 2 instances", "lead, 1 instance", "zeta, 2 instances", "independent, 1 instance"],
+    "the headers keep their order; a header counts the rows shown under it");
+  assert.equal(headerOf(s.control(at("solo"))), "independent", "only the unrelated instance is independent");
+
+  assert.equal(s.key("ArrowRight").defaultPrevented, true);
+  assert.equal(s.control(lead).dataset.rosterCollapsed, "0");
+  assert.equal(s.document.activeElement, s.control(lead));
+  assert.equal(headerOf(s.control(lead)), "lead"); assert.equal(place(s.control(lead)), 2);
+  assert.deepEqual(headers(), open, "expanding changes neither");
+});
+
 for (const picker of ["palette", "quickOpen", "palette→quickOpen"]) for (const control of ["terminal", "actions"]) {
   test(`${picker} cancellation restores replaced composite-identity ${control}, not its remote same-name twin`, async t => {
     const s = shell(t); s.roster(roster);

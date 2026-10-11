@@ -212,11 +212,27 @@ test("filterInstanceTree takes the palette's matcher and keeps the sidebar's def
   assert.ok(ROSTER.filter(i => instanceMatchesFilter(i, "kid")).every(i => i.instance === "alpha-kid"));
   // A predicate decides the matches; the identity-aware ancestor walk is the same.
   assert.deepEqual(names(filterInstanceTree(ROSTER, "x", i => i.instance === "alpha-kid")), ["alpha", "alpha-kid"]);
-  // Groups: multi-member clusters by name, then "independent"; projected to what is visible.
+  // Groups: multi-member clusters by name, then "independent", decided on the full roster and projected to what is visible.
   const visible = ROSTER.filter(i => ["solo-x", "alpha-kid"].includes(i.instance));
   assert.deepEqual(rosterGroups(ROSTER, visible).map(g => [g.key, g.label, g.clusters.flatMap(c => names(c.instances))]),
-    [["independent", "independent", ["alpha-kid", "solo-x"]]], "a cluster with one visible member reads as independent, as in the sidebar");
+    [["cluster:0:alpha", "alpha", ["alpha-kid"]], ["independent", "independent", ["solo-x"]]], "a cluster with one visible member keeps its group and its name, as in the sidebar (#971)");
   assert.deepEqual(rosterGroups([], []), []);
+});
+
+test("one match out of a cluster is listed in the cluster's group, not under independent (#971)", async t => {
+  // "lead" matches the root of a cluster of four and nothing else.
+  const rows = instanceRows(paletteRows(ROSTER, [], "lead", { openTerminal() {} }));
+  assert.deepEqual(rows.map(r => [r.group.key, r.group.label, r.label, !!r.context]), [["cluster:1:lead", "lead", "lead", false]]);
+  assert.equal(rows[0].group.key, instanceRows(paletteRows(ROSTER, [], "", {})).find(r => r.label === "lead").group.key, "the group it is in with no query");
+  // A match in one cluster and an unrelated one: each in its own group, in the roster's order.
+  const mixed = instanceRows(paletteRows(ROSTER, [], "solo-x", { openTerminal() {} }));
+  assert.deepEqual(mixed.map(r => [r.group.label, r.label]), [["independent", "solo-x"]], "an unrelated instance is still independent");
+  const p = palette(t);
+  await p.picker.open();
+  p.filter("lead");
+  const rendered = [...p.doc.querySelectorAll('[role="listbox"] > [role="group"]')];
+  assert.deepEqual(rendered.map(g => [g.getAttribute("aria-label"), [...g.children].map(o => o.querySelector(".plabel").textContent)]), [["lead", ["lead"]]],
+    "drawn as the cluster's named group");
 });
 
 test("two relation groups whose roots share a name (two agents roots) stay two named groups", async t => {

@@ -814,16 +814,16 @@ function renderContextRoster(instances) {
     return;
   }
   // Sidebar groups by agent CLUSTER (connected relations), not per repo:
-  // the repo is the small label under each instance. Clusters read purely
-  // from SPACING/STRUCTURE (human re-test: no visible glyph) — multi-member
-  // clusters get an invisible separator that still exposes the group
-  // boundary to AT (role=separator + aria-label); single-node clusters get
-  // nothing. Clusters are computed on the FULL roster then projected to
-  // visible members — clustering a filtered subset could forge edges from
-  // globally ambiguous names (merged-state review @3e76616).
+  // the repo is the small label under each instance. Groups read purely
+  // from SPACING/STRUCTURE (human re-test: no visible glyph): each group
+  // gets an invisible separator that still exposes the group boundary to
+  // AT (role=separator + aria-label).
   // Agent groups (Redesign v3): each multi-member relation cluster under its
   // deterministic name, then every unrelated instance under "independent"
-  // (rosterGroups, shared with the command palette).
+  // (rosterGroups, shared with the command palette). A cluster's group is
+  // decided on the FULL roster (#971): a filter or a collapse decides which
+  // rows are drawn and never moves a row to another group, a group with no
+  // visible row draws nothing, and a header counts the rows drawn under it.
   // Clusters are computed on the FULL roster then projected to visible
   // members — clustering a filtered subset could forge edges from globally
   // ambiguous names (merged-state review @3e76616).

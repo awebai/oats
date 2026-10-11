@@ -206,7 +206,9 @@ control.
   independent; the same order; indented by depth; the sidebar's collapsed
   state is ignored), then up to twelve commands. `>` restricts to commands.
 - With a query the instances keep tree order: each match at its depth, with
-  its non-matching ancestors shown dimmed for context. A context row is
+  its non-matching ancestors shown dimmed for context. A match stays in its
+  relation group, as in the filtered sidebar: one match out of a group of five
+  is listed under that group's name, not under independent. A context row is
   `aria-disabled`: the arrows, the chord and the pointer skip it, and it opens
   nothing.
 - **While the palette is open, its own chord cycles**: ⌘K moves the active row
@@ -295,7 +297,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Add / onboard workspace dialog | From the menu's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the trigger |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
 | Roster filter | Tab; ⌘F / Ctrl+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
-| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; Up/Down/Home/End; Right expands, Left collapses or goes to the parent | Enter/Space open the terminal (running) or Start (stopped) |
+| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; Up/Down/Home/End; Right expands, Left collapses or goes to the parent. A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is | Enter/Space open the terminal (running) or Start (stopped) |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
