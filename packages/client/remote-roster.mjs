@@ -93,7 +93,9 @@ const rosterError = (message) => ({ code: "E_REMOTE_ROSTER", message });
  * shows it through `displayLine` (display-text.mjs) only.
  *
  * What stays the caller's: one read at a time, when it runs, and dropping an answer that was read
- * with a kernel record that is no longer the accepted one.
+ * with a kernel record that is no longer the accepted one. And its own `try`/`catch` around the read
+ * and around what it does with `reported`: if that step throws after the caller took the new state, the
+ * caller takes `{ thrown: <message> }` next, so the groups it just took are marked not reached.
  */
 export function remoteRosterState(previous, outcome, at) {
   requireTime(at, "remoteRosterState");

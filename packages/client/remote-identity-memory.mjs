@@ -46,6 +46,10 @@ const workspaceName = identity => identity?.key ? String(identity.key).split('/'
  * report equal to what is remembered (identity, label, path) changes nothing. A report that moves the
  * group to another view leaves its note.
  *
+ * A group whose id or server is not in the kernel's form (GROUP_ID and SERVER above: a lower-case server
+ * name, and `<server>:<targetKey>`) is never remembered, and says nothing of it: a client's fixture
+ * needs the real forms, or its machine leaves its view the first time it does not answer.
+ *
  * `groups` is what remote-roster.mjs `remoteRosterState` answers as `reported`; `at` is the caller's
  * time, kept as each new entry's `reportedAt`.
  * @param {{ memory: Map, notes: Map }} held

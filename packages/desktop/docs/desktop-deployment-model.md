@@ -346,7 +346,11 @@ sidebar's Spawn instance, Quick Open and the soul cards spawn.
 `remote-identity.json` in the app's user data (`server/remote-identity.mjs`)
 holds the last identity each remote group reported, keyed by
 `<server>:<targetKey>`. It is written atomically (a temporary file, then
-rename) with mode 0600; a missing or malformed file is an empty memory.
+rename) with mode 0600; a missing or malformed file is an empty memory. The
+file holds at most 256 groups. What one roster answer makes of the memory
+(the rules below) is `packages/client/remote-identity-memory.mjs`
+(`observeIdentities`), a function over two Maps the store keeps; the store
+writes the file when that answer says the memory changed.
 
 - Only a reached group with an identity is a report, and a fresh report
   always wins. A group that reports another workspace moves to that view, and
@@ -507,8 +511,9 @@ A window never waits silently on "Reading the deployment…":
 ## Remote rows
 
 A remote deployment is one group of the kernel's remote roster (`oats server
-roster --json`, projected by `packages/client/remote-roster.mjs`), shown in its
-workspace's view; its rows carry `server`, `home`, and the kernel's
+roster --json`, projected by `packages/client/remote-roster.mjs`, whose
+`remoteRosterState` also decides what a failed or unreadable answer leaves
+held), shown in its workspace's view; its rows carry `server`, `home`, and the kernel's
 `addressable` and `missingRemotely` facts.
 
 - **One predicate.** `canAddressRemote(row)` in `packages/client/remote-address.mjs`
