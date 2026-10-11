@@ -3598,9 +3598,11 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   with the home. Read the field with `facts.workMode`. The plan's text
   (`oats retire <instance> --plan` without `--json`) prints `retain worktree
   true` in its `defaults:` line in `worktree` mode only; in the other modes
-  the line says the above for that mode, and for a record with no work mode,
-  or with one the kernel does not know, that this is so (0.53.0, #959). The
-  JSON is the same as before.
+  the line says the above for that mode (0.53.0, #959). For a record with no
+  work mode it says `work mode not recorded`, and for one whose work mode
+  the kernel does not know, `work mode not known to this kernel`: the value
+  is never printed, and `facts.workMode` holds it. The JSON is the same as
+  before.
 - A home spawned before 0.25.9 has no session receipt (0.30). Its
   `facts.session` is `{state: "absent", present: false, backend, established:
   true, note}` when the session is observably gone: instance.json records no
