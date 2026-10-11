@@ -3,8 +3,9 @@
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list draws (views/instances.mjs).
 import { keyLabel } from "../actions.mjs";
-import { lit } from "../term/text.mjs";
+import { lit, shown, textOf } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
+import { textWidth } from "../term/width.mjs";
 import { cutNote, marksOf } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
 
@@ -16,6 +17,13 @@ const GAP = 3;
 
 /** The keys of an action as a person reads them: `q, Ctrl+C`. */
 export const keysLabel = (action) => action.keys.map(keyLabel).join(", ");
+/** A key's label for the screen: `{ text, width }`. A key is the user's once their tui.json names
+ *  it, so its label is text the TUI did not write: it goes through shown(), and takes the cells
+ *  its display takes (a key may be a wide character). */
+export function keyText(label) {
+  const text = shown(label);
+  return { text, width: textWidth(textOf(text)) };
+}
 
 /** What this version does not do, each with the `oats` command that does it: an omission is
  *  stated where a user looks for it. test/tui-word.test.mjs holds every command here to the
@@ -49,8 +57,10 @@ const flow = (pieces, room) => pieces.reduce((lines, piece) => {
  *  piece wider than that column puts every meaning under its entry instead, so no row is cut at
  *  the smallest width the frame draws at. */
 function table(pairs, cols, look) {
-  const entry = (text) => ({ col: INDENT, text: lit(text), ...(look ? { style: look } : {}) });
-  const column = INDENT + Math.max(...pairs.map(([left]) => left.length)) + GAP;
+  // An entry is the TUI's own word, or text made elsewhere with its width (a key's label).
+  pairs = pairs.map(([left, pieces]) => [typeof left === "string" ? { text: lit(left), width: left.length } : left, pieces]);
+  const entry = (left) => ({ col: INDENT, text: left.text, width: left.width, ...(look ? { style: look } : {}) });
+  const column = INDENT + Math.max(...pairs.map(([left]) => left.width)) + GAP;
   const stacked = pairs.some(([, pieces]) => pieces.some((piece) => column + piece.length > cols));
   const at = stacked ? INDENT + 2 : column;
   return pairs.flatMap(([left, pieces]) => {
@@ -65,11 +75,11 @@ const heading = (text) => [{ col: INDENT, text: lit(text), style: TITLE }];
  *  now. */
 export function helpRows(actions, ascii, cols = 100) {
   const marks = marksOf(ascii);
-  const closing = ["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0]));
+  const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
   return [
     heading("Keys"),
     [],
-    ...table(actions.map((action) => [action.keys.length ? keysLabel(action) : "(no key)", words(action.label)]), cols, KEYS),
+    ...table(actions.map((action) => [action.keys.length ? keyText(keysLabel(action)) : "(no key)", words(action.label)]), cols, KEYS),
     [],
     heading("Marks"),
     [],
@@ -92,7 +102,7 @@ export function helpRows(actions, ascii, cols = 100) {
     heading("Not in this version"),
     [],
     ...table(NOT_YET.map(({ what, command }) => [what, [command]]), cols),
-    ...(closing.length ? [[], [{ col: INDENT, text: lit(`${closing.join(" or ")} closes this help`), style: HINT }]] : []),
+    ...(closing.width ? [[], [{ col: INDENT, text: closing.text, width: closing.width, style: HINT }, { col: INDENT + closing.width + 1, text: lit("closes this help"), style: HINT }]] : []),
   ];
 }
 

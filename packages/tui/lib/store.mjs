@@ -140,7 +140,13 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
   const action = keymap.get(event.key);
   if (editing) return edited(state, event, action);
   const page = Math.max(1, Number.isInteger(event.page) ? event.page : 1);
-  const scrolled = (top) => windowOf({ top: moved(action, top, event.extent ?? 0, event.room ?? 1), count: event.extent ?? 0, height: event.room ?? 1 }).top;
+  // A pane that scrolls on its own (the help, the detail) moves from where it is DRAWN: the top
+  // the state holds may lie past the end since the terminal grew, and the view shows it corrected.
+  const scrolled = (top) => {
+    const count = event.extent ?? 0, height = event.room ?? 1;
+    const from = windowOf({ top, count, height }).top;
+    return windowOf({ top: moved(action, from, count, height), count, height }).top;
+  };
 
   switch (action) {
     case "quit": case "suspend": case "redraw": return { state, effect: action };

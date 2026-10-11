@@ -7,7 +7,7 @@ import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownLines } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { detail } from "./detail.mjs";
-import { help } from "./help.mjs";
+import { help, keyText } from "./help.mjs";
 import { instances } from "./instances.mjs";
 
 /** The frame is drawn from this size up (docs/tui.md); the design size is 80x24. */
@@ -80,16 +80,27 @@ function countSpans(counts, cols) {
 }
 
 /** The footer: the filter field while it is open; else the actions that apply now, read from the
- *  effective table, as many as fit, `help` and `quit` last and always. */
+ *  effective table, as many as fit, `help` and `quit` last and always: their room is set aside
+ *  first, and a kept filter and the other hints take what is left. A key's label is the user's
+ *  (views/help.mjs keyText); everything is placed by cells. */
 function footer(m, cols) {
   const action = (id) => m.actions.find((a) => a.id === id && a.keys.length);
-  const hint = (id, label) => { const a = action(id); return a ? `${keyLabel(a.keys[0])} ${label ?? a.label}` : null; };
+  /** A hint: a key and what it does. */
+  const made = (key, word) => ({ key, word, width: key.width + 1 + word.length });
+  const hint = (id, label) => { const a = action(id); return a ? made(keyText(keyLabel(a.keys[0])), label ?? a.label) : null; };
+  const edge = cols - MARGIN; // nothing stands at or past it
+  /** A hint's spans at `col`, never past the edge. */
+  const put = (h, col, look) => [
+    { col, text: h.key.text, width: Math.max(0, Math.min(h.key.width, edge - col)), ...look },
+    { col: col + h.key.width + 1, text: lit(h.word), width: Math.max(0, Math.min(h.word.length, edge - col - h.key.width - 1)), ...look },
+  ].filter((span) => span.width > 0);
+  const span = (hints) => hints.reduce((sum, h) => sum + h.width, 0) + Math.max(0, hints.length - 1) * GAP;
+
   if (m.view === "instances" && m.filter.editing) {
-    const hints = ["Enter keep", hint("close", "clear")].filter(Boolean);
-    const width = hints.reduce((sum, h) => sum + h.length, 0) + (hints.length - 1) * GAP;
-    const spans = [{ col: MARGIN, text: lit("/"), style: BOLD, width: 1 }, { col: MARGIN + 1, text: shown(m.filter.query), width: Math.max(0, cols - width - 2 * MARGIN - 3) }];
-    let col = cols - MARGIN - width;
-    for (const h of hints) { spans.push({ col, text: lit(h), style: DIM, width: h.length }); col += h.length + GAP; }
+    const hints = [made({ text: lit("Enter"), width: "Enter".length }, "keep"), hint("close", "clear")].filter(Boolean);
+    const spans = [{ col: MARGIN, text: lit("/"), style: BOLD, width: 1 }, { col: MARGIN + 1, text: shown(m.filter.query), width: Math.max(0, edge - span(hints) - GAP - MARGIN - 1) }];
+    let col = Math.max(MARGIN + 2, edge - span(hints));
+    for (const h of hints) { spans.push(...put(h, col, { style: DIM })); col += h.width + GAP; }
     return spans;
   }
   const ids = m.view === "help" ? ["close"] : m.focus === "detail" ? ["detail", "close", "refresh"] : ["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh"];
@@ -97,14 +108,21 @@ function footer(m, cols) {
   const spans = [];
   let col = MARGIN;
   if (m.view === "instances" && m.filter.query) {
-    spans.push({ col, text: lit("/"), style: BOLD, width: 1 }, { col: col + 1, text: shown(m.filter.query), style: BOLD, width: FILTER_COLS - 1 - GAP });
-    col += FILTER_COLS;
+    // The kept filter has a place of its own width, so the hints stand where they always do;
+    // it gives way, down to nothing, before `help` and `quit` do.
+    const slot = Math.min(FILTER_COLS - GAP, edge - MARGIN - span(last) - (last.length ? GAP : 0));
+    if (slot >= 2) {
+      spans.push({ col, text: lit("/"), style: BOLD, width: 1 }, { col: col + 1, text: shown(m.filter.query), style: BOLD, width: slot - 1 });
+      col += slot + GAP;
+    }
   }
-  const end = cols - MARGIN - last.reduce((sum, h) => sum + h.length + GAP, 0);
-  const first = [];
-  for (const h of ids.map((id) => hint(id)).filter(Boolean)) { if (col + h.length > end) break; first.push({ col, text: lit(h), width: h.length }); col += h.length + GAP; }
-  for (const h of last) { spans.push({ col, text: lit(h), width: h.length }); col += h.length + GAP; }
-  return [...spans, ...first].sort((a, b) => a.col - b.col);
+  for (const h of ids.map((id) => hint(id)).filter(Boolean)) {
+    if (col + h.width + GAP + span(last) > edge) break;
+    spans.push(...put(h, col));
+    col += h.width + GAP;
+  }
+  for (const h of last) { spans.push(...put(h, col)); col += h.width + GAP; }
+  return spans;
 }
 
 /** Shift a pane's rows to its place on the screen. */

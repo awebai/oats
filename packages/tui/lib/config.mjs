@@ -7,7 +7,8 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { ACTIONS, bindings } from "./actions.mjs";
+import { ACTIONS, bindings, keyLabel } from "./actions.mjs";
+import { displayLine } from "./client.mjs";
 import { isKeyId } from "./term/keys.mjs";
 
 /** The largest tui.json that is read, in bytes. A larger file is refused by its size, unread. */
@@ -25,6 +26,11 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]{0,30}$/;
 export const MAX_PROBLEMS = 20;
 
 const plain = (name) => typeof name === "string" && PLAIN_NAME.test(name);
+/** Whether the footer and the help can name a key: its label is drawn as text from outside (the
+ *  shared display filter), and a label that filter would change would name another key, or none.
+ *  Such a key (a bidi override, a lone combining mark) is refused here, with the file named,
+ *  where a key the views cannot draw would otherwise be bound and never said. */
+const nameable = (key) => { const label = keyLabel(key); return displayLine(label) === label; };
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 /** Never the text of an error, which may hold anything: its code, when that is a plain one. */
 const unreadable = (error) => { const code = error?.code; return `it cannot be read${typeof code === "string" && ERROR_CODE.test(code) ? ` (${code})` : ""}`; };
@@ -81,6 +87,7 @@ export function effectiveConfig(value, defaults = ACTIONS) {
     } else {
       for (const key of list) {
         if (!isKeyId(key)) problems.push(`${keyOf(key, id)} is not a key id; ${KEY_IDS}`);
+        else if (!nameable(key)) problems.push(`${keyOf(key, id)} is a key the help cannot name; give a key whose character can be shown`);
         else if (claim(key, id)) named.get(id).push(key);
       }
       if (id === "quit" && list.length === 0) problems.push("quit has no key; give it one");

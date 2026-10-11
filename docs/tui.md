@@ -110,12 +110,13 @@ runs.
 
 Every state has a mark of its own shape, so nothing is told by colour alone.
 
-**When the deployment cannot be read,** the list says so in words. A read
-that fails after a good one keeps the last rows and marks them `stale`,
-with the time they were read and the reason on rows of its own; a
-deployment that could not be observed at all shows `not observed` and the
-reason, and no rows. Which of the two a failure becomes is one rule, shared
-with the Desktop. The reason is shown as the kernel or the reader gave it.
+**When a read fails,** what the view then shows is one rule, shared with the
+Desktop, and `oats tui` decides none of it. Depending on the failure the
+last rows stay as they were; or they stay and are marked `stale`, with the
+time they were read (a remote that could not be read again); or the
+deployment is `not observed` and no row is drawn. A state that is not live
+is said in words above the list, with the reason on rows of its own, as the
+kernel or the reader gave it.
 
 Names are cut by terminal cells with `…` (`...` in ASCII) when they do not
 fit; the detail shows them whole.
@@ -197,6 +198,7 @@ guesses nothing. It refuses:
 | names an action that does not exist | `unknown action …`, with the list of actions |
 | gives an action something that is not a list of strings | `… must be a list of key ids` |
 | has a string that is not a key | `the key … of … is not a key id` |
+| names a key whose character cannot be shown (a bidi override, a lone combining mark) | `… is a key the help cannot name` |
 | gives one key to two actions, your lists and the kept keys together | `the key … is given to … and to …; a key does one thing` |
 | leaves `quit` with no key | `quit has no key; give it one` |
 

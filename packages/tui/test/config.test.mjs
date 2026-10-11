@@ -143,6 +143,18 @@ test("a key id a terminal may never send is accepted: what is asked is whether i
   assert.deepEqual(keysOf(result.actions), { ...DEFAULT_KEYS, ...keys });
 });
 
+test("refused: a key the help cannot name, one whose label the display filter would change, though it is a key id", () => {
+  // A bidi override, a zero-width space and a combining mark on a space: each one grapheme, so a
+  // key id; drawn, each would name another key or none.
+  for (const key of ["\u202e", "\u200b", " \u0301", "alt+\u202e"]) {
+    assert.equal(isKeyId(key), true, `${JSON.stringify(key)} is a key id`);
+    assert.deepEqual(load({ keys: { quit: [key] } }).lines, [line("a key of quit that cannot be shown is a key the help cannot name; give a key whose character can be shown")], JSON.stringify(key));
+    assert.deepEqual(effectiveConfig({ keys: { help: ["x", key] } }), { ok: false, problems: ["a key of help that cannot be shown is a key the help cannot name; give a key whose character can be shown"] });
+  }
+  // Every default key can be named.
+  assert.equal(effectiveConfig({ keys: Object.fromEntries(ACTIONS.map((action) => [action.id, [...action.keys]])) }).ok, true);
+});
+
 test("effectiveConfig checks against the table it is given", () => {
   const table = Object.freeze([{ id: "a", keys: ["x"], label: "A", extra: 1 }, { id: "b", keys: ["y"], label: "B" }]);
   assert.deepEqual(effectiveConfig({ keys: { b: ["z"] } }, table), { ok: true, actions: [{ id: "a", keys: ["x"], label: "A", extra: 1 }, { id: "b", keys: ["z"], label: "B" }], ascii: false });
@@ -200,7 +212,7 @@ test("refused: larger than 64 KiB, by its size alone: a file exactly at the limi
 });
 
 test("refused: not valid JSON, and the parser's own words never reach the line", () => {
-  for (const text of ["", " ", "{", "{'keys': {}}", '{"keys": {"quit": ["q"],}}', "// keys\n{}", '{"ascii": true} {"ascii": false}', "﻿{}", "\x1b[2J", "{\"keys\": {\"quit\": [\"\x1b[2J\"]}}", "undefined", "NaN", '{"a\x00": 1'] ) {
+  for (const text of ["", " ", "{", "{'keys': {}}", '{"keys": {"quit": ["q"],}}', "// keys\n{}", '{"ascii": true} {"ascii": false}', "\uFEFF{}", "\x1b[2J", "{\"keys\": {\"quit\": [\"\x1b[2J\"]}}", "undefined", "NaN", '{"a\x00": 1'] ) {
     assert.deepEqual(load(text).lines, [line("it is not valid JSON")], JSON.stringify(text));
   }
 });
@@ -342,7 +354,7 @@ test("at most MAX_PROBLEMS problems are printed: a file with more says the first
 
 // --- What reaches a terminal ------------------------------------------------------
 
-const HOSTILE = ["\x1b[2J", "\x1b]0;title\x07", "a\x07b", "q\x00", "\u009b31m", "\u0085", "x\ny", "x\ry", "tab\there", "a b", " ", "é", "日本", "‮evil", "\u{1f600}", "﻿q", "\x7f", "x".repeat(41), "x".repeat(5000)];
+const HOSTILE = ["\x1b[2J", "\x1b]0;title\x07", "a\x07b", "q\x00", "\u009b31m", "\u0085", "x\ny", "x\ry", "tab\there", "a b", " ", "é", "日本", "\u202Eevil", "\u{1f600}", "\uFEFFq", "\x7f", "x".repeat(41), "x".repeat(5000)];
 
 test("a name from the file reaches a line only when it is plain printable ASCII of at most 40 characters", () => {
   const forty = "x".repeat(40), fortyOne = "x".repeat(41);

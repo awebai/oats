@@ -1265,3 +1265,64 @@ test("the help scrolls: at 60x15 it does not fit, its last row says what is cut 
   for (const line of whole) assert.equal(seen.has(line), true, line);
   assert.deepEqual(draw(press(ended, ["escape"], sz).state, sz).lines, draw(golden(), sz).lines, "Esc closes it");
 });
+
+// ── Keys from tui.json on the screen ─────────────────────────────────────────────────────────────
+
+test("every key a tui.json may give an action is drawn: the footer and the help name it through shown(), placed by cells, at every size, and nothing throws", () => {
+  const keys = { help: ["日"], quit: ["é", "alt+é"], close: ["\u{1f44d}\u{1f3fd}"], filter: ["ctrl+alt+shift+f12"], detail: ["shift+tab", "+"], refresh: ["alt++", "f5"], up: ["名", "k"] };
+  const made = effectiveConfig({ keys });
+  assert.equal(made.ok, true);
+  const labelOf = (id) => keysLabel(made.actions.find((action) => action.id === id));
+  for (const sz of SIZES) for (const ascii of [false, true]) {
+    const state = golden({ actions: made.actions, ascii });
+    for (const [what, s] of [["the list", state], ["the detail's focus", press(state, ["shift+tab"], sz).state], ["the open filter field", press(state, ["ctrl+alt+shift+f12", "x"], sz).state], ["a kept filter", press(state, ["ctrl+alt+shift+f12", "o", "enter"], sz).state], ["the help", press(state, ["日"], sz).state]]) {
+      const d = draw(s, sz);
+      for (const line of d.cells) assert.equal(line.length, sz.cols, `${what} at ${sz.cols}x${sz.rows}: a row of the screen's width`);
+      const footer = cellText(d, sz.rows - 1);
+      // The open field takes the footer row; everywhere else help and quit are last, by their keys.
+      const end = what === "the open filter field" ? `Enter keep   ${labelOf("close")} clear` : "日 help   é quit";
+      assert.ok(footer.endsWith(end), `${what} at ${sz.cols}x${sz.rows}${ascii ? ", ASCII marks" : ""}: the footer ends in ${end}: ${footer}`);
+    }
+    // The wide key takes two cells: the word after it stands one cell past them.
+    const d = draw(state, sz), last = d.cells[sz.rows - 1], at = last.findIndex((cell) => cell.text === "日");
+    assert.equal(last.slice(at + 2, at + 7).map((cell) => cell.text).join(""), " help");
+    const big = size(100, 80), lines = draw(press(state, ["日"], big).state, big).lines.slice(3, big.rows - 2);
+    for (const id of Object.keys(keys)) assert.ok(lines.some((line) => line.trim().startsWith(`${labelOf(id)}  `)), `the help lists ${id} under ${labelOf(id)}`);
+    assert.ok(lines.some((line) => line.trim() === `${labelOf("close").split(", ")[0]} or 日 closes this help`), "the closing line names the two keys");
+    // The meanings stand in one column, whatever cells the keys take.
+    const d2 = draw(press(state, ["日"], big).state, big);
+    const columns = new Set(["up", "help", "quit", "close"].map((id) => { const word = made.actions.find((action) => action.id === id).label.split(" ")[0]; const r = d2.cells.findIndex((line) => line.map((cell) => cell.text).join("").trim().startsWith(`${labelOf(id)}  `)); return cellIndexOf(d2.cells[r], word); }));
+    assert.equal(columns.size, 1, `one column for the meanings: ${[...columns]}`);
+  }
+});
+
+test("help and quit are last and always: a kept filter gives way to them, down to nothing, however long their keys are", () => {
+  const long = effectiveConfig({ keys: { help: ["ctrl+alt+shift+f11"], quit: ["ctrl+alt+shift+f12"] } });
+  assert.equal(long.ok, true);
+  const kept = (query, actions, sz) => cellText(draw(press(golden({ actions }), ["/", ...query, "enter"], sz).state, sz), sz.rows - 1);
+  assert.equal(kept("a", long.actions, S60), " /a       Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit");
+  assert.equal(kept("oats-kernel", long.actions, S60), " /oats…   Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit", "the query is cut, the two hints are whole");
+  // With room, the kept filter has its whole place and the other hints follow it.
+  assert.equal(kept("a", long.actions, S80), " /a                      Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit");
+  assert.equal(kept("a", ACTIONS, S60), " /a                      / filter   ? help   q quit", "of the other hints, as many as fit");
+  assert.equal(kept("a", ACTIONS, S80), " /a                      / filter   Tab detail   Esc close   ? help   q quit");
+  // Keys so long that the two hints fill the row: no kept filter is drawn, and nothing passes the edge.
+  const longest = effectiveConfig({ keys: { help: ["ctrl+alt+shift+pagedown"], quit: ["ctrl+alt+shift+pageup"] } });
+  const row = kept("a", longest.actions, S60);
+  assert.equal(row, " Ctrl+Alt+Shift+PageDown help   Ctrl+Alt+Shift+PageUp quit");
+  assert.equal(textWidth(row) <= 60 - 1, true);
+});
+
+test("a key label is text from outside for the views too: a table that reached them with a key the config refuses is still drawn, through shown(), and puts no control or bidi character on the screen", () => {
+  // effectiveConfig refuses these (config.test.mjs); the views do not rest on that.
+  const hostile = ["\u202E", " \u0301", "\u200B"];
+  const actions = ACTIONS.map((action) => (action.id === "quit" ? { ...action, keys: [hostile[0], "q"] } : action.id === "help" ? { ...action, keys: [hostile[1]] } : action.id === "close" ? { ...action, keys: [hostile[2]] } : action));
+  for (const sz of SIZES) {
+    const state = golden({ actions });
+    for (const s of [state, { ...state, view: "help" }, press(state, ["/", "x"], sz).state, press(state, ["/", "x", "enter"], sz).state]) {
+      const d = draw(s, sz);
+      for (const line of d.lines) assert.equal(CONTROL.test(line), false, `no control or bidi character at ${sz.cols}x${sz.rows}: ${JSON.stringify(line)}`);
+      assert.equal(d.cells.every((line) => line.length === sz.cols), true);
+    }
+  }
+});

@@ -14,7 +14,7 @@ import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, observed, pending, pre
 
 const SIZE = { cols: 80, rows: 24 }, SHORT = { cols: 80, rows: 15 };
 const STOPPED = { running: false, runtimeState: "stopped" };
-const FAMILY = "\u{1f469}‍\u{1f469}‍\u{1f467}‍\u{1f466}"; // one grapheme of seven code points
+const FAMILY = "\u{1f469}\u200D\u{1f469}\u200D\u{1f467}\u200D\u{1f466}"; // one grapheme of seven code points
 const TIMEOUT = { code: "E_CLI_TIMEOUT", message: "the read did not answer in time" };
 const UNREADABLE = { code: "E_REMOTE_UNREADABLE", message: "the remote cache could not be read" };
 const MOVES = ["k", "up", "j", "down", "g", "home", "G", "end", "pageup", "pagedown"];
@@ -581,7 +581,7 @@ test("Backspace removes one grapheme, however many code points it has", () => {
   const open = press(stateOf(observed(TREE)), ["/"]).state;
   assert.equal(press(open, ["a", FAMILY]).state.filter.query, `a${FAMILY}`);
   assert.equal(press(open, ["a", FAMILY, "backspace"]).state.filter.query, "a", "seven code points, one key");
-  assert.equal(press(open, ["a", "é", "backspace"]).state.filter.query, "a", "a letter and its combining mark");
+  assert.equal(press(open, ["a", "e\u0301", "backspace"]).state.filter.query, "a", "a letter and its combining mark");
   assert.equal(press(open, ["a", "b", "backspace", "backspace"]).state.filter.query, "");
   const empty = press(open, ["backspace"]).state;
   assert.deepEqual(empty.filter, { editing: true, query: "" }, "on an empty field it removes nothing and the field stays open");
@@ -644,7 +644,7 @@ test("a paste anywhere but the open filter field is dropped whole: the list, the
 
 test("a paste into the open filter field adds the text up to its first line end, whatever the line end", () => {
   const open = press(stateOf(observed(TREE)), ["/", "s"]).state;
-  for (const end of ["\n", "\r\n", "\r", " "]) {
+  for (const end of ["\n", "\r\n", "\r", "\u2028"]) {
     const result = reduce(open, { paste: `olo${end}q\nrm -rf` });
     assert.equal(result.state.filter.query, "solo", JSON.stringify(end));
     assert.equal(result.state.filter.editing, true);
@@ -658,7 +658,7 @@ test("a paste into the open filter field adds the text up to its first line end,
 test("a pasted first line the display filter would change adds nothing at all", () => {
   const open = press(stateOf(observed(TREE)), ["/", "s"]).state;
   const hostile = {
-    "a control character": "o\x07lo", "an escape sequence": "o\x1b[31mlo", "a tab": "o\tlo", "a bidi override": "o‮lo",
+    "a control character": "o\x07lo", "an escape sequence": "o\x1b[31mlo", "a tab": "o\tlo", "a bidi override": "o\u202Elo",
     "two spaces together": "o  lo", "a secret shape": "token=abcdef", "a leading space": " olo", "a trailing space": "olo ",
   };
   for (const [what, paste] of Object.entries(hostile)) {
@@ -753,6 +753,24 @@ test("an observation that arrives while the filter field is open keeps the text 
   for (const lost of [failed(entry, TIMEOUT), failed(entry, UNREADABLE)]) assert.deepEqual(take(after, lost).filter, { editing: true, query: "solo" });
   // A kept filter is kept across a read as well.
   assert.deepEqual(take(press(typing, ["enter"]).state, entry).filter, { editing: false, query: "solo" });
+});
+
+test("a pane that scrolls on its own moves from where it is drawn: at its end, after the terminal grew, one Up moves it one row", () => {
+  const small = { cols: 60, rows: 15 }, tall = { cols: 60, rows: 24 };
+  const above = (state, size) => Number(/(\d+) more above/.exec(draw(state, size).lines.join("\n"))?.[1] ?? 0);
+  // The help, scrolled to its end on a small terminal: the state's top is past the end of a taller one.
+  const help = press(stateOf(observed(TREE)), ["?", "G"], small).state;
+  const drawnTop = above(help, tall);
+  assert.equal(drawnTop > 0 && drawnTop < help.helpTop, true, `the taller pane draws from ${drawnTop}, the state holds ${help.helpTop}`);
+  assert.equal(above(press(help, ["k"], tall).state, tall), drawnTop - 1, "Up moves one row from what is drawn");
+  assert.equal(above(press(help, ["j"], tall).state, tall), drawnTop, "Down stays at the end");
+  // The detail, the same helper: a long reason makes it scroll.
+  const long = Array.from({ length: 60 }, (_, i) => `word${i}`).join(" ");
+  const row = instanceRow("dev", "long", { running: null, runtimeState: "unreachable", runtimeError: long });
+  const detail = press(stateOf(observed([row])), ["tab", "G"], { cols: 80, rows: 15 }).state;
+  const size = { cols: 80, rows: 20 }, top = above(detail, size);
+  if (top > 0) assert.equal(above(press(detail, ["k"], size).state, size), top - 1);
+  assert.equal(top <= detail.detailTop, true);
 });
 
 // --- reduce never mutates --------------------------------------------------------------
