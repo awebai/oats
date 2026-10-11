@@ -297,12 +297,12 @@ export function rosterGroupKey(workspace, ...parts) {
   return [`g:${workspace || ""}`, ...parts].join("\u0000");
 }
 
-/** Whether an instance itself matches the roster filter (its name, soul, repo or task) — as
+/** Whether an instance itself matches the roster filter (its name, soul or repository) — as
  * opposed to an ancestor shown only to keep a match's tree path. */
 export function instanceMatchesFilter(item, query) {
   const needle = String(query || "").trim().toLowerCase();
   if (!needle) return true;
-  return [item.instance, item.agent, item.repoName, item.task]
+  return [item.instance, item.agent, item.repoName]
     .some((value) => String(value || "").toLowerCase().includes(needle));
 }
 

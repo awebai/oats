@@ -205,7 +205,7 @@ test("the shell wires the cycle to the live app.palette chord; Quick Open (⌘P)
 test("filterInstanceTree takes the palette's matcher and keeps the sidebar's default; rosterGroups is the sidebar's grouping", async () => {
   const { filterInstanceTree, instanceMatchesFilter } = await import("../../client/instance-tree.mjs");
   const names = list => list.map(i => i.instance);
-  // Default (sidebar): substring over name/soul/repo/task, with ancestor paths, in source order.
+  // Default (sidebar): substring over name/soul/repo, with ancestor paths, in source order.
   assert.deepEqual(names(filterInstanceTree(ROSTER, "grandchild")), ["grandchild", "lead", "child-a"]);
   assert.deepEqual(names(filterInstanceTree(ROSTER, "grandchild")), names(ROSTER.filter(i => ["grandchild", "lead", "child-a"].includes(i.instance))));
   assert.equal(filterInstanceTree(ROSTER, "  "), ROSTER, "no query: the roster itself");

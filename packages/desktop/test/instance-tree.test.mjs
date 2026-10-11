@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { collapseKey, hasInstanceChildren, instanceRepoLabel, filterInstanceTree, instanceVisibleInTree, clusterInstances,
+import { collapseKey, hasInstanceChildren, instanceRepoLabel, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree, clusterInstances,
   ROSTER_SORTS, rosterRank, groupRosterFamilies, rosterGroupKey } from "../../client/instance-tree.mjs";
 import { treeGuideSegments, captureTreeRenderState, clusterSeparator, treeConnectors, rosterResponseOwns } from "../renderer/instance-tree-view.mjs";
 
@@ -101,6 +101,18 @@ test("filter includes ancestor paths without mutating persisted collapse state",
   const collapsed = new Set([collapseKey("ws", "root")]);
   assert.equal(instanceVisibleInTree(instances[2], instances, collapsed, "ws", true), true, "filtering reveals the matching path");
   assert.deepEqual([...collapsed], [collapseKey("ws", "root")], "the user's collapse choice survives the filter");
+});
+
+test("the roster filter matches a row's name, soul and repository, and nothing else it carries", () => {
+  const row = { instance: "builder-one", agent: "desktop-dev", repoName: "widgets", home: "/w/agents/desktop-dev/instances/builder-one", branch: "topic/polish" };
+  for (const query of ["builder", "ONE", "desktop-dev", "  Widgets  "]) assert.equal(instanceMatchesFilter(row, query), true, query);
+  for (const query of ["", "   ", null, undefined]) assert.equal(instanceMatchesFilter(row, query), true, "no query matches every row");
+  assert.equal(instanceMatchesFilter(row, "polish"), false, "the branch is not searched");
+  // No panel row carries a `task`; one given by hand is not searched either.
+  const withTask = { ...row, task: "Ship the quarterly report" };
+  assert.equal(instanceMatchesFilter(withTask, "quarterly"), false);
+  assert.deepEqual(filterInstanceTree([withTask], "quarterly"), []);
+  assert.deepEqual(filterInstanceTree([withTask], "widgets"), [withTask]);
 });
 
 // Replaces the Redesign v3 group-header test: Workspace v4 separates agent
