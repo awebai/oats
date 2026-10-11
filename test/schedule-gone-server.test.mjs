@@ -59,10 +59,11 @@ function creatingServer(fn) {
   return result;
 }
 /** A real `oats spawn` without a launch whose session, once started on the fixture's own `oats`
- *  server, runs a frozen command in place of a harness: a fixture that sleeps. */
+ *  server, runs a frozen command in place of a harness: a fixture that writes its pid to
+ *  `harness-ready` in the home (atomically) and execs a sleep. */
 function startableHome(fx, purpose) {
   const harness = join(fx.base, "fixture-harness");
-  writeFileSync(harness, "#!/bin/sh\nexec sleep 600\n", { mode: 0o755 });
+  writeFileSync(harness, `#!/bin/sh\necho $$ > "$OATS_INSTANCE_HOME/harness-ready.tmp"\n/bin/mv "$OATS_INSTANCE_HOME/harness-ready.tmp" "$OATS_INSTANCE_HOME/harness-ready"\nexec sleep 600\n`, { mode: 0o755 });
   const r = fx.cli(["spawn", "dev", "--purpose", purpose, "--harness", "claude", "--no-launch", "--json"]);
   assert.equal(r.status, 0, `${r.stderr}\n${r.stdout}`);
   const { home, instance } = r.json().result;
@@ -72,21 +73,33 @@ function startableHome(fx, purpose) {
   writeFileSync(metaPath, JSON.stringify({ ...meta, command, launched: false }));
   return { home, instance };
 }
-/** Whether `home`'s session runs its command. */
-const active = (fx, home) => fx.inEnv(() => { try { return inspectInstanceSession(home).state === "unknown"; } catch { return false; } });
+/** Whether the pid the harness wrote is now the sleep it execs. Waiting on the pane alone is not
+ *  enough: a step of the session's start before the harness (a transient non-shell) reads as running,
+ *  and the harness's own shell before its exec reads as a shell, idle, to a stop that comes then. */
+function harnessSleeps(home) {
+  try {
+    const pid = readFileSync(join(home, "harness-ready"), "utf8").trim();
+    const comm = execFileSync("ps", ["-o", "comm=", "-p", pid], { encoding: "utf8", env: { PATH: "/usr/bin:/bin", LC_ALL: "C" } }).trim();
+    return comm.split("/").pop() === "sleep";
+  } catch { return false; }
+}
+/** Whether `home`'s session runs its command: the harness sleeps, and the kernel reads it running. */
+const active = (fx, home) => harnessSleeps(home) && fx.inEnv(() => { try { return inspectInstanceSession(home).state === "unknown"; } catch { return false; } });
 /** Stop `home`'s session and wait until its start wrapper has exited, so that nothing the session ran
  *  is still exiting when the fixture checks that its processes are gone. */
 async function stopSession(fx, home) {
   assert.equal((await fx.inEnv(() => stopInstanceSession(home, { graceMs: 5000 }))).stopped, true);
   await waitUntil(() => existsSync(join(home, ".oats-start-exited")), "the session's start wrapper to exit");
 }
-/** A reboot: the fixture's `oats` server is gone, and tmux's socket directory with it. */
-async function reboot(fx) {
+/** A reboot: the fixture's `oats` server is gone, and tmux's socket directory with it, and so is
+ *  every harness it ran: their `harness-ready` files go too, for the next start to write. */
+async function reboot(fx, ...homes) {
   const socket = oatsSocket(fx.env.TMUX_TMPDIR);
   const pid = Number(execFileSync("tmux", ["-S", socket, "display-message", "-p", "#{pid}"], { encoding: "utf8" }).trim());
   execFileSync("tmux", ["-S", socket, "kill-server"]);
   await waitUntil(() => !alive(pid), "the oats tmux server to exit");
   rmSync(dirname(socket), { recursive: true, force: true });
+  for (const home of homes) rmSync(join(home, "harness-ready"), { force: true });
 }
 const stoppedReason = ({ instance, home }) => `previous instance stopped: retire it (oats retire ${instance}) or start it again (oats session start --home ${home})`;
 
@@ -189,7 +202,7 @@ test("after a reboot a scheduled instance reads stopped with what to do, and onc
   assert.equal(first[0].action, "launched", JSON.stringify(first));
   const [run] = spawned;
   await waitUntil(() => active(fx, run.home), "the instance's command runs");
-  await reboot(fx);
+  await reboot(fx, run.home);
   await skippedAsStopped({ fx, io, run });
   // Started again, as the reason says: active, and skipped as still running.
   await fx.inEnv(() => creatingServer(() => startInstanceSession(run.home)));
@@ -208,7 +221,7 @@ test("after a reboot a wake job starts its instance's session at its next due mi
   const { home } = startableHome(fx, "woken");
   await fx.inEnv(() => creatingServer(() => startInstanceSession(home)));
   await waitUntil(() => active(fx, home), "the instance's command runs");
-  await reboot(fx);
+  await reboot(fx, home);
   await fx.inEnv(() => addSchedule(fx.dep, { id: "wake", cron: "*/5 * * * *", tz: "UTC", kind: "wake", home, message: "Fixture only." }));
   const c = await fx.inEnv(() => creatingServer(() => tickWorkspace(fx.dep, { now: new Date("2026-09-07T10:05:00Z"), reg: { maxConcurrent: 5 }, wsList: [fx.dep] })));
   assert.deepEqual([c[0].action, c[0].reason], ["started", "session was stopped; the message is pending until the session is active"]);
