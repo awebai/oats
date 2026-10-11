@@ -96,6 +96,17 @@ Apply knowledge-theory to every changed concept:
 - provenance: each concept cites its evidence (a 5.0 PR: the proposal and
   its notes; a 4.x PR: its OKF input id, and transcript-fed ones turn ids);
 - the exclusions (no secrets, no verbatim third-party text, no task residue);
+- personal data, by the sentence the capturing instance and the harvester
+  were given: Never include personal data about people outside the team
+  (clients, correspondents, any other third party): a name, a contact
+  detail, or anything else that identifies a person, including detail
+  derived from correspondence. Keep the lesson and leave the person out.
+  Naming the author of a published source you cite is fine. Check the
+  changed concepts, the PR title and body, and the names in the provenance
+  block (note file names, task refs, instance names). Your review comes
+  after the push: amending or closing keeps personal data out of the
+  accepted base, not out of the pushed branch or the pull request. Say that
+  in the verdict, without repeating the data;
 - `okf-validate.mjs --strict` passes on the whole base.
 
 ## 5. Human-accepted decisions are never superseded silently

@@ -179,6 +179,11 @@ review.
 ## Exclusions
 
 Never promote secrets or credentials, or verbatim third-party messages.
+Never include personal data about people outside the team (clients,
+correspondents, any other third party): a name, a contact detail, or
+anything else that identifies a person, including detail derived from
+correspondence. Keep the lesson and leave the person out. Naming the author
+of a published source you cite is fine.
 Private evidence (a proposal, a note, a session) is not publication permission. Drop tool noise, task
 residue, code descriptions and duplicates. Do not quote third-party text just
 because it appears in a source record. Preserve verified, generalized

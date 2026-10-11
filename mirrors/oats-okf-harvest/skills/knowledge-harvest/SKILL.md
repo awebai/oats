@@ -146,6 +146,12 @@ concepts in your clone, so every claim lands in ONE canonical home
   `Evidence: OKF proposal from <soul>/<instance>, <date>; notes/<file>.md.`
 - Never put secrets, credentials, private paths or verbatim third-party
   messages in a concept (knowledge-theory, Exclusions).
+- Never include personal data about people outside the team (clients,
+  correspondents, any other third party): a name, a contact detail, or
+  anything else that identifies a person, including detail derived from
+  correspondence. Keep the lesson and leave the person out. Naming the
+  author of a published source you cite is fine. A claim that cannot be
+  stated without the person is dropped, with that reason.
 
 ## 7. Validate
 
@@ -156,6 +162,12 @@ concepts in your clone, so every claim lands in ONE canonical home
   no hidden file, nothing outside the base root.
 - `git -C ./work/<alias> diff origin/<acceptedBranch>` carries no secret,
   credential or private home/machine path.
+- Read the same diff once more for people. Never include personal data
+  about people outside the team (clients, correspondents, any other third
+  party): a name, a contact detail, or anything else that identifies a
+  person, including detail derived from correspondence. Keep the lesson and
+  leave the person out. Naming the author of a published source you cite is
+  fine.
 
 A failure you cannot fix within the owned nodes: drop that change and report.
 
@@ -292,6 +304,13 @@ block, version 2 (no run or input ids):
 - `repository` is the base's GitHub `pr.repository` (`<owner>/<repo>`), never
   the clone locator: that can be a path on this machine.
 - No home, machine or account path anywhere in the PR.
+- The personal-data exclusion of sections 6 and 7 holds for everything you
+  publish, not only the concepts: the commit message, the PR body and the
+  provenance block. Note file names, task refs and the source instance's
+  name are published there as written. If a note's file name or a task ref
+  carries such personal data, drop the claims that rest on it and leave it
+  out of the PR, saying only that one was left out for that reason. If the
+  source instance's name carries it, publish nothing and report.
 - Never push to the accepted branch, update an existing harvest ref or close
   a PR. The empty expected-old lease above is only for creating a new ref.
 
