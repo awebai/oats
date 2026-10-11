@@ -228,6 +228,7 @@ Further documentation:
 - [Packages](docs/packages.md)
 - [Sessions](docs/execution-targets.md)
 - [OATS Desktop](docs/desktop.md)
+- [OATS TUI](docs/tui.md), the terminal client (`oats tui`, a preview)
 
 This README explains the framework and its direction. Advanced mechanisms such as automatic speciation and context cloning require their own implementation and verification; the model is not a claim that every feature or capability combination already works.
 

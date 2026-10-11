@@ -1,0 +1,8 @@
+{
+  "name": "@awebai/oats-tui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OATS TUI (preview): the terminal client behind `oats tui`. Shipped inside @awebai/oats, never published on its own.",
+  "type": "module",
+  "license": "MIT"
+}
