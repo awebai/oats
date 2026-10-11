@@ -659,7 +659,8 @@ test("#778 T4: a deferred --self retirement stops recorded children before it re
   const k5Pid = runningPid(k5.home);
   const s5 = selfRetire("c778-p5", p5.home);
   assert.equal(s5.status, 0, s5.stdout + s5.stderr);
-  const { resultPath, pendingMarker } = JSON.parse(s5.stdout);
+  const { resultPath, pendingMarker, completionPid } = JSON.parse(s5.stdout);
+  assert.ok(Number.isSafeInteger(completionPid), "fixture premise: the scheduling names its completion");
   assert.ok(await waitUntil(() => existsSync(resultPath), "the completion's failure result", 60000));
   const result = readJson(resultPath);
   assert.equal(result.ok, false); assert.equal(result.error.code, "E_CHILDREN_RUNNING");
@@ -667,7 +668,9 @@ test("#778 T4: a deferred --self retirement stops recorded children before it re
   assert.match(result.retry, /^oats retire c778-p5/);
   assert.ok(existsSync(p5.home), "the home is kept");
   // Refused before a hook was started or anything of the home was removed: the caller is not being
-  // retired, and the completion takes its pending marker away (awebai/oats#954).
+  // retired, and the completion takes its pending marker away (awebai/oats#954). It writes its
+  // outcome first and removes the marker after, so the marker is read once the completion has ended.
+  await waitUntil(() => { try { process.kill(completionPid, 0); return false; } catch (e) { return e.code === "ESRCH"; } }, "the completion to end", 60000);
   assert.equal(existsSync(pendingMarker), false, "the pending marker is removed: nothing of the home was changed");
   assert.ok(runningPid(p5.home) !== null, "the caller was not quiesced");
   process.kill(k5Pid, "SIGKILL"); await waitFor(() => runningPid(k5.home) === null, "test cleanup");
