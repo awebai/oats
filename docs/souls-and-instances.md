@@ -818,10 +818,12 @@ clean. Such an entry refuses the retire, at one of three points:
   again in the same home with `oats session start --home <abs>`. A
   self-retire (`--self`) is completed by its detached completion, which stops
   the session and refuses in the same way; the refusal is recorded beside the
-  home, as described below. After a refused self-retire only `oats retire
-  <instance>` continues: `oats session start` refuses while the self-retire's
-  pending marker is there, and a retire clears it. Of the refusals at this
-  point, only that of `--self --keep-dir`, which stays in the calling
+  home, as described [below](#self-retire-not-completed). No hook has run at
+  this point, so from OATS 0.53.0 the completion removes the self-retire's
+  pending marker: the instance is a stopped instance like any other, and
+  both `oats retire <instance>` and `oats session start` continue. Before
+  0.53.0 the marker stayed, and only a retire continued. Of the refusals at
+  this point, only that of `--self --keep-dir`, which stays in the calling
   process, comes with the session still running;
 - **after the hooks**, when a retire hook left the entry behind: the hooks
   have run, and the home, the work and the recovery written before the hooks
@@ -1032,10 +1034,44 @@ status before its tmux window dies a few seconds later. The completion then
 retires the instance exactly as an external `oats retire` would: quiesce the
 harness, preserve uncommitted work, run retire hooks, repair lineage, remove
 the worktree and the home. Success leaves nothing behind: the home and the
-marker are gone. A failure writes `.oats-retired-<instance>.json` beside the
-retained home (plus the usual quarantine marker when hooks reported incomplete
-cleanup), shows in `oats status` and the Desktop as a failed deferred
-retirement, and is retried and cleared with `oats retire <instance>`.
+marker are gone.
+
+<a id="self-retire-not-completed"></a>A completion that does not complete,
+because the retire was refused or failed part way, answers nobody. It
+leaves what happened on disk (OATS 0.53.0):
+
+- **Its outcome, always.** `.oats-retired-<instance>.json` beside the home
+  holds `ok: false`, the code and the sentence the retire answered, and
+  `retry`, the command that retries it. Its log is
+  `.oats-retired-<instance>.log`. `oats status` and the Desktop show the
+  outcome as a failed deferred retirement until a retire of the instance
+  completes. No other command clears it: to drop it without retiring the
+  instance, remove those two files by hand.
+- **Its pending marker, only when the home is owed a retire:** when a retire
+  hook was started or the removal of the home began. The usual quarantine
+  marker is there too when hooks reported incomplete cleanup. The instance
+  then reads as retiring: `oats instance stop --apply` and `oats session
+  start` answer `E_INSTANCE_RETIRING`, and `oats retire <instance>`
+  continues. In every other case the completion removes its marker.
+  Nothing of the home was changed, so the instance is a stopped or a
+  running instance like any other: a start works, and a wake schedule may
+  start it. A session or a child that the completion stopped on its way
+  does not keep the marker.
+- **One event,** `retire-refused`, which says which of the two it was
+  ([Events](desktop-cli-api.md#retire-refused-event)).
+
+Nothing retries by itself: `oats retire <instance>` does. A completion
+removes only the marker of its own scheduling, so the marker of a later
+`--self` is left for that one's completion.
+
+**A home that a refused completion left stuck under 0.52.0 or earlier**
+still has its marker, and reads as retiring although nothing of it was
+changed. To retire it after all, run `oats retire <instance>`. To keep it,
+no command does this. Check that the completion the marker names is gone
+(its pid is `completionPid` in the marker), then remove by hand
+`.oats-retire-pending-<instance>.json`, `.oats-retired-<instance>.json` and
+`.oats-retired-<instance>.log` beside the home. The kernel does not do this
+for such a home, because it cannot date a refusal that it did not record.
 
 When a retire hook reports incomplete cleanup, the home is quarantined before
 any worktree step: the worktree, its git admin entry and the branch stay
