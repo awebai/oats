@@ -97,6 +97,8 @@ console.log(JSON.stringify({ meta: { retired: true } }));\n`,
     },
     /** How many `retire-planned` events the workspace log holds for the home. */
     plansRead: (home) => fx.inEnv(() => readEvents(home).events.filter((e) => e.kind === "retire-planned").length),
+    /** The revision each of those events carries, in the log's order. */
+    planEvents: (home) => fx.inEnv(() => readEvents(home).events.filter((e) => e.kind === "retire-planned").map((e) => e.data.planRevision)),
     /** `oats retire <instance> --json <extra>` as a child process. */
     retire: (instance, extra = [], env) => start([CLI, "retire", instance, "--json", ...extra], env),
     /** A deferred self-retire's completion, as the detached script runs it (delaySec 0). */
@@ -320,9 +322,13 @@ test("a stale guarded apply with nobody else retiring answers E_PLAN_STALE as it
   assert.equal(json.stdout, JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_PLAN_STALE",
     message: `the retire plan changed since it was shown (${STALE} → ${shown.planRevision}); review the fresh plan`, details: { plan } } }) + "\n");
   untouched("--json");
+  // The one thing that has happened: the apply read its plan under the claim, and a plan that is
+  // answered appends its event to the workspace log. The comparison comes after it.
+  assert.deepEqual(await f.planEvents(inst.home), [shown.planRevision, plan.planRevision], "--json: the workspace log holds the event of the plan that was shown and the event of this apply's plan");
   const text = f.fx.cli(args);
   assert.deepEqual([text.status, text.stdout, text.stderr], [1, "", `oats: the retire plan changed since it was shown; re-run oats retire ${name} --plan\n`]);
   untouched("text");
+  assert.equal((await f.planEvents(inst.home)).length, 3, "text: one more event, of that apply's plan");
 });
 
 test("a retire reads its children when it holds the claim: after a retire that kept the home and repaired lineage, the next one acts on the children as they are then", async (t) => {

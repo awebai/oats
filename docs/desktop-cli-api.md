@@ -3057,7 +3057,9 @@ that is not an object; OATS 0.52.0) decides only for itself.
 only before any effect: nothing was signalled, run, copied or removed. A
 record that becomes unreadable after a retire has taken the home's claim is
 refused with the same sentence, before the retire's first signal (the end of
-the hook group an interrupted spawn left). That answer alone carries
+the hook group an interrupted spawn left); in a guarded apply, with
+[its plan's `retire-planned` event](#guarded-apply-plan-event) already
+appended to the workspace log. That answer alone carries
 [`details.reached`](#retire-reached), untouched: `{phase: "before-effects",
 sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery:
 null}`. A plan refuses the same way when the record became unreadable after
@@ -3407,6 +3409,19 @@ effect: `E_CHILDREN_RUNNING`, `E_SESSION_STOP_FAILED`,
 `E_RUNTIME_QUIESCE_FAILED`, `E_WORK_PRESERVATION_FAILED`,
 `E_WORK_INSPECTION_FAILED`, `E_LIFECYCLE_FAILED` and the rest; for a retire
 `reached` says how far it got.
+
+<a id="guarded-apply-plan-event"></a>
+**One thing has already happened when a guarded retire apply answers one of
+these codes: its plan's append.** A guarded apply reads its plan once it
+holds the home's claim, and a plan that is answered appends its
+`retire-planned` event to the workspace log, as [a plan](#retire) always
+does. Every listed code that the apply answers from there on comes with that
+event already appended, in the workspace log only: `E_PLAN_STALE` always,
+since the comparison follows the plan; `E_LIFECYCLE_BUSY` or
+`E_UNIDENTIFIED_INSTANCE_HOME` when the retire's own first reads then refuse
+(the instance is still being spawned; its record became unreadable after the
+plan). Nothing of the home is touched and no signal is sent. A stop's plan
+appends nothing, and a plain or `--self` retire reads no plan.
 
 The rule holds by construction. Each verb knows how far it got at one place
 (a retire: the `phase` it reports in `reached`; a stop apply: whether a
