@@ -2747,7 +2747,7 @@ async function spawnCmd() {
       ...(args.includes("--allow-child-spawns") ? { allowChildSpawns: true } : args.includes("--no-child-spawns") ? { allowChildSpawns: false } : {}),
       // Directory execution uses deployment configuration, not an ambient Git
       // checkout (especially when invoked via --dir from a source instance).
-      // An attached instance's repository is its work tree owner's (derived by the kernel).
+      // An attached instance's repository is the repository of the tree it is attached to (derived by the kernel).
       repo: preparedRepo !== undefined ? preparedRepo : ["directory", "attached"].includes(requestedWork || agent.work)
         ? repo : repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
       work: requestedWork, workDir, harness: harnessFlag(), backend, yolo, model: flag("model"), branch,
