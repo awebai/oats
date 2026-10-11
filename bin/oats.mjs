@@ -56,7 +56,7 @@ import { kernelNode } from "../lib/stable-node.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
-import { planStop, applyStop, planRetire, descendantsOf, resolveInstance as resolveInstanceForCli, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
+import { planStop, applyStop, planRetire, retireDefaultsLine, descendantsOf, resolveInstance as resolveInstanceForCli, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
 import { extraWorktreeLines, formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
 import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
@@ -2956,7 +2956,7 @@ function retireCmd() {
       if (args.includes("--json")) { jsonOk(plan); return; }
       console.log(`retire ${name} — plan ${plan.planRevision}`);
       console.log(`  session ${plan.facts.session.state}; work ${plan.facts.work.observed ? `${plan.facts.work.changed} changed / ${plan.facts.work.untracked} untracked on ${plan.facts.work.branch ?? (plan.facts.work.detached ? "detached" : "a ref OATS carries no branch name for")}` : `not observed (${plan.facts.work.reason})`}; children ${plan.facts.children.length}; pull request ${plan.facts.pullRequest}`);
-      console.log(`  defaults: retain worktree ${plan.defaults.retainWorktree}, delete branch ${plan.defaults.deleteBranch}, stop children ${plan.defaults.stopChildren}`);
+      console.log(`  ${retireDefaultsLine(plan)}`);
       for (const n of plan.notes) console.log(`  note: ${n}`);
       return;
     } catch (e) { return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { ...e.details, candidates: e.candidates } : e.details); }
