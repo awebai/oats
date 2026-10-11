@@ -4525,9 +4525,15 @@ left its outcome at `resultPath` (it failed) or is gone (it died; a
 completion that is a zombie, not reaped by its parent, has died: 0.52.0,
 #870), nor when
 it names no completion (a marker written before 0.51.0): `oats retire
-<instance>` then retries the retirement, as before. The completion waits up
-to 3 s for the retire that scheduled it to release the claim, then takes it
-as any retire does; one that meets another retire still running is refused,
+<instance>` then retries the retirement, as before. The completion does not
+start its retire while the retire that scheduled it holds the claim: it
+waits for that one command, which it knows by the pid and the start time it
+was given, for up to ten minutes (`SCHEDULING_WAIT_MS`; 0.53.0; before, for
+up to 3 s only). Meanwhile the home has no marker, and that retire answers
+a stop and another retire as any running retire does
+([the table](#lifecycle-pairs)). Then it takes the claim as any retire
+does, waiting up to 3 s for a live holder, the one that scheduled it
+included when the ten minutes have passed; one that meets another retire still running is refused,
 and records that at `resultPath` like any failed completion. The `error`
 recorded there has the code and the message the same failure has as an
 envelope: a kernel code, and what the retire had done by then. From 0.53.0
@@ -4540,8 +4546,8 @@ gone.
 
 A `--self` that cannot finish scheduling (the completion's log cannot be
 opened, no process is created, the marker cannot be written, or, from
-0.53.0, its completion has already given up waiting for it when the marker
-is written: the marker is then removed again) answers
+0.53.0, its completion has already ended when the marker is written, with
+an outcome or without one: the marker is then removed again) answers
 `E_SELF_RETIRE_SCHEDULE_FAILED`, with `reached.phase: "before-effects"`. That
 stays true after the answer: a completion this command had started is not
 running when it answers (it is ended, unless it had gone by itself; a
