@@ -2574,6 +2574,10 @@ its absence.
   `soulSource` (`{repoKey, commit, path, current?, status?}`, `current` or
   `moved`) for a workspace soul; `retireFailures[]` (`{instance, completedAt,
   error, incomplete, retry, resultPath}`) when a deferred self-retire failed.
+  An entry stays until a retire of the instance completes or its result
+  file is removed by hand, whether or not the instance's row still has
+  `retirePending`
+  ([a completion that does not complete](souls-and-instances.md#self-retire-not-completed)).
   A capability agent's row is `{name, kind: "capability", capability,
   description, dir, instances}`.
 - **Instance rows**: the home's `instance.json` (launch recipe and command
@@ -3057,7 +3061,8 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   bytes}`. Only a regular file is opened (no symlinks, same device and inode
   after open), and at most its last 4 MiB is read (`"tail"`).
 - **Kinds:** `spawned`, `launched`, `restarted`, `stopped`, `stop-refused`,
-  `retire-planned`, `retired`, `worktree-retained`, `worktree-removed`,
+  `retire-planned`, `retired`, `retire-refused` (0.53.0,
+  [below](#retire-refused-event)), `worktree-retained`, `worktree-removed`,
   `branch-deleted` (not written since 0.41.0: no retire deletes a branch;
   older logs hold it), `child-spawn-refused`, `launch-warning` (0.30: a
   `launch` hook's warning at session start/restart, `data: {message}`),
@@ -3087,6 +3092,34 @@ oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--
   `--delete-branch` (since 0.41.0: `this self-retire was requested with
   --delete-branch by an older OATS; retirement no longer deletes branches, so
   the branch and the worktree were left`).
+- <a id="retire-refused-event"></a>`retire-refused` (0.53.0; `data: {code,
+  homeChanged, reason}`) is written once by the completion of a scheduled
+  self-retire (`oats retire <instance> --self`) that did not complete, and
+  by nothing else. A retire that a person runs answers that person and
+  writes none. No feature names the kind: a client that does not know it
+  reads the row as it reads any unknown kind.
+  - `code` is a kernel code, or `null`. It is the code the retire answered.
+    It is `null` for the one outcome that is a result and not an error: a
+    cleanup that did not finish, with the home retained in quarantine.
+    `null` means that outcome, never "unknown".
+  - `homeChanged` is `false` when no retire hook was started and nothing of
+    the home was removed, and `true` otherwise. It is always `true` for the
+    incomplete cleanup. A session or a child that was stopped on the way
+    does not count.
+  - `reason` is the sentence the retire answered, on one line and at most
+    2048 UTF-16 code units. A longer sentence is cut and ends with `…`,
+    which is counted in the 2048. The bound is the Desktop events reader's,
+    which refuses a whole read that holds a longer detail. For the
+    incomplete cleanup it is a sentence of the kernel's own that names no
+    item; the items are in the completion's result file.
+  - The row is in the workspace's log only, and carries the incarnation
+    the home had before the retire ran. The completion holds no claim when
+    it writes, so it writes nothing into a home.
+  - With `homeChanged: false` the self-retire's pending marker is gone as
+    well, and with `true` it stays
+    ([a completion that does not complete](souls-and-instances.md#self-retire-not-completed)).
+- `stop-refused` and `retire-refused` each cover two cases: a verb that was
+  refused, and one that failed after it began.
 - `worktree-retained` (`data: {movedTo, branch, recordedBranch}`) and
   `worktree-removed` (`data: {branch}`) are written to the workspace log only,
   by the retire's worktree step. Since 0.42.1 the retire also writes one per
@@ -3360,7 +3393,11 @@ oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>]
   target's home when the plan is read (OATS 0.52.0, feature
   `lifecycle-claim-stop`). `retiring`: a self-retire is scheduled for it
   (its pending marker is there), or a retire holds its
-  [claim](#retire-one-at-a-time). `stopPending`: a stop apply holds its
+  [claim](#retire-one-at-a-time). From 0.53.0 the marker outlasts a
+  completion that did not complete only when a retire hook was started or
+  the removal of the home began
+  ([a completion that does not complete](souls-and-instances.md#self-retire-not-completed)).
+  `stopPending`: a stop apply holds its
   claim. A holder counts while it is not known to be gone: alive, or of a
   liveness that cannot be read. `retiring` is one of the facts
   `planRevision` is hashed from, as it was; `stopPending` is not. The
@@ -3637,7 +3674,12 @@ nothing, and the command already on the home is not disturbed.
   they hold the claim, so beside a holder the answer is the cell above
   whatever the plan would read by then.
 - **A scheduled self-retire holds no claim** until its completion runs: it
-  is its pending marker. A retire reads the marker under the claim, while
+  is its pending marker. The row lasts as long as the marker does: until
+  the completion has retired the home, or, from 0.53.0, until a completion
+  that did not complete has removed it, which it does unless it started a
+  retire hook or began the removal of the home
+  ([a completion that does not complete](souls-and-instances.md#self-retire-not-completed)).
+  A retire reads the marker under the claim, while
   the completion lives (`E_LIFECYCLE_BUSY`, [below](#retire-one-at-a-time)).
   A stop apply reads it in the plan it makes under its claims: a plan that
   showed `retiring: true` is answered `E_INSTANCE_RETIRING`, and an apply
@@ -4488,7 +4530,13 @@ to 3 s for the retire that scheduled it to release the claim, then takes it
 as any retire does; one that meets another retire still running is refused,
 and records that at `resultPath` like any failed completion. The `error`
 recorded there has the code and the message the same failure has as an
-envelope: a kernel code, and what the retire had done by then.
+envelope: a kernel code, and what the retire had done by then. From 0.53.0
+a completion that does not complete also writes one
+[`retire-refused` event](#retire-refused-event), and removes its pending
+marker unless it started a retire hook or began the removal of the home.
+It removes only the marker of its own scheduling: the same `requestedAt`,
+and a `completionPid` that is absent, its own, or of a process that is
+gone.
 
 A `--self` that cannot finish scheduling (the completion's log cannot be
 opened, no process is created, the marker cannot be written) answers
