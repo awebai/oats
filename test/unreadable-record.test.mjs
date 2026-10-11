@@ -135,6 +135,31 @@ function refusal(r, what) {
   assert.equal(envelope.ok, false);
   return envelope.error;
 }
+/** How many times appliedByProtocol plans and applies before it gives up. A session the kernel has
+ *  just started changes state at most three times on its way (the tmux server's child, the
+ *  launcher's shell, the harness, and the shell again once the fixture's harness has exited), and
+ *  one change makes at most one apply stale: four rounds, and one more. */
+const APPLY_ROUNDS = 5;
+/** Apply a plan as a client does: plan, apply, and when the apply answers E_PLAN_STALE, plan again
+ *  and apply again. A session that was just started is still on its way, and no state a plan reads
+ *  of it means "will not change again": a plan applied at once may be stale by then, the kernel is
+ *  right to say so, and its answer is what to do next. So the test does that, and does not wait for
+ *  a state. The bound is a number of rounds, not a time: it follows from what the session can do,
+ *  whatever the speed of the host. `plan()` reads a plan, asserts what the test asserts of it and
+ *  gives its revision; `apply(revision)` is the CLI run, with the same idempotency key every round
+ *  (a stale apply stores nothing under its key). Any other refusal fails at once, and so does a
+ *  stale answer in every round, with that last answer. → the run that was answered. */
+function appliedByProtocol(what, plan, apply) {
+  let run;
+  for (let round = 1; round <= APPLY_ROUNDS; round++) {
+    run = apply(plan());
+    let code;
+    try { code = run.json().error?.code; } catch { /* no envelope: answered() says what there is */ }
+    if (run.status === 0 || code !== "E_PLAN_STALE") return answered(run, what);
+    assert.equal(hasStack(run.stderr), false, `${what}: no stack: ${run.stderr}`);
+  }
+  assert.fail(`${what}: the plan was stale at each of ${APPLY_ROUNDS} applies, each of a plan read just before it; the last answer\nstdout: ${run.stdout}\nstderr: ${run.stderr}`);
+}
 /** What every lifecycle verb answers for a home whose record at `record` cannot be read for `reason`. */
 const refused = (record, reason, nothing = "nothing was done") => `${record} cannot be read (${reason}); ${nothing}. Restoring the file from a copy makes the home usable again; removing such a home through OATS is not possible yet.`;
 
@@ -196,8 +221,9 @@ for (const shape of SHAPES.filter((s) => !s.edge)) {
       const started = answered(fx.cli(["session", "start", "--home", d.homes.good, "--json"]), "session start of the other instance").json();
       assert.equal(started.ok, true);
       assert.equal(d.rows().good.running, true, "status reads the started session, beside the unreadable record");
-      const plan = answered(fx.cli(["instance", "stop", "good", "--plan", "--json"]), "stop --plan of the started instance").json();
-      const again = answered(fx.cli(["instance", "stop", "good", "--apply", "--plan-revision", plan.result.planRevision, "--idempotency-key", "k2", "--json"]), "stop --apply of the started instance").json();
+      const again = appliedByProtocol("stop --apply of the started instance",
+        () => answered(fx.cli(["instance", "stop", "good", "--plan", "--json"]), "stop --plan of the started instance").json().result.planRevision,
+        (revision) => fx.cli(["instance", "stop", "good", "--apply", "--plan-revision", revision, "--idempotency-key", "k2", "--json"])).json();
       assert.equal(again.result.ok, true);
     }
 
@@ -205,11 +231,14 @@ for (const shape of SHAPES.filter((s) => !s.edge)) {
     assert.equal(spawned.result.instance, "new-one");
     assert.ok(existsSync(join(d.instances, "new-one", "instance.json")));
 
-    const retirePlan = answered(fx.cli(["retire", "good", "--plan", "--json"]), "retire --plan of the other instance").json();
-    assert.equal(retirePlan.result.action, "retire");
-    assert.deepEqual(retirePlan.result.facts.children, []);
-    // A guarded retire (the Desktop's): the plan revision and an idempotency key.
-    const retired = answered(fx.cli(["retire", "good", "--plan-revision", retirePlan.result.planRevision, "--idempotency-key", "r1", "--json"]), "retire of the other instance");
+    // A guarded retire (the Desktop's): the plan revision and an idempotency key. Its plan reads the
+    // session that was started above, which may still be on its way after the stop.
+    const retired = appliedByProtocol("retire of the other instance", () => {
+      const retirePlan = answered(fx.cli(["retire", "good", "--plan", "--json"]), "retire --plan of the other instance").json();
+      assert.equal(retirePlan.result.action, "retire");
+      assert.deepEqual(retirePlan.result.facts.children, []);
+      return retirePlan.result.planRevision;
+    }, (revision) => fx.cli(["retire", "good", "--plan-revision", revision, "--idempotency-key", "r1", "--json"]));
     assert.equal(JSON.parse(retired.stdout).retired, "good");
     assert.equal(existsSync(d.homes.good), false, "the other instance is retired");
     assert.deepEqual(d.hookRuns(), ["good"], "its retire hook ran, and no other");
@@ -446,6 +475,7 @@ test("a spawn whose parent's record cannot be read is refused and spawns nothing
   const { record, reason } = breakRecord(d.homes.bad, SHAPES[2]);
   const before = listing(d.homes.bad);
   const error = refusal(d.fx.cli(["spawn", "dev", "--name", "kid", "--parent", "bad", "--no-launch", "--json"]), "spawn of a child");
+  assert.equal(error.code, "E_SPAWN_FAILED");
   assert.equal(error.message, refused(record, reason, "nothing was spawned"));
   assert.equal(existsSync(join(d.instances, "kid")), false);
   assert.deepEqual(listing(d.homes.bad), before);
