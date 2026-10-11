@@ -143,7 +143,7 @@ test("a failure Desktop raises itself never carries a detail, whatever the envel
     return { applied: await f.apply((await f.plan()).planRef), planned: await fixture({ invoke: async () => answer }).plan() };
   };
   for (const code of ['E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN', 'E_PLAN_EXPIRED', 'E_PLAN_CHANGED', 'E_PLAN_LIMIT',
-    'E_PLAN_REQUIRED', 'E_OPTION_UNAVAILABLE', 'E_LIFECYCLE_UNAVAILABLE', 'E_FORBIDDEN_FRAME', 'E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'unsupported-remote-operation']) {
+    'E_PLAN_REQUIRED', 'E_OPTION_UNAVAILABLE', 'E_LIFECYCLE_UNAVAILABLE', 'E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'unsupported-remote-operation']) {
     assert.equal(lifecycleDetailCode(code), false, code);
     const { applied, planned } = await outcomes(code);
     assert.equal(applied.status, 'unknown', code); assert.deepEqual(applied.cause, lifecycleReason(code), code);
@@ -151,11 +151,12 @@ test("a failure Desktop raises itself never carries a detail, whatever the envel
     assert.doesNotMatch(JSON.stringify([applied, planned]), /TEXT FROM/, code);
   }
   // A code Desktop has no sentence for (#603), in an envelope that does not say the kernel answered: the fixed reply, and no text.
-  for (const origin of [undefined, 'adapter', true]) {
-    const { applied, planned } = await outcomes('E_NOT_IN_THE_TABLE', origin);
-    assert.equal(lifecycleDetailCode('E_NOT_IN_THE_TABLE'), false);
-    assert.deepEqual(applied.cause, lifecycleReason('E_CLI_FAILED'), String(origin)); assert.deepEqual(planned.reason, lifecycleReason('E_CLI_FAILED'), String(origin));
-    assert.doesNotMatch(JSON.stringify([applied, planned]), /TEXT FROM|E_NOT_IN_THE_TABLE/);
+  // E_FORBIDDEN_FRAME is one here: only main's frame guard raises it (renderer/lifecycle-frame.mjs), so the shared table does not know it.
+  for (const code of ['E_NOT_IN_THE_TABLE', 'E_FORBIDDEN_FRAME']) for (const origin of [undefined, 'adapter', true]) {
+    const { applied, planned } = await outcomes(code, origin);
+    assert.equal(lifecycleDetailCode(code), false, code); assert.equal(lifecycleReason(code).code, 'E_CLI_FAILED', code);
+    assert.deepEqual(applied.cause, lifecycleReason('E_CLI_FAILED'), `${code} ${origin}`); assert.deepEqual(planned.reason, lifecycleReason('E_CLI_FAILED'), `${code} ${origin}`);
+    assert.doesNotMatch(JSON.stringify([applied, planned]), new RegExp(`TEXT FROM|${code}|This window`), code);
   }
   // The codes the kernel raises and Desktop has a sentence for.
   for (const code of ['E_BAD_ARGS', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_HOME_MISMATCH', 'E_PLAN_STALE', 'E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING',

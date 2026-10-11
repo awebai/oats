@@ -2,6 +2,7 @@ import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowKind, stoppedRowText,
   stopResultWords, childrenRefusedMessage, busyRefusal, undescribedRefusal, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
+import { LIFECYCLE_FORBIDDEN_FRAME } from './lifecycle-frame.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { codeLineNodes, readingFrom, remoteReason, serverLabel } from '../../client/remote-address.mjs';
@@ -154,7 +155,8 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     more.append(node('summary', 'Details'), line);
     parent.append(more);
   }
-  /** A refusal: a remote host's headline, else the fixed sentence for the code; the code and the kernel's
+  /** A refusal: a remote host's headline, else the fixed sentence for the code (main's frame refusal is the
+   * Desktop's own, lifecycle-frame.mjs; every other code is the shared table's); the code and the kernel's
    * message in Details when there is one to show. */
   function refusal(reason, snapshot = null) {
     // The kernel's busy answer, read by who holds the claim: the headline, the target it is about when that
@@ -174,7 +176,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     if (!remote && shownReason && reason.code === 'E_LIFECYCLE_BUSY' && retire() && leftover) {
       say(LEFTOVER_BUSY); const p = node('p'); p.append(node('bdi', shownReason.detail)); ui.result.append(p); return;
     }
-    say(remote ? remote.message : undescribed ? undescribed.message : lifecycleReason(reason?.code).message);
+    say(remote ? remote.message : undescribed ? undescribed.message : (reason?.code === LIFECYCLE_FORBIDDEN_FRAME.code ? LIFECYCLE_FORBIDDEN_FRAME : lifecycleReason(reason?.code)).message);
     if (shownReason) details(ui.result, shownReason, !!undescribed);
   }
   /** One line of a list, with an optional path as a muted, selectable second line. */

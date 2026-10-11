@@ -1,6 +1,7 @@
 // An answer the kernel gave never reads as "OATS couldn't be run for this." (#866): a kernel code without a
 // sentence keeps its own code under the fallback sentence, E_RUNTIME_QUIESCE_FAILED has its own, and a code
-// Desktop raises itself always has its own and never reaches the fallback.
+// Desktop raises itself always has its own and never reaches the fallback. Its own is the shared table's, but
+// for main's frame code, whose sentence is the Desktop's alone (renderer/lifecycle-frame.mjs).
 // Every kernel message in a fixture is a stand-in: nothing here reads one.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,6 +11,7 @@ import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
 import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../server/instance-lifecycle.mjs';
 import { lifecycleReason, lifecycleDetailCode, undescribedAnswer, undescribedRefusal, stoppedTargets } from '../../client/lifecycle-contract.mjs';
 import { cliLifecycle } from '../../client/lifecycle-cli.mjs';
+import { LIFECYCLE_FORBIDDEN_FRAME, lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
 import { remoteReason } from '../../client/remote-address.mjs';
 import { cli, context, envelope, instance, stopPlan, retirePlan, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
@@ -129,6 +131,9 @@ const raisedIn = (path, names, ...more) => {
   const call = new RegExp(`\\b(?:${names})\\((?:[^'(),]*\\? )?'([^']+)'(?: : '([^']+)')?`, 'g');
   return [...new Set([call, ...more].flatMap(re => [...source.matchAll(re)].flatMap(m => m.slice(1).filter(Boolean))))].sort();
 };
+/** main's frame guard answers through `lifecycleFrameRefusal()`, which names no code where main calls it: the
+ * code it raises is the one lifecycle-frame.mjs holds. */
+const frameRaisedIn = path => /\blifecycleFrameRefusal\(\)/.test(readFileSync(new URL(path, import.meta.url), 'utf8')) ? [LIFECYCLE_FORBIDDEN_FRAME.code] : [];
 const RAISED = {
   adapter: ['E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT'],
   boundary: ['E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_LIFECYCLE_BUSY', 'E_LIFECYCLE_UNAVAILABLE', 'E_OPTION_UNAVAILABLE', 'E_OUTCOME_UNKNOWN', 'E_PLAN_CHANGED', 'E_PLAN_EXPIRED', 'E_WORKSPACE_UNKNOWN'],
@@ -141,11 +146,21 @@ const RAISED = {
 test('every code Desktop raises itself (the adapter, the boundary, admission, main) has its own sentence; reading the sources finds no other', () => {
   assert.deepEqual(raisedIn('../../client/lifecycle-cli.mjs', 'failure'), RAISED.adapter);
   assert.deepEqual(raisedIn('../server/instance-lifecycle.mjs', 'denied|failure|lifecycleReason', /error: \{ code: '([^']+)' \}/g, /\|\| '([^']+)'/g), RAISED.boundary);
-  assert.deepEqual(raisedIn('../main.mjs', 'failure'), RAISED.main);
+  assert.deepEqual([...raisedIn('../main.mjs', 'failure'), ...frameRaisedIn('../main.mjs')].sort(), RAISED.main);
+  for (const path of ['../../client/lifecycle-cli.mjs', '../server/instance-lifecycle.mjs', '../../client/instance-admission.mjs']) assert.deepEqual(frameRaisedIn(path), [], path);
   assert.deepEqual(raisedIn('../../client/instance-admission.mjs', 'denied'), RAISED.admission);
   for (const code of new Set(Object.values(RAISED).flat())) {
     // A remote row that is not addressable is refused by admission with its own sentence, which names the server.
     if (code === 'E_SNAPSHOT_UNKNOWN') continue;
+    // main's frame code: its own sentence is the Desktop's, held in lifecycle-frame.mjs and not in the shared
+    // table. The answer main sends carries that code and that sentence, and never reads by the fallback.
+    if (code === 'E_FORBIDDEN_FRAME') {
+      assert.deepEqual(LIFECYCLE_FORBIDDEN_FRAME, { code, message: 'This window cannot request a lifecycle operation.' });
+      const { reason } = lifecycleFrameRefusal();
+      assert.deepEqual(reason, LIFECYCLE_FORBIDDEN_FRAME); assert.notEqual(reason.message, UNDESCRIBED); assert.notEqual(reason.message, NOT_RUN);
+      assert.equal(undescribedRefusal(reason), null, `${code} never reads by the fallback`); assert.equal(lifecycleDetailCode(code), false);
+      continue;
+    }
     assert.deepEqual(Object.keys(lifecycleReason(code)), ['code', 'message']); assert.equal(lifecycleReason(code).code, code, `${code} has its own sentence`);
     assert.notEqual(lifecycleReason(code).message, UNDESCRIBED); if (code !== 'E_CLI_FAILED') assert.notEqual(lifecycleReason(code).message, NOT_RUN, code);
     assert.equal(undescribedAnswer(code), null, `${code} never reads by the fallback`);
@@ -154,7 +169,8 @@ test('every code Desktop raises itself (the adapter, the boundary, admission, ma
 
 test('none of those codes reaches the fallback, whatever came with it: not even in an envelope that says the kernel answered', async () => {
   for (const code of new Set(Object.values(RAISED).flat())) {
-    if (['E_SNAPSHOT_UNKNOWN', 'E_PLAN_REQUIRED'].includes(code)) continue;
+    // main's frame code is not the boundary's to read: main answers it without asking the boundary. See below.
+    if (['E_SNAPSHOT_UNKNOWN', 'E_PLAN_REQUIRED', 'E_FORBIDDEN_FRAME'].includes(code)) continue;
     for (const ctx of [context, routedContext]) {
       const { applied } = await replies(ctx(), 'stop', { answer: answered(code) }), { planned } = await replies(ctx(), 'stop', { planAnswer: answered(code) });
       for (const reason of [applied.reason, applied.cause, planned.reason].filter(Boolean)) assert.notEqual(reason.message, UNDESCRIBED, code);
@@ -169,6 +185,12 @@ test('none of those codes reaches the fallback, whatever came with it: not even 
   const thrown = createLifecycleBoundary({ invoke: async () => { throw new Error('PRIVATE'); } }), c = context();
   assert.deepEqual((await thrown({ action: 'plan', operation: 'stop', selector: selectorOf(c), options: optionsOf('stop') }, () => c)).reason, { code: 'E_CLI_FAILED', message: NOT_RUN });
   assert.deepEqual((await replies(context(), 'stop', { planAnswer: 'not an envelope' })).planned.reason, lifecycleReason('E_CLI_PROTOCOL'));
+  // The frame code reaches the boundary only if a kernel answers it, and none does. To the shared table it is
+  // then a kernel code without a sentence, like any other: never main's sentence for an answer main did not give.
+  const frame = { ...await replies(context(), 'stop', { planAnswer: answered('E_FORBIDDEN_FRAME') }), applied: (await replies(context(), 'stop', { answer: answered('E_FORBIDDEN_FRAME') })).applied };
+  assert.deepEqual(frame.planned.reason, { code: 'E_FORBIDDEN_FRAME', message: UNDESCRIBED, detail: SAID });
+  assert.equal(frame.applied.reason.code, 'E_OUTCOME_UNKNOWN'); assert.deepEqual(frame.applied.cause, { code: 'E_FORBIDDEN_FRAME', message: UNDESCRIBED, detail: SAID });
+  assert.equal(JSON.stringify(frame).includes(LIFECYCLE_FORBIDDEN_FRAME.message), false);
 });
 
 test("a failed row's code still goes through lifecycleReason: a code without a sentence in a row is unchanged by the fallback", () => {

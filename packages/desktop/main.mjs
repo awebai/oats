@@ -24,6 +24,7 @@ import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
 import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
 import { forgeFailure } from "./renderer/forge-contract.mjs";
 import { lifecycleFailure } from '../client/lifecycle-contract.mjs';
+import { lifecycleFrameRefusal } from './renderer/lifecycle-frame.mjs';
 import { sweepViewers } from "./tmux-target.mjs";
 import { tmuxSocketArgs } from "./local-tmux-io.mjs";
 import { createTerminalOwnerBroker, installTerminalHandlers } from './terminal-owner.mjs';
@@ -520,8 +521,9 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   const lifecycle = route === 'lifecycle';
   const forgeRequest = lifecycle || route === 'forge';
   const failure = lifecycle ? lifecycleFailure : forgeFailure;
+  const forbidden = () => (lifecycle ? lifecycleFrameRefusal() : forgeFailure('E_FORBIDDEN_FRAME'));
   const mutation = lifecycle && (() => { try { return (typeof opts?.body === 'string' ? JSON.parse(opts.body) : opts?.body)?.action === 'apply'; } catch { return false; } })();
-  if (forgeRequest && !trustedForgeFrame(e, RENDERER_URL)) return { ok: false, status: 403, body: failure('E_FORBIDDEN_FRAME') };
+  if (forgeRequest && !trustedForgeFrame(e, RENDERER_URL)) return { ok: false, status: 403, body: forbidden() };
   const forgeFrame = forgeRequest ? e.senderFrame : null;
   const ownsForgeFrame = () => trustedForgeFrame(e, RENDERER_URL) && e.sender.mainFrame === forgeFrame;
   try {
@@ -552,7 +554,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   const init = { ...(forge?.init ?? apiInit(opts)), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();
-  if ((forge || lifecycle) && !ownsForgeFrame()) return { ok: false, status: 403, body: failure('E_FORBIDDEN_FRAME') };
+  if ((forge || lifecycle) && !ownsForgeFrame()) return { ok: false, status: 403, body: forbidden() };
   let json; try { json = JSON.parse(text); } catch { json = lifecycle ? failure(mutation ? 'E_OUTCOME_UNKNOWN' : 'E_CLI_PROTOCOL', { status: mutation ? 'unknown' : 'unavailable' })
     : forge ? forgeFailure('E_GH_PROTOCOL') : { raw: text }; }
   if ((forge || lifecycle) && (epoch !== serverEpoch || serverHost.inTransition()
@@ -568,7 +570,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   } catch (error) {
     if (forgeRequest) return ownsForgeFrame() ? { ok: false, status: 503, body: lifecycle
       ? failure(mutation ? 'E_OUTCOME_UNKNOWN' : 'E_CLI_FAILED', { status: mutation ? 'unknown' : 'unavailable' }) : forgeFailure('E_GH_FAILED') }
-      : { ok: false, status: 403, body: failure('E_FORBIDDEN_FRAME') };
+      : { ok: false, status: 403, body: forbidden() };
     throw error;
   }
 });

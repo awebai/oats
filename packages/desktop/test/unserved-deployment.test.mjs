@@ -19,6 +19,7 @@ import { apiUrl, apiInit, classifyApiRoute, unservedWorkspace, createUnservedRef
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../../client/lifecycle-contract.mjs';
+import { lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
 import {
   workspaceNotServed, unservedText, unservedError, createPendingWatch, PENDING_LIMIT_MS, NOT_SERVED_CODE, NO_ANSWER_CODE,
 } from '../renderer/deployment-header.mjs';
@@ -179,7 +180,7 @@ test('the shipped api handler answers a known unserved deployment with 404 E_WOR
   const fetched = []; let handler;
   const allowedWs = new Set(['/d/Agents/aweb']);
   const context = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, servedSelectors, classifyApiRoute, forgeProxyOptions, trustedForgeFrame,
-    FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, RENDERER_URL: renderer, serverEpoch: 0, currentForgeEpoch: () => 'main:0',
+    FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, lifecycleFrameRefusal, RENDERER_URL: renderer, serverEpoch: 0, currentForgeEpoch: () => 'main:0',
     unservedRefusal: createUnservedRefusal({ base: () => base, state: () => ({ allowedWs, known }), body: workspaceNotServed }),
     serverHost: { inTransition: () => false }, base: () => base, wsId: '/d/Agents/aweb', allowedWs, guard: () => {}, AbortSignal: { timeout: ms => ({ ms }) },
     fetch: async url => { fetched.push(String(url)); return { ok: true, status: 200, text: async () => JSON.stringify({ workspace: { id: '/d/Agents/aweb' }, workspaces: [{ id: '/d/Agents/aweb' }] }) }; } };

@@ -41,7 +41,6 @@ const messages = {
   E_CLI_TIMEOUT: "OATS didn't answer in time.", E_CLI_OUTPUT_LIMIT: "OATS's answer was larger than Desktop reads safely.",
   E_CLI_PROTOCOL: "OATS answered in a form Desktop can't read.", E_CLI_FAILED: "OATS couldn't be run for this.",
   E_OUTCOME_UNKNOWN: "OATS didn't confirm the result. Check again before assuming nothing happened.",
-  E_FORBIDDEN_FRAME: 'This window cannot request a lifecycle operation.',
 };
 export const lifecycleReason = code => ({ code: Object.hasOwn(messages, code) ? code : 'E_CLI_FAILED', message: messages[code] || messages.E_CLI_FAILED });
 /** A kernel's error answer whose code has no sentence here. It says "OATS answered", so it is chosen only
@@ -65,7 +64,7 @@ export function undescribedRefusal(reason) {
  * one. A new entry of `messages` that the kernel does not raise is listed here too. */
 const desktopCodes = new Set(['E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'E_LIFECYCLE_UNAVAILABLE', 'unsupported-remote-operation',
   'E_PLAN_REQUIRED', 'E_PLAN_EXPIRED', 'E_PLAN_CHANGED', 'E_OPTION_UNAVAILABLE', 'E_PLAN_LIMIT',
-  'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN', 'E_FORBIDDEN_FRAME']);
+  'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN']);
 /** A code whose local failure may show the CLI's own message as a detail beside the fixed sentence: the
  * code has its own sentence and the kernel raises it. Never one of Desktop's own, whatever came with it;
  * a code without a sentence shows no CLI text either. */

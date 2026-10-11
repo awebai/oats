@@ -262,7 +262,8 @@ status; it does not cancel the dispatched operation or signal its process.
   code Desktop raises itself has its own sentence and never reaches the
   fallback; `test/lifecycle-kernel-answers.test.mjs` reads the adapter, the
   boundary, admission and main for the codes they raise and holds each to the
-  table. It changes no status: `refused` and `unknown` are decided by
+  table (main's frame code to its sentence in `renderer/lifecycle-frame.mjs`).
+  It changes no status: `refused` and `unknown` are decided by
   `BEFORE_EFFECT_CODES` (exported by `server/instance-lifecycle.mjs`, so that
   the kernel's tests can hold it inside the kernel's own list of codes
   answered only before any effect). "Before any effect" and the headlines'
@@ -375,7 +376,11 @@ its reason in the visible status line (`aria-describedby`).
   fixed sentences live in `packages/client/lifecycle-contract.mjs`, with the
   functions that choose a sentence from an answer's data (a row's kind and
   line, the sentence above a stop's rows, a refused retire's sentence, a busy
-  answer's headline). The dialog lays them out and words none of them.
+  answer's headline). The dialog lays them out and words none of them. One
+  sentence is not there: main's refusal of a frame that is not the window's
+  own page (`E_FORBIDDEN_FRAME`) is raised by the Desktop alone, and its
+  sentence and the answer main sends are in `renderer/lifecycle-frame.mjs`.
+  The shared table does not know that code.
 
 Modal lifetime, workspace generation, target and request/operation tickets guard
 success, rejection and cleanup. Old controls cannot close or confirm a new

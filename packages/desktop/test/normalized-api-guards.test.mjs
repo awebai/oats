@@ -10,6 +10,7 @@ import { apiUrl, apiInit, classifyApiRoute, servedSelectors } from '../api-url.m
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../../client/lifecycle-contract.mjs';
+import { lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
 import { proxyReadiness } from '../readiness-proxy.mjs';
 import { view as readinessView } from './helpers/readiness-fixture.mjs';
 const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
@@ -38,7 +39,7 @@ function fixture({ classify = classifyApiRoute, fetch } = {}) {
     return { ok: true, status: 200, text: async () => JSON.stringify(body) };
   };
   const context = { ipcMain: { handle: (_channel, fn) => handler = fn }, apiUrl, apiInit, servedSelectors, classifyApiRoute: classify, forgeProxyOptions,
-    trustedForgeFrame, FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure,
+    trustedForgeFrame, FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, lifecycleFrameRefusal,
     proxyReadiness: (event, path, opts, deps) => proxyReadiness(event, path, opts, { ...deps, fetch: fakeFetch }),
     RENDERER_URL: renderer, serverEpoch: 0, forgeEpoch: 'fixture:0', inTransition: false,
     unservedRefusal: () => null, serverHost: { inTransition: () => context.inTransition }, currentForgeEpoch: () => context.forgeEpoch,

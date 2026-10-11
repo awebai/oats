@@ -12,6 +12,7 @@ import { workspaceHash } from '../../renderer/window-binding.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../../forge-proxy.mjs';
 import { forgeFailure } from '../../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../../../client/lifecycle-contract.mjs';
+import { lifecycleFrameRefusal } from '../../renderer/lifecycle-frame.mjs';
 
 export const RENDERER = 'file:///fixture/renderer/index.html';
 
@@ -29,7 +30,7 @@ export function shippedMainApi({ window: bound, chooser = false, base = 'http://
   const sendingWindow = {};
   const context = withWindowGlobals({
     ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, classifyApiRoute, servedSelectors, forgeProxyOptions, trustedForgeFrame,
-    FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, RENDERER_URL: RENDERER, serverEpoch: 0, unservedRefusal: () => null,
+    FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, lifecycleFrameRefusal, RENDERER_URL: RENDERER, serverEpoch: 0, unservedRefusal: () => null,
     serverHost: { inTransition: () => false }, currentForgeEpoch: () => 'fixture:0', base: () => base, wsId, allowedWs: advertised, servedList: served,
     // The re-read of the advertised set (main's panelWorkspaces): `reread` is what the server advertises now.
     panelWorkspaces: async () => { calls.rereads++; if (reread) context.allowedWs = reread; return context.servedList; },

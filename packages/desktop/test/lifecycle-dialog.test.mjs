@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
 import { lifecycleReceipt, lifecycleReason } from '../../client/lifecycle-contract.mjs';
+import { LIFECYCLE_FORBIDDEN_FRAME, lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { pr as rawPr } from './helpers/forge-fixture.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
@@ -657,6 +658,25 @@ test('a plan read that fails leaves no skeleton: a result with the reason and Re
     fail = false; f.button('lifecycle-review').click(); await tick(); assert.deepEqual(footer(f), ['Cancel', 'Retire instance']);
   } finally { f.close(); }
 });
+test("main's frame refusal: the plan shows the Desktop's own sentence, the apply the unknown outcome; the shared table does not know the code", async () => {
+  // What main answers a refused frame with (renderer/lifecycle-frame.mjs), as the dialog receives it.
+  const refused = lifecycleFrameRefusal();
+  assert.deepEqual(refused, { lifecycleApi: 1, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null,
+    reason: { code: 'E_FORBIDDEN_FRAME', message: 'This window cannot request a lifecycle operation.' } });
+  assert.equal(Object.isFrozen(LIFECYCLE_FORBIDDEN_FRAME), true); assert.notEqual(refused.reason, LIFECYCLE_FORBIDDEN_FRAME, 'each answer has its own reason object');
+  assert.equal(lifecycleReason('E_FORBIDDEN_FRAME').code, 'E_CLI_FAILED', 'not a code of the shared table');
+  const onPlan = fixture({ request: () => lifecycleFrameRefusal() });
+  try {
+    onPlan.open('retire'); await tick();
+    assert.equal(onPlan.status(), 'This window cannot request a lifecycle operation.');
+    assert.equal(onPlan.doc.querySelector('.lifecycle-details'), null, 'no Details: the code is the Desktop\'s own');
+  } finally { onPlan.close(); }
+  const onApply = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire') : lifecycleFrameRefusal() });
+  try {
+    onApply.open('retire'); await tick(); onApply.button('lifecycle-confirm').click(); await tick();
+    assert.equal(onApply.status(), lifecycleReason('E_OUTCOME_UNKNOWN').message);
+  } finally { onApply.close(); }
+});
 test('Check again in review keeps the facts on screen, says why confirm waits, and revokes the ref on screen', async () => {
   const gate = deferred(); let n = 0;
   const f = fixture({ request: (_ws, body) => body.action === 'apply' ? assert.fail('no apply') : ++n === 1 ? planned('retire') : gate.promise });
@@ -672,11 +692,13 @@ test('no user-visible "Remove" for retirement, in any phase or in the contract m
   const codes = ['E_BAD_ARGS', 'E_WORKSPACE_UNKNOWN', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_HOME_MISMATCH', 'cli-unavailable', 'E_LIFECYCLE_UNAVAILABLE',
     'unsupported-remote-operation', 'E_PLAN_REQUIRED', 'E_PLAN_EXPIRED', 'E_PLAN_CHANGED', 'E_OPTION_UNAVAILABLE', 'E_PLAN_STALE', 'E_PLAN_LIMIT', 'E_LIFECYCLE_BUSY',
     'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING', 'E_SESSION_STOP_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_WORK_INSPECTION_FAILED', 'E_RETIRE_INCOMPLETE', 'E_RUNTIME_QUIESCE_FAILED',
-    'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN', 'E_FORBIDDEN_FRAME'];
+    'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_FAILED', 'E_OUTCOME_UNKNOWN'];
   for (const code of codes) {
     assert.equal(lifecycleReason(code).code, code, `${code} has its own sentence`);
     assert.doesNotMatch(lifecycleReason(code).message, /\bRemove\b|kernel|Observe a fresh plan/, code);
   }
+  // The frame guard's sentence is the Desktop's own (renderer/lifecycle-frame.mjs), not the shared table's.
+  assert.doesNotMatch(LIFECYCLE_FORBIDDEN_FRAME.message, /\bRemove\b|kernel|Observe a fresh plan/);
   const gate = deferred(), f = fixture({ request: (_ws, body) => body.action === 'plan' ? planned('retire') : gate.promise });
   try {
     f.open('retire'); assert.doesNotMatch(told(f.doc), /\bRemove\b/, 'loading'); await tick(); assert.doesNotMatch(told(f.doc), /\bRemove\b/, 'review');
