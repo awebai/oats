@@ -1800,9 +1800,8 @@ The home's `instance.json` `launchPrompts` always describes the last start
 - otherwise the observed result `{status, answers, reason, receipt}`, `status`
   one of `completed`, `blocked`, `incomplete`. After the Enter, no complete
   clean `SETTLE` window within the 30 s bound is `status: "blocked"` with
-  `reason: "blocked: observation timeout"` and the submitted Enter in `answers`
-  (before 0.52 it was `incomplete` with `launch prompt completion not
-  observed`); `incomplete` now means an audit, input or evidence failure. A
+  `reason: "blocked: observation timeout"` and the submitted Enter in `answers`;
+  `incomplete` means an audit, input or evidence failure. A
   `blocked` result also carries
   `differed: {nearest, firstDifference: {index, expected, found}}` (the nearest
   tolerance entry and at most 40 characters of each normalized text at the first
