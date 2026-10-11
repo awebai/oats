@@ -409,7 +409,7 @@ test("the kernel's error envelope becomes the shared failedEntry over the entry 
   // A remote the kernel could not read, over an observed entry: the rows stay, marked with the failure.
   world.plan({ ...good, status: kernelError("E_REMOTE_UNREADABLE", "could not read the workspace remote", { reason: "network", url: "https://git.example.com/team/agents.git", path: "/private/cache" }) });
   await reader.request({ live: true });
-  const unreadable = { code: "E_REMOTE_UNREADABLE", message: "could not read the workspace remote", cause: { reason: "network", host: "git.example.com" } };
+  const unreadable = { code: "E_REMOTE_UNREADABLE", message: "could not read the workspace remote", origin: "kernel", cause: { reason: "network", host: "git.example.com" } };
   assert.deepEqual(entries[1], { entry: failedEntry(observed, unreadable, at(2)), number: 2 });
   assert.deepEqual([entries[1].entry.deployment.status, entries[1].entry.error, entries[1].entry.errorCause], ["observed", unreadable.message, { code: unreadable.code, ...unreadable.cause }]);
   assert.deepEqual(entries[1].entry.instances, observed.instances);
@@ -419,14 +419,14 @@ test("the kernel's error envelope becomes the shared failedEntry over the entry 
   world.plan({ ...good, status: kernelError("E_LOCK_HELD", "another oats command holds the lock") });
   const held = store.entry;
   await reader.request();
-  const refused = { code: "E_LOCK_HELD", message: "another oats command holds the lock" };
+  const refused = { code: "E_LOCK_HELD", message: "another oats command holds the lock", origin: "kernel" };
   assert.deepEqual(entries[2], { entry: failedEntry(held, refused, at(3)), number: 3 });
   assert.deepEqual(entries[2].entry, { deployment: { status: "unavailable", reason: refused }, instances: [], generatedAt: at(3) });
 
   // With no observation to keep, an unreadable remote is unavailable too. And a kernel that prints no envelope.
   world.plan({ ...good, workspace: kernelError("E_REMOTE_UNREADABLE", "could not read the workspace remote") });
   await reader.request();
-  assert.deepEqual(entries[3].entry.deployment, { status: "unavailable", reason: { code: "E_REMOTE_UNREADABLE", message: "could not read the workspace remote" } });
+  assert.deepEqual(entries[3].entry.deployment, { status: "unavailable", reason: { code: "E_REMOTE_UNREADABLE", message: "could not read the workspace remote", origin: "kernel" } });
   world.plan({ ...good, status: { stdout: "Error: something broke", stderr: STDERR, exit: 1 } });
   await reader.request();
   assert.deepEqual([entries[4].entry.deployment.status, entries[4].entry.deployment.reason.code], ["unavailable", "E_CLI_FAILED"]);

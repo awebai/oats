@@ -195,6 +195,17 @@ function over what its caller holds:
   admission). A decision is made there and drawn here: `instanceActs` returns
   verbs and reasons, never a label, an icon or a key, and
   `renderer/instance-actions.mjs` builds the menu from them.
+- **Whose words a deployment's failure carries.** A deployment that is not
+  observed says why in one sentence, `deploymentUnavailableText`
+  (`deployment-facts.mjs`). A reason the reader marked `origin: 'kernel'`
+  (`deployment-read-cli.mjs`: the error the installed CLI printed) reads "OATS
+  answered with an error (<code>). It says: <message>", with the kernel's
+  message through the display filter; a failure the reader made itself reads
+  `<code>: <message>`, its own fixed sentence. `deploymentUnavailableParts`
+  answers the same as `{ headline, lead, sentence }`, where `sentence` is the
+  only part that can carry words the client did not write. A client that
+  shows one line calls the first; one that sets the kernel's words apart (a
+  quote, another style) calls the second. The Desktop's views call the first.
 - **Whose words a sentence uses.** The home also holds the sentence shown for
   a code, one explanation for every client. Where a sentence names the client
   that shows it ("this Desktop", "Update OATS Desktop") or the machine it

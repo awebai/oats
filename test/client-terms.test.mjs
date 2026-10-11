@@ -15,7 +15,7 @@ import { capabilityShowUnreadable } from "../packages/client/capability-show-con
 import { deploymentReasonParts, deploymentReason } from "../packages/client/workspace-views.mjs";
 import { deploymentLabelParts, deploymentLabel, machineLabels, machineLabelParts } from "../packages/client/deployment-label.mjs";
 import { rosterSections } from "../packages/client/roster-sections.mjs";
-import { deploymentUnavailableText } from "../packages/client/deployment-facts.mjs";
+import { deploymentUnavailableText, deploymentUnavailableParts } from "../packages/client/deployment-facts.mjs";
 import { deploymentInfo, viewModel, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, isServed, teamMembersFor, machineScope, panelData,
   workspaceChoices } from "../packages/client/panel-views.mjs";
 
@@ -135,7 +135,11 @@ const DEPLOYMENT_LISTS = [[{ id: "a", path: "/a/oats" }], [{ id: "a", path: "/a/
 const UNOBSERVED = { "nothing": undefined, "pending": { status: "pending" }, "observed": { status: "observed" },
   "feature": { status: "unavailable", reason: { code: "E_DEPLOYMENT_FEATURE", feature: "served-identity" } },
   "code and message": { status: "unavailable", reason: { code: "E_CLI_FAILED", message: "boom" } },
-  "message": { status: "unavailable", reason: { message: "boom" } }, "no reason": { status: "unavailable" } };
+  "message": { status: "unavailable", reason: { message: "boom" } }, "no reason": { status: "unavailable" },
+  // 3a: a reason the reader marked as the kernel's own, said, withheld and with nothing to show.
+  "kernel": { status: "unavailable", reason: { code: "E_WORKSPACE_SCHEMA", message: "the workspace file is not valid", origin: "kernel" } },
+  "kernel withheld": { status: "unavailable", reason: { code: "E_REMOTE_UNREADABLE", message: "token=abcdef0123456789", origin: "kernel" } },
+  "kernel silent": { status: "unavailable", reason: { code: "E_X", message: "", origin: "kernel" } } };
 /** What a client holds (panel-views.mjs `held`): this machine's three deployments, each with a sentence or a label of
  * its own. One reported a workspace that cannot be read, one is not read yet, one has a kernel without a feature. */
 const HELD = () => ({
@@ -190,6 +194,7 @@ async function everyAnswer(terms) {
     say(`rosterSections ${n}`, rosterSections(ROWS, ROWS, list, terms).map(({ label, machine, tail }) => ({ label, machine, tail })));
   });
   for (const [what, deployment] of Object.entries(UNOBSERVED)) say(`deploymentUnavailableText ${what}`, deploymentUnavailableText(deployment, terms));
+  for (const [what, deployment] of Object.entries(UNOBSERVED)) say(`deploymentUnavailableParts ${what}`, deploymentUnavailableParts(deployment, terms));
   // The views over what a client holds: each deployment's facts, the switcher's list, and every view's panel.
   const model = viewModel(HELD(), terms);
   say("viewModel", { views: model.views, infos: [...model.infos.values()] });
@@ -249,7 +254,7 @@ test("two clients at once: each answer is in its own client's words, and neither
   assert.deepEqual([...tables].sort(), [
     "capabilityShowUnreadable",
     "cliWorkspace E_WORKSPACE_FEATURE",
-    "deploymentInfo", "deploymentLabel", "deploymentLabelParts", "deploymentReasonParts", "deploymentUnavailableText feature",
+    "deploymentInfo", "deploymentLabel", "deploymentLabelParts", "deploymentReasonParts", "deploymentUnavailableParts feature", "deploymentUnavailableText feature",
     "panelData", "teamMembersFor", "viewModel", "workspaceChoices",
     "lifecycleFailure E_CLI_OUTPUT_LIMIT", "lifecycleFailure E_CLI_PROTOCOL", "lifecycleFailure E_LIFECYCLE_UNAVAILABLE", "lifecycleFailure E_PLAN_LIMIT",
     "lifecycleReason E_CLI_OUTPUT_LIMIT", "lifecycleReason E_CLI_PROTOCOL", "lifecycleReason E_LIFECYCLE_UNAVAILABLE", "lifecycleReason E_PLAN_LIMIT",
@@ -299,6 +304,7 @@ const TABLES = {
   machineLabelParts: (terms) => machineLabelParts([], terms),
   rosterSections: (terms) => rosterSections([], [], [], terms),
   deploymentUnavailableText: (terms) => deploymentUnavailableText({ status: "pending" }, terms),
+  deploymentUnavailableParts: (terms) => deploymentUnavailableParts({ status: "pending" }, terms),
   // The views (panel-views.mjs): each refuses by its own name, also where it would build no sentence.
   deploymentInfo: (terms) => deploymentInfo(HELD(), { id: "/a/oats", name: "oats" }, terms),
   viewModel: (terms) => viewModel({ ...HELD(), ctxs: [] }, terms),

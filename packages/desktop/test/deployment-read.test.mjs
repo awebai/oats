@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { cliDeploymentRead, DEPLOYMENT_READ_MAX_BUFFER, DEPLOYMENT_READ_TIMEOUT } from '../../client/deployment-read-cli.mjs';
-import { deploymentReadGate, DEPLOYMENT_FEATURES, remoteFailureCause, panelErrorCause } from '../../client/deployment-contract.mjs';
+import { deploymentReadGate, deploymentFailure, deploymentErrorCode, DEPLOYMENT_FEATURES, remoteFailureCause, panelErrorCause } from '../../client/deployment-contract.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../../client/deployment-data.mjs';
 import builder from '../electron-builder.config.cjs';
 
@@ -89,7 +89,52 @@ test('independent UTF8 byte fence works when a custom invoker ignores maxBuffer'
 test('kernel domain refusal retains bounded code/message, not process diagnostics/details', async () => {
   const message = 'package integrity refused';
   const result = await cliDeploymentRead(cli(), input('workspace-status'), { exec: reply({ schemaVersion: 1, ok: false, error: { code: 'E_PACKAGE_INTEGRITY', message, details: { secret: 'withheld' } } }, { code: 1, message: 'private argv' }) });
-  assert.deepEqual(result, { ok: false, reason: { code: 'E_PACKAGE_INTEGRITY', message } });
+  assert.deepEqual(result, { ok: false, reason: { code: 'E_PACKAGE_INTEGRITY', message, origin: 'kernel' } });
+});
+
+/* Whose words a reason carries (#855, 3a): the error the installed CLI printed is marked `origin: 'kernel'`; a reason the
+   reader made itself carries no origin. Who shows a reason decides by the mark, never by the shape of a code. */
+const refusal = (error, exit = { code: 1 }) => reply({ schemaVersion: 1, ok: false, error }, exit);
+test('the mark: an envelope\'s error is the kernel\'s, from either read, with or without a failed exit', async () => {
+  for (const action of ['status', 'workspace-status']) for (const exit of [{ code: 1 }, null]) {
+    const result = await cliDeploymentRead(cli(), input(action), { exec: refusal({ code: 'E_WORKSPACE_SCHEMA', message: 'the workspace file is not valid', details: { path: '/private' } }, exit) });
+    assert.deepEqual(result, { ok: false, reason: { code: 'E_WORKSPACE_SCHEMA', message: 'the workspace file is not valid', origin: 'kernel' } }, `${action} ${JSON.stringify(exit)}`);
+  }
+  // The envelope cannot set the mark, or another one: it is given here, to what was admitted.
+  for (const origin of ['desktop', 'client', null, 7]) {
+    const result = await cliDeploymentRead(cli(), input('status'), { exec: refusal({ code: 'E_X', message: 'm', origin }) });
+    assert.equal(result.reason.origin, 'kernel', String(origin));
+  }
+  // A code with no `E_` is admitted as before, and marked: the one test of the shape is deployment-contract.mjs `deploymentErrorCode`.
+  const bare = await cliDeploymentRead(cli(), input('status'), { exec: refusal({ code: 'BAD_STATE', message: 'the kernel said this' }) });
+  assert.deepEqual(bare, { ok: false, reason: { code: 'BAD_STATE', message: 'the kernel said this', origin: 'kernel' } });
+  for (const code of ['BAD_STATE', 'E_X', 'E', 'A'.repeat(64)]) assert.equal(deploymentErrorCode(code), true, code);
+  for (const code of ['', 'e_x', '_X', '1X', 'E-X', 'E X', 'A'.repeat(65), undefined, null, 7, ['E_X']]) assert.equal(deploymentErrorCode(code), false, String(code));
+});
+test('the mark is absent from every reason the reader makes itself: the gate, bad arguments, a timeout, the limit, a protocol failure, a failed run', async () => {
+  const made = {
+    E_CLI_UNAVAILABLE: await cliDeploymentRead({ ...cli(), ok: false }, input('status'), { exec() { assert.fail(); } }),
+    E_DEPLOYMENT_FEATURE: await cliDeploymentRead({ ...cli(), features: ['workspace-v2'] }, input('status'), { exec() { assert.fail(); } }),
+    E_BAD_ARGS: await cliDeploymentRead(cli(), { action: 'status', context: 'relative' }, { exec() { assert.fail(); } }),
+    E_CLI_TIMEOUT: await cliDeploymentRead(cli(), input('status'), { exec: reply(status, { killed: true }) }),
+    E_CLI_OUTPUT_LIMIT: await cliDeploymentRead(cli(), input('status'), { exec: reply(status, { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }) }),
+    E_CLI_PROTOCOL: await cliDeploymentRead(cli(), input('status'), { exec(_b, _a, _o, cb) { cb(null, 'not json'); } }),
+    E_CLI_FAILED: await cliDeploymentRead(cli(), input('status'), { exec: reply(status, { code: 1 }) }),
+  };
+  for (const [code, result] of Object.entries(made)) {
+    assert.equal(result.reason.code, code);
+    assert.equal(Object.hasOwn(result.reason, 'origin'), false, code);
+    assert.deepEqual(result, deploymentFailure(code, result.reason.feature ?? null), `${code}: the reader's own sentence`);
+  }
+  // An envelope the reader does not admit is the reader's protocol failure, unmarked: nothing of it is kept.
+  for (const error of [{ code: 'e_lower', message: 'm' }, { code: 'E_X' }, { code: 'E_X', message: 'x'.repeat(8193) }, 'text', null, 7, ['E_X', 'm']]) {
+    const result = await cliDeploymentRead(cli(), input('status'), { exec: refusal(error) });
+    assert.deepEqual(result, deploymentFailure('E_CLI_PROTOCOL'), JSON.stringify(error)?.slice(0, 40));
+  }
+  // And no code the reader can make for itself, with or without a feature, carries one.
+  for (const code of ['E_CLI_UNAVAILABLE', 'E_DEPLOYMENT_FEATURE', 'E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_DEPLOYMENT_SCOPE', 'E_DEPLOYMENT_STALE', 'E_DEPLOYMENT_BUSY', 'E_NOT_A_CODE']) {
+    for (const feature of [null, 'served-identity']) assert.equal(Object.hasOwn(deploymentFailure(code, feature).reason, 'origin'), false, code);
+  }
 });
 
 test('workspace header consumes exact producer members and packages (commit + integrity), no approval state and no inspect scope', () => {
@@ -228,12 +273,12 @@ const CACHE_DETAILS = { url: 'https://github.com/awebai/oats.git', key: 'github.
 test('Spec D: E_REMOTE_UNREADABLE keeps its message and only a bounded cause { reason, host } of its details', async () => {
   const message = 'the remote cache is locked by /Users/op/.cache/oats/remotes/x/index.lock; remove it and retry';
   const result = await cliDeploymentRead(cli(), input('workspace-status'), { exec: reply({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_UNREADABLE', message, details: CACHE_DETAILS } }, { code: 1 }) });
-  assert.deepEqual(result, { ok: false, reason: { code: 'E_REMOTE_UNREADABLE', message, cause: { reason: 'cache', host: 'github.com' } } });
+  assert.deepEqual(result, { ok: false, reason: { code: 'E_REMOTE_UNREADABLE', message, origin: 'kernel', cause: { reason: 'cache', host: 'github.com' } } });
   assert.doesNotMatch(JSON.stringify(result.reason.cause), /Users|4242|lock|reclaim|stage|key/, 'no path, pid or other field crosses');
   const plain = await cliDeploymentRead(cli(), input('status'), { exec: reply({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_UNREADABLE', message } }, { code: 1 }) });
-  assert.deepEqual(plain, { ok: false, reason: { code: 'E_REMOTE_UNREADABLE', message } }, 'no details: no cause');
+  assert.deepEqual(plain, { ok: false, reason: { code: 'E_REMOTE_UNREADABLE', message, origin: 'kernel' } }, 'no details: no cause');
   const other = await cliDeploymentRead(cli(), input('status'), { exec: reply({ schemaVersion: 1, ok: false, error: { code: 'E_WORKSPACE_SCHEMA', message, details: CACHE_DETAILS } }, { code: 1 }) });
-  assert.deepEqual(other, { ok: false, reason: { code: 'E_WORKSPACE_SCHEMA', message } }, 'only an unreadable remote carries a cause');
+  assert.deepEqual(other, { ok: false, reason: { code: 'E_WORKSPACE_SCHEMA', message, origin: 'kernel' } }, 'only an unreadable remote carries a cause');
 });
 
 test('Spec D: remoteFailureCause bounds the reason and derives only a host', () => {
