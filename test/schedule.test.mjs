@@ -170,6 +170,46 @@ test("a due spawn job launches once, holds its lock while the instance lives, an
   assert.equal(runs.lastRun.scheduledFor, "2026-09-07T13:15:00.000Z");
 });
 
+test("a spawn job whose instance stopped keeps its slot and is skipped with what to do, in a tick and a dry run (#921)", () => {
+  const ws = workspace();
+  let seen = { present: true, state: "unknown" };
+  const io = { spawn: fakeSpawn(ws), inspect: () => seen };
+  S.addSchedule(ws, { id: "five", cron: "*/5 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const reg = S.readRegistry();
+  assert.equal(S.tickWorkspace(ws, { now: at("2026-09-07T10:05:00Z"), io, reg })[0].action, "launched");
+  const { instance, home: h } = S.readState(ws).jobs.five.lastRun;
+  seen = { present: false, state: "stopped" };
+  const reason = `previous instance stopped: retire it (oats retire ${instance}) or start it again (oats session start --home ${h})`;
+  const dry = S.tickWorkspace(ws, { now: at("2026-09-07T10:10:00Z"), io, reg, dryRun: true });
+  assert.deepEqual([dry[0].action, dry[0].reason], ["skipped", reason]);
+  const c = S.tickWorkspace(ws, { now: at("2026-09-07T10:10:00Z"), io, reg });
+  assert.deepEqual([c[0].action, c[0].reason], ["skipped", reason]);
+  assert.equal(S.readState(ws).jobs.five.lastRun.outcome, "stopped");
+  assert.ok(S.jobLockInfo(ws, "five"), "a stopped instance keeps the job's slot");
+  assert.throws(() => S.runNow(ws, "five", { io, now: at("2026-09-07T10:11:00Z") }), (e) => e.code === "E_SCHEDULE_RUNNING" && e.message === `schedule five: ${reason}`);
+  // Started again: active, and skipped as still running.
+  seen = { present: true, state: "unknown" };
+  const again = S.tickWorkspace(ws, { now: at("2026-09-07T10:15:00Z"), io, reg });
+  assert.deepEqual([again[0].action, again[0].reason], ["skipped", "still running"]);
+  assert.equal(S.readState(ws).jobs.five.lastRun.outcome, "active");
+  assert.throws(() => S.runNow(ws, "five", { io, now: at("2026-09-07T10:16:00Z") }), (e) => e.code === "E_SCHEDULE_RUNNING" && e.message === "schedule five is still running");
+});
+
+test("a home whose session cannot be inspected for a reason other than a lost tmux server stays unknown and still running (#921)", () => {
+  const ws = workspace();
+  let inspect = () => ({ present: true, state: "unknown" });
+  const io = { spawn: fakeSpawn(ws), inspect: (h) => inspect(h) };
+  S.addSchedule(ws, { id: "five", cron: "*/5 * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const reg = S.readRegistry();
+  S.tickWorkspace(ws, { now: at("2026-09-07T10:05:00Z"), io, reg });
+  inspect = () => { throw Object.assign(new Error("cannot read session receipt: unreadable"), { code: "E_RUNTIME_ENDPOINT_UNKNOWN" }); };
+  const c = S.tickWorkspace(ws, { now: at("2026-09-07T10:10:00Z"), io, reg });
+  assert.deepEqual([c[0].action, c[0].reason], ["skipped", "still running"]);
+  const lr = S.readState(ws).jobs.five.lastRun;
+  assert.equal(lr.outcome, "unknown");
+  assert.match(lr.error, /cannot read session receipt/);
+});
+
 test("host concurrency bounds launches across jobs and run-now shares the same lock", (t) => {
   const ws = workspace();
   const before = S.readRegistry();
