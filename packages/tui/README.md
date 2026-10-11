@@ -54,6 +54,10 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   display filter would change, a run of spaces included, so a row is spans
   placed by column, never one padded string.
 
-Tests: `node --test packages/tui/test/*.test.mjs` (no dependency needed), the
-root tests `test/tui-*.test.mjs`, and the end-to-end tests in a real tmux on a
-private socket (`test/tui-terminal.test.mjs`).
+Tests: `node --test packages/tui/test/*.test.mjs`, the root tests
+`test/tui-*.test.mjs`, and the end-to-end tests in a real tmux on a private
+socket (`test/tui-terminal.test.mjs`). All of them need the root's install
+(`npm ci` at the repository root). The package has no dependency of its own,
+but one of its tests runs the real kernel, which has: "KERNEL_BIN is this
+install's own bin/oats.mjs, and its `version --json` is a record the probe
+accepts" (`packages/tui/test/read.test.mjs`).

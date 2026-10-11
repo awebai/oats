@@ -64,15 +64,15 @@ runs.
 ## What it shows
 
 ```
- oats  lfx-workspace                               21 running  2 need input  1 unknown  1 withheld
+ oats  acme-platform                            21 running  2 need input  1 unknown  1 withheld
  1 Instances   2 Souls   3 Capabilities                                           read 14:03:27
  ───────────────────────────────────────────────┬──────────────────────────────────────────────
->▾ ● oats-kernel-expert-retire      claude      │   oats-kernel-expert-retire
-     ● oats-kernel-developer-note   claude     !│   soul     oats-kernel-expert
-       ○ oats-code-reviewer-note    stopped     │   state    running
-   ▸ ● oats-desktop-expert-readers  claude    !2│   harness  claude, claude-opus-5-5 (soul)
-                                                │   work     worktree, agents/oats-kernel-exp…
-   ● oats-expert-tui                claude      │   home     …instances/oats-kernel-expert-retire
+>▾ ● backend-lead                   claude      │   backend-lead
+     ● backend-dev-auth             claude     !│   soul     tech-lead
+       ○ reviewer-auth              stopped     │   state    running
+   ▸ ● frontend-lead                claude    !2│   harness  claude, claude-opus-5-5 (soul)
+                                                │   work     worktree, agents/backend-lead
+   ● docs-writer                    claude      │   home     …/tech-lead/instances/backend-lead
  ───────────────────────────────────────────────┴──────────────────────────────────────────────
  / filter   Tab detail   r refresh   ? help   q quit
 ```
@@ -229,8 +229,10 @@ with the Desktop (`packages/client/`).
   is the kernel's own look at the workspace's remotes, for up to 60 seconds;
   `r` asks the kernel to look again.
 - **Every child runs in a session of its own** and is ended when the TUI
-  ends, by any way out. A read that was running when the TUI is suspended is
-  dropped, not shown: its answer could arrive cut. The return reads again.
+  ends, on every way out a process can handle (for SIGKILL see
+  [below](#what-it-changes-in-your-terminal-and-restores)). A read that was
+  running when the TUI is suspended is dropped, not shown: its answer could
+  arrive cut. The return reads again.
 - It reads only. It runs no command that changes a deployment.
 
 ## What this version does not do
@@ -298,6 +300,9 @@ and autowrap off. Run `reset`. Inside tmux also run `tput rmcup`: measured
 on tmux 3.7c, `reset` brought back the cursor and autowrap, and the pane
 stayed in the alternate screen until `tput rmcup`. Nothing else is left in
 tmux: `oats tui` creates no session, window, option or key binding.
+Nor can it end a read after SIGKILL: nothing of the TUI runs any more, so a
+read that was in flight runs to its own end, within the limits above. It
+only reads.
 
 ## What it never does
 
@@ -324,7 +329,8 @@ tmux: `oats tui` creates no session, window, option or key binding.
 - It changes nothing in tmux: no option, key binding, server, session,
   window or pane. Its probe only lists panes.
 - It starts no daemon, opens no socket and writes no file. The processes it
-  starts are the reads above, and none outlives it.
+  starts are the reads above, and none outlives it on every way out a
+  process can handle; after SIGKILL a read in flight runs to its own end.
 
 ## Errors
 
