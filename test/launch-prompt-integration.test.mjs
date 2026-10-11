@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { v2Deployment } from './helpers/v2-deployment.mjs';
-import { startInstanceSession, restartInstanceSession, inspectInstanceSession, stopInstanceSession, retireInstance, DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING } from '../lib/core.mjs';
+import { startInstanceSession, restartInstanceSession, inspectInstanceSession, stopInstanceSession, harnessProcesses, retireInstance, DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING } from '../lib/core.mjs';
 import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES, CLAUDE_SESSION_HINT } from '../lib/launch-prompt-fixtures.mjs';
 import { waitUntil } from './helpers/host-fixture.mjs';
 import { readEvents } from '../lib/instance-events.mjs';
@@ -73,15 +73,19 @@ process.stdin.on('data', d => fs.appendFileSync('stub-keys.log', JSON.stringify(
   return { fx, write, home: name => join(fx.root, 'dev', 'instances', name) };
 }
 const meta = home => JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
-// A stop that follows a start: the harness may not be under the pane yet, and a stop then answers
-// E_SESSION_UNKNOWN (rightly). Wait, bounded, until session inspect reads a harness running: present,
-// and neither the fallback shell nor stopped (the kernel's harnessRunning), then stop.
+// A stop that follows a start: stop signals the processes it finds under the pane, and answers
+// E_SESSION_UNKNOWN (rightly) when the session reads as running but its `ps` walk finds none yet, as a
+// just-forked harness under load can be. Wait, bounded, until both hold in one poll: session inspect
+// reads a harness running (present, neither the fallback shell nor stopped), and the same process walk
+// stop uses (harnessProcesses, on the home's recorded tmux target) finds one. Then stop.
 async function stopWhenRunning(fx, h, timeoutMs = 10000) {
   const deadline = Date.now() + timeoutMs;
-  for (let state; ; await new Promise(r => setTimeout(r, 25))) {
+  for (let state, found; ; await new Promise(r => setTimeout(r, 25))) {
     state = await fx.inEnv(() => inspectInstanceSession(h));
-    if (state.present === true && state.state !== 'shell' && state.state !== 'stopped') break;
-    assert.ok(Date.now() < deadline, `timed out waiting for a harness to run in ${h}: ${JSON.stringify(state)}`);
+    const running = state.present === true && state.state !== 'shell' && state.state !== 'stopped';
+    found = running ? await fx.inEnv(() => harnessProcesses(meta(h).tmux)) : [];
+    if (found.length) break;
+    assert.ok(Date.now() < deadline, `timed out waiting for a harness process under the pane of ${h}: ${JSON.stringify(state)}, ${found.length} found`);
   }
   return fx.inEnv(() => stopInstanceSession(h));
 }
