@@ -33,7 +33,7 @@
  * /api/spawn request and the reply it checks). Without a deployment the view id addresses it, as before.
  * A created spawn records its deployment as the view's last used (the spawn dialog's default).
  * `rehome(map)` moves owners onto views (workspace-rehome.mjs); a job's address never changes. */
-import { retainedSpawnMessage } from '../../client/launch-prompt-outcome.mjs';
+import { retainedSpawnMessage, differedLines, DIFFERED_IN_ACTIVITY } from '../../client/launch-prompt-outcome.mjs';
 import { spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
 import { sameSpawnDecision } from '../../client/spawn-decision.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
@@ -159,8 +159,11 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
       say(job, view.reason?.message || `Created ${job.instance}.`, { buttons: [{ label: 'View schedules', ariaLabel: `View schedules for ${job.instance}`, activate: async () => viewSchedules() }] });
     } else if (view.status === 'incomplete') {
       job.wantRunning = false;
-      const problem = spawnProblem(view.reason, 'spawn');
-      say(job, retainedSpawnMessage(view.incomplete), details(problem));
+      // A notice is plain text and cannot attribute a quote: with `differed` it says where the two texts
+      // are shown. The nearest entry and the position are Details' data; no terminal text goes there.
+      const problem = spawnProblem(view.reason, 'spawn'), said = differedLines(view.incomplete.launchPrompts?.differed);
+      say(job, said ? `${retainedSpawnMessage(view.incomplete)} ${DIFFERED_IN_ACTIVITY}` : retainedSpawnMessage(view.incomplete),
+        details(said ? { ...problem, detail: `${problem.detail} · ${said.detail}` } : problem));
     } else if (!view.receipt.launched) {
       job.wantRunning = false;
       say(job, `Created ${job.instance} — not launched. Open its session from the roster.`);

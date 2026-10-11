@@ -5,6 +5,10 @@ import { waitForInstanceInPanel } from "./views/spawn.mjs";
 import { launchConfigFields } from "./launch-config-fields.mjs";
 import { captureFocusReturn } from "./focus-return.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
+import { retainedStartMessage, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
+import { displayLine } from "../../client/display-text.mjs";
+import { sourceQuoteCSS } from "./source-quote.mjs";
+import { launchDiffered, launchDifferedCSS } from "./launch-differed.mjs";
 
 /** Existing homes are started, never scaffolded again. One dialog owns a launch. */
 export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstanceInPanel } = {}) {
@@ -32,6 +36,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
       <p class="start-model-help"></p>
       <div class="start-configurations" hidden></div>
       <p class="start-status" role="status" aria-live="polite"></p>
+      <div class="start-outcome" hidden></div>
       <div class="start-buttons"><button class="act start-submit" type="submit" disabled>Start</button>
         <button class="act start-retry" type="button">Refresh status</button>
         <button class="act start-cancel" type="button">Cancel</button></div>
@@ -39,6 +44,20 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     const form = modal.querySelector("form"), model = modal.querySelector(".start-model");
     const submit = modal.querySelector(".start-submit"), status = modal.querySelector(".start-status");
     const retry = modal.querySelector(".start-retry");
+    // A start that stopped at a launch prompt (the kernel's E_SPAWN_INCOMPLETE, its retained outcome decoded
+    // on the way here): the Desktop's sentence is the status; under it, what the screen differed in (the
+    // quote treatment, whose CSS the dialog brings), then the kernel's own message, attributed, one display
+    // line alone in its <bdi>. Never the kernel's command-line sentence as the dialog's own text.
+    const outcome = modal.querySelector(".start-outcome");
+    const quoteStyle = doc.createElement("style"); quoteStyle.textContent = sourceQuoteCSS + launchDifferedCSS; modal.prepend(quoteStyle);
+    const clearOutcome = () => { outcome.replaceChildren(); outcome.hidden = true; };
+    const showRetained = (error) => {
+      status.textContent = retainedStartMessage(instance.instance, error.incomplete);
+      const differed = launchDiffered(doc, error.incomplete.launchPrompts?.differed), line = displayLine(error.message);
+      let says = null;
+      if (line) { says = doc.createElement("p"); says.className = "start-kernel-says"; const text = doc.createElement("bdi"); text.textContent = line; says.append("OATS says: ", text); }
+      outcome.replaceChildren(...[differed, says].filter(Boolean)); outcome.hidden = !outcome.children.length;
+    };
     modal.querySelector("h2").textContent = `${restart ? "Restart" : "Start"} ${instance.instance}`;
     modal.querySelector(".start-context").textContent = `${instance.harness || "Harness not reported"} · ${instance.server || "This machine"} · ${instance.home}`;
     model.placeholder = instance.model || "Harness default";
@@ -94,6 +113,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     const refresh = async () => {
       if (starting || started) return;
       const request = ++refreshGeneration;
+      clearOutcome(); // the lines belong to the sentence a failed start left as the status
       submit.disabled = true; canStart = false; status.textContent = "Checking instance…";
       try {
         const [cli, panel] = await Promise.all([apiJson(ctx, "/api/cli"), apiJson(ctx, `/api/panel${wsQuery()}`)]);
@@ -143,22 +163,32 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
       const body = { ...choices(), ...(hasLaunchConfig && launchFields.value() ? { launchConfig: launchFields.value() } : {}) };
       launchFields.invalidate();
       runtime.disabled = yolo.disabled = true; launchFields.disabled(true);
-      status.textContent = restart ? "Checking configuration and restarting…" : "Starting…";
+      clearOutcome(); status.textContent = restart ? "Checking configuration and restarting…" : "Starting…";
       try {
-        await postJson(ctx, path, body);
+        const result = await postJson(ctx, path, body);
         started = true;
-        if (!owns()) return;
         // Accepted. The harness may stop at something only its terminal shows (Claude Code's channels
         // confirmation, an error), so the dialog never waits on it (#525): it closes, and the terminal
         // opens as soon as the row is ready. Readiness is reported there, or by a notice, never by a modal.
-        close();
+        const open = owns();
+        if (open) close();
+        // The start worked while Claude Code ignored the channel option (the answer's own `launchPrompts`):
+        // a notice says so once the dialog is gone, also when the person closed it while the start ran. The
+        // view it was started from must still be on screen, as for every notice of this dialog. Never a
+        // failure: the terminal opens as for any start that worked.
+        const ignored = flagIgnoredNotice(instance.instance, result);
+        if (ignored && ws === currentWorkspace() && generation === workspaceGeneration()) ctx.notify?.(ignored.headline, ignored.detail ? { detail: ignored.detail } : undefined);
+        if (!open) return;
         // Taken after the focus return: any explicit choice from now on (another terminal, tab, view or
         // the sidebar) keeps the foreground, and this terminal does not take it later.
         void openWhenReady(ctx.watchSelection?.() ?? (() => true));
       } catch (error) {
         if (!owns()) return;
-        status.textContent = error.message;
-        // A timeout may have happened after launch. Recheck before offering another start.
+        // A start that stopped at a launch prompt says what happened in the Desktop's words; any other
+        // refusal shows the server's message, as before.
+        if (error.incomplete) showRetained(error); else status.textContent = error.message;
+        // A timeout may have happened after launch, and a retained session is still there. Recheck before
+        // offering another start.
         canStart = false;
       } finally {
         starting = false; pending.delete(key);

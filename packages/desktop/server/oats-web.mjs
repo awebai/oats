@@ -75,6 +75,7 @@ import { teamMembers } from "./team-members.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
+import { retainedSpawnDetails } from "../../client/launch-prompt-outcome.mjs";
 import { harnessFlag, HARNESSES } from "../../client/harness-names.mjs";
 import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed, deploymentUnavailableText } from "../renderer/deployment-header.mjs";
@@ -1712,7 +1713,13 @@ const server = createServer(async (req, res) => {
           launchConfig: body.launchConfig, harness: body.harness, harnessFlag: harnessFlag(cliState), yolo: body.yolo, restart,
           workspaceDir: inst.server ? ctxs[0] ?? homedir() : dirname(inst.agentsRoot), server: inst.server });
         observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot();
-        return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });
+        if (env.ok) return send(res, 200, env.result);
+        // A start that stopped at a launch prompt answers E_SPAWN_INCOMPLETE with the retained outcome in its
+        // details, as a spawn does: it travels as `incomplete`, decoded, when it names the instance this route
+        // resolved (not the home: the kernel reports its real path). Anything else answers as before.
+        const kept = env.error.code === "E_SPAWN_INCOMPLETE" ? retainedSpawnDetails(env.error.details) : null;
+        return send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code,
+          ...(kept?.launchPrompts && kept.instance === inst.instance ? { incomplete: kept } : {}) });
       }
       /* OATSWEB_START_END */
     }

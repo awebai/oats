@@ -16,7 +16,8 @@
  * idempotency key). If the world moved, the dialog shows the new values and
  * asks again. An unknown outcome is checked on the same intent, never retried
  * under a new one. */
-import { retainedSpawnMessage } from '../../client/launch-prompt-outcome.mjs';
+import { retainedSpawnMessage, differedLines } from '../../client/launch-prompt-outcome.mjs';
+import { launchDiffered, launchDifferedCSS } from './launch-differed.mjs';
 import { harnessOf } from '../../client/harness-names.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
@@ -279,6 +280,9 @@ export const spawnDialogCSS = `
 .spawn-details-toggle:hover { color:var(--fg); }
 .spawn-details-toggle[hidden], .spawn-problem-detail[hidden] { display:none; }
 .spawn-problem-detail { order:9; flex:1 0 100%; margin:0; padding:8px 10px; border-radius:6px; background:var(--surface-2); color:var(--muted); font-size:11.5px; line-height:1.5; overflow-wrap:anywhere; max-height:96px; overflow:auto; }
+/* What a blocked launch differed in: under the status, on its own line, never inside it. Its host's CSS holds the quote treatment. */
+.spawn-status-differed { order:8; flex:1 0 100%; min-width:0; }
+${launchDifferedCSS}
 .spawn-footer .act { min-height:34px; padding:0 16px; border-radius:8px; font-weight:600; }
 /* data-chord, not data-shortcut: the shell rewrites [data-shortcut] elements as action-id hints. */
 .spawn-footer .fspawn::after { content:attr(data-chord); margin-left:8px; font:10.5px var(--mono,monospace); }
@@ -322,6 +326,8 @@ export const runtimeName = value => Object.hasOwn(RUNTIME_NAMES, value) ? RUNTIM
 // Where the bound identity's mode came from (settingsOrigins, feature settings-origins).
 const ORIGIN_NAMES = { workspace: 'the workspace', soul: 'the soul', host: 'this host', spawn: 'this spawn' };
 const originName = kind => ORIGIN_NAMES[kind] ?? kind;
+/** The Launch configuration select's first entry while the kernel refuses the spawn for want of a default. */
+export const NO_DEFAULT_CONFIG = 'No default: choose one';
 /** The identity select's Default option: the mode only when the kernel reported
  * it — a manifest default, or another origin it names. Never a mode it did not report. */
 function identityDefaultLabel(data, chosen, origins) {
@@ -815,6 +821,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const cancel = el('button', 'Cancel', 'act fcancel'); cancel.type = 'button';
   const spawn = el('button', 'Spawn', 'act fspawn primary'); spawn.type = 'button';
   const actions = el('div', undefined, 'spawn-actions'); actions.append(cancel, spawn);
+  // What a blocked launch differed in (0.52.0): a group of its own under the status, above Details; in the
+  // footer only while there is one to show (setStatus).
+  const statusDiffered = el('div', undefined, 'spawn-status-differed');
   footer.append(statusRow, actions, details);
   const body = el('div', undefined, 'spawn-form-body');
   body.append(selectionSummary, nameField, runField, placeField, relation, teamsField, taskLabel, advanced);
@@ -1105,7 +1114,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     // Advanced defaults.
     yolo.options[0].textContent = data ? `Default · ${permissionText(data.yolo)}` : 'Default';
     backend.options[0].textContent = data ? `Default · ${data.backend}` : 'Default';
-    config.options[0].textContent = data?.launchConfig ? `Default · ${data.launchConfig}` : 'Default';
+    // E_LAUNCH_CONFIG_AMBIGUOUS (0.52.0): while the answer for the choices on screen is that refusal, there is
+    // no default to name. The entry stays the selected one (it is the state the dialog is in), and reads
+    // Default again as soon as the answer for the choices on screen is anything else.
+    const noDefault = shown?.failure?.code === 'E_LAUNCH_CONFIG_AMBIGUOUS' && shown.key === choiceKey(draftChoice.value);
+    config.options[0].textContent = noDefault ? NO_DEFAULT_CONFIG : data?.launchConfig ? `Default · ${data.launchConfig}` : 'Default';
     branch.placeholder = data?.branch && !branch.value ? data.branch : `agents/${soul.name}-…`;
     base.placeholder = data?.base ? `${data.base.ref} · ${short(data.base.oid)}` : 'HEAD';
     // Messaging identity: what the kernel bound for this spawn, and the choice.
@@ -1261,8 +1274,16 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     spawn.disabled = !current() || busy() || !!pressed || !!blocking || ['complete', 'partial', 'incomplete'].includes(phase)
       || !recovering && (!!draftChoice.error || defaultBlocked() || !!deploymentField?.blocked() || (local() ? !applicable() || refused : false));
   }
-  /** A problem shows one plain sentence; its code and technical text wait behind Details. */
-  function setStatus(text, error = false, problem = null, ok = false) {
+  /** A problem shows one plain sentence; its code and technical text wait behind Details. `differed`: what a
+   * blocked launch differed in, shown under the sentence for as long as that sentence is the status. */
+  let differedDrawn = '';
+  function setStatus(text, error = false, problem = null, ok = false, differed = null) {
+    const differedKey = differed ? JSON.stringify(differed) : '';
+    if (differedKey !== differedDrawn) {
+      differedDrawn = differedKey;
+      const group = differed ? launchDiffered(doc, differed) : null;
+      if (group) { statusDiffered.replaceChildren(group); footer.insertBefore(statusDiffered, details); } else statusDiffered.remove();
+    }
     if (status.textContent !== text) status.textContent = text; // an unchanged status is not re-announced
     status.classList.toggle('err', error); status.classList.toggle('ok', ok && !error);
     status.dataset.code = problem?.code || '';
@@ -1455,8 +1476,9 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
         if (!delivered) { delivered = true; deploymentField?.remember(); await onCreated(view, () => current() && owner === mount); }
       } else if (phase === 'incomplete') {
-        const problem = spawnProblem(view.reason, 'spawn');
-        setStatus(retainedSpawnMessage(view.incomplete), true, problem);
+        // What the screen differed in goes under the sentence; the nearest entry and the position are Details' data.
+        const problem = spawnProblem(view.reason, 'spawn'), differed = view.incomplete.launchPrompts?.differed ?? null, said = differedLines(differed);
+        setStatus(retainedSpawnMessage(view.incomplete), true, said ? { ...problem, detail: `${problem.detail} · ${said.detail}` } : problem, false, said ? differed : null);
       } else if (phase === 'unknown' && ROLLED_BACK_CODES.includes(view.reason?.code)) {
         // #802: rolled back, its cleanup owed: retiring the quarantined home completes it; a re-apply cannot.
         intent = null; submitted = false; phase = 'idle';

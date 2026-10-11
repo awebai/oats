@@ -32,6 +32,10 @@ const COMMON = {
   E_LAUNCH_EXECUTABLE: 'The chosen launch configuration can’t start on this machine. Choose another in Developer settings.',
   E_LAUNCH_PROBE_UNSUPPORTED: 'The chosen launch configuration can’t be checked safely. Choose another in Developer settings.',
   E_LAUNCH_CONFIG_UNKNOWN: 'That launch configuration no longer exists. Choose another in Developer settings.',
+  // 0.52.0: the kernel refuses a spawn that names no launch configuration where the harness has several and
+  // none is the default. The sentence names the dialog's own control; the kernel's message, which ends with
+  // its command-line fix, stays in Details.
+  E_LAUNCH_CONFIG_AMBIGUOUS: 'This machine has more than one launch configuration for this soul’s harness, and none is the default. Choose one under Launch configuration in Developer settings.',
   // 0.30 launch preferences: shown in the kernel's own words when it sends them (spawnProblem: the
   // message, then the reason's flat `fix`), which name the harness and where it was chosen; this is the fallback.
   E_HARNESS_UNAVAILABLE: 'The harness this soul would run isn’t installed on this machine. Install it, or pick another harness above.',

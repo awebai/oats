@@ -4,6 +4,7 @@ import { harnessOf } from '../../client/harness-names.mjs';
 import { record } from '../../client/readiness-contract.mjs';
 import { eventsTarget, eventsLimit, eventsTimestamp, eventsId, eventsDetail } from '../../client/instance-events-contract.mjs';
 import { waitingMessage } from '../../client/waiting-on-you.mjs';
+import { launchPromptDiffered } from '../../client/launch-prompt-outcome.mjs';
 const count = v => Number.isSafeInteger(v) && v >= 0;
 const birth = v => v === null || eventsTimestamp(v);
 const id = eventsId, detail = eventsDetail;
@@ -23,8 +24,13 @@ const strings = {
 const numbers = { restarted: ['waitedMs'], stopped: ['waitedMs'], 'stop-refused': ['waitedMs'], 'retire-planned': ['children', 'dirty'], recomposed: ['blocks'] };
 const booleans = { spawned: ['launched'], retired: ['keepDir', 'self', 'quarantine'] };
 /** Read tolerantly, outside the listed keys above (which refuse the read when malformed): a malformed value
- * drops only its own fact. `worktree-added` (0.49.0): an extra tree `oats worktree add` made. */
-const tolerant = { 'worktree-added': ['purpose', 'path', 'branch', 'base', 'member'] };
+ * drops only its own fact. `worktree-added` (0.49.0): an extra tree `oats worktree add` made.
+ * `launch-prompt`: the Claude version the kernel read (0.52.0: a version, or "unknown") and the id of the
+ * confirmation it matched. A row's facts follow the kernel that wrote it, and a log keeps its rows:
+ * `consentSource` (listed above) is only on rows a 0.44 to 0.51 kernel wrote, `claudeVersion` and `differed`
+ * only on rows from 0.52.0. The pane's identity, `startId`, `key`, `signatureDigest` and
+ * `claudeVersionSource` are not read. */
+const tolerant = { 'worktree-added': ['purpose', 'path', 'branch', 'base', 'member'], 'launch-prompt': ['claudeVersion', 'signatureId'] };
 const tolerantText = v => typeof v === 'string' && !!v && v.length <= 4096 ? detail(v, 4096) : undefined;
 /** A `worktree` hooks' receipt (`worktree-added` `hooks`, `spawned` `worktreeHooks`, 0.49.0) as `[{capability, ok,
  * log}]`, `log` the hook's log file or null (a rolled-back spawn's log is removed). Anything malformed, the value
@@ -60,6 +66,10 @@ function facts(kind, v, publicView) {
   const hooks = kind === 'worktree-added' ? 'hooks' : kind === 'spawned' ? 'worktreeHooks' : null;
   const receipt = hooks && hookReceipt(v[hooks]);
   if (receipt) out[hooks] = receipt;
+  // What a blocked launch's screen differed in (0.52.0), on the row that records the miss: the outcome
+  // reader's decoder and its rule (only beside `blocked`). Tolerant and idempotent, as there.
+  const differed = kind === 'launch-prompt' && v.status === 'blocked' ? launchPromptDiffered(v.differed) : undefined;
+  if (differed) out.differed = differed;
   // A waiting claim's note (K's `waiting` rows): the claim rule — absent stays absent, malformed is null.
   if (kind === 'waiting' && Object.hasOwn(v, 'message')) out.message = waitingMessage(v.message);
   if (['stopped', 'stop-refused', 'restarted'].includes(kind)) {

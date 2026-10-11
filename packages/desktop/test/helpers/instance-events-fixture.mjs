@@ -14,6 +14,29 @@ export const launchPromptEvent = (facts = {}) => event({ kind: 'launch-prompt', 
   signatureId: 'fixture-aweb', signatureDigest: 'a'.repeat(64), version: '2.1.289', platform: 'darwin-arm64',
   class: 'awebDevelopmentChannel', key: 'Enter', status: 'submitted', ...facts,
 } });
+// OATS 0.52.0 (awebai/oats#917): the same row as the controller writes it there. Hand-written from the
+// documented shape at kernel head 881ecc1f (lib/launch-prompts.mjs `record` and `finish`): no
+// `consentSource`; `claudeVersion` and `claudeVersionSource`; the matched entry's `signatureId` on the rows
+// of an answer; on a miss, `differed`. All identities and paths are inert.
+export const launchPromptEvent052 = (facts = {}) => event({ kind: 'launch-prompt', data: {
+  home: target.home, startId: 'fixture-launch-052', socket: 'inert', windowId: '@1', paneId: '%2', pid: 123,
+  claudeVersion: '2.1.296', claudeVersionSource: 'executable-path',
+  signatureId: 'aweb-dev-channel-confirmation-1', signatureDigest: 'b'.repeat(64),
+  class: 'awebDevelopmentChannel', key: 'Enter', status: 'submitted', ...facts,
+} });
+/** The row of a miss: no answer was sent, so no signature id, class or key. */
+export const launchPromptMiss052 = (differed, facts = {}) => event({ kind: 'launch-prompt', data: {
+  home: target.home, startId: 'fixture-launch-052', socket: 'inert', windowId: '@1', paneId: '%2', pid: 123,
+  claudeVersion: '2.1.296', claudeVersionSource: 'executable-path', status: 'blocked', reason: 'blocked: unexpected prompt',
+  signatureDigest: 'c'.repeat(64), differed, ...facts,
+} });
+/** The one row of a start where Claude ignored the flag (kernel head 7dc5a20c of awebai/oats#917, docs/desktop-cli-api.md
+ * "Launch prompt results"): the notice's entry as `signatureId`, no key, class or answer. */
+export const launchPromptFlagIgnored052 = (facts = {}) => event({ kind: 'launch-prompt', data: {
+  home: target.home, startId: 'fixture-launch-052', socket: 'inert', windowId: '@1', paneId: '%2', pid: 123,
+  claudeVersion: '2.1.296', claudeVersionSource: 'executable-path', status: 'flag-ignored', reason: 'channels-unavailable',
+  signatureId: 'aweb-dev-channel-flag-ignored-1', signatureDigest: 'd'.repeat(64), ...facts,
+} });
 export function data(events = [event()]) {
   const last = events.at(-1);
   return { eventsApi: 2, instance: selector.instance, home: target.home, incarnation: birth,

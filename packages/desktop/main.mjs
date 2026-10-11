@@ -550,8 +550,13 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // A plan or an instance Git read may be routed to a server (a 45 s CLI deadline): 50 s lets it report itself.
   // A machine connect: the CLI's 15 minutes (5 for the messaging step) after the registry read (60 s); a check,
   // remove or the list: a registry read and a 60 s check (server/machines.mjs, packages/client/cli-adapter.mjs).
+  // A start or restart: the kernel may watch a launch prompt for 30 s and then answers what it kept; the
+  // dialog can say that outcome only if this proxy is still waiting for it. It must outlast the CLI call
+  // (cli-adapter.mjs `cliStart`; start-proxy-deadline.test.mjs holds the two together). Giving up here ends
+  // nothing: the server awaits the call whatever becomes of its request (start-abort-server.test.mjs).
   const timeout = lifecycle ? mutation ? 610_000 : 50_000 : forge?.timeout ?? (route === 'capabilities' || route === 'workspace-sync' ? 310_000
-    : route === 'automations' ? 90_000 : route === 'instance-git' ? 50_000 : route === 'machine-connect' ? 980_000 : route === 'machines' ? 130_000 : 20_000);
+    : route === 'automations' ? 90_000 : route === 'instance-git' ? 50_000 : route === 'machine-connect' ? 980_000 : route === 'machines' ? 130_000
+    : route === 'instance-start' ? 70_000 : 20_000);
   const init = { ...(forge?.init ?? apiInit(opts)), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();
