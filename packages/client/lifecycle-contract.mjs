@@ -1,5 +1,6 @@
 /** K3 projection/validation only. No IO, kernel decisions or executable paths. */
 import { gitRevision } from './instance-git-contract.mjs';
+import { displayLine, cleanLine } from './display-text.mjs';
 export const LIFECYCLE_API = 1;
 export const MAX_LIFECYCLE_TARGETS = 128;
 export const object = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -145,7 +146,9 @@ export function answeringFeatures({ cli, routed, group } = {}) {
 /** The rows of a stop's `results` or of a retire's `childrenStopped`. `decoded: false` reads a kernel's answer:
  * a failed row's `stillRunning: []` is kept only when `features` (the answering kernel's, answeringFeatures)
  * names lifecycle-kernel-codes, and is `null` otherwise, which is what that kernel's `[]` established.
- * `decoded: true` validates rows a server already decoded, and keeps them as they are. */
+ * `decoded: true` validates rows a server already decoded, and keeps them as they are. A row's `message` is
+ * the kernel's text and is dropped, except under E_LIFECYCLE_BUSY, where it is kept as `detail`, through the
+ * display filter. */
 function stoppedRows(value, expected, { withState = false, decoded = false, features = null } = {}) {
   if (!Array.isArray(value) || value.length !== expected.length || value.length > MAX_LIFECYCLE_TARGETS) return null;
   const exited = decoded || names(features, KERNEL_CODES_FEATURE);
@@ -154,8 +157,12 @@ function stoppedRows(value, expected, { withState = false, decoded = false, feat
     if (v.ok) return typeof v.stopped === 'boolean' && typeof v.alreadyIdle === 'boolean' && (!withState || text(v.state, 128))
       ? { instance: v.instance, home: v.home, ok: true, stopped: v.stopped, alreadyIdle: v.alreadyIdle, ...(withState ? { state: v.state } : {}) } : null;
     if (v.stillRunning !== null && (!Array.isArray(v.stillRunning) || v.stillRunning.length > 128 || v.stillRunning.some(p => !Number.isSafeInteger(p) || p <= 0))) return null;
-    return { instance: v.instance, home: v.home, ok: false, code: lifecycleReason(v.code).code,
-      stillRunning: v.stillRunning === null || !v.stillRunning.length && !exited ? null : [...v.stillRunning] };
+    const code = lifecycleReason(v.code).code;
+    // The row's own sentence is kept for one code only: a child whose home could not be locked, where the
+    // sentence is the refusal of that child's stop and names what ends it. One display line, or nothing.
+    const detail = code !== 'E_LIFECYCLE_BUSY' ? null : decoded ? cleanLine(v.detail) ? v.detail : null : displayLine(v.message);
+    return { instance: v.instance, home: v.home, ok: false, code,
+      stillRunning: v.stillRunning === null || !v.stillRunning.length && !exited ? null : [...v.stillRunning], ...(detail ? { detail } : {}) };
   });
   return result.some(v => !v) ? null : result;
 }
@@ -172,17 +179,26 @@ export function decodedStoppedTargets(value, expected) { return stoppedRows(valu
  * result (a line, the sentence above the rows) decides from this.
  *   idle         ok, the session was already stopped
  *   stopped      ok
+ *   retiring     failed with E_INSTANCE_RETIRING: nothing was tried, a retire holds it
+ *   locked       failed with E_LIFECYCLE_BUSY: nothing was tried, its home's claim could not be taken
  *   running      failed, and these signalled processes were seen alive after the wait
  *   unrecorded   failed with `stillRunning: []`: the harness exited, and what failed came after
- *   unconfirmed  failed with `stillRunning: null`: nothing is established */
+ *   unconfirmed  failed with `stillRunning: null`: nothing is established
+ * The two codes decide before `stillRunning` does, and need no feature name: each means the same in every
+ * kernel that answers it, and the kernel answers both only before any effect. */
 export function stoppedRowKind(row) {
   if (row.ok) return row.alreadyIdle ? 'idle' : 'stopped';
+  if (row.code === 'E_INSTANCE_RETIRING') return 'retiring';
+  if (row.code === 'E_LIFECYCLE_BUSY') return 'locked';
   return !Array.isArray(row.stillRunning) ? 'unconfirmed' : row.stillRunning.length ? 'running' : 'unrecorded';
 }
-/** A row's line, after its name. */
+/** A row's line, after its name. "Not stopped" for a row nothing was tried on; "Didn't stop" for one that
+ * was tried. The busy line says only what the code means: a row carries no holder, and the code covers
+ * causes where nobody runs. A `locked` row's own sentence (`detail`) is shown under the line, as a quote. */
 export function stoppedRowText(row) {
   const kind = stoppedRowKind(row);
   return kind === 'idle' ? 'Was already stopped' : kind === 'stopped' ? 'Stopped'
+    : kind === 'retiring' ? 'Not stopped: it is being retired' : kind === 'locked' ? "Not stopped: OATS couldn't lock its home"
     : kind === 'unrecorded' ? "Stopped, but OATS couldn't record it"
     : kind === 'running' ? `Didn't stop (still running: ${row.stillRunning.join(', ')})` : "Didn't stop";
 }

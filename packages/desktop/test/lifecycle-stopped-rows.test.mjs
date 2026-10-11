@@ -9,10 +9,12 @@ import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { answeringFeatures, stoppedTargets, decodedStoppedTargets, lifecycleReceipt, publicLifecycleReceipt, stoppedRowKind, stoppedRowText,
   stopResultWords, childrenRefusedMessage, lifecycleReason } from '../../client/lifecycle-contract.mjs';
 import { cli, context, envelope, instance, stopPlan, retirePlan, stopReceipt, tick } from './helpers/lifecycle-fixture.mjs';
+import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 
 const FEATURE = 'lifecycle-kernel-codes', PROBE_FEATURES = 'server-probe-features', STAND_IN = 'a stand-in for the kernel message';
 // Each sentence whole, once: every assertion below names it.
 const LINE = { idle: 'Was already stopped', stopped: 'Stopped', unrecorded: "Stopped, but OATS couldn't record it", unconfirmed: "Didn't stop",
+  retiring: 'Not stopped: it is being retired', locked: "Not stopped: OATS couldn't lock its home",
   running: pids => `Didn't stop (still running: ${pids.join(', ')})` };
 const NOT_EVERY = { status: 'Not every session stopped:', title: 'Not every session stopped' };
 const UNRECORDED_TITLE = 'Stopped, but not recorded';
@@ -179,6 +181,8 @@ function mount(t, { ctx, operation, plan, answer }) {
       doc.querySelector('.lifecycle-confirm').click(); await tick(); },
     status: () => doc.querySelector('.lifecycle-dialog [role=status]').textContent, title: () => doc.querySelector('.lifecycle-dialog h2').textContent,
     lines: () => [...doc.querySelectorAll('.lifecycle-result li')].map(li => li.textContent),
+    /** Each row as its line and, under it, the element that quotes the kernel (or null). */
+    rows: () => [...doc.querySelectorAll('.lifecycle-result li')].map(li => ({ line: li.firstElementChild.textContent, quote: li.querySelector('.lifecycle-quote') })),
     footer: () => [...doc.querySelectorAll('.lifecycle-footer button')].filter(shown).map(b => b.textContent),
     mark: () => doc.querySelector('.lifecycle-mark'), phase: () => doc.querySelector('.lifecycle-dialog').dataset.phase };
 }
@@ -275,4 +279,86 @@ test('the dialog validates the child rows of a reply and never decodes them agai
     const view = await shown(rows);
     assert.equal(view.status, lifecycleReason('E_OUTCOME_UNKNOWN').message, JSON.stringify(rows)); assert.deepEqual(view.lines, []);
   }
+});
+
+// A child that another command holds (#866): nothing was tried on it, so its row never reads "Didn't stop".
+// The documented shape of a held child: `stillRunning: null`, one row per plan child, in the plan's order.
+const held = (who, code, ...message) => ({ instance: who.instance, home: who.home, ok: false, code, message: message.length ? message[0] : STAND_IN, stillRunning: null });
+
+test('a row with E_INSTANCE_RETIRING is retiring and one with E_LIFECYCLE_BUSY is locked, whatever its stillRunning says: the code decides first', () => {
+  for (const stillRunning of [null, [], [4242]]) {
+    assert.equal(stoppedRowKind({ ...held(kid, 'E_INSTANCE_RETIRING'), stillRunning }), 'retiring', JSON.stringify(stillRunning));
+    assert.equal(stoppedRowKind({ ...held(kid, 'E_LIFECYCLE_BUSY'), stillRunning }), 'locked', JSON.stringify(stillRunning));
+    assert.equal(stoppedRowText({ ...held(kid, 'E_INSTANCE_RETIRING'), stillRunning }), LINE.retiring); assert.equal(stoppedRowText({ ...held(kid, 'E_LIFECYCLE_BUSY'), stillRunning }), LINE.locked);
+  }
+  // A row that is ok is never one of them, whatever else it carries.
+  assert.equal(stoppedRowKind({ ...fine(kid), code: 'E_LIFECYCLE_BUSY' }), 'stopped');
+  // Neither is "stopped, but not recorded": those sentences need every failed row to be unrecorded.
+  for (const code of ['E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY']) {
+    assert.deepEqual(stopResultWords([failed(kid, []), { ...held(instance, code), stillRunning: [] }]), NOT_EVERY, code);
+    assert.equal(childrenRefusedMessage([failed(kid, []), { ...held(kid2, code), stillRunning: [] }]), CHILDREN_RUNNING, code);
+    assert.equal(childrenRefusedMessage([held(kid, code)]), CHILDREN_RUNNING, code);
+  }
+});
+
+test("the decoder keeps a row's kernel sentence for a locked row only, as one display line; the re-read keeps it only when it is one", () => {
+  const retire = retireOf(kid, kid2), decode = rows => stoppedTargets(rows, retire.facts.children, false, { features: [FEATURE] });
+  assert.deepEqual(decode([held(kid, 'E_LIFECYCLE_BUSY', MESSY), held(kid2, 'E_INSTANCE_RETIRING', MESSY)]), [
+    { instance: 'kid', home: kid.home, ok: false, code: 'E_LIFECYCLE_BUSY', stillRunning: null, detail: MESSY_LINE },
+    { instance: 'kid-2', home: kid2.home, ok: false, code: 'E_INSTANCE_RETIRING', stillRunning: null }]);
+  // Every other failed row drops its message, as before.
+  for (const code of ['E_SESSION_STOP_FAILED', 'E_INSTANCE_RETIRING', 'E_SESSION_UNAVAILABLE']) assert.equal(Object.hasOwn(decode([held(kid, code, 'UNSHOWN'), fine(kid2)])[0], 'detail'), false, code);
+  // Withheld whole when it looks like a credential; absent when the kernel sent nothing to show.
+  assert.equal(decode([held(kid, 'E_LIFECYCLE_BUSY', 'see https://user:pw@host/x'), fine(kid2)])[0].detail, '[Detail withheld]');
+  for (const none of [undefined, null, '', ' \n\t ', 7]) assert.equal(Object.hasOwn(decode([held(kid, 'E_LIFECYCLE_BUSY', none), fine(kid2)])[0], 'detail'), false, String(none));
+  // A stop's results are decoded by the same rule.
+  const stop = stopOf(kid), receipt = lifecycleReceipt(stopAnswer({ revision: stop.planRevision, key: 'k' }, stop, [held(kid, 'E_LIFECYCLE_BUSY', MESSY), fine(instance)]), stop, 'k');
+  assert.equal(receipt.results[0].detail, MESSY_LINE); assert.deepEqual(publicLifecycleReceipt(structuredClone(receipt), stop), receipt);
+  // The re-read: a detail that is already a display line is kept, under that code only; a kernel's `message` is never read there.
+  const decoded = decode([held(kid, 'E_LIFECYCLE_BUSY', MESSY), fine(kid2)]);
+  assert.deepEqual(decodedStoppedTargets(structuredClone(decoded), retire.facts.children), decoded);
+  for (const detail of ['UNSHOWN two\nlines', 'UNSHOWN two  spaces', `UNSHOWN a${String.fromCodePoint(0x202E)}b`, 'UNSHOWN token=abc123', 7, null])
+    assert.equal(Object.hasOwn(decodedStoppedTargets([{ ...decoded[0], detail }, decoded[1]], retire.facts.children)[0], 'detail'), false, JSON.stringify(detail));
+  const { detail: _detail, ...bare } = decoded[0];
+  assert.equal(Object.hasOwn(decodedStoppedTargets([{ ...bare, message: 'UNSHOWN line' }, decoded[1]], retire.facts.children)[0], 'detail'), false);
+  assert.equal(Object.hasOwn(decodedStoppedTargets([{ ...bare, code: 'E_INSTANCE_RETIRING', detail: 'UNSHOWN line' }, decoded[1]], retire.facts.children)[0], 'detail'), false);
+});
+
+test("a refused retire's child list: a child being retired and a child whose home could not be locked read \"Not stopped\", with why; the header is today's", async t => {
+  // With and without the feature names: the two lines are keyed on the row's code alone.
+  for (const ctx of [() => localContext(), () => localContext([FEATURE, 'lifecycle-claim-stop']), () => routedContext({ probe: { ok: true, features: null } })]) {
+    const plan = retireOf(kid, kid2), u = mount(t, { ctx: ctx(), operation: 'retire', plan,
+      answer: () => childrenRefused(plan, [held(kid, 'E_INSTANCE_RETIRING'), held(kid2, 'E_LIFECYCLE_BUSY', MESSY)]) });
+    await u.confirm();
+    assert.equal(u.status(), CHILDREN_RUNNING); assert.equal(u.title(), "dev-1 wasn't retired");
+    const rows = u.rows();
+    assert.deepEqual(rows.map(r => r.line), [`kid: ${LINE.retiring}`, `kid-2: ${LINE.locked}`]);
+    assert.equal(rows[0].quote, null, 'only the locked row quotes the kernel');
+    // The kernel's sentence for that row: one display line, alone in its <bdi>, under the line.
+    assertIsolatedDetail(rows[1].quote, { before: '', detail: MESSY_LINE });
+    assert.equal(u.doc.body.textContent.split(MESSY_LINE).length, 2, 'said once');
+    assert.doesNotMatch(u.doc.body.textContent, /Didn't stop/);
+    assertNotDone(u, 'held children');
+  }
+});
+
+test('a locked row whose sentence is withheld says so; one with no sentence has no quote', async t => {
+  for (const [message, quote] of [['the claim: token=abc123', '[Detail withheld]'], [undefined, null]]) {
+    const plan = retireOf(kid), u = mount(t, { ctx: localContext(), operation: 'retire', plan, answer: () => childrenRefused(plan, [held(kid, 'E_LIFECYCLE_BUSY', message)]) });
+    await u.confirm();
+    const [row] = u.rows();
+    assert.equal(row.line, `kid: ${LINE.locked}`); assert.equal(row.quote?.textContent ?? null, quote);
+    assert.doesNotMatch(u.doc.body.textContent, /abc123/);
+  }
+});
+
+test("the same two lines in a stop's result: one function words both lists, and the sentence above stays today's", async t => {
+  const plan = stopOf(kid, kid2), u = mount(t, { ctx: localContext(), operation: 'stop', plan,
+    answer: args => envelope(stopAnswer(args, plan, [held(kid, 'E_INSTANCE_RETIRING'), held(kid2, 'E_LIFECYCLE_BUSY', MESSY), fine(instance)])) });
+  await u.confirm();
+  assert.equal(u.status(), NOT_EVERY.status); assert.equal(u.title(), NOT_EVERY.title);
+  const rows = u.rows();
+  assert.deepEqual(rows.map(r => r.line), [`kid: ${LINE.retiring}`, `kid-2: ${LINE.locked}`, `dev-1: ${LINE.stopped}`]);
+  assertIsolatedDetail(rows[1].quote, { before: '', detail: MESSY_LINE });
+  assertNotDone(u, 'a stop with held targets');
 });

@@ -1,6 +1,6 @@
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs';
-import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowText,
+import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowKind, stoppedRowText,
   stopResultWords, childrenRefusedMessage, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
@@ -314,7 +314,12 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   }
   /** One line per row of a stop's results or of a retire's child list; what a row is, and its words, are the contract's. */
   function stopped(values) {
-    return list(values.map(v => line(`${v.instance}: ${stoppedRowText(v)}`)));
+    return list(values.map(v => {
+      const li = line(`${v.instance}: ${stoppedRowText(v)}`);
+      // The kernel's own sentence for a child whose home it could not lock: a quote, alone in its <bdi>.
+      if (stoppedRowKind(v) === 'locked' && cleanLine(v.detail)) { const quote = node('span', undefined, 'lifecycle-path lifecycle-quote'); quote.append(node('bdi', v.detail)); li.append(quote); }
+      return li;
+    }));
   }
   /** What a retire receipt says happened, each fact on its own line; paths as muted, selectable text. */
   function retired(receipt, snapshot, complete) {
