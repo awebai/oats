@@ -39,9 +39,13 @@ Targets with the same canonical directory are one file. Each plan entry says
 whether it is the ambient file (`ambient`) and which launch configurations
 use it (`launchConfigs`). A launch configuration whose reference is not set,
 whose path is not absolute, or whose directory does not exist is a named
-`problem` on its entry. OATS never creates a launch configuration's
-directory: create it, or start the harness with it once, then rerun. Any
-problem refuses the whole plan before a write, as an unsupported file does.
+`problem` on its entry. OATS never creates a harness configuration directory:
+create it, or start the harness with it once, then rerun. A missing ambient
+directory (`~/.codex` for a user who has never run Codex, for example) means
+the harness has not run as this user: with `--harness all` that harness's
+entry is `skipped`, with its `reason`, and the other harness proceeds; naming
+that harness (`--harness codex`) makes it a problem. Any problem refuses the
+whole plan before a write, as an unsupported file does.
 Each file is verified through the reader under the environment that selects
 it.
 
@@ -57,8 +61,7 @@ On macOS, any extended-attribute (`@`) or ACL (`+`) marker deliberately refuses,
 including `com.apple.provenance`. This v1 writer does not copy or remove those
 attributes. Inspect the selected file; a refusal never authorizes stripping its
 metadata automatically. Existing file permissions are preserved.
-A missing ambient config directory is created with 0700, and new files use
-0600; a launch configuration's directory is never created. The plan shows the effective file,
+No configuration directory is ever created; a new file uses 0600. The plan shows the effective file,
 semantic key, current/desired trust scalar, byte digests and override provenance;
 it never returns other config values or credentials.
 

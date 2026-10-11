@@ -1462,6 +1462,7 @@ function harnessTrustCmd() {
     for (const entry of result.entries) {
       log(`${entry.harness}: ${entry.status} ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest ?? "unknown/absent"}) (${used(entry)})`);
       if (entry.problem) log(`problem: ${entry.problem}`);
+      if (entry.reason) log(`skipped: ${entry.reason}`);
     }
     if (result.audit) log(`audit: ${result.audit.status} ${result.audit.path} ${result.audit.operationId}`);
     for (const warning of result.warnings) log(`warning: ${warning}`);

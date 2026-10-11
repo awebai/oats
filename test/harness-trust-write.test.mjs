@@ -5,10 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { claudeTrusts, codexTrustsRoot } from '../lib/harness-trust.mjs';
 import { harnessTrust } from '../lib/harness-trust-write.mjs';
-const fixture = t => { const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-write-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const root=join(base,'deployment');fs.mkdirSync(root);return {base,root,env:{HOME:join(base,'native')}}; };
+// The operator has run both harnesses: their ambient configuration directories exist (OATS never creates one).
+const fixture = t => { const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-write-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const root=join(base,'deployment');fs.mkdirSync(root);fs.mkdirSync(join(base,'native','.codex'),{recursive:true});return {base,root,env:{HOME:join(base,'native')}}; };
 test('plan creates nothing; apply writes exact leaves and durable audit; repeat is config no-op', t => {
  const {base,root,env}=fixture(t);
- const planned=harnessTrust(root,{plan:true,env});assert.equal(planned.entries.length,2);assert.equal(fs.existsSync(env.HOME),false);assert.equal(fs.existsSync(join(root,'.agents')),false);
+ const planned=harnessTrust(root,{plan:true,env});assert.equal(planned.entries.length,2);assert.deepEqual(fs.readdirSync(env.HOME),['.codex']);assert.deepEqual(fs.readdirSync(join(env.HOME,'.codex')),[]);assert.equal(fs.existsSync(join(root,'.agents')),false);
  const applied=harnessTrust(root,{env});assert.deepEqual(applied.entries.map(e=>e.status),['applied','applied']);assert.equal(applied.audit.status,'recorded');
  const before=applied.entries.map(e=>({bytes:fs.readFileSync(e.file),mtime:fs.statSync(e.file).mtimeMs}));
  const again=harnessTrust(root,{env});assert.deepEqual(again.entries.map(e=>e.status),['unchanged','unchanged']);
@@ -27,7 +28,7 @@ test('audit failure before replacement sends no write; after replacement retains
  assert.equal(JSON.parse(fs.readFileSync(join(env.HOME,'.claude.json'),'utf8')).projects[fs.realpathSync(root)].hasTrustDialogAccepted,true);
 });
 test('cooperating lock and concurrent bytes refuse without overwriting',t=>{
- const {root,env}=fixture(t);fs.mkdirSync(env.HOME);const file=join(env.HOME,'.claude.json');fs.writeFileSync(file,'{}');fs.writeFileSync(file+'.oats-trust.lock','owned elsewhere');
+ const {root,env}=fixture(t);const file=join(env.HOME,'.claude.json');fs.writeFileSync(file,'{}');fs.writeFileSync(file+'.oats-trust.lock','owned elsewhere');
  assert.throws(()=>harnessTrust(root,{env,harness:'claude'}),e=>e.details.reason==='locked');assert.equal(fs.readFileSync(file,'utf8'),'{}');fs.unlinkSync(file+'.oats-trust.lock');
  assert.throws(()=>harnessTrust(root,{env,harness:'claude',checkpoint(name){if(name==='before-replace')fs.writeFileSync(file,'{"operator":true}');}}),e=>e.details.reason==='changed'&&!e.details.mayHaveChanged);
  assert.equal(fs.readFileSync(file,'utf8'),'{"operator":true}');
@@ -48,7 +49,7 @@ test('verification drift reports actual observed digest without rolling back an 
  assert.equal(fs.readFileSync(join(env.HOME,'.claude.json'),'utf8'),'{"operator":true}');
 });
 test('refuses symlink/hardlink leaves and malformed audit before native writes',t=>{
- const {root,env,base}=fixture(t);fs.mkdirSync(env.HOME);const target=join(base,'target');fs.writeFileSync(target,'{}');const file=join(env.HOME,'.claude.json');fs.symlinkSync(target,file);
+ const {root,env,base}=fixture(t);const target=join(base,'target');fs.writeFileSync(target,'{}');const file=join(env.HOME,'.claude.json');fs.symlinkSync(target,file);
  assert.throws(()=>harnessTrust(root,{env,harness:'claude',plan:true}),e=>e.code==='E_CONFIG_BROKEN');fs.unlinkSync(file);fs.linkSync(target,file);
  assert.throws(()=>harnessTrust(root,{env,harness:'claude'}),e=>e.code==='E_CONFIG_BROKEN');fs.unlinkSync(file);
  fs.mkdirSync(join(root,'.agents'));fs.writeFileSync(join(root,'.agents/harness-trust.jsonl'),'{"truncated":');
@@ -87,7 +88,7 @@ test('native temp write, fsync and rename failures retain checked evidence and c
    });
   } finally {t.mock.restoreAll();syncBuiltinESMExports();}
   assert.equal(injected,true,stage);
-  assert.deepEqual(fs.readdirSync(env.HOME),[],stage);
+  assert.deepEqual(fs.readdirSync(env.HOME),['.codex'],stage);
   const rows=fs.readFileSync(join(root,'.agents/harness-trust.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(rows.map(r=>r.status),['planned',stage==='rename'?'incomplete':'failed']);
   assert.equal(rows[1].afterDigest,null,'failed replacement did not create the proposed bytes');
@@ -97,7 +98,7 @@ test('native temp write, fsync and rename failures retain checked evidence and c
 });
 
 test('file modes survive replacement; new directories/audit are private; special modes refuse', t => {
- const {root,env}=fixture(t);fs.mkdirSync(env.HOME,{mode:0o700});const file=join(env.HOME,'.claude.json');fs.writeFileSync(file,'{}',{mode:0o640});
+ const {root,env}=fixture(t);fs.chmodSync(env.HOME,0o700);const file=join(env.HOME,'.claude.json');fs.writeFileSync(file,'{}',{mode:0o640});
  const result=harnessTrust(root,{env,harness:'claude'});
  assert.equal(fs.statSync(file).mode&0o777,0o640);assert.equal(fs.statSync(result.audit.path).mode&0o777,0o600);assert.equal(fs.statSync(join(root,'.agents')).mode&0o777,0o700);
  fs.chmodSync(file,0o1640);assert.throws(()=>harnessTrust(root,{env,harness:'claude',plan:true}),e=>e.code==='E_CONFIG_BROKEN');
@@ -117,9 +118,9 @@ test('native-valid shapes outside the existing readiness reader refuse during al
 });
 
 test('same-byte inode replacement is a conflict, never silently rebased', t => {
- const {root,env}=fixture(t);fs.mkdirSync(env.HOME);const file=join(env.HOME,'.claude.json');fs.writeFileSync(file,'{}');
+ const {root,env}=fixture(t);const file=join(env.HOME,'.claude.json');fs.writeFileSync(file,'{}');
  assert.throws(()=>harnessTrust(root,{env,harness:'claude',checkpoint(name){if(name==='before-replace'){fs.writeFileSync(file+'.external','{}');fs.renameSync(file+'.external',file);}}}),e=>e.details.reason==='changed'&&!e.details.mayHaveChanged);
- assert.equal(fs.readFileSync(file,'utf8'),'{}');assert.deepEqual(fs.readdirSync(env.HOME),['.claude.json']);
+ assert.equal(fs.readFileSync(file,'utf8'),'{}');assert.deepEqual(fs.readdirSync(env.HOME),['.claude.json','.codex']);
 });
 
 test('audit replacement after fsync cannot be reported as a checked durable row', async t => {
@@ -195,8 +196,11 @@ test('native config directory aliases use on-disk spelling even with missing des
  const native=fs.realpathSync.native(actual);
  const env={HOME:typed,CLAUDE_CONFIG_DIR:join(typed,'claude-new'),CODEX_HOME:join(typed,'codex-new')};
  const expected=[join(native,'claude-new/.claude.json'),join(native,'codex-new/config.toml')];
- assert.deepEqual(harnessTrust(root,{env,plan:true}).entries.map(e=>e.file),expected);
+ const planned=harnessTrust(root,{env,plan:true}).entries;
+ assert.deepEqual(planned.map(e=>e.file),expected);
+ assert.deepEqual(planned.map(e=>e.status),['skipped','skipped'],'missing configuration directories are skipped, never created');
  assert.deepEqual(fs.readdirSync(actual),[]);
+ fs.mkdirSync(join(actual,'claude-new'));fs.mkdirSync(join(actual,'codex-new'));
  const result=harnessTrust(root,{env});
  assert.deepEqual(result.entries.map(e=>e.file),expected);
  assert.deepEqual(result.entries.map(e=>e.status),['applied','applied']);
@@ -208,7 +212,7 @@ test('native config directory aliases use on-disk spelling even with missing des
 // launch configuration whose env moves the harness's configuration directory.
 const configs = entries => Object.fromEntries(Object.entries(entries).map(([name, c]) => [name, { name, args: [], ...c }]));
 test('launch configurations with their own config directories are targets beside the ambient file; plan lists, apply writes and verifies each', t => {
- const {base,root,env}=fixture(t);fs.mkdirSync(env.HOME);
+ const {base,root,env}=fixture(t);
  const a=join(base,'claude-a'), b=join(base,'claude-b'), cx=join(base,'codex-w');for(const d of [a,b,cx])fs.mkdirSync(d);
  const launchConfigs=configs({ work:{harness:'claude',env:{CLAUDE_CONFIG_DIR:a}}, play:{harness:'claude',env:{CLAUDE_CONFIG_DIR:{fromEnv:'PLAY_DIR'}}},
   same:{harness:'claude',env:{CLAUDE_CONFIG_DIR:{fromEnv:'ALIAS_A'}}}, cx:{harness:'codex',env:{CODEX_HOME:cx}}, plain:{harness:'claude',env:{}}, pi:{harness:'pi',env:{CLAUDE_CONFIG_DIR:'relative'}} });
@@ -240,7 +244,7 @@ test('a launch configuration whose config directory is missing, unset or relativ
   ['unset',{harness:'codex',env:{CODEX_HOME:{fromEnv:'NOT_SET'}}},{},'launch configuration unset: CODEX_HOME references NOT_SET, not set on this host'],
   ['rel',{harness:'claude',env:{CLAUDE_CONFIG_DIR:{fromEnv:'REL'}}},{REL:'some/dir'},'launch configuration rel: CLAUDE_CONFIG_DIR "some/dir" is not an absolute path'],
  ]) {
-  const {base,root,env}=fixture(t);fs.mkdirSync(env.HOME);
+  const {base,root,env}=fixture(t);
   const fix=v=>typeof v==='string'?v.replaceAll('<base>',base):v;
   const launchConfigs=configs({[name]:{...c,env:Object.fromEntries(Object.entries(c.env).map(([k,v])=>[k,fix(v)]))}});
   for(const plan of [true,false]) assert.throws(()=>harnessTrust(root,{plan,env:{...env,...host},launchConfigs}),e=>{
@@ -248,6 +252,21 @@ test('a launch configuration whose config directory is missing, unset or relativ
    const refused=e.details.entries.find(x=>x.problem);assert.equal(refused.problem,fix(problem));assert.equal(refused.status,'refused');assert.deepEqual(refused.launchConfigs,[name]);
    assert.ok(e.message.includes(fix(problem)),e.message);return true;
   });
-  assert.deepEqual(fs.readdirSync(env.HOME),[],name);assert.equal(fs.existsSync(join(base,'missing')),false);assert.equal(fs.existsSync(join(root,'.agents')),false);
+  assert.deepEqual(fs.readdirSync(env.HOME),['.codex'],name);assert.deepEqual(fs.readdirSync(join(env.HOME,'.codex')),[],name);assert.equal(fs.existsSync(join(base,'missing')),false);assert.equal(fs.existsSync(join(root,'.agents')),false);
  }
+});
+test('a missing ambient config directory is never created: skipped for that harness under all, a problem when that harness is named', t => {
+ const {base,root}=fixture(t);const env={HOME:join(base,'native-bare')};fs.mkdirSync(env.HOME);
+ for (const plan of [true,false]) {
+   const result=harnessTrust(root,{env,plan});
+   const codex=result.entries.find(e=>e.harness==='codex');
+   assert.equal(codex.status,'skipped');assert.match(codex.reason,/\.codex does not exist: codex has not run as this user/);assert.equal(codex.problem,undefined);
+   assert.equal(result.entries.find(e=>e.harness==='claude').status,plan?'change':'applied');
+ }
+ assert.equal(fs.existsSync(join(env.HOME,'.codex')),false,'never created');
+ assert.throws(()=>harnessTrust(root,{env,harness:'codex'}),e=>e.code==='E_CONFIG_BROKEN'&&/\.codex does not exist/.test(e.message)&&!!e.details.entries[0].problem);
+ assert.equal(fs.existsSync(join(env.HOME,'.codex')),false);
+ const gone={HOME:join(base,'no-home')};
+ assert.throws(()=>harnessTrust(root,{env:gone,harness:'claude'}),e=>e.code==='E_CONFIG_BROKEN'&&/does not exist/.test(e.message));
+ assert.equal(fs.existsSync(gone.HOME),false);
 });
