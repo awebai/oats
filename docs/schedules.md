@@ -663,14 +663,22 @@ own shell, not from an instance home:
   installer's `PATH`: entries inside an OATS instance home (an instance's
   `.oats/bin`, or anything under `$OATS_INSTANCE_HOME`), entries inside a
   versioned Homebrew keg (`…/Cellar/<formula>/<version>/…`), and relative or
-  empty entries. An entry that does not exist yet is kept. A job the tick
-  launches finds its tools and harness on this `PATH`, as it would in that
-  shell.
-- **node**: one that survives an upgrade. That is the keg's
-  `<prefix>/opt/<formula>/bin/node` when it is the node running `install`,
-  else the first `node` on the filtered `PATH` that is that same file. When
-  neither exists, `install` keeps the node's own path and its answer carries a
-  warning that the path is not stable.
+  empty entries. An entry that does not exist yet is kept. This is the
+  `PATH` the tick itself runs with. A harness the tick launches is looked up
+  where its pane will look it up
+  ([execution targets](execution-targets.md#the-servers-start-environment)):
+  the running OATS tmux server's `PATH`, or, when the tick is what starts the
+  server, the `PATH` of the login environment the server is created with. The
+  unit's `PATH` is that lookup's fallback, when the login environment cannot
+  be read.
+- **node**: the keg's `<prefix>/opt/<formula>/bin/node` when it is the node
+  running `install`, else the first `node` on the filtered `PATH` that is that
+  same file. When neither exists, `install` keeps the node's own path and its
+  answer carries a warning that the path is not stable. Only Homebrew's `opt`
+  link survives an upgrade. With a version manager (mise, nvm, asdf, fnm) the
+  node on `PATH` is that version's own install, so the unit records that
+  version's path, and `host status` reports `node-missing` once that version
+  is removed.
 - **oats**: the `oats.mjs` of the oats that runs `install`. When that is inside
   `$OATS_INSTANCE_HOME` or its `work` (a clone in an instance's work tree,
   an attached instance's included), `install` and
@@ -696,8 +704,10 @@ from the installed unit alone, so every caller gets the same answer:
 | `path-entry-missing` | an entry of the unit's `PATH` does not exist (one problem per entry; the fixed prefixes above are not checked, nor the missing node's own directory) |
 | `unit-outdated` | the unit fires on an interval (`StartInterval`, `OnUnitActiveSec`), or differs from what this oats renders for the same node, oats, `PATH` and `OATS_HOME_DIR` |
 
-The fix for each is running `oats schedule host install` again from the
-operator's shell.
+Each problem's `fix` says what to do. For `path-entry-missing`, restore the
+entry, or remove it from the operator's `PATH` and run `oats schedule host
+install` again; for the others, run `oats schedule host install` again from
+the operator's shell.
 
 `oats schedule list --json` answers:
 
