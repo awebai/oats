@@ -215,6 +215,39 @@ no version, so it informs and never decides. What
 follows the Enter is reported, never answered: see
 [launch completion](launch-prompt-completion.md).
 
+**When Claude ignores the flag.** This affects a Claude account (or
+organization) for which Claude Code offers no channels, on the messaging
+provider's default `delivery: channel`. Claude then ignores
+`--dangerously-load-development-channels`, shows no confirmation, and starts the
+session with a notice: `--dangerously-load-development-channels ignored
+(plugin:aweb-channel@awebai-marketplace) Channels are not currently available`.
+Before 0.52 such a start reported launched and said nothing, and the instance
+was never woken by mail or chat. Now, when that notice block equals a
+`flag-ignored` tolerance entry (the block's rows with their `▎` dropped,
+normalized the same way; never a contains test; the entry takes no input), OATS
+sends no key and the start succeeds. It records `launchPrompts: {status:
+"flag-ignored", reason: "channels-unavailable", signatureId, startId, at}` (the
+entry's id, no screen text), and the start's warnings say, in place of the
+statement that OATS confirms the prompt, `Claude ignored
+--dangerously-load-development-channels: channels are not available for this
+Claude account, so this instance gets no channel delivery: mail and chat will not
+wake it; set settings.oats.aweb.delivery: session (the host wake broker) and
+respawn the instance to restore wakes.` Every start says so until delivery
+changes. The kernel's readiness shows no `launch-prompt` warning for it; the
+messaging provider's readiness reports the missing channel. A notice in a wording
+no entry holds is an unknown screen and blocks.
+
+**Known limit: a hidden notice.** Claude shows a limited number of notices. On a
+fresh Claude configuration another notice (for example, auto mode becoming the
+default) can take the slot and keep this one behind `1 more notice hidden`,
+typically on an instance's first spawn. OATS cannot see a hidden notice, so that
+start stays `blocked: unexpected prompt` (no key, the home retained). When the
+blocked screen starts with Claude's running-session banner (`Claude Code
+v<semver>` after the logo), the error and the readiness remedy add: "Claude may
+have ignored the development-channel flag (channels unavailable for this
+account); look at the pane. If the session is running, restart the instance, and
+the notice will then show." A restart where the notice shows records `flag-ignored`.
+
 **The two settings that stop it.** OATS confirms the prompt only because the
 deployment launches Claude with the development-channel flag. To keep the prompt
 for a person, stop launching that way: `settings.oats.aweb.delivery: session`

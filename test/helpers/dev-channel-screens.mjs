@@ -23,3 +23,8 @@ export function edit(screen, from, to) {
   if (at < 0 || screen.indexOf(from, at + 1) >= 0) throw new Error(`edit: ${JSON.stringify(from)} must occur exactly once`);
   return screen.slice(0, at) + to + screen.slice(at + from.length);
 }
+
+/** Real Claude 2.1.296 screens where Claude ignored the development-channel flag
+ *  and started with no confirmation: the notice visible, and behind another notice. */
+export const flagIgnored = fixture("claude-2.1.296-darwin-arm64-flag-ignored-80x24.txt");
+export const flagIgnoredHidden = fixture("claude-2.1.296-darwin-arm64-flag-ignored-hidden-80x24.txt");

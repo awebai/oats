@@ -2,6 +2,7 @@
   "entries": [
     {
       "id": "aweb-dev-channel-confirmation-1",
+      "kind": "confirmation",
       "text": "WARNING: Loading development channels --dangerously-load-development-channels is for local channel development only. Do not use this option to run channels you have downloaded off the internet. Please use --channels to run a list of approved channels. Channels: plugin:aweb-channel@awebai-marketplace ❯ 1. I am using this for local development 2. Exit Enter to confirm · Esc to cancel",
       "selected": "❯ 1. I am using this for local development",
       "provenance": [
@@ -28,6 +29,20 @@
           "platform": "linux-x64",
           "capturedAt": "2026-10-11T01:40:21Z",
           "source": "oats#917 review 5481510495 (https://github.com/awebai/oats/pull/917#pullrequestreview-5481510495): a real Claude with the flag in a private pane at 194x50 and 80x24, no key sent; matchDevChannelEntry equals this entry at both sizes; frames kept by the reviewer; capturedAt is the review's submission time"
+        }
+      ]
+    },
+    {
+      "id": "aweb-dev-channel-flag-ignored-1",
+      "kind": "flag-ignored",
+      "input": "none",
+      "text": "--dangerously-load-development-channels ignored (plugin:aweb-channel@awebai-marketplace) Channels are not currently available",
+      "provenance": [
+        {
+          "claudeVersion": "2.1.296",
+          "platform": "darwin-arm64",
+          "capturedAt": "2026-10-11T08:56:47Z",
+          "source": "test/fixtures/launch-prompts/claude-2.1.296-darwin-arm64-flag-ignored-80x24.txt (oats#917 live run at 74946384, root 9df0182b)"
         }
       ]
     }

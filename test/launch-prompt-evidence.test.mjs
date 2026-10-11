@@ -29,18 +29,20 @@ function mock(t, method, handler) {
   t.after(() => { stub.mock.restore(); syncBuiltinESMExports(); });
 }
 
-test('private receipt reader keeps historical v1 and structural receipts readable and accepts only the three v2 pairs', () => {
+test('private receipt reader keeps historical v1 and structural receipts readable and accepts only the four v2 pairs', () => {
   const old = { version: 1, kind: 'launch-prompt-unmatched', captureTime: null };
   const bytes = JSON.stringify(old);
   assert.deepEqual(launchPromptEvidenceRecognition(old), { outcome: 'blocked', recognition: 'unmatched' });
   assert.equal(JSON.stringify(old), bytes, 'reading does not migrate historical evidence');
-  for (const [outcome, recognition] of [['blocked', 'unmatched'], ['completed', 'stable-screen'], ['completed', 'structural']]) {
+  for (const [outcome, recognition] of [['blocked', 'unmatched'], ['completed', 'stable-screen'], ['flag-ignored', 'notice-block'], ['completed', 'structural']]) {
     assert.deepEqual(launchPromptEvidenceRecognition({ version: 2, kind: 'launch-prompt-frame', outcome, recognition }), { outcome, recognition });
   }
   for (const wrong of [null, {}, { ...old, outcome: 'completed' }, { ...old, version: 2 },
     { version: 2, kind: 'launch-prompt-frame', outcome: 'blocked', recognition: 'structural' },
     { version: 2, kind: 'launch-prompt-frame', outcome: 'blocked', recognition: 'stable-screen' },
     { version: 2, kind: 'launch-prompt-frame', outcome: 'completed', recognition: 'unmatched' },
+    { version: 2, kind: 'launch-prompt-frame', outcome: 'completed', recognition: 'notice-block' },
+    { version: 2, kind: 'launch-prompt-frame', outcome: 'flag-ignored', recognition: 'unmatched' },
     { version: 3, kind: 'launch-prompt-frame', outcome: 'completed', recognition: 'structural' }]) {
     assert.equal(launchPromptEvidenceRecognition(wrong), null);
   }
@@ -71,6 +73,14 @@ test('private evidence retains exact compared bytes, target and receipt-last ide
   assert.deepEqual(fs.readFileSync(join(dir, 'receipt.json')), before);
 });
 
+test('notice-block evidence keeps the screen where Claude ignored the flag', t => {
+  const { args, dir } = setup(t);
+  assert.deepEqual(retainLaunchPromptFrame({ ...args, outcome: 'flag-ignored', recognition: 'notice-block' }), { ok: true });
+  const receipt = JSON.parse(fs.readFileSync(join(dir, 'receipt.json')));
+  assert.deepEqual([receipt.outcome, receipt.recognition], ['flag-ignored', 'notice-block']);
+  assert.equal(fs.readFileSync(join(dir, 'frame.txt'), 'utf8'), args.screen.text);
+});
+
 test('stable-screen evidence binds the proposed completion without asserting the final public outcome', t => {
   const { args, dir } = setup(t);
   assert.deepEqual(retainLaunchPromptFrame({ ...args, outcome: 'completed', recognition: 'stable-screen' }), { ok: true });
@@ -87,7 +97,7 @@ test('stable-screen evidence binds the proposed completion without asserting the
   assert.equal(Object.hasOwn(receipt, 'audit'), false);
 });
 
-for (const [outcome, recognition] of [['completed', 'unmatched'], ['blocked', 'structural'], ['completed', 'structural'],
+for (const [outcome, recognition] of [['completed', 'unmatched'], ['blocked', 'structural'], ['completed', 'structural'], ['flag-ignored', 'unmatched'], ['completed', 'notice-block'],
   ['incomplete', 'structural'], ['completed', 'exact'], ['unknown', 'unmatched'], [null, null]]) {
   test(`private receipt refuses unsupported pair ${outcome}/${recognition} before any publication`, t => {
     const { args, home } = setup(t);

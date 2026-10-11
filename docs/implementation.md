@@ -96,9 +96,9 @@ from it, and the test lists the stable surface a second client may import.
 | `retire-output.mjs` | the lines `oats retire` prints for preserved work, one function for the local and the remote path |
 | `retained-after-retire.mjs` | what retires left behind (recovery copies, retained worktrees) as `oats doctor` information lines: read-only, Git through `instance-git.mjs`'s helper-free reads |
 | `servers.mjs` | routing commands to a registered server |
-| `launch-prompt-evidence.mjs` | private bounded storage of exact unmatched or stable-screen completed frames, original-home identity checks and receipt-last publication; no terminal operations or public raw text |
+| `launch-prompt-evidence.mjs` | private bounded storage of exact unmatched, stable-screen completed or flag-ignored notice frames, original-home identity checks and receipt-last publication; no terminal operations or public raw text |
 | `launch-prompt-completion.mjs` | the 21 question markers that block after the development-channel Enter; reporting only, never an input matcher |
-| `launch-prompt-fixtures.mjs` | the development-channel tolerance list (`launch-prompt-fixtures/dev-channel-confirmation.json`): engagement from the argv, the enumerated normalization, equality matching, what differed, and the Claude version read from the executable's path |
+| `launch-prompt-fixtures.mjs` | the development-channel tolerance list (`launch-prompt-fixtures/dev-channel-confirmation.json`): engagement from the argv, the enumerated normalization, equality matching, the `flag-ignored` notice block, the running-session banner hint, what differed, and the Claude version read from the executable's path |
 | `launch-prompts.mjs`, `launch-prompt-transport.mjs` | bounded launch-only controller and visible-screen transport; private process authority, injectable clock/transport, durable checked receipts, one Enter only on equality with a tolerance entry |
 | `harness-trust.mjs` | read-only native trust coverage and operator remedy for launches |
 | `harness-trust-write.mjs` | explicit operator plan/apply, cooperating locks, durable deployment audit and no-rollback outcomes |

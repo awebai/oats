@@ -74,5 +74,27 @@
     "capture": "tmux capture-pane -p in a private socket, --network none container, throwaway CLAUDE_CONFIG_DIR (onboarding, dummy-key approval, tengu_harbor gate, throwaway cwd trust), dummy key, no keys sent",
     "bytes": 567,
     "sha256": "e37437f9610cab795cd05e149c007034b4814656b179c24b79a07999f3c1837f"
+  },
+  "claude-2.1.296-darwin-arm64-flag-ignored-80x24.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "darwin-arm64",
+    "capturedAt": "2026-10-11T08:56:47Z",
+    "width": 80,
+    "height": 24,
+    "source": "oats#917 live run at 74946384 (886/live-enter out-20261011T085636Z, root 9df0182b), darwin-arm64, /opt/homebrew/bin/claude 2.1.296, throwaway CLAUDE_CONFIG_DIR and HOME, dummy key, ANTHROPIC_BASE_URL on a dead local port, private tmux socket",
+    "capture": "unedited tmux capture-pane -p of the restarted pane after the start returned: Claude ignored the flag (notice visible) and started with no confirmation; no key was sent; capturedAt is the capture file's modification time",
+    "bytes": 1121,
+    "sha256": "05b1262fa10102b8b4bbf4e4f50f639890e39d2fa14ecfa5f667acff6a8bfdaf"
+  },
+  "claude-2.1.296-darwin-arm64-flag-ignored-hidden-80x24.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "darwin-arm64",
+    "capturedAt": "2026-10-11T08:56:43Z",
+    "width": 80,
+    "height": 24,
+    "source": "oats#917 live run at 74946384 (886/live-enter out-20261011T085636Z, root 9df0182b), darwin-arm64, /opt/homebrew/bin/claude 2.1.296, throwaway CLAUDE_CONFIG_DIR and HOME, dummy key, ANTHROPIC_BASE_URL on a dead local port, private tmux socket",
+    "capture": "unedited tmux capture-pane -p of the spawned pane after the spawn returned: the same start with the flag-ignored notice behind '1 more notice hidden'; no key was sent; capturedAt is the capture file's modification time",
+    "bytes": 1339,
+    "sha256": "c5494153c545eff030e17ed256e2e0f051cbcd525a60fc72fb6cbf983ebe1a5a"
   }
 }

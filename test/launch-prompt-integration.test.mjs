@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { v2Deployment } from './helpers/v2-deployment.mjs';
-import { startInstanceSession, restartInstanceSession, inspectInstanceSession, stopInstanceSession, retireInstance, DEV_CHANNEL_STATEMENT } from '../lib/core.mjs';
-import { DEV_CHANNEL_ENTRIES } from '../lib/launch-prompt-fixtures.mjs';
+import { startInstanceSession, restartInstanceSession, inspectInstanceSession, stopInstanceSession, retireInstance, DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING } from '../lib/core.mjs';
+import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES, CLAUDE_SESSION_HINT } from '../lib/launch-prompt-fixtures.mjs';
 import { waitUntil } from './helpers/host-fixture.mjs';
 import { readEvents } from '../lib/instance-events.mjs';
 
@@ -16,11 +17,15 @@ const ENTRY = DEV_CHANNEL_ENTRIES[0].id;
 // launched programs here are these stubs; no real harness or default server is used.
 // `confirm-stub` is SYNTHETIC: it draws the real confirmation's text word-wrapped
 // to its pane width, logs every key it reads, and on Enter shows a session screen.
-// `question-stub` shows a question no entry matches.
+// `question-stub` shows a question no entry matches. `ignored-stub` and `hidden-stub`
+// draw the real Claude 2.1.296 screens of a start that ignored the flag (its notice
+// visible, and hidden behind another notice), log every key, and keep running.
+const capture = name => fileURLToPath(new URL(`./fixtures/launch-prompts/${name}`, import.meta.url));
 function fixture(t) {
   const fx = v2Deployment();
   t.after(() => fx.cleanup());
   const confirm = join(fx.base, 'confirm-stub'), question = join(fx.base, 'question-stub');
+  const ignored = join(fx.base, 'ignored-stub'), hidden = join(fx.base, 'hidden-stub');
   const paragraphs = JSON.stringify(['WARNING: Loading development channels',
     '--dangerously-load-development-channels is for local channel development only. Do not use this option to run channels you have downloaded off the internet.',
     'Please use --channels to run a list of approved channels.', 'Channels: plugin:aweb-channel@awebai-marketplace',
@@ -34,11 +39,21 @@ process.stdin.setRawMode(true); process.stdin.resume();
 process.stdin.on('data', d => { fs.appendFileSync('stub-keys.log', JSON.stringify(d.toString()) + '\\n'); if (d.includes(13)) process.stdout.write('\\x1b[2J\\x1b[HSYNTHETIC session ready\\n> '); });
 `);
   writeFileSync(question, `#!${process.execPath}\nconsole.log('Unexpected stub question: secret text must not enter receipts');\nsetInterval(() => {}, 1000);\n`);
-  for (const f of [confirm, question]) chmodSync(f, 0o755);
+  for (const [file, screen] of [[ignored, 'claude-2.1.296-darwin-arm64-flag-ignored-80x24.txt'], [hidden, 'claude-2.1.296-darwin-arm64-flag-ignored-hidden-80x24.txt']]) {
+    writeFileSync(file, `#!${process.execPath}
+const fs = require('fs');
+process.stdout.write(fs.readFileSync(${JSON.stringify(capture(screen))}, 'utf8').replace(/\\n$/, ''));
+process.stdin.setRawMode(true); process.stdin.resume();
+process.stdin.on('data', d => fs.appendFileSync('stub-keys.log', JSON.stringify(d.toString()) + '\\n'));
+`);
+  }
+  for (const f of [confirm, question, ignored, hidden]) chmodSync(f, 0o755);
   const local = YAML.parse(readFileSync(join(fx.dep, 'oats-local.yaml'), 'utf8'));
   local['launch-configs'] = {
     confirm: { harness: 'claude', executable: confirm, args: [...DEV] },
     question: { harness: 'claude', executable: question, args: [...DEV] },
+    ignored: { harness: 'claude', executable: ignored, args: [...DEV] },
+    hidden: { harness: 'claude', executable: hidden, args: [...DEV] },
     plain: { harness: 'claude', executable: confirm },
     codex: { harness: 'codex', executable: confirm, args: [...DEV] },
   };
@@ -264,4 +279,59 @@ test('blocked spawn keeps conservative retirement recovery and refuses a mismatc
   assert.ok(result.workRecovery.classes.includes('changed instance-home bytes'));
   assert.equal(existsSync(join(result.workRecovery.path, 'home', 'instance.json')), true);
   assert.equal(existsSync(h), false);
+});
+
+test('Claude ignoring the flag is a successful start: flag-ignored recorded, no key, a warning, no readiness item', async t => {
+  const { fx, home } = fixture(t);
+  const spawned = await fx.spawn('dev', { name: 'dev-ignored', launchConfig: 'ignored', launch: true });
+  assert.ok(spawned.warnings.includes(FLAG_IGNORED_WARNING));
+  assert.ok(!spawned.warnings.includes(DEV_CHANNEL_STATEMENT), 'the answer never also says OATS confirms the prompt');
+  assert.match(FLAG_IGNORED_WARNING, /^Claude ignored --dangerously-load-development-channels: channels are not available for this Claude account, so this instance gets no channel delivery: mail and chat will not wake it; /);
+  assert.match(FLAG_IGNORED_WARNING, /settings\.oats\.aweb\.delivery: session/);
+  const h = home('dev-ignored');
+  const recorded = meta(h).launchPrompts;
+  assert.deepEqual(Object.keys(recorded).sort(), ['at', 'reason', 'signatureId', 'startId', 'status']);
+  assert.equal(recorded.status, 'flag-ignored');
+  assert.equal(recorded.reason, 'channels-unavailable');
+  assert.equal(recorded.signatureId, FLAG_IGNORED_ENTRIES[0].id);
+  assert.equal(spawned.launchPrompts.signatureId, FLAG_IGNORED_ENTRIES[0].id, 'the spawn answer carries it');
+  assert.doesNotMatch(JSON.stringify([recorded, promptEvents(h)]), /Channels are not|currently available/, 'no screen text in public rows');
+  assert.match(recorded.startId, /^[0-9a-f-]{36}$/);
+  assert.equal(meta(h).launched, true);
+  const rows = promptEvents(h).map(e => e.data);
+  assert.deepEqual(rows.map(r => [r.status, r.signatureId, r.startId]), [['flag-ignored', FLAG_IGNORED_ENTRIES[0].id, recorded.startId]]);
+  assert.deepEqual(readinessItems(fx, h), []);
+
+  const restarted = await fx.inEnv(() => restartInstanceSession(h));
+  assert.ok(restarted.warnings.includes(FLAG_IGNORED_WARNING));
+  assert.ok(!restarted.warnings.includes(DEV_CHANNEL_STATEMENT));
+  assert.equal(restarted.launchPrompts.status, 'flag-ignored', 'the restart result carries what it recorded');
+  assert.deepEqual(restarted.launchPrompts, meta(h).launchPrompts);
+  assert.notEqual(meta(h).launchPrompts.startId, recorded.startId);
+  assert.equal(meta(h).launched, true);
+  assert.deepEqual(readinessItems(fx, h), []);
+  await new Promise(r => setTimeout(r, 300));
+  assert.deepEqual(keys(h), [], 'no key was ever sent');
+  await fx.inEnv(() => stopInstanceSession(h));
+});
+
+test('a running session with the notice hidden stays blocked, and the error and readiness say the flag may have been ignored', async t => {
+  const { fx, home } = fixture(t);
+  let error;
+  await assert.rejects(fx.spawn('dev', { name: 'dev-hidden', launchConfig: 'hidden', launch: true }), e => { error = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
+  assert.ok(error.message.includes(CLAUDE_SESSION_HINT), error.message);
+  const h = home('dev-hidden');
+  assert.equal(meta(h).launchPrompts.status, 'blocked');
+  assert.equal(meta(h).launchPrompts.reason, 'blocked: unexpected prompt');
+  assert.equal(meta(h).launchPrompts.claudeSessionShown, true);
+  const [warning] = readinessItems(fx, h);
+  assert.ok(warning.remedy.includes(CLAUDE_SESSION_HINT), warning.remedy);
+  assert.deepEqual(keys(h), []);
+
+  await fx.spawn('dev', { name: 'dev-question', launchConfig: 'question', launch: false });
+  const q = home('dev-question');
+  let foreign;
+  await assert.rejects(fx.inEnv(() => startInstanceSession(q)), e => { foreign = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
+  assert.ok(!foreign.message.includes(CLAUDE_SESSION_HINT));
+  assert.ok(!readinessItems(fx, q)[0].remedy.includes(CLAUDE_SESSION_HINT));
 });

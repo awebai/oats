@@ -124,7 +124,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results, with one exception: a document with an unsafe mapping key or value is refused under its own name, `unsafe-config-key` or `unsafe-config-value`, by these commands as by every other; `error.details.cause` on an error that has a code which is not a kernel code (`{code, syscall}`) and on a defect of the kernel (`{name}`), and none on a refusal that has no code, which is answered with the command's general code and its message alone ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
 | `schedule-run-warnings` | a schedule run's record (`lastRun`, `recentRuns[]`) and a trigger fire's record and `lastRun` carry `warnings?`, the launch answer's warnings, when it had some; OATS 0.52.0 ([schedules and triggers](#schedules-and-triggers)) | |
 | `lifecycle-claim-stop` | `oats instance stop --apply` holds the claim of every target (the file one retire of a home at a time is ordered by), so a stop is refused beside a retire in flight (`E_INSTANCE_RETIRING`) or another stop (`E_LIFECYCLE_BUSY`), a retire beside a stop (`E_LIFECYCLE_BUSY`), and `oats worktree add` beside a retire (`E_INSTANCE_RETIRING`), each before any effect ([Commands that meet on one home](#lifecycle-pairs)); a stop that was killed refuses nothing afterwards, and `<home>/.oats-stop-pending.json` is no longer written or read: a client's own handling of a stale stop marker is not needed for a kernel that lists this; `error.details.action` (the holder's verb) on those refusals, and `error.details.holder` on every `E_LIFECYCLE_BUSY` ([`details.holder`](#busy-holder)); the codes a stop and a retire answer only before any effect, as one list ([the list](#before-effect-codes)), with two retire answers that came after an effect given codes outside it (`E_WORK_PRESERVATION_FAILED`, `E_RUNTIME_QUIESCE_FAILED`), OATS 0.52.0. Gate on the probe; routed with `--server`, on the host's list | |
-| `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"`; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
+| `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"` and `"flag-ignored"`; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -1786,15 +1786,26 @@ The home's `instance.json` `launchPrompts` always describes the last start
 
 - `{status: "not-engaged", startId, at}` for a start that did not engage it, with
   no `launchPromptTarget`;
+- `{status: "flag-ignored", reason: "channels-unavailable", signatureId, startId,
+  at}` for a start where Claude ignored the flag: a notice block on its screen
+  equalled the `flag-ignored` tolerance entry `signatureId`, Claude showed no
+  confirmation and no key was sent. No screen text is recorded. The start
+  succeeds (`launched: true`) and its `warnings` carry, in place of the statement
+  beginning `This start passes`, a fixed string beginning `Claude ignored
+  --dangerously-load-development-channels: channels are not available for this
+  Claude account`. `launchPromptTarget` is the pane;
 - otherwise the observed result `{status, answers, reason, receipt}`, `status`
   one of `completed`, `blocked`, `incomplete`; a `blocked` result also carries
   `differed: {nearest, firstDifference: {index, expected, found}}` (the nearest
   tolerance entry and at most 40 characters of each normalized text at the first
-  difference). `launchPromptTarget` is the pane.
+  difference) and, when the blocked screen before any Enter started with Claude's
+  running-session banner, `claudeSessionShown: true` (the error and the readiness
+  remedy then add that Claude may have ignored the flag with its notice hidden).
+  `launchPromptTarget` is the pane.
 
 A `--no-launch` spawn records no `launchPrompts`. Readers must treat
-`not-engaged` like an absent value: retire and replay act only on `blocked` and
-`incomplete`.
+`not-engaged` and `flag-ignored` like an absent value: retire and replay act only
+on `blocked` and `incomplete`.
 
 `receipt` carries the actual checked launch-prompt event-write results,
 including partial log availability; it is not a receive-readiness receipt.
@@ -1803,7 +1814,9 @@ Claude version read from the executable's real path (`claudeVersion`, a semver
 or `"unknown"`; `claudeVersionSource`, `"executable-path"` or `"unknown"`; it is
 `"unknown"` when Claude is started through a wrapper, whose path carries no
 version), the matched entry (`signatureId`) and digest, action and outcome; a miss adds
-`differed`. It carries no `consentSource`. Intent is durable before input;
+`differed` (and `claudeSessionShown` as above); a start where Claude ignored the
+flag is one row, `status: "flag-ignored"`, `reason: "channels-unavailable"`, with
+the `flag-ignored` entry as `signatureId` and no `key`. It carries no `consentSource`. Intent is durable before input;
 submission (`submitted`, `failed`, `uncertain`) and an observed screen
 transition are distinct. Beyond `differed`'s bounded snippets, raw screen text
 is never included in the receipt.
@@ -4188,7 +4201,9 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   plus `nativeRecordId` and `stop` (a restart's stop receipt) when they apply,
   and (0.52.0) `launchPrompts`, the value this start recorded in `instance.json`:
   `{status: "not-engaged", startId, at}` for a start that did not engage the
-  development-channel confirmation, or the observed `{status: "completed",
+  development-channel confirmation, `{status: "flag-ignored", reason:
+  "channels-unavailable", signatureId, startId, at}` for one where Claude ignored
+  the flag (with its warning in `warnings`), or the observed `{status: "completed",
   answers, reason, receipt}`. A `blocked` or `incomplete` outcome is
   `E_SPAWN_INCOMPLETE` instead ([Launch prompt results](#launch-prompt-results)).
 - `warnings` (0.30) is always present: an array of strings, the warnings the

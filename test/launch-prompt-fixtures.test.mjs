@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { DEV_CHANNEL_ENTRIES, validateDevChannelEntries, normalizeScreen, matchDevChannelEntry, devChannelDifference,
-  claudeVersionOf, launchPromptEngages } from "../lib/launch-prompt-fixtures.mjs";
-import { raw296, raw289, linux296, edit } from "./helpers/dev-channel-screens.mjs";
+import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES, validateDevChannelEntries, normalizeScreen, matchDevChannelEntry, matchFlagIgnoredEntry,
+  devChannelDifference, claudeVersionOf, launchPromptEngages } from "../lib/launch-prompt-fixtures.mjs";
+import { raw296, raw289, linux296, flagIgnored, flagIgnoredHidden, edit } from "./helpers/dev-channel-screens.mjs";
 
 const PLUGIN = "plugin:aweb-channel@awebai-marketplace";
 const DEV = "--dangerously-load-development-channels";
@@ -128,3 +128,62 @@ test("the Claude version comes from the executable's real path, never from runni
   assert.deepEqual(claudeVersionOf(undefined), { claudeVersion: "unknown", claudeVersionSource: "unknown" });
   assert.equal(existsSync(marker), false);
 });
+
+const NOTICE = "▎ --dangerously-load-development-channels ignored\n▎ (plugin:aweb-channel@awebai-marketplace)\n▎ Channels are not currently available\n";
+
+test("the shipped flag-ignored entry is the notice block of the live 2.1.296 capture", () => {
+  assert.equal(FLAG_IGNORED_ENTRIES.length, 1);
+  const [entry] = FLAG_IGNORED_ENTRIES;
+  assert.equal(entry.kind, "flag-ignored");
+  assert.equal(entry.input, "none", "the entry says it takes no input");
+  assert.equal(entry.text, `${DEV} ignored (${PLUGIN}) Channels are not currently available`);
+  assert.deepEqual(entry.provenance.map(p => [p.claudeVersion, p.platform]), [["2.1.296", "darwin-arm64"]]);
+  assert.ok(Object.isFrozen(entry) && Object.isFrozen(FLAG_IGNORED_ENTRIES));
+  assert.ok(DEV_CHANNEL_ENTRIES.every(e => e.kind === "confirmation"));
+  assert.equal(matchFlagIgnoredEntry(flagIgnored)?.id, entry.id);
+  assert.equal(matchDevChannelEntry(flagIgnored), null, "the notice never confirms anything");
+  assert.equal(matchFlagIgnoredEntry(raw296), null);
+});
+
+test("a notice hidden behind 'more notices hidden' is no match: the visible block is another notice", () => {
+  assert.equal(matchFlagIgnoredEntry(flagIgnoredHidden), null);
+});
+
+test("the notice block matches at any wrapping: the rows' ▎ is dropped before the same normalization", () => {
+  const wide = edit(flagIgnored, NOTICE, `▎ ${DEV} ignored (${PLUGIN})\n▎ Channels are not currently available\n`);
+  assert.equal(matchFlagIgnoredEntry(wide)?.id, FLAG_IGNORED_ENTRIES[0].id);
+  const narrow = edit(flagIgnored, NOTICE, `▎ ${DEV}\n▎ ignored\n▎ (${PLUGIN})\n▎ Channels are not\n▎ currently available\n`);
+  assert.equal(matchFlagIgnoredEntry(narrow)?.id, FLAG_IGNORED_ENTRIES[0].id);
+});
+
+for (const [name, notice] of [
+  ["another plugin", NOTICE.replace(PLUGIN, "plugin:other-channel@elsewhere")],
+  ["another notice wording", NOTICE.replace("Channels are not currently available", "Channels are not available")],
+  ["an extra line in the block", NOTICE + "▎ Run claude /channels to learn more\n"],
+  ["an extra line above it in the block", "▎ Auto mode is now Claude Code's default permission mode.\n" + NOTICE],
+  ["the notice text without the block marker", NOTICE.replaceAll("▎ ", "  ")],
+  ["the notice text inside a longer row", NOTICE.replace("▎ --dangerously", "▎ note: --dangerously")],
+  ["the block marker indented", NOTICE.replaceAll("▎ ", " ▎ ")],
+]) {
+  test(`a flag-ignored near-miss is no match: ${name}`, () => {
+    assert.equal(matchFlagIgnoredEntry(edit(flagIgnored, NOTICE, notice)), null);
+  });
+}
+
+for (const [name, mutate] of [
+  ["no kind", e => { delete e.kind; }],
+  ["no input statement", e => { delete e.input; }],
+  ["an input other than none", e => { e.input = "Enter"; }],
+  ["an unknown kind", e => { e.kind = "notice"; }],
+  ["a selection marker", e => { e.text = `❯ ${e.text}`; }],
+  ["a selected option", e => { e.selected = "❯ 1. I am using this for local development"; }],
+  ["a second channel", e => { e.text = e.text.replace(PLUGIN, `${PLUGIN} plugin:other@market`); }],
+  ["no development flag", e => { e.text = e.text.replace(`${DEV} `, ""); }],
+  ["text that is not normalized", e => { e.text = e.text.replace(" ignored", "  ignored"); }],
+]) {
+  test(`a hand-edited flag-ignored entry with ${name} fails validation`, () => {
+    const entries = structuredClone([...DEV_CHANNEL_ENTRIES, ...FLAG_IGNORED_ENTRIES]);
+    mutate(entries[1]);
+    assert.throws(() => validateDevChannelEntries(entries), /dev-channel tolerance entry/);
+  });
+}

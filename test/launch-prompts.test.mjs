@@ -4,8 +4,8 @@ import { mkdtempSync, realpathSync, rmSync, renameSync, mkdirSync } from "node:f
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createLaunchPromptController } from "../lib/launch-prompts.mjs";
-import { DEV_CHANNEL_ENTRIES } from "../lib/launch-prompt-fixtures.mjs";
-import { raw296, linux296, trustPrompts, sessions, edit } from "./helpers/dev-channel-screens.mjs";
+import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES } from "../lib/launch-prompt-fixtures.mjs";
+import { raw296, linux296, trustPrompts, sessions, flagIgnored, flagIgnoredHidden, edit } from "./helpers/dev-channel-screens.mjs";
 
 // The prompt screens are real captures; the post-answer session screen is
 // SYNTHETIC (any non-blank screen without a question marker completes).
@@ -356,4 +356,60 @@ test("every question marker blocks after the Enter, and none suppresses the init
     assert.equal(result.reason, "blocked: unexpected prompt", marker);
     assert.deepEqual(io.sends, ["Enter"], marker);
   }
+});
+
+test("Claude ignoring the flag (its notice block visible) is flag-ignored: no key, audited, evidence kept", t => {
+  const { controller, io } = setup(t, { configure({ io }) { io.snapshotHook = s => ({ ...s, text: io.text.replace(/Retrying in \d+s/, `Retrying in ${io.captures}s`) }); io.text = flagIgnored; } });
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "flag-ignored");
+  assert.equal(result.reason, "channels-unavailable");
+  assert.equal(result.signatureId, FLAG_IGNORED_ENTRIES[0].id);
+  assert.deepEqual(result.answers, []);
+  assert.deepEqual(io.sends, []);
+  assert.deepEqual(io.audits.map(a => [a.status, a.reason, a.signatureId]), [["flag-ignored", "channels-unavailable", FLAG_IGNORED_ENTRIES[0].id]]);
+  assert.ok(!Object.hasOwn(io.audits[0], "differed") && !Object.hasOwn(result, "differed"));
+  assert.deepEqual(io.retained.map(r => [r.outcome, r.recognition]), [["flag-ignored", "notice-block"]]);
+  assert.ok(!JSON.stringify(io.audits).includes("Channels are not"));
+});
+
+test("a respawn that shows the flag-ignored notice is flag-ignored, after ownership is proven", t => {
+  const { controller, io } = setup(t, { configure({ io }) { io.text = sessions["seq-06-session-after-channel.txt"]; } });
+  const token = controller.captureBeforeRespawn(target);
+  io.text = flagIgnored;
+  const result = controller.observeRespawn({ ...target, pid: "43" }, token);
+  assert.equal(result.status, "flag-ignored");
+  assert.deepEqual(io.sends, []);
+});
+
+test("a running Claude session with the notice hidden blocks with no key and says Claude's session UI was shown", t => {
+  const { controller, io } = setup(t, { configure({ io }) { io.text = flagIgnoredHidden; } });
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "blocked: unexpected prompt");
+  assert.equal(result.claudeSessionShown, true);
+  assert.equal(io.audits.at(-1).claudeSessionShown, true);
+  assert.deepEqual(io.sends, []);
+});
+
+test("a foreign prompt or a near-miss never says Claude's session UI was shown", t => {
+  const banner = flagIgnoredHidden;
+  for (const text of [trust, edit(raw296, PLUGIN, "plugin:other@x"), "SYNTHETIC question?\n",
+    edit(banner, " ▐▛███▛█   Claude Code v2.1.296", " ▐▛███▛█   Claude Code 2.1.296"),
+    edit(banner, " ▐▛███▛█   Claude Code v2.1.296", " ▐▛███▛█   Claude Code v2.1"),
+    edit(banner, " ▐▛███▛█   Claude Code v2.1.296", " ▐▛███▛█   Claude Codex v2.1.296"),
+    "Accessing workspace\n" + banner]) {
+    const { controller, io } = setup(t, { configure({ io }) { io.text = text; } });
+    const result = controller.observeNew(target);
+    assert.equal(result.status, "blocked");
+    assert.ok(!Object.hasOwn(result, "claudeSessionShown"), text.slice(0, 40));
+    assert.ok(!Object.hasOwn(io.audits.at(-1), "claudeSessionShown"));
+    assert.deepEqual(io.sends, []);
+  }
+});
+
+test("after the Enter, a session screen with a question never says the flag was ignored", t => {
+  const { controller, io } = setup(t, { configure({ io }) { io.sendHook = () => { io.text = flagIgnoredHidden + "Do you want to proceed?\n❯ 1. Yes\n"; return { status: "submitted" }; }; } });
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "blocked");
+  assert.ok(!Object.hasOwn(result, "claudeSessionShown"));
 });

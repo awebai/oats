@@ -192,7 +192,13 @@ and API-key questions remain unexpected and blocked. The confirmation is
 answered with one Enter only when the screen equals an entry of the tolerance
 list, on any pane width wide enough to wrap at word boundaries; a new Claude
 wording blocks loudly until a reviewed change adds it. `--no-launch` never
-answers. If launch returns `E_SPAWN_INCOMPLETE`, inspect the retained home/pane:
+answers. Where channels are unavailable for the Claude account, Claude ignores
+the flag and shows no confirmation: the start succeeds with `launchPrompts.status:
+"flag-ignored"`, no key, and a warning that the instance has no channel delivery,
+so mail and chat will not wake it until delivery changes.
+On a first spawn that notice can be hidden behind another one; the start then
+blocks, and the error says to look at the pane and restart a running session.
+If launch returns `E_SPAWN_INCOMPLETE`, inspect the retained home/pane:
 do not respawn, repeat keys or treat `launched:false` as an absent process.
 After the Enter, completion is reporting only: two non-blank captures 200 ms
 apart without a question marker complete; a marker, or the confirmation coming

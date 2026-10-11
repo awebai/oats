@@ -697,9 +697,15 @@ captured twice, identical, around the durable intent.
 Observation is bounded to 30 seconds with 100 ms intervals. A blank screen, or
 one that keeps changing (a prompt still being painted), keeps observing. Only a
 screen whose normalized text equals a tolerance entry can be answered, once,
-with one Enter. An unknown screen that holds still for 200 ms, or the last
+with one Enter. A screen with a notice block (a maximal run of rows that begin
+with `▎`, each row's `▎` dropped, then the same normalization) that equals a
+`flag-ignored` entry means Claude ignored the flag and shows no confirmation: the
+start ends `flag-ignored`, reason `channels-unavailable`, with no key, and
+succeeds. An unknown screen that holds still for 200 ms, or the last
 unknown screen when the bound is reached, permanently closes authority with
-`blocked: unexpected prompt`; a screen blank for the whole bound reports
+`blocked: unexpected prompt`; when that screen starts with Claude's
+running-session banner (`▐▛███▛█ Claude Code v<semver>`), the result carries
+`claudeSessionShown: true`. A screen blank for the whole bound reports
 `blocked: observation timeout`. Folder-trust and API-key prompts
 are unexpected and block; no multi-prompt sequence is authorized. The controller
 never resizes the pane. Uncertain submission is never retried. Ordinary
@@ -776,8 +782,9 @@ event timestamp for capture time. Same-uid concurrent mutation between checks is
 not excluded.
 
 Private receipt version 2 uses `kind:"launch-prompt-frame"`. This kernel writes
-only `outcome:"blocked", recognition:"unmatched"` or
-`outcome:"completed", recognition:"stable-screen"`; readers also accept
+only `outcome:"blocked", recognition:"unmatched"`,
+`outcome:"completed", recognition:"stable-screen"` or
+`outcome:"flag-ignored", recognition:"notice-block"`; readers also accept
 `outcome:"completed", recognition:"structural"`, written by kernels 0.47–0.51 for
 completion recognized by Claude's footer structure. These fields describe the
 recognition whose frame was saved, not the final public launch result: a later
