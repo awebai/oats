@@ -226,7 +226,8 @@ See [launch completion](launch-prompt-completion.md).
 
 **When Claude ignores the flag.** This affects a Claude account (or
 organization) for which Claude Code offers no channels, on the messaging
-provider's default `delivery: channel`. Claude then ignores
+provider's default `delivery: channel`. Claude Code disables channels when telemetry is opted out (`DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), so a launch
+environment that sets any of them is affected the same way. Claude then ignores
 `--dangerously-load-development-channels`, shows no confirmation, and starts the
 session with a notice: `--dangerously-load-development-channels ignored
 (plugin:aweb-channel@awebai-marketplace) Channels are not currently available`.

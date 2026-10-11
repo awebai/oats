@@ -1795,7 +1795,8 @@ The home's `instance.json` `launchPrompts` always describes the last start
   succeeds (`launched: true`) and its `warnings` carry, in place of the statement
   beginning `This start passes`, a fixed string beginning `Claude ignored
   --dangerously-load-development-channels: channels are not available for this
-  Claude account`. `launchPromptTarget` is the pane;
+  Claude account`. `launchPromptTarget` is the pane. Claude Code disables channels when telemetry is opted out (`DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), so a launch
+  environment with any of them set gets this status too;
 - otherwise the observed result `{status, answers, reason, receipt}`, `status`
   one of `completed`, `blocked`, `incomplete`. After the Enter, no complete
   clean `SETTLE` window within the 30 s bound is `status: "blocked"` with

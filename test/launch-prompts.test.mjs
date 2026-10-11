@@ -199,6 +199,18 @@ test("completion: a session repainting clean for 2 s completes, at or after 2 s"
   assert.deepEqual(io.sends, ["Enter"]);
 });
 
+test("completion: frames changing every 100 to 300 ms for longer than the window complete at about 2 s, not at the bound", t => {
+  // Repaints at 100, 300, 200, 100, 300… ms intervals for 5 s: never the same frame twice in a row.
+  const steps = [100, 300, 200];
+  const frameAt = ms => { let at = 0, i = 0; while (at + steps[i % 3] <= ms) at += steps[i++ % 3]; return `SYNTHETIC session ✻ working, repaint ${i}\n> \n`; };
+  const { controller, io } = setup(t, afterEnter(ms => (ms < 5000 ? frameAt(ms) : session)));
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "completed");
+  const at = io.time - io.sentAt;
+  assert.ok(at >= 2000 && at <= 2200, `completed ${at} ms after the Enter`);
+  assert.deepEqual(io.sends, ["Enter"]);
+});
+
 test("completion: a transient frame, then a question painted at 500 ms, blocks with no second key", t => {
   const { controller, io } = setup(t, afterEnter(ms => (ms < 500 ? rendererFallback : trust)));
   const result = controller.observeNew(target);
