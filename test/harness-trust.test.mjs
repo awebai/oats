@@ -1,4 +1,4 @@
-// lib/harness-trust.mjs — whether a harness will stop at its folder-trust prompt
+// lib/harness-trust.mjs — whether the configuration file a launch reads establishes folder trust
 // in a new instance home (#341). The operator's harness config is only ever read.
 import test from "node:test";
 import assert from "node:assert/strict";

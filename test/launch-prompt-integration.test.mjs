@@ -77,6 +77,8 @@ test('an eligible claude argv engages on spawn, start and restart: one Enter eac
   assert.notEqual(meta(b).launchPrompts.receipt[0].row.data.startId, undefined);
   await waitUntil(() => keys(b).length === 2, 'the restart sent its own Enter');
   assert.deepEqual(keys(b), ['\r', '\r']);
+  // Healthy sessions are stopped here, not left for the fixture's kill-server.
+  for (const h of [a, b]) await fx.inEnv(() => stopInstanceSession(h));
 });
 
 test('an ineligible argv, or codex, never engages: no capture, no key, and the start records not-engaged', async t => {
@@ -93,6 +95,7 @@ test('an ineligible argv, or codex, never engages: no capture, no key, and the s
   }
   await new Promise(r => setTimeout(r, 300));
   assert.deepEqual(keys(home('dev-plain')), [], 'the prompt on screen was left for a person');
+  for (const name of ['dev-plain', 'dev-codex']) await fx.inEnv(() => stopInstanceSession(home(name)));
 });
 
 test('preview and no-launch have no capture effects; a blocked spawn retains lineage, says what differed and refuses cached replay', async t => {
