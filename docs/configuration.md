@@ -218,8 +218,11 @@ readiness shows the `launch-prompt` warning. Every attempt and outcome is a
 path (`claudeVersion`, `claudeVersionSource`) and the entry it matched; the
 version is `unknown` when Claude is started through a wrapper, whose path carries
 no version, so it informs and never decides. What
-follows the Enter is reported, never answered: see
-[launch completion](launch-prompt-completion.md).
+follows the Enter is reported, never answered: the start completes after
+`SETTLE` (2 s) of consecutive clean captures (no question marker, no
+confirmation; the screen may keep changing), and a question first painted more
+than 2 s after the session is working is the session's own, not a launch prompt.
+See [launch completion](launch-prompt-completion.md).
 
 **When Claude ignores the flag.** This affects a Claude account (or
 organization) for which Claude Code offers no channels, on the messaging

@@ -183,25 +183,60 @@ test("the prompt still showing within 2 s of the Enter is waited out; returning 
   assert.deepEqual(stuck.io.sends, ["Enter"]);
 });
 
-test("completion needs two non-blank marker-free captures at least 200 ms apart, with nothing else between", t => {
-  const { controller, io } = setup(t, { configure({ io }) {
-    io.sendHook = () => { io.text = session; return { status: "submitted" }; };
-    // Session, blank, session, session...: the blank resets the pair.
-    io.snapshotHook = s => { if (io.sends.length && io.captures === 5) return { ...s, text: "" }; return { ...s, text: io.text }; };
-  } });
-  const sentAt = () => io.audits.find(a => a.status === "submitted");
+// After the Enter, completion needs SETTLE (2 s) of consecutive clean captures: non-blank, no question
+// marker, no entry; the screen may change (a working session repaints). A blank capture restarts
+// the window; a marker or the confirmation coming back blocks.
+const afterEnter = (paint) => ({ configure({ io }) {
+  io.sendHook = () => { io.sentAt = io.time; return { status: "submitted" }; };
+  io.snapshotHook = s => (io.sentAt === undefined ? s : { ...s, text: paint(io.time - io.sentAt, io.captures) });
+} });
+
+test("completion: a session repainting clean for 2 s completes, at or after 2 s", t => {
+  const { controller, io } = setup(t, afterEnter((ms, n) => `SYNTHETIC session ✻ working ${n}\n> \n`));
   const result = controller.observeNew(target);
   assert.equal(result.status, "completed");
-  assert.ok(sentAt());
-  assert.ok(io.time >= 400, "the reset pushed completion past the first pair");
+  assert.ok(io.time - io.sentAt >= 2000, `completed ${io.time - io.sentAt} ms after the Enter`);
+  assert.deepEqual(io.sends, ["Enter"]);
 });
 
-test("no completion within the bound after the Enter is incomplete, never a second key", t => {
-  const { controller, io } = setup(t, { configure({ io }) { io.sendHook = () => { io.text = ""; return { status: "submitted" }; }; } });
+test("completion: a transient frame, then a question painted at 500 ms, blocks with no second key", t => {
+  const { controller, io } = setup(t, afterEnter(ms => (ms < 500 ? rendererFallback : trust)));
   const result = controller.observeNew(target);
-  assert.equal(result.status, "incomplete");
-  assert.equal(result.reason, "launch prompt completion not observed");
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "blocked: unexpected prompt");
+  assert.deepEqual(io.sends, ["Enter"]);
+});
+
+test("completion: the confirmation reappearing at 1.5 s blocks", t => {
+  const { controller, io } = setup(t, afterEnter(ms => (ms < 1500 ? session : raw296)));
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "blocked: repeated or unsupported prompt");
+  assert.ok(io.time - io.sentAt < 2000, "blocked when it came back, not after a window");
+  assert.deepEqual(io.sends, ["Enter"]);
+});
+
+test("completion: a blank capture restarts the window and never blocks", t => {
+  const { controller, io } = setup(t, afterEnter(ms => (ms >= 1000 && ms < 1100 ? "" : session)));
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "completed");
+  assert.ok(io.time - io.sentAt >= 3100, `the blank at 1 s restarted the window: completed ${io.time - io.sentAt} ms after the Enter`);
+});
+
+test("completion: blank throughout after the Enter is an observation timeout that says the Enter was sent, never a second key", t => {
+  const { controller, io } = setup(t, afterEnter(() => ""));
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "blocked: observation timeout");
   assert.equal(result.answers[0].status, "submitted");
+  assert.equal(io.time, 30000);
+  assert.deepEqual(io.sends, ["Enter"]);
+});
+
+test("completion: markers coming and going until the bound never complete", t => {
+  const { controller, io } = setup(t, afterEnter((ms, n) => (n % 15 === 0 ? trust : session)));
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "blocked", "a marker inside the window blocks");
   assert.deepEqual(io.sends, ["Enter"]);
 });
 

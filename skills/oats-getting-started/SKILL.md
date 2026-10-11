@@ -200,9 +200,10 @@ On a first spawn that notice can be hidden behind another one; the start then
 blocks, and the error says to look at the pane and restart a running session.
 If launch returns `E_SPAWN_INCOMPLETE`, inspect the retained home/pane:
 do not respawn, repeat keys or treat `launched:false` as an absent process.
-After the Enter, completion is reporting only: two non-blank captures 200 ms
-apart without a question marker complete; a marker, or the confirmation coming
-back after 2 s, blocks. See [the completion contract](../../docs/launch-prompt-completion.md).
+After the Enter, completion is reporting only: 2 s of consecutive clean captures
+(no question marker, no confirmation; the screen may change) complete; a marker
+or the confirmation coming back blocks; no such window by the 30 s bound is an
+observation timeout after the one Enter. See [the completion contract](../../docs/launch-prompt-completion.md).
 Unknown dialogs without a marker may be reported completed. Completion closes
 input authority, not a readiness or idle-state promise.
 

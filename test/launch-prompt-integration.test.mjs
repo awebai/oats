@@ -49,7 +49,10 @@ process.stdin.setRawMode(true); process.stdin.resume();
 process.stdin.on('data', d => fs.appendFileSync('stub-keys.log', JSON.stringify(d.toString()) + '\\n'));
 `);
   }
-  for (const f of [confirm, question, ignored, hidden, restless]) chmodSync(f, 0o755);
+  // `vanish-stub` draws the same confirmation as confirm-stub, and on Enter clears the screen and stays blank.
+  const vanish = join(fx.base, 'vanish-stub');
+  writeFileSync(vanish, readFileSync(confirm, 'utf8').replace("process.stdout.write('\\x1b[2J\\x1b[HSYNTHETIC session ready\\n> ')", "process.stdout.write('\\x1b[2J\\x1b[H')"));
+  for (const f of [confirm, question, ignored, hidden, restless, vanish]) chmodSync(f, 0o755);
   const local = YAML.parse(readFileSync(join(fx.dep, 'oats-local.yaml'), 'utf8'));
   local['launch-configs'] = {
     confirm: { harness: 'claude', executable: confirm, args: [...DEV] },
@@ -57,6 +60,7 @@ process.stdin.on('data', d => fs.appendFileSync('stub-keys.log', JSON.stringify(
     ignored: { harness: 'claude', executable: ignored, args: [...DEV] },
     hidden: { harness: 'claude', executable: hidden, args: [...DEV] },
     restless: { harness: 'claude', executable: restless, args: [...DEV] },
+    vanish: { harness: 'claude', executable: vanish, args: [...DEV] },
     plain: { harness: 'claude', executable: confirm },
     codex: { harness: 'codex', executable: confirm, args: [...DEV] },
   };
@@ -366,4 +370,25 @@ test('a screen that never settles is an observation timeout: the error and readi
   const [suffixed] = readinessItems(fx, h);
   assert.match(suffixed.reason, /never settled/);
   assert.doesNotMatch(suffixed.remedy, /read the prompt|press Enter/);
+});
+
+test('no clean window after the Enter is an observation timeout whose error and readiness say the one Enter was sent', async t => {
+  const { fx, home } = fixture(t);
+  assert.notEqual(readFileSync(join(fx.base, 'vanish-stub'), 'utf8'), readFileSync(join(fx.base, 'confirm-stub'), 'utf8'), 'the vanish stub differs from confirm-stub');
+  await fx.spawn('dev', { name: 'dev-vanish', launchConfig: 'vanish', launch: false });
+  const h = home('dev-vanish');
+  let now = 0;
+  let error;
+  await assert.rejects(fx.inEnv(() => startInstanceSession(h, { io: { now: () => now, sleep: ms => { now += ms; } } })), e => { error = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
+  const recorded = meta(h).launchPrompts;
+  assert.equal(recorded.status, 'blocked');
+  assert.equal(recorded.reason, 'blocked: observation timeout');
+  assert.deepEqual(recorded.answers, [{ class: 'awebDevelopmentChannel', signatureId: ENTRY, status: 'submitted' }]);
+  assert.match(error.message, /one Enter/);
+  assert.doesNotMatch(error.message, /read the prompt|press Enter yourself/);
+  const [warning] = readinessItems(fx, h);
+  assert.match(warning.reason, /one Enter/);
+  assert.doesNotMatch(warning.remedy, /read the prompt|press Enter/);
+  await waitUntil(() => keys(h).length === 1, 'the one Enter reached the stub');
+  assert.deepEqual(keys(h), ['\r']);
 });

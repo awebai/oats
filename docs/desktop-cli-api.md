@@ -1828,9 +1828,9 @@ with `launchPrompts.status` set to `blocked` or `incomplete`. Error details
 preserve `instance`, `home`, `launched:"unknown"`, `unconfirmed:true` and add
 `retained:true`, `target`,
 `parentLineageCommitted`, and `launchPrompts`. Unknown prompts report
-`blocked: unexpected prompt`. A start whose answer was submitted but whose
-completion was not observed within the bound reports `incomplete` with reason
-`launch prompt completion not observed`. An incomplete audit can follow a
+`blocked: unexpected prompt`. A start whose answer was submitted but that showed no
+complete clean `SETTLE` window (2 s) within the bound reports `blocked` with
+reason `blocked: observation timeout`, its `answers` holding the submitted Enter. An incomplete audit can follow a
 possible key; clients must not offer automatic key retry. `launched:false` in
 retained metadata does not mean there is no process or that another harness
 may be allocated. Use runtime inspection and the existing start/restart

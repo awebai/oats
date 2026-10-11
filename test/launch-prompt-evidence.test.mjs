@@ -222,7 +222,9 @@ for (const mode of ['saved', 'write-failed', 'throw', 'audit-failed', 'no-answer
     assert.deepEqual([receipt.outcome, receipt.recognition], mode === 'completed' ? ['completed', 'stable-screen'] : ['blocked', 'unmatched']);
     assert.equal(receipt.startId, terminal.startId); assert.equal(receipt.signatureDigest, terminal.signatureDigest);
     assert.equal(fs.readFileSync(join(dir, 'frame.txt'), 'utf8'), mode === 'completed' ? done : args.screen.text);
-    assert.equal(captures, mode === 'no-answer' ? 21 : mode === 'completed' ? 6 : 4, 'only existing controller captures, no evidence recapture');
+    // no-answer: 21 captures as its unknown frame holds for SETTLE; completed: 3 up to the Enter, then
+    // 21 as the clean session fills the SETTLE window.
+    assert.equal(captures, mode === 'no-answer' ? 21 : mode === 'completed' ? 24 : 4, 'only existing controller captures, no evidence recapture');
     if (mode === 'saved') {
       const eventRows = fs.readFileSync(join(home, '.oats-events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
       const event = eventRows.find(row => row.kind === 'launch-prompt' && row.data.status === 'blocked');

@@ -728,8 +728,9 @@ replacing concurrent changes with stale metadata. `launchPrompts` records `statu
 `answers`, `reason` and event `receipt`, and a blocked result `differed`; unknown
 prompts use `blocked: unexpected prompt`. Status `incomplete` means the audit could
 not be completed, including a possible key followed by an audit failure or failure
-to retain completion evidence, or that no completion was observed within the bound
-after the Enter (`launch prompt completion not observed`). It is
+to retain completion evidence. No complete clean `SETTLE` window (2 s) within the
+bound after the Enter is `blocked: observation timeout`, with the one Enter in the
+answers. It is
 not proof that no input was sent. Both outcomes record `launched:false` while
 retaining the real process/endpoint for inspection: this is never permission
 to allocate another harness.

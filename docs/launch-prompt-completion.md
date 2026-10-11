@@ -22,24 +22,30 @@ because Claude paints transient frames while it starts: then it is `blocked:
 unexpected prompt`. A screen still changing at the 30 s bound never settled, and
 is `blocked: observation timeout`, never a prompt; see
 [configuration](configuration.md#the-development-channel-confirmation). After
-the Enter, completion follows this rule:
+the Enter, completion takes the same `SETTLE`:
 
-- **completed:** two captures at least 200 ms apart, both non-blank, neither
-  equal to a tolerance entry after normalization, neither containing a question
-  marker, with no other capture between them. They need not be equal: a session
-  that is already working completes too. The last one is retained as private
+- **completed:** `SETTLE` (2 s) of consecutive clean captures. A clean capture
+  is non-blank, carries no question marker and equals no tolerance entry after
+  normalization. The screen is free to change: a working session repaints all
+  the time (a spinner, a counter). The last capture is retained as private
   evidence (recognition `stable-screen`).
-- **blocked:** a capture that contains a question marker (`blocked: unexpected
-  prompt`), or one that equals a tolerance entry again once 2 s have passed since
-  the Enter (`blocked: repeated or unsupported prompt`). Within those 2 s the
-  confirmation may still be painted, and observation goes on. The blocked capture
-  is retained as private evidence (recognition `unmatched`), and the receipt row
-  says what `differed` against the nearest entry.
-- **incomplete:** the bound is reached without either
-  (`launch prompt completion not observed`).
+- **blocked:** a capture inside the window that carries a question marker
+  (`blocked: unexpected prompt`). A marker never restarts the window. Also
+  blocked: the confirmation coming back (`blocked: repeated or unsupported
+  prompt`), after another screen was shown, or still showing 2 s after the
+  Enter. Until then it may still be painted, and observation goes on. The
+  blocked capture is retained as private evidence (recognition `unmatched`), and
+  the receipt row says what `differed` against the nearest entry.
+- **blocked: observation timeout:** no complete clean window by the 30 s bound.
+  The answers record the one Enter that was sent, and the error and readiness
+  remedy say so; no other key is ever sent.
 
-A blank capture is neither, and breaks a pair. The rule does not depend on pane
-geometry, Claude's footer, mode, model, billing or effort.
+A blank capture restarts the window and never blocks. The rule does not depend
+on pane geometry, Claude's footer, mode, model, billing or effort.
+
+**The remaining limit:** a question first painted more than 2 s after the
+session is working is the session's own question, not a launch prompt, and the
+start has already completed.
 
 ## Question markers
 
