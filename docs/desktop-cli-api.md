@@ -2165,6 +2165,16 @@ message names (for the claim of a takeover, `<lock>.reclaim-<nonce>`):
   worktree command holds it, then retry`. Removing that one file lets the
   next command take the rest over.
 
+A claim that is taken again and again by commands that die is neither of
+those (0.52.0). A command takes over the claim of a holder that is gone and
+tries again. Once its 3 s are over, when it has found the claim without a
+live holder five times and each time found it taken again, the last time by
+a process that is gone, it answers `E_LIFECYCLE_BUSY` with `holder: "none"`:
+`the claim <file> was found without a live holder 5 times and was taken
+again each time, the last time by a process that is gone (pid <pid>);
+nothing was done — run the command again`. Nothing is wrong with that file
+and nothing is to be removed: the next run takes it over.
+
 A killed parent does not take its running git with it. So every git step
 that changes a tree, a ref or the worktree list runs in its own process
 group, and is recorded (pid and start time) before it starts: in the claim,
@@ -2209,7 +2219,7 @@ A failed `add` reports the same facts about its rollback in `details`:
 | `E_BRANCH_EXISTS` | the branch exists in the clone (before the tree is made, or made by another `add` at the same moment); `details.remedy` is `<instance>/<branch>` |
 | `E_GIT_FAILED` | a Git step failed on its own (`git worktree add`, or `git switch` while the branch does not exist), with Git's message: `git <sub> failed in <dir>: …`; the tree is removed |
 | `E_PLACEMENT_TAKEN` | a `ready` record with another clone, branch or base (`details.differ`); `.work-<p>` with no record, or a file or symbolic link there; an unreadable record |
-| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified); another add or remove of that purpose holds its claim (`details.lock`); a file at the claim's path is no claim this kernel can read or take over (`details.lock`); an interrupted add's rollback could not be completed (`details.owed`; the message says what to deal with and to run `oats worktree remove --purpose <purpose>`, which finishes the rollback); or, `add` only (OATS 0.52.0), the home's claim is held by a retire whose liveness cannot be read, or is a file that is no readable claim (`no tree was made`; [Commands that meet on one home](#lifecycle-pairs)). Every one carries [`details.holder`](#busy-holder) |
+| `E_LIFECYCLE_BUSY` | an add of that purpose is still running (pid and start time verified); another add or remove of that purpose holds its claim (`details.lock`); a file at the claim's path is no claim this kernel can read or take over (`details.lock`); the claim was taken again, the last time by a process that is gone, each of the five times the command found it without a live holder (`run the command again`); an interrupted add's rollback could not be completed (`details.owed`; the message says what to deal with and to run `oats worktree remove --purpose <purpose>`, which finishes the rollback); or, `add` only (OATS 0.52.0), the home's claim is held by a retire whose liveness cannot be read, or is a file that is no readable claim (`no tree was made`; [Commands that meet on one home](#lifecycle-pairs)). Every one carries [`details.holder`](#busy-holder) |
 | `E_REMOTE_UNREADABLE` | the fetch of `<base>` from `origin` failed; the tree is removed |
 | `E_BASE_UNKNOWN` | the new HEAD is not the fetched commit; the message names both |
 | `E_REQUIRED_HOOK_FAILED`, `E_HOOK_ENVIRONMENT_CONTRACT` | a required `worktree` hook failed or timed out, or a hook answered `env`; the tree is removed (`details.hooks`, `details.rolledBack`) |
@@ -3282,7 +3292,10 @@ nothing, and the command already on the home is not disturbed.
   as a holder that is gone, and runs. So does a file that parses and names
   no pid (`{}`, `[]`, a verb alone): a claim
   [always carries its pid](#retire-one-at-a-time), so no kernel wrote that
-  file as one.
+  file as one. And one race refuses them: a claim that was
+  [taken again](#retire-one-at-a-time) by a command that then died, each of
+  the five times the retire or the stop found it without a live holder, is
+  `E_LIFECYCLE_BUSY`, `holder: "none"`, with `run the command again`.
 - **A stop does not refuse a `worktree add`:** a tree does not depend on the
   session.
 - `--plan` of either verb takes no claim and is never refused by one; a
@@ -3834,6 +3847,16 @@ line and says that nothing was done:
   does not exist). Removing that one file lets the next retire take the
   rest over. A retire of a name that has no home leaves a file whose nonce
   is not a claim's as it is.
+- A claim that is taken again and again by commands that die is an ordinary
+  claim, and is not refused with that sentence. A retire takes over the
+  claim of a holder that is gone and tries again, five times. When each time
+  it found the claim taken again, the last time by a process that is gone,
+  `details` is `{instance, home, lock, pid, since, action, holder: "none"}`
+  (the last holder's), and the message is `the claim <lock> was found
+  without a live holder 5 times and was taken again each time, the last time
+  by a process that is gone (pid <pid>); nothing was done — run the command
+  again` (a stop: `nothing was stopped`). Nothing is to be inspected or
+  removed: the next retire or stop takes that claim over.
 - The retire's own start time cannot be read, so it could not hold the claim
   verifiably: `details` is `{instance, home, lock, holder: "none"}`, and the
   message gives the reader's own reason (the `/proc` read, or what `ps`
