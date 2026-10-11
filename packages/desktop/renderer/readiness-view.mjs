@@ -161,7 +161,9 @@ export function createReadinessView(host, { ctx, compact = false, clock = {}, ca
         const evidence = Object.entries(i.evidence).map(([k, v]) => k === 'from' ? ['Origin', originText(v)] : [k, v]);
         // Team model v2: where the team is declared (the kernel's `at`), the place to fix it.
         const declared = typeof i.at === 'string' && i.at ? [['Declared in', declaredIn(i.at)]] : [];
-        for (const [name, content] of [['Producer', i.producer], ['Reason', i.reason], ...(i.code ? [['Code', i.code]] : []), ...declared, ...evidence, ['Remedy (display only)', i.remedy]]) {
+        // harness-trust (0.52.0): the configuration file the folder-trust check read, also when it passes.
+        const file = typeof i.file === 'string' ? [['Configuration file', i.file]] : [];
+        for (const [name, content] of [['Producer', i.producer], ['Reason', i.reason], ...(i.code ? [['Code', i.code]] : []), ...declared, ...file, ...evidence, ['Remedy (display only)', i.remedy]]) {
           if (content !== null && content !== undefined) facts.append(node('dt', name), node('dd', content));
         }
         // providers: the provider's own answer, verbatim; "unknown" stays unknown.

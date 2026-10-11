@@ -6,6 +6,7 @@ import { effectiveOf, REPORT_FROM } from './launch-contract.mjs';
 import { defaultTeamOf } from './team-rows.mjs';
 import { remoteReason } from './remote-address.mjs';
 import { warningsOf } from './capability-warnings-contract.mjs';
+import { displayLine } from './display-text.mjs';
 export const READINESS_API = 2;
 export const CHECKS = ['installed', 'configured', 'member', 'providers'];
 export const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -78,6 +79,15 @@ function item(v) {
     evidence, remedy: nullable(v.remedy) };
   if (v.capability != null) { if (!record(v.capability)) throw Error(); out.capability = { id: text(v.capability.id, 256) }; }
   if (typeof v.code === 'string') out.code = text(v.code, 128);
+  // launch-prompt (0.52.0): the home's last start stopped at a screen the kernel does not confirm, and its
+  // reason quotes what that terminal showed. One display line, for this code only; the kernel's sentence
+  // already says whose text it is ("found …"). The item's own `differed` is not read: the reason says it once.
+  if (v.code === 'launch-prompt') out.reason = displayLine(out.reason);
+  // harness-trust (0.52.0): the configuration file whose folder trust the item is about, top-level beside
+  // `evidence`, also on a passing item. Read tolerantly: anything but an absolute path with nothing unsafe
+  // in it drops this fact, never the read (dropped, not withheld: the answer must read the same when it is
+  // projected again). The item's other top-level keys (`harness`, `deployment`) are not read.
+  if (v.code === 'harness-trust' && absolute(v.file) && !unsafe.test(v.file)) out.file = v.file;
   // Team model v2 (0.30, K1 amendment g): team items live in checks.configured (no fifth check),
   // subject 'team <label>' or 'teams', and carry the team's label, whether it is the default, and
   // where it is declared (at).
