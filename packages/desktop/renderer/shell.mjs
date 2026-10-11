@@ -16,7 +16,8 @@ import { createInstancePrAction } from "./instance-pr-action.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { runtimeState, unsupportedSession } from "../../client/instance-presentation.mjs";
-import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
+import { NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
+import { deploymentUnavailableText } from "../../client/deployment-facts.mjs";
 import { panelErrorCause } from "../../client/deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, currentTheme, refreshHostTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
@@ -681,7 +682,7 @@ async function refreshContextRoster({ user = false } = {}) {
   // It is its own truthful state, painted above the rows by renderContextRoster
   // on every path (module state, so a filter edit or a collapse keeps it).
   contextDeploymentNote = panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote && !failure
-    ? deploymentUnavailableText(panel.deployment) : null;
+    ? deploymentUnavailableText(panel.deployment, DESKTOP_TERMS) : null;
   const signature = rosterSignature(contextInstances, {
     workspace: resolvedWs, error: failure, deploymentNote: contextDeploymentNote, deployments: contextDeployments,
     activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,

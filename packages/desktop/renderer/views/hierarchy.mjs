@@ -57,7 +57,8 @@ import {
   renderWorkspaceSelect, wsQuery, workspaceGeneration, rowDeployment,
 } from "./common.mjs";
 import { createDataState, skeleton, statusLine, observedText } from "../loading.mjs";
-import { deploymentUnavailableText, NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "../deployment-header.mjs";
+import { NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "../deployment-header.mjs";
+import { deploymentUnavailableText } from "../../../client/deployment-facts.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { icon } from "../shell-icons.mjs";
@@ -652,13 +653,13 @@ export async function refresh(s, { user = false } = {}) {
     // and the next poll brings the observation; a refusal is a failed read.
     const deployment = !panel.workspace?.remote && data.deployment && typeof data.deployment === 'object' && data.deployment.status !== 'observed' ? data.deployment : null;
     if (deployment && !panel.instances.length) {
-      if (deployment.status !== 'pending') throw Error(deploymentUnavailableText(deployment));
+      if (deployment.status !== 'pending') throw Error(deploymentUnavailableText(deployment, DESKTOP_TERMS));
       // Pending past the bound is no answer, not a longer wait (#461); a later observation still lands.
       if (s.pendingWatch.observe(subject, true)) throw unservedError(NO_ANSWER_CODE, requestedWorkspace || panel.workspace?.id || '');
       // With this deployment's observation on screen (a new connection still reading), it stays as it was.
       if (s.dataGen != null) { s.load?.cancel(); return; }
       // The controller stays pending (aria-busy, the one announcement) without a pill: the copy is the summary.
-      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment); notice(s, '');
+      s.load?.defer(); s.q('hier-sum').textContent = deploymentUnavailableText(deployment, DESKTOP_TERMS); notice(s, '');
       return;
     }
     // A stale selection (persisted, no longer served) behaves like an empty

@@ -362,6 +362,24 @@ test('a Herdr-recorded instance: the footer shows Start disabled with the kernel
   assert.equal(control('start').disabled, false); assert.equal(control('start').title, '', 'a tmux row carries no Herdr reason');
 });
 
+test('the Session card names a tmux session only when one was recorded: an unknown row with none shows no session line', t => {
+  // A row whose state OATS could not establish is not probed, so its `tmux` is the kernel's own and no default
+  // session is filled in (packages/client/liveness.mjs). Every shape the projection lets through.
+  const u = fixture(t), line = () => u.query('.context-panel-session-tmux');
+  const unknown = extra => instance('/A/u1', { running: null, runtimeState: 'unreachable', runtimeError: 'error connecting to /x/tmux.sock', ...extra });
+  u.select(unknown({ tmux: { session: 'oats-agents-2', window: 'u1', socket: '/x/tmux.sock' } }));
+  assert.equal(line().hidden, false); assert.equal(line().textContent, 'tmux · oats-agents-2');
+  for (const [what, extra] of [['no tmux', {}], ['tmux: null', { tmux: null }], ['tmux: {}', { tmux: {} }], ['a window and no session', { tmux: { window: 'u1' } }],
+    ['an empty session', { tmux: { session: '' } }], ['a session that is not text', { tmux: { session: null } }]]) {
+    u.select(unknown(extra));
+    assert.equal(line().hidden, true, what); assert.equal(line().textContent, '', what);
+    assert.doesNotMatch(u.root.textContent, /undefined|oats-agents/, what);
+  }
+  // A recorded session shows again when the row has one, and the state beside it stays unknown.
+  u.select(unknown({ tmux: { session: 'oats' } }));
+  assert.equal(line().textContent, 'tmux · oats'); assert.equal(u.query('.context-panel-state').dataset.state, 'unknown');
+});
+
 // #675 item 5: a remote row's work, build and drift facts as the kernel relays them (null when the host
 // doesn't supply one); the repository from its own `repo`, never its repoName (the server's label).
 const remoteRow = (extra = {}) => ({ instance: 'dev-r', agent: 'dev', home: '/srv/agents/dev/instances/dev-r', agentsRoot: '/srv/agents',

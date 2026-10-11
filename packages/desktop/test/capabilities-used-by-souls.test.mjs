@@ -90,7 +90,7 @@ test('anything but the contract\'s entry shape refuses the document (the parse\'
 test('/api/agents carries each soul\'s composition (a copy; null kept; absent stays absent)', () => {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
-  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor', `${source.slice(start, end)}; return agentsData;`);
+  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const run = catalogSouls => {
     const snapshot = { byWs: new Map([['/d', { deployment: { status: 'observed', root: ROOT, souls: [], catalog: { souls: catalogSouls, ambiguous: [], reason: null } } }]]) };
     const ws = { id: '/d', name: 'fixture', roots: [ROOT] };

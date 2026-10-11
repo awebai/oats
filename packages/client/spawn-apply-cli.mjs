@@ -36,6 +36,8 @@ function refusal(doc, cli) {
   }
   return { started: true, envelope: { schemaVersion: 1, ok: false, error: { ...error, ...(details ? { details } : {}) } } };
 }
+/** `io.exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`). Its return is used here:
+ * the child of a spawn this call owns is ended through it at the deadline. */
 export async function cliSpawnApply(cli, options = {}, io = {}) {
   // Repeat the complete positive mode fence here, before even creating inputs.
   if (!spawnApplySupported(cli)) return failure('E_APPLY_UNAVAILABLE');

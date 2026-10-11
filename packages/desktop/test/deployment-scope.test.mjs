@@ -1,7 +1,7 @@
 // Addressing (#482): every INSTANCE-addressed request resolves only by exact deployment id. A workspace
 // view id (`ws:…`) there never reaches a row and runs nothing; the row's own deployment id resolves inside
 // that deployment only (a home of another deployment of the same view is not admitted). The shipped HTTP
-// handler runs over the real views block (test/helpers/workspace-views-fixture.mjs) with Juan's view:
+// handler runs over the real views (test/helpers/workspace-views-fixture.mjs) with Juan's view:
 // two local deployments (A, B) and a remote (R) of one workspace.
 import test from 'node:test';
 import assert from 'node:assert/strict';

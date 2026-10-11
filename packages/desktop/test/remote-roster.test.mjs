@@ -125,3 +125,10 @@ test("#675: a remote row's description comes from its own group's soul, as repor
   assert.equal(remotePanel(other).instances[0].description, "Another host's dev.");
   assert.equal(remotePanel(bare).instances[0].description, null, "projection is per group");
 });
+
+test("a remote panel is stamped with the time its caller gives; without one, with the clock", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2031-03-04T05:06:07.000Z") });
+  assert.equal(remotePanel(group, "2026-10-11T12:00:00.000Z").generatedAt, "2026-10-11T12:00:00.000Z");
+  assert.equal(remotePanel(group).generatedAt, "2031-03-04T05:06:07.000Z");
+  assert.deepEqual({ ...remotePanel(group, "x"), generatedAt: null }, { ...remotePanel(group), generatedAt: null });
+});

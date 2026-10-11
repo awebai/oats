@@ -26,6 +26,11 @@ const INERT_ITEMS_GONE = [
   "unaddressable and held: retire incomplete",
   "all three: unaddressable, held and an unsupported session",
 ];
+/** The rows whose disabled trigger says why a spawning home offers nothing. The sentence is the shared one
+ * (instance-tree.mjs `heldHome`), and it changed after the capture: it no longer says that the row opens. */
+const SENTENCE_CHANGED = ["held: spawning", "held: spawning, and an unsupported session"];
+const SPAWNING_WAS = "dev-one is setting up its worktree. It opens once the spawn finishes.";
+const SPAWNING_IS = "dev-one is setting up its worktree. It can't be used until the spawn finishes.";
 const NO_WAY_IN = { "a click on the trigger": false, openActionMenu: false, "ArrowDown on the trigger": false, "ArrowUp on the trigger": false,
   "the popover's own toggle": { opened: false, refused: true } };
 /** A menu no path opens: the trigger is disabled, opening by any way leaves it closed (the popover's own toggle is refused), its `run` is never handed to the shell, and activating an item does nothing. */
@@ -49,8 +54,21 @@ test("the capture and the probe cover the same rows, and the capture is of a men
   assert.deepEqual(stopped.acts.retire, { clicked: ["lifecycle retire"], run: ["lifecycle retire"] });
 });
 
-for (const name of Object.keys(ROWS)) {
-  if (INERT_ITEMS_GONE.includes(name)) continue;
+/** The rows compared whole with the capture: every row but the two named differences. */
+const AS_IT_WAS = Object.keys(ROWS).filter((name) => !INERT_ITEMS_GONE.includes(name) && !SENTENCE_CHANGED.includes(name));
+
+test("the rows not compared whole with the capture are the two named differences, and no other", () => {
+  // A row that left the comparison without being named here would be a menu nobody checks.
+  assert.deepEqual(SENTENCE_CHANGED, ["held: spawning", "held: spawning, and an unsupported session"]);
+  for (const name of [...INERT_ITEMS_GONE, ...SENTENCE_CHANGED]) assert.ok(Object.hasOwn(before.rows, name) && Object.hasOwn(ROWS, name), `${name} is in the capture and in the probe`);
+  assert.deepEqual(INERT_ITEMS_GONE.filter((name) => SENTENCE_CHANGED.includes(name)), [], "a row is one difference or the other");
+  assert.equal(AS_IT_WAS.length, Object.keys(ROWS).length - INERT_ITEMS_GONE.length - 2);
+  assert.deepEqual(Object.keys(ROWS).filter((name) => !AS_IT_WAS.includes(name)).sort(), [...INERT_ITEMS_GONE, ...SENTENCE_CHANGED].sort());
+  // The sentence is on no other row of the capture: these two are every row it changes.
+  assert.deepEqual(Object.keys(before.rows).filter((name) => JSON.stringify(before.rows[name]).includes("It opens once the spawn finishes")), SENTENCE_CHANGED);
+});
+
+for (const name of AS_IT_WAS) {
   test(`the menu is what it was: ${name}`, () => {
     // Everything the probe reports: the trigger's state, title and description, each item's action, label, disabled
     // state, title, note, shortcut and icon in order, which ways open the menu, and what each item does.
@@ -81,7 +99,8 @@ test("every row instanceActs blocks has a menu that cannot be opened, before and
   for (const name of blockedRows) {
     assertCannotOpen(before.rows[name], `${name}, before`); assertCannotOpen(after[name], `${name}, after`);
     assert.equal(after[name].trigger.title, instanceActs(ROWS[name]).blocked.sentence, `${name}: the trigger's title is the reason's sentence`);
-    assert.equal(after[name].trigger.title, before.rows[name].trigger.title);
+    // The spawning homes' sentence changed after the capture (their own test, at the end); every other blocked row's is the capture's.
+    if (!SENTENCE_CHANGED.includes(name)) assert.equal(after[name].trigger.title, before.rows[name].trigger.title);
   }
   // And only those: a row that is not blocked opens.
   for (const name of Object.keys(ROWS).filter((row) => !blockedRows.includes(row))) {
@@ -109,3 +128,14 @@ test("source pin: the menu decides nothing itself", () => {
   assert.match(source, /import \{ instanceActs \} from "\.\.\/\.\.\/client\/instance-acts\.mjs";/);
   assert.ok(!/\.running\b/.test(source), "nor does it read the row's liveness");
 });
+
+for (const name of SENTENCE_CHANGED) {
+  test(`the menu is what it was, but for the sentence on its trigger: ${name}`, () => {
+    // The capture is left as it was taken. One string differs, and it is the one named here.
+    assert.equal(before.rows[name].trigger.title, SPAWNING_WAS);
+    assert.equal(after[name].trigger.title, SPAWNING_IS);
+    assert.equal(instanceActs(ROWS[name]).blocked.sentence, SPAWNING_IS, "the menu shows the shared sentence");
+    assert.deepEqual({ ...after[name], trigger: { ...after[name].trigger, title: SPAWNING_WAS } }, before.rows[name]);
+    assertCannotOpen(after[name], name);
+  });
+}

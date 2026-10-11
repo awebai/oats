@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { delimiter } from "node:path";
 import { readFileSync } from "node:fs";
 import {
-  acceptProbe, parseSemver, parseProbeStdout, candidates, discover, DESKTOP_API,
+  acceptProbe, parseSemver, parseProbeStdout, candidates, discover, cliRecord, DESKTOP_API,
   ACCEPT_RANGE, ACCEPT_RANGE_TEXT,
 } from "../../client/cli-locator.mjs";
 
@@ -321,4 +321,33 @@ test("discovery retains capabilityShowApi 1 only (the capability-show gate's int
   assert.equal((await found({ capabilityShowApi: 1 })).capabilityShowApi, 1);
   for (const value of [2, "1", true, null]) assert.equal("capabilityShowApi" in await found({ capabilityShowApi: value }), false, String(value));
   assert.equal("capabilityShowApi" in await found({}), false);
+});
+
+test("cliRecord: the record made from an accepted payload and its path is what discover answers for them", async () => {
+  const io = { persisted: () => "/bin/oats", env: {}, isExecutableFile: () => true };
+  const payloads = {
+    "the bare probe": PROBE(),
+    "every field its gate reads": { ...PROBE(), runtimes: ["pi", "claude"], harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], scheduleApi: 2, operationsApi: 2,
+      lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, spawnApplyApi: 1, eventsApi: 2, scheduleHistoryApi: 3, workspaceApi: 2, automationsApi: 1, capabilityShowApi: 1,
+      features: ["workspace-v2", "harness-names", "waiting-on-you"], remote: ["roster", "spawn"] },
+    "the older schedule API": { ...PROBE(), scheduleApi: 1, features: [] },
+    "every field in a form no gate reads": { ...PROBE(), runtimes: "pi", harnesses: "claude", sessionBackends: "tmux", launchOptions: null, scheduleApi: 3, operationsApi: 1, lifecycleApi: 2, readinessApi: 1,
+      spawnPreviewApi: 1, spawnApplyApi: 2, eventsApi: 1, scheduleHistoryApi: 2, workspaceApi: 1, automationsApi: "1", capabilityShowApi: 2, features: "workspace-v2", remote: "roster", extra: { kept: false } },
+  };
+  for (const [what, payload] of Object.entries(payloads)) {
+    const stdout = JSON.stringify(payload);
+    const found = await discover(io, async () => ({ stdout }));
+    assert.equal(found.ok, true, what);
+    // What a client that probes one known kernel does: read the answer, accept it, make the record.
+    const read = Object.freeze(parseProbeStdout(stdout));
+    assert.equal(acceptProbe(read).ok, true, what);
+    const record = cliRecord(read, { bin: "/bin/oats", source: found.source });
+    assert.deepEqual(record, found, what);
+    assert.equal(JSON.stringify(record), JSON.stringify(found), `${what}: the same keys in the same order`);
+  }
+  // A form no gate reads leaves nothing but the four fields every record has.
+  assert.deepEqual(cliRecord(payloads["every field in a form no gate reads"], { bin: "/bin/oats", source: "persisted" }), { ok: true, bin: "/bin/oats", source: "persisted", version: "0.25.8" });
+  // The lists are the payload's own, as discover always answered them: the record copies none.
+  const full = payloads["every field its gate reads"];
+  assert.equal(cliRecord(full, { bin: "/bin/oats", source: "persisted" }).features, full.features);
 });

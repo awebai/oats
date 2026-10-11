@@ -335,7 +335,7 @@ test("desktop server: verifiedLocalHome admits only the exact kernel-reported ho
   const snapshot = { byWs: new Map([[scope, { instances: [
     { instance: INSTANCE, home }, { instance: "link-1", home: escaping }, { instance: "evil-1", home: evil },
   ] }]]) };
-  const verifiedLocalHome = new Function("realpathSync", "basename", "dirname", "sep", "deployments", "snapshot", `${src}; return verifiedLocalHome;`)(
+  const verifiedLocalHome = new Function("realpathSync", "basename", "dirname", "sep", "deployments", "snapshot", `const held = () => null; ${src}; return verifiedLocalHome;`)(
     realpathSync, basename, dirname, sep, () => [{ id: scope }], snapshot);
   try {
     assert.equal(verifiedLocalHome({ instance: INSTANCE, home }), home, "the reported home is accepted");

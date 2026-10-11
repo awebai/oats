@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { parseEnvelope } from './cli-adapter.mjs';
 import { previewChoices, previewTarget, previewSupported, previewFailure, choiceArgv } from './spawn-preview-contract.mjs';
 const failure = (code, message) => ({ schemaVersion: 1, ok: false, error: previewFailure(code, null, message).reason });
+/** `io.exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`). */
 export function cliSpawnPreview(cli, options = {}, io = {}) {
   // Defense at the actual exec owner as well as at HTTP admission.
   if (!previewSupported(cli)) return Promise.resolve(failure('E_PREVIEW_UNAVAILABLE'));

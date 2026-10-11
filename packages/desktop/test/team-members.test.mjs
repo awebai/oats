@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { teamMembers } from '../server/team-members.mjs';
+import { teamMembers } from '../../client/team-members.mjs';
 import { remotePanel } from '../../client/remote-roster.mjs';
 import { apiUrl } from '../api-url.mjs';
 import { loadServer, juanState, A, B, R, V, V_OATS, V_LAB, tag } from './helpers/workspace-views-fixture.mjs';
@@ -14,7 +14,7 @@ const group = (server, extra = {}) => ({ id: `${server}:1a2b`, server, label: `$
   souls: [{ name: 'dev', agentsRoot: '/srv/agents' }, { name: 'qa', agentsRoot: '/srv/agents' }], instances: [], ...extra });
 const remoteRow = (name, extra = {}) => ({ instance: name, agent: 'dev', agentsRoot: '/srv/agents', home: `/srv/agents/dev/instances/${name}`,
   running: true, savedRoute: false, addressable: true, missingRemotely: false, createdAt: null, identity: { alias: name, team: TEAM }, ...extra });
-/** The deployment tag of a remote group, as the views block gives it. */
+/** The deployment tag of a remote group, as the views give it (panel-views.mjs `deploymentTag`). */
 const groupTag = g => ({ id: `remote:${g.id}`, machine: g.label || g.server, path: g.target.workspace });
 const project = ({ rows = [localRow('dev-a')], groups = [], deployments = [{ deployment: LOCAL, instances: rows }] } = {}) =>
   teamMembers({ deployments, groups: groups.map(g => ({ group: g, deployment: groupTag(g), panel: remotePanel(g) })) });

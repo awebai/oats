@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { memberLabel, servedIdentityText } from '../../client/deployment-facts.mjs';
-import { deploymentUnavailableText } from '../renderer/deployment-header.mjs';
+import { deploymentUnavailableText } from '../../client/deployment-facts.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { deploymentNotes, lockNotes } from '../renderer/workspace-catalog.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../../client/deployment-data.mjs';
 
@@ -43,9 +44,9 @@ test('lock notes and unavailable text use workspace status arrays and named feat
   assert.deepEqual(lockNotes(h), [], 'a locked, approved, declared set needs no note');
   assert.deepEqual(lockNotes({ ...h, unsynced: ['a'], stale: ['b'] }).map(n => n.text),
     ['Declared but not locked: a. Sync to lock them.', 'Locked but no longer declared: b. Sync to drop them.']);
-  assert.match(deploymentUnavailableText({ status: 'unavailable', reason: { code: 'E_DEPLOYMENT_FEATURE', feature: 'served-identity' } }), /does not advertise served-identity/);
-  assert.equal(deploymentUnavailableText({ status: 'unavailable', reason: { code: 'E_X', message: 'kernel said' } }), 'E_X: kernel said');
-  assert.equal(deploymentUnavailableText({ status: 'observed' }), '');
+  assert.match(deploymentUnavailableText({ status: 'unavailable', reason: { code: 'E_DEPLOYMENT_FEATURE', feature: 'served-identity' } }, DESKTOP_TERMS), /does not advertise served-identity/);
+  assert.equal(deploymentUnavailableText({ status: 'unavailable', reason: { code: 'E_X', message: 'kernel said' } }, DESKTOP_TERMS), 'E_X: kernel said');
+  assert.equal(deploymentUnavailableText({ status: 'observed' }, DESKTOP_TERMS), '');
 });
 
 test('withheld instance rows and an unreachable workspace are reported with their names and codes', () => {

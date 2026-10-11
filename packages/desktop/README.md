@@ -113,6 +113,20 @@ alone, with no document to draw in: the roster as a tree
 which acts a row offers and why (`instance-acts.mjs`), and whether a directory
 is a deployment (`workspace-admission.mjs`).
 
+It also holds what the backend serves as `/api/panel`, as functions the
+backend calls: what one deployment's observation becomes
+(`deployment-panel.mjs`: the rows, the liveness collector's input and
+answers, the entry before a probe, after a failed read and when observed)
+and the deployments and views over what a client holds (`panel-views.mjs`).
+Those functions keep nothing. `server/oats-web.mjs` keeps the stores (the
+snapshot, the remote roster's last answer, the remembered remote
+identities), runs the kernel and the collector, and passes what it holds at
+each call as one value, `held()`, with the time of the call: those
+functions read no clock, and the same `held` gives the same answer. One
+clock read is left in what they call: `remotePanel`'s default argument
+(`remote-roster.mjs`), for a caller that gives no time; the views give it
+`held.at`.
+
 - **What it holds.** `.mjs` modules and nothing else, in one flat directory:
   no test, fixture, script or manifest, and no subdirectory. A module there
   imports `node:` builtins and its own siblings only: no third-party package
@@ -121,13 +135,22 @@ is a deployment (`workspace-admission.mjs`).
   `own-environment.mjs` is its first import
   ([below](#the-environment-of-the-programs-desktop-starts)); no other module
   there imports either.
+- **Which of them the page may load.** The window's page is a browser page:
+  it cannot load a `node:` builtin. Some modules of the home import one (the
+  kernel callers, `deployment-panel.mjs`, `panel-views.mjs`) and are for main,
+  the backend and a terminal client only. A function the page needs goes in
+  a module that imports none: `deploymentUnavailableText` is in
+  `deployment-facts.mjs` for that reason, not beside the panel's functions.
+  `test/inventory.test.mjs` walks what the page loads and fails on a `node:`
+  import anywhere in it.
 - **What goes there, and what stays here.** A function belongs in the shared
   home when it answers a question from the kernel's rows alone: who is who,
   who relates to whom, which groups, what order, what is visible, who waits,
   what holds a home, which acts apply. It stays in this package when it takes
   a document or an element, or belongs to one of the Desktop's own surfaces:
-  terminal tabs, drawn connectors, loading state, the `/api/panel` wire, its
-  stores. A file that mixes the two is cut in two, and nothing is re-exported:
+  terminal tabs, drawn connectors, loading state, its routes and its stores.
+  The shared home keeps no state: a function there takes what it needs as
+  arguments, and what must be held between calls stays here. A file that mixes the two is cut in two, and nothing is re-exported:
   an importer names the module that has the export
   (`renderer/instance-tree-view.mjs` is the Desktop's half of the tree,
   `renderer/view-deployments.mjs` of the sections, `workspace-registry.mjs` of
