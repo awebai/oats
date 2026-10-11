@@ -1,0 +1,50 @@
+{
+  "grants": [
+    {
+      "expires_at": "2026-10-11T18:18:53.008763+00:00",
+      "grant_did_key": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "grant_id": "5145fc93-a37d-4d08-a8b0-c4b4cb582294",
+      "issued_at": "2026-10-11T16:48:53.008763+00:00",
+      "label": "oats:capture:caee6ca51edd3501",
+      "scopes": [
+        "mail.read",
+        "mail.send",
+        "chat.read",
+        "chat.send",
+        "events.read",
+        "coord.read",
+        "coord.write",
+        "presence.write",
+        "contacts.read",
+        "contacts.write"
+      ],
+      "status": "active",
+      "subject_alias": "carol",
+      "subject_did_aw": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "team_id": "default:fixture-29075.test"
+    },
+    {
+      "expires_at": "never",
+      "grant_did_key": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "grant_id": "071749a6-b72f-4af0-b370-e275ff8d279f",
+      "issued_at": "2026-10-11T16:48:52.964725+00:00",
+      "label": "oats:capture:4acd4c3ed8676ba9",
+      "scopes": [
+        "mail.read",
+        "mail.send",
+        "chat.read",
+        "chat.send",
+        "events.read",
+        "coord.read",
+        "coord.write",
+        "presence.write",
+        "contacts.read",
+        "contacts.write"
+      ],
+      "status": "active",
+      "subject_alias": "carol",
+      "subject_did_aw": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "team_id": "default:fixture-29075.test"
+    }
+  ]
+}

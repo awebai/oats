@@ -1,0 +1,12 @@
+{
+  "address": "fixture-29075.test/carol",
+  "alias": "carol",
+  "apps": [],
+  "custody_socket_path": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "expires_at": "2026-10-11T18:18:53.008763+00:00",
+  "grant_id": "5145fc93-a37d-4d08-a8b0-c4b4cb582294",
+  "name": "carol",
+  "out": "/home/runner/work/_temp/s/grant-90m",
+  "skipped_apps": [],
+  "team_id": "default:fixture-29075.test"
+}

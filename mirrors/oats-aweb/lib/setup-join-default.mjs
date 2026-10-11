@@ -48,7 +48,10 @@ export function prepareJoinConfiguration(label, deployment, { env = process.env,
   // The placeholder is explanatory only, never passed to a mutation or native call.
   // Admission may proceed under an inherited default; only the later mapping
   // write is refused, with the actual verified canonical ID in its remedy.
-  try { teamConfigurationPlan(initial, label, expectedTeam || '<verified-team>', deployment); }
+  // A join preserves an existing default. Before admission that is applied only
+  // to a mapped label: for an unmapped one the default-preserve refusal needs the
+  // verified team in its command, which only admission gives.
+  try { teamConfigurationPlan(initial, label, expectedTeam || '<verified-team>', deployment, { preserveDefault: !!expectedTeam }); }
   catch (error) {
     if (!expectedTeam) error.details = { ...error.details, commandsRequireVerifiedTeam: true,
       note: 'canonical team is unknown before admission; command templates require owner-provided verified membership, not a token or label guess; reconcile policy first' };

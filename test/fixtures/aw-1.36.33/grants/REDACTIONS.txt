@@ -1,0 +1,13 @@
+file	key	length
+grant-90m.grant.yaml	minted_at	34
+grant-list-active.stdout	grants[0].grant_did_key	56
+grant-list-active.stdout	grants[0].subject_did_aw	35
+grant-list-active.stdout	grants[1].grant_did_key	56
+grant-list-active.stdout	grants[1].subject_did_aw	35
+grant-list-after-revoke.stdout	grants[0].grant_did_key	56
+grant-list-after-revoke.stdout	grants[0].subject_did_aw	35
+grant-list-after-revoke.stdout	grants[1].grant_did_key	56
+grant-list-after-revoke.stdout	grants[1].subject_did_aw	35
+grant-mint-90m.stdout	custody_socket_path	55
+grant-mint-never.stdout	custody_socket_path	55
+grant-never.grant.yaml	minted_at	34

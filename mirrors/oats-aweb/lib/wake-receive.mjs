@@ -46,11 +46,24 @@ export function recordedRuntime(meta, harness) {
   return typeof meta?.runtime === 'string' ? meta.runtime : harness;
 }
 
-/** Selection is not consent or a prompt-outcome receipt. Keep warnings brief;
- * the skill explains provider boundaries and compatible-kernel support. */
+/** The kernel's decision for a development home: it confirms Claude's
+ * development-channel prompt at launch. Selection is not a prompt-outcome
+ * receipt; only the kernel's recorded launchPrompts.status is. */
 export const CHANNEL_DEV_CONFIRMATION = {
   code: 'channel-dev-confirmation',
-  message: 'Claude Code may stop at its development-channels confirmation, and nothing in this provider answers it; see the oats-aweb skill, section 4 (Channel selection and launch consent).',
+  message: "Claude's development-channel prompt: OATS confirms this prompt at launch; `settings.oats.aweb.delivery: session` or `settings.oats.aweb.claudeChannelMode: approved` stop it.",
+};
+
+/** The kernel's launchPrompts.status when Claude ignored the development-channel
+ *  flag at the last start, so the kernel sent no key: Claude Code disables
+ *  channels when its launch environment opts out of telemetry, or when the
+ *  account or organization has none. Readiness runs in the operator's shell,
+ *  not Claude's launch environment, so the provider names the variables and
+ *  never reads or changes them. Approved needs channels too: no remedy here. */
+export const CHANNELS_UNAVAILABLE_STATUS = 'flag-ignored';
+export const CLAUDE_CHANNELS_UNAVAILABLE = {
+  code: 'claude-channels-unavailable',
+  message: 'Claude ignored the development-channel flag at the last start, so this home has no channel delivery. Claude Code disables channels when its launch environment opts out of telemetry (`DISABLE_TELEMETRY`, `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) or when the account or organization has no channels. Remove the variable from the launch environment yourself, use an account with channels, or use `settings.oats.aweb.delivery: session`.',
 };
 
 export const CLAUDE_CHANNEL_ARGUMENTS = Object.freeze({
@@ -63,8 +76,9 @@ export function selectClaudeChannel(mode = 'development') {
   return {mode, argument: CLAUDE_CHANNEL_ARGUMENTS[mode]};
 }
 
-/** What a Claude start discloses for its mode: development always warns of the
- *  confirmation; approved warns readiness's machine-policy verdict, and nothing
+/** What a Claude start discloses for its mode: development always states the
+ *  kernel's confirmation (a new start has no outcome yet); approved warns
+ *  readiness's machine-policy verdict, and nothing
  *  when the file admits the plugin (readiness still reports that evidence).
  *  `policy` ({root, platform}) is for tests only; production passes none. */
 export function launchChannelWarning(mode, policy) {
@@ -92,8 +106,12 @@ function aggregateClaudeModes(combined) {
 
 /** Only exact provider contributions identify historical mode. The combined
  * hook argument is a fallback for old records without per-provider receipts.
- * An approved home's warning reads the machine managed-settings evidence. */
-function capturedClaudeChannel(meta, hooks, policy) {
+ * An approved home's warning reads the machine managed-settings evidence; a
+ * development home's is quiet only when the kernel recorded its last start's
+ * launch prompt `completed`, says the home has no channel delivery when Claude
+ * ignored the flag, and otherwise (any other status, or none) states the
+ * decision; the kernel's own launch-prompt readiness item explains a block. */
+function capturedClaudeChannel(meta, hooks, policy, launchPromptStatus) {
   const recorded = meta.claudeChannelMode;
   if (recorded !== undefined) selectClaudeChannel(recorded);
   const combined = hooks?.launch?.claude;
@@ -115,7 +133,9 @@ function capturedClaudeChannel(meta, hooks, policy) {
   const aggregateModes = aggregateClaudeModes(combined);
   if (aggregateModes.length > 1 || (mode !== undefined && aggregateModes.some(value => value !== mode))) throw new Error('captured Claude channel mode contradicts its aggregate contribution');
   if (mode === undefined) return {code:'claude-channel-mode-unproven',message:'captured Claude channel mode is unproven; no approved admission or development selection is inferred from current settings'};
-  return mode === 'approved' ? approvedChannelPolicyWarning(policy) : {...CHANNEL_DEV_CONFIRMATION};
+  if (mode === 'approved') return approvedChannelPolicyWarning(policy);
+  if (launchPromptStatus === 'completed') return undefined;
+  return launchPromptStatus === CHANNELS_UNAVAILABLE_STATUS ? {...CLAUDE_CHANNELS_UNAVAILABLE} : {...CHANNEL_DEV_CONFIRMATION};
 }
 
 /** external-session | native-channel | native-pi. */
@@ -205,7 +225,9 @@ function receiveRecord(home) {
       (doc.launch?.hooks?.env !== undefined && !object(doc.launch.hooks.env))) return {error: 'captured delivery/runtime or credential metadata is malformed'};
   try { if (meta.claudeChannelMode !== undefined) selectClaudeChannel(meta.claudeChannelMode); }
   catch { return {error: 'captured Claude channel mode is malformed'}; }
-  return {meta, runtime: recordedRuntime(meta, doc.launch?.harness ?? doc.harness), identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME, hooks: doc.launch?.hooks};
+  // The kernel's record of the last start's launch prompt; anything unreadable is no outcome.
+  const launchPromptStatus = object(doc.launchPrompts) && typeof doc.launchPrompts.status === 'string' ? doc.launchPrompts.status : undefined;
+  return {meta, runtime: recordedRuntime(meta, doc.launch?.harness ?? doc.harness), identityHome: doc.launch?.hooks?.env?.AWEB_IDENTITY_HOME, hooks: doc.launch?.hooks, launchPromptStatus};
 }
 
 /** Preserve valid retained facts even when a legacy record lacks ownership.
@@ -257,14 +279,29 @@ export function expectedReceive(home, {delivery = 'channel', policy} = {}) {
   const native = meta.delivery === 'channel' && runtime !== undefined && !primaryBroker;
   if (meta.claudeChannelMode !== undefined && (meta.delivery !== 'channel' || runtime !== 'claude')) return fail('captured Claude channel mode contradicts delivery/runtime');
   if (native && runtime === 'claude') {
-    try { warnings.push(capturedClaudeChannel(meta, captured.hooks, policy)); }
+    let channelWarning;
+    try { channelWarning = capturedClaudeChannel(meta, captured.hooks, policy, captured.launchPromptStatus); }
     catch (error) { return fail(error.message); }
+    if (channelWarning) warnings.push(channelWarning);
   }
   const bindings = joined.map(j => ({identity_home: j.identityHome, label: j.label, team: j.team, controls: false, event_classes: ['mail', 'chat']}));
   // Incomplete projections retain known joins but do not manufacture an exact
   // primary plan from settings or the broker's supplied binding list.
   if (!incomplete && primaryBroker) bindings.unshift({identity_home: primary, team: meta.identity?.team || meta.team || meta.defaultTeam?.team, label: joined.length ? 'default' : undefined, controls: true, event_classes: []});
   return {problems: [], warnings, runtimeDelivery, runtime, primary, primaryTeam: meta.identity?.team || meta.team || meta.defaultTeam?.team, primaryBroker, capturedDelivery: meta.delivery, joined, bindings, native, incomplete, brokerRequired: primaryBroker || joined.length > 0};
+}
+
+/** Milliseconds since the epoch of an RFC 3339 timestamp as aw writes them,
+ *  or NaN for anything else, including impossible calendar dates. */
+export function parseTimestamp(value) {
+  const match = typeof value === 'string' && /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.exec(value);
+  if (!match) return NaN;
+  const [, year, month, day, hour, minute, second] = match.map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  // Date.parse normalizes impossible calendar dates such as February 30.
+  if (month < 1 || month > 12 || day < 1 || day > days[month - 1] || hour > 23 || minute > 59 || second > 59) return NaN;
+  return Date.parse(value);
 }
 
 /** Released aw status is a transport observation. Worker telemetry is absent at
@@ -278,7 +315,10 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
   if (status.daemon_version_state !== 'reported' || typeof status.daemon_version !== 'string' || !/^\d+\.\d+\.\d+$/.test(status.daemon_version || '')) return fail('wake-daemon-version-unknown', 'host wake daemon compatibility is unproven');
   const version = status.daemon_version.split('.').map(Number), floor = minimumVersion.split('.').map(Number);
   const difference = version.map((n, i) => n - floor[i]).find(n => n !== 0);
-  if (difference < 0) return fail('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}`);
+  // A daemon below the floor still receives; the floor exists for replies to
+  // senders outside the roster, so it is reported as a warning, and every
+  // later check (and its fail) still carries that warning.
+  if (difference < 0) warnings.push(problem('wake-daemon-outdated', `host wake daemon is running ${status.daemon_version}; required ${minimumVersion}: upgrade aw, then restart the host wake daemon`));
   const rows = status.instances.filter(row => samePath(row?.home, home));
   if (rows.length !== 1) return fail('wake-target-missing', 'canonical home must have exactly one broker target row');
   const row = rows[0];
@@ -347,18 +387,8 @@ export function targetReceiveAssessment(status, {home, runtimeDelivery, runtime,
       (core.readiness_waiting !== undefined && !['', 'inspect_start', 'inspect_done', 'inspect_error'].includes(core.readiness_waiting))) return fail('wake-status-unavailable', 'broker observation status is malformed');
   if (core.readiness_waiting === 'inspect_error' || states.some(state => ['shell', 'stopped', 'not-launched'].includes(state))) return fail('receive-inspection-unproven', 'broker reports a failed inspection or an unusable endpoint');
   if (states.every(Boolean) && states[0] !== states[1]) return fail('wake-status-unavailable', 'broker observation states contradict each other');
-  const timestamp = value => {
-    const match = typeof value === 'string' && /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.exec(value);
-    if (!match) return NaN;
-    const [, year, month, day, hour, minute, second] = match.map(Number);
-    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    // Date.parse normalizes impossible calendar dates such as February 30.
-    if (month < 1 || month > 12 || day < 1 || day > days[month - 1] || hour > 23 || minute > 59 || second > 59) return NaN;
-    return Date.parse(value);
-  };
-  const updated = status.updated_at === undefined ? undefined : timestamp(status.updated_at);
-  const inspected = row.last_inspect_at === undefined ? undefined : timestamp(row.last_inspect_at);
+  const updated = status.updated_at === undefined ? undefined : parseTimestamp(status.updated_at);
+  const inspected = row.last_inspect_at === undefined ? undefined : parseTimestamp(row.last_inspect_at);
   if (updated !== undefined && (!Number.isFinite(updated) || updated > now)) return fail('wake-status-stale', 'supplied broker status timestamp is invalid or future');
   if (inspected !== undefined && (!Number.isFinite(inspected) || inspected > now || (updated !== undefined && inspected > updated))) return fail('receive-inspection-unproven', 'supplied broker inspection timestamp is invalid, future or later than the snapshot');
   // Released aw retains nonempty LastError across child status updates, while

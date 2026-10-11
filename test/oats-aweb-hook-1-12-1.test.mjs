@@ -10,6 +10,8 @@ import { dirname, join, resolve } from "node:path";
 
 const HOOK = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
 const BINDING = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb-binding.mjs", import.meta.url).pathname);
+// Captured aw output and its provenance live together in this fixture directory.
+const AW_VERSION_OUTPUT = readFileSync(new URL("./fixtures/aw-1.36.33/aw-version.txt", import.meta.url), "utf8");
 
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 function awRoot(dir) { mkdirSync(join(dir, ".aw"), { recursive: true }); }
@@ -23,7 +25,7 @@ const s = a.join(" ");
 const log = ${JSON.stringify(join(base, "aw.log"))};
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
 const j = (obj) => JSON.stringify(obj, null, 2);
-if (s === "version") { console.log("aw 1.36.13"); process.exit(0); }
+if (s === "version") { process.stdout.write(${JSON.stringify(AW_VERSION_OUTPUT)}); process.exit(0); }
 if (s.startsWith("wake ")) process.exit(0);
 if (s.startsWith("team list")) { console.log(j({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (s.startsWith("team invite")) { console.log(j({ token: "TOK-secret" })); process.exit(0); }
@@ -89,7 +91,7 @@ function bindingRequest(settings = {}) {
   };
 }
 
-/** oats.aweb 1.16.1 checks the aw floor (>= 1.36.13) in readiness too. The binding check gets
+/** Readiness checks the provider's aw floor too. The binding check gets
  *  an aw that answers only `version` (and logs every call), so the check never reads the host's
  *  own aw and otherwise runs exactly as before the floor. */
 function versionOnlyAw() {
@@ -97,7 +99,7 @@ function versionOnlyAw() {
   write(join(bin, "aw"), `#!/usr/bin/env node
 const s = process.argv.slice(2).join(" ");
 require("node:fs").appendFileSync(${JSON.stringify(join(bin, "calls.log"))}, s + "\\n");
-if (s === "version") { console.log("aw 1.36.13"); process.exit(0); }
+if (s === "version") { process.stdout.write(${JSON.stringify(AW_VERSION_OUTPUT)}); process.exit(0); }
 console.error("version-only aw: unexpected " + s); process.exit(2);
 `);
   chmodSync(join(bin, "aw"), 0o755);

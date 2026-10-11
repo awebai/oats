@@ -32,7 +32,7 @@ export function selectedTeamKernel(deployment, env = process.env) {
       if (envelope?.schemaVersion === 1 && envelope.ok === false && envelope.error?.code === 'E_WORKSPACE_SCHEMA' && envelope.error?.details?.reason === 'local-teams-closed') {
         throw setupFailure('E_SETUP_POLICY', 'local-teams-closed: selected workspace forbids local team writes');
       }
-      const safeCode = ['E_TEAM_EXISTS', 'E_TEAM_UNKNOWN', 'E_WORKSPACE_SCHEMA', 'E_LOCAL_CHANGED', 'E_BAD_ARGS'].includes(envelope?.error?.code) ? ` (${envelope.error.code})` : '';
+      const safeCode = ['E_TEAM_EXISTS', 'E_TEAM_UNKNOWN', 'E_WORKSPACE_SCHEMA', 'E_LOCAL_CHANGED', 'E_BAD_ARGS', 'E_TEAM_DEFAULT_MISMATCH'].includes(envelope?.error?.code) ? ` (${envelope.error.code})` : '';
       throw setupFailure('E_SETUP_KERNEL', `selected kernel command failed${safeCode}; output withheld`);
     }
     if (!object(envelope.result)) throw setupFailure('E_SETUP_KERNEL', 'selected kernel returned an invalid result');
@@ -63,7 +63,14 @@ export function selectedTeamKernel(deployment, env = process.env) {
     }
     return doc;
   };
-  return { read, add: (label, team) => invoke(['teams', 'add', label, `--team=${team}`]), setDefault: label => invoke(['teams', 'default', label]) };
+  return {
+    read,
+    add: (label, team) => invoke(['teams', 'add', label, `--team=${team}`]),
+    setDefault: label => invoke(['teams', 'default', label]),
+    // Feature teams-conditional-default (OATS 0.48.0): a kernel without it ignores these flags.
+    addMapping: (label, team) => invoke(['teams', 'add', label, `--team=${team}`, '--no-default']),
+    setDefaultIfAbsent: label => invoke(['teams', 'default', label, '--if-absent']),
+  };
 }
 
 export function teamConfigurationPlan(doc, label, team, deployment, { preserveDefault = false } = {}) {
@@ -85,7 +92,9 @@ export function teamConfigurationPlan(doc, label, team, deployment, { preserveDe
   }
   const mapped = !!existing;
   const isDefault = doc.defaultTeam?.label === label && doc.defaultTeam?.team === team;
-  const needed = [...(mapped ? [] : [commands[0]]), ...(isDefault ? [] : [commands[1]])];
+  // A join that preserves an existing default never sets it (applyTeamConfiguration).
+  const keepsDefault = preserveDefault && !!doc.defaultTeam;
+  const needed = [...(mapped ? [] : [commands[0]]), ...(isDefault || keepsDefault ? [] : [commands[1]])];
   if (closed && needed.length) {
     throw setupFailure('E_SETUP_POLICY', 'local-teams-closed: selected workspace forbids local team writes; operator must reconcile policy before using the manual commands', { commands });
   }
