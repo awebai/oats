@@ -427,7 +427,7 @@ test("an acquisition whose takeover ended the dead holder's step and that is the
   });
   await t.test("taken first by another command that runs", async (st) => {
     const { c, step, error } = await refusedAfterEnding(st, (lock) => heldBy(lock, { ...selfIdentity(), nonce: N2 }));
-    assert.equal(error.message, `${said(step)}; after that: another oats worktree add or remove of purpose p is running (pid ${process.pid} holds ${c.lock}); nothing else was done — retry when it has finished`);
+    assert.equal(error.message, `${said(step)}; after that: another oats worktree add or remove of purpose p is running (pid ${process.pid} holds ${c.lock}); nothing else was done — retry when it has finished; if it does not end, check that pid by hand, and if it is not an oats worktree command, remove ${c.lock}, then retry`);
     assert.deepEqual(error.details, { purpose: "p", lock: c.lock, pid: process.pid, holder: "running" });
     assert.equal(readClaim(c.lock).nonce, N2, "the live holder's claim is untouched");
   });
@@ -460,8 +460,8 @@ test("an acquisition whose takeover ended the dead holder's step and that is the
     const endedHooks = "the hook process group 77 of a killed oats retire was ended";
     const home = "/agents/worker/instances/worker-1";
     const cases = [
-      ["stop", "retire", (lock, live) => [`worker-1 is being retired (pid ${process.pid}, since ${live.at}); nothing else was done`, { instance: "worker-1", home, lock, pid: process.pid, since: live.at, action: "retire" }]],
-      ["retire", "stop", (lock, live) => [`a stop of worker-1 is already running (pid ${process.pid}, since ${live.at}); nothing else was done — wait for it to finish`, { instance: "worker-1", home, lock, pid: process.pid, since: live.at, action: "stop", holder: "running" }]],
+      ["stop", "retire", (lock, live) => [`worker-1 is being retired (pid ${process.pid}, since ${live.at}); nothing else was done — if it does not end, check that pid by hand, and if it is not an oats retire, remove ${lock}, then retry`, { instance: "worker-1", home, lock, pid: process.pid, since: live.at, action: "retire" }]],
+      ["retire", "stop", (lock, live) => [`a stop of worker-1 is already running (pid ${process.pid}, since ${live.at}); nothing else was done — wait for it to finish; if it does not end, check that pid by hand, and if it is not an oats instance stop, remove ${lock}, then retry`, { instance: "worker-1", home, lock, pid: process.pid, since: live.at, action: "stop", holder: "running" }]],
     ];
     for (const [arriving, holding, expected] of cases) {
       const c = claimDir(st);
@@ -513,7 +513,7 @@ test("every refusal of a claim, of the three callers and of the verb that only r
     // The refusals lib/claim.mjs asks a caller for, and no other.
     assert.deepEqual(Object.keys(r).sort(), ["busy", "cannotTakeOver", "heldAgain", "ownStartUnreadable", "unreadableClaim"], caller);
     // A stop and a worktree add beside a retire that runs are E_INSTANCE_RETIRING: the one refusal
-    // of a claim that is not E_LIFECYCLE_BUSY, with no `holder` and no step that ends it.
+    // of a claim that is not E_LIFECYCLE_BUSY, with no `holder` and a step that never says to wait.
     const besideRetire = caller === "oats instance stop" || caller.startsWith("oats worktree add");
     for (const at of [lock, `${lock}.reclaim-${N1}`]) {
       // Each refusal, as the claim asks for it with `steps` ended before it, and what its
@@ -536,7 +536,14 @@ test("every refusal of a claim, of the three callers and of the verb that only r
         assert.equal(e.details.lock, at, what);
         if (who === null) {
           assert.equal(e.code, "E_INSTANCE_RETIRING", what);
-          assert.ok(e.message.endsWith(`; ${nothing}`) && !e.message.includes(" — "), `${what}: it ends by saying what was not done, and names no step: the instance is on its way out`);
+          // As of the others: one dash, what was refused ends with the verb's words before it, a
+          // step after it. Its own: the step never says to wait. The instance is on its way out,
+          // so waiting makes neither the stop nor the tree possible, which is why this answer
+          // named no step while waiting was the only one; that still holds for waiting, and no
+          // longer for the check of a holder that does not end.
+          const [refused, step, ...more] = e.message.split(" — ");
+          assert.ok(more.length === 0 && refused.endsWith(`; ${nothing}`) && typeof step === "string" && step.trim().length > 0 && WORDS.every((w) => !step.includes(w)) && !/wait for it to finish|retry when it has finished/.test(e.message),
+            `${what}: what was refused ends by saying what was not done, one dash, and a step that holds none of those words and does not say to wait (the instance is on its way out: waiting makes nothing possible; the step is the check of a holder that does not end)`);
           assert.equal("holder" in e.details, false, `${what}: details.holder is of E_LIFECYCLE_BUSY`);
         } else {
           assert.equal(e.code, "E_LIFECYCLE_BUSY", what);

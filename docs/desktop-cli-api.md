@@ -2137,7 +2137,12 @@ purpose's claim, `<home>/.oats/trees/<purpose>.lock`. The claim is a file
 that names its holder by pid and start time. A second command waits up to
 3 s for a live holder, then answers `E_LIFECYCLE_BUSY` (`details.lock`,
 `details.pid`, and [`details.holder`](#busy-holder) on this and on every
-other `E_LIFECYCLE_BUSY` of these commands: OATS 0.52.0). A claim whose holder has died, for example one killed in the
+other `E_LIFECYCLE_BUSY` of these commands: OATS 0.52.0): `another oats
+worktree add or remove of purpose <purpose> is running (pid <pid> holds
+<lock>); nothing was done — retry when it has finished; if it does not end,
+check that pid by hand, and if it is not an oats worktree command, remove
+<lock>, then retry` ([a live process](#busy-holder-running), not a verified
+command). A claim whose holder has died, for example one killed in the
 middle of a recovery, is taken over by the next command. So a killed `add`
 or `remove` can always be run again. A holder that has exited or was killed
 and that its parent has not reaped (a zombie) has died: its claim is taken
@@ -2214,7 +2219,7 @@ A failed `add` reports the same facts about its rollback in `details`:
 | Code | When |
 |---|---|
 | `E_BAD_ARGS` | not run from an instance home; `--dir`, `--home` or `--server`; a missing value; a value starting with `-`; an invalid purpose, branch or base; `remove` of a purpose with no record (a tree made with raw Git is removed with `git worktree remove`) |
-| `E_INSTANCE_RETIRING` | `add` in a quarantined home; in one for which a self-retire is scheduled; or in one whose retire is running (OATS 0.52.0: `add` reads the home's claim and takes nothing; `<instance> is being retired (pid <pid>, since <at>); no tree was made`, `details: {instance, home, lock, pid, since, action: "retire"}`; [Commands that meet on one home](#lifecycle-pairs)) |
+| `E_INSTANCE_RETIRING` | `add` in a quarantined home; in one for which a self-retire is scheduled; or in one whose retire is running (OATS 0.52.0: `add` reads the home's claim and takes nothing; `<instance> is being retired (pid <pid>, since <at>); no tree was made — if it does not end, check that pid by hand, and if it is not an oats retire, remove <lock>, then retry`, `details: {instance, home, lock, pid, since, action: "retire"}`; [Commands that meet on one home](#lifecycle-pairs)) |
 | `E_CLONE_MISSING` | the repository is not found, or is not a Git repository |
 | `E_CLONE_MISMATCH` | the path is a linked worktree, or the clone has no `origin` |
 | `E_BRANCH_EXISTS` | the branch exists in the clone (before the tree is made, or made by another `add` at the same moment); `details.remedy` is `<instance>/<branch>` |
@@ -3362,10 +3367,14 @@ since, action}`, with `holder` on `E_LIFECYCLE_BUSY`:
   `<lock>`, then retry).
 
 The messages: `<instance> is being retired (pid <pid>, since <at>); nothing
-was stopped` (a `worktree add`: `no tree was made`); `a stop of <instance>
-is already running (pid <pid>, since <at>); nothing was done — wait for it
-to finish` (an arriving stop: `nothing was stopped`). A client shows the
-message and never parses it.
+was stopped — if it does not end, check that pid by hand, and if it is not
+an oats retire, remove <lock>, then retry` (a `worktree add`: `no tree was
+made`); `a stop of <instance> is already running (pid <pid>, since <at>);
+nothing was done — wait for it to finish; if it does not end, check that
+pid by hand, and if it is not an oats instance stop, remove <lock>, then
+retry` (an arriving stop: `nothing was stopped`). The step for a holder
+that does not end is [the check of a live process](#busy-holder-running).
+A client shows the message and never parses it.
 
 <a id="busy-holder"></a>
 **`error.details.holder`, on every `E_LIFECYCLE_BUSY`** of `oats retire`,
@@ -3376,14 +3385,26 @@ ends the refusal:
 
 | `details.holder` | It means | What ends it |
 |---|---|---|
-| `"running"` | the kernel established that another `oats` command is alive (a retire, a stop, a worktree command, a spawn, a scheduled completion) | waiting |
+| `"running"` | the kernel established that a process with the recorded pid and start time is alive: the one that the claim, the record or the marker names as an `oats` command (a retire, a stop, a worktree command, a spawn, a scheduled completion). It did not establish that the process is that command | waiting, when it is that command; a claim's refusal also names the check for when it does not end |
 | `"unknown"` | whether one still runs cannot be read | a person checks what the message names (the process, the file) |
 | `"none"` | nobody is running: something that a dead command left, or that this host lacks, has to be dealt with | what the message says (a file to inspect and remove, a group to end, a command to run) |
 
 A reader treats a value it does not know, or the field's absence (a kernel
 without the feature), as **do not promise that waiting ends it**. For
 `"unknown"` and `"none"` the message always names the step that ends it,
-after ` — `. The field has a meaning only under `E_LIFECYCLE_BUSY`: under
+after ` — `.
+
+<a id="busy-holder-running"></a>
+**`"running"` is a live process, not a verified command.** A file that
+names any live process by its pid and start time reads as `running`,
+whoever wrote it, and waiting for that process ends nothing. So a claim's
+refusal for a holder that runs names, after the wait, the check that the
+`unknown` refusal names, in the same words: `… — wait for it to finish; if
+it does not end, check that pid by hand, and if it is not an oats retire,
+remove <lock>, then retry` (`an oats instance stop`, `an oats worktree
+command`). `E_INSTANCE_RETIRING` from a claim names the check alone: the
+instance is on its way out, so waiting makes neither the stop nor the tree
+possible. What a client does with each value of `holder` does not change. The field has a meaning only under `E_LIFECYCLE_BUSY`: under
 any other code a reader ignores it (an `E_LIFECYCLE_FAILED` made after a
 takeover ended a dead holder's step carries the details of the refusal it
 then met, `holder` among them).
@@ -3840,8 +3861,11 @@ line and says that nothing was done:
 
 - A live holder (`holder: "running"`): `a retire of <name> is already
   running (pid <pid>, since <at>); nothing was done — wait for it to
-  finish`; beside a stop, `a stop of <name> is already running …`, with
-  `action: "stop"`.
+  finish; if it does not end, check that pid by hand, and if it is not an
+  oats retire, remove <lock>, then retry`; beside a stop, `a stop of <name>
+  is already running …`, with `action: "stop"` and `an oats instance
+  stop`. Live is what was established
+  [of the process](#busy-holder-running), not that it is that command.
 - A holder whose start time cannot be read (where `ps` fails, or a claim
   that records none) is never taken for gone, and its claim is never taken
   over (`holder: "unknown"`). `details.unknown` is the reason. The message

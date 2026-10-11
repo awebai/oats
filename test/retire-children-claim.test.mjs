@@ -240,7 +240,7 @@ test("a stop of a child whose session runs, beside its parent's retire: the stop
 const HOLDERS = [
   { id: "a stop of that child", action: "stop", code: "E_LIFECYCLE_BUSY",
     argv: (f, kid) => ["instance", "stop", kid.name, "--apply", "--plan-revision", f.stopPlan(kid).planRevision, "--idempotency-key", "k-stop", "--json"],
-    message: (kid, claim) => `a stop of ${kid.name} is already running (pid ${claim.pid}, since ${claim.at}); nothing was stopped — wait for it to finish`,
+    message: (kid, claim) => `a stop of ${kid.name} is already running (pid ${claim.pid}, since ${claim.at}); nothing was stopped — wait for it to finish; if it does not end, check that pid by hand, and if it is not an oats instance stop, remove ${kid.lock}, then retry`,
     /** Released, the stop finishes: the child was idle, and is kept. */
     finished: (f, kid, done) => {
       assert.equal(done.code, 0, done.stdout + done.stderr);
@@ -252,7 +252,7 @@ const HOLDERS = [
     } },
   { id: "a retire of that child", action: "retire", code: "E_INSTANCE_RETIRING",
     argv: (f, kid) => ["retire", kid.name, "--json"],
-    message: (kid, claim) => `${kid.name} is being retired (pid ${claim.pid}, since ${claim.at}); nothing was stopped`,
+    message: (kid, claim) => `${kid.name} is being retired (pid ${claim.pid}, since ${claim.at}); nothing was stopped — if it does not end, check that pid by hand, and if it is not an oats retire, remove ${kid.lock}, then retry`,
     /** Released, the retire finishes: the child is gone. */
     finished: (f, kid, done) => {
       assert.equal(done.code, 0, done.stdout + done.stderr);
@@ -336,7 +336,7 @@ test("a parent's retire that stops one child's harness and meets another child w
     assert.equal(error.code, "E_CHILDREN_RUNNING", JSON.stringify(error));
     assert.deepEqual(error.details.childrenStopped, order.map((name) => (name === "c1"
       ? { instance: "c1", home: kids.c1.home, ok: true, stopped: true, alreadyIdle: false }
-      : { instance: "c2", home: kids.c2.home, ok: false, code: "E_LIFECYCLE_BUSY", message: `a stop of c2 is already running (pid ${claim.pid}, since ${claim.at}); nothing was stopped — wait for it to finish`, stillRunning: null })),
+      : { instance: "c2", home: kids.c2.home, ok: false, code: "E_LIFECYCLE_BUSY", message: `a stop of c2 is already running (pid ${claim.pid}, since ${claim.at}); nothing was stopped — wait for it to finish; if it does not end, check that pid by hand, and if it is not an oats instance stop, remove ${kids.c2.lock}, then retry`, stillRunning: null })),
     "one row per child of the plan, in the plan's order: the one it stopped, and the one whose claim was held");
     assert.deepEqual(error.details.reached, { ...NOTHING_SIGNALLED, sessionStopAttempted: true }, "a signal was sent to a child's harness: the answer says so");
     assert.equal(error.message, "c2 could not be stopped (E_LIFECYCLE_BUSY); nothing was retired and nothing was escalated", "the message names the child that did not stop, and not the one that did");

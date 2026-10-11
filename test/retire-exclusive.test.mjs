@@ -161,7 +161,7 @@ function assertRefused(f, h, r, what) {
   const e = envelope(r);
   assert.deepEqual({ schemaVersion: e.schemaVersion, ok: e.ok, code: e.error.code }, { schemaVersion: 1, ok: false, code: "E_LIFECYCLE_BUSY" }, what);
   assert.deepEqual(e.error.details, { instance: h.inst.instance, home: h.inst.home, lock: h.lock, pid: h.a.pid, since: readJson(h.lock).at, action: "retire", holder: "running" }, what);
-  assert.equal(e.error.message, `a retire of ${h.inst.instance} is already running (pid ${h.a.pid}, since ${e.error.details.since}); nothing was done — wait for it to finish`, what);
+  assert.equal(e.error.message, `a retire of ${h.inst.instance} is already running (pid ${h.a.pid}, since ${e.error.details.since}); nothing was done — wait for it to finish; if it does not end, check that pid by hand, and if it is not an oats retire, remove ${h.lock}, then retry`, what);
   assertUntouched(f, h, what);
   return e;
 }

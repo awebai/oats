@@ -444,10 +444,10 @@ test("beside a live retire a stop and a worktree add are refused E_INSTANCE_RETI
     const said = `${what}: ${e.code} ${JSON.stringify(e.message)} ${JSON.stringify(e.details)}`;
     if (e.code === "E_INSTANCE_RETIRING") {
       assert.deepEqual(e.details, { instance: NAME, home: HOME, lock: LOCK, pid: HOLDER_PID, since: SINCE, action: "retire" }, said);
-      assert.equal(e.message, `${NAME} is being retired (pid ${HOLDER_PID}, since ${SINCE}); ${NOTHING[arriving]}`, said);
+      assert.equal(e.message, `${NAME} is being retired (pid ${HOLDER_PID}, since ${SINCE}); ${NOTHING[arriving]} — if it does not end, check that pid by hand, and if it is not an oats retire, remove ${LOCK}, then retry`, said);
     } else {
       assert.deepEqual(e.details, { instance: NAME, home: HOME, lock: LOCK, pid: HOLDER_PID, since: SINCE, action, holder: "running" }, said);
-      assert.equal(e.message, `a ${action} of ${NAME} is already running (pid ${HOLDER_PID}, since ${SINCE}); ${NOTHING[arriving]} — wait for it to finish`, said);
+      assert.equal(e.message, `a ${action} of ${NAME} is already running (pid ${HOLDER_PID}, since ${SINCE}); ${NOTHING[arriving]} — wait for it to finish; if it does not end, check that pid by hand, and if it is not an oats ${action === "stop" ? "instance stop" : action}, remove ${LOCK}, then retry`, said);
     }
   }
 });

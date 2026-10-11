@@ -149,7 +149,7 @@ test("oats worktree add beside a live retire of its home is refused E_INSTANCE_R
     await run.waitGate("claimed");
     const claim = assertHolds(run, lock, "retire");
     const before = snapshot(home);
-    const message = `${name} is being retired (pid ${run.child.pid}, since ${claim.at}); no tree was made`;
+    const message = `${name} is being retired (pid ${run.child.pid}, since ${claim.at}); no tree was made — if it does not end, check that pid by hand, and if it is not an oats retire, remove ${lock}, then retry`;
     for (const [what, more] of [["add", []], ["add --preview", ["--preview"]]]) {
       const error = refusal(w.add("p", [...more, "--json"]), `\`oats worktree ${what}\` beside a live retire`);
       assert.equal(error.code, "E_INSTANCE_RETIRING", `${what}: ${JSON.stringify(error)}`);

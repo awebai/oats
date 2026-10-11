@@ -152,8 +152,8 @@ function refusedByHolder(r, { target, action, pid, planned = target }, what) {
   // A record without a verb is a retire's: a kernel before `lifecycle-claim-stop` wrote none.
   assert.deepEqual([held.action ?? "retire", held.pid], [action, pid], `${what}: fixture premise, who holds the claim of ${target.name}`);
   assert.deepEqual(details, { instance: target.name, home: target.home, lock: target.lock, pid, since: held.at, action, ...(action === "stop" ? { holder: "running" } : {}) }, what);
-  assert.equal(error.message, action === "retire" ? `${target.name} is being retired (pid ${pid}, since ${held.at}); nothing was stopped`
-    : `a stop of ${target.name} is already running (pid ${pid}, since ${held.at}); nothing was stopped — wait for it to finish`, what);
+  assert.equal(error.message, action === "retire" ? `${target.name} is being retired (pid ${pid}, since ${held.at}); nothing was stopped — if it does not end, check that pid by hand, and if it is not an oats retire, remove ${target.lock}, then retry`
+    : `a stop of ${target.name} is already running (pid ${pid}, since ${held.at}); nothing was stopped — wait for it to finish; if it does not end, check that pid by hand, and if it is not an oats instance stop, remove ${target.lock}, then retry`, what);
   assert.deepEqual([plan.action, plan.instance, plan.home], ["stop", planned.name, planned.home], `${what}: details.plan is the stop plan the apply read`);
   // That plan was read before the claim was asked for: it shows the holder, as any plan does.
   assert.deepEqual(flags(plan).find((shown) => shown.instance === target.name), { instance: target.name, retiring: action === "retire", stopPending: action === "stop" }, `${what}: details.plan shows the holder`);
@@ -315,7 +315,7 @@ test("a retire that arrives while a stop holds the claim (plain, guarded, guarde
       ["guarded, a stale revision", ["--plan-revision", STALE, "--idempotency-key", "r-stale"]], ["--force", ["--force"]]]) {
       const error = refusal(d.fx.cli(["retire", i.name, "--json", ...extra]), "E_LIFECYCLE_BUSY", what);
       // Exactly these keys: no `reached`, which a retire answers once it holds the claim.
-      assert.deepEqual(error, { code: "E_LIFECYCLE_BUSY", message: `a stop of ${i.name} is already running (pid ${held.pid}, since ${held.at}); nothing was done — wait for it to finish`,
+      assert.deepEqual(error, { code: "E_LIFECYCLE_BUSY", message: `a stop of ${i.name} is already running (pid ${held.pid}, since ${held.at}); nothing was done — wait for it to finish; if it does not end, check that pid by hand, and if it is not an oats instance stop, remove ${i.lock}, then retry`,
         details: { instance: i.name, home: i.home, lock: i.lock, pid: held.pid, since: held.at, action: "stop", holder: "running" } }, what);
       assert.deepEqual(listing(i.home), before.home, `${what}: the home is byte-identical`);
       assert.deepEqual([alive(i.pid), i.hookRuns(), i.recoveries(), readFileSync(i.lock, "utf8"), i.events()], [true, 0, [], claim, before.events], `${what}: the session runs, no hook ran, nothing was copied, the claim is the stop's, and no plan was read`);
