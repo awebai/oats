@@ -386,8 +386,14 @@ kernel. Where an answer needs a second writer at an exact moment (an entry
 that vanishes between a walk's listing and its read), the test runs the CLI
 as a child held at one named `node:fs` call with
 `test/helpers/fs-gate-preload.mjs` (`startGated`), does what the second writer
-does, and releases it. The helper only pauses: it changes no argument and no
-result.
+does, and releases it. A gate that pauses changes no argument and no result.
+
+A test never fills a file system, and never waits for one to be full. Where an
+answer needs a write to fail with a code no file shape gives on every host
+(`ENOSPC`), the same helper makes one named `node:fs` call of that child fail
+with it (a gate's `throws`; `runFaulted` runs a child whose gates all throw).
+A shape that does fail by itself, a directory that is not writable, is made
+with mode bits instead and skipped for root.
 
 Cross-package tests that import both the kernel and Desktop belong under root
 `test/`; install dependencies at the root and in `packages/desktop` before

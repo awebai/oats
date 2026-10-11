@@ -17,7 +17,7 @@
 //
 // No outcome rests on a sleep or on which process is faster. The command that holds a claim is the
 // real CLI, started as a child and HELD right after the link that makes its claim file has returned
-// (test/helpers/fs-gate-preload.mjs: a pause, and nothing else); the second command runs while it
+// (test/helpers/fs-gate-preload.mjs: here a pause, and nothing else); the second command runs while it
 // is held, and the held one is then released and must finish.
 import test from "node:test";
 import assert from "node:assert/strict";

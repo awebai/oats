@@ -12,17 +12,18 @@
 //
 // The window between the listing and the read is a few microseconds, so no test can hit it by
 // timing. Each case runs the real CLI as a child that is HELD at the walk's own `lstatSync` of one
-// file (test/helpers/fs-gate-preload.mjs: a pause, and nothing else; written for the reproduction
-// of #866), removes the file, and lets the retire go on. The last tests pin the pause itself.
+// file (test/helpers/fs-gate-preload.mjs: here a pause, and nothing else; written for the
+// reproduction of #866), removes the file, and lets the retire go on. The last tests pin the
+// helper itself: the pause, and the fault it can make of a call instead (awebai/oats#946).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { fixtureBase, waitUntil } from "./helpers/host-fixture.mjs";
-import { startGated } from "./helpers/fs-gate-preload.mjs";
+import { FS_GATE_PRELOAD, runFaulted, startGated } from "./helpers/fs-gate-preload.mjs";
 
 /** A capability whose retire hook records each run in `<agents root>/retire-hook-ran`, outside the home. */
 const recordingHook = {
@@ -279,4 +280,52 @@ test("a gate that is never released does not hold its process for ever: the call
     assert.deepEqual(result.timedOut, ["forgotten"], "a test that asserts timedOut is empty fails on this, by name");
     assert.ok(existsSync(join(s.gateDir, "forgotten.timeout")));
   } finally { await run.finish(); }
+});
+
+/** Write `process.argv[1]` three times, then read a path that is not there, and print what each
+ *  call threw (`null` for none): an error's own keys, its message, and whether the file is there. */
+const WRITE_THRICE = `const fs = require("node:fs"); const out = [];
+const shown = (e) => (e ? { keys: Object.keys(e).sort(), code: e.code, errno: e.errno, syscall: e.syscall, path: e.path, message: e.message, isError: e instanceof Error } : null);
+for (const n of [1, 2, 3]) { let e = null; try { fs.writeFileSync(process.argv[1], "write " + n + "\\n"); } catch (x) { e = x; } out.push({ threw: shown(e), bytes: fs.existsSync(process.argv[1]) ? fs.readFileSync(process.argv[1], "utf8") : null }); }
+let real = null; try { fs.readFileSync(process.argv[1] + ".absent"); } catch (x) { real = x; }
+process.stdout.write(JSON.stringify({ out, real: shown(real) }));`;
+
+test("a gate that throws makes its call fail with the code it names, as an error of the system's is shaped: before the call (nothing is made), once or on every call, from the nth on; and after the call (it was made)", (t) => {
+  const run = (gate) => {
+    const s = scratch(t);
+    const r = runFaulted(["-e", WRITE_THRICE, s.file], { cwd: s.base, gateDir: s.gateDir, gates: [{ name: "full", fn: "writeFileSync", path: s.file, throws: "ENOSPC", ...gate }] });
+    assert.equal(r.status, 0, r.stderr);
+    return { ...JSON.parse(r.stdout), fired: r.fired, s };
+  };
+  const threw = (o) => o.out.map((call) => call.threw?.code ?? null), bytes = (o) => o.out.map((call) => call.bytes);
+
+  const once = run({});
+  assert.deepEqual([threw(once), bytes(once), once.fired], [["ENOSPC", null, null], [null, "write 2\n", "write 3\n"], ["full"]], "once: the first call fails and is not made; the next ones are the system's own");
+  const e = once.out[0].threw;
+  assert.deepEqual({ isError: e.isError, keys: e.keys, syscall: e.syscall, path: e.path }, { isError: true, keys: once.real.keys, syscall: "write", path: once.s.file }, "an Error with the keys a system error of Node's has (the read of an absent path, in the same child), naming the operation and the path");
+  assert.deepEqual([typeof e.errno, e.errno < 0, e.message.startsWith("ENOSPC: ")], ["number", true, true], "its errno is the system's number for the code, negative, and its message starts with the code");
+
+  const every = run({ every: true });
+  assert.deepEqual([threw(every), bytes(every)], [["ENOSPC", "ENOSPC", "ENOSPC"], [null, null, null]], "every: each call fails, and the file is never made");
+  const fromTheSecond = run({ nth: 2, every: true });
+  assert.deepEqual([threw(fromTheSecond), bytes(fromTheSecond)], [[null, "ENOSPC", "ENOSPC"], ["write 1\n", "write 1\n", "write 1\n"]], "nth: 2 with every: the first call is made, the second and the third fail");
+  const after = run({ when: "after" });
+  assert.deepEqual([threw(after), bytes(after)], [["ENOSPC", null, null], ["write 1\n", "write 2\n", "write 3\n"]], "after: the call is made, and then fails");
+
+  // A gate that is never met leaves the child as it is, and is not reported as fired.
+  const s = scratch(t);
+  const unmet = runFaulted(["-e", WRITE_THRICE, s.file], { cwd: s.base, gateDir: s.gateDir, gates: [{ name: "elsewhere", fn: "writeFileSync", path: join(s.base, "another-file"), throws: "EIO" }] });
+  assert.deepEqual([unmet.status, JSON.parse(unmet.stdout).out.map((call) => call.threw), unmet.fired], [0, [null, null, null], []]);
+});
+
+test("what the helper refuses: a throws that is no code of the system's, an every without throws, and a child run to its end with a gate that would hold it", (t) => {
+  for (const [what, gate, said] of [["a throws that is no code", { throws: "E_NOT_A_CODE" }, /has a throws that is not a code of the system's/], ["every without throws", { every: true }, /has an every that is not true, or has it without throws/], ["every: false", { throws: "EIO", every: false }, /has an every that is not true/]]) {
+    const s = scratch(t);
+    const r = spawnSync(process.execPath, ["--import", FS_GATE_PRELOAD, "-e", "process.stdout.write('ran')"], { cwd: s.base, encoding: "utf8", env: { ...process.env, OATS_TEST_GATE_DIR: s.gateDir, OATS_TEST_GATES: JSON.stringify([{ name: "g", fn: "writeFileSync", path: s.file, ...gate }]) } });
+    assert.notEqual(r.status, 0, `${what}: the child does not start`);
+    assert.equal(r.stdout, "", what);
+    assert.match(r.stderr, said, what);
+  }
+  const s = scratch(t);
+  assert.throws(() => runFaulted(["-e", ""], { cwd: s.base, gateDir: s.gateDir, gates: [{ name: "pause", fn: "readFileSync", path: s.file }] }), /the gates pause would pause it/);
 });
