@@ -682,7 +682,7 @@ from the installed unit alone, so every caller gets the same answer:
 | --- | --- |
 | `node-missing` | the node the unit runs does not exist |
 | `oats-bin-missing` | the `oats.mjs` the unit runs does not exist |
-| `path-entry-missing` | an entry of the unit's `PATH` does not exist (one problem per entry; the fixed prefixes above are not checked) |
+| `path-entry-missing` | an entry of the unit's `PATH` does not exist (one problem per entry; the fixed prefixes above are not checked, nor the missing node's own directory) |
 | `unit-outdated` | the unit fires on an interval (`StartInterval`, `OnUnitActiveSec`), or differs from what this oats renders for the same node, oats, `PATH` and `OATS_HOME_DIR` |
 
 The fix for each is running `oats schedule host install` again from the

@@ -131,6 +131,8 @@ test("status reports a missing node, each missing PATH entry and an outdated uni
     assert.equal(ok.installed, true); assert.equal(ok.active, true);
     const node = statusOf(os, render({ node: join(base, "gone", "node") }));
     assert.deepEqual(codes(node), ["node-missing"]); assert.ok(node.problems[0].message.includes(join(base, "gone", "node")));
+    // A gone node's own directory, first on the unit PATH, is the same cause: one problem, not two.
+    assert.deepEqual(codes(statusOf(os, render({ node: join(base, "gone-node-dir", "node"), path: `${join(base, "gone-node-dir")}:${tools}:/usr/bin` }))), ["node-missing"]);
     const oats = statusOf(os, render({ oatsBin: join(base, "gone", "oats.mjs") }));
     assert.deepEqual(codes(oats), ["oats-bin-missing"]); assert.ok(oats.problems[0].message.includes(join(base, "gone", "oats.mjs")));
     const path = statusOf(os, render({ path: `${tools}:${join(base, "gone-a")}:${join(base, "gone-b")}:/usr/bin` }));
@@ -160,8 +162,9 @@ test("status reports a missing node, each missing PATH entry and an outdated uni
 
 test("status reads only the unit: callers with another PATH, OATS_HOME_DIR or oats get the same answer", () => {
   const tools = dir("caller-tools");
-  for (const os of ["darwin", "linux"]) {
-    const unit = { node: process.execPath, oatsBin: executable(join(dir("elsewhere", "oats", "bin"), "oats.mjs")), path: `${tools}:/usr/bin`, oatsHomeDir: join(base, "operator-oats"), logDir: dir("operator-log") };
+  // A unit installed from a shell with OATS_HOME_DIR, and one from a shell without it ("" renders none).
+  for (const [os, oatsHomeDir] of [["darwin", join(base, "operator-oats")], ["linux", join(base, "operator-oats")], ["darwin", ""], ["linux", ""]]) {
+    const unit = { node: process.execPath, oatsBin: executable(join(dir("elsewhere", "oats", "bin"), "oats.mjs")), path: `${tools}:/usr/bin`, oatsHomeDir, logDir: dir("operator-log") };
     const files = os === "darwin" ? { plist: H.renderLaunchdPlist(unit) } : H.renderSystemdUnits(unit);
     const unitDir = dir(`callers-${++n}`);
     const p = H.hostUnitPaths(os, { unitDir });
@@ -174,7 +177,7 @@ test("status reads only the unit: callers with another PATH, OATS_HOME_DIR or oa
         answers.push(H.hostUnitStatus({ exec: loaded, os, unitDir }).problems);
       }
     } finally { process.env.PATH = saved.PATH; process.env.OATS_HOME_DIR = saved.OATS_HOME_DIR; }
-    assert.deepEqual(answers[0], []); assert.deepEqual(answers[1], answers[0], `${os}: the caller's environment never enters status`);
+    assert.deepEqual(answers[0], [], `${os}, OATS_HOME_DIR ${JSON.stringify(oatsHomeDir)}: a fresh unit`); assert.deepEqual(answers[1], answers[0], `${os}: the caller's environment never enters status`);
   }
 });
 
