@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { v2Deployment } from './helpers/v2-deployment.mjs';
-import { startInstanceSession, restartInstanceSession, inspectInstanceSession, stopInstanceSession, retireInstance, DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING } from '../lib/core.mjs';
+import { startInstanceSession, restartInstanceSession, inspectInstanceSession, stopInstanceSession, harnessProcesses, retireInstance, DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING } from '../lib/core.mjs';
 import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES, CLAUDE_SESSION_HINT } from '../lib/launch-prompt-fixtures.mjs';
 import { waitUntil } from './helpers/host-fixture.mjs';
 import { readEvents } from '../lib/instance-events.mjs';
@@ -73,6 +73,22 @@ process.stdin.on('data', d => fs.appendFileSync('stub-keys.log', JSON.stringify(
   return { fx, write, home: name => join(fx.root, 'dev', 'instances', name) };
 }
 const meta = home => JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
+// A stop that follows a start: stop signals the processes it finds under the pane, and answers
+// E_SESSION_UNKNOWN (rightly) when the session reads as running but its `ps` walk finds none yet, as a
+// just-forked harness under load can be. Wait, bounded, until both hold in one poll: session inspect
+// reads a harness running (present, neither the fallback shell nor stopped), and the same process walk
+// stop uses (harnessProcesses, on the home's recorded tmux target) finds one. Then stop.
+async function stopWhenRunning(fx, h, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  for (let state, found; ; await new Promise(r => setTimeout(r, 25))) {
+    state = await fx.inEnv(() => inspectInstanceSession(h));
+    const running = state.present === true && state.state !== 'shell' && state.state !== 'stopped';
+    found = running ? await fx.inEnv(() => harnessProcesses(meta(h).tmux)) : [];
+    if (found.length) break;
+    assert.ok(Date.now() < deadline, `timed out waiting for a harness process under the pane of ${h}: ${JSON.stringify(state)}, ${found.length} found`);
+  }
+  return fx.inEnv(() => stopInstanceSession(h));
+}
 const keys = home => existsSync(join(home, 'stub-keys.log')) ? readFileSync(join(home, 'stub-keys.log'), 'utf8').trim().split('\n').map(JSON.parse) : [];
 const promptEvents = home => readEvents(home).events.filter(e => e.kind === 'launch-prompt');
 const readinessItems = (fx, home) => { const r = fx.cli(['readiness', '--home', home, '--json']); assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result.checks.configured.items.filter(i => i.code === 'launch-prompt'); };
@@ -80,6 +96,7 @@ const readinessItems = (fx, home) => { const r = fx.cli(['readiness', '--home', 
 test('an eligible claude argv engages on spawn, start and restart: one Enter each, completed, and the start says so', async t => {
   const { fx, home } = fixture(t);
   const spawned = await fx.spawn('dev', { name: 'dev-spawn', launchConfig: 'confirm', launch: true });
+  assert.equal(DEV_CHANNEL_STATEMENT, "This start passes --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace; OATS confirms Claude's development-channel prompt once. The messaging provider's delivery or channel-mode setting stops it (the provider's warning says where those settings are).");
   assert.ok(spawned.warnings.includes(DEV_CHANNEL_STATEMENT));
   const a = home('dev-spawn');
   assert.equal(meta(a).launched, true);
@@ -105,7 +122,7 @@ test('an eligible claude argv engages on spawn, start and restart: one Enter eac
   await waitUntil(() => keys(b).length === 2, 'the restart sent its own Enter');
   assert.deepEqual(keys(b), ['\r', '\r']);
   // Healthy sessions are stopped here, not left for the fixture's kill-server.
-  for (const h of [a, b]) await fx.inEnv(() => stopInstanceSession(h));
+  for (const h of [a, b]) await stopWhenRunning(fx, h);
 });
 
 test('an ineligible argv, or codex, never engages: no capture, no key, and the start records not-engaged', async t => {
@@ -122,7 +139,7 @@ test('an ineligible argv, or codex, never engages: no capture, no key, and the s
   }
   await new Promise(r => setTimeout(r, 300));
   assert.deepEqual(keys(home('dev-plain')), [], 'the prompt on screen was left for a person');
-  for (const name of ['dev-plain', 'dev-codex']) await fx.inEnv(() => stopInstanceSession(home(name)));
+  for (const name of ['dev-plain', 'dev-codex']) await stopWhenRunning(fx, home(name));
 });
 
 test('preview and no-launch have no capture effects; a blocked spawn retains lineage, says what differed and refuses cached replay', async t => {
@@ -244,7 +261,7 @@ test('plain start reuses a stopped retained pane only for its newly created proc
   const h = home('dev-plain-reuse');
   let first;
   await assert.rejects(fx.inEnv(() => startInstanceSession(h)), e => { first = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
-  await fx.inEnv(() => stopInstanceSession(h));
+  await stopWhenRunning(fx, h);
   await waitUntil(() => existsSync(join(h, '.oats-start-exited')), 'stub exit receipt');
   let second;
   await assert.rejects(fx.inEnv(() => startInstanceSession(h)), e => { second = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
@@ -323,7 +340,7 @@ test('Claude ignoring the flag is a successful start: flag-ignored recorded, no 
   assert.deepEqual(readinessItems(fx, h), []);
   await new Promise(r => setTimeout(r, 300));
   assert.deepEqual(keys(h), [], 'no key was ever sent');
-  await fx.inEnv(() => stopInstanceSession(h));
+  await stopWhenRunning(fx, h);
 });
 
 test('a running session with the notice hidden stays blocked, and the error and readiness say the flag may have been ignored', async t => {
@@ -411,10 +428,10 @@ test('a successful spawn answer carries launchPrompts in the shape a start recor
     assert.deepEqual(keysOf(result.launchPrompts), keys, name);
     assert.deepEqual(result.launchPrompts, meta(home(name)).launchPrompts, `${name}: the answer carries what the home recorded`);
     // A start of the same configuration records the same shape.
-    await fx.inEnv(() => stopInstanceSession(home(name)));
+    await stopWhenRunning(fx, home(name));
     const started = await fx.inEnv(() => startInstanceSession(home(name)));
     assert.equal(started.launchPrompts.status, status, `${name} start`);
     assert.deepEqual(keysOf(started.launchPrompts), keys, `${name} start`);
-    await fx.inEnv(() => stopInstanceSession(home(name)));
+    await stopWhenRunning(fx, home(name));
   }
 });
