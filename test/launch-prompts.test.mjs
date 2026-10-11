@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createLaunchPromptController } from "../lib/launch-prompts.mjs";
 import { DEV_CHANNEL_ENTRIES, FLAG_IGNORED_ENTRIES } from "../lib/launch-prompt-fixtures.mjs";
-import { raw296, linux296, trustPrompts, sessions, flagIgnored, flagIgnoredHidden, edit } from "./helpers/dev-channel-screens.mjs";
+import { raw296, linux296, trustPrompts, sessions, flagIgnored, flagIgnoredHidden, logoAnimating, edit } from "./helpers/dev-channel-screens.mjs";
 
 // The prompt screens are real captures; the post-answer session screen is
 // SYNTHETIC (any non-blank screen without a question marker completes).
@@ -401,13 +401,23 @@ test("a running Claude session with the notice hidden blocks with no key and say
   assert.deepEqual(io.sends, []);
 });
 
+test("a running session caught with its logo mid-animation also says Claude's session UI was shown", t => {
+  const { controller, io } = setup(t, { configure({ io }) { io.text = logoAnimating; } });
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "blocked");
+  assert.equal(result.claudeSessionShown, true);
+  assert.deepEqual(io.sends, []);
+});
+
 test("a foreign prompt or a near-miss never says Claude's session UI was shown", t => {
   const banner = flagIgnoredHidden;
   for (const text of [trust, edit(raw296, PLUGIN, "plugin:other@x"), "SYNTHETIC question?\n",
     edit(banner, " ▐▛███▛█   Claude Code v2.1.296", " ▐▛███▛█   Claude Code 2.1.296"),
     edit(banner, " ▐▛███▛█   Claude Code v2.1.296", " ▐▛███▛█   Claude Code v2.1"),
     edit(banner, " ▐▛███▛█   Claude Code v2.1.296", " ▐▛███▛█   Claude Codex v2.1.296"),
-    "Accessing workspace\n" + banner]) {
+    "Accessing workspace\n" + banner,
+    edit(logoAnimating, "█▟         Claude Code v2.1.296", "█▟  x      Claude Code v2.1.296"),
+    edit(logoAnimating, "█▟         Claude Code v2.1.296", "█▟         Claude Code v2.1")]) {
     const { controller, io } = setup(t, { configure({ io }) { io.text = text; } });
     const result = controller.observeNew(target);
     assert.equal(result.status, "blocked");

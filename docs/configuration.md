@@ -245,7 +245,7 @@ default) can take the slot and keep this one behind `1 more notice hidden`,
 typically on an instance's first spawn. OATS cannot see a hidden notice, so that
 start stays `blocked: unexpected prompt` (no key, the home retained). When the
 blocked screen starts with Claude's running-session banner (`Claude Code
-v<semver>` after the logo), the error and the readiness remedy add: "Claude may
+v<semver>` after the logo, which may be caught mid-animation), the error and the readiness remedy add: "Claude may
 have ignored the development-channel flag (channels unavailable for this
 account); look at the pane. If the session is running, restart the instance, and
 the notice will then show." A restart where the notice shows records `flag-ignored`.

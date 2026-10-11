@@ -28,3 +28,5 @@ export function edit(screen, from, to) {
  *  and started with no confirmation: the notice visible, and behind another notice. */
 export const flagIgnored = fixture("claude-2.1.296-darwin-arm64-flag-ignored-80x24.txt");
 export const flagIgnoredHidden = fixture("claude-2.1.296-darwin-arm64-flag-ignored-hidden-80x24.txt");
+/** A real Claude 2.1.296 running session caught with its logo mid-animation, the notice hidden. */
+export const logoAnimating = fixture("claude-2.1.296-darwin-arm64-logo-animating-80x24.txt");

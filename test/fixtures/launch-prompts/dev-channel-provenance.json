@@ -96,5 +96,16 @@
     "capture": "unedited tmux capture-pane -p of the spawned pane after the spawn returned: the same start with the flag-ignored notice behind '1 more notice hidden'; no key was sent; capturedAt is the capture file's modification time",
     "bytes": 1339,
     "sha256": "c5494153c545eff030e17ed256e2e0f051cbcd525a60fc72fb6cbf983ebe1a5a"
+  },
+  "claude-2.1.296-darwin-arm64-logo-animating-80x24.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "darwin-arm64",
+    "capturedAt": "2026-10-11T10:10:16.976Z",
+    "width": 80,
+    "height": 24,
+    "source": "oats#917 live enter run out-enter-20261011T101015Z at 6ef3b853 (886/live-enter, root's clean-env run), darwin-arm64, /opt/homebrew/bin/claude 2.1.296 through sandbox-exec, throwaway CLAUDE_CONFIG_DIR and HOME, dummy key, private tmux socket",
+    "capture": "the spawn's audited frame (signatureDigest 4d9dc25f…), unedited tmux capture-pane -p by the run's witness: a running session with its logo caught mid-animation and the flag-ignored notice hidden; no key was sent; capturedAt is the witness's frames.jsonl time",
+    "bytes": 1274,
+    "sha256": "4d9dc25f15ce9476302bb6631f5b79795b623f070bee721015ade1601afa6e53"
   }
 }

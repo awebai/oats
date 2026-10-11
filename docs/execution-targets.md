@@ -704,7 +704,8 @@ the flag and shows no confirmation: the start ends `flag-ignored`, reason `chann
 succeeds. An unknown screen that holds still for 200 ms, or the last
 unknown screen when the bound is reached, permanently closes authority with
 `blocked: unexpected prompt`; when that screen starts with Claude's
-running-session banner (`▐▛███▛█ Claude Code v<semver>`), the result carries
+running-session banner (`Claude Code v<semver>`, after only the logo's block
+elements U+2580–U+259F and spaces), the result carries
 `claudeSessionShown: true`. A screen blank for the whole bound reports
 `blocked: observation timeout`. Folder-trust and API-key prompts
 are unexpected and block; no multi-prompt sequence is authorized. The controller
