@@ -1,0 +1,122 @@
+{
+  "claude-2.1.296-darwin-arm64-194.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "darwin-arm64",
+    "capturedAt": "2026-10-10T18:35:17Z",
+    "width": 194,
+    "source": "https://github.com/awebai/oats/issues/886#issuecomment-6100871837",
+    "capture": "unedited tmux capture-pane -p of a fresh channel-delivery spawn before any key, on the reporting host; trailing blank rows trimmed by the reporter, home path withheld",
+    "bytes": 992,
+    "sha256": "d68983e84aff1bdd5cd30ce3b8f843dffd848c02f6323f392a24c40c6cab5d31"
+  },
+  "claude-2.1.289-darwin-arm64-110.txt": {
+    "claudeVersion": "2.1.289",
+    "platform": "darwin-arm64",
+    "capturedAt": "2026-10-07T03:52:47Z",
+    "width": 110,
+    "height": 35,
+    "source": "oats#708 private throwaway capture (frame-05-channel-seeded), accepted by the #708 fixture review",
+    "capture": "tmux capture-pane -p in a private socket, throwaway CLAUDE_CONFIG_DIR, dummy credentials, network denied; capturedAt is the capture file's modification time",
+    "bytes": 763,
+    "sha256": "8a6dacbf45eab69ddf641cfcb292a5bb5c9eecb45690d0920e35834e24b30036"
+  },
+  "claude-2.1.296-linux-arm64-110x35.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "linux-arm64",
+    "capturedAt": "2026-10-10T23:26:08.284Z",
+    "width": 110,
+    "height": 35,
+    "source": "oats#886 A6 throwaway capture, Debian 13.7 trixie, node:22-trixie@sha256:def2655045ff1ee91b28a48cb3ec84feafef6d128bda0ff6903e7847ed0b27b4, tmux 3.5a",
+    "capture": "tmux capture-pane -p in a private socket, --network none container, throwaway CLAUDE_CONFIG_DIR (onboarding, dummy-key approval, tengu_harbor gate, throwaway cwd trust), dummy key, no keys sent",
+    "bytes": 763,
+    "sha256": "8a6dacbf45eab69ddf641cfcb292a5bb5c9eecb45690d0920e35834e24b30036"
+  },
+  "claude-2.1.296-linux-arm64-194x50.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "linux-arm64",
+    "capturedAt": "2026-10-10T23:26:24.253Z",
+    "width": 194,
+    "height": 50,
+    "source": "oats#886 A6 throwaway capture, Debian 13.7 trixie, node:22-trixie@sha256:def2655045ff1ee91b28a48cb3ec84feafef6d128bda0ff6903e7847ed0b27b4, tmux 3.5a",
+    "capture": "tmux capture-pane -p in a private socket, --network none container, throwaway CLAUDE_CONFIG_DIR (onboarding, dummy-key approval, tengu_harbor gate, throwaway cwd trust), dummy key, no keys sent",
+    "bytes": 1029,
+    "sha256": "cd7d6c2c17f6d489048fb7ca4dded252fa06eedff93498f3a18354c26abeb4f5"
+  },
+  "claude-2.1.296-linux-arm64-80x35.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "linux-arm64",
+    "capturedAt": "2026-10-10T23:26:26.529Z",
+    "width": 80,
+    "height": 35,
+    "source": "oats#886 A6 throwaway capture, Debian 13.7 trixie, node:22-trixie@sha256:def2655045ff1ee91b28a48cb3ec84feafef6d128bda0ff6903e7847ed0b27b4, tmux 3.5a",
+    "capture": "tmux capture-pane -p in a private socket, --network none container, throwaway CLAUDE_CONFIG_DIR (onboarding, dummy-key approval, tengu_harbor gate, throwaway cwd trust), dummy key, no keys sent",
+    "bytes": 674,
+    "sha256": "6454b653ae2d40bdd43e696889d9487324258e20225668a02f231b464ac18ae9"
+  },
+  "claude-2.1.296-linux-arm64-60x35.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "linux-arm64",
+    "capturedAt": "2026-10-10T23:26:29.084Z",
+    "width": 60,
+    "height": 35,
+    "source": "oats#886 A6 throwaway capture, Debian 13.7 trixie, node:22-trixie@sha256:def2655045ff1ee91b28a48cb3ec84feafef6d128bda0ff6903e7847ed0b27b4, tmux 3.5a",
+    "capture": "tmux capture-pane -p in a private socket, --network none container, throwaway CLAUDE_CONFIG_DIR (onboarding, dummy-key approval, tengu_harbor gate, throwaway cwd trust), dummy key, no keys sent",
+    "bytes": 615,
+    "sha256": "a8e5758570c9e88dfcff077e5644821df53407ba9f13e3d32b46c585ea0e3a4c"
+  },
+  "claude-2.1.296-linux-arm64-40x35.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "linux-arm64",
+    "capturedAt": "2026-10-10T23:27:02.541Z",
+    "width": 40,
+    "height": 35,
+    "source": "oats#886 A6 throwaway capture, Debian 13.7 trixie, node:22-trixie@sha256:def2655045ff1ee91b28a48cb3ec84feafef6d128bda0ff6903e7847ed0b27b4, tmux 3.5a",
+    "capture": "tmux capture-pane -p in a private socket, --network none container, throwaway CLAUDE_CONFIG_DIR (onboarding, dummy-key approval, tengu_harbor gate, throwaway cwd trust), dummy key, no keys sent",
+    "bytes": 567,
+    "sha256": "e37437f9610cab795cd05e149c007034b4814656b179c24b79a07999f3c1837f"
+  },
+  "claude-2.1.296-darwin-arm64-flag-ignored-80x24.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "darwin-arm64",
+    "capturedAt": "2026-10-11T08:56:47Z",
+    "width": 80,
+    "height": 24,
+    "source": "oats#917 live run at 74946384 (886/live-enter out-20261011T085636Z, root 9df0182b), darwin-arm64, /opt/homebrew/bin/claude 2.1.296, throwaway CLAUDE_CONFIG_DIR and HOME, dummy key, ANTHROPIC_BASE_URL on a dead local port, private tmux socket",
+    "capture": "unedited tmux capture-pane -p of the restarted pane after the start returned: Claude ignored the flag (notice visible) and started with no confirmation; no key was sent; capturedAt is the capture file's modification time",
+    "bytes": 1121,
+    "sha256": "05b1262fa10102b8b4bbf4e4f50f639890e39d2fa14ecfa5f667acff6a8bfdaf"
+  },
+  "claude-2.1.296-darwin-arm64-flag-ignored-hidden-80x24.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "darwin-arm64",
+    "capturedAt": "2026-10-11T08:56:43Z",
+    "width": 80,
+    "height": 24,
+    "source": "oats#917 live run at 74946384 (886/live-enter out-20261011T085636Z, root 9df0182b), darwin-arm64, /opt/homebrew/bin/claude 2.1.296, throwaway CLAUDE_CONFIG_DIR and HOME, dummy key, ANTHROPIC_BASE_URL on a dead local port, private tmux socket",
+    "capture": "unedited tmux capture-pane -p of the spawned pane after the spawn returned: the same start with the flag-ignored notice behind '1 more notice hidden'; no key was sent; capturedAt is the capture file's modification time",
+    "bytes": 1339,
+    "sha256": "c5494153c545eff030e17ed256e2e0f051cbcd525a60fc72fb6cbf983ebe1a5a"
+  },
+  "claude-2.1.296-darwin-arm64-logo-animating-80x24.txt": {
+    "claudeVersion": "2.1.296",
+    "platform": "darwin-arm64",
+    "capturedAt": "2026-10-11T10:10:16.976Z",
+    "width": 80,
+    "height": 24,
+    "source": "oats#917 live enter run out-enter-20261011T101015Z at 6ef3b853 (886/live-enter, root's clean-env run), darwin-arm64, /opt/homebrew/bin/claude 2.1.296 through sandbox-exec, throwaway CLAUDE_CONFIG_DIR and HOME, dummy key, private tmux socket",
+    "capture": "the spawn's audited frame (signatureDigest 4d9dc25f…), unedited tmux capture-pane -p by the run's witness: a running session with its logo caught mid-animation and the flag-ignored notice hidden; no key was sent; capturedAt is the witness's frames.jsonl time",
+    "bytes": 1274,
+    "sha256": "4d9dc25f15ce9476302bb6631f5b79795b623f070bee721015ade1601afa6e53"
+  },
+  "claude-2.1.288-linux-x64-renderer-fallback-80x24.txt": {
+    "claudeVersion": "2.1.288",
+    "platform": "linux-x64",
+    "capturedAt": "2026-10-11T10:33:45.183Z",
+    "width": 80,
+    "height": 24,
+    "source": "oats#917 review 5482971892 (https://github.com/awebai/oats/pull/917#pullrequestreview-5482971892): the Linux enter leg at b5e8c877, the restart's blocked row (signatureDigest 9b341fba…), given in the review as base64",
+    "capture": "the witness's unedited tmux capture-pane -p of a transient frame Claude prints while starting (its renderer fallback notice); one second later the pane showed the banner, the flag-ignored notice and a running session; no key was sent; capturedAt is the witness's first-seen time",
+    "bytes": 236,
+    "sha256": "9b341fbaa513d7e7e5e242e83372d79ce5291da994450298b6353672ad3d3fb9"
+  }
+}

@@ -1,152 +1,86 @@
-# Development-channel launch fixture qualification
+# Development-channel confirmation tolerance list
 
-`launch-prompt-fixtures.mjs` qualifies the actual selected Claude executable by
-reading its SHA256, without executing it. The qualified executable identity is
-checked again before terminal actions. A harness name or reported version is
-insufficient.
+`dev-channel-confirmation.json` is the list of Claude development-channel
+confirmation wordings the launcher may confirm. `launch-prompt-fixtures.mjs`
+loads and validates it; the controller (`launch-prompts.mjs`) sends its one
+Enter only while the normalized screen EQUALS one `confirmation` entry's `text`.
+It also holds the notice Claude shows when it ignores the development-channel
+flag (`flag-ignored` entries), which ends a start with no key.
 
-The accepted Claude 2.1.289 fixture is specific to darwin-arm64, binary SHA256
-`03d66745e3bb69ec727d66023696f3820bc0a00a8a5ba725eb6706d0c67cbe69`, and
-110 columns by 35 rows. Captures preserve visible bytes, including the final
-newline. The private transport pins only the newly launched owned window to this
-geometry, and restores its previous geometry and sizing policy on every closure.
+## Normalization, and only this
 
-The fixture directory contains only the channel prompt, its blank transition,
-the two known normal banners, and their hashes/provenance. It contains no harness binary,
-extracted proprietary modules, configuration, or credentials.
+1. Split the captured screen into rows.
+2. Drop rows made only of box-drawing characters (U+2500–U+257F) and whitespace.
+3. Join the rest with single spaces, collapsing every whitespace run.
+4. Trim.
 
-The sole supported prompt requires the exact single selected argument
-`--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`.
-Approved-channel flags, multiple channels, and contradictory arguments do not
-qualify. Explicit per-home `awebDevelopmentChannel: true` consent is required;
-the default is off. The controller can send only one fixed Enter per launch.
-There is no navigation or generic answer-sequence API.
+This absorbs wrapping at any pane width, indentation and padding. Nothing else
+is normalized: no case folding, no character removal, no pattern. Equality is
+not a contains test, so anything else on the screen, a second prompt stacked
+with it, another or a second channel, or the options in another order, is no
+match. A pane too narrow for Claude to wrap at word boundaries (about 40
+columns for this prompt) breaks words and is no match either.
 
-Folder trust and all other prompts are unexpected: the controller records a
-blocked outcome and sends no key. Captured folder-trust screens live only in
-`test/fixtures/launch-prompts/` as negative test evidence.
+## The notice block of a `flag-ignored` entry
 
-Normal-output completion has a separate accepted finite policy: all surrounding
-bytes must equal one of the captured normal banners, except for its bounded
-directory line and the source-derived header/footer variants described below. Candidates are the exact home, a home-directory-relative `~` spelling,
-and `~/…/` followed by nonempty whole-component suffixes within the user home.
-Every complete line must fit 110 columns. Only conservative ASCII path components
-without traversal or empty segments qualify. These variants can only terminate
-observation; none can authorize a key or assert harness/channel readiness.
+When Claude ignores `--dangerously-load-development-channels` (channels are not
+available for the account), it shows no confirmation and starts the session,
+with a notice in its notices area. A `flag-ignored` entry is matched against a
+**notice block**, never the whole screen:
 
-Synthetic controller fixtures exercise state-machine behavior; they are not
-production rendering evidence.
+1. Split the captured screen into rows.
+2. A notice block is a maximal run of consecutive rows that each begin with `▎`
+   (U+258E) in the first column.
+3. Drop the `▎` from each row of the block, then normalize the block as above.
 
-The installed-plugin capture (`frame-08-installed-after-channel-200ms.txt`)
-qualifies aweb-channel 1.7.11 with Opus 5.5 / API Usage Billing / auto mode /
-medium effort. Its manifest records the capture owner's provenance: native
-plugin installation in isolated config/cache, dummy credentials, denied runtime
-network and real-home access, seeded onboarding/trust/feature flag, one Enter,
-stable bytes at 200ms/1s/3s, and verified private-server cleanup. The prompt and
-blank transition were byte-identical to the earlier captures. No configuration,
-credentials or extracted source is included. No task or real-account/channel
-connection was tested. Apart from the source-derived variants below, other
-model/billing/effort/permission variants are not exact-frame candidates; a submitted answer can be followed by a retained blocked result.
+The entry matches when one notice block EQUALS its `text`. The controller
+accepts it only on a screen with no question marker
+(`lib/launch-prompt-completion.mjs`): a notice beside a question is a miss. Another plugin,
+another wording, an extra row in the block (another notice stacked against it),
+the text without the bar, or the text inside a longer row is no match. A notice
+Claude keeps behind `N more notice hidden` is not on the screen, so it is no
+match: that start blocks as an unknown screen.
 
-## Source-derived subscription billing variants
+## Entries
 
-**SOURCE-DERIVED / SYNTHETIC, not observed subscription captures:** the adapter
-also constructs complete empty-frame variants for `Claude Max`, `Claude Pro`,
-`Claude Team` and `Claude Enterprise`. It substitutes only the billing atom in
-row 2 of each accepted API frame. Opus 5.5, auto mode, medium effort, separators,
-empty input, notices and all remaining rows stay exact. The existing bounded
-home-row policy is unchanged. These variants cannot authorize input.
+Each entry has `id`, `kind` (`confirmation` or `flag-ignored`), `text` (the
+normalized confirmation, or the normalized notice block) and `provenance` (one
+row per capture: `claudeVersion`, `platform`, `capturedAt`, `source`).
+A `confirmation` entry also has `selected` (the option line that carries `❯`);
+a `flag-ignored` entry has `input: "none"`: it takes no input, ever.
+Loading refuses a `confirmation` entry whose `❯` does not occur exactly once
+immediately before `1. `, or whose `selected` is not that line; a `flag-ignored`
+entry without `input: "none"`, with any `❯` or a `selected`, or that does not name
+`--dangerously-load-development-channels` once; and any entry whose text does not
+name exactly one channel, `plugin:aweb-channel@awebai-marketplace`. A hand edit
+that moves the selection fails the tests.
 
-Provenance is the same pinned 2.1.289 darwin-arm64 executable SHA256 above,
-rechecked by read-only inspection. In that binary, `Knr` at the region containing
-byte offset 182366506 falls back to the four subscription labels (or
-`Claude API` by default). Before that fallback it may return
-`Claude ${planDisplayName}` when the account value and gates permit it. Those
-custom display names are not qualified unless their complete bytes equal an
-explicitly accepted label; subscription membership alone does not qualify a
-banner. The welcome-data
-region containing offset 197387574 selects that billing value independently;
-`Hgr` at offset 197387656 splits model/billing only when their display widths
-plus the three-character separator exceed the available width. These four
-short labels fit the accepted Opus 5.5 header at 110 columns. The test generates
-these explicitly synthetic derivatives and checks the real qualification and
-controller path with a test-local executable hash substitution. No binary or
-proprietary extracted module is included.
+One entry today, `aweb-dev-channel-confirmation-1`: Claude 2.1.289 and 2.1.296
+on darwin-arm64 and 2.1.296 on linux-arm64 render the same text. The raw
+captures and their provenance are in `test/fixtures/launch-prompts/`
+(`dev-channel-provenance.json`), each tested against the entry. The entry's
+2.1.288 linux-x64 row is reported coverage, not a committed capture: the
+oats#917 release review (5481510495) matched its own frames, which it keeps.
 
-The reported Max journey is different evidence: its later retained pane has
-SHA256 `9eb587ab3ac7f97b746169619e02e3c8dd7df2c9069ff4368b6f0858c0964c68`,
-1597 bytes and 51 newline rows. It shows task activity and bypass-permissions
-mode. Its file mtime is 2026-10-07T14:31:54.028296Z (not an independently recorded
-capture time); it follows the submitted Enter at
-14:31:45.365Z and block at 14:31:45.476Z. Its geometry, executable digest and
-plugin version were not independently recorded; no earlier raw frame exists.
-It is not padded, cropped or claimed as a qualified 110x35 first frame. See the
-[published operator evidence](https://github.com/awebai/oats/issues/754#issuecomment-6040215059).
-The billing-only extension does not recognize that later task-filled screen.
+One `flag-ignored` entry, `aweb-dev-channel-flag-ignored-1`: Claude 2.1.296 on
+darwin-arm64, captured in the oats#917 live run
+(`claude-2.1.296-darwin-arm64-flag-ignored-80x24.txt`, the notice visible; the
+same run's `…-flag-ignored-hidden-80x24.txt` is the notice hidden, negative
+evidence).
 
-## Source-derived empty Max/bypass/medium variants
+## Adding a wording
 
-**SOURCE-DERIVED / SYNTHETIC:** only the two existing empty banners with
-`Claude Max` additionally qualify the bypass-permissions footer. The pinned
-source ranges and hashes, exact changed row indices, sample home and complete
-candidate digests are in
-[the derivation manifest](claude-2.1.289-darwin-arm64/max-bypass-source.json).
-No proprietary extracted modules or private task text are included.
+A new Claude wording is a new entry, in a reviewed change, with the raw
+capture (unedited `tmux capture-pane -p`, before any key; for a notice, of the
+started session) and its provenance
+committed under `test/fixtures/launch-prompts/` and a test that it matches.
+Capture it the way the existing ones were: a private tmux socket, a throwaway
+`CLAUDE_CONFIG_DIR` seeded only with completed onboarding, a dummy-key
+approval, the offline channel gate (`cachedGrowthBookFeatures.tengu_harbor`)
+and trust for an empty throwaway directory; a dummy key, no network after the
+install, no key sent. The version string is the only kind of variation entries
+may carry, and only where a captured wording contains one. Never widen an entry
+into a pattern.
 
-The permission-mode table uses the same `⏵⏵` symbol for auto and bypass; only
-colour differs, which plain captures omit. `kx` renders that symbol, the mode
-indicator and ` on`; both modes take `dHe`'s same non-default branch with the
-same hint. Thus the left text changes from `auto mode on` to
-`bypass permissions on`, adding nine columns. The footer container has width
-110, horizontal padding 2 and a right status child with `marginLeft:auto`.
-The alignment gap shrinks from 37 to 28 spaces; the effort glyph remains at
-zero-based column 90 and the complete row remains 108 columns. The independent
-`y8` effort rendering stays exactly `◐ medium · /effort`. All other bytes are
-unchanged, except the already qualified header atom and finite home line.
-
-The source supports this bounded transformation, not arbitrary renderer states.
-Within these exact families, the displayed medium status is mandatory; other
-content does not match an exact candidate. The separate post-answer structural
-policy below can recognize additional bounded states. The #712 observed child screens corroborate the 62-column left footer
-text, but have task/update rows and no effort status there; they are not these
-fixtures. Full-frame comparison and all Enter guards remain unchanged.
-
-Four later private operator captures motivated this work. Their SHA-256 values
-are retained here as provenance only:
-
-| Evidence | Bytes / newline rows | SHA-256 |
-| --- | --- | --- |
-| Journey start | 1597 / 51 | `9eb587ab3ac7f97b746169619e02e3c8dd7df2c9069ff4368b6f0858c0964c68` |
-| Journey restart | 2449 / 51 | `c21cc6ac90487a18828ea2375243c642df2d6959b50a339a187132ec26dc213a` |
-| Pre-rehearsal spawn | 3604 / 87 | `368170ecf1155e45f92a9c394972bf5a2ff0d56d2e03501f3d88615d0d2fab67` |
-| Pre-rehearsal restart | 3180 / 87 | `88352f740e3e8f51f3613a057d7fe8aa41ae26efe20fb0ce24c7ac025fa70d9c` |
-
-All follow controller geometry restoration; actual later-capture geometry,
-executable hash and plugin version were not independently recorded. File mtime
-is not capture time, and restoration dimensions are not capture dimensions.
-No first post-answer frame survives. None is cropped, reflowed or published as
-a raw 110x35 replay. These four captures remain provenance only, not qualified structural input.
-The separate controller-compared regression and structural policy below do not
-turn them into qualified captures or establish general Max success.
-
-## Post-answer structural completion
-
-The [complete table](../../docs/launch-prompt-completion.md) defines the six modes,
-five efforts, finite hints, exact region geometry and 21 marker forms.
-[Source provenance](structural-completion.json) pins all 25 byte ranges against
-the same executable hash. This is the non-Jt footer layout; remote feature flags
-can change shape without binary drift. Unknown dialogs retaining a recognized
-composer/footer can evade the marker set: the accepted risk concerns reporting
-only, never another input action or a readiness claim.
-
-The observed regression is a SANITIZED DERIVATIVE of the actual compared
-110x35 frame retained by the earlier controller after its one Enter. Only
-zero-based home row 2 becomes `/fixture/home`; the manifest records separate
-original/derivative byte counts and hashes. Outside that row, independent review
-found only native constants and the launcher's literal `@TASK.md` reference, no
-task body, account-personal or routing data. Four additional rows distinguish
-this captured in-progress state from the empty source-derived family. Its
-spinner verb is chosen per turn (or configured), its glyph animates and later
-suffixes change. No exact spinner matcher or recurrence claim follows. The
-empty footer derivation remains separately qualified; its arithmetic was not
-disproved by observing a different startup state.
+Folder-trust prompts are never confirmed. The captured trust screens in
+`test/fixtures/launch-prompts/` are negative test evidence.

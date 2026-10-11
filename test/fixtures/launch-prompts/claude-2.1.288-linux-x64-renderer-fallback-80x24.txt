@@ -1,0 +1,24 @@
+Claude Code's fullscreen renderer didn't finish starting last time on this machi
+ne, so this launch is using the classic renderer. It will try fullscreen again n
+ext launch; /tui default keeps the classic renderer.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

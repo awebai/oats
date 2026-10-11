@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HARNESS_PACKAGE_MANAGERS, canonicalDeploymentPath, describeLaunchCommand, renderLaunchRecipe } from "../lib/core.mjs";
-import { effectiveLaunchPromptPolicy } from "../lib/launch-prompt-policy.mjs";
+import { validateLocal } from "../lib/workspace.mjs";
 import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const fx = v2Deployment({ souls: { dev: {}, wt: { soul: { work: "worktree" } } } });
@@ -78,26 +78,19 @@ test("#789 item 2: retire through another spelling removes a clean extra tree an
   assert.equal(git(fx.member, "worktree", "list", "--porcelain").includes(".work-clean"), false, "its registration is gone");
 });
 
-test("#789 item 3: consent recorded for a home under one spelling applies to it under another; an exact key decides; several case variants fail closed", FOLDS, () => {
+test("#789 item 3: a launchPromptAnswers refusal is refused under any spelling of its home; other entries are ignored", FOLDS, () => {
   const home = join(fx.root, "dev", "instances", "consent");
   mkdirSync(home, { recursive: true });
-  const upper = spelled(home, "deployment", "DEPLOYMENT"), title = spelled(home, "deployment", "Deployment");
-  const policy = (homes) => ({ launchPromptAnswers: { homes } });
-  const read = (homes, caller) => effectiveLaunchPromptPolicy(policy(homes), caller, "/x/oats-local.yaml");
-  // (b) the single key naming this directory decides, and the source points at that key.
-  const one = read({ [upper]: { awebDevelopmentChannel: true } }, home);
-  assert.equal(one.awebDevelopmentChannel, true);
-  assert.equal(one.consentSource, `/x/oats-local.yaml#/launchPromptAnswers/homes/${upper.replaceAll("~", "~0").replaceAll("/", "~1")}`);
-  assert.equal(read({ [home]: { awebDevelopmentChannel: true } }, upper).awebDevelopmentChannel, true);
-  // (a) an exact key decides, as before, whatever a case variant says.
-  assert.equal(read({ [home]: { awebDevelopmentChannel: false }, [upper]: { awebDevelopmentChannel: true } }, home).awebDevelopmentChannel, false);
-  // (c) several case-variant keys and no exact one: no consent, even when they agree.
-  for (const values of [[true, false], [true, true]]) {
-    const r = read({ [upper]: { awebDevelopmentChannel: values[0] }, [title]: { awebDevelopmentChannel: values[1] } }, home);
-    assert.deepEqual(r, { awebDevelopmentChannel: false, consentSource: null }, JSON.stringify(values));
+  const upper = spelled(home, "deployment", "DEPLOYMENT");
+  const local = (homes) => ({ schemaVersion: 2, workspace: "github.com/example/workspace", launchPromptAnswers: { homes } });
+  const pointer = (key) => `/launchPromptAnswers/homes/${key.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+  // No spelling of a home can slip an operator's explicit false past the refusal.
+  for (const key of [home, upper]) {
+    const problems = validateLocal(local({ [key]: { awebDevelopmentChannel: false } }));
+    assert.deepEqual(problems.map((p) => [p.path, p.reason]), [[pointer(key), "removed-key"]], key);
   }
-  // Another directory's consent never applies.
-  assert.equal(read({ [join(fx.root, "dev", "instances", "other")]: { awebDevelopmentChannel: true } }, home).awebDevelopmentChannel, false);
+  // A true entry decides nothing, in whatever spelling.
+  assert.deepEqual(validateLocal(local({ [upper]: { awebDevelopmentChannel: true }, [home]: { awebDevelopmentChannel: true } })), []);
 });
 
 test("#789 item 4: the Codex trust written at launch names the home in its on-disk spelling", FOLDS, () => {

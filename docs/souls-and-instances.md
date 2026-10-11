@@ -218,20 +218,25 @@ instructions and pins model/provider settings; it excludes nothing.
 Claude Code and Codex ask before they work in a folder they have not seen, and
 every instance home is new. A launch stopped at that prompt waits for a human,
 so the operator trusts the **deployment directory** (where `oats-local.yaml`
-is) once per harness. Launches only read native configuration. The explicit
-`oats harness trust --dir D --harness all --plan` previews the entry; the same
-command without `--plan` applies it with a deployment audit. See
-[native trust](harness-trust.md) for safe operation and partial-failure recovery.
+is) once per harness configuration file. Launches only read native
+configuration. The explicit `oats harness trust --dir D --plan` previews the
+entry in every file a launch reads: the ambient one and each launch
+configuration's `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. The same command without
+`--plan` applies it with a deployment audit; it never creates a launch
+configuration's directory. See [native trust](harness-trust.md) for safe
+operation and partial-failure recovery.
 
 - **Claude Code** looks for an accepted entry for its folder or an ancestor, up
   to a Git root. An intervening repository can prevent deployment-root inheritance;
   the command does not automatically trust another root. The native field is
   `projects["<deployment>"].hasTrustDialogAccepted` in `~/.claude.json`
-  (`$CLAUDE_CONFIG_DIR/.claude.json` when that is set).
+  (`$CLAUDE_CONFIG_DIR/.claude.json` when the launch's environment, host or
+  launch configuration, sets it).
 - **Codex** applies only an exact entry: a trusted parent does not cover the
   folders below it. The explicit deployment-root command records
   `[projects."<deployment>"] trust_level = "trusted"` in
-  `~/.codex/config.toml` (`$CODEX_HOME/config.toml`). With that entry, or one
+  `~/.codex/config.toml` (`$CODEX_HOME/config.toml`, from the launch's
+  environment as for Claude). With that entry, or one
   for an ancestor of the deployment, each codex launch trusts its own new home
   for that session (`-c 'projects={"<home>"={trust_level="trusted"}}'`) and
   leaves the config file unchanged. A yolo launch always does this. The plan
@@ -239,14 +244,16 @@ command without `--plan` applies it with a deployment audit. See
 - Every codex launch also passes `-c check_for_update_on_startup=false`, so
   Codex's "Update available" choice cannot block it.
 
-When a claude or codex home is not covered, the spawn says so (text and
-`--json` `warnings`): `the <harness> session will stop at its folder-trust
-prompt: trust <deployment> once (<the step>)`. `oats readiness` reports the
-same in `checks.configured` (code `harness-trust`, not required).
+When the file a claude or codex launch reads does not trust the deployment,
+the spawn says so (text and `--json` `warnings`): `<harness> folder trust is
+not established in <file>: oats harness trust --dir <deployment>`. A missing
+entry does not prove a prompt, so it does not say the session will stop.
+`oats readiness` reports the same in `checks.configured` (code
+`harness-trust`, not required), and a passing item naming the file when trust
+is established.
 
-Exact-home [aweb development-channel consent](configuration.md#exact-home-launch-prompt-consent)
-does not cover folder-trust prompts. It neither writes trust settings nor
-enables existing homes automatically.
+[The development-channel confirmation](configuration.md#the-development-channel-confirmation)
+does not cover folder-trust prompts, and never writes trust settings.
 A blocked or incomplete prompt outcome preserves the home and process even
 though its metadata says `launched:false`; inspect that endpoint before any
 recovery. See [launch prompt outcomes](execution-targets.md#launch-prompt-outcomes).

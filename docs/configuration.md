@@ -60,7 +60,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `workspace` | Repo ref of the workspace host (`git:host/org/repo`, `https://…`, `git@host:…`, `file:///…`, `/abs/bare.git`). Read with your own Git credentials; it need not be cloned. |
 | `standalone` | A repo ref to realize on its own: its souls and `from: here` capabilities plus `oats.core`, with no workspace lookup. For a repository whose workspace this machine cannot read ([workspaces.md](workspaces.md#the-standalone-case)). |
 | `clones` | `<repo key>: <absolute path>` for a member clone that is not at `<deployment>/<member name>/`. Only a soul whose work target needs a clone (`work: worktree \| checkout`) uses it. Lookup order: `spawn --repo`, then this map, then `<deployment>/<member name>` (a member named `agents` → `<deployment>/agents-repo`). None → `E_CLONE_MISSING`; a directory whose `origin` is another repository → `E_CLONE_MISMATCH`. |
-| `launchPromptAnswers.homes.<absolute-home>` | Explicit per-home `awebDevelopmentChannel` boolean consent; defaults false. See [launch prompt consent](#exact-home-launch-prompt-consent). |
+| `launchPromptAnswers` | Ignored, with a warning to remove it; a home entry `awebDevelopmentChannel: false` is refused. See [the development-channel confirmation](#the-development-channel-confirmation). |
 | `settings.<cap>.<key>` | Host-owned values a capability's manifest asks for: absolute paths, state roots, delivery modes. The workspace file refuses absolute paths; they go here. Merged into the capability's provider payload after the soul's own and before any `--provider` flag ([three homes](workspaces.md#provider-payloads-have-three-homes)). |
 | `teams.<label>` | A **local** team: `{ team: <provider team id>, description? }`, a team only this deployment uses; every soul may join it. Allowed only where `oats-workspace.yaml` says `localTeams: true` (or in the standalone view); otherwise refused (`E_WORKSPACE_SCHEMA`, reason `local-teams-closed`). Shared teams are committed in `oats-workspace.yaml`; a label in both is `team-label-collision` (the shared one wins). Written by `oats teams add <label> --team <id>` and `oats teams remove <label>`. |
 | `defaultTeam` | This deployment's default team: a label of a local or shared team, under the same condition as `teams`. A soul's own default in the workspace's `souls:` wins over it; it wins over the workspace's `defaultTeam`. The first `oats teams add` sets it (unless `--no-default`); `oats teams default <label>` changes it, and `--if-absent` / `--expect <label>` change it only where there is no effective default / it is that label. |
@@ -138,9 +138,9 @@ Claude config directory the host's Claude launch configuration uses (its
 Respawn a home to adopt the route. Setup never restarts running agents
 without the operator's word.
 
-**No launch-prompt opt-in** is needed in approved mode: the
-[exact-home consent](#exact-home-launch-prompt-consent) applies only to
-development mode, and qualifies only Claude 2.1.289 on `darwin-arm64`.
+**No prompt** appears in approved mode, so there is nothing for OATS to
+confirm: [the development-channel confirmation](#the-development-channel-confirmation)
+applies only to a launch with the development-channel flag.
 
 **Verify:**
 
@@ -170,89 +170,121 @@ development mode, and qualifies only Claude 2.1.289 on `darwin-arm64`.
 account-level feature flag gates channels on every route. The allowlist
 matches the marketplace by name.
 
-## Exact-home launch prompt consent
+## The development-channel confirmation
 
-`launchPromptAnswers` belongs only in the host's `oats-local.yaml`. It is
-refused in workspace and soul declarations. Add an entry only for a home whose
-owner has explicitly authorized Claude's aweb development-channel confirmation:
+**What engages it.** Whenever OATS itself starts Claude Code (a spawn, `oats
+session start` or `session restart`, by hand or by an agent) with
+`--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
+in its argv, the launcher confirms Claude's development-channel prompt once.
+Launching with that flag is the decision: there is no consent setting and no
+list of homes. Every Claude home the messaging provider starts in development
+mode (`settings.oats.aweb.delivery: channel` with `claudeChannelMode:
+development`, today's defaults) is covered, existing homes included at their
+next start. This reverses the earlier rule that no existing home is enabled
+automatically. Any other argv (approved-mode `--channels`, another plugin,
+several plugins, contradictory channel arguments), Codex and pi never engage it,
+and nothing is captured. `--no-launch` never answers.
 
-```yaml
-launchPromptAnswers:
-  homes:
-    /absolute/canonical/instance/home:
-      awebDevelopmentChannel: false
-```
+**What it proves before the one key.** The visible screen of the pane this start
+created, normalized by the [enumerated tolerance](../lib/launch-prompt-fixtures/README.md)
+(box-drawing rows dropped, whitespace collapsed, nothing else), must equal one
+entry of the tolerance list: the confirmation's own text, exactly one channel
+(`plugin:aweb-channel@awebai-marketplace`), the affirmative option
+`1. I am using this for local development` with `❯` before it, option `2. Exit`
+without it, and nothing else on the screen. Matching does not depend on the pane
+width, the Claude binary or the platform: one entry covers Claude 2.1.289 and
+2.1.296 on macOS and Linux, from committed captures, and a release review
+reports the same match for 2.1.288 on linux-x64. A pane too narrow for Claude to wrap at word
+boundaries (about 40 columns for this prompt) does not match.
 
-`awebDevelopmentChannel` is a strict boolean; absent means `false`. Unknown keys
-are refused. `workspaceTrust` is unsupported: remove it and handle folder trust
-through the explicit [native trust command](harness-trust.md). Launch prompt
-consent does not authorize a native trust write.
-Each home key is an exact absolute canonical path, with no symlink alias,
-wildcard, dot segment, trailing separator, ancestor inheritance or soul-wide
-default. A home not yet created uses its resolved existing directory ancestor
-plus its intended suffix; launch checks the created home's identity again.
-No existing home is enabled automatically. Removing an entry disables consent
-for future launches.
-On a case-insensitive filesystem (the macOS default) one home has several
-letter-case spellings, and a key in any of them is valid. A key spelled exactly
-as the home is launched decides. Otherwise the single key naming the same
-directory decides, and `consentSource` points at that key. Several keys naming
-it in different case, with none spelled exactly, decide nothing: no consent.
-Consent never reaches another directory.
+**What it never does.** It sends one `Enter`, never another key, never a retry,
+and never into a pane it did not create in this start (a respawned pane must
+show a new process and a fresh screen). It confirms no other prompt: folder trust
+(owned by [`oats harness trust`](harness-trust.md)), API-key and login questions
+are unexpected and block. While the screen keeps changing it waits, within 30 s
+at 100 ms. An unknown screen is no verdict until it has held unchanged for the
+settle window (`SETTLE`, 2 s): Claude paints transient frames while it starts (a
+logo mid-animation, a renderer notice) and can hold one for a second or more
+under load. An unknown screen that holds still for `SETTLE` blocks with no key,
+`blocked: unexpected prompt`, and the receipt says what `differed` from the
+nearest entry. A screen still changing when the 30 s bound is reached, or blank
+for the whole bound, never settled into a prompt: it blocks with no key,
+`blocked: observation timeout`, keeping what `differed` and the last screen as
+evidence, and its error and readiness remedy say no prompt was established (look
+at the pane; restart a running session) rather than to read and answer one. The instance then waits for a person: the spawn is retained
+(`E_SPAWN_INCOMPLETE`), the home records `launchPrompts.status: "blocked"`, and
+readiness shows the `launch-prompt` warning. Every attempt and outcome is a
+`launch-prompt` event carrying the Claude version read from the executable's
+path (`claudeVersion`, `claudeVersionSource`) and the entry it matched; the
+version is `unknown` when Claude is started through a wrapper, whose path carries
+no version, so it informs and never decides. What
+follows the Enter is reported, never answered: the start completes after
+`SETTLE` (2 s) of consecutive clean captures (no question marker, no
+confirmation; the screen may keep changing), and a question first painted more
+than 2 s after the session is working is the session's own, not a launch prompt.
+See [launch completion](launch-prompt-completion.md).
 
-The sole confirmation covered is Claude's development-channel prompt for
-`plugin:aweb-channel@awebai-marketplace`. The provider's `claudeChannelMode`
-selects arguments; it does not grant consent. Approved-mode arguments, another
-plugin, multiple plugins or contradictory channel arguments cannot qualify.
-Environment values, spawn flags and saved launch recipes cannot enable consent.
-Existing harness folder-trust configuration remains independent.
-The version-independent route, with no prompt to answer, is
-[the approved route](#claude-channel-delivery-the-approved-route).
+**When Claude ignores the flag.** This affects a Claude account (or
+organization) for which Claude Code offers no channels, on the messaging
+provider's default `delivery: channel`. Claude Code disables channels when telemetry is opted out (`DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`), so a launch
+environment that sets any of them is affected the same way; the messaging
+provider's readiness warning names the three variables that do it. Claude then ignores
+`--dangerously-load-development-channels`, shows no confirmation, and starts the
+session with a notice: `--dangerously-load-development-channels ignored
+(plugin:aweb-channel@awebai-marketplace) Channels are not currently available`.
+Before 0.52 such a start reported launched and said nothing, and the instance
+was never woken by mail or chat. Now, when that notice block equals a
+`flag-ignored` tolerance entry (the block's rows with their `▎` dropped,
+normalized the same way; never a contains test; the entry takes no input), and
+the screen shows no question (none of the
+[question markers](launch-prompt-completion.md)), OATS sends no key and the start
+succeeds. A notice beside a question blocks like any unknown screen. It records `launchPrompts: {status:
+"flag-ignored", reason: "channels-unavailable", signatureId, startId, at}` (the
+entry's id, no screen text), and the start's warnings say, in place of the
+statement that OATS confirms the prompt, `Claude ignored
+--dangerously-load-development-channels: channels are not available for this
+Claude account, so this instance gets no channel delivery: mail and chat will not
+wake it; set settings.oats.aweb.delivery: session (the host wake broker) and
+respawn the instance to restore wakes.` Every start says so until delivery
+changes. The kernel's readiness shows no `launch-prompt` warning for it; the
+messaging provider's readiness reports the missing channel. A notice in a wording
+no entry holds is an unknown screen and blocks.
 
-Preview reports effective `launchPromptAnswers.awebDevelopmentChannel` and
-`consentSource` without terminal capture or input. `--no-launch` never answers.
-The qualified fixture is limited to Claude 2.1.289 on `darwin-arm64`, at terminal
-geometry 110 columns by 35 rows, with executable SHA-256
-`03d66745e3bb69ec727d66023696f3820bc0a00a8a5ba725eb6706d0c67cbe69`.
-The launch must satisfy these guards and the exact complete frame, selection
-and argument checks. Reported version alone is insufficient; another
-executable, platform, geometry or prompt variant does not inherit acceptance.
-The qualified channel frame starts on its accepted option and permits one
-Enter only. Folder-trust and API-key questions remain unexpected and block.
-A qualified normal-output boundary closes observation without asserting readiness.
+**Known limit: a hidden notice.** Claude shows a limited number of notices. On a
+fresh Claude configuration another notice (for example, auto mode becoming the
+default) can take the slot and keep this one behind `1 more notice hidden`,
+typically on an instance's first spawn. OATS cannot see a hidden notice, so that
+start stays `blocked: unexpected prompt` (no key, the home retained). When the
+blocked screen starts with Claude's running-session banner (`Claude Code
+v<semver>` after the logo, which may be caught mid-animation), the error and the readiness remedy add: "Claude may
+have ignored the development-channel flag (channels unavailable for this
+account); look at the pane. If the session is running, restart the instance, and
+the notice will then show." A restart where the notice shows records `flag-ignored`.
 
-**Qualified completion and limitation:** the existing exact captured and
-source-derived empty API/subscription frames remain supported. After one recorded
-submitted channel Enter, the same qualified Claude 2.1.289 darwin-arm64 executable
-also recognizes the [bounded bottom input/footer structure](launch-prompt-completion.md)
-at 110x35. Its six mode labels, five effort labels and finite hints are
-source-qualified; header/billing/model and preceding task text are not structural
-completion conditions. The 21 exact question markers take precedence over both
-completion paths after submission. Normal `? for shortcuts` and `esc to interrupt`
-are not markers. Input authorization and exact-home consent are unchanged.
+**The two settings that stop it.** OATS confirms the prompt only because the
+deployment launches Claude with the development-channel flag. To keep the prompt
+for a person, stop launching that way: `settings.oats.aweb.delivery: session`
+(the host wake broker instead of the channel), or `settings.oats.aweb.claudeChannelMode:
+approved` ([the approved route](#claude-channel-delivery-the-approved-route), no
+prompt at all). Both are captured at spawn, so respawn a home to change it. Every
+start that engages the confirmation says so in its output (`launch-config preview`,
+the spawn's warnings, `session start|restart`). `spawn --preview` cannot say it
+yet: the argv comes from the provider's spawn hook, which a preview does not run.
 
-**Accepted reporting risk:** an unknown dialog retaining the composer/footer can
-be misclassified completed. Completion permanently closes input authority, but
-proves neither absence of all questions nor idle/account/channel readiness.
-Missing effort, trailing notices, wrapped footers and other unsupported shapes
-still block. A feature-flag footer change can reduce matches without a binary
-change. A matched structural frame must be saved privately before completed is
-audited; failure reports incomplete with the answer and target preserved.
+**A new Claude wording** blocks loudly until a reviewed change adds it as a new
+tolerance entry with its captured provenance. Until then, read the prompt in the
+instance's terminal and press Enter yourself.
 
-A submitted Enter can therefore precede `E_SPAWN_INCOMPLETE`; the pane may already
-be active. Inspect the answer, checked event receipt and retained target, rather
-than automatically retrying input or relaunching. Existing API fixtures used
-isolated dummy credentials; the observed Max regression is a labeled home-only
-sanitized derivative of one controller-compared in-progress frame, not a new
-end-to-end launch proof or general production-success claim.
+**An old `launchPromptAnswers` block** in `oats-local.yaml` is judged, never used:
 
-When a harness update changes the version-bound prompt frame, opted-in homes
-block again with `blocked: unexpected prompt` until fixtures are refreshed.
-There is no fallback keystroke or broader matching rule. The returned
-`launchPrompts.receipt` identifies the launch-prompt event receipt; the home
-and pane are retained for inspection. See [launch outcomes](execution-targets.md#launch-prompt-outcomes)
-for recovery. Answering a confirmation never establishes harness or messaging
-receive readiness.
+- only `awebDevelopmentChannel: true` entries, an empty block, or
+  `workspaceTrust`: ignored, with one warning per command naming the key and
+  saying to remove it;
+- any home entry `awebDevelopmentChannel: false`: refused (`E_WORKSPACE_SCHEMA`,
+  reason `removed-key`, at that entry), because this kernel can no longer honour
+  that refusal. The message names the two settings above.
+
+`launchPromptAnswers` remains refused in workspace and soul declarations.
 
 ## Launch configurations
 
@@ -307,6 +339,18 @@ account directory (`CLAUDE_CONFIG_DIR`), a wrapper `executable`, an argument.
 - **One per harness.** A second `default: true` for the same harness is
   refused (`E_LAUNCH_CONFIG_INVALID`, naming both); move it by clearing the
   old one first.
+- **Several configurations and no default is ambiguous for a spawn.** When a
+  spawn's harness has more than one configuration here, none of them
+  `default: true`, and the spawn names none, it is refused in preview and
+  apply alike (`E_LAUNCH_CONFIG_AMBIGUOUS`, naming the harness and its
+  configurations) instead of starting the bare harness. Naming one decides
+  it: `--launch-config <name>`, `--launch-config none` (the bare harness) or
+  a `souls.launch` name (`none` included). An inline `souls.launch`
+  preference, the soul's `launch:` and `--harness` alone name no
+  configuration. One configuration for the harness is not ambiguous (without
+  `default: true` it is not used). `oats souls` and `oats inspect --soul`
+  show the refusal as the launch's `problem`. A start or restart of an
+  existing home, with `--harness` or `--reselect-launch` too, is not refused.
 - **Existing homes keep their launch** until `--reselect-launch` or a
   respawn, like any change of preference. Declaring a default is such a
   change: `oats readiness --home` warns `launch-changed` on each existing
@@ -353,7 +397,9 @@ souls:
   **inline or soul preference** runs its harness the way this host starts it
   without a configuration: [the harness default](#the-harness-default) if
   one is declared, else the executable on `PATH` with no args and no env,
-  with the preference's `model`. A preference without `model` uses the
+  with the preference's `model`. A spawn is refused instead when the harness
+  has several configurations and none is its default
+  (`E_LAUNCH_CONFIG_AMBIGUOUS`). A preference without `model` uses the
   harness default's model, else the harness's own; it never borrows a lower
   layer's.
 - **A missing harness is refused**, never replaced: `E_HARNESS_UNAVAILABLE`

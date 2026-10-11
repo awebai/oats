@@ -245,7 +245,14 @@ const receives = succeeds((result, { i, said }) => {
  *  still there (`reused: "pane"`), in a new one otherwise (`"new"`). The second start of the home. */
 const starts = (reused) => succeeds((result, { i, said, windows }) => {
   assert.equal(typeof result.startedAt, "string", said);
-  assert.deepEqual({ ...result, startedAt: "" }, { instance: i.name, agent: "dev", home: i.home, harness: "pi", backend: "tmux", model: null, launchConfig: null, yolo: null,
+  // The start records what it did with Claude's development-channel prompt: this pi start does not
+  // engage it, so `not-engaged` with this start's id and time (awebai/oats#886).
+  const { launchPrompts, ...rest } = result;
+  assert.deepEqual(Object.keys(launchPrompts ?? {}).sort(), ["at", "startId", "status"], said);
+  assert.equal(launchPrompts.status, "not-engaged", said);
+  assert.match(launchPrompts.startId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, said);
+  assert.equal(new Date(launchPrompts.at).toISOString(), launchPrompts.at, said);
+  assert.deepEqual({ ...rest, startedAt: "" }, { instance: i.name, agent: "dev", home: i.home, harness: "pi", backend: "tmux", model: null, launchConfig: null, yolo: null,
     target: { backend: "tmux", session: i.session, window: i.name, socket: i.socket }, startedAt: "", restartCount: 2, reused, warnings: [] }, said);
   assert.equal(windows(i.session).includes(i.name), true, `the window is there: ${said}`);
 });

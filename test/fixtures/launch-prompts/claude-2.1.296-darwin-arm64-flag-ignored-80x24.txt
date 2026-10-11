@@ -1,0 +1,24 @@
+
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   /…/tmp/oats-v2-D70cil/deployment/agents/dev/instances/live-enter
+
+▎ --dangerously-load-development-channels ignored
+▎ (plugin:aweb-channel@awebai-marketplace)
+▎ Channels are not currently available
+
+❯ @TASK.md
+  ⎿  Read TASK.md (9 lines)
+
+
+
+
+
+
+
+✻ Connection refused — a firewall or proxy ma… · Retrying in 2s · attempt 2/10
+                                                            ◐ medium · /effort
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents

@@ -95,7 +95,9 @@ Select `claude` or `codex` instead of `all` when only one is needed. The apply
 records a deployment audit; it does not launch a harness. Claude inheritance
 stops at a Git boundary; Codex uses the existing per-invocation home override.
 See [native trust](harness-trust.md) for qualification, format and recovery
-limits. Spawn and `oats readiness` warn when the selected home remains uncovered.
+limits. A launch configuration that sets its own `CLAUDE_CONFIG_DIR` or
+`CODEX_HOME` is one more file, and the same command covers it. Spawn and
+`oats readiness` warn when the file a launch reads does not establish trust.
 
 ## 3. Give the deployment a team
 

@@ -77,7 +77,8 @@ const recipeFor = (executable) => ({ version: 2, harness: "claude", launchConfig
 const renderFor = (home, name, exe) => `OATS_INSTANCE=${shq(name)} OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE=${shq(name)} PI_AGENT_HOME=${shq(home)} ${shq(exe)} --dangerously-skip-permissions -- "$(cat TASK.md)"`;
 // A home spawned through the workspace path, given the private tmux socket and a recipe.
 async function makeHome(name, soul = "hooked") {
-  const { home } = await fx.spawn(soul, { name, work: "checkout", launch: false, harness: "claude" });
+  // The bare harness, as the recipe below records it: this deployment declares several claude configurations.
+  const { home } = await fx.spawn(soul, { name, work: "checkout", launch: false, harness: "claude", launchConfig: "none" });
   assert.equal(home, homeOf(name, soul));
   const polite = join(binDir, "polite");
   write(join(home, "instance.json"), JSON.stringify({ ...readJson(join(home, "instance.json")), harness: "claude", tmux: { session, window: name, socket }, launched: true, command: renderFor(home, name, polite), launch: recipeFor(polite) }, null, 2) + "\n");

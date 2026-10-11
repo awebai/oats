@@ -171,12 +171,15 @@ oats spawn backend-expert --task "First concrete task"
 oats status
 ```
 
-Before configuring unattended development-channel confirmation, read
-`docs/configuration.md#exact-home-launch-prompt-consent`. The sole opt-in is
-`oats-local.yaml` `launchPromptAnswers.homes.<absolute-canonical-home>.awebDevelopmentChannel`;
-it defaults false and requires the owner's explicit authorization for that home.
-Never infer consent from provider development mode, harness trust settings or
-a request to spawn. `workspaceTrust` is unsupported; remove it and handle
+OATS confirms Claude's development-channel prompt by itself whenever it
+launches Claude with `--dangerously-load-development-channels
+plugin:aweb-channel@awebai-marketplace` (the default `delivery: channel`,
+`claudeChannelMode: development`); see
+`docs/configuration.md#the-development-channel-confirmation`. There is no
+consent setting. To keep the prompt for a person, set
+`settings.oats.aweb.delivery: session` or `claudeChannelMode: approved` in
+`oats-local.yaml`. An old `launchPromptAnswers` block is ignored with a warning
+(remove it); one with `awebDevelopmentChannel: false` is refused. Handle
 folder trust explicitly with `oats harness trust --dir D --harness claude --plan`,
 then the same command without `--plan` to apply. Run it on the target host with
 native configuration writers quiescent. Use `codex` or `all` for those selected
@@ -185,20 +188,24 @@ The command changes only deployment-root trust and records an audit under
 `D/.agents/harness-trust.jsonl`. A failure can retain an applied native change;
 inspect its per-file outcome and audit before retrying. Nested Git boundaries
 can prevent Claude inheritance. See [harness trust](../../docs/harness-trust.md). Folder-trust
-and API-key questions remain unexpected and blocked. Only the qualified Claude
-2.1.289 executable digest, `darwin-arm64` platform and 110x35 geometry documented
-there can match the exact aweb development-channel frame. A reported version
-alone is insufficient. Preview reports policy without terminal input;
-`--no-launch` never answers. If launch returns `E_SPAWN_INCOMPLETE`, inspect the
-retained home/pane: do not respawn, repeat keys or treat `launched:false` as an
-absent process.
-Completion retains the exact empty-frame families and, only after the submitted
-channel Enter, can recognize the qualified bottom composer/effort-footer region.
-See [the bounded completion contract](../../docs/launch-prompt-completion.md).
-Known question markers block first; normal shortcut/interrupt hints do not.
-Unknown dialogs retaining that region may be misclassified completed. Completion
-closes input authority, not a readiness or idle-state promise. Missing effort or
-trailing notices still block. Required private evidence failure is incomplete.
+and API-key questions remain unexpected and blocked. The confirmation is
+answered with one Enter only when the screen equals an entry of the tolerance
+list, on any pane width wide enough to wrap at word boundaries; a new Claude
+wording blocks loudly until a reviewed change adds it. `--no-launch` never
+answers. Where channels are unavailable for the Claude account, Claude ignores
+the flag and shows no confirmation: the start succeeds with `launchPrompts.status:
+"flag-ignored"`, no key, and a warning that the instance has no channel delivery,
+so mail and chat will not wake it until delivery changes.
+On a first spawn that notice can be hidden behind another one; the start then
+blocks, and the error says to look at the pane and restart a running session.
+If launch returns `E_SPAWN_INCOMPLETE`, inspect the retained home/pane:
+do not respawn, repeat keys or treat `launched:false` as an absent process.
+After the Enter, completion is reporting only: 2 s of consecutive clean captures
+(no question marker, no confirmation; the screen may change) complete; a marker
+or the confirmation coming back blocks; no such window by the 30 s bound is an
+observation timeout after the one Enter. See [the completion contract](../../docs/launch-prompt-completion.md).
+Unknown dialogs without a marker may be reported completed. Completion closes
+input authority, not a readiness or idle-state promise.
 
 Create and spawn only when asked. After the first spawn, the `oats.setup`
 skills carry the rest of the deployment (messaging, more souls, rebuilds); the
@@ -208,6 +215,6 @@ model in full is `docs/workspaces.md` in the OATS repository.
 For a retained launch-prompt block after a submitted answer, inspect the existing
 launch event and private frame receipt as described in
 `docs/execution-targets.md#private-unmatched-launch-evidence`. Do not transmit raw
-screen text or treat a saved frame as a new accepted signature. A structurally completed frame is also saved privately. A saved artifact alone
+screen text or treat a saved frame as a new accepted signature. A completed frame is also saved privately. A saved artifact alone
 does not establish completion: verify the final checked launch outcome. Missing
 effort or unsupported footer shapes can block while the pane is active.

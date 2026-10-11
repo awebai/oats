@@ -683,43 +683,54 @@ starts in place. It never escalates: a harness still running is reported
 
 ### Launch prompt outcomes
 
-For a home with [explicit host-local consent](configuration.md#exact-home-launch-prompt-consent),
-spawn, start and restart can observe only the process created by that invocation.
-A new window supplies the exact pane identity. Reusing a pane requires a changed
-numeric process ID and fresh visible bytes differing from the pre-respawn
-screen. An already-running process, stale screen or scrollback grants no input
-authority. Home, socket, pane, PID, geometry and exact visible signature are
-rechecked before each key.
+When a spawn, start or restart launches Claude with
+`--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`
+([configuration](configuration.md#the-development-channel-confirmation)), the
+launcher observes only the process created by that invocation. A new window
+supplies the exact pane identity. Reusing a pane requires a changed numeric
+process ID and fresh visible bytes differing from the pre-respawn screen, at the
+pane's original size: a resize could reflow the old prompt into a match. An
+already-running process, stale screen or scrollback grants no input authority.
+Home, socket, pane and PID are rechecked before the key, and the screen is
+captured twice, identical, around the durable intent.
 
-Observation is bounded to 30 seconds with 100 ms intervals. Only accepted
-version/platform-specific startup and prompt frames keep authority open;
-unexpected output permanently closes it. Only the exact aweb development-channel
-confirmation can be answered, once, with one Enter. Folder-trust and API-key
-prompts are unexpected and block; no multi-prompt sequence is authorized.
-For a qualified launch, the controller saves the exclusively owned window's
-size policy and dimensions, temporarily pins it to the fixture's 110x35
-geometry, and confirms the size before matching. It audits restoration on
-every exit, including timeout and failure; a replaced process/window is never
-resized during cleanup. Pinning a reused pane cannot establish freshness: that
-must already be proved at its original geometry. The selected-option frame
-is rechecked before Enter. Uncertain submission is never retried. Only the
-qualified Claude executable/platform/geometry in
-[configuration](configuration.md#exact-home-launch-prompt-consent) has an enabled
-development-channel fixture. Installed version alone grants no match. Ordinary
-`session input` and wake delivery do not enter this controller.
+Observation is bounded to 30 seconds with 100 ms intervals. A blank screen, or
+one that keeps changing (a prompt still being painted), keeps observing. Only a
+screen whose normalized text equals a tolerance entry can be answered, once,
+with one Enter. A screen with a notice block (a maximal run of rows that begin
+with `▎`, each row's `▎` dropped, then the same normalization) that equals a
+`flag-ignored` entry, on a screen with no question marker, means Claude ignored
+the flag and shows no confirmation: the start ends `flag-ignored`, reason `channels-unavailable`, with no key, and
+succeeds. An unknown screen that holds still for the settle window (`SETTLE`,
+2 s; a transient frame Claude paints while starting is waited out) permanently
+closes authority with `blocked: unexpected prompt`. The last unknown screen when
+the bound is reached, still changing, closes it with `blocked: observation
+timeout` (with `differed` and that screen as evidence; no prompt was
+established). When either screen starts with Claude's
+running-session banner (`Claude Code v<semver>`, after only the logo's block
+elements U+2580–U+259F and spaces), the result carries
+`claudeSessionShown: true`. A screen blank for the whole bound also reports
+`blocked: observation timeout`. Folder-trust and API-key prompts
+are unexpected and block; no multi-prompt sequence is authorized. The controller
+never resizes the pane. Uncertain submission is never retried. Ordinary
+`session input` and wake delivery do not enter this controller. A launch with any
+other argv records `launchPrompts: {status: "not-engaged", startId, at}` and
+captures nothing.
 
 Both spawn and start return `E_SPAWN_INCOMPLETE` for retained prompt failures.
 With `launchPrompts.status` set to `blocked`, the home, actual terminal target,
-provider effects and committed parent lineage are retained. Only an opted-in
-launch commits a new parent link before dispatch; ordinary launches keep their
-post-launch lineage commit and compensate a failed anchor write. That preserves
-timing, not overwrite behavior: even non-opted-in parent spawns now refuse an
+provider effects and committed parent lineage are retained. Only a launch that
+engages the confirmation commits a new parent link before dispatch; other launches
+keep their post-launch lineage commit and compensate a failed anchor write. That
+preserves timing, not overwrite behavior: every parent spawn refuses an
 anchor edited or removed since the original pre-hook snapshot, instead of
 replacing concurrent changes with stale metadata. `launchPrompts` records `status`,
-`answers`, `reason` and event `receipt`; unknown prompts use
-`blocked: unexpected prompt`. Status `incomplete` means the audit could not be
-completed, including a possible key followed by an audit failure or failure to
-retain mandatory structural-completion evidence. It is
+`answers`, `reason` and event `receipt`, and a blocked result `differed`; unknown
+prompts use `blocked: unexpected prompt`. Status `incomplete` means the audit could
+not be completed, including a possible key followed by an audit failure or failure
+to retain completion evidence. No complete clean `SETTLE` window (2 s) within the
+bound after the Enter is `blocked: observation timeout`, with the one Enter in the
+answers. It is
 not proof that no input was sent. Both outcomes record `launched:false` while
 retaining the real process/endpoint for inspection: this is never permission
 to allocate another harness.
@@ -737,28 +748,26 @@ prior evidence, and adds `{ok:false, results:[]}` to the receipt array. That
 entry means zero audit destinations were attempted, not a successful write.
 No audit or metadata write is directed into the replacement home.
 
-A blocked result can follow a successfully submitted Enter. The accepted
-completion families cover exact installed-plugin and plugin-absent banners,
-plus source-derived billing-only variants of those empty frames (Max, Pro,
-Team and Enterprise), and source-derived empty Max/bypass/medium frames.
-Other model, billing, effort or permission text can leave the pane active while
-reporting a retained block. Inspect `answers` and the event receipts; never infer
-that nothing started or nothing was answered. See the
-[completion limitation](configuration.md#exact-home-launch-prompt-consent).
+A blocked result can follow a successfully submitted Enter: a question marker
+after it, or the confirmation coming back, leaves the pane active while reporting
+a retained block. Inspect `answers` and the event receipts; never infer that
+nothing started or nothing was answered. See the
+[completion rule](launch-prompt-completion.md).
 
 ### Private unmatched launch evidence
 
-This section also covers mandatory structural-completion evidence.
+This section also covers mandatory completion evidence.
 
-After a submitted launch answer, an unmatched 110x35 frame is retained locally
-at `<home>/.oats/launch-prompt-evidence/<sha256(startId)>/frame.txt`, with
+The screen of a miss (`blocked: unexpected prompt`, before or after the Enter, or
+`blocked: repeated or unsupported prompt`) is retained locally at
+`<home>/.oats/launch-prompt-evidence/<sha256(startId)>/frame.txt`, with
 `receipt.json` published last. This is the exact UTF-8 text already compared by
 the controller, including whitespace and final newline, not a later recapture.
-It is bounded to 64 KiB and 35 rows. There is no new input, observation, retry,
-geometry change or readiness claim. Evidence is also mandatory when the post-answer
-[structural completion rule](launch-prompt-completion.md) selects completion.
-Previously qualified exact completion does not acquire that requirement. No
-frame is saved before a submitted answer or for unrelated blocked reasons.
+It is bounded to 64 KiB, with one row per pane row at the pane's own size. There
+is no new input, observation, retry, geometry change or readiness claim. Evidence
+is also mandatory when the post-answer [completion rule](launch-prompt-completion.md)
+reports completion. No frame is saved for unrelated blocked reasons (ownership,
+timeouts, capture failures).
 
 Find the invocation's existing `launch-prompt` event in the home's
 `.oats-events.jsonl` (or the checked event rows in `launchPrompts.receipt`). Its
@@ -777,9 +786,12 @@ means no independent capture timestamp was recorded. It does not substitute an
 event timestamp for capture time. Same-uid concurrent mutation between checks is
 not excluded.
 
-Private receipt version 2 uses `kind:"launch-prompt-frame"` and admits only
-`outcome:"blocked", recognition:"unmatched"` or
-`outcome:"completed", recognition:"structural"`. These fields describe the
+Private receipt version 2 uses `kind:"launch-prompt-frame"`. This kernel writes
+only `outcome:"blocked", recognition:"unmatched"`,
+`outcome:"completed", recognition:"stable-screen"` or
+`outcome:"flag-ignored", recognition:"notice-block"`; readers also accept
+`outcome:"completed", recognition:"structural"`, written by kernels 0.47–0.51 for
+completion recognized by Claude's footer structure. These fields describe the
 recognition whose frame was saved, not the final public launch result: a later
 audit or cleanup failure can still report `incomplete`. Historical version 1
 receipts with `kind:"launch-prompt-unmatched"` describe blocked/unmatched
@@ -801,11 +813,12 @@ and adds only `; private launch evidence retention failed` to its diagnostic
 reason. Already published files may remain, including a receipt if a later
 verification fails; their presence alone is not a success claim. The submitted
 answer is preserved. Existing event-audit failures still report `incomplete`.
-A structural-completion save failure instead reports checked `incomplete` with
+A completion save failure instead reports checked `incomplete` with
 `private launch evidence retention failed`, preserving the submitted answer and
 retained target. It never retries publication or input. An audit failure remains
 incomplete even if private evidence was saved. No public result or event contains
-the raw screen or private receipt.
+the raw screen or private receipt; a miss's `differed` carries at most 40
+characters of the normalized screen at its first difference.
 
 The frame can contain private task or account text. It stays on this host with
 no automatic transmission or expiry. Preserve needed evidence privately before
@@ -1032,7 +1045,10 @@ Unattended execution never implies yolo.
 ### Explicit deployment trust
 
 Use `oats harness trust --dir <deployment> --harness claude|codex|all --plan`,
-then the same command without `--plan`, on the execution host. This is the explicit
+then the same command without `--plan`, on the execution host. It covers the ambient
+configuration file and each launch configuration's `CLAUDE_CONFIG_DIR` /
+`CODEX_HOME`; launch-time checks read the file the launch's own environment
+selects. This is the explicit
 operator-only native-config write path; spawn/start/retire remain read-only with
 respect to native trust. See [native trust](harness-trust.md) for qualified formats,
 Git-boundary limits, audit evidence and partial-failure recovery. Root trust does

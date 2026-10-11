@@ -125,8 +125,9 @@ delivery. With `claudeChannelMode: approved`, oats.aweb starts Claude with
 `--channels plugin:aweb-channel@awebai-marketplace` and Claude shows no
 “WARNING: Loading development channels” prompt: it admits the plugin when a
 root-owned managed-settings file on the machine lists it. The route does not
-depend on the Claude version and needs no launch-prompt consent
-(`launchPromptAnswers` applies only to development mode). Contract:
+depend on the Claude version, and there is no prompt for OATS to confirm
+(development mode's prompt is confirmed by OATS itself, see
+`docs/configuration.md`, “The development-channel confirmation”). Contract:
 `docs/configuration.md`, “Claude channel delivery: the approved route”;
 provider behaviour and receive proof: `/oats-aweb` §4.
 
@@ -266,6 +267,7 @@ reports this deployment's local file and lock.
 | `E_TEAM_IN_USE`, `E_TEAM_SHARED`, `E_TEAM_EXISTS` | `oats teams remove`/`add` refused: still the local default, shared (edit by PR), or already declared | see `/oats-teams` |
 | `E_HARNESS_UNAVAILABLE` | the harness a launch preference (or flag) chose is not installed here; `details.from`/`at` name the layer | install it, or override it on this machine in `oats-local.yaml` `souls.launch` |
 | `E_LAUNCH_CONFIG_UNKNOWN` | `souls.launch` names a launch configuration this `oats-local.yaml` lacks | declare it (`oats launch-config set`), or change `souls.launch` |
+| `E_LAUNCH_CONFIG_AMBIGUOUS` | a spawn's harness has several launch configurations here, none `default: true`, and the spawn named none (`details.configurations` lists them) | name one (`--launch-config <name>`, `--launch-config none`, or a `souls.launch` name), or mark one `default: true` (`oats launch-config set`) |
 | `E_LAUNCH_CONFIG_INVALID` | a launch configuration is malformed, or two are `default: true` for one harness (`details.configurations` names both) | fix the entry; keep one default per harness (clear the old one first) |
 | `E_CLAUDE_CONFIG_REMOVED` | an `oats-claude-config` file is in reach of a new claude launch; 0.32 no longer reads it | declare its name as the claude default (`executable: <name>`, `default: true`), then delete the file |
 | `E_SLOT_CONFLICT` | two capabilities fill one slot, a slot default of the wrong layer, or `none` beside the soul's own capability of that layer | keep one per slot |
