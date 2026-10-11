@@ -24,6 +24,7 @@ import { capabilityShowRequest } from '../packages/desktop/server/capability-sho
 import { automationRows, triggerStatus, testResult, capabilitySource, onSummary, sourceParams, triggerSourcesSupported, TRIGGER_SOURCES_FEATURE } from '../packages/desktop/renderer/automation-rows.mjs';
 import { triggerSourcesView } from '../packages/client/capability-show-contract.mjs';
 import { CLI } from './helpers/v2-deployment.mjs';
+import { DESKTOP_TERMS } from '../packages/desktop/renderer/desktop-terms.mjs';
 
 const probe = spawnSync(process.execPath, [CLI, 'version', '--json'], { encoding: 'utf8' });
 const version = (() => { try { return probe.status === 0 ? JSON.parse(probe.stdout) : null; } catch { return null; } })();
@@ -171,7 +172,7 @@ test(`a capability trigger source through the Desktop's readers (feature ${TRIGG
   await t.test('capabilities show: the declared sources, then a declaration with problems, through the server\'s projection', async () => {
     const catalog = () => JSON.parse(must(fx.cli(['capabilities', '--json']), 'capabilities').stdout).result.capabilities;
     const show = () => capabilityShowRequest({ action: 'show', capability: { name: CAPABILITY, kind: 'member', repoKey: fx.key } },
-      { workspace, cli, catalog: catalog(), invoke: (c, options) => cliWorkspace(c, options, io()) });
+      { workspace, cli, catalog: catalog(), invoke: (c, options) => cliWorkspace(c, options, DESKTOP_TERMS, io()) });
     assert.deepEqual(triggerSourcesView(await show()), { sources: [{ name: NAME, events: ['opened', 'updated'], description: HARVEST.description, problems: [] }] });
     fx.commit({ [`capabilities/${CAPABILITY}/oats.json`]: { json: { capability: CAPABILITY, version: '0.0.0-workspace', description: 'acme.graph fixture capability.', compatibility: { oats: '>=0.24.0' },
       ...capabilityManifest({ [NAME]: { ...HARVEST, command: 'missing' }, good: HARVEST, 'Bad Name': 7 }) } } }, 'break the source');

@@ -13,6 +13,7 @@
 import { runtimeState } from "../../client/instance-presentation.mjs";
 import { filterInstanceTree } from "../../client/instance-tree.mjs";
 import { rosterSections, splitByDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
+import { DESKTOP_TERMS } from "./desktop-terms.mjs";
 import { createOverlayPicker, subsequenceScore } from "./overlay-picker.mjs";
 
 /** Commands listed at most (after every instance row; the instance list scrolls). */
@@ -39,7 +40,7 @@ export function paletteRows(roster, commands, raw, { openTerminal } = {}) {
     const visible = isMultiDeployment(deployments)
       ? [...splitByDeployment(deployments)(instances).values()].flatMap(own => filterInstanceTree(own, q, matches))
       : filterInstanceTree(instances, q, matches);
-    for (const section of rosterSections(instances, visible, deployments)) for (const each of section.groups) {
+    for (const section of rosterSections(instances, visible, deployments, DESKTOP_TERMS)) for (const each of section.groups) {
       // A group is named, and kept apart, by its deployment where there are several.
       const group = section.deployment
         ? { key: `${section.deployment.id}|${each.key}`, label: `${section.label} · ${each.label}`, clusters: each.clusters }

@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { machineLabels, pathTail } from '../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, rememberedDeploymentTab, requestDeploymentTab, onDeploymentTabRequest,
   DEPLOYMENT_TAB_KEY, DEPLOYMENT_TAB_VIEWS_MAX, ALL_TAB } from '../renderer/deployment-tabs.mjs';
 
@@ -13,11 +14,11 @@ const far = (server, path) => ({ id: `remote:${server}:aaaaaaaaaaaa`, machine: s
 test('machine labels: the machine alone, its path tail only when one machine holds two, never an id', () => {
   assert.equal(pathTail('/Users/juan/awebai/oats-v2'), 'oats-v2');
   assert.equal(pathTail('/a/b/c', 2), 'b/c');
-  const labels = machineLabels([local('/Users/juan/Agents/oats'), local('/Users/juan/awebai/oats-v2'), far('altair', '/Users/juan/Agents/tsm')]);
+  const labels = machineLabels([local('/Users/juan/Agents/oats'), local('/Users/juan/awebai/oats-v2'), far('altair', '/Users/juan/Agents/tsm')], DESKTOP_TERMS);
   assert.deepEqual([...labels.values()], ['This Mac · oats', 'This Mac · oats-v2', 'altair']);
-  const same = machineLabels([local('/a/x/oats'), local('/b/y/oats')]);
+  const same = machineLabels([local('/a/x/oats'), local('/b/y/oats')], DESKTOP_TERMS);
   assert.deepEqual([...same.values()], ['This Mac · x/oats', 'This Mac · y/oats'], 'colliding tails take two segments');
-  assert.deepEqual([...machineLabels([far('vega', '')]).values()], ['vega']);
+  assert.deepEqual([...machineLabels([far('vega', '')], DESKTOP_TERMS).values()], ['vega']);
   for (const label of [...labels.values(), ...same.values()]) assert.doesNotMatch(label, /remote:|aaaaaaaaaaaa/);
 });
 

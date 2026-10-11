@@ -5,7 +5,7 @@
  * Pure: no I/O. The identity is the kernel's `workspace` object, read as reported; nothing is
  * derived from a path, a ref or a host name, and `ref` is never compared. */
 import { createHash } from 'node:crypto';
-import { THIS_MACHINE } from './deployment-label.mjs';
+import { requireTerms } from './client-terms.mjs';
 
 const TEXT_MAX = 2048;
 const text = v => typeof v === 'string' && v.length > 0 && v.length <= TEXT_MAX && !v.includes('\0');
@@ -66,9 +66,12 @@ const TIMED_OUT = /timed out|timeout/i;
  * words for a heading or the switcher ("OATS too old to report its workspace"); `detail` the one full
  * sentence; `fix` the plain steps (possibly none: the detail then says what happens next). The steps
  * carry every fact the sentence has (a host, a reference): with steps, a heading shows only them.
- * `d`: `{ local, machine, sshHost?, probe?, identityStatus, attach, ref, cliReadsRemotes, rosterError?, unavailable?, readError? }`. */
-export function deploymentReasonParts(d) {
-  const machine = d.machine || THIS_MACHINE;
+ * `d`: `{ local, machine, sshHost?, probe?, identityStatus, attach, ref, cliReadsRemotes, rosterError?, unavailable?, readError? }`.
+ * `terms`: the client's own (client-terms.mjs): its name where a sentence names it, and the label of its
+ * machine where `d` names none. */
+export function deploymentReasonParts(d, terms) {
+  requireTerms(terms, 'deploymentReasonParts');
+  const machine = d.machine || terms.thisMachine;
   const updateHere = ['Update OATS on this computer.'];
   if (d.local) {
     if (d.unavailable) return { short: 'Not observed', detail: d.unavailable, fix: [] };
@@ -86,21 +89,22 @@ export function deploymentReasonParts(d) {
       if (code === 'E_SSH') {
         const host = d.sshHost || machine;
         return { short: 'ssh needs a prompt', detail: `${machine} needs ssh to connect without a prompt; run \`ssh ${host}\` once in a terminal.`,
-          fix: [`Run \`ssh ${host}\` once in a terminal and answer its prompt (a host key or a password).`, 'Desktop tries again on its next read.'] };
+          fix: [`Run \`ssh ${host}\` once in a terminal and answer its prompt (a host key or a password).`, `${terms.name} tries again on its next read.`] };
       }
       return { short: 'Not reached', detail: `${machine} was not reached${code ? ` (${code})` : ''}.`, fix: [] };
     }
     if (d.identityStatus === 'old') return { short: 'OATS too old to report its workspace', detail: `${machine}'s OATS is too old to report its workspace; update OATS there.`, fix: [`Update OATS on ${machine}.`] };
     if (d.identityStatus === 'none') return { short: 'Reports no workspace', detail: `${machine} reports no workspace for this deployment.`, fix: [] };
   }
-  if (d.identityStatus === 'invalid') return { short: 'Unreadable workspace report', detail: `${machine} reported a workspace this Desktop can't read.`, fix: [] };
+  if (d.identityStatus === 'invalid') return { short: 'Unreadable workspace report', detail: `${machine} reported a workspace ${terms.self} can't read.`, fix: [] };
   const reason = d.attach?.unattached && REASONS[d.attach.unattached];
   return reason ? reason({ ref: d.ref, there: d.local ? 'in this deployment' : `on ${machine}` }) : null;
 }
 
 /** The one plain sentence for a deployment that is not live or not matched, or null. */
-export function deploymentReason(d) {
-  return deploymentReasonParts(d)?.detail ?? null;
+export function deploymentReason(d, terms) {
+  requireTerms(terms, 'deploymentReason');
+  return deploymentReasonParts(d, terms)?.detail ?? null;
 }
 
 /** The last segment of a canonical key: github.com/GreaterSkies/tsm → tsm. */

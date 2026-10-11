@@ -10,11 +10,16 @@
  * capability-warnings-contract.mjs, and `triggerSources` / `triggerSourceProblems` (feature `trigger-sources`),
  * projected below: never a reason to refuse the answer (an older kernel sends none). */
 import { warningsOf } from './capability-warnings-contract.mjs';
+import { requireTerms } from './client-terms.mjs';
 
 export const CAPABILITY_SHOW_API = 1;
 export const CAPABILITY_SHOW_FEATURE = 'capability-show';
-/** What a kernel answer this Desktop cannot read says (the failed state's message). */
-export const CAPABILITY_SHOW_UNREADABLE = "This Desktop can't read what this OATS version reports about the capability. Update OATS Desktop.";
+/** What a kernel answer the client cannot read says (the failed state's message), in the client's terms
+ * (client-terms.mjs): here the client is the old one, so the sentence names what to update. */
+export function capabilityShowUnreadable(terms) {
+  requireTerms(terms, 'capabilityShowUnreadable');
+  return `${terms.selfInitial} can't read what this OATS version reports about the capability. Update ${terms.update}.`;
+}
 
 /** Bounds. A file's text is at most 256 KiB (the kernel truncates there, `truncated: true`). */
 export const FILE_TEXT_MAX_BYTES = 256 * 1024;

@@ -8,6 +8,7 @@ import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { answeringFeatures, stoppedTargets, decodedStoppedTargets, lifecycleReceipt, publicLifecycleReceipt, stoppedRowKind, stoppedRowText,
   stopResultWords, childrenRefusedMessage, lifecycleReason } from '../../client/lifecycle-contract.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { cli, context, envelope, instance, stopPlan, retirePlan, stopReceipt, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 
@@ -116,7 +117,7 @@ test('the sentence above the rows is chosen from the rows: all unrecorded reads 
     assert.deepEqual(stopResultWords(rows), NOT_EVERY, JSON.stringify(rows.map(r => r.stillRunning)));
   assert.equal(childrenRefusedMessage([failed(kid, [])]), CHILDREN_UNRECORDED); assert.equal(childrenRefusedMessage([fine(kid), failed(kid2, [])]), CHILDREN_UNRECORDED);
   for (const rows of [[failed(kid, null)], [failed(kid, [9])], [failed(kid, []), failed(kid2, null)], [failed(kid, []), failed(kid2, [9])]]) assert.equal(childrenRefusedMessage(rows), CHILDREN_RUNNING);
-  assert.equal(lifecycleReason('E_CHILDREN_RUNNING').message, CHILDREN_RUNNING, 'the code keeps its sentence');
+  assert.equal(lifecycleReason('E_CHILDREN_RUNNING', DESKTOP_TERMS).message, CHILDREN_RUNNING, 'the code keeps its sentence');
 });
 
 /** A local context whose CLI names `features` beside the lifecycle ones. */
@@ -146,12 +147,12 @@ test("the boundary, a stop's receipt: a failed row's `[]` reaches the reply only
   for (const [name, ctx] of WITH) {
     const reply = await applied(ctx(), 'stop', plan, answer);
     assert.equal(reply.status, 'partial', name); assert.deepEqual(reply.receipt.results.map(r => r.ok ? 'ok' : r.stillRunning), [[], 'ok'], name);
-    assert.deepEqual(reply.reason, lifecycleReason('E_SESSION_STOP_FAILED'), 'no code, status or reason of the reply changes');
+    assert.deepEqual(reply.reason, lifecycleReason('E_SESSION_STOP_FAILED', DESKTOP_TERMS), 'no code, status or reason of the reply changes');
   }
   for (const [name, ctx] of WITHOUT) {
     const reply = await applied(ctx(), 'stop', plan, answer);
     assert.equal(reply.status, 'partial', name); assert.deepEqual(reply.receipt.results.map(r => r.ok ? 'ok' : r.stillRunning), [null, 'ok'], name);
-    assert.deepEqual(reply.reason, lifecycleReason('E_SESSION_STOP_FAILED'), name);
+    assert.deepEqual(reply.reason, lifecycleReason('E_SESSION_STOP_FAILED', DESKTOP_TERMS), name);
   }
 });
 
@@ -160,7 +161,7 @@ test("the boundary, a retire refused with E_CHILDREN_RUNNING: the child rows fol
   for (const [name, ctx] of WITH) {
     const reply = await applied(ctx(), 'retire', plan, answer);
     assert.equal(reply.status, 'refused', name); assert.deepEqual(reply.childrenStopped.map(r => r.ok ? 'ok' : r.stillRunning), [[], 'ok'], name);
-    assert.deepEqual(reply.reason, lifecycleReason('E_CHILDREN_RUNNING'), name);
+    assert.deepEqual(reply.reason, lifecycleReason('E_CHILDREN_RUNNING', DESKTOP_TERMS), name);
   }
   for (const [name, ctx] of WITHOUT) {
     const reply = await applied(ctx(), 'retire', plan, answer);
@@ -269,7 +270,7 @@ test('the dialog validates the child rows of a reply and never decodes them agai
   let children;
   const dialog = createLifecycleDialog({ doc, request: async (_ws, body) => body.action === 'plan'
     ? { lifecycleApi: 1, status: 'plan', target, planRef: 'd'.repeat(64), plan, options: { discardWorktree: false }, receipt: null, reason: null }
-    : { lifecycleApi: 1, status: 'refused', target, planRef: null, plan: null, receipt: null, reason: lifecycleReason('E_CHILDREN_RUNNING'), childrenStopped: children } });
+    : { lifecycleApi: 1, status: 'refused', target, planRef: null, plan: null, receipt: null, reason: lifecycleReason('E_CHILDREN_RUNNING', DESKTOP_TERMS), childrenStopped: children } });
   t.after(() => { dialog.dispose(); dom.window.close(); });
   const shown = async rows => { children = rows; dialog.open({ operation: 'retire', instance, workspace: 'team' }); await tick(); doc.querySelector('.lifecycle-confirm').click(); await tick();
     return { status: doc.querySelector('.lifecycle-dialog [role=status]').textContent, lines: [...doc.querySelectorAll('.lifecycle-result li')].map(li => li.textContent) }; };
@@ -277,7 +278,7 @@ test('the dialog validates the child rows of a reply and never decodes them agai
   assert.deepEqual(await shown([{ instance: 'kid', home: kid.home, ok: false, code: 'E_SESSION_STOP_FAILED', stillRunning: [] }]), { status: CHILDREN_UNRECORDED, lines: [`kid: ${LINE.unrecorded}`] });
   for (const rows of [[{ instance: 'other', home: kid.home, ok: false, code: 'E_SESSION_STOP_FAILED', stillRunning: [] }], [], 'rows']) {
     const view = await shown(rows);
-    assert.equal(view.status, lifecycleReason('E_OUTCOME_UNKNOWN').message, JSON.stringify(rows)); assert.deepEqual(view.lines, []);
+    assert.equal(view.status, lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message, JSON.stringify(rows)); assert.deepEqual(view.lines, []);
   }
 });
 

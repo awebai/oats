@@ -235,7 +235,8 @@ answers the view that holds it; no `?ws=` answers the first view.
   nothing could be matched, and the entries list as they did before views.
 - `deployments` lists every deployment of the view, even a single one:
   `{id, machine, path, label, local, reachable, identityFrom, primary,
-  stale?, reason?, short?, fix?, note?}`. `machine` is "This Mac" or the server's label, else its
+  stale?, reason?, short?, fix?, note?}`. `machine` is "This Mac" (the Desktop's label for the
+  machine it runs on, `thisMachine` of `renderer/desktop-terms.mjs`) or the server's label, else its
   id. `deploymentLabel` (`packages/client/deployment-label.mjs`) shows it as "This
   Mac · ~/Agents/oats" or "altair · ~/Agents/tsm": the home directory as
   `~` (on a remote, a `/Users/<name>` or `/home/<name>` prefix, a display

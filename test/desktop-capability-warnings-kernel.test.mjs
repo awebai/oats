@@ -24,6 +24,7 @@ import { previewData, previewComposedFrom } from '../packages/client/spawn-previ
 import { warningsOf, previewWarningsOf } from '../packages/client/capability-warnings-contract.mjs';
 import { v2Deployment, CLI } from './helpers/v2-deployment.mjs';
 import { APPROVED_HOOKS } from '../lib/capability-contract.mjs';
+import { DESKTOP_TERMS } from '../packages/desktop/renderer/desktop-terms.mjs';
 
 const CAPABILITY = 'acme.tool', SOUL = 'dev', EVENT = 'on-merge';
 let cli = null;
@@ -63,7 +64,7 @@ test.before(() => {
 
 test('capabilities show --member: the raw warning, and capabilityShowData projects it', async () => {
   const selector = { name: CAPABILITY, kind: 'member', repoKey: fx.key };
-  const answer = await cliWorkspace(cli, { action: 'capability-show', context: fx.dep, name: CAPABILITY, member: fx.key }, io());
+  const answer = await cliWorkspace(cli, { action: 'capability-show', context: fx.dep, name: CAPABILITY, member: fx.key }, DESKTOP_TERMS, io());
   assert.equal(answer.ok, true, JSON.stringify(answer));
   assert.deepEqual(argvs.at(-1), ['capabilities', 'show', CAPABILITY, '--member', fx.key, '--dir', fx.dep, '--json']);
   const raw = answer.document.result;

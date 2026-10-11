@@ -45,7 +45,8 @@ const HOME = "packages/client", TUI = "packages/tui", DESKTOP = "packages/deskto
  * exports it may name. A change to one of them updates the TUI in the same PR; anything not listed is
  * the Desktop's own composition and may change without notice.
  * From specs/2026-10-10-stable-surface-v1.md of the Desktop expert (v1, revised for 1b): its firm table
- * and its provisional lists, both. "All" of a module is written out, so a new export is unlisted until
+ * and its provisional lists, both; and from 1c, the client's own terms, which several of the listed
+ * functions take as an argument (client-terms.mjs). "All" of a module is written out, so a new export is unlisted until
  * this list says otherwise.
  */
 const SURFACE = Object.freeze({
@@ -70,6 +71,7 @@ const SURFACE = Object.freeze({
     "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome"],
   "roster-sections.mjs": ["rosterSections"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
+  "client-terms.mjs": ["clientTerms"],
   // Provisional: machines and the switcher.
   "cli-adapter.mjs": ["parseEnvelope", "cliRemoteRoster", "cliStart", "launchChoiceArgv", "cliCapability", "writeTaskFile"],
   "remote-roster.mjs": ["remoteWorkspace", "remotePanel", "remoteAgents", "unavailableGroups"],
@@ -548,9 +550,11 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 38);
+  assert.equal(Object.keys(SURFACE).length, 39);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
+  // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
+  assert.deepEqual(SURFACE["client-terms.mjs"], ["clientTerms"]);
   // Not on it: the Desktop spawn dialog's copy, and the two files nobody imports.
   for (const module of ["spawn-messages.mjs", ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
 });

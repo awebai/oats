@@ -80,7 +80,8 @@ import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed, deploymentUnavailableText } from "../renderer/deployment-header.mjs";
 import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts } from "../../client/workspace-views.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
-import { THIS_MACHINE, shortPath, deploymentLabel } from "../../client/deployment-label.mjs";
+import { shortPath, deploymentLabel } from "../../client/deployment-label.mjs";
+import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -173,11 +174,11 @@ function deploymentInfo(d) {
     const attach = attachment(identity);
     // Not observed (yet): the reading or unavailable sentence, never a silent empty.
     const unavailable = live ? null : deploymentUnavailableText(observed || { status: "pending" });
-    return { id: d.id, local: true, machine: THIS_MACHINE, path: d.id, label: shortPath(d.id, { home: homedir() }), name: d.name,
+    return { id: d.id, local: true, machine: DESKTOP_TERMS.thisMachine, path: d.id, label: shortPath(d.id, { home: homedir() }), name: d.name,
       live: live && !readError, reachable: live, ...(readError ? { stale: true } : {}), identityFrom: identity ? "reported" : null, identity, attach,
       teamLabel: identity?.defaultTeam?.label ?? null,
-      ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable, readError })),
-      note: attach.note === "standalone" ? deploymentReason({ local: true, attach: { unattached: "standalone" } }) : null };
+      ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable, readError }, DESKTOP_TERMS)),
+      note: attach.note === "standalone" ? deploymentReason({ local: true, attach: { unattached: "standalone" } }, DESKTOP_TERMS) : null };
   }
   const g = d.group, machine = g.label || g.server;
   const reached = g.probe?.ok === true;
@@ -190,9 +191,9 @@ function deploymentInfo(d) {
   const identity = read.status === "identity" ? read.identity : null;
   const attach = attachment(identity);
   const reason = reasonFields(deploymentReasonParts({ local: false, machine, sshHost: g.target?.sshHost, probe: g.probe, identityStatus: read.status, attach,
-    ref: identity?.ref, cliReadsRemotes: cliReadsRemotes(), rosterError: g.remembered ? rosterFailure : null }));
+    ref: identity?.ref, cliReadsRemotes: cliReadsRemotes(), rosterError: g.remembered ? rosterFailure : null }, DESKTOP_TERMS));
   const moved = remoteIdentities.note(g.id);
-  const standalone = attach.note === "standalone" ? deploymentReason({ local: false, attach: { unattached: "standalone" } }) : null;
+  const standalone = attach.note === "standalone" ? deploymentReason({ local: false, attach: { unattached: "standalone" } }, DESKTOP_TERMS) : null;
   return { id: d.id, local: false, machine, path: g.target?.workspace || "", label: shortPath(g.target?.workspace || ""), name: d.name,
     live: reached, reachable: reached, identityFrom, identity, attach, teamLabel: identity?.defaultTeam?.label ?? null,
     ...reason, note: [moved, standalone].filter(Boolean).join(" ") || null };
@@ -360,7 +361,7 @@ function workspaceChoices(model = viewModel()) {
     const unmatched = v.unattached && identityFeature();
     return { id: v.id, name: v.name, team: null, deployments: [...v.deployments],
       // The deployments' labels, in the same order, for a view that is not on screen ("This Mac · ~/Agents/oats").
-      deploymentLabels: v.deployments.map((id) => deploymentLabel(model.infos.get(id))),
+      deploymentLabels: v.deployments.map((id) => deploymentLabel(model.infos.get(id), DESKTOP_TERMS)),
       // The switcher's one-liner (UI spec, #482): the machines, in order and once each, and how many deployments aren't live.
       machines: [...new Set(v.deployments.map((id) => model.infos.get(id)?.machine).filter(Boolean))],
       notLive: v.deployments.filter((id) => !model.infos.get(id)?.live).length,

@@ -12,6 +12,7 @@ import { capabilityRequest } from '../server/capabilities.mjs';
 import { createInspectCache } from '../server/inspect-cache.mjs';
 import { observationData } from '../../client/deployment-data.mjs';
 import { OBSERVE_MAX_AGE_FEATURE, validMaxAge, maxAgeArgv } from '../../client/deployment-contract.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
 const probe = fixture('version'), status = fixture('status'), header = fixture('workspace-status');
@@ -72,7 +73,7 @@ for (const action of ['capabilities', 'souls']) {
     for (const [maxAge, token] of [[60, '60'], [0, '0']]) {
       assert.deepEqual(workspaceArgv({ action, context, maxAge }).argv, [action, '--dir', context, '--max-age', token, '--json']);
       const io = capture(capabilities);
-      const result = await cliWorkspace(cli(true), { action, context, maxAge }, io);
+      const result = await cliWorkspace(cli(true), { action, context, maxAge }, DESKTOP_TERMS, io);
       assert.equal(result.ok, true);
       assert.deepEqual(io.calls, [[action, '--dir', context, '--max-age', token, '--json']]);
       assert.equal(flagCount(io.calls[0]), 1);
@@ -81,8 +82,8 @@ for (const action of ['capabilities', 'souls']) {
   test(`${action}: without the feature the flag is dropped from a copy and the argv is the flagless one`, async () => {
     const plain = capture(capabilities), given = capture(capabilities);
     const request = Object.freeze({ action, context, maxAge: 60 });
-    assert.equal((await cliWorkspace(cli(false), { action, context }, plain)).ok, true);
-    assert.equal((await cliWorkspace(cli(false), request, given)).ok, true);
+    assert.equal((await cliWorkspace(cli(false), { action, context }, DESKTOP_TERMS, plain)).ok, true);
+    assert.equal((await cliWorkspace(cli(false), request, DESKTOP_TERMS, given)).ok, true);
     assert.deepEqual(given.calls, plain.calls);
     assert.deepEqual(given.calls, [[action, '--dir', context, '--json']]);
     assert.deepEqual(request, { action, context, maxAge: 60 }, 'the caller\'s request is not mutated');
@@ -91,7 +92,7 @@ for (const action of ['capabilities', 'souls']) {
     for (const maxAge of INVALID) {
       assert.equal(workspaceArgv({ action, context, maxAge }), null, String(maxAge));
       for (const declared of [true, false]) {
-        const result = await cliWorkspace(cli(declared), { action, context, maxAge }, { exec: () => assert.fail(`exec with maxAge ${String(maxAge)}`) });
+        const result = await cliWorkspace(cli(declared), { action, context, maxAge }, DESKTOP_TERMS, { exec: () => assert.fail(`exec with maxAge ${String(maxAge)}`) });
         assert.equal(result.ok, false); assert.equal(result.reason.code, 'E_BAD_ARGS');
       }
     }
@@ -102,7 +103,7 @@ test('sync and onboard refuse maxAge (any value, feature or not) before any exec
   for (const base of requests) for (const maxAge of [60, 0, undefined]) {
     assert.equal(workspaceArgv({ ...base, maxAge }), null, `${base.action} ${String(maxAge)}`);
     for (const declared of [true, false]) {
-      const result = await cliWorkspace(cli(declared), { ...base, maxAge }, { exec: () => assert.fail(`${base.action} exec with maxAge`) });
+      const result = await cliWorkspace(cli(declared), { ...base, maxAge }, DESKTOP_TERMS, { exec: () => assert.fail(`${base.action} exec with maxAge`) });
       assert.equal(result.ok, false); assert.equal(result.reason.code, 'E_BAD_ARGS');
     }
   }

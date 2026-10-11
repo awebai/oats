@@ -9,6 +9,7 @@ import { hostReason } from '../../client/remote-address.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { object, lifecycleOptions, lifecyclePlan, lifecycleReceipt, stoppedTargets, planReference, lifecycleChoicesApplicable,
   lifecycleFailure, lifecycleReason, lifecycleDetailCode, answeringFeatures, busyHolder, busyHeadline, busyAbout, undescribedAnswer } from '../../client/lifecycle-contract.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 const clone = value => structuredClone(value);
 const cliIdentity = cli => JSON.stringify([cli?.bin, cli?.version, cli?.lifecycleApi,
   Array.isArray(cli?.features) ? [...cli.features].sort() : null]);
@@ -44,8 +45,8 @@ const kernelAnswered = envelope => envelope?.origin === 'kernel' && envelope.sch
  * reads by that (`holder`, busyHolder), local or remote, and names the target of `plan` the refusal is
  * about when that is not the instance acted on (`about`). */
 function failureReason(envelope, remote, { code = envelope?.error?.code, features = null, plan = null } = {}) {
-  const kernel = kernelAnswered(envelope), undescribed = kernel ? undescribedAnswer(code) : null;
-  const reason = undescribed || lifecycleReason(code), details = envelope?.error?.details;
+  const kernel = kernelAnswered(envelope), undescribed = kernel ? undescribedAnswer(code, DESKTOP_TERMS) : null;
+  const reason = undescribed || lifecycleReason(code, DESKTOP_TERMS), details = envelope?.error?.details;
   const holder = kernel ? busyHolder(code, details, features) : null, about = holder ? busyAbout(plan, details?.home) : null;
   const busy = holder ? { holder, ...(about ? { about } : {}) } : {};
   const message = holder ? busyHeadline(holder) : reason.message;
@@ -59,7 +60,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
   const sweep = () => { for (const map of [plans, actions]) for (const [key, value] of map) {
     if (!value.pending && value.expires <= now()) map.delete(key);
   } };
-  const denied = (code, target = null, extra = {}) => lifecycleFailure(code, { target, ...extra });
+  const denied = (code, target = null, extra = {}) => lifecycleFailure(code, DESKTOP_TERMS, { target, ...extra });
   function admitted(selector, operation, getContext, apply = false) {
     const context = getContext();
     const result = admitInstance(selector, { ...context, operation: 'lifecycle-plans' });
@@ -115,17 +116,17 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     // A failed retire can still carry a bounded incomplete-cleanup receipt.
     if (envelope.result) {
       const receipt = lifecycleReceipt(envelope.result, entry.plan, entry.key, { server: entry.remote?.server ?? null, features });
-      if (!receipt) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL') });
+      if (!receipt) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL', DESKTOP_TERMS) });
       const complete = receipt.action === 'stop' ? receipt.ok : receipt.removedDir && !receipt.incomplete;
       return { lifecycleApi: 1, status: receipt.deferred ? 'pending' : complete ? 'complete' : 'partial', target: entry.target, planRef: entry.id,
-        options: entry.choices, plan: null, receipt, reason: complete ? null : lifecycleReason(receipt.action === 'stop' ? 'E_SESSION_STOP_FAILED' : 'E_RETIRE_INCOMPLETE') };
+        options: entry.choices, plan: null, receipt, reason: complete ? null : lifecycleReason(receipt.action === 'stop' ? 'E_SESSION_STOP_FAILED' : 'E_RETIRE_INCOMPLETE', DESKTOP_TERMS) };
     }
     const code = envelope.error?.code;
     if (code === 'E_PLAN_STALE') {
       const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, entry.plan.action, entry.choices);
-      if (!fresh) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL') });
+      if (!fresh) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL', DESKTOP_TERMS) });
       const replacement = storePlan(fresh, entry, entry.choices);
-      return replacement ? displayed(replacement, 'stale', lifecycleReason(code)) : failure(code, 'stale', { plan: fresh });
+      return replacement ? displayed(replacement, 'stale', lifecycleReason(code, DESKTOP_TERMS)) : failure(code, 'stale', { plan: fresh });
     }
     if (code === 'E_CHILDREN_RUNNING' && entry.plan.action === 'retire') {
       const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, 'retire', entry.choices);

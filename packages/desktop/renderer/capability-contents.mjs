@@ -20,7 +20,8 @@
  * the controller owns that row too (`triggerSources`, a second long-lived element the page appends into its
  * card on every rebuild) and tells the host when it appears or disappears (`onProvidesChange`). Neither the
  * declaration nor the kernel's problems with it change the section's state, its problems or its warnings. */
-import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, triggerSourcesView, CAPABILITY_SHOW_UNREADABLE } from '../../client/capability-show-contract.mjs';
+import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, triggerSourcesView, capabilityShowUnreadable } from '../../client/capability-show-contract.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { fillTriggerSourcesRow } from './capability-page.mjs';
 import { contentsCardCSS, sizeText, firstSentence, createContentsTree, createContentsReader } from './contents-reader.mjs';
 import { createDataState, skeleton, captureFocusState } from './loading.mjs';
@@ -168,7 +169,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
       const result = await request({ action: 'show', capability: asked });
       if (!alive || ticket !== showTicket) return;
       data = capabilityShowData(result, { selector: asked });
-      if (!data) throw Object.assign(new Error(CAPABILITY_SHOW_UNREADABLE), { code: 'E_CLI_PROTOCOL' });
+      if (!data) throw Object.assign(new Error(capabilityShowUnreadable(DESKTOP_TERMS)), { code: 'E_CLI_PROTOCOL' });
       // The member head moved between the catalog read and this one: never render a mix of the two.
       if (rowCommit && data.commit !== rowCommit) throw Object.assign(new Error(CONTENTS_COPY.moved), { code: 'E_CAPABILITY_MOVED' });
     } catch (error) {
@@ -327,7 +328,7 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     request({ action: 'file', capability: selector, path }).then(result => {
       if (!alive || ticket !== fileTicket) return; // the user has left this file (A→B→A: B's ticket won, A's new read owns it)
       const data = capabilityFileData(result, { selector, path });
-      if (!data) throw Object.assign(new Error(CAPABILITY_SHOW_UNREADABLE), { code: 'E_CLI_PROTOCOL' });
+      if (!data) throw Object.assign(new Error(capabilityShowUnreadable(DESKTOP_TERMS)), { code: 'E_CLI_PROTOCOL' });
       if (data.commit !== show.commit) throw Object.assign(new Error(CONTENTS_COPY.moved), { code: 'E_CAPABILITY_MOVED' });
       fileState.succeed(); paintHead(path, data.file.bytes ?? listed.file.bytes, data.file.truncated); paintFile(data.file);
     }).catch(error => {

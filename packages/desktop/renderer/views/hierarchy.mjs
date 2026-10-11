@@ -64,6 +64,7 @@ import { icon } from "../shell-icons.mjs";
 import { attachDeployments } from "../view-deployments.mjs";
 import { isMultiDeployment, splitByDeployment, rowStale } from "../../../client/roster-sections.mjs";
 import { deploymentLabel } from "../../../client/deployment-label.mjs";
+import { DESKTOP_TERMS } from "../desktop-terms.mjs";
 import { ALL_TAB, deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, onDeploymentTabRequest } from "../deployment-tabs.mjs";
 import { deploymentsPageCSS, createDeploymentTabBar, deploymentHead, deploymentReasonBlock, deploymentNeedsWords, deploymentHasWords } from "../deployments-page.mjs";
 
@@ -315,7 +316,7 @@ function stackDeployments(entries) {
     const lay = rows.length ? layoutClusters(rows) : { placed: [], soloBlock: null, clusters: [], width: 0, height: 0 };
     for (const p of lay.placed) p.y += dy;
     if (lay.soloBlock) lay.soloBlock.y += dy;
-    sections.push({ deployment, rows, label: deploymentLabel(deployment), y: top, room, ...lay });
+    sections.push({ deployment, rows, label: deploymentLabel(deployment, DESKTOP_TERMS), y: top, room, ...lay });
     width = Math.max(width, lay.width);
     top = dy + lay.height + DEP_GAP;
   }

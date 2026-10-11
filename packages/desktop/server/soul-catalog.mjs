@@ -8,6 +8,7 @@
  * (`prefetch`) and binds it to the key that cycle's workspace status produces
  * (`settle`); the holding rules are keyed-catalog.mjs's. */
 import { cliWorkspace } from '../../client/workspace-cli.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { soulsData, observationData } from '../../client/deployment-data.mjs';
 import { createKeyedCatalog } from './keyed-catalog.mjs';
 
@@ -24,7 +25,7 @@ export function soulCatalogKey(cli, workspaceStatus) {
     (ws.external || []).map(e => [e.source ?? null, e.soul ?? null])]);
 }
 
-export function createSoulCatalog({ invoke = cliWorkspace, now = () => Date.now() } = {}) {
+export function createSoulCatalog({ invoke = (cli, options) => cliWorkspace(cli, options, DESKTOP_TERMS), now = () => Date.now() } = {}) {
   async function read(deployment, cli, options) {
     try {
       // `maxAge` only reaches argv when the kernel declares observe-max-age (the adapter's call).

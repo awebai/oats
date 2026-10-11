@@ -27,6 +27,7 @@ import { deploymentScopeLabel, createDeploymentScopeLine, deploymentScopeCSS } f
 import { createAutomationsView, automationsCSS } from "../renderer/views/automations.mjs";
 import { currentWorkspace, setWorkspace } from "../renderer/views/common.mjs";
 import { viewContext } from "./helpers/view-context.mjs";
+import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 
 const read = (name) => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), theme = read("theme.css"), html = read("index.html"), shellSource = read("shell.mjs");
@@ -86,7 +87,7 @@ function roster(t, instances, deployments) {
 
 test("source pin: the shell's roster groups through rosterSections with the shown view's deployments", () => {
   assert.ok(renderSource);
-  assert.match(renderSource, /rosterSections\(instances, visible, contextDeployments\)/);
+  assert.match(renderSource, /rosterSections\(instances, visible, contextDeployments, DESKTOP_TERMS\)/);
   assert.match(shellSource, /contextDeployments = panelDeployments\(panel\);/);
 });
 
@@ -156,10 +157,10 @@ test("roster headings: a deployment with no instances has no heading", (t) => {
 
 test("rosterSections: a pending spawn without a deployment joins the primary; empty deployments are left out", () => {
   const rows = [row("a", LOCAL), { instance: "spawning", agent: "soul", home: "/x/spawning", pendingSpawn: {} }];
-  const sections = vd.rosterSections(rows, rows, [LOCAL, ALTAIR]);
+  const sections = vd.rosterSections(rows, rows, [LOCAL, ALTAIR], DESKTOP_TERMS);
   assert.deepEqual(sections.map((s) => s.deployment.id), [LOCAL.id]);
   assert.deepEqual(sections[0].groups.flatMap((g) => g.clusters.flatMap((c) => c.instances.map((i) => i.instance))), ["a", "spawning"]);
-  assert.equal(vd.rosterSections(rows, rows, [LOCAL]).length, 1); assert.equal(vd.rosterSections(rows, rows, [LOCAL])[0].deployment, null);
+  assert.equal(vd.rosterSections(rows, rows, [LOCAL], DESKTOP_TERMS).length, 1); assert.equal(vd.rosterSections(rows, rows, [LOCAL], DESKTOP_TERMS)[0].deployment, null);
 });
 
 /* ── the switcher ── */

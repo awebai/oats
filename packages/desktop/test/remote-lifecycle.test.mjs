@@ -5,6 +5,7 @@ import { cliLifecycle, lifecycleArgv } from '../../client/lifecycle-cli.mjs';
 import { lifecycleReceipt, lifecycleReason } from '../../client/lifecycle-contract.mjs';
 import { remoteReason } from '../../client/remote-address.mjs';
 import { cli, instance, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options } from './helpers/lifecycle-fixture.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 const remoteRow = { ...instance, server: 'build', addressable: true, missingRemotely: false, savedRoute: false, running: true };
 const remoteContext = () => ({ cli: { ...structuredClone(cli), remote: ['lifecycle-plans'] }, localCwd: '/Users/me/work',
@@ -111,8 +112,8 @@ test('remote Remove refused by inspection: an unknown outcome whose cause is the
   const result = await f.apply((await f.plan('retire')).planRef);
   assert.equal(result.status, 'unknown');
   assert.equal(result.reason.code, 'E_OUTCOME_UNKNOWN');
-  const headline = lifecycleReason('E_WORK_INSPECTION_FAILED').message;
-  assert.notEqual(headline, lifecycleReason('E_CLI_FAILED').message);
+  const headline = lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS).message;
+  assert.notEqual(headline, lifecycleReason('E_CLI_FAILED', DESKTOP_TERMS).message);
   assert.deepEqual(result.cause, { code: 'E_WORK_INSPECTION_FAILED', message: headline, detail, remote: true });
   assert.deepEqual(remoteReason(result.cause), result.cause, 'the dialog keeps the headline and its Details');
 });

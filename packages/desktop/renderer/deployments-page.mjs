@@ -16,6 +16,7 @@
 import { deploymentState } from '../../client/roster-sections.mjs';
 import { deploymentMark } from './view-deployments.mjs';
 import { deploymentLabel, deploymentLabelParts } from '../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { runtimeCounts } from '../../client/instance-presentation.mjs';
 import { tabBarCSS } from './workspace-discovery.mjs';
 
@@ -151,7 +152,7 @@ export const deploymentHasWords = (deployment) => deploymentNeedsWords(deploymen
  * holds it (the visible line is aria-hidden; the disclosure stays reachable). `open` and `onToggle`
  * carry the disclosure's state across repaints. */
 export function deploymentHead(doc, { deployment, rows, open = false, onToggle }) {
-  const label = deploymentLabel(deployment), state = deploymentState(deployment), counts = deploymentCounts(rows);
+  const label = deploymentLabel(deployment, DESKTOP_TERMS), state = deploymentState(deployment), counts = deploymentCounts(rows);
   // `live` here means "nothing to explain": a reached deployment that is not matched explains itself
   // under a "not matched" chip.
   const live = !deploymentNeedsWords(deployment);
@@ -160,7 +161,7 @@ export function deploymentHead(doc, { deployment, rows, open = false, onToggle }
   const line = el(doc, 'div', undefined, 'hier-dline'); line.setAttribute('aria-hidden', 'true');
   // The machine in the group-label type (uppercase); the path beside it in normal case, never
   // transformed: a path is case-sensitive.
-  const parts = deploymentLabelParts(deployment);
+  const parts = deploymentLabelParts(deployment, DESKTOP_TERMS);
   const name = el(doc, 'span', undefined, 'hier-dname');
   name.append(el(doc, 'span', parts.machine, 'cnm hier-dmachine'));
   if (parts.path) name.append(doc.createTextNode(' '), el(doc, 'span', `· ${parts.path}`, 'cct hier-dpath'));

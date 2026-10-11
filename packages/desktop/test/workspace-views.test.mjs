@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readIdentity, attachment, viewId, deploymentReason, deploymentReasonParts, buildViews } from '../../client/workspace-views.mjs';
-import { THIS_MACHINE } from '../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 const KEY = 'github.com/awebai/oats';
 const identity = (over = {}) => ({ key: KEY, ref: 'git:github.com/awebai/oats', keyFrom: 'workspace', standalone: false,
@@ -29,7 +29,7 @@ test('keyFrom "member" is unresolved: never matched, unattached with its reason'
   assert.deepEqual(attach(member), { unattached: 'member' });
   const views = buildViews([dep('/a', member), dep('/b', identity({ key: 'github.com/awebai/oats-member' }))]);
   assert.deepEqual(views.map(v => [v.id, v.unattached]), [[viewId('github.com/awebai/oats-member', 'aweb:oats'), false], ['/a', true]]);
-  assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(member) }),
+  assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(member) }, DESKTOP_TERMS),
     'This deployment\'s workspace reference names a member whose workspace isn\'t known yet; run oats sync there.');
 });
 
@@ -38,9 +38,9 @@ test('a null key is an unusable reference: unattached, the reason shows the ref'
   assert.deepEqual(attach(bad), { unattached: 'invalid-ref' });
   assert.deepEqual(attach(identity({ key: null })), { unattached: 'invalid-ref' }, 'a null key never matches, whatever keyFrom says');
   assert.deepEqual(buildViews([dep('/a', bad)]), [{ id: '/a', name: 'a', key: null, team: null, unattached: true, deployments: ['/a'], primary: '/a' }]);
-  assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(bad), ref: 'git:not a repo' }),
+  assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(bad), ref: 'git:not a repo' }, DESKTOP_TERMS),
     'This deployment\'s workspace reference (git:not a repo) isn\'t valid; fix oats-local.yaml.');
-  assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(bad), ref: null }),
+  assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(bad), ref: null }, DESKTOP_TERMS),
     'This deployment\'s workspace reference isn\'t valid; fix oats-local.yaml.');
 });
 
@@ -50,7 +50,7 @@ test('standalone:false, teamsFrom "local", null default team: unknown, never mat
     assert.deepEqual(attach(unknown), { unattached: 'unknown-team' });
     const views = buildViews([dep('/a', unknown), dep('/b', identity({ teamsFrom: 'local', defaultTeam, standalone: true }))]);
     assert.equal(views.find(v => v.deployments.includes('/a')).unattached, true);
-    assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(unknown) }),
+    assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(unknown) }, DESKTOP_TERMS),
       'This host hasn\'t observed its workspace yet; run oats sync there.');
   }
   // A non-null default team (a locally mapped team) matches normally.
@@ -64,7 +64,7 @@ test('standalone:true, teamsFrom "local", null team: attached as unmapped, match
   const views = buildViews([dep('/a', standalone), dep('remote:altair:a1', identity({ defaultTeam: { label: 'default', team: null } })),
     dep('/c', identity())]);
   assert.deepEqual(views.map(v => v.deployments), [['/a', 'remote:altair:a1'], ['/c']], 'unmapped joins unmapped, never the mapped team');
-  assert.equal(deploymentReason({ local: true, attach: { unattached: 'standalone' } }), 'Teams are local only on this host (standalone).');
+  assert.equal(deploymentReason({ local: true, attach: { unattached: 'standalone' } }, DESKTOP_TERMS), 'Teams are local only on this host (standalone).');
 });
 
 test('teamsFrom observed or cache, null team: unmapped matches only unmapped (never a mapped team)', () => {
@@ -156,11 +156,11 @@ test('readIdentity copies a valid identity and rejects every malformed shape as 
 });
 
 const remoteReason = (over = {}) => deploymentReason({ local: false, machine: 'altair', sshHost: 'altair.lan', probe: { ok: true },
-  identityStatus: 'identity', attach: attach(identity()), cliReadsRemotes: true, ...over });
+  identityStatus: 'identity', attach: attach(identity()), cliReadsRemotes: true, ...over }, DESKTOP_TERMS);
 
 test('reasons: one plain sentence per case, null for a live matched deployment', () => {
   assert.equal(remoteReason(), null);
-  assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(identity()) }), null);
+  assert.equal(deploymentReason({ local: true, identityStatus: 'identity', attach: attach(identity()) }, DESKTOP_TERMS), null);
   assert.equal(remoteReason({ probe: { ok: false, error: { code: 'E_SSH', message: 'ssh to altair.lan failed: Permission denied (publickey)' } } }),
     'altair needs ssh to connect without a prompt; run `ssh altair.lan` once in a terminal.');
   assert.equal(remoteReason({ sshHost: undefined, probe: { ok: false, error: { code: 'E_SSH', message: 'refused' } } }),
@@ -180,43 +180,43 @@ test('reasons: one plain sentence per case, null for a live matched deployment',
     'This deployment\'s workspace reference (git:bad) isn\'t valid; fix oats-local.yaml.');
   assert.equal(remoteReason({ attach: attach(identity({ teamsFrom: 'local', defaultTeam: null })) }),
     'This host hasn\'t observed its workspace yet; run oats sync there.');
-  assert.equal(deploymentReason({ local: false, attach: { unattached: 'standalone' } }), 'Teams are local only on this host (standalone).');
+  assert.equal(deploymentReason({ local: false, attach: { unattached: 'standalone' } }, DESKTOP_TERMS), 'Teams are local only on this host (standalone).');
   assert.equal(remoteReason({ cliReadsRemotes: false, probe: { ok: false, error: { code: 'E_SSH' } } }),
     'This computer\'s OATS can\'t read other machines; update OATS here.', 'the local CLI comes first');
   assert.equal(remoteReason({ identityStatus: 'feature', attach: attachment(null) }),
     'This computer\'s OATS is too old to read other machines\' workspaces; update OATS here.');
-  assert.equal(deploymentReason({ local: true, identityStatus: 'feature', attach: attachment(null) }),
+  assert.equal(deploymentReason({ local: true, identityStatus: 'feature', attach: attachment(null) }, DESKTOP_TERMS),
     'This computer\'s OATS is too old to report its workspace; update OATS here.');
-  assert.equal(deploymentReason({ local: true, unavailable: 'E_CLI_FAILED: boom', identityStatus: 'none', attach: attachment(null) }), 'E_CLI_FAILED: boom');
+  assert.equal(deploymentReason({ local: true, unavailable: 'E_CLI_FAILED: boom', identityStatus: 'none', attach: attachment(null) }, DESKTOP_TERMS), 'E_CLI_FAILED: boom');
   for (const identityStatus of ['old', 'none']) {
-    assert.equal(deploymentReason({ local: true, identityStatus, attach: attachment(null) }), 'This deployment reports no workspace identity.', identityStatus);
+    assert.equal(deploymentReason({ local: true, identityStatus, attach: attachment(null) }, DESKTOP_TERMS), 'This deployment reports no workspace identity.', identityStatus);
   }
-  assert.equal(deploymentReason({ local: true, identityStatus: 'invalid', attach: attachment(null) }), `${THIS_MACHINE} reported a workspace this Desktop can't read.`);
+  assert.equal(deploymentReason({ local: true, identityStatus: 'invalid', attach: attachment(null) }, DESKTOP_TERMS), "This Mac reported a workspace this Desktop can't read.");
   assert.equal(remoteReason({ identityStatus: 'invalid', attach: attachment(null) }), 'altair reported a workspace this Desktop can\'t read.');
 });
 
 test('reason parts: a short label for headings and the switcher, the full sentence, and the fix as plain steps (UI spec)', () => {
-  const ssh = deploymentReasonParts({ local: false, machine: 'altair', sshHost: 'altair.lan', probe: { ok: false, error: { code: 'E_SSH', message: 'Host key verification failed.' } } });
+  const ssh = deploymentReasonParts({ local: false, machine: 'altair', sshHost: 'altair.lan', probe: { ok: false, error: { code: 'E_SSH', message: 'Host key verification failed.' } } }, DESKTOP_TERMS);
   assert.deepEqual(ssh, { short: 'ssh needs a prompt', detail: 'altair needs ssh to connect without a prompt; run `ssh altair.lan` once in a terminal.',
     fix: ['Run `ssh altair.lan` once in a terminal and answer its prompt (a host key or a password).', 'Desktop tries again on its next read.'] });
-  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'rigel', probe: { ok: true }, identityStatus: 'old' }),
+  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'rigel', probe: { ok: true }, identityStatus: 'old' }, DESKTOP_TERMS),
     { short: 'OATS too old to report its workspace', detail: 'rigel\'s OATS is too old to report its workspace; update OATS there.', fix: ['Update OATS on rigel.'] });
-  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'vega', probe: { ok: false, error: { code: 'E_SSH', message: 'Connection timed out' } } }).fix, [], 'a timeout has no step: its sentence says what happens next');
-  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'member' } }).fix, ['Run `oats sync` in this deployment.']);
-  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'altair', probe: { ok: true }, identityStatus: 'identity', attach: { unattached: 'unknown-team' } }).fix, ['Run `oats sync` on altair.']);
-  assert.equal(deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' } }), null);
+  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'vega', probe: { ok: false, error: { code: 'E_SSH', message: 'Connection timed out' } } }, DESKTOP_TERMS).fix, [], 'a timeout has no step: its sentence says what happens next');
+  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'member' } }, DESKTOP_TERMS).fix, ['Run `oats sync` in this deployment.']);
+  assert.deepEqual(deploymentReasonParts({ local: false, machine: 'altair', probe: { ok: true }, identityStatus: 'identity', attach: { unattached: 'unknown-team' } }, DESKTOP_TERMS).fix, ['Run `oats sync` on altair.']);
+  assert.equal(deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' } }, DESKTOP_TERMS), null);
   // The steps carry every fact the sentence has (a heading with steps shows only them): the invalid reference.
-  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'invalid-ref' }, ref: 'git:x' }).fix, ['Fix the workspace reference (`git:x`) in its oats-local.yaml.']);
-  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'invalid-ref' }, ref: null }).fix, ['Fix the workspace reference in its oats-local.yaml.']);
+  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'invalid-ref' }, ref: 'git:x' }, DESKTOP_TERMS).fix, ['Fix the workspace reference (`git:x`) in its oats-local.yaml.']);
+  assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'invalid-ref' }, ref: null }, DESKTOP_TERMS).fix, ['Fix the workspace reference in its oats-local.yaml.']);
   // A failed re-read of this computer's deployment (the last observation kept): the kernel's message, first.
-  assert.deepEqual(deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' }, readError: 'the cache is locked' }),
+  assert.deepEqual(deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' }, readError: 'the cache is locked' }, DESKTOP_TERMS),
     { short: 'Last read failed', detail: 'This deployment\'s last read failed: the cache is locked. It shows what was last observed.', fix: [] });
   // Every reason the sentence form gives has a short label (never a heading without words).
   for (const d of [{ local: true, unavailable: 'Reading…' }, { local: true, identityStatus: 'feature' }, { local: false, cliReadsRemotes: false },
     { local: false, rosterError: 'boom' }, { local: false, probe: { ok: false, error: { code: 'E_X' } } }, { local: true, identityStatus: 'invalid' },
     { local: true, attach: { unattached: 'invalid-ref' }, ref: 'git:x' }, { local: true, attach: { unattached: 'standalone' } }, { local: true, readError: 'boom' }]) {
-    const parts = deploymentReasonParts(d);
+    const parts = deploymentReasonParts(d, DESKTOP_TERMS);
     assert.ok(parts.short && parts.detail && Array.isArray(parts.fix), JSON.stringify(d));
-    assert.equal(deploymentReason(d), parts.detail);
+    assert.equal(deploymentReason(d, DESKTOP_TERMS), parts.detail);
   }
 });

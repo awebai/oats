@@ -7,6 +7,7 @@
  * requestDeploymentTab(): it records the choice and tells the listeners (the shell shows the
  * Deployments stage; the page re-reads its tab). */
 import { machineLabels } from '../../client/deployment-label.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { validWorkspaceId as validId } from './workspace-id.mjs';
 
 export const DEPLOYMENT_TAB_KEY = 'oats.desktop.deploymentTab';
@@ -25,7 +26,7 @@ function readMap(storage) {
  * under its machine label (deployment-label.mjs machineLabels). */
 export function deploymentTabs(deployments) {
   const list = Array.isArray(deployments) ? deployments.filter(d => d && validId(d.id)) : [];
-  const labels = machineLabels(list);
+  const labels = machineLabels(list, DESKTOP_TERMS);
   return [...(list.length >= 2 ? [{ id: ALL_TAB, label: 'All', deployment: null }] : []),
     ...list.map(d => ({ id: d.id, label: labels.get(d.id), deployment: d }))];
 }
