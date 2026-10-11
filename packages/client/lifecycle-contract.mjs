@@ -125,17 +125,83 @@ export function lifecyclePlan(v, target, operation, options) {
   return { ...common, facts: { session, work, workMode: f.workMode, repo: f.repo, recordedBranch: f.recordedBranch,
     children, ambiguous, pullRequest: 'unknown' }, defaults: { retainWorktree: d.retainWorktree, stopChildren: true, retainChildren: true } };
 }
-export function stoppedTargets(value, expected, withState = false) {
+/** The kernel feature from which `stillRunning: []` in a failed row says the harness exited
+ * (docs/desktop-cli-api.md, #still-running). A kernel without it answers `[]` there for a session that was
+ * not seen to stop. */
+const KERNEL_CODES_FEATURE = 'lifecycle-kernel-codes';
+const PROBE_FEATURES_FEATURE = 'server-probe-features';
+const names = (features, feature) => Array.isArray(features) && features.includes(feature);
+/** The features of the kernel that answers a command, or null when they are not known. A local command
+ * (`routed: false`): the selected CLI's own list. A routed one (`routed: true`): the host's list, which is
+ * known only when this computer's CLI relays it (feature server-probe-features), the workspace's roster
+ * `group` was read (`probe.ok === true`) and `probe.features` is an array. Anything else is unknown, a
+ * missing `routed` too: never decided from a refusal, and never by probing. Pure: it keeps nothing. */
+export function answeringFeatures({ cli, routed, group } = {}) {
+  if (cli?.ok !== true || !Array.isArray(cli.features)) return null;
+  if (routed === false) return [...cli.features];
+  const probe = group?.probe;
+  return routed === true && cli.features.includes(PROBE_FEATURES_FEATURE) && probe?.ok === true && Array.isArray(probe.features) ? [...probe.features] : null;
+}
+/** The rows of a stop's `results` or of a retire's `childrenStopped`. `decoded: false` reads a kernel's answer:
+ * a failed row's `stillRunning: []` is kept only when `features` (the answering kernel's, answeringFeatures)
+ * names lifecycle-kernel-codes, and is `null` otherwise, which is what that kernel's `[]` established.
+ * `decoded: true` validates rows a server already decoded, and keeps them as they are. */
+function stoppedRows(value, expected, { withState = false, decoded = false, features = null } = {}) {
   if (!Array.isArray(value) || value.length !== expected.length || value.length > MAX_LIFECYCLE_TARGETS) return null;
+  const exited = decoded || names(features, KERNEL_CODES_FEATURE);
   const result = value.map((v, index) => {
     if (!object(v) || v.home !== expected[index].home || v.instance !== expected[index].instance || typeof v.ok !== 'boolean') return null;
     if (v.ok) return typeof v.stopped === 'boolean' && typeof v.alreadyIdle === 'boolean' && (!withState || text(v.state, 128))
       ? { instance: v.instance, home: v.home, ok: true, stopped: v.stopped, alreadyIdle: v.alreadyIdle, ...(withState ? { state: v.state } : {}) } : null;
     if (v.stillRunning !== null && (!Array.isArray(v.stillRunning) || v.stillRunning.length > 128 || v.stillRunning.some(p => !Number.isSafeInteger(p) || p <= 0))) return null;
-    return { instance: v.instance, home: v.home, ok: false, code: lifecycleReason(v.code).code, stillRunning: v.stillRunning === null ? null : [...v.stillRunning] };
+    return { instance: v.instance, home: v.home, ok: false, code: lifecycleReason(v.code).code,
+      stillRunning: v.stillRunning === null || !v.stillRunning.length && !exited ? null : [...v.stillRunning] };
   });
   return result.some(v => !v) ? null : result;
 }
+/** Decode the rows of a kernel's answer. `features`: the answering kernel's (answeringFeatures). Not given,
+ * null, or a list without lifecycle-kernel-codes all read a failed row's `[]` as `null`: a caller that
+ * forgets the argument makes the weaker claim. From here on `[]` in a failed row has one meaning: the
+ * harness exited, and what failed came after. */
+export function stoppedTargets(value, expected, withState = false, { features = null } = {}) {
+  return stoppedRows(value, expected, { withState, features });
+}
+/** Validate rows a server already decoded (the reply's `childrenStopped`). Never for a kernel's answer. */
+export function decodedStoppedTargets(value, expected) { return stoppedRows(value, expected, { decoded: true }); }
+/** What a decoded row is, as data. The only place that reads a row for wording: every reader of a stop's
+ * result (a line, the sentence above the rows) decides from this.
+ *   idle         ok, the session was already stopped
+ *   stopped      ok
+ *   running      failed, and these signalled processes were seen alive after the wait
+ *   unrecorded   failed with `stillRunning: []`: the harness exited, and what failed came after
+ *   unconfirmed  failed with `stillRunning: null`: nothing is established */
+export function stoppedRowKind(row) {
+  if (row.ok) return row.alreadyIdle ? 'idle' : 'stopped';
+  return !Array.isArray(row.stillRunning) ? 'unconfirmed' : row.stillRunning.length ? 'running' : 'unrecorded';
+}
+/** A row's line, after its name. */
+export function stoppedRowText(row) {
+  const kind = stoppedRowKind(row);
+  return kind === 'idle' ? 'Was already stopped' : kind === 'stopped' ? 'Stopped'
+    : kind === 'unrecorded' ? "Stopped, but OATS couldn't record it"
+    : kind === 'running' ? `Didn't stop (still running: ${row.stillRunning.join(', ')})` : "Didn't stop";
+}
+/** Some row failed, and every failed row is `unrecorded`: each session stopped, and OATS could not record all of it. */
+const stoppedUnrecorded = rows => rows.some(r => !r.ok) && rows.every(r => r.ok || stoppedRowKind(r) === 'unrecorded');
+/** How a stop's result that is not `ok` reads above its rows: `{ status, title }`. A reader words a stop's
+ * result from the rows, through this and childrenRefusedMessage, never from the reply's `reason.message`
+ * (a partial stop's reason stays E_SESSION_STOP_FAILED's sentence, whatever the rows say). */
+export function stopResultWords(rows) {
+  if (!stoppedUnrecorded(rows)) return { status: 'Not every session stopped:', title: 'Not every session stopped' };
+  return { title: 'Stopped, but not recorded', status: rows.length === 1 ? `${rows[0].instance} stopped, but OATS couldn't record it.`
+    : "Every session stopped, but OATS couldn't record all of them:" };
+}
+const CHILDREN_UNRECORDED = "The child instances stopped, but OATS couldn't record it for all of them, so nothing was retired.";
+/** The sentence for a retire refused with E_CHILDREN_RUNNING, chosen from its child rows. "Nothing was
+ * retired" rests on the code (an answer with no result, refused before the retire's own effects); "the
+ * child instances stopped" rests on the rows: every one is ok, or failed with `[]`. Like stopResultWords,
+ * a reader asks this, never the reply's `reason.message`. */
+export const childrenRefusedMessage = rows => stoppedUnrecorded(rows) ? CHILDREN_UNRECORDED : messages.E_CHILDREN_RUNNING;
 /** The one branch deletion a retire reports (feature `worktree-event`, 0.49.0): it finished the compensation of a
  * spawn killed while its `worktree` hooks ran. `{branch, branchDeleted: true}`, or `{branch, branchDeleted: false,
  * reason}`. Additive and read tolerantly: anything else is ignored (null), never a refused receipt. Its text is
@@ -146,18 +212,20 @@ export function spawnCompensationOf(v) {
   if (v.branchDeleted) return { branch: v.branch, branchDeleted: true };
   return label(v.reason, 4096) ? { branch: v.branch, branchDeleted: false, reason: v.reason } : null;
 }
-/** `server`: the request was routed there. The routed retire's result then may also carry `server`
- * and `target` (its route); a local result carrying them is refused.
+/** Decode a kernel's receipt. `server`: the request was routed there. The routed retire's result then may
+ * also carry `server` and `target` (its route); a local result carrying them is refused. `features`: the
+ * answering kernel's (answeringFeatures), for its rows (stoppedTargets).
  * Desktop asks for no branch deletion, so a retire result that reports one, or a skipped one, is not the
  * answer to its request and is refused whole, a deferred one too: nothing of it is projected. The kernel's one
  * exception, an interrupted spawn's branch (`spawnCompensation`), is not such a report: it is projected. */
-export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
+export function lifecycleReceipt(v, plan, key, { server = null, features = null } = {}) { return receipt(v, plan, key, { server, features }); }
+function receipt(v, plan, key, { server = null, features = null, decoded = false } = {}) {
   if (!object(v) || v.idempotencyKey !== key || v.planRevision !== plan.planRevision || typeof v.replayed !== 'boolean') return null;
   if (!server ? Object.hasOwn(v, 'server') || Object.hasOwn(v, 'target')
     : plan.action !== 'retire' && (Object.hasOwn(v, 'server') || Object.hasOwn(v, 'target'))
       || Object.hasOwn(v, 'server') && v.server !== server || Object.hasOwn(v, 'target') && !object(v.target)) return null;
   if (plan.action === 'stop') {
-    const results = stoppedTargets(v.results, plan.targets, true);
+    const results = stoppedRows(v.results, plan.targets, { withState: true, decoded, features });
     if (v.lifecycleApi !== 1 || v.action !== 'stop' || v.instance !== plan.instance || v.home !== plan.home || !at(v.at)
       || !results || v.ok !== results.every(r => r.ok) || !Array.isArray(v.retained)
       || JSON.stringify(v.retained) !== JSON.stringify(['home', 'work', 'transcript', 'launch'])) return null;
@@ -170,7 +238,7 @@ export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
     planRevision: v.planRevision, replayed: v.replayed, deferred: true };
   if (v.retired !== plan.instance || typeof v.removedDir !== 'boolean' || typeof v.worktreeRemoved !== 'boolean'
     || (v.rollbackIncomplete !== undefined && !strings(v.rollbackIncomplete)) || !(v.retainedHome === undefined || v.retainedHome === plan.home)) return null;
-  const childrenStopped = stoppedTargets(v.childrenStopped, plan.facts.children);
+  const childrenStopped = stoppedRows(v.childrenStopped, plan.facts.children, { decoded, features });
   if (!childrenStopped || childrenStopped.some(c => !c.ok)) return null;
   let retention = null;
   if (v.retention !== null) {
@@ -186,13 +254,14 @@ export function lifecycleReceipt(v, plan, key, { server = null } = {}) {
     incomplete: !!v.rollbackIncomplete?.length, retainedHome: v.retainedHome ?? null,
     recoveryPath: absolute(recovery) ? recovery : null, ...(compensation ? { spawnCompensation: compensation } : {}) };
 }
-/** Validate the public projection without exposing the server's private key. */
+/** Validate the public projection without exposing the server's private key. Its rows were decoded by
+ * the server and are kept as they are: this takes no features and never reads a kernel's own row. */
 export function publicLifecycleReceipt(v, plan) {
   if (!object(v) || v.action !== plan.action || v.instance !== plan.instance || v.home !== plan.home) return null;
-  if (v.action === 'stop') return lifecycleReceipt({ ...v, lifecycleApi: 1, idempotencyKey: 'public' }, plan, 'public');
+  if (v.action === 'stop') return receipt({ ...v, lifecycleApi: 1, idempotencyKey: 'public' }, plan, 'public', { decoded: true });
   if (v.deferred !== true && (typeof v.incomplete !== 'boolean' || !(v.retainedHome === null || v.retainedHome === plan.home)
     || !(v.recoveryPath === null || absolute(v.recoveryPath)))) return null;
-  return lifecycleReceipt({ ...v, retired: v.instance, idempotencyKey: 'public',
+  return receipt({ ...v, retired: v.instance, idempotencyKey: 'public',
     retainedHome: v.retainedHome || undefined, rollbackIncomplete: v.incomplete ? ['reported incomplete cleanup'] : undefined,
-    workRecovery: v.recoveryPath ? { path: v.recoveryPath } : undefined }, plan, 'public');
+    workRecovery: v.recoveryPath ? { path: v.recoveryPath } : undefined }, plan, 'public', { decoded: true });
 }

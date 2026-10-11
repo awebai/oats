@@ -8,7 +8,7 @@ import { gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { hostReason } from '../../client/remote-address.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { object, lifecycleOptions, lifecyclePlan, lifecycleReceipt, stoppedTargets, planReference, lifecycleChoicesApplicable,
-  lifecycleFailure, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
+  lifecycleFailure, lifecycleReason, lifecycleDetailCode, answeringFeatures } from '../../client/lifecycle-contract.mjs';
 const clone = value => structuredClone(value);
 const cliIdentity = cli => JSON.stringify([cli?.bin, cli?.version, cli?.lifecycleApi,
   Array.isArray(cli?.features) ? [...cli.features].sort() : null]);
@@ -51,7 +51,9 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     const result = admitInstance(selector, { ...context, operation: 'lifecycle-plans' });
     if (result.code) return { failure: denied(result.code, result.target, result.reason ? { reason: result.reason } : {}) };
     if (!supportsLifecycle(context.cli, operation, apply)) return { failure: denied('E_LIFECYCLE_UNAVAILABLE', result.target) };
-    return { ...result, identity: cliIdentity(context.cli) };
+    // Which kernel answers the command this read admits: its features decide how its answer is read.
+    return { ...result, identity: cliIdentity(context.cli),
+      features: answeringFeatures({ cli: context.cli, routed: !!result.remote, group: context.workspace?.group }) };
   }
   const same = (a, b) => !b.failure && a.bin === b.bin && a.context === b.context && a.identity === b.identity && gitTargetKey(a.target) === gitTargetKey(b.target);
   function storePlan(plan, selection, choices) {
@@ -92,13 +94,13 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     const entry = storePlan(data, { ...selected, scope: getContext().workspace.scope, selector: clone(request.selector) }, choices);
     return entry ? displayed(entry) : denied('E_LIFECYCLE_BUSY', selected.target);
   }
-  function interpret(envelope, entry) {
+  function interpret(envelope, entry, features) {
     const extra = { planRef: entry.id, options: entry.choices };
     const failure = (code, status, more = {}) => denied(code, entry.target, { ...extra, status, ...more });
     if (envelope?.schemaVersion !== 1 || typeof envelope.ok !== 'boolean') return failure('E_OUTCOME_UNKNOWN', 'unknown');
     // A failed retire can still carry a bounded incomplete-cleanup receipt.
     if (envelope.result) {
-      const receipt = lifecycleReceipt(envelope.result, entry.plan, entry.key, { server: entry.remote?.server ?? null });
+      const receipt = lifecycleReceipt(envelope.result, entry.plan, entry.key, { server: entry.remote?.server ?? null, features });
       if (!receipt) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL') });
       const complete = receipt.action === 'stop' ? receipt.ok : receipt.removedDir && !receipt.incomplete;
       return { lifecycleApi: 1, status: receipt.deferred ? 'pending' : complete ? 'complete' : 'partial', target: entry.target, planRef: entry.id,
@@ -113,7 +115,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     }
     if (code === 'E_CHILDREN_RUNNING' && entry.plan.action === 'retire') {
       const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, 'retire', entry.choices);
-      const childrenStopped = fresh && stoppedTargets(envelope.error?.details?.childrenStopped, fresh.facts.children);
+      const childrenStopped = fresh && stoppedTargets(envelope.error?.details?.childrenStopped, fresh.facts.children, false, { features });
       if (!childrenStopped || childrenStopped.every(c => c.ok)) return failure('E_OUTCOME_UNKNOWN', 'unknown');
       // This is the attempted plan, NOT a new executable confirmation: some
       // children have already stopped. The user must explicitly read a new plan.
@@ -142,7 +144,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     plans.delete(entry.id); actions.set(entry.id, entry);
     const args = { operation: entry.plan.action, phase: 'apply', instance: entry.target.instance, home: entry.target.home,
       context: entry.context, ...(entry.remote ? { server: entry.remote.server } : {}), choices: clone(entry.choices), revision: entry.plan.planRevision, key: entry.key };
-    entry.pending = Promise.resolve().then(() => invoke(entry.bin, args)).then(result => interpret(result, entry))
+    entry.pending = Promise.resolve().then(() => invoke(entry.bin, args)).then(result => interpret(result, entry, current.features))
       .catch(() => denied('E_OUTCOME_UNKNOWN', entry.target, { status: 'unknown', planRef: entry.id }))
       .then(result => { entry.reply = clone(result); return result; })
       .finally(() => { entry.pending = null; entry.expires = now() + 30 * 60_000; if (activeApply === entry) activeApply = null; });

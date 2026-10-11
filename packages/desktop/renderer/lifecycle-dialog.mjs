@@ -1,6 +1,7 @@
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs';
-import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, stoppedTargets, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
+import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowText,
+  stopResultWords, childrenRefusedMessage, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { codeLineNodes, readingFrom, remoteReason, serverLabel } from '../../client/remote-address.mjs';
@@ -311,9 +312,9 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       plan = value; planRef = result.planRef; renderPlan(plan, requested); phase = 'review'; say(''); paint(); void overlayForge(ref, plan);
     } catch { if (owns(ref)) failed({ code: 'E_CLI_PROTOCOL' }); }
   }
+  /** One line per row of a stop's results or of a retire's child list; what a row is, and its words, are the contract's. */
   function stopped(values) {
-    return list(values.map(v => line(`${v.instance}: ${v.ok ? v.alreadyIdle ? 'Was already stopped' : 'Stopped'
-      : `Didn't stop${v.stillRunning?.length ? ` (still running: ${v.stillRunning.join(', ')})` : ''}`}`)));
+    return list(values.map(v => line(`${v.instance}: ${stoppedRowText(v)}`)));
   }
   /** What a retire receipt says happened, each fact on its own line; paths as muted, selectable text. */
   function retired(receipt, snapshot, complete) {
@@ -367,12 +368,18 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
           say(`${stopTitle}.`); ui.mark.replaceChildren(iconElement(doc, 'check', { size: 18 })); ui.mark.dataset.tone = 'ok';
           settle('done', stopTitle);
         } else {
-          say(receipt.action === 'stop' ? 'Not every session stopped:' : "Retirement didn't finish. Some steps ran:");
+          // A stop that is not ok: the sentence above the rows is chosen from the rows, so it agrees with them.
+          const words = receipt.action === 'stop' ? stopResultWords(receipt.results) : { status: "Retirement didn't finish. Some steps ran:", title: "Retirement didn't finish" };
+          say(words.status);
           ui.result.append(receipt.action === 'stop' ? stopped(receipt.results) : retired(receipt, snapshot, false)); if (replay) ui.result.append(replay);
-          settle('result', receipt.action === 'stop' ? 'Not every session stopped' : "Retirement didn't finish");
+          settle('result', words.title);
         }
       } else {
+        // The rows are the server's, already decoded: validated here, never decoded again.
+        const children = result.childrenStopped ? decodedStoppedTargets(result.childrenStopped, snapshot.facts?.children || []) : null;
+        if (result.childrenStopped && !children) throw new Error('Invalid child outcomes');
         refusal(result.reason?.code ? result.reason : { code: 'E_OUTCOME_UNKNOWN' });
+        if (children && result.reason?.code === 'E_CHILDREN_RUNNING') say(childrenRefusedMessage(children));
         // Why the outcome is unknown: a remote transport or host cause keeps its headline and Details; a
         // local one says its fixed sentence, with the CLI's own message in Details when it carries one.
         const cause = result.cause && remoteReason(result.cause);
@@ -381,10 +388,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
           ui.result.append(node('p', lifecycleReason(result.cause.code).message, 'lifecycle-note'));
           const local = localDetail(result.cause); if (local) details(ui.result, local);
         }
-        if (result.childrenStopped) {
-          const children = stoppedTargets(result.childrenStopped, snapshot.facts?.children || []); if (!children) throw new Error('Invalid child outcomes');
-          ui.result.append(node('p', 'Child instances:', 'lifecycle-note'), stopped(children));
-        }
+        if (children) ui.result.append(node('p', 'Child instances:', 'lifecycle-note'), stopped(children));
         settle('result', submission.uncertain ? unconfirmed : didNot);
       }
       if (owns(ref) && result.status !== 'stale') {
