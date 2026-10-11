@@ -523,7 +523,7 @@ test("a marker an older kernel left in the home (.oats-stop-pending.json) is no 
   const answered = result(r, "an apply over a marker that cannot be removed");
   assert.deepEqual(Object.keys(answered).sort(), RECEIPT_KEYS, "the answer is the ordinary receipt: the warning is no key of it");
   assert.deepEqual([answered.ok, answered.replayed, answered.results.map(row)], [true, false, [stoppedRow(j)]], "the stop went on");
-  assert.deepEqual(readJson(j.receipt("k1")), answered, "and the stored receipt is the one it printed");
+  assert.deepEqual(readJson(j.receipt("k1")), { ...answered, lifecycleKernelCodes: true }, "and the stored receipt is the one it printed, with the one field that is the file's alone");
   const lines = r.stderr.split("\n").filter(Boolean);
   assert.equal(lines.length, 1, `one line on stderr: ${r.stderr}`);
   assert.ok(lines[0].startsWith(`oats: warning: ${stuck}, a stop marker an older OATS left, could not be removed (`) && lines[0].endsWith("); it refuses nothing, and the stop went on"), lines[0]);

@@ -330,7 +330,7 @@ const ARRIVING = {
       const receipt = a.doc.result;
       assert.deepEqual({ ok: receipt.ok, replayed: receipt.replayed, results: receipt.results.map((row) => [row.instance, row.home, row.ok, row.stopped]) },
         { ok: true, replayed: false, results: [[i.name, i.home, true, i.harness !== null]] }, `its receipt is ok, and says it stopped the session there was: ${a.said}`);
-      assert.deepEqual({ ...readJson(join(i.home, ".oats-stop-receipt.pair-now.json")), replayed: false }, receipt, "the receipt is stored under its key");
+      assert.deepEqual({ ...readJson(join(i.home, ".oats-stop-receipt.pair-now.json")), replayed: false }, { ...receipt, lifecycleKernelCodes: true }, "the receipt is stored under its key, with the one field that is the file's alone");
       if (i.harness) await waitUntil(() => !alive(i.harness), `the harness of ${i.name} to be gone: the stop stopped it`);
     } },
   "oats worktree add": { key: "tree", verb: null, nothing: "no tree was made", takesClaim: false,
