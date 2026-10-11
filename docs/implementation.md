@@ -10,12 +10,13 @@ reference pages ([workspaces](workspaces.md), [souls and instances](souls-and-in
 - **`@awebai/oats`**: the runtime-neutral kernel (`lib/`), the `oats` CLI
   (`bin/oats.mjs`), the kernel and work-mode instruction sources
   (`injects/`), the bootstrap skills, the docs and the official package
-  catalog (`package-catalog.json`). The same tarball carries three
-  dependency-free packages of this repository: the turn record
-  (`packages/record/`, behind `oats capture`, `recall` and `setup`), the
+  catalog (`package-catalog.json`). The same tarball carries two
+  dependency-free packages of this repository, the turn record
+  (`packages/record/`, behind `oats capture`, `recall` and `setup`) and the
   terminal client (`packages/tui/`, behind `oats tui`, a preview:
-  [tui.md](tui.md)) and the readers the terminal client shares with the
-  Desktop (`packages/client/`). None of their tests is packed. The package's
+  [tui.md](tui.md)), and the directory of readers the terminal client shares
+  with the Desktop (`packages/client/`, below), which has no dependency
+  either. None of their tests is packed. The package's
   manifest declares three runtime dependencies: `yaml` (the kernel reads and
   writes the configuration files with it), `croner` (schedule expressions) and
   `@awebai/pi` (pi's aweb messaging extension). The terminal client adds none
