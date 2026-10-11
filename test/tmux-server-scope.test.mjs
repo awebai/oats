@@ -43,15 +43,18 @@ test("an unreadable cgroup: as today, no warning", () => {
   assert.deepEqual(plan(undefined), { wrap: false });
 });
 
-test("the unit name is stable per server address and differs between them", () => {
+test("the unit name: one per start, under a prefix that is stable per server address and differs between them", () => {
+  const prefix = (unit) => unit.slice(0, "oats-tmux-".length + 12);
   const a = serverScopeUnit({ socket: null, env: { TMUX_TMPDIR: "/tmp/a" } });
-  assert.match(a, /^oats-tmux-[0-9a-f]{12}$/);
-  assert.equal(serverScopeUnit({ socket: null, env: { TMUX_TMPDIR: "/tmp/a" } }), a);
-  assert.notEqual(serverScopeUnit({ socket: null, env: { TMUX_TMPDIR: "/tmp/b" } }), a);
-  assert.equal(serverScopeUnit({ socket: null, env: {} }), serverScopeUnit({ socket: null, env: { TMUX_TMPDIR: "/tmp" } }), "tmux's default directory");
+  assert.match(a, /^oats-tmux-[0-9a-f]{12}-[0-9a-f]{8}$/);
+  const again = serverScopeUnit({ socket: null, env: { TMUX_TMPDIR: "/tmp/a" } });
+  assert.notEqual(again, a, "a later start never reuses a scope a server left behind");
+  assert.equal(prefix(again), prefix(a));
+  assert.notEqual(prefix(serverScopeUnit({ socket: null, env: { TMUX_TMPDIR: "/tmp/b" } })), prefix(a));
+  assert.equal(prefix(serverScopeUnit({ socket: null, env: {} })), prefix(serverScopeUnit({ socket: null, env: { TMUX_TMPDIR: "/tmp" } })), "tmux's default directory");
   const s = serverScopeUnit({ socket: "/run/user/1000/tmux-1000/oats", env: { TMUX_TMPDIR: "/tmp/a" } });
-  assert.notEqual(s, a); assert.equal(s, serverScopeUnit({ socket: "/run/user/1000/tmux-1000/oats", env: {} }), "a known socket is the address");
-  assert.notEqual(serverScopeUnit({ socket: "/x/oats", env: {} }), s);
+  assert.notEqual(prefix(s), prefix(a)); assert.equal(prefix(s), prefix(serverScopeUnit({ socket: "/run/user/1000/tmux-1000/oats", env: {} })), "a known socket is the address");
+  assert.notEqual(prefix(serverScopeUnit({ socket: "/x/oats", env: {} })), prefix(s));
 });
 
 test("the warning names the unit, the consequence, the fixes and the reason", () => {

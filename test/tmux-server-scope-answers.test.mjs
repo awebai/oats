@@ -54,7 +54,7 @@ test("with the system's systemd-run, the spawn starts the server through it and 
   assert.ok(sessions().length > 0);
   const args = readFileSync(join(dir, "args"), "utf8").split("\n");
   assert.deepEqual(args.slice(0, 5), ["--user", "--scope", "--collect", "--quiet", "--unit"]);
-  assert.match(args[5], /^oats-tmux-[0-9a-f]{12}$/); assert.equal(args[6], "--");
+  assert.match(args[5], /^oats-tmux-[0-9a-f]{12}-[0-9a-f]{8}$/); assert.equal(args[6], "--");
   assert.ok(args.includes("new-session"));
 });
 

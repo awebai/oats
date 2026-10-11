@@ -140,18 +140,24 @@ on Linux, when OATS starts the `oats` server (no server answered) from inside
 a service, it starts it in a transient scope of its own:
 
 ```text
-systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash> -- tmux -u -L oats new-session -d …
+systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> -- tmux -u -L oats new-session -d …
 ```
 
 - **Only what changes.** The tmux command, its arguments and the environment
-  the server starts with are the same as without the scope. `<hash>` is the
-  first 12 hex digits of the SHA-256 of the server's address: one scope per
-  socket. `systemd-run` is the system's own (`/usr/bin`, `/bin`), never one
-  found on `PATH`.
+  the server starts with are the same as without the scope. There is one
+  scope per start that starts the server: `<hash>` is the first 12 hex digits
+  of the SHA-256 of the server's address, and `<random>` 8 random hex digits.
+  `systemd-run` is the system's own (`/usr/bin`, `/bin`), never one found on
+  `PATH`.
 - **The server outlives the service.** It is a sibling of the service, not
   part of it: the service can end, stop or restart, and the server and its
-  agents go on. The scope ends with the server (`--collect` removes it).
-- **See it:** `systemctl --user status 'oats-tmux-*.scope'`, or
+  agents go on. The scope ends when its last process does, and `--collect`
+  removes it then. That is usually the server. On a tmux without systemd
+  support the panes are in the scope too, so a process that outlives the
+  server (one an agent started in the background) keeps the scope until it
+  exits. A later start never reuses that scope: it gets one of its own.
+- **See it:** `systemctl --user status 'oats-tmux-<hash>-*.scope'` (or
+  `'oats-tmux-*.scope'` for every OATS server), or
   `systemd-cgls --user`. A tmux built with systemd support also puts each
   pane in a `tmux-spawn-<id>.scope` of its own.
 - **When the creator is inside a service:** `/proc/self/cgroup` is the

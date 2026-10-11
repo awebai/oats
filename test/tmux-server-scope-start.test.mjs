@@ -65,7 +65,9 @@ test("inside a service on Linux: the server starts under systemd-run --user --sc
   assert.deepEqual(sessions(), ["scoped"]);
   assert.deepEqual(warnings, []);
   const [start] = starts(calls);
-  const unit = serverScopeUnit({ socket: null, env: start.options.env });
+  const unit = start.args[5];
+  assert.match(unit, /^oats-tmux-[0-9a-f]{12}-[0-9a-f]{8}$/);
+  assert.equal(unit.slice(0, 22), serverScopeUnit({ socket: null, env: start.options.env }).slice(0, 22), "under this address's prefix");
   assert.equal(start.bin, join(sys.dir, "systemd-run"), "from the system directories");
   assert.deepEqual(start.args, ["--user", "--scope", "--collect", "--quiet", "--unit", unit, "--", TMUX, ...plainArgs("scoped")]);
   assert.deepEqual(sys.args(), start.args, "what systemd-run received");
@@ -129,7 +131,7 @@ test("no systemd-run in the system directories, or one that fails: today's start
   killServer();
 });
 
-test("a duplicate scope while another creator starts the server: success, no warning, no second start", () => {
+test("a wrapped start that fails while another creator's server now answers: success, no warning, no second start", () => {
   killServer();
   // The other creator wins: the session exists when systemd-run refuses the unit it already holds.
   const sys = systemDir(`while [ "$1" != "--" ]; do shift; done; shift\n"$@" >/dev/null\necho 'Failed to start transient scope unit: Unit oats-tmux-x.scope already exists.' >&2\nexit 1`);
@@ -157,4 +159,44 @@ test("a wrapped start that fails with no server: one unwrapped start; when that 
   assert.deepEqual(started, [join(sys.dir, "systemd-run"), TMUX], "the wrapped start, then exactly one unwrapped start");
   assert.deepEqual(warnings, [], "nothing was started, so nothing is said to live inside the service");
   assert.deepEqual(sessions(), []);
+});
+
+test("a scope a dead server left behind (a process outlived it) does not block a later wrapped start", () => {
+  killServer();
+  // systemd refuses a unit name it has loaded: a scope stays loaded while any process is left in it.
+  const sys = systemDir(`name=; prev=; for a do [ "$prev" = "--unit" ] && name=$a; prev=$a; done
+loaded='${join(base, `loaded-${n + 1}`)}'
+if grep -qx "$name" "$loaded" 2>/dev/null; then echo "Failed to start transient scope unit: Unit $name.scope was already loaded or has a fragment file." >&2; exit 1; fi
+echo "$name" >> "$loaded"
+${RUNS_COMMAND}`);
+  const first = spy({ platform: "linux", cgroup: TICK, systemToolDirs: [sys.dir] });
+  ensureOatsTmuxSession("left", base, first.io, undefined, undefined, []);
+  killServer(); // its scope stays loaded: the fake never forgets a name
+  const second = spy({ platform: "linux", cgroup: TICK, systemToolDirs: [sys.dir] });
+  const warnings = [];
+  assert.equal(ensureOatsTmuxSession("left", base, second.io, undefined, undefined, warnings), OATS);
+  assert.deepEqual(warnings, [], "started in a scope of its own again, not inside the service");
+  assert.deepEqual(starts(second.calls).map((c) => c.bin), [join(sys.dir, "systemd-run")]);
+  assert.notEqual(starts(second.calls)[0].args[5], starts(first.calls)[0].args[5]);
+  killServer();
+});
+
+test("a creator that loses the start to another one says nothing about the winner's server", () => {
+  killServer();
+  const sys = systemDir(RUNS_COMMAND);
+  const warnings = [], started = [];
+  // B looked and found no server; A starts it before B's wrapped start runs. B's tmux then finds the
+  // session (duplicate session), B's scope empties, and B's second lookup finds A's server.
+  const exec = (bin, args, options) => {
+    if (args.includes("new-session")) {
+      started.push(bin);
+      if (bin === join(sys.dir, "systemd-run") && started.length === 1) execFileSync(TMUX, plainArgs("raced"), { ...options, stdio: "ignore" });
+    }
+    return execFileSync(bin, args, options);
+  };
+  assert.equal(ensureOatsTmuxSession("raced", base, { exec, platform: "linux", cgroup: TICK, systemToolDirs: [sys.dir] }, undefined, undefined, warnings), OATS);
+  assert.deepEqual(sessions(), ["raced"]);
+  assert.deepEqual(warnings, [], "B started nothing, so B says nothing");
+  assert.deepEqual(started, [join(sys.dir, "systemd-run")], "and starts nothing unwrapped after the race");
+  killServer();
 });
