@@ -81,7 +81,7 @@ import { workspaceNotServed } from "../renderer/deployment-header.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
-import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData } from "../../client/panel-views.mjs";
+import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes } from "../../client/panel-views.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -619,38 +619,35 @@ function revalidateCatalog(wsId) {
   d.catalog = { ...d.catalog, refreshing: true }; // this answer says a re-read is in flight
   attachCatalog(ws.id, pending);
 }
+/** The remote panels of the snapshot, in place: the `remote:` keys go and each group held gets its panel
+ * (packages/client/remote-roster.mjs `remotePanelEntries`), made at the time of this merge. */
 function mergeRemotePanels(byWs) {
   for (const id of byWs.keys()) if (id.startsWith("remote:")) byWs.delete(id);
-  const at = new Date().toISOString(); // the shared home reads no clock: the time of this merge
-  for (const group of remoteGroups) {
-    const panel = remote.remotePanel(group, at);
-    byWs.set(panel.workspace.id, panel);
-  }
+  for (const [id, panel] of remote.remotePanelEntries(remoteGroups, new Date().toISOString())) byWs.set(id, panel);
   return byWs;
 }
+/** One outcome of the roster read into what this process holds. What it becomes is the shared home's
+ * (remote-roster.mjs `remoteRosterState`); the groups of an answer go to the remembered identities. */
+function takeRosterOutcome(outcome) {
+  const next = remote.remoteRosterState({ remoteGroups, rosterAnswered, rosterFailure }, outcome, new Date().toISOString());
+  ({ remoteGroups, rosterAnswered, rosterFailure } = next);
+  if (next.reported) remoteIdentities.observe(next.reported);
+  mergeRemotePanels(snapshot.byWs);
+}
+/** The roster read: one at a time, and an answer read with a kernel record that is no longer the accepted
+ * one is dropped and the read runs again. */
 async function refreshRemoteSnapshot() {
   if (remoteCollecting) return;
-  if (!cliState.ok || !cliState.remote?.includes("roster")) {
-    remoteGroups = []; rosterAnswered = false; mergeRemotePanels(snapshot.byWs); return;
-  }
+  if (!cliReadsRemotes(cliState)) { takeRosterOutcome({ gated: true }); return; }
   remoteCollecting = true;
   const probe = cliState;
   try {
-    const env = await adapter.cliRemoteRoster(probe.bin);
+    const envelope = await adapter.cliRemoteRoster(probe.bin);
     if (cliState !== probe) return;
-    const incoming = env.ok && Array.isArray(env.result?.groups)
-      ? env.result.groups : remote.unavailableGroups(remoteGroups, env.error || { code: "E_REMOTE_ROSTER", message: "Remote roster unavailable" });
-    const at = new Date().toISOString();
-    incoming.forEach((group) => remote.remotePanel(group, at)); // validate before replacing the last readable roster
-    remoteGroups = incoming;
-    if (env.ok) { rosterAnswered = true; rosterFailure = null; remoteIdentities.observe(incoming); }
-    else if (!rosterAnswered) rosterFailure = env.error?.message || "Remote roster unavailable";
-    mergeRemotePanels(snapshot.byWs);
+    takeRosterOutcome({ envelope });
   } catch (e) {
     if (cliState !== probe) return;
-    remoteGroups = remote.unavailableGroups(remoteGroups, { code: "E_REMOTE_ROSTER", message: `Remote roster unavailable: ${e.message}` });
-    if (!rosterAnswered) rosterFailure = `Remote roster unavailable: ${e.message}`;
-    mergeRemotePanels(snapshot.byWs);
+    takeRosterOutcome({ thrown: e.message });
   } finally {
     remoteCollecting = false;
     if (cliState !== probe) void refreshRemoteSnapshot();

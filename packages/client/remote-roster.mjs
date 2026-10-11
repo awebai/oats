@@ -67,6 +67,63 @@ export function unavailableGroups(groups, error) {
   return groups.map((g) => ({ ...g, probe: { ok: false, error }, instances: (g.instances || []).map((i) => ({ ...i, running: null })) }));
 }
 
+/** The roster read's failure in words, and as the error an unavailable group carries. */
+const ROSTER_UNAVAILABLE = "Remote roster unavailable";
+const rosterError = (message) => ({ code: "E_REMOTE_ROSTER", message });
+
+/**
+ * What one outcome of `oats server roster --json` makes of the roster a client holds. No state: the
+ * client keeps the three values between reads and passes them back as `previous`.
+ *
+ *   previous: { remoteGroups, rosterAnswered, rosterFailure }
+ *   outcome:  { gated: true }     no accepted CLI, or one that does not read other machines
+ *                                 (panel-views.mjs `cliReadsRemotes`): the read was not made
+ *           | { envelope }        what the CLI answered (cli-adapter.mjs `cliRemoteRoster`)
+ *           | { thrown: string }  the read failed: the message of what was thrown
+ *   at:       the caller's time, the one `remotePanel` stamps
+ *   ->        { remoteGroups, rosterAnswered, rosterFailure, reported }
+ *
+ * `remoteGroups` is the last readable roster: an answer replaces it only when every group of it can be
+ * projected (`remotePanel`), and a failed read keeps the groups held, each marked not reached
+ * (`unavailableGroups`). `rosterAnswered` says an answer arrived; `rosterFailure` is the failure's
+ * sentence, kept only while none has. `reported` is what the client hands to its memory of identities
+ * (remote-identity-memory.mjs `observeIdentities`): the groups of an `ok` envelope, else null.
+ *
+ * The sentence of a thrown read carries the message of an error from outside the client: a client
+ * shows it through `displayLine` (display-text.mjs) only.
+ *
+ * What stays the caller's: one read at a time, when it runs, and dropping an answer that was read
+ * with a kernel record that is no longer the accepted one.
+ */
+export function remoteRosterState(previous, outcome, at) {
+  requireTime(at, "remoteRosterState");
+  if (outcome.gated) return { remoteGroups: [], rosterAnswered: false, rosterFailure: previous.rosterFailure, reported: null };
+  /** A read with no answer to keep: the groups held, marked; the sentence only while no answer has ever arrived. */
+  const failed = (message) => ({
+    remoteGroups: unavailableGroups(previous.remoteGroups, rosterError(message)), rosterAnswered: previous.rosterAnswered,
+    rosterFailure: previous.rosterAnswered ? previous.rosterFailure : message, reported: null,
+  });
+  if (!Object.hasOwn(outcome, "envelope")) return failed(`${ROSTER_UNAVAILABLE}: ${outcome.thrown}`);
+  try {
+    const env = outcome.envelope;
+    const incoming = env.ok && Array.isArray(env.result?.groups)
+      ? env.result.groups : unavailableGroups(previous.remoteGroups, env.error || rosterError(ROSTER_UNAVAILABLE));
+    for (const group of incoming) remotePanel(group, at); // validate before replacing the last readable roster
+    if (env.ok) return { remoteGroups: incoming, rosterAnswered: true, rosterFailure: null, reported: incoming };
+    return { remoteGroups: incoming, rosterAnswered: previous.rosterAnswered,
+      rosterFailure: previous.rosterAnswered ? previous.rosterFailure : env.error?.message || ROSTER_UNAVAILABLE, reported: null };
+  } catch (e) {
+    // An answer that cannot be read, or a group of it that cannot be projected: as a read that threw.
+    return failed(`${ROSTER_UNAVAILABLE}: ${e.message}`);
+  }
+}
+
+/** The panel of each group, keyed as a client's snapshot keys it: [[`remote:<group id>`, panel], …], every one made at `at`. */
+export function remotePanelEntries(remoteGroups, at) {
+  requireTime(at, "remotePanelEntries");
+  return remoteGroups.map((group) => { const panel = remotePanel(group, at); return [panel.workspace.id, panel]; });
+}
+
 export function spawnedWorkspace(groups, result) {
   if (!result.server || !result.target) return undefined;
   const group = groups.find((g) => g.server === result.server && g.registrationPresent
