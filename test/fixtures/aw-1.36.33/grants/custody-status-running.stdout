@@ -1,0 +1,39 @@
+{
+  "status": "running",
+  "service_id": "6891533a-ac86-4632-ba58-320f96a71560",
+  "socket_path": "/home/runner/work/_temp/s/complete/.aw/run/custody.sock",
+  "resident": {
+    "did_aw": "did:aw:3xdkzqav4MBVPCBmKxPHVgbhjdvr",
+    "did_key": "did:key:z6Mkenw3X3qRiu97CK1rQALzUcBdwmaWWr7JrZvyMAMHivLT",
+    "address": "fixture-29075.test/carol",
+    "alias": "carol"
+  },
+  "teams": [
+    {
+      "certificate_loadable": true,
+      "certificate_present": true,
+      "grant_status_endpoint_ready": true,
+      "ready": true,
+      "team_id": "default:fixture-29075.test"
+    }
+  ],
+  "keys": {
+    "encryption_key_id": "sha256:t8OsgJ9mO98t132opo/pF/PnHIjhYuwedgNrovCdZYU",
+    "encryption_ready": true,
+    "signing_ready": true
+  },
+  "ops": [
+    "status.v1",
+    "sign_plain_message.v1",
+    "sign_app_request.v1",
+    "grant_never_ttl.v1",
+    "create_e2ee_envelope.v1",
+    "unwrap_e2ee_message.v1",
+    "mail_reply_continuation.v1"
+  ],
+  "freshness": {
+    "last_checked_at": "2026-10-11T16:48:52Z",
+    "max_cache_age_seconds": 30,
+    "source": "identity-grants"
+  }
+}

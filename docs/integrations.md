@@ -41,7 +41,7 @@ arrives from.
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
   oats.okf: v5.0.2
-  oats.aweb: v1.24.1
+  oats.aweb: v1.27.0
   oats.linear: v1.0.1
   oats.jira: v1.0.1
 defaults:
@@ -79,7 +79,7 @@ operations in full.
 | Slot | Provider | Needs on the host | Documentation |
 | --- | --- | --- | --- |
 | `knowledge` | `oats.okf` | `settings.oats.okf.bindings-file` and `state-dir` (absolute paths) in `oats-local.yaml`; `git` for Git-backed consultation, `git` and `gh` for proposal/review PRs; ordinary kernel/harness selection, no provider harvest-runtime setting | [awebai/oats-okf](https://github.com/awebai/oats-okf), [knowledge.md](knowledge.md) |
-| `messaging` | `oats.aweb` | the `aw` CLI at 1.36.13 or later; for channel delivery, `@awebai/pi` in pi or the `aweb-channel` plugin in Claude Code; host-only `root`, `roots` and `residents` in `oats-local.yaml` | [awebai/oats-aweb](https://github.com/awebai/oats-aweb) |
+| `messaging` | `oats.aweb` | the `aw` CLI at 1.36.33 or later; for channel delivery, `@awebai/pi` in pi or the `aweb-channel` plugin in Claude Code; host-only `root`, `roots` and `residents` in `oats-local.yaml` | [awebai/oats-aweb](https://github.com/awebai/oats-aweb) |
 | `tasks` | `oats.jira` | `acli`, authenticated to the Jira site; `site` and `project` in the soul's `tasks:` payload or `settings.oats.jira` | [awebai/oats-jira](https://github.com/awebai/oats-jira) |
 | `tasks` | `oats.linear` | `LINEAR_API_KEY` in the environment (never in OATS config); `team` (and optionally `project`) in the soul's `tasks:` payload or `settings.oats.linear` | [awebai/oats-linear](https://github.com/awebai/oats-linear) |
 
@@ -93,11 +93,12 @@ operations in full.
   removes it at retire, contributes the aweb messaging skills, and wires the
   channel so sessions are woken by mail. Under `delivery: channel`, Claude Code
   loads the channel plugin with `--dangerously-load-development-channels`,
-  since `aweb-channel` is not on its approved channel list, so every such
-  Claude start waits at Claude Code's
-  development-channels confirmation until someone answers it in the
-  instance's terminal; the start's warnings and readiness say so
-  (`channel-dev-confirmation`). `oats aweb roster` lists the team:
+  and the kernel confirms the development-channel prompt once at launch.
+  The start reports that decision (`channel-dev-confirmation`); readiness
+  becomes quiet after the kernel records a completed confirmation. If Claude
+  ignored the flag, readiness reports `claude-channels-unavailable`.
+  `settings.oats.aweb.delivery: session` or
+  `settings.oats.aweb.claudeChannelMode: approved` stop the prompt. `oats aweb roster` lists the team:
   its membership certificates and workspaces, one entry per alias with its
   sources, status and kind (global identities first), and says when either
   source is incomplete. After `oats server connect`, `oats aweb connect

@@ -1,0 +1,39 @@
+{
+  "status": "running",
+  "service_id": "e5ffa10e-3a88-4246-920a-32603be0a785",
+  "socket_path": "/private/tmp/oats-resident-capture/complete/.aw/run/custody.sock",
+  "resident": {
+    "did_aw": "did:aw:gXz5e5zTXdGYBJRk5wEkT57jPvY",
+    "did_key": "did:key:z6MkwStqCgtv5oF35z18x55pbtYhUHrVYX2u4yCdkKnZ9mL6",
+    "address": "fixture-6400.test/carol",
+    "alias": "carol"
+  },
+  "teams": [
+    {
+      "certificate_loadable": true,
+      "certificate_present": true,
+      "grant_status_endpoint_ready": true,
+      "ready": true,
+      "team_id": "default:fixture-6400.test"
+    }
+  ],
+  "keys": {
+    "encryption_key_id": "sha256:XceGnVY2d7E2IUZJH+Jx6FpTyXbrpeA4UOucqx79hCE",
+    "encryption_ready": true,
+    "signing_ready": true
+  },
+  "ops": [
+    "status.v1",
+    "sign_plain_message.v1",
+    "sign_app_request.v1",
+    "grant_never_ttl.v1",
+    "create_e2ee_envelope.v1",
+    "unwrap_e2ee_message.v1",
+    "mail_reply_continuation.v1"
+  ],
+  "freshness": {
+    "last_checked_at": "2026-10-10T16:44:15Z",
+    "max_cache_age_seconds": 30,
+    "source": "identity-grants"
+  }
+}

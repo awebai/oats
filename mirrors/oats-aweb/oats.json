@@ -1,9 +1,9 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.24.1",
+  "version": "1.27.0",
   "compatibility": {
-    "oats": ">=0.42.0"
+    "oats": ">=0.52.0"
   },
   "layer": "messaging",
   "launchPreview": true,
@@ -11,7 +11,7 @@
   "requires": [
     {
       "command": "aw",
-      "why": "aw >= 1.36.13: identity minting at spawn, self-delete at retire, live receive registration, onboarding, and all agent messaging",
+      "why": "aw >= 1.36.33: identity minting at spawn, self-delete at retire, live receive registration, onboarding, all agent messaging, replies to senders outside the team roster, grants that never expire, and resident creation with oats aweb resident create",
       "install": "https://aweb.ai/docs (aw CLI)"
     },
     {
@@ -74,7 +74,9 @@
     "teams": "bin/oats-aweb.mjs teams",
     "join": "bin/oats-aweb.mjs join",
     "leave": "bin/oats-aweb.mjs leave",
-    "invite": "bin/oats-aweb.mjs invite"
+    "invite": "bin/oats-aweb.mjs invite",
+    "resident": "bin/oats-aweb.mjs resident",
+    "probe": "bin/oats-aweb-probe.mjs"
   },
   "binding": {
     "version": 1,
@@ -129,7 +131,8 @@
   },
   "environment": [
     "AWEB_DELIVERY",
-    "AWEB_IDENTITY_HOME"
+    "AWEB_IDENTITY_HOME",
+    "AWID_REGISTRY_URL"
   ],
   "settings": {
     "delivery": {
@@ -144,7 +147,7 @@
       "hostOnly": true,
       "values": ["approved", "development"],
       "default": "development",
-      "description": "Host-selected Claude/channel request, only in oats-local.yaml. Development is the default for new compositions; it selects the fixed plugin argument, never launch consent. Approved (the recommended unattended route) passes --channels and is admitted when the host's managed policy sets channelsEnabled and lists aweb-channel@awebai-marketplace in allowedChannelPlugins (see the oats-aweb skill, section 4). No automatic fallback, migration or flip-back; a future default change requires an explicit reviewed release. Pi, Codex and session routes are unchanged."
+      "description": "Host-selected Claude/channel request, only in oats-local.yaml. Development is the default for new compositions: development passes --dangerously-load-development-channels, and OATS confirms Claude's development-channel prompt at launch. Approved (the recommended unattended route) passes --channels and, with the machine's managed policy, avoids the prompt: Claude admits the plugin when that policy sets channelsEnabled and lists aweb-channel@awebai-marketplace in allowedChannelPlugins (see the oats-aweb skill, section 4). No automatic fallback, migration or flip-back; a future default change requires an explicit reviewed release. Pi, Codex and session routes are unchanged."
     },
     "root": {
       "hostOnly": true,
@@ -158,7 +161,7 @@
       "default": {
         "mode": "local"
       },
-      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl (Go duration, 60s to 720h, default 720h), e2ee (default true), renew (off|launch, default launch)."
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl (never, or a Go duration from 60s to 720h; default never), e2ee (default true), renew (off|launch, default launch)."
     },
     "residents": {
       "hostOnly": true,
@@ -174,7 +177,8 @@
     }
   },
   "environmentNamespaces": [
-    "AWEB_"
+    "AWEB_",
+    "AWID_"
   ],
   "operations": {
     "teams": {

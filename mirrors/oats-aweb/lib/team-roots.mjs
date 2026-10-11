@@ -1,4 +1,5 @@
-// Deployment selection and current minting authority for explicit wider-team joins.
+// Deployment selection, aweb team names, and current minting authority for
+// explicit wider-team joins.
 // Lifecycle hooks deliberately continue to use their captured provider settings.
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -9,6 +10,15 @@ const canonical = path => {
   if (typeof path !== 'string' || !isAbsolute(path)) throw new Error('an absolute directory is required');
   return realpathSync(path);
 };
+/** A team label or name as an aweb team name: lowercase, '_' and '.' as '-',
+ *  no leading or trailing '-'. It names a per-team root's directory and the
+ *  label `oats aweb resident create` derives from its team's name. */
+export function normalizeAwebTeamName(label) {
+  const normalized = String(label || "").toLowerCase().replace(/[_.]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(normalized) || normalized.length > 128) throw new Error(`team label ${JSON.stringify(label)} does not normalize to a valid aweb team name`);
+  return normalized;
+}
+
 export function selectedDeployment(env = process.env, explicitDir) {
   const selected = env.OATS_TEAM_SCOPE || env.OATS_WORKSPACE;
   try {

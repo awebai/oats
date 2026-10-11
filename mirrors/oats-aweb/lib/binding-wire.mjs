@@ -1,10 +1,15 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import { custodyPreflight } from './grant-custody.mjs';
 import { selectClaudeChannel, recordedStart, expectedReceive, targetReceiveAssessment } from './wake-receive.mjs';
+import { grantExpiryAssessment } from './grant-expiry.mjs';
+import { renewalGrantTTL, resolveGrantTTL } from './grant-duration.mjs';
+import { seatGrantLabel, strayGrants, teamGrants, unrevokedGrant } from './seat-grants.mjs';
+import { childOutcome } from './child-outcome.mjs';
+import { residentRegistryEnv } from './resident-registry.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -167,8 +172,9 @@ function workspaceReadinessContext(value) {
   if(value.home!==null && value.home!==undefined && (typeof value.home!=='string' || !value.home.trim())) wireError('invalid-binding');
   return value;
 }
-function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
-export const AW_MIN = '1.36.13';
+export function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
+export { AW_MIN } from './aw-floor.mjs';
+import { AW_MIN } from './aw-floor.mjs';
 export const NO_TEAMS_MESSAGE='no teams configured: run `oats aweb setup`';
 /** The default team has a label but no provider id. The remedy names both forms of a new default, since a
  *  workspace without `localTeams: true` refuses `oats teams default` (team model 3). */
@@ -237,6 +243,14 @@ function parseOatsTeams(env=process.env){try{const rows=JSON.parse(env.OATS_TEAM
 function primaryTeamLabel(env=process.env){return typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():null;}
 function unmappedPrimary(env=process.env){return undefined;}
 
+/** Whether readiness requires a minting root: a global seat with a resident
+ *  acts through that resident's grant, so it needs none (whether the resident
+ *  resolves is the custody check's). Both the workspace readiness phase and the
+ *  binding path ask this through readinessDetails. */
+function needsMintingRoot(settings) {
+  const identity=obj(settings.identity)?settings.identity:{};
+  return !(identity.mode==='global' && typeof identity.resident==='string' && identity.resident.trim());
+}
 async function readinessDetails(settings,{deployment,env=process.env}={}) {
   try { selectClaudeChannel(settings.claudeChannelMode); }
   catch (error) { return {team:undefined,candidate:null,warnings:[],result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:error.message}]}}; }
@@ -248,7 +262,7 @@ async function readinessDetails(settings,{deployment,env=process.env}={}) {
     const label=typeof env.OATS_DEFAULT_TEAM==='string'&&env.OATS_DEFAULT_TEAM.trim()?env.OATS_DEFAULT_TEAM.trim():'';
     problems.push({code:'needs-configuration',message:label?unmappedDefaultMessage(label):NO_TEAMS_MESSAGE});
   }
-  if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
+  if(needsMintingRoot(settings) && (!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw')))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   return {team,candidate,warnings,result:checkProblems(problems) || {status:'ready',problems:[]}};
 }
 async function readinessFromSettings(settings,options) {return (await readinessDetails(settings,options)).result;}
@@ -256,13 +270,20 @@ function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
   // An inherited AWEB_IDENTITY_HOME is the caller's identity, never this check's.
   const env={...process.env,AW_NO_UPDATE_CHECK:'1'};delete env.AWEB_IDENTITY_HOME;for(const name of unsetEnv) delete env[name];
   try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
-  catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
+  catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} ${childOutcome(e,timeout)}`);}
 }
 function semverLt(a,b) {const A=String(a||'0.0.0').split('.').map(n=>Number(n)||0),B=String(b).split('.').map(n=>Number(n)||0);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0)) return (A[i]||0)<(B[i]||0);}return false;}
-function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const st=statSync(join(dir,cmd));if(st.isFile()&&(st.mode&0o111))return true;}catch{}}return false;}
-async function awFloorProblem(){if(!onPath('aw'))return{code:'needs-configuration',message:`aw CLI not on PATH; install aw >= ${AW_MIN}`};const installed=await readAwVersion();if(!installed)return{code:'needs-configuration',message:`aw version could not be read; install aw >= ${AW_MIN}`};return !semverLt(installed,AW_MIN)?null:{code:'needs-configuration',message:`aw ${installed} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`};}
+/** The first executable `cmd` on env's PATH, as an absolute path, or undefined. */
+export function onPath(cmd,env=process.env){for(const dir of String(env.PATH||'').split(delimiter)){if(!dir)continue;try{const p=resolve(join(dir,cmd));const st=statSync(p);if(st.isFile()&&(st.mode&0o111))return p;}catch{}}return undefined;}
+const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/aw@${AW_MIN}\`)`;
+/** Why the aw on PATH does not meet AW_MIN, or undefined when it does: the one
+ *  wording every path that refuses below the floor uses. `env` is the PATH to
+ *  search and the environment `aw version` runs in. */
+export async function awFloorMessage({env=process.env}={}){if(!onPath('aw',env))return `aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;const installed=await readAwVersion({env});if(!installed)return `aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;return semverLt(installed,AW_MIN)?`aw ${installed} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined;}
+async function awFloorProblem(){const message=await awFloorMessage();return message?{code:'needs-configuration',message}:null;}
 async function workspaceReadinessPhase(req) {
-  const deadline=Date.now()+28000;
+  // One clock for every time-based judgement in this answer.
+  const now=Date.now(),deadline=now+28000;
   const localAw=(argv,cwd)=>runAw(argv,cwd,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
   const ctx=workspaceReadinessContext(req.input.context);
   if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
@@ -275,15 +296,37 @@ async function workspaceReadinessPhase(req) {
     const custody=resident?residents[resident]:undefined;
     if(!resident) problems.push({code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'});
     else if(typeof custody!=='string' || !isAbsolute(custody) || !existsSync(join(custody,'.aw','identity.yaml'))) problems.push({code:'custody',message:`identity.mode "global" resident ${JSON.stringify(resident)} is not resolvable; set oats-local.yaml settings.oats.aweb.residents.${resident} to an absolute custody directory whose .aw/identity.yaml exists`});
-    else if(details.team) {
-      try {
-        const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,fatalOnError:false,runAw:localAw});
-        for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
+    else {
+      const registry=residentRegistryEnv(custody);
+      if(registry.problem) problems.push({code:'custody',message:registry.problem});
+      if(details.team) {
+        try {
+          // A never-grant in use, or the next mint's ttl (a renewal keeps the seat's
+          // duration; a new seat's default is never), decides the custody's ops.
+          const recorded=ctx.home?recordedStart(ctx.home).meta?.identity?.grant:undefined;
+          const next=recorded?.id?renewalGrantTTL(identity.ttl,recorded.ttl):resolveGrantTTL(identity.ttl);
+          const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,ttl:recorded?.expiresAt==='never'?'never':next,fatalOnError:false,runAw:localAw});
+          for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
+          // This seat's active grants other than the current one, from the custody's
+          // list: each stays valid until the next start or retire revokes it.
+          const seat=ctx.home?recordedStart(ctx.home).meta?.identity?.seat:undefined;
+          if(seat) {
+            try {
+              const label=seatGrantLabel(ctx.instance||basename(ctx.home),seat);
+              for(const g of strayGrants(teamGrants(argv=>localAw(argv,custody),details.team),label,recorded?.id)) warnings.push({code:'grant-revoke-pending',message:`${unrevokedGrant({...g,custody})}; the next start or retire revokes it`});
+            }
+            catch(e) {warnings.push({code:'grant-revoke-unchecked',message:`could not check for orphaned grants (${String(e.message||e).slice(0,200)}); this seat may hold grants that stay valid`});}
+          }
+        }
+        catch(e) {problems.push({code:'custody',message:e.message});}
       }
-      catch(e) {problems.push({code:'custody',message:e.message});}
     }
   }
   const receiveProblems=[];
+  if(ctx.home) {
+    const expiry=grantExpiryAssessment(recordedStart(ctx.home).meta?.identity,{home:ctx.home,now,configuredTtl:obj(req.settings.identity)?req.settings.identity.ttl:undefined});
+    receiveProblems.push(...expiry.problems);warnings.push(...expiry.warnings);
+  }
   // Preserve prerequisite diagnostics; receive evidence is meaningful only
   // after configuration and custody checks succeed.
   if(ctx.home && !problems.length) {
@@ -295,14 +338,14 @@ async function workspaceReadinessPhase(req) {
       if(expected.brokerRequired) {
         let status;
         try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.home));} catch { /* unavailable below */ }
-        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN});
+        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN,now});
         const targetProblems=target.problems;
         warnings.push(...target.warnings);
         receiveProblems.push(...targetProblems);
-        for(const joined of expected.joined) {
-          if(targetProblems.length) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
-          else warnings.push({code:'joined-team-receive',message:`joined team ${joined.label} passes observable broker route prerequisites; this is not harness-native connection or proof of message presentation`});
-        }
+        // A joined team that passes the broker route prerequisites needs no
+        // action, so it is not a warning (awebai/oats#881): the spawn brief and
+        // `oats aweb teams --json` already give its receive mode.
+        if(targetProblems.length) for(const joined of expected.joined) warnings.push({code:'joined-team-poll-only',message:`joined team ${joined.label} has unproven broker receive; check aw --identity-home ${joined.identityHome} mail inbox and chat pending at task boundaries`});
       }
     }
   }

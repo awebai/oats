@@ -16,6 +16,9 @@ import { packageRepo } from "./helpers/package-repo.mjs";
 import { killAndReap } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
+// Captured aw output and its provenance live together in this fixture directory.
+const AW_VERSION_OUTPUT = readFileSync(new URL("./fixtures/aw-1.36.33/aw-version.txt", import.meta.url), "utf8");
+const AW_VERSION_SHELL = "printf '%s' '" + AW_VERSION_OUTPUT.replaceAll("'", "'\\''") + "'";
 /** Parse a `--json` CLI success envelope (Desktop CLI API v1): stdout must be
  *  exactly one JSON object {schemaVersion:1,ok:true,result} — no progress prose. */
 function jsonResult(r) {
@@ -2323,7 +2326,7 @@ test("the SHIPPED aweb spawn hook exits nonzero when it cannot mint an identity"
   // A floor-satisfying `aw` that answers only `version`, so the hook deterministically reaches the root
   // check whatever aw the host has (1.16's no-root and no-aw refusals shared one phrase; 1.17's differ).
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
-  fakeAw(bin, `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\necho "unexpected aw $*" 1>&2; exit 2\n`);
+  fakeAw(bin, `#!/bin/sh\nif [ "$1" = "version" ]; then ${AW_VERSION_SHELL}; exit 0; fi\necho "unexpected aw $*" 1>&2; exit 2\n`);
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: join(base, "no-such-home"), OATS_WORKSPACE: base, OATS_CONTEXT: base, OATS_TEAM_SCOPE: base, ...AWEB_V2_ENV },
@@ -2357,7 +2360,7 @@ test("the SHIPPED aweb hook is fatal on every terminal pre-mint path (reviewer-5
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   // CURRENT aw shape: memberships, not teams. Using the stale key here is what
   // let a real field drift pass review (reviewer-602627c).
-  fakeAw(bin, `#!/bin/sh\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"memberships":[],"active_team":null}'; exit 0; fi\nexit 0\n`);
+  fakeAw(bin, `#!/bin/sh\nif [ "$1" = "version" ]; then ${AW_VERSION_SHELL}; exit 0; fi\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"memberships":[],"active_team":null}'; exit 0; fi\nexit 0\n`);
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const run = (env) => spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
@@ -2452,7 +2455,7 @@ test("a name-only default team id is refused with the provider's id-shape messag
   const hook = resolve(new URL("../mirrors/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   const log = join(base, "aw.log");
-  write(join(bin, "aw"), `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\nif [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":null,"memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi\nexit 0\n`);
+  write(join(bin, "aw"), `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\nif [ "$1" = "version" ]; then ${AW_VERSION_SHELL}; exit 0; fi\nif [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":null,"memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi\nexit 0\n`);
   execFileSync("chmod", ["+x", join(bin, "aw")]);
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const r = spawnSync(process.execPath, [hook, "spawn"], {
@@ -2491,7 +2494,7 @@ if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"alias":"probe" ${TOKEN}'
     const base = temp();
     const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
     fakeAw(bin, `#!/bin/sh
-if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
+if [ "$1" = "version" ]; then ${AW_VERSION_SHELL}; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 ${script}
 exit 0
@@ -2526,7 +2529,7 @@ test("a WELL-FORMED mint response cannot reflect a token-shaped value into the a
   const log = join(base, "aw.log");
   fakeAw(bin, `#!/bin/sh
 echo "$*" >> "${log}"
-if [ "$1" = "version" ]; then echo "aw 1.36.13"; exit 0; fi
+if [ "$1" = "version" ]; then ${AW_VERSION_SHELL}; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "list" ]; then echo '{"active_team":"default:acme.aweb.ai","memberships":[{"team_id":"default:acme.aweb.ai","alias":"x"}]}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "invite" ]; then echo '{"token":"${TOKEN}"}'; exit 0; fi
 if [ "$1" = "team" ] && [ "$2" = "join" ]; then echo '{"team_id":"${TOKEN}","alias":"${TOKEN}"}'; exit 0; fi

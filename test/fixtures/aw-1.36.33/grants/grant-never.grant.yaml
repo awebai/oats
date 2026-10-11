@@ -1,0 +1,24 @@
+version: 1
+grant_id: 071749a6-b72f-4af0-b370-e275ff8d279f
+team_id: default:fixture-29075.test
+subject:
+    did_aw: did:aw:3xdkzqav4MBVPCBmKxPHVgbhjdvr
+    did_key: did:key:z6Mkenw3X3qRiu97CK1rQALzUcBdwmaWWr7JrZvyMAMHivLT
+    address: fixture-29075.test/carol
+    alias: carol
+scopes:
+    - mail.read
+    - mail.send
+    - chat.read
+    - chat.send
+    - events.read
+    - coord.read
+    - coord.write
+    - presence.write
+    - contacts.read
+    - contacts.write
+expires_at: never
+aweb_url: http://127.0.0.1:18000
+minted_at: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+custody:
+    socket_path: /home/runner/work/_temp/s/complete/.aw/run/custody.sock

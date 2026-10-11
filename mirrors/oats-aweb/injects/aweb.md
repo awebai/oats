@@ -45,14 +45,13 @@ release. An operator may choose supported session delivery for unattended use
 where authorized, without overriding an explicit native-channel requirement.
 Never switch to development as an automatic fallback.
 
-Development selection may stop at confirmation; nothing in this provider answers
-it. For future support, a compatible kernel may answer it at launch under explicit
-per-home consent recorded in the kernel's host-only configuration. This does not
-claim support in the installed kernel. See /oats-aweb section 4, **Channel
-selection and launch consent**, for the boundaries. Provider mode, consent and
-readiness never establish that a prompt was answered; actual outcomes belong to
-the kernel launch result and durable receipt, where supported. Passing
-confirmation does not prove native receive; `native-receive-unproven` remains.
+Under development mode Claude shows its development-channel prompt and OATS
+confirms it once at launch; `settings.oats.aweb.delivery: session` or
+`settings.oats.aweb.claudeChannelMode: approved` stop the prompt. See /oats-aweb
+section 4, **Channel selection and the development-channel prompt**. The kernel
+records each start's outcome in `instance.json` `launchPrompts.status` and
+explains a blocked start in its own `launch-prompt` readiness item. A confirmed
+prompt does not prove native receive; `native-receive-unproven` remains.
 
 **When woken**, read what the broker or channel presents first: it may be a
 line naming what is waiting, or the full mail/chat event with body. aw 1.36.21+
@@ -74,7 +73,7 @@ reconcile STATE and task records against exact delivered ids: use
 `aw mail inbox --show-all --json` with `--cursor`. Read state is not completion,
 and `--conversation-id` is not a recovery check.
 
-Some instances act as a resident identity through an expiring session grant
+Some instances act as a resident identity through a session grant
 (TASK.md says so). Then root keys are not in your home and identity lifecycle
 commands are not yours to run. At session start in a grant seat, run `aw whoami`,
 then `aw mail inbox` and `aw chat pending`; do not run `aw workspace status` or
