@@ -325,6 +325,42 @@ test("a registered worktree at work/ under a record that was given a link is a d
   assert.equal(d.git(d.fx.member, "rev-parse", `refs/heads/${branch}`), commit);
 });
 
+test("what work/ is is part of the plan's revision: a guarded apply refuses as stale when an own tree became a directory of the home, or the other way round, since the plan was shown (#962)", async (t) => {
+  const d = deployment(t);
+  const inst = await d.fx.spawn("dev", { instance: "dev-guarded" });
+  const work = join(inst.home, "work");
+  writeFileSync(join(work, FILE), BYTES);
+  // No receipt: the record decides. Nothing but the record's work mode changes below; the
+  // registered worktree, its branch, its file and its repository stay as they are.
+  rmSync(d.baselines(inst.home), { recursive: true });
+  const guarded = (revision, key) => ["--plan-revision", revision, "--idempotency-key", key];
+  const stale = (revision, key) => {
+    // E_PLAN_STALE says that nothing was done; what is on disk says the same below.
+    const error = d.refused(inst.instance, guarded(revision, key), "E_PLAN_STALE");
+    assert.equal(readFileSync(join(work, FILE), "utf8"), BYTES, "nothing was copied away or removed");
+    assert.equal(d.git(d.fx.member, "worktree", "list", "--porcelain").includes(`worktree ${realpathSync(work)}\n`), true, "the tree is where it was");
+    return error.details.plan;
+  };
+  const retained = d.plan(inst.instance);
+  assert.equal(retained.defaults.retainWorktree, true);
+  // The own tree becomes a directory of the home: the plan that said "retained" no longer applies.
+  d.record(inst.home, (meta) => { meta.work = "attached"; });
+  const copied = d.plan(inst.instance);
+  assert.equal(copied.defaults.retainWorktree, false);
+  assert.ok(copied.notes.includes(HOME_DIRECTORY_NOTE));
+  assert.deepEqual({ ...copied.facts.work, upstream: null }, { ...retained.facts.work, upstream: null }, "what Git says of work/ is the same");
+  assert.notEqual(copied.planRevision, retained.planRevision);
+  assert.equal(stale(retained.planRevision, "shown-as-retained").planRevision, copied.planRevision, "the refusal carries the fresh plan");
+  // The other way round: the plan that said "copied and removed" does not apply to an own tree.
+  d.record(inst.home, (meta) => { meta.work = "worktree"; });
+  assert.equal(d.plan(inst.instance).planRevision, retained.planRevision, "the same home, the same plan");
+  stale(copied.planRevision, "shown-as-copied");
+  // The plan as it is applies.
+  const result = d.retired(inst.instance, guarded(retained.planRevision, "as-it-is"));
+  assert.equal(result.retention.worktree, "retained");
+  assert.equal(readFileSync(join(result.retention.movedTo, FILE), "utf8"), BYTES);
+});
+
 test("an own tree with no repository, recorded or read from Git, is never removed with the home: refused before anything, --force included (#962)", async (t) => {
   const d = deployment(t);
   const inst = await d.fx.spawn("dev", { instance: "dev-norepo" });
