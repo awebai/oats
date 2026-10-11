@@ -667,8 +667,9 @@ own shell, not from an instance home:
   `PATH` the tick itself runs with. A harness the tick launches is looked up
   where its pane will look it up
   ([execution targets](execution-targets.md#the-servers-start-environment)):
-  the running OATS tmux server's `PATH`, or, when the tick is what starts the
-  server, the `PATH` of the login environment the server is created with. The
+  a launch configuration's own `PATH` when it sets one, else the running OATS
+  tmux server's `PATH`, or, when the tick is what starts the server, the
+  `PATH` of the login environment the server is created with. The
   unit's `PATH` is that lookup's fallback, when the login environment cannot
   be read.
 - **node**: the keg's `<prefix>/opt/<formula>/bin/node` when it is the node
