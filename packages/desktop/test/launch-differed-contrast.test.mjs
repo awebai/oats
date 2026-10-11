@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { launchDiffered } from '../renderer/launch-differed.mjs';
+import { launchDiffered, launchDifferedCSS } from '../renderer/launch-differed.mjs';
 import { sourceQuoteCSS } from '../renderer/source-quote.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
 import { instanceEventsCSS } from '../renderer/instance-events-view.mjs';
@@ -49,3 +49,9 @@ holds({ name: 'an Activity row', styles: ['.pop { background:var(--surface); }',
   html: '<main class="oats-view"><div class="pop"><section class="events-view"><ol class="events-rows"><li></li></ol></section></div></main>',
   also: (doc, li) => { const span = doc.createElement('span'); span.className = 'events-differed-detail'; span.textContent = 'Nearest entry x, first difference at 0'; li.append(span); },
   extra: [['.events-differed-detail', 'muted']] });
+
+// The Start dialog: under the status, on the dialog's surface, with the kernel's own message beneath (shell.css; the dialog brings the quote's CSS).
+holds({ name: 'the Start dialog', styles: [readFileSync(new URL('shell.css', renderer), 'utf8'), sourceQuoteCSS, launchDifferedCSS], into: '.start-outcome', painted: '.instance-start-dialog', bg: 'surface',
+  html: '<div class="oats-view instance-start-modal"><form class="instance-start-dialog"><p class="start-status">x</p><div class="start-outcome"></div></form></div>',
+  also: (doc, box) => { const p = doc.createElement('p'); p.className = 'start-kernel-says'; p.append('OATS says: ', Object.assign(doc.createElement('bdi'), { textContent: 'x' })); box.append(p); },
+  extra: [['.start-kernel-says', 'muted']] });

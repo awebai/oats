@@ -117,10 +117,20 @@ export function retainedSpawnDetails(d) {
   }
   return out;
 }
+/** Whether input reached the pane, as far as the outcome says: a submitted answer, or an incomplete result
+ * (a failed audit can follow a possible key). One rule for a spawn and for a start. */
+const inputNote = p => p.answers.length ? ' A launch-prompt answer was submitted; this does not confirm readiness.'
+  : p.status === 'incomplete' ? ' Input may already have been sent.' : '';
 export function retainedSpawnMessage(d) {
   if (!d.launchPrompts) return `${d.instance} was created but didn’t finish starting. Open it from the instance list instead of spawning again.`;
   const p = launchPromptOutcome(d.launchPrompts);
-  const sent = p.answers.length ? ' A launch-prompt answer was submitted; this does not confirm readiness.'
-    : p.status === 'incomplete' ? ' Input may already have been sent.' : '';
-  return `${d.instance} was retained: ${p.reason}.${sent} Inspect its existing pane, then use oats session start --home for this home. Do not spawn again.`;
+  return `${d.instance} was retained: ${p.reason}.${inputNote(p)} Inspect its existing pane, then use oats session start --home for this home. Do not spawn again.`;
+}
+/** A Start or Restart of an existing home that stopped at a launch prompt, in the Desktop's words: the
+ * kernel answers E_SPAWN_INCOMPLETE with the same retained details as a spawn. `instance` is the name the
+ * dialog started; `d` the decoded details. It claims the weaker thing for both statuses: a blocked start and
+ * one whose completion was not seen are both "not confirmed", never "failed" and never "started". */
+export function retainedStartMessage(instance, d) {
+  const p = launchPromptOutcome(d?.launchPrompts);
+  return `OATS could not confirm that ${instance} finished starting: ${p.reason}.${inputNote(p)} Its session was kept. Refresh status, then open its terminal to read what it shows. Do not start it again before that.`;
 }

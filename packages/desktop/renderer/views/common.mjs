@@ -1,6 +1,7 @@
 import { hashWorkspace, workspaceHash } from "../window-binding.mjs";
 import { validWorkspaceId } from "../workspace-id.mjs";
 import { remoteReason } from "../../../client/remote-address.mjs";
+import { retainedSpawnDetails } from "../../../client/launch-prompt-outcome.mjs";
 
 /* oats desktop — shared helpers for renderer views.
    Plain ES module, DOM-only, no frameworks (contract). Views import from
@@ -24,6 +25,14 @@ export function miniMarkdown(s) {
     .replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
 }
 
+/* A failed start's retained launch-prompt outcome (`incomplete` beside E_SPAWN_INCOMPLETE on the start
+   route's answer): kept on the error only when the outcome reader decodes it again and it holds an outcome. */
+function retainedOutcome(body) {
+  if (body?.code !== "E_SPAWN_INCOMPLETE") return null;
+  const kept = retainedSpawnDetails(body.incomplete);
+  return kept?.launchPrompts ? kept : null;
+}
+
 /* Fetch JSON via the shell's ctx.api — one seam so a base-URL change (remote
    panel, port) never touches the views. Tolerates BOTH ctx.api shapes:
    a Fetch Response (harness: ctx.api = (p, o) => fetch(base + p, o)) and a
@@ -40,6 +49,8 @@ export async function apiJson(ctx, pathname, opts) {
     if (Array.isArray(d.labels)) err.labels = d.labels; // E_TEAM_CONFLICT: the disagreeing team labels
     const reason = remoteReason(d.reason); // a remote refusal's reason, only once re-validated
     if (reason) err.reason = reason;
+    const incomplete = retainedOutcome(d); // a start that stopped at a launch prompt, only once re-validated
+    if (incomplete) err.incomplete = incomplete;
     throw err;
   }
   return d;
@@ -61,6 +72,9 @@ export function httpError(r, pathname) {
   // A remote refusal's reason (server → main → renderer): kept only once re-validated, else dropped.
   const reason = remoteReason(r.body?.reason);
   if (reason) err.reason = reason;
+  // A start that stopped at a launch prompt (server → main → renderer): its retained outcome, decoded again here.
+  const incomplete = retainedOutcome(r.body);
+  if (incomplete) err.incomplete = incomplete;
   // A window's refusal for a workspace not served carries the served choices (#481).
   if (Array.isArray(r.body?.workspaces)) err.workspaces = r.body.workspaces;
   return err;
