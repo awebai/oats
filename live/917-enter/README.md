@@ -279,7 +279,10 @@ repeat the run if it is needed.
   - one row, `flag-ignored`, for the entry `aweb-dev-channel-flag-ignored-1`;
   - no key: `enterRows: 0`, no `attempted` or `submitted` row;
   - `frameMatchesFlagIgnored: true`;
-  - the no-channel-delivery warning, and not the statement that OATS confirms
+  - the no-channel-delivery warning (opening either with #917's words, "Claude
+    ignored --dangerously-load-development-channels:", or with the follow-up's,
+    "Claude reported that channels are not currently available and ignored the
+    development-channel flag"), and not the statement that OATS confirms
     the prompt.
 
   **What the spawn records.** On a fresh config, Claude can keep the notice

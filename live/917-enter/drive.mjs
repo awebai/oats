@@ -189,13 +189,16 @@ const record = (label, result) => {
 // notice. The telemetry A/B's run B is enter with LIVE_ENTER_EXPECT=flag-ignored.
 const EXPECT = process.env.LIVE_ENTER_EXPECT || (mode === "enter" ? "completed" : "flag-ignored");
 if (!["completed", "flag-ignored"].includes(EXPECT)) { console.error(`LIVE_ENTER_EXPECT must be completed or flag-ignored, not ${EXPECT}`); process.exit(2); }
+// The flag-ignored warning's opening words: #917's, and the follow-up's that say what was seen.
+const FLAG_IGNORED_WORDS = ["Claude ignored --dangerously-load-development-channels:",
+  "Claude reported that channels are not currently available and ignored the development-channel flag"];
 // What the kernel's own record and rows must show, and what the witnessed frame must be.
 const rowsShow = {
   completed: (e) => e.status === "completed" && e.launched === true && e.enterKeys === 1 && e.enterRows === 2
     && e.entry === DEV_CHANNEL_ENTRIES[0].id,
   "flag-ignored": (e) => e.status === "flag-ignored" && e.launched === true && e.enterRows === 0
     && e.entry === FLAG_IGNORED_ENTRIES[0].id
-    && (e.warnings ?? []).some((w) => w.startsWith("Claude ignored --dangerously-load-development-channels:"))
+    && (e.warnings ?? []).some((w) => FLAG_IGNORED_WORDS.some((words) => w.startsWith(words)))
     && !(e.warnings ?? []).some((w) => w.startsWith("This start passes")),
 };
 const frameShows = { completed: (e) => e.frameEqualsEntryOne === true, "flag-ignored": (e) => e.frameMatchesFlagIgnored === true };
