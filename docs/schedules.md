@@ -647,7 +647,13 @@ registry by hand.
 The unit is a launchd user agent (`~/Library/LaunchAgents/ai.oats.schedule-tick.plist`,
 `StartCalendarInterval` with an empty dict) or a systemd user timer and service
 (`oats-schedule-tick.timer`, `OnCalendar=*-*-* *:*:00`, `AccuracySec=1s`,
-`Persistent=false`). Both fire at second 0 of every minute. `install` renders it
+`Persistent=false`). Both fire at second 0 of every minute; the launchd job is
+`ProcessType Standard`, not `Background`, whose throttling delayed its start
+under load. The tick evaluates the minute it was fired for as long as it starts
+within that minute. A tick still running when the next minute fires loses that
+minute's fire, on both platforms: launchd and systemd do not start a job that is
+still running, and nothing replays the minute (#902's bounded catch-up, a
+separate change, is what recovers it). `install` renders it
 from **the environment of the shell it runs in**, so run it from the operator's
 own shell, not from an instance home:
 
