@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createDeploymentObserver, MAX_DEPLOYMENT_OBSERVATIONS } from '../../client/deployment-observer.mjs';
+import { cliDeploymentRead, DEPLOYMENT_READ_TIMEOUT, DEPLOYMENT_READ_MAX_BUFFER } from '../../client/deployment-read-cli.mjs';
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
 const status = fixture('status'), header = fixture('workspace-status'), version = fixture('version');
 const context = dirname(status.root);
@@ -108,4 +109,43 @@ test('observedAt: the OLDEST of the two reads\' kernel stamps; a live (--max-age
   const allBroken = setup(async (_cli, { action }) => stamped(action, 'garbage'));
   const fallback = await allBroken.observe(context);
   assert.equal(fallback.ok, true); assert.ok(Date.parse(fallback.observedAt) >= before, 'completion time when no sound stamp exists');
+});
+
+// A client that runs the kernel through its own exec gives the observer a reader that closes over it.
+test('a reader that closes over a client\'s own exec: every read of an observation runs through that exec, with the options as given', async () => {
+  const calls = [];
+  const exec = (bin, argv, options, done) => { calls.push({ bin, argv, options }); done(null, JSON.stringify(argv[0] === 'status' ? status : header)); return { pid: 1 }; };
+  const env = { PATH: '/fixture/bin', KEEP: 'mine' };
+  const owner = setup((cli, options) => cliDeploymentRead(cli, options, { exec, env }));
+  const first = await owner.observe(context);
+  assert.equal(first.ok, true);
+  assert.equal(first.workspaceStatus.workspace.name, 'northwind');
+  // Both reads, and nothing else: one `status`, one `workspace status`, on the accepted binary.
+  assert.deepEqual(calls.map(c => [c.bin, c.argv]).sort(), [
+    ['/fixture/bin/oats', ['status', '--dir', context, '--json']],
+    ['/fixture/bin/oats', ['workspace', 'status', '--dir', context, '--json']],
+  ].sort());
+  // The options reach the exec as the reader built them: it adds none and drops none.
+  for (const { options } of calls) {
+    assert.deepEqual(Object.keys(options).sort(), ['cwd', 'encoding', 'env', 'maxBuffer', 'shell', 'timeout']);
+    assert.deepEqual([options.cwd, options.shell, options.encoding, options.timeout, options.maxBuffer], [context, false, 'utf8', DEPLOYMENT_READ_TIMEOUT, DEPLOYMENT_READ_MAX_BUFFER]);
+    assert.equal(options.env.KEEP, 'mine');
+  }
+  // maxAge rides on both reads for a kernel that declares observe-max-age, through the same exec.
+  owner.state.cli.features = [...owner.state.cli.features.filter(f => f !== 'observe-max-age'), 'observe-max-age'];
+  calls.length = 0;
+  assert.equal((await owner.observe(context, { maxAge: 60 })).ok, true);
+  assert.equal(calls.length, 2);
+  for (const { argv } of calls) assert.deepEqual(argv.slice(-3), ['--max-age', '60', '--json']);
+});
+
+test('a client\'s own exec calls back with execFile\'s own error: a timeout is told by `killed`, an overflow by its code', async () => {
+  const failing = error => setup((cli, options) => cliDeploymentRead(cli, options, { exec: (_bin, _argv, _options, done) => { done(error, ''); }, env: {} }));
+  assert.equal((await failing({ killed: true }).observe(context)).reason.code, 'E_CLI_TIMEOUT');
+  assert.equal((await failing({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }).observe(context)).reason.code, 'E_CLI_OUTPUT_LIMIT');
+  // An exec that replaces that error with its own loses both: the read is a plain failure.
+  assert.equal((await failing(new Error('timed out after 30000 ms')).observe(context)).reason.code, 'E_CLI_FAILED');
+  // An exec that throws is a failed read, never an exception out of the observer.
+  const throwing = setup((cli, options) => cliDeploymentRead(cli, options, { exec: () => { throw new Error('no such file'); }, env: {} }));
+  assert.equal((await throwing.observe(context)).reason.code, 'E_CLI_FAILED');
 });

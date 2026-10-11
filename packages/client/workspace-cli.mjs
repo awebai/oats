@@ -95,6 +95,7 @@ export function workspaceArgv(options) {
   return { argv: ['sync', '--dir', options.context, '--json'], cwd: options.context, timeout: WORKSPACE_WRITE_TIMEOUT };
 }
 
+/** `io.exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`). */
 export function cliWorkspace(cli, options, terms, io = {}) {
   requireTerms(terms, 'cliWorkspace');
   const gate = workspaceGate(cli, terms);

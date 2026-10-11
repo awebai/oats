@@ -28,6 +28,7 @@ export function lifecycleArgv(options) {
   if (o.operation === 'stop' && !choices.recursive) args.push('--no-recursive');
   args.push('--json'); return args;
 }
+/** `exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`). */
 export function cliLifecycle(bin, options, { exec = execFile, timeout } = {}) {
   const argv = lifecycleArgv(options);
   if (!absolute(bin) || !argv) return Promise.resolve(failure('E_BAD_ARGS'));

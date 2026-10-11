@@ -175,6 +175,34 @@ export async function candidates(io) {
 }
 
 /**
+ * The kernel record of an ACCEPTED probe payload: what every gate of this home reads (`bin`, `version`,
+ * the API integers, `features`, `remote`). A field is kept only in the form its gate reads: a list
+ * when the payload has a list, an API integer only at the value that is gated on. `discover` answers
+ * this for the candidate that wins. A client that probes one known kernel reads the answer with
+ * `parseProbeStdout`, accepts it with `acceptProbe`, and makes its record with this: it does not
+ * call `acceptProbe` itself, so a payload that was not accepted must not reach it.
+ */
+export function cliRecord(payload, { bin, source }) {
+  return { ok: true, bin, source, version: payload.version,
+    ...(harnessList(payload) ? { harnesses: harnessList(payload) } : {}),
+    ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}),
+    ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}),
+    ...([1, 2].includes(payload.scheduleApi) ? { scheduleApi: payload.scheduleApi } : {}),
+    ...(payload.operationsApi === 2 ? { operationsApi: 2 } : {}),
+    ...(payload.lifecycleApi === 1 ? { lifecycleApi: 1 } : {}),
+    ...(payload.readinessApi === 2 ? { readinessApi: 2 } : {}),
+    ...(payload.spawnPreviewApi === 2 ? { spawnPreviewApi: 2 } : {}),
+    ...(payload.spawnApplyApi === 1 ? { spawnApplyApi: 1 } : {}),
+    ...(payload.eventsApi === 2 ? { eventsApi: 2 } : {}),
+    ...(payload.scheduleHistoryApi === 3 ? { scheduleHistoryApi: 3 } : {}),
+    ...(payload.workspaceApi === 2 ? { workspaceApi: 2 } : {}),
+    ...(payload.automationsApi === 1 ? { automationsApi: 1 } : {}),
+    ...(payload.capabilityShowApi === 1 ? { capabilityShowApi: 1 } : {}),
+    ...(Array.isArray(payload.features) ? { features: payload.features } : {}),
+    ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };
+}
+
+/**
  * Discover the first acceptable CLI. `probe(path)` runs `<path> version
  * --json` (execFile, absolute binary, no shell) and resolves { stdout } on
  * CLEAN exit — it must REJECT on nonzero exit or timeout even when stdout
@@ -209,7 +237,7 @@ export async function discover(io, probe) {
         continue;
       }
       const a = acceptProbe(payload);
-      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(harnessList(payload) ? { harnesses: harnessList(payload) } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}), ...([1, 2].includes(payload.scheduleApi) ? { scheduleApi: payload.scheduleApi } : {}), ...(payload.operationsApi === 2 ? { operationsApi: 2 } : {}), ...(payload.lifecycleApi === 1 ? { lifecycleApi: 1 } : {}), ...(payload.readinessApi === 2 ? { readinessApi: 2 } : {}), ...(payload.spawnPreviewApi === 2 ? { spawnPreviewApi: 2 } : {}), ...(payload.spawnApplyApi === 1 ? { spawnApplyApi: 1 } : {}), ...(payload.eventsApi === 2 ? { eventsApi: 2 } : {}), ...(payload.scheduleHistoryApi === 3 ? { scheduleHistoryApi: 3 } : {}), ...(payload.workspaceApi === 2 ? { workspaceApi: 2 } : {}), ...(payload.automationsApi === 1 ? { automationsApi: 1 } : {}), ...(payload.capabilityShowApi === 1 ? { capabilityShowApi: 1 } : {}), ...(Array.isArray(payload.features) ? { features: payload.features } : {}), ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };
+      if (a.ok) return cliRecord(payload, { bin: path, source: src.source });
       tried.push({ path, source: src.source, reason: a.reason, version: payload?.version });
     }
   }

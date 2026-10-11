@@ -10,7 +10,8 @@ export const DEPLOYMENT_READ_MAX_BUFFER = 4 * 1024 * 1024;
 const absolute = path => typeof path === 'string' && !path.includes('\0') && isAbsolute(path) && resolve(path) === path;
 
 /** `status` is a raw object; `workspace status` is a schemaVersion:1 envelope.
- * Those are distinct native command contracts, not interchangeable generations. */
+ * Those are distinct native command contracts, not interchangeable generations.
+ * `io.exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`); `io.env` its environment. */
 export function cliDeploymentRead(cli, options, io = {}) {
   const action = options?.action;
   const gate = deploymentReadGate(cli, action);

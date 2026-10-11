@@ -22,7 +22,11 @@ const absolute = value => typeof value === 'string' && !value.includes('\0') && 
 
 /** getContext(id) is the owner's registry lookup, not renderer data. revision
  * must change on CLI/registry invalidation. Pending revoked reads retain their
- * slots until settlement; a new epoch cannot bypass the resource bound. */
+ * slots until settlement; a new epoch cannot bypass the resource bound.
+ * `read` is a reader with `cliDeploymentRead`'s signature, `(cli, options)`, and its answer. A client
+ * that runs the kernel through its own `exec` passes one that closes over it:
+ * `read: (cli, options) => cliDeploymentRead(cli, options, { exec })`. Both reads of an observation
+ * go through it, and nothing else of the observer starts a process. */
 export function createDeploymentObserver({ getContext, read = cliDeploymentRead }) {
   const pending = new Map(); let active = 0, alive = true;
   function admit(id) {
