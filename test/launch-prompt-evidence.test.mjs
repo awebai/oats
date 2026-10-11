@@ -178,7 +178,8 @@ test('evidence keeps any pane geometry, with rows matching its height', t => {
 });
 
 // `question` is a private post-answer screen carrying a question marker: it
-// blocks after the Enter. Before the Enter it is an unknown screen that holds still.
+// blocks after the Enter. Before the Enter it is an unknown screen that holds still
+// for the 2 s settle window: 21 captures at 100 ms.
 for (const mode of ['saved', 'write-failed', 'throw', 'audit-failed', 'no-answer', 'send-failed', 'send-uncertain', 'completed', 'replaced-home']) {
  test(`controller retention trigger and permanent closure: ${mode}`, t => {
   const { args, home, dir } = setup(t), prompt = linux296['110x35'], done = frame('SYNTHETIC complete');
@@ -221,7 +222,7 @@ for (const mode of ['saved', 'write-failed', 'throw', 'audit-failed', 'no-answer
     assert.deepEqual([receipt.outcome, receipt.recognition], mode === 'completed' ? ['completed', 'stable-screen'] : ['blocked', 'unmatched']);
     assert.equal(receipt.startId, terminal.startId); assert.equal(receipt.signatureDigest, terminal.signatureDigest);
     assert.equal(fs.readFileSync(join(dir, 'frame.txt'), 'utf8'), mode === 'completed' ? done : args.screen.text);
-    assert.equal(captures, mode === 'no-answer' ? 3 : mode === 'completed' ? 6 : 4, 'only existing controller captures, no evidence recapture');
+    assert.equal(captures, mode === 'no-answer' ? 21 : mode === 'completed' ? 6 : 4, 'only existing controller captures, no evidence recapture');
     if (mode === 'saved') {
       const eventRows = fs.readFileSync(join(home, '.oats-events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
       const event = eventRows.find(row => row.kind === 'launch-prompt' && row.data.status === 'blocked');
