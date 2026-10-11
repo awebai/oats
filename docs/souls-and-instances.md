@@ -447,7 +447,8 @@ scheduled it to release the claim. A self-retire that is scheduled counts from t
 while its completion lives. A retire killed while it holds the claim leaves
 the file behind until that name is retired again: the next retire takes the
 claim over, because its holder is verifiably gone, and the file is safe to
-remove by hand once its pid is gone. The claim does not end what the killed
+remove by hand once its pid is gone. A holder that was killed and that its
+parent has not reaped (a zombie) is gone too: nothing waits for that reap. The claim does not end what the killed
 retire left running: one of its retire hooks may still be running when the
 next retire takes the claim over and runs the hooks again (#865). A holder whose start time cannot be
 read is never taken for gone; the refusal names the pid, the file and the
@@ -1456,7 +1457,8 @@ and hooks, and fetches and writes nothing.
 A process is "still running" when its pid runs with the recorded start
 time. It counts as gone only when its pid does not run (the operating
 system says no such process: `kill -0` fails with ESRCH), or runs with another
-start. When the start cannot be read (for example where `ps` fails), the
+start, or is a zombie: it has exited or was killed, and its parent has not
+reaped it. When the start cannot be read (for example where `ps` fails), the
 process is never taken for gone. `add` and `remove` refuse with
 `E_LIFECYCLE_BUSY`, naming the pid and the exact file to remove by hand once
 you have checked it: the record `.oats/trees/<p>.json`, or the claim
