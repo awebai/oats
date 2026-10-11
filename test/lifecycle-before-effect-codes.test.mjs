@@ -91,17 +91,15 @@ test("both verbs list at least the ten codes a client already read as a refusal 
   }
 });
 
-test("the Desktop's own set of refusals lies inside the kernel's list, for a stop and for a retire: it exports it as BEFORE_EFFECT_CODES, and every code in it is one the kernel answers only before any effect", async (t) => {
+test("the Desktop's own set of refusals lies inside the kernel's list, for a stop and for a retire: it exports it as BEFORE_EFFECT_CODES, and every code in it is one the kernel answers only before any effect", async () => {
   // The module loads under plain Node, without the Desktop's own dependencies, as the other root
   // tests that import from packages/desktop/server do (test/desktop-trigger-sources-kernel.test.mjs): it needs no
   // `.integration.mjs` name (scripts/run-tests.mjs).
   const desktop = await import(`../${DESKTOP_MODULE}`);
-  if (desktop.BEFORE_EFFECT_CODES === undefined) {
-    t.todo(`${DESKTOP_MODULE} does not export BEFORE_EFFECT_CODES yet (its set is a private constant): until it does, nothing ties the codes the Desktop reads as "refused, nothing happened" to lib/errors.mjs BEFORE_EFFECT_CODES`);
-    return;
-  }
+  // An export that is gone or renamed fails here, by name: without it nothing ties the codes the
+  // Desktop reads as "refused, nothing happened" to the kernel's list.
   const codes = desktop.BEFORE_EFFECT_CODES;
-  assert.equal(Array.isArray(codes), true, `${DESKTOP_MODULE} exports BEFORE_EFFECT_CODES as a list (one list, for a stop and for a retire)`);
+  assert.ok(Array.isArray(codes), `${DESKTOP_MODULE} does not export BEFORE_EFFECT_CODES as a list (${codes === undefined ? "it exports no such name" : `what it exports under that name is no array: ${typeof codes}`}): the one list, for a stop and for a retire, that this test holds inside lib/errors.mjs BEFORE_EFFECT_CODES`);
   assert.ok(codes.length > 0, "the list is not empty");
   for (const code of codes) assert.equal(typeof code, "string", `every entry is a string: ${JSON.stringify(code)}`);
   // Inside, never equal: the client may know fewer codes than the kernel lists.
