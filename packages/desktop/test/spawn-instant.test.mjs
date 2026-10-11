@@ -9,7 +9,7 @@ import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
 import { creation } from './helpers/spawn-apply-fixture.mjs';
 import { createSpawnJobs, pendingPlacement, DRIFT_TEXT, SPAWN_STORAGE_KEY } from '../renderer/spawn-jobs.mjs';
-import { flagIgnored, FLAG_IGNORED_WARNING, DEV_CHANNEL_STATEMENT } from './helpers/launch-prompt-fixture.mjs';
+import { flagIgnored, EXAMPLE_WARNING_TWO, EXAMPLE_WARNING_ONE } from './helpers/launch-prompt-fixture.mjs';
 
 const created = (name = 'preview-worktree-purpose') => kernel(name).result;
 const receipt = (preview = created(), changes = {}) => ({ started: true, envelope: { schemaVersion: 1, ok: true, result: creation(preview, changes) } });
@@ -513,8 +513,8 @@ test('store: retained prompt outcome explains reason/recovery without Reopen spa
 
 const IGNORED_NAME = created().decision.instance;
 const IGNORED = `${IGNORED_NAME} started. Claude Code reported that channels are not available and ignored the channel option, so mail and chat will not wake this instance.`;
-const IGNORED_DETAIL = `OATS says:\n${DEV_CHANNEL_STATEMENT}\n${FLAG_IGNORED_WARNING}`;
-const ignoredReceipt = (changes = {}) => receipt(created(), { launchPrompts: flagIgnored(), warnings: [DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING], ...changes });
+const IGNORED_DETAIL = `OATS says:\n${EXAMPLE_WARNING_ONE}\n${EXAMPLE_WARNING_TWO}`;
+const ignoredReceipt = (changes = {}) => receipt(created(), { launchPrompts: flagIgnored(), warnings: [EXAMPLE_WARNING_ONE, EXAMPLE_WARNING_TWO], ...changes });
 const said = notes => notes.filter(n => n.message === IGNORED);
 const WAKE = { cron: '0 * * * *', tz: 'UTC', message: 'wake', enabled: false };
 
@@ -625,7 +625,7 @@ test('flag-ignored and a reload: shown before the window reloads, it is not show
   // The job waits for the roster, so it is still kept: with the fact that the notice was shown, never its text.
   const kept = JSON.parse(storage.raw());
   assert.equal(kept.length, 1); assert.equal(kept[0].flagSaid, true);
-  assert.doesNotMatch(storage.raw(), /OATS says|will not wake|dangerously|channels|warning/i, 'no warning text and no sentence is stored');
+  assert.doesNotMatch(storage.raw(), /OATS says|will not wake|example|warning|hook|check a setting/i, 'no warning text and no sentence is stored');
   first.s.dispose(); // the window reloads
   const second = rig.window(storage);
   assert.equal(second.s.recover(), 1); await settle(20);

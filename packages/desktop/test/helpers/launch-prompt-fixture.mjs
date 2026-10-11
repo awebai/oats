@@ -28,11 +28,15 @@ export const observationTimeout = (extra = {}) => ({ status: 'blocked', reason: 
   answers: [{ class: 'awebDevelopmentChannel', signatureId: 'aweb-dev-channel-confirmation-1', status: 'submitted' }], receipt: [], ...extra });
 export const observationTimeoutMessage = home => `blocked: observation timeout; home and pane retained: inspect ${home}, then use oats session start --home '${home}'. OATS sent one Enter to Claude's development-channel confirmation, and the screen then never settled into a session within the 30 s bound; no other key is sent: look at the pane, and if Claude's session is running, it started.`;
 
-// A start that worked while Claude ignored the channel flag (0.52.0). Hand-written from the same head:
-// docs/desktop-cli-api.md "Start and restart" and "Launch prompt results", and lib/core.mjs for the two
-// fixed strings the kernel puts among a start's `warnings`. No kernel execution.
-export const DEV_CHANNEL_STATEMENT = "This start passes --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace; OATS confirms Claude's development-channel prompt once. The messaging provider's delivery or channel-mode setting stops it (the provider's warning names its keys).";
-export const FLAG_IGNORED_WARNING = 'Claude ignored --dangerously-load-development-channels: channels are not available for this Claude account, so this instance gets no channel delivery: mail and chat will not wake it; set settings.oats.aweb.delivery: session (the host wake broker) and respawn the instance to restore wakes.';
+// A start that worked while Claude ignored the channel flag (0.52.0). The shape is hand-written from the same
+// head: docs/desktop-cli-api.md "Start and restart" and "Launch prompt results". No kernel execution.
+//
+// Two example warnings for such an answer's `warnings`. They are NOT the kernel's sentences and say nothing
+// the kernel says: the Desktop shows a warning whole, as one display line, and matches none by its words, so
+// any text serves. The kernel's own two strings are read where the kernel is: the root test
+// test/desktop-launch-prompt-kernel.test.mjs imports them from lib/core.mjs.
+export const EXAMPLE_WARNING_ONE = "example warning one: a launch hook's note with a colon, a quoted 'value' and a path /srv/example/hook.log; nothing of it is matched.";
+export const EXAMPLE_WARNING_TWO = 'example warning two: a second note, with advice to check a setting first (example.setting: on) and then to start the instance again.';
 export const flagIgnored = (extra = {}) => ({ status: 'flag-ignored', reason: 'channels-unavailable', signatureId: 'aweb-dev-channel-flag-ignored-1',
   startId: 'fixture-start-052', at: '2026-10-11T12:00:00.000Z', ...extra });
 /** A start's or restart's successful result. `launchPrompts` undefined: a kernel before 0.52.0, which sends none. */

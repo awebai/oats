@@ -12,7 +12,7 @@ import { DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs
 import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
 import { target, selector, data, kernel, cli as CLI, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 import { creation } from './helpers/spawn-apply-fixture.mjs';
-import { flagIgnored, FLAG_IGNORED_WARNING, DEV_CHANNEL_STATEMENT } from './helpers/launch-prompt-fixture.mjs';
+import { flagIgnored, EXAMPLE_WARNING_TWO, EXAMPLE_WARNING_ONE } from './helpers/launch-prompt-fixture.mjs';
 import { mountSpawn, settle } from './helpers/spawn-dialog-host.mjs';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -21,9 +21,9 @@ const NAME = preview().decision.instance;
 const UNAVAILABLE = `${NAME} started. Claude Code reported that channels are not available and ignored the channel option, so mail and chat will not wake this instance.`;
 const numbered = n => Array.from({ length: n }, (_, i) => `warning ${i + 1}`);
 /** The kernel's answer to a launched spawn, as `oats spawn --json` gives it from 0.52.0. */
-const answer = (changes = {}) => creation(preview(), { launchPrompts: flagIgnored(), warnings: [DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING], ...changes });
+const answer = (changes = {}) => creation(preview(), { launchPrompts: flagIgnored(), warnings: [EXAMPLE_WARNING_ONE, EXAMPLE_WARNING_TWO], ...changes });
 const receiptOf = changes => spawnCreationReceipt(answer(changes), { target, preview: preview() });
-const FACT = { reason: 'channels-unavailable', warnings: [DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING], omitted: 0 };
+const FACT = { reason: 'channels-unavailable', warnings: [EXAMPLE_WARNING_ONE, EXAMPLE_WARNING_TWO], omitted: 0 };
 const REF = 'a'.repeat(64);
 const viewOf = (receipt, extra = {}) => ({ spawnApplyViewApi: 1, status: 'complete', target, spawnRef: REF, preview: preview(), wakeRequested: false, receipt, reason: null, ...extra });
 const without = receipt => { const { flagIgnored: _dropped, ...rest } = receipt; return rest; };
@@ -82,7 +82,7 @@ test('the view reads the key again through the reader\'s decoder, and crossing i
   assert.deepEqual(twice, once);
   // It is read from the receipt's own key, never composed again from the warnings, which are a count here:
   // a view whose receipt also holds the kernel's `launchPrompts` gets nothing from it.
-  const smuggled = spawnApplyView(viewOf({ ...without(receipt), launchPrompts: flagIgnored(), warnings: [FLAG_IGNORED_WARNING] }));
+  const smuggled = spawnApplyView(viewOf({ ...without(receipt), launchPrompts: flagIgnored(), warnings: [EXAMPLE_WARNING_TWO] }));
   assert.deepEqual(smuggled.receipt, without(receipt));
   // An older server sends none; a partial apply keeps it beside its own reason.
   assert.deepEqual(spawnApplyView(viewOf(without(receipt))).receipt, without(receipt));
@@ -193,7 +193,7 @@ const kernelAnswer = (changes = {}) => () => ({ started: true, envelope: { schem
 test('dialog: its own completion shows the notice once, beside what the completion says', async t => {
   const { u, notices } = await press(t, kernelAnswer());
   assert.match(u.text('.fstatus'), new RegExp(`^Created ${NAME}`));
-  assert.deepEqual(notices, [[UNAVAILABLE, { detail: `OATS says:\n${DEV_CHANNEL_STATEMENT}\n${FLAG_IGNORED_WARNING}` }]]);
+  assert.deepEqual(notices, [[UNAVAILABLE, { detail: `OATS says:\n${EXAMPLE_WARNING_ONE}\n${EXAMPLE_WARNING_TWO}` }]]);
   // The press is spent: the completion cannot be reached a second time from this dialog.
   assert.equal(u.q('.fspawn').disabled, true);
   u.q('.fspawn').click(); await settle(10);
@@ -208,7 +208,7 @@ test('dialog: a partial apply shows both facts: the notice once, and the wake sc
   const { u, notices } = await press(t, kernelAnswer({ wake: { requested: true, saved: false, error: { code: 'E_SCHEDULE', message: 'PRIVATE scheduler text' } } }), requestWake);
   assert.equal(u.spawns().at(0).wake.message, 'check in', 'the wake was requested');
   // The channel notice, exactly and once.
-  assert.deepEqual(notices, [[UNAVAILABLE, { detail: `OATS says:\n${DEV_CHANNEL_STATEMENT}\n${FLAG_IGNORED_WARNING}` }]]);
+  assert.deepEqual(notices, [[UNAVAILABLE, { detail: `OATS says:\n${EXAMPLE_WARNING_ONE}\n${EXAMPLE_WARNING_TWO}` }]]);
   // And the partial apply's own fact is not lost to it: its status, and the way to the schedules.
   assert.match(u.text('.fstatus'), /wake schedule was not saved/); assert.doesNotMatch(u.text('.fstatus'), /PRIVATE/);
   assert.equal(u.dialog().querySelector('.guarded-schedules').textContent, 'View schedules');

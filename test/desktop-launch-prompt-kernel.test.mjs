@@ -12,7 +12,7 @@
 // the flag (`channelsUnavailable`). The kernel's own tests pin those; this file reads lib/ and edits nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createLaunchPromptController } from "../lib/launch-prompts.mjs";
@@ -170,10 +170,51 @@ test("a start where Claude ignored the flag: the kernel's record and its own war
   assert.equal(cut.detail.includes(FLAG_IGNORED_WARNING), false);
   // Seven of the kernel's own sentence fit the bound on the total; the eighth does not.
   assert.equal(launchFlagIgnored({ ...answer, warnings: Array(8).fill(FLAG_IGNORED_WARNING) }).warnings.length, Math.floor(4096 / FLAG_IGNORED_WARNING.length));
+  // The kernel's two sentences are not looked for: with any other status, or none, they give no fact and no notice.
+  for (const launchPrompts of [undefined, { status: "not-engaged", startId: "s", at: "t" }, { status: "completed", answers: [], reason: "recognized launch boundary", receipt: [] }])
+    assert.equal(launchFlagIgnored({ ...answer, launchPrompts, warnings: [DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING] }), null);
   // The controller's own result is not the start's answer: a kept-session reader that met it reads it as unknown.
   assert.equal(launchPromptOutcome(result).status, "unknown");
   // Its one row in Activity: the notice is the screen OATS recognised.
   assert.deepEqual(activity(io.audits), [{ status: "flag-ignored", reason: "channels-unavailable", claudeVersion: "2.1.296", signatureId: NOTICE }]);
+});
+
+test("no module that makes or shows the notice holds the kernel's words: no run of eight consecutive words of its two sentences", () => {
+  // The Desktop shows the kernel's warnings and matches none by its words, so its code needs none of them. The
+  // check reads the kernel's own constants, so it follows the kernel's wording by itself.
+  // Measured when this was written: the longest run the Desktop shares with the kernel's flag-ignored sentence is
+  // six words, in the headline's "mail and chat will not wake". A failure here is a copy that got in, or a new
+  // sentence of the Desktop or of the kernel that came too close.
+  const RUN = 8;
+  const words = (text) => text.split(/\s+/).filter(Boolean);
+  const runs = (sentence, n = RUN) => { const w = words(sentence); return Array.from({ length: Math.max(0, w.length - n + 1) }, (_, i) => w.slice(i, i + n).join(" ")); };
+  /** The runs of `sentence` that `text` holds, however the text breaks its lines, in code or in a comment
+   * (a comment's line markers are not words). */
+  const held = (text, sentence) => {
+    const flat = words(text.replace(/^[ \t]*(?:\/\/+|\/\*+|\*+\/?)[ \t]?/gm, "")).join(" ");
+    return runs(sentence).filter((run) => flat.includes(run));
+  };
+  const sentences = { FLAG_IGNORED_WARNING, DEV_CHANNEL_STATEMENT };
+  // The reader, the receipt that carries its fact, and the three places that show the notice.
+  const sources = ["../packages/client/launch-prompt-outcome.mjs", "../packages/client/spawn-apply-contract.mjs", "../packages/desktop/renderer/start-instance.mjs",
+    "../packages/desktop/renderer/spawn-dialog.mjs", "../packages/desktop/renderer/spawn-jobs.mjs"];
+  for (const [name, sentence] of Object.entries(sentences)) {
+    assert.ok(runs(sentence).length >= 20, `${name}: long enough to be split into runs`);
+    for (const path of sources) assert.deepEqual(held(readFileSync(new URL(path, import.meta.url), "utf8"), sentence), [], `${path} holds words of ${name}`);
+  }
+  // The check itself: it reports a text that holds a whole sentence, and one that holds eight consecutive words
+  // of it, also across a line break in code or in a comment; seven are not a run. Without this a mistake in the
+  // splitting passes for ever.
+  for (const [name, sentence] of Object.entries(sentences)) {
+    assert.deepEqual(held(`const WARNING = ${JSON.stringify(sentence)};`, sentence), runs(sentence), `${name}: whole`);
+    const w = words(sentence), eight = w.slice(4, 4 + RUN).join(" ");
+    assert.deepEqual(held(`  if (w === "${eight}") return true;`, sentence), [eight], `${name}: eight words`);
+    const first = w.slice(4, 8).join(" "), rest = w.slice(8, 4 + RUN).join(" ");
+    for (const broken of [`\`${first}\n    ${rest}\``, `  // ${first}\n  // ${rest}`, `/** ${first}\n * ${rest} */`, `   * ${first}\n   * ${rest}`])
+      assert.deepEqual(held(broken, sentence), [eight], `${name}: across a line break: ${JSON.stringify(broken)}`);
+    assert.deepEqual(held(w.slice(4, 4 + RUN - 1).join(" "), sentence), [], `${name}: seven words`);
+    assert.deepEqual(held(w.slice(4, 4 + RUN).reverse().join(" "), sentence), [], `${name}: the same words in another order`);
+  }
 });
 
 test("the kernel's own E_LAUNCH_CONFIG_AMBIGUOUS reads as the Desktop's sentence at a preview and at the apply's re-read", async () => {

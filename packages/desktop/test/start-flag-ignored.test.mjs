@@ -1,9 +1,9 @@
 // A Start or Restart that worked while Claude Code ignored the channel option (OATS 0.52.0, awebai/oats#917):
 // the start's successful answer carries `launchPrompts: {status: "flag-ignored", ...}` and the kernel's own
 // words as one string among its `warnings`. The start worked, so the dialog closes and the terminal opens as
-// for any start; a notice then says that mail and chat will not wake the instance, with every warning of
+// for any start; a notice then says that mail and chat will not wake the instance, with the warnings of
 // that answer under "OATS says:". The answers are helpers/launch-prompt-fixture.mjs (hand-written from the
-// kernel's documented shapes at head 7dc5a20c).
+// kernel's documented shapes at head 7dc5a20c); their warnings are examples, not the kernel's sentences.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -13,7 +13,7 @@ import { setWorkspace } from "../renderer/views/common.mjs";
 import { createNotificationCenter } from "../renderer/notifications.mjs";
 import { launchFlagIgnored, flagIgnoredFact, flagIgnoredNotice, launchPromptOutcome, FLAG_IGNORED_WARNINGS, FLAG_IGNORED_UNITS } from "../../client/launch-prompt-outcome.mjs";
 import { DETAIL_WITHHELD, MAX_DISPLAY_LINE } from "../../client/display-text.mjs";
-import { started, flagIgnored, FLAG_IGNORED_WARNING, DEV_CHANNEL_STATEMENT } from "./helpers/launch-prompt-fixture.mjs";
+import { started, flagIgnored, EXAMPLE_WARNING_TWO, EXAMPLE_WARNING_ONE } from "./helpers/launch-prompt-fixture.mjs";
 
 const tick = () => new Promise((r) => setImmediate(r));
 const HOME = "/workspace/agents/accountant/instances/accountant-minerva", NAME = "accountant-minerva";
@@ -69,8 +69,8 @@ test("a malformed `launchPrompts`, an unknown status, or none gives nothing", ()
     { status: 7 }, { status: null }, { status: ["flag-ignored"] }, { status: "flag-ignored " }, { status: "Flag-Ignored" }, { status: "flag_ignored" },
     { status: "not-engaged", startId: "s", at: "t" }, { status: "completed", answers: [], reason: "recognized launch boundary", receipt: [] },
     { status: "blocked", reason: "channels-unavailable" }, { status: "flag-seen", reason: "channels-unavailable" }]) {
-    // The kernel's own sentence among the warnings changes nothing: it is not looked for.
-    for (const warnings of [[], [FLAG_IGNORED_WARNING]]) {
+    // A warning among the answer's `warnings` changes nothing: none is looked for.
+    for (const warnings of [[], [EXAMPLE_WARNING_TWO]]) {
       const answer = started(D, prompts, warnings);
       assert.equal(launchFlagIgnored(answer), null, JSON.stringify(prompts));
       assert.equal(noticeOf(NAME, answer), null);
@@ -83,10 +83,10 @@ test("a malformed `launchPrompts`, an unknown status, or none gives nothing", ()
 test("the detail: \"OATS says:\" and every warning, whole, in the order given, each one display line; a withheld one shows the marker", () => {
   const first = "launch hook: the model sonnet is not in this host's catalog", last = "tmux: the window was created on another server";
   const secret = "the provider answered with token=ghp_abcdefghijklmnopqrstuvwxyz012345";
-  const answer = started(D, flagIgnored(), [first, DEV_CHANNEL_STATEMENT, secret, FLAG_IGNORED_WARNING, last]);
-  assert.deepEqual(launchFlagIgnored(answer), { reason: "channels-unavailable", warnings: [first, DEV_CHANNEL_STATEMENT, DETAIL_WITHHELD, FLAG_IGNORED_WARNING, last], omitted: 0 });
+  const answer = started(D, flagIgnored(), [first, EXAMPLE_WARNING_ONE, secret, EXAMPLE_WARNING_TWO, last]);
+  assert.deepEqual(launchFlagIgnored(answer), { reason: "channels-unavailable", warnings: [first, EXAMPLE_WARNING_ONE, DETAIL_WITHHELD, EXAMPLE_WARNING_TWO, last], omitted: 0 });
   assert.deepEqual(noticeOf(NAME, answer), { headline: UNAVAILABLE,
-    detail: ["OATS says:", first, DEV_CHANNEL_STATEMENT, DETAIL_WITHHELD, FLAG_IGNORED_WARNING, last].join("\n") });
+    detail: ["OATS says:", first, EXAMPLE_WARNING_ONE, DETAIL_WITHHELD, EXAMPLE_WARNING_TWO, last].join("\n") });
   // Each is one line: a line break or a bidi control inside a warning never makes a second line or reorders the text.
   const folded = noticeOf(NAME, started(D, flagIgnored(), ["one\ntwo\u2028three", "right\u202Eleft", "\ttabbed  twice "]));
   assert.equal(folded.detail, "OATS says:\none two three\nright\uFFFDleft\ntabbed twice");
@@ -101,21 +101,21 @@ test("the detail: \"OATS says:\" and every warning, whole, in the order given, e
 });
 
 test("no warning is picked, matched or dropped by its words", () => {
-  // The same answer with the kernel's sentence replaced, moved or absent gives the same headline and exactly its own lines.
+  // The same answer with one warning first, last, repeated, replaced or absent gives the same headline and exactly its own lines.
   const others = ["a warning of a launch hook", "another one"];
   const headline = (warnings) => noticeOf(NAME, started(D, flagIgnored(), warnings)).headline;
   const lines = (warnings) => launchFlagIgnored(started(D, flagIgnored(), warnings)).warnings;
-  for (const warnings of [[FLAG_IGNORED_WARNING, ...others], [...others, FLAG_IGNORED_WARNING], others, [DEV_CHANNEL_STATEMENT, ...others],
-    [FLAG_IGNORED_WARNING, FLAG_IGNORED_WARNING], ["Claude ignored nothing", "This start passes nothing", "channels-unavailable", "flag-ignored"]]) {
+  for (const warnings of [[EXAMPLE_WARNING_TWO, ...others], [...others, EXAMPLE_WARNING_TWO], others, [EXAMPLE_WARNING_ONE, ...others],
+    [EXAMPLE_WARNING_TWO, EXAMPLE_WARNING_TWO], ["Claude ignored nothing", "This start passes nothing", "channels-unavailable", "flag-ignored"]]) {
     assert.equal(headline(warnings), UNAVAILABLE);
     assert.deepEqual(lines(warnings), warnings);
   }
-  // And in the code: the reader and the dialog hold none of the kernel's words, and no test of a warning's text.
+  // And in the code: no test of a warning's text. (That the code holds none of the kernel's words is checked
+  // where the kernel's sentences can be read: test/desktop-launch-prompt-kernel.test.mjs, at the repository root.)
   const source = read("../../client/launch-prompt-outcome.mjs");
   const reader = source.slice(source.indexOf("export function launchFlagIgnored"));
   assert.ok(reader.includes("export function flagIgnoredNotice"));
   const dialog = read("../renderer/start-instance.mjs");
-  for (const text of [reader, dialog]) assert.doesNotMatch(text, /Claude ignored|This start passes|dangerously|not available for this/);
   assert.doesNotMatch(reader, /\.(?:includes|startsWith|endsWith|match|matchAll|search|test|indexOf|replace|split|localeCompare)\(|===\s*w\b|\bw\s*===|new RegExp|\/[^/\n]+\/[a-z]*\.test/);
   assert.deepEqual(reader.match(/displayLine\(w\)/g), ["displayLine(w)"], "a warning goes to the display filter and nowhere else");
   assert.equal(dialog.match(/flagIgnoredNotice\(/g).length, 1);
@@ -144,9 +144,9 @@ test("the bound: the first 16 display lines, cut by position, and how many more 
   const secret = "token=ghp_abcdefghijklmnopqrstuvwxyz012345";
   assert.deepEqual(fact([secret, ...numbered(16)]), { reason: "channels-unavailable", warnings: [DETAIL_WITHHELD, ...numbered(15)], omitted: 1 });
   assert.deepEqual(fact([...numbered(16), secret, secret]), { reason: "channels-unavailable", warnings: numbered(16), omitted: 2 });
-  // The cut is by position: the kernel's own sentence past the 16th line is left out like any other.
-  assert.deepEqual(fact([...numbered(16), FLAG_IGNORED_WARNING]).warnings, numbered(16));
-  assert.equal(noticeOf(NAME, started(D, flagIgnored(), [...numbered(16), FLAG_IGNORED_WARNING])).headline, UNAVAILABLE);
+  // The cut is by position: whatever stands past the 16th line is left out, whatever it says.
+  assert.deepEqual(fact([...numbered(16), EXAMPLE_WARNING_TWO]).warnings, numbered(16));
+  assert.equal(noticeOf(NAME, started(D, flagIgnored(), [...numbered(16), EXAMPLE_WARNING_TWO])).headline, UNAVAILABLE);
 });
 
 test("the bound on the total: at most 4096 units of lines, cut by position, and no line is cut inside", () => {
@@ -240,13 +240,13 @@ for (const restart of [false, true]) {
   const act = restart ? "Restart" : "Start";
   test(`${act} dialog: the start worked, so the dialog closes and the terminal opens as for any start; then the notice`, async () => {
     for (const [prompts, headline] of [[flagIgnored(), UNAVAILABLE], [flagIgnored({ reason: "another-reason" }), IGNORED]]) {
-      const s = setup({ restart, running: restart, start: () => started(D, prompts, [DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING]) });
+      const s = setup({ restart, running: restart, start: () => started(D, prompts, [EXAMPLE_WARNING_ONE, EXAMPLE_WARNING_TWO]) });
       try {
         await s.run();
         assert.equal(s.calls.some((c) => c.path.startsWith(restart ? "/api/restart/" : "/api/start/")), true);
         assert.equal(s.modal.isConnected, false); assert.equal(s.opened.length, 1);
         assert.equal(s.notices.length, 1);
-        assert.deepEqual(s.notices[0].args, [headline, { detail: `OATS says:\n${DEV_CHANNEL_STATEMENT}\n${FLAG_IGNORED_WARNING}` }]);
+        assert.deepEqual(s.notices[0].args, [headline, { detail: `OATS says:\n${EXAMPLE_WARNING_ONE}\n${EXAMPLE_WARNING_TWO}` }]);
         // After the dialog closed, and the dialog itself said nothing of it.
         assert.equal(s.notices[0].dialogOpen, false);
       } finally { s.cleanup(); }
@@ -257,12 +257,12 @@ for (const restart of [false, true]) {
 test("Start dialog: no warnings, no detail; a fetch-shaped answer and a routed host read the same", async () => {
   const bare = setup({ start: () => started(D, flagIgnored()) });
   try { await bare.run(); assert.deepEqual(bare.notices.map((n) => n.args), [[UNAVAILABLE, undefined]]); assert.equal(bare.opened.length, 1); } finally { bare.cleanup(); }
-  const body = started(D, flagIgnored(), [FLAG_IGNORED_WARNING]);
+  const body = started(D, flagIgnored(), [EXAMPLE_WARNING_TWO]);
   for (const options of [{ start: () => ({ ok: true, status: 200, json: async () => body }) }, { server: "build", start: () => body }]) {
     const s = setup(options);
     try {
       await s.run();
-      assert.deepEqual(s.notices.map((n) => n.args), [[UNAVAILABLE, { detail: `OATS says:\n${FLAG_IGNORED_WARNING}` }]]);
+      assert.deepEqual(s.notices.map((n) => n.args), [[UNAVAILABLE, { detail: `OATS says:\n${EXAMPLE_WARNING_TWO}` }]]);
       assert.equal(s.modal.isConnected, false); assert.equal(s.opened.length, 1);
     } finally { s.cleanup(); }
   }
@@ -278,9 +278,9 @@ test("Start dialog: 17 warnings show 16 and \"1 more not shown.\"", async () => 
 });
 
 test("Start dialog: any other start that worked reads as today, with no notice, whatever its warnings say", async () => {
-  for (const answer of [{ launched: true }, started(D, undefined, [FLAG_IGNORED_WARNING]), started(D, { status: "not-engaged", startId: "s", at: "t" }, [FLAG_IGNORED_WARNING]),
-    started(D, { status: "completed", answers: [], reason: "recognized launch boundary", receipt: [] }, [DEV_CHANNEL_STATEMENT]),
-    started(D, "flag-ignored", [FLAG_IGNORED_WARNING]), started(D, { status: "flag-future", reason: "channels-unavailable" }, [FLAG_IGNORED_WARNING]), null, "ok", []]) {
+  for (const answer of [{ launched: true }, started(D, undefined, [EXAMPLE_WARNING_TWO]), started(D, { status: "not-engaged", startId: "s", at: "t" }, [EXAMPLE_WARNING_TWO]),
+    started(D, { status: "completed", answers: [], reason: "recognized launch boundary", receipt: [] }, [EXAMPLE_WARNING_ONE]),
+    started(D, "flag-ignored", [EXAMPLE_WARNING_TWO]), started(D, { status: "flag-future", reason: "channels-unavailable" }, [EXAMPLE_WARNING_TWO]), null, "ok", []]) {
     const s = setup({ start: () => answer });
     try {
       await s.run();
@@ -292,14 +292,14 @@ test("Start dialog: any other start that worked reads as today, with no notice, 
 
 test("Start dialog: closed by the person while the start ran, the notice still says it and no terminal opens; another workspace on screen, nothing", async () => {
   let release;
-  const gate = () => new Promise((resolve) => { release = () => resolve(started(D, flagIgnored(), [FLAG_IGNORED_WARNING])); });
+  const gate = () => new Promise((resolve) => { release = () => resolve(started(D, flagIgnored(), [EXAMPLE_WARNING_TWO])); });
   const closed = setup({ start: gate });
   try {
     await tick(); closed.submit(); await tick();
     closed.q(".start-cancel").click();
     assert.equal(closed.modal.isConnected, false);
     release(); await tick(); await tick();
-    assert.deepEqual(closed.notices.map((n) => n.args), [[UNAVAILABLE, { detail: `OATS says:\n${FLAG_IGNORED_WARNING}` }]]);
+    assert.deepEqual(closed.notices.map((n) => n.args), [[UNAVAILABLE, { detail: `OATS says:\n${EXAMPLE_WARNING_TWO}` }]]);
     assert.deepEqual(closed.opened, []);
   } finally { closed.cleanup(); }
   const moved = setup({ start: gate });
@@ -315,12 +315,12 @@ test("the notice in the notification center: the headline is the message, the wa
   const dom = new JSDOM("<body></body>");
   try {
     const center = createNotificationCenter({ document: dom.window.document });
-    const notice = noticeOf(NAME, started(D, flagIgnored(), ["<b>bold</b> launch hook", FLAG_IGNORED_WARNING]));
+    const notice = noticeOf(NAME, started(D, flagIgnored(), ["<b>bold</b> launch hook", EXAMPLE_WARNING_TWO]));
     assert.ok(center.notify(notice.headline, { detail: notice.detail }));
     const toast = dom.window.document.querySelector(".app-toast");
     assert.equal(toast.querySelector(".app-toast-text").textContent, UNAVAILABLE);
     const panel = toast.querySelector(".app-toast-detail");
-    assert.equal(panel.textContent, `OATS says:\n<b>bold</b> launch hook\n${FLAG_IGNORED_WARNING}`);
+    assert.equal(panel.textContent, `OATS says:\n<b>bold</b> launch hook\n${EXAMPLE_WARNING_TWO}`);
     assert.equal(panel.querySelector("b"), null); assert.equal(panel.hidden, true);
     assert.equal(toast.querySelector(".app-toast-details").textContent, "Details");
     center.dispose();
