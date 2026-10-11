@@ -5,7 +5,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync, spawn as spawnChild } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { listInstances, retireInstance } from "../lib/core.mjs";
@@ -13,10 +14,12 @@ import { listInstances, retireInstance } from "../lib/core.mjs";
 /** The hook: appends one JSON line of facts to <OATS_ROOT>/hook-runs.jsonl, then acts on files in
  *  <OATS_ROOT>: `hook-fail` (exit 3), `hook-sleep` (sleep N s, writing its pid first), `hook-env`
  *  (answer env), `hook-warning` (answer a warning), `hook-rm-tree` (remove the tree), `hook-chatter`
- *  (print 150 numbered lines to each stream over 3 s, writing its pid first). */
-const HOOK = `import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+ *  (print 150 numbered lines to each stream over 3 s, writing its pid first). Each pid file a test waits
+ *  for appears whole (written beside it, then renamed), so a reader never sees it empty. */
+const HOOK = `import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const root = process.env.OATS_ROOT;
+const writeWhole = (file, text) => { writeFileSync(file + ".tmp", text); renameSync(file + ".tmp", file); };
 let stdin = "";
 try { stdin = readFileSync(0, "utf8"); } catch (e) { stdin = "ERR:" + e.code; }
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith("OATS_")));
@@ -30,17 +33,17 @@ if (existsSync(join(root, "hook-stubborn"))) {
   const { spawn } = await import("node:child_process");
   // One process (exec), so the pid written is the member itself: no child of it can outlive a kill of that pid.
   const c = spawn("/bin/sh", ["-c", "trap '' TERM; exec sleep 60"], { stdio: "ignore" });
-  writeFileSync(join(root, "hook-stubborn-pid"), String(c.pid));
+  writeWhole(join(root, "hook-stubborn-pid"), String(c.pid));
   // Its group (the hook's own), so a test can end the whole group whatever the kernel did.
   const { execFileSync } = await import("node:child_process");
-  writeFileSync(join(root, "hook-stubborn-pgid"), execFileSync("ps", ["-o", "pgid=", "-p", String(c.pid)], { encoding: "utf8" }).trim());
+  writeWhole(join(root, "hook-stubborn-pgid"), execFileSync("ps", ["-o", "pgid=", "-p", String(c.pid)], { encoding: "utf8" }).trim());
 }
 if (existsSync(join(root, "hook-sleep"))) {
-  writeFileSync(join(root, "hook-sleeping"), String(process.pid));
+  writeWhole(join(root, "hook-sleeping"), String(process.pid));
   await new Promise((r) => setTimeout(r, Number(readFileSync(join(root, "hook-sleep"), "utf8")) * 1000));
 }
 if (existsSync(join(root, "hook-chatter"))) {
-  writeFileSync(join(root, "hook-chattering"), String(process.pid));
+  writeWhole(join(root, "hook-chattering"), String(process.pid));
   for (let i = 0; i < 150; i++) { console.log("chatter-out " + i); console.error("chatter-err " + i); await new Promise((r) => setTimeout(r, 20)); }
   console.log("chatter done");
 }
@@ -205,6 +208,21 @@ const endGroupAfter = (fx, pgid, ...pids) => fx.beforeCleanup(() => {
   for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
 });
 const waitFor = async (cond, ms = 20000) => { const end = Date.now() + ms; while (Date.now() < end) { if (cond()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+
+test("the fixture hook's pid file appears whole: a reader polling it never sees it empty, and no .tmp is left", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "oats-hook-pid-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "hook.mjs"), HOOK);
+  writeFileSync(join(root, "hook-sleep"), "0");
+  const hook = spawnChild(process.execPath, [join(root, "hook.mjs")], { cwd: root, env: { ...process.env, OATS_ROOT: root }, stdio: "ignore" });
+  const exited = new Promise((r) => hook.on("exit", r));
+  // Spin without yielding: the first read that finds the file is the one a half-written file would fail.
+  let text = null;
+  for (const end = Date.now() + 20000; text === null && Date.now() < end;) { try { text = readFileSync(join(root, "hook-sleeping"), "utf8"); } catch { /* not yet */ } }
+  assert.equal(text, String(hook.pid), "the first read of hook-sleeping holds the hook's whole pid");
+  assert.equal(await exited, 0);
+  assert.deepEqual(readdirSync(root).filter((f) => f.endsWith(".tmp")), [], "every pid file was renamed into place");
+});
 
 test("a hook past the timeout has its process group ended and fails as a required hook", async (t) => {
   const fx = deployment(t);
@@ -843,12 +861,13 @@ function gatedGit(fx, name, { gate, entered, release, after = "null" }) {
   const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8", env: fx.env }).trim();
   const dir = join(fx.base, `git-${name}`); mkdirSync(dir);
   writeFileSync(join(dir, "git"), `#!${process.execPath}
-const { existsSync, writeFileSync } = require("node:fs");
+const { existsSync, renameSync, writeFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const a = process.argv.slice(2), base = ${JSON.stringify(fx.base)};
 const gated = ${gate};
 if (gated) {
-  writeFileSync(base + "/" + (${entered}), String(process.pid));
+  const entered = base + "/" + (${entered});
+  writeFileSync(entered + ".tmp", String(process.pid)); renameSync(entered + ".tmp", entered);
   for (let n = 0; n < 1500 && !existsSync(base + "/" + (${release})); n++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
 }
 const r = spawnSync(${JSON.stringify(real)}, a, { stdio: "inherit" });
