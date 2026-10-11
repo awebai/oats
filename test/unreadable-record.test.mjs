@@ -24,6 +24,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fakeBin } from "./helpers/fake-ssh.mjs";
 import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { waitUntil } from "./helpers/host-fixture.mjs";
 import { readHomeRecord, retireInstance, RETIRE_UNDER_CLAIM } from "../lib/core.mjs";
 
 /** A mode no longer keeps root out: the shapes that rest on one are skipped for root. */
@@ -196,6 +197,11 @@ for (const shape of SHAPES.filter((s) => !s.edge)) {
       const started = answered(fx.cli(["session", "start", "--home", d.homes.good, "--json"]), "session start of the other instance").json();
       assert.equal(started.ok, true);
       assert.equal(d.rows().good.running, true, "status reads the started session, beside the unreadable record");
+      // The inert harness exits at once: plan once the session has settled into its fallback shell, so
+      // that the apply finds what the plan read (a session still starting would make the plan stale).
+      await waitUntil(() => existsSync(join(d.homes.good, ".oats-start-exited"))
+        && answered(fx.cli(["session", "inspect", "--home", d.homes.good, "--json"]), "session inspect of the started instance").json().result.state === "shell",
+      "the started session's harness to exit to its fallback shell");
       const plan = answered(fx.cli(["instance", "stop", "good", "--plan", "--json"]), "stop --plan of the started instance").json();
       const again = answered(fx.cli(["instance", "stop", "good", "--apply", "--plan-revision", plan.result.planRevision, "--idempotency-key", "k2", "--json"]), "stop --apply of the started instance").json();
       assert.equal(again.result.ok, true);
@@ -446,6 +452,7 @@ test("a spawn whose parent's record cannot be read is refused and spawns nothing
   const { record, reason } = breakRecord(d.homes.bad, SHAPES[2]);
   const before = listing(d.homes.bad);
   const error = refusal(d.fx.cli(["spawn", "dev", "--name", "kid", "--parent", "bad", "--no-launch", "--json"]), "spawn of a child");
+  assert.equal(error.code, "E_SPAWN_FAILED", JSON.stringify(error));
   assert.equal(error.message, refused(record, reason, "nothing was spawned"));
   assert.equal(existsSync(join(d.instances, "kid")), false);
   assert.deepEqual(listing(d.homes.bad), before);
