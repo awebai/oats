@@ -4184,7 +4184,12 @@ selection flags. See [the start workflow](desktop-instance-start.md).
 
 - The result is `{instance, agent, home, harness, backend, model,
   launchConfig, yolo, target, startedAt, restartCount, reused, warnings}`,
-  plus `nativeRecordId` and `stop` (a restart's stop receipt) when they apply.
+  plus `nativeRecordId` and `stop` (a restart's stop receipt) when they apply,
+  and (0.52.0) `launchPrompts`, the value this start recorded in `instance.json`:
+  `{status: "not-engaged", startId, at}` for a start that did not engage the
+  development-channel confirmation, or the observed `{status: "completed",
+  answers, reason, receipt}`. A `blocked` or `incomplete` outcome is
+  `E_SPAWN_INCOMPLETE` instead ([Launch prompt results](#launch-prompt-results)).
 - `warnings` (0.30) is always present: an array of strings, the warnings the
   capabilities' `launch` hooks returned for this start (as spawn's
   `warnings`), `[]` when there are none. Each is also appended to the

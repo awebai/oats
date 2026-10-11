@@ -69,6 +69,7 @@ test('an eligible claude argv engages on spawn, start and restart: one Enter eac
   assert.equal(promptEvents(b).length, 0, 'no start, no capture');
   const started = await fx.inEnv(() => startInstanceSession(b));
   assert.ok(started.warnings.includes(DEV_CHANNEL_STATEMENT));
+  assert.equal(started.launchPrompts.status, 'completed', 'the start result carries what it recorded');
   assert.equal(meta(b).launchPrompts.status, 'completed');
   await waitUntil(() => keys(b).length === 1, 'the start sent its Enter');
   const restarted = await fx.inEnv(() => restartInstanceSession(b));
@@ -192,6 +193,8 @@ test('a blocked start, then a restart that does not engage, records not-engaged 
   assert.notEqual(second.details.target.pid, first.details.target.pid);
   const result = await fx.inEnv(() => restartInstanceSession(h, { launchConfig: 'plain' }));
   assert.equal(result.reused, 'pane');
+  assert.deepEqual(result.launchPrompts, meta(h).launchPrompts, 'the restart result carries what it recorded');
+  assert.equal(result.launchPrompts.status, 'not-engaged');
   assert.equal(meta(h).launched, true);
   assert.equal(meta(h).launchPrompts.status, 'not-engaged');
   assert.equal(Object.hasOwn(meta(h), 'launchPromptTarget'), false);
