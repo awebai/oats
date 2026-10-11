@@ -66,7 +66,8 @@ const SURFACE = Object.freeze({
   "launch-contract.mjs": ["effectiveOf", "launchOf", "REPORT_FROM", "PREVIEW_FROM", "RECORD_FROM"],
   "deployment-facts.mjs": ["memberLabel", "servedIdentityText"],
   "instance-admission.mjs": ["admitInstance", "instanceSelector"],
-  "instance-tree.mjs": ["instanceId", "resolveLinkId", "clusterInstances", "rosterGroups", "waitingRollup", "instanceVisibleInTree"],
+  "instance-tree.mjs": ["instanceId", "resolveLinkId", "clusterInstances", "rosterGroups", "waitingRollup", "instanceVisibleInTree",
+    "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome"],
   "roster-sections.mjs": ["rosterSections"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
   // Provisional: machines and the switcher.
