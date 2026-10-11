@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from '../renderer/instance-events-data.mjs';
-import { target, birth, event, data, launchPromptEvent } from './helpers/instance-events-fixture.mjs';
+import { target, birth, event, data, launchPromptEvent, launchPromptEvent052, launchPromptMiss052 } from './helpers/instance-events-fixture.mjs';
+import { differed, DIFFERED } from './helpers/launch-prompt-fixture.mjs';
 
 test('launch-prompt audit rows preserve bounded reported outcomes across private and public projection', () => {
   assert.equal(EVENT_TITLES['launch-prompt'], 'Launch prompt');
@@ -10,7 +11,7 @@ test('launch-prompt audit rows preserve bounded reported outcomes across private
   const out = eventsData(data(rows), target);
   assert.ok(out);
   assert.deepEqual(out.events.map(row => row.data), [
-    { status: 'submitted', class: 'awebDevelopmentChannel', consentSource: rows[0].data.consentSource },
+    { status: 'submitted', class: 'awebDevelopmentChannel', consentSource: rows[0].data.consentSource, signatureId: 'fixture-aweb' },
     { status: 'failed', action: 'restore-geometry', consentSource: null },
   ]);
   assert.deepEqual(eventsData(out, target, 100, { publicView: true }), out);
@@ -30,6 +31,55 @@ test('launch-prompt facts retain event detail bounds and redaction without expos
   }
   const out = eventsData(data([launchPromptEvent({ consentSource: null })]), target);
   assert.equal(out.events[0].data.consentSource, null);
+});
+
+// OATS 0.52.0 (#917): the Claude version, the entry of the recognised screen and, on a miss, what differed.
+test('launch-prompt rows of 0.52: the version, the entry of the recognised screen and what a miss differed in; pane, digest and key stay unread', () => {
+  const rows = [launchPromptEvent052({ status: 'attempted' }), launchPromptEvent052(), launchPromptMiss052(differed())];
+  const out = eventsData(data(rows), target);
+  assert.deepEqual(out.events.map(row => row.data), [
+    { status: 'attempted', class: 'awebDevelopmentChannel', claudeVersion: '2.1.296', signatureId: 'aweb-dev-channel-confirmation-1' },
+    { status: 'submitted', class: 'awebDevelopmentChannel', claudeVersion: '2.1.296', signatureId: 'aweb-dev-channel-confirmation-1' },
+    { status: 'blocked', reason: 'blocked: unexpected prompt', claudeVersion: '2.1.296', differed: DIFFERED },
+  ]);
+  // The server projects, then main and the renderer project again: the same answer.
+  assert.deepEqual(eventsData(out, target, 100, { publicView: true }), out);
+  assert.deepEqual(eventsData(JSON.parse(JSON.stringify(out)), target, 100, { publicView: true }), out);
+  assert.doesNotMatch(JSON.stringify(out.events.map(row => row.data)), /executable-path|fixture-launch-052|"key"|bbbb|cccc|inert|%2/);
+  // "unknown" is a version as the kernel reports it.
+  assert.equal(eventsData(data([launchPromptEvent052({ claudeVersion: 'unknown', claudeVersionSource: 'unknown' })]), target).events[0].data.claudeVersion, 'unknown');
+});
+test('launch-prompt: a log holds rows of both generations, each with the facts its kernel wrote', () => {
+  const out = eventsData(data([launchPromptEvent(), launchPromptMiss052(differed()), launchPromptEvent052()]), target);
+  assert.deepEqual(out.events.map(row => Object.keys(row.data)), [['status', 'class', 'consentSource', 'signatureId'],
+    ['status', 'reason', 'claudeVersion', 'differed'], ['status', 'class', 'claudeVersion', 'signatureId']]);
+  assert.equal(out.events[0].data.consentSource, launchPromptEvent().data.consentSource);
+});
+test('launch-prompt: a malformed new fact drops that fact, never the read', () => {
+  const plain = eventsData(data([launchPromptMiss052(undefined)]), target).events[0].data;
+  assert.deepEqual(plain, { status: 'blocked', reason: 'blocked: unexpected prompt', claudeVersion: '2.1.296' });
+  for (const bad of ['a string', 7, null, [], {}, differed({ index: -1 }), differed({ found: 7 }), differed({ expected: 'x'.repeat(41) })]) {
+    const out = eventsData(data([launchPromptMiss052(bad)]), target);
+    assert.ok(out, JSON.stringify(bad)); assert.deepEqual(out.events[0].data, plain);
+  }
+  for (const key of ['claudeVersion', 'signatureId']) for (const bad of [2.1, null, {}, [], '', 'x'.repeat(4097), true]) {
+    const out = eventsData(data([launchPromptEvent052({ [key]: bad })]), target);
+    assert.ok(out, `${key}: ${JSON.stringify(bad)}`); assert.equal(Object.hasOwn(out.events[0].data, key), false);
+    assert.equal(out.events[0].data.status, 'submitted');
+  }
+  // Unsafe text is withheld, as every event detail is.
+  assert.equal(eventsData(data([launchPromptEvent052({ claudeVersion: 'token: PRIVATE' })]), target).events[0].data.claudeVersion, '[Detail withheld]');
+  // A listed key still refuses the read when malformed: the tolerance is for the new facts only.
+  assert.equal(eventsData(data([launchPromptEvent052({ status: {} })]), target), null);
+});
+test('launch-prompt: what differed is read only on a blocked row', () => {
+  for (const status of ['incomplete', 'completed', 'submitted', 'attempted']) {
+    const out = eventsData(data([launchPromptMiss052(differed(), { status })]), target);
+    assert.equal(Object.hasOwn(out.events[0].data, 'differed'), false, status);
+  }
+  // Each side is a display line; the terminal's bidi controls are replaced.
+  const out = eventsData(data([launchPromptMiss052(differed({ found: 'a\u202Eb\tc', expected: '' }))]), target);
+  assert.deepEqual(out.events[0].data.differed, { ...DIFFERED, expected: null, found: 'a\uFFFDb c' });
 });
 
 test('address history preserves earlier/current/unknown incarnations without runtime inference', () => {

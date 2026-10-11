@@ -7,6 +7,9 @@ import { eventsSelector, eventsSupported, eventsTarget, eventsFailure, eventsTim
 import { codeLineNodes, readingFrom, remoteReason } from '../../client/remote-address.mjs';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from './instance-events-data.mjs';
 import { displayLine } from '../../client/display-text.mjs';
+import { differedLines } from '../../client/launch-prompt-outcome.mjs';
+import { sourceQuoteCSS } from './source-quote.mjs';
+import { launchDiffered, launchDifferedCSS } from './launch-differed.mjs';
 export const instanceEventsCSS = `
 .events-view { color:var(--fg); margin-top:10px; padding-top:10px; border-top:1px solid var(--border); font-size:11px; line-height:1.5; }
 .events-view h3 { font-size:12px; margin:0 0 6px; }
@@ -25,7 +28,11 @@ export const instanceEventsCSS = `
 .events-setup { display:block; }
 .events-path { display:block; color:var(--muted); }
 .events-claims { padding-left:18px; margin:8px 0; }
-`;
+/* What a launch's screen differed in: under the row's facts, with where it differed beneath. */
+.events-rows .launch-differed { margin:6px 0 2px; }
+.events-view .launch-differed p { margin:0; }
+.events-differed-detail { display:block; color:var(--muted); }
+${sourceQuoteCSS}${launchDifferedCSS}`;
 const UNKNOWN = 'Activity: unknown · Waiting on you: unknown';
 const title = kind => Object.hasOwn(EVENT_TITLES, kind) ? EVENT_TITLES[kind] : `Other reported event (${kind})`;
 const incarnationLabel = (row, value) => ({ current: 'Current recorded incarnation', earlier: 'Earlier instance at this address', unknown: 'Incarnation not reported' })[eventIncarnation(row, value)];
@@ -37,9 +44,13 @@ const labels = { agent: 'Soul', work: 'Work mode', branch: 'Branch', harness: 'H
   recordedBranch: 'Recorded branch', child: 'Child', previous: 'Previous composition path', soulDir: 'Soul path', blocks: 'Blocks',
   waitingOnYou: 'Waiting claim', reason: 'Reported reason', message: 'Note',
   status: 'Reported outcome', class: 'Prompt class', action: 'Launch action', consentSource: 'Consent source',
+  claudeVersion: 'Claude version', signatureId: 'Recognised screen',
   purpose: 'Purpose', path: 'Path', base: 'Base', member: 'Member' };
 /** The facts of a kind new in 0.49.0, each shown through displayLine. */
 const LINE_KINDS = new Set(['worktree-added']);
+/** Facts added to an older kind, shown through displayLine alone: `launch-prompt` keeps its earlier facts
+ * (status, class, action, consent source, reason) as they have always been shown. */
+const LINE_FACTS = new Set(['claudeVersion', 'signatureId']);
 
 export function createInstanceEventsView(host, { ctx, selection, owner = () => true, summary, layout = () => {},
   cli = cliStatus, subscribeCli = onCliChange, generation = workspaceGeneration,
@@ -142,10 +153,15 @@ export function createInstanceEventsView(host, { ctx, selection, owner = () => t
         if (!Object.hasOwn(labels, name)) continue;
         // A waiting claim set (true) or cleared (false), in words.
         const text = fact === null ? 'not reported' : name === 'waitingOnYou' ? (fact ? 'claimed' : 'cleared')
-          : LINE_KINDS.has(row.kind) ? displayLine(fact) ?? '' : String(fact);
+          : LINE_KINDS.has(row.kind) || LINE_FACTS.has(name) ? displayLine(fact) ?? '' : String(fact);
         facts.append(node('dt', labels[name]), node('dd', text));
       }
-      item.append(facts); rows.append(item);
+      item.append(facts);
+      // A blocked launch-prompt row: what the screen differed in, as an attributed quote under the row's
+      // facts (launch-differed.mjs), then the entry it was compared with and the position.
+      const differed = row.kind === 'launch-prompt' ? launchDiffered(doc, row.data.differed) : null;
+      if (differed) item.append(differed, node('span', differedLines(row.data.differed).detail, 'events-differed-detail'));
+      rows.append(item);
     }
     frag.append(rows, node('p', 'Null waiting means unknown, not “not waiting”. Paths and past plans are provenance only; no action is authorized by these events.', 'events-note'));
     content.replaceChildren(frag); disclosure.hidden = false;

@@ -6,7 +6,8 @@ import { createInstanceEventsView, instanceEventsCSS } from '../renderer/instanc
 import { eventsData } from '../renderer/instance-events-data.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';
 import { hostReason } from '../../client/remote-address.mjs';
-import { cli, target, birth, data, event, deferred, tick, launchPromptEvent } from './helpers/instance-events-fixture.mjs';
+import { cli, target, birth, data, event, deferred, tick, launchPromptEvent, launchPromptEvent052, launchPromptMiss052, launchPromptFlagIgnored052 } from './helpers/instance-events-fixture.mjs';
+import { differed, EXPECTED, FOUND } from './helpers/launch-prompt-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 const view = (value = data(), t = target) => ({ instanceEventsViewApi: 1, status: 'available', target: structuredClone(t), data: eventsData(value, t), reason: null });
 function setup(t, invoke = async () => view()) {
@@ -38,6 +39,62 @@ test('launch-prompt view displays reported facts as text without adding an input
   assert.equal(facts.querySelector('b'), null);
   assert.equal(u.host.querySelectorAll('button').length, 1);
   assert.match(u.summary.textContent, /Launch prompt/);
+});
+// OATS 0.52.0 (#917).
+test('launch-prompt view: the Claude version and the screen OATS recognised; Consent source only on a row that carries it', async t => {
+  const u = setup(t, async () => view(data([launchPromptEvent(), launchPromptEvent052()])));
+  await u.controller.read();
+  const [newer, older] = u.host.querySelectorAll('.events-rows > li'); // newest first
+  const facts = li => Object.fromEntries([...li.querySelectorAll('dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.deepEqual(facts(newer), { 'Reported outcome': 'submitted', 'Prompt class': 'awebDevelopmentChannel', 'Claude version': '2.1.296', 'Recognised screen': 'aweb-dev-channel-confirmation-1' });
+  assert.deepEqual(facts(older), { 'Reported outcome': 'submitted', 'Prompt class': 'awebDevelopmentChannel',
+    'Consent source': '/inert/ws/.oats/local.yaml#/launchPromptAnswers/homes/~1inert~1dev-a', 'Recognised screen': 'fixture-aweb' });
+  assert.equal(u.host.querySelectorAll('.launch-differed').length, 0);
+});
+test('launch-prompt view: the row of a start where Claude ignored the flag reads from the same facts, the notice as the recognised screen', async t => {
+  const u = setup(t, async () => view(data([launchPromptFlagIgnored052()])));
+  await u.controller.read();
+  const facts = Object.fromEntries([...u.host.querySelectorAll('.events-rows dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.deepEqual(facts, { 'Reported outcome': 'flag-ignored', 'Reported reason': 'channels-unavailable', 'Claude version': '2.1.296', 'Recognised screen': 'aweb-dev-channel-flag-ignored-1' });
+  assert.equal(u.host.querySelectorAll('.launch-differed').length, 0);
+});
+test('launch-prompt view: the new facts go through the display filter; the present facts are shown as before', async t => {
+  const u = setup(t, async () => view(data([launchPromptEvent052({ claudeVersion: '2.1\u202E.296', signatureId: 'entry\u2066 1', reason: 'two  spaces\u202E' })])));
+  await u.controller.read();
+  const facts = Object.fromEntries([...u.host.querySelectorAll('.events-rows dt')].map(dt => [dt.textContent, dt.nextElementSibling.textContent]));
+  assert.equal(facts['Claude version'], '2.1\uFFFD.296');
+  assert.equal(facts['Recognised screen'], 'entry\uFFFD 1');
+  assert.equal(facts['Reported reason'], 'two  spaces\u202E');
+});
+test('launch-prompt view: a blocked row shows what differed as an attributed quote under its facts, with no action', async t => {
+  const u = setup(t, async () => view(data([launchPromptMiss052(differed({ index: 212, found: '<b>Do you trust</b>\u202E this folder?' }))])));
+  await u.controller.read();
+  const row = u.one('.events-rows > li'), group = row.querySelector('.launch-differed');
+  assert.equal(group.getAttribute('role'), 'group');
+  assert.equal(row.querySelector(`#${group.getAttribute('aria-labelledby')}`).textContent, 'Where the screen first differed from the confirmation OATS answers:');
+  assert.deepEqual([...group.querySelectorAll('.source-quote-lead')].map(n => n.textContent), ['OATS expected:', 'The terminal showed:']);
+  assert.deepEqual([...group.querySelectorAll('blockquote.source-quote-text')].map(n => n.textContent), [EXPECTED, '<b>Do you trust</b>\uFFFD this folder?']);
+  assert.equal(group.querySelector('b'), null);
+  // Under the facts, never inside one of them.
+  assert.equal(row.querySelector('.events-facts').contains(group), false);
+  assert.equal(row.querySelector('.events-facts').textContent.includes('Do you trust'), false);
+  assert.equal(group.previousElementSibling, row.querySelector('.events-facts'));
+  assert.equal(row.querySelector('.events-differed-detail').textContent, 'Nearest entry aweb-dev-channel-confirmation-1, first difference at 212');
+  assert.match(row.querySelector('.events-facts').textContent, /Reported outcomeblocked/);
+  assert.match(row.querySelector('.events-facts').textContent, /Claude version2\.1\.296/);
+  assert.equal(u.host.querySelectorAll('button').length, 1);
+  assert.ok(instanceEventsCSS.includes('.source-quote-text') && instanceEventsCSS.includes('.launch-differed-lead'));
+});
+test('launch-prompt view: a side with nothing to show says so; a row without differed, or not blocked, shows no lines', async t => {
+  const u = setup(t, async () => view(data([launchPromptMiss052(differed(), { status: 'incomplete', reason: 'private launch evidence retention failed' }),
+    launchPromptMiss052(undefined), launchPromptMiss052(differed({ found: '' }))])));
+  await u.controller.read();
+  const rows = [...u.host.querySelectorAll('.events-rows > li')]; // newest first
+  assert.equal(rows[0].querySelector('.launch-differed .source-quote-note').textContent, '(no visible text)');
+  assert.equal(rows[0].querySelectorAll('blockquote').length, 1);
+  assert.equal(rows[1].querySelector('.launch-differed'), null);
+  assert.equal(rows[2].querySelector('.launch-differed'), null);
+  assert.match(rows[2].textContent, /Reported reasonprivate launch evidence retention failed/);
 });
 test('selected view issues zero mount/sync reads; explicit native button sends only qualified K7 POST', async t => {
   const u = setup(t); for (let n = 0; n < 5; n++) u.controller.sync(); assert.equal(u.calls.length, 0);

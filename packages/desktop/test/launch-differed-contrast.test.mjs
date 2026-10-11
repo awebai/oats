@@ -8,6 +8,7 @@ import { JSDOM } from 'jsdom';
 import { launchDiffered } from '../renderer/launch-differed.mjs';
 import { sourceQuoteCSS } from '../renderer/source-quote.mjs';
 import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { instanceEventsCSS } from '../renderer/instance-events-view.mjs';
 import { differed } from './helpers/launch-prompt-fixture.mjs';
 
 const renderer = new URL('../renderer/', import.meta.url);
@@ -18,16 +19,18 @@ const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (M
 // One side with text and one without: the quote, and the plain note of a side with nothing to show.
 const INVENTORY = [['.launch-differed-lead', 'muted'], ['.source-quote-lead', 'muted'], ['.source-quote-text', 'fg'], ['.source-quote-note', 'muted']];
 
-/** `host`: { name, html (the host's markup, with one element matching `into`), into, painted (the element whose background is under the text), bg, styles } */
+/** `host`: { name, html (the host's markup, with one element matching `into`), into, painted (the element whose background is under the text), bg, styles,
+ * extra: more [selector, token] pairs of the host's own text beside the group, made by `also(doc, into)` } */
 function holds(host) {
   for (const name of ['light', 'solarized', 'dark']) test(`${name}: what differed meets computed AA in ${host.name}`, () => {
     const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body>${host.html}</body></html>`, { pretendToBeVisual: true });
     const doc = dom.window.document;
     for (const source of [theme, ...host.styles]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
     doc.querySelector(host.into).append(launchDiffered(doc, differed({ found: '' })));
+    host.also?.(doc, doc.querySelector(host.into));
     const root = dom.window.getComputedStyle(doc.documentElement), surface = doc.querySelector(host.painted);
     assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${host.bg})`, host.painted);
-    for (const [selector, fg] of INVENTORY) {
+    for (const [selector, fg] of [...INVENTORY, ...(host.extra ?? [])]) {
       const el = doc.querySelector(`${host.into} ${selector}`); assert.ok(el, selector);
       assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
       assert.ok(contrast(channels(root.getPropertyValue(`--${fg}`).trim()), channels(root.getPropertyValue(`--${host.bg}`).trim())) >= 4.5, `${name} ${selector} on --${host.bg}`);
@@ -40,3 +43,9 @@ function holds(host) {
 // The Spawn dialog's footer: under the status, on the dialog's surface (views/spawn.mjs ships the quote's CSS beside the dialog's).
 holds({ name: "the Spawn dialog's footer", styles: [sourceQuoteCSS, spawnDialogCSS], into: '.spawn-status-differed', painted: '.spawn-footer', bg: 'surface',
   html: '<div class="spawn-modal"><div class="spawn-dialog"><div class="spawn-footer"><p class="fstatus err">x</p><div class="spawn-status-differed"></div></div></div></div>' });
+
+// Activity: under a blocked launch-prompt row's facts, in the instance popup (on --surface), with where it differed beneath.
+holds({ name: 'an Activity row', styles: ['.pop { background:var(--surface); }', instanceEventsCSS], into: '.events-rows li', painted: '.pop', bg: 'surface',
+  html: '<main class="oats-view"><div class="pop"><section class="events-view"><ol class="events-rows"><li></li></ol></section></div></main>',
+  also: (doc, li) => { const span = doc.createElement('span'); span.className = 'events-differed-detail'; span.textContent = 'Nearest entry x, first difference at 0'; li.append(span); },
+  extra: [['.events-differed-detail', 'muted']] });
