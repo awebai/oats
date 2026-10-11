@@ -240,6 +240,9 @@ confirmed decision (including effective), exact soul/name/home/work/repo/branch
 and model/harness facts, and typed launched/replayed fields. Raw recipes, attach
 commands, task content and warning text are dropped; only warning count crosses
 (the preview shows the warnings before the press: see the preview column, Warnings).
+The one exception is the optional `flagIgnored` key of a launched spawn where
+Claude Code ignored the channel option (below, A spawn where Claude Code ignored
+the channel option).
 Malformed/mismatched receipts, transport loss and ambiguous post-dispatch failures
 are **unknown**, not permission for a fresh spawn/key. A timeout does not prove
 rollback or stop an already launched agent.
@@ -482,7 +485,8 @@ unknown, a failure until it is dismissed or reopened, and any other outcome unti
 its notification is posted (an outcome settled while another workspace is on
 screen is held, and settling is not reporting). It is kept as `{workspace,
 deployment, spawnRef, soul, selector, instance, home, placement, startedAt,
-deadline}`:
+deadline, flagSaid}` (`flagSaid: true` once the notice that Claude Code ignored
+the channel option was shown, absent before):
 `workspace` is the view that owns the job (its pending row, its notices) and
 `deployment` the one it spawns in, which every `/api/spawn` request and checked
 reply is addressed to (#482; an entry without it is addressed to its view, as
@@ -640,6 +644,46 @@ operator to inspect the existing pane, then use `oats session start --home` for
 that home. No new spawn or key retry is offered. A submitted answer does not
 confirm readiness; empty answers after audit failure do not prove no input was
 sent. Result reads and repeated apply requests keep the same retained result.
+
+### A spawn where Claude Code ignored the channel option
+
+From 0.52 a launched spawn's successful answer carries `launchPrompts` in the
+start's shape. With the status `flag-ignored` the spawn worked and the instance
+has no channel delivery: mail and chat will not wake it. The Desktop says so in
+the notice a start shows (`docs/desktop-instance-start.md`): the same reader,
+the same two headlines, and "OATS says:" with at most 16 warnings, at most 4096
+characters of them, and a count of the rest.
+
+`spawnCreationReceipt` puts the reader's answer on the receipt as the optional
+key `flagIgnored` (`{reason, warnings, omitted}`), for that status only, and
+only when the answer says the spawn was launched. It is the one place where the
+text of an apply's warnings crosses to the renderer: as bounded display lines,
+none picked, matched or dropped by its words. Every other warning stays a
+count. `spawnApplyView` rebuilds the receipt at each boundary (main's proxy,
+the renderer) and reads the key again through the reader's decoder
+(`flagIgnoredFact`). It is tolerant: a value that does not decode is dropped
+and the receipt stands, and a side that does not know the key drops it the same
+way. No fact is larger than `FLAG_IGNORED_BYTES`, which is under the bound of a
+retained launch's diagnostics: the broker reserves the larger of the two for a
+transaction's outcome, so its reservation is what it was.
+
+A replayed spawn (`replayed: true`) is the home's own record, so it shows the
+notice too, with whatever warnings the replay has. A `--no-launch` spawn, any
+other status, an answer without `launchPrompts` and one that does not decode
+read as before. A spawn routed to a server says nothing: that path reads no
+receipt.
+
+The place that ends the apply shows the notice, once per apply. In the shipped
+app the spawn-jobs store ends every local spawn. It shows the notice when the
+apply settles as created, in a slot of its own beside the job's notice, so a
+partial apply shows both and neither replaces the other. It follows the store's
+rule for every notice: held while another workspace is on screen, shown on
+return. The start's notice differs: it is never shown after a workspace change.
+A window reload settles a created job again from `result`, so the stored job
+keeps `flagSaid: true` from the moment the notice was shown (never its text),
+and a job that has it shows none. A dialog that runs its own apply (a host
+without a store) shows the notice at its completion; a reply for a dialog that
+is gone stays discarded, as before.
 
 ### An ambiguous launch configuration
 

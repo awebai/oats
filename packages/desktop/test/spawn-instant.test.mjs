@@ -9,6 +9,7 @@ import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
 import { creation } from './helpers/spawn-apply-fixture.mjs';
 import { createSpawnJobs, pendingPlacement, DRIFT_TEXT, SPAWN_STORAGE_KEY } from '../renderer/spawn-jobs.mjs';
+import { flagIgnored, FLAG_IGNORED_WARNING, DEV_CHANNEL_STATEMENT } from './helpers/launch-prompt-fixture.mjs';
 
 const created = (name = 'preview-worktree-purpose') => kernel(name).result;
 const receipt = (preview = created(), changes = {}) => ({ started: true, envelope: { schemaVersion: 1, ok: true, result: creation(preview, changes) } });
@@ -505,6 +506,145 @@ test('store: retained prompt outcome explains reason/recovery without Reopen spa
     assert.match(notes[0].message, status === 'blocked' ? /blocked: unexpected prompt/ : /audit failed after possible input/);
     assert.match(notes[0].message, /Inspect its existing pane, then use oats session start --home/);
     assert.equal(reopenButton(notes[0]), undefined); assert.equal(s.rows('northwind').length, 1);
+  }
+});
+
+// ── Claude Code ignored the channel option (the receipt's `flagIgnored`): the store says it once per apply ──
+
+const IGNORED_NAME = created().decision.instance;
+const IGNORED = `${IGNORED_NAME} started. Claude Code reported that channels are not available and ignored the channel option, so mail and chat will not wake this instance.`;
+const IGNORED_DETAIL = `OATS says:\n${DEV_CHANNEL_STATEMENT}\n${FLAG_IGNORED_WARNING}`;
+const ignoredReceipt = (changes = {}) => receipt(created(), { launchPrompts: flagIgnored(), warnings: [DEV_CHANNEL_STATEMENT, FLAG_IGNORED_WARNING], ...changes });
+const said = notes => notes.filter(n => n.message === IGNORED);
+const WAKE = { cron: '0 * * * *', tz: 'UTC', message: 'wake', enabled: false };
+
+test('flag-ignored: the store says it once when the apply settles as created, and the spawn is still followed to its instance', async () => {
+  const arrivals = [];
+  const { s, id, notes } = brokerStore({ apply: () => ignoredReceipt(), notifySpawned: (row, ws, epoch, arrival) => arrivals.push(arrival) });
+  await settle(10);
+  assert.deepEqual(notes.map(n => [n.message, n.options]), [[IGNORED, { detail: IGNORED_DETAIL }]], 'the notice of a start, with what OATS reported');
+  assert.equal(notes[0].options.sticky, undefined, 'not sticky, as the start\'s');
+  assert.equal(s.rows('northwind')[0].pending, 'spawning', 'it does not wait for the roster, and the row still does');
+  s.observe('northwind', []); s.observe('northwind', [realRow(created(), { running: false, tmux: null })]);
+  assert.equal(notes.length, 1, 'once, however often the roster is observed');
+  s.observe('northwind', [realRow()]);
+  assert.deepEqual(arrivals, [{ id, complete: true }], 'a complete spawn: followed and announced as any other');
+  assert.equal(notes.length, 1); assert.equal(s.size(), 0);
+});
+
+test('flag-ignored: a replayed spawn says it too; no warnings, no detail; more than 16 says how many more', async () => {
+  const replayed = brokerStore({ apply: () => ignoredReceipt({ replayed: true, warnings: [] }) });
+  await settle(10);
+  assert.deepEqual(replayed.notes.map(n => [n.message, n.options]), [[IGNORED, {}]]);
+  const lines = Array.from({ length: 19 }, (_, i) => `warning ${i + 1}`);
+  const many = brokerStore({ apply: () => ignoredReceipt({ warnings: lines }) });
+  await settle(10);
+  assert.equal(many.notes[0].options.detail, ['OATS says:', ...lines.slice(0, 16), '3 more not shown.'].join('\n'));
+});
+
+test('flag-ignored: a partial apply shows both facts, and neither replaces the other', async () => {
+  const arrivals = [], viewed = [];
+  const { s, id, notes } = brokerStore({ wake: WAKE, viewSchedules: () => viewed.push(true), notifySpawned: (row, ws, epoch, arrival) => arrivals.push(arrival),
+    apply: () => ignoredReceipt({ wake: { requested: true, saved: false, error: { code: 'E_SCHEDULE', message: 'x' } } }) });
+  await settle(10);
+  assert.equal(notes.length, 2, 'two notices for one spawn');
+  assert.equal(said(notes).length, 1); assert.equal(said(notes)[0].options.detail, IGNORED_DETAIL);
+  const own = notes.find(n => n.message !== IGNORED);
+  assert.match(own.message, /wake schedule was not saved/);
+  await own.options.buttons.find(b => b.label === 'View schedules').activate(); assert.equal(viewed.length, 1);
+  assert.equal(said(notes)[0].options.buttons, undefined, 'each keeps its own options');
+  // Both stay as they were while the roster catches up, and the launched partial spawn is still followed.
+  s.observe('northwind', []); s.observe('northwind', [realRow()]);
+  assert.equal(notes.length, 2); assert.deepEqual(arrivals, [{ id, complete: false }]); assert.equal(s.size(), 0);
+});
+
+test('flag-ignored: every other spawn that worked reads as today, with no such notice', async () => {
+  for (const changes of [{ launchPrompts: undefined }, { launchPrompts: { status: 'not-engaged', startId: 's', at: 't' } },
+    { launchPrompts: { status: 'completed', answers: [], reason: 'recognized launch boundary', receipt: [] } }, { launchPrompts: 'flag-ignored' }, { launchPrompts: { status: 'flag-future' } }]) {
+    const { s, notes, spawned } = brokerStore({ apply: () => ignoredReceipt(changes) });
+    await settle(10);
+    assert.deepEqual(notes, [], JSON.stringify(changes));
+    s.observe('northwind', [realRow()]); assert.equal(spawned.length, 1); assert.equal(notes.length, 0);
+  }
+  // Not launched: "started" would be untrue. Today's one notice, and nothing beside it.
+  const scaffold = brokerStore({ apply: () => ignoredReceipt({ launched: false }) });
+  await settle(10);
+  assert.deepEqual(scaffold.notes.map(n => n.message), [`Created ${IGNORED_NAME} — not launched. Open its session from the roster.`]);
+});
+
+test('flag-ignored: held while another workspace is on screen and shown on return, with the job\'s own notice', async () => {
+  let ws = 'other';
+  const { s, notes } = brokerStore({ currentWorkspace: () => ws, wake: WAKE,
+    apply: () => ignoredReceipt({ wake: { requested: true, saved: false, error: { code: 'E_SCHEDULE', message: 'x' } } }) });
+  await settle(10);
+  assert.equal(notes.length, 0, 'held: its workspace is not on screen');
+  s.observe('northwind', [realRow()]); // a background read of its workspace
+  assert.equal(notes.length, 0, 'still held');
+  ws = 'northwind'; s.observe('northwind', [realRow()]);
+  assert.equal(notes.length, 2); assert.equal(said(notes).length, 1);
+  s.observe('northwind', [realRow()]); assert.equal(notes.length, 2, 'once');
+});
+
+test('flag-ignored: an unknown outcome that Check result finds created says it once', async () => {
+  let n = 0;
+  const { s, id, notes } = brokerStore({ apply: () => ++n === 1 ? failure('E_CLI_TIMEOUT', true) : ignoredReceipt({ replayed: true, warnings: [] }) });
+  await settle(10);
+  assert.equal(said(notes).length, 0); assert.equal(s.rows('northwind')[0].pending, 'unknown');
+  await s.check(id); await settle(10);
+  assert.equal(said(notes).length, 1);
+  s.observe('northwind', [realRow()]); assert.equal(said(notes).length, 1);
+});
+
+test('flag-ignored and a reload: held when the window reloads, it is shown once on return', async () => {
+  let current = 'other';
+  const rig = reloadRig(async () => ignoredReceipt());
+  const storage = memoryStorage(), onScreen = { currentWorkspace: () => current };
+  const first = rig.window(storage, onScreen);
+  rig.submit(first.s); await settle(20);
+  assert.equal(first.notes.length, 0, 'held: its workspace is not on screen');
+  assert.doesNotMatch(storage.raw(), /flagSaid/, 'held is not shown: nothing is remembered yet');
+  first.s.dispose(); // the window reloads while it is held
+  const second = rig.window(storage, onScreen);
+  assert.equal(second.s.recover(), 1); await settle(20);
+  assert.equal(second.notes.length, 0, 'still held after the reload');
+  assert.doesNotMatch(storage.raw(), /flagSaid/);
+  current = 'northwind'; second.s.observe('northwind', []);
+  assert.deepEqual(second.notes.map(n => [n.message, n.options]), [[IGNORED, { detail: IGNORED_DETAIL }]], 'shown on return');
+  assert.match(storage.raw(), /"flagSaid":true/, 'remembered from the moment it was shown');
+  second.s.observe('northwind', []); second.s.observe('northwind', [realRow()]);
+  assert.equal(second.notes.length, 1, 'once'); assert.equal(second.spawned.length, 1); assert.equal(storage.raw(), null);
+  assert.equal(rig.posts.filter(a => a === 'apply').length, 1, 'never applied again');
+});
+
+test('flag-ignored and a reload: shown before the window reloads, it is not shown again', async () => {
+  const rig = reloadRig(async () => ignoredReceipt());
+  const storage = memoryStorage();
+  const first = rig.window(storage);
+  rig.submit(first.s); await settle(20);
+  assert.equal(said(first.notes).length, 1, 'shown: its workspace is on screen');
+  // The job waits for the roster, so it is still kept: with the fact that the notice was shown, never its text.
+  const kept = JSON.parse(storage.raw());
+  assert.equal(kept.length, 1); assert.equal(kept[0].flagSaid, true);
+  assert.doesNotMatch(storage.raw(), /OATS says|will not wake|dangerously|channels|warning/i, 'no warning text and no sentence is stored');
+  first.s.dispose(); // the window reloads
+  const second = rig.window(storage);
+  assert.equal(second.s.recover(), 1); await settle(20);
+  assert.ok(rig.posts.filter(a => a === 'result').length >= 1, 'the same apply is settled again from `result`');
+  assert.deepEqual(second.notes, [], 'and says nothing a second time');
+  second.s.observe('northwind', []); second.s.observe('northwind', [realRow()]);
+  assert.deepEqual(second.notes, []); assert.equal(second.spawned.length, 1, 'its "spawned" is still reported');
+  assert.equal(storage.raw(), null);
+  // Only the stored `true` means shown: anything else in its place shows the notice (once) rather than losing it.
+  for (const value of ['true', 1, {}, null]) {
+    const again = reloadRig(async () => ignoredReceipt()), store2 = memoryStorage();
+    const before = again.window(store2);
+    again.submit(before.s); await settle(20);
+    const entries = JSON.parse(store2.raw()); entries[0].flagSaid = value;
+    store2.setItem(SPAWN_STORAGE_KEY, JSON.stringify(entries));
+    before.s.dispose();
+    const after = again.window(store2);
+    after.s.recover(); await settle(20);
+    assert.equal(said(after.notes).length, 1, JSON.stringify(value));
   }
 });
 

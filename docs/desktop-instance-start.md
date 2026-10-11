@@ -66,8 +66,11 @@ and how many lines the cut left out. It knows nothing of the act that was
 answered. `flagIgnoredNotice` makes the headline and the
 detail from that fact, and from nothing else. Both are tolerant: an answer the
 reader cannot read, or any other status, gives no fact and no notice, and the
-start reads as any start that worked. Only the start dialog calls them: the
-Desktop does not yet read `launchPrompts` on a spawn's answer.
+start reads as any start that worked. The start dialog calls them for a
+start's and a restart's answer. A launched spawn's answer goes through the same
+reader into its creation receipt, and the notice is the same
+(`packages/desktop/docs/desktop-spawn-preview.md`, A spawn where Claude Code
+ignored the channel option).
 
 If an ordinary Start dialog finds the instance already running, its action becomes
 **Open terminal**. A failed or timed-out start requires **Refresh status** before

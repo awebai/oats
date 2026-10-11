@@ -138,12 +138,16 @@ export function retainedStartMessage(instance, d) {
  * this many UTF-16 units of them in total. Each cut is by position: never by a warning's words. */
 export const FLAG_IGNORED_WARNINGS = 16;
 export const FLAG_IGNORED_UNITS = 4096;
+/** No fact below is larger than this, as JSON in UTF-8 bytes: what a store that keeps one reserves for it.
+ * A UTF-16 unit of a display line is at most six bytes there (a lone surrogate, which JSON writes as an
+ * escape); the rest is the keys, the punctuation and the count. */
+export const FLAG_IGNORED_BYTES = FLAG_IGNORED_UNITS * 6 + 256;
 /** A launch that worked while Claude Code ignored the channel option (0.52.0). The kernel's successful
  * answer then carries `launchPrompts: {status: "flag-ignored", reason, signatureId, startId, at}` and its own
  * words as one string among `warnings`, never as a field. This reader takes those two fields of an answer
- * and knows nothing of the act that was answered. Its one caller is the start dialog, for a start's and a
- * restart's answer; a spawn's answer carries `launchPrompts` too (0.52.0) and is not read yet. It stands
- * beside the kept-session reader above, which reads a refusal's details and knows no such status.
+ * and knows nothing of the act that was answered. It has two callers: the start dialog, for a start's and
+ * a restart's answer, and the spawn's creation receipt (spawn-apply-contract.mjs), for a launched spawn's.
+ * It stands beside the kept-session reader above, which reads a refusal's details and knows no such status.
  * Tolerant: an answer that does not decode, or any other status, is null, and the launch reads as any
  * launch that worked.
  *

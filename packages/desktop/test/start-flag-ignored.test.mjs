@@ -228,12 +228,12 @@ test("the kept-session reader does not change: it knows no such status", () => {
   assert.deepEqual(launchPromptOutcome(flagIgnored()), { status: "unknown", answers: [], reason: "Launch requires inspection", receipt: [] });
 });
 
-test("not the spawn: no module of the spawn's path reads the status or calls the reader", () => {
-  for (const path of ["../renderer/spawn-jobs.mjs", "../renderer/spawn-dialog.mjs", "../renderer/views/spawn.mjs", "../server/spawn-apply.mjs", "../spawn-apply-proxy.mjs",
-    "../../client/spawn-apply-contract.mjs", "../../client/spawn-apply-cli.mjs", "../../client/spawn-messages.mjs"])
-    assert.doesNotMatch(read(path), /flag-ignored|flagIgnored|FlagIgnored|channels-unavailable/, path);
-  // The one caller of the reader in what the app ships is the start dialog.
-  assert.match(read("../renderer/start-instance.mjs"), /flagIgnoredNotice\(instance\.instance, launchFlagIgnored\(result\)\)/);
+test("the start dialog calls the reader and then the notice, once each", () => {
+  const dialog = read("../renderer/start-instance.mjs");
+  assert.match(dialog, /flagIgnoredNotice\(instance\.instance, launchFlagIgnored\(result\)\)/);
+  assert.equal(dialog.match(/launchFlagIgnored\(/g).length, 1);
+  // The spawn's receipt carries the same reader's fact (spawn-flag-ignored.test.mjs); the start reads no receipt.
+  assert.doesNotMatch(dialog, /flagIgnoredFact|receipt/);
 });
 
 for (const restart of [false, true]) {

@@ -21,7 +21,7 @@ import { launchConfigAmbiguous } from "../lib/launch-preference.mjs";
 import { FLAG_IGNORED_WARNING, DEV_CHANNEL_STATEMENT } from "../lib/core.mjs";
 import { raw296, trustPrompts, flagIgnored } from "./helpers/dev-channel-screens.mjs";
 import { launchPromptOutcome, launchPromptDiffered, differedLines, retainedSpawnDetails, retainedSpawnMessage, retainedStartMessage,
-  launchFlagIgnored, flagIgnoredNotice, LAUNCH_INSPECTION } from "../packages/client/launch-prompt-outcome.mjs";
+  launchFlagIgnored, flagIgnoredFact, flagIgnoredNotice, LAUNCH_INSPECTION } from "../packages/client/launch-prompt-outcome.mjs";
 import { displayLine } from "../packages/client/display-text.mjs";
 import { cliSpawnPreview } from "../packages/client/spawn-preview-cli.mjs";
 import { spawnApplyReason } from "../packages/client/spawn-apply-contract.mjs";
@@ -149,6 +149,11 @@ test("a start where Claude ignored the flag: the kernel's record and its own war
   // The kernel's two fixed strings pass the display filter whole: nothing of them is withheld or folded.
   assert.equal(displayLine(FLAG_IGNORED_WARNING), FLAG_IGNORED_WARNING); assert.equal(displayLine(DEV_CHANNEL_STATEMENT), DEV_CHANNEL_STATEMENT);
   assert.deepEqual(launchFlagIgnored(answer), { reason: "channels-unavailable", warnings: answer.warnings, omitted: 0 });
+  // A launched spawn's answer carries the same two fields (0.52.0): `spawnInstanceAsync` in lib/core.mjs
+  // composes it from the same `channelsUnavailable` and `flagIgnoredWarnings`, with no export for it, so the
+  // shape above stands for both. The Desktop's spawn receipt carries the reader's fact through its decoder:
+  // the kernel's own words are a fact the decoder accepts as it is.
+  assert.deepEqual(flagIgnoredFact(launchFlagIgnored(answer)), launchFlagIgnored(answer));
   assert.deepEqual(flagIgnoredNotice(NAME, launchFlagIgnored(answer)), {
     headline: `${NAME} started. Claude Code reported that channels are not available and ignored the channel option, so mail and chat will not wake this instance.`,
     detail: `OATS says:\na launch hook's own warning\n${FLAG_IGNORED_WARNING}` });
