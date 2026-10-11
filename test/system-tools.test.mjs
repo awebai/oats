@@ -6,6 +6,7 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SYSTEM_TOOL_DIRS, systemTool } from "../lib/system-tools.mjs";
+import { PS_ENV } from "../lib/worktree-hooks.mjs";
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-system-tools-")));
 test.after(() => rmSync(base, { recursive: true, force: true }));
@@ -14,6 +15,11 @@ const tool = (dir, name, mode = 0o755) => { mkdirSync(dir, { recursive: true });
 test("the system directories are /usr/bin and /bin", () => {
   assert.deepEqual(SYSTEM_TOOL_DIRS, ["/usr/bin", "/bin"]);
   assert.ok(Object.isFrozen(SYSTEM_TOOL_DIRS));
+});
+
+test("ps runs on the system directories: PS_ENV's PATH is SYSTEM_TOOL_DIRS, one source of them", () => {
+  assert.equal(PS_ENV.PATH, SYSTEM_TOOL_DIRS.join(":"));
+  assert.ok(Object.isFrozen(PS_ENV));
 });
 
 test("systemTool: the first executable file in the system directories, whatever the caller's PATH holds", () => {
