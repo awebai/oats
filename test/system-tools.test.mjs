@@ -47,3 +47,20 @@ test("systemTool finds a real system tool in the default directories", () => {
   const sh = systemTool("sh");
   assert.ok(sh.file === "/usr/bin/sh" || sh.file === "/bin/sh", JSON.stringify(sh));
 });
+
+test("OATS_TEST_SYSTEM_TOOL_DIRS (test only) names the directories, absolute ones only; anything else is no tool", () => {
+  const saved = process.env.OATS_TEST_SYSTEM_TOOL_DIRS;
+  const dir = join(base, "seam"); const file = tool(dir, "systemd-run");
+  try {
+    process.env.OATS_TEST_SYSTEM_TOOL_DIRS = `${join(base, "empty")}:${dir}`;
+    assert.deepEqual(systemTool("systemd-run"), { file });
+    for (const bad of ["relative/bin", `${dir}:bin`, "", `${dir}:`]) {
+      process.env.OATS_TEST_SYSTEM_TOOL_DIRS = bad;
+      const r = systemTool("systemd-run");
+      assert.equal(r.file, undefined, JSON.stringify(bad)); assert.match(r.reason, /OATS_TEST_SYSTEM_TOOL_DIRS/);
+    }
+    // An explicit `dirs` is the caller's: the seam is read only when none is given.
+    process.env.OATS_TEST_SYSTEM_TOOL_DIRS = "relative";
+    assert.deepEqual(systemTool("systemd-run", { dirs: [dir] }), { file });
+  } finally { if (saved === undefined) delete process.env.OATS_TEST_SYSTEM_TOOL_DIRS; else process.env.OATS_TEST_SYSTEM_TOOL_DIRS = saved; }
+});

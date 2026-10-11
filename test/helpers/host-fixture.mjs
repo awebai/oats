@@ -93,10 +93,15 @@ function isolatedHomeAndGit(home) {
   for (const dir of [home, ...Object.values(xdg)]) mkdirSync(dir, { recursive: true });
   return { HOME: home, ...xdg, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
 }
+/** Where a kernel a fixture starts judges itself to run (lib/tmux-server-scope.mjs, #915): a scope,
+ *  never a systemd service, whatever runs the suite. A CI job inside a service would otherwise make
+ *  the kernel start the OATS tmux server under the host's own systemd-run. A test of that start
+ *  sets its own. */
+const FIXTURE_CGROUP = "0::/oats-fixture.scope\n";
 /** A fixture's rules, made once: its HOME and XDG directories and its scheduler stubs are created
  *  here, and nowhere else. */
 export function fixtureRules(base, { home = join(base, "home") } = {}) {
-  return { set: isolatedHomeAndGit(home), stubs: schedulerStubs(base) };
+  return { set: { ...isolatedHomeAndGit(home), OATS_TEST_CGROUP: FIXTURE_CGROUP }, stubs: schedulerStubs(base) };
 }
 /** Apply a fixture's rules to an environment in place, creating nothing: what it never inherits
  *  removed, its HOME, XDG and git set, and its scheduler stubs ahead on PATH (once). */
@@ -259,7 +264,7 @@ exec ${quote(tmux)}${userConfig ? "" : " -f /dev/null"} "$@"
   }
   // The fixture's git and XDG rules (fixtureEnv's), with HOME as this worker's; PATH stays system-bin
   // only, so no host service manager is reachable at all.
-  Object.assign(process.env, isolatedHomeAndGit(home), { XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base) });
+  Object.assign(process.env, isolatedHomeAndGit(home), { XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base), OATS_TEST_CGROUP: FIXTURE_CGROUP });
   // Neither the environment (above) nor the working directory makes this worker an OATS instance.
   const comeBack = leaveEnclosingInstance(base);
   isolatedTmpdir = tmuxTmpdir;

@@ -11,6 +11,17 @@ import { basename, delimiter, dirname, join, sep } from "node:path";
 import { FS_LIMITS, assertNoFixtureProcesses, fixtureBase, fixtureEnv, nameOfLength, pathOfLength } from "./helpers/host-fixture.mjs";
 import { describeNestedTestFailure } from "./helpers/nested-test-failure.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { creatorPlacement, serverScopePlan } from "../lib/tmux-server-scope.mjs";
+
+/** The creator's placement as a process with `env` would read it (its seams only; no io). */
+function creatorPlacementIn(env) {
+  const saved = { cgroup: process.env.OATS_TEST_CGROUP, invocation: process.env.INVOCATION_ID };
+  process.env.OATS_TEST_CGROUP = env.OATS_TEST_CGROUP; process.env.INVOCATION_ID = "fixture-run-by-a-service";
+  try { return creatorPlacement(); }
+  finally {
+    for (const [k, v] of [["OATS_TEST_CGROUP", saved.cgroup], ["INVOCATION_ID", saved.invocation]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
 
 const bases = [];
 const base = (prefix) => { const b = fixtureBase(prefix); bases.push(b); return b; };
@@ -91,6 +102,10 @@ test("#816 fixtureEnv: HOME and XDG under the base, git without host config, no 
   // git reads no host configuration: no credential helper, whatever the host's git config says.
   const helper = spawnSync("git", ["config", "--get", "credential.helper"], { env, encoding: "utf8" });
   assert.equal(helper.stdout, "");
+  // A kernel the fixture starts never judges itself inside a systemd service, whatever runs the suite
+  // (a CI job in a service): it starts no systemd-run of the host's (#915).
+  assert.deepEqual(serverScopePlan(creatorPlacementIn(env)), { wrap: false });
+  assert.match(env.OATS_TEST_CGROUP, /^0::\/.*\.scope\n$/);
   // The host's service manager is never asked: the fixture's launchctl and systemctl answer "not loaded".
   for (const [tool, args] of [["launchctl", ["print", "gui/501/ai.oats.schedule"]], ["systemctl", ["--user", "is-active", "oats-schedule.timer"]]]) {
     const r = spawnSync(tool, args, { env, encoding: "utf8" });
