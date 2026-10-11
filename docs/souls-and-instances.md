@@ -1195,11 +1195,18 @@ the recorded children it stopped and by the test it uses for `work/`:
 The plan's note for a tree names its attached children and says which of the
 two the retire would do. A retire that refuses after it has handled trees
 says, with the trees it handled, each warning it has about their attached
-children. All of this is about the recorded children, for `work/` too: an
-attached instance that the plan lists under `ambiguous` (it records this
-instance as its parent under a name that is not unique) is not asked to
-stop, so the retire neither repoints its link nor names it, and its link
-points at the path the tree has left.
+children.
+
+All of this is about the recorded children, for `work/` too. An attached
+instance that the plan lists under `ambiguous` (it records this instance as
+its parent under a name that is not unique) is not asked to stop, so the
+retire does not repoint its link, which then points at the path the tree
+has left. The retire says so. The plan's note for an extra tree names such
+instances in a clause of its own, and `work/` has a note of its own for
+them. The receipt's `warnings` name each one for every tree the retire moved
+or removed, with the command to repoint its link by hand where the tree was
+re-homed. The receipt of a `--self` retirement does not carry those
+warnings; its plan's notes are the same.
 
 `--discard-worktree` applies to `work/` only: a tree that is not clean is
 always re-homed. The retire writes one workspace event per handled tree

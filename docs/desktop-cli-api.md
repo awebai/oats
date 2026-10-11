@@ -3678,6 +3678,21 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   removed, and its note says nothing of them. Names too long for the note
   give way to `<n> of the recorded children`. They are strings in `notes`: no
   key changes, and `planRevision` is unaffected.
+- The retire does not act on an instance listed under `ambiguous`, and one
+  that is attached to a tree of this home is named with what that leaves it
+  with. An extra tree's note gains a clause of its own, after the one for
+  the recorded children: `; attached instance(s) <names>, listed under
+  ambiguous, use it as their work: the retire does not stop them, and their
+  work link would then point at a path that is gone` for a tree that would
+  be removed, and `…: the retire neither stops them nor repoints their work
+  link, which would then point at a path that is gone (the tree would be at
+  <movedTo>)` for one that would be re-homed. For `work/` it is a note of
+  its own, in a worktree-mode plan: `attached instance(s) <names>, listed
+  under ambiguous, use this home's work/ as their work: the retire neither
+  stops them nor repoints their work link, which will then point at a path
+  that is gone, whether the worktree is retained (the receipt names where)
+  or removed with --discard-worktree`. The note for the recorded children
+  above is unchanged.
 - `facts.recordedBranch` is `null` where the home records the word `"HEAD"`
   (a detached checkout or attached spawn before 0.49.0, #641): it is not a
   branch name, so `facts.work.drift` is `false` for it as well.
@@ -3801,6 +3816,16 @@ A first retire prints the **raw receipt**, not an envelope:
   points at a path that is gone`. A child that was repointed has no string:
   the text summary's `child <name>` line says where its work now links. No
   key is new.
+
+  An attached instance the plan lists under `ambiguous` is not stopped and
+  not repointed, and has a string for each tree that was moved or removed:
+  the sentence above for a removed tree, followed by ` (it records this
+  instance as its parent under a name that is not unique, so the retire did
+  not stop it)`, or, for a re-homed tree, `<instance>: its work was <tree>,
+  which this retire re-homed to <movedTo>; its work link <home>/work was not
+  repointed and now points at a path that is gone (it records … did not stop
+  it); to repoint it by hand: ln -sfn …`. A `--self` retirement's receipt
+  does not carry these strings.
 - `workRecovery`: `{path, classes, bytes, home, outputs?, repoCopy?,
   notCopied?, afterHooks?}`, present when a recovery was written. One retire
   writes at most one recovery directory, and `path` is that directory.

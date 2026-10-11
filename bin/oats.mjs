@@ -2929,13 +2929,15 @@ function retireCmd() {
     revalidate = () => {
       try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { planFailure = e; throw e; }
       if (fresh.planRevision !== planRev) throw (stalePlan = Object.assign(new Error(`the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`), { code: "E_PLAN_STALE", details: { plan: fresh } }));
-      return { plannedExtraWorktrees: fresh.facts.extraWorktrees, children: fresh.facts.children };
+      return { plannedExtraWorktrees: fresh.facts.extraWorktrees, children: fresh.facts.children, ambiguous: fresh.facts.ambiguous };
     };
   } else {
     // A plain or --self retire reads its recorded children the same way: under the claim, as they
     // are when the retire starts (an earlier retire that kept the home has repaired lineage by
     // then), and none when there are none.
-    revalidate = () => { const recorded = descendantsOf(root, name); return recorded.length ? { children: recorded } : {}; };
+    // The instances the plan lists under `ambiguous` go with them: the retire does not act on
+    // them, and says what it left the ones attached to a tree it moved or removed with.
+    revalidate = () => { const recorded = descendantsOf(root, name); return { ...(recorded.length ? { children: recorded } : {}), ...(recorded.ambiguous?.length ? { ambiguous: recorded.ambiguous } : {}) }; };
   }
   let r;
   try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), [RETIRE_UNDER_CLAIM]: revalidate }); }
