@@ -1,22 +1,23 @@
 // /api/panel per-instance contract projection (review 2092e0f): renderer
 // clustering and its cluster-first overview consume these exact
 // fields, but renderer tests inject them directly — a dropped or typo'd
-// projection field would stay green there. Extract the REAL projection
-// function from server/oats-web.mjs via block markers (house pattern,
-// as TMUXTGT) and assert the relation contract fields end to end.
+// projection field would stay green there. The projection is the shared
+// home's (packages/client/deployment-panel.mjs `panelInstance`), which the
+// server calls: assert the relation contract fields end to end.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { panelInstance } from "../../client/deployment-panel.mjs";
 
 const SRV = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "oats-web.mjs");
 
 function projection() {
   const src = readFileSync(SRV, "utf8");
-  const m = src.match(/\/\* OATSWEB_PANELPROJ_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_PANELPROJ_END \*\//);
-  assert.ok(m, "PANELPROJ block markers present");
-  return new Function("dirname", m[1] + "\nreturn projectPanelInstance;")(dirname);
+  assert.ok(/import \{[^}]*\bpanelInstances\b[^}]*\} from "\.\.\/\.\.\/client\/deployment-panel\.mjs"/.test(src) && !/projectPanelInstance|OATSWEB_PANELPROJ/.test(src),
+    "the server serves the shared projection and holds none of its own");
+  return panelInstance;
 }
 
 test("/api/panel projection forwards the agent-relations contract fields (present values)", () => {

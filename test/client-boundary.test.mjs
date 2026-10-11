@@ -72,6 +72,8 @@ const SURFACE = Object.freeze({
   "roster-sections.mjs": ["rosterSections"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES", "withoutInstanceVariables"],
   "client-terms.mjs": ["clientTerms"],
+  // Firm (1d): what one deployment's observation becomes for the panel. A client calls `panelInstances`, not the row's own projection.
+  "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances"],
   // Provisional: machines and the switcher.
   "cli-adapter.mjs": ["parseEnvelope", "cliRemoteRoster", "cliStart", "launchChoiceArgv", "cliCapability", "writeTaskFile"],
   "remote-roster.mjs": ["remoteWorkspace", "remotePanel", "remoteAgents", "unavailableGroups"],
@@ -550,11 +552,13 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 39);
+  assert.equal(Object.keys(SURFACE).length, 40);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
   assert.deepEqual(SURFACE["client-terms.mjs"], ["clientTerms"]);
+  // 1d: the panel's projection is on it; the projection of one row is not (a client calls `panelInstances`).
+  assert.ok(Object.hasOwn(SURFACE, "deployment-panel.mjs") && !SURFACE["deployment-panel.mjs"].includes("panelInstance"));
   // Not on it: the Desktop spawn dialog's copy, and the two files nobody imports.
   for (const module of ["spawn-messages.mjs", ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
 });

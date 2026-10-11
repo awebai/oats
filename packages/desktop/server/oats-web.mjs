@@ -83,6 +83,7 @@ import { readIdentity, attachment, buildViews, deploymentReason, deploymentReaso
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { shortPath, deploymentLabel } from "../../client/deployment-label.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
+import { rosterRows, livenessInput, livenessAnswers, panelInstances } from "../../client/deployment-panel.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -371,54 +372,6 @@ function workspaceChoices(model = viewModel()) {
   });
 }
 /* OATSWEB_VIEWS_END */
-
-/* OATSWEB_PANELPROJ_BEGIN — the /api/panel per-instance contract projection.
-   Extracted by packages/desktop/test/panel-projection.test.mjs via block
-   markers so a dropped/typo'd field fails a real assertion (review
-   2092e0f): the renderer's cluster grouping and its overview consume
-   exactly these fields. */
-function projectPanelInstance(i) {
-  return {
-    instance: i.instance, agent: i.agent, description: i.description,
-    // The reported harness only (harness-names.mjs reads a released kernel's runtime); never a guessed default.
-    repo: i.repo, work: i.work, branch: i.branch || null, harness: i.harness || null,
-    model: i.model || null, running: i.running, createdAt: i.createdAt,
-    home: i.home, agentsRoot: i.agentsRoot,
-    workspace: dirname(i.agentsRoot), repoName: (i.repo || dirname(i.agentsRoot)).split("/").pop(),
-    parentInstance: i.parentInstance || null,
-    // Agent relations (kernel contract, final): siblingInstance links a
-    // declared sibling to a ROOT anchor; relation/relativeTo record what
-    // was declared at spawn. Forwarded for cluster grouping and the
-    // cluster-first overview (the renderer reads /api/panel).
-    siblingInstance: i.siblingInstance || null,
-    relation: i.relation || null,
-    relativeTo: i.relativeTo || null,
-    ...(i.sessionTarget ? { sessionTarget: i.sessionTarget } : {}),
-    runtimeState: i.runtimeState, runtimeError: i.runtimeError,
-    tmux: i.tmux, git: null,
-    // Workspace-model v2 facts exactly as `oats status --json` reported them:
-    // module drift rows (or the recorded map when the workspace is
-    // unreachable), the soul source and the served identity. Identity is
-    // present only when a provider reported one — never synthesized.
-    ...(i.modules !== undefined ? { modules: i.modules } : {}),
-    ...(i.soul !== undefined ? { soul: i.soul } : {}),
-    ...(i.identity !== undefined ? { identity: i.identity } : {}),
-    // desktop-facts: the last session start, where the model came from, the messaging identity's address.
-    ...(i.startedAt !== undefined ? { startedAt: i.startedAt } : {}),
-    ...(i.modelFrom !== undefined ? { modelFrom: i.modelFrom } : {}),
-    ...(i.identityAddress !== undefined ? { identityAddress: i.identityAddress } : {}),
-    ...(i.retirePending ? { retirePending: true } : {}),
-    ...(i.rollbackIncomplete ? { rollbackIncomplete: true } : {}),
-    // #802: a spawn setting up its worktree (deployment-data.mjs keeps it as true only).
-    ...(i.spawnInProgress === true ? { spawnInProgress: true } : {}),
-    ...(i.captured ? { captured: true } : {}),
-    // Needs input (PR K): the validated claim (or null, unknown) as status reported it; absent stays absent.
-    // Desktop liveness is merged before projection, so running/runtimeState beside it are Desktop's.
-    ...(i.waitingOnYou !== undefined ? { waitingOnYou: i.waitingOnYou } : {}),
-    team: i.team || null,
-  };
-}
-/* OATSWEB_PANELPROJ_END */
 
 /** Spawnable souls of a local v2 deployment: the kernel's spawn catalog
  * (`oats souls --json` — non-private souls of confirmed members, and external
@@ -809,24 +762,21 @@ const deploymentObserver = createDeploymentObserver({
   // probe generation is the revision: a real CLI change revokes pending reads.
   getContext: (id) => ctxs.includes(id) ? { deployment: id, revision: cliProbeGeneration, cli: cliState } : null,
 });
-function observeLivenessRows(rows) {
+/** Run the liveness collector over its input (deployment-panel.mjs `livenessInput`) and answer what it
+ * printed, or null when it failed, timed out or could not start (`livenessAnswers` reads either). No
+ * rows start no child. */
+function runLivenessCollector(input) {
   return new Promise((done) => {
-    if (!rows.length) return done([]);
-    const unknown = () => done(rows.map(() => ({ running: null, runtimeState: "unreachable", runtimeError: "Terminal status is unavailable" })));
+    if (!input.length) return done(null);
     let child;
     try {
       // The collector is this executable as Node too: it gets the environment this process was
       // started with (the Node-mode flag is in it) and cleans its own. No other child gets it.
-      child = execFile(process.execPath, [LIVENESS], { encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024, env: launchEnvironment }, (err, stdout) => {
-        if (err) return unknown();
-        try {
-          const parsed = JSON.parse(stdout);
-          return Array.isArray(parsed) && parsed.length === rows.length ? done(parsed) : unknown();
-        } catch { return unknown(); }
-      });
+      child = execFile(process.execPath, [LIVENESS], { encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024, env: launchEnvironment },
+        (err, stdout) => done(err ? null : stdout));
       child.stdin.on("error", () => { /* reported through the exit callback */ });
-      child.stdin.end(JSON.stringify(rows));
-    } catch { unknown(); }
+      child.stdin.end(JSON.stringify(input));
+    } catch { done(null); }
   });
 }
 /** The /api/agents view of a souls-catalog entry: the last good catalog (or none), the latest
@@ -876,18 +826,10 @@ async function observeDeployment(id, { live = false } = {}) {
     // revalidateCatalog), so an idle app costs nothing and no deployment file is ever named to find out.
     const { entry: catalogEntry, pending } = soulCatalog.settle(id, cli, workspaceStatus, { maxAge });
     capabilityCatalog.ensure(id, cli, workspaceStatus, { maxAge });
-    // Needs input: a row keeps the kernel's waitingOnYou only when this CLI advertises waiting-on-you.
-    // Gate on the feature, never the version: a pre-feature kernel emitting the field is dropped.
-    const waitingFeature = !!cli.features?.includes("waiting-on-you");
-    const rows = roster.agents.flatMap((agent) => agent.instances.map(({ waitingOnYou, ...instance }) => ({
-      ...instance, ...(waitingFeature && waitingOnYou !== undefined ? { waitingOnYou } : {}),
-      agent: instance.agent || agent.name, description: agent.description || "",
-      team: agent.team || null, agentsRoot: roster.root,
-    })));
-    const liveness = await observeLivenessRows(rows.map((i) => ({ instance: i.instance, tmux: i.tmux, sessionTarget: i.sessionTarget,
-      runtimeState: i.runtimeState, runtimeError: i.runtimeError })));
-    const instances = rows.map((row, index) => projectPanelInstance({ ...row, ...liveness[index] }))
-      .sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
+    // The rows, the collector's input and its answers, and the projection are the shared home's
+    // (packages/client/deployment-panel.mjs); running the collector is this process's.
+    const rows = rosterRows(roster, cli);
+    const instances = panelInstances(rows, livenessAnswers(rows, await runLivenessCollector(livenessInput(rows))));
     const entry = {
       deployment: { status: "observed", root: roster.root, workspace: workspaceStatus.workspace, workspaceStatus,
         reachable: roster.workspace ?? null, withheld: roster.withheld,
