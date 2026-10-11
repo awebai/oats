@@ -484,10 +484,12 @@ test("the retire plan's text says what is true of each work mode's work, and its
   }
   // A record with no work mode, and one with a mode this kernel does not know: said, never "retain worktree false".
   const record = join(homes.checkout.home, "instance.json"), meta = readJson(record);
-  for (const [work, said] of [[undefined, "work mode not recorded"], ["somewhere", `work mode "somewhere" not known to this kernel`]]) {
+  // A value that is not a string is never read as a mode's name, and never fails the text.
+  for (const [work, said] of [[undefined, "work mode not recorded"], ["somewhere", `work mode "somewhere" not known to this kernel`],
+    [["attached"], `work mode ["attached"] not known to this kernel`], [{ toString: null }, `work mode {"toString":null} not known to this kernel`]]) {
     writeFileSync(record, JSON.stringify({ ...meta, work }, null, 2) + "\n");
     const seen = plan(homes.checkout.instance);
-    assert.equal(seen.workMode, work ?? null);
+    assert.deepEqual(seen.workMode, work ?? null);
     assert.equal(seen.line, `  defaults: ${said}${REST}`);
     assert.deepEqual(seen.defaults, defaults(false));
   }
