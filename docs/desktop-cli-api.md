@@ -1688,7 +1688,9 @@ shows the drift as `launch-changed`.
   configuration this `oats-local.yaml` does not declare.
 - `E_LAUNCH_CONFIG_AMBIGUOUS {harness, configurations, fix}` (spawn and its
   preview only, 0.52): the chosen harness has more than one launch
-  configuration here (`configurations`, their names sorted), none is
+  configuration here (`configurations`, all their names, sorted; the message
+  names the first 10, then "and K more", so it stays within 1024 characters),
+  none is
   `default: true`, and the spawn named none. Named means `--launch-config
   <name>`, `--launch-config none`, or a `souls.launch` string; an inline or
   soul preference and `--harness` alone are not. `fix` is "name one with

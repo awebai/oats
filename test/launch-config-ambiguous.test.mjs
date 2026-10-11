@@ -86,6 +86,23 @@ test("listings carry the refusal as the launch report's problem", (t) => {
   assert.equal(inspected.launch.problem.code, "E_LAUNCH_CONFIG_AMBIGUOUS");
 });
 
+test("the message names at most 10 configurations, then how many more, and stays within the Desktop's 1024 characters", (t) => {
+  const many = Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`account-${String(i).padStart(2, "0")}-${"x".repeat(53)}`, { harness: "claude" }]));
+  const fx = fixture(t, { "launch-configs": many });
+  const names = Object.keys(many).sort();
+  assert.ok(names.every((n) => n.length === 64), "names at the 64-character maximum: the worst case");
+  const error = refused(fx.cli(["spawn", "writer", "--preview", "--json"]), "preview");
+  assert.deepEqual(error.details.configurations, names, "details keep the full list");
+  assert.ok(error.message.length < 1024, `${error.message.length} characters`);
+  assert.ok(error.message.includes(`(${names.slice(0, 10).join(", ")}, and 15 more)`), error.message);
+  assert.ok(!error.message.includes(names[10]));
+  const souls = Object.fromEntries(ok(fx.cli(["souls", "--json"]), "souls").souls.map((s) => [s.name, s]));
+  const { problem } = souls.writer.launch;
+  assert.equal(problem.message, error.message, "the launch report's problem carries the same bounded message");
+  assert.ok(problem.message.length < 1024);
+  assert.notEqual(launchOf(souls.writer.launch, REPORT_FROM), undefined, "the Desktop decodes it");
+});
+
 test("a start or restart of an existing home is unaffected, --harness and --reselect-launch included", async (t) => {
   const fx = fixture(t);
   const { home } = await fx.spawn("writer", { instance: "writer-1", launchConfig: "personal" });
