@@ -18,7 +18,7 @@ import { createContextPanel } from "../renderer/context-panel.mjs";
 import { createInstanceGitPanel } from "../renderer/instance-git.mjs";
 import { createInstanceTeamsSection } from '../renderer/instance-teams.mjs';
 import { createInstanceSoulSection } from '../renderer/instance-soul.mjs';
-import { resolveTerminalOpen, terminalKey } from "../renderer/instance-tree.mjs";
+import { resolveTerminalOpen, terminalKey } from "../renderer/instance-tree-view.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import { DEFAULT_KEYMAP, getBinding, formatChord } from "../renderer/keybindings.mjs";

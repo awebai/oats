@@ -26,7 +26,7 @@ const stored = () => store.get(WS_KEY);
 
 const common = await import("../renderer/views/common.mjs");
 const hier = await import("../renderer/views/hierarchy.mjs");
-const { rosterResponseOwns, rosterSignature } = await import("../renderer/instance-tree.mjs");
+const { rosterResponseOwns, rosterSignature } = await import("../renderer/instance-tree-view.mjs");
 const { createWorkspaceSwitcher } = await import("../renderer/workspace-switcher.mjs");
 const { mountShellIcons } = await import("../renderer/shell-icons.mjs");
 

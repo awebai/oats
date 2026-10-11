@@ -18,6 +18,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { OBSERVE_MAX_AGE_FEATURE, validMaxAge } from './deployment-contract.mjs';
 import { capabilityShowSupported, validCapabilityName, validPackageId, validRelativePath, validRepoKey } from './capability-show-contract.mjs';
 import { cliEnvironment } from './cli-environment.mjs';
+import { withoutInstanceVariables } from './kernel-environment.mjs';
 
 export const WORKSPACE_READ_TIMEOUT = 60_000;
 export const WORKSPACE_WRITE_TIMEOUT = 300_000; // discovery reads every member remote
@@ -27,7 +28,6 @@ export const WORKSPACE_ACTIONS = Object.freeze(['capabilities', 'souls', 'sync',
 const READS = ['capabilities', 'souls', 'capability-show'];
 /** The kernel line this Desktop drives: workspace model v2 without package approval. */
 export const WORKSPACE_FEATURES = Object.freeze(['workspace-v2', 'packages-no-approval']);
-const SCRUB = ['PI_AGENTS_ROOT', 'PI_AGENT_HOME', 'PI_AGENT_INSTANCE', 'OATS_HOME', 'OATS_INSTANCE_HOME', 'OATS_INSTANCE', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION'];
 const absolute = path => typeof path === 'string' && !path.includes('\0') && isAbsolute(path) && resolve(path) === path;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 /** A repository reference is the kernel's to parse (E_REPO_REF); the Desktop
@@ -103,8 +103,7 @@ export function cliWorkspace(cli, options, io = {}) {
   }
   const plan = workspaceArgv(options);
   if (!plan) return Promise.resolve(workspaceFailure('E_BAD_ARGS'));
-  const env = cliEnvironment(io.env ?? process.env); // main's own environment is not cleaned; in the backend this changes nothing
-  for (const key of SCRUB) delete env[key];
+  const env = withoutInstanceVariables(cliEnvironment(io.env ?? process.env)); // main's own environment is not cleaned; in the backend this changes nothing
   return new Promise(done => {
     const fail = code => done(workspaceFailure(code));
     try {

@@ -5,7 +5,7 @@
 import { prText } from './roster-pr.mjs';
 import { createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { runtimeState } from '../../client/instance-presentation.mjs';
-import { instanceRepoLabel, heldHome } from './instance-tree.mjs';
+import { instanceRepoLabel, heldHome } from '../../client/instance-tree.mjs';
 import { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from '../../client/waiting-on-you.mjs';
 
 export const rosterTipCSS = `

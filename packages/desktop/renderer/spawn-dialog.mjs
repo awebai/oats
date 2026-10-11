@@ -20,7 +20,7 @@ import { retainedSpawnMessage } from '../../client/launch-prompt-outcome.mjs';
 import { harnessOf } from '../../client/harness-names.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
-import { distinguishingRootTags } from './instance-tree.mjs';
+import { distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX } from '../../client/spawn-preview-contract.mjs';

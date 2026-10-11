@@ -16,7 +16,7 @@ import { NAV } from "../renderer/shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "../renderer/shell-icons.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
-import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree.mjs";
+import { rosterResponseOwns, rosterSignature } from "../renderer/instance-tree-view.mjs";
 import { staleWorkspaceSelection } from "../renderer/views/common.mjs";
 import { createPendingWatch, NOT_SERVED_CODE, NO_ANSWER_CODE } from "../renderer/deployment-header.mjs";
 import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, listActions, getBinding, formatChord, setActiveContexts, matchEvent, handleKeydown, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";

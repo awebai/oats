@@ -14,7 +14,9 @@ import { runInNewContext, runInContext } from 'node:vm';
 import { rosterPollDue, ROSTER_POLL_FOCUSED_MS } from '../renderer/roster-cadence.mjs';
 import { withShellWindowGlobals } from './helpers/shell-window-globals.mjs';
 import { JSDOM } from 'jsdom';
-import * as tree from '../renderer/instance-tree.mjs';
+import * as treeShared from '../../client/instance-tree.mjs';
+import * as treeView from '../renderer/instance-tree-view.mjs';
+const tree = { ...treeShared, ...treeView };
 import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, AGE_TICK_MS } from '../renderer/loading.mjs';
 import { instanceActions, captureInstanceActionMenu } from '../renderer/instance-actions.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
@@ -60,7 +62,7 @@ const row = (name, extra = {}) => ({ instance: name, home: `/synthetic/${name}`,
 const roster = [row('alpha'), row('beta', { running: false }), row('gamma', { parentInstance: 'alpha' })];
 const panelOf = (ws, instances, extra = {}) => ({ workspace: { id: ws, name: ws }, workspaces: [{ id: 'A', name: 'A' }, { id: 'B', name: 'B' }], deployment: { status: 'observed' }, instances, ...extra });
 
-/* ── the helpers in instance-tree.mjs ─────────────────────────────────────── */
+/* ── the helpers in instance-tree-view.mjs ─────────────────────────────────────── */
 function rosterDom(t, html = read('index.html')) {
   const dom = new JSDOM(html, { pretendToBeVisual: true }); t.after(() => dom.window.close());
   return { dom, doc: dom.window.document, rosterEl: dom.window.document.getElementById('instance-roster') };

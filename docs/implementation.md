@@ -27,8 +27,12 @@ published to npm. Its developer docs are in
 
 `packages/client/` holds the readers of the kernel's JSON that the kernel's
 clients share: the CLI adapters and contract decoders the Desktop imports by
-relative path and ships beside its `app.asar`. It is a flat directory of
-`.mjs` modules with no manifest of its own, not a package.
+relative path and ships beside its `app.asar`, and what a client decides from
+the kernel's rows alone (the roster as a tree, which acts a row offers). It is
+a flat directory of `.mjs` modules with no manifest of its own, not a package.
+`test/client-boundary.test.mjs` holds who may import what: the directory
+imports only itself and `node:` builtins, `lib/` and `bin/` import nothing
+from it, and the test lists the stable surface a second client may import.
 
 ## Repository layout
 

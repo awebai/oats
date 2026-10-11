@@ -13,7 +13,8 @@
  * and an inline "How to fix" disclosure (the spawn dialog's Developer settings summary: a chevron, 12px
  * at 650) holding the full sentence, the fix steps and the note. Never an id: the full path is the
  * label's tooltip only. */
-import { deploymentState, deploymentMark } from './view-deployments.mjs';
+import { deploymentState } from '../../client/roster-sections.mjs';
+import { deploymentMark } from './view-deployments.mjs';
 import { deploymentLabel, deploymentLabelParts } from '../../client/deployment-label.mjs';
 import { runtimeCounts } from '../../client/instance-presentation.mjs';
 import { tabBarCSS } from './workspace-discovery.mjs';

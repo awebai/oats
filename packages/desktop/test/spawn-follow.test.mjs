@@ -11,7 +11,8 @@ import { JSDOM } from 'jsdom';
 import { createSpawnFollow, watchOperator, operatorInput } from '../renderer/spawn-follow.mjs';
 import { createSelectionOwnership } from '../renderer/selection-ownership.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
-import { instanceId, terminalKey } from '../renderer/instance-tree.mjs';
+import { instanceId } from '../../client/instance-tree.mjs';
+import { terminalKey } from '../renderer/instance-tree-view.mjs';
 
 const row = { instance: 'dev-x', home: '/d/agents/dev/instances/dev-x', agentsRoot: '/d/agents', agent: 'dev', running: true };
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };

@@ -26,7 +26,7 @@
    their gates — while a window-focus reprobe of the same binary returns a
    payload identical in every gate-relevant field with only a fresh
    `probedAt` (and locator `tried`/`source` diagnostics). Change is judged by
-   the shared probe signature (../cli-probe-contract.mjs), so such a reprobe
+   the shared probe signature (packages/client/cli-probe-contract.mjs), so such a reprobe
    is a no-op end to end instead of a flash of re-fetched views. */
 import { escapeHtml } from "./common.mjs";
 import { icon } from "../shell-icons.mjs";

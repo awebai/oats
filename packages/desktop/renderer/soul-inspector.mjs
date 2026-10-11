@@ -45,7 +45,7 @@ const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
 const harnessName = value => HARNESS_NAMES[value] || value;
 const WORK_TEXT = { worktree: 'works in its own worktree', checkout: 'works in the repo checkout', attached: 'attaches to an owning instance' };
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
-/** Why a stale inspector's mutations wait (the sidebar roster's rule, instance-tree.mjs ROSTER_STALE_TITLE). */
+/** Why a stale inspector's mutations wait (the sidebar roster's rule, instance-tree-view.mjs ROSTER_STALE_TITLE). */
 export const INSPECTION_STALE_TITLE = 'Unavailable: inspection is not current';
 /** What a core capability does for this soul, from its own declarations and teams. */
 function coreDetail(slot, declared, teams, mapped) {

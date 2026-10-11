@@ -3,6 +3,7 @@
 import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
 import { deploymentReadGate, deploymentFailure, deploymentRecord, validMaxAge, maxAgeArgv, remoteFailureCause } from './deployment-contract.mjs';
+import { withoutInstanceVariables } from './kernel-environment.mjs';
 
 export const DEPLOYMENT_READ_TIMEOUT = 30_000;
 export const DEPLOYMENT_READ_MAX_BUFFER = 4 * 1024 * 1024;
@@ -19,8 +20,7 @@ export function cliDeploymentRead(cli, options, io = {}) {
   const context = options.context, bin = cli.bin;
   // --max-age only when the probe declares observe-max-age; otherwise the argv is the flagless one.
   const argv = [...(action === 'status' ? ['status'] : ['workspace', 'status']), '--dir', context, ...maxAgeArgv(cli.features, options.maxAge), '--json'];
-  const env = { ...(io.env ?? process.env) };
-  for (const key of ['PI_AGENTS_ROOT', 'PI_AGENT_HOME', 'PI_AGENT_INSTANCE', 'OATS_HOME', 'OATS_INSTANCE_HOME', 'OATS_INSTANCE', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION']) delete env[key];
+  const env = withoutInstanceVariables(io.env ?? process.env);
   return new Promise(done => {
     const fail = code => done(deploymentFailure(code));
     try {

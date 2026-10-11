@@ -6,10 +6,10 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createTabChrome, tabNameTailStart } from "../renderer/tab-a11y.mjs";
-import { terminalKey } from "../renderer/instance-tree.mjs";
+import { terminalKey } from "../renderer/instance-tree-view.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
 import { waitingClaim, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
-import { rowStale } from "../renderer/view-deployments.mjs";
+import { rowStale } from "../../client/roster-sections.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
 
