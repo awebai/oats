@@ -73,6 +73,18 @@ process.stdin.on('data', d => fs.appendFileSync('stub-keys.log', JSON.stringify(
   return { fx, write, home: name => join(fx.root, 'dev', 'instances', name) };
 }
 const meta = home => JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
+// A stop that follows a start: the harness may not be under the pane yet, and a stop then answers
+// E_SESSION_UNKNOWN (rightly). Wait, bounded, until session inspect reads a harness running: present,
+// and neither the fallback shell nor stopped (the kernel's harnessRunning), then stop.
+async function stopWhenRunning(fx, h, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  for (let state; ; await new Promise(r => setTimeout(r, 25))) {
+    state = await fx.inEnv(() => inspectInstanceSession(h));
+    if (state.present === true && state.state !== 'shell' && state.state !== 'stopped') break;
+    assert.ok(Date.now() < deadline, `timed out waiting for a harness to run in ${h}: ${JSON.stringify(state)}`);
+  }
+  return fx.inEnv(() => stopInstanceSession(h));
+}
 const keys = home => existsSync(join(home, 'stub-keys.log')) ? readFileSync(join(home, 'stub-keys.log'), 'utf8').trim().split('\n').map(JSON.parse) : [];
 const promptEvents = home => readEvents(home).events.filter(e => e.kind === 'launch-prompt');
 const readinessItems = (fx, home) => { const r = fx.cli(['readiness', '--home', home, '--json']); assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result.checks.configured.items.filter(i => i.code === 'launch-prompt'); };
@@ -105,7 +117,7 @@ test('an eligible claude argv engages on spawn, start and restart: one Enter eac
   await waitUntil(() => keys(b).length === 2, 'the restart sent its own Enter');
   assert.deepEqual(keys(b), ['\r', '\r']);
   // Healthy sessions are stopped here, not left for the fixture's kill-server.
-  for (const h of [a, b]) await fx.inEnv(() => stopInstanceSession(h));
+  for (const h of [a, b]) await stopWhenRunning(fx, h);
 });
 
 test('an ineligible argv, or codex, never engages: no capture, no key, and the start records not-engaged', async t => {
@@ -122,7 +134,7 @@ test('an ineligible argv, or codex, never engages: no capture, no key, and the s
   }
   await new Promise(r => setTimeout(r, 300));
   assert.deepEqual(keys(home('dev-plain')), [], 'the prompt on screen was left for a person');
-  for (const name of ['dev-plain', 'dev-codex']) await fx.inEnv(() => stopInstanceSession(home(name)));
+  for (const name of ['dev-plain', 'dev-codex']) await stopWhenRunning(fx, home(name));
 });
 
 test('preview and no-launch have no capture effects; a blocked spawn retains lineage, says what differed and refuses cached replay', async t => {
@@ -244,7 +256,7 @@ test('plain start reuses a stopped retained pane only for its newly created proc
   const h = home('dev-plain-reuse');
   let first;
   await assert.rejects(fx.inEnv(() => startInstanceSession(h)), e => { first = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
-  await fx.inEnv(() => stopInstanceSession(h));
+  await stopWhenRunning(fx, h);
   await waitUntil(() => existsSync(join(h, '.oats-start-exited')), 'stub exit receipt');
   let second;
   await assert.rejects(fx.inEnv(() => startInstanceSession(h)), e => { second = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
@@ -323,7 +335,7 @@ test('Claude ignoring the flag is a successful start: flag-ignored recorded, no 
   assert.deepEqual(readinessItems(fx, h), []);
   await new Promise(r => setTimeout(r, 300));
   assert.deepEqual(keys(h), [], 'no key was ever sent');
-  await fx.inEnv(() => stopInstanceSession(h));
+  await stopWhenRunning(fx, h);
 });
 
 test('a running session with the notice hidden stays blocked, and the error and readiness say the flag may have been ignored', async t => {
@@ -411,10 +423,10 @@ test('a successful spawn answer carries launchPrompts in the shape a start recor
     assert.deepEqual(keysOf(result.launchPrompts), keys, name);
     assert.deepEqual(result.launchPrompts, meta(home(name)).launchPrompts, `${name}: the answer carries what the home recorded`);
     // A start of the same configuration records the same shape.
-    await fx.inEnv(() => stopInstanceSession(home(name)));
+    await stopWhenRunning(fx, home(name));
     const started = await fx.inEnv(() => startInstanceSession(home(name)));
     assert.equal(started.launchPrompts.status, status, `${name} start`);
     assert.deepEqual(keysOf(started.launchPrompts), keys, `${name} start`);
-    await fx.inEnv(() => stopInstanceSession(home(name)));
+    await stopWhenRunning(fx, home(name));
   }
 });
