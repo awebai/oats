@@ -455,7 +455,7 @@ test("the retire plan's text says what is true of each work mode's work, and its
     workspace: await f.spawn("plan-workspace", { work: "workspace", repo: "." }),
     directory: await f.spawn("plan-directory"),
   };
-  /** The plan of one instance through the CLI: the `defaults:` line of its text, and the `defaults` of its JSON. */
+  /** The plan of one instance through the CLI: its text, the `defaults:` line of it, and the `defaults` of its JSON. */
   const plan = (instance) => {
     const text = spawnSync(process.execPath, [CLI, "retire", instance, "--plan", "--dir", f.context], { cwd: f.context, env: process.env, encoding: "utf8" });
     assert.equal(text.status, 0, text.stdout + text.stderr);
@@ -464,7 +464,7 @@ test("the retire plan's text says what is true of each work mode's work, and its
     const json = cli(f, ["retire", instance, "--plan"]);
     assert.equal(json.status, 0, json.stdout + json.stderr);
     const result = JSON.parse(json.stdout).result;
-    return { line: lines[0], defaults: result.defaults, workMode: result.facts.workMode };
+    return { text: text.stdout, line: lines[0], defaults: result.defaults, workMode: result.facts.workMode };
   };
   const REST = ", delete branch false, stop children true";
   const LINES = {
@@ -482,15 +482,19 @@ test("the retire plan's text says what is true of each work mode's work, and its
     assert.deepEqual(seen.defaults, defaults(mode === "worktree"), `${mode}: the JSON's defaults`);
     if (mode !== "worktree") assert.doesNotMatch(seen.line, /retain worktree/, mode);
   }
-  // A record with no work mode, and one with a mode this kernel does not know: said, never "retain worktree false".
+  // A record with no work mode, and one with a mode this kernel does not know: said, never "retain
+  // worktree false", and in the kernel's words alone. The value is the record's: none of its text is
+  // printed, whatever it is. A value that is not a string is never read as a mode's name (an array
+  // of one known name would be, as a key), and never fails the text.
   const record = join(homes.checkout.home, "instance.json"), meta = readJson(record);
-  // A value that is not a string is never read as a mode's name, and never fails the text.
-  for (const [work, said] of [[undefined, "work mode not recorded"], ["somewhere", `work mode "somewhere" not known to this kernel`],
-    [["attached"], `work mode ["attached"] not known to this kernel`], [{ toString: null }, `work mode {"toString":null} not known to this kernel`]]) {
+  const UNKNOWN = "work mode not known to this kernel";
+  for (const [work, said, absent] of [[undefined, "work mode not recorded", []], ["zq-some-mode", UNKNOWN, ["zq-"]],
+    [["attached"], UNKNOWN, ["attached", "owner"]], [{ toString: null, "zq-key": "zq-value" }, UNKNOWN, ["zq-", "toString"]]]) {
     writeFileSync(record, JSON.stringify({ ...meta, work }, null, 2) + "\n");
     const seen = plan(homes.checkout.instance);
-    assert.deepEqual(seen.workMode, work ?? null);
+    assert.deepEqual(seen.workMode, work ?? null, "the JSON holds the value as recorded");
     assert.equal(seen.line, `  defaults: ${said}${REST}`);
+    for (const part of absent) assert.equal(seen.text.includes(part), false, `no text of the value in the plan's text (${part}): ${seen.text}`);
     assert.deepEqual(seen.defaults, defaults(false));
   }
 });
