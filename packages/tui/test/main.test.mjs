@@ -109,7 +109,7 @@ test("a run draws the frame, opens and closes the help, and q quits with status 
   assert.deepEqual(r.errors, []);
 });
 
-test("the modes a whole run switches are exactly the list: four on at the start and again at Ctrl+L, the same four back at the end, and nothing else", async () => {
+test("the modes a whole run switches are exactly the list: four on at the start, the same four off and on again at Ctrl+L, the four back at the end, and nothing else", async () => {
   const r = run();
   r.stdin.type("?");
   r.stdout.resize(100, 30);
@@ -120,7 +120,7 @@ test("the modes a whole run switches are exactly the list: four on at the start 
   assert.equal(await r.status, 0);
   const output = r.stdout.written.join("");
   const on = ["?1049h", "?25l", "?7l", "?2004h"], off = ["?2004l", "?7h", "?25h", "?1049l"];
-  assert.deepEqual(modesOf(output), [...on, ...on, ...off]);
+  assert.deepEqual(modesOf(output), [...on, ...off, ...on, ...off]);
   assert.deepEqual([...new Set(modesOf(output))].sort(), [...on, ...off].sort(), "the set of mode sequences is the list, and only it");
   const { sequences, foreign, text } = readTerminalOutput(output);
   assert.deepEqual(foreign, [], "no mouse or focus reporting, no keyboard protocol, no keypad mode, no title, no clipboard, no query");
@@ -199,10 +199,32 @@ test("Ctrl+L sets the terminal's modes again and redraws in full, and Ctrl+\\ do
   assert.equal(r.stdout.take(), "");
   r.log.length = 0;
   r.stdin.type("\x0c");
-  assert.equal(r.stdout.take(), first, "the same bytes as the start: the modes, then the frame cleared and drawn whole");
+  assert.equal(r.stdout.take(), LEAVE + first, "the terminal left, then the same bytes as the start: the modes, then the frame cleared and drawn whole");
   assert.deepEqual(r.log.filter(([what]) => what === "raw"), [["raw", false], ["raw", true]], "raw mode is set again too");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
+});
+
+test("the bytes Ctrl+L writes, in order: raw mode off and on, then the leave and the enter sequence in ONE write, then the frame; three in a row write that three times, and q then leaves once", async () => {
+  const r = run();
+  const frame = r.stdout.take().replace(ENTER, "");
+  assert.equal(frame.includes("\x1b[?"), false, "the frame itself switches no mode");
+  r.log.length = 0;
+  r.stdin.type("\x0c");
+  // One write for the pair: a terminal never shows the shell's screen between the two halves, and
+  // no other write of the program can land between them.
+  assert.deepEqual(r.log.slice(0, 3), [["raw", false], ["raw", true], ["write", LEAVE + ENTER]]);
+  assert.equal(r.log.slice(3).every(([what]) => what === "write"), true);
+  assert.equal(r.log.slice(3).map(([, bytes]) => bytes).join(""), frame, "then the frame, cleared and drawn whole");
+  assert.equal(r.stdout.take(), LEAVE + ENTER + frame);
+
+  r.stdin.type("\x0c");
+  r.stdin.type("\x0c");
+  assert.equal(r.stdout.take(), (LEAVE + ENTER + frame).repeat(2));
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  assert.equal(r.stdout.take(), LEAVE, "after any number of Ctrl+L the end is one leave: every entry was matched by a leave before it");
+  assert.equal(r.stdin.raw, false);
 });
 
 test("Ctrl+Z hands the terminal back and stops the process group; SIGCONT brings the frame back in full", async () => {

@@ -140,6 +140,8 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
     flags() { const values = tmuxOn("display-message", "-p", "-t", pane, FLAGS.map((flag) => `#{${flag}}`).join(",")).split(","); return Object.fromEntries(FLAGS.map((flag, i) => [flag, values[i] ?? ""])); },
     flagsLine() { try { return Object.entries(term.flags()).map(([flag, value]) => `${flag}=${value}`).join(" "); } catch { return "no flags"; } },
     size() { return tmuxOn("display-message", "-p", "-t", pane, "#{pane_width}x#{pane_height}"); },
+    /** The row the cursor is on, counted from 0 as the rows of `screen()` are. */
+    cursorRow() { return Number(tmuxOn("display-message", "-p", "-t", pane, "#{cursor_y}")); },
     /** Keys, as tmux names them, typed at the terminal. */
     press(...keys) { tmuxOn("send-keys", "-t", pane, ...keys); },
     atPrompt() { return term.screen().filter(Boolean).at(-1) === PROMPT; },
@@ -294,6 +296,20 @@ for (const [how, status, leave] of [
   ["SIGINT", 130, (term, run) => process.kill(run.pid, "SIGINT")],
   ["SIGTERM", 143, (term, run) => process.kill(run.pid, "SIGTERM")],
   ["SIGQUIT", 131, (term, run) => process.kill(run.pid, "SIGQUIT")],
+  // Ctrl+L leaves and enters the alternate screen again. However often it did, the end is one
+  // leave, and the shell's cursor is where the first entry found it. Keys are read in order, so the
+  // help that answers the `?` typed after a Ctrl+L shows that the Ctrl+L was acted on before it.
+  ...[1, 3].map((times) => [`${times} Ctrl+L and then q`, 0, async (term, run) => {
+    for (let i = 1; i <= times; i++) {
+      term.press("C-l");
+      term.press("?");
+      await run.help(`after Ctrl+L number ${i}, then ?`);
+      assertRunningModes(term, `after Ctrl+L number ${i}`);
+      term.press("Escape");
+      await run.frame(`after Ctrl+L number ${i}, then ? and Esc`);
+    }
+    term.press("q");
+  }]),
 ]) {
   test(`the terminal is intact after ${how}: status ${status}, and stty -g, the pane's modes and every tmux option are what they were before the start; while it ran, only the alternate screen, the cursor, autowrap and bracketed paste were changed`, { skip: NO_TMUX }, async (t) => {
     const term = await terminal(t);
@@ -304,9 +320,17 @@ for (const [how, status, leave] of [
     assertRunningModes(term, `while it runs, before ${how}`);
     assert.deepEqual(everything(), mine, "the TUI made no session, window or pane");
 
-    leave(term, run);
+    await leave(term, run);
     assert.equal(await run.ended(`after ${how}`), status, term.shows());
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
+    // The cursor the alternate screen saved is the one that came back: the prompt is on the row
+    // after the command line, with the cursor on it, and nothing of the frame above it.
+    await term.prompt(`after ${how}`);
+    const screen = term.screen(), promptRow = screen.findLastIndex((row) => row === PROMPT);
+    assert.equal(term.cursorRow(), promptRow, `the cursor is on the prompt's row after ${how}:\n${term.shows()}`);
+    assert.equal(screen.slice(promptRow + 1).every((row) => row === ""), true, `nothing below the prompt after ${how}:\n${term.shows()}`);
+    assert.notEqual(screen[promptRow - 1], "", `no empty row between the command and the prompt after ${how}:\n${term.shows()}`);
+    assert.ok(term.joined().at(-2).startsWith(`${PROMPT} sh -c `), `the row above the prompt is the command line after ${how}:\n${term.shows()}`);
     const after = await term.state(`after ${how}`);
     assert.equal(after.stty, before.stty, `stty -g after ${how}`);
     assert.deepEqual(after.flags, before.flags, `the pane's modes after ${how}`);

@@ -212,12 +212,12 @@ test("SIGCONT after a suspend cancels the waiting timer, and the timer firing af
   assert.equal(log.filter(([, bytes]) => bytes === ENTER).length, 2, "the start and the return");
 });
 
-test("SIGCONT with no suspend of ours sets raw mode off and on again, writes the modes again and redraws in full", () => {
+test("SIGCONT with no suspend of ours sets raw mode off and on again, writes the leave and the enter sequence in one write and redraws in full", () => {
   const { stdout, proc, seen, log } = setup();
   stdout.take();
   log.length = 0;
   proc.emit("SIGCONT", "SIGCONT");
-  assert.deepEqual(log, [["raw", false], ["raw", true], ["write", ENTER]]);
+  assert.deepEqual(log, [["raw", false], ["raw", true], ["write", LEAVE + ENTER]]);
   assert.equal(seen.redraws, 1);
 });
 
@@ -226,7 +226,10 @@ test("reassert, which Ctrl+L asks for, takes the terminal again the same way; it
   stdout.take();
   log.length = 0;
   guard.reassert();
-  assert.deepEqual(log, [["raw", false], ["raw", true], ["write", ENTER]]);
+  // Leave, then enter, in ONE write: a second entry to the alternate screen with no leave before
+  // it may save the cursor again, over the position the shell's prompt returns to.
+  assert.deepEqual(log, [["raw", false], ["raw", true], ["write", LEAVE + ENTER]]);
+  assert.deepEqual(modesOf(LEAVE + ENTER), ["?2004l", "?7h", "?25h", "?1049l", "?1049h", "?25l", "?7l", "?2004h"]);
   assert.equal(seen.redraws, 1);
   guard.suspend();
   log.length = 0;

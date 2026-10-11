@@ -119,11 +119,16 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
    *  program reset it (a shell while the process was stopped, a `reset` typed elsewhere, the
    *  multiplexer). Node does nothing when asked for the raw mode it believes it is in, so raw goes
    *  off and on; then the modes, then a full redraw. This is what Ctrl+L asks for: a redraw that
-   *  left bracketed paste off would let a paste act as keys. */
+   *  left bracketed paste off would let a paste act as keys.
+   *  The modes are written as LEAVE and then ENTER, in one write: the pair a suspend and a resume
+   *  write. Entering the alternate screen also saves the cursor, and a terminal that is still on
+   *  it may take a second entry as a new save, over the shell's position: the prompt would then
+   *  land on the wrong row at the end. Leaving first puts back the cursor the first entry saved,
+   *  so the second saves the same one. On a terminal that was reset, the leave changes nothing. */
   function reassert() {
     if (!entered || over) return;
     quietly(() => { stdin.setRawMode(false); stdin.setRawMode(true); });
-    quietly(() => stdout.write(ENTER));
+    quietly(() => stdout.write(LEAVE + ENTER));
     attempt(onRedraw);
   }
   /** SIGCONT. After our own suspend: come back. Otherwise the process was stopped and continued
