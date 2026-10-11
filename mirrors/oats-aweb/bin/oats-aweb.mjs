@@ -42,6 +42,8 @@
  */
 import { inviteMain } from '../lib/invite.mjs';
 if ((process.env.OATS_EVENT || process.argv[2]) === 'invite') process.exit(inviteMain(process.argv.slice(3)));
+import { residentMain } from '../lib/resident.mjs';
+if ((process.env.OATS_EVENT || process.argv[2]) === 'resident') process.exit(await residentMain(process.argv.slice(3)));
 
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
@@ -49,14 +51,19 @@ import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter, isAbsolute, relative } from "node:path";
 import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/captured-execution.mjs";
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
-import { selectedDeployment, currentJoinRoot } from "../lib/team-roots.mjs";
+import { selectedDeployment, currentJoinRoot, normalizeAwebTeamName } from "../lib/team-roots.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { prepareJoinConfiguration, readJoinedLocalMembership } from "../lib/setup-join-default.mjs";
 import { setupUsernameDefault } from '../lib/setup-team-default.mjs';
-import { AW_MIN, NO_TEAMS_MESSAGE, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
+import { assertAwebSettingRecordable, atomicWrite, recordAwebSetting } from "../lib/local-settings.mjs";
+import { AW_MIN, NO_TEAMS_MESSAGE, awFloorMessage, grantYamlCustodySocket, parseBindingJson, readAwVersion, unmappedDefaultMessage } from "../lib/binding-wire.mjs";
 import { grantAppInventory, grantInventoryAdvisory, INVENTORY_ERROR } from "../lib/grant-app-inventory.mjs";
-import { resolveGrantTTL } from "../lib/grant-duration.mjs";
+import { renewalGrantTTL, resolveGrantTTL } from "../lib/grant-duration.mjs";
+import { parseTimestamp } from "../lib/wake-receive.mjs";
+import { childOutcome } from "../lib/child-outcome.mjs";
+import { newSeatId, seatGrantLabel, sweepSeatGrants, unrevokedGrant } from "../lib/seat-grants.mjs";
 import { custodyPreflight } from "../lib/grant-custody.mjs";
+import { residentRegistryEnv } from "../lib/resident-registry.mjs";
 import { selectClaudeChannel, launchChannelWarning, brokerDelivers, recordedRuntime, recordedStart, statusListsHome, wakeRegistration } from "../lib/wake-receive.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -95,8 +102,12 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env
     // the diagnosis anyone gets.
     const scrub = (t) => secrets.filter(Boolean).reduce((acc, sec) => acc.split(sec).join("<redacted>"), String(t ?? ""));
     const where = [argv[0], argv[1], argv[2]].filter((a) => a && !secrets.includes(a) && !a.startsWith("-")).join(" ");
-    const why = secretSafe ? "" : (scrub(e.stderr).trim() || (e.status === undefined ? String(e.code || "failed") : ""));
-    const err = new Error(`${where} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
+    // The outcome says how the child ended (a timeout or signal included), which
+    // is not its output, so even a secretSafe command reports it.
+    const outcome = childOutcome(e, timeout);
+    const output = secretSafe ? "" : scrub(e.stderr).trim();
+    const err = new Error(`${where} ${outcome}${output ? `: ${output}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
+    err.outcome = outcome;
     err.status = e.status;
     err.stdout = scrub(e.stdout).trim();
     err.stderr = scrub(e.stderr).trim();
@@ -114,11 +125,6 @@ const parseSecretJson = (text, what) => {
   try { return JSON.parse(text); }
   catch { throw new Error(`${what} returned output that is not valid JSON (withheld: this command handles credentials)`); }
 };
-function semverAtLeast(version, floor) {
-  const a = version.split(".").map(Number), b = floor.split(".").map(Number);
-  for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
-  return true;
-}
 /** Is a command on PATH? Resolved in-process rather than by running
  * `command -v`, which is a SHELL BUILTIN — spawning it as a program depends on
  * a /usr/bin/command binary that many systems do not ship, and its absence
@@ -162,7 +168,10 @@ if (operation) {
     if (!code) process.exitCode = 1;
   });
 }
+/** Notes a start or retire adds to whatever it answers (its grant sweep). */
+const outNotes = [];
 const out = (o, code = 0) => {
+  if (outNotes.length) o = { ...o, warning: [o?.warning, ...outNotes.map((n) => `oats-aweb: ${n}`)].filter(Boolean).join(" | ") };
   if (o?.launch?.claude) o = withChannelModeWarning(o);
   if (operation) operationFail("E_OPERATION_FAILED", String(o?.warning || o?.problems?.[0]?.message || "failed").replace(/^oats-aweb: /, ""));
   process.stdout.write(JSON.stringify(o) + "\n");
@@ -282,7 +291,7 @@ const defaultTeamId = () => typeof process.env.OATS_DEFAULT_TEAM_ID === "string"
 const DEFAULT_TEAM_ORIGINS = ["soul", "deployment", "workspace"];
 const defaultTeamOrigin = (from) => DEFAULT_TEAM_ORIGINS.includes(from) ? from : "deployment";
 const defaultTeamFromEnv = () => defaultTeamOrigin(process.env.OATS_DEFAULT_TEAM_FROM);
-const identityMeta = ({ mode = "local", alias, team, address = null, resident = null, grant }) => ({ mode, alias, team, address: address || null, resident: resident || null, ...(grant ? { grant } : {}) });
+const identityMeta = ({ mode = "local", alias, team, address = null, resident = null, seat, grant }) => ({ mode, alias, team, address: address || null, resident: resident || null, ...(seat ? { seat } : {}), ...(grant ? { grant } : {}) });
 const teamConfigRemedy = () => defaultTeamLabel() && !defaultTeamId() ? unmappedDefaultMessage(defaultTeamLabel()) : NO_TEAMS_MESSAGE;
 function declaredRootCandidate(team = defaultTeamId()) {
   const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
@@ -318,11 +327,6 @@ function awebRoot() { return resolveAwebRoot(); }
  * name-only team config into a blocked spawn (reviewer-602627c). */
 const teamMemberships = (listed) => listed?.memberships || listed?.teams || [];
 const teamIdsOf = (listed) => teamMemberships(listed).map((m) => m.team_id || m.id || m);
-function normalizeAwebTeamName(label) {
-  const normalized = String(label || "").toLowerCase().replace(/[_.]+/g, "-").replace(/^-+|-+$/g, "");
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(normalized) || normalized.length > 128) throw new Error(`team label ${JSON.stringify(label)} does not normalize to a valid aweb team name`);
-  return normalized;
-}
 const AWEB_TEAM_ID_MESSAGE = "aweb team ids must have shape <name>:<namespace> (name matches ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$; namespace is a hostname)";
 function validHostname(value) { const s = String(value || ""); return s.length <= 253 && s.split(".").every((label) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label)); }
 function validAwebTeamId(value) { const m = /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}):([^:]+)$/.exec(String(value || "")); return !!m && validHostname(m[2]); }
@@ -336,140 +340,9 @@ const flagEq = (name, value) => `${name}=${String(value)}`;
 function assertNotFlag(value, what) {
   if (String(value || "").startsWith("-")) throw new Error(`${what} must not start with '-'`);
 }
-const yamlQuote = (value) => JSON.stringify(String(value));
-function blockEnd(lines, start, indent) {
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) if (lines[i].trim() && !lines[i].startsWith(" ".repeat(indent + 1))) { end = i; break; }
-  return end;
-}
-function ensureYamlBlock(lines, parentStart, parentEnd, indent, header) {
-  const row = `${" ".repeat(indent)}${header}:`;
-  for (let i = parentStart + 1; i < parentEnd; i++) if (lines[i].trimEnd() === row) return i;
-  lines.splice(parentEnd, 0, row);
-  return parentEnd;
-}
-function atomicWrite(file, text) {
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = join(dirname(file), `.${basenameForTemp(file)}.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(tmp, text, { mode: 0o600 });
-  renameSync(tmp, file);
-}
-function basenameForTemp(file) { return file.split(/[\\/]/).pop() || "oats-local.yaml"; }
-function unsupportedLocalYaml(file, detail, team, rootDir) {
-  throw new Error(`${file}: cannot safely update settings.oats.aweb.roots automatically (${detail}); add this line by hand under block-style settings.oats.aweb.roots: ${yamlQuote(team)}: ${yamlQuote(rootDir)}`);
-}
-function findBlockHeader(lines, start, end, indent, names) {
-  const pad = " ".repeat(indent);
-  for (let i = start; i < end; i++) {
-    const line = lines[i];
-    if (!line.trim() || line.trimStart().startsWith("#")) continue;
-    if (!line.startsWith(pad) || line.startsWith(pad + " ")) continue;
-    const trimmed = line.slice(indent).trimEnd();
-    for (const name of names) if (trimmed === `${name}:`) return i;
-    for (const name of names) if (trimmed.startsWith(`${name}:`)) return { unsupported: i, line };
-  }
-  return -1;
-}
-function assertAwebRootSettingRecordable(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
-  const file = join(start, "oats-local.yaml");
-  if (!existsSync(file)) return;
-  const lines = readFileSync(file, "utf8").split(/\r?\n/);
-  let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
-  if (typeof settings === "object") unsupportedLocalYaml(file, `line ${settings.unsupported + 1} is not a block-style settings: mapping`, team, rootDir);
-  if (settings < 0) return;
-  const settingsEnd = blockEnd(lines, settings, 0);
-  let aweb = findBlockHeader(lines, settings + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
-  if (typeof aweb === "object") unsupportedLocalYaml(file, `line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`, team, rootDir);
-  if (aweb < 0) return;
-  const awebEnd = blockEnd(lines, aweb, 2);
-  const roots = findBlockHeader(lines, aweb + 1, awebEnd, 4, ["roots"]);
-  if (typeof roots === "object") unsupportedLocalYaml(file, `line ${roots.unsupported + 1} is not a block-style roots: mapping`, team, rootDir);
-}
-function recordAwebRootSetting(team, rootDir, { start = process.env.OATS_WORKSPACE || process.cwd() } = {}) {
-  const file = join(start, "oats-local.yaml");
-  const existed = existsSync(file);
-  const lines = existed ? readFileSync(file, "utf8").split(/\r?\n/) : ["schemaVersion: 2", "workspace: local"];
-  while (lines.length && lines.at(-1) === "") lines.pop();
-  let settings = findBlockHeader(lines, 0, lines.length, 0, ["settings"]);
-  if (typeof settings === "object") unsupportedLocalYaml(file, `line ${settings.unsupported + 1} is not a block-style settings: mapping`, team, rootDir);
-  if (settings < 0) { lines.push("settings:"); settings = lines.length - 1; }
-  let settingsEnd = blockEnd(lines, settings, 0);
-  let aweb = findBlockHeader(lines, settings + 1, settingsEnd, 2, ["oats.aweb", '"oats.aweb"', "'oats.aweb'"]);
-  if (typeof aweb === "object") unsupportedLocalYaml(file, `line ${aweb.unsupported + 1} is not a block-style oats.aweb: mapping`, team, rootDir);
-  if (aweb < 0) { aweb = ensureYamlBlock(lines, settings, settingsEnd, 2, "oats.aweb"); settingsEnd++; }
-  let awebEnd = blockEnd(lines, aweb, 2);
-  let roots = findBlockHeader(lines, aweb + 1, awebEnd, 4, ["roots"]);
-  if (typeof roots === "object") unsupportedLocalYaml(file, `line ${roots.unsupported + 1} is not a block-style roots: mapping`, team, rootDir);
-  if (roots < 0) { roots = ensureYamlBlock(lines, aweb, awebEnd, 4, "roots"); awebEnd++; }
-  const rootsEnd = blockEnd(lines, roots, 4);
-  const key = yamlQuote(team), value = yamlQuote(rootDir), row = `      ${key}: ${value}`;
-  // The public kernel serializer may wrap a scalar value and may choose a
-  // plain or single-quoted canonical-team key. Replace the entire scalar entry,
-  // not just its first line, so a tokenless resume remains valid YAML.
-  const keys = [key, team, "'" + team + "'"];
-  // Identify the key/delimiter before examining the value. Empty or unsupported
-  // tails must refuse, not disappear from duplicate detection.
-  const matches = lines.flatMap((line, index) => {
-    if (index <= roots || index >= rootsEnd || !line.startsWith("      ") || line.startsWith("       ")) return [];
-    const entry = line.slice(6);
-    for (const candidate of keys) {
-      if (!entry.startsWith(candidate)) continue;
-      const delimiter = /^[ \t]*:(.*)$/.exec(entry.slice(candidate.length));
-      if (delimiter) return [{ index, tail: delimiter[1] }];
-    }
-    return [];
-  });
-  if (matches.length > 1) unsupportedLocalYaml(file, "duplicate root key", team, rootDir);
-  if (matches.length) {
-    const { index: existing, tail } = matches[0];
-    if (tail && !/^[ \t]/.test(tail)) unsupportedLocalYaml(file, "unsupported root delimiter", team, rootDir);
-    const scalar = tail.trimStart();
-    let end = existing + 1, comment = "";
-    if (scalar.startsWith('"') || scalar.startsWith("'")) {
-      const quote = scalar[0];
-      let closed = false, escaped = false;
-      for (let i = existing; i < rootsEnd && !closed; i++) {
-        if (i > existing && (!lines[i].startsWith("       ") || !lines[i].trim() || lines[i].trimStart().startsWith("#"))) break;
-        const part = i === existing ? scalar.slice(1) : lines[i].trimStart();
-        for (let j = 0; j < part.length; j++) {
-          const char = part[j];
-          if (quote === '"' && escaped) { escaped = false; continue; }
-          if (quote === '"' && char === "\\") { escaped = true; continue; }
-          if (char !== quote) continue;
-          if (quote === "'" && part[j + 1] === "'") { j++; continue; }
-          const tail = part.slice(j + 1).trim();
-          if (tail && !tail.startsWith("#")) unsupportedLocalYaml(file, "ambiguous root scalar", team, rootDir);
-          comment = tail; closed = true; end = i + 1; break;
-        }
-        // A YAML backslash at end of line escapes the line break, not the
-        // first character on the next line.
-        escaped = false;
-      }
-      if (!closed) unsupportedLocalYaml(file, "unterminated or unsupported root scalar", team, rootDir);
-    } else {
-      if (!scalar || scalar.startsWith("#") || scalar === "null" || scalar === "~" || /^[|>&*!{[]/.test(scalar)) unsupportedLocalYaml(file, "unsupported root scalar", team, rootDir);
-      comment = scalar.match(/\s+(#.*)$/)?.[1] || "";
-    }
-    // Never consume another setting, nested mapping or comment as a scalar.
-    if (end < rootsEnd && lines[end].trim() && !lines[end].trimStart().startsWith("#") && lines[end].startsWith("       ")) {
-      unsupportedLocalYaml(file, "ambiguous root continuation", team, rootDir);
-    }
-    lines.splice(existing, end - existing, row + (comment ? " " + comment : ""));
-  } else lines.splice(rootsEnd, 0, row);
-  atomicWrite(file, `${lines.join("\n")}\n`);
-}
+const assertAwebRootSettingRecordable = (team, rootDir, options) => assertAwebSettingRecordable("roots", team, rootDir, options);
+const recordAwebRootSetting = (team, rootDir, options) => recordAwebSetting("roots", team, rootDir, options);
 function perTeamRoot(base, label) { return join(resolve(base), ".aweb-roots", normalizeAwebTeamName(label)); }
-
-/** The aw floor. The version read stops at the version line instead of
- * waiting out aw's update check; the binding check shares it
- * (lib/binding-wire.mjs readAwVersion). */
-async function awFloorProblem() {
-  if (!onPath("aw")) return `aw CLI not on PATH; install aw >= ${AW_MIN}`;
-  const version = await readAwVersion();
-  if (!version) return `aw version could not be read; install aw >= ${AW_MIN}`;
-  if (semverAtLeast(version, AW_MIN)) return undefined;
-  return `aw ${version} is older than required ${AW_MIN}; install aw >= ${AW_MIN}`;
-}
 
 /** What `npm install -g @awebai/aw@<spec>` may be given: an exact version, or a ^/~ range. */
 const AW_VERSION_SPEC_RE = /^[\^~]?\d+\.\d+\.\d+$/;
@@ -477,7 +350,7 @@ const AW_VERSION_SPEC_RE = /^[\^~]?\d+\.\d+\.\d+$/;
  *  `done` (installed now), `needs-human` (missing or old, not asked to install) or `failed`. The
  *  default install is AW_MIN's release line (`^AW_MIN`, the newest compatible aw). */
 async function ensureAw({ install, version }) {
-  const problem = await awFloorProblem();
+  const problem = await awFloorMessage();
   if (!problem) return { status: "ok", version: await readAwVersion() };
   if (!install) return { status: "needs-human", detail: problem, remedy: "`oats aweb setup --install-aw` (installs aw with npm)" };
   const was = onPath("aw") ? (await readAwVersion()) || "unreadable" : "missing";
@@ -485,9 +358,9 @@ async function ensureAw({ install, version }) {
   try { run(["npm", "install", "-g", pkg], process.cwd(), 300000); }
   catch (e) {
     const why = String(e.stderr || e.message || "").replace(/\s+/g, " ").trim().slice(0, 500);
-    return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}` };
+    return { status: "failed", code: "E_AW_INSTALL", detail: `npm install -g ${pkg} ${e.outcome || "failed"}${why ? `: ${why}` : ""}` };
   }
-  const after = await awFloorProblem();
+  const after = await awFloorMessage();
   if (after) return { status: "failed", code: "E_AW_FLOOR", detail: `npm install -g ${pkg} ran, but ${after}` };
   const installed = await readAwVersion();
   return { status: "done", version: installed, detail: `installed aw ${installed} (was ${was})` };
@@ -509,7 +382,7 @@ if (!onPath("aw") && !setupHandlesAw) {
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
 }
 if ((isCommand && !setupHandlesAw) || event === "spawn") {
-  const floorProblem = await awFloorProblem();
+  const floorProblem = await awFloorMessage();
   if (floorProblem) {
     if (isCommand) { console.error(`oats aweb ${event}: ${floorProblem}`); process.exit(1); }
     fatal(`${floorProblem}, so no identity could be minted and this instance would not meet the messaging contract`);
@@ -730,26 +603,102 @@ function newestGrantHome() {
 }
 const priorGrantHome = (meta = {}) => typeof meta.identity?.grant?.home === "string" && meta.identity.grant.home ? meta.identity.grant.home : newestGrantHome();
 const localIdentityHome = () => join(home, ".aw");
+/** A grant seat's registry, from its resident's identity through the residents
+ *  setting; nothing when the resident does not resolve, which readiness reports. */
+function seatRegistryEnv(resident) {
+  const custody = settings.residents && typeof settings.residents === "object" ? settings.residents[resident] : undefined;
+  return typeof custody === "string" && isAbsolute(custody) ? residentRegistryEnv(custody).env : {};
+}
 function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
   const { env: deliveryEnv, launch } = deliveryFor();
   const env = { ...deliveryEnv };
-  if (meta.identity?.mode === "global" && meta.identity?.grant?.id) env.AWEB_IDENTITY_HOME = identityHome;
+  if (meta.identity?.mode === "global" && meta.identity?.grant?.id) Object.assign(env, { AWEB_IDENTITY_HOME: identityHome }, seatRegistryEnv(meta.identity.resident));
   else if ((meta.identity?.mode || identityMode) === "local") env.AWEB_IDENTITY_HOME = localIdentityHome();
   return { ...(Object.keys(env).length ? { env } : {}), ...(launch ? { launch } : {}) };
 }
-function grantMintArgv({ team, scopes, ttl, grantHome, custodySocket }) {
-  return ["aw", "id", "grant", "mint", flagEq("--team", team), flagEq("--scope", scopes.join(",")), flagEq("--ttl", ttl), flagEq("--label", `oats:${instance}`), flagEq("--out", grantHome), flagEq("--custody-socket", custodySocket), "--json"];
+function grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }) {
+  return ["aw", "id", "grant", "mint", flagEq("--team", team), flagEq("--scope", scopes.join(",")), flagEq("--ttl", ttl), flagEq("--label", seatGrantLabel(instance, seat)), flagEq("--out", grantHome), flagEq("--custody-socket", custodySocket), "--json"];
 }
-function validateMintedGrant(minted, grantHome) {
+/** A minted grant's expiry must answer its request: "never" for a never-grant,
+ *  a timestamp for a duration. Anything else is a failed mint. */
+function mintedExpiryProblem(expiresAt, ttl) {
+  if (ttl === "never") return expiresAt === "never" ? undefined : `aw id grant mint returned expires_at ${JSON.stringify(expiresAt).slice(0, 64)} for a never-expiring grant`;
+  return expiresAt !== "never" && Number.isFinite(parseTimestamp(expiresAt)) ? undefined : `aw id grant mint returned expires_at ${JSON.stringify(expiresAt).slice(0, 64)} for a ${ttl} grant`;
+}
+function validateMintedGrant(minted, grantHome, ttl) {
   const grantId = typeof minted.grant_id === "string" ? minted.grant_id : undefined;
   const expiresAt = typeof minted.expires_at === "string" ? minted.expires_at : undefined;
   const mintedTeam = typeof minted.team_id === "string" ? minted.team_id : undefined;
   const mintedOut = typeof minted.out === "string" ? minted.out : undefined;
   if (!grantId || !expiresAt || !mintedTeam || !mintedOut) throw new Error("aw id grant mint JSON lacked grant_id, expires_at, team_id, or out");
   if (resolve(mintedOut) !== resolve(grantHome)) throw new Error(`aw id grant mint wrote ${mintedOut}, not ${grantHome}`);
+  const expiryProblem = mintedExpiryProblem(expiresAt, ttl);
+  if (expiryProblem) throw new Error(expiryProblem);
   return { minted, grantId, expiresAt, mintedTeam, alias: typeof minted.alias === "string" && minted.alias ? minted.alias : undefined, address: typeof minted.address === "string" && minted.address ? minted.address : null };
 }
-function parseMintedGrant(raw, grantHome) { return validateMintedGrant(parseAwJson(raw, "aw id grant mint"), grantHome); }
+function parseMintedGrant(raw, grantHome, ttl) { return validateMintedGrant(parseAwJson(raw, "aw id grant mint"), grantHome, ttl); }
+/** What to say about a grant whose revoke failed: how long it stays valid and
+ *  how to revoke it. The next start or retire finds it in the custody's list. */
+const unrevokedNote = (custody, grant, error) => `; revoke failed (${String(error?.message || error).slice(0, 200)}), so ${unrevokedGrant({ grant: grant.id, expiresAt: grant.expiresAt, custody })}`;
+/** Revoke a grant this hook will not keep: "" when it is gone, else unrevokedNote. */
+function revokeOrNote(custody, grant) {
+  try { revokeGrant(custody, grant.id); return ""; }
+  catch (e) { return unrevokedNote(custody, grant, e); }
+}
+/** `aw id grant list` for the sweep, run in the resident's custody root. A start
+ *  waits at most aw's own 10 s client timeout for it, so an outage delays a start
+ *  by no more than that before it says it could not check; a retire waits longer. */
+const START_GRANT_LIST_TIMEOUT_MS = 10000, RETIRE_GRANT_LIST_TIMEOUT_MS = 30000;
+const grantLister = (custody, timeout) => (argv) => run(argv, custody, timeout, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+/** The resident's custody root, or undefined when it cannot be resolved. */
+function residentCustodyOf(name) {
+  const residents = settings.residents && typeof settings.residents === "object" && !Array.isArray(settings.residents) ? settings.residents : {};
+  const custody = name ? residents[name] : undefined;
+  return typeof custody === "string" && isAbsolute(custody) && existsSync(join(custody, ".aw", "identity.yaml")) ? custody : undefined;
+}
+/** The seat's record in the home's provider state: {seat, instance, resident,
+ *  team}, no keys. It is written before the first mint for a seat, so a hook
+ *  killed between the mint and its answer (which leaves the kernel no meta)
+ *  still leaves what a retire or a start needs to find the grant by its label.
+ *  .oats-aweb stays in the home until the home is removed, and the kernel runs
+ *  the retire hook (its spawn rollback included) before it removes the home. */
+const seatRecordFile = () => join(providerStateDir(), "seat.json");
+function persistSeat(record) {
+  mkdirSync(providerStateDir(), { recursive: true, mode: 0o700 });
+  const tmp = `${seatRecordFile()}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(record) + "\n", { mode: 0o600 });
+  renameSync(tmp, seatRecordFile());
+}
+/** The recorded seat, undefined when there is none; an unreadable record
+ *  throws, so a retire says so instead of passing over a grant it may hide. */
+function recordedSeat() {
+  if (!existsSync(seatRecordFile())) return undefined;
+  const record = JSON.parse(readFileSync(seatRecordFile(), "utf8"));
+  if (!record || typeof record.seat !== "string" || !/^[0-9a-f]{16}$/.test(record.seat)) throw new Error(`${seatRecordFile()} is malformed`);
+  return record;
+}
+/** The meta with the recorded seat filled in where it carries none. */
+function withRecordedSeat(meta, record) {
+  if (!record || meta.identity?.seat) return meta;
+  const identity = meta.identity || {};
+  return { ...meta, identity: { ...identity, mode: "global", seat: record.seat, resident: identity.resident || record.resident, team: identity.team || record.team } };
+}
+/** At every real start: revoke this seat's grants other than the one it runs
+ *  on (a mint before a crash, a revoke that failed). A start never fails on it. */
+function sweepAtStart(meta) {
+  let record;
+  try { record = recordedSeat(); } catch (e) { outNotes.push(`could not check for orphaned grants: the seat record is unreadable (${String(e.message || e).slice(0, 200)})`); }
+  meta = withRecordedSeat(meta, record);
+  const seat = meta.identity?.seat;
+  if (!seat) return;
+  const custody = residentCustodyOf(String(identitySettings.resident || meta.identity.resident || ""));
+  const team = meta.identity.team || defaultTeamId();
+  if (!custody || !team) { outNotes.push("could not check for orphaned grants: the resident's custody or the team is not resolvable; this seat may hold grants that stay valid"); return; }
+  const swept = sweepSeatGrants({ list: grantLister(custody, START_GRANT_LIST_TIMEOUT_MS), revoke: (id) => revokeGrant(custody, id), custody, team, label: seatGrantLabel(instance, seat), keep: meta.identity.grant?.id });
+  if (!swept.checked) { outNotes.push(`could not check for orphaned grants (${swept.error}); this seat may hold grants that stay valid`); return; }
+  for (const g of swept.revoked) outNotes.push(`revoked orphaned grant ${g.grant}`);
+  for (const g of swept.remaining) outNotes.push(`orphaned grant ${g.grant} was not revoked (${g.error}), so ${unrevokedGrant(g)}`);
+}
 function checkedGrantTTL() {
   try { return resolveGrantTTL(identitySettings.ttl); }
   catch (error) { fatal(error.message); }
@@ -761,7 +710,9 @@ function checkedRenewMode() {
   return mode;
 }
 function globalGrantRenew(oldMeta) {
-  const ttl = identityMode === "global" || oldMeta.identity?.mode === "global" ? checkedGrantTTL() : undefined;
+  if (identityMode === "global" || oldMeta.identity?.mode === "global") checkedGrantTTL();
+  // Every real start revokes what an earlier start or spawn left of this seat.
+  if (oldMeta.identity?.mode === "global") sweepAtStart(oldMeta);
   if (checkedRenewMode() === "off") out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta), ...(oldMeta.identity?.mode === "global" ? { warning: grantInventoryAdvisory(oldMeta.identity.grant, { retained: true }) } : {}) });
   if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta) });
   const resident = String(identitySettings.resident || oldMeta.identity.resident || "");
@@ -769,51 +720,63 @@ function globalGrantRenew(oldMeta) {
   const team = defaultTeamId() || oldMeta.identity.team;
   if (!team) fatal(teamConfigRemedy());
   const scopes = grantScopes();
+  // A renewal keeps the seat's duration; only a new spawn defaults to never.
+  const ttl = renewalGrantTTL(identitySettings.ttl, oldMeta.identity.grant.ttl);
+  // A seat keeps its id; one whose meta predates seat ids gets one now, kept
+  // in every meta this start returns, so its new grants can be found.
+  let seatRecord;
+  try { seatRecord = recordedSeat(); } catch { /* an unreadable record is replaced below */ }
+  const seat = oldMeta.identity.seat || seatRecord?.seat || newSeatId();
+  if (!oldMeta.identity.seat) oldMeta = { ...oldMeta, identity: { ...oldMeta.identity, seat } };
   const oldHome = priorGrantHome(oldMeta);
   let preflight;
-  try { preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), fatalOnError: false, runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal }); }
+  try { preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), ttl, fatalOnError: false, runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal }); }
   catch (e) { out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal custody preflight failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` }); }
   const custodySocket = preflightCustodySocket(preflight);
   if (!custodySocket) out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal custody preflight reported no socket_path, so the grant cannot be attached to custody; keeping previous grant ${oldMeta.identity.grant.id}` });
   let stamp = Math.floor(Date.now() / 1000);
   let grantHome = join(home, `.aweb-identity-${stamp}`);
   while (existsSync(grantHome)) grantHome = join(home, `.aweb-identity-${++stamp}`);
-  let parsed;
-  try {
-    parsed = parseMintedGrant(run(grantMintArgv({ team, scopes, ttl, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }), grantHome);
-  } catch (e) {
+  // The seat starts on its previous grant; a fresh grant left unrevoked is named,
+  // and the next start or retire finds it in the custody's list.
+  const keepPrevious = (why, unrevoked = "") => {
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
-    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal mint failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` });
+    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: ${why}; keeping previous grant ${oldMeta.identity.grant.id}${unrevoked}` });
+  };
+  // Durable before the mint: a hook killed after it still leaves the seat.
+  if (seatRecord?.seat !== seat) persistSeat({ seat, instance, resident, team });
+  let raw, parsed;
+  // A failed mint call printed no receipt, so there is no grant to revoke.
+  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
+  catch (e) { keepPrevious(`renewal mint failed (${e.message || e})`); }
+  try { parsed = parseMintedGrant(raw, grantHome, ttl); }
+  catch (e) {
+    const recovered = recoverGrantHome(grantHome);
+    keepPrevious(`renewal mint failed (${e.message || e})`, recovered.grantId ? revokeOrNote(custody, { id: recovered.grantId, expiresAt: recovered.expiresAt }) : "");
   }
   const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
   const recovered = recoverGrantHome(grantHome);
   const alias = recovered.subjectAlias || mintedAlias || oldMeta.identity.alias || resident;
-  const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
-  if (mintedTeam !== team) {
-    try { revokeGrant(custody, grantId); } catch { /* minted mismatch expires by TTL if revoke fails */ }
-    try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
-    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal minted grant team ${mintedTeam} differs from ${team}; keeping previous grant ${oldMeta.identity.grant.id}` });
-  }
+  const newMeta = { ...oldMeta, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, seat, grant: { id: grantId, expiresAt, ttl, renew: "launch", scopes, home: grantHome, ...grantAppInventory(parsed.minted) } }) };
+  const newGrant = newMeta.identity.grant;
+  if (mintedTeam !== team) keepPrevious(`renewal minted grant team ${mintedTeam} differs from ${team}`, revokeOrNote(custody, newGrant));
   try { verifyGrantCustodyAttachment({ grantHome, custodySocket, alias: newMeta.identity.alias, team: mintedTeam }); }
-  catch (e) {
-    try { revokeGrant(custody, grantId); } catch { /* new grant expires by TTL if revoke fails */ }
-    try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
-    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal grant ${grantId} custody attachment failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` });
-  }
+  catch (e) { keepPrevious(`renewal grant ${grantId} custody attachment failed (${e.message || e})`, revokeOrNote(custody, newGrant)); }
   // The start already registered the previous grant home; the new one replaces it.
   if (deliveryFor().broker) {
     try { wakeRegister(home, grantHome); }
-    catch (e) {
-      try { revokeGrant(custody, grantId); } catch { /* new grant expires by TTL if revoke fails */ }
-      try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
-      out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal session delivery registration failed for new grant ${grantId} (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` });
-    }
+    catch (e) { keepPrevious(`renewal session delivery registration failed for new grant ${grantId} (${e.message || e})`, revokeOrNote(custody, newGrant)); }
   }
   let warning;
   try { revokeGrant(custody, oldMeta.identity.grant.id); }
-  catch (e) { warning = `oats-aweb: previous grant ${oldMeta.identity.grant.id} was not revoked (${e.message || e}); new grant ${grantId} is kept and the previous grant still expires at ${oldMeta.identity.grant.expiresAt || "its TTL"}`; }
-  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
+  // The seat has a working new grant: the start proceeds, and the next start
+  // or retire finds the previous one in the custody's list.
+  catch (e) { warning = `oats-aweb: new grant ${grantId} is kept; previous grant ${oldMeta.identity.grant.id} was not revoked${unrevokedNote(custody, oldMeta.identity.grant, e)}`; }
+  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), warning: [warning, ...preflight.warnings, grantInventoryAdvisory(newMeta.identity.grant)].filter(Boolean).join(" | ") });
 }
+/** The renew mode a spawned grant records, when it is one launch accepts;
+ *  readiness reads it to give the seat its own expiry remedy. */
+const recordedRenew = () => ["launch", "off"].includes(grantRenewMode()) ? { renew: grantRenewMode() } : {};
 function globalGrantSpawn() {
   const ttl = checkedGrantTTL();
   const resident = String(identitySettings.resident || "");
@@ -824,74 +787,104 @@ function globalGrantSpawn() {
   const grantHome = join(home, ".aweb-identity");
   if (existsSync(grantHome)) fatal(`${grantHome} already exists; refusing to overwrite an existing aweb session grant home`);
   const scopes = grantScopes();
-  const preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal });
+  const seat = newSeatId();
+  // Once aw has been asked to mint, a grant with this seat's label may exist on
+  // the server even when no receipt arrives: every failure from here returns
+  // the seat, so the kernel's rollback retire sweeps the custody's list for it.
+  const seatMeta = () => startedMeta({ identity: identityMeta({ mode: "global", alias: resident, team, resident, seat }) });
+  const preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), ttl, runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal });
   const custodySocket = requirePreflightCustodySocket(preflight);
   let meta;
   const cleanup = () => { try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ } };
-  const failAfterMint = (message, code = 1) => { cleanup(); out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(message).slice(0, 300)}` }, code); };
+  // The error text is bounded; what to do about a grant that survives is not cut.
+  const failAfterMint = (message, survives = "") => { cleanup(); out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(message).slice(0, 300)}${survives}` }, 1); };
+  // Durable before the mint: a hook killed after it still leaves the seat.
+  persistSeat({ seat, instance, resident, team });
+  // A failed mint call printed no receipt, so there is no grant to revoke.
+  let raw;
+  try { raw = run(grantMintArgv({ team, scopes, ttl, seat, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }); }
+  catch (e) { cleanup(); fatal(`identity grant minting failed: ${e.message || e}`, seatMeta()); }
   try {
-    const raw = run(grantMintArgv({ team, scopes, ttl, grantHome, custodySocket }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
     let minted;
-    try { minted = parseMintedGrant(raw, grantHome).minted; }
+    try { minted = parseMintedGrant(raw, grantHome, ttl).minted; }
     catch (parseError) {
       const recovered = recoverGrantHome(grantHome);
       if (recovered.grantId) {
-        meta = startedMeta({ identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, grant: { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown", scopes, home: grantHome } }) });
+        const grant = { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown" };
+        meta = startedMeta({ identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, seat, grant: { ...grant, scopes, home: grantHome } }) });
         try { revokeGrant(custody, recovered.grantId); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
-        catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, but revoke failed: ${revokeError.message || revokeError}`); }
+        catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml`, unrevokedNote(custody, grant, revokeError)); }
       }
+      cleanup();
+      meta = seatMeta();
       throw parseError;
     }
-    const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome);
+    const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome, ttl);
     const recovered = recoverGrantHome(grantHome);
     const alias = recovered.subjectAlias || mintedAlias || resident;
-    meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome, ...grantAppInventory(minted) } }) });
+    meta = startedMeta({ defaultTeam: { label: defaultTeamLabel(), team: mintedTeam, from: defaultTeamFromEnv() }, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, seat, grant: { id: grantId, expiresAt, ttl, ...recordedRenew(), scopes, home: grantHome, ...grantAppInventory(minted) } }) });
     if (mintedTeam !== team) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
-      catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; revoke failed: ${e.message || e}`); }
+      catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}`, unrevokedNote(custody, meta.identity.grant, e)); }
     }
     try { verifyGrantCustodyAttachment({ grantHome, custodySocket, alias, team: mintedTeam }); }
     catch (e) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}; the grant was revoked and nothing was kept`); }
-      catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}; revoke failed: ${revokeError.message || revokeError}`); }
+      catch (revokeError) { failAfterMint(`minted grant ${grantId} custody attachment failed: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError)); }
     }
     const { broker, env: deliveryEnv, launch, brief: deliveryBrief } = deliveryFor();
-    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: grantHome };
+    const registry = residentRegistryEnv(custody);
+    const env = { ...deliveryEnv, AWEB_IDENTITY_HOME: grantHome, ...registry.env };
     if (broker) {
       try { wakeRegister(home, grantHome); }
       catch (e) {
         try { revokeGrant(custody, grantId); failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; grant revoked and grant home removed`); }
-        catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; revoke failed: ${revokeError.message || revokeError}`); }
+        catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}`, unrevokedNote(custody, meta.identity.grant, revokeError)); }
       }
     }
-    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : [])];
+    const warnings = [...teamWarnings, ...preflight.warnings, ...(meta.identity.grant.appInventoryError ? [INVENTORY_ERROR] : []), ...(registry.problem ? [`oats-aweb: ${registry.problem}`] : [])];
     const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     out({
       meta,
       env,
-      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; expires: ${expiresAt}. ${grantInventoryAdvisory(meta.identity.grant)} This Comms snapshot is fixed at spawn; use \`oats inspect --home <home> --json\` for the current recorded grant. Root keys are not in this home, and identity lifecycle commands are not yours to run; your grant home is attached to the resident's custody service. At session start, run \`aw whoami\`, then \`aw mail inbox\` and \`aw chat pending\`; do not run \`aw workspace status\` or \`aw id show\` from this grant seat. Grant inspection (\`aw id grant list/show\`) runs from the resident custody \`.aw\`, not from this grant home. If a message you sent shows unverified at the receiver, report it, do not retry.${e2eeBrief}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
+      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; ${expiresAt === "never" ? "never expires (it ends only when revoked)" : `expires: ${expiresAt}`}. ${grantInventoryAdvisory(meta.identity.grant)} This Comms snapshot is fixed at spawn; use \`oats inspect --home <home> --json\` for the current recorded grant. Root keys are not in this home, and identity lifecycle commands are not yours to run; your grant home is attached to the resident's custody service. At session start, run \`aw whoami\`, then \`aw mail inbox\` and \`aw chat pending\`; do not run \`aw workspace status\` or \`aw id show\` from this grant seat. Grant inspection (\`aw id grant list/show\`) runs from the resident custody \`.aw\`, not from this grant home. If a message you sent shows unverified at the receiver, report it, do not retry.${e2eeBrief}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
       ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
   } catch (e) {
-    if (meta?.identity?.grant?.id) { try { revokeGrant(custody, meta.identity.grant.id); } catch { /* retire compensation gets meta */ } cleanup(); }
-    fatal(`identity grant minting failed: ${e.message || e}`, meta);
+    // The returned meta lets retire's compensation revoke a grant that survives.
+    const survives = meta?.identity?.grant?.id ? revokeOrNote(custody, meta.identity.grant) : "";
+    cleanup();
+    out({ meta: meta || seatMeta(), warning: `oats-aweb: ${`identity grant minting failed: ${e.message || e}`.slice(0, 300)}${survives}` }, 1);
   }
 }
 function globalGrantRetire(meta) {
   if (brokerDeliveredTo(meta)) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
-  const id = meta.identity?.grant?.id;
-  if (!id) out({ meta: { retired: false, reason: "nothing-to-revoke" } });
-  const resident = meta.identity?.resident;
-  const custody = resolveResidentCustody(resident);
-  try {
-    revokeGrant(custody, id);
-    removeGrantHomes();
-    out({ meta: { retired: true, identityRevoked: true, grant: id } });
-  } catch (e) {
-    removeGrantHomes();
-    out({ meta: { retired: false, reason: "grant-revoke-failed", grant: id }, warning: `oats-aweb: grant ${id} was not revoked (${e.message || e}); it still expires at ${meta.identity?.grant?.expiresAt || "its TTL"}` }, 1);
+  const id = meta.identity?.grant?.id, seat = meta.identity?.seat;
+  if (!id && !seat) out({ meta: { retired: false, reason: "nothing-to-revoke" } });
+  const custody = resolveResidentCustody(meta.identity?.resident);
+  const team = meta.identity?.team || defaultTeamId();
+  // Every active grant of this seat goes, the current one included; the
+  // custody's list also finds a grant minted before a crash.
+  const label = seat ? seatGrantLabel(instance, seat) : undefined;
+  const swept = seat ? sweepSeatGrants({ list: grantLister(custody, RETIRE_GRANT_LIST_TIMEOUT_MS), revoke: (grant) => revokeGrant(custody, grant), custody, team, label })
+    : { checked: false, revoked: [], remaining: [], grants: [], error: "this seat records no seat id" };
+  const unrevoked = [...swept.remaining];
+  // The sweep covers a current grant that carries this seat's label. One from
+  // before seat labels, or one the list could not show, is revoked here unless
+  // the list says it is no longer active.
+  const listed = swept.grants.find((g) => g.grant_id === id);
+  if (id && !(listed && (listed.label === label || listed.status !== "active"))) {
+    try { revokeGrant(custody, id); }
+    catch (e) { unrevoked.push({ grant: id, expiresAt: meta.identity.grant.expiresAt, custody, error: String(e.message || e).slice(0, 200) }); }
   }
+  removeGrantHomes();
+  // A grant that survives a retire is a live credential, and an unread list
+  // may hide one: the retire fails, and the kernel keeps the home and this meta
+  // for the retry. Under --force each grant and its revoke command is printed.
+  const notes = [...unrevoked.map((g) => `grant ${g.grant} was not revoked (${g.error}), so ${unrevokedGrant(g)}`), ...(seat && !swept.checked ? [`could not check for orphaned grants (${swept.error}); this seat may hold grants that stay valid`] : [])];
+  if (notes.length) out({ meta: { retired: false, reason: unrevoked.length ? "grant-revoke-failed" : "grant-list-failed", ...(id ? { grant: id } : {}), identity: meta.identity }, warning: notes.map((n) => `oats-aweb: ${n}`).join(" | ") }, 1);
+  out({ meta: { retired: true, identityRevoked: true, grant: id } });
 }
 const seatLockPath = (source) => join(dirname(source), ".aw-retained-seat.json");
 /** The alias a home's .aw/workspace.yaml records under memberships (indented),
@@ -1757,7 +1750,19 @@ if (event === "launch") {
     }
     out(o, code);
   };
-  if (meta.identity?.mode === "global" && !meta.retained) globalGrantRetire(meta);
+  // A grant seat, or a home whose seat record outlived its meta (a hook killed
+  // after the mint, before it answered), retires through the grant path.
+  if (!meta.retained) {
+    let seatRecord;
+    try { seatRecord = recordedSeat(); }
+    catch (e) {
+      const why = String(e.message || e).slice(0, 200);
+      // With no seat in the meta either, nothing names this seat's grants.
+      if (!meta.identity?.seat) out({ meta: { retired: false, reason: "seat-record-unreadable", ...(meta.identity ? { identity: meta.identity } : {}) }, warning: `oats-aweb: could not check for orphaned grants: the seat record is unreadable (${why}); this seat may hold grants that stay valid` }, 1);
+      outNotes.push(`the seat record is unreadable (${why}); retired from the seat in the meta`);
+    }
+    if (meta.identity?.mode === "global" || seatRecord) globalGrantRetire(withRecordedSeat(meta, seatRecord));
+  }
   for (const joined of joinedTeamsOf(meta)) {
     try { meta = leaveJoinedTeam(joined.label, meta).meta; }
     catch (e) { const failed = failedLeaveDisposition(joined, e); retireWarnings.push(failed.warning); rememberControllerCleanup(failed.data); if (failed.data.cleanup !== "controller") failedLeaves.push(joined.label); }
@@ -1850,7 +1855,7 @@ if (event === "launch") {
     let doc;
     try { doc = parseAwJson(run(argv, root, 60000), what); }
     catch (e) {
-      const why = e.status === undefined ? e.message : `${what} failed (exit ${e.status})${e.stderr ? `: ${e.stderr}` : ""}`;
+      const why = e.status == null ? e.message : `${what} ${e.outcome}${e.stderr ? `: ${e.stderr}` : ""}`;
       problems.push({ source, message: String(why || e).replace(/\s+/g, " ").trim().slice(0, 300) });
       return undefined;
     }
@@ -2003,7 +2008,7 @@ if (event === "launch") {
   const joinArgv = routedArgv(["setup", "--join", team.label, "--invite-stdin", "--name", alias, ...(service ? ["--service", service] : [])]);
   let joinFailure;
   try { run(joinArgv, process.cwd(), JOIN_TIMEOUT_MS + 120000, { input: `${token}\n`, secrets: [token] }); }
-  catch (e) { joinFailure = `oats aweb setup --join ${team.label} on ${serverId} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${e.stderr ? `: ${oneLine(e.stderr)}` : ""}`; }
+  catch (e) { joinFailure = `oats aweb setup --join ${team.label} on ${serverId} ${e.outcome || "failed"}${e.stderr ? `: ${oneLine(e.stderr)}` : ""}`; }
   finally { token = undefined; }
   if (joinFailure) fail("join", "E_JOIN_FAILED", joinFailure);
 
@@ -2061,7 +2066,7 @@ if (event === "launch") {
   if (inviteStdin && !joinLabel) { console.error(`oats aweb setup: --invite-stdin requires --join <label> so the team gets its own root\n${usage}`); process.exit(2); }
   if (checkOnly && (username || createLabel || joinLabel || invite || inviteStdin)) { console.error(`oats aweb setup: --check-only cannot be combined with --username, --create, --join or --invite\n${usage}`); process.exit(2); }
   if (awVersion && !installAw) { console.error(`oats aweb setup: --aw-version requires --install-aw\n${usage}`); process.exit(2); }
-  if (awVersion && !AW_VERSION_SPEC_RE.test(awVersion)) { console.error(`oats aweb setup: --aw-version must be a version such as 1.36.23, ^1.36.13 or ~1.36.13\n${usage}`); process.exit(2); }
+  if (awVersion && !AW_VERSION_SPEC_RE.test(awVersion)) { console.error(`oats aweb setup: --aw-version must be a version such as ${AW_MIN}, ^${AW_MIN} or ~${AW_MIN}\n${usage}`); process.exit(2); }
   // The token is read into memory only: never argv, a file or any output.
   if (inviteStdin) {
     try { invite = readFileSync(0, "utf8").split(/\r?\n/)[0].trim(); } catch { invite = ""; }

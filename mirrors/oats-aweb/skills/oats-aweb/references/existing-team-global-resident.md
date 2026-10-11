@@ -1,5 +1,35 @@
 # A GLOBAL resident in an existing hosted team
 
+## The one command (provider 1.26.0, aw >=1.36.33)
+
+In an OATS deployment, run the aweb dashboard's line:
+
+```text
+AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--team-label <label>] [--plan] [--json]
+```
+
+It does every step of this card that OATS can: the preflight of the resident
+parent R (`<deployment>/.aweb-residents/<name>`, or `--root`), exactly one
+`aw init --global --name <name> --do-not-touch-agents-md --json` in R with the
+key only in that child's environment, the validation of its result, the
+offline identity diagnostic (every check must be `ok`) and the online registry
+diagnostic (a failure there is a warning only, since publication can lag; read
+it against the online checks below), a per-user custody unit (launchd on
+macOS, systemd --user on Linux) that runs `aw custody serve` in R, the custody
+readiness check, and
+`settings.oats.aweb.residents.<name>`, and the mapping of the resident's team
+under `--team-label` or the team's name, made the default team where the
+deployment has none (provider 1.26.1, OATS >=0.48.0). A complete identity already in R is
+verified and adopted, not re-created; a partial init is continued with the same
+DID; a quarantined partial is refused with aw's own message. With no
+`AWEB_API_KEY` it asks for the key on the terminal without echo. Its stages,
+`--json` envelopes and custody unit controls are in the package's
+`docs/resident-create.md`.
+
+The rest of this card is what the command checks, and the plain-aw path, which
+plain-aw users keep: they run the dashboard's plain `aw init --global` line
+and start custody themselves.
+
 Use this card after `/oats-onboarding` selects fresh versus retained GLOBAL,
 authorized owner, R, resident name, team credential authority, service/registry,
 scopes/TTL and receive policy. That intake authorizes routine selected steps;
@@ -26,9 +56,9 @@ integration requirements, not a second native contract.
 Fresh bootstrap proceeds to the same diagnostic commands as reuse. The native
 external-home allowlist correction is version-qualified to aw 1.36.24 source
 `32fe2d795780a8ba90260c631d84f5d5c6fc0190`; a global help flag is not admission proof.
-Provider #58's planned registration wrapper is unavailable here; until service
-manager integration its contract is one onboarding command plus one printed host
-step, not daemon autostart. No command for that future wrapper is invented.
+From provider 1.26.0, `oats aweb resident create` is the one onboarding
+command, and it installs the per-user custody service itself; elsewhere than
+macOS and Linux it prints the host step.
 LOCAL minting-root or `spawn-authority` diagnostics are never a GLOBAL launch gate.
 
 ## Choose the journey and fix the context
@@ -150,18 +180,21 @@ a root's current active team is not a substitute. Host-only
 
 For resident consumption, the provider reads `identity.mode: global`,
 `identity.resident`, `identity.scopes` (explicit nonempty list, or the selected
-`profile` defaults), `identity.ttl` (default `720h` in provider 1.23.0),
+`profile` defaults), `identity.ttl` (default `never` from provider 1.25.0:
+the grant ends only when revoked; `720h` in providers 1.23.0 to 1.24.x),
 `identity.renew` (`launch` by default or explicit `off`) and `identity.e2ee` (required unless explicitly
 false). Profiles are `normal` or `reviewer`; choose scopes/TTL under the owner's
 least-authority decision, not by copying another worker's grant.
-Do not configure shorter TTLs for customer seats. Explicit shorter durations
-remain supported, using native Go duration syntax from 60s through 720h
-(30 days); invalid/over-limit values refuse with `E_GRANT_TTL` before effects.
-Actual launches re-mint by default, previews do not. Explicit `renew: off`
-and failed renewals leave a finite grant: running beyond its expiry without a
-successful re-mint can still expire. Non-expiring grants are requested upstream
-in oats-aweb#80 and are not provided here. No background renewal runs, and old
-homes retain their captured composition/settings until explicitly recomposed.
+A never-grant is bounded by its scopes and by revocation, at retire or by the
+resident's owner. An explicit duration remains supported, using native Go
+duration syntax from 60s through 720h (30 days), for example
+`identity: { ttl: 720h }`; any other value refuses with `E_GRANT_TTL` before
+effects. Actual launches re-mint by default, previews do not; a renewal keeps
+the seat's duration, and a grant minted before 1.25.0 renews at 720h. Explicit
+`renew: off` and failed renewals leave the existing grant: a grant with a
+duration can still expire if it is not re-minted in time. No background renewal
+runs, and old homes retain their captured composition/settings until explicitly
+recomposed.
 
 Assign one host/user/resident root to the selected custody service. Starting that
 service is a separate authorized host operation, not a worker action. Before
