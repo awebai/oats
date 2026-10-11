@@ -20,6 +20,12 @@
 // or stand between two steps, the completion is a child of the test that runs the same function
 // with no delay, from an intent or from the marker's path, as the detached script does.
 //
+// The scheduling and its completion are two processes, and the scheduling writes the marker last,
+// under the home's claim. A completion that gave up waiting for that claim before the marker was
+// written finds none to remove; so the scheduling looks for the completion's outcome once it has
+// written the marker, and fails when it is there. The last two tests hold the scheduling at each
+// side of that look.
+//
 // "A recorded child that will not stop" is a child whose lifecycle claim cannot be read: its stop
 // is refused at once (E_LIFECYCLE_BUSY) and nothing is signalled, so the parent's retire answers
 // E_CHILDREN_RUNNING before it touches the parent's home. No outcome rests on a sleep.
@@ -64,6 +70,13 @@ function listing(dir, rel = "") {
 const COMPLETION = `import { completeDeferredRetirement } from ${JSON.stringify(CORE)};
 const given = process.env.OATS_TEST_COMPLETION_MARKER || JSON.parse(process.env.OATS_RETIRE_INTENT);
 process.exitCode = completeDeferredRetirement(given, { delaySec: 0 }) ? 0 : 1;`;
+
+/** `oats retire <name> --self` as the instance's own process runs it, its completion due at once:
+ *  the answer on stdout, an error as `{ error: { code, message, reached } }` with exit 1. */
+const SCHEDULING = `import { retireInstance } from ${JSON.stringify(CORE)};
+const { root, name } = JSON.parse(process.env.OATS_TEST_SCHEDULING);
+try { console.log(JSON.stringify(retireInstance(root, name, { self: true, selfKillDelaySec: 0 }))); }
+catch (e) { console.log(JSON.stringify({ error: { code: e.code, message: e.message, reached: e.details?.reached ?? null } })); process.exitCode = 1; }`;
 
 /** The retire hook. It appends the instance it ran for to `<agents root>/retire-hook.log`, outside
  *  every home, and then does what the files beside that log ask: `hook-unreadable`, leave in the
@@ -162,6 +175,14 @@ function deployment(t) {
     },
     /** The same completion, held at `gates` (test/helpers/fs-gate-preload.mjs). */
     completeGated: (intent, gates) => startGated(["--input-type=module", "-e", COMPLETION], { cwd: fx.dep, env: { ...fx.env, OATS_RETIRE_INTENT: JSON.stringify(intent) }, gateDir: join(fx.base, `gates-${++gateDirs}`), gates }),
+    /** The same scheduling, its completion far away, as the promise of its answer or its error. */
+    scheduling: (i) => onFixturePath(() => retireInstance(fx.root, i.name, { self: true, selfKillDelaySec: 600 })),
+    /** A scheduling of `i` in a process of its own, held at `gates`. */
+    scheduleGated: (i, gates) => startGated(["--input-type=module", "-e", SCHEDULING], { cwd: fx.dep, env: { ...fx.env, OATS_TEST_SCHEDULING: JSON.stringify({ root: fx.root, name: i.name }) }, gateDir: join(fx.base, `gates-${++gateDirs}`), gates }),
+    /** Wait until the completion of `i` has said, in its log, that it did not complete: the last
+     *  thing it does. (Its scheduling is held and reaps nothing, so its pid stays a zombie.) */
+    gaveUp: (i) => waitUntil(() => existsSync(i.log) && readFileSync(i.log, "utf8").includes(`deferred retirement of ${i.name} failed: `), `the completion of ${i.name} to give up and say so`, COMPLETION_MS),
+    track: (pid) => { completions.push(pid); return pid; },
     /** The `retire-refused` rows of a log file. */
     refused: (file) => rowsOf(file).filter((row) => row.kind === "retire-refused"),
     kinds: (file) => rowsOf(file).map((row) => row.kind),
@@ -509,4 +530,88 @@ test("a completion whose home is already gone: no hook and nothing removed by it
     assert.equal(existsSync(i.marker), false, "the marker goes");
     assert.equal(f.refused(i.workspaceLog).length, 1, "no second row");
   } finally { chmodSync(i.workspaceLog, 0o644); }
+});
+
+test("a scheduling that writes its marker after its completion has given up: it answers E_SELF_RETIRE_SCHEDULE_FAILED, and no marker, outcome or log is left; the instance does not read as retiring", async (t) => {
+  const f = deployment(t);
+  const i = await f.spawn("late");
+  const before = listing(i.home);
+  // Held before the marker's write, under the home's claim, with the completion already started.
+  const run = f.scheduleGated(i, [{ name: "marker", fn: "writeFileSync", path: i.marker, when: "before", waitMs: COMPLETION_MS }]);
+  try {
+    await run.waitGate("marker", COMPLETION_MS);
+    await f.gaveUp(i);
+    const outcome = readJson(i.result);
+    assert.equal(outcome.error.code, "E_LIFECYCLE_BUSY");
+    assert.ok(outcome.error.message.startsWith(`a retire of late is already running (pid ${run.child.pid}, `), outcome.error.message);
+    const row = oneRefusal(f, i.workspaceLog, outcome, false, "the workspace's log");
+    assert.equal(existsSync(i.marker), false, "fixture premise: the completion found no marker to remove");
+
+    run.release("marker");
+    const done = await run.done;
+    assert.deepEqual(done.timedOut, []);
+    assert.equal(done.code, 1, done.stdout + done.stderr);
+    assert.deepEqual(JSON.parse(done.stdout.trim()).error, { code: "E_SELF_RETIRE_SCHEDULE_FAILED",
+      message: `could not start the deferred retirement of late: its completion gave up waiting for this command and has ended. Nothing was inspected, run, or removed; the instance is still live and can be retired externally with \`oats retire late --home ${i.home}\``,
+      reached: { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null } });
+    assert.deepEqual([existsSync(i.marker), existsSync(i.result), existsSync(i.log)], [false, false, false], "the marker this scheduling wrote, the outcome and the log are removed: the answer is the outcome");
+    const status = f.status(i);
+    assert.equal(Object.hasOwn(status.row, "retirePending"), false, "oats status: the row has no retirePending");
+    assert.deepEqual(status.failures, [], "and lists no failed deferred retirement: the scheduling answered its caller");
+    assert.deepEqual(f.stopPlan(i).targets.map((target) => target.retiring), [false]);
+    assert.deepEqual(f.refused(i.workspaceLog), [row], "the row the completion wrote stays: a completion did not complete");
+    assert.deepEqual(listing(i.home), before, "no file of the home changed");
+  } finally { await run.finish(); }
+});
+
+test("a scheduling still holding the claim when its completion gives up, its marker written: the completion sees the marker and removes it; the instance does not read as retiring", async (t) => {
+  const f = deployment(t);
+  const i = await f.spawn("slow");
+  const lock = join(dirname(i.home), ".oats-retirement", "claims", "slow.lock");
+  // Held before it releases the claim: the marker is written, and the look for an outcome found none.
+  const run = f.scheduleGated(i, [{ name: "release", fn: "unlinkSync", path: lock, when: "before", waitMs: COMPLETION_MS }]);
+  try {
+    await run.waitGate("release", COMPLETION_MS);
+    assert.equal(readJson(lock).pid, run.child.pid, "fixture premise: the scheduling still holds the home's claim");
+    assert.equal(existsSync(i.marker), true, "fixture premise: the scheduling wrote its marker before its completion gave up");
+    const pid = f.track(readJson(i.marker).completionPid);
+    await f.gaveUp(i);
+    const outcome = readJson(i.result);
+    assert.equal(outcome.error.code, "E_LIFECYCLE_BUSY");
+    assert.equal(existsSync(i.marker), false, "the completion saw its marker and removed it");
+    assert.ok(readFileSync(i.log, "utf8").includes("its pending marker is removed; slow is not being retired"));
+
+    run.release("release");
+    const done = await run.done;
+    assert.deepEqual(done.timedOut, []);
+    assert.equal(done.code, 0, done.stdout + done.stderr);
+    const receipt = JSON.parse(done.stdout.trim());
+    assert.deepEqual([receipt.deferred, receipt.completionPid], [true, pid], "the scheduling answers what it saw: a completion was on its way");
+    assert.equal(existsSync(i.marker), false, "no marker is left");
+    const status = f.status(i);
+    assert.equal(Object.hasOwn(status.row, "retirePending"), false, "oats status: the row has no retirePending");
+    assert.deepEqual(status.failures.map((failure) => failure.error), [outcome.error.message], "and lists the completion's failure");
+    assert.deepEqual(f.stopPlan(i).targets.map((target) => target.retiring), [false]);
+    oneRefusal(f, i.workspaceLog, outcome, false, "the workspace's log");
+  } finally { await run.finish(); }
+});
+
+test("a scheduling that fails before it wrote its marker leaves the marker that was there: it removes only the one it wrote", async (t) => {
+  if (ROOT) { t.skip(SKIP_FOR_ROOT); return; }
+  const f = deployment(t);
+  const i = await f.spawn("earlier");
+  // An earlier scheduling's marker, with its completion's outcome beside it: a new --self schedules
+  // again. The marker cannot be written over.
+  const earlier = JSON.stringify(f.intent(i), null, 2) + "\n";
+  writeFileSync(i.marker, earlier);
+  writeFileSync(i.result, JSON.stringify({ ok: false }) + "\n");
+  chmodSync(i.marker, 0o444);
+  try {
+    await assert.rejects(f.scheduling(i), (e) => {
+      assert.equal(e.code, "E_SELF_RETIRE_SCHEDULE_FAILED");
+      assert.ok(e.message.includes("EACCES") && e.message.includes("the completion this command had started is not running"), e.message);
+      return true;
+    });
+    assert.equal(readFileSync(i.marker, "utf8"), earlier, "the marker this scheduling did not write is left, as it was");
+  } finally { chmodSync(i.marker, 0o644); }
 });

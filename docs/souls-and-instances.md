@@ -1064,6 +1064,13 @@ Nothing retries by itself: `oats retire <instance>` does. A completion
 removes only the marker of its own scheduling, so the marker of a later
 `--self` is left for that one's completion.
 
+A `--self` whose completion has already given up when the scheduling writes
+its marker answers `E_SELF_RETIRE_SCHEDULE_FAILED`, and nothing is scheduled
+(OATS 0.53.0). The completion waits 3 s for the scheduling to finish; a
+scheduling that the host held up for longer finds the completion's outcome
+already there. It removes the marker it wrote, the outcome and the log, and
+the instance is still live.
+
 **A home that a refused completion left stuck under 0.52.0 or earlier**
 still has its marker, and reads as retiring although nothing of it was
 changed. To retire it after all, run `oats retire <instance>`. To keep it,
