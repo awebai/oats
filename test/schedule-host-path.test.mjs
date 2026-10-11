@@ -1,6 +1,9 @@
 // A job the host tick launches finds its harness through the unit's PATH alone (awebai/oats#902):
 // the unit carries the installer's PATH without its hazards, so a harness installed in a
 // `~/.local/bin`-shaped directory of the installer's PATH is what the spawn resolves.
+// This is the lookup's fallback, the case where the login environment the OATS tmux server is created
+// with cannot be read (the fixture's OATS_TEST_LOGIN_SHELL makes that read fail): otherwise a pane's
+// harness is looked up on that login environment's PATH (docs/execution-targets.md).
 // The tick is the real CLI, run with the PATH a unit would carry. Everything is the fixture's: its
 // HOME, OATS_HOME_DIR, deployment and private tmux server; launchctl/systemctl are the fixture's
 // stubs (they are on the installer's PATH too), so no real host timer is read or touched.
