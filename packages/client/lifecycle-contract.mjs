@@ -1,6 +1,6 @@
 /** K3 projection/validation only. No IO, kernel decisions or executable paths. */
 import { gitRevision } from './instance-git-contract.mjs';
-import { displayLine, cleanLine } from './display-text.mjs';
+import { displayLine, cleanLine, DETAIL_WITHHELD } from './display-text.mjs';
 export const LIFECYCLE_API = 1;
 export const MAX_LIFECYCLE_TARGETS = 128;
 export const object = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -49,6 +49,55 @@ const desktopCodes = new Set(['E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'E_LIFEC
  * code has its own sentence and the kernel raises it. Never one of Desktop's own, whatever came with it;
  * a code without a sentence shows no CLI text either. */
 export const lifecycleDetailCode = code => Object.hasOwn(messages, code) && !desktopCodes.has(code);
+/** The kernel feature from which every E_LIFECYCLE_BUSY of a stop or a retire carries `error.details.holder`
+ * (docs/desktop-cli-api.md): whether waiting ends the refusal, as data. */
+const CLAIM_STOP_FEATURE = 'lifecycle-claim-stop';
+/** E_LIFECYCLE_BUSY by who holds the claim. `headline` is the status line. `lead` introduces the kernel's own
+ * sentence, shown under it as the main text: for these holders the kernel's message names the step that ends
+ * the refusal, and Desktop shows the whole line, never a part of it. `running` promises that waiting ends
+ * it, and is the only one that does; its kernel sentence stays in Details. `unstated`: the field is absent
+ * or holds a value outside the kernel's list, read as the weaker claim. */
+const BUSY = {
+  running: { headline: 'Another OATS command is already running. Wait for it to finish, then review again.' },
+  unknown: { headline: "Nothing was done. OATS can't tell whether another command is still running.", lead: 'It says what to check:' },
+  none: { headline: 'Nothing was done, and there is no other command to wait for.', lead: 'OATS says what to do:' },
+  unstated: { headline: 'Nothing was done: OATS refused this as busy.', lead: 'It says:' },
+};
+const HOLDERS = ['running', 'unknown', 'none'];
+/** How a kernel's E_LIFECYCLE_BUSY is read: one of BUSY's keys, or null when the rule does not apply and
+ * the code keeps its fixed sentence. For the kernel's own answer only (the caller says so; Desktop's own busy
+ * carries no details), under that code only (`details.holder` on any other code means nothing to a client),
+ * and only when `features` (the answering kernel's, answeringFeatures) names lifecycle-claim-stop: a kernel
+ * without it answers the code for a command that may be running. */
+export function busyHolder(code, details, features) {
+  if (code !== 'E_LIFECYCLE_BUSY' || !names(features, CLAIM_STOP_FEATURE)) return null;
+  return object(details) && HOLDERS.includes(details.holder) ? details.holder : 'unstated';
+}
+export const busyHeadline = holder => BUSY[holder].headline;
+/** The target of a stop plan that a home names, when it is not the instance acted on: `{instance, home}`,
+ * else null. The `details` of a stop's claim refusal are of the target whose claim refused, which in a
+ * recursive stop may be a child. Matched by home against the plan's own targets, so a name shown is always
+ * one the plan already showed. */
+export function busyAbout(plan, home) {
+  if (!object(plan) || plan.action !== 'stop' || typeof home !== 'string' || home === plan.home) return null;
+  const target = plan.targets.find(t => t.home === home);
+  return target ? { instance: target.instance, home: target.home } : null;
+}
+/** Re-validate a relayed busy reason (server → main → renderer) that says who holds, or null: the reason then
+ * reads by its code's fixed sentence. `{ headline, about, lead, sentence, details }`, each a line or null,
+ * in the order they are shown: the headline; `about`, when the refusal is of another target of `plan` (the
+ * reader's own plan snapshot: a name that is not in it is not shown); then `lead` and the kernel's `sentence`
+ * as the main text. A sentence the display filter withheld, or one that is not there, is not introduced:
+ * no lead, and `details` holds what Details shows (the code and the filter's line), as for any other code.
+ * The headline is chosen here from `holder`; the reply's `message` is never shown. */
+export function busyRefusal(reason, plan = null) {
+  if (!object(reason) || reason.code !== 'E_LIFECYCLE_BUSY' || !Object.hasOwn(reason, 'holder') || typeof reason.holder !== 'string' || !Object.hasOwn(BUSY, reason.holder)) return null;
+  const { headline, lead } = BUSY[reason.holder], detail = cleanLine(reason.detail) ? reason.detail : null;
+  const target = object(reason.about) ? busyAbout(plan, reason.about.home) : null;
+  const about = target && target.instance === reason.about.instance ? `This is about ${target.instance}, which is in this plan.` : null;
+  const main = !!lead && !!detail && detail !== DETAIL_WITHHELD;
+  return { headline, about, lead: main ? lead : null, sentence: main ? detail : null, details: !main && detail ? { code: reason.code, detail } : null };
+}
 export function lifecycleFailure(code, extra = {}) {
   return { lifecycleApi: LIFECYCLE_API, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null,
     reason: lifecycleReason(code), ...extra };

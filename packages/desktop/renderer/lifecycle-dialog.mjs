@@ -1,7 +1,7 @@
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowKind, stoppedRowText,
-  stopResultWords, childrenRefusedMessage, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
+  stopResultWords, childrenRefusedMessage, busyRefusal, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { codeLineNodes, readingFrom, remoteReason, serverLabel } from '../../client/remote-address.mjs';
@@ -33,6 +33,8 @@ export const lifecycleCSS = `
 .lifecycle-skeleton .skeleton-line:nth-child(2n) { width:75%; }
 .lifecycle-skeleton .skeleton-line:nth-child(3n) { width:45%; }
 .lifecycle-status { display:flex; gap:8px; align-items:center; }
+/* The status text and, under it, the lines that belong to it and are announced with it: each on its own row. */
+.lifecycle-status-body, .lifecycle-status-more { min-width:0; display:grid; gap:6px; }
 .lifecycle-dialog .spinner { flex:none; width:14px; height:14px; box-sizing:border-box; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:oats-spin .7s linear infinite; }
 .lifecycle-sr { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .lifecycle-dialog label { display:flex; gap:8px; align-items:flex-start; }
@@ -59,7 +61,9 @@ const workText = w => !w.observed ? "Unknown (couldn't be checked)" : !w.changed
   : [w.changed && `${w.changed} changed`, w.untracked && `${w.untracked} untracked`].filter(Boolean).join(', ');
 /** The worktree's branch as observed, else the one recorded at spawn; null when detached or unknown. */
 const branchOf = f => f.work.observed ? f.work.branch : f.recordedBranch;
-/** A retire the kernel refuses as busy for a home a spawn left (`rollbackIncomplete`): the spawn may still run. */
+/** A retire the kernel refuses as busy for a home a spawn left (`rollbackIncomplete`): the spawn may still run.
+ * For a kernel that does not say who holds the claim. One that does (feature lifecycle-claim-stop) has its
+ * answer read by `details.holder`, and its own sentence names the check and the command: never this one. */
 const LEFTOVER_BUSY = "OATS can't confirm that the spawn which left this home has stopped, so it won't retire it yet. Check the process it names, then retire it from the CLI with --force.";
 const ambiguousText = v => `Not included: ${v.instance} (another instance has the same parent name, so OATS can't tell whose child it is).`;
 let dialogs = 0;
@@ -97,7 +101,9 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     }
     restore = null;
   }
-  const say = text => { ui.statusText.textContent = text; };
+  /** The status line, and under it the lines that belong to it. They share its live region, so a screen
+   * reader gets them with the headline, in order; a space before each keeps them apart as text. */
+  const say = (text, more = []) => { ui.statusText.textContent = text; ui.statusMore.replaceChildren(...more.flatMap(el => [' ', el])); ui.statusMore.hidden = !more.length; };
   const title = text => { ui.title.textContent = text; };
   const isShown = el => { for (let n = el; n && n !== ui.dialog; n = n.parentElement) if (n.hidden) return false; return !!el?.isConnected; };
   const focusOn = el => applyFocus(() => el.focus());
@@ -149,7 +155,17 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   }
   /** A refusal: a remote host's headline, else the fixed sentence for the code; the code and the kernel's
    * message in Details when there is one to show. */
-  function refusal(reason) {
+  function refusal(reason, snapshot = null) {
+    // The kernel's busy answer, read by who holds the claim: the headline, the target it is about when that
+    // is another one of this plan, and the kernel's own sentence as the main text when it names what ends it.
+    const busy = busyRefusal(reason, snapshot);
+    if (busy) {
+      const lines = [busy.about, busy.lead].filter(Boolean).map(text => node('span', text));
+      if (busy.sentence) { const quote = node('span'); quote.append(node('bdi', busy.sentence)); lines.push(quote); }
+      say(busy.headline, lines);
+      if (busy.details) details(ui.result, busy.details);
+      return;
+    }
     const remote = remoteReason(reason), shownReason = remote || localDetail(reason);
     // The kernel's own busy refusal (it carries the kernel's message; Desktop's own busy does not) for a home
     // a spawn left: its sentence, and the kernel's message, which names the process, shown under it.
@@ -383,7 +399,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         // The rows are the server's, already decoded: validated here, never decoded again.
         const children = result.childrenStopped ? decodedStoppedTargets(result.childrenStopped, snapshot.facts?.children || []) : null;
         if (result.childrenStopped && !children) throw new Error('Invalid child outcomes');
-        refusal(result.reason?.code ? result.reason : { code: 'E_OUTCOME_UNKNOWN' });
+        refusal(result.reason?.code ? result.reason : { code: 'E_OUTCOME_UNKNOWN' }, snapshot);
         if (children && result.reason?.code === 'E_CHILDREN_RUNNING') say(childrenRefusedMessage(children));
         // Why the outcome is unknown: a remote transport or host cause keeps its headline and Details; a
         // local one says its fixed sentence, with the CLI's own message in Details when it carries one.
@@ -417,7 +433,9 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     const heading = node('div', undefined, 'lifecycle-heading'), mark = node('span', undefined, 'lifecycle-mark'); mark.append(iconElement(doc, next === 'stop' ? 'stop' : 'remove', { size: 18 })); mark.setAttribute('aria-hidden', 'true');
     const h2 = node('h2'); h2.id = `${id}-title`;
     const status = node('p', undefined, 'lifecycle-status'), spinner = node('span', undefined, 'spinner'), statusText = node('span');
-    status.id = `${id}-status`; status.setAttribute('role', 'status'); spinner.setAttribute('aria-hidden', 'true'); status.append(spinner, statusText);
+    const statusBody = node('span', undefined, 'lifecycle-status-body'), statusMore = node('span', undefined, 'lifecycle-status-more'); statusMore.hidden = true;
+    statusBody.append(statusText, statusMore);
+    status.id = `${id}-status`; status.setAttribute('role', 'status'); spinner.setAttribute('aria-hidden', 'true'); status.append(spinner, statusBody);
     const titles = node('div', undefined, 'lifecycle-titles'); titles.append(h2, status); heading.append(mark, titles);
     const section = (label, region) => { const s = node('section', undefined, 'lifecycle-section'), h = node('h3', label); h.id = `${id}-${region.className}`;
       s.setAttribute('aria-labelledby', h.id); s.append(h, region); return s; };
@@ -456,7 +474,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     const reviewButton = button('Review again', () => { onIntent(); void refresh('review'); }, 'lifecycle-review');
     footer.append(retryButton, reviewButton, closeButton, confirmButton, doneButton);
     dialog.append(heading, happenSection, stateSection, options, observed, result, continues, footer); overlay.append(dialog); doc.body.append(overlay);
-    ui = { dialog, title: h2, mark, status, statusText, spinner, happen, happenSection, facts, stateSection, forge, options, optionSkeleton, warning,
+    ui = { dialog, title: h2, mark, status, statusText, statusMore, spinner, happen, happenSection, facts, stateSection, forge, options, optionSkeleton, warning,
       observed, observedText, result, continues, recursive, discard, confirm: confirmButton, close: closeButton, done: doneButton, retry: retryButton, review: reviewButton };
     overlay.addEventListener('keydown', event => {
       if (!current()) return;

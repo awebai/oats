@@ -39,15 +39,20 @@ export function cliLifecycle(bin, options, { exec = execFile, timeout } = {}) {
         maxBuffer: (apply ? 4 : 1) * 1024 * 1024 }, (error, stdout) => {
         if (error?.killed) return resolve(failure('E_CLI_TIMEOUT'));
         if (error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return resolve(failure('E_CLI_OUTPUT_LIMIT'));
-        const value = apply && options.operation === 'retire' ? parseRetireEnvelope(stdout) : parseEnvelope(stdout);
+        const printed = parseEnvelope(stdout), value = apply && options.operation === 'retire' ? parseRetireEnvelope(stdout) : printed;
         if (!value) return resolve(failure('E_CLI_PROTOCOL'));
         if (error && value.ok !== false) return resolve(failure('E_CLI_FAILED'));
         // Only internal consumers see result/details. They validate/project all
         // data against their admitted target. An error envelope's message is kept, for a
         // local command and a routed one: the boundary shows it only through the display
         // filter, as the refusal's detail. Stderr and the process error never leave here.
+        // `origin: 'kernel'`: the error is the one the installed CLI printed in its envelope, so the
+        // kernel answered. The adapter's own failures (`failure`) and the error it writes for a raw
+        // retire receipt that reports incomplete cleanup (parseRetireEnvelope) carry no origin, and
+        // unmarked reads as not the kernel's: a reader decides by where an answer came from, never
+        // by its shape.
         if (value.ok) resolve({ schemaVersion: 1, ok: true, result: value.result });
-        else resolve({ schemaVersion: 1, ok: false, ...(value.result ? { result: value.result } : {}),
+        else resolve({ schemaVersion: 1, ok: false, ...(printed?.ok === false ? { origin: 'kernel' } : {}), ...(value.result ? { result: value.result } : {}),
           error: { code: value.error?.code, message: value.error?.message, details: value.error?.details } });
       });
     } catch { resolve(failure('E_CLI_FAILED')); }

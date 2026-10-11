@@ -177,8 +177,21 @@ test("the adapter keeps an error envelope's code, message and details for a loca
   const args = { operation: 'retire', phase: 'apply', instance: instance.instance, home: instance.home, context: '/team', choices: options('retire'), revision: 'b'.repeat(24), key: 'server-key' };
   const sent = { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message: 'could not inspect the work tree', details: { path: '/team/x' }, stack: 'PRIVATE stack' }, debug: 'PRIVATE field' };
   const result = await cliLifecycle(cli.bin, args, { exec: (_b, _a, _o, done) => done(Object.assign(new Error('PRIVATE process error'), { code: 1 }), JSON.stringify(sent), 'PRIVATE stderr') });
-  assert.deepEqual(result, { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message: 'could not inspect the work tree', details: { path: '/team/x' } } });
+  // `origin: 'kernel'`: the adapter says that the installed CLI printed this envelope.
+  assert.deepEqual(result, { schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_WORK_INSPECTION_FAILED', message: 'could not inspect the work tree', details: { path: '/team/x' } } });
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+  // The adapter's own failures say no origin, whatever the CLI printed: a timeout, too much output, no envelope, an exit with a success envelope, bad arguments.
+  const own = async (error, stdout, options = args) => cliLifecycle(cli.bin, options, { exec: (_b, _a, _o, done) => done(error, stdout, '') });
+  for (const [failure, code] of [[await own({ killed: true }, JSON.stringify(sent)), 'E_CLI_TIMEOUT'], [await own({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, JSON.stringify(sent)), 'E_CLI_OUTPUT_LIMIT'],
+    [await own(null, 'not an envelope'), 'E_CLI_PROTOCOL'], [await own(new Error('exit 1'), JSON.stringify({ retired: instance.instance })), 'E_CLI_FAILED'], [await own(null, '', { ...args, phase: 'neither' }), 'E_BAD_ARGS']])
+    assert.deepEqual(failure, { schemaVersion: 1, ok: false, error: { code } }, code);
+  // A raw retire receipt that reports incomplete cleanup: its error is the adapter's own words, so it says no origin either.
+  const raw = { ...retireReceipt({ key: 'server-key', revision: 'b'.repeat(24) }), rollbackIncomplete: ['cleanup'] };
+  const incomplete = await own(new Error('exit 1'), JSON.stringify(raw));
+  assert.deepEqual(Object.keys(incomplete).sort(), ['error', 'ok', 'result', 'schemaVersion']); assert.equal(incomplete.error.code, 'E_RETIRE_INCOMPLETE');
+  // The same receipt inside the kernel's own error envelope is the kernel's answer.
+  const enveloped = await own(new Error('exit 1'), JSON.stringify({ schemaVersion: 1, ok: false, result: raw, error: { code: 'E_RETIRE_INCOMPLETE', message: 'a stand-in for the kernel message' } }));
+  assert.equal(enveloped.origin, 'kernel'); assert.deepEqual(enveloped.result, raw);
 });
 test('expired plans, malformed/oversized DTOs, stale admission and hostile returned aliases cannot authorize an apply', async () => {
   let clock = 0; const f = fixture({ now: () => clock }); const p = await f.plan(); clock += 300_001;

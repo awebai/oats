@@ -139,7 +139,7 @@ test('cliLifecycle: a remote plan gets 45 s and keeps the host\'s message; an ap
   const seen = [];
   const exec = (bin, argv, opts, done) => { seen.push({ argv, opts }); done(Object.assign(new Error('x'), { code: 1 }), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_INCOMPATIBLE', message: 'needs 0.31' } })); };
   const plan = await cliLifecycle('/installed/oats', { operation: 'stop', phase: 'plan', instance: 'dev-1', home: instance.home, context: '/Users/me/work', server: 'build', choices: { recursive: true } }, { exec });
-  assert.deepEqual(plan, { schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_INCOMPATIBLE', message: 'needs 0.31', details: undefined } });
+  assert.deepEqual(plan, { schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_REMOTE_INCOMPATIBLE', message: 'needs 0.31', details: undefined } });
   assert.equal(seen[0].opts.timeout, 45_000); assert.equal(seen[0].opts.cwd, '/Users/me/work');
   await cliLifecycle('/installed/oats', { operation: 'stop', phase: 'plan', instance: 'dev-1', home: instance.home, context: '/team', choices: { recursive: true } }, { exec });
   assert.equal(seen[1].opts.timeout, 30_000, 'local plans keep 30 s');

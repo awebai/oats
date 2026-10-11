@@ -8,7 +8,7 @@ import { gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { hostReason } from '../../client/remote-address.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { object, lifecycleOptions, lifecyclePlan, lifecycleReceipt, stoppedTargets, planReference, lifecycleChoicesApplicable,
-  lifecycleFailure, lifecycleReason, lifecycleDetailCode, answeringFeatures } from '../../client/lifecycle-contract.mjs';
+  lifecycleFailure, lifecycleReason, lifecycleDetailCode, answeringFeatures, busyHolder, busyHeadline, busyAbout } from '../../client/lifecycle-contract.mjs';
 const clone = value => structuredClone(value);
 const cliIdentity = cli => JSON.stringify([cli?.bin, cli?.version, cli?.lifecycleApi,
   Array.isArray(cli?.features) ? [...cli.features].sort() : null]);
@@ -29,15 +29,25 @@ export function supportsLifecycle(cli, operation, apply = false) {
 export const BEFORE_EFFECT_CODES = Object.freeze(['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
   'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
 const beforeEffect = new Set(BEFORE_EFFECT_CODES);
+/** The installed CLI printed this error envelope: the kernel answered. Said by the adapter where it builds
+ * the envelope (`origin`), never inferred from the envelope's shape: the adapter's own failures and this
+ * boundary's have the same shape, and no origin. */
+const kernelAnswered = envelope => envelope?.origin === 'kernel' && envelope.schemaVersion === 1 && envelope.ok === false;
 /** A failed command's reason. Remote: the host's code and message under its headline. Local: the fixed
  * sentence for `code`, and the CLI's own message beside it as `detail`, through the display filter, only
  * when the installed CLI answered with an error envelope and the code may show one (lifecycleDetailCode:
- * it has its own sentence and is not one Desktop raises). Otherwise the reason is `{code, message}` alone. */
-function failureReason(envelope, remote, code = envelope?.error?.code) {
-  const reason = lifecycleReason(code);
-  if (remote) return hostReason({ ...envelope?.error, code }, remote.label, reason.message) || reason;
+ * it has its own sentence and is not one Desktop raises). Otherwise the reason is `{code, message}` alone.
+ * A kernel's E_LIFECYCLE_BUSY whose kernel (`features`: the answering kernel's) says who holds the claim
+ * reads by that (`holder`, busyHolder), local or remote, and names the target of `plan` the refusal is
+ * about when that is not the instance acted on (`about`). */
+function failureReason(envelope, remote, { code = envelope?.error?.code, features = null, plan = null } = {}) {
+  const reason = lifecycleReason(code), details = envelope?.error?.details;
+  const holder = kernelAnswered(envelope) ? busyHolder(code, details, features) : null, about = holder ? busyAbout(plan, details?.home) : null;
+  const busy = holder ? { holder, ...(about ? { about } : {}) } : {};
+  const message = holder ? busyHeadline(holder) : reason.message;
+  if (remote) { const host = hostReason({ ...envelope?.error, code }, remote.label, message); return host ? { ...host, ...busy } : reason; }
   const detail = envelope?.schemaVersion === 1 && envelope.ok === false && lifecycleDetailCode(code) ? displayLine(envelope.error?.message) : null;
-  return detail ? { ...reason, detail } : reason;
+  return { ...reason, message, ...(detail ? { detail } : {}), ...busy };
 }
 export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), mint = () => randomBytes(32).toString('hex') } = {}) {
   const plans = new Map(), actions = new Map(), reads = new Map();
@@ -87,7 +97,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     if (!same(selected, current)) return denied('E_PLAN_CHANGED', selected.target);
     if (envelope?.schemaVersion !== 1 || envelope.ok !== true) {
       const code = envelope?.error?.code || 'E_CLI_PROTOCOL';
-      return denied(code, selected.target, { reason: failureReason(envelope, selected.remote, code) });
+      return denied(code, selected.target, { reason: failureReason(envelope, selected.remote, { code, features: selected.features }) });
     }
     const data = lifecyclePlan(envelope.result, selected.target, request.operation, choices);
     if (!data) return denied('E_CLI_PROTOCOL', selected.target);
@@ -121,8 +131,8 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
       // children have already stopped. The user must explicitly read a new plan.
       return failure(code, 'refused', { plan: fresh, childrenStopped });
     }
-    if (beforeEffect.has(code)) return failure(code, 'refused', { reason: failureReason(envelope, entry.remote) });
-    return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: failureReason(envelope, entry.remote) });
+    if (beforeEffect.has(code)) return failure(code, 'refused', { reason: failureReason(envelope, entry.remote, { features, plan: entry.plan }) });
+    return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: failureReason(envelope, entry.remote, { features }) });
   }
   function apply(request, getContext, ws) {
     if (Object.keys(request).some(k => !['action', 'planRef'].includes(k)) || !planReference(request.planRef)) return Promise.resolve(denied('E_BAD_ARGS'));
