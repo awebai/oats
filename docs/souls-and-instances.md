@@ -1073,10 +1073,13 @@ given when it was started: a holder that has died, one whose liveness
 cannot be read, and any other holder are not waited for here, and the
 retire answers for them as every retire does.
 
-While a completion waits, the instance reads as live in `oats status`:
-there is no marker yet. The scheduling is a retire that runs, so a stop
-plan shows `retiring: true`, and a stop apply (`E_INSTANCE_RETIRING`) and
-another retire (`E_LIFECYCLE_BUSY`) are refused with its pid. The wait ends
+While a completion waits, the instance reads as live in `oats status`
+until the scheduling has written its marker, which is the last thing it
+does before it releases the claim; from then on it reads `RETIRING`, as
+every scheduled self-retire does. Throughout, the scheduling is a retire
+that runs, so a stop plan shows `retiring: true`, and a stop apply
+(`E_INSTANCE_RETIRING`) and another retire (`E_LIFECYCLE_BUSY`) are refused
+with its pid. The wait ends
 when that command returns, fails or dies; ending it by hand lets the
 completion go on and retire the instance, which is what the instance asked
 for. It also ends after ten minutes (`SCHEDULING_WAIT_MS`): the completion
