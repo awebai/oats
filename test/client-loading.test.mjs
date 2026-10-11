@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 const HOME = new URL("../packages/client/", import.meta.url);
 const ENTRIES = ["liveness-main.mjs", "own-environment.mjs"];
 const SPLIT = ["instance-tree.mjs", "roster-sections.mjs", "instance-acts.mjs", "workspace-admission.mjs", "kernel-environment.mjs"];
+/** The modules 3a made (#855): the rule of a store or of a menu that the Desktop kept, cut out of it. */
+const RULES = ["remote-identity-memory.mjs"];
 const files = readdirSync(HOME).sort();
 
 test("every module of packages/client, its two entries apart, loads by import under plain Node", async (t) => {
@@ -34,6 +36,8 @@ test("every module of packages/client, its two entries apart, loads by import un
   // The halves cut out of four Desktop files that also built DOM or kept the Desktop's stores (#855, 1b),
   // and the one list two callers shared: each is here, and loaded above with no document to build in.
   for (const name of SPLIT) assert.ok(modules.includes(name), `${name} is in the shared home`);
+  // And the rules cut out of the Desktop's identity store and of its switcher (3a): loaded above with no file and no document.
+  for (const name of RULES) assert.ok(modules.includes(name), `${name} is in the shared home`);
   assert.equal(JSON.stringify(process.env), environment, "loading the libraries changes nothing in the environment of the process that loads them");
   t.diagnostic(`${modules.length} modules loaded`);
 });
