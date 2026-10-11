@@ -3856,6 +3856,14 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   `the record names no repository for the work tree: the retire uses the
   one Git names for it, <repository>, and does not write it into the
   record`. No key of the plan is new.
+
+  What `work/` is decides what the retire does with it, so it is part of
+  `planRevision` wherever it is not what the work mode alone says: when an
+  own tree became a directory of the home, or the other way round, between
+  the plan and the apply (a record's work mode that changed, a receipt that
+  is gone), or the repository read from Git changed, a guarded apply refuses
+  with `E_PLAN_STALE` before anything runs. Every other home has the
+  revision it had.
 - A home spawned before 0.25.9 has no session receipt (0.30). Its
   `facts.session` is `{state: "absent", present: false, backend, established:
   true, note}` when the session is observably gone: instance.json records no
