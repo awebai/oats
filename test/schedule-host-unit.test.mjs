@@ -225,3 +225,18 @@ test("install --print shows exactly what install would write and changes nothing
   assert.equal(refused(["--print", "--max-concurrent", "2"])?.code, "E_BAD_ARGS", "--print writes no cap");
   assert.equal(existsSync(oatsHome), false); assert.equal(existsSync(calls), false);
 });
+
+test("install warns, without refusing, when the oats it would run lives under the instance home", () => {
+  const instanceHome = dir(`instance-${++n}`);
+  const inHome = executable(join(instanceHome, "work", "bin", "oats.mjs"));
+  for (const os of ["darwin", "linux"]) {
+    const files = H.hostUnitFiles({ os, unitDir: dir(`warn-${++n}`), execPath: process.execPath, envPath: "/usr/bin", instanceHome, oatsBin: inHome });
+    const warning = files.warnings.find((w) => w.includes(inHome));
+    assert.ok(warning, `${os}: the warning names ${inHome}`);
+    assert.match(warning, /instance home/); assert.match(warning, /operator's installed oats/);
+    assert.ok(Object.values(files.files).some((text) => text.includes(inHome)), `${os}: rendered all the same`);
+    const elsewhere = executable(join(dir(`installed-oats-${++n}`), "bin", "oats.mjs"));
+    assert.deepEqual(H.hostUnitFiles({ os, unitDir: dir(`warn-${++n}`), execPath: process.execPath, envPath: "/usr/bin", instanceHome, oatsBin: elsewhere }).warnings, []);
+    assert.deepEqual(H.hostUnitFiles({ os, unitDir: dir(`warn-${++n}`), execPath: process.execPath, envPath: "/usr/bin", instanceHome: undefined, oatsBin: inHome }).warnings, [], "no instance home, nothing to compare");
+  }
+});

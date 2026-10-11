@@ -665,6 +665,10 @@ own shell, not from an instance home:
   else the first `node` on the filtered `PATH` that is that same file. When
   neither exists, `install` keeps the node's own path and its answer carries a
   warning that the path is not stable.
+- **oats**: the `oats.mjs` of the oats that runs `install`. When that is inside
+  `$OATS_INSTANCE_HOME` (a clone in an instance's work tree), `install` and
+  `--print` warn: the timer would stop when that instance retires. Run
+  `install` with the operator's installed oats.
 
 An installed unit changes only when `install` runs again. `install` rewrites a
 unit whose bytes differ, so running it again after an upgrade migrates the
