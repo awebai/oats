@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { startGated } from "./helpers/fs-gate-preload.mjs";
@@ -172,6 +172,38 @@ test("a retire that removes a tree names each child it leaves with a link to a p
   }
 });
 
+test("a retire that refuses at work/ after it handled extra trees says which, and what that left their attached children with (#964)", async (t) => {
+  const d = deployment(t);
+  const owner = await d.owner("dev-owner");
+  const clean = d.tree(owner.home, "clean"), dirty = d.tree(owner.home, "dirty", { dirty: true });
+  const left = d.attach("left", clean), follows = d.attach("follows", dirty);
+  const movedTo = d.plan(owner.instance).facts.extraWorktrees.find((row) => row.path === dirty).movedTo;
+  // Git refuses to move a locked worktree: the work/ step fails, after the extra-tree step.
+  const work = join(owner.home, "work");
+  d.git(d.fx.member, "worktree", "lock", work);
+  const refuse = (instance) => { const r = d.fx.cli(["retire", instance, "--json"]); assert.notEqual(r.status, 0, r.stdout); return r.json().error; };
+  const error = refuse(owner.instance);
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", error.message);
+  assert.match(error.message, /the worktree at .*\/work could not be re-homed to /);
+  const done = error.message.slice(error.message.indexOf(" Already done in this retire: "));
+  assert.ok(done.startsWith(` Already done in this retire: ${clean} removed, ${dirty} re-homed to ${movedTo}. Attached children: ${left.instance}: its work was ${clean}, which this retire removed (${REMOVED_TREE}); its work link ${join(left.home, "work")} now points at a path that is gone. The home is kept so nothing is lost`), error.message);
+  assert.equal(existsSync(join(owner.home, "instance.json")), true, "the home is kept");
+  assert.equal(existsSync(join(work, ".git")), true, "and work/ is where it was");
+  // The tree that was re-homed took its child with it, although the retire then refused.
+  assert.equal(d.link(follows), movedTo);
+  assert.equal(dangles(join(left.home, "work")), true);
+  // Nothing to say where no extra tree was handled: the sentence as it was.
+  const plain = await d.owner("dev-plain");
+  d.git(d.fx.member, "worktree", "lock", join(plain.home, "work"));
+  const before = refuse(plain.instance);
+  assert.equal(before.code, "E_WORK_PRESERVATION_FAILED", before.message);
+  assert.doesNotMatch(before.message, /Already done in this retire|Attached children/);
+  assert.match(before.message, /\); the home is kept so nothing is lost — resolve and retry, or pass --discard-worktree to remove the worktree instead$/);
+  // The retry, once the lock is gone: the trees are dealt with, and the home goes.
+  d.git(d.fx.member, "worktree", "unlock", work);
+  assert.equal(d.retired(owner.instance).removedDir, true);
+});
+
 test("a retire that keeps the home in place moves no tree and says nothing of the children attached to them (#964)", async (t) => {
   const d = deployment(t);
   const owner = await d.owner("dev-owner");
@@ -241,6 +273,7 @@ test("oats worktree remove: nobody attached removes as before; an attached insta
 /** What a refused `oats worktree remove` answers and leaves: the code, the details whole, no key of
  *  a retire's refusal, and the tree, its registration and its record as they were. */
 function assertRefused(d, owner, purpose, tree, children, said) {
+  // `owner.home` is the home as the command is given it: its own path, or a link to it.
   const r = d.wt(owner.home, ["remove", "--purpose", purpose, "--json"]);
   assert.notEqual(r.status, 0, r.stdout);
   const error = r.json().error;
@@ -261,6 +294,13 @@ test("oats worktree remove refuses under an attached instance whose session cann
   d.unreadable(kid.home);
   assertRefused(d, owner, "unread", tree, [{ instance: kid.instance, home: kid.home, session: "unknown" }],
     `${tree} is the work of an attached instance: ${kid.instance} (whether its session is running could not be read); nothing was removed (the record is kept). To remove the tree, stop it (\`oats instance stop ${kid.instance}\`) or retire it, then remove again`);
+  // The same answer when the command is given a link to the owner's home: who is attached is read
+  // under the home's real path, and the answer keeps the path as the command was given it.
+  const alias = join(d.fx.base, "owner-alias");
+  symlinkSync(owner.home, alias);
+  const aliased = join(alias, ".work-unread");
+  assertRefused(d, { home: alias }, "unread", aliased, [{ instance: kid.instance, home: kid.home, session: "unknown" }],
+    `${aliased} is the work of an attached instance: ${kid.instance} (whether its session is running could not be read); nothing was removed (the record is kept). To remove the tree, stop it (\`oats instance stop ${kid.instance}\`) or retire it, then remove again`);
   // The step it names: once that instance is retired, the same command removes the tree, and names the one still attached.
   d.retired(kid.instance, ["--force"]);
   const again = d.wt(owner.home, ["remove", "--purpose", "unread", "--json"]);
