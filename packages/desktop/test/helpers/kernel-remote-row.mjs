@@ -4,6 +4,8 @@
 // never import the kernel (#577). The kernel's own suite feeds real rosterGroups output through
 // remotePanel and waitingClaim; keep this shape equal to it.
 import { remotePanel } from "../../../client/remote-roster.mjs";
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = "2026-10-11T12:00:00.000Z";
 
 const AGENTS_ROOT = "/remote/project/agents";
 const REMOTE_ROW_FACTS = ["identity", "identityAddress", "teams", "startedAt", "createdAt", "model", "runtimeState",
@@ -30,4 +32,4 @@ export const kernelRemoteGroup = (instances = [kernelRemoteRow()], extra = {}) =
   instances, retireFailures: [], ...extra });
 
 /** The rows the renderer receives for those kernel rows: the shipped remotePanel projection. */
-export const remoteRows = (instances, extra) => remotePanel(kernelRemoteGroup(instances, extra)).instances;
+export const remoteRows = (instances, extra) => remotePanel(kernelRemoteGroup(instances, extra), AT).instances;

@@ -621,8 +621,9 @@ function revalidateCatalog(wsId) {
 }
 function mergeRemotePanels(byWs) {
   for (const id of byWs.keys()) if (id.startsWith("remote:")) byWs.delete(id);
+  const at = new Date().toISOString(); // the shared home reads no clock: the time of this merge
   for (const group of remoteGroups) {
-    const panel = remote.remotePanel(group);
+    const panel = remote.remotePanel(group, at);
     byWs.set(panel.workspace.id, panel);
   }
   return byWs;
@@ -639,7 +640,8 @@ async function refreshRemoteSnapshot() {
     if (cliState !== probe) return;
     const incoming = env.ok && Array.isArray(env.result?.groups)
       ? env.result.groups : remote.unavailableGroups(remoteGroups, env.error || { code: "E_REMOTE_ROSTER", message: "Remote roster unavailable" });
-    incoming.forEach(remote.remotePanel); // validate before replacing the last readable roster
+    const at = new Date().toISOString();
+    incoming.forEach((group) => remote.remotePanel(group, at)); // validate before replacing the last readable roster
     remoteGroups = incoming;
     if (env.ok) { rosterAnswered = true; rosterFailure = null; remoteIdentities.observe(incoming); }
     else if (!rosterAnswered) rosterFailure = env.error?.message || "Remote roster unavailable";

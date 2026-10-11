@@ -8,6 +8,8 @@ import { viewId } from '../../../client/workspace-views.mjs';
 import * as shared from '../../../client/panel-views.mjs';
 import { createRemoteIdentityStore } from '../../server/remote-identity.mjs';
 import { DESKTOP_TERMS } from '../../renderer/desktop-terms.mjs';
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = '2026-10-11T12:00:00.000Z';
 
 export const SOURCE = readFileSync(new URL('../../server/oats-web.mjs', import.meta.url), 'utf8');
 export const between = (begin, end) => SOURCE.slice(SOURCE.indexOf(begin), SOURCE.indexOf(end));
@@ -80,7 +82,7 @@ export function juanState(over = {}) {
     [A, observed(A, { reachable: true, ...identity() }, [row(A, 'dev-a'), row(A, 'idle', { running: false })])],
     [B, observed(B, { reachable: true, ...identity() }, [row(B, 'dev-b')])],
     [L, unavailable()],
-    ...remoteGroups.map(g => [`remote:${g.id}`, remote.remotePanel(g)]),
+    ...remoteGroups.map(g => [`remote:${g.id}`, remote.remotePanel(g, AT)]),
   ]);
   return { altair, vega, state: { ctxs: [A, B, L], snapshot: { byWs }, remoteGroups, ...over } };
 }

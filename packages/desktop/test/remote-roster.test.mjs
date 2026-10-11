@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { remoteWorkspace, remotePanel, remoteAgents, unavailableGroups, spawnedWorkspace } from "../../client/remote-roster.mjs";
 import { HERDR_REMOVED } from "../../client/terminal-contract.mjs";
 import { waitingClaim } from "../../client/waiting-on-you.mjs";
 import { kernelRemoteRow, kernelGoneRow, kernelRemoteGroup } from "./helpers/kernel-remote-row.mjs";
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = "2026-10-11T12:00:00.000Z";
 
 const group = {
   id: "host-abc", server: "host", label: "Build server", registrationPresent: true,
@@ -14,7 +17,7 @@ const group = {
 
 test("remote roster projects server identity and souls without local path resolution", () => {
   assert.equal(remoteWorkspace(group).id, "remote:host-abc");
-  const panel = remotePanel(group);
+  const panel = remotePanel(group, AT);
   assert.equal(panel.workspace.registrationPresent, true);
   assert.equal(panel.workspace.scope, "/remote/project");
   assert.equal(panel.instances[0].server, "host");
@@ -38,13 +41,13 @@ test("spawn handoff matches the actual remote target, preserving old route group
 
 test("removed registration keeps saved instances while unreachable means unknown, not stopped", () => {
   const removed = { ...group, registrationPresent: false };
-  assert.equal(remotePanel(removed).instances.length, 1);
-  assert.equal(remotePanel(removed).workspace.registrationPresent, false);
-  assert.equal(remotePanel({ ...group, registrationPresent: undefined }).workspace.registrationPresent, false);
-  assert.equal(remotePanel({ ...group, registrationPresent: "true" }).workspace.registrationPresent, false);
+  assert.equal(remotePanel(removed, AT).instances.length, 1);
+  assert.equal(remotePanel(removed, AT).workspace.registrationPresent, false);
+  assert.equal(remotePanel({ ...group, registrationPresent: undefined }, AT).workspace.registrationPresent, false);
+  assert.equal(remotePanel({ ...group, registrationPresent: "true" }, AT).workspace.registrationPresent, false);
   assert.deepEqual(remoteAgents(removed), []);
   const [unreachable] = unavailableGroups([removed], { code: "E_SSH", message: "Connection refused" });
-  const panel = remotePanel(unreachable);
+  const panel = remotePanel(unreachable, AT);
   assert.equal(panel.instances[0].running, null);
   assert.equal(panel.instances[0].savedRoute, true);
   assert.equal(panel.instances[0].runtimeError, "Connection refused");
@@ -57,7 +60,7 @@ test("a remote Herdr row is unsupported with the kernel's reason, from a 0.31 or
     { instance: "h-new", agent: "dev", home: "/remote/h-new", running: null, savedRoute: true, runtimeState: "unsupported", runtimeError: `${stem} (h-new)` },
     { instance: "h-old", agent: "dev", home: "/remote/h-old", running: true, savedRoute: true, backend: "herdr", runtimeError: "Herdr snapshot unavailable" },
     { instance: "t-one", agent: "dev", home: "/remote/t-one", running: true, savedRoute: true, backend: "tmux" },
-  ] });
+  ] }, AT);
   const [fresh, old, tmux] = panel.instances;
   assert.deepEqual([fresh.running, fresh.runtimeState, fresh.runtimeError], [null, "unsupported", `${stem} (h-new)`]);
   assert.deepEqual([old.running, old.runtimeState, old.runtimeError], [null, "unsupported", stem]);
@@ -67,17 +70,17 @@ test("a remote Herdr row is unsupported with the kernel's reason, from a 0.31 or
 
 test("Needs input: a remote row's waitingOnYou is validated (malformed → null), passed through when valid, never synthesized", () => {
   const claim = { since: "2026-10-03T10:00:00.000Z", producer: "pi-extension", reason: "attention", message: "Review <b>this</b>" };
-  const row = waitingOnYou => remotePanel(kernelRemoteGroup([kernelRemoteRow("dev-one", { waitingOnYou })])).instances[0];
+  const row = waitingOnYou => remotePanel(kernelRemoteGroup([kernelRemoteRow("dev-one", { waitingOnYou })]), AT).instances[0];
   assert.deepEqual(row({ ...claim, extra: 1 }).waitingOnYou, claim);
   assert.equal(row({ ...claim, since: "now" }).waitingOnYou, null);
   assert.equal(row({ ...claim, producer: "token=abc123" }).waitingOnYou, null);
   assert.equal(row("yes").waitingOnYou, null);
   assert.equal(row(null).waitingOnYou, null, "a reported null stays null (unknown)");
   assert.equal(row({ ...claim, message: "x".repeat(201) }).waitingOnYou.message, null, "an oversized note keeps the claim");
-  assert.equal(Object.hasOwn(remotePanel(kernelRemoteGroup()).instances[0], "waitingOnYou"), false, "a remote kernel without the feature: absent stays absent");
+  assert.equal(Object.hasOwn(remotePanel(kernelRemoteGroup(), AT).instances[0], "waitingOnYou"), false, "a remote kernel without the feature: absent stays absent");
   // An unreached server keeps last-known rows: the field rides along, and the renderer's gate (serverUnreached) hides it.
   const [group] = unavailableGroups([kernelRemoteGroup([kernelRemoteRow("dev-one", { waitingOnYou: claim })])], { code: "E_SSH", message: "Connection refused" });
-  const unreached = remotePanel(group).instances[0];
+  const unreached = remotePanel(group, AT).instances[0];
   assert.deepEqual([unreached.serverUnreached, unreached.running], [true, null]);
   assert.deepEqual(unreached.waitingOnYou, claim);
 });
@@ -87,7 +90,7 @@ test("Needs input: a remote row's waitingOnYou is validated (malformed → null)
 // full rosterGroups → remotePanel → waitingClaim run lives in the kernel's suite (Desktop tests never import lib/).
 test("Needs input (#582): a kernel-shaped remote row (runtimeState null) shows its claim through remotePanel and waitingClaim", () => {
   const claim = { since: "2026-10-03T10:00:00.000Z", producer: "oats.core", reason: "question", message: "Which branch?" };
-  const panel = (instances, extra) => remotePanel(kernelRemoteGroup(instances, extra)).instances;
+  const panel = (instances, extra) => remotePanel(kernelRemoteGroup(instances, extra), AT).instances;
   const [running] = panel([kernelRemoteRow("dev-one", { waitingOnYou: claim })]);
   assert.equal(running.runtimeState, null, "the projection keeps the kernel's null: not reported");
   assert.equal(running.running, true);
@@ -106,7 +109,7 @@ test("Needs input (#582): a kernel-shaped remote row (runtimeState null) shows i
   assert.deepEqual([Object.hasOwn(gone, "waitingOnYou"), gone.running, waitingClaim(gone)], [false, null, null]);
   assert.equal(waitingClaim({ ...gone, waitingOnYou: claim }), null, "and would not show one: its state is unknown");
   const [unreachedGroup] = unavailableGroups([kernelRemoteGroup([kernelRemoteRow("dev-one", { waitingOnYou: claim })])], { code: "E_SSH", message: "Connection refused" });
-  assert.equal(waitingClaim(remotePanel(unreachedGroup).instances[0]), null, "last-known rows of an unreached server");
+  assert.equal(waitingClaim(remotePanel(unreachedGroup, AT).instances[0]), null, "last-known rows of an unreached server");
   assert.equal(waitingClaim(running, { stale: true }), null, "a row the roster holds stale");
   assert.equal(waitingClaim(panel([kernelRemoteRow("dev-one")])[0]), null, "no field (an older remote kernel): unknown");
   assert.equal(waitingClaim(panel([kernelRemoteRow("dev-one", { waitingOnYou: null })])[0]), null, "a reported null: unknown");
@@ -114,21 +117,34 @@ test("Needs input (#582): a kernel-shaped remote row (runtimeState null) shows i
 
 test("#675: a remote row's description comes from its own group's soul, as reported, never synthesized", () => {
   const described = { ...group, souls: [{ name: "dev", description: "Builds the desktop app." }, { name: "ops", description: "Runs ops." }] };
-  assert.equal(remotePanel(described).instances[0].description, "Builds the desktop app.");
+  assert.equal(remotePanel(described, AT).instances[0].description, "Builds the desktop app.");
   for (const souls of [[{ name: "dev" }], [{ name: "dev", description: 42 }], [{ name: "dev", description: null }], [], undefined, [{ name: "ops", description: "Runs ops." }]]) {
-    assert.equal(remotePanel({ ...group, souls }).instances[0].description, null, JSON.stringify(souls));
+    assert.equal(remotePanel({ ...group, souls }, AT).instances[0].description, null, JSON.stringify(souls));
   }
   // A same-named soul in another group is never used.
   const other = { ...group, id: "other", server: "other", souls: [{ name: "dev", description: "Another host's dev." }] };
   const bare = { ...group, souls: [] };
-  assert.equal(remotePanel(bare).instances[0].description, null);
-  assert.equal(remotePanel(other).instances[0].description, "Another host's dev.");
-  assert.equal(remotePanel(bare).instances[0].description, null, "projection is per group");
+  assert.equal(remotePanel(bare, AT).instances[0].description, null);
+  assert.equal(remotePanel(other, AT).instances[0].description, "Another host's dev.");
+  assert.equal(remotePanel(bare, AT).instances[0].description, null, "projection is per group");
 });
 
-test("a remote panel is stamped with the time its caller gives; without one, with the clock", (t) => {
+test("a remote panel is stamped with the time its caller gives, and the module reads no clock", (t) => {
+  // The clock is another year than the time given: an answer that read it would hold that year.
   t.mock.timers.enable({ apis: ["Date"], now: new Date("2031-03-04T05:06:07.000Z") });
   assert.equal(remotePanel(group, "2026-10-11T12:00:00.000Z").generatedAt, "2026-10-11T12:00:00.000Z");
-  assert.equal(remotePanel(group).generatedAt, "2031-03-04T05:06:07.000Z");
-  assert.deepEqual({ ...remotePanel(group, "x"), generatedAt: null }, { ...remotePanel(group), generatedAt: null });
+  assert.doesNotMatch(JSON.stringify(remotePanel(group, AT)), /2031-/);
+  assert.deepEqual({ ...remotePanel(group, "x"), generatedAt: null }, { ...remotePanel(group, AT), generatedAt: null }, "the time is the panel's stamp and nothing else of it");
+  // Not by a default argument, a fallback or a comment's promise: the source names no `Date` at all.
+  assert.doesNotMatch(readFileSync(new URL("../../client/remote-roster.mjs", import.meta.url), "utf8"), /\bDate\b/);
+});
+
+test("a remote panel made without a time throws, naming the argument: there is no default", () => {
+  for (const at of [undefined, null, "", 0, 1760184000000, new Date(0), {}]) {
+    assert.throws(() => remotePanel(group, at), (error) => error instanceof TypeError && /^remotePanel: at must be the time of the call, a non-empty string$/.test(error.message), String(at));
+  }
+  assert.throws(() => remotePanel(group), TypeError);
+  // The index a bare `groups.forEach(remotePanel)` passes is not a time.
+  assert.throws(() => [group].forEach(remotePanel), TypeError);
+  assert.equal([group].map((g) => remotePanel(g, AT)).length, 1);
 });

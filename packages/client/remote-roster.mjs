@@ -10,9 +10,17 @@ export function remoteWorkspace(group) {
   };
 }
 
-/** A remote deployment's panel. `at` is the time the panel is made, an ISO string: a caller that holds
- * the time of its call passes it (panel-views.mjs passes `held.at`); without it the clock is read. */
-export function remotePanel(group, at = new Date().toISOString()) {
+/** The time a caller gives, or a TypeError when it gave none: this module reads no clock. `table` names
+ * the function that was called without it (as client-terms.mjs `requireTerms` does for terms). */
+function requireTime(at, table) {
+  if (typeof at !== "string" || !at) throw new TypeError(`${table}: at must be the time of the call, a non-empty string`);
+  return at;
+}
+
+/** A remote deployment's panel. `at` is the time the panel is made, an ISO string, and is required: the
+ * caller holds the time of its call (panel-views.mjs passes `held.at`) and no clock is read here. */
+export function remotePanel(group, at) {
+  requireTime(at, "remotePanel");
   const ws = remoteWorkspace(group);
   // A row's soul subtitle: its own group's soul list only, a string as the host reported it, never synthesized.
   const described = name => { const soul = (group.souls || []).find((a) => a?.name === name); return typeof soul?.description === "string" ? soul.description : null; };

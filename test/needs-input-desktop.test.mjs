@@ -18,6 +18,8 @@ import { REMOTE_ROW_FACTS, rosterGroups, writeServers } from "../lib/servers.mjs
 import { eventsData } from "../packages/desktop/renderer/instance-events-data.mjs";
 import { remotePanel } from "../packages/client/remote-roster.mjs";
 import { waitingClaim } from "../packages/client/waiting-on-you.mjs";
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = "2026-10-11T12:00:00.000Z";
 
 const base = mkdtempSync("/tmp/oats-rw-");
 const prevHomeDir = process.env.OATS_HOME_DIR;
@@ -103,7 +105,7 @@ test("rosterGroups relays a validated shape, by the kernel's own read rule: a va
 });
 
 // ---- end to end: the kernel's roster, the Desktop's panel, the Desktop's gate ----
-const panelRows = (rows) => Object.fromEntries(remotePanel(roster(rows)).instances.map((r) => [r.instance, r]));
+const panelRows = (rows) => Object.fromEntries(remotePanel(roster(rows), AT).instances.map((r) => [r.instance, r]));
 
 test("end to end: the Desktop's remote panel carries the claim rosterGroups relayed, and leaves it out when the host did not report one", () => {
   const rows = panelRows([hostRow("dev-a", { waitingOnYou: CLAIM }), hostRow("dev-b", { waitingOnYou: null }), hostRow("dev-old"), hostRow("dev-bad", { waitingOnYou: "yes" })]);

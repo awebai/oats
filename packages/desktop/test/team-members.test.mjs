@@ -4,6 +4,8 @@ import { teamMembers } from '../../client/team-members.mjs';
 import { remotePanel } from '../../client/remote-roster.mjs';
 import { apiUrl } from '../api-url.mjs';
 import { loadServer, juanState, A, B, R, V, V_OATS, V_LAB, tag } from './helpers/workspace-views-fixture.mjs';
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = '2026-10-11T12:00:00.000Z';
 
 const TEAM = 'aweb:juan.aweb.ai';
 const LOCAL = { id: '/w', machine: 'This Mac', path: '/w' };
@@ -17,7 +19,7 @@ const remoteRow = (name, extra = {}) => ({ instance: name, agent: 'dev', agentsR
 /** The deployment tag of a remote group, as the views give it (panel-views.mjs `deploymentTag`). */
 const groupTag = g => ({ id: `remote:${g.id}`, machine: g.label || g.server, path: g.target.workspace });
 const project = ({ rows = [localRow('dev-a')], groups = [], deployments = [{ deployment: LOCAL, instances: rows }] } = {}) =>
-  teamMembers({ deployments, groups: groups.map(g => ({ group: g, deployment: groupTag(g), panel: remotePanel(g) })) });
+  teamMembers({ deployments, groups: groups.map(g => ({ group: g, deployment: groupTag(g), panel: remotePanel(g, AT) })) });
 
 test('members: this workspace\'s rows and every remote panel\'s rows with a team; rows without one are not members', () => {
   const build = group('build', { instances: [remoteRow('far-a'), remoteRow('no-team', { identity: null }), remoteRow('blank', { identity: { team: '' } })] });
