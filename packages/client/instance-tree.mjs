@@ -210,7 +210,7 @@ export function instanceRepoLabel(instance) {
 
 const HELD_HOMES = Object.freeze({
   spawning: { state: "Setting up worktree…", status: "Spawning (setting up worktree)", retire: false,
-    sentence: name => `${name} is setting up its worktree. It opens once the spawn finishes.` },
+    sentence: name => `${name} is setting up its worktree. It can't be used until the spawn finishes.` },
   "spawn-incomplete": { state: "Spawn didn't finish", hint: "Retire it to clean up", status: "Spawn didn't finish", retire: true,
     sentence: name => `The spawn of ${name} didn't finish. Retire it to clean up.` },
   "retire-incomplete": { state: "Retire didn't finish", hint: "Retire it again to complete", status: "Retire didn't finish", retire: true,
@@ -222,7 +222,9 @@ const HELD_HOMES = Object.freeze({
  * (`retirePending`). rollbackIncomplete wins over spawnInProgress (the spawn is gone, not live), and a
  * live spawn over retirePending (the kernel refuses to retire it). Every surface draws such a row from
  * this: a spawning one starts, stops, retires and splits nothing; a quarantined one (`retire`) offers
- * Retire only. `state` is the row's text, `hint` its muted line, `status` the hover card's Status. */
+ * Retire only. `state` is the row's text, `hint` its muted line, `status` the hover card's Status.
+ * `sentence` is every client's, so it promises no act of one client: a spawning home "can't be used
+ * until the spawn finishes", whoever started the spawn and whether or not it ends finished. */
 export function heldHome(instance) {
   const kind = !instance ? null : instance.rollbackIncomplete ? "spawn-incomplete"
     : instance.spawnInProgress === true ? "spawning" : instance.retirePending ? "retire-incomplete" : null;
@@ -231,10 +233,10 @@ export function heldHome(instance) {
 
 /* ── roster grouping: repo → agent family (soul), with sort modes ── */
 
-export const ROSTER_SORTS = [
-  { id: "status", label: "Status (running first)" },
-  { id: "name", label: "Name" },
-];
+export const ROSTER_SORTS = Object.freeze([
+  Object.freeze({ id: "status", label: "Status (running first)" }),
+  Object.freeze({ id: "name", label: "Name" }),
+]);
 
 /** Comparator for one sibling level. "status" ranks running instances first,
  * then by name; "name" is purely alphabetical. Unknown ids fall back to
