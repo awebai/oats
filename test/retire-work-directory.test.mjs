@@ -412,6 +412,10 @@ test("a real directory at work/ is the instance's work tree only when Git names 
   assert.equal(ownPlan.facts.work.branch, "mine");
   assert.equal(ownPlan.facts.work.untracked, 1);
   assert.equal(ownPlan.defaults.retainWorktree, false);
+  // Its files are observed, and no note says that they would be retained: they are copied to recovery
+  // and removed with the home.
+  assert.deepEqual(ownPlan.notes.filter((n) => /retained/.test(n)), [], JSON.stringify(ownPlan.notes));
+  assert.ok(ownPlan.notes.includes("recovery: work/ is copied there when it is not empty"), JSON.stringify(ownPlan.notes));
   // A workspace instance's work/ is a link to the deployment directory, which is above its home:
   // a link is read as what it leads to, so the deployment's checkout is its work, as before.
   const wsp = await d.fx.spawn("wsp", { instance: "wsp-link" });
