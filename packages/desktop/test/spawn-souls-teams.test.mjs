@@ -22,7 +22,7 @@ function agentRows() {
   const source = readFileSync(new URL("../server/oats-web.mjs", import.meta.url), "utf8");
   const start = source.indexOf("function agentsData("), end = source.indexOf("/* ── Model catalog", start);
   const agentsData = new Function("deploymentFor", "deployments", "snapshot", "remote", "dirname", "resolve", "normalizeSoulColor",
-    `${source.slice(start, end)}; return agentsData;`);
+    `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const roster = deploymentStatusData(v2("status"), DEPLOYMENT), catalog = soulsData(v2("souls"));
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: "observed", root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s),
     catalog: { souls: catalog.souls, ambiguous: [], reason: null } } }]]) };

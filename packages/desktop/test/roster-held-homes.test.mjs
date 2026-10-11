@@ -7,7 +7,6 @@ import test from "node:test";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname } from "node:path";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import * as treeShared from "../../client/instance-tree.mjs";
@@ -23,6 +22,7 @@ import { rosterTipFacts } from "../renderer/roster-tip.mjs";
 import { waitingClock } from "../../client/waiting-on-you.mjs";
 import { projectActivePanel } from "../renderer/active-observation.mjs";
 import { deploymentStatusData } from "../../client/deployment-data.mjs";
+import { panelInstance } from "../../client/deployment-panel.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), html = read("index.html"), shell = read("shell.mjs");
@@ -92,9 +92,7 @@ test("projection: spawnInProgress is kept as boolean true only; anything else is
 });
 
 test("projection: /api/panel forwards spawnInProgress (true only), beside the quarantine flags", () => {
-  const src = readFileSync(new URL("../server/oats-web.mjs", import.meta.url), "utf8");
-  const m = src.match(/\/\* OATSWEB_PANELPROJ_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_PANELPROJ_END \*\//);
-  const project = new Function("dirname", m[1] + "\nreturn projectPanelInstance;")(dirname);
+  const project = panelInstance;
   const base = { instance: "dev-a", agentsRoot: "/d/agents", home: "/d/agents/dev/instances/dev-a" };
   assert.equal(project({ ...base, spawnInProgress: true }).spawnInProgress, true);
   for (const value of [undefined, false, "yes", 1]) assert.equal(Object.hasOwn(project({ ...base, spawnInProgress: value }), "spawnInProgress"), false, String(value));

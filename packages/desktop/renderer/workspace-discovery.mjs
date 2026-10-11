@@ -9,7 +9,8 @@
 import { teamModelOf } from '../../client/team-rows.mjs';
 import { apiJson, postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable } from './views/cli-status.mjs';
-import { deploymentUnavailableText } from './deployment-header.mjs';
+import { deploymentUnavailableText } from '../../client/deployment-facts.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { setupCSS, renderSetup, teamsBox } from './workspace-setup.mjs';
 import { createWorkspaceMachines, machinesCSS } from './workspace-machines.mjs';
 import { machinesGated } from '../../client/machine-contract.mjs';
@@ -149,7 +150,7 @@ function gate(workspace, deployment) {
   if (cli.workspaceApi !== 2 || !list(cli.features).includes('workspace-v2')) return 'The installed OATS CLI does not advertise workspace-v2. Update OATS and retry.';
   if (!workspace) return 'Waiting for the current workspace…';
   if (workspace.remote || workspace.server) return 'Remote workspaces are observed through their server; open the deployment on that machine to sync it.';
-  if (deployment?.status !== 'observed') return deploymentUnavailableText(deployment);
+  if (deployment?.status !== 'observed') return deploymentUnavailableText(deployment, DESKTOP_TERMS);
   return '';
 }
 
@@ -488,12 +489,12 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     rovePill(pills, target); target.focus({ preventScroll: true });
   }
   panel.addEventListener('scroll', () => { if (tab === 'capabilities') syncCapabilityNav(body, panel, capLead); }, { passive: true });
-  function updateRoster(agents, panelData) {
+  function updateRoster(agents, panelAnswer) {
     const gen = workspaceGeneration();
     // Another workspace generation is another subject: the table is forgotten. Within one, it is never set to null.
     if (rosterGen !== gen) { catalog = null; failure = ''; repo = null; setupMember = null; serial++; loading = false; loadState.reset(); }
-    rosterGen = gen; workspace = panelData.workspace || null; deployment = panelData.deployment || null; souls = list(agents);
-    instances = list(panelData.instances);
+    rosterGen = gen; workspace = panelAnswer.workspace || null; deployment = panelAnswer.deployment || null; souls = list(agents);
+    instances = list(panelAnswer.instances);
     updateCounts(agents.length); render();
     computerTeams?.syncRoster(); // the Teams page's members follow the roster poll
     // Read once per roster generation on any tab: the tab bar counts it.

@@ -132,6 +132,13 @@ export function writeTaskFile(taskText, io = {}) {
   return { file, cleanup };
 }
 
+/** A client's own `exec`: `io.exec` on every kernel caller of this home (`exec` in the third argument
+ * of lifecycle-cli.mjs `cliLifecycle`), in place of `execFile`. It has `execFile`'s signature,
+ * `(bin, argv, options, callback)`, and its return, the child (spawn-apply-cli.mjs ends a spawn it
+ * owns through it). It passes the options through as given (cwd, env, timeout, maxBuffer, no shell)
+ * and calls back with `execFile`'s own error: every caller tells a timeout by `error.killed` and an
+ * overflow by `error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'`, so an `exec` that wraps or
+ * replaces that error turns both into a plain failure. */
 function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false } = {}) {
   return new Promise((resolveP, rejectP) => {
     try {

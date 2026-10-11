@@ -177,8 +177,9 @@ kernel's remote roster (id `remote:<server>:<targetKey>`). A **workspace
 view** is what the switcher lists and a window shows: every deployment, on
 this Mac or on a registered server, that reports the same workspace identity.
 Views are built per request from the held observations and the remembered
-remote identities, never by a CLI read (`packages/client/workspace-views.mjs`, the
-`OATSWEB_VIEWS` block of `server/oats-web.mjs`).
+remote identities, never by a CLI read (`packages/client/workspace-views.mjs` and
+`packages/client/panel-views.mjs`, which `server/oats-web.mjs` calls with what it
+holds, `held()`).
 
 A matched identity's view id is `ws:` and 20 hex characters of a hash of its
 key and default team: never a path, so it cannot collide with a deployment
@@ -581,7 +582,11 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
 
 Terminal-target liveness (`packages/client/liveness.mjs`, run out of process by `packages/client/liveness-main.mjs`) still
 observes the exact recorded tmux socket/session/window — it reads no deployment
-file. A Herdr-recorded row (a `sessionTarget`, or `runtimeState: "unsupported"`)
+file. It refines a row only when the kernel answered `running` true or false: a row the kernel
+answered `running: null` is not probed, and keeps the kernel's `running`, `runtimeState`,
+`runtimeError` and `tmux`, because the kernel says unknown also where a probe would say stopped and
+be wrong (a missing socket file while a process works in the home, a record that cannot be read).
+Such a row stays unknown until the next roster read. A Herdr-recorded row (a `sessionTarget`, or `runtimeState: "unsupported"`)
 is never probed: it is reported unsupported with the kernel's E_HERDR_REMOVED
 `runtimeError`, or with the E_HERDR_REMOVED stem when an older kernel gave none.
 `remotePanel` does the same for remote rows, including an older remote kernel's

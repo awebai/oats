@@ -13,6 +13,7 @@ import { capabilityShowUnreadable } from '../../client/capability-show-contract.
 import { deploymentReasonParts, deploymentReason } from '../../client/workspace-views.mjs';
 import { deploymentLabelParts, deploymentLabel, machineLabels, machineLabelParts } from '../../client/deployment-label.mjs';
 import { rosterSections } from '../../client/roster-sections.mjs';
+import { deploymentUnavailableText } from '../../client/deployment-facts.mjs';
 
 test("the Desktop's five terms", () => {
   assert.deepEqual({ ...DESKTOP_TERMS }, { name: 'Desktop', self: 'this Desktop', selfInitial: 'This Desktop', update: 'OATS Desktop', thisMachine: 'This Mac' });
@@ -56,6 +57,9 @@ test("the sentences that name the Desktop are the Desktop's strings, byte for by
   assert.deepEqual([...machineLabelParts(two.slice(1), T)], [['b', { machine: 'This Mac', tail: '' }], ['c', { machine: 'altair', tail: '' }]]);
   const rows = [{ instance: 'dev-1', agent: 'dev', home: '/b/oats-v2/agents/dev/instances/dev-1', deployment: { id: 'b' } }];
   assert.deepEqual(rosterSections(rows, rows, two.slice(1), T).map(s => [s.label, s.machine, s.tail]), [['This Mac', 'This Mac', '']]);
+  // deployment-facts.mjs: a deployment whose kernel lacks a feature this client needs (#855, 1d)
+  assert.equal(deploymentUnavailableText({ status: 'unavailable', reason: { code: 'E_DEPLOYMENT_FEATURE', feature: 'served-identity' } }, T),
+    'The installed OATS CLI does not advertise served-identity, which the Desktop needs to show this deployment. Update OATS and retry.');
 });
 
 // ── Every call site passes the terms ──────────────────────────────────────────
@@ -65,7 +69,11 @@ test("the sentences that name the Desktop are the Desktop's strings, byte for by
 // cliWorkspace`) or binding the terms in a module of its own would hide what a call site passes.
 
 const TABLES = ['lifecycleReason', 'lifecycleFailure', 'undescribedAnswer', 'undescribedRefusal', 'workspaceFailure', 'workspaceGate', 'cliWorkspace', 'capabilityShowUnreadable',
-  'deploymentReasonParts', 'deploymentReason', 'deploymentLabelParts', 'deploymentLabel', 'machineLabels', 'machineLabelParts', 'rosterSections'];
+  'deploymentReasonParts', 'deploymentReason', 'deploymentLabelParts', 'deploymentLabel', 'machineLabels', 'machineLabelParts', 'rosterSections',
+  // 1d: the sentence for a deployment that is not observed, and the views that reach a sentence or a label
+  // (packages/client/panel-views.mjs): each passes the terms it is given on to the tables above.
+  'deploymentUnavailableText', 'deploymentInfo', 'viewModel', 'viewFor', 'deploymentFor', 'surfaceDeployment', 'viewForgeContext', 'isServed',
+  'teamMembersFor', 'machineScope', 'panelData', 'workspaceChoices'];
 const ROOT = new URL('../', import.meta.url);
 function shippedModules(dir = '') {
   const out = [];
@@ -158,8 +166,8 @@ test('every shipped Desktop module that calls a table that takes terms passes DE
   // Not vacuous: the reader found the call sites, in main, the backend and the page.
   assert.deepEqual([...callers.keys()].sort(), ['main.mjs', 'renderer/capability-contents.mjs', 'renderer/computer-teams.mjs', 'renderer/deployment-scope-line.mjs',
     'renderer/deployment-tabs.mjs', 'renderer/deployments-page.mjs', 'renderer/lifecycle-dialog.mjs', 'renderer/lifecycle-frame.mjs', 'renderer/palette.mjs', 'renderer/shell.mjs',
-    'renderer/spawn-deployment-field.mjs', 'renderer/views/hierarchy.mjs', 'server/capability-catalog.mjs', 'server/capability-show.mjs', 'server/instance-lifecycle.mjs',
-    'server/oats-web.mjs', 'server/soul-catalog.mjs', 'server/workspace-sync.mjs']);
+    'renderer/spawn-deployment-field.mjs', 'renderer/views/hierarchy.mjs', 'renderer/views/spawn.mjs', 'renderer/workspace-discovery.mjs', 'server/capability-catalog.mjs',
+    'server/capability-show.mjs', 'server/instance-lifecycle.mjs', 'server/oats-web.mjs', 'server/soul-catalog.mjs', 'server/workspace-sync.mjs']);
   const calls = [...callers.values()].reduce((a, b) => a + b, 0);
   assert.ok(calls >= 48, `the call sites were read (${calls})`);
   t.diagnostic(`${calls} calls in ${callers.size} modules: ${[...callers].map(([path, n]) => `${path} ${n}`).join(', ')}`);

@@ -284,6 +284,73 @@ test("inventory: the shared home imports Node builtins and its own files, and no
   assert.deepEqual(problems, []);
 });
 
+/**
+ * What the window's page loads: from the page itself, every script and module it names, and every
+ * view (shell.mjs and shell-nav.mjs load renderer/views/*.mjs by a computed path). Returns the files
+ * read and the problems: a Node builtin, or a bare specifier the page's import map does not name.
+ */
+function pageGraph(readFile = read, has = exists, views = filesUnder("renderer/views").filter(isModule)) {
+  const page = "renderer/index.html", html = readFile(page);
+  const map = /<script\b[^>]*\btype=["']importmap["'][^>]*>([\s\S]*?)<\/script>/.exec(html);
+  const mapped = map ? JSON.parse(map[1]).imports ?? {} : {};
+  const problems = [], seen = new Set(), queue = [page, ...views];
+  while (queue.length) {
+    const from = queue.pop();
+    if (seen.has(from)) continue;
+    seen.add(from);
+    for (const spec of requestsOf(from, readFile(from))) {
+      // A page names its files relative to itself, with or without `./`.
+      const relative = from.endsWith(".html") || isRelative(spec);
+      if (!relative) {
+        if (spec.startsWith("node:")) problems.push(`${from}: imports "${spec}", a Node builtin: the page is a browser page and cannot load it`);
+        else if (!Object.hasOwn(mapped, spec)) problems.push(`${from}: imports "${spec}", which the page's import map does not name`);
+        continue;
+      }
+      const target = posix(normalize(join(dirname(from), spec)));
+      if (!target.startsWith("node_modules/") && readable(target) && has(target)) queue.push(target);
+    }
+  }
+  return { problems, seen };
+}
+
+test("inventory: the page reaches no module that imports a Node builtin", () => {
+  // The window runs with nodeIntegration off and its import map names three browser modules, so a
+  // `node:` import anywhere in what the page loads stops the page at load. The shared home holds both
+  // kinds of module: the ones a page loads, and the ones (the kernel callers, deployment-panel.mjs) that
+  // only main, the backend and a terminal client load. Nothing else in this file tells them apart.
+  const { problems, seen } = pageGraph();
+  assert.deepEqual(problems, []);
+  // Not vacuous: the page's entry, a view, and the shared home through them were read.
+  for (const path of ["renderer/index.html", "renderer/shell.mjs", "renderer/views/hierarchy.mjs", `${HOME}/deployment-facts.mjs`, `${HOME}/instance-tree.mjs`]) assert.ok(seen.has(path), `${path} was read`);
+  const reached = [...seen].filter((path) => path.startsWith(`${HOME}/`));
+  assert.ok(reached.length > 20, `the page reaches the shared home (${reached.length} of its modules)`);
+  // The modules of the shared home that import a Node builtin are the ones the page must not reach.
+  const builtin = filesUnder(HOME).filter((path) => requestsOf(path, read(path)).some((spec) => spec.startsWith("node:")));
+  assert.ok(builtin.includes(`${HOME}/deployment-panel.mjs`) && builtin.includes(`${HOME}/cli-adapter.mjs`), "the shared home has modules for Node only");
+  assert.deepEqual(builtin.filter((path) => seen.has(path)), []);
+});
+
+test("inventory: the reader of the page's graph refuses a Node builtin, at any depth, and an unmapped bare import", () => {
+  const files = {
+    "renderer/index.html": '<script type="importmap">{ "imports": { "marked": "../node_modules/marked/lib/marked.esm.js" } }</script>\n<script type="module" src="shell.mjs"></script>',
+    "renderer/shell.mjs": 'import { marked } from "marked";\nimport { text } from "../../client/facts.mjs";\nexport const shell = [marked, text];\n',
+    "renderer/views/one.mjs": 'import { shell } from "../shell.mjs";\nexport const one = shell;\n',
+    "../client/facts.mjs": "export const text = 1;\n",
+  };
+  const graph = (changes = {}) => { const tree = { ...files, ...changes }; return pageGraph((path) => tree[path], (path) => Object.hasOwn(tree, path), ["renderer/views/one.mjs"]); };
+  assert.deepEqual(graph().problems, []);
+  assert.deepEqual([...graph().seen].sort(), ["../client/facts.mjs", "renderer/index.html", "renderer/shell.mjs", "renderer/views/one.mjs"]);
+  // In the shared module the page imports, which is the case this rule is for; in a view; in the page's entry.
+  assert.deepEqual(graph({ "../client/facts.mjs": 'import { dirname } from "node:path";\nexport const text = dirname;\n' }).problems,
+    ['../client/facts.mjs: imports "node:path", a Node builtin: the page is a browser page and cannot load it']);
+  assert.match(graph({ "renderer/views/one.mjs": 'import { readFileSync } from "node:fs";\nexport const one = readFileSync;\n' }).problems[0], /^renderer\/views\/one\.mjs: imports "node:fs"/);
+  assert.match(graph({ "renderer/shell.mjs": 'export const shell = () => import("node:os");\n' }).problems[0], /^renderer\/shell\.mjs: imports "node:os"/);
+  // A builtin without its prefix, or any package the import map does not name, cannot load either.
+  assert.deepEqual(graph({ "renderer/shell.mjs": 'import { dirname } from "path";\nexport const shell = dirname;\n' }).problems, ['renderer/shell.mjs: imports "path", which the page\'s import map does not name']);
+  // A module of the shared home that the page does not import may import what it likes.
+  assert.deepEqual(graph({ "../client/panel.mjs": 'import { dirname } from "node:path";\nexport const panel = dirname;\n' }).problems, []);
+});
+
 test("inventory: in the shared home only the collector's entry imports own-environment.mjs", () => {
   // own-environment.mjs changes the environment of whoever imports it (#602). It is the first import
   // of a program's entry (test/cli-environment.test.mjs pins the order); a library that imported it

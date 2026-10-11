@@ -41,7 +41,7 @@ test("a session backend OATS no longer has: Start is listed, not enabled, with t
 
 test("a home the kernel holds: nothing while it spawns, Retire alone when a spawn or a retire left it half cleaned", () => {
   const spawning = { ...LOCAL, running: false, spawnInProgress: true };
-  assert.deepEqual(instanceActs(spawning), { blocked: { code: "held", kind: "spawning", sentence: "dev-one is setting up its worktree. It opens once the spawn finishes." }, limited: null, acts: [] });
+  assert.deepEqual(instanceActs(spawning), { blocked: { code: "held", kind: "spawning", sentence: "dev-one is setting up its worktree. It can't be used until the spawn finishes." }, limited: null, acts: [] });
   assert.deepEqual(instanceActs({ ...LOCAL, running: false, rollbackIncomplete: true }),
     { blocked: null, limited: { code: "held", kind: "spawn-incomplete", sentence: "The spawn of dev-one didn't finish. Retire it to clean up." }, acts: [on("retire")] });
   assert.deepEqual(instanceActs({ ...LOCAL, running: true, retirePending: true }),

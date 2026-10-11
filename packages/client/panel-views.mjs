@@ -1,0 +1,286 @@
+/** The deployments a client serves and the workspace views over them (#482, workspace-views.mjs; #855, 1d):
+ * what the switcher lists, what a panel holds, and which deployment a request is addressed to.
+ * A view is one per matched workspace identity, plus one per unattached deployment under that
+ * deployment's own id. Everything is built per call from what the client holds; never a CLI read.
+ *
+ * No state. Every function that reads what a client holds takes it as its first argument, `held`,
+ * reads it and never changes it. The client builds one per call from its own store:
+ *
+ *   held = {
+ *     ctxs,              // string[]: this machine's deployments, in served order
+ *     snapshot,          // { byWs: Map<deployment id, entry | remote panel> } (deployment-panel.mjs entries)
+ *     remoteGroups,      // the last readable remote roster's groups (remote-roster.mjs)
+ *     remembered,        // the remembered remote identities: an object with get(id), note(id), all()
+ *     rosterAnswered,    // boolean: a roster answer arrived under the current CLI
+ *     rosterFailure,     // string | null: the roster read's failure while no answer has arrived
+ *     cli,               // the kernel record (cli-locator.mjs)
+ *     observing,         // Set<deployment id>: a read in flight
+ *     remoteCollecting,  // boolean: the remote roster is being read
+ *     home,              // string: the user's home directory, for the short label
+ *     at,                // string: the ISO time of this call
+ *   }
+ *
+ * These functions read no clock: the one time they stamp is `held.at`, and the same `held` gives the
+ * same answer. A remote deployment's panel is remote-roster.mjs `remotePanel`, made at `held.at`; what
+ * a remote roster's answer becomes is that module's.
+ *
+ * `remembered` is the client's own store, passed in: this module calls its three reading methods and
+ * keeps nothing. `note(id)` answers the sentence left for a machine that moved to another workspace,
+ * or null. The store's writing method is never called from here.
+ *
+ * A function that reaches a sentence or a label takes the client's terms (client-terms.mjs) after its
+ * required arguments and before its optional ones, and throws without them.
+ *
+ * Not for a page: this module imports `node:path`, and so does deployment-panel.mjs. */
+import { basename } from 'node:path';
+import { remoteWorkspace, remotePanel } from './remote-roster.mjs';
+import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts } from './workspace-views.mjs';
+import { shortPath, deploymentLabel } from './deployment-label.mjs';
+import { deploymentUnavailableText } from './deployment-facts.mjs';
+import { publicDeployment } from './deployment-panel.mjs';
+import { teamMembers } from './team-members.mjs';
+import { requireTerms } from './client-terms.mjs';
+
+/** Roots come ONLY from the kernel's observed `status.root`; before (or
+ * without) an observation there is nothing to act on. No layout guess. */
+export function workspaceEntry(held, ctx) {
+  const deployment = held.snapshot.byWs.get(ctx)?.deployment;
+  const observed = deployment?.status === "observed";
+  return { id: ctx, name: (observed && deployment.workspace?.name) || basename(ctx) || ctx, scope: ctx, team: null,
+    roots: observed ? [deployment.root] : [] };
+}
+/** Every served deployment, in served order: the local deployments, then the
+ * remote roster groups, then (only while there is no roster answer at all) the remembered remote
+ * groups, which have no rows. An id here is a deployment id: every instance-addressed route
+ * resolves only these. */
+export function deployments(held) {
+  return [...held.ctxs.map((ctx) => workspaceEntry(held, ctx)), ...held.remoteGroups.map(remoteWorkspace), ...rememberedGroups(held).map(remoteWorkspace)];
+}
+
+/** Remembered remote groups shown only while no roster answer exists: not reached, no rows (Q3). */
+export function rememberedGroups(held) {
+  if (held.rosterAnswered) return [];
+  const listed = new Set(held.remoteGroups.map((g) => g.id));
+  return held.remembered.all().filter((e) => !listed.has(e.id)).map((e) => ({
+    id: e.id, server: e.server, label: e.label, registrationPresent: true, remembered: true,
+    target: { workspace: e.path }, probe: { ok: false, error: { code: "E_REMOTE_ROSTER", message: held.rosterFailure || "no roster answer" } },
+    agentsRoot: undefined, workspace: null, souls: [], instances: [], retireFailures: [],
+  }));
+}
+const cliReadsRemotes = (held) => !!held.cli.ok && !!held.cli.remote?.includes("roster");
+const identityFeature = (held) => !!held.cli.features?.includes("workspace-identity");
+/** One deployment's identity, attachment, machine label and reason. */
+export function deploymentInfo(held, d, terms) {
+  requireTerms(terms, 'deploymentInfo');
+  if (!d.remote) {
+    const entry = held.snapshot.byWs.get(d.id), observed = entry?.deployment;
+    const live = observed?.status === "observed";
+    // A failed re-read kept the last observation (deployment-panel.mjs `failedEntry`): its identity still places
+    // it in its view, but it is stale, not live, and says why. Still reachable: this computer's own deployment.
+    const readError = live && typeof entry.error === "string" ? entry.error : null;
+    const read = !live ? { status: "none" } : !identityFeature(held) ? { status: "feature" }
+      : observed.reachable?.identityInvalid ? { status: "invalid" } : readIdentity(observed.reachable);
+    const identity = read.status === "identity" ? read.identity : null;
+    const attach = attachment(identity);
+    // Not observed (yet): the reading or unavailable sentence, never a silent empty.
+    const unavailable = live ? null : deploymentUnavailableText(observed || { status: "pending" }, terms);
+    return { id: d.id, local: true, machine: terms.thisMachine, path: d.id, label: shortPath(d.id, { home: held.home }), name: d.name,
+      live: live && !readError, reachable: live, ...(readError ? { stale: true } : {}), identityFrom: identity ? "reported" : null, identity, attach,
+      teamLabel: identity?.defaultTeam?.label ?? null,
+      ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable, readError }, terms)),
+      note: attach.note === "standalone" ? deploymentReason({ local: true, attach: { unattached: "standalone" } }, terms) : null };
+  }
+  const g = d.group, machine = g.label || g.server;
+  const reached = g.probe?.ok === true;
+  let read = reached ? (identityFeature(held) ? readIdentity(g.workspace) : { status: "feature" }) : { status: "none" };
+  let identityFrom = read.status === "identity" ? "reported" : null;
+  if (!reached && (g.remembered || held.remembered.get(g.id))) {
+    const memory = held.remembered.get(g.id);
+    if (memory) { read = { status: "identity", identity: memory.workspace }; identityFrom = "remembered"; }
+  }
+  const identity = read.status === "identity" ? read.identity : null;
+  const attach = attachment(identity);
+  const reason = reasonFields(deploymentReasonParts({ local: false, machine, sshHost: g.target?.sshHost, probe: g.probe, identityStatus: read.status, attach,
+    ref: identity?.ref, cliReadsRemotes: cliReadsRemotes(held), rosterError: g.remembered ? held.rosterFailure : null }, terms));
+  const moved = held.remembered.note(g.id);
+  const standalone = attach.note === "standalone" ? deploymentReason({ local: false, attach: { unattached: "standalone" } }, terms) : null;
+  return { id: d.id, local: false, machine, path: g.target?.workspace || "", label: shortPath(g.target?.workspace || ""), name: d.name,
+    live: reached, reachable: reached, identityFrom, identity, attach, teamLabel: identity?.defaultTeam?.label ?? null,
+    ...reason, note: [moved, standalone].filter(Boolean).join(" ") || null };
+}
+/** A reason's parts as a deployment's fields: `reason` (the full sentence), `short` and `fix` (UI spec, #482). */
+export function reasonFields(parts) {
+  return parts ? { reason: parts.detail, short: parts.short, fix: parts.fix } : { reason: null, short: null, fix: [] };
+}
+/** The views and the per-deployment facts they rest on: `{ views, infos: Map<deploymentId, info> }`. */
+export function viewModel(held, terms) {
+  requireTerms(terms, 'viewModel');
+  const infos = new Map(deployments(held).map((d) => [d.id, deploymentInfo(held, d, terms)]));
+  const views = buildViews([...infos.values()]).map((v) => {
+    const unattachedReason = v.unattached ? infos.get(v.primary)?.reason ?? null : null;
+    const unattachedShort = v.unattached ? infos.get(v.primary)?.short ?? null : null;
+    const ref = v.unattached ? infos.get(v.primary)?.identity?.ref ?? null : null;
+    return { ...v, ...(unattachedReason ? { reason: unattachedReason } : {}), ...(unattachedShort ? { short: unattachedShort } : {}), ...(ref ? { ref } : {}) };
+  });
+  return { views, infos };
+}
+/** The view a selector names: a view id, or a deployment id (answered with the view that holds it, so
+ * a selection saved before views opens its view). No selector means the first view. `model` is a
+ * view model already built for this call (`viewModel`); without one, it is built here. */
+export function viewFor(held, wsId, terms, model) {
+  requireTerms(terms, 'viewFor');
+  if (model === undefined) model = viewModel(held, terms);
+  if (!wsId) return model.views[0] || null;
+  return model.views.find((v) => v.id === wsId) || model.views.find((v) => v.deployments.includes(wsId)) || null;
+}
+/** A deployment-level surface (header, capabilities, sync, automations, schedules, teams configuration,
+ * brain, launch configurations, spawn catalog): a deployment id as itself, a view id as that view's
+ * PRIMARY deployment (its first local one, else its first). Never used for an instance-addressed route,
+ * which resolves deployment ids only (`deployments(held).find`), so a view id there is refused. */
+export function deploymentFor(held, wsId, terms) {
+  requireTerms(terms, 'deploymentFor');
+  const exact = wsId ? deployments(held).find((w) => w.id === wsId) : null;
+  if (exact) return exact;
+  const view = viewFor(held, wsId, terms);
+  return view ? deployments(held).find((w) => w.id === view.primary) || null : null;
+}
+/** A body that names an instance home (capabilities, launch configurations, schedules) addresses that
+ * instance: only an exact deployment id resolves it, never a view id. Anything else is deployment-level. */
+const namesInstance = (request) => request?.selector?.home !== undefined || request?.spec?.home !== undefined;
+export function surfaceDeployment(held, wsId, request, terms) {
+  requireTerms(terms, 'surfaceDeployment');
+  if (!wsId) return undefined; // these routes name their workspace: no selector is no workspace, never the first
+  return namesInstance(request) ? deployments(held).find((w) => w.id === wsId) : deploymentFor(held, wsId, terms);
+}
+/** The forge roster's context for a view (or a deployment id, read as its view): the union of its
+ * local deployments' rows and clones, under the view's id. */
+export function viewForgeContext(held, wsId, terms) {
+  requireTerms(terms, 'viewForgeContext');
+  const view = viewFor(held, wsId, terms);
+  if (!view) return { workspace: undefined, cli: held.cli, instances: [], clones: [] };
+  const local = view.deployments.filter((id) => held.ctxs.includes(id));
+  const observed = local.map((id) => held.snapshot.byWs.get(id)).filter(Boolean);
+  return { workspace: { id: view.id, name: view.name, remote: local.length === 0 }, cli: held.cli,
+    instances: observed.flatMap((o) => o.instances || []), clones: observed.flatMap((o) => o.deployment?.workspaceStatus?.clones || []) };
+}
+/** One deployment's own rows (never its view's union): what an instance-addressed request may admit. */
+export function deploymentRows(held, ws) {
+  return deploymentPanel(held, ws).instances || [];
+}
+/** The ids a client may let a caller select: every view id and every deployment id. */
+export function isServed(held, id, terms) {
+  requireTerms(terms, 'isServed');
+  const model = viewModel(held, terms);
+  return model.views.some((v) => v.id === id) || model.infos.has(id);
+}
+/** The members of a view's deployments only, each tagged with its deployment (Q5; team-members.mjs);
+ * null for a selector that names no view. */
+export function teamMembersFor(held, wsId, terms) {
+  requireTerms(terms, 'teamMembersFor');
+  const model = viewModel(held, terms);
+  const view = viewFor(held, wsId, terms, model);
+  if (!view) return null;
+  const members = view.deployments.map((id) => deployments(held).find((w) => w.id === id)).filter(Boolean);
+  return teamMembers({
+    deployments: members.filter((d) => !d.remote).map((d) => ({ deployment: deploymentTag(model.infos.get(d.id)), instances: held.snapshot.byWs.get(d.id)?.instances || [] })),
+    groups: members.filter((d) => d.remote).map((d) => ({ group: d.group, deployment: deploymentTag(model.infos.get(d.id)),
+      panel: held.snapshot.byWs.get(d.id) || remotePanel(d.group, held.at) })) });
+}
+
+/** A workspace's own machines (#517): the view's key, the deployment every
+ * machine call runs in and its messaging slot. The key is the one the view's primary local deployment
+ * reports (keyFrom "workspace" only; a matched view's deployments all share it); without one, or with no
+ * local deployment, `key` is null and `reason` says which. null for a selector that names no view. */
+export function machineScope(held, wsId, terms) {
+  requireTerms(terms, 'machineScope');
+  const model = viewModel(held, terms);
+  const view = viewFor(held, wsId, terms, model);
+  if (!view) return null;
+  const local = view.deployments.map((id) => model.infos.get(id)).find((info) => info?.local);
+  if (!local) return { key: null, deployment: null, messaging: null, reason: "no-local" };
+  const identity = local.identity;
+  const messaging = held.snapshot.byWs.get(local.id)?.deployment?.workspaceStatus?.defaults?.slots?.messaging?.name ?? null;
+  if (identity?.keyFrom !== "workspace" || typeof identity.key !== "string" || !identity.key) return { key: null, deployment: local.id, messaging, reason: "no-key" };
+  return { key: identity.key, deployment: local.id, messaging };
+}
+
+/** A deployment as the panel and the rows name it. */
+export const deploymentTag = (info) => ({ id: info.id, machine: info.machine, path: info.path });
+/** A deployment's entry in the panel's `deployments` list (roster-sections.mjs `deploymentState` reads one). */
+export function deploymentEntry(info, primary) {
+  return { ...deploymentTag(info), label: info.label, local: info.local, reachable: info.reachable,
+    identityFrom: info.identityFrom, primary: info.id === primary, ...(info.stale ? { stale: true } : {}),
+    ...(info.reason ? { reason: info.reason } : {}), ...(info.short ? { short: info.short } : {}),
+    ...(info.reason && info.fix?.length ? { fix: [...info.fix] } : {}), ...(info.note ? { note: info.note } : {}) };
+}
+
+/** One deployment's own panel, as served before views. */
+export function deploymentPanel(held, ws) {
+  if (ws?.remote) return { ...remotePanel(ws.group, held.at), observedAt: null, refreshing: held.remoteCollecting };
+  const observed = ws ? held.snapshot.byWs.get(ws.id) : null;
+  const instances = observed?.instances || [];
+  return {
+    workspace: ws ? { id: ws.id, name: ws.name, team: null } : null,
+    team: null,
+    deployment: publicDeployment(observed?.deployment),
+    generatedAt: observed?.generatedAt || held.at,
+    // When the kernel observed the remotes this roster rests on, and whether a newer
+    // observation of this deployment is running right now (a client labels stale data).
+    observedAt: observed?.observedAt ?? null,
+    refreshing: !!ws && held.observing.has(ws.id),
+    running: instances.filter((i) => i.running).length,
+    instances,
+    // A failed re-read kept the last observation (deployment-panel.mjs `failedEntry`): the kernel's message and its bounded cause.
+    ...(typeof observed?.error === "string" ? { error: observed.error } : {}),
+    ...(observed?.errorCause ? { errorCause: observed.errorCause } : {}),
+  };
+}
+
+/** Panel data is served from the latest observation and never blocks on a
+ * CLI read: a client's views and its readiness probes stay responsive. A view's panel is its
+ * primary deployment's panel (header, error, stamps) with the union of every deployment's rows,
+ * each row tagged with its deployment, and the view's deployments listed. */
+export function panelData(held, wsId, terms) {
+  requireTerms(terms, 'panelData');
+  const model = viewModel(held, terms);
+  const view = viewFor(held, wsId, terms, model);
+  const choices = workspaceChoices(held, terms, model);
+  if (!view) return { ...deploymentPanel(held, null), workspaces: choices, deployments: [] };
+  const members = view.deployments.map((id) => deployments(held).find((w) => w.id === id)).filter(Boolean);
+  const panels = members.map((d) => [d, deploymentPanel(held, d)]);
+  const [, primary] = panels.find(([d]) => d.id === view.primary) || panels[0];
+  const instances = panels.flatMap(([d, p]) => (p.instances || []).map((row) => ({ ...row, deployment: deploymentTag(model.infos.get(d.id)) })));
+  return {
+    ...primary,
+    // `primary`: the deployment a deployment-level request is addressed to (it echoes that deployment back).
+    workspace: { ...primary.workspace, id: view.id, name: view.name, primary: view.primary, ...(view.key ? { key: view.key, teamId: view.team } : {}) },
+    workspaces: choices,
+    deployments: view.deployments.map((id) => deploymentEntry(model.infos.get(id), view.primary)),
+    refreshing: panels.some(([, p]) => p.refreshing),
+    running: instances.filter((i) => i.running).length,
+    instances,
+  };
+}
+
+/** The switcher's list: views, not deployments. Each names its deployments (a client lets a caller
+ * select any of these ids); an unattached view keeps today's remote fields and says why. `model` is a
+ * view model already built for this call (`viewModel`); without one, it is built here. */
+export function workspaceChoices(held, terms, model) {
+  requireTerms(terms, 'workspaceChoices');
+  if (model === undefined) model = viewModel(held, terms);
+  return model.views.map((v) => {
+    const primary = deployments(held).find((w) => w.id === v.primary);
+    const remoteOnly = v.deployments.every((id) => !model.infos.get(id)?.local);
+    // Without the CLI's workspace-identity feature nothing can match: every deployment keeps its own entry, listed as
+    // before views, not as "not matched" (each deployment's own reason still says why).
+    const unmatched = v.unattached && identityFeature(held);
+    return { id: v.id, name: v.name, team: null, deployments: [...v.deployments],
+      // The deployments' labels, in the same order, for a view that is not on screen ("This Mac · ~/Agents/oats").
+      deploymentLabels: v.deployments.map((id) => deploymentLabel(model.infos.get(id), terms)),
+      // The switcher's one-liner (UI spec, #482): the machines, in order and once each, and how many deployments aren't live.
+      machines: [...new Set(v.deployments.map((id) => model.infos.get(id)?.machine).filter(Boolean))],
+      notLive: v.deployments.filter((id) => !model.infos.get(id)?.live).length,
+      ...(v.key ? { key: v.key } : {}), ...(unmatched ? { unattached: true } : {}), ...(unmatched && v.reason ? { reason: v.reason } : {}), ...(unmatched && v.short ? { short: v.short } : {}), ...(unmatched && v.ref ? { ref: v.ref } : {}),
+      ...(remoteOnly && primary?.remote ? { server: primary.server, remote: true } : {}) };
+  });
+}

@@ -11,6 +11,7 @@ import { dirname, resolve } from 'node:path';
 import * as remote from '../../client/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
 import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
+import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry } from '../../client/deployment-panel.mjs';
 
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/desktop-facts/${name}.json`, import.meta.url), 'utf8'));
 const old = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
@@ -76,8 +77,7 @@ test('status → /api/panel: startedAt, modelFrom and identityAddress travel wit
   const roster = deploymentStatusData(fx('status'), DEPLOYMENT);
   const row = roster.agents.flatMap(a => a.instances)[0];
   assert.deepEqual([row.startedAt, row.modelFrom, row.identityAddress, row.model], [null, 'spawn', null, 'fixture-model']);
-  const m = source.match(/\/\* OATSWEB_PANELPROJ_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_PANELPROJ_END \*\//);
-  const project = new Function('dirname', m[1] + '\nreturn projectPanelInstance;')(dirname);
+  const project = panelInstance;
   const panel = project({ ...row, agentsRoot: roster.root });
   assert.deepEqual([panel.startedAt, panel.modelFrom, panel.identityAddress], [null, 'spawn', null]);
   const legacy = project({ ...row, agentsRoot: roster.root, startedAt: undefined, modelFrom: undefined, identityAddress: undefined });
@@ -87,7 +87,7 @@ test('status → /api/panel: startedAt, modelFrom and identityAddress travel wit
 test('/api/agents: spawnable + problem and file; no harness/model default', () => {
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
   const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor',
-    `${source.slice(start, end)}; return agentsData;`);
+    `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const roster = deploymentStatusData(fx('status'), DEPLOYMENT), catalog = soulsData(fx('souls'));
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: 'observed', root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s),
     catalog: { souls: catalog.souls, ambiguous: [], reason: null } } }]]) };
@@ -122,16 +122,17 @@ test('status: a valid waitingOnYou passes validated, an invalid one becomes null
 
 function observeWith(features, instance) {
   const fn = name => { const found = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`)); assert.ok(found, name); return found[0]; };
-  const m = source.match(/\/\* OATSWEB_PANELPROJ_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_PANELPROJ_END \*\//);
   const roster = { root: '/d/agents', agents: [{ name: 'dev', description: '', team: null, instances: [instance] }], withheld: [] };
   const context = {
     snapshot: { byWs: new Map() }, cliState: { probedAt: 1, features }, admitted: new Set(['/d']), BACKGROUND_MAX_AGE: 60, observing: new Set(),
     soulCatalog: { prefetch() {}, settle: () => ({ entry: null, pending: null }) }, capabilityCatalog: { prefetch() {}, ensure() {} },
     deploymentObserver: { observe: async () => ({ ok: true, roster, workspaceStatus: { workspace: {} }, observedAt: '2026-10-03T10:00:00.000Z' }) },
-    soulCatalogKey: () => null, catalogProjection: () => null, attachCatalog() {}, dirname,
-    observeLivenessRows: async rows => rows.map(() => ({ running: true, runtimeState: 'running', tmux: null })), Date, String,
+    soulCatalogKey: () => null, catalogProjection: () => null, attachCatalog() {},
+    // The shared home's functions, as the server imports them; the collector is a double that prints its answers.
+    rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry,
+    runLivenessCollector: async input => JSON.stringify(input.map(() => ({ running: true, runtimeState: 'running', tmux: null }))), Date, String,
   };
-  const run = runInNewContext(`${m[1]}\n${fn('observeDeployment')}\nobserveDeployment`, context);
+  const run = runInNewContext(`${fn('observeDeployment')}\nobserveDeployment`, context);
   return run('/d').then(entry => JSON.parse(JSON.stringify(entry)).instances[0]);
 }
 

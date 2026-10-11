@@ -13,7 +13,8 @@ import { soulInstructionsCSS } from "../soul-instructions.mjs";
 import { capabilitySelector, sameSelector } from "../../../client/capability-show-contract.mjs";
 import { MARKDOWN_CSS } from "./markdown.mjs";
 import { runtimeState } from "../../../client/instance-presentation.mjs";
-import { deploymentUnavailableText } from "../deployment-header.mjs";
+import { deploymentUnavailableText } from "../../../client/deployment-facts.mjs";
+import { DESKTOP_TERMS } from "../desktop-terms.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { SPAWN_DIALOG_KEYS, SPAWN_JUMPS, registerSpawnDialogKeys, ariaKeyShortcuts } from "../spawn-dialog-keys.mjs";
 import { pendingPlacement } from "../spawn-jobs.mjs";
@@ -841,7 +842,7 @@ function renderGrid(s, { restoreFocus = true } = {}) {
     // An unobserved deployment is not an empty one: say why (a missing
     // advertised feature is named; a kernel refusal keeps its code/message).
     empty.textContent = s.souls.agents.length ? "Nothing matches the filter."
-      : unobserved ? deploymentUnavailableText(s.deployment) : "No souls are materialized in this deployment yet.";
+      : unobserved ? deploymentUnavailableText(s.deployment, DESKTOP_TERMS) : "No souls are materialized in this deployment yet.";
     grid.append(empty);
     return;
   }

@@ -15,6 +15,9 @@ import { capabilityShowUnreadable } from "../packages/client/capability-show-con
 import { deploymentReasonParts, deploymentReason } from "../packages/client/workspace-views.mjs";
 import { deploymentLabelParts, deploymentLabel, machineLabels, machineLabelParts } from "../packages/client/deployment-label.mjs";
 import { rosterSections } from "../packages/client/roster-sections.mjs";
+import { deploymentUnavailableText } from "../packages/client/deployment-facts.mjs";
+import { deploymentInfo, viewModel, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, isServed, teamMembersFor, machineScope, panelData,
+  workspaceChoices } from "../packages/client/panel-views.mjs";
 
 /** The two clients' values (specs: the Desktop's are its words today; the TUI's are #855's). */
 const DESKTOP = { name: "Desktop", self: "this Desktop", selfInitial: "This Desktop", update: "OATS Desktop", thisMachine: "This Mac" };
@@ -128,6 +131,23 @@ function reasonInputs() {
 const REASON_INPUTS = reasonInputs();
 const DEPLOYMENTS = [undefined, null, {}, { machine: "altair" }, { label: "~/Agents/oats" }, { machine: "altair", label: "~/Agents/tsm" }];
 const DEPLOYMENT_LISTS = [[{ id: "a", path: "/a/oats" }], [{ id: "a", path: "/a/oats" }, { id: "b", path: "/b/oats" }, { id: "c", machine: "altair", path: "/c/tsm" }]];
+/** Every branch of deploymentUnavailableText, by what the deployment is. */
+const UNOBSERVED = { "nothing": undefined, "pending": { status: "pending" }, "observed": { status: "observed" },
+  "feature": { status: "unavailable", reason: { code: "E_DEPLOYMENT_FEATURE", feature: "served-identity" } },
+  "code and message": { status: "unavailable", reason: { code: "E_CLI_FAILED", message: "boom" } },
+  "message": { status: "unavailable", reason: { message: "boom" } }, "no reason": { status: "unavailable" } };
+/** What a client holds (panel-views.mjs `held`): this machine's three deployments, each with a sentence or a label of
+ * its own. One reported a workspace that cannot be read, one is not read yet, one has a kernel without a feature. */
+const HELD = () => ({
+  ctxs: ["/a/oats", "/a/loose", "/a/old"],
+  snapshot: { byWs: new Map([
+    ["/a/oats", { deployment: { status: "observed", root: "/a/oats/agents", workspace: { name: "oats" }, workspaceStatus: {}, reachable: { reachable: true, identityInvalid: true }, withheld: [], souls: [] },
+      instances: [{ instance: "dev-1", agent: "dev", home: "/a/oats/agents/dev/instances/dev-1", running: true, identity: { alias: "dev-1", team: "aweb:oats" } }], generatedAt: "2026-10-11T12:00:00.000Z", observedAt: null }],
+    ["/a/old", { deployment: { status: "unavailable", reason: { code: "E_DEPLOYMENT_FEATURE", feature: "served-identity" } }, instances: [], generatedAt: "2026-10-11T12:00:00.000Z" }],
+  ]) },
+  remoteGroups: [], remembered: { get: () => null, note: () => null, all: () => [] }, rosterAnswered: true, rosterFailure: null,
+  cli: { ok: true, features: ["workspace-identity"], remote: ["roster"] }, observing: new Set(), remoteCollecting: false, home: "/a", at: "2026-10-11T12:00:00.000Z",
+});
 const ROWS = [{ instance: "dev-1", agent: "dev", home: "/a/oats/agents/dev/instances/dev-1", deployment: { id: "a" } },
   { instance: "dev-2", agent: "dev", home: "/c/tsm/agents/dev/instances/dev-2", deployment: { id: "c" } }];
 
@@ -169,6 +189,16 @@ async function everyAnswer(terms) {
     say(`machineLabels ${n}`, [...machineLabels(list, terms)]); say(`machineLabelParts ${n}`, [...machineLabelParts(list, terms)]);
     say(`rosterSections ${n}`, rosterSections(ROWS, ROWS, list, terms).map(({ label, machine, tail }) => ({ label, machine, tail })));
   });
+  for (const [what, deployment] of Object.entries(UNOBSERVED)) say(`deploymentUnavailableText ${what}`, deploymentUnavailableText(deployment, terms));
+  // The views over what a client holds: each deployment's facts, the switcher's list, and every view's panel.
+  const model = viewModel(HELD(), terms);
+  say("viewModel", { views: model.views, infos: [...model.infos.values()] });
+  say("workspaceChoices", workspaceChoices(HELD(), terms));
+  for (const id of HELD().ctxs) {
+    say(`deploymentInfo ${id}`, deploymentInfo(HELD(), { id, name: id }, terms));
+    say(`panelData ${id}`, panelData(HELD(), id, terms));
+    say(`teamMembersFor ${id}`, teamMembersFor(HELD(), id, terms));
+  }
   return answers;
 }
 
@@ -215,11 +245,12 @@ test("two clients at once: each answer is in its own client's words, and neither
   // The answers that differ between the two are the sentences that take a term, and no other: each of
   // them holds its own client's words. If one is hard-wired back it stops differing, and the list changes.
   const differing = [...first.keys()].filter((asked) => JSON.stringify(first.get(asked)) !== JSON.stringify(second.get(asked)));
-  const tables = new Set(differing.map((asked) => asked.replace(/^deploymentReasonParts .*$/, "deploymentReasonParts").replace(/ \d+$/, "")));
+  const tables = new Set(differing.map((asked) => asked.replace(/^deploymentReasonParts .*$/, "deploymentReasonParts").replace(/ \d+$/, "").replace(/ \/a\/\w+$/, "")));
   assert.deepEqual([...tables].sort(), [
     "capabilityShowUnreadable",
     "cliWorkspace E_WORKSPACE_FEATURE",
-    "deploymentLabel", "deploymentLabelParts", "deploymentReasonParts",
+    "deploymentInfo", "deploymentLabel", "deploymentLabelParts", "deploymentReasonParts", "deploymentUnavailableText feature",
+    "panelData", "teamMembersFor", "viewModel", "workspaceChoices",
     "lifecycleFailure E_CLI_OUTPUT_LIMIT", "lifecycleFailure E_CLI_PROTOCOL", "lifecycleFailure E_LIFECYCLE_UNAVAILABLE", "lifecycleFailure E_PLAN_LIMIT",
     "lifecycleReason E_CLI_OUTPUT_LIMIT", "lifecycleReason E_CLI_PROTOCOL", "lifecycleReason E_LIFECYCLE_UNAVAILABLE", "lifecycleReason E_PLAN_LIMIT",
     "machineLabelParts", "machineLabels", "rosterSections",
@@ -267,6 +298,19 @@ const TABLES = {
   machineLabels: (terms) => machineLabels([], terms),
   machineLabelParts: (terms) => machineLabelParts([], terms),
   rosterSections: (terms) => rosterSections([], [], [], terms),
+  deploymentUnavailableText: (terms) => deploymentUnavailableText({ status: "pending" }, terms),
+  // The views (panel-views.mjs): each refuses by its own name, also where it would build no sentence.
+  deploymentInfo: (terms) => deploymentInfo(HELD(), { id: "/a/oats", name: "oats" }, terms),
+  viewModel: (terms) => viewModel({ ...HELD(), ctxs: [] }, terms),
+  viewFor: (terms) => viewFor(HELD(), "/a/oats", terms, { views: [], infos: new Map() }),
+  deploymentFor: (terms) => deploymentFor(HELD(), "/a/oats", terms),
+  surfaceDeployment: (terms) => surfaceDeployment(HELD(), undefined, {}, terms),
+  viewForgeContext: (terms) => viewForgeContext(HELD(), "/a/oats", terms),
+  isServed: (terms) => isServed(HELD(), "/a/oats", terms),
+  teamMembersFor: (terms) => teamMembersFor(HELD(), "/a/oats", terms),
+  machineScope: (terms) => machineScope(HELD(), "/a/oats", terms),
+  panelData: (terms) => panelData(HELD(), "/a/oats", terms),
+  workspaceChoices: (terms) => workspaceChoices(HELD(), terms, { views: [], infos: new Map() }),
 };
 
 test("no terms: every table throws without them, and with an object clientTerms did not make", async () => {
@@ -309,7 +353,8 @@ test("what needs only the code needs no terms", () => {
 
 test("the shared home holds no terms of its own: none of its modules calls clientTerms", () => {
   const home = new URL("../packages/client/", import.meta.url);
-  for (const name of ["lifecycle-contract.mjs", "workspace-cli.mjs", "capability-show-contract.mjs", "workspace-views.mjs", "deployment-label.mjs", "roster-sections.mjs"]) {
+  for (const name of ["lifecycle-contract.mjs", "workspace-cli.mjs", "capability-show-contract.mjs", "workspace-views.mjs", "deployment-label.mjs", "roster-sections.mjs",
+    "deployment-facts.mjs", "panel-views.mjs"]) {
     const source = readFileSync(new URL(name, home), "utf8");
     assert.match(source, /import \{ requireTerms \} from '\.\/client-terms\.mjs';/, `${name} checks the terms it is given`);
     assert.doesNotMatch(source, /\bclientTerms\(/, `${name} makes terms of its own`);

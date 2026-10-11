@@ -10,7 +10,9 @@ export function remoteWorkspace(group) {
   };
 }
 
-export function remotePanel(group) {
+/** A remote deployment's panel. `at` is the time the panel is made, an ISO string: a caller that holds
+ * the time of its call passes it (panel-views.mjs passes `held.at`); without it the clock is read. */
+export function remotePanel(group, at = new Date().toISOString()) {
   const ws = remoteWorkspace(group);
   // A row's soul subtitle: its own group's soul list only, a string as the host reported it, never synthesized.
   const described = name => { const soul = (group.souls || []).find((a) => a?.name === name); return typeof soul?.description === "string" ? soul.description : null; };
@@ -35,7 +37,7 @@ export function remotePanel(group) {
   return {
     workspace: { id: ws.id, name: ws.name, scope: ws.scope, team: null, server: ws.server,
       remote: true, registrationPresent: ws.registrationPresent === true },
-    team: null, generatedAt: new Date().toISOString(),
+    team: null, generatedAt: at,
     running: instances.filter((i) => i.running).length, instances,
     error: group.probe.ok ? null : group.probe.error?.message || "Server is unreachable",
   };

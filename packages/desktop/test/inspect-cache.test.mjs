@@ -248,8 +248,9 @@ test('observeMutation (server) invalidates the inspections held under the worksp
   const invalidated = [], refreshed = [];
   const deployments = () => [{ id: '/local', scope: '/local' }, { id: 'remote:g', scope: '/remote/member', remote: true, server: 'hetzner' }];
   const previews = [];
-  const observeMutation = new Function('deployments', 'inspectCache', 'spawnPreviewCache', 'refreshSnapshot', `${source.slice(start, end)}\nreturn observeMutation;`)(
-    deployments, { invalidate: scope => invalidated.push(scope) }, { invalidate: id => previews.push(id) }, options => { refreshed.push(options); return Promise.resolve(); });
+  // The server passes what it holds to the shared `deployments`; this double reads none of it.
+  const observeMutation = new Function('deployments', 'held', 'inspectCache', 'spawnPreviewCache', 'refreshSnapshot', `${source.slice(start, end)}\nreturn observeMutation;`)(
+    deployments, () => null, { invalidate: scope => invalidated.push(scope) }, { invalidate: id => previews.push(id) }, options => { refreshed.push(options); return Promise.resolve(); });
   await observeMutation('/local'); await observeMutation('remote:g'); await observeMutation('unknown');
   assert.deepEqual(invalidated, ['/local', '/remote/member'], 'by scope: the key inspections are stored under');
   assert.deepEqual(previews, ['/local', 'remote:g', 'unknown'], 'the held spawn previews go by workspace ID: the key they are stored under');
