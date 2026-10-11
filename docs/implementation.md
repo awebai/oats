@@ -77,6 +77,8 @@ from it, and the test lists the stable surface a second client may import.
 | `errors.mjs` | `oatsError`, and the door of the lifecycle verbs: `isKernelCode` (the shape of a kernel code, `^E_[A-Z0-9_]+$`, never a list of codes), `kernelCode`, `asKernelError` and `errorCause`. An answer of `oats retire`, `oats instance stop`, `oats session` and `oats worktree` carries a kernel code, or one of the two names every command answers as they are (`OWN_NAME_FAILURES`: `unsafe-config-key`, `unsafe-config-value`), and no other: `isAnswerCode` is what the door and its wrappers keep, `isKernelCode` stays the test of the shape. An error of the system's or of Node's, a refusal written as a plain `Error` without a code, and a defect (`isDefect`: a `TypeError` and its like without a code, or a thrown value that is no `Error`), is wrapped at the boundary (`bin/oats.mjs` `lifecycleFail`; in a retire, `core.mjs` `retireClaimed`, which also says what the retire had done by then) and its own code goes to `details.cause` (a defect's name does; a plain `Error` without a code has no cause, and is answered with the general code and its message alone, which is what an ordinary refusal of `tmux`, `git` or the kernel itself must read as). New code that answers an error tests the shape with these, never `e.code \|\| "E_…"`: a system error has a `code` too. Whoever ends an error's way up prints the stack of a defect with `reportDefect`: the door, and any code that turns a caught error into a row of results (a stop's `results[]`, a retire's `childrenStopped[]`), after which nobody else can |
 | `claim.mjs` | the claim: one file naming, by pid and start time, the process doing something that happens once at a time; taken over when its holder is verifiably gone, never when that cannot be read. Synchronous. Held by `oats worktree add\|remove` per purpose (`worktree.mjs`) and by `oats retire` per home (`core.mjs`, `retireInstance`). Its loop has one rule: every pass that does not take the claim falls through one check of its time and one pause, so no state of the path makes it spin. Each caller words the refusals (`busy`, `unreadableClaim`, `cannotTakeOver`, `ownStartUnreadable`) |
 | `worktree-hooks.mjs` | the `worktree` event's runner (cwd the tree, detached process group, log under `.oats/logs/`, fixed timeout, interrupt handling), process identity by pid and start time, and the credential-free `origin` URL. Two questions, two functions: `processStart` says whose a pid is (a zombie still holds its pid and start, which is what proves a recorded process group), `processLiveness` says whether the `oats` command a record names can still act (a zombie cannot: it is gone). Ask `processLiveness` only about an `oats` command's own process, never about a hook's or a harness's pid. `runPs` is the one way the kernel calls `ps` where an identity is read: the program, the fixed environment and how the answer is classified |
+| `system-tools.mjs` | `systemTool`: a program the kernel runs from the system directories (`SYSTEM_TOOL_DIRS`), never from the caller's `PATH`. `ps` runs on the same directories: `worktree-hooks.mjs`'s `PS_ENV` takes its `PATH` from them |
+| `tmux-server-scope.mjs` | whether the OATS tmux server starts in a systemd scope of its own: the creator's cgroup judged (Linux, inside a `.service`, unified hierarchy), the scope's name and the warning when it cannot |
 | `tmux-config.mjs`, `session-*.mjs` | the tmux session backend and terminal input |
 | `login-environment.mjs` | the user's login environment a server OATS starts gets: the login shell's answer as one nonce-framed block on its stdout, bounded and accepted only whole ([execution targets](execution-targets.md#the-servers-start-environment)) |
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation (launch environment, hooks, `retirement`) as problems and warnings (`manifestContract`: an unknown, non-required hook event is a warning every reader reports), the hook environment rules, the readiness wire |
@@ -406,6 +408,23 @@ and acts on every existing session through its recorded socket
   `list-windows`, `new-window` (a window id) and `set-option`.
 - A server a test starts is killed by its socket, never by name and never
   with a bare `tmux kill-server`.
+- A test never reaches the host's `systemd-run` (#915). A Linux creator
+  inside a systemd service starts the server through the system's own
+  `systemd-run`, found by absolute path, not on `PATH`, so a fake-free `PATH`
+  does not stop it. The fixtures (`isolateSessionEnvironment`, `fixtureEnv`)
+  therefore set `OATS_TEST_CGROUP` to a scope, never a service, whatever runs
+  the suite. Two test-only seams select where the kernel judges itself and
+  which `systemd-run` it runs:
+  - `OATS_TEST_CGROUP`: the text of a `/proc/self/cgroup`, judged as Linux;
+  - `OATS_TEST_SYSTEM_TOOL_DIRS`: absolute directories separated by `:`, in
+    place of `/usr/bin:/bin`. Any other value means no system tool, never a
+    `PATH` lookup.
+
+  Both are reserved launch names (a launch configuration cannot set them),
+  are removed from a server's environment, and are stripped from the tick's
+  children like every reserved name. In process, `io.cgroup`, `io.platform`,
+  `io.invocationId` and `io.systemToolDirs` do the same for
+  `ensureOatsTmuxSession`.
 - A test that needs a terminal (an attached tmux client, a key press) runs
   the command in a pane of a second private server and types at that pane
   with `send-keys`; the pane's shell records the exit status

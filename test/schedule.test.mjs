@@ -335,6 +335,27 @@ test("a command job runs an oats-only argv in its cwd and tracks the instance th
   assert.equal(S.jobLockInfo(ws, "broken"), null);
 });
 
+test("a wake that starts its session records the start's warnings; the delivery after it keeps none (schedule-run-warnings)", () => {
+  const ws = workspace();
+  const h = home(ws, "dev-warned");
+  const warning = "the OATS tmux server was started inside oats-schedule-tick.service: it ends when that unit stops; start the OATS tmux server from your own shell, or enable the user systemd bus (no executable systemd-run in /usr/bin, /bin)";
+  let state = { present: false, state: "shell" };
+  const io = { inspect: () => state, start: () => ({ instance: "dev-warned", target: { backend: "tmux" }, warnings: [warning] }), input: () => ({ submitted: true }) };
+  S.addSchedule(ws, { id: "warned", cron: "*/15 * * * *", tz: "UTC", kind: "wake", home: h, message: "hello" });
+  const reg = S.readRegistry();
+  assert.equal(S.tickWorkspace(ws, { now: at("2026-09-07T09:15:00Z"), io, reg })[0].action, "started");
+  assert.deepEqual(S.describe(ws, "warned", io).lastRun.warnings, [warning]);
+  state = { present: true, state: "unknown" };
+  assert.equal(S.tickWorkspace(ws, { now: at("2026-09-07T09:16:00Z"), io, reg })[0].action, "delivered");
+  assert.equal("warnings" in S.describe(ws, "warned", io).lastRun, false, "the delivery is a later run: the start's warnings are not its own");
+  // A start with nothing to say records no warnings at all.
+  const quiet = { ...io, start: () => ({ instance: "dev-warned", target: { backend: "tmux" }, warnings: [] }) };
+  state = { present: false, state: "shell" };
+  assert.equal(S.tickWorkspace(ws, { now: at("2026-09-07T09:30:00Z"), io: quiet, reg })[0].action, "started");
+  assert.equal("warnings" in S.describe(ws, "warned", quiet).lastRun, false);
+  rmSync(h, { recursive: true, force: true });
+});
+
 test("wake-at-spawn helpers: flags translate to one object, save binds to the home, retirement forgets it", () => {
   const ws = workspace();
   const h = home(ws, "dev-worker");

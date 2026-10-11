@@ -44,7 +44,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
-             "lifecycle-kernel-codes"],
+             "lifecycle-kernel-codes","schedule-run-warnings"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -122,6 +122,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `server-probe-features` | `features` on `oats status --json` (this kernel's own list, as `version --json` answers it), and each `oats server roster --json` group's `probe.features`: the host's list, relayed from that status answer after validation, `null` when unknown, OATS 0.49.0 ([The remote roster](#the-remote-roster-oats-server-roster---json)) | |
 | `session-attach-detach-key` | `oats session attach … --detach-key <key>`, local and `--server`: the one key that detaches that viewer, and exit status 20 when it did, OATS 0.51.0 ([execution-targets.md](execution-targets.md#inspect-input-and-attach)). Gate on the probe and never try: a kernel without it ignores the flag and opens a viewer with no exit. A routed attach refuses a host without it (`E_REMOTE_INCOMPATIBLE`, `details: {"feature":"session-attach-detach-key"}`) | |
 | `lifecycle-kernel-codes` | `oats retire`, `oats instance stop`, `oats session …` and `oats worktree add\|remove` answer kernel codes only (`^E_[A-Z0-9_]+$`), in `error.code` and in the codes inside their results, with one exception: a document with an unsafe mapping key or value is refused under its own name, `unsafe-config-key` or `unsafe-config-value`, by these commands as by every other; `error.details.cause` on an error that has a code which is not a kernel code (`{code, syscall}`) and on a defect of the kernel (`{name}`), and none on a refusal that has no code, which is answered with the command's general code and its message alone ([The envelope](#kernel-codes)); `error.details.reached` on every error of a retire apply once the retire of the home has begun, and its absence before that ([`error.details.reached`](#retire-reached)), OATS 0.52.0. Gate on the probe: a kernel without it can answer one of these commands with a system code (`ENOENT`, `EACCES`), and an absent `reached` there says nothing | |
+| `schedule-run-warnings` | a schedule run's record (`lastRun`, `recentRuns[]`) and a trigger fire's record and `lastRun` carry `warnings?`, the launch answer's warnings, when it had some; OATS 0.52.0 ([schedules and triggers](#schedules-and-triggers)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -3893,6 +3894,12 @@ oats schedule update <id> --description=<text> [--dir <d>] --json
   - `session` is `{instance, home, incarnation, server, delivery: "launched"
     | "delivered-active" | "none"}`: recorded provenance, not a transcript
     reader.
+  - `warnings?` (feature `schedule-run-warnings`): the launch answer's
+    warnings, strings, present only when it had some (a spawn job's spawn, a
+    wake that started its session). For example, that the OATS tmux server
+    was started inside the tick's systemd service
+    ([execution targets](execution-targets.md#a-server-started-from-inside-a-systemd-service)).
+    A later run of the same record never keeps an earlier run's.
 - `nextDue` is "when it next runs" in every row (`null` when another host
   runs it); a schedule row also keeps `nextRun`.
 - **Integrity.** `oats-schedules.json` and `.agents/schedules/state.json` are
@@ -3951,7 +3958,9 @@ capability declares ([schedules.md](schedules.md#capability-sources)).
     distinct labels passed as `--provider <messaging cap> join=<labels>`; a
     soul without messaging refuses `E_TRIGGER_TEAMS {soul, teams}`.
   - `template?`: `{package, version, commit, template}`.
-  - `lastRun`: `{at, instance, home, event, number, subject, key}`
+  - `lastRun`: `{at, instance, home, event, number, subject, key, warnings?}`
+    (`warnings?`, feature `schedule-run-warnings`: the fire's spawn answer's
+    warnings, present only when it had some)
     (`subject`, 0.49.0: the event's subject, a PR's number as a string;
     for a run recorded before 0.49.0, its number; a capability source's
     run has `number: null`); `nextDue`: the next poll here, `null` before
