@@ -30,7 +30,7 @@ test("the shipped tolerance list is one structurally valid entry with captured p
   const [entry] = DEV_CHANNEL_ENTRIES;
   assert.equal(entry.text, normalizeScreen(raw296));
   assert.equal(entry.selected, "❯ 1. I am using this for local development");
-  assert.deepEqual(entry.provenance.map(p => [p.claudeVersion, p.platform]).sort(), [["2.1.289", "darwin-arm64"], ["2.1.296", "darwin-arm64"], ["2.1.296", "linux-arm64"]]);
+  assert.deepEqual(entry.provenance.map(p => [p.claudeVersion, p.platform]).sort(), [["2.1.288", "linux-x64"], ["2.1.289", "darwin-arm64"], ["2.1.296", "darwin-arm64"], ["2.1.296", "linux-arm64"]]);
   assert.ok(Object.isFrozen(entry) && Object.isFrozen(DEV_CHANNEL_ENTRIES));
   assert.doesNotThrow(() => validateDevChannelEntries(structuredClone(DEV_CHANNEL_ENTRIES)));
 });

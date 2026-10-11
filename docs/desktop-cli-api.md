@@ -1800,8 +1800,9 @@ A `--no-launch` spawn records no `launchPrompts`. Readers must treat
 including partial log availability; it is not a receive-readiness receipt.
 The `launch-prompt` event records the launch start and pane/PID identity, the
 Claude version read from the executable's real path (`claudeVersion`, a semver
-or `"unknown"`; `claudeVersionSource`, `"executable-path"` or `"unknown"`), the
-matched entry (`signatureId`) and digest, action and outcome; a miss adds
+or `"unknown"`; `claudeVersionSource`, `"executable-path"` or `"unknown"`; it is
+`"unknown"` when Claude is started through a wrapper, whose path carries no
+version), the matched entry (`signatureId`) and digest, action and outcome; a miss adds
 `differed`. It carries no `consentSource`. Intent is durable before input;
 submission (`submitted`, `failed`, `uncertain`) and an observed screen
 transition are distinct. Beyond `differed`'s bounded snippets, raw screen text

@@ -192,8 +192,8 @@ entry of the tolerance list: the confirmation's own text, exactly one channel
 (`plugin:aweb-channel@awebai-marketplace`), the affirmative option
 `1. I am using this for local development` with `❯` before it, option `2. Exit`
 without it, and nothing else on the screen. Matching does not depend on the pane
-width, the Claude binary or the platform: one entry covers Claude 2.1.289 and
-2.1.296 on macOS and Linux. A pane too narrow for Claude to wrap at word
+width, the Claude binary or the platform: one entry covers Claude 2.1.288,
+2.1.289 and 2.1.296 on macOS and Linux. A pane too narrow for Claude to wrap at word
 boundaries (about 40 columns for this prompt) does not match.
 
 **What it never does.** It sends one `Enter`, never another key, never a retry,
@@ -208,7 +208,9 @@ whole bound is `blocked: observation timeout`). The instance then waits for a pe
 (`E_SPAWN_INCOMPLETE`), the home records `launchPrompts.status: "blocked"`, and
 readiness shows the `launch-prompt` warning. Every attempt and outcome is a
 `launch-prompt` event carrying the Claude version read from the executable's
-path (`claudeVersion`, `claudeVersionSource`) and the entry it matched. What
+path (`claudeVersion`, `claudeVersionSource`) and the entry it matched; the
+version is `unknown` when Claude is started through a wrapper, whose path carries
+no version, so it informs and never decides. What
 follows the Enter is reported, never answered: see
 [launch completion](launch-prompt-completion.md).
 
