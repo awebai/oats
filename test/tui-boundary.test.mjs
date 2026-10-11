@@ -1,14 +1,16 @@
-// The boundaries of the terminal client (packages/tui, `oats tui`; awebai/oats#855 section 3.2).
+// The shape of the terminal client (packages/tui, `oats tui`; awebai/oats#855 section 3.2): where
+// the kernel loads it, which of its modules does what, and what of it is packed.
+// What may cross into it (which modules and exports of packages/client it may import, and that it
+// imports nothing else from outside itself) is test/client-boundary.test.mjs's, not this file's.
 // Every test here READS files and never imports them: on a checkout with every dependency
 // installed an import would simply succeed, and an import cannot see what a file names.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const TUI = join(ROOT, "packages/tui");
 const read = (path) => readFileSync(join(ROOT, path), "utf8");
 function filesUnder(dir, keep = (name) => name.endsWith(".mjs")) {
   const out = [];
@@ -52,26 +54,12 @@ test("no file under lib/ names packages/tui: the kernel does not know its client
   assert.deepEqual(naming, []);
 });
 
-test("only packages/tui/lib/client.mjs imports from the shared client home, and it names one module of it", () => {
+test("only packages/tui/lib/client.mjs imports from the shared client home", () => {
   for (const path of TUI_FILES) {
     const shared = staticImports(read(path)).filter((name) => /(^|\/)client\//.test(name) || /packages\/client/.test(name));
-    assert.deepEqual(shared, path === CLIENT ? ["../../client/display-text.mjs"] : [], path);
+    assert.equal(shared.length > 0, path === CLIENT, `${path} imports ${shared.join(", ") || "nothing"} from the shared home`);
   }
-  assert.equal(existsSync(join(ROOT, "packages/client/display-text.mjs")), true, "the module it names is there");
   for (const path of TUI_FILES.filter((p) => p !== CLIENT)) assert.doesNotMatch(code(read(path)), /packages\/client|\.\.\/client\//, `${path} names no reader path`);
-});
-
-test("no file in packages/tui imports anything but node: modules, its own files and that one path", () => {
-  for (const path of TUI_FILES) {
-    for (const name of staticImports(read(path))) {
-      if (name.startsWith("node:")) continue;
-      if (path === CLIENT && name === "../../client/display-text.mjs") continue;
-      assert.match(name, /^\.\.?\//, `${path} imports ${name}: not a node: module and not a relative path`);
-      const target = resolve(dirname(join(ROOT, path)), name);
-      assert.equal(relative(TUI, target).startsWith(".."), false, `${path} imports ${name}, outside packages/tui`);
-      assert.equal(existsSync(target), true, `${path} imports ${name}, which is not there`);
-    }
-  }
 });
 
 test("no file in packages/tui uses a dynamic import", () => {
