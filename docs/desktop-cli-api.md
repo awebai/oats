@@ -158,8 +158,9 @@ stdout (progress goes to stderr):
   [`oats server roster --json`](#the-remote-roster-oats-server-roster---json)).
   A kernel code is `E_` followed by upper-case letters, digits
   and underscores (`^E_[A-Z0-9_]+$`). The kernel tests that shape, not a list
-  of known codes, and the shape is enough: the kernel has no dependency, and
-  neither the system (`ENOENT`) nor Node (`ERR_…`) gives a code of that shape.
+  of known codes, and the shape is enough: no dependency of the kernel gives
+  an error whose code has that shape, and neither does the system (`ENOENT`)
+  or Node (`ERR_…`).
   An error that is not the kernel's is answered with the command's general
   code (`E_LIFECYCLE_FAILED`, `E_SESSION_FAILED`, or the one its section
   names). What the answer adds depends on the error:
