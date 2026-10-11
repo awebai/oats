@@ -22,6 +22,9 @@
 // spell the directory. And everywhere: the test reads, it does not run, so a loader built out of strings
 // (`eval`, `new Function`) is outside what it can see.
 //
+// A refusal says what to write instead, and that the rule is this test's: whoever meets one may be
+// changing lib/ or bin/, and need not know the shared home to get past it.
+//
 // Two things this test does not prove, and what does:
 //   * that a module of the home uses no DOM global (the modules use `window` and `document` as ordinary
 //     local names, so a name check cannot tell): test/client-loading.test.mjs loads every one under
@@ -256,13 +259,14 @@ function reading(T) {
  *   unreadable  an `import` or `export … from` that is none of the forms above, a specifier written with an escape,
  *               and a regular expression that spells a load
  *   ambiguous   a `/ … /` (its `text`) that may be a regular expression or two divisions, where the two readings do
- *               not ask for the same: one of them hides code from the other
+ *               not ask for the same: one of them hides code from the other. With `unchecked`, the file has more
+ *               readings than are checked, and `text` is the first such place of the reader's own reading
  */
 function requestsOf(source) {
   const readings = readingsOf(source), own = requestsIn(readings ? readings[0] : tokensOf(source));
   // Where the reader had to guess between a regular expression and two divisions, every reading must ask for the same.
   if (readings?.every((T) => JSON.stringify(requestsIn(T)) === JSON.stringify(own))) return own;
-  return [...own, { spec: null, form: "ambiguous", names: [], text: (readings ? readings[0] : tokensOf(source)).guesses[0].text }];
+  return [...own, { spec: null, form: "ambiguous", names: [], text: (readings ? readings[0] : tokensOf(source)).guesses[0].text, ...(readings ? {} : { unchecked: true }) }];
 }
 function requestsIn(T) {
   const { is, property, literal, oneLiteral } = reading(T), found = [];
@@ -393,12 +397,23 @@ function exportsIn(T) {
 const resolve = (from, spec) => posix.normalize(posix.join(posix.dirname(from), spec));
 const filesIn = (tree, dir) => [...tree.keys()].filter((path) => under(path, dir)).sort();
 
-/** What reading cannot judge, said once per file: a load that is not one string literal, an import that is no form the reader knows. */
+/** Whose rule a refusal is, for someone who meets one in a file that is not the shared home's. */
+const WHOSE = "The rule is packages/client's: test/client-boundary.test.mjs reads the files it judges, and its header says what it can read.";
+/** What to write instead, per refusal. */
+const INSTEAD = {
+  computed: 'Write the path as one string literal: import("./x.mjs").',
+  unreadable: 'Write it as import … from "x", export … from "x" or import("x"), with the path a plain string and no escape in it; and build a regular expression that spells import, export or require from a string: new RegExp("…").',
+  ambiguous: "Put parentheses around what is divided, or around the regular expression, so that it reads one way.",
+};
+/** What reading cannot judge, said once per file, each with what to write instead: a load that is not one string literal, an
+ * import that is no form the reader knows, a `/` that reads two ways, and more readings than are checked. */
 function unjudged(path, asked) {
   const ambiguous = asked.find((request) => request.form === "ambiguous");
-  return [...(asked.some((request) => request.form === "computed") ? [`${path}: loads a module by something other than one string literal`] : []),
-    ...(asked.some((request) => request.form === "unreadable") ? [`${path}: has an import or an export … from that this reader cannot read`] : []),
-    ...(ambiguous ? [`${path}: ${ambiguous.text} may be a regular expression or two divisions, and one reading would hide code from this reader`] : [])];
+  return [...(asked.some((request) => request.form === "computed") ? [`${path}: loads a module by something other than one string literal. ${INSTEAD.computed} ${WHOSE}`] : []),
+    ...(asked.some((request) => request.form === "unreadable") ? [`${path}: has an import or an export … from that this reader cannot read. ${INSTEAD.unreadable} ${WHOSE}`] : []),
+    ...(!ambiguous ? []
+      : ambiguous.unchecked ? [`${path}: has more possible readings than this reader checks: too many places where a / may start a regular expression or divide (the first is ${ambiguous.text}). ${INSTEAD.ambiguous} ${WHOSE}`]
+      : [`${path}: ${ambiguous.text} may be a regular expression or two divisions, and one reading would hide code from this reader. ${INSTEAD.ambiguous} ${WHOSE}`])];
 }
 
 /** packages/client: its own files and node: builtins, no Electron, one importer of own-environment.mjs, modules only. */
@@ -596,7 +611,7 @@ test("fixture, packages/client: an import that leaves the home fails (the Deskto
   breaks(homeProblems, { "packages/client/liveness.mjs": 'export { frame as collect } from "../tui/frame.mjs";\n' }, /leaves the shared home \(packages\/tui\/frame\.mjs\)$/);
   breaks(homeProblems, { "packages/client/liveness.mjs": 'export const collect = () => import("../../lib/core.mjs");\n' }, /leaves the shared home \(lib\/core\.mjs\)$/);
   breaks(homeProblems, { "packages/client/liveness.mjs": 'export const collect = new URL("../desktop/main.mjs", import.meta.url);\n' }, /leaves the shared home \(packages\/desktop\/main\.mjs\)$/);
-  breaks(homeProblems, { "packages/client/liveness.mjs": 'export const collect = (name) => import(`../desktop/${name}.mjs`);\n' }, /loads a module by something other than one string literal$/);
+  breaks(homeProblems, { "packages/client/liveness.mjs": 'export const collect = (name) => import(`../desktop/${name}.mjs`);\n' }, /loads a module by something other than one string literal\. Write the path as one string literal: /);
   breaks(homeProblems, { "packages/client/liveness.mjs": 'import { gone } from "./gone.mjs";\nexport const collect = gone;\n' }, /is packages\/client\/gone\.mjs, which does not exist$/);
 });
 
@@ -614,18 +629,18 @@ test("fixture, packages/client: an import is found wherever it stands, and a loa
   // Anything but one string literal: a string that only starts the path, a second argument, a template with a ${…}, a name.
   for (const load of ['import("../desktop/" + name + ".mjs")', 'import("../desktop/main.mjs", {})', 'import("./display-text.mjs", { with: { type: "json" } })', "import(`../desktop/${name}.mjs`)",
     "import(name)", 'import(/* a comment is not an argument */ name)', 'require("../desktop/" + name)', "require(name)", 'createRequire(import.meta.url)("yaml")'])
-    home(`export const collect = (name) => ${load};\n`, /^packages\/client\/liveness\.mjs: loads a module by something other than one string literal$/);
+    home(`export const collect = (name) => ${load};\n`, /^packages\/client\/liveness\.mjs: loads a module by something other than one string literal\. Write the path as one string literal: /);
   // An import that is no form the reader knows, a specifier that is not the text it loads, and a regular expression that spells a load.
-  const unreadable = /^packages\/client\/liveness\.mjs: has an import or an export … from that this reader cannot read$/;
+  const unreadable = /^packages\/client\/liveness\.mjs: has an import or an export … from that this reader cannot read\. Write it as /;
   home('import collect, = from "./display-text.mjs";\nexport { collect };\n', unreadable);
   home('import { displayLine as collect } from "\\x2e/display-text.mjs";\nexport { collect };\n', unreadable);
   home('export const collect = (name) => /import\\(name\\)/.test(name);\n', unreadable);
   assert.deepEqual(homeProblems(fixture({ "packages/client/liveness.mjs": 'export const collect = (name) => name++ / import("../desktop/main.mjs") / 2;\n' })),
-    ['packages/client/liveness.mjs: / import("../ may be a regular expression or two divisions, and one reading would hide code from this reader', 'packages/client/liveness.mjs: "../desktop/main.mjs" leaves the shared home (packages/desktop/main.mjs)']);
+    [`packages/client/liveness.mjs: / import("../ may be a regular expression or two divisions, and one reading would hide code from this reader. ${INSTEAD.ambiguous} ${WHOSE}`, 'packages/client/liveness.mjs: "../desktop/main.mjs" leaves the shared home (packages/desktop/main.mjs)']);
   // Where a `/` may be either (after a `}`, after `x++`, after `of`), both are read. One reading hiding a load the other shows is refused,
   // whichever of them is the code: here it is a regular expression and a string, and read as divisions it would be a load.
   home("export const collect = (o) => { for (const k of /'/.exec(o) ?? []) return 'import(\"../desktop/main.mjs\")'; };\n",
-    /^packages\/client\/liveness\.mjs: \/'\/ may be a regular expression or two divisions, and one reading would hide code from this reader$/);
+    /^packages\/client\/liveness\.mjs: \/'\/ may be a regular expression or two divisions, and one reading would hide code from this reader\. Put parentheses /);
   home("export const collect = (o) => { if (o) {} /'/.test(o); return 'require(\"yaml\")'; };\n", /: \/'\/ may be a regular expression or two divisions/);
   home("export const collect = (n) => n++ / 2 + '/' + 'import(\"yaml\")';\n", /: \/ 2 \+ '\/ may be a regular expression or two divisions/);
   // And what is not a load is not taken for one: spacing, a trailing comma, a template with nothing in it, a comment, a string, a property.
@@ -636,6 +651,47 @@ test("fixture, packages/client: an import is found wherever it stands, and a loa
     assert.deepEqual(allProblems(fixture({ "packages/client/liveness.mjs": `/* import x from "yaml" */\nexport const collect = (name) => ${fine};\n` })), [], fine);
   assert.deepEqual(requestsOf('const a = import( "./x.mjs" ), b = import("./y.mjs" + z), c = require("./w.cjs");'),
     [{ spec: "./x.mjs", form: "dynamic", names: [] }, { spec: null, form: "computed", names: [] }, { spec: "./w.cjs", form: "require", names: [] }]);
+});
+
+test("fixture: each refusal says what to write instead and whose rule it is, in the kernel too, and what it says to write passes", () => {
+  const whose = "The rule is packages/client's: test/client-boundary.test.mjs reads the files it judges, and its header says what it can read.";
+  const parentheses = "Put parentheses around what is divided, or around the regular expression, so that it reads one way.";
+  const said = (path, source) => allProblems(fixture({ [path]: source }));
+  // A load that is not one string literal: refused in the home and in the TUI. The kernel loads by computed paths, and may.
+  for (const path of ["packages/client/liveness.mjs", "packages/tui/frame.mjs"]) {
+    const name = path.endsWith("frame.mjs") ? "frame" : "collect";
+    assert.deepEqual(said(path, `export const ${name} = (file) => import("./" + file);\n`),
+      [`${path}: loads a module by something other than one string literal. Write the path as one string literal: import("./x.mjs"). ${whose}`]);
+    assert.deepEqual(said(path, `export const ${name} = () => import("./${path.endsWith("frame.mjs") ? "main" : "display-text"}.mjs");\n`), []);
+  }
+  assert.deepEqual(said("lib/helper.mjs", 'export const helper = (file) => import("./" + file);\n'), []);
+  // An import the reader cannot read, a path written with an escape, a regular expression that spells a load.
+  const unreadable = `lib/helper.mjs: has an import or an export … from that this reader cannot read. Write it as import … from "x", export … from "x" or import("x"), with the path a plain string and no escape in it; and build a regular expression that spells import, export or require from a string: new RegExp("…"). ${whose}`;
+  assert.deepEqual(said("lib/helper.mjs", "export const helper = (text) => /^import\\b/.test(text);\n"), [unreadable]);
+  assert.deepEqual(said("lib/helper.mjs", 'import { join } from "node\\x3apath";\nexport const helper = join;\n'), [unreadable]);
+  assert.deepEqual(said("lib/helper.mjs", 'export const helper = (text) => new RegExp("^import\\\\b").test(text);\n'), []);
+  assert.deepEqual(said("lib/helper.mjs", 'import { join } from "node:path";\nexport const helper = join;\n'), []);
+  // A `/` that reads two ways, where one of them hides a load: the text in question is quoted.
+  assert.deepEqual(said("bin/oats.mjs", "for (const k of /'/.exec(process.argv[2]) ?? []) console.log(k, 'import(\"./x.mjs\")');\n"),
+    [`bin/oats.mjs: /'/ may be a regular expression or two divisions, and one reading would hide code from this reader. ${parentheses} ${whose}`]);
+  assert.deepEqual(said("bin/oats.mjs", "for (const k of (/'/).exec(process.argv[2]) ?? []) console.log(k, 'import(\"./x.mjs\")');\n"), []);
+  assert.deepEqual(said("lib/helper.mjs", "export const helper = (n) => n++ / 2 + '/' + 'require(\"yaml\")';\n"),
+    [`lib/helper.mjs: / 2 + '/ may be a regular expression or two divisions, and one reading would hide code from this reader. ${parentheses} ${whose}`]);
+  assert.deepEqual(said("lib/helper.mjs", "export const helper = (n) => (n++) / 2 + '/' + 'require(\"yaml\")';\n"), []);
+  // More readings than are checked (64: six such places in a row are read every way, seven are not): a sentence of its own, with
+  // the first place. It gives no count: a place may only show in a reading that is not the reader's own.
+  const halves = (count, one) => `export const helper = (n) => [${Array(count).fill(one).join(", ")}];\n`;
+  assert.deepEqual(said("lib/helper.mjs", halves(6, "n++ / 2 / 1")), []);
+  assert.deepEqual(said("lib/helper.mjs", halves(7, "n++ / 2 / 1")),
+    [`lib/helper.mjs: has more possible readings than this reader checks: too many places where a / may start a regular expression or divide (the first is / 2 /). ${parentheses} ${whose}`]);
+  assert.deepEqual(said("lib/helper.mjs", halves(7, "(n++) / 2 / 1")), []);
+  assert.deepEqual(said("packages/client/liveness.mjs", halves(7, "n++ / 2 / 1").replace("helper", "collect")),
+    [`packages/client/liveness.mjs: has more possible readings than this reader checks: too many places where a / may start a regular expression or divide (the first is / 2 /). ${parentheses} ${whose}`]);
+  // One place in the reader's own reading, and seven more inside it when it is read the other way.
+  const seven = `/[${Array(7).fill("n++ / 2 / 1").join(", ")}]/`, inside = `export function helper(n) { if (n) {} ${seven}.test(n); }\n`;
+  assert.equal(tokensOf(inside).guesses.length, 1);
+  assert.deepEqual(said("lib/helper.mjs", inside),
+    [`lib/helper.mjs: has more possible readings than this reader checks: too many places where a / may start a regular expression or divide (the first is ${seven}). ${parentheses} ${whose}`]);
 });
 
 test("fixture, packages/client: each Electron name fails", () => {
@@ -692,8 +748,8 @@ test("fixture, packages/tui: a second import on a line is read like the first", 
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import { displayLine } from "../client/display-text.mjs"; import { discover } from "../client/cli-locator.mjs";\nexport const frame = () => [displayLine, discover];\n' },
     /^packages\/tui\/frame\.mjs: imports discover from cli-locator\.mjs, which is not on the stable surface$/);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (t) => t; export { discover } from "../client/cli-locator.mjs"\n' }, /imports discover from cli-locator\.mjs/);
-  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (name) => import("../client/" + name);\n' }, /loads a module by something other than one string literal$/);
-  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = () => import("../client/display-text.mjs", {});\n' }, /loads a module by something other than one string literal$/);
+  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (name) => import("../client/" + name);\n' }, /loads a module by something other than one string literal\. Write the path as one string literal: /);
+  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = () => import("../client/display-text.mjs", {});\n' }, /loads a module by something other than one string literal\. Write the path as one string literal: /);
   // Named, on one line, with what the surface lists: nothing to say.
   assert.deepEqual(allProblems(fixture({ "packages/tui/frame.mjs": 'import{displayLine}from"../client/display-text.mjs";import{PROBE_NAME as name}from"../client/cli-locator.mjs";export const frame=()=>[displayLine,name];' })), []);
 });
@@ -702,7 +758,7 @@ test("fixture, packages/tui: anything else it imports fails (a package, the Desk
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import blessed from "blessed";\nexport const frame = blessed;\n' }, /^packages\/tui\/frame\.mjs: imports "blessed", which is not a Node builtin/);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import { skeleton } from "../desktop/renderer/loading.mjs";\nexport const frame = skeleton;\n' }, /leaves packages\/tui for packages\/desktop\/renderer\/loading\.mjs, which is not the shared home$/);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import { core } from "../../lib/core.mjs";\nexport const frame = core;\n' }, /leaves packages\/tui for lib\/core\.mjs/);
-  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (name) => import(`../client/${name}.mjs`);\n' }, /loads a module by something other than one string literal$/);
+  breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = (name) => import(`../client/${name}.mjs`);\n' }, /loads a module by something other than one string literal\. Write the path as one string literal: /);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import { gone } from "./gone.mjs";\nexport const frame = gone;\n' }, /is packages\/tui\/gone\.mjs, which does not exist$/);
 });
 
