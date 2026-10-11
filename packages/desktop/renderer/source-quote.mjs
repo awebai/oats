@@ -4,6 +4,9 @@
  * group is labelled by its lead-in for assistive technology, and the difference is carried by the typeface,
  * the rule and the lead-in, not by colour.
  *
+ * One user quotes a text that is the kernel's: what a blocked launch differed in (launch-differed.mjs) sets
+ * the kernel's `expected` beside the terminal's `found`, each under its own lead-in, so the two read as a pair.
+ *
  * Every text is set with textContent: no markup, no link, no button, no tooltip is ever made from it.
  * Presentation only: what is shown here is never evidence of identity nor authority for an action. */
 import { displayLine, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';

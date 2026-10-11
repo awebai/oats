@@ -54,6 +54,25 @@ export function launchPromptDiffered(v) {
   if (!sides.every(s => typeof s === 'string' ? s.length <= DIFFERED_UNITS : own && s === null)) return undefined;
   return { nearest: v.nearest, index: d.index, expected: displayLine(d.expected), found: displayLine(d.found) };
 }
+/** What differed, as data for a view: the Desktop's lead-in, then the two texts, each under a lead-in of
+ * its own that names whose text it is. `found` is what a terminal showed, so it is shown as an attributed
+ * quote and never inside one of the Desktop's sentences; `expected` is the kernel's own text and gets the
+ * same line, so the two read as a pair. A side with nothing to show has a `note` instead of a `text`.
+ * `detail` (the nearest entry and the position) is for Details, never part of a sentence. Null when there is
+ * nothing decodable to say. Nothing is interpreted: no client decides from the two texts what the prompt
+ * was, whether a key is safe, or what to press. */
+export const DIFFERED_LEAD_IN = 'Where the screen first differed from the confirmation OATS answers:';
+export const DIFFERED_NO_TEXT = '(no visible text)';
+/** The background notice cannot hold an attributed quote: it says where one is. True whenever it shows:
+ * the kernel writes `differed` to the `launch-prompt` event in the step that puts it on the result. */
+export const DIFFERED_IN_ACTIVITY = 'Its Activity shows what OATS expected and what the terminal showed.';
+export function differedLines(v) {
+  const d = launchPromptDiffered(v);
+  if (!d) return null;
+  const line = (leadIn, text) => ({ leadIn, text, note: text === null ? DIFFERED_NO_TEXT : null });
+  return { leadIn: DIFFERED_LEAD_IN, lines: [line('OATS expected:', d.expected), line('The terminal showed:', d.found)],
+    detail: `Nearest entry ${displayLine(d.nearest)}, first difference at ${d.index}` };
+}
 const unknown = () => ({ status: 'unknown', answers: [], reason: LAUNCH_INSPECTION, receipt: [] });
 const within = v => new TextEncoder().encode(JSON.stringify(v)).length <= LAUNCH_DIAGNOSTIC_BYTES;
 export function launchPromptOutcome(v) {
