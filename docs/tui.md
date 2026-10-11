@@ -198,7 +198,7 @@ guesses nothing. It refuses:
 | names an action that does not exist | `unknown action …`, with the list of actions |
 | gives an action something that is not a list of strings | `… must be a list of key ids` |
 | has a string that is not a key | `the key … of … is not a key id` |
-| names a key whose character cannot be shown (a bidi override, a lone combining mark) | `… is a key the help cannot name` |
+| names a key whose character cannot be shown (a bidi override, a combining mark on a space) | `… is a key the help cannot name` |
 | gives one key to two actions, your lists and the kept keys together | `the key … is given to … and to …; a key does one thing` |
 | leaves `quit` with no key | `quit has no key; give it one` |
 

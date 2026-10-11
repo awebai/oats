@@ -28,7 +28,7 @@ export const MAX_PROBLEMS = 20;
 const plain = (name) => typeof name === "string" && PLAIN_NAME.test(name);
 /** Whether the footer and the help can name a key: its label is drawn as text from outside (the
  *  shared display filter), and a label that filter would change would name another key, or none.
- *  Such a key (a bidi override, a lone combining mark) is refused here, with the file named,
+ *  Such a key (a bidi override, a combining mark on a space) is refused here, with the file named,
  *  where a key the views cannot draw would otherwise be bound and never said. */
 const nameable = (key) => { const label = keyLabel(key); return displayLine(label) === label; };
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
