@@ -93,7 +93,7 @@ test("both verbs list at least the ten codes a client already read as a refusal 
 
 test("the Desktop's own set of refusals lies inside the kernel's list, for a stop and for a retire: it exports it as BEFORE_EFFECT_CODES, and every code in it is one the kernel answers only before any effect", async (t) => {
   // The module loads under plain Node, without the Desktop's own dependencies, as the other root
-  // tests that import from packages/desktop/server do (test/remote-parity.test.mjs): it needs no
+  // tests that import from packages/desktop/server do (test/desktop-trigger-sources-kernel.test.mjs): it needs no
   // `.integration.mjs` name (scripts/run-tests.mjs).
   const desktop = await import(`../${DESKTOP_MODULE}`);
   if (desktop.BEFORE_EFFECT_CODES === undefined) {
