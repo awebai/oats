@@ -8,7 +8,7 @@ import { gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { hostReason } from '../../client/remote-address.mjs';
 import { displayLine } from '../../client/display-text.mjs';
 import { object, lifecycleOptions, lifecyclePlan, lifecycleReceipt, stoppedTargets, planReference, lifecycleChoicesApplicable,
-  lifecycleFailure, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
+  lifecycleFailure, lifecycleReason, lifecycleDetailCode, answeringFeatures, busyHolder, busyHeadline, busyAbout, undescribedAnswer } from '../../client/lifecycle-contract.mjs';
 const clone = value => structuredClone(value);
 const cliIdentity = cli => JSON.stringify([cli?.bin, cli?.version, cli?.lifecycleApi,
   Array.isArray(cli?.features) ? [...cli.features].sort() : null]);
@@ -18,19 +18,40 @@ export function supportsLifecycle(cli, operation, apply = false) {
     && cli.features.includes('lifecycle-plans')
     && (!apply || operation !== 'retire' || cli.features.includes('retire-retention') && cli.features.includes('retire-home'));
 }
-// A routed command's router refuses E_REMOTE_INCOMPATIBLE, E_AMBIGUOUS and E_SNAPSHOT_UNKNOWN before
-// sending, and the host's own resolution refuses them (and E_HOME_MISMATCH) before any effect.
-const beforeEffect = new Set(['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
+/** The codes of an apply's error answer that Desktop reads as "refused, nothing was done to the instance",
+ * for a stop and for a retire alike. Every other code is an unknown outcome. Exported so that the kernel's
+ * tests can hold this list inside the kernel's own list of the codes it answers only before any effect: a
+ * code joins here only once the kernel promises that of it. The promise is about the instance (its sessions,
+ * its home), not about the workspace log: a guarded retire may have appended its plan's event there by then,
+ * so no sentence built on this list says that nothing was recorded. A routed command's router refuses
+ * E_REMOTE_INCOMPATIBLE, E_AMBIGUOUS and E_SNAPSHOT_UNKNOWN before sending, and the host's own resolution
+ * refuses them (and E_HOME_MISMATCH) before any effect. */
+export const BEFORE_EFFECT_CODES = Object.freeze(['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
   'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
+const beforeEffect = new Set(BEFORE_EFFECT_CODES);
+/** The installed CLI printed this error envelope: the kernel answered. Said by the adapter where it builds
+ * the envelope (`origin`), never inferred from the envelope's shape: the adapter's own failures and this
+ * boundary's have the same shape, and no origin. */
+const kernelAnswered = envelope => envelope?.origin === 'kernel' && envelope.schemaVersion === 1 && envelope.ok === false;
 /** A failed command's reason. Remote: the host's code and message under its headline. Local: the fixed
- * sentence for `code`, and the CLI's own message beside it as `detail`, through the display filter, only
- * when the installed CLI answered with an error envelope and the code may show one (lifecycleDetailCode:
- * it has its own sentence and is not one Desktop raises). Otherwise the reason is `{code, message}` alone. */
-function failureReason(envelope, remote, code = envelope?.error?.code) {
-  const reason = lifecycleReason(code);
-  if (remote) return hostReason({ ...envelope?.error, code }, remote.label, reason.message) || reason;
-  const detail = envelope?.schemaVersion === 1 && envelope.ok === false && lifecycleDetailCode(code) ? displayLine(envelope.error?.message) : null;
-  return detail ? { ...reason, detail } : reason;
+ * sentence for `code`, and the kernel's own message beside it as `detail`, through the display filter, only
+ * when the kernel answered (kernelAnswered) and the code may show one (lifecycleDetailCode: it has its own
+ * sentence and is not one Desktop raises). Otherwise the reason is `{code, message}` alone.
+ * A code the kernel answered that has no sentence keeps its own code and reads by the fallback sentence
+ * (undescribedAnswer), with the kernel's message as its detail: "OATS couldn't be run for this." is never
+ * the sentence for an answer the kernel gave. A code that did not come from the kernel never reaches it.
+ * A kernel's E_LIFECYCLE_BUSY whose kernel (`features`: the answering kernel's) says who holds the claim
+ * reads by that (`holder`, busyHolder), local or remote, and names the target of `plan` the refusal is
+ * about when that is not the instance acted on (`about`). */
+function failureReason(envelope, remote, { code = envelope?.error?.code, features = null, plan = null } = {}) {
+  const kernel = kernelAnswered(envelope), undescribed = kernel ? undescribedAnswer(code) : null;
+  const reason = undescribed || lifecycleReason(code), details = envelope?.error?.details;
+  const holder = kernel ? busyHolder(code, details, features) : null, about = holder ? busyAbout(plan, details?.home) : null;
+  const busy = holder ? { holder, ...(about ? { about } : {}) } : {};
+  const message = holder ? busyHeadline(holder) : reason.message;
+  if (remote) { const host = hostReason({ ...envelope?.error, code }, remote.label, message); return host ? { ...host, ...busy } : reason; }
+  const detail = kernel && (undescribed || lifecycleDetailCode(code)) ? displayLine(envelope.error?.message) : null;
+  return { ...reason, message, ...(detail ? { detail } : {}), ...busy };
 }
 export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), mint = () => randomBytes(32).toString('hex') } = {}) {
   const plans = new Map(), actions = new Map(), reads = new Map();
@@ -44,7 +65,9 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     const result = admitInstance(selector, { ...context, operation: 'lifecycle-plans' });
     if (result.code) return { failure: denied(result.code, result.target, result.reason ? { reason: result.reason } : {}) };
     if (!supportsLifecycle(context.cli, operation, apply)) return { failure: denied('E_LIFECYCLE_UNAVAILABLE', result.target) };
-    return { ...result, identity: cliIdentity(context.cli) };
+    // Which kernel answers the command this read admits: its features decide how its answer is read.
+    return { ...result, identity: cliIdentity(context.cli),
+      features: answeringFeatures({ cli: context.cli, routed: !!result.remote, group: context.workspace?.group }) };
   }
   const same = (a, b) => !b.failure && a.bin === b.bin && a.context === b.context && a.identity === b.identity && gitTargetKey(a.target) === gitTargetKey(b.target);
   function storePlan(plan, selection, choices) {
@@ -78,20 +101,20 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     if (!same(selected, current)) return denied('E_PLAN_CHANGED', selected.target);
     if (envelope?.schemaVersion !== 1 || envelope.ok !== true) {
       const code = envelope?.error?.code || 'E_CLI_PROTOCOL';
-      return denied(code, selected.target, { reason: failureReason(envelope, selected.remote, code) });
+      return denied(code, selected.target, { reason: failureReason(envelope, selected.remote, { code, features: selected.features }) });
     }
     const data = lifecyclePlan(envelope.result, selected.target, request.operation, choices);
     if (!data) return denied('E_CLI_PROTOCOL', selected.target);
     const entry = storePlan(data, { ...selected, scope: getContext().workspace.scope, selector: clone(request.selector) }, choices);
     return entry ? displayed(entry) : denied('E_LIFECYCLE_BUSY', selected.target);
   }
-  function interpret(envelope, entry) {
+  function interpret(envelope, entry, features) {
     const extra = { planRef: entry.id, options: entry.choices };
     const failure = (code, status, more = {}) => denied(code, entry.target, { ...extra, status, ...more });
     if (envelope?.schemaVersion !== 1 || typeof envelope.ok !== 'boolean') return failure('E_OUTCOME_UNKNOWN', 'unknown');
     // A failed retire can still carry a bounded incomplete-cleanup receipt.
     if (envelope.result) {
-      const receipt = lifecycleReceipt(envelope.result, entry.plan, entry.key, { server: entry.remote?.server ?? null });
+      const receipt = lifecycleReceipt(envelope.result, entry.plan, entry.key, { server: entry.remote?.server ?? null, features });
       if (!receipt) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL') });
       const complete = receipt.action === 'stop' ? receipt.ok : receipt.removedDir && !receipt.incomplete;
       return { lifecycleApi: 1, status: receipt.deferred ? 'pending' : complete ? 'complete' : 'partial', target: entry.target, planRef: entry.id,
@@ -106,14 +129,14 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     }
     if (code === 'E_CHILDREN_RUNNING' && entry.plan.action === 'retire') {
       const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, 'retire', entry.choices);
-      const childrenStopped = fresh && stoppedTargets(envelope.error?.details?.childrenStopped, fresh.facts.children);
+      const childrenStopped = fresh && stoppedTargets(envelope.error?.details?.childrenStopped, fresh.facts.children, false, { features });
       if (!childrenStopped || childrenStopped.every(c => c.ok)) return failure('E_OUTCOME_UNKNOWN', 'unknown');
       // This is the attempted plan, NOT a new executable confirmation: some
       // children have already stopped. The user must explicitly read a new plan.
       return failure(code, 'refused', { plan: fresh, childrenStopped });
     }
-    if (beforeEffect.has(code)) return failure(code, 'refused', { reason: failureReason(envelope, entry.remote) });
-    return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: failureReason(envelope, entry.remote) });
+    if (beforeEffect.has(code)) return failure(code, 'refused', { reason: failureReason(envelope, entry.remote, { features, plan: entry.plan }) });
+    return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: failureReason(envelope, entry.remote, { features }) });
   }
   function apply(request, getContext, ws) {
     if (Object.keys(request).some(k => !['action', 'planRef'].includes(k)) || !planReference(request.planRef)) return Promise.resolve(denied('E_BAD_ARGS'));
@@ -135,7 +158,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     plans.delete(entry.id); actions.set(entry.id, entry);
     const args = { operation: entry.plan.action, phase: 'apply', instance: entry.target.instance, home: entry.target.home,
       context: entry.context, ...(entry.remote ? { server: entry.remote.server } : {}), choices: clone(entry.choices), revision: entry.plan.planRevision, key: entry.key };
-    entry.pending = Promise.resolve().then(() => invoke(entry.bin, args)).then(result => interpret(result, entry))
+    entry.pending = Promise.resolve().then(() => invoke(entry.bin, args)).then(result => interpret(result, entry, current.features))
       .catch(() => denied('E_OUTCOME_UNKNOWN', entry.target, { status: 'unknown', planRef: entry.id }))
       .then(result => { entry.reply = clone(result); return result; })
       .finally(() => { entry.pending = null; entry.expires = now() + 30 * 60_000; if (activeApply === entry) activeApply = null; });

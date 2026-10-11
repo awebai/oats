@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../server/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../../client/lifecycle-cli.mjs';
 import { lifecycleOptions, lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
 import { displayLine } from '../../client/display-text.mjs';
@@ -113,7 +113,7 @@ test("a local Remove refused by inspection is an unknown outcome with its own fi
   const line = `directory work must remain an owned directory, not missing, a link or another filesystem type: ${path}; ${remedy}\uFFFD`;
   let writes = 0;
   const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan())
-    : (writes++, { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message } }) });
+    : (writes++, { schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_WORK_INSPECTION_FAILED', message } }) });
   const p = await f.plan('retire'), result = await f.apply(p.planRef);
   // Never "refused": the kernel can raise it after the children stop, the session stop and the retire hooks.
   assert.equal(result.status, 'unknown'); assert.deepEqual(result.reason, lifecycleReason('E_OUTCOME_UNKNOWN')); assert.equal(writes, 1);
@@ -128,16 +128,17 @@ test("a local Remove refused by inspection is an unknown outcome with its own fi
 });
 test("a local refusal's detail is withheld whole when the message looks like a credential, and absent when the CLI sent no message or nothing to show", async () => {
   const cause = async error => {
-    const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan()) : { schemaVersion: 1, ok: false, error } });
+    const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan()) : { schemaVersion: 1, ok: false, origin: 'kernel', error } });
     return (await f.apply((await f.plan('retire')).planRef)).cause;
   };
   const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED');
   assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: 'could not read the work root\ntoken=abc123' }), { ...fixed, detail: '[Detail withheld]' });
   for (const none of [undefined, null, '', ' \n\t ', 7, { text: 'not a string' }]) assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: none }), fixed, JSON.stringify(none));
 });
-test('a failure Desktop raises itself never carries a detail, whatever the envelope holds; a code without its own sentence keeps the fixed reply', async () => {
-  const outcomes = async code => {
-    const answer = { schemaVersion: 1, ok: false, error: { code, message: 'TEXT FROM THE ENVELOPE' } };
+test("a failure Desktop raises itself never carries a detail, whatever the envelope holds; a code without its own sentence keeps the fixed reply unless the kernel answered it", async () => {
+  // The strongest envelope: one that says the kernel answered, with a message.
+  const outcomes = async (code, ...origin) => {
+    const answer = { schemaVersion: 1, ok: false, origin: origin.length ? origin[0] : 'kernel', error: { code, message: 'TEXT FROM THE ENVELOPE' } };
     const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(stopPlan()) : answer });
     return { applied: await f.apply((await f.plan()).planRef), planned: await fixture({ invoke: async () => answer }).plan() };
   };
@@ -149,26 +150,30 @@ test('a failure Desktop raises itself never carries a detail, whatever the envel
     assert.deepEqual(planned.reason, lifecycleReason(code), code);
     assert.doesNotMatch(JSON.stringify([applied, planned]), /TEXT FROM/, code);
   }
-  // A code Desktop has no sentence for (#603): today's reply, unchanged.
-  const { applied, planned } = await outcomes('E_NOT_IN_THE_TABLE');
-  assert.equal(lifecycleDetailCode('E_NOT_IN_THE_TABLE'), false);
-  assert.deepEqual(applied.cause, lifecycleReason('E_CLI_FAILED')); assert.deepEqual(planned.reason, lifecycleReason('E_CLI_FAILED'));
-  assert.doesNotMatch(JSON.stringify([applied, planned]), /TEXT FROM|E_NOT_IN_THE_TABLE/);
+  // A code Desktop has no sentence for (#603), in an envelope that does not say the kernel answered: the fixed reply, and no text.
+  for (const origin of [undefined, 'adapter', true]) {
+    const { applied, planned } = await outcomes('E_NOT_IN_THE_TABLE', origin);
+    assert.equal(lifecycleDetailCode('E_NOT_IN_THE_TABLE'), false);
+    assert.deepEqual(applied.cause, lifecycleReason('E_CLI_FAILED'), String(origin)); assert.deepEqual(planned.reason, lifecycleReason('E_CLI_FAILED'), String(origin));
+    assert.doesNotMatch(JSON.stringify([applied, planned]), /TEXT FROM|E_NOT_IN_THE_TABLE/);
+  }
   // The codes the kernel raises and Desktop has a sentence for.
   for (const code of ['E_BAD_ARGS', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_HOME_MISMATCH', 'E_PLAN_STALE', 'E_LIFECYCLE_BUSY', 'E_INSTANCE_RETIRING', 'E_CHILDREN_RUNNING',
-    'E_SESSION_STOP_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_WORK_INSPECTION_FAILED', 'E_RETIRE_INCOMPLETE']) assert.equal(lifecycleDetailCode(code), true, code);
+    'E_SESSION_STOP_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_WORK_INSPECTION_FAILED', 'E_RETIRE_INCOMPLETE', 'E_RUNTIME_QUIESCE_FAILED']) assert.equal(lifecycleDetailCode(code), true, code);
   for (const none of [undefined, null, '', 7, {}]) assert.equal(lifecycleDetailCode(none), false);
 });
 test("a local plan refusal and a refusal before any effect carry the CLI's message as their detail; an answer that is not an error envelope never does", async () => {
   const error = { code: 'E_INSTANCE_RETIRING', message: 'dev-1 is already being retired\n(since 12:00)' }, fixed = lifecycleReason('E_INSTANCE_RETIRING');
   const shown = { ...fixed, detail: 'dev-1 is already being retired (since 12:00)' };
-  const planned = await fixture({ invoke: async () => ({ schemaVersion: 1, ok: false, error }) }).plan('retire');
+  const planned = await fixture({ invoke: async () => ({ schemaVersion: 1, ok: false, origin: 'kernel', error }) }).plan('retire');
   assert.equal(planned.status, 'unavailable'); assert.deepEqual(planned.reason, shown);
-  const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan()) : { schemaVersion: 1, ok: false, error } });
+  const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan()) : { schemaVersion: 1, ok: false, origin: 'kernel', error } });
   const refused = await f.apply((await f.plan('retire')).planRef);
   assert.equal(refused.status, 'refused'); assert.deepEqual(refused.reason, shown); assert.equal(Object.hasOwn(refused, 'cause'), false);
-  // Not the installed CLI's error envelope: another schema version, or `ok` that is not false.
-  for (const answer of [{ schemaVersion: 2, ok: false, error }, { ok: false, error }, { schemaVersion: 1, error }, { schemaVersion: 1, ok: 'false', error }]) {
+  // Not the installed CLI's error envelope: another schema version, or `ok` that is not false, whatever origin it claims;
+  // and an error envelope that does not say the kernel answered (the adapter's own failures have that shape).
+  for (const answer of [{ schemaVersion: 2, ok: false, origin: 'kernel', error }, { ok: false, origin: 'kernel', error }, { schemaVersion: 1, origin: 'kernel', error },
+    { schemaVersion: 1, ok: 'false', origin: 'kernel', error }, { schemaVersion: 1, ok: false, error }, { schemaVersion: 1, ok: false, origin: 'cli', error }, { schemaVersion: 1, ok: false, origin: true, error }]) {
     const reply = await fixture({ invoke: async () => answer }).plan('retire');
     assert.deepEqual(reply.reason, fixed, JSON.stringify(Object.keys(answer)));
   }
@@ -177,8 +182,21 @@ test("the adapter keeps an error envelope's code, message and details for a loca
   const args = { operation: 'retire', phase: 'apply', instance: instance.instance, home: instance.home, context: '/team', choices: options('retire'), revision: 'b'.repeat(24), key: 'server-key' };
   const sent = { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message: 'could not inspect the work tree', details: { path: '/team/x' }, stack: 'PRIVATE stack' }, debug: 'PRIVATE field' };
   const result = await cliLifecycle(cli.bin, args, { exec: (_b, _a, _o, done) => done(Object.assign(new Error('PRIVATE process error'), { code: 1 }), JSON.stringify(sent), 'PRIVATE stderr') });
-  assert.deepEqual(result, { schemaVersion: 1, ok: false, error: { code: 'E_WORK_INSPECTION_FAILED', message: 'could not inspect the work tree', details: { path: '/team/x' } } });
+  // `origin: 'kernel'`: the adapter says that the installed CLI printed this envelope.
+  assert.deepEqual(result, { schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_WORK_INSPECTION_FAILED', message: 'could not inspect the work tree', details: { path: '/team/x' } } });
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+  // The adapter's own failures say no origin, whatever the CLI printed: a timeout, too much output, no envelope, an exit with a success envelope, bad arguments.
+  const own = async (error, stdout, options = args) => cliLifecycle(cli.bin, options, { exec: (_b, _a, _o, done) => done(error, stdout, '') });
+  for (const [failure, code] of [[await own({ killed: true }, JSON.stringify(sent)), 'E_CLI_TIMEOUT'], [await own({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, JSON.stringify(sent)), 'E_CLI_OUTPUT_LIMIT'],
+    [await own(null, 'not an envelope'), 'E_CLI_PROTOCOL'], [await own(new Error('exit 1'), JSON.stringify({ retired: instance.instance })), 'E_CLI_FAILED'], [await own(null, '', { ...args, phase: 'neither' }), 'E_BAD_ARGS']])
+    assert.deepEqual(failure, { schemaVersion: 1, ok: false, error: { code } }, code);
+  // A raw retire receipt that reports incomplete cleanup: its error is the adapter's own words, so it says no origin either.
+  const raw = { ...retireReceipt({ key: 'server-key', revision: 'b'.repeat(24) }), rollbackIncomplete: ['cleanup'] };
+  const incomplete = await own(new Error('exit 1'), JSON.stringify(raw));
+  assert.deepEqual(Object.keys(incomplete).sort(), ['error', 'ok', 'result', 'schemaVersion']); assert.equal(incomplete.error.code, 'E_RETIRE_INCOMPLETE');
+  // The same receipt inside the kernel's own error envelope is the kernel's answer.
+  const enveloped = await own(new Error('exit 1'), JSON.stringify({ schemaVersion: 1, ok: false, result: raw, error: { code: 'E_RETIRE_INCOMPLETE', message: 'a stand-in for the kernel message' } }));
+  assert.equal(enveloped.origin, 'kernel'); assert.deepEqual(enveloped.result, raw);
 });
 test('expired plans, malformed/oversized DTOs, stale admission and hostile returned aliases cannot authorize an apply', async () => {
   let clock = 0; const f = fixture({ now: () => clock }); const p = await f.plan(); clock += 300_001;
@@ -382,4 +400,22 @@ test('a Herdr-recorded instance still plans and applies Retire: the kernel decid
   assert.equal(plan.status, 'plan');
   assert.equal((await f.apply(plan.planRef)).status, 'complete');
   assert.deepEqual(f.calls.map(c => [c.args.operation, c.args.phase]), [['retire', 'plan'], ['retire', 'apply']]);
+});
+test('BEFORE_EFFECT_CODES is a frozen list of ten codes, and it is the set an apply reads as "refused, nothing happened"', async () => {
+  assert.deepEqual(BEFORE_EFFECT_CODES, ['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
+    'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
+  assert.equal(Object.isFrozen(BEFORE_EFFECT_CODES), true); assert.throws(() => BEFORE_EFFECT_CODES.push('E_OTHER'), TypeError);
+  assert.equal(new Set(BEFORE_EFFECT_CODES).size, 10); assert.ok(BEFORE_EFFECT_CODES.every(code => typeof code === 'string'));
+  const applied = async (operation, code) => {
+    const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(operation === 'stop' ? stopPlan() : retirePlan())
+      : { schemaVersion: 1, ok: false, error: { code, message: 'a stand-in for the kernel message' } } });
+    return (await f.apply((await f.plan(operation)).planRef)).status;
+  };
+  for (const operation of ['stop', 'retire']) {
+    // E_PLAN_STALE without its fresh plan is no answer Desktop can read: its own branch, before the set.
+    for (const code of BEFORE_EFFECT_CODES) assert.equal(await applied(operation, code), code === 'E_PLAN_STALE' ? 'unknown' : 'refused', `${operation} ${code}`);
+    // Outside the list, whatever the kernel's own list says: an unknown outcome.
+    for (const code of ['E_UNIDENTIFIED_INSTANCE_HOME', 'E_WORK_INSPECTION_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_LIFECYCLE_FAILED', 'E_NOT_IN_THE_TABLE'])
+      assert.equal(await applied(operation, code), 'unknown', `${operation} ${code}`);
+  }
 });

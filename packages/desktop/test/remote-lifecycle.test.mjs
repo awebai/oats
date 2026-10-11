@@ -69,10 +69,11 @@ test('remote plan refused by the host: the kernel\'s code and message verbatim u
     E_HOME_MISMATCH: 'Build box answered for a different instance. Nothing was changed.',
     E_AMBIGUOUS: 'Build box answered for a different instance. Nothing was changed.',
     E_SSH: "Couldn't reach Build box.",
-    E_REMOTE_ENVELOPE: "OATS couldn't be run for this.",
+    // A code nothing here describes, in an answer OATS gave: never "OATS couldn't be run for this."
+    E_REMOTE_ENVELOPE: 'OATS answered with an error that Desktop has no description for.',
   };
   for (const [code, headline] of Object.entries(cases)) {
-    const f = fixture({ plan: () => ({ schemaVersion: 1, ok: false, error: { code, message: `host says ${code}` } }) });
+    const f = fixture({ plan: () => ({ schemaVersion: 1, ok: false, origin: 'kernel', error: { code, message: `host says ${code}` } }) });
     const result = await f.plan('stop');
     assert.equal(result.status, 'unavailable');
     assert.deepEqual(result.reason, { code, message: headline, detail: `host says ${code}`, remote: true });
@@ -139,7 +140,7 @@ test('cliLifecycle: a remote plan gets 45 s and keeps the host\'s message; an ap
   const seen = [];
   const exec = (bin, argv, opts, done) => { seen.push({ argv, opts }); done(Object.assign(new Error('x'), { code: 1 }), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_INCOMPATIBLE', message: 'needs 0.31' } })); };
   const plan = await cliLifecycle('/installed/oats', { operation: 'stop', phase: 'plan', instance: 'dev-1', home: instance.home, context: '/Users/me/work', server: 'build', choices: { recursive: true } }, { exec });
-  assert.deepEqual(plan, { schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_INCOMPATIBLE', message: 'needs 0.31', details: undefined } });
+  assert.deepEqual(plan, { schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_REMOTE_INCOMPATIBLE', message: 'needs 0.31', details: undefined } });
   assert.equal(seen[0].opts.timeout, 45_000); assert.equal(seen[0].opts.cwd, '/Users/me/work');
   await cliLifecycle('/installed/oats', { operation: 'stop', phase: 'plan', instance: 'dev-1', home: instance.home, context: '/team', choices: { recursive: true } }, { exec });
   assert.equal(seen[1].opts.timeout, 30_000, 'local plans keep 30 s');
