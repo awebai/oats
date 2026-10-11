@@ -123,6 +123,13 @@ Everything after `build` reads `MANIFEST.json` and the files already staged:
   so no checks run on it by themselves; close and reopen it to run them, and
   do not read missing checks as green. Open the PR by hand if the workflow
   does not run.
+- **The accepted range also decides which kernel `oats tui` accepts.**
+  `ACCEPT_RANGE` (`packages/client/cli-locator.mjs`) is read by the Desktop
+  and by the terminal client, which runs the kernel it ships with: a bump
+  that leaves the new version outside the range ships an `oats tui` that
+  stops at its start with `E_TUI_KERNEL`. The test "the accepted band admits
+  the kernel version this Desktop ships with"
+  (`packages/desktop/test/cli-locator.test.mjs`) fails for such a bump.
 - **Legs for hosts you do not have.** The Linux AppImage/DEB need a Linux
   host; the lane says so and `stage` lists what is missing.
 - **The packaged window launch.** `release.yml` launches the packaged window

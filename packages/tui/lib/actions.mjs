@@ -1,7 +1,20 @@
 // The action table: what the TUI can do and the keys that do it. The reducer and the help view
 // both read it, so the help cannot name a key the program does not act on. `keys` are key ids
-// (term/keys.mjs keyId); they are the part a user's tui.json will replace.
+// (term/keys.mjs keyId); they are the part a user's tui.json replaces (config.mjs), so everything
+// that acts on a key or names one reads the EFFECTIVE table it is handed, never this constant.
 export const ACTIONS = Object.freeze([
+  { id: "up", keys: ["up", "k"], label: "up" },
+  { id: "down", keys: ["down", "j"], label: "down" },
+  { id: "top", keys: ["g", "home"], label: "first" },
+  { id: "bottom", keys: ["G", "end"], label: "last" },
+  { id: "page-up", keys: ["pageup"], label: "page up" },
+  { id: "page-down", keys: ["pagedown"], label: "page down" },
+  { id: "collapse", keys: ["left", "h"], label: "collapse, or go to the parent" },
+  { id: "expand", keys: ["right", "l"], label: "expand, or go to the first child" },
+  { id: "detail", keys: ["tab"], label: "detail" },
+  { id: "filter", keys: ["/"], label: "filter" },
+  { id: "refresh", keys: ["r"], label: "refresh" },
+  { id: "instances", keys: ["1"], label: "instances" },
   { id: "help", keys: ["?"], label: "help" },
   { id: "close", keys: ["escape"], label: "close" },
   { id: "quit", keys: ["q", "ctrl+c"], label: "quit" },

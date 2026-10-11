@@ -10,6 +10,7 @@
 // by column (`{ col, text, style }`), never one padded string: the gap between two spans is the
 // screen's blank cells, not text.
 import { displayLine, DETAIL_WITHHELD } from "../client.mjs";
+import { cells } from "./width.mjs";
 
 /** The brand: a value is safe text when it is a key here. Nothing outside this module can add one,
  *  and a look-alike object is not one. */
@@ -37,6 +38,65 @@ export function lit(string) {
 export function shown(value) {
   const line = displayLine(value);
   return line === null ? EMPTY : line === DETAIL_WITHHELD ? WITHHELD : make(line);
+}
+
+/** The cut mark, the screen's own (term/screen.mjs): one cell, or three in ASCII. */
+const cutMark = (ascii) => (ascii ? "..." : "\u2026");
+const widthOf = (graphemes) => graphemes.reduce((sum, g) => sum + g.width, 0);
+const joined = (graphemes) => graphemes.map((g) => g.text).join("");
+
+/** Text the TUI did not write, as the END of its display line: what fits `width` cells, with the
+ *  cut mark in front when the start is left out. For a value read from its end (a path).
+ *  Filtered first and cut after, by cells and between graphemes: a part of a display line is
+ *  itself fit to show, so nothing reaches the screen that shown() would not have let through. */
+export function shownEnd(value, width, { ascii = false } = {}) {
+  const line = displayLine(value);
+  if (line === null) return EMPTY;
+  if (line === DETAIL_WITHHELD) return WITHHELD;
+  const all = cells(line);
+  if (widthOf(all) <= width) return make(joined(all));
+  const mark = cutMark(ascii), room = width - mark.length;
+  const kept = [];
+  for (let i = all.length - 1, used = 0; i >= 0 && used + all[i].width <= room; used += all[i].width, i--) kept.unshift(all[i]);
+  return make(room < 0 ? "" : mark + joined(kept).replace(/^ +/, ""));
+}
+
+/** Text the TUI did not write, as at most `max` rows of at most `width` cells: its display line
+ *  broken at spaces where it can be and between graphemes where it cannot, the last row ending
+ *  in the cut mark when more was left. For a sentence that must be read whole (a kernel's
+ *  reason). Filtered first and cut after, as shownEnd is; nothing to show gives no row, and
+ *  neither does a row too narrow for the first grapheme. */
+export function shownLines(value, width, max, { ascii = false } = {}) {
+  const line = displayLine(value);
+  if (line === null || width < 1 || max < 1) return [];
+  if (line === DETAIL_WITHHELD) return [WITHHELD];
+  const rows = [];
+  let rest = cells(line);
+  while (rest.length && rows.length < max) {
+    if (widthOf(rest) <= width) { rows.push(rest); rest = []; break; }
+    let end = 0;
+    for (let used = 0; end < rest.length && used + rest[end].width <= width; used += rest[end].width) end++;
+    // Back to the last space inside the row, when there is one: the row ends before it.
+    let cut = end;
+    while (cut > 0 && rest[cut]?.text !== " " && rest[cut - 1].text !== " ") cut--;
+    if (cut === 0) cut = end;
+    if (cut === 0) break; // a grapheme wider than the row: nothing more can be set
+    const row = rest.slice(0, cut);
+    while (row.length && row[row.length - 1].text === " ") row.pop();
+    rest = rest.slice(cut);
+    while (rest.length && rest[0].text === " ") rest.shift();
+    rows.push(row);
+  }
+  const mark = cutMark(ascii);
+  if (rest.length && rows.length && mark.length <= width) {
+    // More was left: the last row gives up its end to the mark. (A row too narrow for the mark
+    // keeps what it has: no row is ever wider than `width`.)
+    const last = rows[rows.length - 1];
+    while (last.length && widthOf(last) + mark.length > width) last.pop();
+    while (last.length && last[last.length - 1].text === " ") last.pop();
+    last.push(...cells(mark));
+  }
+  return rows.map((row) => make(joined(row)));
 }
 
 export const isSafeText = (value) => TEXT.has(value);

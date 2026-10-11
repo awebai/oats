@@ -31,8 +31,13 @@ export function isTerminal({ stdin, stdout, env }) {
 /** The guard of one run. `frame()` answers the bytes of the newest frame when it is time to write
  *  one; `onInput(bytes)`, `onResize()` and `onRedraw()` (the screen must be drawn in full: after a
  *  suspend, after SIGCONT) are the events. `done` resolves once, with `{ status, error }`, after the
- *  terminal is restored and every listener is removed. */
-export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onRedraw, setTimer = setTimeout, clearTimer = clearTimeout }) {
+ *  terminal is restored and every listener is removed.
+ *  Three more, for whoever started work that outlives a frame (the reads of lib/read.mjs), each
+ *  optional: `onStop()` is called when the process is about to be stopped by its own suspend, after
+ *  the terminal is handed back and before the signal; `onResume(asked)` when it runs again, `asked`
+ *  true after its own suspend and false when it was stopped and continued from outside; `onEnd()`
+ *  once on every way out, after the terminal is restored and before `done` resolves. */
+export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onRedraw, onStop = null, onResume = null, onEnd = null, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let entered = false, raw = false, modes = false;
   let suspended = false, stopTimer = null;
   let over = false, blocked = false, stale = false;
@@ -67,6 +72,8 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
     if (over) return;
     over = true;
     leave();
+    // What it throws must not keep the run from ending, nor replace the status it ends with.
+    if (onEnd) quietly(onEnd);
     if (stopTimer !== null) { clearTimer(stopTimer); stopTimer = null; }
     for (const [emitter, name, listener] of listeners) emitter.removeListener(name, listener);
     proc.removeListener("SIGTSTP", suspend);
@@ -100,6 +107,7 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   function suspend() {
     if (!entered || over) return;
     leave();
+    if (onStop) { attempt(onStop); if (over) return; }
     suspended = true;
     proc.removeListener("SIGTSTP", suspend); // the default action stops the process
     quietly(() => proc.kill(0, "SIGTSTP"));
@@ -113,6 +121,7 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
     if (stopTimer !== null) { clearTimer(stopTimer); stopTimer = null; }
     proc.on("SIGTSTP", suspend);
     try { enter(); } catch { return finish(TERMINAL_GONE_STATUS); }
+    if (onResume) attempt(() => onResume(true));
     attempt(onRedraw);
   }
   /** Take the terminal again where it may no longer be as enter() left it: something outside the
@@ -136,6 +145,7 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   function continued() {
     if (over) return;
     if (suspended) return resume();
+    if (onResume && entered) { attempt(() => onResume(false)); if (over) return; }
     reassert();
   }
 
@@ -147,7 +157,7 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
     proc.on("SIGTSTP", suspend);
     on(proc, "uncaughtException", (error) => finish(1, error));
     on(proc, "unhandledRejection", (reason) => finish(1, reason));
-    on(proc, "exit", leave); // the last resort: a process.exit() nobody expected
+    on(proc, "exit", () => { leave(); if (onEnd) quietly(onEnd); }); // the last resort: a process.exit() nobody expected
     // A dead terminal answers a write or a read with an error event. These two listeners are never
     // removed: the write that restores the terminal can fail after the run is over, and an error
     // event nobody hears is an uncaught exception, which would turn the status into 1.

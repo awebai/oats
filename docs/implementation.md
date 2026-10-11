@@ -45,6 +45,22 @@ a flat directory of `.mjs` modules with no manifest of its own, not a package.
 imports only itself and `node:` builtins, `lib/` and `bin/` import nothing
 from it, and the test lists the stable surface a second client may import.
 
+`packages/tui/` is that second client, the terminal one (`oats tui`), in
+layers that each do one thing. `lib/term/` is the terminal: the key parser,
+cell widths, safe text, the screen and the guard that restores the terminal;
+only the screen and the guard write an escape byte. `lib/read.mjs` is every
+effect of reading: it runs the kernel of the same install and the shared
+liveness collector as children, through the shared observer and refresh
+loop, and ends them. `lib/store.mjs` is the state and a pure
+`reduce(state, event)`; `lib/model.mjs` turns the state into the rows to
+draw by calling the shared readers through `lib/client.mjs`, the one module
+that imports `packages/client/`; `lib/views/` are pure functions from that
+model and a size to rows of spans; `lib/main.mjs` wires them. It decodes no
+kernel answer of its own: grouping, order, states and what a failed read
+becomes are the shared readers', so both clients show the same roster.
+[`packages/tui/README.md`](../packages/tui/README.md) has the module table
+and the rules its tests pin.
+
 ## Repository layout
 
 | path | contents |

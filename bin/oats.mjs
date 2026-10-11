@@ -4446,7 +4446,9 @@ Usage:
                                             Desktop CLI API v1 probe payload
   oats status [--json]                       agents, souls, running instances
       [--max-age <s>]                        reuse head observations up to <s> s old (below)
-  oats tui [--ascii]                         PREVIEW: the full-screen terminal client (docs/tui.md);
+  oats tui [--dir <path>] [--ascii]          PREVIEW: the full-screen terminal client (docs/tui.md):
+                                            this machine's instances of the deployment at or above
+                                            <path> (default: where you are); it changes nothing.
                                             ? help, q quit. Needs a terminal on stdin and stdout
                                             and has no --json form; --ascii = ASCII rules and marks
   oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,

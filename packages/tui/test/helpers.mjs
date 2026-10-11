@@ -100,3 +100,73 @@ export function rowStrings(rows, cols) {
     return line.join("").trimEnd();
   });
 }
+
+// ── The Instances view: a deployment's entry made by the shared functions, and what is drawn for it.
+// Everything below goes through the same calls the program makes (lib/client.mjs re-exports them):
+// a test that built an entry or a panel by hand would test its own idea of them.
+import { failedEntry, observedEntry, panelInstances, pendingEntry, rosterRows } from "../lib/client.mjs";
+import { model, roster } from "../lib/model.mjs";
+import { initialState, reduce } from "../lib/store.mjs";
+import { createScreen } from "../lib/term/screen.mjs";
+import { frame, layout } from "../lib/views/frame.mjs";
+
+/** The fixture's deployment and the kernel record the shared gates accept. */
+export const DEPLOYMENT = "/srv/deploy";
+export const CLI = Object.freeze({ ok: true, bin: "/opt/oats/bin/oats.mjs", source: "tui", version: "0.52.0", workspaceApi: 2, features: Object.freeze(["workspace-v2", "instance-modules", "served-identity", "packages-no-approval", "waiting-on-you", "workspace-identity"]) });
+/** The time of every paint in a test that does not say otherwise; run the tests with TZ=UTC in mind:
+ *  a clock time on the screen is local, so a test that reads one computes it the same way. */
+export const NOW = Date.parse("2026-10-11T10:00:30.000Z");
+
+/** One kernel row (`oats status --json`, an instance), running in tmux unless `extra` says otherwise. */
+export function instanceRow(soul, name, extra = {}) {
+  return {
+    instance: name, agent: soul, home: `${DEPLOYMENT}/agents/${soul}/instances/${name}`, repo: `${DEPLOYMENT}/oats`, work: "worktree", branch: `agents/${name}`,
+    harness: "claude", model: "claude-opus-5-5", modelFrom: "soul", createdAt: "2026-10-11T08:00:00.000Z", startedAt: "2026-10-11T09:00:00.000Z",
+    running: true, runtimeState: "running", tmux: { session: "oats-agents", window: name }, ...extra,
+  };
+}
+/** A roster as the shared reader hands it on (deployment-data.mjs `deploymentStatusData`), from rows:
+ *  one soul per distinct `agent`, in first-seen order. */
+export function rosterOf(rows, { withheld = [], team = "lfx" } = {}) {
+  const souls = new Map();
+  for (const row of rows) { if (!souls.has(row.agent)) souls.set(row.agent, []); souls.get(row.agent).push(row); }
+  return { root: `${DEPLOYMENT}/agents`, agents: [...souls].map(([name, instances]) => ({ name, description: "", team, dir: `${DEPLOYMENT}/agents/${name}`, instances })), withheld, workspace: { reachable: true } };
+}
+/** An observed entry for those rows, through the real `rosterRows`, `panelInstances` and
+ *  `observedEntry`. `answers(row)` is the collector's answer for a row (default: what the row says). */
+export function observed(rows, { withheld, workspace = "lfx-workspace", observedAt = "2026-10-11T10:00:00.000Z", at = "2026-10-11T10:00:01.000Z", cli = CLI, answers = (row) => ({ running: row.running, runtimeState: row.runtimeState, ...(row.runtimeError ? { runtimeError: row.runtimeError } : {}), tmux: row.tmux }) } = {}) {
+  const document = rosterOf(rows, { withheld }), listed = rosterRows(document, cli);
+  return observedEntry({ roster: document, workspaceStatus: { workspace: { name: workspace } }, observedAt }, panelInstances(listed, listed.map(answers)), at);
+}
+/** The same entry after a read that failed with `reason`, through the real `failedEntry`. */
+export const failed = (entry, reason, at = "2026-10-11T10:05:00.000Z") => failedEntry(entry, reason, at);
+export const pending = (at = "2026-10-11T09:59:59.000Z") => pendingEntry(null, at);
+
+/** The state of a run that took `entry` (pending when none is given). */
+export function stateOf(entry = null, options = {}) {
+  const first = initialState({ deployment: DEPLOYMENT, cli: CLI, home: "/home/u", entry: pending(), ...options });
+  return entry ? reduce(first, { entry, number: 1 }).state : first;
+}
+/** Draw a state as the main loop does: `{ rows, page, extent, room, cells, lines }`. `cells` is the
+ *  screen's cell buffer (term/screen.mjs `cells`), `lines` its rows as strings, one character per
+ *  cell (the second cell of a wide character is empty), trailing blanks cut. */
+export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = true } = {}) {
+  const r = roster(state);
+  const page = layout(r.notice, size, { observed: r.status === "observed", ascii: state.ascii }).page;
+  const made = frame(model(state, { page, now, at: new Date(now).toISOString() }), size);
+  const cells = createScreen({ utf8, ascii: state.ascii }).cells(made.rows, size);
+  return { ...made, cells, lines: cells.map((line) => line.map((cell) => cell.text).join("").trimEnd()) };
+}
+/** Press keys on a state, each with the geometry of the frame drawn before it, as the loop does.
+ *  A key is a key id (`"j"`, `"ctrl+l"`, `"enter"`); a one-grapheme id that is not `space` types itself. */
+export function press(state, keys, size = { cols: 80, rows: 24 }) {
+  const effects = [];
+  for (const key of keys) {
+    const { page, extent, room } = draw(state, size);
+    const text = key === "space" ? " " : [...new Intl.Segmenter().segment(key)].length === 1 ? key : undefined;
+    const next = reduce(state, { key, ...(text ? { text } : {}), page, extent, room });
+    state = next.state;
+    if (next.effect) effects.push(next.effect);
+  }
+  return { state, effects };
+}
