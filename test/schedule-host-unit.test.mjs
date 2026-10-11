@@ -31,7 +31,9 @@ test("the launchd unit fires at second 0 of every minute and never on an interva
   assert.match(plist, /<key>StartCalendarInterval<\/key><dict\/>/);
   assert.doesNotMatch(plist, /StartInterval<\/key><integer>/);
   assert.match(plist, /<key>RunAtLoad<\/key><false\/>/);
-  assert.match(plist, /<key>ProcessType<\/key><string>Background<\/string>/);
+  // Standard, not Background: under load a Background job's node started up to ~90 s after launchd fired it (#902).
+  assert.match(plist, /<key>ProcessType<\/key><string>Standard<\/string>/);
+  assert.doesNotMatch(plist, /Background/);
   assert.match(plist, /<key>StandardOutPath<\/key>/); assert.match(plist, /<key>StandardErrorPath<\/key>/);
 });
 
