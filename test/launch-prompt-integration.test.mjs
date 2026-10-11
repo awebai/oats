@@ -96,6 +96,7 @@ const readinessItems = (fx, home) => { const r = fx.cli(['readiness', '--home', 
 test('an eligible claude argv engages on spawn, start and restart: one Enter each, completed, and the start says so', async t => {
   const { fx, home } = fixture(t);
   const spawned = await fx.spawn('dev', { name: 'dev-spawn', launchConfig: 'confirm', launch: true });
+  assert.equal(DEV_CHANNEL_STATEMENT, "This start passes --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace; OATS confirms Claude's development-channel prompt once. The messaging provider's delivery or channel-mode setting stops it (the provider's warning says where those settings are).");
   assert.ok(spawned.warnings.includes(DEV_CHANNEL_STATEMENT));
   const a = home('dev-spawn');
   assert.equal(meta(a).launched, true);
