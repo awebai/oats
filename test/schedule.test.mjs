@@ -186,11 +186,13 @@ test("a spawn job whose instance stopped keeps its slot and is skipped with what
   assert.deepEqual([c[0].action, c[0].reason], ["skipped", reason]);
   assert.equal(S.readState(ws).jobs.five.lastRun.outcome, "stopped");
   assert.ok(S.jobLockInfo(ws, "five"), "a stopped instance keeps the job's slot");
+  assert.throws(() => S.runNow(ws, "five", { io, now: at("2026-09-07T10:11:00Z") }), (e) => e.code === "E_SCHEDULE_RUNNING" && e.message === `schedule five: ${reason}`);
   // Started again: active, and skipped as still running.
   seen = { present: true, state: "unknown" };
   const again = S.tickWorkspace(ws, { now: at("2026-09-07T10:15:00Z"), io, reg });
   assert.deepEqual([again[0].action, again[0].reason], ["skipped", "still running"]);
   assert.equal(S.readState(ws).jobs.five.lastRun.outcome, "active");
+  assert.throws(() => S.runNow(ws, "five", { io, now: at("2026-09-07T10:16:00Z") }), (e) => e.code === "E_SCHEDULE_RUNNING" && e.message === "schedule five is still running");
 });
 
 test("a home whose session cannot be inspected for a reason other than a lost tmux server stays unknown and still running (#921)", () => {

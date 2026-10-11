@@ -13,7 +13,7 @@ import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { leaveEnclosingInstance, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
 import { alive, endServers, killServer, recordLaunch, startServer } from "./helpers/recorded-tmux-server.mjs";
 import { addSchedule, jobLockInfo, readState, tickWorkspace } from "../lib/schedule.mjs";
-import { inspectInstanceSession, shq, startInstanceSession } from "../lib/core.mjs";
+import { inspectInstanceSession, shq, startInstanceSession, stopInstanceSession } from "../lib/core.mjs";
 
 const fixtures = [];
 test.afterEach(() => {
@@ -74,6 +74,12 @@ function startableHome(fx, purpose) {
 }
 /** Whether `home`'s session runs its command. */
 const active = (fx, home) => fx.inEnv(() => { try { return inspectInstanceSession(home).state === "unknown"; } catch { return false; } });
+/** Stop `home`'s session and wait until its start wrapper has exited, so that nothing the session ran
+ *  is still exiting when the fixture checks that its processes are gone. */
+async function stopSession(fx, home) {
+  assert.equal((await fx.inEnv(() => stopInstanceSession(home, { graceMs: 5000 }))).stopped, true);
+  await waitUntil(() => existsSync(join(home, ".oats-start-exited")), "the session's start wrapper to exit");
+}
 /** A reboot: the fixture's `oats` server is gone, and tmux's socket directory with it. */
 async function reboot(fx) {
   const socket = oatsSocket(fx.env.TMUX_TMPDIR);
@@ -191,6 +197,7 @@ test("after a reboot a scheduled instance reads stopped with what to do, and onc
   const c = await tick(fx, "2026-09-07T10:15:00Z", io);
   assert.deepEqual([c[0].action, c[0].reason], ["skipped", "still running"]);
   assert.equal(lastRun(fx).outcome, "active");
+  await stopSession(fx, run.home);
 });
 
 test("after a reboot a wake job starts its instance's session at its next due minute", async (t) => {
@@ -206,4 +213,5 @@ test("after a reboot a wake job starts its instance's session at its next due mi
   const c = await fx.inEnv(() => creatingServer(() => tickWorkspace(fx.dep, { now: new Date("2026-09-07T10:05:00Z"), reg: { maxConcurrent: 5 }, wsList: [fx.dep] })));
   assert.deepEqual([c[0].action, c[0].reason], ["started", "session was stopped; the message is pending until the session is active"]);
   await waitUntil(() => active(fx, home), "the instance's command runs again");
+  await stopSession(fx, home);
 });

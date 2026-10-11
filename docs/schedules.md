@@ -677,8 +677,9 @@ process works in the home. When a process still works there, the home stays
 ([missing socket](execution-targets.md#missing-socket)). A spawn job keeps
 its slot while its instance's home exists, a stopped one included, so its due
 minutes are skipped with `previous instance stopped: retire it (oats retire
-<instance>) or start it again (oats session start --home <home>)`. While the
-instance runs, they are skipped as `still running`. After a reboot, a wake job
+<instance>) or start it again (oats session start --home <home>)`, and
+`oats schedule run-now` refuses with the same words (`E_SCHEDULE_RUNNING`).
+While the instance runs, they are skipped as `still running`. After a reboot, a wake job
 starts its instance's session at its next due minute, and a spawn job shows
 `stopped` with the command to retire or start its instance.
 
