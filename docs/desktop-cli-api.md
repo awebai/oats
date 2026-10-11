@@ -3336,6 +3336,16 @@ since, action}`, with `holder` on `E_LIFECYCLE_BUSY`:
 - **`action`: the holder's verb**, `"retire"` or `"stop"`. A claim written
   by a kernel before this feature has no verb and reads as `"retire"`. A
   reader treats a value it does not know as busy.
+- <a id="claim-file-text"></a>**Text of a claim file is never part of an
+  answer.** A claim is read back as whatever is in its file, and the claims
+  of a deployment's homes are in a directory that every instance of it can
+  write. A field of the claim that does not have the shape the kernel
+  writes is answered as `null` (`pid`: a positive integer; `since`: an
+  instant as `2026-01-01T00:00:00.000Z`) and printed as `?` (the recorded
+  start: `none`), and an `action` that is not a verb of the list is
+  answered as `"retire"`. The same holds for a purpose's claim
+  ([`oats worktree`](#oats-worktree)), whose refusal then names no `pid`,
+  and for the recorded start of a process group (`details.gitStart`).
 - A refusal that names no holder has no `pid`, no `since` and no `action`:
   a claim file that is no readable claim, and a command that cannot read
   its own start time.
