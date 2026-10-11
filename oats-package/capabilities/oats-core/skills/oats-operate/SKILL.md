@@ -201,6 +201,15 @@ clean and retained when it holds work; discarding does not apply to it.
 From OATS 0.48.0, retiring an instance stops its recorded children first and keeps them; if one
 will not stop, retire refuses with `E_CHILDREN_RUNNING` and retires nothing
 (`--force` does not bypass it), including your own `--self` retirement.
+From OATS 0.52.0 one stop or retire of an instance runs at a time. A stop
+that meets a retire of that instance answers `E_INSTANCE_RETIRING`; a stop or
+a retire that meets a stop, or a retire that meets a retire, answers
+`E_LIFECYCLE_BUSY`. Nothing happened either way, and what to do differs.
+After `E_INSTANCE_RETIRING` the instance is on its way out: do not run the
+command again (`oats worktree add` in a home that is being retired is
+refused the same way). After `E_LIFECYCLE_BUSY` read the message: beside a
+running stop or retire, run yours again once that one has ended; when nobody
+is running, the message names the step to take first.
 
 ## Asking for a human's attention
 
