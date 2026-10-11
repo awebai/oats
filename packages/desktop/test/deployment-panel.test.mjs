@@ -3,6 +3,9 @@
 // input here is frozen, at every depth, and a function that changed one would throw.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { observeLiveness } from '../../client/liveness.mjs';
 import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry, publicDeployment } from '../../client/deployment-panel.mjs';
 
 /** Frozen at every depth: a function that writes to its input throws (modules are strict). */
@@ -53,14 +56,14 @@ test('rosterRows: waitingOnYou is kept only when cli.features lists waiting-on-y
   }
 });
 
-test('livenessInput: one per row, in order, with the five fields the collector reads and nothing else', () => {
+test('livenessInput: one per row, in order, with the six fields the collector reads and nothing else', () => {
   const rows = frozen(rosterRows(roster(), WAITING));
   assert.deepEqual(livenessInput(rows), [
-    { instance: 'dev-b', tmux: { session: 'oats', window: 'dev-b' }, sessionTarget: undefined, runtimeState: 'stopped', runtimeError: undefined },
-    { instance: 'dev-a', tmux: undefined, sessionTarget: undefined, runtimeState: 'unreachable', runtimeError: 'no server' },
-    { instance: 'ops-a', tmux: null, sessionTarget: { backend: 'herdr' }, runtimeState: undefined, runtimeError: undefined },
+    { instance: 'dev-b', running: false, tmux: { session: 'oats', window: 'dev-b' }, sessionTarget: undefined, runtimeState: 'stopped', runtimeError: undefined },
+    { instance: 'dev-a', running: null, tmux: undefined, sessionTarget: undefined, runtimeState: 'unreachable', runtimeError: 'no server' },
+    { instance: 'ops-a', running: undefined, tmux: null, sessionTarget: { backend: 'herdr' }, runtimeState: undefined, runtimeError: undefined },
   ]);
-  for (const input of livenessInput(rows)) assert.deepEqual(Object.keys(input), ['instance', 'tmux', 'sessionTarget', 'runtimeState', 'runtimeError']);
+  for (const input of livenessInput(rows)) assert.deepEqual(Object.keys(input), ['instance', 'running', 'tmux', 'sessionTarget', 'runtimeState', 'runtimeError']);
   assert.deepEqual(livenessInput(frozen([])), []);
 });
 
@@ -220,4 +223,58 @@ test('composed: a fixture roster becomes the entry the Desktop\'s observeDeploym
   const failed = panelInstances(rows, livenessAnswers(rows, null));
   assert.deepEqual(failed.map(i => [i.instance, i.running, i.runtimeState]), [['dev-a', null, 'unreachable'], ['dev-b', null, 'unreachable'], ['ops-a', null, 'unreachable']]);
   assert.deepEqual(publicDeployment(pendingEntry(undefined, AT).deployment), { status: 'pending' });
+});
+
+// ── A row the kernel answered as unknown stays unknown ────────────────────────
+
+/** A roster with one row per kernel answer, and every `tmux` the projection lets through on an unknown one. */
+const answered = () => frozen({ root: '/d/agents', withheld: [], agents: [{ name: 'dev', description: '', team: null, instances: [
+  { instance: 'yes', home: '/d/agents/dev/instances/yes', running: true, runtimeState: 'running', tmux: { session: 'oats', window: 'yes' } },
+  { instance: 'no', home: '/d/agents/dev/instances/no', running: false, runtimeState: 'stopped', tmux: { session: 'oats', window: 'no' } },
+  { instance: 'unknown-recorded', home: '/d/agents/dev/instances/unknown-recorded', running: null, runtimeState: 'unreachable', runtimeError: 'error connecting to /x/tmux.sock', tmux: { session: 'oats', window: 'unknown-recorded', socket: '/x/tmux.sock' } },
+  { instance: 'unknown-bare', home: '/d/agents/dev/instances/unknown-bare', running: null, runtimeState: 'unreachable', runtimeError: 'E_UNIDENTIFIED_INSTANCE_HOME: instance.json cannot be read' },
+  { instance: 'unknown-null', home: '/d/agents/dev/instances/unknown-null', running: null, tmux: null },
+  { instance: 'unknown-empty', home: '/d/agents/dev/instances/unknown-empty', running: null, runtimeState: 'unidentified', tmux: {} },
+] }] });
+const UNKNOWN_ROWS = ['unknown-bare', 'unknown-empty', 'unknown-null', 'unknown-recorded'];
+/** The collector as the Desktop runs it, in this process: its input as JSON in, what it would print out. */
+const collector = tmuxReader => input => JSON.stringify(observeLiveness(JSON.parse(JSON.stringify(input)), { tmuxReader }));
+
+test('input, collector, answers and panel together: no row the kernel answered `running: null` leaves as running or stopped', () => {
+  const rows = rosterRows(answered(), WAITING);
+  const verdicts = { running: { running: true, runtimeState: 'running' }, stopped: { running: false, runtimeState: 'stopped' }, unknown: { running: null, runtimeState: 'unreachable', runtimeError: 'no server' } };
+  for (const [what, verdict] of Object.entries(verdicts)) {
+    const asked = [];
+    const print = collector(row => { asked.push(row.instance); return { tmux: { ...row.tmux, session: row.tmux?.session || 'oats-agents', window: row.tmux?.window || row.instance }, ...verdict }; });
+    const instances = panelInstances(rows, livenessAnswers(rows, print(livenessInput(rows))));
+    assert.deepEqual(asked, ['yes', 'no'], `${what}: only the rows the kernel answered are probed`);
+    const by = Object.fromEntries(instances.map(i => [i.instance, i]));
+    assert.deepEqual([by.yes.running, by.no.running], [verdict.running, verdict.running], `${what}: the probe decides for a row the kernel answered`);
+    for (const name of UNKNOWN_ROWS) assert.equal(by[name].running, null, `${what}: ${name}`);
+    // The state, the reason and the tmux of an unknown row are the kernel's own; no default session or window is filled in.
+    assert.deepEqual([by['unknown-recorded'].runtimeState, by['unknown-recorded'].runtimeError, by['unknown-recorded'].tmux],
+      ['unreachable', 'error connecting to /x/tmux.sock', { session: 'oats', window: 'unknown-recorded', socket: '/x/tmux.sock' }]);
+    assert.deepEqual([by['unknown-bare'].runtimeState, by['unknown-bare'].runtimeError, by['unknown-bare'].tmux], ['unreachable', 'E_UNIDENTIFIED_INSTANCE_HOME: instance.json cannot be read', undefined]);
+    assert.deepEqual([by['unknown-null'].runtimeState, by['unknown-null'].runtimeError, by['unknown-null'].tmux], ['unreachable', undefined, null]);
+    assert.deepEqual([by['unknown-empty'].runtimeState, by['unknown-empty'].tmux], ['unidentified', {}]);
+  }
+  // The collector failed (it printed nothing the Desktop can read): every row is unknown, those four among them.
+  for (const stdout of [null, '', 'tmux: no server running', '[]']) {
+    const instances = panelInstances(rows, livenessAnswers(rows, stdout));
+    for (const i of instances) assert.equal(i.running, null, `${JSON.stringify(stdout)}: ${i.instance}`);
+    assert.deepEqual(instances.filter(i => UNKNOWN_ROWS.includes(i.instance)).map(i => i.instance), UNKNOWN_ROWS);
+  }
+});
+
+test('the collector as a program, with no terminal server to ask: the kernel\'s unknown rows come back unknown, with the kernel\'s reason', () => {
+  // PATH names nothing, so tmux cannot be started: what the probe says of the two answered rows is its own business.
+  const rows = rosterRows(answered(), WAITING);
+  const program = fileURLToPath(new URL('../../client/liveness-main.mjs', import.meta.url));
+  const child = spawnSync(process.execPath, [program], { input: JSON.stringify(livenessInput(rows)), encoding: 'utf8', timeout: 30_000, env: { PATH: '/nonexistent' } });
+  assert.equal(child.status, 0, child.stderr);
+  const instances = panelInstances(rows, livenessAnswers(rows, child.stdout));
+  const by = Object.fromEntries(instances.map(i => [i.instance, i]));
+  for (const name of UNKNOWN_ROWS) assert.equal(by[name].running, null, name);
+  assert.equal(by['unknown-bare'].runtimeError, 'E_UNIDENTIFIED_INSTANCE_HOME: instance.json cannot be read');
+  assert.equal(by['unknown-recorded'].runtimeError, 'error connecting to /x/tmux.sock');
 });

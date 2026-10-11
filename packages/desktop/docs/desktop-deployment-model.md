@@ -582,7 +582,11 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
 
 Terminal-target liveness (`packages/client/liveness.mjs`, run out of process by `packages/client/liveness-main.mjs`) still
 observes the exact recorded tmux socket/session/window — it reads no deployment
-file. A Herdr-recorded row (a `sessionTarget`, or `runtimeState: "unsupported"`)
+file. It refines a row only when the kernel answered `running` true or false: a row the kernel
+answered `running: null` is not probed, and keeps the kernel's `running`, `runtimeState`,
+`runtimeError` and `tmux`, because the kernel says unknown also where a probe would say stopped and
+be wrong (a missing socket file while a process works in the home, a record that cannot be read).
+Such a row stays unknown until the next roster read. A Herdr-recorded row (a `sessionTarget`, or `runtimeState: "unsupported"`)
 is never probed: it is reported unsupported with the kernel's E_HERDR_REMOVED
 `runtimeError`, or with the E_HERDR_REMOVED stem when an older kernel gave none.
 `remotePanel` does the same for remote rows, including an older remote kernel's

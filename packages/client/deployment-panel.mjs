@@ -26,9 +26,10 @@ export function rosterRows(roster, cli) {
   })));
 }
 
-/** The liveness collector's input (liveness.mjs `observeLiveness`), one per row, in the rows' order. */
+/** The liveness collector's input (liveness.mjs `observeLiveness`), one per row, in the rows' order.
+ * `running` is the kernel's answer: the collector leaves a row it answered `null` as the kernel has it. */
 export function livenessInput(rows) {
-  return rows.map((i) => ({ instance: i.instance, tmux: i.tmux, sessionTarget: i.sessionTarget,
+  return rows.map((i) => ({ instance: i.instance, running: i.running, tmux: i.tmux, sessionTarget: i.sessionTarget,
     runtimeState: i.runtimeState, runtimeError: i.runtimeError }));
 }
 
