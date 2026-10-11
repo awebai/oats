@@ -24,12 +24,14 @@
 // under the home's claim. Two rules order them, and the last tests hold a real scheduling to show
 // each:
 //   - a completion does not start its retire while the command that scheduled it holds the home's
-//     claim, however long that takes: it is never refused by its own scheduling, and never looks
-//     for a marker that is not written yet. It waits for one reading alone: the claim's holder is
-//     that command, by the pid and the start its intent was given in its environment, and reads as
-//     alive. The wait ends when the scheduling returns, when it fails, and when it dies; a holder
-//     whose liveness cannot be read, another holder, and an intent that names no start are not
-//     waited for, and the retire answers for them as for every retire;
+//     claim, for up to SCHEDULING_WAIT_MS: a scheduling that is only slow does not refuse its own
+//     completion, which does not look for a marker that is not written yet. It waits for one
+//     reading alone: the claim's holder is that command, by the pid and the start its intent was
+//     given in its environment, and reads as alive. The wait ends when the scheduling returns,
+//     when it fails, when it dies, and at its bound, where the completion goes on to its retire
+//     and that retire waits and is refused as every retire is; a holder whose liveness cannot be
+//     read, another holder, and an intent that names no start are not waited for, and the retire
+//     answers for them as for every retire;
 //   - a scheduling whose completion has ended by the time the marker is written has failed
 //     (E_SELF_RETIRE_SCHEDULE_FAILED), and removes the marker it wrote.
 // Those tests hold the scheduling for longer than a completion used to wait for the claim: that is
@@ -585,6 +587,8 @@ for (const [what, gate, unwritable] of [
       // alone, in its environment.
       if (existsSync(i.marker)) assert.deepEqual(Object.keys(readJson(i.marker)).sort(), ["agent", "completionPid", "completionStart", "delaySec", "instance", "options", "requestedAt", "requestedByPid", "resultPath", "root"]);
       else assert.deepEqual(gate(i), { fn: "writeFileSync", path: i.marker }, "fixture premise: only a scheduling held before its marker's write has none");
+      // What a person sees while a completion waits: a live instance until the marker is written.
+      assert.equal(Object.hasOwn(f.status(i).row, "retirePending"), existsSync(i.marker), "oats status reads the instance as retiring from the marker's write on, and as live before");
       // What a completion that gave up would do meanwhile: write its outcome, or fail to and say so.
       if (unwritable) chmodSync(instances, 0o555);
       try {

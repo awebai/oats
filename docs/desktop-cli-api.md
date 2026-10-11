@@ -4529,9 +4529,9 @@ it names no completion (a marker written before 0.51.0): `oats retire
 start its retire while the retire that scheduled it holds the claim: it
 waits for that one command, which it knows by the pid and the start time it
 was given, for up to ten minutes (`SCHEDULING_WAIT_MS`; 0.53.0; before, for
-up to 3 s only). Meanwhile the home has no marker, and that retire answers
-a stop and another retire as any running retire does
-([the table](#lifecycle-pairs)). Then it takes the claim as any retire
+up to 3 s only). Meanwhile the home has no marker until that retire writes
+it, last, and that retire answers a stop and another retire as any running
+retire does ([the table](#lifecycle-pairs)). Then it takes the claim as any retire
 does, waiting up to 3 s for a live holder, the one that scheduled it
 included when the ten minutes have passed; one that meets another retire still running is refused,
 and records that at `resultPath` like any failed completion. The `error`
