@@ -144,10 +144,12 @@ systemd-run --user --scope --collect --quiet --unit oats-tmux-<hash>-<random> --
 ```
 
 - **Only what changes.** The tmux command, its arguments and the environment
-  the server starts with are the same as without the scope. `systemd-run`
-  exports the scope's own `INVOCATION_ID` to what it runs, and the system's
-  `env -u INVOCATION_ID` removes it, so neither the server nor its panes get
-  it. There is one
+  the server starts with are the same as without the scope, less any
+  `INVOCATION_ID`. `systemd-run` exports the scope's own `INVOCATION_ID` to
+  what it runs, and the system's `env -u INVOCATION_ID` removes it, so
+  neither the server nor its panes get it. It also removes a service's own
+  `INVOCATION_ID` that the start's environment would otherwise carry (when the
+  login environment cannot be read and the creator's is used). There is one
   scope per start that starts the server: `<hash>` is the first 12 hex digits
   of the SHA-256 of the server's address, and `<random>` 8 random hex digits.
   `systemd-run` and `env` are the system's own (`/usr/bin`, `/bin`), never
