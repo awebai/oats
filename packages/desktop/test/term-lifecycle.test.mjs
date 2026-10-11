@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTermLifecycle } from '../renderer/term-lifecycle.mjs';
 import { handle, confirmed } from './helpers/terminal-wire.mjs';
-import { terminalFailure } from '../renderer/terminal-contract.mjs';
+import { terminalFailure } from '../../client/terminal-contract.mjs';
 const deferred = () => { let resolve, reject; const promise = new Promise((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
 
 test('close before open resolves: original leased PTY detached once, no late setup, UI only after confirmation', async () => {

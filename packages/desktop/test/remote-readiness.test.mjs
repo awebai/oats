@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { cliReadiness } from '../readiness-cli.mjs';
 import { createReadinessBoundary } from '../server/readiness.mjs';
 import { proxyReadiness } from '../readiness-proxy.mjs';
-import { readinessFailure } from '../renderer/readiness-contract.mjs';
+import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { cli, data, envelope } from './helpers/readiness-fixture.mjs';
 
 const home = '/srv/agents/dev/instances/dev-1';

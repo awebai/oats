@@ -155,7 +155,7 @@ test('--max-age (feature spawn-preview-max-age): the dialog\'s reads pass it onl
   gate.resolve(); await reusing; await live;
 });
 test('the adapter: --max-age <s> in the argv only with the feature; a bad value refuses before any process', async () => {
-  const { cliSpawnPreview } = await import('../spawn-preview-cli.mjs');
+  const { cliSpawnPreview } = await import('../../client/spawn-preview-cli.mjs');
   const c = context(), argvs = [];
   const io = { env: {}, exec: (_bin, argv, _o, cb) => { argvs.push(argv); cb(null, JSON.stringify(envelope(data()))); } };
   const target = { workspace: c.workspace.id, context: c.workspace.scope, selector };
@@ -170,7 +170,7 @@ test('the adapter: --max-age <s> in the argv only with the feature; a bad value 
   assert.equal(argvs.length, 3);
 });
 test('the projection tolerates the reuse observation block (drops it, never refuses)', async () => {
-  const { previewData, previewTarget } = await import('../renderer/spawn-preview-contract.mjs');
+  const { previewData, previewTarget } = await import('../../client/spawn-preview-contract.mjs');
   const c = context(), t = previewTarget({ workspace: c.workspace.id, context: c.workspace.scope, selector });
   const v = { ...data(), observation: { observedAt: '2026-09-30T10:00:00.000Z', reused: true, localRevision: 'abc' } };
   const projected = previewData(v, t); assert.ok(projected); assert.equal(Object.hasOwn(projected, 'observation'), false);

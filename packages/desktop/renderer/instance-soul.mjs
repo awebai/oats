@@ -11,17 +11,17 @@
  * row the kernel does not report addressable, or this computer's OATS without
  * remote operations, sends nothing and says why; a host's refusal is shown as
  * relayed (remote-address.mjs). */
-import { inspectData, inspectSupported } from './inspect-contract.mjs';
+import { inspectData, inspectSupported } from '../../client/inspect-contract.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { soulTeams } from './teams-panel.mjs';
-import { memberLabel } from './deployment-facts.mjs';
+import { memberLabel } from '../../client/deployment-facts.mjs';
 import { compositionEntries, coreEntries, coreNote, whyTag, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
 import { createDataState, statusLine, captureFocusState } from './loading.mjs';
 import { instanceStatusIdentity } from './instance-status-identity.mjs';
-import { readingFrom, relayedFailure, remoteInspectBlock, serverLabel } from './remote-address.mjs';
-import { warningsOf } from './capability-warnings-contract.mjs';
+import { readingFrom, relayedFailure, remoteInspectBlock, serverLabel } from '../../client/remote-address.mjs';
+import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 
 export const instanceSoulCSS = `

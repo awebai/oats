@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { cliLaunchConfig, cliStart } from '../cli-adapter.mjs';
+import { cliLaunchConfig, cliStart } from '../../client/cli-adapter.mjs';
 import { launchConfigRequest } from '../server/launch-configs.mjs';
 import { launchConfigFields } from '../renderer/launch-config-fields.mjs';
 import { createInstanceStarter } from '../renderer/start-instance.mjs';

@@ -6,7 +6,7 @@ import { trustedRendererUrl } from './renderer/window-binding.mjs';
 import {
   terminalFailure as fail, terminalSuccess as ok, terminalHandle, terminalGeometry,
   TERM_WRITE_BYTES, TERM_READY_BYTES, TERM_READY_MS, TERM_CLOSE_MS, TERM_PREPARE_MS, TERM_ATTACHMENTS_MAX,
-} from './renderer/terminal-contract.mjs';
+} from '../client/terminal-contract.mjs';
 
 const own = Symbol('desktop terminal owner');
 const validHandle = h => !!h && typeof h === 'object' && !Array.isArray(h)

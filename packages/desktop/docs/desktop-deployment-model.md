@@ -8,9 +8,9 @@ manifests or locks) and keeps no fallback reader for older kernels.
 ## Reads
 
 For each registered deployment directory `D`, the server
-(`server/deployment-observer.mjs`) performs two fixed-argv reads with
+(`packages/client/deployment-observer.mjs`) performs two fixed-argv reads with
 the accepted CLI, `cwd = D`, no shell, a 30 s timeout and a 4 MiB output
-bound (`deployment-read-cli.mjs`); when the probe declares `observe-max-age`
+bound (`packages/client/deployment-read-cli.mjs`); when the probe declares `observe-max-age`
 they carry `--max-age <seconds>` (see
 [desktop-load-path.md](desktop-load-path.md)):
 
@@ -69,7 +69,7 @@ gate.
 
 ## Projection and ownership
 
-`deployment-data.mjs` validates and copies each command's own shape once for
+`packages/client/deployment-data.mjs` validates and copies each command's own shape once for
 rendering; it computes no drift and invents no identity. The roster root must
 be `D/agents`, every soul directory must be inside `D`, and the header's
 `workspace.local` must be `D/oats-local.yaml`. An instance row whose reported
@@ -161,7 +161,7 @@ kernel's remote roster (id `remote:<server>:<targetKey>`). A **workspace
 view** is what the switcher lists and a window shows: every deployment, on
 this Mac or on a registered server, that reports the same workspace identity.
 Views are built per request from the held observations and the remembered
-remote identities, never by a CLI read (`server/workspace-views.mjs`, the
+remote identities, never by a CLI read (`packages/client/workspace-views.mjs`, the
 `OATSWEB_VIEWS` block of `server/oats-web.mjs`).
 
 A matched identity's view id is `ws:` and 20 hex characters of a hash of its
@@ -236,7 +236,7 @@ answers the view that holds it; no `?ws=` answers the first view.
 - `deployments` lists every deployment of the view, even a single one:
   `{id, machine, path, label, local, reachable, identityFrom, primary,
   stale?, reason?, short?, fix?, note?}`. `machine` is "This Mac" or the server's label, else its
-  id. `deploymentLabel` (`renderer/deployment-label.mjs`) shows it as "This
+  id. `deploymentLabel` (`packages/client/deployment-label.mjs`) shows it as "This
   Mac · ~/Agents/oats" or "altair · ~/Agents/tsm": the home directory as
   `~` (on a remote, a `/Users/<name>` or `/home/<name>` prefix, a display
   guess) and the last two segments of a long path. A deployment is live
@@ -488,12 +488,12 @@ A window never waits silently on "Reading the deployment…":
 ## Remote rows
 
 A remote deployment is one group of the kernel's remote roster (`oats server
-roster --json`, projected by `server/remote-roster.mjs`), shown in its
+roster --json`, projected by `packages/client/remote-roster.mjs`), shown in its
 workspace's view; its rows carry `server`, `home`, and the kernel's
 `addressable` and `missingRemotely` facts.
 
-- **One predicate.** `canAddressRemote(row)` in `renderer/remote-address.mjs`
-  (re-exported by `server/instance-admission.mjs`): a local row, or a remote row
+- **One predicate.** `canAddressRemote(row)` in `packages/client/remote-address.mjs`
+  (re-exported by `packages/client/instance-admission.mjs`): a local row, or a remote row
   with `addressable === true`. It gates every action on a row: opening the
   terminal, Start…, the actions menu, the context panel's buttons, the start
   and restart dialog and route, launch configurations, inspection, lifecycle
@@ -530,7 +530,7 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
   already be a display line); views show the headline with the code and detail
   behind Details. A missing `remote` entry is
   "This computer's OATS can't route this to `<server>`. Update OATS here."
-- **The display filter** (`renderer/display-text.mjs`, `displayLine`) is the
+- **The display filter** (`packages/client/display-text.mjs`, `displayLine`) is the
   one way a refusal's `detail` reaches a view. Text that looks like a credential,
   or holds DEL or a C0 control character other than tab and line feed, is
   withheld whole (`[Detail withheld]`), tested on the text as given. Otherwise it becomes one
@@ -562,14 +562,14 @@ workspace's view; its rows carry `server`, `home`, and the kernel's
 
 ## Unchanged, v2-agnostic
 
-Terminal-target liveness (`server/liveness.mjs`, run out of process by `server/liveness-main.mjs`) still
+Terminal-target liveness (`packages/client/liveness.mjs`, run out of process by `packages/client/liveness-main.mjs`) still
 observes the exact recorded tmux socket/session/window — it reads no deployment
 file. A Herdr-recorded row (a `sessionTarget`, or `runtimeState: "unsupported"`)
 is never probed: it is reported unsupported with the kernel's E_HERDR_REMOVED
 `runtimeError`, or with the E_HERDR_REMOVED stem when an older kernel gave none.
 `remotePanel` does the same for remote rows, including an older remote kernel's
 `backend: herdr` row, and `unsupportedSession()` in
-`renderer/instance-presentation.mjs` is the one rule both sides use. Such a row
+`packages/client/instance-presentation.mjs` is the one rule both sides use. Such a row
 cannot open, start or restart; it can retire. The terminal owner broker, tmux admission, file
 guard, spawn preview/apply, lifecycle, events, schedules and Git boundaries are
 unchanged; they now receive their roster rows from the kernel observation.

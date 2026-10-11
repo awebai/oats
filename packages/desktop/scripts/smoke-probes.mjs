@@ -71,6 +71,93 @@ export async function runAbiProbe(reaper, appExe, asarMainPath, {
   return { ok: true, detail: `node-pty loads and spawns under the packaged Electron ABI${mode} (via app.asar)` };
 }
 
+/**
+ * Phase 1's check of the shared home (packages/client, which the builder places beside app.asar as
+ * client/): the package holds exactly the module files the repository's directory has. `packaged`
+ * and `source` are the two directories; nothing is read but their listings.
+ * Returns { ok, detail }.
+ */
+export function sharedHomeInventory(packaged, source, { readdirSync, existsSync }) {
+  if (!existsSync(packaged)) return { ok: false, detail: `the package has no shared home: ${packaged} does not exist` };
+  const want = readdirSync(source).filter((name) => name.endsWith(".mjs")).sort();
+  const have = readdirSync(packaged).sort();
+  if (want.length === 0) return { ok: false, detail: `${source} holds no module: nothing to compare the package with` };
+  const missing = want.filter((name) => !have.includes(name)), extra = have.filter((name) => !want.includes(name));
+  if (missing.length || extra.length) {
+    const parts = [missing.length ? `missing ${missing.join(", ")}` : "", extra.length ? `not in the repository's directory: ${extra.join(", ")}` : ""].filter(Boolean);
+    return { ok: false, detail: `the packaged shared home (${packaged}) does not hold exactly the repository's ${want.length} modules: ${parts.join("; ")}` };
+  }
+  return { ok: true, detail: `the packaged shared home (client/, beside app.asar) holds exactly the repository's ${want.length} modules` };
+}
+
+/**
+ * The relative imports of a module's source, each with the names the module takes from it
+ * (`default` for a default import, none for a namespace or a bare import). Self-contained: its
+ * text is also run inside the packaged executable (mainImportsSource).
+ */
+export function relativeImportsOf(source) {
+  const out = [];
+  const statement = /^[ \t]*import\s+([^;"']*?)\s*from\s*["'](\.{1,2}\/[^"']+)["']|^[ \t]*import\s*["'](\.{1,2}\/[^"']+)["']/gm;
+  for (const m of source.matchAll(statement)) {
+    const clause = m[1] ?? "", names = [];
+    const braces = /\{([^}]*)\}/.exec(clause);
+    if (braces) for (const part of braces[1].split(",")) { const name = part.trim().split(/\s+as\s+/)[0].trim(); if (name) names.push(name); }
+    if (clause.replace(/\{[^}]*\}/, "").replace(/\*\s*as\s+[\w$]+/, "").replace(/,/g, "").trim()) names.push("default");
+    out.push({ specifier: m[2] ?? m[3], names });
+  }
+  return out;
+}
+
+export function mainImportsSource(entry) {
+  return `
+    const { readFileSync } = require("node:fs");
+    const { pathToFileURL } = require("node:url");
+    ${relativeImportsOf.toString()}
+    const entry = ${JSON.stringify(entry)};
+    Promise.all(relativeImportsOf(readFileSync(entry, "utf8")).map(async ({ specifier, names }) => {
+      const loaded = await import(new URL(specifier, pathToFileURL(entry)).href);
+      for (const name of names) if (!(name in loaded)) throw new Error(specifier + " has no export " + name);
+      return specifier;
+    })).then((list) => { console.log("MAIN_IMPORTS_OK " + JSON.stringify(list)); process.exit(0); }, (e) => { console.error(e.message); process.exit(1); });
+  `;
+}
+
+/**
+ * What MAIN loads, without a display (phase 4b). Main imports electron, so it cannot run as Node;
+ * everything else it imports can. The probe reads the packaged `entry` (app.asar/main.mjs) inside
+ * the packaged executable, and imports each module it names by a relative path, from where main
+ * names it: the same loader main has, resolving the same `./` and `../client/` from the same
+ * directory, and each with its own imports. Every name main takes from a module must be an export
+ * of it. The list is main's own, read from the package: there is none here to keep up to date.
+ * `home` is the prefix of the specifiers that leave the app directory for the shared home; a main
+ * that names none of them would make this phase prove nothing about it, and fails.
+ * `reaper` MUST provide runTracked. Returns { ok, detail, imports }.
+ */
+export async function runMainImportsProbe(reaper, appExe, entry, {
+  home = "../client/", timeout = 60_000, env = process.env, targetArch,
+  platform = process.platform, hostArch = process.arch,
+} = {}) {
+  if (typeof reaper?.runTracked !== "function") {
+    return { ok: false, detail: "probe runner requires a reaper with runTracked (async group-tracked execution is the contract)" };
+  }
+  const { exe, args, rosetta } = packagedNode(appExe, ["-e", mainImportsSource(entry)], { targetArch, platform, hostArch });
+  const r = await reaper.runTracked(exe, args, { timeout, env: { ...env, ELECTRON_RUN_AS_NODE: "1" } });
+  const mode = rosetta ? " under Rosetta x86_64" : "";
+  if (r.timedOut) return { ok: false, detail: `main-imports probe${mode} timed out (group killed)` };
+  const line = String(r.stdout).split("\n").find((l) => l.startsWith("MAIN_IMPORTS_OK "));
+  if (r.code !== 0 || !line) {
+    const combined = `${String(r.stdout)}\n${String(r.stderr || "")}`.trim().slice(-800);
+    return { ok: false, detail: `main-imports probe${mode} failed (exit ${r.code}): ${combined}` };
+  }
+  const imports = JSON.parse(line.slice("MAIN_IMPORTS_OK ".length));
+  const shared = imports.filter((specifier) => specifier.startsWith(home));
+  if (shared.length === 0) return { ok: false, imports, detail: `main-imports probe${mode}: ${entry} names no module under ${home}, so this phase does not load the shared home as main does` };
+  return {
+    ok: true, imports,
+    detail: `the ${imports.length} modules main imports by a relative path load, with the names main takes from each, as Node under the packaged executable${mode}: ${shared.length} directly from the shared home (${shared.join(", ")}), the rest from the asar, each with its own imports`,
+  };
+}
+
 /** As the hermetic tests start the backend: no oats CLI is discoverable, no login shell runs. */
 export const NO_CLI_ENV = Object.freeze({ OATS_DESKTOP_OATS_BIN: "", PATH: "/nonexistent", SHELL: "/bin/false" });
 
@@ -112,8 +199,8 @@ const seconds = (ms) => `${Math.round(ms / 100) / 10}s`;
  *     (any HTTP answer) within `readyMs`;
  *  2. its stdin is then closed, as the kernel closes it when main ends, and
  *     it must exit 0 with its port closed within `exitMs` (#698's lifeline);
- *  3. the collector (`collector`, app.asar/server/liveness-main.mjs, the
- *     entry the backend starts) is run as Node with `[]` on stdin and must
+ *  3. the collector (`collector`, client/liveness-main.mjs beside app.asar,
+ *     the entry the backend starts) is run as Node with `[]` on stdin and must
  *     print `[]` within `collectorMs`.
  * Every process goes through the reaper (spawnTracked/runTracked: detached,
  * group-tracked) and is reaped, and the backend awaited, before this returns,

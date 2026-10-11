@@ -10,8 +10,8 @@
  * Results RESOLVE with a stable shape; nothing here re-derives kernel logic.
  * There is no package approval: declaring a package in `packages:` is the
  * trust decision (packages-no-approval). */
-import { cliWorkspace, workspaceGate, workspaceFailure } from '../workspace-cli.mjs';
-import { syncData, capabilitiesData, observationData } from '../deployment-data.mjs';
+import { cliWorkspace, workspaceGate, workspaceFailure } from '../../client/workspace-cli.mjs';
+import { syncData, capabilitiesData, observationData } from '../../client/deployment-data.mjs';
 
 export const WORKSPACE_SYNC_API = 1;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);

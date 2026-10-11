@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { eventsSupported, eventsSelector, eventsRequest, eventsTarget, eventsFailure } from '../renderer/instance-events-contract.mjs';
+import { eventsSupported, eventsSelector, eventsRequest, eventsTarget, eventsFailure } from '../../client/instance-events-contract.mjs';
 import { cliInstanceEvents, EVENTS_CLI_TIMEOUT, EVENTS_CLI_MAX_BUFFER } from '../instance-events-cli.mjs';
 const cli = { ok: true, bin: '/fixture/bin/oats', version: '0.24.12', eventsApi: 2, features: ['instance-events-2'] };
 const selector = { instance: 'dev-probe', agent: 'dev', agentsRoot: '/team/agents', server: null };

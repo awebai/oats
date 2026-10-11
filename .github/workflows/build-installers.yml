@@ -12,6 +12,9 @@ on:
   pull_request:
     paths:
       - "packages/desktop/**"
+      # The shared home the app imports by relative path and ships beside
+      # app.asar: a change there changes every installer.
+      - "packages/client/**"
       - ".github/workflows/**"
 
 # Verify-only: read the repo, write nothing. No publish/release/attestation
@@ -65,11 +68,12 @@ jobs:
         with:
           node-version: 22
 
-      # (No xvfb / display needed: the build-verify smoke runs the static
-      # inventory + strict codesign + node-pty ABI checks and the headless
-      # backend/collector run as Node, not the packaged GUI launch — that needs an interactive windowserver an app without
-      # Developer ID trust can't get on CI runners and is verified out of
-      # band.)
+      # (No display needed up to the upload: the build-verify smoke runs the
+      # static inventory + strict codesign + node-pty ABI checks and the headless
+      # backend/collector run as Node, not the packaged GUI launch. The window is
+      # launched by the last step, on the Linux leg only, under xvfb; on macOS it
+      # needs an interactive windowserver an app without Developer ID trust can't
+      # get on CI runners and is verified out of band.)
       - name: Install deps (root + packages/desktop)
         run: |
           npm ci
@@ -107,12 +111,14 @@ jobs:
       # .app bundle (macOS legs — unconditional, rejects the v0.18.2
       # partial/absent-signature class) + node-pty under the packaged Electron
       # ABI + the bundled backend (started as main starts it, answering, then
-      # exiting when its stdin closes) and its liveness collector, run
-      # headless as Node from app.asar. The packaged GUI LAUNCH is skipped
-      # (OATS_SMOKE_BUILD_VERIFY authorizes the skip under CI) — it needs a
-      # display ad-hoc-signed apps don't get on CI runners; the installer
-      # BUILD + signature + native-module ABI + headless backend are the
-      # meaningful evidence here. Not the AppImage's launcher or runtime.
+      # exiting when its stdin closes), its liveness collector and every
+      # module main imports, run headless as Node from app.asar and the shared
+      # home beside it (client/), which the inventory compares with
+      # packages/client. The packaged GUI LAUNCH is skipped in this step
+      # (OATS_SMOKE_BUILD_VERIFY authorizes the skip under CI) — on macOS it
+      # needs a display ad-hoc-signed apps don't get on CI runners; the
+      # installer BUILD + signature + native-module ABI + headless backend are
+      # the evidence every leg gives. Not the AppImage's launcher or runtime.
       - name: Installed-artifact smoke (build-verify)
         working-directory: packages/desktop
         env:
@@ -128,3 +134,28 @@ jobs:
           name: installers-${{ matrix.os }}-${{ matrix.arch }}
           path: packages/desktop/dist/oats-desktop-*
           if-no-files-found: error
+
+      # The packaged WINDOW, on the Linux leg only: the same smoke once more,
+      # WITH its launch phase (5), on a virtual display. Neither
+      # OATS_SMOKE_SKIP_LAUNCH nor OATS_SMOKE_BUILD_VERIFY is set here. It is
+      # the one claim the steps above cannot show: the page, over file:// under
+      # its CSP, imports the shared home (packages/client, placed beside
+      # app.asar as client/) from app.asar/renderer. `SHELL_OK nav=N` means
+      # shell.mjs ran, and a module graph with one file that does not load does
+      # not run at all. Last, after the upload, so a red launch leaves the
+      # build-verify evidence and the artifacts as they are; it fails the job
+      # all the same. macOS has no launch step: a runner gives an ad-hoc signed
+      # app without Developer ID trust no interactive windowserver, so no
+      # window comes up there, and a step that cannot pass would prove nothing.
+      # The macOS window is launched on a real Mac, outside CI
+      # (docs/release-lane.md, "Desktop release verification"). This step must
+      # stay identical in build-installers.yml and release.yml
+      # (test/release-workflow.test.mjs enforces both).
+      - name: Packaged window launch (smoke with the launch phase, Linux only)
+        if: runner.os == 'Linux'
+        working-directory: packages/desktop
+        env:
+          OATS_SMOKE_TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          command -v xvfb-run >/dev/null || { sudo apt-get update && sudo apt-get install -y xvfb; }
+          xvfb-run -a npm run dist:smoke

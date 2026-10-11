@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
-import { lifecycleReceipt, lifecycleReason } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleReceipt, lifecycleReason } from '../../client/lifecycle-contract.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { pr as rawPr } from './helpers/forge-fixture.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';

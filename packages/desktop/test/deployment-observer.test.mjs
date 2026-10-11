@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { createDeploymentObserver, MAX_DEPLOYMENT_OBSERVATIONS } from '../server/deployment-observer.mjs';
+import { createDeploymentObserver, MAX_DEPLOYMENT_OBSERVATIONS } from '../../client/deployment-observer.mjs';
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
 const status = fixture('status'), header = fixture('workspace-status'), version = fixture('version');
 const context = dirname(status.root);

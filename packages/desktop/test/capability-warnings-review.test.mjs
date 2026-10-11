@@ -14,7 +14,7 @@ import * as spawn from '../renderer/views/spawn.mjs';
 import { createWorkspaceDiscovery } from '../renderer/workspace-discovery.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
-import { workspaceStatusData, deploymentStatusData } from '../deployment-data.mjs';
+import { workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
 import * as readiness from './helpers/readiness-fixture.mjs';
 import { homeInspection } from './helpers/inspect-fixture.mjs';
 

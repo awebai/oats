@@ -2,13 +2,13 @@
  * No direct Git, kernel import, PID/tmux control or legacy mutation fallback. */
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { admitInstance, instanceSelector } from './instance-admission.mjs';
-import { cliLifecycle } from '../lifecycle-cli.mjs';
-import { gitTargetKey } from '../renderer/instance-git-contract.mjs';
-import { hostReason } from '../renderer/remote-address.mjs';
-import { displayLine } from '../renderer/display-text.mjs';
+import { admitInstance, instanceSelector } from '../../client/instance-admission.mjs';
+import { cliLifecycle } from '../../client/lifecycle-cli.mjs';
+import { gitTargetKey } from '../../client/instance-git-contract.mjs';
+import { hostReason } from '../../client/remote-address.mjs';
+import { displayLine } from '../../client/display-text.mjs';
 import { object, lifecycleOptions, lifecyclePlan, lifecycleReceipt, stoppedTargets, planReference, lifecycleChoicesApplicable,
-  lifecycleFailure, lifecycleReason, lifecycleDetailCode } from '../renderer/lifecycle-contract.mjs';
+  lifecycleFailure, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
 const clone = value => structuredClone(value);
 const cliIdentity = cli => JSON.stringify([cli?.bin, cli?.version, cli?.lifecycleApi,
   Array.isArray(cli?.features) ? [...cli.features].sort() : null]);

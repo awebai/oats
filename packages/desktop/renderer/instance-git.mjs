@@ -1,10 +1,10 @@
 /** On-demand K1 projection. IO is injected; never reads Git, files or a roster.
  * The context-panel host owns visibility/selection, this controller owns reads. */
-import { gitTarget, gitTargetKey, gitState, gitDiff, gitObservation, gitKinds, INSTANCE_GIT_MINIMUM_VERSION } from './instance-git-contract.mjs';
+import { gitTarget, gitTargetKey, gitState, gitDiff, gitObservation, gitKinds, INSTANCE_GIT_MINIMUM_VERSION } from '../../client/instance-git-contract.mjs';
 import { createForgePrPanel } from './forge-pr.mjs';
 import { ageText } from './age-text.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { codeLineNodes, readingFrom, serverLabel } from './remote-address.mjs';
+import { codeLineNodes, readingFrom, serverLabel } from '../../client/remote-address.mjs';
 
 export const instanceGitCSS = `
 /* v4.1 Developer tab (Git and GitHub; board 2): Branch, Changes and Pull request cards under small-caps labels,

@@ -20,7 +20,7 @@
  *   returns to whatever held it when the dialog opened. */
 import { postJson } from './views/common.mjs';
 import { machineName, machineFolder, machineFieldProblem, connectOutcome, registerReached, stepCommands,
-  STEP_LABELS, CONNECT_STEPS, AWEB_STEPS } from './machine-contract.mjs';
+  STEP_LABELS, CONNECT_STEPS, AWEB_STEPS } from '../../client/machine-contract.mjs';
 
 export const addMachineCSS = `
 /* The shared modal backdrop (.palette-overlay, shell.css), raised over the spawn dialog it can open from. */

@@ -12,7 +12,7 @@ import { createTeamsPanel, teamsOperations, teamsDocument, receiveText, whenText
 import { createInstanceTeamsSection } from '../renderer/instance-teams.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
-import { cliCapability, operationArgs } from '../cli-adapter.mjs';
+import { cliCapability, operationArgs } from '../../client/cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 
 const fx = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/teams/${name}.json`, import.meta.url), 'utf8'));

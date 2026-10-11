@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { automationRows, automationRow, placementText } from '../renderer/automation-rows.mjs';
 import { createAutomationsView } from '../renderer/views/automations.mjs';
-import { workspaceStatusData } from '../deployment-data.mjs';
+import { workspaceStatusData } from '../../client/deployment-data.mjs';
 
 const real = name => JSON.parse(readFileSync(new URL(`./fixtures/automations-trust/${name}.json`, import.meta.url), 'utf8')).result;
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));

@@ -1,6 +1,6 @@
 /** Renderer intent identity, never a filesystem/command authority. */
-import { absolute, record } from './readiness-contract.mjs';
-import { eventsTimestamp } from './instance-events-contract.mjs';
+import { absolute, record } from '../../client/readiness-contract.mjs';
+import { eventsTimestamp } from '../../client/instance-events-contract.mjs';
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
 const workspaceId = v => typeof v === 'string' && v.length > 0 && v.length <= 4096 && !/[\x00-\x1f\x7f]/.test(v);
 const fields = ['workspace', 'deployment', 'instance', 'agent', 'agentsRoot', 'home', 'server', 'incarnation'];

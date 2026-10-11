@@ -6,16 +6,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createReadinessBoundary } from '../server/readiness.mjs';
-import { readinessFailure } from '../renderer/readiness-contract.mjs';
+import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { createInstanceEventsBoundary } from '../server/instance-events.mjs';
-import { eventsFailure } from '../renderer/instance-events-contract.mjs';
+import { eventsFailure } from '../../client/instance-events-contract.mjs';
 import { createInstanceGitBoundary } from '../server/instance-git.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 import { launchConfigRequest } from '../server/launch-configs.mjs';
 import { scheduleRequest } from '../server/schedules.mjs';
 import { FORGE_EPOCH_HEADER, validForgeEpoch } from '../forge-proxy.mjs';
-import { canAddressRemote, unaddressableSentence } from '../renderer/remote-address.mjs';
+import { canAddressRemote, unaddressableSentence } from '../../client/remote-address.mjs';
 import { apiUrl, servedSelectors } from '../api-url.mjs';
 import { loadServer, juanState, A, B, L, R, V, V_OATS, V_LAB } from './helpers/workspace-views-fixture.mjs';
 

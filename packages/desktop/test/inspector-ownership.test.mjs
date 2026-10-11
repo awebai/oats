@@ -6,9 +6,9 @@ import { createSoulInspector, INSPECTION_STALE_TITLE } from '../renderer/soul-in
 import { createReadinessView } from '../renderer/readiness-view.mjs';
 import { cliStatus } from '../renderer/views/cli-status.mjs';
 import { postJson, wsQuery, workspaceGeneration, currentWorkspace, setWorkspace, rowDeployment } from '../renderer/views/common.mjs';
-import { runtimeState } from '../renderer/instance-presentation.mjs';
+import { runtimeState } from '../../client/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
-import { inspectData, inspectFacts, originText } from '../renderer/inspect-contract.mjs';
+import { inspectData, inspectFacts, originText } from '../../client/inspect-contract.mjs';
 import { createTeamsPanel, teamsOperations, soulTeams } from '../renderer/teams-panel.mjs';
 import { ageText } from '../renderer/age-text.mjs';
 import { homeInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';

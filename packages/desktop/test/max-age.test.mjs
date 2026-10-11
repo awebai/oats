@@ -5,13 +5,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { cliDeploymentRead } from '../deployment-read-cli.mjs';
-import { cliWorkspace, workspaceArgv } from '../workspace-cli.mjs';
-import { cliCapability } from '../cli-adapter.mjs';
+import { cliDeploymentRead } from '../../client/deployment-read-cli.mjs';
+import { cliWorkspace, workspaceArgv } from '../../client/workspace-cli.mjs';
+import { cliCapability } from '../../client/cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 import { createInspectCache } from '../server/inspect-cache.mjs';
-import { observationData } from '../deployment-data.mjs';
-import { OBSERVE_MAX_AGE_FEATURE, validMaxAge, maxAgeArgv } from '../renderer/deployment-contract.mjs';
+import { observationData } from '../../client/deployment-data.mjs';
+import { OBSERVE_MAX_AGE_FEATURE, validMaxAge, maxAgeArgv } from '../../client/deployment-contract.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
 const probe = fixture('version'), status = fixture('status'), header = fixture('workspace-status');

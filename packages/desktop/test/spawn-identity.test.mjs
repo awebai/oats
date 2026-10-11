@@ -8,10 +8,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { previewChoices, previewData, choiceArgv } from '../renderer/spawn-preview-contract.mjs';
-import { spawnApplyChoicesSupported } from '../renderer/spawn-apply-contract.mjs';
+import { previewChoices, previewData, choiceArgv } from '../../client/spawn-preview-contract.mjs';
+import { spawnApplyChoicesSupported } from '../../client/spawn-apply-contract.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
-import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
+import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
 import { mountSpawn, settle, ROOT } from './helpers/spawn-dialog-host.mjs';
 import { cli as CLI, target, context, request } from './helpers/spawn-preview-fixture.mjs';
 

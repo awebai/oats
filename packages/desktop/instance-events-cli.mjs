@@ -1,9 +1,9 @@
 /** Fixed API2 event read transport. Full result/row projection belongs to the
  * owning server boundary; this private envelope never goes directly to IPC. */
 import { execFile } from 'node:child_process';
-import { parseEnvelope } from './cli-adapter.mjs';
-import { absolute, record } from './renderer/readiness-contract.mjs';
-import { eventsSupported, eventsTarget, eventsLimit, eventsFailure, EVENTS_DEFAULT_LIMIT } from './renderer/instance-events-contract.mjs';
+import { parseEnvelope } from '../client/cli-adapter.mjs';
+import { absolute, record } from '../client/readiness-contract.mjs';
+import { eventsSupported, eventsTarget, eventsLimit, eventsFailure, EVENTS_DEFAULT_LIMIT } from '../client/instance-events-contract.mjs';
 const failure = code => ({ schemaVersion: 1, ok: false, error: eventsFailure(code).reason });
 export const EVENTS_CLI_TIMEOUT = 15_000;
 /** Remote reads: ssh's ConnectTimeout (15 s) plus the command. */

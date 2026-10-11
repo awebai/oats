@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { launchConfigsAt, NATIVE_DEFAULT_MODEL, resolveLaunchSelection } from "../lib/core.mjs";
-import { launchOf, PREVIEW_FROM, REPORT_FROM } from "../packages/desktop/renderer/launch-contract.mjs";
+import { launchOf, PREVIEW_FROM, REPORT_FROM } from "../packages/client/launch-contract.mjs";
 
 const OPUS = { harness: "claude", model: "claude-opus-5-5" };
 const LOCAL = "oats-local.yaml";

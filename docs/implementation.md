@@ -25,6 +25,11 @@ dependency-free localhost server; it is released with the kernel but not
 published to npm. Its developer docs are in
 [`packages/desktop/README.md`](../packages/desktop/README.md).
 
+`packages/client/` holds the readers of the kernel's JSON that the kernel's
+clients share: the CLI adapters and contract decoders the Desktop imports by
+relative path and ships beside its `app.asar`. It is a flat directory of
+`.mjs` modules with no manifest of its own, not a package.
+
 ## Repository layout
 
 | path | contents |

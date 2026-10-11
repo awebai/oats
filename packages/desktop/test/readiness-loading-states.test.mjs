@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
-import { readinessFailure } from '../renderer/readiness-contract.mjs';
+import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { PENDING_DELAY_MS, REFRESHING_DELAY_MS, AGE_TICK_MS } from '../renderer/loading.mjs';
 import { createReadinessBoundary } from '../server/readiness.mjs';
 import { cli, workspace, selector, target, data, view, envelope, deferred, tick } from './helpers/readiness-fixture.mjs';

@@ -9,7 +9,7 @@ import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, apiInit, classifyApiRoute, servedSelectors } from '../api-url.mjs';
 import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
-import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
+import { lifecycleFailure } from '../../client/lifecycle-contract.mjs';
 import { proxyReadiness } from '../readiness-proxy.mjs';
 import { view as readinessView } from './helpers/readiness-fixture.mjs';
 const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');

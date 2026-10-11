@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { capabilityShowData, capabilityFileData, listedFiles } from '../renderer/capability-show-contract.mjs';
+import { capabilityShowData, capabilityFileData, listedFiles } from '../../client/capability-show-contract.mjs';
 import { createCapabilityContents } from '../renderer/capability-contents.mjs';
 
 // Real `oats capabilities show … --max-age 60 --json` answers (main @ 6cd27bf8, captured on a live deployment, 2026-10-01):

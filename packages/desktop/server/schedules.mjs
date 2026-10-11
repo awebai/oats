@@ -1,7 +1,7 @@
 /** Workspace-scoped scheduling through the installed CLI. */
 import { capabilityRequest } from "./capabilities.mjs";
-import { cliSchedule } from "../cli-adapter.mjs";
-import { harnessKey } from "../renderer/harness-names.mjs";
+import { cliSchedule } from "../../client/cli-adapter.mjs";
+import { harnessKey } from "../../client/harness-names.mjs";
 
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 

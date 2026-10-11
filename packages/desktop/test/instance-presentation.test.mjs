@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runtimeState, unsupportedSession } from "../renderer/instance-presentation.mjs";
-import { HERDR_REMOVED } from "../renderer/terminal-contract.mjs";
+import { runtimeState, unsupportedSession } from "../../client/instance-presentation.mjs";
+import { HERDR_REMOVED } from "../../client/terminal-contract.mjs";
 import { httpError } from "../renderer/views/common.mjs";
 
 test("unreachable and missing runtime state are unknown, distinct from an observed stop", () => {

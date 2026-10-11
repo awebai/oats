@@ -1,10 +1,10 @@
-import { harnessOf } from './harness-names.mjs';
+import { harnessOf } from '../../client/harness-names.mjs';
 import { apiJson, postJson, instanceApiPath, currentWorkspace, workspaceGeneration, onWorkspaceChange, wsQuery, rowDeployment } from "./views/common.mjs";
 import { instanceId } from "./instance-tree.mjs";
 import { waitForInstanceInPanel } from "./views/spawn.mjs";
 import { launchConfigFields } from "./launch-config-fields.mjs";
 import { captureFocusReturn } from "./focus-return.mjs";
-import { canAddressRemote, unaddressableSentence } from "./remote-address.mjs";
+import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
 
 /** Existing homes are started, never scaffolded again. One dialog owns a launch. */
 export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstanceInPanel } = {}) {

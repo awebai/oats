@@ -14,7 +14,7 @@
 import { apiJson, postJson } from './views/common.mjs';
 import { box } from './workspace-setup.mjs';
 import { openAddMachineDialog } from './add-machine-dialog.mjs';
-import { followBackfill, BACKFILL_POLL_MS } from './machine-contract.mjs';
+import { followBackfill, BACKFILL_POLL_MS } from '../../client/machine-contract.mjs';
 
 export const machinesCSS = `
 .machines-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1.3fr) 92px 104px auto; gap:10px; align-items:center; min-height:42px; padding:0 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }

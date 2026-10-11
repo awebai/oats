@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { waitingOnYouData, waitingMessage, waitingClaim, waitingLabel, waitedText, waitingClock, waitingNames,
-  waitingBelowText, waitingSentence } from '../renderer/waiting-on-you.mjs';
-import { EVENTS_WITHHELD, eventsDetail } from '../renderer/instance-events-contract.mjs';
+  waitingBelowText, waitingSentence } from '../../client/waiting-on-you.mjs';
+import { EVENTS_WITHHELD, eventsDetail } from '../../client/instance-events-contract.mjs';
 import { collapseKey, instanceId, waitingRollup } from '../renderer/instance-tree.mjs';
 
 const since = '2026-10-03T10:00:00.000Z';
@@ -102,7 +102,7 @@ test('the sidebar\'s claim never carries the withheld marker: a withheld note re
   assert.equal(waitingOnYouData(claim({ message: 'Allow Bash(rm -rf build)?' })).message, 'Allow Bash(rm -rf build)?', 'a safe note is kept');
 });
 test('the withheld marker is one literal: the contract exports it, the claim module only imports it', () => {
-  const source = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), 'utf8');
+  const source = name => readFileSync(new URL(`../../client/${name}`, import.meta.url), 'utf8');
   assert.equal(source('instance-events-contract.mjs').split(EVENTS_WITHHELD).length - 1, 1);
   assert.equal(source('waiting-on-you.mjs').includes(EVENTS_WITHHELD), false);
 });
@@ -260,10 +260,10 @@ test('waitingRollup: a chain that leaves the waiting row\'s section (deployment)
 });
 
 test('layering: the claim contract imports only contract modules and the display filter, which imports nothing (the server loads it; the tree roll-up lives in instance-tree.mjs)', () => {
-  const source = readFileSync(new URL('../renderer/waiting-on-you.mjs', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../client/waiting-on-you.mjs', import.meta.url), 'utf8');
   const importsOf = text => [...text.matchAll(/^import\b[^;]*?from\s+['"]([^'"]+)['"]/gm)].map(m => m[1]).sort();
   assert.deepEqual(importsOf(source), ['./display-text.mjs', './instance-events-contract.mjs', './readiness-contract.mjs']);
   assert.doesNotMatch(source, /from\s+['"][^'"]*instance-tree|import\s*\(/, 'no tree import, static or dynamic');
-  const filter = readFileSync(new URL('../renderer/display-text.mjs', import.meta.url), 'utf8');
+  const filter = readFileSync(new URL('../../client/display-text.mjs', import.meta.url), 'utf8');
   assert.deepEqual(importsOf(filter), []); assert.doesNotMatch(filter, /\bimport\s*\(|\bdocument\b/, 'pure: no import, no DOM');
 });

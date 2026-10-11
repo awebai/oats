@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { canAddressRemote, serverLabel, rowReason, remoteHeadline, hostReason, remoteReason, unroutableReason, readingFrom,
-  unaddressableSentence, codeLineNodes, kernelCode } from '../renderer/remote-address.mjs';
+  unaddressableSentence, codeLineNodes, kernelCode } from '../../client/remote-address.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
-import { canAddressRemote as serverCanAddressRemote, admitInstance } from '../server/instance-admission.mjs';
+import { canAddressRemote as serverCanAddressRemote, admitInstance } from '../../client/instance-admission.mjs';
 
 const remote = (extra = {}) => ({ instance: 'dev-a', agent: 'dev', home: '/srv/agents/dev/instances/dev-a', server: 'build',
   repoName: 'Build box', running: true, addressable: true, missingRemotely: false, savedRoute: false, ...extra });
@@ -258,7 +258,7 @@ test('a local OATS before 0.31 reports no addressable fact: a saved-route row ke
 });
 
 test('incompatibleSentence, relayedFailure, remoteInspectBlock (#675): the panel reads of a remote instance', async () => {
-  const { incompatibleSentence, relayedFailure, remoteInspectBlock } = await import('../renderer/remote-address.mjs');
+  const { incompatibleSentence, relayedFailure, remoteInspectBlock } = await import('../../client/remote-address.mjs');
   assert.equal(incompatibleSentence('Build box', 'soul'),
     "Build box runs an OATS that can't show this instance's soul here (it needs the operations feature). Update OATS on Build box.");
   assert.equal(incompatibleSentence('', 'teams'),

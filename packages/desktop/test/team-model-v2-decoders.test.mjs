@@ -7,11 +7,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { teamsData, soulTeamsData, soulsData, deploymentStatusData } from '../deployment-data.mjs';
-import { previewData } from '../renderer/spawn-preview-contract.mjs';
-import { defaultTeamOf } from '../renderer/team-rows.mjs';
-import { cliTeams, cliSoulTeams } from '../cli-adapter.mjs';
-import * as remote from '../server/remote-roster.mjs';
+import { teamsData, soulTeamsData, soulsData, deploymentStatusData } from '../../client/deployment-data.mjs';
+import { previewData } from '../../client/spawn-preview-contract.mjs';
+import { defaultTeamOf } from '../../client/team-rows.mjs';
+import { cliTeams, cliSoulTeams } from '../../client/cli-adapter.mjs';
+import * as remote from '../../client/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
@@ -117,7 +117,7 @@ test('argv: oats teams and oats soul teams, validated before any exec, never opt
 });
 
 test('readiness (real): team items in checks.configured (no fifth check) keep code, label, default and at', async () => {
-  const { readinessData } = await import('../renderer/readiness-contract.mjs');
+  const { readinessData } = await import('../../client/readiness-contract.mjs');
   const { data } = await import('./helpers/readiness-fixture.mjs');
   const t = { workspace: 'northwind', context: DEPLOYMENT, observedAs: 'soul', selector: { kind: 'soul', soul: 'release-manager', agentsRoot: `${DEPLOYMENT}/agents` } };
   const real = v2('readiness-soul').result, r = readinessData(structuredClone(real), t);
@@ -135,7 +135,7 @@ test('readiness (real): team items in checks.configured (no fifth check) keep co
 });
 
 test('team ids follow the kernel\'s provider-neutral rule in every generic reader (the aweb form stays the route\'s)', async () => {
-  const { teamRow, defaultTeamOf, TEAM_ID } = await import('../renderer/team-rows.mjs');
+  const { teamRow, defaultTeamOf, TEAM_ID } = await import('../../client/team-rows.mjs');
   for (const id of ['mine:juan.aweb.ai', 'team@example.org', 'org/team+eng', 'a', 'A'.repeat(256)]) {
     assert.ok(TEAM_ID.test(id), id);
     assert.ok(teamRow({ label: 'x', team: id, default: false, from: 'local' }), id);

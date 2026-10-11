@@ -13,7 +13,7 @@ The probe (`oats version --json`) must declare `servers-per-workspace` and
 them nothing here changes: `/api/servers` answers the registered list as
 before, Where to run lists every registered server, there is no Add entry and
 no Machines box (`machinesGated`, `awebConnectGated` in
-`renderer/machine-contract.mjs`).
+`packages/client/machine-contract.mjs`).
 
 ## The window's key
 

@@ -6,9 +6,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { soulsData, deploymentStatusData } from '../deployment-data.mjs';
-import { cliSoulTeams } from '../cli-adapter.mjs';
-import * as remote from '../server/remote-roster.mjs';
+import { soulsData, deploymentStatusData } from '../../client/deployment-data.mjs';
+import { cliSoulTeams } from '../../client/cli-adapter.mjs';
+import * as remote from '../../client/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
 
 const read = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/package-souls/${name}.json`, import.meta.url), 'utf8'));

@@ -1,10 +1,10 @@
 import { takePickerFocusReturn } from './overlay-picker.mjs';
-import { gitTarget, gitTargetKey } from './instance-git-contract.mjs';
-import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, stoppedTargets, lifecycleChoicesApplicable } from './lifecycle-contract.mjs';
+import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs';
+import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, stoppedTargets, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { codeLineNodes, readingFrom, remoteReason, serverLabel } from './remote-address.mjs';
-import { cleanLine, displayLine } from './display-text.mjs';
+import { codeLineNodes, readingFrom, remoteReason, serverLabel } from '../../client/remote-address.mjs';
+import { cleanLine, displayLine } from '../../client/display-text.mjs';
 import { skeleton, observedAgeText, AGE_TICK_MS } from './loading.mjs';
 export const lifecycleCSS = `
 .lifecycle-dialog { width:min(420px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }

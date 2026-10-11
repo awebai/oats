@@ -1,9 +1,9 @@
 /** API2 address-history projection. No log parsing, activity inference or IO.
  * Counts/integrity/claims come from the producer, not reconstructed from prose. */
-import { harnessOf } from './harness-names.mjs';
-import { record } from './readiness-contract.mjs';
-import { eventsTarget, eventsLimit, eventsTimestamp, eventsId, eventsDetail } from './instance-events-contract.mjs';
-import { waitingMessage } from './waiting-on-you.mjs';
+import { harnessOf } from '../../client/harness-names.mjs';
+import { record } from '../../client/readiness-contract.mjs';
+import { eventsTarget, eventsLimit, eventsTimestamp, eventsId, eventsDetail } from '../../client/instance-events-contract.mjs';
+import { waitingMessage } from '../../client/waiting-on-you.mjs';
 const count = v => Number.isSafeInteger(v) && v >= 0;
 const birth = v => v === null || eventsTimestamp(v);
 const id = eventsId, detail = eventsDetail;

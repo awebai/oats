@@ -16,8 +16,8 @@ import { join } from "node:path";
 import { appendEvent, readEvents, recordStartBoundary, setWaiting } from "../lib/instance-events.mjs";
 import { REMOTE_ROW_FACTS, rosterGroups, writeServers } from "../lib/servers.mjs";
 import { eventsData } from "../packages/desktop/renderer/instance-events-data.mjs";
-import { remotePanel } from "../packages/desktop/server/remote-roster.mjs";
-import { waitingClaim } from "../packages/desktop/renderer/waiting-on-you.mjs";
+import { remotePanel } from "../packages/client/remote-roster.mjs";
+import { waitingClaim } from "../packages/client/waiting-on-you.mjs";
 
 const base = mkdtempSync("/tmp/oats-rw-");
 const prevHomeDir = process.env.OATS_HOME_DIR;

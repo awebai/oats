@@ -2,7 +2,7 @@
 // machine as the label (with the path tail when one machine holds two), and the tab remembered per view.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { machineLabels, pathTail } from '../renderer/deployment-label.mjs';
+import { machineLabels, pathTail } from '../../client/deployment-label.mjs';
 import { deploymentTabs, selectedDeploymentTab, rememberDeploymentTab, rememberedDeploymentTab, requestDeploymentTab, onDeploymentTabRequest,
   DEPLOYMENT_TAB_KEY, DEPLOYMENT_TAB_VIEWS_MAX, ALL_TAB } from '../renderer/deployment-tabs.mjs';
 
