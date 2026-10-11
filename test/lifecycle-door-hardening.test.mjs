@@ -112,7 +112,10 @@ async function launchHarness(w) {
   let hasSession = true;
   try { tmux("has-session", "-t", `=${session}`); } catch { hasSession = false; }
   if (!hasSession) tmux("new-session", "-d", "-s", session, "-n", "keeper", "-c", fx.base, "sleep 600");
-  tmux("new-window", "-d", "-t", `${session}:`, "-n", name, "-c", home, launcher);
+  // Two arguments, so tmux executes the command with no shell of its own and the pane's process is the
+  // launcher on every host: given as one it goes through `sh -c`, which on some hosts stays as one
+  // more process above the launcher (#908).
+  tmux("new-window", "-d", "-t", `${session}:`, "-n", name, "-c", home, "/bin/sh", launcher);
   const harnessPid = () => { try { const text = readFileSync(pidFile, "utf8").trim(); return /^\d+$/.test(text) && Number(text) > 1 ? Number(text) : null; } catch { return null; } };
   await waitUntil(() => harnessPid() !== null && alive(harnessPid()), "the stand-in harness to run");
   const pid = harnessPid();
