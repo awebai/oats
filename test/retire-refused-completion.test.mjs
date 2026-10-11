@@ -104,7 +104,8 @@ try { console.log(JSON.stringify(retireInstance(root, name, { self: true, selfKi
 catch (e) { console.log(JSON.stringify({ error: { code: e.code, message: e.message, reached: e.details?.reached ?? null } })); process.exitCode = 1; }`;
 
 /** The retire hook. It appends the instance it ran for to `<agents root>/retire-hook.log`, outside
- *  every home, and then does what the files beside that log ask: `hook-unreadable`, leave in the
+ *  every home, writes the names of its environment's variables to `retire-hook-env.json` beside
+ *  it, and then does what the files beside that log ask: `hook-unreadable`, leave in the
  *  home a file nobody may read (the inspection after the hooks fails on it); `hook-incomplete`,
  *  report that its cleanup did not finish, in words of its own. */
 const HOOK_TEXT = "HOOK-OWN-WORDS";
@@ -112,6 +113,7 @@ const HOOK = `import { appendFileSync, chmodSync, existsSync, writeFileSync } fr
 import { join } from "node:path";
 const root = process.env.OATS_ROOT, home = process.env.OATS_INSTANCE_HOME;
 appendFileSync(join(root, "retire-hook.log"), process.env.OATS_INSTANCE + "\\n");
+writeFileSync(join(root, "retire-hook-env.json"), JSON.stringify(Object.keys(process.env).sort()));
 if (existsSync(join(root, "hook-unreadable"))) { const left = join(home, "left-by-the-hook"); writeFileSync(left, "the hook's\\n"); chmodSync(left, 0o000); }
 if (existsSync(join(root, "hook-incomplete"))) {
   console.error("${HOOK_TEXT} on stderr");
@@ -563,6 +565,18 @@ test("a completion whose home is already gone: no hook and nothing removed by it
     assert.equal(existsSync(i.marker), false, "the marker goes");
     assert.equal(f.refused(i.workspaceLog).length, 1, "no second row");
   } finally { chmodSync(i.workspaceLog, 0o644); }
+});
+
+test("the intent is the completion's own input: a retire hook of a scheduled self-retire does not find OATS_RETIRE_INTENT in its environment", async (t) => {
+  const f = deployment(t);
+  const i = await f.spawn("private");
+  const { completionPid } = await f.schedule(i);
+  await f.ended(completionPid);
+  assert.equal(existsSync(i.home), false, "fixture premise: the completion retired the instance");
+  assert.equal(f.hookRuns(), 1, "fixture premise: its retire hook ran");
+  const names = readJson(join(f.fx.root, "retire-hook-env.json"));
+  for (const given of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_CAPABILITY", "PATH"]) assert.ok(names.includes(given), `fixture premise: the hook recorded its environment (${given})`);
+  assert.equal(names.includes("OATS_RETIRE_INTENT"), false, "the completion took its intent out of its environment before it ran anything");
 });
 
 const SCHEDULING_REACHED = { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null };
