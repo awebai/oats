@@ -235,8 +235,15 @@ test("install warns, without refusing, when the oats it would run lives under th
     assert.ok(warning, `${os}: the warning names ${inHome}`);
     assert.match(warning, /instance home/); assert.match(warning, /operator's installed oats/);
     assert.ok(Object.values(files.files).some((text) => text.includes(inHome)), `${os}: rendered all the same`);
+    // Only the instance-home warning is this test's: whether this host's node is stable is not.
+    const homeWarnings = (opts) => H.hostUnitFiles({ os, unitDir: dir(`warn-${++n}`), execPath: process.execPath, envPath: "/usr/bin", ...opts }).warnings.filter((w) => w.includes("instance home"));
     const elsewhere = executable(join(dir(`installed-oats-${++n}`), "bin", "oats.mjs"));
-    assert.deepEqual(H.hostUnitFiles({ os, unitDir: dir(`warn-${++n}`), execPath: process.execPath, envPath: "/usr/bin", instanceHome, oatsBin: elsewhere }).warnings, []);
-    assert.deepEqual(H.hostUnitFiles({ os, unitDir: dir(`warn-${++n}`), execPath: process.execPath, envPath: "/usr/bin", instanceHome: undefined, oatsBin: inHome }).warnings, [], "no instance home, nothing to compare");
+    assert.deepEqual(homeWarnings({ instanceHome, oatsBin: elsewhere }), []);
+    assert.deepEqual(homeWarnings({ instanceHome: undefined, oatsBin: inHome }), [], "no instance home, nothing to compare");
+    // An attached instance's work is a symlink into its owner's home: node resolves the oats it runs to the owner's path.
+    const owner = dir(`owner-${++n}`), attached = dir(`attached-${++n}`);
+    const ownerOats = executable(join(owner, "work", "bin", "oats.mjs"));
+    symlinkSync(join(owner, "work"), join(attached, "work"));
+    assert.equal(homeWarnings({ instanceHome: attached, oatsBin: ownerOats }).length, 1, `${os}: an attached home's work is its own too`);
   }
 });
