@@ -448,9 +448,10 @@ beside the homes, which names its holder by pid and start time. Any other
 retire of that instance (plain, guarded or `--self`, `--force` included) is
 refused at once with `E_LIFECYCLE_BUSY`, before it stops anything, copies
 anything or runs a hook: a retire hook releases things that exist once, such
-as a messaging identity or a scheduled job. A self-retire's completion is
-refused the same way, after it has waited up to 3 s for the retire that
-scheduled it to release the claim. A self-retire that is scheduled counts from the moment it is scheduled,
+as a messaging identity or a scheduled job. A self-retire's completion
+waits for the retire that scheduled it to release the claim, for up to ten
+minutes (OATS 0.53.0; before, it gave up after 3 s). Beside any other
+holder it is refused the same way, after it has waited up to 3 s. A self-retire that is scheduled counts from the moment it is scheduled,
 while its completion lives. A retire killed while it holds the claim leaves
 the file behind until that name is retired again: the next retire takes the
 claim over, because its holder is verifiably gone, and the file is safe to
@@ -1064,12 +1065,31 @@ Nothing retries by itself: `oats retire <instance>` does. A completion
 removes only the marker of its own scheduling, so the marker of a later
 `--self` is left for that one's completion.
 
-A `--self` whose completion has already given up when the scheduling writes
-its marker answers `E_SELF_RETIRE_SCHEDULE_FAILED`, and nothing is scheduled
-(OATS 0.53.0). The completion waits 3 s for the scheduling to finish; a
-scheduling that the host held up for longer finds the completion's outcome
-already there. It removes the marker it wrote, the outcome and the log, and
-the instance is still live.
+A completion does not start its retire while its scheduling still holds
+the home's claim (OATS 0.53.0). A scheduling that the host holds up
+therefore delays the retire and does not fail it. The completion waits for
+that one command only, which it knows by the pid and the start time it was
+given when it was started: a holder that has died, one whose liveness
+cannot be read, and any other holder are not waited for here, and the
+retire answers for them as every retire does.
+
+While a completion waits, the instance reads as live in `oats status`:
+there is no marker yet. The scheduling is a retire that runs, so a stop
+plan shows `retiring: true`, and a stop apply (`E_INSTANCE_RETIRING`) and
+another retire (`E_LIFECYCLE_BUSY`) are refused with its pid. The wait ends
+when that command returns, fails or dies; ending it by hand lets the
+completion go on and retire the instance, which is what the instance asked
+for. It also ends after ten minutes (`SCHEDULING_WAIT_MS`): the completion
+then goes on to its retire, which is refused by the holder that is still
+there like any retire, and a scheduling that comes back afterwards answers
+`E_SELF_RETIRE_SCHEDULE_FAILED`, having found its completion's outcome.
+
+A `--self` whose completion has already ended when the scheduling writes
+its marker answers `E_SELF_RETIRE_SCHEDULE_FAILED`, and nothing is
+scheduled: the completion left its outcome, or it is gone and left none
+(it was killed, for one). The scheduling removes the marker it wrote, with
+the completion's outcome and log if there are any, and the instance is
+still live.
 
 **A home that a refused completion left stuck under 0.52.0 or earlier**
 still has its marker, and reads as retiring although nothing of it was

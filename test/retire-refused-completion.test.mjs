@@ -21,10 +21,19 @@
 // with no delay, from an intent or from the marker's path, as the detached script does.
 //
 // The scheduling and its completion are two processes, and the scheduling writes the marker last,
-// under the home's claim. A completion that gave up waiting for that claim before the marker was
-// written finds none to remove; so the scheduling looks for the completion's outcome once it has
-// written the marker, and fails when it is there. The last two tests hold the scheduling at each
-// side of that look.
+// under the home's claim. Two rules order them, and the last tests hold a real scheduling to show
+// each:
+//   - a completion does not start its retire while the command that scheduled it holds the home's
+//     claim, however long that takes: it is never refused by its own scheduling, and never looks
+//     for a marker that is not written yet. It waits for one reading alone: the claim's holder is
+//     that command, by the pid and the start its intent was given in its environment, and reads as
+//     alive. The wait ends when the scheduling returns, when it fails, and when it dies; a holder
+//     whose liveness cannot be read, another holder, and an intent that names no start are not
+//     waited for, and the retire answers for them as for every retire;
+//   - a scheduling whose completion has ended by the time the marker is written has failed
+//     (E_SELF_RETIRE_SCHEDULE_FAILED), and removes the marker it wrote.
+// Those tests hold the scheduling for longer than a completion used to wait for the claim: that is
+// a wait on purpose, during which the invariants are polled.
 //
 // "A recorded child that will not stop" is a child whose lifecycle claim cannot be read: its stop
 // is refused at once (E_LIFECYCLE_BUSY) and nothing is signalled, so the parent's retire answers
@@ -33,13 +42,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { deferredRetireResultPath, retireInstance, retirePendingMarkerPath } from "../lib/core.mjs";
+import { CLAIM_WAIT_MS } from "../lib/claim.mjs";
+import { SCHEDULING_WAIT_MS, deferredRetireResultPath, processesInHome, retireInstance, retirePendingMarkerPath } from "../lib/core.mjs";
 import { RETIRE_REFUSED_REASON_MAX } from "../lib/instance-events.mjs";
 import { startGated } from "./helpers/fs-gate-preload.mjs";
-import { killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
+import { hostProcessState, killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
+import { processStartToken } from "../lib/worktree-hooks.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CORE = pathToFileURL(new URL("../lib/core.mjs", import.meta.url).pathname).href;
@@ -51,6 +62,15 @@ const COMPLETION_MS = 180000;
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const gone = (pid) => { try { process.kill(pid, 0); return false; } catch (e) { return e.code === "ESRCH"; } };
 const oneLine = (text) => text.replace(/\s+/g, " ").trim();
+/** Longer than a completion waited for the claim of its scheduling before it gave up. */
+const PAST_THE_OLD_WAIT_MS = CLAIM_WAIT_MS + 2000;
+/** Poll `invariant` for `ms`: it holds the whole time, or the test fails where it stopped holding. */
+async function during(ms, invariant) {
+  for (const end = Date.now() + ms; Date.now() < end;) { invariant(); await new Promise((resolve) => setTimeout(resolve, 50)); }
+  invariant();
+}
+/** The pending markers and outcomes beside the homes of `instances`. */
+const besideTheHomes = (instances) => readdirSync(instances).filter((name) => name.startsWith(".oats-retire-pending-") || name.startsWith(".oats-retired-"));
 
 /** Every entry under `dir`, one row each: its path, its mode, and a file's bytes (as a digest) or a
  *  link's target. Two listings that are equal are the same tree, byte for byte. */
@@ -66,10 +86,13 @@ function listing(dir, rel = "") {
 }
 
 /** What the detached script of a self-retire runs, with no delay: from the marker's path when
- *  OATS_TEST_COMPLETION_MARKER names one, else from the intent in the environment. */
+ *  OATS_TEST_COMPLETION_MARKER names one, else from the intent in the environment. The bound of its
+ *  wait for its scheduling is the kernel's, or the one OATS_TEST_SCHEDULING_WAIT_MS gives this
+ *  script (the kernel reads no such variable: it is an option of the function). */
 const COMPLETION = `import { completeDeferredRetirement } from ${JSON.stringify(CORE)};
 const given = process.env.OATS_TEST_COMPLETION_MARKER || JSON.parse(process.env.OATS_RETIRE_INTENT);
-process.exitCode = completeDeferredRetirement(given, { delaySec: 0 }) ? 0 : 1;`;
+const bound = process.env.OATS_TEST_SCHEDULING_WAIT_MS;
+process.exitCode = completeDeferredRetirement(given, { delaySec: 0, ...(bound ? { schedulingWaitMs: Number(bound) } : {}) }) ? 0 : 1;`;
 
 /** `oats retire <name> --self` as the instance's own process runs it, its completion due at once:
  *  the answer on stdout, an error as `{ error: { code, message, reached } }` with exit 1. */
@@ -166,10 +189,11 @@ function deployment(t) {
     intent: (i, { children, ...more } = {}) => ({ instance: i.name, agent: "dev", root: fx.root, requestedAt: "2026-10-10T00:00:00.000Z", requestedByPid: 1, delaySec: 0,
       options: { home: i.home, tmuxSession: "oats-agents", ...(children ? { children: children.map((kid) => ({ instance: kid.name, home: kid.home })) } : {}) }, resultPath: i.result, ...more }),
     /** A completion of the test's own, run to its end → { status, stdout, stderr }. `given` is an
-     *  intent, or the path of a marker. */
-    complete: (given) => {
-      const r = spawnSync(process.execPath, ["--input-type=module", "-e", COMPLETION], { cwd: fx.dep, encoding: "utf8", timeout: COMPLETION_MS,
-        env: { ...fx.env, ...(typeof given === "string" ? { OATS_TEST_COMPLETION_MARKER: given } : { OATS_RETIRE_INTENT: JSON.stringify(given) }) } });
+     *  intent, or the path of a marker. `schedulingWaitMs`: the bound of its wait for its scheduling. */
+    complete: (given, { timeout = COMPLETION_MS, schedulingWaitMs } = {}) => {
+      const r = spawnSync(process.execPath, ["--input-type=module", "-e", COMPLETION], { cwd: fx.dep, encoding: "utf8", timeout,
+        env: { ...fx.env, ...(schedulingWaitMs === undefined ? {} : { OATS_TEST_SCHEDULING_WAIT_MS: String(schedulingWaitMs) }),
+          ...(typeof given === "string" ? { OATS_TEST_COMPLETION_MARKER: given } : { OATS_RETIRE_INTENT: JSON.stringify(given) }) } });
       assert.equal(r.signal, null, `the completion ended by itself\n${r.stdout}\n${r.stderr}`);
       return r;
     },
@@ -179,9 +203,13 @@ function deployment(t) {
     scheduling: (i) => onFixturePath(() => retireInstance(fx.root, i.name, { self: true, selfKillDelaySec: 600 })),
     /** A scheduling of `i` in a process of its own, held at `gates`. */
     scheduleGated: (i, gates) => startGated(["--input-type=module", "-e", SCHEDULING], { cwd: fx.dep, env: { ...fx.env, OATS_TEST_SCHEDULING: JSON.stringify({ root: fx.root, name: i.name }) }, gateDir: join(fx.base, `gates-${++gateDirs}`), gates }),
-    /** Wait until the completion of `i` has said, in its log, that it did not complete: the last
-     *  thing it does. (Its scheduling is held and reaps nothing, so its pid stays a zombie.) */
-    gaveUp: (i) => waitUntil(() => existsSync(i.log) && readFileSync(i.log, "utf8").includes(`deferred retirement of ${i.name} failed: `), `the completion of ${i.name} to give up and say so`, COMPLETION_MS),
+    /** The completion a held scheduling of `i` has started → its pid. It is the one process that
+     *  works in the instances directory, where the kernel starts it (the kernel's own scan). */
+    completionOf: async (i) => {
+      const working = () => { const scan = processesInHome(dirname(i.home)); assert.equal(scan.ok, true, `the process scan: ${scan.error}`); return scan.processes.map((p) => p.pid); };
+      await waitUntil(() => working().length === 1, `the completion of ${i.name} to run`, COMPLETION_MS);
+      return f.track(working()[0]);
+    },
     track: (pid) => { completions.push(pid); return pid; },
     /** The `retire-refused` rows of a log file. */
     refused: (file) => rowsOf(file).filter((row) => row.kind === "retire-refused"),
@@ -393,7 +421,10 @@ test("a completion that cannot take the home's claim: the refusal's code, no hoo
   writeFileSync(i.marker, JSON.stringify(intent, null, 2) + "\n");
   const before = listing(i.home);
 
-  const r = f.complete(intent);
+  // The holder is not the process that scheduled this completion: it is not waited for beyond the
+  // retire's own wait for the claim.
+  assert.notEqual(intent.requestedByPid, process.pid);
+  const r = f.complete(intent, { timeout: 60000 });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   const outcome = readJson(i.result);
   assert.deepEqual({ ok: outcome.ok, code: outcome.error.code }, { ok: false, code: "E_LIFECYCLE_BUSY" });
@@ -532,69 +563,257 @@ test("a completion whose home is already gone: no hook and nothing removed by it
   } finally { chmodSync(i.workspaceLog, 0o644); }
 });
 
-test("a scheduling that writes its marker after its completion has given up: it answers E_SELF_RETIRE_SCHEDULE_FAILED, and no marker, outcome or log is left; the instance does not read as retiring", async (t) => {
+const SCHEDULING_REACHED = { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null };
+const claimOf = (i) => join(dirname(i.home), ".oats-retirement", "claims", `${i.name}.lock`);
+
+for (const [what, gate, unwritable] of [
+  ["before it writes its marker", (i) => ({ fn: "writeFileSync", path: i.marker }), false],
+  ["before it writes its marker, with nothing writable beside the home meanwhile", (i) => ({ fn: "writeFileSync", path: i.marker }), true],
+  ["before it releases the claim, its marker written", (i) => ({ fn: "unlinkSync", path: claimOf(i) }), false],
+]) {
+  test(`a scheduling held ${what}, for longer than a completion used to wait: the completion waits for its scheduling, then retires the instance, and nothing is left beside the home`, async (t) => {
+    if (unwritable && ROOT) { t.skip(SKIP_FOR_ROOT); return; }
+    const f = deployment(t);
+    const i = await f.spawn("held");
+    const instances = dirname(i.home), mode = lstatSync(instances).mode & 0o7777;
+    const run = f.scheduleGated(i, [{ name: "held", when: "before", waitMs: COMPLETION_MS, ...gate(i) }]);
+    try {
+      await run.waitGate("held", COMPLETION_MS);
+      const pid = await f.completionOf(i);
+      assert.equal(readJson(claimOf(i)).pid, run.child.pid, "fixture premise: the scheduling holds the home's claim");
+      // The marker's format is what it was: who scheduled the completion is told to the completion
+      // alone, in its environment.
+      if (existsSync(i.marker)) assert.deepEqual(Object.keys(readJson(i.marker)).sort(), ["agent", "completionPid", "completionStart", "delaySec", "instance", "options", "requestedAt", "requestedByPid", "resultPath", "root"]);
+      else assert.deepEqual(gate(i), { fn: "writeFileSync", path: i.marker }, "fixture premise: only a scheduling held before its marker's write has none");
+      // What a completion that gave up would do meanwhile: write its outcome, or fail to and say so.
+      if (unwritable) chmodSync(instances, 0o555);
+      try {
+        await during(PAST_THE_OLD_WAIT_MS, () => {
+          assert.equal(existsSync(i.result), false, "the completion has not given up: no outcome");
+          assert.equal(readFileSync(i.log, "utf8"), "", "and it has said nothing");
+          assert.equal(existsSync(join(i.home, "instance.json")), true, "nor started its retire");
+        });
+      } finally { chmodSync(instances, mode); }
+
+      run.release("held");
+      const done = await run.done;
+      assert.deepEqual(done.timedOut, []);
+      assert.equal(done.code, 0, done.stdout + done.stderr);
+      const receipt = JSON.parse(done.stdout.trim());
+      assert.deepEqual([receipt.deferred, receipt.completionPid], [true, pid], "the scheduling answers that its completion is on its way, and it is");
+      await f.ended(pid);
+      assert.equal(existsSync(i.home), false, "the instance is retired");
+      assert.equal(f.hookRuns(), 1, "its retire hook ran once");
+      assert.deepEqual(besideTheHomes(instances), [], "no marker, outcome or log is left beside the home");
+      assert.deepEqual(f.refused(i.workspaceLog), [], "no completion gave up: no retire-refused row");
+      assert.ok(f.kinds(i.workspaceLog).includes("retired"));
+      const status = f.status(i);
+      assert.deepEqual([status.row, status.failures], [undefined, []]);
+    } finally { chmodSync(instances, mode); await run.finish(); }
+  });
+}
+
+test("a scheduling whose completion was killed before the marker is written: it answers E_SELF_RETIRE_SCHEDULE_FAILED, the completion has ended and left no outcome, and no marker is left", async (t) => {
   const f = deployment(t);
-  const i = await f.spawn("late");
+  const i = await f.spawn("killed");
   const before = listing(i.home);
-  // Held before the marker's write, under the home's claim, with the completion already started.
   const run = f.scheduleGated(i, [{ name: "marker", fn: "writeFileSync", path: i.marker, when: "before", waitMs: COMPLETION_MS }]);
   try {
     await run.waitGate("marker", COMPLETION_MS);
-    await f.gaveUp(i);
+    const pid = await f.completionOf(i);
+    process.kill(pid, "SIGKILL");
+    // Its parent is held and reads no exit status: it stays a zombie, which is gone.
+    await waitUntil(() => gone(pid) || /^Z/.test(String(hostProcessState(pid))), "the killed completion to have ended", COMPLETION_MS);
+    run.release("marker");
+    const done = await run.done;
+    assert.deepEqual(done.timedOut, []);
+    assert.equal(done.code, 1, done.stdout + done.stderr);
+    assert.deepEqual(JSON.parse(done.stdout.trim()).error, { code: "E_SELF_RETIRE_SCHEDULE_FAILED",
+      message: `could not start the deferred retirement of killed: its completion has ended and left no outcome. Nothing was inspected, run, or removed; the instance is still live and can be retired externally with \`oats retire killed --home ${i.home}\``,
+      reached: SCHEDULING_REACHED });
+    assert.deepEqual(besideTheHomes(dirname(i.home)), [], "the marker this scheduling wrote is removed, and no outcome or log is left");
+    const status = f.status(i);
+    assert.equal(Object.hasOwn(status.row, "retirePending"), false, "oats status: the row has no retirePending");
+    assert.deepEqual(status.failures, []);
+    assert.deepEqual(f.stopPlan(i).targets.map((target) => target.retiring), [false]);
+    assert.deepEqual(f.refused(i.workspaceLog), []);
+    assert.deepEqual(listing(i.home), before, "no file of the home changed");
+  } finally { await run.finish(); }
+});
+
+test("a held scheduling whose marker cannot be written: the scheduling fails and ends the completion that waited for it; nothing is retired, and no outcome, log or row is left", async (t) => {
+  const f = deployment(t);
+  const i = await f.spawn("failing");
+  const before = listing(i.home);
+  const run = f.scheduleGated(i, [{ name: "marker", fn: "writeFileSync", path: i.marker, when: "before", waitMs: COMPLETION_MS }]);
+  try {
+    await run.waitGate("marker", COMPLETION_MS);
+    const pid = await f.completionOf(i);
+    // A directory where the marker goes: the write the scheduling is held before will fail.
+    mkdirSync(i.marker);
+    await during(PAST_THE_OLD_WAIT_MS, () => {
+      assert.equal(existsSync(i.result), false, "the completion has not given up: no outcome");
+      assert.equal(gone(pid), false, "it waits");
+    });
+    run.release("marker");
+    const done = await run.done;
+    assert.deepEqual(done.timedOut, []);
+    assert.equal(done.code, 1, done.stdout + done.stderr);
+    const { error } = JSON.parse(done.stdout.trim());
+    assert.deepEqual([error.code, error.reached], ["E_SELF_RETIRE_SCHEDULE_FAILED", SCHEDULING_REACHED]);
+    assert.ok(error.message.includes("EISDIR") && error.message.includes("the completion this command had started is not running"), error.message);
+    await f.ended(pid);
+    rmdirSync(i.marker); // the test's own
+    assert.deepEqual(besideTheHomes(dirname(i.home)), [], "no outcome and no log is left: the answer is the outcome");
+    assert.deepEqual(listing(i.home), before, "no file of the home changed");
+    assert.equal(f.hookRuns(), 0);
+    assert.deepEqual(f.refused(i.workspaceLog), [], "the completion was ended while it waited: it refused nothing");
+    assert.equal(existsSync(claimOf(i)), false, "the scheduling released the claim");
+  } finally { await run.finish(); }
+});
+
+test("a held scheduling whose liveness cannot be read from its claim: the completion does not wait, its retire answers for that holder, and the scheduling, finding the outcome, fails and leaves no marker, outcome or log", async (t) => {
+  const f = deployment(t);
+  const i = await f.spawn("unread");
+  const before = listing(i.home);
+  const run = f.scheduleGated(i, [{ name: "marker", fn: "writeFileSync", path: i.marker, when: "before", waitMs: COMPLETION_MS }]);
+  try {
+    await run.waitGate("marker", COMPLETION_MS);
+    const pid = await f.completionOf(i);
+    // The scheduling's claim, as it took it, without the start that tells its pid from a reused
+    // one: the same holder, whose liveness cannot be read. Swapped in whole, never half written.
+    const { processStart, ...claim } = readJson(claimOf(i));
+    assert.deepEqual([claim.pid, processStart], [run.child.pid, processStartToken(run.child.pid)], "fixture premise: the scheduling holds the home's claim, by its pid and its start");
+    writeFileSync(`${claimOf(i)}.test`, JSON.stringify(claim) + "\n");
+    renameSync(`${claimOf(i)}.test`, claimOf(i));
+    // The completion goes on, and its retire is refused by that holder. Its parent is held and
+    // reads no exit status: it stays a zombie.
+    await waitUntil(() => gone(pid) || /^Z/.test(String(hostProcessState(pid))), "the completion to have ended", COMPLETION_MS);
     const outcome = readJson(i.result);
-    assert.equal(outcome.error.code, "E_LIFECYCLE_BUSY");
-    assert.ok(outcome.error.message.startsWith(`a retire of late is already running (pid ${run.child.pid}, `), outcome.error.message);
-    const row = oneRefusal(f, i.workspaceLog, outcome, false, "the workspace's log");
-    assert.equal(existsSync(i.marker), false, "fixture premise: the completion found no marker to remove");
+    assert.equal(outcome.error.code, "E_LIFECYCLE_BUSY", "the retire answered for a holder it cannot read");
+    assert.equal(existsSync(i.marker), false, "fixture premise: no marker is written yet");
+    oneRefusal(f, i.workspaceLog, outcome, false, "the workspace's log");
 
     run.release("marker");
     const done = await run.done;
     assert.deepEqual(done.timedOut, []);
     assert.equal(done.code, 1, done.stdout + done.stderr);
     assert.deepEqual(JSON.parse(done.stdout.trim()).error, { code: "E_SELF_RETIRE_SCHEDULE_FAILED",
-      message: `could not start the deferred retirement of late: its completion gave up waiting for this command and has ended. Nothing was inspected, run, or removed; the instance is still live and can be retired externally with \`oats retire late --home ${i.home}\``,
-      reached: { phase: "before-effects", sessionStopAttempted: false, hooksStarted: false, home: "kept", recovery: null } });
-    assert.deepEqual([existsSync(i.marker), existsSync(i.result), existsSync(i.log)], [false, false, false], "the marker this scheduling wrote, the outcome and the log are removed: the answer is the outcome");
+      message: `could not start the deferred retirement of unread: its completion gave up waiting for this command and has ended. Nothing was inspected, run, or removed; the instance is still live and can be retired externally with \`oats retire unread --home ${i.home}\``,
+      reached: SCHEDULING_REACHED });
+    assert.deepEqual(besideTheHomes(dirname(i.home)), [], "the marker this scheduling wrote, the outcome and the log are removed: the answer is the outcome");
+    assert.equal(existsSync(claimOf(i)), false, "the scheduling released its claim");
     const status = f.status(i);
     assert.equal(Object.hasOwn(status.row, "retirePending"), false, "oats status: the row has no retirePending");
-    assert.deepEqual(status.failures, [], "and lists no failed deferred retirement: the scheduling answered its caller");
-    assert.deepEqual(f.stopPlan(i).targets.map((target) => target.retiring), [false]);
-    assert.deepEqual(f.refused(i.workspaceLog), [row], "the row the completion wrote stays: a completion did not complete");
+    assert.deepEqual(status.failures, []);
     assert.deepEqual(listing(i.home), before, "no file of the home changed");
+    assert.equal(f.hookRuns(), 0);
   } finally { await run.finish(); }
 });
 
-test("a scheduling still holding the claim when its completion gives up, its marker written: the completion sees the marker and removes it; the instance does not read as retiring", async (t) => {
+test("a scheduling held past the bound of its completion's wait: until then the instance reads live, and a stop and a retire of it are refused with the scheduling's pid; at the bound the completion goes on to its retire, which answers for that holder as for every retire; the scheduling, back afterwards, finds the outcome and fails", async (t) => {
   const f = deployment(t);
-  const i = await f.spawn("slow");
-  const lock = join(dirname(i.home), ".oats-retirement", "claims", "slow.lock");
-  // Held before it releases the claim: the marker is written, and the look for an outcome found none.
-  const run = f.scheduleGated(i, [{ name: "release", fn: "unlinkSync", path: lock, when: "before", waitMs: COMPLETION_MS }]);
+  const i = await f.spawn("overdue");
+  const before = listing(i.home);
+  const run = f.scheduleGated(i, [{ name: "marker", fn: "writeFileSync", path: i.marker, when: "before", waitMs: COMPLETION_MS }]);
   try {
-    await run.waitGate("release", COMPLETION_MS);
-    assert.equal(readJson(lock).pid, run.child.pid, "fixture premise: the scheduling still holds the home's claim");
-    assert.equal(existsSync(i.marker), true, "fixture premise: the scheduling wrote its marker before its completion gave up");
-    const pid = f.track(readJson(i.marker).completionPid);
-    await f.gaveUp(i);
-    const outcome = readJson(i.result);
-    assert.equal(outcome.error.code, "E_LIFECYCLE_BUSY");
-    assert.equal(existsSync(i.marker), false, "the completion saw its marker and removed it");
-    assert.ok(readFileSync(i.log, "utf8").includes("its pending marker is removed; slow is not being retired"));
+    await run.waitGate("marker", COMPLETION_MS);
+    // The scheduling's own detached completion waits with the kernel's bound, ten minutes, for the
+    // whole test. The one that reaches a bound here is run by the test with a short one, and is
+    // told who scheduled it as that completion was: by the pid and the start of the claim's holder.
+    const own = await f.completionOf(i);
+    const holder = readJson(claimOf(i));
+    assert.deepEqual([holder.pid, holder.processStart], [run.child.pid, processStartToken(run.child.pid)], "fixture premise: the scheduling holds the home's claim, by its pid and its start");
+    const intent = { ...f.intent(i), requestedByPid: holder.pid, requestedByStart: holder.processStart };
 
-    run.release("release");
+    // What a person sees while a completion waits: the answers a running retire gets (the pair
+    // table of docs/desktop-cli-api.md), since the scheduling is one.
+    const status = f.status(i);
+    assert.equal(Object.hasOwn(status.row, "retirePending"), false, "oats status: the instance reads live, there is no marker yet");
+    const plan = f.stopPlan(i);
+    assert.deepEqual(plan.targets.map((target) => target.retiring), [true], "a stop plan: a retire holds the home");
+    const stop = f.fx.cli(["instance", "stop", i.name, "--apply", "--plan-revision", plan.planRevision, "--idempotency-key", "k1", "--json"]);
+    assert.equal(stop.status, 1, stop.stdout + stop.stderr);
+    assert.deepEqual([stop.json().error.code, stop.json().error.details.pid], ["E_INSTANCE_RETIRING", holder.pid], "a stop is refused: a retire holds the home, and the answer names its pid");
+    const retire = f.fx.cli(["retire", i.name, "--home", i.home, "--json"]);
+    assert.equal(retire.status, 1, retire.stdout + retire.stderr);
+    assert.deepEqual([retire.json().error.code, retire.json().error.details.pid, retire.json().error.details.holder], ["E_LIFECYCLE_BUSY", holder.pid, "running"], "a retire is refused as busy, with the scheduling's pid");
+
+    assert.equal(SCHEDULING_WAIT_MS, 10 * 60 * 1000, "the kernel's bound is ten minutes");
+    const BOUND_MS = 2000, started = Date.now();
+    const r = f.complete(intent, { timeout: 60000, schedulingWaitMs: BOUND_MS });
+    const took = Date.now() - started;
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.ok(took >= BOUND_MS + CLAIM_WAIT_MS, `the completion waited for its scheduling up to the bound, and then its retire waited as every retire does (${took} ms)`);
+    const outcome = readJson(i.result);
+    assert.equal(outcome.error.code, "E_LIFECYCLE_BUSY", "the retire's own refusal: nothing of the bound is in the answer");
+    assert.equal(outcome.error.message.includes(String(holder.pid)), true, outcome.error.message);
+    assert.equal(existsSync(i.marker), false, "fixture premise: no marker is written yet");
+    oneRefusal(f, i.workspaceLog, outcome, false, "the workspace's log");
+    assert.equal(gone(own), false, "the scheduling's own completion still waits");
+
+    run.release("marker");
     const done = await run.done;
     assert.deepEqual(done.timedOut, []);
-    assert.equal(done.code, 0, done.stdout + done.stderr);
-    const receipt = JSON.parse(done.stdout.trim());
-    assert.deepEqual([receipt.deferred, receipt.completionPid], [true, pid], "the scheduling answers what it saw: a completion was on its way");
-    assert.equal(existsSync(i.marker), false, "no marker is left");
-    const status = f.status(i);
-    assert.equal(Object.hasOwn(status.row, "retirePending"), false, "oats status: the row has no retirePending");
-    assert.deepEqual(status.failures.map((failure) => failure.error), [outcome.error.message], "and lists the completion's failure");
-    assert.deepEqual(f.stopPlan(i).targets.map((target) => target.retiring), [false]);
-    oneRefusal(f, i.workspaceLog, outcome, false, "the workspace's log");
+    assert.equal(done.code, 1, done.stdout + done.stderr);
+    assert.deepEqual(JSON.parse(done.stdout.trim()).error, { code: "E_SELF_RETIRE_SCHEDULE_FAILED",
+      message: `could not start the deferred retirement of overdue: its completion gave up waiting for this command and has ended. Nothing was inspected, run, or removed; the instance is still live and can be retired externally with \`oats retire overdue --home ${i.home}\``,
+      reached: SCHEDULING_REACHED });
+    await f.ended(own);
+    assert.deepEqual(besideTheHomes(dirname(i.home)), [], "the marker this scheduling wrote, the outcome and the log are removed: the answer is the outcome");
+    assert.equal(Object.hasOwn(f.status(i).row, "retirePending"), false, "oats status: the row has no retirePending");
+    assert.deepEqual(listing(i.home), before, "no file of the home changed");
+    assert.equal(f.hookRuns(), 0);
   } finally { await run.finish(); }
 });
+
+test("a scheduling killed while it holds the claim: its completion's wait ends, and the retire takes the claim over", async (t) => {
+  const f = deployment(t);
+  const i = await f.spawn("orphan");
+  const run = f.scheduleGated(i, [{ name: "marker", fn: "writeFileSync", path: i.marker, when: "before", waitMs: COMPLETION_MS }]);
+  try {
+    await run.waitGate("marker", COMPLETION_MS);
+    const pid = await f.completionOf(i);
+    assert.equal(readJson(claimOf(i)).pid, run.child.pid, "fixture premise: the scheduling holds the home's claim");
+    run.child.kill("SIGKILL");
+    assert.equal((await run.done).signal, "SIGKILL");
+    await f.ended(pid);
+    assert.equal(existsSync(i.home), false, "the completion retired the instance, as it does after a scheduling that died");
+    assert.equal(f.hookRuns(), 1);
+    assert.deepEqual(besideTheHomes(dirname(i.home)), []);
+    assert.equal(existsSync(claimOf(i)), false, "the dead scheduling's claim was taken over, and released");
+    assert.deepEqual(f.refused(i.workspaceLog), []);
+  } finally { await run.finish(); }
+});
+
+// Two readings no two real processes make at will: a command that took the claim under the pid the
+// scheduling had, and an intent that names no start. The holder is this test's process, alive, by
+// its true start, and the completion is a child of the test.
+for (const [what, scheduledBy] of [
+  ["a live holder with the pid of its scheduling and another start is another command", () => ({ requestedByPid: process.pid, requestedByStart: "proc:1" })],
+  ["an intent that names no start of its scheduling waits for nobody", () => ({ requestedByPid: process.pid })],
+  ["an intent whose start of its scheduling is no start token waits for nobody", () => ({ requestedByPid: process.pid, requestedByStart: 7 })],
+]) {
+  test(`a completion waits for its own scheduling alone: ${what}, and the retire answers for that holder`, async (t) => {
+    const f = deployment(t);
+    const i = await f.spawn("alone");
+    const start = processStartToken(process.pid);
+    assert.notEqual(start, "proc:1", "fixture premise: this process did not start at the host's first tick");
+    mkdirSync(dirname(claimOf(i)), { recursive: true });
+    const claim = JSON.stringify({ pid: process.pid, processStart: start, nonce: "b".repeat(32), at: "2026-10-10T00:00:00.000Z", action: "retire" }) + "\n";
+    writeFileSync(claimOf(i), claim);
+    const intent = { ...f.intent(i), ...scheduledBy() };
+    writeFileSync(i.marker, JSON.stringify(intent, null, 2) + "\n");
+    // A completion that waited for this holder would never end: the holder is the test.
+    const r = f.complete(intent, { timeout: 60000 });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    const outcome = readJson(i.result);
+    assert.equal(outcome.error.code, "E_LIFECYCLE_BUSY");
+    assert.equal(readFileSync(claimOf(i), "utf8"), claim, "the holder's claim is as it was");
+    assert.equal(existsSync(i.marker), false, "refused with the home as it was: the marker goes");
+    oneRefusal(f, i.workspaceLog, outcome, false, "the workspace's log");
+  });
+}
 
 test("a scheduling that fails before it wrote its marker leaves the marker that was there: it removes only the one it wrote", async (t) => {
   if (ROOT) { t.skip(SKIP_FOR_ROOT); return; }
