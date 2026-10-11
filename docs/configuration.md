@@ -243,7 +243,7 @@ succeeds. A notice beside a question blocks like any unknown screen. It records 
 entry's id, no screen text), and the start's warnings say, in place of the
 statement that OATS confirms the prompt:
 
-> Claude reported that channels are not currently available and ignored the development-channel flag, so this instance gets no channel delivery: mail and chat will not wake it. Check first for a telemetry opt-out in the launch environment (DISABLE_TELEMETRY, DO_NOT_TRACK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: Claude Code disables channels when one is set), then whether this Claude account offers channels; otherwise change the messaging provider's delivery (its readiness warning names the key). See docs/configuration.md#the-development-channel-confirmation.
+> Claude reported that channels are not currently available and ignored the development-channel flag, so this instance gets no channel delivery: mail and chat will not wake it. Check first for a telemetry opt-out in the launch environment (DISABLE_TELEMETRY, DO_NOT_TRACK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: Claude Code disables channels when one is set), then whether this Claude account offers channels; otherwise change the messaging provider's delivery (its readiness warning says where the setting is). See docs/configuration.md#the-development-channel-confirmation.
 
 Every start says so until the cause is removed or delivery changes. The kernel's readiness shows no `launch-prompt` warning for it; the
 messaging provider's readiness reports the missing channel. A notice in a wording
@@ -257,7 +257,7 @@ start stays `blocked: unexpected prompt` (no key, the home retained). When the
 blocked screen starts with Claude's running-session banner (`Claude Code
 v<semver>` after the logo, which may be caught mid-animation), the error and the readiness remedy add:
 
-> Claude may have reported that channels are not currently available and ignored the development-channel flag, its notice hidden behind another one: look at the pane. If the session is running, restart the instance, and the notice will then show. Check first for a telemetry opt-out in the launch environment (DISABLE_TELEMETRY, DO_NOT_TRACK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC), then whether this Claude account offers channels; otherwise change the messaging provider's delivery (its readiness warning names the key). See docs/configuration.md#the-development-channel-confirmation.
+> Claude may have reported that channels are not currently available and ignored the development-channel flag, its notice hidden behind another one: look at the pane. If the session is running, restart the instance, and the notice will then show. Check first for a telemetry opt-out in the launch environment (DISABLE_TELEMETRY, DO_NOT_TRACK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC), then whether this Claude account offers channels; otherwise change the messaging provider's delivery (its readiness warning says where the setting is). See docs/configuration.md#the-development-channel-confirmation.
 
 A restart where the notice shows records `flag-ignored`.
 
