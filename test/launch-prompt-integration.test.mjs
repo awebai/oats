@@ -11,6 +11,10 @@ import { waitUntil } from './helpers/host-fixture.mjs';
 import { readEvents } from '../lib/instance-events.mjs';
 
 const DEV = ['--dangerously-load-development-channels', 'plugin:aweb-channel@awebai-marketplace'];
+// The exact words a person reads: what was seen, then the causes in order (a telemetry opt-out, the
+// account, delivery), the provider's warning for the key, and the docs section.
+const FLAG_IGNORED_WORDS = "Claude reported that channels are not currently available and ignored the development-channel flag, so this instance gets no channel delivery: mail and chat will not wake it. Check first for a telemetry opt-out in the launch environment (DISABLE_TELEMETRY, DO_NOT_TRACK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: Claude Code disables channels when one is set), then whether this Claude account offers channels; otherwise change the messaging provider's delivery (its readiness warning names the key). See docs/configuration.md#the-development-channel-confirmation.";
+const SESSION_HINT_WORDS = "Claude may have reported that channels are not currently available and ignored the development-channel flag, its notice hidden behind another one: look at the pane. If the session is running, restart the instance, and the notice will then show. Check first for a telemetry opt-out in the launch environment (DISABLE_TELEMETRY, DO_NOT_TRACK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC), then whether this Claude account offers channels; otherwise change the messaging provider's delivery (its readiness warning names the key). See docs/configuration.md#the-development-channel-confirmation.";
 const ENTRY = DEV_CHANNEL_ENTRIES[0].id;
 
 // v2Deployment installs a private TMUX_TMPDIR and inert harness PATH. The only
@@ -293,8 +297,8 @@ test('Claude ignoring the flag is a successful start: flag-ignored recorded, no 
   const spawned = await fx.spawn('dev', { name: 'dev-ignored', launchConfig: 'ignored', launch: true });
   assert.ok(spawned.warnings.includes(FLAG_IGNORED_WARNING));
   assert.ok(!spawned.warnings.includes(DEV_CHANNEL_STATEMENT), 'the answer never also says OATS confirms the prompt');
-  assert.match(FLAG_IGNORED_WARNING, /^Claude ignored --dangerously-load-development-channels: channels are not available for this Claude account, so this instance gets no channel delivery: mail and chat will not wake it; /);
-  assert.match(FLAG_IGNORED_WARNING, /settings\.oats\.aweb\.delivery: session/);
+  assert.equal(FLAG_IGNORED_WARNING, FLAG_IGNORED_WORDS);
+  assert.ok(spawned.warnings.includes(FLAG_IGNORED_WORDS));
   const h = home('dev-ignored');
   const recorded = meta(h).launchPrompts;
   assert.deepEqual(Object.keys(recorded).sort(), ['at', 'reason', 'signatureId', 'startId', 'status']);
@@ -326,13 +330,14 @@ test('a running session with the notice hidden stays blocked, and the error and 
   const { fx, home } = fixture(t);
   let error;
   await assert.rejects(fx.spawn('dev', { name: 'dev-hidden', launchConfig: 'hidden', launch: true }), e => { error = e; return e.code === 'E_SPAWN_INCOMPLETE'; });
-  assert.ok(error.message.includes(CLAUDE_SESSION_HINT), error.message);
+  assert.equal(CLAUDE_SESSION_HINT, SESSION_HINT_WORDS);
+  assert.ok(error.message.endsWith(` ${SESSION_HINT_WORDS}`), error.message);
   const h = home('dev-hidden');
   assert.equal(meta(h).launchPrompts.status, 'blocked');
   assert.equal(meta(h).launchPrompts.reason, 'blocked: unexpected prompt');
   assert.equal(meta(h).launchPrompts.claudeSessionShown, true);
   const [warning] = readinessItems(fx, h);
-  assert.ok(warning.remedy.includes(CLAUDE_SESSION_HINT), warning.remedy);
+  assert.ok(warning.remedy.endsWith(`. ${SESSION_HINT_WORDS}`), warning.remedy);
   assert.deepEqual(keys(h), []);
 
   await fx.spawn('dev', { name: 'dev-question', launchConfig: 'question', launch: false });
@@ -391,4 +396,25 @@ test('no clean window after the Enter is an observation timeout whose error and 
   assert.doesNotMatch(warning.remedy, /read the prompt|press Enter/);
   await waitUntil(() => keys(h).length === 1, 'the one Enter reached the stub');
   assert.deepEqual(keys(h), ['\r']);
+});
+
+test('a successful spawn answer carries launchPrompts in the shape a start records, for each status a spawn can produce', async t => {
+  const { fx, home } = fixture(t);
+  const keysOf = v => Object.keys(v).sort();
+  const spawnJson = (name, launchConfig) => { const r = fx.cli(['spawn', 'dev', '--name', name, '--launch-config', launchConfig, '--json']); assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result; };
+  const cases = [['dev-done', 'confirm', 'completed', ['answers', 'reason', 'receipt', 'status']],
+    ['dev-plain', 'plain', 'not-engaged', ['at', 'startId', 'status']],
+    ['dev-ignored', 'ignored', 'flag-ignored', ['at', 'reason', 'signatureId', 'startId', 'status']]];
+  for (const [name, launchConfig, status, keys] of cases) {
+    const result = spawnJson(name, launchConfig);
+    assert.equal(result.launchPrompts?.status, status, name);
+    assert.deepEqual(keysOf(result.launchPrompts), keys, name);
+    assert.deepEqual(result.launchPrompts, meta(home(name)).launchPrompts, `${name}: the answer carries what the home recorded`);
+    // A start of the same configuration records the same shape.
+    await fx.inEnv(() => stopInstanceSession(home(name)));
+    const started = await fx.inEnv(() => startInstanceSession(home(name)));
+    assert.equal(started.launchPrompts.status, status, `${name} start`);
+    assert.deepEqual(keysOf(started.launchPrompts), keys, `${name} start`);
+    await fx.inEnv(() => stopInstanceSession(home(name)));
+  }
 });

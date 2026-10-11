@@ -2826,6 +2826,8 @@ async function spawnCmd() {
     jsonOk({
       instance: r.instance, agent: r.agent, home: r.home, work: r.work,
       branch: r.branch || null, base: r.base ?? null, launched: r.launched, warnings: r.warnings || [],
+      // #917: what this spawn's start did with Claude's development-channel prompt, as a start answers it.
+      ...(r.launchPrompts ? { launchPrompts: r.launchPrompts } : {}),
       ...(wakeSchedule ? { wakeSchedule } : {}), ...(wakeScheduleError ? { wakeScheduleError } : {}),
       tmux: r.tmux || null, backend: "tmux", repo: r.repo || null, harness: r.harness || null,
       model: r.model || null, parent: r.parentInstance || null,
