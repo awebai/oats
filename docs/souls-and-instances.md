@@ -402,7 +402,9 @@ sugar for `--relative-to <instance> --relation child`):
   `oats status --json` (`parentInstance` + `siblingInstance` edges).
 - **unrelated** (default): no link, operator-origin, top-level.
 
-Attached-mode spawns are ALWAYS children of the owner of the shared work tree,
+Attached-mode spawns are ALWAYS children of the owner of the shared work tree
+(the instance in whose home the tree is, as its `work/` or as one of its
+extra trees: see [`attached`](#attached--another-instances-tree)),
 because an attached agent serves that owner; relation flags other than a
 redundant child-of-owner are rejected. Any other spawn, including one from a
 shell that inherited an agent's environment variables, is operator-origin and
@@ -1598,16 +1600,50 @@ Rules:
 ### `attached` — another instance's tree
 
 `work/` points at **another instance's work tree** — same branch, same
-uncommitted state. Spawning attached requires `workDir` (the owning
-instance's `<home>/work`); it is a spawn-time choice (`--work attached`) for
-service agents such as reviewers.
+uncommitted state. Spawning attached requires `workDir` (`--work-dir`): a
+tree in the owning instance's home, its `<home>/work` or one of its
+[extra trees](#extra-trees) (`<home>/.work-<purpose>`). It is a spawn-time
+choice (`--work attached`) for service agents such as reviewers.
+
+The kernel derives the owner and the repository from the tree named on the
+command line, so the spawn needs no `--repo` and no relation flag (an extra
+tree from 0.56.0, #958):
+
+```text
+oats spawn <soul> --work attached --work-dir <home>/work
+oats spawn <soul> --work attached --work-dir <home>/.work-<purpose>
+```
+
+- **The owner** is the instance in whose home the tree is, and the new
+  instance is its child. It must be an instance of the deployment the spawn
+  runs in, and its name must resolve back to that home from there: a name
+  that resolves to another instance is refused, since the parent link would
+  be ambiguous. The parent is never read from the caller's environment.
+- **An attached instance's repository is the repository of the tree it is
+  attached to.** For `<home>/work` that is the repository its owner
+  recorded. For an extra tree it is the repository Git names for that tree,
+  which can be another member repository than the owner's own
+  (`oats worktree add --repo`).
+- `--parent <owner>` and `--repo <repository>` given explicitly are
+  accepted. A relation that is not "child of the owner" is refused.
+- An extra tree is one by the kernel's test of it, the same one a retire
+  uses ([extra trees at retire](#extra-trees-at-retire)): a linked worktree
+  in the home that Git confirms is registered in a repository outside the
+  home. The shape of the path decides nothing. A directory named `.work-x`
+  that is not such a tree (a plain directory, a clone of its own, a tree of
+  a repository inside the home, a tree whose registration was pruned) is a
+  tree of no instance, and so is a path inside an extra tree.
+- **A tree of no known instance** (an integration worktree, for example)
+  has nothing to derive from: the spawn needs `--parent <instance>` and
+  `--repo <repository>`. One refusal (`E_BAD_ARGS`) names every one still
+  missing, so one retry is enough.
 
 Attached agents are guests: never switch branches or rewrite history, touch
 only what the briefing names, keep commits small and attributable. Retiring
 an attached instance never removes the shared tree. When its owner retires
-and the tree is re-homed, the attached instance's `work` link is repointed to
-the tree's new path ([retire](#retire)); its AGENTS.md and TASK.md still name
-the old one. The packaged
+and its `work/` is re-homed, the `work` link of an instance attached to it is
+repointed to the tree's new path ([retire](#retire)); its AGENTS.md and
+TASK.md still name the old one. The packaged
 `work-attached` instruction source carries this discipline into each generated instance AGENTS.md.
 
 ### `directory` — independent execution
