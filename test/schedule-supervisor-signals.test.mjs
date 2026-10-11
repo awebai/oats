@@ -36,7 +36,7 @@ function fixture(t, { mode = "graceful", descendant = false, pipes = true, escap
   const pid = (name) => existsSync(path(`${name}.pid`)) ? Number(readFileSync(path(`${name}.pid`), "utf8")) : null;
   writeFileSync(actor, `
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, renameSync, writeFileSync } from 'node:fs';
 const dir = ${JSON.stringify(dir)};
 const grandchild = process.argv.includes('descendant');
 const name = grandchild ? 'descendant' : 'child';
@@ -48,7 +48,8 @@ process.on('SIGTERM', () => {
     setTimeout(() => process.stdout.write(JSON.stringify({ ok: true, result: { completed: true } }), () => process.exit(0)), 40);
   }
 });
-writeFileSync(dir + '/' + name + '.pid', String(process.pid));
+writeFileSync(dir + '/' + name + '.pid.tmp', String(process.pid));
+renameSync(dir + '/' + name + '.pid.tmp', dir + '/' + name + '.pid');
 if (!grandchild && ${JSON.stringify(mode)}.startsWith('overflow')) setTimeout(() => process.stderr.write('x'.repeat(5000)), 10);
 if (!grandchild && ${descendant}) {
   const child = spawn(process.execPath, [${JSON.stringify(actor)}, 'descendant'], {

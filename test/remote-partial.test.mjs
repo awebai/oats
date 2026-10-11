@@ -751,7 +751,7 @@ test("terminateGroup sends no SIGKILL to a group that closed within the grace, a
 async function groupWithDescendant(onTerm, { pipes }) {
   const { watchGroup } = await import("../lib/process-group.mjs");
   const pidFile = join(scratch(), "descendant.pid");
-  const descendantCode = `process.on('SIGTERM', () => { ${onTerm} }); require('node:fs').writeFileSync(process.env.PID_FILE, String(process.pid)); setInterval(() => {}, 1000);`;
+  const descendantCode = `process.on('SIGTERM', () => { ${onTerm} }); const fs = require('node:fs'); fs.writeFileSync(process.env.PID_FILE + '.tmp', String(process.pid)); fs.renameSync(process.env.PID_FILE + '.tmp', process.env.PID_FILE); setInterval(() => {}, 1000);`;
   const leaderCode = `require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendantCode)}], { stdio: ${JSON.stringify(pipes ? "inherit" : "ignore")} }); setInterval(() => {}, 1000);`;
   const leader = watchGroup(spawn(process.execPath, ["-e", leaderCode], { detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PID_FILE: pidFile } }));
   leader.stdout.resume(); leader.stderr.resume();
