@@ -193,6 +193,29 @@ not a universal kernel harvester. Both package role souls have
 The [older knowledge-operations design](design/2026-09-26-okf-knowledge-operations.md)
 is historical 4.x context, not instructions for operating 5.0.
 
+### What a harvest leaves out
+
+Secrets, credentials, private paths and verbatim third-party messages are
+left out. So is personal data, in the same sentence at every place an agent
+is told what to leave out (the capturing instance, the proposal brief, the
+harvester when it edits and when it reads its diff, and the maintainer's
+review):
+
+> Never include personal data about people outside the team (clients,
+> correspondents, any other third party): a name, a contact detail, or
+> anything else that identifies a person, including detail derived from
+> correspondence. Keep the lesson and leave the person out. Naming the
+> author of a published source you cite is fine.
+
+The sentence also covers the names provenance publishes as written: note
+file names, task refs and instance names. These exclusions are instructions
+to agents and guarantee nothing. No program reads a harvest's content, and
+the first reader other than the harvester is the reviewer of the pushed pull
+request. The one control enforced in code is the soul's opt-out
+([The harvest switch](#the-harvest-switch)). It is per soul, and it covers
+that soul's own proposals, not what its instances write to other seats. A
+soul whose work is reading third-party correspondence should opt out.
+
 ### Triggers
 
 Only **PR review** is triggered. Use the package template

@@ -84,7 +84,7 @@ It needs a clear scope, a responsible maintenance process, an as-of date and an 
 | Current investigation, provisional reasoning and next action | Instance context and state |
 | Raw records and notes awaiting judgment | Evidence, not accepted knowledge |
 
-A bare sequence of commands belongs in a skill; if an insight already has an authoritative home, point to it. Exclude secrets, improperly disclosed private material, wholesale copies of third-party messages, tool noise and ordinary task residue. If code, a test or a clearer contract can eliminate a recurring problem, fix it instead of writing it down.
+A bare sequence of commands belongs in a skill; if an insight already has an authoritative home, point to it. Exclude secrets, improperly disclosed private material, personal data about people outside the team (clients, correspondents, any other third party), wholesale copies of third-party messages, tool noise and ordinary task residue; for the full rule and what enforces it, see [What a harvest leaves out](knowledge.md#what-a-harvest-leaves-out). If code, a test or a clearer contract can eliminate a recurring problem, fix it instead of writing it down.
 
 "Invariant across incarnations" means useful beyond its author, not true forever. Date and scope contingent claims, and supersede changed decisions explicitly rather than leaving contradictory truths or erasing their history.
 
