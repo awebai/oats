@@ -224,8 +224,10 @@ session with a notice: `--dangerously-load-development-channels ignored
 Before 0.52 such a start reported launched and said nothing, and the instance
 was never woken by mail or chat. Now, when that notice block equals a
 `flag-ignored` tolerance entry (the block's rows with their `▎` dropped,
-normalized the same way; never a contains test; the entry takes no input), OATS
-sends no key and the start succeeds. It records `launchPrompts: {status:
+normalized the same way; never a contains test; the entry takes no input), and
+the screen shows no question (none of the
+[question markers](launch-prompt-completion.md)), OATS sends no key and the start
+succeeds. A notice beside a question blocks like any unknown screen. It records `launchPrompts: {status:
 "flag-ignored", reason: "channels-unavailable", signatureId, startId, at}` (the
 entry's id, no screen text), and the start's warnings say, in place of the
 statement that OATS confirms the prompt, `Claude ignored

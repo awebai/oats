@@ -372,6 +372,16 @@ test("Claude ignoring the flag (its notice block visible) is flag-ignored: no ke
   assert.ok(!JSON.stringify(io.audits).includes("Channels are not"));
 });
 
+test("the flag-ignored notice beside a question Claude asks is a loud miss, never a successful start", t => {
+  const question = edit(flagIgnored, "❯ @TASK.md\n", "Do you want to proceed?\n❯ 1. Yes\n  2. No\nEnter to confirm · Esc to cancel\n");
+  const { controller, io } = setup(t, { configure({ io }) { io.text = question; } });
+  const result = controller.observeNew(target);
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "blocked: unexpected prompt");
+  assert.deepEqual(io.sends, []);
+  assert.ok(!io.audits.some(a => a.status === "flag-ignored"));
+});
+
 test("a respawn that shows the flag-ignored notice is flag-ignored, after ownership is proven", t => {
   const { controller, io } = setup(t, { configure({ io }) { io.text = sessions["seq-06-session-after-channel.txt"]; } });
   const token = controller.captureBeforeRespawn(target);

@@ -33,7 +33,9 @@ with a notice in its notices area. A `flag-ignored` entry is matched against a
    (U+258E) in the first column.
 3. Drop the `▎` from each row of the block, then normalize the block as above.
 
-The entry matches when one notice block EQUALS its `text`. Another plugin,
+The entry matches when one notice block EQUALS its `text`. The controller
+accepts it only on a screen with no question marker
+(`lib/launch-prompt-completion.mjs`): a notice beside a question is a miss. Another plugin,
 another wording, an extra row in the block (another notice stacked against it),
 the text without the bar, or the text inside a longer row is no match. A notice
 Claude keeps behind `N more notice hidden` is not on the screen, so it is no
