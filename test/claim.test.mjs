@@ -11,9 +11,9 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { CLAIM_WAIT_MS, acquireClaim, readClaim, releaseClaim, removeGoneClaim, shownHolder } from "../lib/claim.mjs";
+import { CLAIM_UNWRITABLE_CODES, CLAIM_WAIT_MS, acquireClaim, claimUnheld, readClaim, releaseClaim, removeGoneClaim, shownHolder, unwritableCode } from "../lib/claim.mjs";
 import { BUSY_HOLDERS, defectOf } from "../lib/errors.mjs";
-import { claimHomeFor, lifecycleClaimRefusals, releaseHomeClaim, retireClaimPath, retireClaimRefusals } from "../lib/core.mjs";
+import { READ_CLAIM_WHEN_UNWRITABLE, claimHomeFor, lifecycleClaimRefusals, releaseHomeClaim, retireClaimPath, retireClaimRefusals } from "../lib/core.mjs";
 import { purposeClaimBusy, withClaim, worktreeClaimRefusals } from "../lib/worktree.mjs";
 import { processStartToken, selfIdentity } from "../lib/worktree-hooks.mjs";
 import { hostProcessState, zombieSync } from "./helpers/host-fixture.mjs";
@@ -694,4 +694,343 @@ test("the home's claim is taken for a verb that takes it and for no other: the o
     assert.throws(() => claimHomeFor(verb, "worker-1", home), (e) => e instanceof TypeError && e.message.includes("retire, stop"), `${JSON.stringify(verb)} takes no claim`);
     assert.equal(existsSync(retireClaimPath(home)), false, "and nothing was written");
   }
+});
+
+// ---- a claim that cannot be WRITTEN, and the one caller that then reads it (awebai/oats#946) ----
+//
+// `oats instance stop --apply` passes READ_CLAIM_WHEN_UNWRITABLE to claimHomeFor, and nobody else
+// does. What makes a failure "the claim could not be written" is the place (one of the claim's
+// writes) and the system's code as it was thrown there (CLAIM_UNWRITABLE_CODES); what the caller
+// then learns is read from the path, and is "nobody holds it" or the answer the taking would have
+// given. These are the units; the command is in test/stop-unwritable-claim.test.mjs.
+
+/** An error as the system gives it for `code` in `syscall` on `path`. */
+const systemError = (code, syscall, path) => Object.assign(new Error(`${code}: made by the test, ${syscall} '${path}'`), { errno: -1, code, syscall, path });
+/** A home that is only a path, as claimHomeFor needs one, under a directory of this test's own
+ *  → { home, lock, claims, retirement, entries() }: `entries` is what is in the claims directory. */
+function claimedHome(t) {
+  const root = mkdtempSync(join(tmpdir(), "oats-claim-unwritable-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const home = join(root, "worker", "instances", "worker-1");
+  mkdirSync(home, { recursive: true });
+  const lock = retireClaimPath(home), claims = dirname(lock);
+  return { home, lock, claims, retirement: dirname(claims), entries: () => (existsSync(claims) ? readdirSync(claims).sort() : null) };
+}
+/** One fault at a time in the claim's writes, until `t` ends: `fault.at` is null, or
+ *  `{ fn, hits(...args), error(...args), created? }`. The call `fn(...args)` for which `hits` is
+ *  true throws `error(...)`; with `created`, a writeFileSync first makes its file, empty, as a
+ *  file system does that has an entry for it and no space for its bytes. `fault.met` counts. */
+function claimFault(t) {
+  const fault = { at: null, met: 0 };
+  for (const fn of ["mkdirSync", "writeFileSync", "linkSync", "unlinkSync", "readFileSync", "lstatSync"]) {
+    wrapFs(t, fn, (original) => function (...args) {
+      const at = fault.at;
+      if (!at || at.fn !== fn || !at.hits(...args)) return original.apply(this, args);
+      fault.met++;
+      if (at.created) original.call(this, args[0], "", args[2]);
+      throw at.error(...args);
+    });
+  }
+  return fault;
+}
+/** The record of a claim whose holder is verifiably gone, and which a takeover can take over. */
+const goneHolder = (extra = {}) => ({ pid: exitedPid(), processStart: "proc:1", nonce: N1, at: "2026-10-10T00:00:00.000Z", ...extra });
+/** The writes of taking the home's claim, each by the call it is: `hits(h)` says which call, and
+ *  `syscall` what the system calls it. The last two are a takeover's, of the claim of a holder that
+ *  is gone (`dead`): the same two writes one level down, at `<lock>.reclaim-<its nonce>`. */
+const CLAIM_WRITES = [
+  { what: "the retirement directory", fn: "mkdirSync", syscall: "mkdir", hits: (h) => (path) => path === h.retirement },
+  { what: "the claims directory", fn: "mkdirSync", syscall: "mkdir", hits: (h) => (path) => path === h.claims },
+  { what: "the private file", fn: "writeFileSync", syscall: "open", hits: (h) => (path) => String(path).startsWith(`${h.lock}.tmp-`) },
+  { what: "the link", fn: "linkSync", syscall: "link", hits: (h) => (from, to) => to === h.lock },
+  { what: "the private file of a takeover's own claim", dead: true, fn: "writeFileSync", syscall: "write", hits: (h) => (path) => String(path).startsWith(`${h.lock}.reclaim-${N1}.tmp-`) },
+  { what: "the link of a takeover's own claim", dead: true, fn: "linkSync", syscall: "link", hits: (h) => (from, to) => to === `${h.lock}.reclaim-${N1}` },
+];
+const READ = { [READ_CLAIM_WHEN_UNWRITABLE]: true };
+/** The private file of one acquisition is named with its nonce: two acquisitions never name the same. */
+const anyNonce = (text) => text.replace(/\.tmp-(\d+)-[0-9a-f]{32}/g, ".tmp-$1-<nonce>");
+/** What an answer is, for "the same answer": its code, its words and its details. */
+const answer = (e) => ({ code: e.code, message: anyNonce(e.message), details: e.details });
+
+test("the codes for which a claim that cannot be written is read in its place are five, in one frozen list: a full file system, a spent quota, a read-only file system, and a directory this user may not write", () => {
+  assert.deepEqual([...CLAIM_UNWRITABLE_CODES], ["ENOSPC", "EDQUOT", "EROFS", "EACCES", "EPERM"]);
+  assert.equal(Object.isFrozen(CLAIM_UNWRITABLE_CODES), true);
+});
+
+test("each of the five codes at each write of the home's claim: with the option the claim is read and nobody holds it (no holding, the code, and nothing left beside the claim); without it, the refusal of today, E_LIFECYCLE_FAILED naming the claim", (t) => {
+  const h = claimedHome(t), fault = claimFault(t);
+  for (const write of CLAIM_WRITES) {
+    for (const code of CLAIM_UNWRITABLE_CODES) {
+      const what = `${code} at ${write.what}`;
+      rmSync(h.retirement, { recursive: true, force: true });
+      let dead = null;
+      if (write.dead) { mkdirSync(h.claims, { recursive: true }); dead = JSON.stringify(goneHolder()) + "\n"; writeFileSync(h.lock, dead); }
+      // What is in the claims directory once the write has failed: the dead holder's claim as it
+      // was, or nothing; never a private file. A directory that could not be made is not there.
+      const left = () => assert.deepEqual([h.entries(), dead === null ? null : readFileSync(h.lock, "utf8")],
+        [write.what === "the retirement directory" || write.what === "the claims directory" ? null : dead === null ? [] : ["worker-1.lock"], dead], `${what}: what is left in the claims directory`);
+      const failed = write.dead ? `${h.lock}.reclaim-${N1}` : h.lock;
+      fault.at = { fn: write.fn, hits: write.hits(h), error: (...args) => systemError(code, write.syscall, args.at(write.fn === "linkSync" ? 1 : 0)) };
+
+      fault.met = 0;
+      const e = thrown(() => claimHomeFor("stop", "worker-1", h.home));
+      assert.equal(fault.met, 1, `${what}: the write was reached, once`);
+      assert.equal(e.code, "E_LIFECYCLE_FAILED", what);
+      assert.match(e.message, new RegExp(`^the claim ${failed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} could not be taken \\(${code}: made by the test, .*\\); nothing was done$`), what);
+      assert.deepEqual(e.details, { cause: { code, syscall: write.syscall } }, what);
+      left();
+
+      fault.met = 0;
+      const read = claimHomeFor("stop", "worker-1", h.home, READ);
+      assert.equal(fault.met, 1, `${what}: the write was reached, once`);
+      // The claim's own path, also where the write that failed was a takeover's.
+      assert.deepEqual({ lock: read.lock, me: read.me, unwritable: read.unwritable, look: typeof read.look }, { lock: h.lock, me: null, unwritable: code, look: "function" }, what);
+      left();
+      releaseHomeClaim(read);
+      left();
+    }
+  }
+});
+
+test("a code that is not in the list, at each of those writes, and an error that is no error of the system's: the option changes nothing, the answer is the one without it", (t) => {
+  const h = claimedHome(t), fault = claimFault(t);
+  const NOT_THE_SYSTEMS = [
+    ["a TypeError", () => new TypeError("boom")],
+    ["an error with a listed code that no system call threw", () => Object.assign(new Error("ENOSPC: said by something else"), { code: "ENOSPC" })],
+    ["a kernel error", () => Object.assign(new Error("a refusal of the kernel's"), { code: "E_LIFECYCLE_BUSY" })],
+  ];
+  const dead = JSON.stringify(goneHolder()) + "\n";
+  for (const write of CLAIM_WRITES) {
+    const cases = [
+      ...["EIO", "EMFILE", "ENAMETOOLONG", "ENOTDIR", "ENOENT"].map((code) => [code, (...args) => systemError(code, write.syscall, args.at(write.fn === "linkSync" ? 1 : 0))]),
+      ...NOT_THE_SYSTEMS,
+    ];
+    for (const [label, error] of cases) {
+      const what = `${label} at ${write.what}`;
+      const once = (options) => {
+        rmSync(h.retirement, { recursive: true, force: true });
+        if (write.dead) { mkdirSync(h.claims, { recursive: true }); writeFileSync(h.lock, dead); }
+        fault.at = { fn: write.fn, hits: write.hits(h), error };
+        fault.met = 0;
+        const e = thrown(() => claimHomeFor("stop", "worker-1", h.home, options));
+        assert.equal(fault.met, 1, `${what}: the write was reached, once`);
+        return e;
+      };
+      const plain = once(undefined), read = once(READ);
+      assert.deepEqual(answer(read), answer(plain), `${what}: the same answer with the option`);
+      // The one code of these that is another answer today: a takeover's claim the system will not name.
+      const unnameable = write.dead && label === "ENAMETOOLONG";
+      assert.equal(read.code, label === "a kernel error" || unnameable ? "E_LIFECYCLE_BUSY" : "E_LIFECYCLE_FAILED", what);
+      if (unnameable) assert.equal(read.details.holder, "none", what);
+    }
+  }
+});
+
+test("a file where the claims directory belongs, and one where the retirement directory belongs (EEXIST, ENOTDIR from the system itself): refused as today, with the option too", (t) => {
+  for (const where of ["claims", "retirement"]) {
+    const h = claimedHome(t);
+    if (where === "claims") mkdirSync(h.retirement, { recursive: true });
+    writeFileSync(h[where], "not a directory\n");
+    const plain = thrown(() => claimHomeFor("stop", "worker-1", h.home)), read = thrown(() => claimHomeFor("stop", "worker-1", h.home, READ));
+    assert.equal(plain.code, "E_LIFECYCLE_FAILED");
+    assert.match(plain.message, /^the claim .* could not be taken \((?:EEXIST|ENOTDIR): .*\); nothing was done$/);
+    assert.deepEqual(answer(read), answer(plain), `a file where the ${where} directory belongs`);
+    assert.equal(readFileSync(h[where], "utf8"), "not a directory\n", "the file is as it was");
+  }
+});
+
+test("a gone holder's claim that the takeover cannot REMOVE, for each of the five codes, is never a claim that could not be written: refused as today with the option, and the claim is kept", (t) => {
+  const h = claimedHome(t), fault = claimFault(t);
+  mkdirSync(h.claims, { recursive: true });
+  for (const code of CLAIM_UNWRITABLE_CODES) {
+    const dead = JSON.stringify(goneHolder()) + "\n";
+    writeFileSync(h.lock, dead);
+    fault.at = { fn: "unlinkSync", hits: (path) => path === h.lock, error: (path) => systemError(code, "unlink", path) };
+    const plain = thrown(() => claimHomeFor("stop", "worker-1", h.home)), read = thrown(() => claimHomeFor("stop", "worker-1", h.home, READ));
+    assert.equal(plain.code, "E_LIFECYCLE_FAILED", code);
+    assert.equal(plain.message, `the claim ${h.lock} could not be taken (${code}: made by the test, unlink '${h.lock}'); nothing was done`, code);
+    assert.deepEqual(answer(read), answer(plain), `${code}: the same answer with the option`);
+    assert.deepEqual([h.entries(), readFileSync(h.lock, "utf8")], [["worker-1.lock"], dead], `${code}: the claim is kept, and the takeover's own is released`);
+  }
+});
+
+test("a write that fails once a takeover has ended the dead holder's step is not a claim that could not be written: the answer names what was ended, and carries no code to read the claim for", (t) => {
+  const c = claimDir(t), fault = claimFault(t);
+  writeFileSync(c.lock, JSON.stringify(goneHolder()) + "\n");
+  // The first link meets the dead holder's claim, whose step the takeover ends; the second, with
+  // the claim removed, finds no space.
+  let links = 0;
+  fault.at = { fn: "linkSync", hits: (from, to) => to === c.lock && ++links === 2, error: (from, to) => systemError("ENOSPC", "link", to) };
+  const e = thrown(() => acquireClaim(c.lock, c.opts({ waitMs: 0, endHolderStep: () => ({ ended: "the step of the test's was ended" }) })));
+  assert.deepEqual([links, e.code, unwritableCode(e)], [2, "E_LIFECYCLE_FAILED", undefined]);
+  assert.match(e.message, /the step of the test's was ended/);
+  assert.ok(!/nothing was done/.test(e.message), "it does not say that nothing was done");
+  assert.deepEqual(c.entries(), []);
+  // The same write, with nothing ended before it, is one.
+  writeFileSync(c.lock, JSON.stringify(goneHolder()) + "\n");
+  links = 0;
+  assert.equal(unwritableCode(thrown(() => acquireClaim(c.lock, c.opts({ waitMs: 0 })))), "ENOSPC");
+});
+
+test("the private file's write is inside the block that removes it: a write that fails once the file was created leaves nothing at <lock>.tmp-<pid>-<nonce>", (t) => {
+  const c = claimDir(t), fault = claimFault(t);
+  let made = null;
+  fault.at = { fn: "writeFileSync", created: true, hits: (path) => String(path).startsWith(`${c.lock}.tmp-`),
+    error: (path) => { made = [path, existsSync(path), readFileSync(path, "utf8")]; return systemError("ENOSPC", "write", path); } };
+  const e = thrown(() => acquireClaim(c.lock, c.opts({ waitMs: 0 })));
+  assert.equal(e.code, "E_LIFECYCLE_FAILED");
+  assert.match(made[0], new RegExp(`\\.tmp-${process.pid}-[0-9a-f]{32}$`));
+  assert.deepEqual(made.slice(1), [true, ""], "fixture premise: the file was there, empty, when its write failed");
+  assert.deepEqual(c.entries(), [], "and nothing of it is left");
+  // The same of a takeover's private file, beside the dead holder's claim.
+  const dead = JSON.stringify(goneHolder()) + "\n";
+  writeFileSync(c.lock, dead);
+  made = null;
+  fault.at = { ...fault.at, hits: (path) => String(path).startsWith(`${c.lock}.reclaim-${N1}.tmp-`) };
+  assert.equal(thrown(() => acquireClaim(c.lock, c.opts({ waitMs: 0 }))).code, "E_LIFECYCLE_FAILED");
+  assert.deepEqual([made.slice(1), c.entries(), readFileSync(c.lock, "utf8")], [[true, ""], ["p.lock"], dead], "the dead holder's claim is as it was, and nothing else is there");
+});
+
+test("a claim that cannot be written and that somebody holds, or that is no claim: the answer is the one the taking gives for what is at the path, from the same builder, and what is there is left as it is", (t) => {
+  const h = claimedHome(t), fault = claimFault(t);
+  mkdirSync(h.claims, { recursive: true });
+  const live = { pid: process.pid, processStart: processStartToken(process.pid), nonce: N1, at: "2026-10-10T00:00:00.000Z" };
+  const gone = { pid: exitedPid(), processStart: "proc:1", at: "2026-10-10T00:00:00.000Z" };
+  const AT_THE_PATH = [
+    ["a retire that lives", "E_INSTANCE_RETIRING", () => writeFileSync(h.lock, JSON.stringify({ ...live, action: "retire" }) + "\n")],
+    ["a holder that lives and names no verb (a retire's)", "E_INSTANCE_RETIRING", () => writeFileSync(h.lock, JSON.stringify(live) + "\n")],
+    ["a stop that lives", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, JSON.stringify({ ...live, action: "stop" }) + "\n"), "running"],
+    ["a retire whose liveness cannot be read", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, JSON.stringify({ ...live, processStart: undefined, action: "retire" }) + "\n"), "unknown"],
+    ["a stop whose liveness cannot be read", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, JSON.stringify({ ...live, processStart: undefined, action: "stop" }) + "\n"), "unknown"],
+    ["bytes that are no claim", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, "{not json"), "unknown"],
+    ["a JSON value that is no record", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, "7\n"), "unknown"],
+    ["an empty file", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, ""), "unknown"],
+    ["a record that says it is unreadable", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, JSON.stringify({ ...live, unreadable: true }) + "\n"), "unknown"],
+    ["a link to nowhere", "E_LIFECYCLE_BUSY", () => symlinkSync(join(h.claims, "nowhere"), h.lock), "unknown"],
+    ["a directory", "E_LIFECYCLE_BUSY", () => mkdirSync(h.lock), "unknown"],
+    // A holder that reads as gone and that no kernel can take over: no nonce of a claim's shape.
+    ["a gone holder with no nonce", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, JSON.stringify(gone) + "\n"), "none"],
+    ["a gone holder whose nonce is not a claim's", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, JSON.stringify({ ...gone, nonce: "short" }) + "\n"), "none"],
+    ["{}", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, "{}\n"), "none"],
+    ["[]", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, "[]\n"), "none"],
+    ["a verb alone", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, JSON.stringify({ action: "stop" }) + "\n"), "none"],
+    ["a pid that is no pid", "E_LIFECYCLE_BUSY", () => writeFileSync(h.lock, JSON.stringify({ pid: "one", action: "retire" }) + "\n"), "none"],
+  ];
+  const shape = () => { const st = lstatSync(h.lock); return st.isSymbolicLink() ? `link ${readlinkSync(h.lock)}` : st.isDirectory() ? "directory" : `file ${readFileSync(h.lock, "utf8")}`; };
+  for (const [what, code, make, holder] of AT_THE_PATH) {
+    rmSync(h.lock, { recursive: true, force: true });
+    make();
+    const before = shape();
+    fault.at = null;
+    const plain = thrown(() => claimHomeFor("stop", "worker-1", h.home));
+    assert.equal(plain.code, code, `${what}: fixture premise, what the taking answers`);
+    assert.equal(plain.details?.holder, holder, `${what}: fixture premise, details.holder`);
+    // The first write of the claim finds no space: the claim is read, where it would have been taken.
+    for (const write of CLAIM_WRITES.filter((w) => !w.dead)) {
+      fault.at = { fn: write.fn, hits: write.hits(h), error: (...args) => systemError("ENOSPC", write.syscall, args.at(write.fn === "linkSync" ? 1 : 0)) };
+      fault.met = 0;
+      const read = thrown(() => claimHomeFor("stop", "worker-1", h.home, READ));
+      assert.equal(fault.met, 1, `${what}, ${write.what}: the write was reached`);
+      assert.deepEqual(answer(read), answer(plain), `${what}, with no space at ${write.what}: the answer of the taking, byte for byte`);
+      assert.deepEqual([shape(), h.entries()], [before, ["worker-1.lock"]], `${what}: what is at the path is as it was, and nothing is beside it`);
+    }
+  }
+});
+
+test("a claim that cannot be written and whose holder is verifiably gone, where a takeover could take it: nobody holds it, and the dead claim's file is as it was", (t) => {
+  const h = claimedHome(t), fault = claimFault(t);
+  mkdirSync(h.claims, { recursive: true });
+  for (const [what, record] of [["a retire that died", goneHolder({ action: "retire" })], ["a stop that died", goneHolder({ action: "stop" })], ["a pid that is no pid, with a nonce", { pid: "one", nonce: N1 }]]) {
+    const dead = JSON.stringify(record) + "\n";
+    writeFileSync(h.lock, dead);
+    for (const write of CLAIM_WRITES.filter((w) => w.what === "the private file" || w.dead)) {
+      fault.at = { fn: write.fn, hits: write.hits(h), error: (...args) => systemError("EROFS", write.syscall, args.at(write.fn === "linkSync" ? 1 : 0)) };
+      const read = claimHomeFor("stop", "worker-1", h.home, READ);
+      assert.deepEqual([read.me, read.unwritable], [null, "EROFS"], `${what}, ${write.what}`);
+      assert.deepEqual([readFileSync(h.lock, "utf8"), h.entries()], [dead, ["worker-1.lock"]], `${what}, ${write.what}: the dead claim is left, byte for byte`);
+    }
+    // Fixture premise: with its writes made, the taking takes that claim over.
+    fault.at = null;
+    const held = claimHomeFor("stop", "worker-1", h.home);
+    assert.equal(readClaim(h.lock).nonce, held.me.nonce, what);
+    releaseHomeClaim(held);
+  }
+});
+
+test("the read is positive or it is nothing: when the read of the claim itself fails for a reason of the system's, the answer is the refusal of the WRITE, as without the option", (t) => {
+  const h = claimedHome(t), fault = claimFault(t);
+  mkdirSync(h.claims, { recursive: true });
+  const noSpace = { fn: "writeFileSync", hits: (path) => String(path).startsWith(`${h.lock}.tmp-`), error: (path) => systemError("ENOSPC", "write", path) };
+  fault.at = noSpace;
+  const plain = thrown(() => claimHomeFor("stop", "worker-1", h.home));
+  assert.equal(anyNonce(plain.message), `the claim ${h.lock} could not be taken (ENOSPC: made by the test, write '${h.lock}.tmp-${process.pid}-<nonce>'); nothing was done`);
+  // Two faults at once: the write, and then the read of the path (or, the path reading as absent,
+  // the look at the path itself).
+  const READS = [
+    ["the read of the claim fails with EIO", { fn: "readFileSync", hits: (path) => path === h.lock, error: (path) => systemError("EIO", "read", path) }],
+    ["the read of the claim fails with EACCES", { fn: "readFileSync", hits: (path) => path === h.lock, error: (path) => systemError("EACCES", "open", path) }],
+    ["the claim reads as absent and the look at its path fails", { fn: "lstatSync", hits: (path) => path === h.lock, error: (path) => systemError("EIO", "lstat", path) }],
+  ];
+  for (const [what, failingRead] of READS) {
+    let reads = 0;
+    fault.at = { fn: "writeFileSync", hits: (path) => { const hit = noSpace.hits(path); if (hit) fault.at = { ...failingRead, hits: (...args) => failingRead.hits(...args) && ++reads > 0 }; return hit; }, error: noSpace.error };
+    const read = thrown(() => claimHomeFor("stop", "worker-1", h.home, READ));
+    assert.equal(reads, 1, `${what}: the read was reached, once`);
+    assert.deepEqual([read.code, read.details, anyNonce(read.message)], ["E_LIFECYCLE_FAILED", { cause: { code: "ENOSPC", syscall: "write" } }, anyNonce(plain.message)], `${what}: the write's refusal, with the write's error as its cause`);
+    assert.deepEqual(h.entries(), [], what);
+  }
+});
+
+test("a claim that was only read holds nothing: the same read made again answers for what is at the path then (nobody, a holder, no claim, a read that fails), and releasing it removes nothing", (t) => {
+  const h = claimedHome(t), fault = claimFault(t);
+  const noSpace = { fn: "writeFileSync", hits: (path) => String(path).startsWith(`${h.lock}.tmp-`), error: (path) => systemError("ENOSPC", "write", path) };
+  fault.at = noSpace;
+  const refusedWrite = thrown(() => claimHomeFor("stop", "worker-1", h.home));
+  const read = claimHomeFor("stop", "worker-1", h.home, READ);
+  fault.at = null;
+  assert.equal(read.look(), undefined, "nobody holds it: the look returns");
+  // A stop that took the claim since, with its writes made.
+  const other = claimHomeFor("stop", "worker-1", h.home);
+  const beside = thrown(() => claimHomeFor("stop", "worker-1", h.home));
+  assert.deepEqual([beside.code, beside.details.holder], ["E_LIFECYCLE_BUSY", "running"]);
+  assert.deepEqual(answer(thrown(() => read.look())), answer(beside), "a holder that came since: the answer of the taking");
+  releaseHomeClaim(read);
+  assert.equal(readClaim(h.lock).nonce, other.me.nonce, "releasing what was only read leaves the other's claim");
+  releaseHomeClaim(other);
+  assert.equal(read.look(), undefined, "released: nobody again");
+  writeFileSync(h.lock, "{not json");
+  assert.deepEqual(answer(thrown(() => read.look())), answer(thrown(() => claimHomeFor("stop", "worker-1", h.home))), "bytes that are no claim: the answer of the taking");
+  rmSync(h.lock);
+  // The path cannot be read: neither a holder nor nobody was established.
+  fault.at = { fn: "readFileSync", hits: (path) => path === h.lock, error: (path) => systemError("EIO", "read", path) };
+  const failed = thrown(() => read.look());
+  assert.equal(failed.code, "E_LIFECYCLE_FAILED");
+  assert.deepEqual([failed.details, anyNonce(failed.message)], [refusedWrite.details, anyNonce(refusedWrite.message)], "the refusal of the write that failed");
+});
+
+test("claimUnheld: an absent path and an absent directory are nobody; a claim made between its two reads is read again, once, and is a claim; a path that is there and keeps reading as absent is no claim", (t) => {
+  const c = claimDir(t), fault = claimFault(t);
+  const otherwise = new Error("the refusal of the write");
+  assert.equal(claimUnheld(c.lock, c.opts(), otherwise), undefined, "absent");
+  assert.equal(claimUnheld(join(c.dir, "no-such-directory", "p.lock"), c.opts(), otherwise), undefined, "its directory absent");
+  // The claim reads as absent once, and is there when its path is looked at: taken in between.
+  const live = { pid: process.pid, processStart: processStartToken(process.pid), nonce: N1 };
+  writeFileSync(c.lock, JSON.stringify(live) + "\n");
+  let reads = 0;
+  fault.at = { fn: "readFileSync", hits: (path) => path === c.lock && ++reads === 1, error: (path) => systemError("ENOENT", "open", path) };
+  const e = thrown(() => claimUnheld(c.lock, c.opts(), otherwise));
+  assert.deepEqual([reads, e.kind, e.holder, e.unknown, e.at], [2, "busy", live, null, c.lock]);
+  // It reads as absent each time, and its path is there each time: not a claim, and not for ever.
+  reads = 0;
+  fault.at = { fn: "readFileSync", hits: (path) => path === c.lock && ++reads > 0, error: (path) => systemError("ENOENT", "open", path) };
+  const never = thrown(() => claimUnheld(c.lock, c.opts(), otherwise));
+  assert.deepEqual([reads, never.kind, never.at], [2, "unreadableClaim", c.lock]);
+  // A holder whose liveness cannot be read: the reason is handed to the caller's refusal.
+  fault.at = null;
+  writeFileSync(c.lock, JSON.stringify({ pid: process.pid, nonce: N1 }) + "\n");
+  const unknown = thrown(() => claimUnheld(c.lock, c.opts(), otherwise));
+  assert.deepEqual([unknown.kind, typeof unknown.unknown, unknown.unknown.length > 0], ["busy", "string", true]);
+  // Any other failure of the read: what the caller gave for it, the same object.
+  fault.at = { fn: "readFileSync", hits: (path) => path === c.lock, error: (path) => systemError("EIO", "read", path) };
+  assert.equal(thrown(() => claimUnheld(c.lock, c.opts(), otherwise)), otherwise);
 });

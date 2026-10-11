@@ -237,47 +237,12 @@ for (const { what, root, code, make, after } of RETIRE_CLAIM_SHAPES) {
   });
 }
 
-// A stop holds the claim too (feature `lifecycle-claim-stop`), so a stop needs to WRITE it: where
-// the claim's file cannot be written (a read-only claims directory here; a full disk is the likely
-// case) the stop is refused before anything is signalled. Before, a stop took no claim: it
-// signalled the harness and failed afterwards on its own files (the test of a home that cannot be
-// written, below). A claims directory that cannot be MADE is test/stop-claim.test.mjs's.
-test("instance stop --apply when the claim's file cannot be written (its claims directory is read-only): E_LIFECYCLE_FAILED naming the claim, the system's error as its cause, and nothing was signalled or written", async (t) => {
-  if (ROOT) { t.skip(SKIP_FOR_ROOT); return; }
-  const w = await instance(t, "a6");
-  const { fx, home, name } = w;
-  const pid = await launchHarness(w);
-  const stop = (...flags) => fx.cli(["instance", "stop", name, ...flags, "--json"]);
-  const planned = () => { const r = stop("--plan"); assert.equal(r.status, 0, r.stderr + r.stdout); return r.json().result; };
-  let plan;
-  await waitUntil(() => { plan = planned(); const s = plan.targets[0].session; return s.present === true && s.state !== "shell"; }, "the session to read as running");
-  const claims = dirname(w.claim);
-  mkdirSync(claims, { recursive: true });
-  chmodSync(claims, 0o500);
-  const before = listing(home);
-
-  for (const key of ["k1", "k2"]) {
-    const error = refusal(stop("--apply", "--plan-revision", plan.planRevision, "--idempotency-key", key));
-    assert.equal(error.code, "E_LIFECYCLE_FAILED", JSON.stringify(error));
-    assert.match(error.message, new RegExp(`^the claim ${escapeRegExp(w.claim)} could not be taken \\(.*\\); nothing was done$`));
-    assert.equal(systemCause(error), "EACCES");
-    assert.ok(error.message.includes("EACCES"), `the message carries the system's text: ${error.message}`);
-    assert.deepEqual([error.details.plan?.action, error.details.plan?.instance], ["stop", name], "details.plan is the plan the apply read");
-    // Before any signal: the harness runs as it did, and the session still reads as running.
-    assert.equal(alive(pid), true, "the harness was not signalled");
-    const session = planned().targets[0].session;
-    assert.equal(session.present === true && session.state !== "shell", true, `the session still reads as running: ${JSON.stringify(session)}`);
-    // "nothing was done", on disk: no record of a stop, no receipt, nothing in the claims directory.
-    assert.deepEqual(listing(home), before, "the home is as it was, byte for byte");
-    assert.deepEqual(readdirSync(claims), [], "nothing was left in the claims directory");
-  }
-  // The way out: once the claim can be written, the same apply stops the session.
-  chmodSync(claims, 0o700);
-  const done = stop("--apply", "--plan-revision", planned().planRevision, "--idempotency-key", "k3");
-  assert.equal(done.status, 0, done.stderr + done.stdout);
-  assert.deepEqual([done.json().result.ok, done.json().result.results.map((row) => [row.instance, row.ok, row.stopped])], [true, [[name, true, true]]], done.stdout);
-  await waitUntil(() => !alive(pid), "the harness to be gone: that stop stopped it");
-});
+// A stop holds the claim too (feature `lifecycle-claim-stop`), and is the one verb that does not
+// need to WRITE it: where the claim cannot be written for a reason that stops every other writer
+// of this user as well (a read-only claims directory, a full disk), a stop apply reads it in its
+// place and goes on when nobody holds it (awebai/oats#946). Those answers are in
+// test/stop-unwritable-claim.test.mjs; a claims directory that cannot be MADE because a file is
+// where it belongs is still refused, in test/stop-claim.test.mjs.
 
 const TREE_CLAIM_SHAPES = [
   { what: "a regular file is where its trees directory belongs", root: true, make: (trees) => { rmSync(trees, { recursive: true, force: true }); writeFileSync(trees, "not a directory\n"); } },
