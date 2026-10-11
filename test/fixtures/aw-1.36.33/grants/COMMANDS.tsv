@@ -1,0 +1,7 @@
+custody-status-running	aw custody status --json
+grant-mint-never	aw id grant mint --team=default:fixture-29075.test --scope=mail.read,mail.send,chat.read,chat.send,events.read,coord.read,coord.write,presence.write,contacts.read,contacts.write --ttl=never --label=oats:capture:4acd4c3ed8676ba9 --out=/home/runner/work/_temp/s/grant-never --custody-socket=/home/runner/work/_temp/s/complete/.aw/run/custody.sock --json
+grant-mint-90m	aw id grant mint --team=default:fixture-29075.test --scope=mail.read,mail.send,chat.read,chat.send,events.read,coord.read,coord.write,presence.write,contacts.read,contacts.write --ttl=90m --label=oats:capture:caee6ca51edd3501 --out=/home/runner/work/_temp/s/grant-90m --custody-socket=/home/runner/work/_temp/s/complete/.aw/run/custody.sock --json
+grant-list-active	aw id grant list --team=default:fixture-29075.test --json
+grant-revoke	aw id grant revoke 071749a6-b72f-4af0-b370-e275ff8d279f --json
+grant-list-after-revoke	aw id grant list --team=default:fixture-29075.test --json
+grant-revoke-again	aw id grant revoke 071749a6-b72f-4af0-b370-e275ff8d279f --json

@@ -1,0 +1,12 @@
+{
+  "status": "not_running",
+  "socket_path": "/private/tmp/oats-resident-capture/complete/.aw/run/custody.sock",
+  "resident": {},
+  "teams": null,
+  "keys": null,
+  "ops": null,
+  "freshness": null,
+  "errors": [
+    "custody_unavailable"
+  ]
+}
