@@ -108,14 +108,32 @@ local trigger on one host.
 
 ```sh
 oats trigger test <member>/okf-harvest-review   # or: oats trigger test okf-harvest-review (local)
-oats schedule host install                      # the host tick, if the test says it is missing
+oats schedule host status                     # is the host timer installed and active?
 oats trigger status
 ```
+
+**If this host has none yet, installing the timer is the operator's step, in
+their own shell, never yours:** `install` renders the unit from the
+environment of the shell it runs in, and an agent's shell can carry a
+session's own `PATH` and node. Hand the operator the exact command to run in
+their own terminal, from the deployment directory and outside every instance
+home:
+
+```sh
+oats schedule host install
+```
+
+Do not run it yourself, with or without flags. On OATS 0.52.0 and later, do
+not offer its `--print` from your shell as a preview: that renders your
+environment, not the operator's. After the operator has run it, check the
+result yourself with `oats schedule host status`. With no operator at the machine, the timer stays
+as it is until they run the command: say what is waiting, and do not run it in
+their place.
 
 - **Why a schedule command here:** the shared host tick that
   `oats schedule host install` installs is what polls PR triggers such as this
   one ([OATS v0.41.0 schedules, Triggers](https://github.com/awebai/oats/blob/v0.41.0/docs/schedules.md)).
-  Run it for this review trigger only. It adds no scheduler job, and harvest
+  The timer supports this review trigger. It adds no scheduler job, and harvest
   needs no timer: working agents propose at their checkpoints.
 
 - `oats trigger test` checks gh auth and where its credential comes from, the
