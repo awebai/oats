@@ -93,6 +93,9 @@ and the rules its tests pin.
 | `instruction-composition.mjs` | the generated `AGENTS.md`; `renderInstructionParts` is the span-reporting renderer (`renderInstructionText` is its text) |
 | `soul-composition.mjs` | the instructions a spawn of a soul would write, composed without a spawn (kernel half + materialize into a scratch home): the one path behind `doctor --soul` and `inspect --soul --instructions` |
 | `teams.mjs`, `teams-verbs.mjs` | the team model and the `oats teams` verbs |
+| `local-edit.mjs` | the one way a verb rewrites `oats-local.yaml` in place (`editLocal`): the file as it is now, the deployment's local lock, compare-and-swap, the local schema and the caller's check before the rename. `oats teams add\|remove\|default` and `oats soul launch set\|remove` both write through it; a new writer of that file does too, so that no two drop each other's change |
+| `launch-preference.mjs` | a soul's launch preference, pure: the layers a new launch reads, the `Launch` report, and `launchKeysUnmatched`, the one function that decides which keys of `souls.launch` name no soul. It decides from a description of one read of the workspace (`soulsOffered` in `instance-resolution.mjs`, built from the discovery and its `soulsUnread`); a reader never computes the answer itself |
+| `soul-launch-verbs.mjs` | `oats soul launch set\|remove`, the writer of `souls.launch` |
 | `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
 | `trigger-sources.mjs` | a capability's `triggerSources`: the use-time validator (per source, never from the manifest contract or discovery) and the source wire's answer and event rules; `triggers.mjs` runs a source with `instance-inspect.mjs`'s `runModuleCommand`, the provider-check runner |
 | `refused-text.mjs` | the one set of characters the kernel never stores or prints in text it did not write (`REFUSED_TEXT`), and `safeText`, which replaces them |

@@ -125,10 +125,12 @@ see the [official catalog](official-catalog.md) for current pins.
 | `schedule-run-warnings` | a schedule run's record (`lastRun`, `recentRuns[]`) and a trigger fire's record and `lastRun` carry `warnings?`, the launch answer's warnings, when it had some; OATS 0.52.0 ([schedules and triggers](#schedules-and-triggers)) | |
 | `lifecycle-claim-stop` | `oats instance stop --apply` holds the claim of every target (the file one retire of a home at a time is ordered by), so a stop is refused beside a retire in flight (`E_INSTANCE_RETIRING`) or another stop (`E_LIFECYCLE_BUSY`), a retire beside a stop (`E_LIFECYCLE_BUSY`), and `oats worktree add` beside a retire (`E_INSTANCE_RETIRING`), each before any effect ([Commands that meet on one home](#lifecycle-pairs)); a stop that was killed refuses nothing afterwards, and `<home>/.oats-stop-pending.json` is no longer written or read: a client's own handling of a stale stop marker is not needed for a kernel that lists this; `error.details.action` (the holder's verb) on those refusals, and `error.details.holder` on every `E_LIFECYCLE_BUSY` ([`details.holder`](#busy-holder)); the codes a stop and a retire answer only before any effect, as one list ([the list](#before-effect-codes)), with two retire answers that came after an effect given codes outside it (`E_WORK_PRESERVATION_FAILED`, `E_RUNTIME_QUIESCE_FAILED`), OATS 0.52.0. Gate on the probe; routed with `--server`, on the host's list | |
 | `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"` and `"flag-ignored"`; `launchPrompts` in a launched spawn's answer; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
+| `soul-launch` | `oats soul launch set\|remove`, the writer of `oats-local.yaml` `souls.launch`, and `E_LAUNCH_PREFERENCE_UNKNOWN`, OATS 0.53.0 ([`oats soul launch`](#oats-soul-launch)). Gate on the probe: a kernel without it answers `E_USAGE` | `soulLaunchApi: 1` (payload only) |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
-`soulsApi: 1`, `teamsApi: 1`, `soulTeamsApi: 1`, `triggerApi: 1`.
+`soulsApi: 1`, `teamsApi: 1`, `soulTeamsApi: 1`, `triggerApi: 1`,
+`soulLaunchApi: 1`.
 
 **Gate on the probe, never by trying.** An older kernel can ignore an unknown
 flag and act: without `lifecycle-plans`, `retire --plan` retires.
@@ -1440,6 +1442,9 @@ oats teams default <label> [--if-absent | --expect <label>] --json
   form `--max-age` (on a write form, `--max-age` is the kernel's own
   `E_BAD_ARGS`, as for every write verb). `--help` is the kernel's usage
   answer, as for every command.
+- **Rendering** (0.53.0). The file is written without folding lines: a value
+  past 80 columns stays on its line. Before, a write re-wrapped such a line
+  (the same value, over two lines).
 - A write that would introduce an unknown reference is refused with that
   code; an invalid result is `E_WORKSPACE_SCHEMA`.
 - **Writes** edit `oats-local.yaml` in place and touch only the entries that
@@ -1452,6 +1457,7 @@ oats teams default <label> [--if-absent | --expect <label>] --json
   every redo.
 - **Concurrency.** Every `add`, `remove` and `default` holds
   `<deployment>/.agents/locks/local.lock` for its whole read-compare-write.
+  [`oats soul launch set|remove`](#oats-soul-launch) holds the same lock.
   Among concurrent `oats teams` writers on one deployment, a conditional write
   therefore never overwrites a default another of them set: when two race, the
   later one sees the earlier result and refuses with
@@ -1489,6 +1495,91 @@ oats soul teams <soul>|'*' [--dir <d>] [--max-age <s>] --json
   removed in 0.38.0: `E_BAD_ARGS` with details `{flag, replacement: "souls: in
   oats-workspace.yaml (a PR to the workspace file)"}`, before anything else
   is judged.
+
+<a id="oats-soul-launch"></a>
+### `oats soul launch`
+
+Feature `soul-launch` (OATS 0.53.0). The supported writer of
+`oats-local.yaml` `souls.launch`, a soul's
+[launch preference](#launch-preferences) on this machine.
+
+```text
+oats soul launch set <soul>|'*' (--launch-config <name>|none | --harness pi|claude|codex [--model <id>]) [--plan] [--dir <d>] --json
+oats soul launch remove <soul>|'*'|<exact key> [--plan] [--dir <d>] --json
+```
+
+```json
+{"soulLaunchApi":1,"action":"set","plan":false,
+ "key":"example.pkg/reviewer","souls":["example.pkg/reviewer"],
+ "level":"/abs/deployment","file":"/abs/deployment/oats-local.yaml",
+ "before":null,"after":"private","changed":true,
+ "launch":{"declared":null,"effective":{"harness":"claude","model":null,"launchConfig":"private"},
+           "from":"local","at":"oats-local.yaml#/souls/launch/example.pkg~1reviewer","problem":null},
+ "unmatched":[],"unread":null}
+```
+
+One closed answer for `set`, `remove` and their plans.
+
+- **`set`** names the soul as a spawn does (`E_SOUL_UNKNOWN`,
+  `E_SOUL_AMBIGUOUS`) and writes the key that soul has: its bare name, or
+  `<package>/<soul>`. `'*'` is the machine default. Exactly one of
+  `--launch-config` and `--harness`; `--model` only with `--harness`
+  (`E_BAD_ARGS`). `--launch-config <name>` writes the name (`none` too) and
+  `--harness` the inline `{harness, model?}`. A harness that is not installed
+  is not refused: `launch.problem` says what a spawn would refuse.
+- **`remove`** tries its argument **first as the exact text of a key in
+  `souls.launch`**, with no read of the workspace; otherwise it names a soul,
+  as for `set`, and removes that soul's key. Removing the last entry removes
+  `souls.launch`, and `souls` when that leaves it empty.
+- **`--plan`** runs every check and writes nothing. Its answer is the
+  apply's with `plan: true`, and a state that refuses the apply refuses the
+  plan with the same code. It takes no lock, so it never answers
+  `E_LOCAL_BUSY`.
+- **The read.** Both forms read the workspace live: `--max-age` is refused
+  (`E_BAD_ARGS`) with and without `--plan`, as for every write verb, and the
+  answer never carries `observation`.
+
+| Field | Meaning |
+|---|---|
+| `action` | `"set"` or `"remove"` |
+| `plan` | `true`: nothing was written |
+| `key` | the `souls.launch` key written or removed, exactly as in the file; `"*"` for the machine default |
+| `souls` | the qualified names of the offered souls that key applies to, sorted. More than one when two members offer a soul of that name: the entry pins all of them. `[]` for a key that is the key of no soul; `null` for `"*"` |
+| `level`, `file` | the deployment and its `oats-local.yaml` |
+| `before`, `after` | the entry: `null` (none), a string (a launch configuration's name, or `none`), or `{harness, model}` with `model` `null` when it has none |
+| `changed` | `false` when the file already said it: nothing was written |
+| `launch` | the [`Launch`](#the-launch-report-launch) report a spawn with no flags would decide for the named soul, with the file as it is after this change (as it would be, under `--plan`). After a `remove` it shows what the soul falls through to. For a key given by its exact text, the soul is the first of `souls`. `null` for `"*"` and for a key that is the key of no soul |
+| `unmatched` | the keys of `souls.launch` that are the key of no offered soul after this change, sorted by key: `[{key, at, value, suggestions}]`. `at` is `oats-local.yaml#/souls/launch/<key>` (JSON-pointer escaped), `value` the entry as in `before`, `suggestions` at most three offered soul keys: those with the key's bare name (the part after the last `/`) first, then those within two edits of it. `"*"` is never listed, and neither is a key the read could not check (a member unconfirmed, a soul skipped with a problem, a package declared and not locked). `[]`: no key is known to name no soul |
+| `unread` | `null`, or `{code, message}` when a `remove` by exact text ran although the workspace's souls could not be read |
+
+- **Read `unread` first.** When it is not `null`, the answer says nothing
+  about souls: `souls`, `launch` and `unmatched` are `null` for that reason
+  and no other. In every other answer `unmatched` is a list, and `souls` and
+  `launch` are `null` only as the table says.
+- **The write** is the one `oats teams` makes (above): one entry set or
+  deleted in the parsed document, under
+  `<deployment>/.agents/locks/local.lock`, from the file as it is now, redone
+  when the file changed under it. The file is rewritten, and every other
+  entry keeps its value and its comments. Before the rename the rewritten
+  text is validated against the local schema and read back: it must equal
+  the old value everywhere but the one entry.
+- **Refusals**, all before a byte of the file changes: `E_USAGE` (no `set` or
+  `remove`; a flag the form does not take, `--home` and `--soul` among them,
+  with `details: {flag}`), `E_BAD_ARGS`, `E_LOCAL_MISSING`, `E_SOUL_UNKNOWN`,
+  `E_SOUL_AMBIGUOUS`, `E_LAUNCH_CONFIG_UNKNOWN {name, from, at}` (a
+  `--launch-config` name this file does not declare: the fact a spawn would
+  report, said before the file holds it), `E_LAUNCH_PREFERENCE_UNKNOWN {key,
+  keys}` (a `remove` of an entry the file does not have; `keys` are the
+  entries it has), `E_LOCAL_BUSY {path, lock}`, `E_LOCAL_CHANGED {path}`,
+  `E_WORKSPACE_SCHEMA` (the rewritten file would be invalid, `details:
+  {problems}`; or it would not read back as this one edit, `details: {path,
+  reason: "read-back", differs}` with `differs` the JSON pointers that
+  differ, never their values), and whatever the read of the workspace
+  answers when `set`, or a `remove` that names a soul, cannot read the souls.
+- Text mode says the same in lines: what was set or removed and in which
+  file; the souls the entry applies to, when more than one; what the next
+  spawn of that soul selects; and each key that still names no soul, with
+  the command that removes it.
 
 ### The messaging provider's teams document
 
@@ -1639,7 +1730,9 @@ Every object shape here is closed.
 - **The machine** may override it in `oats-local.yaml` `souls.launch`. A key is
   a soul key (as for `souls.teams`: `"*"`, a bare soul name, or
   `<package>/<soul>`). A value is a `launch-configs` name in the same file, or
-  an inline `{harness, model?}` with the soul's rules.
+  an inline `{harness, model?}` with the soul's rules. From OATS 0.53.0 the
+  key is written by [`oats soul launch set|remove`](#oats-soul-launch)
+  (feature `soul-launch`).
   ```yaml
   souls:
     launch:
