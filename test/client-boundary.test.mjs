@@ -60,7 +60,7 @@ const SURFACE = Object.freeze({
     "soulsData", "soulCapabilitiesOf", "capabilitiesData"],
   "deployment-observer.mjs": ["createDeploymentObserver", "mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"],
   "refresh-loop.mjs": ["createRefreshLoop", "REFRESH_FOCUSED_MS", "REFRESH_BLURRED_MS"],
-  "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "unsupportedSession"],
+  "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "unsupportedSession", "originLead"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingNames", "waitingBelowText", "waitingSentence"],
   "harness-names.mjs": ["HARNESSES", "HARNESS_NAMES", "harnessFeature", "harnessFlag", "harnessKey", "harnessOf", "harnessList"],
   "team-rows.mjs": ["teamRow", "teamRowsOf", "defaultTeamOf", "teamModelOf"],
@@ -575,6 +575,9 @@ test("the stable surface names what packages/client has: every listed module, ev
   assert.deepEqual(SURFACE["remote-identity-memory.mjs"], ["observeIdentities", "identityMemory"]);
   // 3a: a second client's switcher reads the rows; the two functions a row is made of are the Desktop's own importers'.
   assert.deepEqual(SURFACE["workspace-choices.mjs"], ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"]);
+  // #982: the words that name who made a text are on it; how the shared home decides a speaker is not.
+  assert.deepEqual(SURFACE["instance-presentation.mjs"], ["runtimeState", "runtimeCounts", "unsupportedSession", "originLead"]);
+  assert.ok(!Object.hasOwn(SURFACE, "kernel-made.mjs") && !Object.hasOwn(SURFACE, "liveness.mjs"));
   // Not on it: the Desktop spawn dialog's copy, and the two files nobody imports.
   for (const module of ["spawn-messages.mjs", ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
 });

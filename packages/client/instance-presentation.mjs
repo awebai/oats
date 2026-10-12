@@ -1,4 +1,5 @@
 import { HERDR_REMOVED } from "./terminal-contract.mjs";
+import { requireTerms } from './client-terms.mjs';
 
 export function runtimeState(instance) {
   return instance.running === true ? "running" : instance.running === false ? "stopped" : "unknown";
@@ -25,18 +26,42 @@ export function unsupportedSession(instance) {
  * Not on the stable surface. */
 export const unsupportedSessionOrigin = (instance) => (kernelsOwnReason(instance) ? "kernel" : null);
 
-/** The speakers a text of a row can have, as `runtimeErrorOrigin` and a reason's `origin` name them:
+/** The speakers a text of a row can have, as `runtimeErrorOrigin` and a reason's `origin` name them, each
+ * with the words a client puts in front of the text (`originLead`):
  *
- *   kernel          read from a kernel answer: this machine's OATS, or another host's OATS relayed by it
- *   terminal-probe  made by the client's terminal check (liveness.mjs, tmux-status.mjs)
+ *   kernel          read from a kernel answer: this machine's OATS, or another host's OATS relayed by it.
+ *                   A client names both the same; a row's `serverUnreached` says which read the text is about.
+ *   terminal-probe  made by the client's terminal check (liveness.mjs, tmux-status.mjs): a sentence of
+ *                   its own, or the message of a failed `tmux` or `ps` run
  *   roster-read     made by the client while it read the roster of other machines (remote-roster.mjs)
  *
  * A text with no speaker (the stand-in above) has no key. The marks are written here, in the shared home,
  * at the place that chooses the text, and never taken from an answer: a key a kernel, a host or the
  * liveness collector sent is dropped on every path. */
-const ORIGINS = Object.freeze(["kernel", "terminal-probe", "roster-read"]);
+const LEADS = Object.freeze({
+  kernel: () => "OATS says:",
+  "terminal-probe": (terms) => `${terms.name}'s terminal check says:`,
+  "roster-read": (terms) => `${terms.name}'s read of other machines says:`,
+});
 /** Whether a value is one of the three speakers. Not on the stable surface. */
-export const knownOrigin = (value) => ORIGINS.includes(value);
+export const knownOrigin = (value) => typeof value === "string" && Object.hasOwn(LEADS, value);
+
+/** The words a client puts in front of a text to name who made it, or null when `origin` is not one of
+ * the three speakers (absent, or any other value). It takes a row's `runtimeErrorOrigin`, a reason's
+ * `origin` (remote-address.mjs `rowReason`, instance-acts.mjs) or a kept failure's `errorOrigin`: all hold
+ * the same values. A client writes nothing of its own there, so two clients name a speaker the same way.
+ *
+ *   kernel          "OATS says:"                                  no term: the word the other sentences use
+ *   terminal-probe  "<name>'s terminal check says:"               `terms.name` (client-terms.mjs)
+ *   roster-read     "<name>'s read of other machines says:"
+ *
+ * The two checks name the client: the kernel's own text can be about a terminal server too, so "the
+ * terminal check" alone would not say whose check it was. A text with no lead is shown as the client's
+ * own words always were: never under "OATS says:". `terms` is required, also where no term is used. */
+export function originLead(origin, terms) {
+  requireTerms(terms, "originLead");
+  return knownOrigin(origin) ? LEADS[origin](terms) : null;
+}
 /** Whether a row has a `runtimeError`: a string that is not empty. Only such a row carries `runtimeErrorOrigin`. */
 export const hasRuntimeError = (row) => typeof row?.runtimeError === "string" && !!row.runtimeError;
 /** The speaker of a sentence a reason carries, or null: the row's `runtimeErrorOrigin` when the sentence
