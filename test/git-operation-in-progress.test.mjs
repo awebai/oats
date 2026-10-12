@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GIT_OPERATION_ENTRIES, RECOVERABLE_GIT_ADMIN, gitOperationInProgress, retireInstance } from "../lib/core.mjs";
+import { gitRefPresenceOf } from "../lib/instance-git.mjs";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -141,13 +142,16 @@ const NO_REFTABLE = (() => {
   } finally { rmSync(base, { recursive: true, force: true }); }
 })();
 const skipFor = (format) => (format === "reftable" && NO_REFTABLE ? { skip: NO_REFTABLE } : {});
-/** A deployment whose member clone stores its refs in `format`, turned before any worktree is made. */
+/** A deployment whose member clone stores its refs in `format`, turned before any worktree is made.
+ *  The files format is every Git's own and is checked without a command an older Git lacks. */
 function deployment(t, format, opts) {
   const fx = v2Deployment(opts);
   t.after(fx.cleanup);
   const g = gitWith(fx.env);
-  if (format === "reftable") g(fx.member, "refs", "migrate", "--ref-format=reftable");
-  assert.equal(g(fx.member, "rev-parse", "--show-ref-format"), format, "premise: the clone's ref format");
+  if (format === "reftable") {
+    g(fx.member, "refs", "migrate", "--ref-format=reftable");
+    assert.equal(g(fx.member, "rev-parse", "--show-ref-format"), "reftable", "premise: the clone's refs are in the reftable format");
+  } else assert.equal(existsSync(join(fx.member, ".git", "reftable")), false, "premise: the clone's refs are files");
   return { fx, g };
 }
 
@@ -276,6 +280,19 @@ test("the two refs are asked of Git where the refs may be in the reftable format
     git.answer(word);
     assert.equal(gitOperationInProgress(own, tree), true, `Git's answer is ${what}`);
   }
+  // The same from the probe's result alone, for what no quick process can stage: a Git ended at the
+  // timeout that handles the signal exits 1 and prints nothing, and is not "not there".
+  const result = (over) => ({ status: 1, signal: null, error: undefined, stdout: "", stderr: "", ...over });
+  const timedOut = Object.assign(new Error("spawnSync git ETIMEDOUT"), { code: "ETIMEDOUT" });
+  assert.equal(gitRefPresenceOf(result()), "absent", "status 1, nothing printed, no error");
+  assert.equal(gitRefPresenceOf(result({ status: 0, stdout: "1111111111111111111111111111111111111111\n" })), "there");
+  assert.equal(gitRefPresenceOf(result({ error: timedOut })), "unknown", "timed out, and the child exited 1 with nothing printed");
+  assert.equal(gitRefPresenceOf(result({ error: timedOut, status: null, signal: "SIGTERM" })), "unknown", "timed out, and the child was ended by the signal");
+  assert.equal(gitRefPresenceOf(result({ status: null, signal: "SIGKILL" })), "unknown", "ended by a signal");
+  assert.equal(gitRefPresenceOf(result({ status: null, error: Object.assign(new Error("spawnSync git ENOENT"), { code: "ENOENT" }) })), "unknown", "no Git");
+  assert.equal(gitRefPresenceOf(result({ stdout: "x\n" })), "unknown", "status 1 with something printed");
+  assert.equal(gitRefPresenceOf(result({ stderr: "fatal: x\n" })), "unknown", "status 1 with an error printed");
+  assert.equal(gitRefPresenceOf(result({ status: 128 })), "unknown", "another status");
   git.answer("absent");
   assert.equal(gitOperationInProgress(own), true, "no tree to ask in");
   assert.equal(gitOperationInProgress(own, ""), true, "an empty tree path");
