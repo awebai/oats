@@ -45,14 +45,14 @@ test("release alignment rejects stale lock metadata even when all three manifest
 
 test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", () => {
   for (const cap of MIRROR_PATHS) {
-    assert.equal(json(`${cap}/oats.json`).version, "5.0.1");
-    assert.equal(json(`${cap}/oats.json`).compatibility.oats, ">=0.29.0", `${cap}: OKF 5.0.1 retains the declared 0.29.0 package-soul/trigger floor; this is a manifest assertion, not qualification of every old kernel`);
+    assert.equal(json(`${cap}/oats.json`).version, "5.0.2");
+    assert.equal(json(`${cap}/oats.json`).compatibility.oats, ">=0.29.0", `${cap}: OKF 5.0.2 retains the declared 0.29.0 package-soul/trigger floor; this is a manifest assertion, not qualification of every old kernel`);
   }
-  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v5.0.1");
+  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v5.0.2");
   const catalog = json("package-catalog.json");
   assert.equal(catalog.packages["oats.knowledge-theory"], undefined, "the theory package identity was renamed to oats.framework");
   const framework = catalog.packages["oats.framework"];
-  assert.equal(framework.ref, "oats-framework/v1.9.1", "catalog uses the published distribution tag, not a pending kernel release tag");
+  assert.equal(framework.ref, "oats-framework/v1.9.3", "catalog uses the published distribution tag, not a pending kernel release tag");
   assert.equal(framework.path, "oats-package");
   for (const id of ["oats.knowledge-theory", "oats.core", "oats.setup"]) assert.equal(catalog.capabilities[id], "oats.framework");
 });

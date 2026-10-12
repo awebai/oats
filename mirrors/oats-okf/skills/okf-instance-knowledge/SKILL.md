@@ -59,6 +59,13 @@ self-censor a real decision because it might not be promoted.
 - Command logs and tool output; retries that taught nothing.
 - Secrets and credentials, however they appear.
 - Third-party messages verbatim (a lesson *about* one is fine).
+- Personal data. Never include personal data about people outside the team
+  (clients, correspondents, any other third party): a name, a contact
+  detail, or anything else that identifies a person, including detail
+  derived from correspondence. Keep the lesson and leave the person out.
+  Naming the author of a published source you cite is fine. That covers the
+  names you choose as well: a note's file name, a task ref and an instance's
+  name are published as provenance when knowledge is harvested.
 - What the tracker or the docs already hold: link to it instead.
 
 ## The form of a note

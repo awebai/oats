@@ -36,7 +36,14 @@ alternatives, costly discoveries, limitations and the workaround that worked,
 conclusions, blockers, human direction and corrections, and surprises that
 contradict soul knowledge (flag those as candidate supersessions). Not code
 descriptions, command logs, retries, secrets, verbatim third-party messages,
-or what the tracker and docs already hold. One concept per note in notes/;
+or what the tracker and docs already hold. Never include personal data
+about people outside the team (clients, correspondents, any other third
+party): a name, a contact detail, or anything else that identifies a person,
+including detail derived from correspondence. Keep the lesson and leave the
+person out. Naming the author of a published source you cite is fine. That
+covers the names you choose as well: a note's file name, a task ref and an
+instance's name are published as provenance when knowledge is harvested. One
+concept per note in notes/;
 STATE.md is the current picture (rewritten); log.md is dated events
 (append-only). Soul knowledge changes only through a reviewed PR. Load
 **knowledge-theory** for what is worth keeping.
