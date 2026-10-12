@@ -1144,7 +1144,23 @@ The retire and its plan read what is at `<home>/work` once, by one rule
   that repository until a prune; the receipt's `warnings` name the
   repository and give the command (`git -C <repository> worktree prune`).
   Its branch and its commits are not touched.
-- **A link** goes with the home, and what it leads to is not touched.
+- **A link** is never the instance's own tree, whatever the record says
+  (0.53.0, #973). It goes with the home, and what it leads to is not
+  touched: not copied, not moved, not removed, not read through Git, and no
+  branch is deleted, with `--discard-worktree` and `--force` as without
+  them. The record is a file the instance can write; what a link leads to
+  is not the instance's. For a link under a record that says `worktree`
+  (the instance's registered worktree moved elsewhere with a link left in
+  its place, for example) the plan says so in a note and in its `defaults:`
+  line, and the receipt's `warnings` say where the link led: the path the
+  system resolved it to just before the home was removed, or that it led
+  nowhere that could be read. The tree stays registered in its repository.
+  A retry of a failed spawn's cleanup over a link verifies no Git debt
+  through it: the debt stays outstanding, and `--force` removes the home
+  alone. A link that is no longer a link when the retire inspects the home
+  again after its hooks refuses the retire (`E_WORK_INSPECTION_FAILED`) and
+  keeps the home, since removing the home would take what replaced the
+  link, uncopied.
 - **A directory instance's `work/`** is held against the spawn's receipt as
   before: a record that says `directory` where the receipt does not, or the
   other way round, refuses the retire.
