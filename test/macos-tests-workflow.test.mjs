@@ -38,6 +38,9 @@ test("macOS tests: the token reads contents only, and no secret, artifact or cac
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.deepEqual(Object.keys(workflow.jobs), ["run"]);
   assert.equal(job.permissions, undefined, "the job widens nothing");
+  // Its check is its own: a run must never read as one of pull-request CI's, the gate above all.
+  const ciNames = Object.entries(read("pull-request.yml").jobs).flatMap(([key, j]) => [key, j.name]);
+  assert.ok(ciNames.includes("Node 22 / test, validate, pack, smoke") && !ciNames.includes(job.name) && !ciNames.includes("run"), `the job's name or key is one of pull-request CI's: ${job.name}`);
   for (const word of ["secrets.", "github.token", "GITHUB_TOKEN"]) assert.ok(!source.includes(word), `the workflow names ${word}`);
   // The two actions pull-request CI uses, as it references them, and no other: no
   // actions/upload-artifact, no actions/cache.

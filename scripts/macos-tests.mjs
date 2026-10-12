@@ -530,7 +530,7 @@ export function formatHeader(f) {
     `  tmux default socket: ${show(f.tmuxSocket.path)} ${f.tmuxSocket.there ? "EXISTS before the first file: the leak check is skipped for this run" : "is not there (looked for again after each file)"}`,
   ];
   if (f.changed) lines.push(`  tracked files that differ from the commit: ${f.changed.length ? `${f.changed.length} (${f.changed.slice(0, 10).map(show).join(", ")}${f.changed.length > 10 ? ", ..." : ""})` : "none"}`);
-  lines.push(`  bounds:              at most ${MAX_FILES} files a run, ${formatDuration(FILE_TIMEOUT_MS)} a file`);
+  lines.push(`  bounds:              at most ${MAX_FILES} files a run, ${FILE_TIMEOUT_MS / 60_000} minutes a file`);
   lines.push(`  files (${f.files.length}), each alone, in this order:`);
   for (const file of f.files) lines.push(`    ${file}`);
   for (const file of f.repeated) lines.push(`  (named more than once, runs once: ${file})`);
@@ -539,10 +539,12 @@ export function formatHeader(f) {
 
 // ---- the two steps -------------------------------------------------------------------------------
 
-function refuse(refusals, { write, env }) {
-  write("Refused: nothing was checked out, installed or run.\n");
+const NOTHING_YET = "nothing was checked out, installed or run", NO_FILE = "no file was run";
+/** Print a refusal, every entry of it → the exit status. `nothing` says how far the job had come. */
+function refuse(refusals, { write, env, nothing = NOTHING_YET }) {
+  write(`Refused: ${nothing}.\n`);
   for (const { entry, why } of refusals) write(`  ${entry}: ${why}\n`);
-  summarize(env, ["## macOS test run: refused", "", "Nothing was checked out, installed or run.", "", "<pre>", ...refusals.map(({ entry, why }) => html(`${entry}: ${why}`)), "</pre>", ""]);
+  summarize(env, ["## macOS test run: refused", "", `Refused: ${nothing}.`, "", "<pre>", ...refusals.map(({ entry, why }) => html(`${entry}: ${why}`)), "</pre>", ""]);
   return 2;
 }
 function summarize(env, lines) {
@@ -582,9 +584,9 @@ export function prepare({ tree, repo = REPO_ROOT, env = process.env, write = (ch
 /** Step two: validate again, run each file in `tree`, print the table → Promise of the exit status. */
 export async function run({ tree, repo = REPO_ROOT, env = process.env, write = (chunk) => process.stdout.write(chunk), timeoutMs = FILE_TIMEOUT_MS }) {
   const request = validateRequest({ ref: env.MACOS_TESTS_REF, files: env.MACOS_TESTS_FILES }, repo, env);
-  if (!request.ok) return refuse(request.refusals, { write, env });
+  if (!request.ok) return refuse(request.refusals, { write, env, nothing: NO_FILE });
   const wrong = treeRefusal(tree, request, env);
-  if (wrong) return refuse([{ entry: `commit ${request.commit}`, why: wrong }], { write, env });
+  if (wrong) return refuse([{ entry: `commit ${request.commit}`, why: wrong }], { write, env, nothing: NO_FILE });
   const facts = readFacts({ request, tree, repo, env });
   write(`${formatHeader(facts).join("\n")}\n`);
   // Read once, before the first file: a socket that is there already is not a file's doing.
@@ -593,10 +595,10 @@ export async function run({ tree, repo = REPO_ROOT, env = process.env, write = (
   write(`\n${buildTable(runs).join("\n")}\n\n${lines.join("\n")}\n`);
   summarize(env, [
     `## macOS test run: ${ok ? "passed" : "FAILED"}`, "",
-    `Commit under test: <code>${html(facts.commit)}</code>, asked for as <code>${html(show(facts.asked))}</code>.`,
-    `Workflow: <code>${html(show(facts.workflowRef ?? "not a workflow run"))}</code> at <code>${html(show(facts.workflowSha ?? "-"))}</code>.`,
-    `${facts.macos ? `macOS ${html(show(facts.macos.version ?? "unknown"))}` : "NOT macOS"}, ${html(facts.arch)}, node ${html(facts.node)}, ${html(facts.fileSystem)} file system, tmux ${facts.tmux ? html(show(facts.tmux.version ?? "version unknown")) : "not on PATH"}.`,
-    "", ...buildMarkdownTable(runs), "", ...lines.map(html), "",
+    `- Commit under test: <code>${html(facts.commit)}</code>, asked for as <code>${html(show(facts.asked))}</code>.`,
+    `- Workflow: <code>${html(show(facts.workflowRef ?? "not a workflow run"))}</code> at <code>${html(show(facts.workflowSha ?? "-"))}</code>.`,
+    `- ${facts.macos ? `macOS ${html(show(facts.macos.version ?? "unknown"))}` : "NOT macOS"}, ${html(facts.arch)}, node ${html(facts.node)}, ${html(facts.fileSystem)} file system, tmux ${facts.tmux ? html(show(facts.tmux.version ?? "version unknown")) : "not on PATH"}.`,
+    "", ...buildMarkdownTable(runs), "", ...lines.map((line) => `- ${html(line)}`), "",
     "The step's log has the full header and each file's output; it is the evidence, not this summary.", "",
   ]);
   return ok ? 0 : 1;
@@ -613,7 +615,7 @@ export async function main(argv, env = process.env, write = (chunk) => process.s
   const tree = resolve(treeArg), token = env.GITHUB_ACTIONS === "true" ? randomBytes(16).toString("hex") : null;
   if (token) write(`::stop-commands::${token}\n`);
   try { return step === "prepare" ? prepare({ tree, env, write }) : await run({ tree, env, write }); }
-  catch (error) { write(`macos-tests: ${error.message}\n`); return 2; }
+  catch (error) { write(`macos-tests: ${error.stack ?? error}\n`); return 2; }
   finally { if (token) write(`\n::${token}::\n`); }
 }
 

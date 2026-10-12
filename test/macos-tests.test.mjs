@@ -235,7 +235,7 @@ test("macos-tests formatHeader: what makes the log evidence by itself", () => {
     'workflow ref:        "awebai/oats/.github/workflows/macos-tests.yml@refs/heads/main"', `workflow commit:     "${B}"`, `script's commit:     ${B} (the workflow's)`,
     'macOS:               "14.7.1" (build "23H222")', 'runner image:        ImageOS "macos14", ImageVersion "20261001.1"', 'architecture:        arm64 (machine "arm64")',
     'node:                v22.9.0 ("/usr/local/bin/node")', "file system:         case-insensitive (measured", 'tmux on PATH:        "/opt/homebrew/bin/tmux", "tmux 3.5a"',
-    'tmux default socket: "/private/tmp/tmux-501/oats" is not there', "tracked files that differ from the commit: none", "at most 10 files a run, 300.0s a file",
+    'tmux default socket: "/private/tmp/tmux-501/oats" is not there', "tracked files that differ from the commit: none", "at most 10 files a run, 5 minutes a file",
     "files (2), each alone, in this order:\n    test/a.test.mjs\n    test/b.test.mjs",
   ]) assert.ok(header.includes(line), `the header lacks: ${line}\n${header}`);
 
@@ -449,7 +449,7 @@ test("macos-tests prepare, then run: the commit goes to a second tree, the heade
   for (const [ref, files, reason] of [["main", "test/a.test.mjs", /the tree at .* is not at /], ["feature/x", "test/missing.test.mjs", /is not a file at that commit/], ["", "test/a.test.mjs", /no ref was given/]]) {
     const refused = collect();
     assert.equal(await run({ tree, repo: runner, env: stepEnv(ref, files), write: refused.write }), 2);
-    assert.match(refused.text(), /^Refused: nothing was checked out, installed or run\./);
+    assert.match(refused.text(), /^Refused: no file was run\./);
     assert.match(refused.text(), reason);
   }
   assert.equal(await run({ tree: join(base, "no-such-tree"), repo: runner, env, write: collect().write }), 2);
