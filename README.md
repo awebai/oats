@@ -227,6 +227,7 @@ Further documentation:
 - [Knowledge, instances and evolving expertise](docs/knowledge-theory.md)
 - [Packages](docs/packages.md)
 - [Sessions](docs/execution-targets.md)
+- [Upgrading OATS on a host](docs/upgrading.md)
 - [OATS Desktop](docs/desktop.md)
 - [OATS TUI](docs/tui.md), the terminal client (`oats tui`, a preview)
 

@@ -38,6 +38,7 @@ import {
   writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { harnessTrust } from "../lib/harness-trust-write.mjs";
+import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
@@ -772,12 +773,15 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
     warnings: hookEvents.warnings,
   };
 }
-/** Kernel/bridge version skew (published in lockstep from one tag). */
-function doctorVersionSkew() {
-  const piPkgFile = join(homedir(), ".pi", "agent", "npm", "node_modules", "@awebai", "oats-pi", "package.json");
-  if (!existsSync(piPkgFile)) return;
-  const bridge = JSON.parse(readFileSync(piPkgFile, "utf8")).version;
-  if (bridge !== OATS_VERSION) console.log(`WARNING: version skew — kernel ${OATS_VERSION}, pi bridge ${bridge}; run \`oats update\` (they publish in lockstep)\n`);
+/** Kernel/bridge version skew (published in lockstep from one tag), in every pi folder a launch
+ *  of the deployment uses (lib/pi-bridge.mjs): one warning per folder. Text output only. */
+function doctorVersionSkew(deployment) {
+  let launchConfigs = {}, unread = null;
+  try { launchConfigs = launchConfigsAt(deployment); } catch (e) { unread = e.message; }
+  const warnings = piBridgeSkewWarnings(piBridgeFolders({ launchConfigs }), OATS_VERSION);
+  if (unread) warnings.push(`pi bridge — the launch configurations could not be read, so only the default pi folder and this shell's were looked at: ${unread}`);
+  for (const warning of warnings) console.log(`WARNING: ${warning}`);
+  if (warnings.length) console.log("");
 }
 /** The "Workspace (v2, offline view)" + "Locked packages" sections, shared by both doctor shapes. */
 function printDoctorWorkspace(ws) {
@@ -798,7 +802,7 @@ async function doctor(dir) {
   const { ctx, ws } = doctorDeployment(dir);
   const soulName = flag("soul");
   console.log(`oats doctor — resolved from ${shortPath(ctx)}\n`);
-  doctorVersionSkew();
+  doctorVersionSkew(dirname(ws.local.path));
   const composition = await doctorComposition(ctx, soulName, ws, (code, msg) => die(`${msg} [${code}]`));
   printDoctorWorkspace(ws);
   const agentsRoot = join(dirname(ws.local.path), "agents");
@@ -3763,40 +3767,61 @@ async function capabilityCommand() {
 // ---------- update ----------
 function updateCmd() {
   const checkOnly = args.includes("--check");
+  // The deployment whose launch configurations name pi folders: at or above the working
+  // directory, or --dir. Without one, or with one that does not load, the update still runs on
+  // the default folder and this shell's, and says so first and last: an operator reads the end.
+  let deployment = null, launchConfigs = {}, notLookedAt = null;
+  try { deployment = dirname(loadLocal(dirFlag()).path); launchConfigs = launchConfigsAt(deployment); }
+  catch (e) {
+    if (e?.code !== "E_LOCAL_MISSING" || e.details?.legacy) notLookedAt = `No launch configuration was looked at: ${deployment ? `the launch configurations of ${deployment} do` : "the deployment does"} not load (${e.message}). Run \`oats doctor\` there, then \`oats update\` again.`;
+    else if (flag("dir") !== undefined) die(e.message);
+    else notLookedAt = `No launch configuration was looked at: no deployment at or above ${process.cwd()}. Run \`oats update\` in each deployment, or with --dir <deployment>.`;
+    launchConfigs = {};
+  }
+  const end = (text) => { console.log(text); if (notLookedAt) console.log(`\n${notLookedAt}`); };
   let latest;
   try { latest = execFileSync("npm", ["view", "@awebai/oats", "version"], { encoding: "utf8", timeout: 30000 }).trim(); }
   catch (e) { die(`cannot check npm for the latest version: ${e.message}`); }
   console.log(`@awebai/oats  installed: ${OATS_VERSION}  latest: ${latest}`);
-  // pi bridge, if a pi installation carries it.
-  let piBridge;
-  const piPkg = join(homedir(), ".pi", "agent", "npm", "node_modules", "@awebai", "oats-pi", "package.json");
-  if (existsSync(piPkg)) piBridge = JSON.parse(readFileSync(piPkg, "utf8")).version;
-  if (piBridge) console.log(`@awebai/oats-pi   installed: ${piBridge}  latest: ${latest} (published in lockstep)`);
-  if (latest === OATS_VERSION && (!piBridge || piBridge === latest)) { console.log("Up to date."); return; }
-  const steps = [];
-  if (latest !== OATS_VERSION) steps.push(`npm install -g @awebai/oats@${latest}`);
-  if (piBridge && piBridge !== latest) steps.push(`pi uninstall npm:@awebai/oats-pi@${piBridge}`, `pi install npm:@awebai/oats-pi@${latest}`);
+  // The pi bridge, in every pi folder a launch of the deployment uses (lib/pi-bridge.mjs).
+  const plan = planPiBridges(piBridgeFolders({ launchConfigs }), latest);
+  console.log(`\n${PI_BRIDGE} ${latest} (published in lockstep), by pi folder${deployment && !notLookedAt ? ` of ${deployment}` : ""}:`);
+  for (const line of piBridgePlanLines(plan)) console.log(line);
+  if (notLookedAt) console.log(`  ${notLookedAt}`);
+  const moves = plan.filter((entry) => entry.step);
+  const untouched = plan.filter((entry) => entry.action === "skip").length;
+  const untouchedNote = untouched ? ` ${untouched} pi folder${untouched > 1 ? "s were" : " was"} not touched: see above for what to run there.` : "";
+  const steps = [...(latest !== OATS_VERSION ? [{ argv: ["npm", "install", "-g", `@awebai/oats@${latest}`], display: `npm install -g @awebai/oats@${latest}` }] : []), ...moves.map((entry) => ({ ...entry.step, entry }))];
+  if (!steps.length) return end(untouched ? `\nNothing for \`oats update\` to run.${untouchedNote}` : "\nUp to date.");
   console.log("\nUpdate steps:");
-  for (const s of steps) console.log(`  ${s}`);
-  if (checkOnly) { console.log("\n(--check: not executing)"); return; }
+  for (const s of steps) console.log(`  ${s.display}`);
+  if (checkOnly) return end("\n(--check: not executing)");
   const interactive = process.stdin.isTTY && process.stdout.isTTY;
   if (interactive) {
     process.stdout.write("\nRun these now? [y/N] ");
     const buf = Buffer.alloc(16);
     let answer = "";
     try { answer = buf.toString("utf8", 0, readSync(0, buf, 0, 16)).trim().toLowerCase(); } catch { /* no input */ }
-    if (answer !== "y" && answer !== "yes") { console.log("Not updating."); return; }
-  } else if (!args.includes("--yes")) {
-    console.log("\nNon-interactive: pass --yes to execute, or run the steps yourself.");
-    return;
+    if (answer !== "y" && answer !== "yes") return end("Not updating.");
+  } else if (!args.includes("--yes")) return end("\nNon-interactive: pass --yes to execute, or run the steps yourself.");
+  const fail = (text) => die(notLookedAt ? `${text}\n${notLookedAt}` : text);
+  // Before any step, the CLI's included: the bridge's exact version is seen on the registry by a
+  // lookup that revalidates npm's cache (awebai/oats#852). A version is listed a while after it
+  // is published, and the kernel's "latest" says nothing about the bridge's.
+  if (moves.length) {
+    console.log(`\n$ npm view ${PI_BRIDGE}@${latest} version --prefer-online`);
+    const seen = spawnSync("npm", ["view", `${PI_BRIDGE}@${latest}`, "version", "--prefer-online"], { encoding: "utf8", timeout: 30000 });
+    const answer = seen.error ? seen.error.message : seen.status !== 0 ? `exit ${seen.status}` : seen.stdout.trim() === latest ? null : seen.stdout.trim() ? `it answered ${JSON.stringify(seen.stdout.trim())}` : "no answer";
+    if (answer) fail(`${PI_BRIDGE}@${latest} was not seen on the registry (npm view: ${answer}): a version is listed a few minutes after it is published. Nothing was changed, and every bridge is in place. Run \`oats update\` again in a few minutes.`);
   }
-  for (const s of steps) {
-    console.log(`\n$ ${s}`);
-    const [bin, ...rest] = s.split(/\s+/);
-    const r = spawnSync(bin, rest, { stdio: "inherit" });
-    if (r.status !== 0) die(`step failed: ${s}`);
+  for (const [i, s] of steps.entries()) {
+    console.log(`\n$ ${s.display}`);
+    const r = spawnSync(s.argv[0], s.argv.slice(1), { stdio: "inherit", env: { ...process.env, ...s.env } });
+    const ran = r.error ? `${s.argv[0]}: ${r.error.message}` : r.status !== 0 ? (r.signal ? `killed by ${r.signal}` : `exit ${r.status}`) : null;
+    const problem = s.entry ? piBridgeStepProblem(s.entry, latest, ran) : ran;
+    if (problem) fail(piBridgeFailure({ entry: s.entry, display: s.display, problem, notReached: steps.slice(i + 1).filter((next) => next.entry).map((next) => next.entry) }));
   }
-  console.log(`\nUpdated to ${latest}. Now verify each deployment: run \`oats doctor\` at your workspace/repo scopes — it reports config spellings this version rejects, version skew, and missing requirements. Restart running pi sessions to pick up the new bridge.`);
+  end(`\nUpdated to ${latest}.${untouchedNote} Now verify each deployment: run \`oats doctor\` at your workspace/repo scopes — it reports config spellings this version rejects, version skew, and missing requirements. Restart running pi sessions to pick up the new bridge.`);
 }
 
 // ---------- version (Desktop CLI API v1 probe) ----------
@@ -4618,8 +4643,9 @@ Usage:
       [--yolo | --no-yolo] --json           a disagreeing --harness is refused
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
-  oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
-                                            optionally run the update; then run oats doctor
+  oats update [--check] [--yes]              check npm for a newer kernel and move the pi bridge
+      [--dir <deployment>]                  in every pi folder the deployment's launches use
+                                            (docs/upgrading.md); then run oats doctor
   oats sync [--dir <d>] [--plan] [--json]    workspace model v2: observe the workspace named by
                                             oats-local.yaml over its Git remote, confirm every
                                             member (reciprocal oats-membership.yaml), resolve
