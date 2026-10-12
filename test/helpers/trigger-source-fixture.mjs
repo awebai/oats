@@ -6,7 +6,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inheritedEnv } from "./host-fixture.mjs";
-import { v2Deployment } from "./v2-deployment.mjs";
+import { forceEnvironment, v2Deployment } from "./v2-deployment.mjs";
 
 /** The source script; `version` lets a test see which commit of it ran. */
 export const sourceScript = (version = 1) => `import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -79,12 +79,14 @@ export function sourceDeployment(t, { manifest = capabilityManifest(), capabilit
 
 /** Run `fn` synchronously with the fixture's environment (its isolation and PATH, and nothing a
  *  fixture never inherits: host-fixture.mjs, so no ambient instance identity), plus `extra`: the
- *  in-process tick's children see exactly that. */
+ *  in-process tick's children see exactly that, those it starts with no `env` included, because the
+ *  names are set on the real process.env (v2-deployment.mjs forceEnvironment) and what was there is
+ *  put back when `fn` returns or throws. */
 export function inFixture(fx, fn, extra = {}) {
-  const saved = process.env;
-  const next = inheritedEnv();
-  for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR", "OATS_TEST_LOGIN_SHELL", "PATH"]) if (fx.env[k] !== undefined) next[k] = fx.env[k];
-  Object.assign(next, extra);
-  process.env = next;
-  try { return fn(); } finally { process.env = saved; }
+  const end = forceEnvironment(fx, fx.base, () => {
+    const next = inheritedEnv();
+    for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR", "OATS_TEST_LOGIN_SHELL", "PATH"]) if (fx.env[k] !== undefined) next[k] = fx.env[k];
+    return Object.assign(next, extra);
+  });
+  try { return fn(); } finally { end(); }
 }

@@ -72,6 +72,57 @@ export function capabilityFiles(id, manifest = {}, files = {}) {
   return spec;
 }
 
+// ---- a fixture's environment, forced on the real process.env (awebai/oats#1010) -----------------
+// An in-process kernel call reads process.env, and so does every child it starts with no `env`
+// option (the tmux lookups, git). A fixture therefore forces its environment for the length of
+// the call. It never does so by REPLACING the object (`process.env = {…}`): what a child started
+// with no `env` gets then depends on the Node that runs the suite (from v26.11.0 it is the
+// process's real environment, not the replacement), and a kernel call that leaves the fixture
+// reaches the operator's own tmux server. The names are set on the real process.env and exactly
+// what was there is put back.
+
+/** What is in force on this process, if anything: the fixture (`owner`, `name`), what was there
+ *  before its first call (`before`), and its calls in flight, oldest first. */
+let inForce = null;
+/** Make the real process.env hold exactly `target` (a name whose value is undefined is absent). */
+function setProcessEnvironment(target) {
+  for (const key of Object.keys(process.env)) if (target[key] === undefined) delete process.env[key];
+  for (const [key, value] of Object.entries(target)) if (value !== undefined && process.env[key] !== String(value)) process.env[key] = value;
+}
+/** Force the environment `build()` returns (from process.env as it is) on the real process.env, for
+ *  `owner` (a fixture; `name` names it in an error) → the function that ends this call.
+ *
+ *  Calls of ONE fixture may nest or overlap (a spawn inside fx.inEnv, two spawns awaited together).
+ *  - The last call to end puts back exactly what was there before the first.
+ *  - A call that ends while it is the newest in flight (a nested one) puts back what was there
+ *    when it began, as when each call had an object of its own: what happened to the environment
+ *    during the inner call does not outlive it.
+ *  - A call that ends while a newer one is in flight (they overlap) puts nothing back: the
+ *    environment is never taken from under a call still running.
+ *  Ending a call twice counts once.
+ *
+ *  A call of ANOTHER fixture while one is in flight is refused: one process has one environment, so
+ *  one of the two would run its kernel calls in the other's deployment, or in none. */
+export function forceEnvironment(owner, name, build) {
+  if (inForce && inForce.owner !== owner) {
+    throw new Error(`the fixture ${name} cannot force its environment on this process: the fixture ${inForce.name} has an in-process call in flight, and a process has one environment. Await that call first, or run this one as a child with the fixture's env (fx.cli).`);
+  }
+  const began = { ...process.env };
+  inForce ??= { owner, name, before: began, calls: [] };
+  const held = inForce, call = { began };
+  held.calls.push(call);
+  const end = () => {
+    const at = held.calls.indexOf(call);
+    if (at < 0) return;
+    const newest = at === held.calls.length - 1;
+    held.calls.splice(at, 1);
+    if (!held.calls.length) { inForce = null; setProcessEnvironment(held.before); }
+    else if (newest) setProcessEnvironment(call.began);
+  };
+  try { setProcessEnvironment(build()); } catch (e) { end(); throw e; }
+  return end;
+}
+
 /**
  * Build a deployment. Options:
  *   souls         { <name>: { soul: {soul.yaml fields}, agents, skills } }   (default: one `dev` soul, work: directory)
@@ -171,10 +222,11 @@ function buildDeployment(base, ownTmuxTmpdir, { souls = { dev: {} }, capabilitie
     next.OATS_TEST_LOGIN_SHELL ??= env.OATS_TEST_LOGIN_SHELL;
     return next;
   };
+  // Forced on the real process.env, never by replacing it (forceEnvironment, above), and put back
+  // also when `fn` throws or rejects.
   fx.inEnv = async (fn) => {
-    const saved = process.env;
-    process.env = fixtureProcessEnv();
-    try { return await fn(); } finally { process.env = saved; }
+    const end = forceEnvironment(fx, base, fixtureProcessEnv);
+    try { return await fn(); } finally { end(); }
   };
   /** What bin/oats.mjs hands spawnInstanceAsync for a soul: the prepared resolution and the fetched soul. */
   fx.prepare = (soul, opts) => fx.inEnv(() => prepareIn(soul, opts));
@@ -231,9 +283,12 @@ function buildDeployment(base, ownTmuxTmpdir, { souls = { dev: {} }, capabilitie
     }
     // Its own `oats` server, if a test launched on real tmux: killed by socket, never by name.
     if (ownTmuxTmpdir) removeTmuxTmpdir(ownTmuxTmpdir);
-    const saved = process.env;
-    process.env = fixtureProcessEnv(); // as fx.inEnv: the check may be what first loads the kernel
-    try { assertNoFixtureProcesses(base); } catch (e) { errors.push(e); } finally { process.env = saved; }
+    // As fx.inEnv: the check may be what first loads the kernel. A refusal (another fixture's call
+    // is in flight) is reported like the check's own failure, and the base is still removed.
+    try {
+      const end = forceEnvironment(fx, base, fixtureProcessEnv);
+      try { assertNoFixtureProcesses(base); } finally { end(); }
+    } catch (e) { errors.push(e); }
     rmSync(base, { recursive: true, force: true });
     if (errors.length) throw errors[0];
   };

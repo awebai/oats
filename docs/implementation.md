@@ -521,9 +521,16 @@ inherits it (awebai/oats#816):
   filesystem's.
 - **An explicit environment for every child.** `fixtureEnv(base)` is what
   every child the fixture starts gets, and `fx.inEnv` applies the same rules
-  to the test process for an in-process kernel call. It sets `HOME` and the XDG
-  base directories under the base, and `GIT_CONFIG_NOSYSTEM=1`,
-  `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_TERMINAL_PROMPT=0`, so no host git
+  to the test process for an in-process kernel call. `fx.inEnv` and
+  `inFixture` set the names on the real `process.env` and put back exactly
+  what was there (`forceEnvironment` in `test/helpers/v2-deployment.mjs`),
+  never by assigning another object to `process.env`: a child the kernel
+  starts with no `env` option gets a replaced object on some Node versions
+  only (not from v26.11.0). Calls of one fixture may nest or overlap; a
+  call of another fixture while one is in flight is refused. The fixture's
+  environment sets `HOME` and the XDG base directories under the base, and
+  `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null` and
+  `GIT_TERMINAL_PROMPT=0`, so no host git
   configuration or credential helper is read. It removes every `*_PROXY`,
   `CLAUDECODE` and git configuration passed through the environment. PATH
   starts with `launchctl` and `systemctl` stubs that answer as a service
