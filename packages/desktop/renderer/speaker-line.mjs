@@ -1,5 +1,5 @@
-/** The one line the Desktop shows for a text it did not write with certainty: a row's `runtimeError` and a
- * reason's sentence that may be that text (#982). Who made the text is said in
+/** The one line the Desktop shows for a text it did not write with certainty: a row's `runtimeError`, a
+ * reason's sentence that may be that text, a kept failure's message (#982). Who made the text is said in
  * front of it, in the words the shared home gives (packages/client/instance-presentation.mjs `originLead`),
  * and the Desktop writes none of its own there.
  *
@@ -20,12 +20,23 @@ import { originLead, runtimeErrorSpeaker, unsupportedSession } from '../../clien
 import { rowReason } from '../../client/remote-address.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
 
-export function speakerLine(origin, text) {
+/** The two parts of the line, for a place that sets them in a sentence of its own: `line` the text as one
+ * display line (null, or "[Detail withheld]"), `lead` the speaker's words, null when there is no speaker
+ * or no line for them to introduce. */
+export function speakerParts(origin, text) {
   const line = displayLine(text);
-  if (line === null || line === DETAIL_WITHHELD) return line;
-  const lead = originLead(origin, DESKTOP_TERMS);
+  return { lead: line === null || line === DETAIL_WITHHELD ? null : originLead(origin, DESKTOP_TERMS), line };
+}
+
+export function speakerLine(origin, text) {
+  const { lead, line } = speakerParts(origin, text);
   return lead ? `${lead} ${line}` : line;
 }
+
+/** A kept failure's message (packages/client/deployment-facts.mjs `keptFailure`) with its speaker, or null
+ * when the failure has no words to show. Whether a failure is kept is `keptFailure`'s to say, never this
+ * line's: a failure with nothing to show is still one. */
+export const keptFailureLine = (kept) => speakerLine(kept.origin, kept.message);
 
 /** A reason's sentence (remote-address.mjs `rowReason`, instance-acts.mjs `instanceActs`) with its speaker, or null. */
 export const reasonLine = (reason) => speakerLine(reason?.origin, reason?.sentence);

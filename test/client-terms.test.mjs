@@ -118,7 +118,7 @@ const WORKSPACE_PATHS = [
 function reasonInputs() {
   const fields = {
     local: [true, false], machine: [undefined, "altair"], sshHost: [undefined, "altair.lan"], unavailable: [undefined, "E_CLI_FAILED: boom"],
-    readError: [undefined, "the cache is locked"], identityStatus: [undefined, "identity", "feature", "old", "none", "invalid"],
+    readError: [undefined, "the cache is locked", ""], readErrorOrigin: [undefined, "kernel"], identityStatus: [undefined, "identity", "feature", "old", "none", "invalid"],
     cliReadsRemotes: [undefined, false], rosterError: [undefined, "no route to host"],
     probe: [undefined, { ok: true }, { ok: false }, { ok: false, error: { code: "E_SSH", message: "Host key verification failed." } },
       { ok: false, error: { code: "E_SSH", message: "Connection timed out" } }, { ok: false, error: { code: "E_ROSTER_BUDGET" } }, { ok: false, error: { code: "E_OTHER", message: "x" } }],

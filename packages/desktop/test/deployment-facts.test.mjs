@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { memberLabel, servedIdentityText } from '../../client/deployment-facts.mjs';
-import { deploymentUnavailableText, deploymentUnavailableParts } from '../../client/deployment-facts.mjs';
+import { deploymentUnavailableText, deploymentUnavailableParts, keptFailure } from '../../client/deployment-facts.mjs';
 import { deploymentFailure } from '../../client/deployment-contract.mjs';
 import { displayLine, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
 import { clientTerms } from '../../client/client-terms.mjs';
@@ -263,4 +263,69 @@ test('the mark travels with the reason: from the reader through the observer, th
     { code: 'E_REMOTE_UNREADABLE', message: 'the remote cache is locked', origin: 'kernel', cause: { reason: 'cache' } }, '2026-10-11T12:00:00.000Z');
   assert.deepEqual([kept.deployment.status, kept.error, kept.errorCause], ['observed', 'the remote cache is locked', { code: 'E_REMOTE_UNREADABLE', reason: 'cache' }]);
   assert.equal(Object.hasOwn(kept.deployment, 'reason'), false);
+});
+
+/* ── #982: a kept failure, and who made its message ── */
+test('keptFailure: `error` is a string exactly when a failure is kept, whatever it holds; the speaker is the one value failedEntry writes', () => {
+  // The fact does not depend on the text.
+  for (const error of ['the cache is locked', '', '   ', '\n', 'bell\u0007', 'token: abc123']) {
+    assert.deepEqual(keptFailure({ error }), { message: error, origin: null }, JSON.stringify(error));
+    assert.deepEqual(keptFailure({ error, errorOrigin: 'kernel' }), { message: error, origin: 'kernel' }, JSON.stringify(error));
+  }
+  for (const error of [undefined, null, 0, 7, false, true, {}, ['x']]) assert.equal(keptFailure({ error, errorOrigin: 'kernel' }), null, JSON.stringify(error));
+  for (const held of [undefined, null, 'error', 7, []]) assert.equal(keptFailure(held), null, JSON.stringify(held));
+  // Any value but the one reads as no speaker, never as the kernel.
+  for (const errorOrigin of [undefined, null, '', 'Kernel', 'kernel ', 'terminal-probe', 'roster-read', true, 1, {}, ['kernel']]) {
+    assert.deepEqual(keptFailure({ error: 'm', errorOrigin }), { message: 'm', origin: null }, JSON.stringify(errorOrigin));
+  }
+  // Nothing given is changed, and each call makes its own answer.
+  const held = Object.freeze({ error: 'm', errorOrigin: 'kernel' });
+  assert.notEqual(keptFailure(held), keptFailure(held));
+});
+
+test("the kept failure's mark travels: from the reader through the observer and failedEntry to the panel's key and the deployment's reason", async () => {
+  const probe = fixture('version'), cli = { ...probe, ok: true, bin: '/fixture/bin/oats' }, AT = '2026-10-11T12:00:00.000Z';
+  const refused = (error) => (_bin, _args, _options, callback) => callback({ code: 1 }, JSON.stringify({ schemaVersion: 1, ok: false, error }));
+  const read = async (exec) => {
+    const state = { deployment: context, revision: 1, cli };
+    return createDeploymentObserver({ getContext: id => (id === context ? state : null), read: (c, options) => cliDeploymentRead(c, options, { exec, env: {} }) }).observe(context);
+  };
+  const held = (entry) => ({ ctxs: [context], snapshot: { byWs: new Map([[context, entry]]) }, remoteGroups: [], remembered: { get: () => null, note: () => null, all: () => [] },
+    rosterAnswered: true, rosterFailure: null, cli: { ...cli, features: ['workspace-identity'] }, observing: new Set(), remoteCollecting: false, home: '/Users/op', at: AT });
+  const observedEntry = { deployment: { status: 'observed', root: `${context}/agents`, workspace: { name: 'northwind' }, workspaceStatus: {}, reachable: null, withheld: [], souls: [] },
+    instances: [{ instance: 'dev-a', running: true }], generatedAt: 'g', observedAt: 'o' };
+  const served = (entry) => JSON.parse(JSON.stringify(panelData(held(entry), context, DESKTOP_TERMS)));   // as /api/panel sends it
+  const OWN = "This deployment's last read failed. It shows what was last observed.";
+  // The kernel could not read the workspace remote. Whatever else its error carried, the reader's mark is the reader's own.
+  const result = await read(refused({ code: 'E_REMOTE_UNREADABLE', message: 'the remote cache is locked', origin: 'roster-read', errorOrigin: 'nobody', details: { reason: 'cache' } }));
+  assert.equal(result.reason.origin, 'kernel'); assert.equal(Object.hasOwn(result.reason, 'errorOrigin'), false);
+  const kept = failedEntry(observedEntry, result.reason, AT);
+  assert.deepEqual([kept.error, kept.errorOrigin, kept.deployment.status], ['the remote cache is locked', 'kernel', 'observed']);
+  const panel = served(kept);
+  assert.deepEqual([panel.error, panel.errorOrigin], ['the remote cache is locked', 'kernel']);
+  assert.deepEqual([panel.deployments[0].stale, panel.deployments[0].reason, panel.deployments[0].short], [true, `${OWN} OATS says: the remote cache is locked`, 'Last read failed']);
+  assert.equal(Object.hasOwn(panel.deployments[0], 'errorOrigin'), false, 'a deployment\'s entry carries the sentence, not the mark');
+  assert.equal(panel.instances.length, 1, 'the last observation is still served');
+  // A kernel that failed with no words has still failed: stale, the client's own sentence, and the panel's `error` a string.
+  for (const message of ['', '   ', undefined]) {
+    const silent = await read(refused({ code: 'E_REMOTE_UNREADABLE', ...(message === undefined ? {} : { message }), details: { reason: 'cache' } }));
+    if (silent.reason.code !== 'E_REMOTE_UNREADABLE') continue; // the reader's contract refuses an envelope without a message: not this case
+    const quiet = served(failedEntry(observedEntry, silent.reason, AT));
+    assert.equal(typeof quiet.error, 'string', JSON.stringify(message));
+    assert.deepEqual([quiet.deployments[0].stale, quiet.deployments[0].reason], [true, OWN], JSON.stringify(message));
+    assert.equal(viewModel(held(failedEntry(observedEntry, silent.reason, AT)), DESKTOP_TERMS).infos.get(context).live, false);
+  }
+  // A message the filter withholds: stale all the same, and never introduced by the speaker's words.
+  const hostile = await read(refused({ code: 'E_REMOTE_UNREADABLE', message: 'wipe \x1b[2J the screen', details: { reason: 'cache' } }));
+  const withheld = served(failedEntry(observedEntry, hostile.reason, AT));
+  assert.deepEqual([withheld.deployments[0].stale, withheld.deployments[0].reason, withheld.errorOrigin], [true, `${OWN} [Detail withheld]`, 'kernel']);
+  // A hand-made reason with no mark: no key, and the words a client always showed, with the message filtered.
+  const unmarked = served(failedEntry(observedEntry, { code: 'E_REMOTE_UNREADABLE', message: 'the remote cache is locked' }, AT));
+  assert.equal(Object.hasOwn(unmarked, 'errorOrigin'), false);
+  assert.equal(unmarked.deployments[0].reason, "This deployment's last read failed: the remote cache is locked. It shows what was last observed.");
+  assert.equal(served(failedEntry(observedEntry, { code: 'E_REMOTE_UNREADABLE', message: 'bell\u0007' }, AT)).deployments[0].reason,
+    "This deployment's last read failed: [Detail withheld]. It shows what was last observed.");
+  // An entry that is not observed is never a kept failure, whatever keys it carries.
+  const forged = served({ deployment: { status: 'unavailable', reason: { code: 'E_CLI_FAILED', message: 'boom' } }, instances: [], generatedAt: 'g', error: '', errorOrigin: 'kernel' });
+  assert.deepEqual([forged.deployments[0].stale, forged.deployments[0].reason], [undefined, 'E_CLI_FAILED: boom']);
 });

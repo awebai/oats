@@ -48,7 +48,8 @@ import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "../roster-cadence.mjs";
 import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts } from "../../../client/instance-presentation.mjs";
 import { serverLabel } from "../../../client/remote-address.mjs";
-import { unsupportedLine } from "../speaker-line.mjs";
+import { unsupportedLine, speakerParts, keptFailureLine } from "../speaker-line.mjs";
+import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId, heldHome } from "../../../client/instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
@@ -539,6 +540,22 @@ function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
 /** Actions on one row also wait when its deployment is stale (#482: that deployment's last re-read failed). */
 function rowActionsCurrent(s, i) { return actionsCurrent(s) && !rowStale(i, s.panel.deployments); }
 /** The stale rule's age (" · observed 45s ago") for the kept observation, from the panel's observedAt; nothing when unreported. */
+/** The note over rows kept after a failed read. The failure's message is one display line, cut to 300, and
+ * its speaker is the one the failure notice beside it names (speaker-line.mjs, from the same mark):
+ *
+ *   the kernel's, a line     "Roster unavailable. Showing a reported observation<age>, …; actions disabled. OATS says: <line>"
+ *   the kernel's, withheld   "Roster unavailable. Showing … actions disabled. [Detail withheld]"
+ *   no speaker, a line       "Roster unavailable: <line>. Showing … actions disabled."
+ *   no speaker, withheld     "Roster unavailable: [Detail withheld]. Showing … actions disabled."
+ *   nothing to show          "Roster unavailable. Showing … actions disabled."
+ *
+ * The kernel's words stand apart, after the Desktop's own sentence; a message with no speaker stays inside it. */
+function reportedObservationNote(kept, age) {
+  const { lead, line } = speakerParts(kept.origin, kept.message);
+  const shown = line === null ? null : line.slice(0, 300), own = `Showing a reported observation${age}, not current state; actions disabled.`;
+  if (kept.origin === 'kernel') return ['Roster unavailable.', own, lead, shown].filter(part => part !== null).join(' ');
+  return shown === null ? `Roster unavailable. ${own}` : `Roster unavailable: ${shown}. ${own}`;
+}
 function staleAge(s) {
   const age = observedText(s.load?.observedAt ?? null, Date.now());
   return age ? ` · ${age}` : '';
@@ -600,15 +617,18 @@ function acceptObservation(s, panel, gen) {
   const ids = new Set(panel.instances.map(instanceId));
   for (const key of s.nodeOffsets.keys()) if (!ids.has(key)) s.nodeOffsets.delete(key);
   for (const key of s.nodeIds?.keys() || []) if (!ids.has(key)) s.nodeIds.delete(key);
-  s.panel = panel; s.dataGen = gen; s.dataWorkspace = currentWorkspace(); s.stale = !!panel.error; s.pending = null;
+  // Whether the last read failed is the shared home's rule (keptFailure), never a test of the message.
+  const kept = keptFailure(panel);
+  s.panel = panel; s.dataGen = gen; s.dataWorkspace = currentWorkspace(); s.stale = !!kept; s.pending = null;
   // The read landed: the controller drops the pill / indicator before the summary repaints. A panel
   // that reports an error beside its instances is the kernel's last observation: stale, announced once
   // (the view's notice is a note; the controller's hidden status line is the one live region).
-  if (s.load && (!panel.error || !s.load.hasData)) s.load.succeed({ observedAt: panel.observedAt ?? null, empty: !panel.instances.length });
-  if (panel.error) s.load?.fail({ message: panel.error }); // a repeated stale poll updates in place, no re-announcement
+  if (s.load && (!kept || !s.load.hasData)) s.load.succeed({ observedAt: panel.observedAt ?? null, empty: !panel.instances.length });
+  // The failure's message with who made it (speaker-line.mjs); a repeated stale poll updates in place, no re-announcement.
+  if (kept) s.load?.fail({ message: keptFailureLine(kept) });
   if (s.ctx.hasWorkspaceSwitcher) s.q('wssel').style.display = 'none';
   else renderWorkspaceSelect(s.q('wssel'), panel.workspaces, panel.workspace?.id || '');
-  notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation${staleAge(s)}, not current state; actions disabled.` : '');
+  notice(s, kept ? reportedObservationNote(kept, staleAge(s)) : '');
   if (signature !== s.signature) { s.signature = signature; render(s); }
   else { if (!s.fitted) fit(s); updatePop(s); }
 }
@@ -647,7 +667,9 @@ export async function refresh(s, { user = false } = {}) {
     // observedAt (spec 02, additive) labels the observation's age; never invented.
     panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
     if (data.deployment?.status !== 'pending') s.pendingWatch.observe(null, false); // the server answered
-    if (panel.error && !panel.instances.length) throw Error(panel.error); // failed absence is not an observed empty roster
+    // Failed absence is not an observed empty roster: the failure's message, with who made it.
+    const kept = keptFailure(panel);
+    if (kept && !panel.instances.length) throw Error(keptFailureLine(kept) ?? '');
     // A deployment the kernel has not observed yet (the server's first read is
     // still running) or could not observe is not an empty roster either. Pending
     // keeps its own copy in the summary — no skeleton, no counts, no empty state —
@@ -1259,7 +1281,7 @@ function activitySelection(s, id) {
   const selected = selection(i);
   if (s.pending) {
     const next = s.pending.panel.instances.filter(row => instanceId(row) === id);
-    if (s.pending.panel.error || next.length !== 1 || JSON.stringify(selection(next[0])) !== JSON.stringify(selected)) return null;
+    if (keptFailure(s.pending.panel) || next.length !== 1 || JSON.stringify(selection(next[0])) !== JSON.stringify(selected)) return null;
   }
   return selected;
 }

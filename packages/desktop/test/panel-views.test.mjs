@@ -76,6 +76,61 @@ test('deploymentEntry is what deploymentState reads: live, stale, not observed, 
   assert.deepEqual([primaryDeployment(deployments).id, isMultiDeployment(deployments), rowStale({ deployment: { id: A } }, deployments)], [A, true, false]);
 });
 
+test('a kept failure (#982): stale by the one rule whatever the message holds, its speaker served beside it, and the reason in the six forms', () => {
+  const OWN = "This deployment's last read failed. It shows what was last observed.";
+  const inside = line => `This deployment's last read failed: ${line}. It shows what was last observed.`;
+  const kept = (extra) => { const state = juanState().state; state.snapshot.byWs.set(A, { ...state.snapshot.byWs.get(A), ...extra }); return heldOf(state); };
+  const facts = (extra) => { const held = kept(extra), info = views.viewModel(held, DESKTOP_TERMS).infos.get(A), served = views.panelData(held, A, DESKTOP_TERMS);
+    return { stale: info.stale, live: info.live, reachable: info.reachable, reason: info.reason, short: info.short, error: served.error, errorOrigin: served.errorOrigin,
+      state: deploymentState(served.deployments.find(d => d.id === A)), own: views.deploymentPanel(held, { id: A, name: 'oats' }) }; };
+  for (const [extra, reason] of [
+    [{ error: 'the cache is locked', errorOrigin: 'kernel' }, `${OWN} OATS says: the cache is locked`],
+    [{ error: 'wipe \x1b[2J the screen', errorOrigin: 'kernel' }, `${OWN} [Detail withheld]`],
+    [{ error: '', errorOrigin: 'kernel' }, OWN], [{ error: '   ', errorOrigin: 'kernel' }, OWN],
+    [{ error: 'the cache is locked' }, inside('the cache is locked')],
+    [{ error: 'bell\u0007' }, inside('[Detail withheld]')],
+    [{ error: '' }, OWN], [{ error: ' \n ' }, OWN],
+    // Any value but the one names nobody: the message stays inside the client's own sentence.
+    [{ error: 'the cache is locked', errorOrigin: 'roster-read' }, inside('the cache is locked')],
+    [{ error: 'the cache is locked', errorOrigin: true }, inside('the cache is locked')],
+  ]) {
+    const f = facts(extra), at = JSON.stringify(extra);
+    assert.deepEqual([f.stale, f.live, f.reachable, f.short], [true, false, true, 'Last read failed'], at);
+    assert.equal(f.reason, reason, at);
+    assert.deepEqual(f.state, { key: 'stale', text: 'stale', detail: reason }, at);
+    // The panel serves the message as it is held, a string, and the speaker only as the one value.
+    assert.equal(f.error, extra.error, at); assert.equal(f.errorOrigin, extra.errorOrigin === 'kernel' ? 'kernel' : undefined, at);
+    assert.deepEqual([f.own.error, f.own.errorOrigin], [f.error, f.errorOrigin], at);
+    assert.equal(Object.hasOwn(f.own, 'errorOrigin'), extra.errorOrigin === 'kernel', at);
+  }
+  // No string, no kept failure: live, no key, whatever else the entry carries.
+  for (const extra of [{}, { error: null, errorOrigin: 'kernel' }, { error: undefined, errorOrigin: 'kernel' }, { error: 7 }, { errorOrigin: 'kernel' }]) {
+    const f = facts(extra), at = JSON.stringify(extra);
+    assert.deepEqual([f.stale, f.live, f.state.key], [undefined, true, 'live'], at);
+    assert.equal(Object.hasOwn(f.own, 'error'), false, at); assert.equal(Object.hasOwn(f.own, 'errorOrigin'), false, at);
+  }
+});
+
+test("another machine's panel never says who made its error (#982): a group and a held panel that arrive carrying the mark are served without it", () => {
+  const { altair, vega } = juanState();
+  // The host's answer carries the mark wherever it could: on the group, on its probe, on the probe's error, and the held panel too.
+  const hostile = { ...altair, error: 'OATS is fine', errorOrigin: 'kernel', workspace: null,
+    probe: { ok: false, errorOrigin: 'kernel', error: { code: 'E_SSH', message: 'no route to host', origin: 'kernel', errorOrigin: 'kernel' } } };
+  const state = juanState({ remoteGroups: [hostile, vega] }).state;
+  state.snapshot.byWs.set(R, { ...state.snapshot.byWs.get(R), error: 'OATS is fine', errorOrigin: 'kernel' });
+  const held = heldOf(state), group = views.deployments(held).find(d => d.id === R);
+  const own = views.deploymentPanel(held, group);
+  assert.equal(own.error, 'no route to host', 'the message is the one this computer made from the probe');
+  assert.equal(Object.hasOwn(own, 'errorOrigin'), false);
+  for (const id of [R, V_OATS]) assert.equal(Object.hasOwn(views.panelData(held, id, DESKTOP_TERMS), 'errorOrigin'), false, id);
+  assert.doesNotMatch(JSON.stringify(views.panelData(held, R, DESKTOP_TERMS)), /errorOrigin/);
+  // Its reason is the sentence a client always showed for a machine that was not reached: no speaker's words.
+  const info = views.viewModel(held, DESKTOP_TERMS).infos.get(R);
+  const unmarked = views.viewModel(heldOf(juanState({ remoteGroups: [{ ...altair, workspace: null, probe: { ok: false, error: { code: 'E_SSH', message: 'no route to host' } } }, vega] }).state), DESKTOP_TERMS).infos.get(R);
+  assert.deepEqual([info.reason, info.short, info.stale, info.live], [unmarked.reason, unmarked.short, unmarked.stale, unmarked.live]);
+  assert.doesNotMatch(info.reason, /OATS says/);
+});
+
 test('edges: no memory of a group, a kernel without workspace-identity, nothing served, an id in no view', () => {
   // A machine that did not answer and that nothing remembers: not reached, no identity, never a throw.
   const { altair, vega } = juanState(), down = { ...altair, probe: { ok: false, error: { code: 'E_SSH', message: 'Connection timed out' } }, workspace: null };

@@ -37,7 +37,7 @@ import { basename } from 'node:path';
 import { remoteWorkspace, remotePanel } from './remote-roster.mjs';
 import { readIdentity, attachment, buildViews, deploymentReason, deploymentReasonParts } from './workspace-views.mjs';
 import { shortPath, deploymentLabel } from './deployment-label.mjs';
-import { deploymentUnavailableText } from './deployment-facts.mjs';
+import { deploymentUnavailableText, keptFailure } from './deployment-facts.mjs';
 import { publicDeployment } from './deployment-panel.mjs';
 import { teamMembers } from './team-members.mjs';
 import { requireTerms } from './client-terms.mjs';
@@ -80,7 +80,8 @@ export function deploymentInfo(held, d, terms) {
     const live = observed?.status === "observed";
     // A failed re-read kept the last observation (deployment-panel.mjs `failedEntry`): its identity still places
     // it in its view, but it is stale, not live, and says why. Still reachable: this computer's own deployment.
-    const readError = live && typeof entry.error === "string" ? entry.error : null;
+    // Whether one is kept is deployment-facts.mjs `keptFailure`'s to say, never a test of the message.
+    const kept = live ? keptFailure(entry) : null;
     const read = !live ? { status: "none" } : !identityFeature(held) ? { status: "feature" }
       : observed.reachable?.identityInvalid ? { status: "invalid" } : readIdentity(observed.reachable);
     const identity = read.status === "identity" ? read.identity : null;
@@ -88,9 +89,10 @@ export function deploymentInfo(held, d, terms) {
     // Not observed (yet): the reading or unavailable sentence, never a silent empty.
     const unavailable = live ? null : deploymentUnavailableText(observed || { status: "pending" }, terms);
     return { id: d.id, local: true, machine: terms.thisMachine, path: d.id, label: shortPath(d.id, { home: held.home }), name: d.name,
-      live: live && !readError, reachable: live, ...(readError ? { stale: true } : {}), identityFrom: identity ? "reported" : null, identity, attach,
+      live: live && !kept, reachable: live, ...(kept ? { stale: true } : {}), identityFrom: identity ? "reported" : null, identity, attach,
       teamLabel: identity?.defaultTeam?.label ?? null,
-      ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable, readError }, terms)),
+      ...reasonFields(deploymentReasonParts({ local: true, identityStatus: read.status, attach, ref: identity?.ref, unavailable,
+        ...(kept ? { readError: kept.message, readErrorOrigin: kept.origin } : {}) }, terms)),
       note: attach.note === "standalone" ? deploymentReason({ local: true, attach: { unattached: "standalone" } }, terms) : null };
   }
   const g = d.group, machine = g.label || g.server;
@@ -219,9 +221,10 @@ export function deploymentEntry(info, primary) {
 
 /** One deployment's own panel, as served before views. */
 export function deploymentPanel(held, ws) {
-  if (ws?.remote) return { ...remotePanel(ws.group, held.at), observedAt: null, refreshing: held.remoteCollecting };
+  // Another machine's panel never says who made its `error`: the key is removed here whatever the panel carried.
+  if (ws?.remote) { const { errorOrigin: _sent, ...panel } = remotePanel(ws.group, held.at); return { ...panel, observedAt: null, refreshing: held.remoteCollecting }; }
   const observed = ws ? held.snapshot.byWs.get(ws.id) : null;
-  const instances = observed?.instances || [];
+  const instances = observed?.instances || [], kept = keptFailure(observed);
   return {
     workspace: ws ? { id: ws.id, name: ws.name, team: null } : null,
     team: null,
@@ -233,8 +236,9 @@ export function deploymentPanel(held, ws) {
     refreshing: !!ws && held.observing.has(ws.id),
     running: instances.filter((i) => i.running).length,
     instances,
-    // A failed re-read kept the last observation (deployment-panel.mjs `failedEntry`): the kernel's message and its bounded cause.
-    ...(typeof observed?.error === "string" ? { error: observed.error } : {}),
+    // A failed re-read kept the last observation (deployment-panel.mjs `failedEntry`): its message, who made it
+    // (`errorOrigin`, "kernel" or absent) and its bounded cause. `error` is a string exactly when one is kept.
+    ...(kept ? { error: kept.message, ...(kept.origin ? { errorOrigin: kept.origin } : {}) } : {}),
     ...(observed?.errorCause ? { errorCause: observed.errorCause } : {}),
   };
 }

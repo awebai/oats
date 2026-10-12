@@ -309,6 +309,23 @@ test("the overview's projection keeps who made a row's text (#982): one of the t
   }
 });
 
+test("the overview's projection keeps a kept failure as the shared home's rule reads it (#982): a string is a failure whatever it holds, and its speaker only the kernel", () => {
+  const project = extra => projectActivePanel({ ...panel([instance('dev', { running: true })], '/team'), ...extra });
+  for (const error of ['the cache is locked', '', '   ']) {
+    const kept = project({ error, errorOrigin: 'kernel' });
+    assert.deepEqual([kept.error, kept.errorOrigin, kept.instances[0].running], [error, 'kernel', null], JSON.stringify(error));
+    const bare = project({ error });
+    assert.deepEqual([bare.error, Object.hasOwn(bare, 'errorOrigin'), bare.instances[0].running], [error, false, null], JSON.stringify(error));
+  }
+  for (const errorOrigin of ['roster-read', 'terminal-probe', 'Kernel', true, 1, {}, ['kernel']]) assert.equal(Object.hasOwn(project({ error: 'm', errorOrigin }), 'errorOrigin'), false, JSON.stringify(errorOrigin));
+  // No failure: null, no speaker, and the rows keep their reported state.
+  for (const extra of [{}, { error: null }, { error: undefined, errorOrigin: 'kernel' }, { errorOrigin: 'kernel' }]) {
+    const live = project(extra);
+    assert.deepEqual([live.error, Object.hasOwn(live, 'errorOrigin'), live.instances[0].running], [null, false, true], JSON.stringify(extra));
+  }
+  assert.throws(() => project({ error: 7 }), /unreadable roster error/);
+});
+
 async function mutatedModule(before, after) {
   let source = readFileSync(new URL('../renderer/views/hierarchy.mjs', import.meta.url), 'utf8'); assert.ok(source.includes(before));
   source = source.replace(before, after).replace(/from "(\.[^"]+)"/g, (_all, path) => `from ${JSON.stringify(new URL(path, new URL('../renderer/views/hierarchy.mjs', import.meta.url)).href)}`);

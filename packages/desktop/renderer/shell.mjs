@@ -17,7 +17,7 @@ import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { runtimeState } from "../../client/instance-presentation.mjs";
 import { NOT_SERVED_CODE, NO_ANSWER_CODE, unservedError, createPendingWatch } from "./deployment-header.mjs";
-import { deploymentUnavailableText } from "../../client/deployment-facts.mjs";
+import { deploymentUnavailableText, keptFailure } from "../../client/deployment-facts.mjs";
 import { panelErrorCause } from "../../client/deployment-contract.mjs";
 import {
   initTheme, toggleTheme, setTheme, currentTheme, refreshHostTheme, THEMES, xtermTheme, terminalFontWeight, onThemeChange,
@@ -57,7 +57,7 @@ import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
 import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
-import { rowReasonLine, runtimeErrorLine, unsupportedLine } from "./speaker-line.mjs";
+import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine } from "./speaker-line.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createHostTheme } from "./host-theme.mjs";
 import { createSpawnJobs } from "./spawn-jobs.mjs";
@@ -673,10 +673,14 @@ async function refreshContextRoster({ user = false } = {}) {
   // observed yet is a failed read with that message, never an empty roster.
   const unreadable = !panel.workspace?.remote && panel.deployment?.status === "unavailable" && panel.deployment.reason?.code === "E_REMOTE_UNREADABLE"
     ? panelErrorCause({ code: "E_REMOTE_UNREADABLE", ...(panel.deployment.reason.cause || {}) }) : null;
-  const failure = typeof panel.error === "string" && panel.error
-    ? { message: panel.error, ...(panelErrorCause(panel.errorCause) ? { code: panel.errorCause.code, cause: panelErrorCause(panel.errorCause) } : {}) }
+  // Whether a failure is kept is the shared home's rule (keptFailure), never a test of the message. Either
+  // message is shown with who made it (speaker-line.mjs): the kept one by the panel's `errorOrigin`, the
+  // unobserved one by its reason's `origin` (the reader's mark, on this computer's own deployment only).
+  const kept = keptFailure(panel);
+  const failure = kept
+    ? { message: keptFailureLine(kept), ...(panelErrorCause(panel.errorCause) ? { code: panel.errorCause.code, cause: panelErrorCause(panel.errorCause) } : {}) }
     : unreadable?.reason === "cache" && typeof panel.deployment.reason.message === "string"
-      ? { message: panel.deployment.reason.message, code: unreadable.code, cause: unreadable } : null;
+      ? { message: speakerLine(panel.deployment.reason.origin === "kernel" ? "kernel" : null, panel.deployment.reason.message), code: unreadable.code, cause: unreadable } : null;
   if (!(failure && !(panel.instances || []).length && rosterState?.hasData)) contextInstances = panel.instances || [];
   // A deployment the kernel could not observe is not an empty one: name the
   // missing feature or keep the kernel's refusal (never an optimistic read).

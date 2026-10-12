@@ -132,16 +132,27 @@ export function pendingEntry(previous, at) {
 /** A deployment's entry after a read that failed with `reason` (deployment-contract.mjs).
  * A transient busy or stale read keeps the entry held, as it is. A remote the kernel could not read
  * (a cache problem, the network, a timeout) does not erase what was observed: the last observation
- * stays, marked with the failure, the kernel's message and its bounded cause (Spec D); an `error` and
- * an `errorCause` it already carried are replaced, the cause removed when this reason has none.
+ * stays, marked with the failure, the kernel's message and its bounded cause (Spec D); an `error`, an
+ * `errorOrigin` and an `errorCause` it already carried are replaced, the origin and the cause removed
+ * when this reason has none.
  * Every other failure, and each of those without an entry to keep, is shown as unavailable with the
- * reason, never as an empty roster. */
+ * reason, never as an empty roster.
+ *
+ * The kept entry's `error` is always a string: the reason's message, or "" when it carries none. That
+ * `error` is a string is the fact "a failure is kept" (deployment-facts.mjs `keptFailure`, the one place
+ * that reads it); what the string holds decides nothing.
+ * `errorOrigin: "kernel"` stands beside it when the reason is one the installed CLI printed (the reader's
+ * `origin: 'kernel'`, deployment-read-cli.mjs), and is absent for any other reason: who shows `error`
+ * names its speaker from this key (instance-presentation.mjs `originLead`), and shows a message with no
+ * origin as its own, never under the kernel's name. The key is written here only, from the reason given:
+ * one the entry already carried never survives. */
 export function failedEntry(previous, reason, at) {
   if (previous && ["E_DEPLOYMENT_BUSY", "E_DEPLOYMENT_STALE"].includes(reason?.code)) return previous;
   if (previous?.deployment?.status === "observed" && reason?.code === "E_REMOTE_UNREADABLE") {
-    const { error: _error, errorCause: _cause, ...kept } = previous;
+    const { error: _error, errorCause: _cause, errorOrigin: _origin, ...kept } = previous;
     const cause = reason.cause;
-    return { ...kept, error: reason.message, ...(cause ? { errorCause: { code: reason.code, ...cause } } : {}) };
+    return { ...kept, error: typeof reason.message === "string" ? reason.message : "", ...(reason.origin === "kernel" ? { errorOrigin: "kernel" } : {}),
+      ...(cause ? { errorCause: { code: reason.code, ...cause } } : {}) };
   }
   return { deployment: { status: "unavailable", reason }, instances: [], generatedAt: at };
 }

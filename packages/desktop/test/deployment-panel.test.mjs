@@ -157,6 +157,42 @@ test('failedEntry: an unreadable remote keeps an observed entry, marked with the
   assert.deepEqual(Object.keys(bare), ['deployment', 'instances', 'generatedAt', 'observedAt', 'error']);
 });
 
+test('failedEntry: the kept entry says who made its message (#982), from the reason given and from nothing else', () => {
+  const held = HELD();
+  // The reader's mark on the reason: the installed CLI printed it.
+  const marked = failedEntry(held, frozen({ ...unreadable({ reason: 'cache' }), origin: 'kernel' }), AT);
+  assert.deepEqual(marked, { ...held, error: unreadable().message, errorOrigin: 'kernel', errorCause: { code: 'E_REMOTE_UNREADABLE', reason: 'cache' } });
+  assert.deepEqual(Object.keys(marked), ['deployment', 'instances', 'generatedAt', 'observedAt', 'error', 'errorOrigin', 'errorCause']);
+  // A reason with no mark (a hand-made one), or with any other value: no key.
+  for (const origin of [undefined, null, '', 'Kernel', 'terminal-probe', 'roster-read', true, 1, {}, ['kernel']]) {
+    const kept = failedEntry(held, frozen({ ...unreadable(null), ...(origin === undefined ? {} : { origin }) }), AT);
+    assert.equal(Object.hasOwn(kept, 'errorOrigin'), false, JSON.stringify(origin));
+    assert.deepEqual(kept, { ...held, error: unreadable().message });
+  }
+  // A key the entry already carried never survives: the next failure decides it again.
+  const again = failedEntry(frozen({ ...marked }), unreadable(null), AT);
+  assert.deepEqual(again, { ...held, error: unreadable().message });
+  for (const carried of ['kernel', 'roster-read', 'anything', 7]) {
+    assert.equal(Object.hasOwn(failedEntry(frozen({ ...held, error: 'an older message', errorOrigin: carried }), unreadable(null), AT), 'errorOrigin'), false, String(carried));
+    assert.equal(failedEntry(frozen({ ...held, error: 'an older message', errorOrigin: carried }), frozen({ ...unreadable(null), origin: 'kernel' }), AT).errorOrigin, 'kernel');
+  }
+  // A busy or stale read keeps the entry as it is, its message and its speaker with it.
+  assert.equal(failedEntry(marked, frozen({ code: 'E_DEPLOYMENT_BUSY', message: 'try again', origin: 'kernel' }), AT), marked);
+  // Any other failure, marked or not, is unavailable with the reason: the entry itself carries no key.
+  const refused = frozen({ code: 'E_WORKSPACE_SCHEMA', message: 'not valid', origin: 'kernel' });
+  assert.deepEqual(failedEntry(marked, refused, AT), { deployment: { status: 'unavailable', reason: refused }, instances: [], generatedAt: AT });
+});
+
+test('failedEntry: a kept failure\'s `error` is always a string, the message or "" when the reason carries none (#982)', () => {
+  const held = HELD();
+  for (const [message, error] of [['', ''], ['   ', '   '], [undefined, ''], [null, ''], [7, ''], [{ text: 'x' }, ''], [['x'], '']]) {
+    const reason = frozen({ code: 'E_REMOTE_UNREADABLE', ...(message === undefined ? {} : { message }), origin: 'kernel' });
+    const kept = failedEntry(held, reason, AT);
+    assert.deepEqual(kept, { ...held, error, errorOrigin: 'kernel' }, JSON.stringify(message));
+    assert.equal(typeof kept.error, 'string');
+  }
+});
+
 test('failedEntry: an unreadable remote over nothing observed, and every other failure, is unavailable with the reason', () => {
   const reason = unreadable({ reason: 'network', host: 'github.com' });
   const unavailable = r => ({ deployment: { status: 'unavailable', reason: r }, instances: [], generatedAt: AT });

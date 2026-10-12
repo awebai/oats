@@ -293,7 +293,10 @@ answers the view that holds it; no `?ws=` answers the first view.
   (`reachable`), not reached (with its `reason`), remembered
   (`identityFrom: "remembered"`, the last report, not live), or stale
   (`stale`: this computer's deployment whose last re-read failed, its rows
-  the last observation, "Last read failed" with the kernel's message). A
+  the last observation, "Last read failed" with the kernel's message after
+  the Desktop's own sentence, under "OATS says:"). It is stale because the
+  read failed, whatever the message holds: a failure with no message is
+  stale too. A
   stale deployment's rows wait for a current read, as on a stale roster:
   Start and the actions menu in the sidebar, the overview's actions. It stays
   `reachable`, so spawning there is not blocked. `note` is information, not a
@@ -415,8 +418,15 @@ sentence already says what happens next, as for a timeout). The sentences:
 - An invalid reference (`null` key): the ref and "fix oats-local.yaml"; the
   fix step names the ref.
 - This computer's deployment whose re-read failed (the last observation kept,
-  `E_REMOTE_UNREADABLE`): "This deployment's last read failed: <the
-  kernel's message>. It shows what was last observed." It is `stale`.
+  `E_REMOTE_UNREADABLE`): "This deployment's last read failed. It shows what
+  was last observed. OATS says: <the kernel's message>" It is `stale`. The
+  Desktop's sentence comes first and the kernel's words after their
+  speaker, as one display line. A message the display filter withholds reads
+  "[Detail withheld]" in its place, with no "OATS says:" in front; a
+  failure with no message reads the Desktop's sentence alone. A kept
+  message that carries no speaker (the reader makes none today) stays inside the
+  sentence as before, filtered the same way: "This deployment's last read
+  failed: <message>. It shows what was last observed."
 - An unknown team: "This host hasn't observed its workspace yet; run oats
   sync there."
 - Standalone and unmapped: "Teams are local only on this host

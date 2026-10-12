@@ -3,6 +3,7 @@ import { instanceId, distinguishingRootTags } from '../../client/instance-tree.m
 import { eventsTimestamp } from '../../client/instance-events-contract.mjs';
 import { canAddressRemote } from '../../client/remote-address.mjs';
 import { knownOrigin, hasRuntimeError } from '../../client/instance-presentation.mjs';
+import { keptFailure } from '../../client/deployment-facts.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
@@ -14,11 +15,14 @@ export function projectActivePanel(panel) {
   if (!object(panel) || !Array.isArray(panel.instances)) throw new Error('The server did not report a roster.');
   if (panel.workspace != null && (!object(panel.workspace) || typeof panel.workspace.id !== 'string')) throw new Error('The roster did not report a valid workspace identity.');
   if (panel.error != null && typeof panel.error !== 'string') throw new Error('The server reported an unreadable roster error.');
+  // A kept failure (the last read failed, the rows are the last observation): the shared home's one rule,
+  // never a test of the message. Its rows' state is unknown.
+  const kept = keptFailure(panel);
   const seen = new Set();
   const instances = panel.instances.map(raw => {
     if (!object(raw) || typeof raw.instance !== 'string' || !raw.instance) throw new Error('The roster contains an invalid instance identity.');
     for (const key of identityFields) if (raw[key] != null && (typeof raw[key] !== 'string' || raw[key].includes('\0'))) throw new Error('The roster contains an invalid instance address.');
-    const instance = { instance: raw.instance, running: panel.error ? null : raw.running === true ? true : raw.running === false ? false : null,
+    const instance = { instance: raw.instance, running: kept ? null : raw.running === true ? true : raw.running === false ? false : null,
       remote: raw.remote === true || panel.workspace?.remote === true,
       // addressable stays absent when this computer's OATS (before 0.31) reports none: the saved route then decides.
       ...(typeof raw.addressable === 'boolean' ? { addressable: raw.addressable } : {}), savedRoute: raw.savedRoute === true,
@@ -43,7 +47,9 @@ export function projectActivePanel(panel) {
   instances.sort((a, b) => instanceId(a).localeCompare(instanceId(b)));
   return { instances, workspace: object(panel.workspace) ? panel.workspace : null,
     workspaces: Array.isArray(panel.workspaces) ? panel.workspaces.filter(w => object(w) && typeof w.id === 'string') : [],
-    generatedAt: text(panel.generatedAt), error: text(panel.error) };
+    // `error` is the kept failure's message as a string (possibly empty), or null when none is kept;
+    // `errorOrigin` who made it, "kernel" or absent (packages/client/deployment-facts.mjs `keptFailure`).
+    generatedAt: text(panel.generatedAt), error: kept ? kept.message : null, ...(kept?.origin ? { errorOrigin: kept.origin } : {}) };
 }
 
 export function activeSignature(panel) {

@@ -120,9 +120,9 @@ deployment is `not observed` and no row is drawn. A state that is not live
 is said in words above the list, with the reason on rows of its own. When
 the kernel refused the read and no rows are kept, the reason says so and
 quotes it: `OATS answered with an error (<code>). It says: <message>`. When
-the last rows are kept as `stale`, the reason holds the kernel's message
-inside one sentence:
-`This deployment's last read failed: <message>. It shows what was last observed.`
+the last rows are kept as `stale`, the reason says so and then quotes the
+kernel:
+`This deployment's last read failed. It shows what was last observed. OATS says: <message>`.
 Any other reason is the reader's own sentence.
 
 Names are cut by terminal cells with `…` (`...` in ASCII) when they do not

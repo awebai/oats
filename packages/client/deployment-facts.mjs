@@ -61,6 +61,27 @@ export function deploymentUnavailableParts(deployment, terms) {
   return own(code && message ? `${code}: ${message}` : message || 'The deployment could not be observed.');
 }
 
+/** Whether what a client holds for a deployment is a kept failure: its last read failed and what was
+ * observed before is still shown (deployment-panel.mjs `failedEntry`). `held` is a deployment's entry or
+ * a panel made from one (panel-views.mjs `deploymentPanel`, `panelData`); the answer is null, or
+ *
+ *   { message, origin }     message: the failure's text, a string, possibly empty
+ *                           origin: "kernel" when the installed CLI printed it, else null
+ *
+ * **The fact does not depend on the text.** `error` is a string exactly when a failure is kept, and an
+ * empty, blank or withheld message is as much a kept failure as any other: a kernel that fails with no
+ * words has still failed. This is the one place that decides it. A client asks here whether a deployment
+ * is stale and never tests `error` for truth, so the shared reason and each of a client's notices agree.
+ *
+ * `origin` is `errorOrigin` read strictly: the one value `failedEntry` writes, anything else null. A
+ * panel of another machine (remote-roster.mjs `remotePanel`) never carries the key; its `error` is a
+ * string while that machine was not reached, and reads here as a failure with no speaker.
+ * Not on the stable surface. */
+export function keptFailure(held) {
+  if (held === null || typeof held !== 'object' || typeof held.error !== 'string') return null;
+  return { message: held.error, origin: held.errorOrigin === 'kernel' ? 'kernel' : null };
+}
+
 /** The sentence a client shows in place of a deployment's rows when the kernel could not observe it: the parts
  * that are there (`deploymentUnavailableParts`), joined by one space. '' for an observed deployment. */
 export function deploymentUnavailableText(deployment, terms) {
