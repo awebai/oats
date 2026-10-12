@@ -3864,7 +3864,7 @@ function updateCmd() {
   // The pi bridge, in every pi folder a launch of the deployment uses (lib/pi-bridge.mjs).
   const plan = planPiBridges(piBridgeFolders({ launchConfigs }), target);
   console.log(`\n${PI_BRIDGE} ${target} (published in lockstep), by pi folder${deployment && !notLookedAt ? ` of ${deployment}` : ""}:`);
-  for (const line of piBridgePlanLines(plan)) console.log(line);
+  for (const line of piBridgePlanLines(plan, cli)) console.log(line);
   if (notLookedAt) console.log(`  ${notLookedAt}`);
   const moves = plan.filter((entry) => entry.step);
   const untouched = plan.filter((entry) => entry.action === "skip").length;

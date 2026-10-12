@@ -415,6 +415,7 @@ test("#991 oats update: a bridge whose package.json cannot be parsed is listed w
 
 const KERNEL_SPEC = `npm:@awebai/oats-pi@${KERNEL}`;
 const VIEW_KERNEL_BRIDGE = `npm view @awebai/oats-pi@${KERNEL} version --prefer-online`;
+const AHEAD_NOTE = `  A bridge moves to ${KERNEL} only if @awebai/oats-pi@${KERNEL} is published: the installed kernel is ahead of the registry's ${OLD}, and a run checks that before any step.`;
 
 test("#1011 oats update: an installed version above the registry's gives no CLI step, and one line says so; a bridge behind the installed kernel moves to it, one ahead is left alone", (t) => {
   const fx = fixture(t, { ahead: piConfig("{AHEAD}"), behind: piConfig("{BEHIND}") });
@@ -438,6 +439,8 @@ test("#1011 oats update: an installed version above the registry's gives no CLI 
     `    bridge ${NEXT}: left alone, ahead of ${KERNEL}`,
     `  ${fx.at("pi-behind")}  (launch configuration behind)`,
     `    bridge ${OLD}: move to ${KERNEL}`,
+    // The plan makes no lookup: it says what the move depends on, not whether the version is published.
+    AHEAD_NOTE,
     "",
     "Update steps:",
     `  PI_CODING_AGENT_DIR=${fx.at("pi-behind")} npm_config_prefer_online=true pi install ${KERNEL_SPEC}`,
@@ -452,9 +455,11 @@ test("#1011 oats update: an installed version above the registry's gives no CLI 
   assert.deepEqual(r.calls, [VIEW_KERNEL, VIEW_KERNEL_BRIDGE, `pi install ${KERNEL_SPEC} | folder=${fx.at("pi-behind")} | prefer_online=true`]);
   assert.deepEqual([fx.defaultDir, fx.at("pi-ahead"), fx.at("pi-behind")].map(bridgeIn), [KERNEL, NEXT, KERNEL]);
   assert.match(lastLine(r.stdout), new RegExp(`^Updated to ${KERNEL.replaceAll(".", "\\.")}\\. Now verify`));
+  assert.ok(r.stdout.includes(`\n${AHEAD_NOTE}\n\nUpdate steps:\n`), "the same line in a run's plan");
   // Nothing left to move, with the CLI and a bridge ahead: it runs nothing, and does not say "Up to date".
   const done = fx.run(["update", "--yes"], { env });
   assert.equal(done.status, 0, done.stderr);
+  assert.ok(!done.stdout.includes("only if"), "no move, no such line");
   assert.deepEqual(done.calls, [VIEW_KERNEL]);
   assert.equal(lastLine(done.stdout), "Nothing for `oats update` to run.");
   assert.deepEqual([fx.defaultDir, fx.at("pi-ahead"), fx.at("pi-behind")].map(bridgeIn), [KERNEL, NEXT, KERNEL]);

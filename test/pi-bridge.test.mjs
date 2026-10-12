@@ -401,6 +401,34 @@ test("piBridgePlanLines: the folder and why, what happens there, and the command
   assert.equal(lines.length, 2 * 10 + 4, "two lines a folder, one more for each command");
 });
 
+test("#1011 piBridgePlanLines: the installed kernel ahead of the registry and a bridge to move to its version: one line says the move needs that version published", () => {
+  const h = host();
+  h.bridge(h.defaultDir, "0.50.0");
+  const current = h.bridge(join(h.base, "current"), "0.53.0");
+  const folders = () => piBridgeFolders({ env: h.env, launchConfigs: configs(pi("work", { PI_CODING_AGENT_DIR: current })) });
+  const linesFor = (cli) => piBridgePlanLines(planPiBridges(folders(), cli.target, { env: h.env }), cli);
+  const note = "  A bridge moves to 0.53.0 only if @awebai/oats-pi@0.53.0 is published: the installed kernel is ahead of the registry's 0.52.0, and a run checks that before any step.";
+  // Ahead, with a move: the folders as in any plan, then the line, once.
+  assert.deepEqual(linesFor(planCliUpdate("0.53.0", "0.52.0")), [
+    `  ${h.defaultDir}  (the default)`,
+    "    bridge 0.50.0: move to 0.53.0",
+    `  ${current}  (launch configuration work)`,
+    "    bridge 0.53.0: left alone, already at 0.53.0",
+    note,
+  ]);
+  // Not ahead, with a move: the version is the registry's own, or the installed one it lists. No line.
+  for (const cli of [planCliUpdate("0.52.0", "0.53.0"), planCliUpdate("0.53.0", "0.53.0")]) assert.ok(!linesFor(cli).some((l) => l.includes("only if")), JSON.stringify(cli));
+  assert.equal(linesFor(planCliUpdate("0.52.0", "0.53.0"))[1], "    bridge 0.50.0: move to 0.53.0");
+  // Ahead, with no move: nothing is promised, so nothing is qualified.
+  h.bridge(h.defaultDir, "0.53.0");
+  assert.deepEqual(linesFor(planCliUpdate("0.53.0", "0.52.0")).filter((l) => !l.startsWith("    ")), [`  ${h.defaultDir}  (the default)`, `  ${current}  (launch configuration work)`]);
+  h.bridge(h.defaultDir, "0.54.0");
+  assert.ok(!linesFor(planCliUpdate("0.53.0", "0.52.0")).some((l) => l.includes("only if")), "a bridge ahead is left alone: no move");
+  // A plan's lines alone, as before.
+  h.bridge(h.defaultDir, "0.50.0");
+  assert.equal(piBridgePlanLines(planPiBridges(folders(), "0.53.0", { env: h.env })).length, 4);
+});
+
 test("piBridgeSkewWarnings: one per folder whose bridge is not the kernel's version or could not be looked at; none for a folder without a bridge", () => {
   const h = host();
   const at = (name) => join(h.base, name);

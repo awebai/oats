@@ -150,9 +150,17 @@ in a few minutes. The same setting goes to pi's own npm for the install
 shows what would run, and the run looks again.
 
 When the installed CLI is ahead of the registry, the version asked for is
-the installed one, and it may not be published at all. The message then says
-that the installed kernel is ahead of the registry, instead of telling you to
-wait a few minutes.
+the installed one, and it may not be published at all. The plan does not
+know: it makes no lookup. So when it lists a move to that version, it says
+under the folders what the move depends on:
+
+```text
+  A bridge moves to 0.53.0 only if @awebai/oats-pi@0.53.0 is published: the installed kernel is ahead of the registry's 0.52.0, and a run checks that before any step.
+```
+
+When the run's lookup then does not find the version, the message says that
+the installed kernel is ahead of the registry, instead of telling you to wait
+a few minutes.
 
 **What npm answers is checked before it is used.** Both lookups must answer
 one version and nothing else: three numbers and an optional prerelease, on
