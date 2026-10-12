@@ -211,6 +211,16 @@ node scripts/assemble-release-notes.mjs --tag v0.54.0
 - **All or nothing.** With a problem in any entry, or a notes file that holds
   a section twice or a fenced block that is never closed, it prints every
   problem, writes nothing, removes nothing and exits 2.
+- **An interrupted run.** The command writes the notes file first and removes
+  the entry files after it. A run that stops in between leaves entry files
+  beside a notes file that already holds their text, and a second run would
+  add that text again. Put the tree back first, one of two ways: delete the
+  entry files that are left, whose text the notes file holds, and the run is
+  complete; or return all of `docs/release-notes/` to what Git has, which is
+  the notes file (deleted, if this run created it) and the entry files
+  already removed, and run the command again. A run that stops before it
+  writes the notes file has changed neither; at most it leaves a `.tmp` file
+  beside the notes file.
 - **Running it more than once in a release is normal.** The pull request that
   moves the manifests to a new version runs it to create that version's notes
   file, which `test/release-packaging.test.mjs` requires for the version the
