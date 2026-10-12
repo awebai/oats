@@ -3773,15 +3773,17 @@ function updateCmd() {
   let deployment = null, launchConfigs = {}, notLookedAt = null;
   try { deployment = dirname(loadLocal(dirFlag()).path); launchConfigs = launchConfigsAt(deployment); }
   catch (e) {
+    // An explicit --dir with no deployment at or above it is refused, a 0.25 configuration there included.
+    if (e?.code === "E_LOCAL_MISSING" && flag("dir") !== undefined) die(e.message);
     if (e?.code !== "E_LOCAL_MISSING" || e.details?.legacy) notLookedAt = `No launch configuration was looked at: ${deployment ? `the launch configurations of ${deployment} do` : "the deployment does"} not load (${e.message}). Run \`oats doctor\` there, then \`oats update\` again.`;
-    else if (flag("dir") !== undefined) die(e.message);
     else notLookedAt = `No launch configuration was looked at: no deployment at or above ${process.cwd()}. Run \`oats update\` in each deployment, or with --dir <deployment>.`;
     launchConfigs = {};
   }
   const end = (text) => { console.log(text); if (notLookedAt) console.log(`\n${notLookedAt}`); };
+  const fail = (text) => die(notLookedAt ? `${text}\n${notLookedAt}` : text);
   let latest;
   try { latest = execFileSync("npm", ["view", "@awebai/oats", "version"], { encoding: "utf8", timeout: 30000 }).trim(); }
-  catch (e) { die(`cannot check npm for the latest version: ${e.message}`); }
+  catch (e) { fail(`cannot check npm for the latest version: ${e.message}`); }
   console.log(`@awebai/oats  installed: ${OATS_VERSION}  latest: ${latest}`);
   // The pi bridge, in every pi folder a launch of the deployment uses (lib/pi-bridge.mjs).
   const plan = planPiBridges(piBridgeFolders({ launchConfigs }), latest);
@@ -3804,7 +3806,6 @@ function updateCmd() {
     try { answer = buf.toString("utf8", 0, readSync(0, buf, 0, 16)).trim().toLowerCase(); } catch { /* no input */ }
     if (answer !== "y" && answer !== "yes") return end("Not updating.");
   } else if (!args.includes("--yes")) return end("\nNon-interactive: pass --yes to execute, or run the steps yourself.");
-  const fail = (text) => die(notLookedAt ? `${text}\n${notLookedAt}` : text);
   // Before any step, the CLI's included: the bridge's exact version is seen on the registry by a
   // lookup that revalidates npm's cache (awebai/oats#852). A version is listed a while after it
   // is published, and the kernel's "latest" says nothing about the bridge's.

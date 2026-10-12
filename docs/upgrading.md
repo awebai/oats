@@ -160,5 +160,6 @@ In any pi folder, with the `pi` that is launched with it:
 PI_CODING_AGENT_DIR=<folder> pi install npm:@awebai/oats-pi@<the CLI's version>
 ```
 
-`oats version` prints the CLI's version. Leave the variable out for the
-default folder.
+`oats version` prints the CLI's version. For the default folder, leave the
+assignment out only when your shell does not set `PI_CODING_AGENT_DIR`;
+when it does, name the folder: `PI_CODING_AGENT_DIR="$HOME/.pi/agent"`.

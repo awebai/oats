@@ -12,13 +12,13 @@ const KERNEL = JSON.parse(readFileSync(new URL("../package.json", import.meta.ur
 const NEXT = "99.0.0", OLD = "0.40.0";
 const SPEC = `npm:@awebai/oats-pi@${NEXT}`;
 
-/** `npm`: `view @awebai/oats version` answers $FAKE_LATEST; `view @awebai/oats-pi@X version` answers
+/** `npm`: `view @awebai/oats version` answers $FAKE_LATEST (exits 17 when $FAKE_VIEW_FAILS is set); `view @awebai/oats-pi@X version` answers
  *  X, or fails as npm 11 does when $FAKE_BRIDGE_UNLISTED is set (prints nothing and exits 0, as an
  *  older npm does, when it is "quiet"); `install -g` exits $FAKE_NPM_INSTALL (0). Every call is logged. */
 const FAKE_NPM = `#!/bin/sh
 echo "npm $*" >> "$FAKE_LOG"
 case "$1 $2" in
-  "view @awebai/oats") echo "$FAKE_LATEST"; exit 0 ;;
+  "view @awebai/oats") if [ -n "$FAKE_VIEW_FAILS" ]; then exit 17; fi; echo "$FAKE_LATEST"; exit 0 ;;
   "view @awebai/oats-pi@"*)
     if [ "$FAKE_BRIDGE_UNLISTED" = quiet ]; then exit 0; fi
     if [ -n "$FAKE_BRIDGE_UNLISTED" ]; then echo "npm error code E404" >&2; exit 1; fi
@@ -329,6 +329,12 @@ test("#991 oats update with no deployment in reach: the default folder and this 
   const failed = fx.run(["update", "--yes"], { cwd: fx.base, env: { FAKE_BRIDGE_UNLISTED: "1" } });
   assert.equal(failed.status, 1);
   assert.equal(lastLine(failed.stderr), none);
+  // And when npm cannot say what the latest version is: nothing was looked at at all.
+  const early = fx.run(["update", "--check"], { cwd: fx.base, env: { FAKE_VIEW_FAILS: "1" } });
+  assert.equal(early.status, 1);
+  assert.match(early.stderr, /^oats: cannot check npm for the latest version: /);
+  assert.equal(lastLine(early.stderr), none);
+  assert.equal(early.stdout, "");
 });
 
 test("#991 oats update --dir: the deployment named, from anywhere; a directory with no deployment at or above it is refused and nothing runs", (t) => {
@@ -341,6 +347,18 @@ test("#991 oats update --dir: the deployment named, from anywhere; a directory w
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /^oats: no oats-local\.yaml found walking up from .*nowhere/);
   assert.deepEqual(refused.calls, []);
+  // A 0.25 configuration there is no deployment either: refused the same, not "one that does not load".
+  mkdirSync(fx.at("legacy"));
+  writeFileSync(join(fx.at("legacy"), "oats-config.yaml"), "agents: {}\n");
+  const legacy = fx.run(["update", "--yes", "--dir", fx.at("legacy")], { cwd: fx.dep });
+  assert.equal(legacy.status, 1);
+  assert.match(legacy.stderr, /^oats: no oats-local\.yaml found walking up from .*legacy/);
+  assert.deepEqual(legacy.calls, [], "neither npm nor pi ran");
+  assert.equal(bridgeIn(fx.defaultDir), OLD);
+  // Without --dir, from inside it, the update goes on with the default folder and says why nothing else was looked at.
+  const inLegacy = fx.run(["update", "--check"], { cwd: fx.at("legacy") });
+  assert.equal(inLegacy.status, 0, inLegacy.stderr);
+  assert.match(lastLine(inLegacy.stdout), /^No launch configuration was looked at: the deployment does not load \(no oats-local\.yaml found walking up from .*legacy/);
   const help = fx.run(["update", "--help"]);
   assert.match(help.stdout, /oats update \[--check\] \[--yes\][\s\S]*\[--dir <deployment>\]/);
 });
