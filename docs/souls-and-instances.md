@@ -1160,9 +1160,15 @@ The retire and its plan read what is at `<home>/work` once, by one rule
   A retry of a failed spawn's cleanup over a link verifies no Git debt
   through it: the debt stays outstanding, and `--force` removes the home
   alone. A link that is no longer a link when the retire inspects the home
-  again after its hooks refuses the retire (`E_WORK_INSPECTION_FAILED`) and
-  keeps the home, since removing the home would take what replaced the
-  link, uncopied.
+  again (a retire hook put a directory or a file in its place) refuses the
+  retire (`E_WORK_INSPECTION_FAILED`) and keeps the home, since removing
+  the home would take what replaced the link, uncopied. The message says
+  what is there now and to run the retire again, which reads the home as it
+  is then: a directory in a home that was given a link is a directory of
+  the home (copied to recovery, removed with the home); a directory or a
+  file under a `worktree` record and a worktree's receipt, and a file in a
+  home that was given a link, are kept with the home until a person moves
+  them out, and the retire says so each time.
 - **A directory instance's `work/`** is held against the spawn's receipt as
   before: a record that says `directory` where the receipt does not, or the
   other way round, refuses the retire.

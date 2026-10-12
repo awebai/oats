@@ -11,6 +11,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { REFUSED_TEXT, terminalText } from "../lib/refused-text.mjs";
 
 const readJson = (file) => JSON.parse(readFileSync(file, "utf8"));
 const FILE = "only-copy.txt", BYTES = "work that exists nowhere else\n";
@@ -44,22 +45,28 @@ function entries(dir, out = new Map(), root = dir) {
 /** A scratch deployment and what the cases do in it. The deployment directory is a Git checkout, so
  *  that a workspace instance's link leads to a repository too. Soul `hooked` has a retire hook that
  *  does nothing until a case asks: with `<flags>/stubborn` it reports incomplete cleanup, and with
- *  `<flags>/swap` (a home's path) it puts a real directory where that home's `work/` link was. */
+ *  `<flags>/swap` (`{home, kind}`) it puts a real directory, or a file, where that home's `work/`
+ *  link was. Souls `hooked-chk` and `hooked-wsp` have the same hook in checkout and workspace mode. */
 function deployment(t) {
   const flags = mkdtempSync(join(tmpdir(), "oats-link-flags-")); t.after(() => rmSync(flags, { recursive: true, force: true }));
   const hook = `import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const swap = ${JSON.stringify(join(flags, "swap"))};
 if (existsSync(swap)) {
-  const work = join(readFileSync(swap, "utf8"), "work");
-  rmSync(work, { force: true }); mkdirSync(work); writeFileSync(join(work, ${JSON.stringify(FILE)}), ${JSON.stringify(BYTES)});
+  const { home, kind } = JSON.parse(readFileSync(swap, "utf8"));
+  const work = join(home, "work");
+  rmSync(work, { force: true });
+  if (kind === "file") writeFileSync(work, ${JSON.stringify(BYTES)});
+  else { mkdirSync(work); writeFileSync(join(work, ${JSON.stringify(FILE)}), ${JSON.stringify(BYTES)}); }
   rmSync(swap);
 }
 console.log(JSON.stringify({ meta: existsSync(${JSON.stringify(join(flags, "stubborn"))}) ? { retired: false, reason: "capture-unfinished" } : { retired: true } }));
 `;
   const fx = v2Deployment({ t,
     souls: { dev: { soul: { work: "worktree" } }, dir: { soul: { work: "directory" } }, wsp: { soul: { work: "workspace" } }, chk: { soul: { work: "checkout" } },
-      hooked: { soul: { work: "worktree", capabilities: { "test.link": { from: "here" } } } } },
+      hooked: { soul: { work: "worktree", capabilities: { "test.link": { from: "here" } } } },
+      "hooked-chk": { soul: { work: "checkout", capabilities: { "test.link": { from: "here" } } } },
+      "hooked-wsp": { soul: { work: "workspace", capabilities: { "test.link": { from: "here" } } } } },
     capabilities: { "test.link": { manifest: { hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": hook } } } });
   const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { encoding: "utf8", env: fx.env, stdio: ["ignore", "pipe", "pipe"] }).trim();
   execFileSync("git", ["init", "-q", fx.dep], { env: fx.env });
@@ -303,26 +310,91 @@ test("a link that leads nowhere, to a file, or to an extra tree of the home is a
   assert.deepEqual(result.warnings, [led(inst.home, null)]);
 });
 
-test("a link that became a directory during the retire keeps the home: nothing of the directory is removed uncopied; the next retire copies it (#973)", async (t) => {
+/** The refusal of a retire whose link at work/ is `now` by its second inspection, up to where the
+ *  retire says what it had done by then. */
+const NO_LONGER_A_LINK = (home, instance, now) => `${join(home, "work")} was a link when this retire first read the home, and ${now} is there now. The home is kept and nothing of it was removed. \`oats retire ${instance} --plan\` shows what a retire would do with what is there now, and running the retire again does that. `;
+/** The retire of `inst` during which its hook puts a directory or a file where the link was:
+ *  refused, --force included, with the home and what is there now kept. */
+function swappedDuringRetire(d, inst, kind, label) {
+  writeFileSync(join(d.flags, "swap"), JSON.stringify({ home: inst.home, kind }));
+  const error = d.refused(inst.instance, ["--force"], "E_WORK_INSPECTION_FAILED");
+  assert.equal(existsSync(join(d.flags, "swap")), false, "fixture premise: the hook ran");
+  assert.ok(error.message.startsWith(NO_LONGER_A_LINK(inst.home, inst.instance, kind === "file" ? "a file" : "a directory")), `${label}: ${error.message}`);
+  assert.match(error.message, /The retire hooks have run; the home, its work and the pre-hook recovery \(if any\) are kept/, label);
+  assert.equal(readFileSync(kind === "file" ? join(inst.home, "work") : join(inst.home, "work", FILE), "utf8"), BYTES, `${label}: the home and what is there now are kept`);
+}
+
+test("a link that became a directory during the retire keeps the home and says how it ends; for a home that was given a link, the next retire copies the directory and removes it with the home (#973)", async (t) => {
   const d = deployment(t);
   const owner = await d.fx.spawn("dev", { instance: "dev-owner" });
-  for (const worktree of [true, false]) {
-    const label = worktree ? "the record says worktree" : "an attached instance as it was given";
-    const kid = d.attached(owner, worktree ? "swap-w" : "swap-a", "hooked");
-    if (worktree) d.sayWorktree(kid.home, join(owner.home, "work"));
-    // The retire hook puts a real directory, holding the one file, where the link was.
-    writeFileSync(join(d.flags, "swap"), kid.home);
-    const error = d.refused(kid.instance, ["--force"], "E_WORK_INSPECTION_FAILED");
-    assert.match(error.message, /work was a link when this retire first read it and is not one now/, label);
-    assert.equal(existsSync(join(d.flags, "swap")), false, "fixture premise: the hook ran");
-    assert.equal(readFileSync(join(kid.home, "work", FILE), "utf8"), BYTES, `${label}: the home and the directory are kept`);
-    // What is there now is a directory of the home (#962): copied to recovery, then removed.
-    const result = d.retired(kid.instance);
+  const homes = [
+    ["an attached instance as it was given", () => d.attached(owner, "swap-a", "hooked")],
+    ["an attached instance whose record says worktree", () => { const kid = d.attached(owner, "swap-w", "hooked"); d.sayWorktree(kid.home, join(owner.home, "work")); return kid; }],
+    ["a checkout instance", () => d.fx.spawn("hooked-chk", { instance: "hooked-chk-swap" })],
+    ["a workspace instance", () => d.fx.spawn("hooked-wsp", { instance: "hooked-wsp-swap" })],
+  ];
+  for (const [label, make] of homes) {
+    const inst = await make();
+    assert.equal(lstatSync(join(inst.home, "work")).isSymbolicLink(), true, label);
+    swappedDuringRetire(d, inst, "directory", label);
+    // The plan the refusal points to says what the next retire does: a directory of the home (#962).
+    const seen = d.plan(inst.instance);
+    assert.deepEqual(seen.defaults, DEFAULTS(false), label);
+    assert.ok(seen.notes.includes("recovery: work/ is copied there when it is not empty"), `${label}: ${JSON.stringify(seen.notes)}`);
+    const result = d.retired(inst.instance);
     assert.ok(result.workRecovery?.classes.includes("directory work bytes"), `${label}: ${JSON.stringify(result.workRecovery?.classes)}`);
     assert.equal(readFileSync(join(result.workRecovery.path, "work", FILE), "utf8"), BYTES, label);
-    assert.equal(existsSync(kid.home), false, label);
+    assert.equal(existsSync(inst.home), false, label);
   }
   assert.equal(lstatSync(join(owner.home, "work")).isDirectory(), true);
+});
+
+test("what replaced the link under a worktree's receipt and record, and a file in any home, are kept by the next retire until a person moves them: it says so, --force included, and completes after that (#973)", async (t) => {
+  const d = deployment(t);
+  const owner = await d.fx.spawn("dev", { instance: "dev-owner" });
+  // A home that was given a worktree, whose tree was moved away and linked: what replaces the link is
+  // read as the instance's own tree by the spawn's receipt, and it has no Git admin entry.
+  for (const kind of ["directory", "file"]) {
+    const label = `a worktree's receipt and record, ${kind === "file" ? "a file" : "a directory"} there now`;
+    const inst = await d.fx.spawn("hooked", { instance: `hooked-own-${kind}` });
+    const work = join(inst.home, "work"), away = join(d.fx.base, `away-${kind}`);
+    writeFileSync(join(work, "theirs.txt"), "of the tree that was moved away\n");
+    d.git(d.fx.member, "worktree", "move", work, away); symlinkSync(away, work);
+    const before = { git: d.gitState(away), files: entries(away) };
+    swappedDuringRetire(d, inst, kind, label);
+    const held = () => readFileSync(kind === "file" ? work : join(work, FILE), "utf8");
+    const ITEM = `git worktree ${work}: its admin entry is missing; the directory is kept — move it out or delete it by hand, then retire again`;
+    for (const flags of [[], ["--discard-worktree"]]) {
+      const kept = d.retire(inst.instance, flags);
+      assert.equal(kept.status, 1, `${label} ${flags.join(" ")}: ${JSON.stringify(kept)}`);
+      assert.deepEqual(kept.result.rollbackIncomplete, [ITEM], label);
+      assert.equal(kept.result.removedDir, false, label);
+      assert.equal(held(), BYTES, label);
+    }
+    const forced = d.refused(inst.instance, ["--force"], "E_WORK_PRESERVATION_FAILED");
+    assert.match(forced.message, /has no git admin entry in .*move it out or delete it by hand, then retire again; nothing was run or removed$/, label);
+    assert.equal(held(), BYTES, label);
+    // A person moves it out: the retire then completes.
+    rmSync(work, { recursive: true });
+    const done = d.retired(inst.instance);
+    assert.equal(done.removedDir, true, label);
+    assert.equal(done.rollbackIncomplete, undefined, label);
+    assert.equal(existsSync(inst.home), false, label);
+    assert.deepEqual({ git: d.gitState(away), files: entries(away) }, before, `${label}: the tree that was moved away is as it was`);
+  }
+  // A home that was given a link, with a file there now: read as a worktree, and its inspection refuses.
+  const kid = d.attached(owner, "swap-f", "hooked");
+  swappedDuringRetire(d, kid, "file", "a home that was given a link, a file there now");
+  for (const flags of [[], ["--force"]]) {
+    const error = d.refused(kid.instance, flags, "E_WORK_INSPECTION_FAILED");
+    assert.match(error.message, /^could not read the top level of the worktree at .*\. Nothing was stopped, run or removed\.$/s, flags.join(" "));
+    assert.equal(readFileSync(join(kid.home, "work"), "utf8"), BYTES);
+  }
+  rmSync(join(kid.home, "work"));
+  const done = d.retired(kid.instance);
+  assert.equal(done.removedDir, true);
+  assert.equal(done.retention, null);
+  assert.equal(existsSync(kid.home), false);
 });
 
 test("a retry of a rollback marker over a link does nothing through Git to what the link leads to and deletes no branch: Git debt stays unverified, and --force removes the home alone (#973)", async (t) => {
@@ -400,6 +472,21 @@ test("the retire's text spells the characters of a link's target that a terminal
   assert.deepEqual(lines, [`  WARNING: ${join(asText.home, "work")} was a link though the record says work mode worktree: nothing was retained or removed as a work tree, and what it led to (${spelled}) was not touched`]);
   assert.equal(r.stdout.split("\n").filter((l) => l.startsWith("Retired")).length, 1, r.stdout);
   assert.equal(readFileSync(join(target, FILE), "utf8"), BYTES);
+});
+
+test("terminalText spells every refused character as \\u{hex} and leaves the rest of a line as it is (#973)", () => {
+  assert.equal(terminalText("plain é 日本 — text, with 'quotes' and \\ a backslash"), "plain é 日本 — text, with 'quotes' and \\ a backslash");
+  assert.equal(terminalText("a\x1b[2Jb\nc\td\x7f\u0085e"), "a\\u{1b}[2Jb\\u{a}c\\u{9}d\\u{7f}\\u{85}e");
+  assert.equal(terminalText("\u2028\u2029\u202e\u2066\u200b\u2060\ufeff\u{e0041}"), "\\u{2028}\\u{2029}\\u{202e}\\u{2066}\\u{200b}\\u{2060}\\u{feff}\\u{e0041}");
+  // Not refused: joiners and direction marks that text in several scripts needs.
+  assert.equal(terminalText("\u200c\u200d\u200e\u200f\u061c"), "\u200c\u200d\u200e\u200f\u061c");
+  // Every character of the set, and nothing of it left in what comes back.
+  for (let cp = 0; cp <= 0x10ffff; cp++) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue;
+    const ch = String.fromCodePoint(cp);
+    if (REFUSED_TEXT.test(ch)) assert.equal(terminalText(`x${ch}y`), `x\\u{${cp.toString(16)}}y`);
+  }
+  assert.equal(terminalText(undefined), "undefined", "whatever it is given is text");
 });
 
 test("the notes about a worktree that is retained are for the instance's own tree alone: none for an attached, checkout or workspace instance over a tree that is dirty or on another branch (#973)", async (t) => {

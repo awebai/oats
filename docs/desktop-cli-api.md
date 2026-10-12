@@ -3977,11 +3977,28 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   kernel never prints in text it did not write), as `\u{<hex>}`, so that a
   name cannot clear the screen or write a line of its own. The JSON is not
   changed by that: its strings are what they were. No key of the plan or of
-  the receipt is new. A link that is no longer a link when the
-  retire inspects the home again after its hooks (a directory or a file was
-  put in its place) refuses with `E_WORK_INSPECTION_FAILED` and keeps the
-  home, in every work mode: the home's removal would take what is there
-  now, uncopied.
+  the receipt is new.
+- A link at `work/` that is no longer a link when the retire inspects the
+  home again (a retire hook, or anything else, put a directory or a file in
+  its place) refuses with `E_WORK_INSPECTION_FAILED` and keeps the home, in
+  every work mode (0.53.0, #973): the home's removal would take what is
+  there now, uncopied. The message says what was there and what is there
+  now, that the home is kept and nothing of it was removed, and that `oats
+  retire <instance> --plan` shows what a retire would do with what is there
+  now. Running the retire again reads the home as it is now:
+  - a directory, in a home that was given a link (an attached, a checkout
+    or a workspace instance, whatever its record says now): a directory of
+    the home (#962). The retire copies it to recovery, checks the copy and
+    removes it with the home.
+  - a directory or a file, in a home whose record says `worktree` and whose
+    spawn's receipt says it was given a tree: a work directory with no Git
+    admin entry. The retire runs its hooks and keeps the entry and the home
+    as an incomplete item (exit 1; `--force` refuses with
+    `E_WORK_PRESERVATION_FAILED`) until a person moves the entry out or
+    deletes it; then it completes.
+  - a file, in a home that was given a link: the inspection refuses
+    (`E_WORK_INSPECTION_FAILED`, `--force` included, nothing stopped, run
+    or removed) until a person removes the file; then it completes.
 - The two notes about a worktree that is retained, `N changed and M
   untracked file(s) would be retained with the worktree` and `the worktree
   is on <branch>, not the recorded <branch>`, are given for the instance's
