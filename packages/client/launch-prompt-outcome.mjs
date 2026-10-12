@@ -2,7 +2,7 @@
  * grants terminal authority. Bad additive data must never erase a retained home. */
 import { record, absolute } from './spawn-preview-contract.mjs';
 import { eventsUnsafe } from './instance-events-contract.mjs';
-import { displayLine } from './display-text.mjs';
+import { displayLine, cleanLine, MAX_DISPLAY_LINE } from './display-text.mjs';
 const safe = (v, max = 1024) => typeof v === 'string' && v.length <= max && !/[\x00-\x1f\x7f]/.test(v) && !eventsUnsafe.test(v);
 /** The kernel's reasons, matched whole and shown as it wrote them: no prefix or suffix is matched, so the
  * blocked reasons the kernel suffixes when its private evidence was not kept are entries of their own.
@@ -134,32 +134,67 @@ export function retainedStartMessage(instance, d) {
   const p = launchPromptOutcome(d?.launchPrompts);
   return `OATS could not confirm that ${instance} finished starting: ${p.reason}.${inputNote(p)} Its session was kept. Refresh status, then open its terminal to read what it shows. Do not start it again before that.`;
 }
+/** How much of an answer's warnings the notice below shows: at most this many display lines, and at most
+ * this many UTF-16 units of them in total. Each cut is by position: never by a warning's words. */
+export const FLAG_IGNORED_WARNINGS = 16;
+export const FLAG_IGNORED_UNITS = 4096;
+/** No fact below is larger than this, as JSON in UTF-8 bytes: what a store that keeps one reserves for it.
+ * A UTF-16 unit of a display line is at most six bytes there (a lone surrogate, which JSON writes as an
+ * escape); the rest is the keys, the punctuation and the count. */
+export const FLAG_IGNORED_BYTES = FLAG_IGNORED_UNITS * 6 + 256;
 /** A launch that worked while Claude Code ignored the channel option (0.52.0). The kernel's successful
  * answer then carries `launchPrompts: {status: "flag-ignored", reason, signatureId, startId, at}` and its own
  * words as one string among `warnings`, never as a field. This reader takes those two fields of an answer
- * and knows nothing of the act that was answered. Its one caller is the start dialog, for a start's and a
- * restart's answer; a spawn's answer carries `launchPrompts` too (0.52.0) and is not read yet. It stands
- * beside the kept-session reader above, which reads a refusal's details and knows no such status.
+ * and knows nothing of the act that was answered. It has two callers: the start dialog, for a start's and
+ * a restart's answer, and the spawn's creation receipt (spawn-apply-contract.mjs), for a launched spawn's.
+ * It stands beside the kept-session reader above, which reads a refusal's details and knows no such status.
  * Tolerant: an answer that does not decode, or any other status, is null, and the launch reads as any
  * launch that worked.
  *
- * `reason` is the one value the notice has a clause for, else null. `warnings` is every warning of that
- * answer in the order given, each as one display line: the withheld marker for one the filter withholds,
- * and no line for an entry with nothing to show. None is picked, matched or dropped by its words: no
- * client looks for the kernel's sentence among them. */
+ * The fact is `{reason, warnings, omitted}`. `reason` is the one value the notice has a clause for, else
+ * null. `warnings` is the answer's warnings in the order given, each as one display line: the withheld
+ * marker for one the filter withholds, and no line for an entry with nothing to show. None is picked,
+ * matched or dropped by its words: no client looks for the kernel's sentence among them. Lines are kept in
+ * order while both bounds hold: FLAG_IGNORED_WARNINGS lines, FLAG_IGNORED_UNITS units in total. The first
+ * line that does not fit and every line after it are left out, and no line is cut inside; the first line
+ * always fits (a display line is at most MAX_DISPLAY_LINE units). `omitted` counts the lines left out, 0
+ * when none. An entry with nothing to show was never a line and is not counted. */
 export function launchFlagIgnored(answer) {
   if (!record(answer) || !record(answer.launchPrompts) || answer.launchPrompts.status !== 'flag-ignored') return null;
-  const warnings = Array.isArray(answer.warnings) ? answer.warnings.map(w => displayLine(w)).filter(line => line !== null) : [];
-  return { reason: answer.launchPrompts.reason === 'channels-unavailable' ? 'channels-unavailable' : null, warnings };
+  const lines = Array.isArray(answer.warnings) ? answer.warnings.map(w => displayLine(w)).filter(line => line !== null) : [];
+  const warnings = [];
+  let units = 0;
+  for (const line of lines) {
+    if (warnings.length === FLAG_IGNORED_WARNINGS || units + line.length > FLAG_IGNORED_UNITS) break;
+    warnings.push(line); units += line.length;
+  }
+  return { reason: answer.launchPrompts.reason === 'channels-unavailable' ? 'channels-unavailable' : null, warnings, omitted: lines.length - warnings.length };
 }
-/** The notice for it, `{headline, detail?}`, or null. `instance` is the name the caller launched. The launch
- * worked: the headline never says "failed" or "could not confirm". The detail is the warnings under the
- * Desktop's lead-in, one per line; there is none without a warning. */
-export function flagIgnoredNotice(instance, answer) {
-  const d = launchFlagIgnored(answer);
+/** The fact above as it crossed a boundary: the same fact, or undefined. Exactly the three keys; `reason`
+ * the one known value or null; `warnings` display lines within both bounds; `omitted` a non-negative safe
+ * integer, above 0 only where a cut can have happened: beside a full list, or beside lines that leave no
+ * room for another of MAX_DISPLAY_LINE units. Anything else is undefined, so a malformed value drops this
+ * one fact and never what carried it. Idempotent: the reader's own answer decodes to itself. */
+export function flagIgnoredFact(v) {
+  if (!record(v) || Object.keys(v).length !== 3 || !['reason', 'warnings', 'omitted'].every(k => Object.hasOwn(v, k))
+    || v.reason !== null && v.reason !== 'channels-unavailable'
+    || !Array.isArray(v.warnings) || v.warnings.length > FLAG_IGNORED_WARNINGS || !v.warnings.every(cleanLine)
+    || !Number.isSafeInteger(v.omitted) || v.omitted < 0) return undefined;
+  const units = v.warnings.reduce((sum, line) => sum + line.length, 0);
+  if (units > FLAG_IGNORED_UNITS
+    || v.omitted > 0 && v.warnings.length < FLAG_IGNORED_WARNINGS && units <= FLAG_IGNORED_UNITS - MAX_DISPLAY_LINE) return undefined;
+  return { reason: v.reason, warnings: [...v.warnings], omitted: v.omitted };
+}
+/** The notice for the fact, `{headline, detail?}`, or null when `fact` is not one. `instance` is the name
+ * the caller launched. The launch worked: the headline never says "failed" or "could not confirm". The
+ * detail is the warnings under the Desktop's lead-in, one per line, and after them, in the Desktop's words,
+ * how many more the cut left out; there is none without a warning. */
+export function flagIgnoredNotice(instance, fact) {
+  const d = flagIgnoredFact(fact);
   if (!d) return null;
   const headline = d.reason === 'channels-unavailable'
     ? `${instance} started. Claude Code reported that channels are not available and ignored the channel option, so mail and chat will not wake this instance.`
     : `${instance} started. Claude Code ignored the channel option, so mail and chat will not wake this instance.`;
-  return d.warnings.length ? { headline, detail: ['OATS says:', ...d.warnings].join('\n') } : { headline };
+  if (!d.warnings.length) return { headline };
+  return { headline, detail: ['OATS says:', ...d.warnings, ...(d.omitted > 0 ? [`${d.omitted} more not shown.`] : [])].join('\n') };
 }

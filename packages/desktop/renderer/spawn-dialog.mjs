@@ -16,7 +16,7 @@
  * idempotency key). If the world moved, the dialog shows the new values and
  * asks again. An unknown outcome is checked on the same intent, never retried
  * under a new one. */
-import { retainedSpawnMessage, differedLines } from '../../client/launch-prompt-outcome.mjs';
+import { retainedSpawnMessage, differedLines, flagIgnoredNotice } from '../../client/launch-prompt-outcome.mjs';
 import { launchDiffered, launchDifferedCSS } from './launch-differed.mjs';
 import { harnessOf } from '../../client/harness-names.mjs';
 import { displayLine } from '../../client/display-text.mjs';
@@ -1474,7 +1474,15 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       const named = intent?.preview?.instance ?? shown?.data?.instance ?? '';
       if (['complete', 'partial'].includes(phase)) {
         setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
-        if (!delivered) { delivered = true; deploymentField?.remember(); await onCreated(view, () => current() && owner === mount); }
+        if (!delivered) {
+          delivered = true; deploymentField?.remember();
+          // The spawn worked while Claude Code ignored the channel option (the receipt's `flagIgnored`): a
+          // notice says so, once per completed apply, beside whatever the completion itself says. Only a
+          // dialog that runs its own apply gets here: with a store (the shipped shell) spawn-jobs.mjs says it.
+          const ignored = flagIgnoredNotice(view.receipt.instance, view.receipt.flagIgnored);
+          if (ignored) ctx.notify?.(ignored.headline, ignored.detail ? { detail: ignored.detail } : undefined);
+          await onCreated(view, () => current() && owner === mount);
+        }
       } else if (phase === 'incomplete') {
         // What the screen differed in goes under the sentence; the nearest entry and the position are Details' data.
         const problem = spawnProblem(view.reason, 'spawn'), differed = view.incomplete.launchPrompts?.differed ?? null, said = differedLines(differed);

@@ -7,7 +7,7 @@
  * request answers within ANSWER_WITHIN_MS: with the outcome if the CLI settled, else `pending`;
  * the CLI keeps running here and `result` reads its outcome. Up to MAX_APPLIES applies run at
  * once backend-wide, one per workspace and soul. */
-import { retainedSpawnDetails, LAUNCH_DIAGNOSTIC_BYTES } from '../../client/launch-prompt-outcome.mjs';
+import { retainedSpawnDetails, LAUNCH_DIAGNOSTIC_BYTES, FLAG_IGNORED_BYTES } from '../../client/launch-prompt-outcome.mjs';
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnApply } from '../../client/spawn-apply-cli.mjs';
@@ -73,7 +73,9 @@ export function createSpawnApplyBoundary({ read = spawnPreviewPrepareRequest, in
     if (!entry.ref) return denied('E_BUSY', entry);
     // Reserve bounded outcome storage before dispatch. A settled reply shares
     // this immutable preview internally; public responses are always cloned.
-    entry.bytes = byteSize(entry) + 3 * byteSize(preview.decision) + 2 * byteSize(entry.target) + 4096 + LAUNCH_DIAGNOSTIC_BYTES;
+    // A reply keeps one of two bounded texts, never both: a retained launch's diagnostics, or the
+    // fact a receipt carries when Claude Code ignored the channel option. The larger bound covers either.
+    entry.bytes = byteSize(entry) + 3 * byteSize(preview.decision) + 2 * byteSize(entry.target) + 4096 + Math.max(LAUNCH_DIAGNOSTIC_BYTES, FLAG_IGNORED_BYTES);
     if (usedBytes() + entry.bytes > 8 * 1024 * 1024) return denied('E_BUSY', entry);
     prepared.set(entry.ref, entry);
     return display(entry, 'prepared');

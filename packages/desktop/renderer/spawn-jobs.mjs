@@ -15,12 +15,18 @@
  * workspace is on screen, then posted on return. Pending rows are Desktop-local.
  *
  * Reload (Spec D, #383): with a `storage` (the shell passes sessionStorage), every submitted job is kept
- * as { workspace, deployment, spawnRef, soul, selector, instance, home, placement, startedAt, deadline } until its outcome has
+ * as { workspace, deployment, spawnRef, soul, selector, instance, home, placement, startedAt, deadline, flagSaid } until its outcome has
  * been reported: in flight, unknown, failed (until dismissed or reopened), or settled with a notice still
  * held for its workspace. Never its opening instruction or a key (the renderer never holds the idempotency
  * key; spawnRef is the server's opaque handle, kept 30 min after it settles). After a window reload,
  * recover() brings each back as a pending row and reads the existing `result` action, so settling and
  * reporting stay separate events across a reload.
+ *
+ * Claude Code ignored the channel option (the receipt's `flagIgnored`): the spawn worked, and a notice says
+ * that mail and chat will not wake the instance. It has a slot of its own (`job.flag`) beside the job's
+ * notice, so neither replaces the other, and it follows the same rule: held while another workspace is on
+ * screen, shown on return. Once per apply: a reload settles a created job again, so the stored job keeps
+ * `flagSaid` from the moment the notice was shown (never its text), and a job that has it shows none.
  *
  * Long spawns (#802): `apply` answers `pending` when the CLI is still running after 50 s (a spawn whose
  * `worktree` hooks set up ./work can run for up to 30 minutes per hook). The job then reads `result`
@@ -33,7 +39,7 @@
  * /api/spawn request and the reply it checks). Without a deployment the view id addresses it, as before.
  * A created spawn records its deployment as the view's last used (the spawn dialog's default).
  * `rehome(map)` moves owners onto views (workspace-rehome.mjs); a job's address never changes. */
-import { retainedSpawnMessage, differedLines, DIFFERED_IN_ACTIVITY } from '../../client/launch-prompt-outcome.mjs';
+import { retainedSpawnMessage, differedLines, DIFFERED_IN_ACTIVITY, flagIgnoredNotice } from '../../client/launch-prompt-outcome.mjs';
 import { spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
 import { sameSpawnDecision } from '../../client/spawn-decision.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
@@ -94,12 +100,12 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   const flightOf = (workspace, soul) => [...jobs.values()].find(j => FLIGHT.includes(j.state) && sameSoul(j, workspace, soul)) || null;
   /** Submitted jobs whose outcome has not been reported survive a window reload (never the task text):
    * a failure until it is dismissed or reopened, any other outcome until its notice is posted. */
-  const unreported = j => ['spawning', 'checking', 'unknown', 'failed'].includes(j.state) || !j.notice?.posted;
+  const unreported = j => ['spawning', 'checking', 'unknown', 'failed'].includes(j.state) || !j.notice?.posted || !!j.flag;
   function save() {
     if (!alive || !storage) return;
     const kept = [...jobs.values()].filter(j => j.spawnRef && unreported(j))
       .map(j => ({ workspace: j.workspace, deployment: j.deployment, spawnRef: j.spawnRef, soul: j.soul, selector: j.selector, instance: j.instance, home: j.home, placement: j.placement, startedAt: j.startedAt,
-        ...(Number.isFinite(j.deadline) ? { deadline: j.deadline } : {}) }));
+        ...(Number.isFinite(j.deadline) ? { deadline: j.deadline } : {}), ...(j.flagSaid ? { flagSaid: true } : {}) }));
     try { if (kept.length) storage.setItem(SPAWN_STORAGE_KEY, JSON.stringify(kept)); else storage.removeItem(SPAWN_STORAGE_KEY); } catch { /* storage is a convenience */ }
   }
   const changed = () => {
@@ -114,6 +120,8 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   // ── notifications, held per workspace
   function deliver(job) {
     if (!live(job) || currentWorkspace() !== job.workspace) return; // held until its workspace is on screen
+    // Its own slot, before the job's notice: shown once, and remembered as shown across a reload.
+    if (job.flag) { const { message, options } = job.flag; job.flag = null; job.flagSaid = true; notify(message, options); save(); }
     // Spec E: a launched partial spawn is followed to its instance too, with no second notice (its own
     // notice already said what went wrong with its wake schedule).
     if (job.arrived) {
@@ -153,6 +161,8 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   function created(job, view) {
     job.state = 'created'; job.receipt = view.receipt || null; job.createdAt = now();
     if (job.deployment !== job.workspace) { try { rememberDeployment(job.workspace, job.deployment); } catch { /* a convenience */ } }
+    const ignored = job.flagSaid ? null : flagIgnoredNotice(job.instance, view.receipt?.flagIgnored);
+    if (ignored) job.flag = { message: ignored.headline, options: ignored.detail ? { detail: ignored.detail } : {} };
     if (view.status === 'partial') {
       // Created; only its wake schedule failed. A launched one is still awaited running, to be followed to (Spec E).
       job.wantRunning = view.receipt?.launched === true; job.quiet = true;
@@ -167,7 +177,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     } else if (!view.receipt.launched) {
       job.wantRunning = false;
       say(job, `Created ${job.instance} — not launched. Open its session from the roster.`);
-    } else job.wantRunning = true; // "<name> spawned" waits for the roster to show it running with a session
+    } else { job.wantRunning = true; deliver(job); } // "<name> spawned" waits for the roster to show it running with a session
     changed();
   }
   /** A refusal before anything was applied, or one the kernel reports: the kernel's reason, and that nothing was created. */
@@ -337,6 +347,8 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
           // Reopen after a reload restores the soul and the exact name; the opening instruction is never stored.
           draft: { layout: 'scoped', restore: { choices: { name: e.instance } } }, state: 'spawning', submitted: true, spawnRef: e.spawnRef,
           prepared: null, notice: null, announced: false, startedAt: Number.isFinite(e.startedAt) ? e.startedAt : now(), recovered: true,
+          // The flag-ignored notice of this apply was shown before the reload: it is not shown again.
+          flagSaid: e.flagSaid === true,
           // The deadline kept at the press (#802); an entry without one follows the ordinary apply's.
           deadline: Number.isFinite(e.deadline) ? e.deadline : now() + recoverWithinMs };
         jobs.set(job.id, job); n++;

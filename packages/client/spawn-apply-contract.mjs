@@ -1,5 +1,5 @@
 /** Confirmed K6d input/data boundary. No kernel resolution or renderer key authority. */
-import { retainedSpawnDetails } from './launch-prompt-outcome.mjs';
+import { retainedSpawnDetails, launchFlagIgnored, flagIgnoredFact } from './launch-prompt-outcome.mjs';
 import { harnessOf } from './harness-names.mjs';
 import { record, previewSupported, previewSelector, previewChoices, previewTarget, previewData, previewFailure, MAX_HOOKS } from './spawn-preview-contract.mjs';
 import { spawnDecision, sameSpawnDecision } from './spawn-decision.mjs';
@@ -74,7 +74,13 @@ export function spawnWakeOutcome(value, requested) {
   if (value.saved === false && !error) return null;
   return { requested: value.requested, saved: value.saved, error };
 }
-/** A qualified creation receipt, not executable terminal/session instructions. */
+/** A qualified creation receipt, not executable terminal/session instructions.
+ *
+ * `flagIgnored` (optional) is the one fact of the kernel's answer the receipt carries as text: a launched
+ * spawn where Claude Code ignored the channel option (launchFlagIgnored: `launchPrompts.status`
+ * "flag-ignored", with the answer's warnings as bounded display lines). Absent for any other status, for
+ * an answer without `launchPrompts`, and for a spawn that was not launched. It holds facts and no sentence.
+ * Every other warning of an apply stays a count (`warningCount`). */
 export function spawnCreationReceipt(v, { target, preview, wakeRequested = false } = {}) {
   const selected = previewTarget(target), expected = spawnDecision(preview?.decision, { effectiveRequired: true });
   const decision = spawnDecision(v?.decision, { effectiveRequired: true });
@@ -93,10 +99,11 @@ export function spawnCreationReceipt(v, { target, preview, wakeRequested = false
     wake = spawnWakeOutcome({ requested: true, saved: false, error: v.wakeScheduleError }, true);
   }
   if (!wake) return null;
+  const flagIgnored = v.launched ? launchFlagIgnored(v) : null;
   return { instance: v.instance, agent: v.agent, home: v.home, agentsRoot: selected.selector.agentsRoot,
     workspace: selected.workspace, server: null, repo: v.repo, work: v.work, branch: v.branch,
     harness: harnessOf(v), model: v.model, launched: v.launched, replayed: v.replayed, decision,
-    warningCount: v.warnings.length, wake };
+    warningCount: v.warnings.length, wake, ...(flagIgnored ? { flagIgnored } : {}) };
 }
 /** Project the Desktop HTTP view again at the main/renderer trust boundaries. */
 export function spawnApplyView(v, expected = {}) {
@@ -122,8 +129,13 @@ export function spawnApplyView(v, expected = {}) {
   if (['complete', 'partial'].includes(v.status)) {
     if (!record(v.receipt) || !Number.isInteger(v.receipt.warningCount) || v.receipt.warningCount < 0 || v.receipt.warningCount > 512
       || v.receipt.workspace !== target.workspace || v.receipt.agentsRoot !== target.selector.agentsRoot || v.receipt.server !== null) return null;
-    receipt = spawnCreationReceipt({ ...v.receipt, warnings: Array(v.receipt.warningCount).fill('') }, { target, preview, wakeRequested: v.wakeRequested });
+    // The receipt is rebuilt from its own keys: the warnings are a count here, so `flagIgnored` is read from
+    // the receipt's key through the reader's decoder, never composed again. Tolerant: a value that does not
+    // decode is dropped, and the receipt stands.
+    receipt = spawnCreationReceipt({ ...v.receipt, warnings: Array(v.receipt.warningCount).fill(''), launchPrompts: undefined }, { target, preview, wakeRequested: v.wakeRequested });
     if (!receipt) return null;
+    const flagIgnored = receipt.launched ? flagIgnoredFact(v.receipt.flagIgnored) : undefined;
+    if (flagIgnored) receipt.flagIgnored = flagIgnored;
     const partial = v.wakeRequested && receipt.wake.saved !== true;
     if ((v.status === 'partial') !== partial) return null;
     if (partial) reason = receipt.wake.error ?? { code: 'E_WAKE_OUTCOME_UNKNOWN', message: WAKE_OUTCOME_UNKNOWN };
