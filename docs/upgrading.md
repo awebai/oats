@@ -178,12 +178,15 @@ Claude instance and the host timer's unit also record the `node` that runs
 them, by one rule
 ([the node a hook writes down](capabilities.md#the-node-a-hook-writes-down)):
 
-- **On Homebrew**, the `opt` link (`<prefix>/opt/node/bin/node`), which
-  `brew upgrade node` repoints. The recorded path outlasts the upgrade: the
-  hooks and the timer need nothing done.
+- **On Homebrew**, the `opt` link (`<prefix>/opt/node/bin/node`) when it is
+  the `node` running the kernel. `brew upgrade node` repoints it, so the
+  recorded path outlasts the upgrade: the hooks and the timer need nothing
+  done.
 - **Otherwise**, a `node` on `PATH` that is the same file as the one running
   the kernel. With mise that is the version's own install, which does not
   outlast the version (other version managers were not measured).
+- **When there is neither**, the path of the `node` as it is. A spawn, a
+  start and `oats schedule host install` then warn that it is not stable.
 
 Once the recorded `node` no longer exists (an old version removed under a
 version manager, for example), the hooks fail without a message, so the
