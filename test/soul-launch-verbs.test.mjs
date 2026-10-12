@@ -692,6 +692,20 @@ test("a local file written as JSON is edited as JSON: set, remove and plan, by b
   const { teams: _teams, defaultTeam: _defaultTeam, ...others } = strict();
   assert.deepEqual(others, rest, "and it changed nothing else");
   assert.equal(localOf(fx), `${JSON.stringify(strict(), null, 2)}\n`, "written as two-space JSON");
+  // What a JSON file has, it keeps: the order of its keys (names an object would sort first among them)
+  // and the absence of a final newline. Its indentation becomes two spaces.
+  const ordered = `{"workspace": ${JSON.stringify(base.workspace)},\n    "launch-configs": {"zeta": {"harness": "pi"}, "10": {"harness": "pi"}, "alpha": {"harness": "claude"}, "9": {"harness": "pi"}},\n "souls": {"launch": {"writer": "zeta", "2": "10", "dev": "none"}}, "schemaVersion": 2}`;
+  writeFileSync(file, ordered);
+  ok(fx.cli(["soul", "launch", "set", "runner", "--launch-config", "9", "--json"]), "set on a JSON file with its own key order");
+  assert.equal(localOf(fx), [
+    "{", `  "workspace": ${JSON.stringify(base.workspace)},`,
+    `  "launch-configs": {`, `    "zeta": {`, `      "harness": "pi"`, "    },", `    "10": {`, `      "harness": "pi"`, "    },", `    "alpha": {`, `      "harness": "claude"`, "    },", `    "9": {`, `      "harness": "pi"`, "    }", "  },",
+    `  "souls": {`, `    "launch": {`, `      "writer": "zeta",`, `      "2": "10",`, `      "dev": "none",`, `      "runner": "9"`, "    }", "  },",
+    `  "schemaVersion": 2`, "}"].join("\n"), "the keys in the file's order, the new entry last, and still no final newline");
+  ok(fx.cli(["teams", "add", "desk", "--team", "local:desk.example", "--no-default", "--json"]), "teams add keeps them too");
+  // (Read from the text: an object parsed from it would list "9" and "10" first.)
+  const keysAt = (depth) => localOf(fx).split("\n").map((line) => new RegExp(`^ {${depth}}"([^"]+)":`).exec(line)?.[1]).filter(Boolean);
+  assert.deepEqual([keysAt(2), keysAt(4).slice(0, 4), localOf(fx).endsWith("}")], [["workspace", "launch-configs", "souls", "schemaVersion", "teams"], ["zeta", "10", "alpha", "9"], true]);
 });
 
 test("text the kernel would not decode is never written: the rewrite is refused as E_WORKSPACE_SCHEMA", (t) => {
@@ -706,7 +720,8 @@ test("text the kernel would not decode is never written: the rewrite is refused 
       assert.deepEqual(Object.keys(e.details), ["problems"]);
       return true;
     });
-    assert.equal(fx.text(), text);
+    assert.equal(fx.text(), text, "refused before the rename: the file's bytes are what they were");
+    assert.deepEqual(readdirSync(fx.dir).filter((n) => n !== ".agents"), [LOCAL], "and no temporary file is left beside it");
   }
 });
 

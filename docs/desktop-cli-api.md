@@ -1445,8 +1445,11 @@ oats teams default <label> [--if-absent | --expect <label>] --json
 - **Rendering** (0.53.0). The file is written without folding lines: a value
   past 80 columns stays on its line. Before, a write re-wrapped such a line
   (the same value, over two lines). A file written as JSON (it opens with
-  `{`, and the kernel reads it as strict JSON) is written back as two-space
-  JSON; before, a write to such a file failed with no answer.
+  `{`, and the kernel reads it as strict JSON) is written back as JSON: it
+  keeps the order of its keys and its final newline, or the absence of one,
+  and its indentation becomes two spaces. Before, a write to such a file
+  failed with no answer. A rewrite the kernel could not read back is
+  `E_WORKSPACE_SCHEMA`, and nothing is written.
 - A write that would introduce an unknown reference is refused with that
   code; an invalid result is `E_WORKSPACE_SCHEMA`.
 - **Writes** edit `oats-local.yaml` in place and touch only the entries that
