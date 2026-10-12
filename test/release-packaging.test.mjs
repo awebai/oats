@@ -49,6 +49,10 @@ test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", ()
     assert.equal(json(`${cap}/oats.json`).compatibility.oats, ">=0.29.0", `${cap}: OKF 5.0.2 retains the declared 0.29.0 package-soul/trigger floor; this is a manifest assertion, not qualification of every old kernel`);
   }
   assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v5.0.2");
+  // The getting-started skill shows a workspace file: its package versions are the catalog's.
+  const gettingStarted = readFileSync(join(ROOT, "skills/oats-getting-started/SKILL.md"), "utf8");
+  assert.match(gettingStarted, /^  oats\.okf: v5\.0\.2$/m, "the getting-started skill shows the catalog's oats.okf version");
+  assert.match(gettingStarted, /^  oats\.framework: v1\.9\.3\b/m, "the getting-started skill shows the catalog's oats.framework version");
   const catalog = json("package-catalog.json");
   assert.equal(catalog.packages["oats.knowledge-theory"], undefined, "the theory package identity was renamed to oats.framework");
   const framework = catalog.packages["oats.framework"];
