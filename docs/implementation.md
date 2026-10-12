@@ -75,7 +75,7 @@ and the rules its tests pin.
 | `souls/` | this repository's own souls (a workspace member) |
 | `docs/` | the reference pages, schemas, design records and release notes |
 | `packages/` | the pi adapter, the Desktop, the terminal client (`tui/`), the readers both clients share (`client/`), the turn-record package and experiments |
-| `scripts/` | the test runner, validators, packaging checks and the release lane |
+| `scripts/` | the test runner, validators, packaging checks, the release lane and the assembly of release-notes entries |
 | `test/` | the kernel and CLI suites, with their fixtures |
 
 ## Kernel modules
@@ -349,7 +349,7 @@ scaling by call count.
 | `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs` |
 | `npm run check` | syntax of every shipped file |
 | `npm run check:pi` | the pi adapter's TypeScript |
-| `npm run validate` | the JSON schemas, the example manifests and configs, every local link and anchor in the public docs, the repository's own `oats-workspace.yaml` and `package-catalog.json` read by the kernel's readers, and no unresolved merge-conflict marker in a tracked text file (`scripts/check-workspace-files.mjs`) |
+| `npm run validate` | the JSON schemas, the example manifests and configs, every local link and anchor in the public docs (a release-notes entry under `docs/release-notes/next/` has its links read from `docs/release-notes/`, where its text is moved), the repository's own `oats-workspace.yaml` and `package-catalog.json` read by the kernel's readers, and no unresolved merge-conflict marker in a tracked text file (`scripts/check-workspace-files.mjs`) |
 | `npm run pack:check` | an `npm pack` dry run of both packages: nothing missing, nothing leaked |
 | `npm run smoke:tarball` | installs the packed tarballs outside the checkout and exercises them |
 

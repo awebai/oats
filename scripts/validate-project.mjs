@@ -4,6 +4,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYamlFull } from "yaml";
+import { entriesDir } from "./assemble-release-notes.mjs";
 import { checkOkfMirror } from "./check-okf-mirror.mjs";
 import { checkKnowledgeTheoryPackage } from "./check-knowledge-theory-package.mjs";
 import { checkReleaseVersions } from "./check-package-dry-runs.mjs";
@@ -107,6 +108,9 @@ function headings(path) {
   return headingCache.get(path);
 }
 
+// A release-notes entry (a file directly under docs/release-notes/next/) is a piece of the
+// notes file its text is moved into, unchanged: its links are written for docs/release-notes/.
+const linkBase = (file) => (dirname(file) === entriesDir(root) ? dirname(dirname(file)) : dirname(file));
 let links = 0;
 let examples = 0;
 for (const file of publicMarkdown) {
@@ -119,7 +123,7 @@ for (const file of publicMarkdown) {
     }
     links++;
     const [rawPath, rawAnchor] = href.split("#", 2);
-    const target = resolve(dirname(file), decodeURIComponent(rawPath));
+    const target = resolve(linkBase(file), decodeURIComponent(rawPath));
     if (!existsSync(target)) { fail(`${relative(root, file)}: broken link ${href}`); continue; }
     if (rawAnchor && lstatSync(target).isFile() && extname(target) === ".md" && !headings(target).has(decodeURIComponent(rawAnchor))) {
       fail(`${relative(root, file)}: missing anchor ${href}`);

@@ -13,8 +13,16 @@ OATS's lane adds.
 In an exact-commit checkout, read `.github/workflows/release.yml`, `docs/release-lane.md`,
 `scripts/release-lane.mjs` and the tag's release notes.
 
-- CI builds the exact tag SHA, and requires that it is on `main` and that
-  `docs/release-notes/<tag>.md` exists.
+- CI builds the exact tag SHA, and requires that it is on `main`, that
+  `docs/release-notes/<tag>.md` exists and that nothing is left under
+  `docs/release-notes/next/`.
+- Pull requests leave their release-notes entries as files under
+  `docs/release-notes/next/`. In the release-prep PR, run
+  `node scripts/assemble-release-notes.mjs --tag <tag>`: it moves every entry into
+  `docs/release-notes/<tag>.md` and removes the entry files. Review the diff there and
+  reorder entries by hand. A tag with an entry file left is refused by the workflow and
+  by the lane's `build`, each naming that command. `docs/release-lane.md`,
+  "Release-notes entries", is the rule.
 - The tag version is derived into the root, adapter and Desktop manifests with
   `--allow-same-version`. A version already aligned is not an error, and doesn't justify
   reverting versions or retagging.
@@ -52,7 +60,8 @@ kernel ships behaviour whose skill text reaches no deployment.
 - When you plan the release, diff `oats-package/` between the last `oats-framework/` tag
   and `main`, plus the PRs still to merge. An empty diff needs nothing.
 - Otherwise the release has two prep PRs. The first bumps the changed capabilities and
-  the package, with its notes entry; tag its merge commit `oats-framework/v<version>`.
+  the package, with its notes entry as a file under `docs/release-notes/next/`; tag its
+  merge commit `oats-framework/v<version>`.
   The kernel prep PR then pins that version: the catalog ref, `oats-workspace.yaml`, and
   the version literals in the docs and tests. Push the tag before the pin's CI runs: two
   kernel tests read the catalog's ref from the remote and fail until it exists. A green

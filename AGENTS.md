@@ -18,7 +18,10 @@ adapter and the Desktop (`packages/`), the `oats.framework` package
 - **Never weaken trust or integrity checks** (package integrity, the lock,
   path containment) without an explicit decision.
 - **Behaviour and docs change together.** An operator-visible change updates
-  the reference page in `docs/` that owns the rule, and the release notes.
+  the reference page in `docs/` that owns the rule, and adds its release-notes
+  entry as a file of its own under `docs/release-notes/next/`
+  ([Release-notes entries](docs/release-lane.md#release-notes-entries)); it
+  does not edit the version's notes file.
 - **Tests pin behaviour.** A behaviour change changes its test in the same
   commit. Never weaken an assertion to make a change pass.
 - The package mirrors in `mirrors/` (`mirrors/oats-okf*` and the other

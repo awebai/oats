@@ -9,8 +9,9 @@ The policy it satisfies: no release capability may permanently depend on
 GitHub or GitHub Actions. Registry publish works on its own; tags and hosted
 release assets can follow later.
 
-The last two sections cover the post-publish Desktop check and mirroring a
-released `oats.okf`.
+The sections after the lane's own cover release-notes entries, the
+post-publish Desktop check, mirroring a released `oats.okf` and releasing
+`oats.framework`.
 
 ## When to use it
 
@@ -33,7 +34,7 @@ under `stage/<tag>/logs/`; a failing step exits non-zero with the log path.
 
 | Phase | Mirrors in `release.yml` | Writes |
 | --- | --- | --- |
-| `build --tag vX.Y.Z [--sha <commit>]` | jobs `build-and-test` and `tests` (the lane runs the suite unsharded): notes gate, three-manifest bump, `node --check`, `npm ci`, `npm run check`, Desktop test deps, `npm test`, `pack:check` and the tarball greps, `smoke:tarball`, the `version --json` probe | `npm/*.tgz`, `MANIFEST.json` |
+| `build --tag vX.Y.Z [--sha <commit>]` | jobs `build-and-test` and `tests` (the lane runs the suite unsharded): notes gate, unassembled-entries gate, three-manifest bump, `node --check`, `npm ci`, `npm run check`, Desktop test deps, `npm test`, `pack:check` and the tarball greps, `smoke:tarball`, the `version --json` probe | `npm/*.tgz`, `MANIFEST.json` |
 | `desktop --tag vX.Y.Z --arch arm64\|x64` | one `desktop-build` matrix leg: desktop `npm ci`, `npm test`, `npm run dist -- --<arch>`, strict deep `codesign --verify` (macOS), `dist:smoke` in build-verify mode | `assets/oats-desktop-*` |
 | `stage --tag vX.Y.Z` | publish job, "Checksums" (`shasum -a 256`) | `assets/SHA256SUMS.txt` |
 | `publish-npm --tag vX.Y.Z [--dry-run] --yes` | publish job, the two guarded `npm publish --access public` steps, kernel then adapter | — |
@@ -59,7 +60,9 @@ through `NPM_CONFIG_USERCONFIG` and deleted afterwards, never into the repo.
 ## A full release from a Mac plus a Linux host
 
 Release notes must exist at `docs/release-notes/<tag>.md` on the commit being
-released, and the commit must be on `origin/main`. On the Mac:
+released, with no entry file left under `docs/release-notes/next/`
+([Release-notes entries](#release-notes-entries)), and the commit must be on
+`origin/main`. On the Mac:
 
 ```bash
 git fetch origin
@@ -149,6 +152,82 @@ contract; `test/release-lane.test.mjs` covers the lane's gates and phase
 logic against fixtures, with `npm` stubbed. The two can run in either order:
 a lane release followed by a workflow run, or a broken workflow run finished
 by the lane, and neither republishes what the other already did.
+
+## Release-notes entries
+
+A release ships one notes file, `docs/release-notes/v<version>.md`. Between
+releases a pull request does not write into it: it adds its entry as a file
+of its own, and one command moves the entries into the notes file in the
+release-prep pull request. Two pull requests that share no code therefore
+never conflict over the notes.
+
+### For the author of a pull request
+
+- **One file, `docs/release-notes/next/<name>.md`**, added by the pull
+  request that makes the change. The pull request does not touch
+  `docs/release-notes/v<next>.md`.
+- **The name** is the issue's number and a short slug:
+  `991-update-every-pi-folder.md`. Lower-case letters, digits and hyphens,
+  then `.md`. The number is a convention: nothing reads the name but the
+  order of assembly.
+- **The content is a piece of the notes file:** one or more `## <Section>`
+  headings, each followed by its entries, and nothing else. No title, no text
+  before the first heading. Write the entry as it will read in the notes
+  file. The sections, in the notes file's order, are `Upgrade`, `Added`,
+  `Changed`, `Fixed`, `Removed`, `Provider updates` and `Documentation`. A
+  heading is one of them exactly, from the first column.
+- **Links are written for `docs/release-notes/`**, the directory the text
+  moves into: a link to `docs/tui.md` has the target `../tui.md`.
+  `npm run validate` resolves an entry file's links from that directory. Such
+  a link does not resolve when the entry file is opened on its own in a
+  browser.
+- **`test/release-notes-entries.test.mjs` holds every entry file on the tree
+  to these rules:** the name; a regular file directly in the directory; only
+  the seven sections, each at most once; at least one non-blank line under
+  each heading; no `# ` title; every fenced block closed. A `## ` line inside
+  a fenced block is text.
+- **The directory exists only while it holds entries.** It has no README and
+  no placeholder: anything in it counts as an unassembled entry.
+
+### For the tag owner
+
+```bash
+node scripts/assemble-release-notes.mjs --tag v0.54.0
+```
+
+- **It moves every entry into `docs/release-notes/v0.54.0.md`** and removes
+  the entry files and the emptied directory. A notes file that does not exist
+  is created, with the title `# OATS 0.54.0` and the line `Unreleased`.
+  `--root <dir>` works in another tree.
+- **Order.** Files are taken by name as plain strings, what `LC_ALL=C ls`
+  prints: `1002-…` comes before `996-…`. In each section a file's text goes
+  after what the section already holds. A section the notes file lacks is
+  created at its place in the order above. A heading that is not one of the
+  seven, such as a hand-written highlight, stays where it is.
+- **It moves text and rewrites none.** Every line it did not add is kept as
+  it is, except blank lines where text goes in. It sets no date in place of
+  `Unreleased` and sorts nothing inside a section: reorder entries by hand in
+  the prep pull request, where the result is reviewed as a diff.
+- **All or nothing.** With a problem in any entry, or a notes file that holds
+  a section twice or a fenced block that is never closed, it prints every
+  problem, writes nothing, removes nothing and exits 2.
+- **Running it more than once in a release is normal.** The pull request that
+  moves the manifests to a new version runs it to create that version's notes
+  file, which `test/release-packaging.test.mjs` requires for the version the
+  manifests carry. The release-prep pull request runs it again for the
+  entries merged since, which go after the earlier ones.
+- **A tag is refused while anything is under `docs/release-notes/next/`:** by
+  the `build-and-test` job of `release.yml` and by `release-lane.mjs build`,
+  each right after its notes-file gate and before anything is built. Each
+  names the command to run. The kernel package carries all of `docs/`, so
+  these two gates are also what keeps an unassembled entry out of a published
+  tarball.
+
+### When it starts
+
+When the change that adds this section is on `main`. Entries already in
+`docs/release-notes/v0.53.0.md` stay there. A pull request in flight that has
+to rebase for the notes anyway may move its entry into a file at that rebase.
 
 ## Desktop release verification
 
@@ -254,7 +333,9 @@ When the diff is not empty:
 
 1. **The framework prep PR.** Bump `version` in the `oats.json` of each
    changed capability and in `oats-package/oats-package.json`, and add the
-   release-notes entry. Read the skill lines added since the last tag: a
+   release-notes entry as a file under `docs/release-notes/next/`
+   ([Release-notes entries](#release-notes-entries)). Read the skill lines
+   added since the last tag: a
    command or behaviour that an older kernel the capability still admits does
    not have names the version it starts in. Guidance text alone does not
    raise a capability's `compatibility.oats`.

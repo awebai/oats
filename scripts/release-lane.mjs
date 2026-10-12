@@ -10,9 +10,12 @@
 // the Desktop legs this machine cannot build.
 //
 //   build           build-and-test job: clean detached export of the SHA,
-//                   version bump, syntax check, tests, pack checks, tarball
-//                   clean-room smoke, version probe, then `npm pack` into
-//                   stage/<tag>/npm/ and MANIFEST.json.
+//                   release-notes gates (the tag's notes file exists, no
+//                   entry file is left unassembled under
+//                   docs/release-notes/next/), version bump, syntax check,
+//                   tests, pack checks, tarball clean-room smoke, version
+//                   probe, then `npm pack` into stage/<tag>/npm/ and
+//                   MANIFEST.json.
 //   desktop         one desktop-build matrix leg for the current host/arch.
 //   stage           the publish job's "Checksums" step (SHA256SUMS.txt).
 //   publish-npm     the publish job's two guarded `npm publish` steps.
@@ -38,6 +41,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { listEntryFiles } from "./assemble-release-notes.mjs";
 
 const KERNEL = "@awebai/oats";
 const ADAPTER = "@awebai/oats-pi";
@@ -56,8 +60,10 @@ release is resumable phase by phase. The checkout itself is never modified.
 
 phases (in release order)
   build           Build once from a clean detached export of --sha (default
-                  HEAD): release-notes gate, version bump of root, packages/pi
-                  and packages/desktop, node --check on every shipped .mjs,
+                  HEAD): release-notes gate, unassembled-entries gate (no
+                  file left under docs/release-notes/next/), version bump of
+                  root, packages/pi and packages/desktop, node --check on
+                  every shipped .mjs,
                   npm ci, npm run check, desktop test deps, npm test,
                   pack:check, smoke:tarball, the version --json probe, then
                   npm pack both packages into stage/<tag>/npm/ and write
@@ -341,6 +347,12 @@ class Lane {
     const notes = `docs/release-notes/${this.tag}.md`;
     if (!existsSync(join(exportDir, notes))) throw new LaneError(`missing ${notes} at ${sha} — the release-notes filename must match the tag`);
     say(`release notes present: ${notes}`);
+
+    // release.yml: "Verify no release-notes entry is left unassembled" — the entries of this
+    // release belong in the notes file above; one left behind would ship in the tarball's docs/.
+    const entries = listEntryFiles(exportDir).map((entry) => entry.name);
+    if (entries.length) throw new LaneError(`unassembled release-notes entries under docs/release-notes/next/ at ${sha}: ${entries.join(", ")} — run "node scripts/assemble-release-notes.mjs --tag ${this.tag}" in the release-prep pull request`);
+    say("no unassembled release-notes entry");
 
     await this.bumpManifests(exportDir);
 
