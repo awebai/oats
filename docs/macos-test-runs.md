@@ -45,7 +45,7 @@ or a tag of `origin`.
 
 - A name is made of `A-Z a-z 0-9 . _ / -`, does not start with `-` and has no
   `..`. A branch whose name has another character is given by its full commit
-  id.
+  id. The text is taken as typed: a space before or after it is refused too.
 - A shortened commit id is refused: give all 40 characters.
 - **A pull request's number is not accepted.** A pull request from a fork has
   a head that is not this repository's commit, and nothing is ever fetched by
@@ -138,9 +138,11 @@ These are constants of the script, not inputs:
 | time for the job | 60 minutes |
 | runner | `macos-14` (arm64), Node 22 |
 
-A run leaves its log and its summary and nothing else: no artifact and no
-cache. Its token can read the repository's contents and do nothing more, and
-the workflow names no secret.
+The workflow's steps upload no artifact and save or restore no cache: the log
+and the summary are all they leave. The token can read the repository's
+contents and do nothing more, and the workflow names no secret. The code a run
+executes can reach more than the workflow's own steps do: see
+[What a run does not protect](#what-a-run-does-not-protect).
 
 ## What a run does not show
 
@@ -191,7 +193,7 @@ reads the workflow file and pins each one:
 
 - `workflow_dispatch` is the only trigger;
 - `permissions` is exactly `contents: read`; no secret is named; no artifact
-  is uploaded; no cache is written or read;
+  is uploaded; no step saves or restores a cache;
 - no input is written into a shell line: the ref and the file list reach the
   script as environment variables;
 - the checkout is the workflow's own commit, without its token left in the

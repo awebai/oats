@@ -208,7 +208,9 @@ function lookUp({ kind, object }, repo, env) {
 /** The commit a ref's text names in the checkout at `repo` → { ok, asked, commit, kinds } or
  *  { ok: false, asked, why }. */
 export function resolveRef(text, repo, env = process.env) {
-  const asked = String(text ?? "").trim();
+  // As it was typed: white space around a name is refused like any other, and the header shows
+  // the text that was asked for, not a tidied one.
+  const asked = String(text ?? "");
   const shape = refShapeRefusal(asked);
   if (shape) return { ok: false, asked, why: shape };
   return { asked, ...chooseCommit(asked, refCandidates(asked, readRefs(repo, env)).map((c) => lookUp(c, repo, env))) };

@@ -310,7 +310,6 @@ test("macos-tests resolveRef: a branch, a tag and a full commit id of origin res
   assert.deepEqual(resolveRef("v2", runner), { asked: "v2", ok: true, commit: main, kinds: ["tag"] }, "an annotated tag is peeled to its commit");
   assert.deepEqual(resolveRef(first, runner), { asked: first, ok: true, commit: first, kinds: ["commit id"] });
   assert.deepEqual(resolveRef(feature.toUpperCase(), runner), { asked: feature.toUpperCase(), ok: true, commit: feature, kinds: ["commit id"] });
-  assert.deepEqual(resolveRef("  main\n", runner), { asked: "main", ok: true, commit: main, kinds: ["branch"] }, "white space around the name is not part of it");
   assert.deepEqual(resolveRef("2026", runner), { asked: "2026", ok: true, commit: main, kinds: ["branch"] }, "a branch named as a number is a branch");
   // A branch and a tag of one name: one commit is no ambiguity, two are.
   assert.deepEqual(resolveRef("both", runner), { asked: "both", ok: true, commit: main, kinds: ["branch", "tag"] });
@@ -343,12 +342,21 @@ test("macos-tests resolveRef: what is not a commit of origin's branches and tags
     ["--upload-pack=x", /starts with `-`/],
     ["v1..main", /has `\.\.`/],
     ["", /no ref was given/],
+    // The text is taken as it was typed: white space around a name that exists is still refused.
+    ["  main\n", /white space or a control character/],
+    ["main ", /white space or a control character/],
+    ["\tmain\r", /white space or a control character/],
+    ["\u00a0main", /white space or a control character/],
+    [" ", /white space or a control character/],
+    ["\n", /white space or a control character/],
   ];
   for (const [ref, reason] of refused) {
     const result = resolveRef(ref, runner);
-    assert.equal(result.ok, false, `${ref} resolved to ${result.commit}`);
-    assert.match(result.why, reason, ref);
+    assert.equal(result.ok, false, `${JSON.stringify(ref)} resolved to ${result.commit}`);
+    assert.equal(result.asked, ref, "the refusal shows the text as it was typed");
+    assert.match(result.why, reason, JSON.stringify(ref));
   }
+  assert.deepEqual(resolveRef(undefined, runner), { ok: false, asked: "", why: "no ref was given" });
 });
 
 test("macos-tests validateRequest: files are checked against the commit's own tree", () => {

@@ -1,6 +1,6 @@
 // The terms of the hand-started macOS test workflow (.github/workflows/macos-tests.yml), pinned by
 // reading the file. The workflow runs a branch's code on request, so each term is a line that must
-// not move unnoticed: the one trigger, the read-only token, no secret, no artifact, no cache, no
+// not move unnoticed: the one trigger, the read-only token, no secret, no artifact, no cache step, no
 // input in a shell line, the two trees, the bounds. docs/macos-test-runs.md states them.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -34,7 +34,7 @@ test("macOS tests: started by hand and by nothing else, with a ref, a list of fi
   assert.deepEqual({ type: inputs.tmux.type, default: inputs.tmux.default }, { type: "boolean", default: false });
 });
 
-test("macOS tests: the token reads contents only, and no secret, artifact or cache is named", () => {
+test("macOS tests: the token reads contents only, no secret is named, and no step uploads an artifact or saves or restores a cache", () => {
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.deepEqual(Object.keys(workflow.jobs), ["run"]);
   assert.equal(job.permissions, undefined, "the job widens nothing");
