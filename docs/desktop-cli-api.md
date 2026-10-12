@@ -4464,8 +4464,10 @@ oats schedule update <id> --description=<text> [--dir <d>] --json
 - `add <id> (--file <spec.json> | --spec-json <json>)`, `update`, `enable`,
   `disable` → `{schedule}`. `run [--force]`, `remove [--force]`, `reconcile
   [--clear]` → the action's receipt. `tick [--dry-run] [--host]` →
-  `{tickedAt, considered, scheduler}`; `host install | uninstall | status` →
-  `{scheduler}`.
+  `{tickedAt, considered, scheduler}`; `host install` → `{scheduler, warnings}`;
+  `host uninstall | status` → `{scheduler}`; `host install --print [--os
+  darwin|linux]` → `{kind, files: {<path>: <content>}, warnings}`, writing
+  nothing.
 - `test <id>` → `{test: {id, qualifiedId, kind, placement: {runsHere, reason,
   reasonDetail?, enabledHere, runsOn, owner, host}, soul: {name, origin,
   resolves, error} | null, nextDue, spawned: false, problems, ok}}`. The soul
@@ -4676,8 +4678,10 @@ Details: [schedules.md](schedules.md#workspace-triggers-and-schedules).
 null}}` (this machine's `host.name` and its `gh` logins, compared with a
 row's `owner`), `snapshot: {takenAt, problems (a count)} | null` (the last
 `oats sync` snapshot), and `scheduler: {installed, active, registered,
-lastTick, maxConcurrent, triggersMaxConcurrent, …}` (nothing runs unless installed, active and
-registered). `maxConcurrent` is the effective scheduled-job cap (default 5);
+problems, lastTick, maxConcurrent, triggersMaxConcurrent, …}` (nothing runs unless installed, active and
+registered; `problems` is always an array of `{code, message, fix}` warnings
+about the installed unit, see [schedules](schedules.md#the-host-timers-unit), and never
+changes `installed` or `active`). `maxConcurrent` is the effective scheduled-job cap (default 5);
 `triggersMaxConcurrent` is the separate trigger cap, or `null` for no host cap.
 
 **Every row** carries:

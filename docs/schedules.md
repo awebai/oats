@@ -21,8 +21,10 @@ inside the deployment, including from an instance home, sees the same
 definitions.
 
 There is no daemon. One host timer (a launchd user agent on macOS, a systemd
-user timer on Linux) runs `oats schedule tick --host` once a minute. The tick
-evaluates only the current minute, launches what is due through the same
+user timer on Linux) runs `oats schedule tick --host` at second 0 of every
+minute. The tick evaluates only the minute it was fired for (read from the
+process's own start, before any other work, so a tick that is slow to start
+still evaluates its minute), launches what is due through the same
 `spawn`, `session start` and `session input` paths you use by hand, polls the
 triggers that are due, records what it observed, and exits. Minutes missed
 while the machine slept are skipped, never replayed; there are no retries and
@@ -586,6 +588,7 @@ oats schedule reconcile <id> [--clear]   # resolve an attempt whose result was n
 oats schedule host install        # register this deployment and install the one host timer (idempotent)
 oats schedule host install --max-concurrent 3 --triggers-max-concurrent 2
 oats schedule host install --max-concurrent default --triggers-max-concurrent none
+oats schedule host install --print [--os darwin|linux]   # what install would write; changes nothing
 oats schedule host status | uninstall
 oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --wake-file spec.json
 ```
@@ -639,6 +642,74 @@ five. Correct it with `oats schedule host install --max-concurrent N` (or
 An absent value still means five. Set caps through the CLI; do not edit the
 registry by hand.
 
+### The host timer's unit
+
+The unit is a launchd user agent (`~/Library/LaunchAgents/ai.oats.schedule-tick.plist`,
+`StartCalendarInterval` with an empty dict) or a systemd user timer and service
+(`oats-schedule-tick.timer`, `OnCalendar=*-*-* *:*:00`, `AccuracySec=1s`,
+`Persistent=false`). Both fire at second 0 of every minute; the launchd job is
+`ProcessType Standard`, not `Background`, whose throttling delayed its start
+under load. The tick evaluates the minute it was fired for as long as it starts
+within that minute. A tick still running when the next minute fires loses that
+minute's fire, on both platforms: launchd and systemd do not start a job that is
+still running, and nothing replays the minute (#902's bounded catch-up, a
+separate change, is what recovers it). `install` renders it
+from **the environment of the shell it runs in**, so run it from the operator's
+own shell, not from an instance home:
+
+- **PATH**: the directory of the node the unit runs, then the installer's
+  `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`,
+  `/usr/sbin` and `/sbin`. Three kinds of entry are dropped from the
+  installer's `PATH`: entries inside an OATS instance home (an instance's
+  `.oats/bin`, or anything under `$OATS_INSTANCE_HOME`), entries inside a
+  versioned Homebrew keg (`…/Cellar/<formula>/<version>/…`), and relative or
+  empty entries. An entry that does not exist yet is kept. This is the
+  `PATH` the tick itself runs with. A harness the tick launches is looked up
+  where its pane will look it up
+  ([execution targets](execution-targets.md#the-servers-start-environment)):
+  a launch configuration's own `PATH` when it sets one, else the running OATS
+  tmux server's `PATH`, or, when the tick is what starts the server, the
+  `PATH` of the login environment the server is created with. The
+  unit's `PATH` is that lookup's fallback, when the login environment cannot
+  be read.
+- **node**: the keg's `<prefix>/opt/<formula>/bin/node` when it is the node
+  running `install`, else the first `node` on the filtered `PATH` that is that
+  same file. When neither exists, `install` keeps the node's own path and its
+  answer carries a warning that the path is not stable. Only Homebrew's `opt`
+  link survives an upgrade. With a version manager (mise, nvm, asdf, fnm) the
+  node on `PATH` is that version's own install, so the unit records that
+  version's path, and `host status` reports `node-missing` once that version
+  is removed.
+- **oats**: the `oats.mjs` of the oats that runs `install`. When that is inside
+  `$OATS_INSTANCE_HOME` or its `work` (a clone in an instance's work tree,
+  an attached instance's included), `install` and
+  `--print` warn: the timer would stop when that instance retires. Run
+  `install` with the operator's installed oats.
+
+An installed unit changes only when `install` runs again. `install` rewrites a
+unit whose bytes differ, so running it again after an upgrade migrates the
+unit. `oats schedule host install --print` writes to stdout exactly what
+`install` would write, each file under a `==> <path> <==` line, and changes
+nothing: no registry, no unit file, no log directory, no `launchctl` or
+`systemctl` call. `--os darwin|linux` renders another platform's unit. With
+`--json` it answers `{kind, files: {<path>: <content>}, warnings}`.
+
+`host status` (and the `scheduler` of every list) carries `problems`, warnings
+that never change `installed` or `active`. Each is `{code, message, fix}`, read
+from the installed unit alone, so every caller gets the same answer:
+
+| Code | When |
+| --- | --- |
+| `node-missing` | the node the unit runs does not exist |
+| `oats-bin-missing` | the `oats.mjs` the unit runs does not exist |
+| `path-entry-missing` | an entry of the unit's `PATH` does not exist (one problem per entry; the fixed prefixes above are not checked, nor the missing node's own directory) |
+| `unit-outdated` | the unit fires on an interval (`StartInterval`, `OnUnitActiveSec`), or differs from what this oats renders for the same node, oats, `PATH` and `OATS_HOME_DIR` |
+
+Each problem's `fix` says what to do. For `path-entry-missing`, restore the
+entry, or remove it from the operator's `PATH` and run `oats schedule host
+install` again; for the others, run `oats schedule host install` again from
+the operator's shell.
+
 `oats schedule list --json` answers:
 
 ```text
@@ -648,7 +719,7 @@ registry by hand.
   schedules: [ <row> ],
   triggers: { count, command: "oats trigger list" },
   snapshot: { takenAt, problems } | null,
-  scheduler: { installed, active, unit?, lastTick, maxConcurrent, triggersMaxConcurrent, tickIntervalSec,
+  scheduler: { installed, active, unit?, problems, lastTick, maxConcurrent, triggersMaxConcurrent, tickIntervalSec,
                workspace, registered, workspaces, live } }
 ```
 
