@@ -65,17 +65,33 @@ test("npm run test:session: node --test always gets an explicit list of files, a
   // Flags go before the files; with none given the suites are still named.
   assert.deepEqual(nodeTestArguments(["--test-name-pattern=the rule", "--test-concurrency=1"]), ["--test", "--test-name-pattern=the rule", "--test-concurrency=1", ...SESSION_SUITES]);
   assert.deepEqual(nodeTestArguments(["test/login-environment.test.mjs", "--test-reporter=tap"]), ["--test", "--test-reporter=tap", "test/login-environment.test.mjs"]);
-  // A value given apart from its flag would be node's value and this run's only "file": node would
-  // then be given no file, and discover every suite of the repository.
-  assert.throws(() => nodeTestArguments(["--test-name-pattern", "definition"]), /"definition" is not a test file.*--flag=value/);
-  assert.throws(() => nodeTestArguments(["--test-name-pattern", "definition", "--test-reporter", "tap", "test/session-inheritance.test.mjs"]), /"definition" is not a test file/);
+  // A bare flag is refused, whatever follows it: node may take the next argument for its value.
+  // With a value given apart, that value would be this run's only "file"; with the value forgotten,
+  // the one file selected (moved after the flag) would be node's value. Either way node would be
+  // given no file, and discover every suite of the repository.
+  assert.throws(() => nodeTestArguments(["--test-name-pattern", "definition"]), /"--test-name-pattern" is refused.*--flag=value/);
+  assert.throws(() => nodeTestArguments(["--test-name-pattern", "definition", "--test-reporter", "tap", "test/session-inheritance.test.mjs"]), /"--test-name-pattern" is refused/);
+  assert.throws(() => nodeTestArguments(["test/session-inheritance.test.mjs", "--test-name-pattern"]), /"--test-name-pattern" is refused/);
+  assert.throws(() => nodeTestArguments(["--import", "test/helpers/host-fixture.mjs"]), /"--import" is refused/, "a module after a bare flag is that flag's value, not a test file");
+  for (const bare of ["--test-only", "-r", "-r=x", "--", "--=x", "--Test-reporter=tap", "-"]) assert.throws(() => nodeTestArguments([bare, "test/login-environment.test.mjs"]), /is refused/, bare);
+  // A value with no flag at all is no test file.
+  assert.throws(() => nodeTestArguments(["definition"]), /"definition" is not a test file.*--flag=value/);
+  // Every argument node gets after --test is a flag that holds its value, or a file: nothing between them.
+  for (const args of [[], ["--test-reporter=tap", "--test-name-pattern=a b"], ["test/login-environment.test.mjs", "--test-concurrency=1"]]) {
+    const [first, ...rest] = nodeTestArguments(args);
+    assert.equal(first, "--test");
+    const files = rest.filter((a) => !a.startsWith("-"));
+    assert.ok(files.length > 0 && files.every((a) => a.endsWith(".test.mjs")), JSON.stringify(rest));
+    assert.ok(rest.filter((a) => a.startsWith("-")).every((a) => /^--[a-z][a-z0-9-]*=/.test(a)), JSON.stringify(rest));
+    assert.deepEqual(rest.slice(rest.length - files.length), files, "the files come last");
+  }
   // Nor a directory, a file that is not there, or one that is no module.
   for (const not of ["test", "test/no-such.test.mjs", "package.json"]) assert.throws(() => nodeTestArguments([not]), /is not a test file/, not);
   for (const args of [[], ["--test-reporter=tap"], ["test/login-environment.test.mjs"]]) assert.ok(nodeTestArguments(args).some((a) => a.endsWith(".test.mjs")), `no file for ${JSON.stringify(args)}`);
   // The command itself refuses, and starts no test run: it exits before it prints what it sets.
   const r = spawnSync(process.execPath, [SCRIPT, "--test-name-pattern", "definition"], { encoding: "utf8", env: inheritedEnv(), timeout: 60000 });
   assert.equal(r.status, 2, r.stdout + r.stderr);
-  assert.match(r.stderr, /^session inheritance: "definition" is not a test file/);
+  assert.match(r.stderr, /^session inheritance: "--test-name-pattern" is refused/);
   assert.equal(r.stdout, "", "no run was started");
 });
 

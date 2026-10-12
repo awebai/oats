@@ -12,10 +12,11 @@
 //   npm run test:session                                     the suites below
 //   npm run test:session -- test/login-environment.test.mjs  that file alone (any test file)
 //
-// A flag is forwarded to node --test, with its value in the same argument
-// (`--test-name-pattern=rule`, never `--test-name-pattern rule`): every other argument must be an
-// existing test file, so a flag's value is never taken for one. node --test always gets an explicit
-// list of files; with none it would discover and run every suite of the repository.
+// A flag for node --test is accepted only with its value in the same argument
+// (`--test-name-pattern=rule`): a bare flag (`--test-name-pattern`, `--test-only`) is refused,
+// because node may take the argument after it, a file, as its value. Every other argument must be
+// an existing test file. So node --test always gets an explicit list of files; with none it would
+// discover and run every suite of the repository.
 
 import { spawnSync } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
@@ -69,12 +70,18 @@ export function poisonedSession() {
   return Object.fromEntries(names.map((name) => [name, SHAPED[name] ?? `${NOWHERE}/${name.toLowerCase()}`]));
 }
 
+/** A flag that carries its own value: node cannot take another argument for it. */
+const FLAG_WITH_VALUE = /^--[a-z][a-z0-9-]*=/;
 /** The arguments of the `node` this run starts, from the command's own: `--test`, the flags, then
- *  the files given, else SESSION_SUITES. Never without files. An argument that is neither a flag
- *  nor an existing `.mjs` file is refused: it is a flag's value given apart (`--flag value`), which
- *  node would take as the value and this run as a file, leaving node no file at all. */
+ *  the files given, else SESSION_SUITES. Never without files, and node never takes one of them
+ *  for a flag's value: a flag is accepted only as `--name=value`, and every other argument must be
+ *  an existing `.mjs` file. Whether a bare flag takes a value is node's to know, not guessed here:
+ *  every bare flag is refused, and so is a value given apart from its flag. */
 export function nodeTestArguments(argv, { root = REPO_ROOT } = {}) {
   const flags = argv.filter((a) => a.startsWith("-")), files = argv.filter((a) => !a.startsWith("-"));
+  for (const flag of flags) {
+    if (!FLAG_WITH_VALUE.test(flag)) throw new Error(`${JSON.stringify(flag)} is refused: a flag is given with its value in the same argument (--flag=value), so that node never takes a test file for the value`);
+  }
   for (const file of files) {
     let isFile = false;
     try { isFile = file.endsWith(".mjs") && statSync(resolve(root, file)).isFile(); } catch { /* not there */ }
