@@ -18,6 +18,10 @@
 #     the runner by accident. The trees are no security boundary: from the first install step on,
 #     the ref's code runs as the runner's user. Only the validation step's output is printed
 #     before any of it has run.
+#
+# All of this is of a run whose workflow commit is the default branch's. Started from another
+# branch, this file and the script are that branch's, and so is every line the run prints: where
+# a run ran from is read in GitHub's record of it, never in its log.
 name: macOS tests
 
 on:

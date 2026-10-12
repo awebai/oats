@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The script of the hand-started macOS test runs (.github/workflows/macos-tests.yml,
 // docs/macos-test-runs.md): it runs named test files of a named ref, each alone, and
-// prints what a reader of the run needs to take it as evidence.
+// prints what a reader of the run needs beside GitHub's own record of it.
 //
 //   node scripts/macos-tests.mjs prepare <tree>   validate the request, print the header,
 //                                                 put the commit in <tree>
@@ -23,14 +23,19 @@
 // workflow's, not the tested branch's. Nothing is installed in the script's tree, so this file imports
 // node's built-in modules only: not the kernel (`lib/`), not a package.
 //
-// What is protected, and what is not. `prepare` runs before any code of the ref does: the
-// validation and its header are printed by a runner nothing of the ref has touched. From the
-// first install step on, the ref's code runs as the runner's own user, and nothing printed
-// after that is out of its reach, the per-file results and the table included. `run`
-// validates again rather than trust a value carried between steps, which guards against an
-// accident and not against a commit that sets out to forge its result. The two trees are no
-// boundary either: they let a ref older than the workflow be tested, and keep an honest
-// branch from changing the runner by accident (docs/macos-test-runs.md).
+// What is protected, and what is not. All of it holds for a run whose workflow commit is the
+// default branch's: started from another branch, the workflow and this script are that
+// branch's, and so is every line they print, the header's `workflow ref` included. Where a
+// run ran from is read in GitHub's record of the run, never in its log.
+//
+// `prepare` runs before any code of the ref does: the validation and its header are printed
+// by a runner nothing of the ref has touched. From the first install step on, the ref's code
+// runs as the runner's own user, and nothing printed after that is out of its reach, the
+// per-file results and the table included. `run` validates again rather than trust a value
+// carried between steps, which guards against an accident and not against a commit that sets
+// out to forge its result. The two trees are no boundary either: they let a ref older than
+// the workflow be tested, and keep an honest branch from changing the runner by accident
+// (docs/macos-test-runs.md).
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -467,7 +472,7 @@ export async function runFiles(files, { cwd, env = process.env, write = (chunk) 
   return runs;
 }
 
-// ---- the header: what makes the log evidence by itself -------------------------------------------
+// ---- the header: what the log says of the run ----------------------------------------------------
 
 /** Whether the file system `dir` is on tells names apart by case, measured: create a file, look for
  *  it by another case → "case-sensitive", "case-insensitive", or "unknown (...)". */
@@ -574,7 +579,8 @@ function treeRefusal(tree, request, env) {
   return null;
 }
 
-// The boundary, said in the evidence itself. Only the first step's output is out of the ref's reach.
+// The boundary, said in the log itself. Only the first step's output is out of the ref's reach,
+// and that in a run whose workflow commit is the default branch's.
 const BEFORE_THE_REF = "Everything above this line was printed before any code of the ref ran.";
 const AFTER_THE_INSTALLS = "This header was read again after the ref's install scripts ran, and all that follows is printed while its code runs.\nThe header to rely on is the validation step's, printed before any code of the ref ran: the two should agree.";
 

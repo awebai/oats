@@ -76,7 +76,9 @@ The step **Validate the request and check out its commit** prints a header,
 before any code of the ref has run:
 
 - the commit under test (full id) and the ref that was asked for;
-- the workflow's own ref and commit;
+- the workflow's own ref and commit, as the script reads them (where a run
+  really ran from is GitHub's record of it, not this line: see
+  [What counts as evidence](#what-counts-as-evidence));
 - the macOS version, the runner image and the architecture;
 - the Node version;
 - whether the file system is case-sensitive, measured there (a file is made,
@@ -119,18 +121,37 @@ commit that nobody has read proves nothing about it: from its first install
 step on, the commit's own code runs on the runner and can change what the run
 prints (see [What a run does not protect](#what-a-run-does-not-protect)).
 
-On a pull request, a run is macOS evidence when all of this holds:
+The pull request gives **the run's link**. From it, a run is macOS evidence
+when all of this holds. The first condition comes first because the others
+rest on it.
 
-1. The pull request gives **the run's link**.
+1. **The workflow ran from `main`, by GitHub's own record of the run.** Not
+   by the log. A run started from another branch uses that branch's workflow
+   file and that branch's script, so every line of its log, the header
+   included, is text that branch wrote. Ask GitHub about the run instead:
+
+   ```bash
+   gh run view <run id> --json event,headSha,workflowName
+   git fetch origin
+   git merge-base --is-ancestor <headSha> origin/main; echo $?
+   ```
+
+   `event` must be `workflow_dispatch` and `workflowName` must be `macOS
+   tests`. The last command must print `0`: the workflow's commit is a commit
+   of `main`. Anything else is not a pass: `1` means the commit is not on
+   `main`, and an error means your clone does not have it. Check the commit,
+   not the run's branch name: a tag can carry a branch's name.
 2. The `commit under test` in the validation step's header **equals the head
    under review**. A run of an earlier head is evidence for that head only.
-3. The `workflow ref` in that header ends in `@refs/heads/main`: **the
-   workflow ran from the default branch**. Started from another branch, the
-   workflow and its script are that branch's, which nobody has reviewed.
-4. The run passed, and no file the pull request relies on is marked `no test
+3. The run passed, and no file the pull request relies on is marked `no test
    passed`. **A run of only skips is not evidence.**
 
-The log is the evidence. The job's summary page is a convenience.
+The header also prints a `workflow ref` line. It is a convenience for
+reading a run, and it is not proof of where the workflow ran from: the
+workflow prints it.
+
+With the first condition met, the log is the evidence. The job's summary page
+is a convenience.
 
 ## Bounds
 
@@ -160,6 +181,10 @@ executes can reach more than the workflow's own steps do: see
 - **A killed file's leftovers.** The script kills the process group of a file
   that timed out. A tmux server has left that group by design, so a tmux
   server of a killed file stays, and it is that test's to explain.
+- **Nothing about `main`.** A run started from `main` is listed among the
+  runs of main's head commit (`gh run list --commit <sha>`). Its result is
+  about the ref under test. It says nothing about `main`, a failed run
+  included.
 
 So a pull request that asks for a person's run on a Mac still gets one.
 
@@ -169,9 +194,12 @@ After the validation, the ref's own code runs on the runner as the runner's
 user: its install scripts, then its tests. Pull-request CI does the same for
 every branch.
 
-**Protected: the validation and the header.** They are printed from the
-workflow's own commit, before any code of the ref has run. A commit cannot
-change which commit the header names, or get a refused request past it.
+**Protected, in a run whose workflow commit is `main`'s: the validation and
+the header.** They are printed from the workflow's own commit, before any
+code of the ref has run. A commit under test cannot change which commit the
+header names, or get a refused request past it. In a run started from another
+branch nothing is protected: the workflow and the script are that branch's
+(see [What counts as evidence](#what-counts-as-evidence)).
 
 **Not protected: everything after the first install step**, the per-file
 results and the table included. From there on, the ref's code can change

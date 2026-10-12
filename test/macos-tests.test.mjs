@@ -228,7 +228,7 @@ const facts = (over = {}) => ({
   arch: "arm64", machine: "arm64", node: "v22.9.0", nodePath: "/usr/local/bin/node", fileSystem: "case-insensitive",
   tmux: { path: "/opt/homebrew/bin/tmux", version: "tmux 3.5a" }, tmuxSocket: { path: "/private/tmp/tmux-501/oats", there: false }, changed: [], ...over,
 });
-test("macos-tests formatHeader: what makes the log evidence by itself", () => {
+test("macos-tests formatHeader: what the log says of the run", () => {
   const header = formatHeader(facts()).join("\n");
   for (const line of [
     `commit under test:   ${A}`, 'ref asked for:       "main" (a branch)',
