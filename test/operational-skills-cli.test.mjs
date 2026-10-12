@@ -110,6 +110,32 @@ test("no published skill teaches a removed verb", () => {
   assert.deepEqual(found, [], `skills teach removed verbs:\n${found.join("\n")}`);
 });
 
+// The host timer's unit records the PATH and the node of the shell that installs it
+// (docs/schedules.md, "The host timer's unit"), so `oats schedule host install` is the
+// operator's step, in their own shell, and never the agent's (#967). The two oats.setup
+// skills that show the command may show it only that way: in a fenced block of install
+// lines alone, under a paragraph that hands it to the operator. `--print` is not a preview
+// an agent can offer: from the agent's shell it renders the agent's environment.
+const HOST_INSTALL = "oats schedule host install";
+const HOST_INSTALL_SKILLS = SKILLS.filter((rel) => /\/oats-(automations|onboarding)\/SKILL\.md$/.test(rel));
+test("oats schedule host install is the operator's step in the skills that show it", () => {
+  assert.equal(HOST_INSTALL_SKILLS.length, 2, "both oats.setup skills are checked");
+  for (const rel of HOST_INSTALL_SKILLS) {
+    const text = readFileSync(join(ROOT, rel), "utf8");
+    const blocks = [...text.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].filter((block) => block[1].includes(HOST_INSTALL));
+    assert.ok(blocks.length > 0, `${rel}: the command stays visible, for the operator to copy`);
+    for (const block of blocks) {
+      const lines = block[1].split("\n").map((line) => line.replace(/#.*$/, "").trim()).filter(Boolean);
+      assert.deepEqual(lines.filter((line) => !line.startsWith(HOST_INSTALL)), [], `${rel}: the install block holds no command of the agent's own`);
+      assert.deepEqual(lines.filter((line) => /--print\b/.test(line)), [], `${rel}: --print is not offered as a preview of the operator's unit`);
+      const before = text.slice(0, block.index).trimEnd().split(/\n[ \t]*\n/).pop().replace(/\s+/g, " ");
+      for (const said of [/operator's step/, /never yours/, /their own terminal/, /outside every instance home/]) {
+        assert.match(before, said, `${rel}: the paragraph before the install block hands it to the operator`);
+      }
+    }
+  }
+});
+
 for (const rel of SKILLS) {
   test(`${rel}: every oats command and flag exists in the shipped CLI`, () => {
     const lines = oatsLines(readFileSync(join(ROOT, rel), "utf8"));

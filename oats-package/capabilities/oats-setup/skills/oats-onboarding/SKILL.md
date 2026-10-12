@@ -397,8 +397,25 @@ Then, **on the named host**, from its deployment directory:
 
 ```bash
 oats trigger test <member>/okf-harvest-review   # must pass: runs here, owner = this gh login, merge permission, the soul resolvable
-oats schedule host install                      # the ONE host timer, if this host has none yet (docs/schedules.md)
+oats schedule host status                       # has this host the ONE host timer yet? (docs/schedules.md)
 ```
+
+**If this host has none yet, installing the timer is the operator's step, in
+their own shell, never yours:** `install` renders the unit from the
+environment of the shell it runs in, and an agent's shell can carry a
+session's own `PATH` and node. Hand the operator the exact command to run in
+their own terminal, from the deployment directory and outside every instance
+home:
+
+```bash
+oats schedule host install
+```
+
+After the operator has run it, check the result yourself with
+`oats schedule host status`. With no operator at the machine, the timer stays
+as it is until they run the command: do not run it in their place. The step in
+full (the cap flags, why its `--print` is no preview) is `/oats-automations`,
+"One host timer, no daemon".
 
 **The machine-private alternative** is a local trigger: this host only, its
 own `gh`, no `runsOn`/`owner`, id `local/okf-harvest-review`. Use it to try

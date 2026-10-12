@@ -31,12 +31,30 @@ launches it through the same spawn path a person uses, records what it saw
 and exits. Missed minutes are skipped, never replayed.
 
 ```bash
-oats schedule host status      # is the timer installed and active on this machine?
-oats schedule host install     # install it (a host change: ask the operator first)
-oats schedule host install --max-concurrent 3 --triggers-max-concurrent 2
-oats schedule host install --max-concurrent default --triggers-max-concurrent none
+oats schedule host status      # is the timer installed and active on this machine? what is wrong with its unit?
 oats schedule tick --dry-run   # what would run this minute, launching nothing
 ```
+
+**Installing the timer is the operator's step, in their own shell, never yours:**
+`install` renders the unit from the environment of the shell it runs in, and an
+agent's shell can carry a session's own `PATH` and node (`docs/schedules.md`,
+"The host timer's unit"). Hand the operator the exact command, with the flags
+they want (the cap flags below included), to run in their own terminal, from
+the deployment directory and outside every instance home:
+
+```bash
+oats schedule host install
+oats schedule host install --max-concurrent 3 --triggers-max-concurrent 2
+oats schedule host install --max-concurrent default --triggers-max-concurrent none
+```
+
+Do not run it yourself, with or without flags, and do not offer its `--print`
+from your shell as a preview: that renders your environment, not the
+operator's. After the operator has run it, check the result yourself with
+`oats schedule host status`: it reports `unit-outdated` and the unit's other
+problems, each with its fix. With no operator at the machine, the timer stays
+as it is until they run the command: say what is waiting, and do not run it in
+their place.
 
 The default cap is five running scheduled jobs. The two install flags set
 independent positive-integer caps; `default` restores the schedule default and
