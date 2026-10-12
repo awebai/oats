@@ -41,7 +41,9 @@ you to. Never open a PR to get a review. If your expert is on another machine, p
 branch so it can read it; still no PR.
 
 **Worktrees.** Create as many as the work needs (`/worktrees`; your work-mode
-briefing has the command). What you create, you clean up before you hand back.
+briefing has the command). What you create, you clean up before you hand back, except one
+that an instance is attached to (usually the reviewer): that one is cleaned up after your
+expert accepts, by the Close of `/run-the-review-loop`.
 
 **What you know lives in the repository.** You keep no knowledge base: what the next
 developer needs (how the code works, its conventions, how to work in it) goes into the

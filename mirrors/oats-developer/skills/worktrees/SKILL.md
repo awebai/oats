@@ -33,4 +33,8 @@ branch becomes the PR:
 ## Before handing back
 - Every other worktree is merged, or its branch is pushed and named in your handback, or it
   was deliberately abandoned.
-- Then remove them all; the worktree list shows only your main tree.
+- Then remove every extra worktree that no instance is attached to.
+- **Before you remove a worktree, retire every instance attached to it** (usually the
+  reviewer): its work link would point at a path that is gone. An extra worktree with an
+  instance attached stays until that instance is retired, and is removed then. With the
+  last one removed, the worktree list shows only your main tree.
