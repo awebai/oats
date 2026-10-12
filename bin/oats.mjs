@@ -53,7 +53,7 @@ import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
 import { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe as describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
-import { kernelNode } from "../lib/stable-node.mjs";
+import { kernelNode, stableNode } from "../lib/stable-node.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
@@ -3996,6 +3996,16 @@ function versionCmd() {
 const EXPERIMENTAL_CMDS = new Set(["dress", "spawn", "segments", "mind"]);
 async function recordCmd(sub) {
   process.argv.splice(2, 1);
+  if (sub === "setup") {
+    // setup writes a node into the user's Claude settings and into the capture watcher's unit,
+    // and nothing rewrites them but setup run again: it is handed the rule's answer for the node
+    // running this kernel (docs/capabilities.md, "The node a hook writes down"). The script is
+    // imported into this process, so the variable is set here, over whatever the caller's
+    // environment held; packages/record imports nothing of the kernel.
+    const { node, warning } = stableNode({ consequence: "the capture hooks and the capture watcher stop when it goes away", remedy: "run `oats setup` again" });
+    if (warning) console.error(`oats: warning: ${warning}`);
+    process.env.OATS_NODE_BIN = node;
+  }
   await import(new URL(`../packages/record/bin/${sub}.mjs`, import.meta.url));
 }
 async function experimentalCmd() {

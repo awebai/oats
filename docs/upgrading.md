@@ -215,33 +215,46 @@ under npm's global prefix (`npm prefix -g`).
 - **The prefix is the Node version's own directory**, the usual layout of a
   version manager (mise, nvm, asdf, fnm). Every Node version then has its own
   global packages: a new version has no `oats`, and removing the old version
-  removes the kernel with it. Three things name that kernel by its path: each
+  removes the kernel with it. Four things name that kernel by its path: each
   instance home's own `oats` (`<home>/.oats/bin/oats`), the Claude Code hooks
-  of a Claude instance, and the host timer's unit. OATS cannot make a path
-  inside a Node version outlast that version.
+  of a Claude instance, the host timer's unit, and what `oats setup` installs
+  (the turn record's capture hooks and its watcher, which name the capture
+  script inside the kernel). OATS cannot make a path inside a Node version
+  outlast that version.
 
 Both layouts can exist on one host: check the prefix in the shell that
 installs the CLI.
 
 **The `node`'s path**, whatever the prefix. The Claude Code hooks of a
-Claude instance and the host timer's unit also record the `node` that runs
-them, by one rule
+Claude instance, the host timer's unit and what `oats setup` installs also
+record the `node` that runs them, by one rule
 ([the node a hook writes down](capabilities.md#the-node-a-hook-writes-down)):
 
 - **On Homebrew**, the `opt` link (`<prefix>/opt/node/bin/node`) when it is
   the `node` running the kernel. `brew upgrade node` repoints it, so the
-  recorded path outlasts the upgrade: the hooks and the timer need nothing
-  done.
+  recorded path outlasts the upgrade: the hooks, the timer and the capture
+  watcher need nothing done.
 - **Otherwise**, a `node` on `PATH` that is the same file as the one running
   the kernel. With mise that is the version's own install, which does not
   outlast the version (other version managers were not measured).
 - **When there is neither**, the path of the `node` as it is. A spawn, a
-  start and `oats schedule host install` then warn that it is not stable.
+  start, `oats schedule host install` and `oats setup` then warn that it is
+  not stable.
+
+**What `oats setup` records is in your own files, not in an instance home:**
+the capture hooks (`Stop` and `SessionEnd`) in every `~/.claude*/settings.json`
+of the user who ran it, and the capture watcher's unit
+(`~/Library/LaunchAgents/ai.aweb.turn-record-capture.plist` on macOS,
+`~/.config/systemd/user/turn-record-capture.service` on Linux). No spawn,
+start or restart writes them: only `oats setup` run again does, and it
+replaces its own hooks and unit, it does not add a second one.
 
 Once the recorded `node` no longer exists (an old version removed under a
 version manager, for example), the hooks fail without a message, so the
 instance stops reporting that it waits on you, and
-`oats schedule host status` reports `node-missing`.
+`oats schedule host status` reports `node-missing`. The capture hooks then
+fail at every stop of every Claude Code session of that user, and launchd or
+systemd keeps restarting a watcher that cannot start.
 
 **A home spawned with an oats.core that does not read `OATS_NODE_BIN`** does
 not follow the rule. Its hooks record the path of the `node` its hook ran
@@ -265,6 +278,9 @@ wherever a recorded path does not outlast it:
    `oats schedule host status` reports `oats-bin-missing` or `node-missing`
    once the old version is removed
    ([Schedules](schedules.md#the-host-timers-unit)).
+4. On a host where `oats setup` was run, run `oats setup` again, as the same
+   user and from your own shell. `oats setup --dry-run` prints the `node` it
+   would record and changes nothing.
 
 Until the old version is removed, the instances and the timer keep running
 what it holds.
