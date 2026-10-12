@@ -3969,8 +3969,15 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   what it led to (<path>) was not touched`. `<path>` is what the system
   resolves the link to just before the home is removed, never the text
   stored in the link; nothing acts on it. When the link does not resolve,
-  the string ends `and it led nowhere that could be read`. No key of the
-  plan or of the receipt is new. A link that is no longer a link when the
+  the string ends `and it led nowhere that could be read`. The receipt holds
+  the path as the system gave it. The retire's text (without `--json`)
+  prints every warning of the receipt on one line and spells each character
+  a terminal would act on, or that hides or reorders text (a control
+  character such as an escape or a newline, a bidi override: the set the
+  kernel never prints in text it did not write), as `\u{<hex>}`, so that a
+  name cannot clear the screen or write a line of its own. The JSON is not
+  changed by that: its strings are what they were. No key of the plan or of
+  the receipt is new. A link that is no longer a link when the
   retire inspects the home again after its hooks (a directory or a file was
   put in its place) refuses with `E_WORK_INSPECTION_FAILED` and keeps the
   home, in every work mode: the home's removal would take what is there

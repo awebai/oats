@@ -58,7 +58,7 @@ import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, retireDefaultsLine, descendantsOf, resolveInstance as resolveInstanceForCli, STOP_WARNINGS } from "../lib/instance-lifecycle.mjs";
-import { extraWorktreeLines, formatBytes, workRecoveryLines } from "../lib/retire-output.mjs";
+import { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } from "../lib/retire-output.mjs";
 import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposedInstructions, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
@@ -3135,7 +3135,7 @@ function retireCmd() {
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const line of workRecoveryLines(r)) console.log(line);
   for (const line of extraWorktreeLines(r)) console.log(line);
-  for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+  for (const line of warningLines(r)) console.log(line);
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
 

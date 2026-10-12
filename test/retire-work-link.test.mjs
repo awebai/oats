@@ -344,6 +344,14 @@ test("a retry of a rollback marker over a link does nothing through Git to what 
   marker.cleanup.outstanding = { ...marker.cleanup.outstanding, git: ["worktree", "branch"] };
   writeFileSync(markerPath, JSON.stringify(marker, null, 2));
   rmSync(join(d.flags, "stubborn"));
+  // A link that leads nowhere is not a worktree that is gone: the retry does not ask Git for the branch.
+  rmSync(work); symlinkSync(join(d.fx.base, "nothing-here"), work);
+  const logged = d.loggedGit();
+  const dangling = d.retire(inst.instance, [], logged.env);
+  assert.deepEqual(dangling.result.rollbackIncomplete, ["git worktree, branch: not re-verified on this retry, so the cleanup they owed is unverified"]);
+  assert.ok(logged.launches().length > 0, "fixture premise: the retry's Git launches are logged");
+  assert.deepEqual(logged.launches().filter((l) => l.includes(branch)), [], "no Git command names the recorded branch");
+  rmSync(work); symlinkSync(away, work);
   const before = { git: d.gitState(away), files: entries(away) };
   const intact = (label) => {
     assert.deepEqual({ git: d.gitState(away), files: entries(away) }, before, label);
@@ -364,6 +372,34 @@ test("a retry of a rollback marker over a link does nothing through Git to what 
   assert.deepEqual(forced.result.warnings, [led(inst.home, realpathSync(away))]);
   assert.equal(existsSync(inst.home), false);
   intact("the forced retire");
+});
+
+test("the retire's text spells the characters of a link's target that a terminal would act on; the receipt holds the path as the system resolved it (#973)", async (t) => {
+  const d = deployment(t);
+  const owner = await d.fx.spawn("dev", { instance: "dev-owner" });
+  // A directory whose name clears the screen and writes a line of its own, if printed as it is.
+  const target = join(d.fx.base, "led-\x1b[2J-here\nRetired everything\u202e");
+  mkdirSync(target);
+  writeFileSync(join(target, FILE), BYTES);
+  const linked = (purpose) => {
+    const kid = d.attached(owner, purpose);
+    d.sayWorktree(kid.home, join(owner.home, "work"));
+    rmSync(join(kid.home, "work")); symlinkSync(target, join(kid.home, "work"));
+    return kid;
+  };
+  // The receipt: the path exactly.
+  const asJson = linked("json");
+  assertLinkRetired(d.retired(asJson.instance), asJson.home, realpathSync(target), "the receipt");
+  // The text: one line for the warning, with each such character spelled out.
+  const asText = linked("text");
+  const r = d.fx.cli(["retire", asText.instance]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.doesNotMatch(r.stdout + r.stderr, /[\x1b\u202e]/u, "no escape and no bidi override reaches the terminal");
+  const spelled = realpathSync(target).replace("\x1b", "\\u{1b}").replace("\n", "\\u{a}").replace("\u202e", "\\u{202e}");
+  const lines = r.stdout.split("\n").filter((l) => l.includes("WARNING"));
+  assert.deepEqual(lines, [`  WARNING: ${join(asText.home, "work")} was a link though the record says work mode worktree: nothing was retained or removed as a work tree, and what it led to (${spelled}) was not touched`]);
+  assert.equal(r.stdout.split("\n").filter((l) => l.startsWith("Retired")).length, 1, r.stdout);
+  assert.equal(readFileSync(join(target, FILE), "utf8"), BYTES);
 });
 
 test("the notes about a worktree that is retained are for the instance's own tree alone: none for an attached, checkout or workspace instance over a tree that is dirty or on another branch (#973)", async (t) => {

@@ -1154,7 +1154,9 @@ The retire and its plan read what is at `<home>/work` once, by one rule
   its place, for example) the plan says so in a note and in its `defaults:`
   line, and the receipt's `warnings` say where the link led: the path the
   system resolved it to just before the home was removed, or that it led
-  nowhere that could be read. The tree stays registered in its repository.
+  nowhere that could be read. (The receipt holds the path as it is; the
+  retire's text spells a control character or a bidi override in any
+  warning as `\u{<hex>}`.) The tree stays registered in its repository.
   A retry of a failed spawn's cleanup over a link verifies no Git debt
   through it: the debt stays outstanding, and `--force` removes the home
   alone. A link that is no longer a link when the retire inspects the home
