@@ -265,6 +265,42 @@ test('the mark travels with the reason: from the reader through the observer, th
   assert.equal(Object.hasOwn(kept.deployment, 'reason'), false);
 });
 
+/* ── #982, the fix forward: the reader's own reason goes through the display filter too ── */
+test("the reader's own reason through the filter: each of its fixed sentences reads byte for byte as written, and anything else of that shape is one line or withheld whole", () => {
+  const parts = deployment => deploymentUnavailableParts(deployment, DESKTOP_TERMS);
+  const unavailable = reason => ({ status: 'unavailable', reason });
+  // Every code the reader can answer (deployment-contract.mjs `deploymentFailure`), the missing feature in both of its forms.
+  const CODES = ['E_CLI_UNAVAILABLE', 'E_DEPLOYMENT_FEATURE', 'E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT', 'E_CLI_OUTPUT_LIMIT', 'E_DEPLOYMENT_SCOPE', 'E_DEPLOYMENT_STALE', 'E_DEPLOYMENT_BUSY'];
+  const source = readFileSync(new URL('../../client/deployment-contract.mjs', import.meta.url), 'utf8');
+  const table = source.slice(source.indexOf('export function deploymentFailure'), source.indexOf('const known = Object.hasOwn(messages, code)'));
+  assert.deepEqual([...table.matchAll(/^\s{4}(E_[A-Z_]+):/gm)].map(found => found[1]), CODES, 'the list here is every code of the table');
+  for (const code of CODES) {
+    const { reason } = deploymentFailure(code);
+    assert.equal(reason.code, code);
+    const line = `${code}: ${reason.message}`;   // the base's expression, as it was shown
+    assert.deepEqual(parts(unavailable(reason)), { headline: line, lead: null, sentence: null }, code);
+    assert.equal(deploymentUnavailableText(unavailable(reason), DESKTOP_TERMS), line, code);
+    assert.equal(displayLine(line), line, `${code}: the filter changes no byte of it`);
+  }
+  // A hand-made reason with no mark: the whole line at once, never under the kernel's name.
+  for (const [reason, shown] of [
+    [{ code: 'E_X', message: 'wipe \x1b[2J the screen' }, DETAIL_WITHHELD],
+    [{ code: 'E_X', message: 'bell\u0007' }, DETAIL_WITHHELD],
+    [{ message: 'red \u009B31m alert' }, 'red \uFFFD31m alert'],
+    [{ code: 'E_X', message: 'fetch https://op:hunter2@example.com/x.git failed' }, DETAIL_WITHHELD],
+    [{ code: 'wipe \x1b[2J', message: 'a message' }, DETAIL_WITHHELD],
+    [{ code: 'E_X', message: 'first\nsecond\tthird' }, 'E_X: first second third'],
+    [{ code: 'E_X', message: 'safe\u202Etxt.exe was read' }, 'E_X: safe\uFFFDtxt.exe was read'],
+    [{ code: 'E_X', message: '<b>bold</b>' }, 'E_X: <b>bold</b>'],
+    // Nothing to show: the client's own sentence, as before for a reason without a message.
+    [{ message: ' \n\t ' }, 'The deployment could not be observed.'],
+    [{ code: 'E_X' }, 'The deployment could not be observed.'], [{}, 'The deployment could not be observed.'],
+  ]) {
+    assert.deepEqual(parts(unavailable(reason)), { headline: shown, lead: null, sentence: null }, JSON.stringify(reason));
+    assert.doesNotMatch(parts(unavailable(reason)).headline, /[\u0000-\u001f\u007f-\u009f\u202e]/, JSON.stringify(reason));
+  }
+});
+
 /* ── #982: a kept failure, and who made its message ── */
 test('keptFailure: `error` is a string exactly when a failure is kept, whatever it holds; the speaker is the one value failedEntry writes', () => {
   // The fact does not depend on the text.
