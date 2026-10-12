@@ -1,12 +1,13 @@
-// awebai/oats#991, #852: the pi folders of a deployment, the bridge found in each and the plan
-// `oats update` runs (lib/pi-bridge.mjs). The module's functions alone, on a temporary tree; the
-// CLI over them is test/pi-bridge-cli.test.mjs.
+// awebai/oats#991, #852, #1011: the pi folders of a deployment, the bridge found in each and the
+// plan `oats update` runs, forward only and on a checked registry answer (lib/pi-bridge.mjs). The
+// module's functions alone, on a temporary tree; the CLI over them is test/pi-bridge-cli.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
-import { PI_BRIDGE, launchConfigPiFolder, piBridgeFailure, piBridgeFolders, piBridgeSkewWarnings, piBridgeState, piBridgeStepProblem, piFolders, planPiBridges, piBridgePlanLines, whyLookedAt } from "../lib/pi-bridge.mjs";
+import { PI_BRIDGE, bridgeLookup, bridgeLookupProblem, launchConfigPiFolder, piBridgeFailure, piBridgeFolders, piBridgeSkewWarnings, piBridgeState, piBridgeStepProblem, piFolders, planCliUpdate, planPiBridges, piBridgePlanLines, registryVersion, whyLookedAt } from "../lib/pi-bridge.mjs";
+import { compareVersions, parseVersion } from "../lib/resolve.mjs";
 
 const bases = [];
 test.after(() => { for (const b of bases) rmSync(b, { recursive: true, force: true }); });
@@ -157,12 +158,16 @@ test("planPiBridges: move, leave, none and skip, each with its line, its command
   const at = (name) => join(h.base, name);
   const plan = planPiBridges(everyKind(h), "0.53.0", { env: h.env });
   const spec = "npm:@awebai/oats-pi@0.53.0";
-  assert.deepEqual(plan.map((e) => [e.reasons.map((r) => r.name ?? r.kind).join("+"), e.action, e.detail, e.command ?? null, e.step?.display ?? null]), [
+  assert.deepEqual(plan.map((e) => [e.reasons.map((r) => r.name ?? r.kind).join("+"), e.action, e.detail, e.commands ?? null, e.step?.display ?? null]), [
     ["default", "move", "bridge 0.52.0: move to 0.53.0", null, `npm_config_prefer_online=true pi install ${spec}`],
     ["behind", "move", "bridge 0.51.0: move to 0.53.0", null, `PI_CODING_AGENT_DIR='${at("behind dir")}' npm_config_prefer_online=true pi install ${spec}`],
-    ["boxed+boxed-too", "skip", "bridge 0.52.0: not touched: launch configurations boxed, boxed-too run their own executable, and `oats update` runs no wrapper", `PI_CODING_AGENT_DIR=${at("boxed")} '/dep/bin/pi box' install ${spec}`, null],
-    ["broken", "skip", `bridge not read: not touched: ${h.bridgeFile(at("broken"))} cannot be read as JSON`, `PI_CODING_AGENT_DIR=${at("broken")} pi install ${spec}`, null],
-    ["ci", "skip", "not touched: PI_CODING_AGENT_DIR references PI_CI_DIR, not set on this host", `PI_CODING_AGENT_DIR="$PI_CI_DIR" /opt/ci-box install ${spec}`, null],
+    ["boxed+boxed-too", "skip", "bridge 0.52.0: not touched: launch configurations boxed, boxed-too run their own executable, and `oats update` runs no wrapper", [
+      // Every distinct executable, one command each, with the configuration it is for: not the first alone (#1011).
+      { command: `PI_CODING_AGENT_DIR=${at("boxed")} '/dep/bin/pi box' install ${spec}`, where: "for launch configuration boxed" },
+      { command: `PI_CODING_AGENT_DIR=${at("boxed")} /opt/other-box install ${spec}`, where: "for launch configuration boxed-too" },
+    ], null],
+    ["broken", "skip", `bridge not read: not touched: ${h.bridgeFile(at("broken"))} cannot be read as JSON`, [{ command: `PI_CODING_AGENT_DIR=${at("broken")} pi install ${spec}` }], null],
+    ["ci", "skip", "not touched: PI_CODING_AGENT_DIR references PI_CI_DIR, not set on this host", [{ command: `PI_CODING_AGENT_DIR="$PI_CI_DIR" /opt/ci-box install ${spec}`, where: "where PI_CI_DIR is set" }], null],
     ["current", "leave", "bridge 0.53.0: left alone, already at 0.53.0", null, null],
     ["empty", "none", "no bridge: not touched", null, null],
     ["gone", "none", "no bridge (the folder does not exist): not touched", null, null],
@@ -172,7 +177,6 @@ test("planPiBridges: move, leave, none and skip, each with its line, its command
   // The step is arguments and an environment, never a shell string: a folder with a space is one value.
   assert.deepEqual(plan[1].step, { argv: ["pi", "install", spec], env: { PI_CODING_AGENT_DIR: at("behind dir"), npm_config_prefer_online: "true" }, display: plan[1].step.display });
   assert.deepEqual(plan[0].step.env, { npm_config_prefer_online: "true" }, "the default folder, when nothing sets one: pi is left to find it");
-  assert.equal(plan.find((e) => e.reasons[0].name === "ci").commandWhere, "where PI_CI_DIR is set");
 });
 
 test("planPiBridges: a single configuration with its own executable, in the singular", () => {
@@ -180,7 +184,36 @@ test("planPiBridges: a single configuration with its own executable, in the sing
   h.bridge(join(h.base, "boxed"), "0.52.0");
   const plan = planPiBridges(piBridgeFolders({ env: h.env, launchConfigs: configs(pi("boxed", { PI_CODING_AGENT_DIR: join(h.base, "boxed") }, { executable: "pi-box" })) }), "0.53.0", { env: h.env });
   assert.equal(plan[1].detail, "bridge 0.52.0: not touched: launch configuration boxed runs its own executable, and `oats update` runs no wrapper");
-  assert.equal(plan[1].command, `PI_CODING_AGENT_DIR=${join(h.base, "boxed")} pi-box install npm:@awebai/oats-pi@0.53.0`);
+  assert.deepEqual(plan[1].commands, [{ command: `PI_CODING_AGENT_DIR=${join(h.base, "boxed")} pi-box install npm:@awebai/oats-pi@0.53.0` }]);
+});
+
+test("#1011 planPiBridges: the by-hand commands of a folder only wrapped configurations name: one per distinct executable, with the configurations it is for", () => {
+  const h = host();
+  const dir = h.bridge(join(h.base, "boxed"), "0.52.0");
+  const spec = "npm:@awebai/oats-pi@0.53.0";
+  const planOf = (...list) => planPiBridges(piBridgeFolders({ env: h.env, launchConfigs: configs(...list) }), "0.53.0", { env: h.env })[1];
+  const boxed = (name, executable) => pi(name, { PI_CODING_AGENT_DIR: dir }, executable ? { executable } : {});
+  // Two configurations, one executable: one command, and nothing to tell apart.
+  const same = planOf(boxed("a", "/opt/pi-box"), boxed("b", "/opt/pi-box"));
+  assert.equal(same.detail, "bridge 0.52.0: not touched: launch configurations a, b run their own executable, and `oats update` runs no wrapper");
+  assert.deepEqual(same.commands, [{ command: `PI_CODING_AGENT_DIR=${dir} /opt/pi-box install ${spec}` }]);
+  // Three configurations, two executables: the configurations of one executable share its command, in name order.
+  const three = planOf(boxed("c", "/opt/pi-box"), boxed("a", "/opt/pi-box"), boxed("b", "/opt/other box"));
+  assert.deepEqual(three.commands, [
+    { command: `PI_CODING_AGENT_DIR=${dir} /opt/pi-box install ${spec}`, where: "for launch configurations a, c" },
+    { command: `PI_CODING_AGENT_DIR=${dir} '/opt/other box' install ${spec}`, where: "for launch configuration b" },
+  ]);
+  assert.deepEqual(piBridgePlanLines([three]).slice(2), [
+    `    run there, for launch configurations a, c: PI_CODING_AGENT_DIR=${dir} /opt/pi-box install ${spec}`,
+    `    run there, for launch configuration b: PI_CODING_AGENT_DIR=${dir} '/opt/other box' install ${spec}`,
+  ]);
+  // The same for a bridge that cannot be read there.
+  h.bridge(dir, null, "{");
+  assert.deepEqual(planOf(boxed("a", "/opt/pi-box"), boxed("b", "/opt/other-box")).commands.map((c) => c.where), ["for launch configuration a", "for launch configuration b"]);
+  // One wrapped and one plain configuration: the folder is not wrapped, and the plain `pi` is named.
+  assert.deepEqual(planOf(boxed("a", "/opt/pi-box"), boxed("b")).commands, [{ command: `PI_CODING_AGENT_DIR=${dir} pi install ${spec}` }]);
+  h.bridge(dir, "0.52.0");
+  assert.deepEqual(planOf(boxed("a", "/opt/pi-box"), boxed("b")).step.argv, ["pi", "install", spec]);
 });
 
 test("planPiBridges: with this shell's PI_CODING_AGENT_DIR set, the default folder's step names the default folder", () => {
@@ -195,10 +228,110 @@ test("planPiBridges: with this shell's PI_CODING_AGENT_DIR set, the default fold
   assert.deepEqual(planPiBridges(piBridgeFolders({ env: same }), "0.53.0", { env: same }).map((e) => [whyLookedAt(e), e.step.env.PI_CODING_AGENT_DIR]), [["the default, this shell's PI_CODING_AGENT_DIR", h.defaultDir]]);
 });
 
-test("planPiBridges: a bridge ahead of the target is moved to it, as one behind is", () => {
+test("#1011 the ordering the forward-only rule rests on (compareVersions, resolve.mjs): a prerelease is below its release", () => {
+  const order = (a, b) => Math.sign(compareVersions(parseVersion(a), parseVersion(b)));
+  assert.equal(order("0.53.0", "0.53.0-rc.1"), 1, "a release is above its own prerelease");
+  assert.equal(order("0.53.0-rc.1", "0.53.0"), -1);
+  assert.equal(order("0.53.0-rc.1", "0.53.0-rc.2"), -1, "rc.1 is below rc.2");
+  assert.equal(order("0.53.0-rc.1", "0.52.0"), 1, "a prerelease of a higher triple is above a lower release");
+  assert.equal(order("0.53.0", "0.52.9"), 1);
+  assert.equal(order("0.9.0", "0.10.0"), -1, "numbers, not text");
+  assert.equal(order("0.53.0", "0.53.0"), 0);
+});
+
+test("#1011 planPiBridges: a bridge ahead of the target is left alone and said to be ahead; one behind is moved", () => {
   const h = host();
-  h.bridge(h.defaultDir, "0.54.0");
-  assert.equal(planPiBridges(piBridgeFolders({ env: h.env }), "0.53.0", { env: h.env })[0].detail, "bridge 0.54.0: move to 0.53.0");
+  const planFor = (version, target = "0.53.0") => { h.bridge(h.defaultDir, version); return planPiBridges(piBridgeFolders({ env: h.env }), target, { env: h.env })[0]; };
+  const ahead = planFor("0.54.0");
+  assert.deepEqual([ahead.action, ahead.ahead, ahead.detail, ahead.step, ahead.commands], ["leave", true, "bridge 0.54.0: left alone, ahead of 0.53.0", undefined, undefined]);
+  assert.equal(planFor("0.53.1-rc.1").detail, "bridge 0.53.1-rc.1: left alone, ahead of 0.53.0");
+  // A prerelease is below its release: a bridge at the release is ahead of a kernel at its prerelease, and the reverse is behind.
+  assert.equal(planFor("0.53.0", "0.53.0-rc.1").detail, "bridge 0.53.0: left alone, ahead of 0.53.0-rc.1");
+  assert.equal(planFor("0.53.0-rc.1").detail, "bridge 0.53.0-rc.1: move to 0.53.0");
+  assert.equal(planFor("0.52.0").detail, "bridge 0.52.0: move to 0.53.0");
+  assert.equal(planFor("0.53.0").ahead, undefined, "at the target: left alone, and not ahead");
+  // Ahead, in a folder only a wrapped configuration names: left alone, and no command to run there.
+  const boxed = h.bridge(join(h.base, "boxed"), "0.54.0");
+  const wrapped = planPiBridges(piBridgeFolders({ env: h.env, launchConfigs: configs(pi("boxed", { PI_CODING_AGENT_DIR: boxed }, { executable: "/opt/pi-box" })) }), "0.53.0", { env: h.env })[1];
+  assert.deepEqual([wrapped.action, wrapped.detail, wrapped.commands], ["leave", "bridge 0.54.0: left alone, ahead of 0.53.0", undefined]);
+});
+
+test("#1011 planPiBridges: a bridge whose version cannot be compared is another version: moved, as before", () => {
+  const h = host();
+  for (const version of ["banana", "99", "latest", "0.54.0 beta"]) {
+    h.bridge(h.defaultDir, version);
+    const entry = planPiBridges(piBridgeFolders({ env: h.env }), "0.53.0", { env: h.env })[0];
+    assert.deepEqual([entry.action, entry.detail], version === "99" ? ["leave", "bridge 99: left alone, ahead of 0.53.0"] : ["move", `bridge ${version}: move to 0.53.0`], version);
+  }
+});
+
+test("#1011 registryVersion: the registry's answer is one version and nothing else, or a problem that is safe to print", () => {
+  const lookup = "npm view @awebai/oats version";
+  for (const good of ["0.52.0", "0.53.0-rc.1", "10.20.30-beta.2-x", "0.0.0"]) {
+    assert.deepEqual(registryVersion(`${good}\n`, lookup), { version: good }, good);
+    assert.deepEqual(registryVersion(good, lookup), { version: good });
+    assert.deepEqual(registryVersion(`${good}\r\n`, lookup), { version: good });
+  }
+  const refused = (answer) => { const r = registryVersion(answer, lookup); assert.equal(r.version, undefined, JSON.stringify(answer)); return r.problem; };
+  const says = (shown) => `\`${lookup}\` answered ${shown}, which is not a version`;
+  assert.equal(refused(""), says("nothing"));
+  assert.equal(refused("\n"), says("nothing"));
+  assert.equal(refused(undefined), says("nothing"));
+  assert.equal(refused("0.52.0\n0.53.0\n"), says('"0.52.0\\n0.53.0"'), "two lines");
+  assert.equal(refused("0.52.0\n\n"), says('"0.52.0\\n"'), "a blank line after it");
+  assert.equal(refused("0.52.0 (latest)\n"), says('"0.52.0 (latest)"'), "a version with trailing text");
+  assert.equal(refused(" 0.52.0\n"), says('" 0.52.0"'));
+  assert.equal(refused("0.52.0 \n"), says('"0.52.0 "'));
+  assert.equal(refused('[\n  "0.51.0",\n  "0.52.0"\n]\n'), says('"[\\n  \\"0.51.0\\",\\n  \\"0.52.0\\"\\n]"'), "the JSON array npm prints for a range");
+  assert.equal(refused("\u001b[31m0.52.0\u001b[0m\n"), says('"\\u001b[31m0.52.0\\u001b[0m"'), "an ANSI sequence is shown, not sent to the terminal");
+  assert.equal(refused("0.52.0\u009b31m\u202e\n"), says('"0.52.0\uFFFD31m\uFFFD"'), "C1 and bidi characters are replaced");
+  for (const bad of ["v0.52.0", "0.52", "1", "0.52.x", "0.52.0+build.1", "0.52.0-", "0.52.0-rc_1", "^0.52.0", "latest", "0.52.0; rm -rf /", "$(id)", "0.52.0 --registry=http://x", "-0.52.0", "0.52.0\u0000"]) refused(`${bad}\n`);
+  // A very long line: refused, and the message is bounded whatever came.
+  const long = refused(`${"9".repeat(100_000)}\n`);
+  assert.equal([...long].length, [...says("")].length + 80);
+  assert.ok(long.includes("…, which is not a version"), long.slice(-40));
+  assert.equal(refused(`0.52.0-${"a".repeat(300)}\n`).length, long.length, "the shape, but longer than a version is");
+  assert.deepEqual(registryVersion(`0.52.0-${"a".repeat(249)}`, lookup), { version: `0.52.0-${"a".repeat(249)}` });
+});
+
+test("#1011 planCliUpdate: the CLI moves forward only, and the bridges' target is the version the kernel has after the run", () => {
+  const step = (version) => ({ argv: ["npm", "install", "-g", `@awebai/oats@${version}`], display: `npm install -g @awebai/oats@${version}` });
+  // Behind: the step, and the bridges go where the CLI goes.
+  assert.deepEqual(planCliUpdate("0.52.0", "0.53.0"), { installed: "0.52.0", registry: "0.53.0", target: "0.53.0", ahead: false, step: step("0.53.0") });
+  // Equal: nothing for the CLI.
+  assert.deepEqual(planCliUpdate("0.53.0", "0.53.0"), { installed: "0.53.0", registry: "0.53.0", target: "0.53.0", ahead: false });
+  // Ahead (the issue's own case: main says 0.53.0 while npm's latest is 0.52.0): no step, one line with both versions.
+  assert.deepEqual(planCliUpdate("0.53.0", "0.52.0"), { installed: "0.53.0", registry: "0.52.0", target: "0.53.0", ahead: true, note: "The installed 0.53.0 is ahead of the registry's 0.52.0: nothing to do for the CLI." });
+  // A prerelease kernel: ahead of an older release, behind its own release.
+  assert.deepEqual([planCliUpdate("0.53.0-rc.1", "0.52.0").ahead, planCliUpdate("0.53.0-rc.1", "0.52.0").step, planCliUpdate("0.53.0-rc.1", "0.52.0").target], [true, undefined, "0.53.0-rc.1"]);
+  assert.deepEqual(planCliUpdate("0.53.0-rc.1", "0.53.0").step, step("0.53.0"));
+  assert.deepEqual(planCliUpdate("0.53.0-rc.2", "0.53.0-rc.1").ahead, true);
+  assert.deepEqual(planCliUpdate("0.53.0-rc.1", "0.53.0-rc.2").step, step("0.53.0-rc.2"));
+  assert.equal(planCliUpdate("0.9.0", "0.10.0").target, "0.10.0", "compared as numbers");
+});
+
+test("#1011 bridgeLookupProblem: seen is exit 0 and the checked answer equal to the target; anything else stops the update", () => {
+  const cli = planCliUpdate("0.52.0", "0.53.0");
+  assert.deepEqual(bridgeLookup("0.53.0"), ["npm", "view", "@awebai/oats-pi@0.53.0", "version", "--prefer-online"]);
+  assert.equal(bridgeLookupProblem({ status: 0, stdout: "0.53.0\n" }, cli), null);
+  const later = ": a version is listed a few minutes after it is published. Nothing was changed, and every bridge is in place. Run `oats update` again in a few minutes.";
+  const notSeen = (why) => `@awebai/oats-pi@0.53.0 was not seen on the registry (npm view: ${why})${later}`;
+  assert.equal(bridgeLookupProblem({ status: 1, stdout: "" }, cli), notSeen("exit 1"));
+  assert.equal(bridgeLookupProblem({ status: 1, stdout: "0.53.0\n" }, cli), notSeen("exit 1"), "a failed run's output is not an answer");
+  assert.equal(bridgeLookupProblem({ status: 0, stdout: "" }, cli), notSeen("no answer"), "an older npm: exit 0 and no output for a version that does not exist");
+  assert.equal(bridgeLookupProblem({ status: 0, stdout: "\n" }, cli), notSeen("no answer"));
+  assert.equal(bridgeLookupProblem({ status: 0, stdout: "0.52.0\n" }, cli), notSeen("it answered 0.52.0"));
+  assert.equal(bridgeLookupProblem({ error: new Error("spawnSync npm ETIMEDOUT"), status: null, stdout: "0.53.0\n" }, cli), notSeen("spawnSync npm ETIMEDOUT"));
+  // An answer that is not a version: said to be that, with the lookup that answered, safe to print.
+  assert.equal(bridgeLookupProblem({ status: 0, stdout: "\u001b[2J0.53.0\nnpm notice\n" }, cli),
+    '`npm view @awebai/oats-pi@0.53.0 version --prefer-online` answered "\\u001b[2J0.53.0\\nnpm notice", which is not a version. Nothing was changed, and every bridge is in place. Run `oats update` again.');
+  assert.match(bridgeLookupProblem({ status: 0, stdout: '[ "0.53.0" ]\n' }, cli), /^`npm view @awebai\/oats-pi@0\.53\.0 version --prefer-online` answered "\[ \\"0\.53\.0\\" \]", which is not a version\./);
+  // The installed kernel ahead of the registry: its bridge is not one that appears in a few minutes.
+  const ahead = planCliUpdate("0.53.0", "0.52.0");
+  assert.equal(bridgeLookupProblem({ status: 0, stdout: "0.53.0\n" }, ahead), null);
+  assert.equal(bridgeLookupProblem({ status: 1, stdout: "" }, ahead),
+    "@awebai/oats-pi@0.53.0 was not seen on the registry (npm view: exit 1): the installed kernel 0.53.0 is ahead of the registry's 0.52.0, so its bridge may not be published. Nothing was changed, and every bridge is in place. Run `oats update` again once npm lists 0.53.0.");
+  assert.match(bridgeLookupProblem({ status: 0, stdout: "" }, ahead), /\(npm view: no answer\): the installed kernel 0\.53\.0 is ahead of the registry's 0\.52\.0/);
 });
 
 test("piBridgePlanLines: the folder and why, what happens there, and the command where update does not run it", () => {
@@ -209,8 +342,11 @@ test("piBridgePlanLines: the folder and why, what happens there, and the command
   const ci = lines.indexOf("  (not resolved)  (launch configuration ci)");
   assert.deepEqual(lines.slice(ci, ci + 3), ["  (not resolved)  (launch configuration ci)", "    not touched: PI_CODING_AGENT_DIR references PI_CI_DIR, not set on this host", '    run there, where PI_CI_DIR is set: PI_CODING_AGENT_DIR="$PI_CI_DIR" /opt/ci-box install npm:@awebai/oats-pi@0.53.0']);
   const boxed = lines.indexOf(`  ${at("boxed")}  (launch configurations boxed, boxed-too)`);
-  assert.equal(lines[boxed + 2], `    run there: PI_CODING_AGENT_DIR=${at("boxed")} '/dep/bin/pi box' install npm:@awebai/oats-pi@0.53.0`);
-  assert.equal(lines.length, 2 * 10 + 3, "two lines a folder, a third for each command");
+  assert.deepEqual(lines.slice(boxed + 2, boxed + 4), [
+    `    run there, for launch configuration boxed: PI_CODING_AGENT_DIR=${at("boxed")} '/dep/bin/pi box' install npm:@awebai/oats-pi@0.53.0`,
+    `    run there, for launch configuration boxed-too: PI_CODING_AGENT_DIR=${at("boxed")} /opt/other-box install npm:@awebai/oats-pi@0.53.0`,
+  ]);
+  assert.equal(lines.length, 2 * 10 + 4, "two lines a folder, one more for each command");
 });
 
 test("piBridgeSkewWarnings: one per folder whose bridge is not the kernel's version or could not be looked at; none for a folder without a bridge", () => {
@@ -227,6 +363,19 @@ test("piBridgeSkewWarnings: one per folder whose bridge is not the kernel's vers
   ]);
   const quiet = host();
   assert.deepEqual(piBridgeSkewWarnings(piBridgeFolders({ env: quiet.env }), "0.53.0"), [], "no pi folder at all: nothing to say");
+});
+
+test("#1011 piBridgeSkewWarnings: a bridge ahead of the kernel is still a skew, and the warning says what ends it instead of `run oats update`", () => {
+  const h = host();
+  const warned = (bridge, kernel) => { h.bridge(h.defaultDir, bridge); return piBridgeSkewWarnings(piBridgeFolders({ env: h.env }), kernel); };
+  const ahead = (bridge, kernel) => `version skew — kernel ${kernel}, pi bridge ${bridge} in ${h.defaultDir} (the default); the bridge is ahead of the kernel, and \`oats update\` never moves a bridge back. The skew ends when the kernel is at ${bridge} (\`oats update\` moves it once npm lists that version), or when the kernel's bridge is installed there by hand (docs/upgrading.md, "By hand")`;
+  const behind = (bridge, kernel) => `version skew — kernel ${kernel}, pi bridge ${bridge} in ${h.defaultDir} (the default); run \`oats update\` (they publish in lockstep)`;
+  assert.deepEqual(warned("0.53.0", "0.52.0"), [ahead("0.53.0", "0.52.0")]);
+  assert.deepEqual(warned("0.53.0", "0.53.0-rc.1"), [ahead("0.53.0", "0.53.0-rc.1")], "a release is ahead of its prerelease");
+  assert.deepEqual(warned("0.53.0-rc.1", "0.53.0"), [behind("0.53.0-rc.1", "0.53.0")]);
+  assert.deepEqual(warned("0.52.0", "0.53.0"), [behind("0.52.0", "0.53.0")]);
+  assert.deepEqual(warned("banana", "0.53.0"), [behind("banana", "0.53.0")], "a version that cannot be compared is not ahead");
+  assert.deepEqual(warned("0.53.0", "0.53.0"), []);
 });
 
 test("piBridgeStepProblem and piBridgeFailure: what the folder holds is read from it after the step", () => {

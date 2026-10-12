@@ -1,4 +1,4 @@
-// awebai/oats#991, #852: `oats doctor` and `oats update` over every pi folder of a deployment,
+// awebai/oats#991, #852, #1011: `oats doctor` and `oats update` over every pi folder of a deployment,
 // through the real CLI in a fixture deployment, with a fake `pi` and a fake `npm` first on PATH
 // and the fixture's HOME. Nothing here reaches the registry or the host's own pi.
 import test from "node:test";
@@ -12,16 +12,19 @@ const KERNEL = JSON.parse(readFileSync(new URL("../package.json", import.meta.ur
 const NEXT = "99.0.0", OLD = "0.40.0";
 const SPEC = `npm:@awebai/oats-pi@${NEXT}`;
 
-/** `npm`: `view @awebai/oats version` answers $FAKE_LATEST (exits 17 when $FAKE_VIEW_FAILS is set); `view @awebai/oats-pi@X version` answers
- *  X, or fails as npm 11 does when $FAKE_BRIDGE_UNLISTED is set (prints nothing and exits 0, as an
- *  older npm does, when it is "quiet"); `install -g` exits $FAKE_NPM_INSTALL (0). Every call is logged. */
+/** `npm`: `view @awebai/oats version` answers $FAKE_LATEST, byte for byte and a line ending (exits
+ *  17 when $FAKE_VIEW_FAILS is set); `view @awebai/oats-pi@X version` answers X, or
+ *  $FAKE_BRIDGE_ANSWER when it is set, or fails as npm 11 does when $FAKE_BRIDGE_UNLISTED is set
+ *  (prints nothing and exits 0, as an older npm does, when it is "quiet"); `install -g` exits
+ *  $FAKE_NPM_INSTALL (0). Every call is logged. */
 const FAKE_NPM = `#!/bin/sh
 echo "npm $*" >> "$FAKE_LOG"
 case "$1 $2" in
-  "view @awebai/oats") if [ -n "$FAKE_VIEW_FAILS" ]; then exit 17; fi; echo "$FAKE_LATEST"; exit 0 ;;
+  "view @awebai/oats") if [ -n "$FAKE_VIEW_FAILS" ]; then exit 17; fi; printf '%s\\n' "$FAKE_LATEST"; exit 0 ;;
   "view @awebai/oats-pi@"*)
     if [ "$FAKE_BRIDGE_UNLISTED" = quiet ]; then exit 0; fi
     if [ -n "$FAKE_BRIDGE_UNLISTED" ]; then echo "npm error code E404" >&2; exit 1; fi
+    if [ -n "$FAKE_BRIDGE_ANSWER" ]; then printf '%s\\n' "$FAKE_BRIDGE_ANSWER"; exit 0; fi
     echo "\${2##*@}"; exit 0 ;;
   "install -g") exit "\${FAKE_NPM_INSTALL:-0}" ;;
 esac
@@ -203,8 +206,13 @@ test("#991 #852 oats update --yes: the bridge's version is seen on the registry 
   assert.equal(existsSync(fx.at("gone")), false);
   assert.match(lastLine(r.stdout), new RegExp(`^Updated to ${NEXT.replaceAll(".", "\\.")}\\. 3 pi folders were not touched: see above for what to run there\\. Now verify each deployment: run \`oats doctor\``));
   // Run again, the kernel's version aside: nothing is left to move, and the untouched ones are still named.
+  // The bridges just moved are now ahead of the kernel: they are not moved back (#1011).
   const again = fx.run(["update", "--yes"], { env: { FAKE_LATEST: KERNEL } });
   assert.equal(again.status, 0, again.stderr);
+  assert.deepEqual(again.calls, [VIEW_KERNEL]);
+  assert.ok(again.stdout.includes(`  ${fx.defaultDir}  (the default)\n    bridge ${NEXT}: left alone, ahead of ${KERNEL}\n`), again.stdout);
+  assert.equal(lastLine(again.stdout), "Nothing for `oats update` to run. 3 pi folders were not touched: see above for what to run there.");
+  assert.deepEqual([fx.defaultDir, fx.at("behind dir")].map(bridgeIn), [NEXT, NEXT]);
 });
 
 test("#991 oats update: the CLI already at the latest version and one folder's bridge behind: the bridge steps alone", (t) => {
@@ -399,4 +407,185 @@ test("#991 oats update: a bridge whose package.json cannot be parsed is listed w
   assert.ok(r.stdout.includes(`  ${fx.defaultDir}  (the default)\n    bridge not read: not touched: ${bridgeFile(fx.defaultDir)} cannot be read as JSON\n    run there: PI_CODING_AGENT_DIR=${fx.defaultDir} pi install ${SPEC}\n`), r.stdout);
   assert.deepEqual(r.calls, [VIEW_KERNEL, `npm install -g @awebai/oats@${NEXT}`], "no bridge to move: no lookup of it, and no pi");
   assert.equal(readFileSync(bridgeFile(fx.defaultDir), "utf8"), "{ not json");
+});
+
+// ---------- awebai/oats#1011: forward only, and the registry's answer checked ----------
+
+const KERNEL_SPEC = `npm:@awebai/oats-pi@${KERNEL}`;
+const VIEW_KERNEL_BRIDGE = `npm view @awebai/oats-pi@${KERNEL} version --prefer-online`;
+
+test("#1011 oats update: an installed version above the registry's gives no CLI step, and one line says so; a bridge behind the installed kernel moves to it, one ahead is left alone", (t) => {
+  const fx = fixture(t, { ahead: piConfig("{AHEAD}"), behind: piConfig("{BEHIND}") });
+  const local = join(fx.dep, "oats-local.yaml");
+  writeFileSync(local, readFileSync(local, "utf8").replace("{AHEAD}", fx.at("pi-ahead")).replace("{BEHIND}", fx.at("pi-behind")));
+  setBridge(fx.defaultDir, KERNEL);
+  setBridge(fx.at("pi-ahead"), NEXT);
+  setBridge(fx.at("pi-behind"), OLD);
+  // The registry lists an older CLI than the one installed: a checkout, or a build not yet published.
+  const env = { FAKE_LATEST: OLD };
+  const check = fx.run(["update", "--check"], { env });
+  assert.equal(check.status, 0, check.stderr);
+  assert.equal(check.stdout, [
+    `@awebai/oats  installed: ${KERNEL}  latest: ${OLD}`,
+    `The installed ${KERNEL} is ahead of the registry's ${OLD}: nothing to do for the CLI.`,
+    "",
+    `@awebai/oats-pi ${KERNEL} (published in lockstep), by pi folder of ${fx.dep}:`,
+    `  ${fx.defaultDir}  (the default)`,
+    `    bridge ${KERNEL}: left alone, already at ${KERNEL}`,
+    `  ${fx.at("pi-ahead")}  (launch configuration ahead)`,
+    `    bridge ${NEXT}: left alone, ahead of ${KERNEL}`,
+    `  ${fx.at("pi-behind")}  (launch configuration behind)`,
+    `    bridge ${OLD}: move to ${KERNEL}`,
+    "",
+    "Update steps:",
+    `  PI_CODING_AGENT_DIR=${fx.at("pi-behind")} npm_config_prefer_online=true pi install ${KERNEL_SPEC}`,
+    "",
+    "(--check: not executing)",
+    "",
+  ].join("\n"));
+  assert.deepEqual(check.calls, [VIEW_KERNEL], "--check prints the plan and runs nothing");
+  const r = fx.run(["update", "--yes"], { env });
+  assert.equal(r.status, 0, r.stderr);
+  // No `npm install -g` of the older CLI; the bridge's lookup is for the installed kernel's version.
+  assert.deepEqual(r.calls, [VIEW_KERNEL, VIEW_KERNEL_BRIDGE, `pi install ${KERNEL_SPEC} | folder=${fx.at("pi-behind")} | prefer_online=true`]);
+  assert.deepEqual([fx.defaultDir, fx.at("pi-ahead"), fx.at("pi-behind")].map(bridgeIn), [KERNEL, NEXT, KERNEL]);
+  assert.match(lastLine(r.stdout), new RegExp(`^Updated to ${KERNEL.replaceAll(".", "\\.")}\\. Now verify`));
+  // Nothing left to move, with the CLI and a bridge ahead: it runs nothing, and does not say "Up to date".
+  const done = fx.run(["update", "--yes"], { env });
+  assert.equal(done.status, 0, done.stderr);
+  assert.deepEqual(done.calls, [VIEW_KERNEL]);
+  assert.equal(lastLine(done.stdout), "Nothing for `oats update` to run.");
+  assert.deepEqual([fx.defaultDir, fx.at("pi-ahead"), fx.at("pi-behind")].map(bridgeIn), [KERNEL, NEXT, KERNEL]);
+});
+
+test("#1011 oats update: the CLI moves to the registry's newer version, and a bridge ahead of that version is left alone", (t) => {
+  const fx = fixture(t);
+  setBridge(fx.defaultDir, "100.0.0-rc.1");
+  const r = fx.run(["update", "--yes"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes(`    bridge 100.0.0-rc.1: left alone, ahead of ${NEXT}\n\nUpdate steps:\n  npm install -g @awebai/oats@${NEXT}\n`), r.stdout);
+  assert.deepEqual(r.calls, [VIEW_KERNEL, `npm install -g @awebai/oats@${NEXT}`], "no bridge moves: no lookup of it, and no pi");
+  assert.equal(bridgeIn(fx.defaultDir), "100.0.0-rc.1");
+});
+
+test("#1011 oats update --yes: the installed kernel is ahead of the registry and its bridge is not published: the message says so, not to wait a few minutes", (t) => {
+  for (const [unlisted, answer] of [["npm-11", "exit 1"], ["quiet", "no answer"]]) {
+    const fx = fixture(t);
+    setBridge(fx.defaultDir, OLD);
+    const r = fx.run(["update", "--yes"], { env: { FAKE_LATEST: OLD, FAKE_BRIDGE_UNLISTED: unlisted } });
+    assert.equal(r.status, 1, unlisted);
+    assert.ok(r.stderr.includes(`oats: @awebai/oats-pi@${KERNEL} was not seen on the registry (npm view: ${answer}): the installed kernel ${KERNEL} is ahead of the registry's ${OLD}, so its bridge may not be published. Nothing was changed, and every bridge is in place. Run \`oats update\` again once npm lists ${KERNEL}.`), r.stderr);
+    assert.ok(!r.stderr.includes("few minutes"), r.stderr);
+    assert.deepEqual(r.calls, [VIEW_KERNEL, VIEW_KERNEL_BRIDGE], unlisted);
+    assert.equal(bridgeIn(fx.defaultDir), OLD);
+  }
+});
+
+/** Answers that are not one version, each with how it is shown: empty, two lines, a version with
+ *  trailing text, the JSON array npm prints for a range, an ANSI sequence, a very long line. */
+const BAD_ANSWERS = [
+  ["", "nothing"],
+  [`${NEXT}\n${OLD}`, JSON.stringify(`${NEXT}\n${OLD}`)],
+  [`${NEXT} (latest)`, `"${NEXT} (latest)"`],
+  [`[ '${OLD}', '${NEXT}' ]`, `"[ '${OLD}', '${NEXT}' ]"`],
+  [`\u001b[31m${NEXT}\u001b[0m`, `"\\u001b[31m${NEXT}\\u001b[0m"`],
+  [`${NEXT}-${"a".repeat(5000)}`, `"${NEXT}-${"a".repeat(79 - 2 - NEXT.length)}…`],
+  [`v${NEXT}`, `"v${NEXT}"`],
+  [`${NEXT}; touch pwned`, `"${NEXT}; touch pwned"`],
+];
+
+test("#1011 oats update: an answer of the registry that is not one version stops the update before any step, with nothing changed and nothing of it on the screen", (t) => {
+  const fx = everyKind(t);
+  for (const [answer, shown] of BAD_ANSWERS) for (const mode of ["--yes", "--check"]) {
+    const r = fx.run(["update", mode], { env: { FAKE_LATEST: answer } });
+    assert.equal(r.status, 1, shown);
+    assert.equal(r.stdout, "", "no plan, no step: nothing the registry printed reaches the screen unchecked");
+    assert.equal(r.stderr, `oats: \`npm view @awebai/oats version\` answered ${shown}, which is not a version. Nothing was changed. Run \`oats update\` again.\n`);
+    assert.ok(!r.stderr.includes("\u001b"), "no control character reaches the terminal");
+    assert.deepEqual(r.calls, [VIEW_KERNEL], shown);
+    assert.deepEqual([fx.defaultDir, fx.at("behind dir"), fx.at("boxed")].map(bridgeIn), [OLD, OLD, OLD]);
+  }
+  assert.equal(existsSync(join(fx.dep, "pwned")), false);
+  // With no deployment in reach, the refusal still ends with what was not looked at.
+  const outside = fx.run(["update", "--yes"], { cwd: fx.base, env: { FAKE_LATEST: "latest" } });
+  assert.equal(outside.status, 1);
+  assert.match(outside.stderr, /^oats: `npm view @awebai\/oats version` answered "latest", which is not a version\. Nothing was changed\. Run `oats update` again\.\nNo launch configuration was looked at: /);
+});
+
+test("#1011 oats update --yes: the bridge's own lookup answers something that is not one version: nothing is run, and the message names that lookup", (t) => {
+  const fx = everyKind(t);
+  for (const [answer, shown] of BAD_ANSWERS.slice(1)) {
+    const r = fx.run(["update", "--yes"], { env: { FAKE_BRIDGE_ANSWER: answer } });
+    assert.equal(r.status, 1, shown);
+    assert.equal(lastLine(r.stderr), `oats: \`${VIEW_BRIDGE}\` answered ${shown}, which is not a version. Nothing was changed, and every bridge is in place. Run \`oats update\` again.`);
+    assert.ok(!r.stderr.includes("\u001b"));
+    // Not the CLI's own install either.
+    assert.deepEqual(r.calls, [VIEW_KERNEL, VIEW_BRIDGE], shown);
+    assert.deepEqual([fx.defaultDir, fx.at("behind dir"), fx.at("boxed")].map(bridgeIn), [OLD, OLD, OLD]);
+  }
+  // Another version than the one asked for is "not seen", as before, and the checked value is what is printed.
+  const other = fx.run(["update", "--yes"], { env: { FAKE_BRIDGE_ANSWER: OLD } });
+  assert.equal(other.status, 1);
+  assert.ok(other.stderr.includes(`oats: @awebai/oats-pi@${NEXT} was not seen on the registry (npm view: it answered ${OLD}): a version is listed a few minutes after it is published.`), other.stderr);
+  assert.deepEqual(other.calls, [VIEW_KERNEL, VIEW_BRIDGE]);
+});
+
+test("#1011 oats update: a folder named only by wrapped launch configurations gets one by-hand command per distinct executable, each with the configurations it is for", (t) => {
+  const dir = "/nonexistent/oats-pi-boxed";
+  const fx = fixture(t, {
+    "box-a": piConfig(dir, { executable: "/opt/pi-box" }),
+    "box-b": piConfig(dir, { executable: "bin/other box" }),
+    "box-c": piConfig(dir, { executable: "/opt/pi-box" }),
+    "same-a": piConfig("/nonexistent/oats-pi-same", { executable: "/opt/pi-box" }),
+    "same-b": piConfig("/nonexistent/oats-pi-same", { executable: "/opt/pi-box" }),
+    "mixed-box": piConfig("/nonexistent/oats-pi-mixed", { executable: "/opt/pi-box" }),
+    "mixed-plain": piConfig("/nonexistent/oats-pi-mixed"),
+    ci: { harness: "pi", executable: "/opt/ci-box", env: { PI_CODING_AGENT_DIR: { fromEnv: "PI_CI_DIR" } } },
+  });
+  // The configurations are written with placeholders, then pointed at the fixture's folders.
+  const boxed = setBridge(fx.at("boxed"), OLD), same = setBridge(fx.at("same"), OLD), mixed = setBridge(fx.at("mixed"), null, "{");
+  const local = join(fx.dep, "oats-local.yaml");
+  writeFileSync(local, readFileSync(local, "utf8").replaceAll(dir, boxed).replaceAll("/nonexistent/oats-pi-same", same).replaceAll("/nonexistent/oats-pi-mixed", mixed));
+  const r = fx.run(["update", "--check"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(r.stdout.split("\n").slice(5, 17), [
+    `  ${boxed}  (launch configurations box-a, box-b, box-c)`,
+    `    bridge ${OLD}: not touched: launch configurations box-a, box-b, box-c run their own executable, and \`oats update\` runs no wrapper`,
+    `    run there, for launch configurations box-a, box-c: PI_CODING_AGENT_DIR=${boxed} /opt/pi-box install ${SPEC}`,
+    `    run there, for launch configuration box-b: PI_CODING_AGENT_DIR=${boxed} '${join(fx.dep, "bin/other box")}' install ${SPEC}`,
+    "  (not resolved)  (launch configuration ci)",
+    "    not touched: PI_CODING_AGENT_DIR references PI_CI_DIR, not set on this host",
+    `    run there, where PI_CI_DIR is set: PI_CODING_AGENT_DIR="$PI_CI_DIR" /opt/ci-box install ${SPEC}`,
+    // One wrapped and one plain configuration: not wrapped, the plain `pi`.
+    `  ${mixed}  (launch configurations mixed-box, mixed-plain)`,
+    `    bridge not read: not touched: ${bridgeFile(mixed)} cannot be read as JSON`,
+    `    run there: PI_CODING_AGENT_DIR=${mixed} pi install ${SPEC}`,
+    // Two configurations, one executable: one command.
+    `  ${same}  (launch configurations same-a, same-b)`,
+    `    bridge ${OLD}: not touched: launch configurations same-a, same-b run their own executable, and \`oats update\` runs no wrapper`,
+  ]);
+  assert.ok(r.stdout.includes(`runs no wrapper\n    run there: PI_CODING_AGENT_DIR=${same} /opt/pi-box install ${SPEC}\n\nUpdate steps:\n  npm install -g @awebai/oats@${NEXT}\n\n`), r.stdout);
+  // A folder a plain configuration also names is moved with the plain `pi`, as before.
+  setBridge(mixed, OLD);
+  const run = fx.run(["update", "--yes"]);
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.calls.slice(3), [install(mixed)]);
+  assert.deepEqual([boxed, same, mixed].map(bridgeIn), [OLD, OLD, NEXT]);
+});
+
+test("#1011 oats doctor: a bridge ahead of the kernel is still a skew, and the warning says what ends it, not to run `oats update`", (t) => {
+  const fx = fixture(t, { work: piConfig("{WORK}") });
+  const local = join(fx.dep, "oats-local.yaml");
+  writeFileSync(local, readFileSync(local, "utf8").replace("{WORK}", fx.at("pi-work")));
+  setBridge(fx.defaultDir, NEXT);
+  setBridge(fx.at("pi-work"), OLD);
+  const r = fx.run(["doctor"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(r.stdout.split("\n").filter((l) => /pi bridge/.test(l)), [
+    `WARNING: version skew — kernel ${KERNEL}, pi bridge ${NEXT} in ${fx.defaultDir} (the default); the bridge is ahead of the kernel, and \`oats update\` never moves a bridge back. The skew ends when the kernel is at ${NEXT} (\`oats update\` moves it once npm lists that version), or when the kernel's bridge is installed there by hand (docs/upgrading.md, "By hand")`,
+    `WARNING: version skew — kernel ${KERNEL}, pi bridge ${OLD} in ${fx.at("pi-work")} (launch configuration work); run \`oats update\` (they publish in lockstep)`,
+  ]);
+  assert.deepEqual(r.calls, []);
+  // The pointer names a heading the page has.
+  assert.match(readFileSync(new URL("../docs/upgrading.md", import.meta.url), "utf8"), /^## By hand$/m);
 });
