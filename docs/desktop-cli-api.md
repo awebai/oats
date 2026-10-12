@@ -44,7 +44,8 @@ see the [official catalog](official-catalog.md) for current pins.
              "workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you",
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
-             "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel"],
+             "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
+             "retire-plan-own-worktree"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -126,6 +127,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `lifecycle-claim-stop` | `oats instance stop --apply` holds the claim of every target (the file one retire of a home at a time is ordered by), so a stop is refused beside a retire in flight (`E_INSTANCE_RETIRING`) or another stop (`E_LIFECYCLE_BUSY`), a retire beside a stop (`E_LIFECYCLE_BUSY`), and `oats worktree add` beside a retire (`E_INSTANCE_RETIRING`), each before any effect ([Commands that meet on one home](#lifecycle-pairs)); a stop that was killed refuses nothing afterwards, and `<home>/.oats-stop-pending.json` is no longer written or read: a client's own handling of a stale stop marker is not needed for a kernel that lists this; `error.details.action` (the holder's verb) on those refusals, and `error.details.holder` on every `E_LIFECYCLE_BUSY` ([`details.holder`](#busy-holder)); the codes a stop and a retire answer only before any effect, as one list ([the list](#before-effect-codes)), with two retire answers that came after an effect given codes outside it (`E_WORK_PRESERVATION_FAILED`, `E_RUNTIME_QUIESCE_FAILED`), OATS 0.52.0. Gate on the probe; routed with `--server`, on the host's list | |
 | `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"` and `"flag-ignored"`; `launchPrompts` in a launched spawn's answer; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
 | `soul-launch` | `oats soul launch set\|remove`, the writer of `oats-local.yaml` `souls.launch`, and `E_LAUNCH_PREFERENCE_UNKNOWN`, OATS 0.53.0 ([`oats soul launch`](#oats-soul-launch)). Gate on the probe: a kernel without it answers `E_USAGE` | `soulLaunchApi: 1` (payload only) |
+| `retire-plan-own-worktree` | a retire plan carries `facts.ownWorktree`, a boolean: whether `work/` is the instance's own work tree, the one the retire retains or removes; in `oats retire --plan` and in the fresh plan (`details.plan`) of `E_PLAN_STALE` and `E_CHILDREN_RUNNING`; a stop plan does not carry it; OATS 0.53.0 ([the retire plan](#retire)) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -3848,7 +3850,7 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
  "facts":{"session":{"state":"shell","present":true,"backend":"tmux","established":true},
           "work":{"observed":true,"revision":"46c20668…","branch":"feat/x","detached":false,"drift":true,"changed":0,"untracked":1,
                   "upstream":{"ref":null,"ahead":null,"behind":null},"base":{"ref":null,"ahead":null,"behind":null},"remote":null},
-          "workMode":"worktree","repo":"/w/one","recordedBranch":"agents/dev-1",
+          "workMode":"worktree","ownWorktree":true,"repo":"/w/one","recordedBranch":"agents/dev-1",
           "children":[{"instance":"dev-1-child","agent":"dev","home":"/w/agents/dev/instances/dev-1-child","session":{"state":"shell","present":true,"backend":"tmux","established":true}}],
           "ambiguous":[],"pullRequest":"unknown",
           "extraWorktrees":[{"path":"/w/agents/dev/instances/dev-1/.work-docs","repo":"/w/docs","branch":"agents/dev-1-docs","detachedAt":null,
@@ -3868,33 +3870,49 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
 - The plan changes nothing except appending a `retire-planned` event to the
   workspace log. `pullRequest` is always `"unknown"`. Branch actions use the
   worktree's branch, never `recordedBranch`.
+- `facts.ownWorktree` (0.53.0, #988, feature `retire-plan-own-worktree`) is
+  a fact: a boolean, `true` exactly when `work/` is the instance's own work
+  tree, the one this retire retains (moved, as described below) or removes
+  (`--discard-worktree`), and `false` for every other home. It is always
+  present and never `null`. It is the answer of the one reading of `work/`
+  that the retire acts on (below), so it is `true` in `worktree` mode with
+  the instance's tree at `work/` (and, by the record, with nothing at
+  `work/`: the retire then finds its tree absent), and for a record with no
+  work mode whose `work/` Git confirms is a registered linked worktree
+  (#962). It is `false` for a directory instance; for an attached, a
+  checkout or a workspace instance, whatever the tree its link leads to is
+  on; for a real directory that is not the instance's own tree (#962) and
+  for a link (#973), under a record that says `worktree` too. Neither
+  `facts.workMode` (the record's value, which the instance can write) nor
+  `facts.work` (an observation, through any link) says whose tree it is:
+  read this key for that. Gate on the probe: from a kernel that lists the
+  feature the key is present and a boolean; from one that does not it is
+  absent, and its absence says nothing. A stop plan does not carry it. A
+  relayed plan (`--server`) carries it as its host answered it, so it is
+  the host's features that say whether it is there.
 - `defaults.retainWorktree` is the default of one option of this retire:
-  whether the instance's OWN work tree is retained (moved, as described
-  below) or removed (`--discard-worktree`). It is `true` exactly when
-  `work/` is the instance's own tree: in `worktree` mode, and (0.53.0, #962)
-  for a record with no work mode whose `work/` Git confirms is a registered
-  linked worktree, which the retire retains. A link at `work/` is never that
-  tree, under a record that says `worktree` too (0.53.0, #973, below). In
-  every other mode it is
-  `false` because the instance has no work
-  tree of its own, never because a tree would be removed: there the retire
-  touches no tree it does not own. `work/` of an attached, a checkout or a
-  workspace instance is a link (to its owner's tree, to the shared checkout,
-  to the deployment directory) that goes with the home, and what it links to
-  is not touched. Where a real directory is found at `work/` of such an
-  instance and no link, it is a directory of the home: the retire copies it
-  to recovery when it is not empty and removes it with the home, and the
-  plan says so (0.53.0, #962: the next item). `work/` of a directory
-  instance is the home's own
-  directory: it is copied to recovery when it is not empty, then removed
-  with the home. Read the field with `facts.workMode`. The plan's text
-  (`oats retire <instance> --plan` without `--json`) prints `retain worktree
-  true` in its `defaults:` line in `worktree` mode only; in the other modes
-  the line says the above for that mode (0.53.0, #959). For a record with no
-  work mode it says `work mode not recorded`, and for one whose work mode
-  the kernel does not know, `work mode not known to this kernel`: the value
-  is never printed, and `facts.workMode` holds it. The JSON is the same as
-  before.
+  whether the instance's own work tree is retained or removed
+  (`--discard-worktree`). It follows the fact today: it is `true` when
+  `facts.ownWorktree` is. A default is what the retire would do if nobody
+  chose and a fact is what is there, so a client does not read this key to
+  learn what `work/` is. Where it is `false` the instance has no work tree
+  of its own; it is never `false` because a tree would be removed: there
+  the retire touches no tree it does not own. `work/` of an attached, a
+  checkout or a workspace instance is a link (to its owner's tree, to the
+  shared checkout, to the deployment directory) that goes with the home,
+  and what it links to is not touched. Where a real directory is found at
+  `work/` of such an instance and no link, it is a directory of the home:
+  the retire copies it to recovery when it is not empty and removes it
+  with the home, and the plan says so (0.53.0, #962: the next item).
+  `work/` of a directory instance is the home's own directory: it is
+  copied to recovery when it is not empty, then removed with the home. The
+  plan's text (`oats retire <instance>
+  --plan` without `--json`) prints `retain worktree true` in its `defaults:`
+  line for the instance's own tree only; for the other homes the line says
+  the above (0.53.0, #959). For a record with no work mode it says `work
+  mode not recorded`, and for one whose work mode the kernel does not know,
+  `work mode not known to this kernel`: the value is never printed, and
+  `facts.workMode` holds it. The text does not print the fact.
 - What `work/` is comes from one reading, which the plan and the retire
   share (0.53.0, #962). It is **the instance's own tree** when the spawn's
   receipt says the instance was given one; for a home without a valid

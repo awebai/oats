@@ -481,7 +481,8 @@ const ENVELOPES = {
   diff: { schemaVersion: 1, ok: true, result: { file: { id: "f1", path: "a.txt", kind: "modified" }, against: "index", patch: "@@\n", binary: false, truncated: false } },
   stopPlan: { schemaVersion: 1, ok: true, result: { planRevision: "r1", targets: [], notes: [] } },
   stopApply: { schemaVersion: 1, ok: true, result: { ok: true, results: [], replayed: false } },
-  retirePlan: { schemaVersion: 1, ok: true, result: { planRevision: "r2", home: HOME_A, facts: {}, defaults: {}, notes: [] } },
+  // `facts.ownWorktree` (awebai/oats#988): the host's plan crosses with its facts as the host answered them.
+  retirePlan: { schemaVersion: 1, ok: true, result: { planRevision: "r2", home: HOME_A, facts: { workMode: "worktree", ownWorktree: true }, defaults: { retainWorktree: true }, notes: [] } },
 };
 const answer = (envelope) => ({ stdout: JSON.stringify(envelope) });
 
@@ -569,6 +570,8 @@ test("retire --plan and the guarded apply take the Desktop's exact arguments, --
   const { env, host } = surfaceSetup("desk-retire");
   let r = cli(env, ["retire", "dev-a", "--plan", "--home", HOME_A, "--dir", WS, "--json", "--server", "build"]);
   assert.equal(r.status, 0, r.stdout + r.stderr); assert.deepEqual(r.json(), ENVELOPES.retirePlan);
+  // The relay rebuilds nothing of the plan: the host's fact of what work/ is crosses as a boolean (#988).
+  assert.equal(r.json().result.facts.ownWorktree, true);
   writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: WS, oatsPath: fakeHost(mkdtempSync(join(base, "desk-apply-")), { probe: SURFACE_PROBE, answers: {
     [`retire dev-a --plan-revision r2 --idempotency-key k2 --discard-worktree --home ${HOME_A} --dir /srv/member --json`]: { stdout: JSON.stringify({ retired: "dev-a", agent: "dev", removedDir: true, planRevision: "r2", idempotencyKey: "k2", replayed: false }) },
   } }).oatsPath } } }));
