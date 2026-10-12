@@ -6,13 +6,16 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { waitUntil } from "./host-fixture.mjs";
+import { inheritedEnv, waitUntil } from "./host-fixture.mjs";
 
 export const SESSION = "oats-agents";
 // Every server a test started: { socket, pid }. endServers ends what is still alive by its own pid.
 const servers = [];
 
-export const tmuxOn = (socket, ...args) => execFileSync("tmux", ["-f", "/dev/null", "-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
+// A server holds the environment of the client that started it: never the runner's session
+// (host-fixture.mjs inheritedEnv), or the kernel would read the runner's display or pane from the
+// server a home records.
+export const tmuxOn = (socket, ...args) => execFileSync("tmux", ["-f", "/dev/null", "-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"], env: inheritedEnv() }).trim();
 export const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 export const windows = (socket) => tmuxOn(socket, "list-windows", "-t", `=${SESSION}`, "-F", "#{window_name}").split("\n").filter(Boolean);
 

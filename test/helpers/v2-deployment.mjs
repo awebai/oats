@@ -22,11 +22,9 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
 import { inertHarnessDir } from "./runtime-stub.mjs";
-import { applyFixtureRules, assertNoFixtureProcesses, fixtureBase, fixtureEnv, fixtureRules, isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
+import { applyFixtureRules, assertNoFixtureProcesses, fixtureBase, fixtureEnv, fixtureRules, inheritedEnv, isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
 
 export const CLI = resolve(new URL("../../bin/oats.mjs", import.meta.url).pathname);
-const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_SOUL_ID", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
-  "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"];
 const DATE = "2026-09-25T09:00:00Z";
 
 function gitEnv() {
@@ -140,15 +138,16 @@ function buildDeployment(base, ownTmuxTmpdir, { souls = { dev: {} }, capabilitie
   writeFileSync(join(dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: ref, ...local }, { lineWidth: 0 }));
   const bin = inertHarnessDir(base);
   const cache = join(base, "cache");
-  // The fixture's rules (host-fixture.mjs fixtureEnv: HOME, XDG, git, no proxies, the scheduler
-  // stubs), its inert harnesses first on PATH.
+  // The fixture's rules (host-fixture.mjs fixtureEnv: HOME, XDG, git, the scheduler stubs, and
+  // nothing a fixture never inherits: no proxies, no variable of the session that runs the suite, so
+  // no ambient instance identity or TMUX), its inert harnesses first on PATH.
   const rules = fixtureRules(base, { home });
   const env = fixtureEnv(base, { rules, extra: { OATS_HOME_DIR: join(base, "oats-home"), OATS_REMOTE_CACHE: cache,
     OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR: ownTmuxTmpdir ?? isolatedTmuxTmpdir(),
-    // Never the operator's login shell (host-fixture.mjs isolateSessionEnvironment says why).
-    OATS_TEST_LOGIN_SHELL: process.env.OATS_TEST_LOGIN_SHELL ?? noLoginShell(base) } });
+    // Never the operator's login shell (host-fixture.mjs isolateSessionEnvironment says why), nor
+    // one the runner's session names: only the test's own.
+    OATS_TEST_LOGIN_SHELL: inheritedEnv().OATS_TEST_LOGIN_SHELL ?? noLoginShell(base) } });
   env.PATH = `${bin}:${env.PATH}`;
-  for (const k of IDENTITY) delete env[k];
   const remoteOptions = { cacheDir: cache };
 
   const fx = { base, dep, root, repo: bare, key, ref, member, env, remoteOptions };
@@ -161,15 +160,15 @@ function buildDeployment(base, ownTmuxTmpdir, { souls = { dev: {} }, capabilitie
   };
   /** Run `fn` with the fixture's isolation forced onto process.env, restored afterwards:
    *  HOME, the remote cache, a tmux session that does not exist, the private TMUX_TMPDIR, a login
-   *  shell that cannot run (unless the test set its own), and no
-   *  ambient instance identity or TMUX. Everything else the test set (its own PATH with fakes, switches)
-   *  is kept. Every in-process kernel call goes through here, so a test can never reach
-   *  the operator's own tmux server or deployment. */
+   *  shell that cannot run (unless the test set its own), and nothing a fixture never inherits
+   *  (host-fixture.mjs: no ambient instance identity or TMUX, no harness account or display of the
+   *  session that runs the suite). Everything the test set itself (its own PATH with fakes, switches,
+   *  an identity it is testing) is kept. Every in-process kernel call goes through here, so a test
+   *  can never reach the operator's own tmux server or deployment. */
   const fixtureProcessEnv = () => {
     const next = applyFixtureRules({ ...process.env }, rules);
     for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR"]) next[k] = env[k];
     next.OATS_TEST_LOGIN_SHELL ??= env.OATS_TEST_LOGIN_SHELL;
-    for (const k of IDENTITY) delete next[k];
     return next;
   };
   fx.inEnv = async (fn) => {

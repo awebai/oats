@@ -5,6 +5,7 @@
 // request, argv, cwd and the script's version) and env.json (its whole environment).
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { inheritedEnv } from "./host-fixture.mjs";
 import { v2Deployment } from "./v2-deployment.mjs";
 
 /** The source script; `version` lets a test see which commit of it ran. */
@@ -76,14 +77,12 @@ export function sourceDeployment(t, { manifest = capabilityManifest(), capabilit
   return fx;
 }
 
-const IDENTITY = ["TMUX", "TMUX_PANE", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_SOUL_ID", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE",
-  "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"];
-/** Run `fn` synchronously with the fixture's environment (its isolation and PATH, no ambient
- *  instance identity), plus `extra`: the in-process tick's children see exactly that. */
+/** Run `fn` synchronously with the fixture's environment (its isolation and PATH, and nothing a
+ *  fixture never inherits: host-fixture.mjs, so no ambient instance identity), plus `extra`: the
+ *  in-process tick's children see exactly that. */
 export function inFixture(fx, fn, extra = {}) {
   const saved = process.env;
-  const next = { ...saved };
-  for (const k of IDENTITY) delete next[k];
+  const next = inheritedEnv();
   for (const k of ["HOME", "OATS_HOME_DIR", "OATS_REMOTE_CACHE", "OATS_TMUX_SESSION", "PI_AGENTS_TMUX_SESSION", "TMUX_TMPDIR", "OATS_TEST_LOGIN_SHELL", "PATH"]) if (fx.env[k] !== undefined) next[k] = fx.env[k];
   Object.assign(next, extra);
   process.env = next;

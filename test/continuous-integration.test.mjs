@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseConfigData } from "../lib/config-data.mjs";
+import { SESSION_VARIABLES, isSessionVariable } from "./helpers/host-fixture.mjs";
+import { SESSION_SUITES, poisonedSession } from "../scripts/test-session-inheritance.mjs";
 
 test("direct main pushes retain the same read-only CI gates as pull requests", () => {
   const workflow = parseConfigData(readFileSync(new URL("../.github/workflows/pull-request.yml", import.meta.url))).value;
@@ -29,7 +31,7 @@ test("direct main pushes retain the same read-only CI gates as pull requests", (
   // One stable check name gates on BOTH the shards and the static gates.
   const gate = workflow.jobs.gate;
   assert.equal(gate.name, "Node 22 / test, validate, pack, smoke");
-  assert.deepEqual(gate.needs, ["tests", "verify", "desktop-standalone"]);
+  assert.deepEqual(gate.needs, ["tests", "verify", "desktop-standalone", "session-inheritance"]);
   assert.equal(gate.if, "always()");
   // `always()` runs the gate after a failed job too, so needing a job is not enough: the
   // gate must test each needed job's result itself, or that job's failure passes the gate.
@@ -93,4 +95,47 @@ test("pull-request CI runs the Desktop suite with only packages/desktop installe
   const pullRequest = read("pull-request.yml");
   assert.equal(pullRequest.on.pull_request.paths, undefined);
   assert.equal(pullRequest.on.pull_request["paths-ignore"], undefined);
+});
+
+test("pull-request CI runs the suites that followed a session variable with every one poisoned, and the gate requires it", () => {
+  const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+  const workflow = parseConfigData(read(".github/workflows/pull-request.yml")).value;
+  // awebai/oats#972: the shards run with none of a session's variables, so only this job sees a
+  // test that reads one. It is one command, the one a developer runs locally.
+  const job = workflow.jobs["session-inheritance"];
+  assert.ok(job, "pull-request CI must run the suites under a poisoned session");
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  const commands = job.steps.filter((step) => step.run).map((step) => step.run.trim());
+  assert.deepEqual(commands, ["npm ci", "npm run test:session"], "it installs the root and runs the poisoned session, and nothing else");
+  assert.equal(JSON.parse(read("package.json")).scripts["test:session"], "node scripts/test-session-inheritance.mjs");
+  // A red run must stay red: nothing skips the job or a step, no failure is tolerated, and no
+  // step gives the run an environment of its own in place of the script's.
+  for (const part of [job, ...job.steps]) {
+    assert.equal(part.if, undefined, "no condition may skip the job or one of its steps");
+    assert.equal(part["continue-on-error"], undefined, "a failure under the poisoned session must fail the job");
+    assert.equal(part.env, undefined, "the run's environment is the script's to build");
+  }
+  // The gate fails when it fails: needed, and its result tested (`always()` runs the gate anyway).
+  const gate = workflow.jobs.gate;
+  assert.ok(gate.needs.includes("session-inheritance"));
+  assert.ok(gate.steps.flatMap((step) => (step.run ?? "").split("\n").map((line) => line.trim())).includes('test "${{ needs.session-inheritance.result }}" = success'));
+
+  // The run's names are the helpers' own definition, not a second list: every name of it, and for
+  // each prefix the names a session really has and one that nothing knows.
+  const poison = poisonedSession(), names = Object.keys(poison);
+  for (const name of SESSION_VARIABLES.names) assert.ok(names.includes(name), `the run does not set ${name}`);
+  for (const prefix of SESSION_VARIABLES.prefixes) {
+    assert.ok(names.filter((name) => name.startsWith(prefix)).length >= 2, `the run sets no name of the session, or none that nothing knows, under ${prefix}`);
+    assert.ok(names.some((name) => name.startsWith(prefix) && /NOTHING_KNOWS_THIS$/.test(name)), `no unknown name under ${prefix}`);
+  }
+  for (const name of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "AWEB_IDENTITY_HOME", "AWEB_DELIVERY"]) assert.ok(names.includes(name), `the run does not set ${name}, which an instance's session has`);
+  for (const name of names) assert.ok(isSessionVariable(name), `the run sets ${name}, which the definition does not cover: no helper removes it`);
+  // Values that cannot work: no directory, home or socket the run names exists.
+  for (const [name, value] of Object.entries(poison)) {
+    assert.ok(value.length > 0, name);
+    for (const path of value.split(",").filter((part) => part.startsWith("/"))) assert.equal(existsSync(path), false, `${name} names ${path}, which exists`);
+  }
+  // The suites that followed one are all still run, and exist.
+  for (const suite of ["test/capabilities.test.mjs", "test/golden-fixtures.test.mjs", "test/harness-trust-launch.test.mjs", "test/login-environment.test.mjs"]) assert.ok(SESSION_SUITES.includes(suite), `the run no longer covers ${suite}`);
+  for (const suite of SESSION_SUITES) assert.ok(existsSync(new URL(`../${suite}`, import.meta.url)), `${suite} does not exist`);
 });
