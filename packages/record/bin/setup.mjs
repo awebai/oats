@@ -62,15 +62,16 @@ function shellWord(value) {
 
 // The words of a command as /bin/sh reads them, for the one form shellWord
 // writes: plain characters, single-quoted runs and \' for a quote, adjacent
-// pieces joined into one word. null when the command holds anything else
-// outside quotes (an expansion, an operator, a double quote) or a quote left
-// open: it is then not read this way.
+// pieces joined into one word, words apart by spaces or tabs. null when the
+// command holds anything else outside quotes (an expansion, an operator, a
+// double quote, a newline, which ends a command) or a quote left open: it is
+// then not read this way.
 function shellWords(command) {
   const words = [];
   let word = null;
   for (let i = 0; i < command.length; ) {
     const c = command[i];
-    if (/\s/.test(c)) {
+    if (c === " " || c === "\t") {
       if (word !== null) words.push(word);
       word = null;
       i++;

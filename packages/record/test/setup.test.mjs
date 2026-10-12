@@ -370,6 +370,8 @@ test("a command that is not provably setup's is left alone, and setup's own is a
     "'/a b/tool' '/x/capture.mjs' --owner a --quiet $EXTRA", // an expansion
     `'/a b/node' "/x/capture.mjs" --owner a --quiet`, // a double quote
     "'/a b/node' '/x/capture.mjs' --owner a --quiet >/dev/null", // a redirection
+    "'/a b/node' '/x/capture.mjs' --owner a --quiet\n/bin/echo a second command", // a newline: two commands
+    "'/a b/node' '/x/capture.mjs' --owner a\r--quiet", // whitespace that is not a blank
     "'/a b/node' '/x/capture.mjs' --owner a --quiet 'and", // a quote left open
     // Read whole, and the shape is not there:
     "'/a b/node' '/x/capture.mjs --owner a --quiet'", // one word, not a script and two flags
