@@ -235,7 +235,7 @@ This README explains the framework and its direction. Advanced mechanisms such a
 
 ## Contributing and releases
 
-Source, issues and pull requests live at [awebai/oats](https://github.com/awebai/oats). See the [implementation guide](docs/implementation.md) for repository details and the [release lane](docs/release-lane.md) for artifact verification and publication.
+Source, issues and pull requests live at [awebai/oats](https://github.com/awebai/oats). See the [implementation guide](docs/implementation.md) for repository details and the [release lane](docs/release-lane.md) for artifact verification and publication. Tests that depend on macOS can be run on a macOS runner by hand: see [macOS test runs](docs/macos-test-runs.md).
 
 Versioned releases publish the kernel, Pi bridge and Desktop installers. Check the [release notes](docs/release-notes/) before changing an existing deployment; installing software does not automatically migrate knowledge or reconfigure live agents.
 
