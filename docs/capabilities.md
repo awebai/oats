@@ -565,39 +565,6 @@ preview (only a preview-aware hook does, below); on a real run
 `OATS_LAUNCH_PREVIEW` is not set. A worktree hook also gets the tree
 variables of [The worktree event](#the-worktree-event).
 
-### The node a hook writes down
-
-A hook or a command that writes a `node` path into something that outlives it
-(a harness's settings file, a unit, a script) writes `OATS_NODE_BIN`, never
-its own `process.execPath`: on Homebrew that is the versioned keg
-(`…/Cellar/node/<version>/bin/node`), which the next `brew upgrade node`
-removes, and what was written then fails where nobody sees it. To run
-something at once, `process.execPath` is still right.
-
-`OATS_NODE_BIN` is the node running the kernel, the one that runs
-`OATS_CLI_BIN`. A hook is itself run as the `node` first on its `PATH`, which
-can be another one. The kernel computes the path once per process, by the one
-rule it also uses for [the host timer's unit](schedules.md#the-host-timers-unit):
-
-1. the keg's `<prefix>/opt/<formula>/bin/node`, when that is the node running
-   the kernel;
-2. else the first `node` on the kernel's own `PATH` that is that same file.
-   Entries inside an instance home and inside a versioned keg are not looked
-   at;
-3. else the node's own path, as it is.
-
-With a version manager (mise, nvm, asdf, fnm) the answer is that version's
-own install, which lasts until the version is removed. A manager's shim is
-never the answer: it is not that node, and which node it runs depends on the
-directory it is run from.
-
-In the third case a spawn and a start each carry one warning, for every
-harness, that the node path is not stable; a preview carries none. The hook
-itself cannot report it.
-
-A package that also runs under a kernel older than the variable falls back to
-`process.execPath` when `OATS_NODE_BIN` is absent or not an absolute path.
-
 A dispatched command (`oats <namespace> <command>`, from an instance home or
 from the deployment directory) receives:
 
@@ -772,6 +739,41 @@ and must not be encoded into this persisted spawn command.
 Spawn order is by capability name; retirement reverses successful
 spawn order. Hooks run from the instance's own copy
 (`<home>/.oats/modules/<cap>/`).
+
+### The node a hook writes down
+
+A hook or a command that writes a `node` path into something that outlives it
+(a harness's settings file, a unit, a script) writes `OATS_NODE_BIN`, never
+its own `process.execPath`: on Homebrew that is the versioned keg
+(`…/Cellar/node/<version>/bin/node`), which the next `brew upgrade node`
+removes, and what was written then fails where nobody sees it. To run
+something at once, `process.execPath` is still right.
+
+`OATS_NODE_BIN` is the node running the kernel, the one that runs
+`OATS_CLI_BIN`. A hook is itself run as the `node` first on its `PATH`, which
+can be another one. The kernel computes the path once per process, by the one
+rule it also uses for [the host timer's unit](schedules.md#the-host-timers-unit):
+
+1. the keg's `<prefix>/opt/<formula>/bin/node`, when that is the node running
+   the kernel;
+2. else the first `node` on the kernel's own `PATH` that is that same file.
+   Entries inside an instance home and inside a versioned keg are not looked
+   at;
+3. else the node's own path, as it is.
+
+The second case answers only a `node` that is the same file as the one
+running the kernel. A version manager's shim is another program, so it is
+never the answer: which node a shim runs depends on the directory it is run
+from. With mise the answer is the version's own install, which lasts until
+that version is removed (measured: mise's shim puts that directory on the
+`PATH` of what it starts). Other version managers were not measured.
+
+In the third case a spawn and a start each carry one warning, for every
+harness, that the node path is not stable; a preview carries none. The hook
+itself cannot report it.
+
+A package that also runs under a kernel older than the variable falls back to
+`process.execPath` when `OATS_NODE_BIN` is absent or not an absolute path.
 
 ### The worktree event
 
@@ -1015,9 +1017,10 @@ clears it.
   the kernel's own node, by a path that survives a Node upgrade. Under a
   kernel that does not set the variable it is the hook's own
   `process.execPath`, which on Homebrew is the versioned keg, gone at the
-  next `brew upgrade node`. Under a version manager both are that version's
-  own path, as for the host timer's unit, and a start rewrites the hooks
-  after the version changes. The hook a start runs is the copy of oats.core
+  next `brew upgrade node`. With mise the variable is the version's own
+  path, as the hook's own node was (other version managers were not
+  measured), and a start rewrites the hooks after the version changes. The
+  hook a start runs is the copy of oats.core
   in the home (`.oats/modules/oats.core`), which a start does not refresh. A
   home spawned with an oats.core that does not read the variable therefore
   writes its hook's own node path at every start: a restart repairs its
