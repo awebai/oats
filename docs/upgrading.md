@@ -154,12 +154,14 @@ in the text output only; `oats doctor --json` does not carry them.
 
 ## After a change of Node version
 
-The CLI is an npm global package: it is installed under npm's global prefix
-(`npm prefix -g`). What a new Node version means for it depends on where
-that prefix is.
+Two paths are written into things that outlive a command: the kernel's, and
+the `node` that runs it. A new Node version can leave either behind.
+
+**The kernel's path.** The CLI is an npm global package: it is installed
+under npm's global prefix (`npm prefix -g`).
 
 - **The prefix is outside the Node install.** The kernel's path does not
-  change with the Node version, and nothing in this section is needed.
+  change with the Node version: the CLI needs no reinstall.
 - **The prefix is the Node version's own directory**, the usual layout of a
   version manager (mise, nvm, asdf, fnm). Every Node version then has its own
   global packages: a new version has no `oats`, and removing the old version
@@ -168,28 +170,32 @@ that prefix is.
   of a Claude instance, and the host timer's unit. OATS cannot make a path
   inside a Node version outlast that version.
 
-In the second layout, after moving to another Node version:
-
-1. Install the CLI in it: `npm install -g @awebai/oats`.
-2. Restart the instances (`oats session restart --home <home>`). A start
-   writes the home's `oats` and its Claude Code hooks again, for the kernel
-   that starts it ([Configuration](configuration.md#launch-configurations)).
-3. On a host that runs schedules, run `oats schedule host install` again,
-   from your own shell, not from an instance home. Until then
-   `oats schedule host status` reports `oats-bin-missing` once the old
-   version is removed ([Schedules](schedules.md#the-host-timers-unit)).
-
-Do this before removing the old Node version: until it is removed, the
-instances and the timer keep running its kernel.
-
 Both layouts can exist on one host: check the prefix in the shell that
 installs the CLI.
 
-The host timer's unit also records the `node` it runs, apart from the
-kernel. Under a version manager that is the version's own `node`, whatever
-the prefix: `oats schedule host status` reports `node-missing` once that
-version is removed, and `oats schedule host install` writes the unit again
-([Schedules](schedules.md#the-host-timers-unit)).
+**The `node`'s own path**, whatever the prefix. The Claude Code hooks of a
+Claude instance and the host timer's unit also record the `node` that runs
+them. Once that `node` no longer exists (an old version removed under a
+version manager, for example), the hooks fail without a message, so the
+instance stops reporting that it waits on you, and
+`oats schedule host status` reports `node-missing`.
+
+So after moving to another Node version, and before removing the old one:
+
+1. Where the prefix is the version's own directory, install the CLI in the
+   new version: `npm install -g @awebai/oats`.
+2. Restart the instances, from a shell on the new version
+   (`oats session restart --home <home>`). A start writes the home's `oats`
+   and its Claude Code hooks again
+   ([Configuration](configuration.md#launch-configurations)).
+3. On a host that runs schedules, run `oats schedule host install` again,
+   from your own shell, not from an instance home. Without it,
+   `oats schedule host status` reports `oats-bin-missing` or `node-missing`
+   once the old version is removed
+   ([Schedules](schedules.md#the-host-timers-unit)).
+
+Until the old version is removed, the instances and the timer keep running
+what it holds.
 
 ## By hand
 
