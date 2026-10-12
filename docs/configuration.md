@@ -70,7 +70,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | `automations.trust` | The workspace triggers and schedules (`<member>/<id>`) this host agrees to run, or `"*"` for every one the workspace places here (0.30). Absent or empty: none runs. See [Who runs workspace automations](#who-runs-workspace-automations). |
 | `triggers.disabled`, `schedules.disabled` | Workspace triggers and schedules (`<member>/<id>`) this host does not run, without a commit. Written by `oats trigger disable` / `oats schedule disable`. |
 | `launch-configs.<name>` | A named way to start a harness on this host, chosen at spawn or session start, never by the soul. `default: true` makes it this host's baseline for its harness (0.32). See [Launch configurations](#launch-configurations). |
-| `souls.launch` | This machine's launch preference per soul (0.30): `"*"` for every soul, a soul's own entry (its name, or `<package>/<soul>`) over it. A value is a `launch-configs` name or an inline `{ harness, model? }`. It overrides the soul's own `launch:`; explicit spawn flags win over both. See [Launch preferences](#launch-preferences). |
+| `souls.launch` | This machine's launch preference per soul (0.30): `"*"` for every soul, a soul's own entry (its name, or `<package>/<soul>`) over it. A value is a `launch-configs` name or an inline `{ harness, model? }`. It overrides the soul's own `launch:`; explicit spawn flags win over both. Written by `oats soul launch set\|remove` (0.53). See [Launch preferences](#launch-preferences). |
 
 Which teams a soul may join, and its default, are committed in the workspace's
 `souls:`, never here: `souls.teams` and `souls.default` were removed in 0.38.0
@@ -389,6 +389,38 @@ souls:
     oats.engineering/code-reviewer: { harness: codex }   # a package soul
 ```
 
+- **Write `souls.launch` with `oats soul launch`** (0.53.0), not by hand:
+
+  ```
+  oats soul launch set <soul>|'*' (--launch-config <name>|none | --harness pi|claude|codex [--model <id>])
+  oats soul launch remove <soul>|'*'|<exact key>
+  ```
+
+  each with `--plan` (every check, nothing written), `--dir <deployment>`
+  and `--json`.
+  - `set` names the soul as a spawn does and writes the key that soul has:
+    its bare name, or `<package>/<soul>` for a package's. So it cannot write
+    a key that names no soul. `'*'` is every soul without an entry of its
+    own. `--launch-config <name>` must be a launch configuration this file
+    declares (`none` is the bare harness); `--harness` writes the inline
+    preference.
+  - `remove` takes a soul, `'*'`, or the exact text of a key in the file.
+    The exact text is tried first and needs no read of the workspace, so a
+    key that names no soul can always be removed. An entry the file does not
+    have is refused (`E_LAUNCH_PREFERENCE_UNKNOWN`), never answered "done".
+  - Both answer what the next spawn of that soul selects, and every key of
+    `souls.launch` that still names no soul the workspace offers.
+  - **The file is rewritten, and every other entry keeps its value and its
+    comments.** The write holds the lock `oats teams` holds, so neither
+    drops the other's change.
+  - **A name two members offer.** A member's soul is keyed by its bare name,
+    so one entry pins every member's soul of that name: an entry cannot pin
+    one of them and leave the other. `oats soul launch set <member>/<soul>`
+    writes the bare name and lists each soul the entry applies to; the bare
+    name alone is refused, as for a spawn (`E_SOUL_AMBIGUOUS`). To run one
+    of them differently, name its launch on that spawn (`--launch-config` or
+    `--harness`), or keep the other off this machine (`souls.disabled` takes
+    `<member>/<soul>`).
 - **Precedence for a new launch:** `--launch-config` or `--harness`, then
   `souls.launch.<soul>`, then `souls.launch."*"`, then the soul's `launch:`,
   then `pi` with its defaults. `--model` alone keeps the deciding layer's

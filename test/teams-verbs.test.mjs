@@ -45,6 +45,18 @@ test("an edit touches only what changes: inline comments on sibling entries surv
   assert.ok(out.startsWith(HEAD + "teams:\n  mine: { team: \"mine:me.aweb.ai\" } # my own team\n"), out);
 });
 
+test("a long line elsewhere in the file is not re-wrapped: a plain value past 80 columns comes back byte for byte", (t) => {
+  const long = `    PROMPT: ${"a value well past eighty columns ".repeat(4)}that a folding writer would wrap onto a second line`;
+  const rest = ["settings:", "  acme.tool:", long, "clones:", "  github.com/acme/platform: /srv/checkouts/platform # where the clone is", ""].join("\n");
+  const fx = fixture(t, `teams:\n  mine: { team: "mine:me.aweb.ai" }\ndefaultTeam: mine\n${rest}`);
+  assert.ok(long.length > 160);
+  teamsAdd(fx.ctx(), "third", { team: "third:me.aweb.ai" });
+  assert.equal(fx.text(), `${HEAD}teams:\n  mine: { team: "mine:me.aweb.ai" }\n  third:\n    team: third:me.aweb.ai\ndefaultTeam: mine\n${rest}`);
+  teamsDefault(fx.ctx(), "third");
+  teamsRemove(fx.ctx(), "mine");
+  assert.equal(fx.text(), `${HEAD}teams:\n  third:\n    team: third:me.aweb.ai\ndefaultTeam: third\n${rest}`, "the same after default and remove");
+});
+
 test("a verb works from the file as it is NOW: a stale snapshot never drops another write, and its refusals see the current file", (t) => {
   const fx = fixture(t, "teams:\n  mine: { team: \"mine:me.aweb.ai\" }\ndefaultTeam: mine\n");
   const stale = fx.ctx();
