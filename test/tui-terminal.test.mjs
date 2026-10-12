@@ -248,13 +248,18 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
   const extra = Object.entries(env).map(([name, value]) => `${name}=${shq(value)} `).join("");
   const shell = command ?? `sh ${shq(world.enter)} env ${extra}LC_ALL=${locale} LANG=${locale} HISTFILE=/dev/null PS1=${shq(`${PROMPT} `)} bash --norc --noprofile -i`;
   const [pane, session] = tmuxOn("new-session", "-d", "-P", "-F", "#{pane_id} #{session_id}", "-s", id, "-x", String(cols), "-y", String(rows), "-c", cwd, shell).split(" ");
-  let files = 0;
+  let files = 0, typed = null;
   const term = {
     id, pane, session,
     /** The screen: one string per row, as `capture-pane` prints them (no trailing spaces). */
     screen() { return tmuxRaw("capture-pane", "-p", "-t", pane).split("\n").slice(0, -1); },
     /** The screen with wrapped rows joined: a line longer than the terminal is one line. */
     joined() { return tmuxRaw("capture-pane", "-p", "-J", "-t", pane).split("\n").map((row) => row.trimEnd()).filter(Boolean); },
+    /** Whether the pane shows `line`, printed by the command typed last (or by the pane's own
+     *  command), as a whole line: a joined row of its own, or the rest of the row that holds the
+     *  prompt and what was typed. A typed line that fills its last row exactly leaves that row
+     *  marked as wrapped, and the joined capture then has what was printed next on the same row. */
+    showsLine(line) { const rows = term.joined(); return rows.includes(line) || (typed !== null && rows.includes(`${PROMPT} ${typed}${line}`)); },
     shows() { try { return term.screen().map((row) => `  |${row}`).join("\n"); } catch (error) { return `  (no pane: ${error.message})`; } },
     flags() { const values = tmuxOn("display-message", "-p", "-t", pane, FLAGS.map((flag) => `#{${flag}}`).join(",")).split(","); return Object.fromEntries(FLAGS.map((flag, i) => [flag, values[i] ?? ""])); },
     flagsLine() { try { return Object.entries(term.flags()).map(([flag, value]) => `${flag}=${value}`).join(" "); } catch { return "no flags"; } },
@@ -270,6 +275,7 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
       await term.prompt(`before typing ${why}`);
       tmuxOn("send-keys", "-l", "-t", pane, text);
       tmuxOn("send-keys", "-t", pane, "Enter");
+      typed = text;
     },
     /** The terminal's line settings, as `stty -g` prints them in the pane's own shell. */
     async stty(when) {
@@ -745,7 +751,7 @@ for (const [what, set] of [["TERM=dumb", "env TERM=dumb"], ["an empty TERM", "en
     const { term, status, text } = await bare(t, `${set} ${TUI}`, `with ${what}`);
     assert.equal(status, "1\n", term.shows());
     assert.equal(text, `\n${NO_TERMINAL}\ntui-ended\n`);
-    assert.ok(term.joined().includes(NO_TERMINAL), `the pane shows the line:\n${term.shows()}`);
+    assert.ok(term.showsLine(NO_TERMINAL), `the pane shows the line:\n${term.shows()}`);
   });
 }
 
@@ -764,8 +770,45 @@ test("outside a deployment it prints one line with E_NO_DEPLOYMENT that names th
   await until(term, () => existsSync(statusFile) && /\n$/.test(readFileSync(statusFile, "utf8")), "the status of oats tui outside a deployment");
   await term.prompt("after the refusal");
   assert.equal(readFileSync(statusFile, "utf8"), "1\n");
-  assert.ok(term.joined().includes(noDeployment(realpathSync(base))), `the pane shows the line:\n${term.shows()}`);
+  assert.ok(term.showsLine(noDeployment(realpathSync(base))), `the pane shows the line:\n${term.shows()}`);
   assert.deepEqual(await term.state("after the refusal"), before, "the terminal and the server after the refusal");
+});
+
+test("a line a command prints is found on the pane whether the typed command line ends one cell short of its row, fills it exactly or runs one cell over: where it fills the row, the joined capture has the printed line on the command's own row, and no row equal to it", { skip: NO_TMUX }, async (t) => {
+  const cols = 80;
+  // What prints a line, and the line: it is put together by printf, so it is nowhere in what is
+  // typed. The second is longer than the pane and wraps by itself.
+  const short = ["printf '%s%s\\n' shown -by-the-command", "shown-by-the-command"], long = [`printf '%0${cols + 20}d\\n' 7`, `${"0".repeat(cols + 19)}7`];
+  // The length of the typed line, prompt included, and what it prints.
+  const cases = [[cols - 1, short], [cols, short], [cols + 1, short], [2 * cols, short], [cols - 1, long], [cols, long]];
+  for (const [n, [length, [print, line]]] of cases.entries()) {
+    const what = `a typed line of ${length} cells in ${cols} columns that prints ${line.length}`;
+    const done = join(base, `typed-${n}.done`);
+    const term = await terminal(t, { cols, env: { DONE: done } });
+    // The rest of the typed line is a comment: the command prints that line and nothing else.
+    const text = `${print}; : > "$DONE"; #`.padEnd(length - PROMPT.length - 1, "x");
+    assert.equal(`${PROMPT} ${text}`.length, length, `${what}: the command fits the length asked for`);
+    assert.equal(text.includes(line), false);
+    await term.command(text, what);
+    await until(term, () => existsSync(done), `the command to end, ${what}`);
+    await term.prompt(`after ${what}`);
+    const rows = term.joined(), fills = length % cols === 0;
+    if (fills) {
+      // What the helper's second way is for. A tmux or a shell that does not do this fails here:
+      // on such a host this case would test nothing of it.
+      assert.equal(rows.includes(line), false, `${what}: the typed line fills its row, and the joined capture was expected to have the printed line on that row, not on one of its own. This tmux or this shell does not join them, so this case cannot test what it is for:\n${rows.join("\n")}`);
+      assert.equal(rows.includes(`${PROMPT} ${text}${line}`), true, `${what}: the joined row is the prompt, what was typed and the printed line:\n${rows.join("\n")}`);
+    } else {
+      assert.equal(rows.includes(`${PROMPT} ${text}`), true, `${what}: the typed line is a joined row of its own:\n${rows.join("\n")}`);
+      assert.equal(rows.includes(line), true, `${what}: the printed line is a joined row of its own:\n${rows.join("\n")}`);
+    }
+    assert.equal(term.showsLine(line), true, `${what}: the pane shows the line:\n${term.shows()}`);
+    // Only a whole line: not a part of one, and not what was typed.
+    assert.equal(term.showsLine(line.slice(1)), false, `${what}: a part of the line is not the line`);
+    assert.equal(term.showsLine(line.slice(0, -1)), false, `${what}: a part of the line is not the line`);
+    assert.equal(term.showsLine(text), false, `${what}: what was typed is not a line the command printed`);
+    term.kill();
+  }
 });
 
 test("started in an agent's pane, in the instance's home and with the variables of an instance session set, it shows the deployment that home is in, and no child of a read sees one of them; with one of the two that name a captured context the kernel refuses the word as it refuses every command, before anything is drawn", { skip: NO_TMUX }, async (t) => {
