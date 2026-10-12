@@ -143,8 +143,8 @@ tmux: `oats tui` creates no session, window, option or key binding.
 
 ## Where it has been run
 
-So far `oats tui` has been run in tmux on Linux only: not on macOS, not in a
-terminal emulator without tmux, and not over ssh.
+So far `oats tui` has been run in tmux only: not in a terminal emulator
+without tmux, and not over ssh.
 The automated tests run the real `oats tui` in tmux (a pane is a real
 terminal: keys and screen are bytes through a pty), on a private tmux server.
 Other terminals and multiplexers are untested so far: that is a statement
