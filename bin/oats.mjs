@@ -41,7 +41,7 @@ import { harnessTrust } from "../lib/harness-trust-write.mjs";
 import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
-import { LAUNCH_PREFERENCE_UNMATCHED, launchKeysUnmatched, launchLayers, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
+import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeysUnmatched, launchLayers, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
 import { soulsOffered } from "../lib/instance-resolution.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
@@ -301,14 +301,6 @@ async function doctorOperator(ws) {
   return { problems: found.map(({ code, label, message, remedy }) => ({ code, ...(label ? { label } : {}), message, remedy })), information: [] };
 }
 
-/** Why a key of souls.launch could not be checked (lib/instance-resolution.mjs soulsOffered's reasons). */
-const LAUNCH_KEY_UNCHECKED = {
-  standalone: "this deployment sees a standalone view (the workspace's host could not be read), so the workspace's souls are not known",
-  "member-unconfirmed": "a member of the workspace is not confirmed, and the key may be a soul of it",
-  "soul-unread": "a member's or an external soul could not be read, and the key may be that soul's",
-  "package-unlocked": "its package is declared and not locked (oats sync)",
-  "package-soul-unread": "a soul of its package could not be read, and the key may be that soul's",
-};
 /** The keys of oats-local.yaml souls.launch that name no soul (awebai/oats#989), in doctor, OFFLINE like
  *  doctorOperator: the souls are discovered from this machine's cache only, and the one function
  *  (launchKeysUnmatched) decides. A problem per unmatched key, which speaks about this machine's last

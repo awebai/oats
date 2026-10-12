@@ -703,8 +703,8 @@ test("oats soul launch in text mode: what was done and where, what the next spaw
 
 test("a package soul is pinned by its qualified key; a bare key under it and a wrong package are reported; the workspace unreachable leaves only remove by exact text", (t) => {
   const pkg = packageRepo({ souls: { keeper: {} } });
+  t.after(pkg.cleanup); // registered before anything else is built, so a fixture that fails to build leaves no package behind
   const fx = deployment(t, {});
-  t.after(pkg.cleanup);
   fx.commit({ "oats-workspace.yaml": { yaml: { schemaVersion: 2, name: "acme", members: [fx.ref], packages: { "acme.pkg": `${pkg.ref}@v1.0.0` }, teams: { global: { description: "Fixture team" } }, defaults: { knowledge: "none", messaging: "none", tasks: "none" } } } });
   ok(fx.cli(["sync", "--json"]), "sync");
   const a = ok(fx.cli(["soul", "launch", "set", "keeper", "--launch-config", "private", "--json"]), "set a package soul by its bare name");

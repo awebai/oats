@@ -1823,7 +1823,10 @@ shows the drift as `launch-changed`.
     member is not confirmed or a member's or an external soul was skipped
     with a problem; `<package>/…` while that package is declared and not
     locked, or one of its souls was skipped; every key in the standalone
-    view of a workspace whose host cannot be read. Every other key that
+    view of a workspace whose host cannot be read. What a read did not
+    record, it did not establish: a read that carries no record of what it
+    skipped leaves every key not checked, and a member whose listing carries
+    none counts as one with a soul skipped. Every other key that
     matches nothing is unmatched, `<member>/<soul>` among them (a member's
     soul is keyed by its bare name). When the workspace cannot be read at
     all, the answer is that read's own error. `"*"` is never reported.

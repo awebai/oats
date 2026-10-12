@@ -13,9 +13,9 @@ import { dirname, join, resolve } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
-import { REF, soulFile, world } from "./helpers/memory-workspace.mjs";
+import { KEY, REF, world } from "./helpers/memory-workspace.mjs";
 import { isolateSessionEnvironment, oatsSocket, waitUntil } from "./helpers/host-fixture.mjs";
-import { LAUNCH_PREFERENCE_UNMATCHED, LAUNCH_PROBLEM_TEXT_MAX, launchLayers, launchPreferenceUnmatched, selectionFrom, UNMATCHED_FIX } from "../lib/launch-preference.mjs";
+import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, LAUNCH_PROBLEM_TEXT_MAX, launchKeysUnmatched, launchLayers, launchPreferenceUnmatched, selectionFrom, UNMATCHED_FIX } from "../lib/launch-preference.mjs";
 import { launchReportFor, restartInstanceSession, selectNewLaunch, startInstanceSession } from "../lib/core.mjs";
 import { discoverOrStandalone, findSoulEntry, prepareInstance, soulsOffered } from "../lib/instance-resolution.mjs";
 import { soulKeyOf } from "../lib/teams.mjs";
@@ -140,9 +140,9 @@ test("the message names at most three keys, then \"and K more\", and stays withi
  *  preparation, with this read of the workspace), then the selection. → the refusal, or null.
  *  `resolve: false` is for a standalone view, whose resolution needs a locked package this fixture does
  *  not hold: the layers are then built here as prepareInstance builds them, from the same read. */
-async function spawnOver(w, soul, launch, { local = {}, flags = {}, ref = REF("agents"), resolve: resolved = true } = {}) {
+async function spawnOver(w, soul, launch, { local = {}, flags = {}, ref = REF("agents"), resolve: resolved = true, read = (d) => d } = {}) {
   const config = { schemaVersion: 2, workspace: ref, ...local, souls: { ...(local.souls ?? {}), launch } };
-  const discovery = await discoverOrStandalone(config, { lock: w.lock, remote: w.remote });
+  const discovery = read(await discoverOrStandalone(config, { lock: w.lock, remote: w.remote }));
   const entry = findSoulEntry(discovery, soul);
   const prepared = resolved ? await prepareInstance(tmpdir(), soul, { local: config, remote: w.remote, discovery })
     : { discovery, launch: launchLayers({ definition: entry.definition, entry, key: soulKeyOf(entry), local: config, offered: soulsOffered(discovery) }) };
@@ -204,6 +204,65 @@ test("not unmatched, each going on: a disabled soul's key, and every key the rea
   // An explicit standalone: is the configured view: what it offers is known, so a key that names none of it refuses.
   const explicit = await spawnOver(world(), "builder", { "*": "fast", ghost: "private" }, { local: { standalone: REF("platform") }, resolve: false });
   assert.equal(explicit.refused?.code, CODE);
+});
+
+test("what a read did not record, it did not establish: a discovery with no record of what it skipped leaves every key unchecked, and a member's enumeration with none leaves the bare keys unchecked", async () => {
+  const launch = { "*": "fast", ghost: "private", "acme.pkg/gone": "private", "platform/builder": "private" };
+  const local = { souls: { launch } };
+  const keysOf = (rows) => rows.map((r) => r.key);
+  // The read as discoverWorkspace writes it: everything was read, so each of the three keys names no soul.
+  const whole = await world().discover();
+  assert.deepEqual(keysOf(launchKeysUnmatched({ local, offered: soulsOffered(whole) }).unmatched), ["acme.pkg/gone", "ghost", "platform/builder"]);
+  assert.equal((await spawnOver(world(), "planner", launch)).refused?.code, CODE);
+  // 1. A discovery with no `soulsUnread`, or with part of it: nothing says what it skipped. Every key is
+  //    unchecked, for a reason of its own, and the spawn goes on.
+  const { soulsUnread, ...bare } = whole;
+  for (const discovery of [bare, { ...whole, soulsUnread: null }, { ...whole, soulsUnread: { packages: [], unlocked: [] } }, { ...whole, soulsUnread: { ...soulsUnread, members: undefined } }]) {
+    const description = soulsOffered(discovery);
+    assert.equal(description.unread.all, "unrecorded");
+    const told = launchKeysUnmatched({ local, offered: description });
+    assert.deepEqual([told.unmatched, told.unchecked.map((u) => [u.key, u.reason])], [[], [["acme.pkg/gone", "unrecorded"], ["ghost", "unrecorded"], ["platform/builder", "unrecorded"]]]);
+  }
+  for (const read of [({ soulsUnread: _dropped, ...rest }) => rest, (d) => ({ ...d, soulsUnread: { packages: [], unlocked: [] } })]) {
+    assert.equal((await spawnOver(world(), "planner", launch, { read })).refused, null, "through the spawn: not refused on a read that established nothing");
+  }
+  // The same for a description that says nothing of what was not read.
+  assert.deepEqual(keysOf(launchKeysUnmatched({ local, offered: { keys: ["planner"] } }).unchecked), ["acme.pkg/gone", "ghost", "platform/builder"]);
+  assert.deepEqual(launchKeysUnmatched({ local, offered: { keys: ["planner"] } }).unmatched, []);
+  // Every reason has its sentence in doctor's table, this one included.
+  assert.deepEqual(Object.keys(LAUNCH_KEY_UNCHECKED).sort(), ["member-unconfirmed", "package-soul-unread", "package-unlocked", "soul-unread", "standalone", "unrecorded"]);
+  for (const sentence of Object.values(LAUNCH_KEY_UNCHECKED)) assert.ok(typeof sentence === "string" && sentence.length > 20 && !/[\n\r]/.test(sentence));
+  // 2. A member's enumeration that carries no `soulsSkipped` (an item this build did not write) counts as
+  //    one with a soul skipped: the member's bare keys are unchecked. Here the item comes from a remote
+  //    whose per-commit memo returns it without the record.
+  //    This is NOT how an older CLI's cache reaches a newer one: the parsed cache is kept per kernel
+  //    fingerprint, and another build's entries are never read (test/parsed-cache.test.mjs, "invalidation:
+  //    another kernel fingerprint (a CLI change) never reads this one's entries"). The rule is for whatever
+  //    builds a discovery without the record.
+  const unrecorded = () => {
+    const w = world();
+    w.remote.memoAtCommit = async (ref, commit, item, compute) => {
+      const value = await compute();
+      if (item !== "enumerate" || w.remote.parseRepoRef(ref).key !== KEY("platform")) return value;
+      const { soulsSkipped: _dropped, ...rest } = value;
+      return rest;
+    };
+    return w;
+  };
+  const partial = await unrecorded().discover();
+  assert.deepEqual(partial.soulsUnread.members, [KEY("platform")], "the member whose enumeration has no record, and only it");
+  assert.equal(soulsOffered(partial).unread.bare, "soul-unread");
+  const told = launchKeysUnmatched({ local, offered: soulsOffered(partial) });
+  assert.deepEqual([keysOf(told.unmatched), told.unchecked.map((u) => [u.key, u.reason])], [["acme.pkg/gone", "platform/builder"], [["ghost", "soul-unread"]]], "a qualified key is not a bare one: still unmatched");
+  // Through the spawn: a bare key alone refuses nothing there; a key that is unmatched still does.
+  assert.equal((await spawnOver(unrecorded(), "planner", { "*": "fast", ghost: "private" })).refused, null);
+  assert.deepEqual((await spawnOver(unrecorded(), "planner", launch)).refused?.details.keys.map((k) => k.key), ["acme.pkg/gone", "platform/builder"]);
+  // The standalone view of that one repository, from an enumeration with no record: its bare keys too.
+  const alone = unrecorded();
+  const view = await discoverOrStandalone({ standalone: REF("platform") }, { lock: null, remote: alone.remote });
+  assert.deepEqual([view.standaloneReason, view.soulsUnread.members, soulsOffered(view).unread.bare], ["explicit", [KEY("platform")], "soul-unread"]);
+  const recorded = await discoverOrStandalone({ standalone: REF("platform") }, { lock: null, remote: world().remote });
+  assert.deepEqual([recorded.soulsUnread.members, soulsOffered(recorded).unread.bare], [[], null]);
 });
 
 /* ───────────────────────────── the readers, through the CLI ───────────── */
