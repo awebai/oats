@@ -1,0 +1,53 @@
+{
+  "live": "awebai/oats#994",
+  "mode": "approved",
+  "rule": {
+    "cleanWindowMs": 2000,
+    "intervalMs": 100
+  },
+  "outcome": "no-prompt",
+  "outcomeMs": 2400,
+  "screenOnlyOutcome": "no-prompt",
+  "firstNonBlankMs": 400,
+  "firstMarkerMs": null,
+  "firstMarkers": [],
+  "cleanWindowStartMs": 400,
+  "cleanWindowCompletedMs": 2400,
+  "questionAfterNoPrompt": false,
+  "questionAfterNoPromptTimes": null,
+  "markerCaptures": 0,
+  "markerRuns": [],
+  "sessionBannerFirstMs": 400,
+  "harness": {
+    "readings": 201,
+    "firstRunningMs": 0,
+    "capturesBeforeRunning": 0,
+    "firstNotRunningMs": null,
+    "noLongerRunningMs": null,
+    "singleNotRunningReadings": 0
+  },
+  "exitFile": {
+    "firstSeenMs": null,
+    "status": null
+  },
+  "settledFrame": {
+    "ms": 19000,
+    "lastMs": 20000,
+    "heldMs": 1000,
+    "settled": false,
+    "frame": "frames/approved/t+019000.txt",
+    "blank": false,
+    "markers": [],
+    "sessionBanner": true,
+    "noticeBlocks": 1,
+    "flagIgnoredEntry": null
+  },
+  "captures": 201,
+  "failedCaptures": 0,
+  "blankCaptures": 4,
+  "distinctFrames": 28,
+  "geometryChanges": [],
+  "observedMs": 20000,
+  "failure": null,
+  "interrupted": null
+}

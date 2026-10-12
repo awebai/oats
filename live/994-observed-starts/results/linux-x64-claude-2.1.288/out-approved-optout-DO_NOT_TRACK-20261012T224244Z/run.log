@@ -1,0 +1,5 @@
+mode approved-optout DO_NOT_TRACK; executable from LIVE_994_EXECUTABLE; Claude 2.1.288 (executable-path)
+run folder: /tmp/l994/run-approved-optout/home
+out dir: /tmp/l994/out-approved-optout-DO_NOT_TRACK-20261012T224244Z
+pane %0 created in 11 ms; watching for 20 s, a capture every 100 ms
+outcome: no-prompt

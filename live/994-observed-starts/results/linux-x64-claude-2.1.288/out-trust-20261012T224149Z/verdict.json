@@ -1,0 +1,82 @@
+{
+  "live": "awebai/oats#994",
+  "mode": "trust",
+  "rule": {
+    "cleanWindowMs": 2000,
+    "intervalMs": 100
+  },
+  "outcome": "blocked: unexpected prompt",
+  "outcomeMs": 300,
+  "screenOnlyOutcome": "blocked: unexpected prompt",
+  "firstNonBlankMs": 300,
+  "firstMarkerMs": 300,
+  "firstMarkers": [
+    "Accessing workspace:",
+    "Quick safety check:",
+    "Yes, I trust this folder",
+    "No, exit",
+    "Enter to confirm",
+    "Esc to cancel"
+  ],
+  "cleanWindowStartMs": null,
+  "cleanWindowCompletedMs": null,
+  "questionAfterNoPrompt": false,
+  "questionAfterNoPromptTimes": null,
+  "markerCaptures": 198,
+  "markerRuns": [
+    {
+      "fromMs": 300,
+      "toMs": 20000,
+      "captures": 198,
+      "markers": [
+        "Accessing workspace:",
+        "Quick safety check:",
+        "Yes, I trust this folder",
+        "No, exit",
+        "Enter to confirm",
+        "Esc to cancel"
+      ]
+    }
+  ],
+  "sessionBannerFirstMs": null,
+  "harness": {
+    "readings": 201,
+    "firstRunningMs": 0,
+    "capturesBeforeRunning": 0,
+    "firstNotRunningMs": null,
+    "noLongerRunningMs": null,
+    "singleNotRunningReadings": 0
+  },
+  "exitFile": {
+    "firstSeenMs": null,
+    "status": null
+  },
+  "settledFrame": {
+    "ms": 300,
+    "lastMs": 20000,
+    "heldMs": 19700,
+    "settled": true,
+    "frame": "frames/trust/t+000300.txt",
+    "blank": false,
+    "markers": [
+      "Accessing workspace:",
+      "Quick safety check:",
+      "Yes, I trust this folder",
+      "No, exit",
+      "Enter to confirm",
+      "Esc to cancel"
+    ],
+    "sessionBanner": false,
+    "noticeBlocks": 0,
+    "flagIgnoredEntry": null
+  },
+  "questionMatchedMarker": true,
+  "captures": 201,
+  "failedCaptures": 0,
+  "blankCaptures": 3,
+  "distinctFrames": 2,
+  "geometryChanges": [],
+  "observedMs": 20000,
+  "failure": null,
+  "interrupted": null
+}

@@ -1,0 +1,5 @@
+mode probe; executable from LIVE_994_EXECUTABLE; Claude 2.1.288 (executable-path)
+run folder: /tmp/l994/run-probe/home
+out dir: /tmp/l994/out-probe-20261012T224028Z
+probe `--no-chrome plugin list --json`: exit 0, JSON array true
+probe `plugin list --json`: exit 0, JSON array true

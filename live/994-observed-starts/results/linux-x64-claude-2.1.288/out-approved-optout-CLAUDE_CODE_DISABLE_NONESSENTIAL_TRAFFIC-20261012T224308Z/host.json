@@ -1,0 +1,60 @@
+{
+  "live": "awebai/oats#994",
+  "mode": "approved-optout",
+  "optOut": "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+  "platform": "linux-x64",
+  "claudeVersion": "2.1.288",
+  "claudeVersionSource": "executable-path",
+  "claudeVersionReadFrom": "LIVE_994_CLAUDE_BINARY",
+  "executableVariable": "LIVE_994_EXECUTABLE",
+  "stub": false,
+  "dryRun": false,
+  "configuration": "LIVE_994_CONFIG_DIR",
+  "pane": {
+    "requested": "110x35",
+    "width": 110,
+    "height": 35
+  },
+  "paneArguments": [
+    "--channels",
+    "plugin:aweb-channel@awebai-marketplace",
+    "--",
+    "@TASK.md"
+  ],
+  "paneEnvironmentNames": [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+    "CLAUDE_CONFIG_DIR",
+    "DISABLE_AUTOUPDATER",
+    "HOME",
+    "LANG",
+    "PATH",
+    "TERM"
+  ],
+  "modeEnvironment": {
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "extraEnvNames": [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "DISABLE_AUTOUPDATER"
+  ],
+  "seconds": 20,
+  "intervalMs": 100,
+  "cleanWindowMs": 2000,
+  "tmuxVersion": "tmux 3.7c",
+  "nodeVersion": "v26.8.2",
+  "oatsHead": "22f211aaa5485067843d9e796ad1a98e7897ece7",
+  "scripts": {
+    "run.sh": "d2c0a8fd3178198d91ccced582462aece2174faa4e84cb7ce6900119f00850a2",
+    "drive.mjs": "d7e205308767a967c8d1f1451c3a35534ed3e5422e54d74dad6c53c8cf314993",
+    "verdict.mjs": "8868d445900cfb611e95b02497af32d64373a33d19edebc39cf05a574d810610",
+    "report.mjs": "dc2ec79c99286f4c5695cc615bf23376c9af2a6dd8ed36720c842cffd0598bc5",
+    "cleanup.sh": "6799acf319c70412b142b55cf8721d7035c0efbd5ff5cee5caed98315e6788dd",
+    "stub-claude.sh": "35256b6064a40e0ca12010f81ca8ba9f9e9c713ba26c1f30dd64b7febe980ab5",
+    "check-dry-runs.sh": "b66c96fa8b42a78044b55657b3341da5605d607aa9da11e2760025e4d63f21f8",
+    "tmux.conf": "7baf59963e89d1907825edc356fcd53d4ef0f1d5bd384bd9a7ba8d243bd55ee1"
+  },
+  "startedAt": "2026-10-12T22:43:08.127Z"
+}

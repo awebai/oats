@@ -1,0 +1,4 @@
+probe on linux-x64: Claude 2.1.288 (executable-path), executable from LIVE_994_EXECUTABLE, pane ?x?, tmux 3.7c, oats 22f211aaa5485067843d9e796ad1a98e7897ece7
+extra pane environment, by name: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, DISABLE_AUTOUPDATER
+probe `--no-chrome plugin list --json`: exit 0, stdout is a JSON array: yes, stderr: empty
+probe `plugin list --json`: exit 0, stdout is a JSON array: yes, stderr: empty

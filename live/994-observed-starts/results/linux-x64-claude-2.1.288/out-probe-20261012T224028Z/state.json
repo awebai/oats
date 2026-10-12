@@ -1,0 +1,8 @@
+{
+  "live": "awebai/oats#994",
+  "mode": "probe",
+  "out": "/tmp/l994/out-probe-20261012T224028Z",
+  "socket": "/tmp/l994/tmux/20261012T224028Z-3203212",
+  "session": "live994",
+  "panePid": null
+}

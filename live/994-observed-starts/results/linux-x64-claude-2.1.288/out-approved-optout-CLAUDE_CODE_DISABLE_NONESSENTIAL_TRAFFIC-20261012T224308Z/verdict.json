@@ -1,0 +1,55 @@
+{
+  "live": "awebai/oats#994",
+  "mode": "approved-optout",
+  "optOut": "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+  "rule": {
+    "cleanWindowMs": 2000,
+    "intervalMs": 100
+  },
+  "outcome": "no-prompt",
+  "outcomeMs": 2600,
+  "screenOnlyOutcome": "no-prompt",
+  "firstNonBlankMs": 500,
+  "firstMarkerMs": null,
+  "firstMarkers": [],
+  "cleanWindowStartMs": 500,
+  "cleanWindowCompletedMs": 2600,
+  "questionAfterNoPrompt": false,
+  "questionAfterNoPromptTimes": null,
+  "markerCaptures": 0,
+  "markerRuns": [],
+  "sessionBannerFirstMs": 500,
+  "harness": {
+    "readings": 201,
+    "firstRunningMs": 0,
+    "capturesBeforeRunning": 0,
+    "firstNotRunningMs": null,
+    "noLongerRunningMs": null,
+    "singleNotRunningReadings": 0
+  },
+  "exitFile": {
+    "firstSeenMs": null,
+    "status": null
+  },
+  "settledFrame": {
+    "ms": 19599,
+    "lastMs": 19999,
+    "heldMs": 400,
+    "settled": false,
+    "frame": "frames/approved-optout/t+019599.txt",
+    "blank": false,
+    "markers": [],
+    "sessionBanner": true,
+    "noticeBlocks": 1,
+    "flagIgnoredEntry": null
+  },
+  "noticeBlocksAtSettledFrame": 1,
+  "captures": 201,
+  "failedCaptures": 0,
+  "blankCaptures": 5,
+  "distinctFrames": 33,
+  "geometryChanges": [],
+  "observedMs": 19999,
+  "failure": null,
+  "interrupted": null
+}

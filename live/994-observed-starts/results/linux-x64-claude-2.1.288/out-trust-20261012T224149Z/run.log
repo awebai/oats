@@ -1,0 +1,5 @@
+mode trust; executable from LIVE_994_EXECUTABLE; Claude 2.1.288 (executable-path)
+run folder: /tmp/l994/run-trust/home
+out dir: /tmp/l994/out-trust-20261012T224149Z
+pane %0 created in 9 ms; watching for 20 s, a capture every 100 ms
+outcome: blocked: unexpected prompt

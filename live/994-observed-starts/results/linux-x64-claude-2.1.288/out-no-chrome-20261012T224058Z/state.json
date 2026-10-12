@@ -1,0 +1,8 @@
+{
+  "live": "awebai/oats#994",
+  "mode": "no-chrome",
+  "out": "/tmp/l994/out-no-chrome-20261012T224058Z",
+  "socket": "/tmp/l994/tmux/20261012T224058Z-3226850",
+  "session": "live994",
+  "panePid": 3226922
+}

@@ -1,0 +1,12 @@
+{
+  "checked": 6,
+  "notChecked": [
+    "throwaway-home/"
+  ],
+  "classes": [
+    "home",
+    "user",
+    "host"
+  ],
+  "failed": []
+}

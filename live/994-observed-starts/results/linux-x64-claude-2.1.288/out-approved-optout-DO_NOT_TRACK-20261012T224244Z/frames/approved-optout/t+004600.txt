@@ -1,0 +1,35 @@
+
+ ▐▛███▛█   Claude Code v2.1.288
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   /tmp/l994/run-approved-optout/home
+
+▎ Auto mode is now Claude Code's default permission mode.
+▎ Auto mode lets Claude handle permission prompts automatically. Claude checks each tool call for risky
+▎ actions and prompt injection before executing, runs the ones it assesses as lower-risk, and blocks the rest.
+▎ https://code.claude.com/docs/en/permission-modes
+  1 more notice hidden
+
+❯ @TASK.md
+  ⎿  Read TASK.md (10 lines)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+✻ Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED) · Retrying in 5s · attempt 4/10
+                                                                                          ◐ medium · /effort
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents

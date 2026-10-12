@@ -1,0 +1,11 @@
+trust on linux-x64: Claude 2.1.288 (executable-path), executable from LIVE_994_EXECUTABLE, pane 110x35, tmux 3.7c, oats 22f211aaa5485067843d9e796ad1a98e7897ece7
+extra pane environment, by name: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, DISABLE_AUTOUPDATER
+outcome: blocked: unexpected prompt at 300 ms (from the screen alone: blocked: unexpected prompt)
+first non-blank capture: 300 ms; first capture with a marker: 300 ms ["Accessing workspace:","Quick safety check:","Yes, I trust this folder","No, exit","Enter to confirm","Esc to cancel"]; clean window completed: never
+questionAfterNoPrompt: false
+marker captures: 198 in 198 from 300 ms; session banner first at: never
+harness: first read as running at 0 ms, after 0 earlier captures; no longer running: never; single not-running readings: 0; exit file first seen: never
+settled frame: frames/trust/t+000300.txt, held 19700 ms to the end (settled); markers 6, notice blocks 0, session banner no, flag-ignored entry none
+questionMatchedMarker: true (the settled frame holds a marker of the kernel's list)
+captures: 201 (0 failed, 3 blank, 2 distinct frames) over 20000 ms; geometry changes: none
+cleanup: tmux server gone yes, pane process group gone yes

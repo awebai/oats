@@ -1,0 +1,11 @@
+approved-optout DO_NOT_TRACK on linux-x64: Claude 2.1.288 (executable-path), executable from LIVE_994_EXECUTABLE, pane 110x35, tmux 3.7c, oats 22f211aaa5485067843d9e796ad1a98e7897ece7
+extra pane environment, by name: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, DISABLE_AUTOUPDATER
+outcome: no-prompt at 2600 ms (from the screen alone: no-prompt)
+first non-blank capture: 501 ms; first capture with a marker: never; clean window completed: 2600 ms
+questionAfterNoPrompt: false
+marker captures: 0; session banner first at: 501 ms
+harness: first read as running at 0 ms, after 0 earlier captures; no longer running: never; single not-running readings: 0; exit file first seen: never
+settled frame: frames/approved-optout/t+019300.txt, held 700 ms to the end (still changing); markers 0, notice blocks 1, session banner yes, flag-ignored entry none
+DO_NOT_TRACK=1: notice blocks at the settled frame: 1
+captures: 201 (0 failed, 5 blank, 26 distinct frames) over 20000 ms; geometry changes: none
+cleanup: tmux server gone yes, pane process group gone yes

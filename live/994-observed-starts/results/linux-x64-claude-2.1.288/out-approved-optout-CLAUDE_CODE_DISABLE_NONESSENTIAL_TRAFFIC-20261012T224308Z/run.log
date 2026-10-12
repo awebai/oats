@@ -1,0 +1,5 @@
+mode approved-optout CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC; executable from LIVE_994_EXECUTABLE; Claude 2.1.288 (executable-path)
+run folder: /tmp/l994/run-approved-optout/home
+out dir: /tmp/l994/out-approved-optout-CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC-20261012T224308Z
+pane %0 created in 10 ms; watching for 20 s, a capture every 100 ms
+outcome: no-prompt

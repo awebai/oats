@@ -1,0 +1,10 @@
+approved on linux-x64: Claude 2.1.288 (executable-path), executable from LIVE_994_EXECUTABLE, pane 110x35, tmux 3.7c, oats 22f211aaa5485067843d9e796ad1a98e7897ece7
+extra pane environment, by name: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, DISABLE_AUTOUPDATER
+outcome: no-prompt at 2400 ms (from the screen alone: no-prompt)
+first non-blank capture: 400 ms; first capture with a marker: never; clean window completed: 2400 ms
+questionAfterNoPrompt: false
+marker captures: 0; session banner first at: 400 ms
+harness: first read as running at 0 ms, after 0 earlier captures; no longer running: never; single not-running readings: 0; exit file first seen: never
+settled frame: frames/approved/t+019000.txt, held 1000 ms to the end (still changing); markers 0, notice blocks 1, session banner yes, flag-ignored entry none
+captures: 201 (0 failed, 4 blank, 28 distinct frames) over 20000 ms; geometry changes: none
+cleanup: tmux server gone yes, pane process group gone yes
