@@ -297,12 +297,12 @@ export function rosterGroupKey(workspace, ...parts) {
   return [`g:${workspace || ""}`, ...parts].join("\u0000");
 }
 
-/** Whether an instance itself matches the roster filter (its name, soul, repo or task) — as
+/** Whether an instance itself matches the roster filter (its name, soul or repository) — as
  * opposed to an ancestor shown only to keep a match's tree path. */
 export function instanceMatchesFilter(item, query) {
   const needle = String(query || "").trim().toLowerCase();
   if (!needle) return true;
-  return [item.instance, item.agent, item.repoName, item.task]
+  return [item.instance, item.agent, item.repoName]
     .some((value) => String(value || "").toLowerCase().includes(needle));
 }
 
@@ -355,19 +355,28 @@ export function visibleClusters(allInstances, visibleInstances, { links = instan
 
 /** The sidebar roster's groups (Redesign v3), shared with the command palette:
  * each multi-member relation cluster under its deterministic name, then every
- * unrelated instance under "independent". Clusters come from the FULL roster,
- * projected to the visible members (visibleClusters), so a group's size is
- * what is shown. Returns [{ key, label, clusters: [{ key, instances }] }] in
- * display order, members carrying their tree depth. A group's key is unique
- * even when two roots share a name (other agents roots or hosts): the label is
- * the name, the key adds its place in the order. */
+ * unrelated instance under "independent". A cluster's group is decided on the
+ * FULL roster: more than one member there is a group under the cluster's name,
+ * exactly one goes under "independent". A filter or a collapse decides which
+ * rows are listed and never moves a row to another group; a group with no
+ * visible row is left out. Returns [{ key, label, clusters: [{ key, instances }] }]
+ * in the full roster's cluster order, each cluster projected to its visible
+ * members, which carry their tree depth. A group's key is unique even when two
+ * roots share a name (other agents roots or hosts), and does not depend on what
+ * is visible: the label is the name, the key adds the cluster's place among the
+ * multi-member clusters of the full roster. */
 export function rosterGroups(allInstances, visibleInstances, { links = instanceLinks } = {}) {
-  const clusters = visibleClusters(allInstances, visibleInstances, { links });
-  return [
-    ...clusters.filter((c) => c.instances.length > 1).map((c, i) => ({ key: `cluster:${i}:${c.key}`, label: c.key, clusters: [c] })),
-    ...(clusters.some((c) => c.instances.length === 1)
-      ? [{ key: "independent", label: "independent", clusters: clusters.filter((c) => c.instances.length === 1) }] : []),
-  ];
+  const visibleIds = new Set(visibleInstances.map((i) => instanceId(i)));
+  const named = [], independent = [];
+  let place = 0;
+  for (const c of clusterInstances(allInstances, { links })) {
+    const at = c.instances.length > 1 ? place++ : -1;
+    const shown = { ...c, instances: c.instances.filter((i) => visibleIds.has(instanceId(i))) };
+    if (!shown.instances.length) continue;
+    if (at < 0) independent.push(shown);
+    else named.push({ key: `cluster:${at}:${c.key}`, label: c.key, clusters: [shown] });
+  }
+  return [...named, ...(independent.length ? [{ key: "independent", label: "independent", clusters: independent }] : [])];
 }
 
 /** Whether an item remains visible under VS Code-style collapsed ancestors.

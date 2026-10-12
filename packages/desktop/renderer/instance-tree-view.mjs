@@ -7,9 +7,11 @@ import { instanceId, resolveLinkId, findRosterInstance } from '../../client/inst
 /** Agent-group boundary for the instances sidebar (Workspace v4): groups
  * read from spacing alone — a 14px gap, no title — and the boundary is still
  * exposed to assistive technology (role=separator with the group's name and
- * size). The group is the relation cluster (never the repo); unrelated
- * instances share one "independent" group. Importable so the regression
- * exercises the exact builder the shell uses. */
+ * the number of rows shown under it). The group is the relation cluster
+ * (never the repo), decided on the full roster, so a filter or a collapse
+ * never moves a row to another group; unrelated instances share one
+ * "independent" group. Importable so the regression exercises the exact
+ * builder the shell uses. */
 export function clusterSeparator(doc, { label, count } = {}) {
   const gap = doc.createElement("div");
   gap.className = "ctx-group"; gap.setAttribute("role", "separator");
