@@ -7,6 +7,7 @@ import { registerAction, setActiveContexts, getBinding, formatChord, setBinding,
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { markStaleControl, ROSTER_STALE_TITLE } from "../renderer/instance-tree-view.mjs";
 import { cliRetire, parseRetireEnvelope } from "../../client/cli-adapter.mjs";
+import { HERDR, MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
 
 // jsdom has no top-layer API. Model only its open/close events here; native
 // light-dismiss and rendering are Chromium's behavior, not this test's claim.
@@ -280,5 +281,49 @@ test("actions are app buttons with keyboard navigation, dismissal and refresh re
   assert.equal(doc.activeElement, trigger, "Tab continues from the trigger, not a hidden menu item");
   trigger.click(); menu.hidePopover(); // the browser's light-dismiss path
   assert.equal(trigger.getAttribute("aria-expanded"), "false");
+  dom.window.close();
+});
+
+/* ── #982: a reason that is the row's own text is shown with who made it ── */
+test("Start on a Herdr row says who made its reason: each speaker, none, and hostile text as text; it stays disabled whatever the text shows", () => {
+  const dom = menuDom(), doc = dom.window.document;
+  const start = (extra) => {
+    const control = instanceActions(doc, { instance: "h1", home: "/home/h1", running: null, runtimeState: "unsupported", ...extra },
+      { invoke: () => assert.fail("nothing is sent"), openLifecycle: () => assert.fail("no dialog"), report: m => assert.fail(m) });
+    doc.body.append(control);
+    return control.querySelector('[data-action="start"]');
+  };
+  const reason = `${HERDR} (h1)`;
+  for (const [origin, line] of shown(reason)) {
+    const item = start({ runtimeError: reason, ...(origin ? { runtimeErrorOrigin: origin } : {}) });
+    assert.equal(item.title, line, String(origin)); assert.equal(item.querySelector("small").textContent, line, String(origin));
+    assert.equal(item.disabled, true);
+  }
+  // The stand-in for an older kernel's row is the client's sentence: no lead, whatever mark the row carries.
+  for (const row of [{ runtimeState: undefined, backend: "herdr", running: true }, { runtimeState: undefined, backend: "herdr", running: true, runtimeError: "another text", runtimeErrorOrigin: "kernel" }]) {
+    assert.equal(start(row).title, HERDR);
+  }
+  const markup = start({ runtimeError: `E_HERDR_REMOVED: ${MARKUP}`, runtimeErrorOrigin: "kernel" });
+  assert.equal(markup.querySelector("small").textContent, `OATS says: E_HERDR_REMOVED: ${MARKUP}`);
+  assert.equal(doc.querySelector("small b, small script"), null, "the reason is text");
+  const withheld = start({ runtimeError: `E_HERDR_REMOVED: ${CONTROL}`, runtimeErrorOrigin: "kernel" });
+  assert.equal(withheld.title, DETAIL_WITHHELD, "an unsafe reason is withheld, under no speaker's name"); assert.equal(withheld.disabled, true);
+  dom.window.close();
+});
+
+test("a row that offers nothing says why on its trigger, with who made the text when it is the row's own", () => {
+  const dom = menuDom(), doc = dom.window.document;
+  const trigger = (extra) => triggerOf(instanceActions(doc, { instance: "dev-a", home: "/remote/dev-a", server: "box", repoName: "box-repo", addressable: false, running: null, serverUnreached: true, ...extra },
+    { invoke: () => assert.fail("nothing is sent"), openLifecycle: () => assert.fail("no dialog") }));
+  const text = "the read did not answer";
+  for (const [origin, line] of shown(text)) {
+    const control = trigger({ runtimeError: text, ...(origin ? { runtimeErrorOrigin: origin } : {}) });
+    assert.equal(control.title, line, String(origin)); assert.equal(control.disabled, true);
+  }
+  assert.equal(trigger({}).title, "box-repo was not reached.", "a sentence written here has no lead");
+  assert.equal(trigger({ serverUnreached: false, runtimeError: text, runtimeErrorOrigin: "kernel" }).title, "box-repo did not report this instance as reachable.",
+    "a sentence written here stays without one beside a row's marked text");
+  const withheld = trigger({ runtimeError: CONTROL, runtimeErrorOrigin: "roster-read" });
+  assert.equal(withheld.title, DETAIL_WITHHELD); assert.equal(withheld.disabled, true);
   dom.window.close();
 });

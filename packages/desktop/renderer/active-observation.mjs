@@ -2,6 +2,7 @@
 import { instanceId, distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { eventsTimestamp } from '../../client/instance-events-contract.mjs';
 import { canAddressRemote } from '../../client/remote-address.mjs';
+import { knownOrigin, hasRuntimeError } from '../../client/instance-presentation.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
@@ -27,6 +28,10 @@ export function projectActivePanel(panel) {
     // forwards it (true only): instance-tree.mjs heldHome gates the canvas's actions on it.
     for (const key of ['spawnInProgress', 'rollbackIncomplete', 'retirePending']) if (raw[key] === true) instance[key] = true;
     for (const key of [...identityFields, ...displayed, ...reported]) instance[key] = text(raw[key]);
+    // Who made the row's runtimeError, as /api/panel forwards it: only beside that text as it was reported (a
+    // non-empty string), and only one of the three speakers (packages/client/instance-presentation.mjs). The
+    // backend is where the mark is made and guarded.
+    if (hasRuntimeError(raw) && knownOrigin(raw.runtimeErrorOrigin)) instance.runtimeErrorOrigin = raw.runtimeErrorOrigin;
     for (const key of ['parentInstance', 'siblingInstance']) instance[key] = typeof raw[key] === 'string' ? raw[key] : '';
     const id = instanceId(instance);
     if (seen.has(id)) throw new Error('The roster contains duplicate instance identities; actions are unavailable.');

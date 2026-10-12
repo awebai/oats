@@ -225,6 +225,29 @@ test('a Herdr-recorded instance: the popover disables Terminal and Restart with 
   assert.equal(restart.disabled, true); assert.equal(restart.title, reason);
 });
 
+test('a Herdr-recorded instance: the popover says who made the reason (#982): each speaker the panel names, none, and a hostile text as text or withheld', async t => {
+  const reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  const cases = [['kernel', `OATS says: ${reason}`], ['terminal-probe', `Desktop's terminal check says: ${reason}`], ['roster-read', `Desktop's read of other machines says: ${reason}`],
+    [undefined, reason], ['server-probe', reason], [{ lead: 'kernel' }, reason]];
+  for (const [origin, line] of cases) {
+    const u = await setup(t, { instances: [instance('h1', { running: null, runtimeState: 'unsupported', runtimeError: reason, ...(origin ? { runtimeErrorOrigin: origin } : {}) })] }); await tick();
+    u.mouse(u.nodes()[0], 'click');
+    assert.equal(u.one('.pterm').title, line, String(origin)); assert.equal(u.one('.prestart').title, line, String(origin));
+    assert.equal(u.one('.pterm').disabled, true); assert.equal(u.one('.prestart').disabled, true);
+    u.dispose();
+  }
+  for (const [text, line] of [['E_HERDR_REMOVED: <b>bold</b>', 'OATS says: E_HERDR_REMOVED: <b>bold</b>'], ['E_HERDR_REMOVED: gone\u001b[2J', '[Detail withheld]']]) {
+    const u = await setup(t, { instances: [instance('h1', { running: null, runtimeState: 'unsupported', runtimeError: text, runtimeErrorOrigin: 'kernel' })] }); await tick();
+    u.mouse(u.nodes()[0], 'click');
+    assert.equal(u.one('.pterm').title, line); assert.equal(u.one('.pterm').disabled, true);
+    u.dispose();
+  }
+  // The stand-in for an older kernel's row is written here: no lead beside another marked text.
+  const u = await setup(t, { instances: [instance('h1', { backend: 'herdr', runtimeError: 'another text', runtimeErrorOrigin: 'kernel' })] }); await tick();
+  u.mouse(u.nodes()[0], 'click');
+  assert.equal(u.one('.pterm').title, reason);
+});
+
 /* ── #461: a deployment the server does not serve, or does not answer for ── */
 const notServed = () => Promise.reject(Object.assign(new Error("This Desktop's server isn't serving this deployment."), { code: NOT_SERVED_CODE, status: 404 }));
 

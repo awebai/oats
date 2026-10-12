@@ -3,6 +3,7 @@ import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { unsupportedSession } from '../../client/instance-presentation.mjs';
+import { unsupportedLine } from './speaker-line.mjs';
 import { heldHome } from '../../client/instance-tree.mjs';
 import { canAddressRemote, serverLabel, shownLabel, unaddressableSentence } from '../../client/remote-address.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
@@ -669,7 +670,7 @@ export function createContextPanel({
     for (const b of [restartControl, startControl, stopControl, retireControl]) b.disabled = !canAddressRemote(instance);
     // A Herdr-recorded instance cannot start: Start stays visible, disabled, with the kernel's reason.
     if (unsupported) startControl.disabled = true;
-    startControl.title = unsupported || '';
+    startControl.title = unsupportedLine(instance) || '';
     // A section with nothing reported is not shown; the header sub-line omits an unreported description.
     soulSub.hidden = fields.get('description').textContent === 'Not reported';
     lineage.hidden = [...lineage.querySelectorAll('[data-row]')].every(r => r.hidden);

@@ -4,6 +4,7 @@
 import { instanceId } from "../../client/instance-tree.mjs";
 import { instanceActs } from "../../client/instance-acts.mjs";
 import { iconElement } from "./shell-icons.mjs";
+import { reasonLine } from "./speaker-line.mjs";
 /** The menu's words for each act instanceActs can list. */
 const LABELS = Object.freeze({ inspect: 'Knowledge & capabilities…', start: 'Start…', restart: 'Restart with…', stop: 'Stop…', retire: 'Retire instance…' });
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
@@ -66,7 +67,8 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   const syncOptions = () => {
     for (const item of items) {
       const reason = reasonFor(item.dataset.action), note = item.querySelector('small');
-      item.disabled = !!reason;
+      // An act the shared home lists as not enabled stays so whatever its reason's text shows.
+      item.disabled = !!reason || descriptors.find(row => row.action === item.dataset.action)?.unavailable === true;
       if (note) { note.textContent = reason; note.hidden = !reason; }
       item.title = reason;
       item.autofocus = false;
@@ -77,7 +79,8 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   // A remote row the kernel does not report addressable has no actions here; the trigger says why.
   const unrouted = offer.blocked?.code === 'unaddressable';
   trigger.disabled = unrouted;
-  if (unrouted) trigger.title = offer.blocked.sentence;
+  // A reason's sentence that is the row's own text is said with who made it (speaker-line.mjs).
+  if (unrouted) trigger.title = reasonLine(offer.blocked) ?? '';
   else if (pending.has(key)) { const { reason, controls } = pending.get(key); markPending(trigger, reason); controls.push({ trigger, owns }); }
   const close = (restoreFocus = false) => {
     menu.hidePopover();
@@ -159,7 +162,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   // row has no menu, and a limited one (#802: a home a spawn or a retire left half cleaned) offers Retire alone.
   // An act listed with a reason (Start on a row whose session backend is gone) stays visible, disabled, with it.
   const descriptors = [...(offer.blocked || offer.limited ? [] : extra),
-    ...offer.acts.map(({ verb, reason }) => ({ action: verb, label: LABELS[verb], ...(reason ? { reason: reason.sentence } : {}) }))];
+    ...offer.acts.map(({ verb, reason }) => ({ action: verb, label: LABELS[verb], ...(reason ? { reason: reasonLine(reason) ?? '', unavailable: true } : {}) }))];
   for (const descriptor of descriptors) {
     const { action, label, reason, actionId } = descriptor;
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
@@ -178,7 +181,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   }
   syncOptions();
   // A blocked row has no actions at all: the trigger says why instead of opening an empty menu.
-  if (offer.blocked) { trigger.disabled = true; trigger.title = offer.blocked.sentence; }
+  if (offer.blocked) { trigger.disabled = true; trigger.title = reasonLine(offer.blocked) ?? ''; }
   wrapper.append(trigger, menu);
   return wrapper;
 }

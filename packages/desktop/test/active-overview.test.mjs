@@ -295,6 +295,20 @@ test('malicious metadata stays inert; unnegotiated activity/task/git fields neve
   assert.equal(canAddressInstance(instance('bad-home', { home: 'relative-home' })), false, 'malformed primary home must not fall back to another root/name target');
 });
 
+test("the overview's projection keeps who made a row's text (#982): one of the three speakers, beside a text, and nothing else", () => {
+  const row = fields => projectActivePanel(panel([instance('dev', { running: null, ...fields })], '/team')).instances[0];
+  for (const origin of ['kernel', 'terminal-probe', 'roster-read']) {
+    assert.equal(row({ runtimeError: 'the session did not answer', runtimeErrorOrigin: origin }).runtimeErrorOrigin, origin);
+  }
+  for (const origin of [undefined, null, '', 'server-probe', 'Kernel', true, 1, {}, ['kernel'], '__proto__', 'constructor']) {
+    assert.equal(Object.hasOwn(row({ runtimeError: 'the session did not answer', runtimeErrorOrigin: origin }), 'runtimeErrorOrigin'), false, JSON.stringify(origin) ?? String(origin));
+  }
+  // A mark with no text beside it names nobody.
+  for (const runtimeError of [undefined, null, '', 7, {}]) {
+    assert.equal(Object.hasOwn(row({ runtimeError, runtimeErrorOrigin: 'kernel' }), 'runtimeErrorOrigin'), false, JSON.stringify(runtimeError) ?? String(runtimeError));
+  }
+});
+
 async function mutatedModule(before, after) {
   let source = readFileSync(new URL('../renderer/views/hierarchy.mjs', import.meta.url), 'utf8'); assert.ok(source.includes(before));
   source = source.replace(before, after).replace(/from "(\.[^"]+)"/g, (_all, path) => `from ${JSON.stringify(new URL(path, new URL('../renderer/views/hierarchy.mjs', import.meta.url)).href)}`);

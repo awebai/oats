@@ -10,6 +10,9 @@ import { runInNewContext } from "node:vm";
 import { DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
 import { fillEmptyGroup, requestSplit } from "../renderer/split-layout.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
+import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
+import { rowReasonLine, runtimeErrorLine } from "../renderer/speaker-line.mjs";
+import { MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (f) => readFileSync(join(PKG, f), "utf8");
@@ -100,7 +103,7 @@ test("post-spawn auto-open is QUIET: openTerminalTab failures route through noti
   // both user-facing refusals inside the open path go through notify
   assert.match(src, /return notify\(r\.error === "ambiguous"/,
     "resolution refusals use notify");
-  assert.match(src, /if \(!inst\.running \|\| \(!inst\.server && !inst\.tmux\?\.session\)\) return notify\(inst\.runtimeError \|\| `"\$\{name\}" has no live terminal session`\);/,
+  assert.match(src, /if \(!inst\.running \|\| \(!inst\.server && !inst\.tmux\?\.session\)\) return notify\(runtimeErrorLine\(inst\) \|\| `"\$\{name\}" has no live terminal session`\);/,
     "the no-live-terminal refusal uses notify (the original stuck-modal alert)");
   // and the spawn view's handoff actually asks for quiet + closes the modal first
   const spawnSrc = read("renderer/views/spawn.mjs");
@@ -108,4 +111,25 @@ test("post-spawn auto-open is QUIET: openTerminalTab failures route through noti
     "the local handoff closes the modal then opens the terminal quietly");
   assert.match(spawnSrc, /closeSpawnModal\(s\);\n\s*s\.ctx\.openTerminal\(ref, \{ quiet: true \}\);\n\s*return \{ created: true \};/,
     "the execution-server handoff closes the modal then opens the terminal quietly");
+});
+
+/* ── #982: the notice of a terminal that cannot open says who made the row's text ── */
+test("opening a terminal that cannot open: the notice carries the row's text with its speaker, and attaches nothing", async () => {
+  const inner = read("renderer/shell.mjs").match(/async function openTerminalTabInner\(inst, ws, key, owns,[\s\S]*?\n\}/)?.[0];
+  assert.ok(inner, "the terminal open function exists");
+  // The two refusals return before the function touches the page: any other name it reaches fails the run.
+  const open = runInNewContext(`(${inner})`, { canAddressRemote, rowReason, rowReasonLine, runtimeErrorLine });
+  const notice = async (inst) => { const said = []; await open(inst, "A", "key", () => true, (message) => said.push(message), () => assert.fail("no destination is committed")); return said; };
+  const text = "the session did not answer";
+  for (const [origin, line] of shown(text)) {
+    const mark = origin ? { runtimeErrorOrigin: origin } : {};
+    assert.deepEqual(await notice({ instance: "dev-a", running: null, runtimeError: text, ...mark }), [line], `not running: ${origin}`);
+    assert.deepEqual(await notice({ instance: "dev-a", running: true, tmux: null, runtimeError: text, ...mark }), [line], `no session: ${origin}`);
+    assert.deepEqual(await notice({ instance: "dev-a", server: "box", repoName: "box-repo", addressable: false, serverUnreached: true, running: null, runtimeError: text, ...mark }), [line], `not addressable: ${origin}`);
+  }
+  assert.deepEqual(await notice({ instance: "dev-a", running: false }), ['"dev-a" has no live terminal session'], "a row with no text keeps the sentence written here");
+  assert.deepEqual(await notice({ instance: "dev-a", running: false, runtimeErrorOrigin: "kernel" }), ['"dev-a" has no live terminal session'], "a mark beside no text names nobody");
+  assert.deepEqual(await notice({ instance: "dev-a", server: "box", repoName: "box-repo", addressable: false, running: true }), ["box-repo did not report this instance as reachable."]);
+  assert.deepEqual(await notice({ instance: "dev-a", running: null, runtimeError: MARKUP, runtimeErrorOrigin: "kernel" }), [`OATS says: ${MARKUP}`], "the notice is given text, never markup of its own");
+  assert.deepEqual(await notice({ instance: "dev-a", running: null, runtimeError: CONTROL, runtimeErrorOrigin: "kernel" }), [DETAIL_WITHHELD]);
 });
