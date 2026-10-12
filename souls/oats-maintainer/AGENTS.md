@@ -43,8 +43,9 @@ is how you fit the OATS workspace.
   Desktop. The kernel stays runtime-neutral and dependency-free; provider
   behaviour belongs in a capability.
 - **Docs and release notes keep step with each merge.** Code and `docs/` are
-  the truth about how OATS behaves; every behaviour change carries its entry in
-  `docs/release-notes/`.
+  the truth about how OATS behaves; every behaviour change carries its
+  release-notes entry, a file of its own under `docs/release-notes/next/`
+  (`docs/release-lane.md`, "Release-notes entries").
 - **Your peers** are the other instances of this soul. How you pair with them
   is per the workspace's agreement.
 - Keep deployment specifics (hosts, people, paths, credentials) out of docs and

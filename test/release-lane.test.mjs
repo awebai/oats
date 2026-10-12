@@ -82,6 +82,7 @@ test("--help works and names every phase", () => {
   assert.equal(r.status, 0, r.stderr);
   for (const phase of ["build", "desktop", "stage", "publish-npm", "tag", "release-github", "status"]) assert.match(r.stdout, new RegExp(`^  ${phase}\\b`, "m"), `help documents ${phase}`);
   assert.match(r.stdout, /Linux AppImage\/DEB leg needs a Linux host/);
+  assert.match(r.stdout, /release-notes gate, unassembled-entries gate \(no\s+file left under docs\/release-notes\/next\/\), version bump/, "build names its two release-notes gates, before the bump");
   assert.match(r.stdout, /NO npm provenance attestation/);
   assert.match(r.stdout, /Pushing triggers release\.yml/);
   assert.equal(lane([]).status, 2, "no phase: usage, refused");
@@ -123,6 +124,44 @@ test("build refuses when docs/release-notes/<tag>.md is missing at the SHA (fixt
   assert.equal(spawnSync("git", ["-C", exportDir, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim(), sha);
   assert.ok(!existsSync(join(exportDir, "node_modules")), "no install happened");
   assert.equal(spawnSync("git", ["-C", repo, "status", "--porcelain"], { encoding: "utf8" }).stdout, "", "the checkout is untouched");
+});
+
+test("build refuses while a release-notes entry is left unassembled at the SHA, before the bump (fixture repo)", (t) => {
+  // The workflow's "Verify no release-notes entry is left unassembled": the notes file is there,
+  // and so is an entry the release-prep pull request did not move into it.
+  const { repo, run } = fixtureRepo(t);
+  const write = (file, text) => { mkdirSync(join(repo, file, ".."), { recursive: true }); writeFileSync(join(repo, file), text); };
+  for (const sub of ["", "packages/pi/", "packages/desktop/"]) write(`${sub}package.json`, JSON.stringify({ name: `fixture${sub.length}`, version: "9.9.9", private: true }));
+  write("docs/release-notes/v9.9.9.md", "# OATS 9.9.9\n");
+  write("docs/release-notes/next/1018-entry-files.md", "## Changed\n\n- an entry\n");
+  write("docs/release-notes/next/991-pi-folders.md", "## Fixed\n\n- another\n");
+  run("add", "."); run("commit", "-qm", "notes file and two entries");
+  const sha = run("rev-parse", "HEAD");
+  const stage = join(scratch(t, "stage"), "v9.9.9");
+  const exportDir = join(scratch(t, "export"), "v9.9.9");
+  const npm = fakeNpm(t);
+  const r = lane(["build", "--tag", "v9.9.9", "--stage", stage, "--export", exportDir, "--allow-off-main"], { cwd: repo, env: npm.env });
+  // the same class of error as the notes-file gate beside it
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stdout, /release notes present: docs\/release-notes\/v9\.9\.9\.md/, "the notes-file gate passed first");
+  assert.match(r.stderr, /unassembled release-notes entries under docs\/release-notes\/next\//);
+  assert.ok(r.stderr.includes('run "node scripts/assemble-release-notes.mjs --tag v9.9.9" in the release-prep pull request'), "names the command with the tag");
+  assert.ok(r.stderr.includes(": 1018-entry-files.md, 991-pi-folders.md "), "names the files it found");
+  assert.ok(r.stderr.includes(sha));
+  // no phase is recorded, and npm was asked for its own version only (the manifest's field, before
+  // every gate): no bump, and nothing after it
+  const manifest = JSON.parse(readFileSync(join(stage, "MANIFEST.json"), "utf8"));
+  assert.equal(manifest.sha, sha);
+  assert.deepEqual(manifest.phases, {});
+  assert.deepEqual(npm.calls(), ["--version"]);
+  assert.equal(run("status", "--porcelain"), "", "the checkout is untouched");
+
+  // With the entries assembled away, the same build passes this gate and goes on to the bump.
+  run("rm", "-rq", "docs/release-notes/next"); run("commit", "-qm", "entries assembled");
+  const passed = lane(["build", "--tag", "v9.9.9", "--stage", stage, "--export", exportDir, "--allow-off-main", "--force"], { cwd: repo, env: npm.env });
+  assert.match(passed.stdout, /no unassembled release-notes entry/);
+  assert.doesNotMatch(passed.stderr, /unassembled release-notes entries/);
+  assert.equal(npm.calls().filter((c) => c === "version 9.9.9 --no-git-tag-version --allow-same-version").length, 3, "it reached the three-manifest bump");
 });
 
 test("stage writes SHA256SUMS.txt in shasum format and records staged/missing assets in MANIFEST.json", (t) => {

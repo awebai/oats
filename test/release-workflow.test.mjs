@@ -7,7 +7,10 @@
 //   * the bump PR covers all three package manifests.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseConfigData } from "../lib/config-data.mjs";
 
 const yml = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
@@ -132,6 +135,54 @@ test("release fails fast when the tag has no matching release-notes file", () =>
   assert.ok(guard < yml.indexOf("publish:\n"), "gate runs pre-publication");
   assert.match(yml, /docs\/release-notes\/\$\{GITHUB_REF_NAME\}\.md/, "gate checks the tag-named notes file");
   assert.match(yml, /--notes-file docs\/release-notes\/\$\{GITHUB_REF_NAME\}\.md/, "gh release create uses the same tag-named file");
+});
+
+test("release refuses a tag while a release-notes entry is left unassembled, before the first bump", (t) => {
+  // A pull request writes its entry under docs/release-notes/next/ and the
+  // release-prep pull request moves the entries into the tag's notes file
+  // (docs/release-lane.md, "Release-notes entries"). Anything still there is
+  // missing from the notes the tag publishes and rides in the kernel tarball's
+  // docs/, so the tag is refused where the notes-file gate is: in
+  // build-and-test, before any build spend or publication.
+  const workflow = parseConfigData(yml).value;
+  const steps = workflow.jobs["build-and-test"].steps;
+  const names = steps.map((step) => step.name);
+  const gate = names.indexOf("Verify no release-notes entry is left unassembled");
+  assert.ok(gate > 0, "the gate is a step of build-and-test");
+  assert.equal(gate, names.indexOf("Verify release notes exist for this tag") + 1, "right after the notes-file gate");
+  assert.ok(gate < steps.findIndex((step) => /\bnpm version\b/.test(step.run ?? "")), "before the first version bump of the job");
+  assert.ok(workflow.jobs.publish.needs.includes("build-and-test"), "and publication needs the job");
+  assert.ok(yml.indexOf("Verify no release-notes entry is left unassembled") < yml.indexOf("publish:\n"));
+  assert.deepEqual(Object.keys(steps[gate]), ["name", "run"], "the step is unconditional and may not continue on error");
+
+  // The step's own script, as the runner runs it (bash -e), in a directory that stands for the checkout.
+  const dir = mkdtempSync(join(tmpdir(), "oats-release-entries-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const run = () => spawnSync("bash", ["-e", "-c", steps[gate].run], { cwd: dir, env: { PATH: process.env.PATH, GITHUB_REF_NAME: "v9.9.9" }, encoding: "utf8" });
+  const passes = (why) => { const r = run(); assert.equal(r.status, 0, `${why}: ${r.stdout}${r.stderr}`); assert.equal(r.stdout, ""); };
+  passes("no docs/release-notes/next");
+  mkdirSync(join(dir, "docs", "release-notes"), { recursive: true });
+  writeFileSync(join(dir, "docs", "release-notes", "v9.9.9.md"), "# OATS 9.9.9\n");
+  passes("no directory beside the notes file");
+  mkdirSync(join(dir, "docs", "release-notes", "next"));
+  passes("an empty directory");
+
+  writeFileSync(join(dir, "docs", "release-notes", "next", "1018-entry-files.md"), "## Changed\n\n- an entry\n");
+  const refused = run();
+  assert.notEqual(refused.status, 0, "one file there refuses the tag");
+  const [line, ...rest] = refused.stdout.trimEnd().split("\n");
+  assert.deepEqual(rest, [], "one annotation line");
+  assert.match(line, /^::error::/);
+  assert.ok(line.includes("`node scripts/assemble-release-notes.mjs --tag v9.9.9`"), "names the command with the tag");
+  assert.match(line, /in the release-prep pull request/);
+  assert.match(line, /docs\/release-notes\/next: 1018-entry-files\.md /, "lists what it found");
+  // Anything in the directory counts, whatever its name: a hidden file, a directory.
+  rmSync(join(dir, "docs", "release-notes", "next", "1018-entry-files.md"));
+  writeFileSync(join(dir, "docs", "release-notes", "next", ".gitkeep"), "");
+  assert.match(run().stdout, /next: \.gitkeep /);
+  rmSync(join(dir, "docs", "release-notes", "next", ".gitkeep"));
+  mkdirSync(join(dir, "docs", "release-notes", "next", "drafts"));
+  assert.notEqual(run().status, 0);
 });
 
 test("ad-hoc signing posture: certificate auto-discovery disabled; supported matrix only", () => {

@@ -28,7 +28,8 @@ surfaces; this file is how you fit the OATS workspace.
 - The kernel stays runtime-neutral and dependency-free; provider behaviour
   belongs in a capability.
 - Behaviour and docs change together: the `docs/` page that owns the rule, and
-  the release notes.
+  the release-notes entry, a file of its own under `docs/release-notes/next/`
+  (`docs/release-lane.md`, "Release-notes entries").
 
 ## Knowledge
 

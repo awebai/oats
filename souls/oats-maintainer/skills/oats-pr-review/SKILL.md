@@ -26,5 +26,9 @@ the smoke script or packaging. For a knowledge change, run the OKF validator ove
 whole base and read its warnings.
 
 ## Mergeability: notes
-Every behaviour change carries its entry in `docs/release-notes/<next version>.md` and
-updates the `docs/` page that owns the rule.
+Every behaviour change carries its release-notes entry as one file under
+`docs/release-notes/next/` and updates the `docs/` page that owns the rule. The pull
+request does not touch `docs/release-notes/<next version>.md`: the release-prep PR moves
+the entries there. `test/release-notes-entries.test.mjs` holds the file to its form (the
+name, the section headings, nothing else), not to what it says: read the entry.
+`docs/release-lane.md`, "Release-notes entries", is the rule.

@@ -124,6 +124,23 @@ jobs:
           NOTES="docs/release-notes/${GITHUB_REF_NAME}.md"
           [ -f "$NOTES" ] || { echo "::error::missing $NOTES — the release-notes filename must match the tag"; exit 1; }
 
+      # A pull request writes its release-notes entry as a file under
+      # docs/release-notes/next/, and the release-prep pull request moves
+      # the entries into the notes file checked above
+      # (docs/release-lane.md, "Release-notes entries"). Anything still
+      # there is missing from the notes this tag publishes and would ship
+      # in the kernel tarball's docs/: refuse, like the gate above, before
+      # any build spend.
+      - name: Verify no release-notes entry is left unassembled
+        run: |
+          NEXT="docs/release-notes/next"
+          FOUND=""
+          if [ -e "$NEXT" ]; then FOUND="$(ls -A "$NEXT" | tr '\n' ' ')"; fi
+          if [ -n "$FOUND" ]; then
+            echo "::error::unassembled release-notes entries under $NEXT: ${FOUND}— run \`node scripts/assemble-release-notes.mjs --tag ${GITHUB_REF_NAME}\` in the release-prep pull request"
+            exit 1
+          fi
+
       - name: Bump all three packages (root, pi, desktop)
         run: |
           npm version "${{ steps.v.outputs.version }}" --no-git-tag-version --allow-same-version
