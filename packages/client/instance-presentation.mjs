@@ -39,6 +39,12 @@ const ORIGINS = Object.freeze(["kernel", "terminal-probe", "roster-read"]);
 export const knownOrigin = (value) => ORIGINS.includes(value);
 /** Whether a row has a `runtimeError`: a string that is not empty. Only such a row carries `runtimeErrorOrigin`. */
 export const hasRuntimeError = (row) => typeof row?.runtimeError === "string" && !!row.runtimeError;
+/** The speaker of a sentence a reason carries, or null: the row's `runtimeErrorOrigin` when the sentence
+ * is the row's own `runtimeError` and the key names one of the three. A sentence written for the row (it
+ * was not reached, its state is unknown) and the Herdr stand-in have none. The key is a panel row's, set
+ * by the shared home (deployment-panel.mjs, remote-roster.mjs). Not on the stable surface. */
+export const runtimeErrorSpeaker = (row, sentence) =>
+  (hasRuntimeError(row) && sentence === row.runtimeError && knownOrigin(row.runtimeErrorOrigin) ? row.runtimeErrorOrigin : null);
 
 export function runtimeCounts(instances) {
   const counts = { running: 0, stopped: 0, unknown: 0 };

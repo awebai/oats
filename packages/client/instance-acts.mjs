@@ -4,14 +4,20 @@
  *   instanceActs(instance) -> { blocked: Reason | null, limited: Reason | null, acts: Act[] }
  *   Act    = { verb, enabled, reason: Reason | null }
  *   Reason = { code, sentence } and, by code:
- *     { code: 'unaddressable', key, sentence }   key: the row reason's own (remote-address.mjs rowReason)
- *     { code: 'held', kind, sentence }           kind: 'spawning' | 'spawn-incomplete' | 'retire-incomplete'
- *     { code: 'unsupported-session', sentence }
+ *     { code: 'unaddressable', key, sentence, origin? }   key: the row reason's own (remote-address.mjs rowReason)
+ *     { code: 'held', kind, sentence }                    kind: 'spawning' | 'spawn-incomplete' | 'retire-incomplete'
+ *     { code: 'unsupported-session', sentence, origin? }
  *
  * A client may switch on `code`, and on `key` or `kind` when it needs to; never on the sentence.
- * The sentences are the ones the shared tables already produce. Two of them can be kernel text (an
- * unaddressable row's `runtimeError`, the kernel's reason for a removed session backend): a client
- * shows a sentence only through display-text.mjs `displayLine`.
+ * The sentences are the ones the shared tables already produce. Two of them can be text this home did
+ * not write (an unaddressable row's `runtimeError`, the kernel's reason for a removed session backend): a
+ * client shows a sentence only through display-text.mjs `displayLine`.
+ *
+ * `origin` says who made such a sentence: "kernel", "terminal-probe" or "roster-read", the row's
+ * `runtimeErrorOrigin` passed on when the sentence is the row's own `runtimeError` (the rule of
+ * `rowReason`). It is absent on a sentence this home wrote and on the stand-in for an older kernel's
+ * Herdr row, and a `held` reason never has one. A client names the speaker with
+ * instance-presentation.mjs `originLead`, and shows a sentence with no `origin` as its own.
  *
  * `blocked`: the row offers nothing, and this is why; `acts` is then empty.
  * `limited`: the row offers fewer acts than a home normally does, and this is why. It is about the
@@ -29,15 +35,15 @@
  *   running unknown                                       inspect, stop, retire
  */
 import { heldHome } from './instance-tree.mjs';
-import { unsupportedSession } from './instance-presentation.mjs';
+import { unsupportedSession, runtimeErrorSpeaker } from './instance-presentation.mjs';
 import { canAddressRemote, rowReason } from './remote-address.mjs';
 
 const act = (verb, reason = null) => ({ verb, enabled: !reason, reason });
 
 export function instanceActs(instance) {
   if (!canAddressRemote(instance)) {
-    const { key, sentence } = rowReason(instance);
-    return { blocked: { code: 'unaddressable', key, sentence }, limited: null, acts: [] };
+    const { key, sentence, origin } = rowReason(instance);
+    return { blocked: { code: 'unaddressable', key, sentence, ...(origin ? { origin } : {}) }, limited: null, acts: [] };
   }
   // #802: a home the kernel holds starts, stops and opens nothing. Retire only when a spawn or a retire left it
   // half cleaned (the kernel's retire completes it), nothing while its spawn sets up the worktree.
@@ -47,8 +53,8 @@ export function instanceActs(instance) {
     return held.retire ? { blocked: null, limited: reason, acts: [act('retire')] } : { blocked: reason, limited: null, acts: [] };
   }
   // A Herdr-recorded row cannot start or restart: Start stays listed, not enabled, with the kernel's reason.
-  const unsupported = unsupportedSession(instance);
-  const launch = unsupported ? [act('start', { code: 'unsupported-session', sentence: unsupported })]
+  const unsupported = unsupportedSession(instance), speaker = unsupported ? runtimeErrorSpeaker(instance, unsupported) : null;
+  const launch = unsupported ? [act('start', { code: 'unsupported-session', sentence: unsupported, ...(speaker ? { origin: speaker } : {}) })]
     : instance.running === true ? [act('restart')] : instance.running === false ? [act('start')] : [];
   return { blocked: null, limited: null, acts: [act('inspect'), ...launch, act('stop'), act('retire')] };
 }

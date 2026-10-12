@@ -44,6 +44,46 @@ test('rowReason: one function for the meta-line label and the full sentence, key
   assert.equal(rowReason(remote({ running: null, serverUnreached: true, addressable: false, missingRemotely: true })).key, 'unreached');
 });
 
+// Who made a reason's sentence (#982): `origin`, when the sentence is the row's own runtimeError.
+const ORIGINS = ['kernel', 'terminal-probe', 'roster-read'];
+const HERDR_STAND_IN = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+
+test('rowReason: origin is the row\'s runtimeErrorOrigin when the sentence is the row\'s runtimeError, for herdr, unreached and unknown', () => {
+  for (const origin of ORIGINS) {
+    const own = { runtimeError: 'the text the row carries', runtimeErrorOrigin: origin };
+    assert.deepEqual(rowReason(remote({ running: null, runtimeState: 'unsupported', ...own })),
+      { key: 'herdr', label: 'Herdr no longer supported', sentence: 'the text the row carries', origin });
+    assert.deepEqual(rowReason(remote({ running: null, serverUnreached: true, ...own })), { key: 'unreached', label: 'Build box not reached', sentence: 'the text the row carries', origin });
+    assert.deepEqual(rowReason(remote({ running: null, ...own })), { key: 'unknown', label: 'state unknown', sentence: 'the text the row carries', origin });
+    assert.deepEqual(rowReason({ instance: 'x', home: '/w/x', running: null, ...own }), { key: 'unknown', label: 'state unknown', sentence: 'the text the row carries', origin }, 'a local row too');
+  }
+});
+
+test('rowReason: no origin for a sentence written here, for the Herdr stand-in, or for a key that is not a speaker', () => {
+  const none = (row, key, sentence) => { const reason = rowReason(row); assert.deepEqual([reason.key, reason.sentence, Object.hasOwn(reason, 'origin')], [key, sentence, false], JSON.stringify(row)); };
+  for (const origin of [...ORIGINS, 'someone-else']) {
+    // Written here: the row has no text of its own, whatever key it carries.
+    none(remote({ running: null, serverUnreached: true, runtimeErrorOrigin: origin }), 'unreached', 'Build box was not reached.');
+    none(remote({ running: null, runtimeErrorOrigin: origin }), 'unknown', 'dev-a: status unknown');
+    none(remote({ running: null, runtimeError: '', runtimeErrorOrigin: origin }), 'unknown', 'dev-a: status unknown');
+    // `missing` and `unaddressable` are sentences about the row, never its text.
+    none(remote({ addressable: false, missingRemotely: true, running: null, runtimeError: 'a text', runtimeErrorOrigin: origin }), 'missing',
+      'dev-a is no longer on Build box. Remove it from this computer with: oats server forget build --instance dev-a');
+    none(remote({ addressable: false, runtimeError: 'a text', runtimeErrorOrigin: origin }), 'unaddressable', 'Build box did not report this instance as reachable.');
+    // The stand-in for an older kernel's Herdr row: the row's runtimeError is a Herdr probe's, not the sentence.
+    none(remote({ backend: 'herdr', runtimeError: 'Herdr snapshot unavailable', runtimeErrorOrigin: origin }), 'herdr', HERDR_STAND_IN);
+    none({ instance: 'h', home: '/w/h', running: null, sessionTarget: 'x', runtimeErrorOrigin: origin }, 'herdr', HERDR_STAND_IN);
+  }
+  // The row's own text with a key that names no speaker, or none: shown, with no speaker.
+  for (const origin of ['Kernel', 'server-probe', '', '__proto__', 'constructor', 7, null, undefined, { kernel: true }]) {
+    none(remote({ running: null, runtimeError: 'a text', runtimeErrorOrigin: origin }), 'unknown', 'a text');
+    none(remote({ running: null, serverUnreached: true, runtimeError: 'a text', runtimeErrorOrigin: origin }), 'unreached', 'a text');
+    none(remote({ running: null, runtimeState: 'unsupported', runtimeError: 'a text', runtimeErrorOrigin: origin }), 'herdr', 'a text');
+  }
+  // A panel's row of an older kernel's Herdr instance holds the stand-in as its runtimeError and no key: no speaker.
+  none(remote({ running: null, runtimeState: 'unsupported', runtimeError: HERDR_STAND_IN }), 'herdr', HERDR_STAND_IN);
+});
+
 test('remoteHeadline: the host-refusal table, with the view\'s own sentence for every other code', () => {
   assert.equal(remoteHeadline('E_REMOTE_INCOMPATIBLE', 'Build box', 'x'), "Build box runs an OATS that can't do this yet.");
   assert.equal(remoteHeadline('E_SNAPSHOT_UNKNOWN', 'Build box', 'x'), "Build box doesn't list this instance any more.");

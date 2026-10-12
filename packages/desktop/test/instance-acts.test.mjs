@@ -7,6 +7,9 @@ import { heldHome } from "../../client/instance-tree.mjs";
 import { unsupportedSession } from "../../client/instance-presentation.mjs";
 import { rowReason } from "../../client/remote-address.mjs";
 import { ROWS } from "./helpers/instance-menu-probe.mjs";
+import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
+import { parseEnvelope } from "../../client/cli-adapter.mjs";
+import { kernelRemoteRow, kernelRemoteGroup } from "./helpers/kernel-remote-row.mjs";
 
 const VERBS = ["inspect", "start", "restart", "stop", "retire"];
 const LOCAL = { instance: "dev-one", home: "/agents/dev/instances/dev-one" };
@@ -69,6 +72,62 @@ test("a remote row the kernel does not report addressable: blocked with the row'
   for (const [row, key, sentence] of cases) {
     assert.deepEqual(instanceActs(row), { blocked: { code: "unaddressable", key, sentence }, limited: null, acts: [] });
     assert.equal(rowReason(row).key, key); assert.equal(rowReason(row).sentence, sentence, "the sentence is the row reason's");
+  }
+});
+
+// ── Who made a reason's sentence (#982) ──────────────────────────────────────
+const ORIGINS = ["kernel", "terminal-probe", "roster-read"];
+
+test("the unaddressable reason passes the row reason's origin on, and has none when the row reason has none", () => {
+  for (const origin of ORIGINS) {
+    const own = { runtimeError: "the text the row carries", runtimeErrorOrigin: origin };
+    assert.deepEqual(instanceActs({ ...REMOTE, addressable: false, serverUnreached: true, ...own }),
+      { blocked: { code: "unaddressable", key: "unreached", sentence: "the text the row carries", origin }, limited: null, acts: [] });
+    assert.deepEqual(instanceActs({ ...REMOTE, addressable: false, running: null, runtimeState: "unsupported", ...own }),
+      { blocked: { code: "unaddressable", key: "herdr", sentence: "the text the row carries", origin }, limited: null, acts: [] });
+    // Sentences written for the row carry no origin, whatever the row's key says.
+    for (const [row, key] of [[{ ...REMOTE, addressable: false, running: true, ...own }, "unaddressable"], [{ ...REMOTE, addressable: false, missingRemotely: true, ...own }, "missing"],
+      [{ ...REMOTE, addressable: false, serverUnreached: true, runtimeErrorOrigin: origin }, "unreached"], [{ ...REMOTE, addressable: false, backend: "herdr", ...own }, "herdr"]]) {
+      const { blocked } = instanceActs(row);
+      assert.deepEqual([blocked.key, Object.hasOwn(blocked, "origin")], [key, false], `${origin}: ${key}`);
+      assert.equal(blocked.sentence, rowReason(row).sentence);
+    }
+  }
+});
+
+test("Start's unsupported-session reason carries the origin under the same rule: the kernel's own text has its speaker, the stand-in has none", () => {
+  for (const origin of ORIGINS) {
+    const { acts } = instanceActs({ ...LOCAL, running: null, runtimeState: "unsupported", runtimeError: HERDR, runtimeErrorOrigin: origin });
+    assert.deepEqual(acts[1], { verb: "start", enabled: false, reason: { code: "unsupported-session", sentence: HERDR, origin } });
+    // An older kernel's row: its runtimeError is a Herdr probe's, the sentence is the stand-in, and no key makes it a speaker's.
+    for (const row of [{ ...LOCAL, running: true, sessionTarget: "herdr:pane-1", runtimeError: "spawn herdr ENOENT", runtimeErrorOrigin: origin }, { ...REMOTE, running: true, backend: "herdr", runtimeErrorOrigin: origin }]) {
+      const reason = instanceActs(row).acts[1].reason;
+      assert.deepEqual(reason, { code: "unsupported-session", sentence: unsupportedSession(row) }, JSON.stringify(row));
+    }
+  }
+  // No key, or one that names no speaker: the sentence as it is, with no origin.
+  for (const runtimeErrorOrigin of [undefined, "someone-else", "__proto__", 7, null]) {
+    assert.deepEqual(instanceActs({ ...LOCAL, running: null, runtimeState: "unsupported", runtimeError: HERDR, runtimeErrorOrigin }).acts[1].reason, { code: "unsupported-session", sentence: HERDR });
+  }
+  // A held reason never has one.
+  for (const row of [{ ...LOCAL, spawnInProgress: true, runtimeError: "a text", runtimeErrorOrigin: "kernel" }, { ...LOCAL, rollbackIncomplete: true, running: false, runtimeError: "a text", runtimeErrorOrigin: "kernel" }]) {
+    const { blocked, limited } = instanceActs(row);
+    assert.equal(Object.hasOwn(blocked ?? limited, "origin"), false);
+  }
+});
+
+test("a kept row of a machine that was not reached, in the kernel's form: with addressable true it lists its acts as before; with addressable false it is blocked with the row's text and its speaker", () => {
+  const printed = (error) => parseEnvelope(JSON.stringify({ schemaVersion: 1, ok: false, error })).error;
+  const kept = (row, error) => remotePanel(unavailableGroups([kernelRemoteGroup([row])], error)[0], "2026-10-11T12:00:00.000Z").instances[0];
+  for (const [error, text, origin] of [[printed({ code: "E_SSH", message: "ssh: connect to host build: No route to host" }), "ssh: connect to host build: No route to host", "kernel"],
+    [{ code: "E_REMOTE_ROSTER", message: "Remote roster unavailable: spawn oats ENOENT" }, "Remote roster unavailable: spawn oats ENOENT", "roster-read"], [undefined, "Server is unreachable", "roster-read"]]) {
+    // The kernel's form: `addressable: true` on a row it listed. The row carries the facts; the acts are the base's.
+    const reachable = kept(kernelRemoteRow("dev-one"), error);
+    assert.deepEqual([reachable.serverUnreached, reachable.running, reachable.runtimeError, reachable.runtimeErrorOrigin], [true, null, text, origin]);
+    assert.deepEqual(instanceActs(reachable), offered([on("inspect"), on("stop"), on("retire")]), "no blocked reason: running is unknown, so no launch act");
+    // `addressable: false`: blocked, key unreached, the row's text as the sentence, and who made it.
+    const blocked = kept(kernelRemoteRow("dev-one", { addressable: false }), error);
+    assert.deepEqual(instanceActs(blocked), { blocked: { code: "unaddressable", key: "unreached", sentence: text, origin }, limited: null, acts: [] });
   }
 });
 

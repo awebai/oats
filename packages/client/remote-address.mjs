@@ -1,6 +1,6 @@
 /** Which roster rows can be addressed, why a row can't, and the copy for a remote read or plan
  * that the host (or this machine's router) refused. Shared by the renderer and the server. */
-import { unsupportedSession } from './instance-presentation.mjs';
+import { unsupportedSession, runtimeErrorSpeaker } from './instance-presentation.mjs';
 import { displayLine, cleanLine, DETAIL_WITHHELD } from './display-text.mjs';
 
 /** A local row, or a remote row the kernel reports addressable (routed by `--server <id> --home <abs>`).
@@ -28,18 +28,24 @@ export function unaddressableSentence(row) {
     : `${shownLabel(label, true)} did not report this instance as reachable.`;
 }
 
-/** Why a row can't be opened, as `{key, label, sentence}`, or null when nothing stands in the way.
+/** Why a row can't be opened, as `{key, label, sentence, origin?}`, or null when nothing stands in the way.
  * `label` is the roster meta line's state segment; `sentence` is the row's title, accessible
- * description and actions-menu reason. */
+ * description and actions-menu reason.
+ *
+ * `origin` says who made the sentence when it is the row's own `runtimeError`: the row's
+ * `runtimeErrorOrigin` (instance-presentation.mjs names the three speakers). That can be so for the keys
+ * `herdr`, `unreached` and `unknown`. It is absent when the sentence is one written here (`missing`,
+ * `unaddressable`, a row with no text of its own) and for the Herdr stand-in: a client shows a sentence
+ * with no origin as its own, never under a speaker's name. */
 export function rowReason(row) {
   const label = serverLabel(row);
+  const said = (key, label, sentence) => { const origin = runtimeErrorSpeaker(row, sentence); return { key, label, sentence, ...(origin ? { origin } : {}) }; };
   const herdr = unsupportedSession(row);
-  if (herdr) return { key: 'herdr', label: 'Herdr no longer supported', sentence: herdr };
-  if (row.server && row.serverUnreached) return { key: 'unreached', label: `${label} not reached`,
-    sentence: row.runtimeError || `${label} was not reached.` };
+  if (herdr) return said('herdr', 'Herdr no longer supported', herdr);
+  if (row.server && row.serverUnreached) return said('unreached', `${label} not reached`, row.runtimeError || `${label} was not reached.`);
   if (row.server && row.missingRemotely === true) return { key: 'missing', label: `gone from ${label}`, sentence: unaddressableSentence(row) };
   if (!canAddressRemote(row)) return { key: 'unaddressable', label: `not reachable on ${label}`, sentence: unaddressableSentence(row) };
-  if (row.running == null) return { key: 'unknown', label: 'state unknown', sentence: row.runtimeError || `${row.instance}: status unknown` };
+  if (row.running == null) return said('unknown', 'state unknown', row.runtimeError || `${row.instance}: status unknown`);
   return null;
 }
 
