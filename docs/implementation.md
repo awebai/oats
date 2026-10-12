@@ -545,7 +545,10 @@ inherits it (awebai/oats#816):
   that have followed a session variable with every variable a session has set
   to a value that cannot work, the names read from the helper's definition
   (its legacy names, which no session has, are dropped and not set). Give it a
-  test file to run that file alone. Pull-request CI runs it as the
+  test file to run that file alone, and a flag for `node --test` with its
+  value in the same argument (`--test-name-pattern=…`): it refuses any other
+  argument, so it never starts `node --test` without naming the files.
+  Pull-request CI runs it as the
   `session-inheritance` job, which the gate requires
   (`test/continuous-integration.test.mjs` pins both), and
   `test/session-inheritance.test.mjs` pins the rule helper by helper.

@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SESSION_VARIABLES, fixtureBase, inheritedEnv, isSessionVariable, neverInherited } from "./helpers/host-fixture.mjs";
-import { poisonedSession } from "../scripts/test-session-inheritance.mjs";
+import { SESSION_SUITES, nodeTestArguments, poisonedSession } from "../scripts/test-session-inheritance.mjs";
 
 const HELPERS = new URL("./helpers/", import.meta.url).href;
 const SESSION = poisonedSession();
@@ -56,6 +56,27 @@ test("the definition: the harness configuration selectors, the display, the tmux
     assert.equal(isSessionVariable(name), false, name);
   }
   assert.throws(() => { SESSION_VARIABLES.names.push("X"); }, TypeError, "the definition is not changed by a test");
+});
+
+test("npm run test:session: node --test always gets an explicit list of files, and a flag's value is never taken for one", () => {
+  const SCRIPT = new URL("../scripts/test-session-inheritance.mjs", import.meta.url).pathname;
+  assert.deepEqual(nodeTestArguments([]), ["--test", ...SESSION_SUITES]);
+  assert.deepEqual(nodeTestArguments(["test/login-environment.test.mjs"]), ["--test", "test/login-environment.test.mjs"]);
+  // Flags go before the files; with none given the suites are still named.
+  assert.deepEqual(nodeTestArguments(["--test-name-pattern=the rule", "--test-concurrency=1"]), ["--test", "--test-name-pattern=the rule", "--test-concurrency=1", ...SESSION_SUITES]);
+  assert.deepEqual(nodeTestArguments(["test/login-environment.test.mjs", "--test-reporter=tap"]), ["--test", "--test-reporter=tap", "test/login-environment.test.mjs"]);
+  // A value given apart from its flag would be node's value and this run's only "file": node would
+  // then be given no file, and discover every suite of the repository.
+  assert.throws(() => nodeTestArguments(["--test-name-pattern", "definition"]), /"definition" is not a test file.*--flag=value/);
+  assert.throws(() => nodeTestArguments(["--test-name-pattern", "definition", "--test-reporter", "tap", "test/session-inheritance.test.mjs"]), /"definition" is not a test file/);
+  // Nor a directory, a file that is not there, or one that is no module.
+  for (const not of ["test", "test/no-such.test.mjs", "package.json"]) assert.throws(() => nodeTestArguments([not]), /is not a test file/, not);
+  for (const args of [[], ["--test-reporter=tap"], ["test/login-environment.test.mjs"]]) assert.ok(nodeTestArguments(args).some((a) => a.endsWith(".test.mjs")), `no file for ${JSON.stringify(args)}`);
+  // The command itself refuses, and starts no test run: it exits before it prints what it sets.
+  const r = spawnSync(process.execPath, [SCRIPT, "--test-name-pattern", "definition"], { encoding: "utf8", env: inheritedEnv(), timeout: 60000 });
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /^session inheritance: "definition" is not a test file/);
+  assert.equal(r.stdout, "", "no run was started");
 });
 
 test("the rule: a session variable is left out while it has the value the worker started with, and kept once a test set it", () => {

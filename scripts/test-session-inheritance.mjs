@@ -12,10 +12,14 @@
 //   npm run test:session                                     the suites below
 //   npm run test:session -- test/login-environment.test.mjs  that file alone (any test file)
 //
-// Flags are forwarded to node --test.
+// A flag is forwarded to node --test, with its value in the same argument
+// (`--test-name-pattern=rule`, never `--test-name-pattern rule`): every other argument must be an
+// existing test file, so a flag's value is never taken for one. node --test always gets an explicit
+// list of files; with none it would discover and run every suite of the repository.
 
 import { spawnSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { REPO_ROOT } from "./desktop-test-deps.mjs";
 import { SESSION_VARIABLES, isSessionVariable } from "../test/helpers/host-fixture.mjs";
@@ -65,12 +69,27 @@ export function poisonedSession() {
   return Object.fromEntries(names.map((name) => [name, SHAPED[name] ?? `${NOWHERE}/${name.toLowerCase()}`]));
 }
 
-function main(argv) {
+/** The arguments of the `node` this run starts, from the command's own: `--test`, the flags, then
+ *  the files given, else SESSION_SUITES. Never without files. An argument that is neither a flag
+ *  nor an existing `.mjs` file is refused: it is a flag's value given apart (`--flag value`), which
+ *  node would take as the value and this run as a file, leaving node no file at all. */
+export function nodeTestArguments(argv, { root = REPO_ROOT } = {}) {
   const flags = argv.filter((a) => a.startsWith("-")), files = argv.filter((a) => !a.startsWith("-"));
+  for (const file of files) {
+    let isFile = false;
+    try { isFile = file.endsWith(".mjs") && statSync(resolve(root, file)).isFile(); } catch { /* not there */ }
+    if (!isFile) throw new Error(`${JSON.stringify(file)} is not a test file of this repository. Give a test file (test/<name>.test.mjs), and a flag's value in the same argument: --flag=value`);
+  }
+  // Flags before the files: node --test reads a flag after the first positional as a file.
+  return ["--test", ...flags, ...(files.length ? files : SESSION_SUITES)];
+}
+
+function main(argv) {
+  let args;
+  try { args = nodeTestArguments(argv); } catch (error) { console.error(`session inheritance: ${error.message}`); return 2; }
   const poison = poisonedSession();
   console.log(`session inheritance: ${Object.keys(poison).length} variables of the session set to values that cannot work\n  ${Object.keys(poison).join(" ")}`);
-  // Flags before the files: node --test reads a flag after the first positional as a file.
-  const run = spawnSync(process.execPath, ["--test", ...flags, ...(files.length ? files : SESSION_SUITES)], { cwd: REPO_ROOT, stdio: "inherit", env: { ...process.env, ...poison } });
+  const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit", env: { ...process.env, ...poison } });
   if (run.error) throw run.error;
   if (run.status !== 0) console.error("\nsession inheritance: a test followed a variable of the session that ran it. A fixture never inherits one: build the environment through test/helpers/host-fixture.mjs (docs/implementation.md, \"An explicit environment for every child\").");
   return run.status ?? 1;
