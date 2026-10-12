@@ -3879,7 +3879,11 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   touches no tree it does not own. `work/` of an attached, a checkout or a
   workspace instance is a link (to its owner's tree, to the shared checkout,
   to the deployment directory) that goes with the home, and what it links to
-  is not touched. `work/` of a directory instance is the home's own
+  is not touched. Where a real directory is found at `work/` of such an
+  instance and no link, it is a directory of the home: the retire copies it
+  to recovery when it is not empty and removes it with the home, and the
+  plan says so (0.53.0, #962: the next item). `work/` of a directory
+  instance is the home's own
   directory: it is copied to recovery when it is not empty, then removed
   with the home. Read the field with `facts.workMode`. The plan's text
   (`oats retire <instance> --plan` without `--json`) prints `retain worktree
