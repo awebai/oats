@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { NO_TERMINAL, USAGE } from "../packages/tui/lib/main.mjs";
+import { NOT_YET, VIEWS } from "../packages/tui/lib/views/help.mjs";
 import { fixtureBase, fixtureEnv } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -30,7 +31,7 @@ test("oats tui --json is refused with E_BAD_ARGS in the usual envelope, wherever
 test("oats tui --help answers as every kernel word does, in both modes, and shows the usage the client itself prints", () => {
   const text = oats("tui", "--help");
   assert.equal(text.status, 0);
-  assert.match(text.stdout, /^Usage:\n {2}oats tui \[--ascii\] +PREVIEW: /);
+  assert.match(text.stdout, /^Usage:\n {2}oats tui \[--dir <path>\] \[--ascii\] +PREVIEW: /);
   assert.equal(text.stdout.includes(`  ${USAGE} `), true, "the usage line of bin/oats.mjs is the client's own");
   const json = oats("tui", "--help", "--json");
   assert.equal(json.status, 0);
@@ -39,7 +40,8 @@ test("oats tui --help answers as every kernel word does, in both modes, and show
   assert.equal(answer.result.command, "tui");
   assert.equal(answer.result.usage[0].startsWith(`  ${USAGE} `), true);
   assert.match(answer.result.usage.join("\n"), /preview/i);
-  assert.match(oats("--help").stdout, /\n {2}oats tui \[--ascii\] +PREVIEW: /, "and the word is in the full usage, marked preview");
+  assert.match(oats("--help").stdout, /\n {2}oats tui \[--dir <path>\] \[--ascii\] +PREVIEW: /, "and the word is in the full usage, marked preview");
+  assert.equal(USAGE, "oats tui [--dir <path>] [--ascii]");
 });
 
 test("oats tui with no terminal exits 1 with the one line on stderr and nothing on stdout", () => {
@@ -50,13 +52,49 @@ test("oats tui with no terminal exits 1 with the one line on stderr and nothing 
   assert.equal(oats("tui", "--ascii").stderr, `${NO_TERMINAL}\n`);
 });
 
-test("oats tui takes no other argument: --dir and --server are E_BAD_ARGS with the usage line, exit 1, nothing on stdout", () => {
-  for (const [args, shownAs] of [[["--dir", base], "--dir"], [["--server", "build-host"], "--server"], [["--max-age", "5"], "--max-age"], [["instances"], "instances"], [["--ascii=yes"], "--ascii=yes"]]) {
+test("oats tui takes no other argument: --server and the rest are E_BAD_ARGS with the usage line, exit 1, nothing on stdout; --dir is taken, with its path", () => {
+  for (const [args, shownAs] of [[["--server", "build-host"], "--server"], [["--max-age", "5"], "--max-age"], [["instances"], "instances"], [["--ascii=yes"], "--ascii=yes"]]) {
     const r = oats("tui", ...args);
     assert.equal(r.status, 1, args.join(" "));
     assert.equal(r.stderr, `oats: \`oats tui\` takes no argument ${shownAs} (E_BAD_ARGS); usage: ${USAGE}\n`);
     assert.equal(r.stdout, "");
   }
+  for (const args of [["--dir"], ["--dir="], ["--ascii", "--dir"]]) {
+    const r = oats("tui", ...args);
+    assert.deepEqual([r.status, r.stderr, r.stdout], [1, `oats: \`oats tui --dir\` takes a path (E_BAD_ARGS); usage: ${USAGE}\n`, ""], args.join(" "));
+  }
+  // The kernel hands the word its arguments untouched: --dir reaches the client, which then stops
+  // at the next thing it needs, a terminal.
+  for (const args of [["--dir", base], [`--dir=${base}`], ["--dir", "/nowhere/at/all"]]) assert.equal(oats("tui", ...args).stderr, `${NO_TERMINAL}\n`, args.join(" "));
+});
+
+test("every command the help names for what this version does not do is one the kernel has: its word answers --help, and its usage holds the command", () => {
+  const commands = [...NOT_YET.map((entry) => entry.command), ...VIEWS.flatMap((view) => view.commands)];
+  assert.equal(commands.length >= 8, true, commands.join(" | "));
+  const usageOf = new Map();
+  for (const command of commands) {
+    const [program, word, ...rest] = command.split(" ");
+    assert.equal(program, "oats", command);
+    if (!usageOf.has(word)) {
+      const answer = oats(word, "--help", "--json");
+      assert.equal(answer.status, 0, `oats ${word} --help: ${answer.stderr}`);
+      const parsed = JSON.parse(answer.stdout);
+      assert.deepEqual([parsed.ok, parsed.result.command], [true, word], `${word} is a word of the kernel`);
+      usageOf.set(word, parsed.result.usage.join("\n"));
+    }
+    // What is literal in the help's command (the words and the flags, not its <placeholders>)
+    // stands in one usage line of the kernel, in that order.
+    const literal = rest.filter((part) => !part.startsWith("<"));
+    const line = usageOf.get(word).split("\n").find((row) => {
+      let from = row.indexOf(`oats ${word}`);
+      if (from < 0) return false;
+      for (const part of literal) { from = row.indexOf(part, from); if (from < 0) return false; }
+      return true;
+    });
+    assert.ok(line, `the kernel's usage of \`oats ${word}\` has no line with ${JSON.stringify(literal)}:\n${usageOf.get(word)}`);
+  }
+  // And the reading itself refuses a command that does not exist.
+  assert.notEqual(oats("no-such-word", "--help", "--json").status, 0);
 });
 
 test("oats pane still refuses, and now names the terminal client beside the Desktop", () => {

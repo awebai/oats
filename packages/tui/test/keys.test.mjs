@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ESC_TIMEOUT_MS, PASTE_LIMIT, PASTE_PAUSE_MS, createKeyParser, keyId } from "../lib/term/keys.mjs";
+import { ESC_TIMEOUT_MS, PASTE_LIMIT, PASTE_PAUSE_MS, createKeyParser, isKeyId, keyId } from "../lib/term/keys.mjs";
 
 const ESC = "\x1b", CSI = "\x1b[", SS3 = "\x1bO", ST = "\x1b\\", BEL = "\x07";
 const PASTE_START = "\x1b[200~", PASTE_END = "\x1b[201~";
@@ -712,4 +712,105 @@ test("keyId of the events the parser emits is what the action table binds", () =
   parser.advance(ESC_TIMEOUT_MS);
   events.push(...parser.expire());
   assert.deepEqual(events.map(keyId), ["ctrl+c", "alt+q", "?", "space", "shift+tab", "ctrl+alt+up", null, "f1", "enter", "backspace", "escape"]);
+});
+
+// --- isKeyId ----------------------------------------------------------------------
+
+/** Every key id the parser gives for real bytes: each table row, each byte below 0x80 alone and
+ * after an ESC, and every CSI and SS3 key form with every modifier parameter. */
+function producedIds() {
+  const ids = new Set();
+  const take = (events) => { for (const event of events) if (keyId(event) !== null) ids.add(keyId(event)); };
+  for (const [, parts] of TABLE) take(harness().feed(...parts));
+  for (let b = 0; b < 0x80; b++) {
+    take(harness().feed(b));
+    const parser = harness();
+    take(parser.feed(ESC, b));
+    parser.advance(ESC_TIMEOUT_MS);
+    take(parser.expire());
+  }
+  for (let m = 0; m <= 17; m++) {
+    for (let final = 0x40; final <= 0x7e; final++) {
+      const letter = String.fromCharCode(final);
+      take(harness().feed(CSI, `1;${m}${letter}`));
+      take(harness().feed(SS3, `${m}${letter}`));
+      take(harness().feed(CSI, "[", letter));
+    }
+    for (let n = 0; n <= 30; n++) take(harness().feed(CSI, `${n};${m}~`));
+  }
+  return ids;
+}
+const PREFIXES = ["", "ctrl+", "alt+", "shift+", "ctrl+alt+", "ctrl+shift+", "alt+shift+", "ctrl+alt+shift+"];
+
+test("isKeyId accepts every id keyId gives for what the parser emits from real bytes", () => {
+  const ids = producedIds();
+  assert.ok(ids.size > 300, `${ids.size} ids`);
+  for (const id of ids) assert.equal(isKeyId(id), true, JSON.stringify(id));
+  for (const id of ["q", "Q", "?", "+", "/", "space", "alt+space", "alt++", "alt+q", "escape", "enter", "alt+enter", "tab", "alt+tab", "shift+tab",
+    "ctrl+alt+shift+tab", "backspace", "alt+backspace", "ctrl+c", "ctrl+alt+c", "f1", "f12", "ctrl+alt+shift+f12", "alt+shift+delete", "é", FAMILY]) {
+    assert.equal(ids.has(id), true, `the parser gave ${JSON.stringify(id)}`);
+  }
+});
+
+test("isKeyId is exact: of every name and every ASCII character under every modifier prefix, it accepts those the parser gives and no other", () => {
+  const ids = producedIds();
+  const printable = Array.from({ length: 0x7f - 0x21 }, (_, i) => String.fromCharCode(0x21 + i));
+  const names = ["enter", "tab", "backspace", "escape", "space", "up", "down", "left", "right", "home", "end", "pageup", "pagedown", "insert", "delete",
+    ...Array.from({ length: 15 }, (_, i) => `f${i}`), ...printable, "return", "esc", "del", "pgup", "fn", "ff1", "f01", "f1x"];
+  const accepted = [];
+  for (const prefix of PREFIXES) for (const name of names) {
+    const id = prefix + name;
+    assert.equal(isKeyId(id), ids.has(id), JSON.stringify(id));
+    if (isKeyId(id)) accepted.push(id);
+  }
+  // 22 names take all 8 prefixes (the arrows, Home, End, Insert, Delete, PageUp, PageDown, F1..F12); Enter and Backspace are
+  // bare or with alt+, Tab has 6 forms, Esc is bare, the space is `space` and `alt+space`; 22 letters are a key as ctrl+ and
+  // ctrl+alt+; the 94 printable characters are themselves, and all but the 7 that begin a sequence are a key with alt+.
+  assert.equal(accepted.length, 22 * 8 + 2 + 2 + 6 + 1 + 2 + 22 * 2 + 94 + (94 - 7));
+  assert.deepEqual(accepted.filter((id) => id.endsWith("tab")), ["tab", "alt+tab", "shift+tab", "ctrl+shift+tab", "alt+shift+tab", "ctrl+alt+shift+tab"]);
+  for (const letter of "hijm") for (const prefix of ["ctrl+", "ctrl+alt+"]) assert.equal(isKeyId(prefix + letter), false, `${prefix}${letter} arrives as Backspace, Tab or Enter`);
+  for (const character of "[O]PX^_") {
+    assert.equal(isKeyId(`alt+${character}`), false, `ESC ${character} begins a sequence`);
+    assert.equal(isKeyId(character), true, `${character} alone is a key`);
+  }
+  for (const id of ["alt+\\", "alt+o", "alt+p", "alt+x", "alt+Z", "alt+M", "alt+~"]) assert.equal(isKeyId(id), true, id);
+  for (const id of ["ctrl+tab", "ctrl+alt+tab", "ctrl+enter", "shift+enter", "shift+backspace", "alt+escape", "ctrl+escape", "shift+escape", "shift+a", "ctrl+shift+a", "ctrl+A", "ctrl+1", "ctrl+space", "shift+space"]) {
+    assert.equal(isKeyId(id), false, id);
+  }
+});
+
+test("isKeyId takes one grapheme as itself and alt+ with one code point, and no control character in either", () => {
+  for (const id of ["é", "é", "日", "\u{1d11e}", "\u{10ffff}", " ", "́", "‍", FAMILY, "\u{1f1ea}\u{1f1f8}", "\u{1f44d}\u{1f3fd}", " ́",
+    "alt+é", "alt+日", "alt+\u{1f600}", "alt+ ", "alt+~", "alt+A"]) {
+    assert.equal(isKeyId(id), true, JSON.stringify(id));
+  }
+  // Alt reaches one character: `ESC e U+0301` is Alt+e and then the mark.
+  assert.deepEqual(harness().feed(ESC, "é").map(keyId), ["alt+e", "́"]);
+  for (const id of ["alt+é", `alt+${FAMILY}`, "alt+\u{1f1ea}\u{1f1f8}", "alt+ab", "alt+ ́"]) assert.equal(isKeyId(id), false, JSON.stringify(id));
+  // The space is written `space`; a control character, or half a surrogate pair, is in no text event.
+  for (const id of [" ", "alt+ ", "  ", "\t", "\n", "\r\n", "\x00", "\x07", "\x1b", "\x7f", "\u0080", "\u0085", "\u009b", "\u009f", "q\n", "\nq", "é\x07", "ctrl+c\n", "\x1b[A",
+    "alt+\x1b", "alt+\t", "alt+\u009b", "alt+q\x00", "\ud83d", "\ude00", "alt+\ud83d", "\ud83d\ud83d"]) {
+    assert.equal(isKeyId(id), false, JSON.stringify(id));
+  }
+});
+
+test("isKeyId is exact about the plus key, and refuses the near-misses", () => {
+  assert.equal(keyId(text("+")), "+");
+  assert.equal(keyId(alt("+")), "alt++");
+  for (const id of ["+", "alt++"]) assert.equal(isKeyId(id), true, id);
+  for (const id of ["alt+", "ctrl+", "shift+", "ctrl++", "shift++", "alt+++", "++", "+q", "q+", "alt+ctrl+c", "+up", "up+", "ctrl+alt+", "ctrl+alt++"]) assert.equal(isKeyId(id), false, id);
+  for (const id of ["Ctrl+C", "ctrl+C", "CTRL+c", "Escape", "ESC", "Enter", "Up", "F5", "ctrl+shift+alt+x", "ctrl+shift+alt+up", "shift+ctrl+up", "alt+ctrl+up", "shift+alt+up",
+    "ctrl+ctrl+c", "alt+alt+q", "ctrl-c", "ctrl c", "^C", "C-c", "", "ab", "qq", "f13", "f0", "f1 ", " f1", "up ", "ctrl+ c", "ctrl +c", "alt+ q", "alt+q ", "spacebar", "Space", "alt+Space"]) {
+    assert.equal(isKeyId(id), false, JSON.stringify(id));
+  }
+  for (const value of [undefined, null, 0, 1, true, ["q"], { text: "q" }, { name: "up", ctrl: false, alt: false, shift: false }, Symbol("q"), () => "q", new String("q")]) {
+    assert.equal(isKeyId(value), false, typeof value);
+  }
+});
+
+test("isKeyId is not slowed by a long string: only one grapheme of it is ever cut", () => {
+  assert.equal(isKeyId("a".repeat(1_000_000)), false);
+  assert.equal(isKeyId(`alt+${"a".repeat(1_000_000)}`), false);
+  assert.equal(isKeyId(`ctrl+${"a".repeat(1_000_000)}`), false);
+  assert.equal(isKeyId(`e${"́".repeat(50_000)}`), true, "a grapheme has no length limit, and neither has the parser's");
 });

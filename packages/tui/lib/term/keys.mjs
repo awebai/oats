@@ -321,3 +321,47 @@ export function keyId(event) {
   const id = event.text === " " ? "space" : event.text;
   return event.alt ? `alt+${id}` : id;
 }
+
+/** The names that take every modifier: the keys read by `modified` from a CSI or an SS3. */
+const MODIFIED_NAMES = new Set([...Object.values(LETTER_KEYS), ...Object.values(TILDE_KEYS)]);
+const NAMED_ID = /^(ctrl\+)?(alt\+)?(shift\+)?([a-z][a-z0-9]*)$/;
+/** What no text event holds: a control character (C0, DEL, C1) or half a surrogate pair. */
+const NOT_TEXT = /[\p{Cc}\p{Cs}]/u;
+/** The characters that, after an ESC, begin a sequence (CSI, SS3, OSC, DCS, SOS, PM, APC): Alt
+ * with one of them never arrives as a key. */
+const INTRODUCERS = "[O]PX^_";
+const oneGrapheme = (text) => GRAPHEMES.segment(text).containing(0).segment === text;
+const oneCodePoint = (text) => text.length === (text.codePointAt(0) > 0xffff ? 2 : 1);
+
+/** Whether a string is a key id: true exactly for the strings keyId answers for an event the
+ * parser above can emit, so a table that binds only key ids binds nothing that can never arrive
+ * from it. Whether a given terminal sends the key is not asked: `f12` and `alt+` an accented
+ * letter are key ids on a terminal that sends neither. The grammar is the parser's, branch for
+ * branch (the Linux console's F1..F5 are bare names the others already hold):
+ *
+ *   text       one grapheme without a control character, as itself (`+` is the plus key), and
+ *              `space` for the space, which is never written " "
+ *   alt+text   `alt+` and ONE CODE POINT (`alt++`, `alt+space`): Alt reaches a single
+ *              character, so `alt+` and a grapheme of several code points is no key; and not
+ *              `alt+` with one of `[ O ] P X ^ _`, which after an ESC begin a sequence
+ *   named      up down left right home end insert delete pageup pagedown f1..f12, with any of
+ *              `ctrl+`, `alt+`, `shift+`, in that order
+ *              enter, backspace: bare or `alt+`.  escape: bare
+ *              tab: bare, `alt+tab`, and `shift+tab` with any of `ctrl+`, `alt+` before it
+ *   ctrl       `ctrl+` or `ctrl+alt+` and a letter a..z whose C0 byte is a key of its own:
+ *              not h, i, j or m, which arrive as Backspace, Tab and Enter */
+export function isKeyId(id) {
+  if (typeof id !== "string" || id === "" || NOT_TEXT.test(id)) return false;
+  if (id === "space" || id === "alt+space") return true;
+  if (id === " " || id === "alt+ ") return false;
+  if (oneGrapheme(id)) return true;
+  if (id.startsWith("alt+") && id.length > 4 && oneCodePoint(id.slice(4))) return !INTRODUCERS.includes(id.slice(4));
+  const match = NAMED_ID.exec(id);
+  if (!match) return false;
+  const [, ctrl, alt, shift, name] = match;
+  if (MODIFIED_NAMES.has(name)) return true;
+  if (name === "tab") return shift !== undefined || ctrl === undefined;
+  if (name === "enter" || name === "backspace") return ctrl === undefined && shift === undefined;
+  if (name === "escape") return ctrl === undefined && alt === undefined && shift === undefined;
+  return name.length === 1 && ctrl !== undefined && shift === undefined && c0Key(name.charCodeAt(0) - 0x60).name === name;
+}

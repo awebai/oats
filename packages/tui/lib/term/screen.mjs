@@ -34,8 +34,11 @@ export function glyphs(env, { ascii = false } = {}) {
 }
 
 /** A screen. `render(rows, size, { full })` answers the bytes for one frame and remembers it.
- *  `rows[r]` is the spans of row r: `{ col, text, style?, width? }`, `text` safe text, `width` the
- *  cells the span may take (default: to the right edge). */
+ *  `rows[r]` is the spans of row r, drawn in order, a later one over an earlier one:
+ *  `{ col, text, style?, width? }`, `text` safe text, `width` the cells the span may take (default:
+ *  to the right edge); or a fill, `{ col, width, style? }`, `width` blank cells in that style.
+ *  `cells(rows, size)` answers the same frame as cells and writes nothing: `{ text, width, style }`
+ *  per cell, the second cell of a two-cell grapheme with `width: 0`. */
 export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) {
   const mark = cells(ascii ? "..." : "\u2026");
   let previous = null;
@@ -48,10 +51,19 @@ export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) 
   }
   function place(line, span) {
     const { col, style = PLAIN } = span;
-    const source = textOf(span.text);
     if (!isStyle(style)) throw new TypeError("a span's style is a style value: make one with style()");
     if (!Number.isInteger(col) || col < 0) throw new RangeError("a span's column is a cell index from 0");
     const limit = span.width === undefined ? line.length : Math.min(line.length, col + span.width);
+    // A fill: no text, a width. Blank cells in the span's style, which is how a bar is drawn
+    // (a selected row in reverse video): text.mjs rightly makes no text of a run of spaces.
+    // A span that names a text, even an absent one, is never a fill: it is refused below.
+    if (!Object.hasOwn(span, "text") && span.width !== undefined) {
+      if (!Number.isInteger(span.width) || span.width < 0) throw new RangeError("a fill has a width in cells");
+      const blank = cell(" ", 1, style);
+      for (let x = col; x < limit; x++) { clear(line, x); line[x] = blank; }
+      return;
+    }
+    const source = textOf(span.text);
     if (col >= limit) return;
     let drawn = cells(source);
     // A terminal that is not reading UTF-8 would show each byte of a character on its own.
@@ -118,5 +130,5 @@ export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) 
     previous = { cols: size.cols, rows: size.rows, lines };
     return out;
   }
-  return { render };
+  return { render, cells: layout };
 }

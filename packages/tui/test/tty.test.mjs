@@ -317,3 +317,107 @@ test("a terminal is a tty on stdin and on stdout with a TERM that can be address
   assert.equal(isTerminal({ stdin: file, stdout: file, env: { TERM: "xterm" } }), false);
   for (const env of [{}, { TERM: "" }, { TERM: "dumb" }]) assert.equal(isTerminal({ stdin: tty, stdout: tty, env }), false, JSON.stringify(env));
 });
+
+/** A guard whose owner started work that outlives a frame: the three callbacks, recorded in the
+ *  same log as the terminal's acts, so their order is part of what is asserted. */
+function owned({ onStop, onResume, onEnd } = {}) {
+  const log = [];
+  const stdin = fakeStdin({ log }), stdout = fakeStdout({ log }), proc = fakeProcess(), timers = fakeTimers();
+  const kill = proc.kill;
+  proc.kill = (pid, signal) => { log.push(["kill", pid, signal]); return kill(pid, signal); };
+  const guard = createGuard({
+    stdin, stdout, proc, setTimer: timers.setTimer, clearTimer: timers.clearTimer,
+    frame: () => "", onInput() {}, onResize() {}, onRedraw: () => { log.push(["redraw"]); },
+    onStop: () => { log.push(["stop"]); onStop?.(); },
+    onResume: (asked) => { log.push(["resume", asked]); onResume?.(asked); },
+    onEnd: () => { log.push(["end"]); onEnd?.(); },
+  });
+  guard.start();
+  log.length = 0;
+  return { guard, stdin, stdout, proc, timers, log };
+}
+
+test("onEnd is called once on every way out, after the terminal is restored and before done resolves, and what it throws changes neither", async () => {
+  for (const [name, leave, status] of [
+    ["quit", ({ guard }) => guard.finish(0), 0],
+    ["a signal", ({ proc }) => proc.emit("SIGTERM", "SIGTERM"), SIGNAL_STATUS.SIGTERM],
+    ["a hangup", ({ proc }) => proc.emit("SIGHUP", "SIGHUP"), SIGNAL_STATUS.SIGHUP],
+    ["an internal error", ({ proc }) => proc.emit("uncaughtException", new Error("broke")), 1],
+    ["the terminal going away", ({ stdin }) => stdin.emit("end"), TERMINAL_GONE_STATUS],
+  ]) {
+    const g = owned();
+    let resolved = false;
+    g.guard.done.then(() => { resolved = true; });
+    leave(g);
+    assert.deepEqual(g.log, [["write", LEAVE], ["raw", false], ["end"]], name);
+    assert.equal(resolved, false, "the promise had not resolved when onEnd ran");
+    assert.equal((await g.guard.done).status, status, name);
+    g.guard.finish(0);
+    g.proc.emit("SIGTERM", "SIGTERM");
+    assert.equal(g.log.filter(([what]) => what === "end").length, 1, `${name}: once`);
+  }
+  const thrower = owned({ onEnd() { throw new Error("the cleanup broke"); } });
+  thrower.guard.finish(0);
+  assert.deepEqual(await thrower.guard.done, { status: 0, error: undefined });
+});
+
+test("a process.exit nobody expected still restores the terminal and calls onEnd", () => {
+  const g = owned();
+  g.proc.emit("exit", 3);
+  assert.deepEqual(g.log, [["write", LEAVE], ["raw", false], ["end"]]);
+});
+
+test("onStop is called at a suspend after the terminal is handed back and before the signal; onResume(true) on the return, before the redraw", () => {
+  const g = owned();
+  g.guard.suspend();
+  assert.deepEqual(g.log, [["write", LEAVE], ["raw", false], ["stop"], ["kill", 0, "SIGTSTP"]]);
+  g.log.length = 0;
+  g.proc.emit("SIGCONT", "SIGCONT");
+  assert.deepEqual(g.log, [["raw", true], ["write", ENTER], ["resume", true], ["redraw"]]);
+  // The same when nothing stopped the process (SIGTSTP ignored): the grace timer brings it back.
+  g.guard.suspend();
+  g.log.length = 0;
+  g.timers.fire();
+  assert.deepEqual(g.log, [["raw", true], ["write", ENTER], ["resume", true], ["redraw"]]);
+  g.guard.finish(0);
+});
+
+test("a SIGTSTP from outside is a suspend like the key's: onStop first, then the stop", () => {
+  const g = owned();
+  g.proc.emit("SIGTSTP", "SIGTSTP");
+  assert.deepEqual(g.log, [["write", LEAVE], ["raw", false], ["stop"], ["kill", 0, "SIGTSTP"]]);
+  g.guard.finish(0);
+});
+
+test("stopped and continued from outside with no suspend of its own: onResume(false), then the modes again and the redraw; onStop was never called", () => {
+  const g = owned();
+  g.proc.emit("SIGCONT", "SIGCONT");
+  assert.deepEqual(g.log, [["resume", false], ["raw", false], ["raw", true], ["write", LEAVE + ENTER], ["redraw"]]);
+  g.guard.finish(0);
+});
+
+test("what onStop throws ends the run as an internal error, and the process is not stopped; what onResume throws ends it too", async () => {
+  const stop = owned({ onStop() { throw new Error("could not drop the reads"); } });
+  stop.guard.suspend();
+  const ended = await stop.guard.done;
+  assert.equal(ended.status, 1);
+  assert.match(ended.error.message, /could not drop the reads/);
+  assert.equal(stop.log.some(([what]) => what === "kill"), false, "no SIGTSTP after a failed hand-over");
+  assert.deepEqual(stop.log.filter(([what]) => what === "write"), [["write", LEAVE]], "the terminal was restored once");
+
+  const back = owned({ onResume() { throw new Error("could not read again"); } });
+  back.proc.emit("SIGCONT", "SIGCONT");
+  assert.equal((await back.guard.done).status, 1);
+  assert.equal(back.stdin.raw, false);
+});
+
+test("the three callbacks are optional: a guard without them suspends, returns and ends as before", async () => {
+  const { guard, proc, log } = setup();
+  log.length = 0;
+  guard.suspend();
+  proc.emit("SIGCONT", "SIGCONT");
+  proc.emit("SIGCONT", "SIGCONT");
+  guard.finish(0);
+  assert.equal((await guard.done).status, 0);
+  assert.deepEqual(proc.kills, [[0, "SIGTSTP"]]);
+});

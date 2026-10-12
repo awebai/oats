@@ -71,7 +71,7 @@ test("every module under packages/tui/lib is reached by static imports from bin/
   const visit = (path) => {
     if (reached.has(path)) return;
     reached.add(path);
-    for (const name of staticImports(read(path))) {
+    for (const name of staticImports(read(path)).filter((spec) => !spec.startsWith("node:"))) {
       const target = relative(ROOT, resolve(dirname(join(ROOT, path)), name));
       if (target.startsWith("packages/tui/")) visit(target);
     }
@@ -102,6 +102,25 @@ test("the views are pure: they import only the TUI's own text, style and action 
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);
   }
+});
+
+test("this version only reads: lib/read.mjs alone starts a process, lib/read.mjs and lib/config.mjs alone read the file system, and no shipped module can write, remove or rename a file", () => {
+  const builtins = (path) => staticImports(read(path)).filter((name) => name.startsWith("node:"));
+  const users = (name) => TUI_SOURCES.filter((path) => builtins(path).includes(name));
+  assert.deepEqual(users("node:child_process"), ["packages/tui/lib/read.mjs"]);
+  assert.deepEqual(users("node:fs"), ["packages/tui/lib/config.mjs", "packages/tui/lib/read.mjs"]);
+  assert.deepEqual(users("node:fs/promises"), []);
+  // What the two take from node:fs is named, and each name only reads.
+  const READS = ["closeSync", "lstatSync", "openSync", "readSync", "realpathSync", "statSync"];
+  for (const path of users("node:fs")) {
+    const taken = code(read(path)).match(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/);
+    assert.ok(taken, `${path} names what it takes from node:fs`);
+    for (const name of taken[1].split(",").map((part) => part.trim().split(/\s+as\s+/)[0]).filter(Boolean)) assert.ok(READS.includes(name), `${path} takes ${name} from node:fs`);
+  }
+  // A file is opened for reading only: no flag is ever passed that could say otherwise.
+  for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/\bopenSync\(([^)]*)\)/g)) assert.match(call[1], /^[^,]+,\s*"r"$/, `${path} opens ${call[1]}`);
+  // Every builtin the client loads, by module: a new one is a decision, and shows here.
+  assert.deepEqual([...new Set(TUI_SOURCES.flatMap(builtins))].sort(), ["node:child_process", "node:fs", "node:os", "node:path", "node:url"]);
 });
 
 test("packages/tui is private, has no dependency of any kind, no bin and no script, and the root manifest ships its bin, lib, README and manifest but not its tests", () => {

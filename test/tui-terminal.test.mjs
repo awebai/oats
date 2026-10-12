@@ -1,4 +1,5 @@
-// `oats tui` (preview) end to end: the real CLI on a real terminal.
+// `oats tui` (preview) end to end: the real CLI on a real terminal, reading a fixture deployment
+// with the checkout's own kernel.
 //
 // Real tmux, never the operator's (docs/implementation.md; the conventions of
 // test/session-attach-detach-key.test.mjs): the fixture owns a private TMUX_TMPDIR, and the one
@@ -11,9 +12,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fixtureBase, fixtureEnv, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
+import { assertNoFixtureProcesses, fixtureBase, fixtureEnv, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
+import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -28,9 +30,10 @@ const base = fixtureBase("oats-tui-"); // short: a socket path lives in it
 const restoreEnvironment = REAL_TMUX ? isolateSessionEnvironment(base) : () => {};
 const TERM = join(base, "term.sock");
 
-/** Alone the file takes under ten seconds, and about half a minute on a host three times
- *  oversubscribed. A program that never draws would cost a ten-second wait in every test. */
-const BUDGET_MS = 90000;
+/** Every test starts the real CLI, which reads the fixture with the real kernel before it draws:
+ *  on a host twice oversubscribed (a load of 30 on 16 cores) the file took a minute and a half.
+ *  A program that never draws would cost a ten-second wait in every test. */
+const BUDGET_MS = 180000;
 const FILE_DEADLINE = Date.now() + BUDGET_MS;
 
 const tmuxRaw = (...args) => execFileSync("tmux", ["-u", "-S", TERM, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] });
@@ -46,65 +49,155 @@ if (REAL_TMUX) {
   tmuxOn("set-option", "-g", "default-terminal", "screen");
 }
 
+// ---- a deployment to look at ---------------------------------------------------------------------
+/** The variables an OATS instance session carries (packages/client/kernel-environment.mjs): the
+ *  TUI removes them from its own environment before it starts a child (docs/tui.md). */
+const INSTANCE_VARIABLES = ["PI_AGENTS_ROOT", "PI_AGENT_HOME", "PI_AGENT_INSTANCE", "OATS_HOME", "OATS_INSTANCE_HOME", "OATS_INSTANCE", "OATS_DEPLOYMENT", "OATS_RESOLUTION"];
+const withPath = async (path, fn) => { const saved = process.env.PATH; process.env.PATH = path; try { return await fn(); } finally { process.env.PATH = saved; } };
+
+/** A fixture deployment (test/helpers/v2-deployment.mjs) with three instances that never ran:
+ *  `alpha` and its child `beta` of the soul `dev`, and `gamma` of the soul `reviewer`, alone.
+ *  `enter` is a script that sets the fixture's environment and then becomes its arguments: a
+ *  terminal's shell is started through it, so the TUI typed there reads this deployment with the
+ *  fixture's home, cache and tools, as `fx.cli` does.
+ *
+ *  A home that never ran has no recorded tmux socket, and for such a home the shared liveness
+ *  collector asks the default tmux server, which no test may reach. So the first `tmux` on that
+ *  PATH is `front/tmux`: it asks the fixture's own `oats` server instead, which nothing started,
+ *  and real tmux answers that no server runs: every row is `stopped`. It writes down the
+ *  environment it was started with. While the file `hold` exists it does not answer: it starts a
+ *  `sleep` of half a minute, writes that pid to `held` and waits for it: a read that stays in
+ *  flight. The sleep is in the collector's process group and outlives the four seconds the
+ *  collector gives its tmux, so when it is gone long before its time, the TUI ended the group. */
+async function deployment(t) {
+  const fx = v2Deployment({ souls: { dev: {}, reviewer: {} }, t });
+  const world = { fx, dep: fx.dep, enter: join(fx.base, "enter.sh"), holdFile: join(fx.base, "hold"), heldFile: join(fx.base, "held"), seenFile: join(fx.base, "collector-tmux.env") };
+  world.spawn = (soul, options) => withPath(fx.env.PATH, () => fx.spawn(soul, { harness: "claude", ...options }));
+  world.home = (await world.spawn("dev", { name: "alpha" })).home;
+  await world.spawn("dev", { name: "beta", relativeTo: "alpha", relation: "child" });
+  await world.spawn("reviewer", { name: "gamma" });
+  const front = join(fx.base, "front");
+  mkdirSync(front);
+  writeFileSync(join(front, "tmux"), `#!/bin/sh
+env > ${shq(world.seenFile)}
+if [ -e ${shq(world.holdFile)} ]; then sleep 30 < /dev/null > /dev/null 2>&1 & echo $! >> ${shq(world.heldFile)}; wait; exit 1; fi
+exec ${shq(join(base, "system-bin", "tmux"))} -L oats "$@"
+`, { mode: 0o755 });
+  const env = { ...fx.env, PATH: `${front}:${fx.env.PATH}` };
+  writeFileSync(world.enter, `#!/bin/sh\n${Object.entries(env).map(([name, value]) => `export ${name}=${shq(value)}`).join("\n")}\nexec "$@"\n`);
+  /** The pids of the sleeps that held a read, in the order they started. */
+  world.held = () => (existsSync(world.heldFile) ? lines(readFileSync(world.heldFile, "utf8")).map(Number) : []);
+  world.release = () => rmSync(world.holdFile, { force: true });
+  return world;
+}
+/** The deployment most tests look at; a test that changes one makes its own. */
+const WORLD = REAL_TMUX ? await deployment() : null;
+
 test.after(() => {
   if (REAL_TMUX) { try { execFileSync(REAL_TMUX, ["-S", TERM, "kill-server"], { stdio: "ignore", timeout: 10000 }); } catch { /* not running */ } }
+  const errors = [];
+  // Every TUI of this file ran in `base`, and so did its children: none is left (the SIGKILL case
+  // leaves a collector that ends by itself, within the check's own wait).
+  if (REAL_TMUX) { try { assertNoFixtureProcesses(base, { settleMs: 6000 }); } catch (error) { errors.push(error); } }
+  try { WORLD?.fx.cleanup(); } catch (error) { errors.push(error); }
   restoreEnvironment();
   rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  if (errors.length) throw errors[0];
 });
 
 // ---- what the program says, as the spec gives it ------------------------------------------------
 const TUI = `${shq(process.execPath)} ${shq(CLI)} tui`;
 const PROMPT = "tui-test$";
-const VIEWS = "1 Instances   2 Souls   3 Capabilities";
-const BODY = ["This preview draws the frame only.", "Views arrive in later releases."];
-const KEYS_ROW = "? help   q quit";
-const HELP_KEYS = [/^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/];
+const USAGE = "oats tui [--dir <path>] [--ascii]";
+const FOOTER = " / filter   Tab detail   r refresh   ? help   q quit";
+const DETAIL_FOOTER = " Tab detail   Esc close   r refresh   ? help   q quit";
+const HELP_FOOTER = " Esc close   ? help   q quit";
+/** The help's `Keys` list, one row per action, in the table's order. */
+const HELP_KEYS = [
+  /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
+  /^ *Left, h {2,}collapse, or go to the parent$/, /^ *Right, l {2,}expand, or go to the first child$/, /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/,
+  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
+];
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
+const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
 const tooSmallLine = (cols, rows) => `Terminal too small: ${cols}x${rows}, oats tui needs 60x15.`;
-const UTF8 = { locale: "C.UTF-8", rule: "\u2500" };
-const ASCII = { locale: "C", rule: "-" };
+const UTF8 = { locale: "C.UTF-8", rule: "─", down: "┬", up: "┴", open: "▾", closed: "▸", stopped: "○" };
+const ASCII = { locale: "C", rule: "-", down: "+", up: "+", open: "v", closed: ">", stopped: "-" };
+/** The columns of the list pane where the terminal is wide enough for two panes (docs/tui.md). */
+const listCols = (cols) => Math.min(60, Math.max(36, Math.floor(cols * 0.48)));
+const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** The rows around the body, the same in the frame and in the help: what is wrong with them. */
-function chromeFaults(screen, { cols, rows, rule }) {
+/** The rows around the panes, the same in every view: what is wrong with them. `split`: the two
+ *  panes are drawn, so each rule has a joint where the line between them meets it. `footer` is
+ *  the last row, or what it matches. */
+function chromeFaults(screen, { cols, rows, look, split, footer, count }) {
   const faults = [];
-  const expect = (row, text, what) => { if (screen[row] !== text) faults.push(`${what} (row ${row + 1}) is ${JSON.stringify(screen[row])}, not ${JSON.stringify(text)}`); };
+  const expect = (row, want, what) => {
+    const got = screen[row] ?? "";
+    if (want instanceof RegExp ? !want.test(got) : got !== want) faults.push(`${what} (row ${row + 1}) is ${JSON.stringify(screen[row])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`);
+  };
+  const rule = (joint) => (split ? look.rule.repeat(listCols(cols)) + joint + look.rule.repeat(cols - listCols(cols) - 1) : look.rule.repeat(cols));
   if (screen.length !== rows) faults.push(`the screen has ${screen.length} rows, not ${rows}`);
-  expect(0, `oats${" ".repeat(cols - "oats".length - "preview".length)}preview`, "the title row");
-  expect(1, VIEWS, "the views row");
-  expect(2, rule.repeat(cols), "the rule under the views");
-  expect(rows - 2, rule.repeat(cols), "the rule over the keys");
+  expect(0, new RegExp(`^ oats {2}fixture +${count} stopped$`), "the title row");
+  expect(1, /^ 1 Instances {3}2 Souls {3}3 Capabilities +read \d\d:\d\d:\d\d$/, "the views row");
+  expect(2, rule(look.down), "the rule under the views");
+  expect(rows - 2, rule(look.up), "the rule over the footer");
+  expect(rows - 1, footer, "the footer");
+  if (screen.some((row) => [...row].length > cols)) faults.push(`a row is longer than ${cols} cells`);
   return faults;
 }
-/** What keeps a screen from being the frame at that size: nothing, when it is the frame. The body
- *  is one line where it fits, else a line per sentence, centred both ways; every other row of the
- *  body is empty. */
-function frameFaults(screen, { cols = 80, rows = 24, rule = UTF8.rule } = {}) {
-  const faults = chromeFaults(screen, { cols, rows, rule });
-  if (screen[rows - 1] !== KEYS_ROW) faults.push(`the keys row (row ${rows}) is ${JSON.stringify(screen[rows - 1])}, not ${JSON.stringify(KEYS_ROW)}`);
-  const want = BODY.join(" ").length <= cols ? [BODY.join(" ")] : BODY;
-  const first = 3 + Math.floor((rows - 5 - want.length) / 2);
-  const body = screen.slice(3, rows - 2).map((text, i) => ({ text, row: i + 3 })).filter((r) => r.text !== "");
-  const wanted = want.map((text, i) => ({ text: " ".repeat(Math.floor((cols - text.length) / 2)) + text, row: first + i }));
-  if (JSON.stringify(body) !== JSON.stringify(wanted)) faults.push(`the body is ${JSON.stringify(body)}, not ${JSON.stringify(wanted)}`);
+/** What keeps a screen from being the Instances view of the fixture at that size: nothing, when
+ *  it is that view. `selected` is the instance the selection is on; `folded`: `alpha` is
+ *  collapsed; `gone`: names no row shows (folded away, or hidden by the filter); `extra`: names of
+ *  instances a test added; `detail`: the detail pane holds the focus. With every row hidden the
+ *  list says that nothing matches the filter, and the detail is empty.
+ *  With nothing hidden the list is the Desktop's order, row for row: the cluster, an empty row,
+ *  the single instance. With something hidden only what the shared grouping promises whatever it
+ *  hides is asserted: which rows are drawn, each once, and which is selected; not where a row
+ *  stands among the groups (awebai/oats#971). */
+function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alpha", folded = false, gone = [], extra = [], detail = false, footer = FOOTER, count = 3 } = {}) {
+  const split = cols >= 80;
+  const faults = chromeFaults(screen, { cols, rows, look, split, footer, count });
+  const hidden = new Set([...gone, ...(folded ? ["beta"] : [])]);
+  const row = (name, depth, fold = " ") => new RegExp(`^${name === selected ? ">" : " "}${"  ".repeat(depth)}${literal(fold)} ${literal(look.stopped)} ${name} +stopped$`);
+  const wanted = [["alpha", 0, folded ? look.closed : look.open], ["beta", 1], ["gamma", 0], ...extra.map((name) => [name, 0])].filter(([name]) => !hidden.has(name));
+  const list = screen.slice(3, rows - 2).map((text) => (split ? [...text].slice(0, listCols(cols)).join("").trimEnd() : text));
+  const NO_MATCH = "   No instance matches the filter.";
+  const drawn = list.filter((text) => text !== "" && text !== NO_MATCH);
+  if (wanted.length === 0 && list[0] !== NO_MATCH) faults.push(`the list's first row is ${JSON.stringify(list[0])}, not ${JSON.stringify(NO_MATCH)}`);
+  if (wanted.length > 0 && list.includes(NO_MATCH)) faults.push("the list says nothing matches");
+  if (hidden.size === 0 && extra.length === 0) {
+    const order = [wanted[0], wanted[1], null, wanted[2]];
+    order.forEach((want, i) => { if (want ? !row(...want).test(list[i] ?? "") : list[i] !== "") faults.push(`row ${i + 4} of the list is ${JSON.stringify(list[i])}, not ${want ? row(...want) : "empty"}`); });
+    if (drawn.length !== 3) faults.push(`the list draws ${drawn.length} rows, not 3: ${JSON.stringify(drawn)}`);
+  } else {
+    for (const want of wanted) { const n = drawn.filter((text) => row(...want).test(text)).length; if (n !== 1) faults.push(`${n} rows of the list are ${row(...want)}: ${JSON.stringify(drawn)}`); }
+    if (drawn.length !== wanted.length) faults.push(`the list draws ${drawn.length} rows, not ${wanted.length}: ${JSON.stringify(drawn)}`);
+    for (const name of hidden) if (drawn.some((text) => new RegExp(`\\b${name}\\b`).test(text))) faults.push(`a row still shows ${name}`);
+  }
+  if (split) {
+    const pane = screen.slice(3, rows - 2).map((text) => [...text].slice(listCols(cols) + 1).join(""));
+    const title = wanted.length ? `${detail ? " >" : "  "} ${selected}` : "";
+    if (pane[0] !== title) faults.push(`the detail's first row is ${JSON.stringify(pane[0])}, not ${JSON.stringify(title)}`);
+    if (wanted.length && !pane.some((text) => /^ {3}soul {5}(dev|reviewer)$/.test(text))) faults.push("the detail names no soul");
+  }
   return faults;
 }
-/** The same for the help: the frame's rows around a `Keys` list, one row per action, in the
- *  table's order, and no body line. */
-function helpFaults(screen, { cols = 80, rows = 24, rule = UTF8.rule } = {}) {
-  const faults = chromeFaults(screen, { cols, rows, rule });
+/** The same for the help: the rules without a joint, a `Keys` list with one row per action in the
+ *  table's order, as many as the pane holds over its last row, and no row of the list. */
+function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, count = 3 } = {}) {
+  const faults = chromeFaults(screen, { cols, rows, look, split: false, footer: HELP_FOOTER, count });
   const area = screen.slice(3, rows - 2);
-  const title = area.findIndex((row) => row.trim() === "Keys");
+  const title = area.findIndex((text) => text.trim() === "Keys");
   if (title < 0) faults.push("no row is the title `Keys`");
-  const start = area.findIndex((row) => HELP_KEYS[0].test(row));
-  if (start < 0 || start < title) faults.push("no row under the title is `?  help`");
-  else HELP_KEYS.forEach((pattern, i) => { if (!pattern.test(area[start + i] ?? "")) faults.push(`row ${start + i + 4} is ${JSON.stringify(area[start + i])}, which is not ${pattern}`); });
-  if (area.some((row) => BODY.some((sentence) => row.includes(sentence)))) faults.push("the frame's body line is still shown");
+  const start = area.findIndex((text) => HELP_KEYS[0].test(text));
+  if (start < 0 || start < title) faults.push("no row under the title is `Up, k  up`");
+  else HELP_KEYS.slice(0, area.length - 1 - start).forEach((pattern, i) => { if (!pattern.test(area[start + i] ?? "")) faults.push(`row ${start + i + 4} is ${JSON.stringify(area[start + i])}, which is not ${pattern}`); });
+  if (area.some((text) => /\bstopped$/.test(text))) faults.push("a row of the list is still shown");
   return faults;
 }
 
 // ---- a terminal ---------------------------------------------------------------------------------
-/** The pane's modes, as tmux tracks them. `bracket_paste_flag` is empty on a tmux that has no such
- *  format (it prints nothing for a name it does not know). */
 /** A `stty -g` line as this file compares it: the line itself, but for one bit of macOS's `lflag`.
  *  That bit, 0x20000000, is PENDIN, and it is state of the terminal driver, not a setting: the
  *  driver sets it when the terminal goes canonical and clears it when something reads or watches
@@ -127,6 +220,8 @@ function comparableStty(line) {
   return fields.join(":");
 }
 
+/** The pane's modes, as tmux tracks them. `bracket_paste_flag` is empty on a tmux that has no such
+ *  format (it prints nothing for a name it does not know). */
 const FLAGS = ["alternate_on", "cursor_flag", "wrap_flag", "mouse_any_flag", "keypad_flag", "keypad_cursor_flag", "insert_flag", "origin_flag", "bracket_paste_flag"];
 let opened = 0, started = 0;
 
@@ -146,11 +241,13 @@ const untilScreen = (term, faults, what) => until(term, () => faults(term.screen
 
 /** A terminal of `cols`x`rows`: a new session of the private server, removed after the test. Its
  *  pane runs `command`, or an interactive bash with job control, a known prompt and the locale
- *  named (the TUI reads LC_ALL to choose its rules); then it resolves at the first prompt. */
-async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command } = {}) {
+ *  named (the TUI reads LC_ALL to choose its rules), started in `cwd` with the environment of
+ *  `world`'s deployment and `env` over it; then it resolves at the first prompt. */
+async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command, world = WORLD, cwd = base, env = {} } = {}) {
   const id = `t${++opened}`;
-  const shell = command ?? `env LC_ALL=${locale} LANG=${locale} HISTFILE=/dev/null PS1=${shq(`${PROMPT} `)} bash --norc --noprofile -i`;
-  const [pane, session] = tmuxOn("new-session", "-d", "-P", "-F", "#{pane_id} #{session_id}", "-s", id, "-x", String(cols), "-y", String(rows), "-c", base, shell).split(" ");
+  const extra = Object.entries(env).map(([name, value]) => `${name}=${shq(value)} `).join("");
+  const shell = command ?? `sh ${shq(world.enter)} env ${extra}LC_ALL=${locale} LANG=${locale} HISTFILE=/dev/null PS1=${shq(`${PROMPT} `)} bash --norc --noprofile -i`;
+  const [pane, session] = tmuxOn("new-session", "-d", "-P", "-F", "#{pane_id} #{session_id}", "-s", id, "-x", String(cols), "-y", String(rows), "-c", cwd, shell).split(" ");
   let files = 0;
   const term = {
     id, pane, session,
@@ -195,6 +292,8 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
       };
     },
     kill() { try { tmuxOn("kill-session", "-t", session); } catch { /* gone */ } },
+    /** Something to do when the test that opened this terminal is over. */
+    after(fn) { t.after(fn); },
   };
   t.after(term.kill); // a failed test leaves nothing for the next one
   if (!command) await term.prompt("when its shell has started");
@@ -202,28 +301,50 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
 }
 
 /** `oats tui`, the real CLI, typed at a terminal's prompt through a wrapper that writes its own pid
- *  and then becomes the CLI (so the pid is the TUI's, and the shell's job is the TUI). The shell
- *  records the exit status unless `record` is false. Resolves once the frame is on the screen. */
-async function tui(term, look = {}, { record = true } = {}) {
+ *  and then becomes the CLI (so the pid is the TUI's, and the shell's job is the TUI). `args` are
+ *  the word's arguments: the deployment by `--dir`, unless a test says otherwise. The shell
+ *  records the exit status unless `record` is false. Resolves once the Instances view of that
+ *  deployment is on the screen, read: `at` is what `viewFaults` is told about every screen of
+ *  this run (its size, its look). */
+async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir ${shq(world.dep)}` } = {}) {
   const n = ++started;
   const pidFile = join(base, `tui-${n}.pid`), statusFile = join(base, `tui-${n}.status`);
-  await term.command(`sh -c ${shq(`echo $$ > ${shq(pidFile)}; exec ${TUI}`)}${record ? `; echo $? > ${shq(statusFile)}` : ""}`, "the oats tui command");
+  await term.command(`sh -c ${shq(`echo $$ > ${shq(pidFile)}; exec ${TUI} ${args}`)}${record ? `; echo $? > ${shq(statusFile)}` : ""}`, "the oats tui command");
   const run = {
-    statusFile,
+    statusFile, world,
     /** The exit status the pane's shell recorded; null while the command runs. */
     status() { const text = existsSync(statusFile) ? readFileSync(statusFile, "utf8") : ""; return /^\d+\n$/.test(text) ? Number(text) : null; },
     async ended(why) { await until(term, () => run.status() !== null, `oats tui in ${term.id} to end ${why}`); return run.status(); },
-    /** The frame is on the screen and the program still runs. */
-    async frame(why, at = look) {
-      await untilScreen(term, (screen) => frameFaults(screen, at), `the frame ${why}`);
+    /** The Instances view is on the screen, as `want` says, and the program still runs. */
+    async view(why, want = {}) {
+      await untilScreen(term, (screen) => viewFaults(screen, { ...at, ...want }), `the Instances view ${why}`);
       assert.equal(run.status(), null, `oats tui still runs ${why}`);
     },
-    async help(why) {
-      await untilScreen(term, (screen) => helpFaults(screen, look), `the help ${why}`);
+    async help(why, want = {}) {
+      await untilScreen(term, (screen) => helpFaults(screen, { ...at, ...want }), `the help ${why}`);
       assert.equal(run.status(), null, `oats tui still runs ${why}`);
+    },
+    /** A read in flight: the next answer of the collector's tmux is held (see `deployment`), the
+     *  refresh key starts a read now, and this resolves once a held tmux wrote down the pid of its
+     *  sleep: the pids that hold reads, of processes that run. `release()` lets the next read
+     *  answer again. */
+    async reading(why) {
+      const before = world.held().length;
+      writeFileSync(world.holdFile, "");
+      term.press("r");
+      await until(term, () => world.held().length > before, `a read in flight ${why}: the collector's tmux, held`);
+      const pids = world.held().slice(before);
+      assert.ok(pids.every((pid) => Number.isInteger(pid) && pid > 1 && alive(pid)), `what holds the read runs ${why} (${pids})`);
+      return pids;
+    },
+    /** The children of a read that was in flight are gone. Left alone, what held the read would
+     *  run for half a minute, far longer than any wait of this file: the TUI ended its group. */
+    async childrenGone(pids, why) {
+      await until(term, () => pids.every((pid) => !alive(pid)), `the children of the read in flight (${pids}) to be gone ${why}`);
     },
   };
-  await run.frame("after the start");
+  term.after(world.release); // a held read of a failed test holds no later one
+  await run.view("after the start");
   const pid = Number(readFileSync(pidFile, "utf8").trim());
   assert.ok(Number.isInteger(pid) && pid > 1, `the wrapper wrote the pid (${pid})`);
   run.pid = pid;
@@ -278,15 +399,16 @@ test("a stty -g line is compared without macOS's PENDIN bit and with everything 
 });
 
 // ---- no terminal at all: plain children ---------------------------------------------------------
-test("without a terminal on stdout `oats tui` prints the E_NO_TERMINAL line on stderr and exits 1 with no escape byte; --json is refused as one JSON envelope, --help prints the usage, and --dir and --server are refused", () => {
+test("without a terminal on stdout `oats tui` prints the E_NO_TERMINAL line on stderr and exits 1 with no escape byte, with or without --dir; --json is refused as one JSON envelope, --help prints the usage, and --server and a --dir without a path are refused", () => {
   // The worktree may live inside an agent's instance home: the children run in the fixture, with
   // its environment, and with no name that makes them an OATS instance.
   const env = REAL_TMUX ? { ...process.env } : fixtureEnv(base, { extra: { OATS_HOME_DIR: join(base, "oats-home") } });
   for (const key of Object.keys(env)) if (key !== "OATS_HOME_DIR" && /^(OATS_|PI_AGENT|TMUX)/.test(key)) delete env[key];
   const cli = (...args) => spawnSync(process.execPath, [CLI, "tui", ...args], { cwd: base, env: { ...env, TERM: "xterm-256color" }, encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "pipe"] });
 
-  const none = cli();
-  assert.deepEqual({ status: none.status, stdout: none.stdout, stderr: none.stderr }, { status: 1, stdout: "", stderr: `${NO_TERMINAL}\n` });
+  // The terminal is asked for before the deployment is looked for: no directory changes the answer.
+  const none = cli(), named = cli("--dir", base);
+  for (const r of [none, named]) assert.deepEqual({ status: r.status, stdout: r.stdout, stderr: r.stderr }, { status: 1, stdout: "", stderr: `${NO_TERMINAL}\n` });
 
   const json = cli("--json");
   assert.equal(json.status, 1);
@@ -296,17 +418,16 @@ test("without a terminal on stdout `oats tui` prints the E_NO_TERMINAL line on s
   const help = cli("--help");
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /^Usage:\n/);
-  assert.ok(help.stdout.includes("oats tui [--ascii]"), help.stdout);
+  assert.ok(help.stdout.includes(USAGE), help.stdout);
   assert.equal(help.stderr, "");
 
-  for (const flag of ["--dir", "--server"]) {
-    const refused = cli(flag, "x");
-    assert.equal(refused.status, 1, flag);
-    assert.match(refused.stderr, /\(E_BAD_ARGS\)/, flag);
-    assert.ok(refused.stderr.includes(flag), `${flag} is named: ${refused.stderr}`);
-    assert.equal(refused.stdout, "", flag);
-  }
-  for (const r of [none, json, help]) assert.equal(/\x1b/.test(r.stdout + r.stderr), false, "no escape byte without a terminal");
+  const server = cli("--server", "x");
+  assert.deepEqual({ status: server.status, stdout: server.stdout }, { status: 1, stdout: "" });
+  assert.match(server.stderr, /\(E_BAD_ARGS\)/);
+  assert.ok(server.stderr.includes("--server") && server.stderr.includes(USAGE), `--server is named, with the usage: ${server.stderr}`);
+  const bare = cli("--dir");
+  assert.deepEqual({ status: bare.status, stdout: bare.stdout, stderr: bare.stderr }, { status: 1, stdout: "", stderr: `oats: \`oats tui --dir\` takes a path (E_BAD_ARGS); usage: ${USAGE}\n` });
+  for (const r of [none, named, json, help, server, bare]) assert.equal(/\x1b/.test(r.stdout + r.stderr), false, "no escape byte without a terminal");
 });
 
 // ---- on a terminal ------------------------------------------------------------------------------
@@ -318,37 +439,76 @@ test(`the tmux these tests run against: ${TMUX_VERSION}`, { skip: NO_TMUX }, asy
   assert.equal(term.size(), "80x24", "a detached session made with -x and -y has that size");
 });
 
-test("on a terminal of 80x24 the frame appears; ? shows the help, generated from the action table; Esc closes it; ? opens it and ? closes it; q exits with status 0 and the shell's screen is back", { skip: NO_TMUX }, async (t) => {
-  const term = await terminal(t);
-  const run = await tui(term);
-  assert.deepEqual(term.screen(), [
-    "oats                                                                     preview",
-    VIEWS,
-    "\u2500".repeat(80),
-    ...Array(9).fill(""),
-    "       This preview draws the frame only. Views arrive in later releases.",
-    ...Array(9).fill(""),
-    "\u2500".repeat(80),
-    KEYS_ROW,
-  ], "the frame, row for row");
+test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, grouped as the shared home groups them, with the detail of the selected one; j, h, l, /, text, Enter, Esc, r, Tab and ? each do what the help says, waited for on what the pane shows; q exits with status 0 and the shell's screen is back", { skip: NO_TMUX }, async (t) => {
+  const world = await deployment(t); // its own: this test adds an instance
+  const term = await terminal(t, { world });
+  const run = await tui(term, {}, { world });
+  const two = (left, right) => `${left.padEnd(38)}│${right}`.trimEnd();
+  assert.deepEqual(term.screen().map((row) => row.replace(/read \d\d:\d\d:\d\d$/, "read HH:MM:SS")), [
+    " oats  fixture                                                        3 stopped",
+    " 1 Instances   2 Souls   3 Capabilities                           read HH:MM:SS",
+    `${"─".repeat(38)}┬${"─".repeat(41)}`,
+    two(">▾ ○ alpha                stopped", "   alpha"),
+    two("     ○ beta               stopped", "   soul     dev"),
+    two("", "   state    stopped"),
+    two("   ○ gamma                stopped", "   harness  claude"),
+    two("", "   work     directory"),
+    two("", "   home     …/agents/dev/instances/alpha"),
+    ...Array(13).fill(two("", "")),
+    `${"─".repeat(38)}┴${"─".repeat(41)}`,
+    FOOTER,
+  ], "the Instances view, row for row");
 
-  term.press("?");
-  await run.help("after ?");
+  term.press("j");
+  await run.view("after j: the next row, the child", { selected: "beta" });
+  term.press("h");
+  await run.view("after h on a row with nothing below it: its parent", { selected: "alpha" });
+  term.press("h");
+  await run.view("after h on an open row: collapsed", { selected: "alpha", folded: true });
+  term.press("l");
+  await run.view("after l on a collapsed row: open again", { selected: "alpha" });
+  term.press("l");
+  await run.view("after l on an open row: its first child", { selected: "beta" });
+
+  term.press("/");
+  await run.view("after /: the filter field takes the footer", { selected: "beta", footer: /^ \/ +Enter keep {3}Esc clear$/ });
+  tmuxOn("send-keys", "-l", "-t", term.pane, "gamq");
+  await run.view("after text: q is text in the field, and nothing matches", { gone: ["alpha", "beta", "gamma"], footer: /^ \/gamq +Enter keep {3}Esc clear$/ });
+  term.press("BSpace");
+  await run.view("after Backspace: the one match, selected", { selected: "gamma", gone: ["alpha", "beta"], footer: /^ \/gam +Enter keep {3}Esc clear$/ });
+  term.press("Enter");
+  await run.view("after Enter: the filter is kept and the keys are keys again", { selected: "gamma", gone: ["alpha", "beta"], footer: /^ \/gam +\/ filter {3}Tab detail {3}Esc close {3}\? help {3}q quit$/ });
   term.press("Escape");
-  await run.frame("after Esc closed the help");
+  await run.view("after Esc: the filter is cleared, the selection stays on its instance", { selected: "gamma" });
+
+  // The view follows the deployment: an instance spawned meanwhile is there after a read. (That
+  // the key asks for one is packages/tui/test/main.test.mjs's; a read comes every five seconds too.)
+  await world.spawn("reviewer", { name: "delta" });
+  term.press("r");
+  const more = { selected: "gamma", extra: ["delta"], count: 4 };
+  await run.view("after r: the new instance", more);
+
+  term.press("Tab");
+  await run.view("after Tab: the detail holds the focus", { ...more, detail: true, footer: DETAIL_FOOTER });
+  term.press("Escape");
+  await run.view("after Esc: the list has it again", more);
   term.press("?");
-  await run.help("after ? again");
+  await run.help("after ?", { count: 4 });
+  term.press("Escape");
+  await run.view("after Esc closed the help", more);
   term.press("?");
-  await run.frame("after ? closed the help");
+  await run.help("after ? again", { count: 4 });
+  term.press("?");
+  await run.view("after ? closed the help", more);
 
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
   await term.prompt("after q");
-  assert.equal(term.screen().includes(KEYS_ROW), false, `the frame is gone from the shell's screen:\n${term.shows()}`);
+  assert.equal(term.screen().includes(FOOTER), false, `the view is gone from the shell's screen:\n${term.shows()}`);
   assert.equal(alive(run.pid), false, "the process is gone");
 });
 
-for (const [how, status, leave] of [
+for (const [how, status, leave, first = async () => {}] of [
   ["q", 0, (term) => term.press("q")],
   ["Ctrl+C, the byte 0x03 on a raw terminal", 0, (term) => term.press("C-c")],
   ["SIGINT", 130, (term, run) => process.kill(run.pid, "SIGINT")],
@@ -357,19 +517,18 @@ for (const [how, status, leave] of [
   // Ctrl+L leaves and enters the alternate screen again. However often it did, the end is one
   // leave, and the shell's cursor is where the first entry found it. Keys are read in order, so the
   // help that answers the `?` typed after a Ctrl+L shows that the Ctrl+L was acted on before it.
-  ...[1, 3].map((times) => [`${times} Ctrl+L and then q`, 0, async (term, run) => {
+  ...[1, 3].map((times) => [`${times} Ctrl+L and then q`, 0, (term) => term.press("q"), async (term, run) => {
     for (let i = 1; i <= times; i++) {
       term.press("C-l");
       term.press("?");
       await run.help(`after Ctrl+L number ${i}, then ?`);
       assertRunningModes(term, `after Ctrl+L number ${i}`);
       term.press("Escape");
-      await run.frame(`after Ctrl+L number ${i}, then ? and Esc`);
+      await run.view(`after Ctrl+L number ${i}, then ? and Esc`);
     }
-    term.press("q");
   }]),
 ]) {
-  test(`the terminal is intact after ${how}: status ${status}, and stty -g, the pane's modes and every tmux option are what they were before the start; while it ran, only the alternate screen, the cursor, autowrap and bracketed paste were changed`, { skip: NO_TMUX }, async (t) => {
+  test(`the terminal is intact after ${how}, with the view drawn and a read in flight: status ${status}, the read's children are gone, and stty -g, the pane's modes and every tmux option are what they were before the start; while it ran, only the alternate screen, the cursor, autowrap and bracketed paste were changed`, { skip: NO_TMUX }, async (t) => {
     const term = await terminal(t);
     const before = await term.state("before the start");
     assertShellModes(before.flags, "before the start");
@@ -378,11 +537,14 @@ for (const [how, status, leave] of [
     assertRunningModes(term, `while it runs, before ${how}`);
     assert.deepEqual(everything(), mine, "the TUI made no session, window or pane");
 
+    await first(term, run);
+    const reading = await run.reading(`before ${how}`);
     await leave(term, run);
+    await run.childrenGone(reading, `after ${how}`);
     assert.equal(await run.ended(`after ${how}`), status, term.shows());
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
     // The cursor the alternate screen saved is the one that came back: the prompt is on the row
-    // after the command line, with the cursor on it, and nothing of the frame above it.
+    // after the command line, with the cursor on it, and nothing of the view above it.
     await term.prompt(`after ${how}`);
     const screen = term.screen(), promptRow = screen.findLastIndex((row) => row === PROMPT);
     assert.equal(term.cursorRow(), promptRow, `the cursor is on the prompt's row after ${how}:\n${term.shows()}`);
@@ -394,34 +556,41 @@ for (const [how, status, leave] of [
     assert.deepEqual(after.flags, before.flags, `the pane's modes after ${how}`);
     assertShellModes(after.flags, `after ${how}`);
     assert.deepEqual(after, before, `the terminal and the server after ${how}`);
-    assert.equal(term.screen().includes(KEYS_ROW), false, `the shell's screen is back:\n${term.shows()}`);
+    assert.equal(term.screen().includes(FOOTER), false, `the shell's screen is back:\n${term.shows()}`);
   });
 }
 
-test("SIGHUP ends it with status 129 and SIGKILL ends it at once: either way the process is gone and the private server holds exactly the sessions, windows and panes the tests made", { skip: NO_TMUX }, async (t) => {
+test("SIGHUP ends it with status 129, and the children of a read in flight with it; SIGKILL ends it at once: either way the process is gone and the private server holds exactly the sessions, windows and panes the tests made", { skip: NO_TMUX }, async (t) => {
   for (const [signal, status] of [["SIGHUP", 129], ["SIGKILL", 137]]) {
     const term = await terminal(t);
     const mine = everything();
     const run = await tui(term);
+    // After SIGKILL nothing ran that could end a child either: a read then ends by itself.
+    const reading = signal === "SIGHUP" ? await run.reading("before SIGHUP") : [];
     process.kill(run.pid, signal);
+    await run.childrenGone(reading, `after ${signal}`);
     assert.equal(await run.ended(`after ${signal}`), status, term.shows());
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${signal}`);
     assert.deepEqual(everything(), mine, `${signal}: nothing was added to the server, and nothing of the test's was taken`);
     // After SIGKILL nothing ran that could put the terminal back: it is left in the alternate
     // screen, which is expected and documented, and not asserted. The terminal goes with its session.
     t.diagnostic(`after ${signal} the pane reports ${term.flagsLine()}`);
+    run.world.release();
     term.kill();
     assert.deepEqual(everything(), mine.filter((row) => !row.startsWith(`${term.id} `)), `${signal}: the test's terminal is removed`);
   }
 });
 
-test("Ctrl+Z suspends with the terminal handed back: the shell's prompt returns, the alternate screen is off, autowrap and the cursor are on and stty -g is what it was; fg draws the frame again; q then exits 0", { skip: NO_TMUX }, async (t) => {
+test("Ctrl+Z during a read suspends with the terminal handed back: the read is given up and its children are gone, the shell's prompt returns, the alternate screen is off, autowrap and the cursor are on and stty -g is what it was; fg draws the view again from a new read; q then exits 0", { skip: NO_TMUX }, async (t) => {
   const term = await terminal(t);
   const before = await term.state("before the start");
   const run = await tui(term, {}, { record: false });
   assertRunningModes(term, "while it runs");
 
+  const reading = await run.reading("before Ctrl+Z");
   term.press("C-z");
+  await run.childrenGone(reading, "after Ctrl+Z");
+  run.world.release();
   await until(term, () => term.flags().alternate_on === "0" && term.atPrompt(), "the shell's prompt on its own screen after Ctrl+Z");
   await until(term, () => /^T/.test(execFileSync("ps", ["-o", "stat=", "-p", String(run.pid)], { encoding: "utf8", timeout: 10000 }).trim()), `the process ${run.pid} to be stopped`);
   assert.ok(term.joined().some((row) => /Stopped/.test(row)), `the shell reports a stopped job:\n${term.shows()}`);
@@ -432,12 +601,12 @@ test("Ctrl+Z suspends with the terminal handed back: the shell's prompt returns,
   assert.deepEqual(stopped, before, "the terminal and the server while stopped");
 
   await term.command("fg", "fg");
-  await run.frame("after fg");
+  await run.view("after fg");
   assertRunningModes(term, "after fg");
   term.press("?");
   await run.help("after fg: it reads keys again");
   term.press("Escape");
-  await run.frame("after the help was closed");
+  await run.view("after the help was closed");
 
   term.press("q");
   await term.command(`echo $? > ${shq(run.statusFile)}`, "the status of fg");
@@ -446,12 +615,12 @@ test("Ctrl+Z suspends with the terminal handed back: the shell's prompt returns,
   assert.deepEqual(after, before, "the terminal and the server after a suspend, a return and q");
 });
 
-test("Ctrl+Z through a wrapper that does not exec: the wrapper stops with the TUI, the interactive shell's prompt returns with the alternate screen off, fg draws the frame again, and after q the wrapper goes on", { skip: NO_TMUX }, async (t) => {
+test("Ctrl+Z through a wrapper that does not exec: the wrapper stops with the TUI, the interactive shell's prompt returns with the alternate screen off, fg draws the view again, and after q the wrapper goes on", { skip: NO_TMUX }, async (t) => {
   const term = await terminal(t);
   const before = await term.state("before the start");
   const statusFile = join(base, `${term.id}-wrapped.status`);
-  await term.command(`sh -c ${shq(`${TUI}; echo after-the-tui`)}`, "oats tui under sh -c");
-  await untilScreen(term, (screen) => frameFaults(screen), "the frame under a wrapper");
+  await term.command(`sh -c ${shq(`${TUI} --dir ${shq(WORLD.dep)}; echo after-the-tui`)}`, "oats tui under sh -c");
+  await untilScreen(term, (screen) => viewFaults(screen), "the view under a wrapper");
   assertRunningModes(term, "while it runs under a wrapper");
 
   term.press("C-z");
@@ -463,7 +632,7 @@ test("Ctrl+Z through a wrapper that does not exec: the wrapper stops with the TU
   assert.deepEqual(stopped, before, "the terminal and the server while stopped");
 
   await term.command("fg", "fg");
-  await untilScreen(term, (screen) => frameFaults(screen), "the frame after fg under a wrapper");
+  await untilScreen(term, (screen) => viewFaults(screen), "the view after fg under a wrapper");
   assertRunningModes(term, "after fg under a wrapper");
 
   term.press("q");
@@ -474,7 +643,41 @@ test("Ctrl+Z through a wrapper that does not exec: the wrapper stops with the TU
   assert.deepEqual(await term.state("after q under a wrapper"), before, "the terminal and the server afterwards");
 });
 
-test("it follows the terminal's size: at 60x15 the frame still draws; below it, in either direction, one line gives the size found and the size needed; back at 80x24 the frame returns", { skip: NO_TMUX }, async (t) => {
+test("Ctrl+Z, the deployment removed, fg: the view returns and says, in the shared home's words, that the deployment is not observed and why, with no instance drawn; it still reads keys, and q exits 0", { skip: NO_TMUX }, async (t) => {
+  const world = await deployment(t); // its own: this test removes it
+  const term = await terminal(t, { world });
+  const run = await tui(term, {}, { world, record: false });
+  term.press("C-z");
+  await until(term, () => term.flags().alternate_on === "0" && term.atPrompt(), "the shell's prompt on its own screen after Ctrl+Z");
+  renameSync(world.dep, `${world.dep}-gone`);
+
+  await term.command("fg", "fg");
+  // What a failed read becomes is the shared rule's answer, and so are its words: here only that
+  // it is said, on rows of its own under the views, that no instance and no time of a read is
+  // drawn for a deployment that was not read, and that the one pane has no line down its middle.
+  const notReadFaults = (screen) => [
+    ...(/^ oats {2}\S+$/.test(screen[0] ?? "") ? [] : [`the title row counts instances: ${JSON.stringify(screen[0])}`]),
+    ...(screen[1] === " 1 Instances   2 Souls   3 Capabilities" ? [] : [`the views row is ${JSON.stringify(screen[1])}`]),
+    ...(screen[2] === UTF8.rule.repeat(80) && screen[22] === UTF8.rule.repeat(80) ? [] : ["a rule has a joint, or is not there"]),
+    ...(/^ \S/.test(screen[3] ?? "") && /^ \S/.test(screen[4] ?? "") ? [] : [`rows 4 and 5 do not say what state the deployment is in and why: ${JSON.stringify(screen.slice(3, 5))}`]),
+    ...(screen.slice(5, 22).every((row) => row === "") ? [] : ["something is drawn under the reason"]),
+    ...(screen[23] === FOOTER ? [] : [`the footer is ${JSON.stringify(screen[23])}`]),
+  ];
+  await untilScreen(term, notReadFaults, "the view after fg, saying the deployment could not be read");
+  assertRunningModes(term, "after fg");
+  t.diagnostic(`after fg with the deployment gone the pane shows:\n${term.shows()}`);
+  term.press("?");
+  await until(term, () => term.screen().some((row) => row.trim() === "Keys") && term.screen().at(-1) === HELP_FOOTER, "the help, after fg with the deployment gone");
+  assert.equal(run.status(), null, "it still runs");
+  term.press("Escape");
+  await untilScreen(term, notReadFaults, "the view again after the help was closed");
+
+  term.press("q");
+  await term.command(`echo $? > ${shq(run.statusFile)}`, "the status of fg");
+  assert.equal(await run.ended("after fg and q"), 0, term.shows());
+});
+
+test("it follows the terminal's size: at 60x15 the view still draws, in one pane; below it, in either direction, one line gives the size found and the size needed; back at 80x24 the two panes return with the selection where it was; under 80 columns the detail is a page of its own", { skip: NO_TMUX }, async (t) => {
   const term = await terminal(t);
   const run = await tui(term);
   // A detached session keeps the size it was made with, and resize-window sets window-size to
@@ -488,44 +691,139 @@ test("it follows the terminal's size: at 60x15 the frame still draws; below it, 
     assert.equal(run.status(), null, `oats tui still runs at ${cols}x${rows}`);
   };
 
+  term.press("j");
+  await run.view("after j", { selected: "beta" });
   resize(60, 15);
-  await run.frame("at 60x15, the smallest size it draws at", { cols: 60, rows: 15 });
-  assert.equal(term.screen().at(-1), KEYS_ROW);
+  await run.view("at 60x15, the smallest size it draws at", { cols: 60, rows: 15, selected: "beta" });
   await tooSmall(59, 15); // one column short
   await tooSmall(60, 14); // one row short
   await tooSmall(59, 14);
   resize(80, 24);
-  await run.frame("back at 80x24");
+  await run.view("back at 80x24: the state was kept", { selected: "beta" });
   assertRunningModes(term, "after the resizes");
+
+  // With the focus on the detail, a terminal under 80 columns shows the detail alone.
+  term.press("Tab");
+  await run.view("after Tab", { selected: "beta", detail: true, footer: DETAIL_FOOTER });
+  resize(79, 24);
+  const pageFaults = (screen) => [
+    ...chromeFaults(screen, { cols: 79, rows: 24, look: UTF8, split: false, footer: DETAIL_FOOTER, count: 3 }),
+    ...(screen[3] === " > beta" ? [] : [`row 4 is ${JSON.stringify(screen[3])}, not the detail's title`]),
+    ...(screen.includes("   parent   alpha") ? [] : ["no row names the parent"]),
+    ...(screen.some((row) => /\balpha +stopped$/.test(row)) ? ["a row of the list is still shown"] : []),
+  ];
+  await untilScreen(term, pageFaults, "the detail as a page at 79x24");
+  term.press("Escape");
+  await run.view("after Esc at 79x24: the list, in one pane", { cols: 79, rows: 24, selected: "beta" });
 
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
 
 let refusals = 0;
+/** A pane nothing but the program writes to: no shell prompt, no readline. It waits for a line, so
+ *  that the recording of what it receives starts before the program does, and for another at its
+ *  end: a dead pane kept by remain-on-exit reports its cursor as off. Resolves with every byte the
+ *  pane received, the status, and the terminal. */
+async function bare(t, command, what) {
+  const n = ++refusals;
+  const statusFile = join(base, `refusal-${n}.status`), record = join(base, `refusal-${n}.bytes`);
+  const term = await terminal(t, { command: `read go; ${command}; echo $? > ${shq(statusFile)}; echo tui-ended; read stay` });
+  tmuxOn("pipe-pane", "-o", "-t", term.pane, `cat > ${shq(record)}`);
+  const before = term.flags();
+  term.press("Enter");
+  await until(term, () => existsSync(record) && readFileSync(record, "utf8").includes("tui-ended"), `everything the pane received ${what}, to its end`);
+  const received = readFileSync(record);
+  assert.equal(received.includes(0x1b), false, `no escape byte reached the terminal ${what}: ${JSON.stringify(received.toString("latin1"))}`);
+  assert.deepEqual(term.flags(), before, `no mode of the terminal changed ${what}`);
+  // The terminal's echo of the Enter, the program's lines, the pane's own last word.
+  return { term, status: readFileSync(statusFile, "utf8"), text: received.toString("utf8").replace(/\r/g, "") };
+}
+
 for (const [what, set] of [["TERM=dumb", "env TERM=dumb"], ["an empty TERM", "env TERM="], ["no TERM", "env -u TERM"]]) {
   test(`with ${what} on a real terminal it refuses with the E_NO_TERMINAL line and status 1, and the terminal received no escape byte and changed no mode`, { skip: NO_TMUX }, async (t) => {
-    // Nothing but the program writes to this pane: no shell prompt, no readline. The pane waits for
-    // a line, so that the recording of what it receives starts before the program does, and for
-    // another at its end: a dead pane kept by remain-on-exit reports its cursor as off.
-    const n = ++refusals;
-    const statusFile = join(base, `refusal-${n}.status`), record = join(base, `refusal-${n}.bytes`);
-    const term = await terminal(t, { command: `read go; ${set} ${TUI}; echo $? > ${shq(statusFile)}; echo tui-ended; read stay` });
-    tmuxOn("pipe-pane", "-o", "-t", term.pane, `cat > ${shq(record)}`);
-    const before = term.flags();
-    term.press("Enter");
-    await until(term, () => existsSync(record) && readFileSync(record, "utf8").includes("tui-ended"), `everything the pane received with ${what}, to its end`);
-    assert.equal(readFileSync(statusFile, "utf8"), "1\n", term.shows());
-    const received = readFileSync(record);
-    assert.equal(received.includes(0x1b), false, `no escape byte reached the terminal: ${JSON.stringify(received.toString("latin1"))}`);
-    // The terminal's echo of the Enter, the program's one line, the pane's own last word.
-    assert.equal(received.toString("utf8").replace(/\r/g, ""), `\n${NO_TERMINAL}\ntui-ended\n`);
+    const { term, status, text } = await bare(t, `${set} ${TUI}`, `with ${what}`);
+    assert.equal(status, "1\n", term.shows());
+    assert.equal(text, `\n${NO_TERMINAL}\ntui-ended\n`);
     assert.ok(term.joined().includes(NO_TERMINAL), `the pane shows the line:\n${term.shows()}`);
-    assert.deepEqual(term.flags(), before, "no mode of the terminal changed");
   });
 }
 
-test("a bracketed paste is dropped whole: a pasted q does not quit, nor does a longer paste with q and a newline in it; a typed q then quits with status 0", { skip: NO_TMUX }, async (t) => {
+test("outside a deployment it prints one line with E_NO_DEPLOYMENT that names the directory and --dir, with status 1, and the terminal received no escape byte and changed no mode: where it was started, for a --dir that is a file, and for one that is not there; at a shell's prompt the terminal and the server are what they were", { skip: NO_TMUX }, async (t) => {
+  const file = join(base, "a-file"), missing = join(base, "not", "there");
+  writeFileSync(file, "");
+  for (const [what, args, dir] of [["where it was started", "", realpathSync(base)], ["for a --dir that is a file", `--dir ${shq(file)}`, file], ["for a --dir that is not there", `--dir ${shq(missing)}`, missing]]) {
+    const { term, status, text } = await bare(t, `${TUI} ${args}`, what);
+    assert.equal(status, "1\n", term.shows());
+    assert.equal(text, `\n${noDeployment(dir)}\ntui-ended\n`, what);
+  }
+  const term = await terminal(t);
+  const before = await term.state("before the start");
+  const statusFile = join(base, `${term.id}-outside.status`);
+  await term.command(`${TUI}; echo $? > ${shq(statusFile)}`, "oats tui outside a deployment");
+  await until(term, () => existsSync(statusFile) && /\n$/.test(readFileSync(statusFile, "utf8")), "the status of oats tui outside a deployment");
+  await term.prompt("after the refusal");
+  assert.equal(readFileSync(statusFile, "utf8"), "1\n");
+  assert.ok(term.joined().includes(noDeployment(realpathSync(base))), `the pane shows the line:\n${term.shows()}`);
+  assert.deepEqual(await term.state("after the refusal"), before, "the terminal and the server after the refusal");
+});
+
+test("started in an agent's pane, in the instance's home and with the variables of an instance session set, it shows the deployment that home is in, and no child of a read sees one of them; with one of the two that name a captured context the kernel refuses the word as it refuses every command, before anything is drawn", { skip: NO_TMUX }, async (t) => {
+  // Each names another place: a kernel that ran with them would answer for that place, or refuse.
+  // Two of the eight name a captured context, which bin/oats.mjs refuses for every command but
+  // `version` before the command runs: the TUI never starts with those, and they are the last part
+  // of this test. (That it removes all eight is packages/tui/test/read.test.mjs's.)
+  const CAPTURED = ["OATS_RESOLUTION", "OATS_DEPLOYMENT"];
+  const stray = Object.fromEntries(INSTANCE_VARIABLES.filter((name) => !CAPTURED.includes(name)).map((name) => [name, join(base, "elsewhere", name.toLowerCase())]));
+  const term = await terminal(t, { cwd: WORLD.home, env: stray });
+  const shellEnv = join(base, `${term.id}-shell.env`);
+  await term.command(`env > ${shq(shellEnv)}; echo written`, "env in the pane's shell");
+  await until(term, () => term.screen().includes("written") && term.atPrompt(), "the shell's environment, written down");
+  for (const name of Object.keys(stray)) assert.ok(lines(readFileSync(shellEnv, "utf8")).includes(`${name}=${stray[name]}`), `the pane's shell has ${name}`);
+
+  rmSync(WORLD.seenFile, { force: true });
+  const run = await tui(term, {}, { args: "" }); // no --dir: the deployment is found from the home
+  // The view is drawn from a read whose collector ran its tmux, which wrote its environment down.
+  await until(term, () => existsSync(WORLD.seenFile) && /(^|\n)PATH=/.test(readFileSync(WORLD.seenFile, "utf8")), "the environment the collector's tmux was started with");
+  const seen = lines(readFileSync(WORLD.seenFile, "utf8")).map((line) => line.split("=")[0]);
+  assert.deepEqual(INSTANCE_VARIABLES.filter((name) => seen.includes(name)), [], "no instance variable reached a child's child");
+  assert.ok(seen.includes("HOME") && seen.includes("OATS_HOME_DIR"), "the rest of the environment did");
+  term.press("q");
+  assert.equal(await run.ended("after q"), 0, term.shows());
+
+  for (const name of CAPTURED) {
+    const refused = await bare(t, `env ${name}=${shq(join(base, "elsewhere"))} ${TUI} --dir ${shq(WORLD.dep)}`, `with ${name} set`);
+    assert.equal(refused.status, "1\n", refused.term.shows());
+    assert.match(refused.text, new RegExp(`^\\noats: this environment carries a captured context \\(${name}\\): [^\\n]+\\ntui-ended\\n$`), `the kernel's own refusal, on one line, with ${name} set`);
+  }
+});
+
+test("tui.json is honoured: the key it gives an action is that action's key in the footer, in the help and at the keyboard, and the default it replaced is no key; a file the TUI cannot use is named on stderr with E_TUI_CONFIG, status 1, and nothing is drawn", { skip: NO_TMUX }, async (t) => {
+  const good = join(base, "config-good"), bad = join(base, "config-bad");
+  for (const [dir, value] of [[good, { keys: { quit: ["x"] } }], [bad, { keys: { fly: ["x"] } }]]) {
+    mkdirSync(join(dir, "oats"), { recursive: true });
+    writeFileSync(join(dir, "oats", "tui.json"), JSON.stringify(value));
+  }
+  const term = await terminal(t, { env: { XDG_CONFIG_HOME: good } });
+  const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
+  term.press("q"); // no key now: read, and nothing happens
+  term.press("?");
+  await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
+  assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
+  term.press("Escape");
+  await run.view("after the help was closed");
+  term.press("x");
+  assert.equal(await run.ended("after x"), 0, term.shows());
+
+  const refused = await bare(t, `env XDG_CONFIG_HOME=${shq(bad)} ${TUI} --dir ${shq(WORLD.dep)}`, "with a tui.json that names an action there is none of");
+  assert.equal(refused.status, "1\n", refused.term.shows());
+  const said = refused.text.split("\n").filter(Boolean);
+  assert.equal(said.length, 2, refused.text);
+  assert.ok(said[0].startsWith(`oats: \`oats tui\` cannot use ${join(bad, "oats", "tui.json")}: `) && said[0].endsWith(" (E_TUI_CONFIG)") && said[0].includes("fly"), said[0]);
+  assert.equal(said[1], "tui-ended");
+});
+
+test("a bracketed paste outside the filter field is dropped whole: a pasted q does not quit, nor does a longer paste with q and a newline in it; into the open field its first line is the filter's text, a line the display filter would change adds nothing, and nothing of a paste is a key; a typed q then quits with status 0", { skip: NO_TMUX }, async (t) => {
   const term = await terminal(t);
   const run = await tui(term);
   // -p pastes between the bracket codes only when the pane's program asked for them: it did.
@@ -535,20 +833,30 @@ test("a bracketed paste is dropped whole: a pasted q does not quit, nor does a l
   term.press("?"); // input is read in order: once the help is open, the paste before it was read
   await run.help("after a pasted q, then ?");
   term.press("?");
-  await run.frame("after the help was closed");
+  await run.view("after the help was closed");
 
-  paste("quit q\n?q\u0003");
+  paste("quit q\n?q\x03");
   term.press("?");
   await run.help("after a longer paste, then ?");
   term.press("Escape");
-  await run.frame("after the pastes");
+  await run.view("after the pastes");
   assertRunningModes(term, "after the pastes");
+
+  term.press("/");
+  await run.view("after /", { footer: /^ \/ +Enter keep {3}Esc clear$/ });
+  paste("gam\nq\n");
+  await run.view("after a paste into the field: its first line", { selected: "gamma", gone: ["alpha", "beta"], footer: /^ \/gam +Enter keep {3}Esc clear$/ });
+  paste("\u202Ema"); // a bidi override: the display filter replaces it
+  term.press("Enter"); // read after the paste: the footer shows what the field held then
+  await run.view("after a paste the display filter would change, then Enter: nothing was added", { selected: "gamma", gone: ["alpha", "beta"], footer: /^ \/gam +\/ filter {3}Tab detail {3}Esc close {3}\? help {3}q quit$/ });
+  term.press("Escape");
+  await run.view("after Esc cleared the filter", { selected: "gamma" });
 
   term.press("q");
   assert.equal(await run.ended("after a typed q"), 0, term.shows());
 });
 
-test("Ctrl+L takes the terminal again: after the screen and the modes were reset from outside the program, the frame is complete, the modes are the TUI's again and a paste is still not keys", { skip: NO_TMUX }, async (t) => {
+test("Ctrl+L takes the terminal again: after the screen and the modes were reset from outside the program, the view is complete, the modes are the TUI's again and a paste is still not keys", { skip: NO_TMUX }, async (t) => {
   const term = await terminal(t);
   const run = await tui(term);
   // `send-keys -R` resets the pane's terminal state inside tmux: the screen is cleared without the
@@ -556,7 +864,7 @@ test("Ctrl+L takes the terminal again: after the screen and the modes were reset
   tmuxOn("send-keys", "-R", "-t", term.pane);
   assert.deepEqual(term.screen().filter(Boolean), [], `${TMUX_VERSION} wiped the pane's screen`);
   term.press("C-l");
-  await run.frame("after Ctrl+L on a wiped screen");
+  await run.view("after Ctrl+L on a wiped screen");
   // tmux's reset also put the pane's modes back to a terminal's defaults (cursor shown, autowrap
   // on, bracketed paste off): Ctrl+L sets the TUI's own again, so a paste cannot act as keys.
   assertRunningModes(term, `after ${TMUX_VERSION}'s reset and Ctrl+L`);
@@ -567,23 +875,27 @@ test("Ctrl+L takes the terminal again: after the screen and the modes were reset
   await run.help("after another Ctrl+L, then ?");
   term.press("C-l");
   term.press("Escape");
-  await run.frame("after Ctrl+L with the help open, then Esc");
+  await run.view("after Ctrl+L with the help open, then Esc");
 
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
 
-test("in a locale that is not UTF-8 the frame's rules are ASCII, and the help and q work the same", { skip: NO_TMUX }, async (t) => {
+test("in a locale that is not UTF-8 the view's rules and marks are ASCII, and the keys, the help and q work the same", { skip: NO_TMUX }, async (t) => {
   const term = await terminal(t, { locale: ASCII.locale });
-  const run = await tui(term, { rule: ASCII.rule });
+  const run = await tui(term, { look: ASCII });
   const screen = term.screen();
-  assert.equal(screen[2], "-".repeat(80));
-  assert.equal(screen[22], "-".repeat(80));
+  assert.equal(screen[2], `${"-".repeat(38)}+${"-".repeat(41)}`);
+  assert.equal(screen[22], `${"-".repeat(38)}+${"-".repeat(41)}`);
+  assert.equal(screen[3].slice(0, 38).trimEnd(), ">v - alpha                stopped");
   assert.equal(screen.some((row) => /[^\x20-\x7e]/.test(row)), false, `every character on the screen is printable ASCII:\n${term.shows()}`);
+  term.press("h");
+  await run.view("after h in an ASCII locale: collapsed", { folded: true });
+  assert.equal(term.screen().some((row) => /[^\x20-\x7e]/.test(row)), false, `every character on the screen is printable ASCII:\n${term.shows()}`);
   term.press("?");
   await run.help("in an ASCII locale");
   term.press("Escape");
-  await run.frame("after the help was closed");
+  await run.view("after the help was closed", { folded: true });
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
