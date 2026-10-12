@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { observeLiveness } from '../../client/liveness.mjs';
+import { observeLiveness, livenessOrigin } from '../../client/liveness.mjs';
 import { HERDR_REMOVED } from '../../client/terminal-contract.mjs';
 
 const sessionTarget = { backend: 'herdr', protocol: 20, socket: '/memory/herdr.sock', paneId: 'w1:pA', terminalId: 'term_ABC' };
@@ -103,4 +103,45 @@ test('the rule that keeps a row unprobed: it is left only when the kernel answer
       if (row.running === null) assert.equal(answers[n].running, null, `${row.instance}: the kernel's unknown stays unknown`);
     });
   }
+});
+
+// Who makes the text of a row's answer (#982). The collector's answer crosses a process as JSON, so the
+// speaker is decided by the reader of the answers from the row it sent (deployment-panel.mjs
+// `livenessAnswers` asks `livenessOrigin`). That holds only while the two take the same order.
+test('livenessOrigin and observeLiveness agree on every branch: the speaker named for a row is the place its text came from', () => {
+  const PROBE = 'the terminal check\'s own words', KERNEL = 'the kernel\'s own words';
+  const tmuxReader = () => ({ tmux: undefined, running: null, runtimeState: 'unreachable', runtimeError: PROBE });
+  const each = (key, values) => values.map(value => (value === undefined ? {} : { [key]: value }));
+  const rows = [null, 7, 'row', [], { running: null, runtimeError: KERNEL }, { instance: 7, running: null, runtimeError: KERNEL }];
+  for (const running of each('running', [undefined, true, false, null])) for (const state of each('runtimeState', [undefined, 'unreachable', 'unsupported', 'stopped']))
+    for (const text of each('runtimeError', [undefined, '', KERNEL, 5, null])) for (const target of each('sessionTarget', [undefined, null, sessionTarget]))
+      for (const backend of each('backend', [undefined, 'tmux', 'herdr'])) rows.push({ instance: 'row', ...running, ...state, ...text, ...target, ...backend });
+  const seen = { 'terminal-probe': 0, kernel: 0, none: 0 }, texts = new Set();
+  for (const row of rows) {
+    // As the collector is given it: through JSON.
+    const [answer] = observeLiveness(JSON.parse(JSON.stringify([row])), { tmuxReader }), at = JSON.stringify(row);
+    const said = answer.runtimeError;
+    if (said === undefined) { assert.equal(Object.hasOwn(answer, 'runtimeError'), false, at); continue; }
+    // Where the text came from, read from the text itself: each place writes one this test can tell apart.
+    const from = said === PROBE || said === 'Invalid terminal target' ? 'terminal-probe' : said === kernelText ? null
+      : said === String(row.runtimeError) && row.runtimeError ? 'kernel' : 'no place this test knows';
+    assert.equal(livenessOrigin(row), from, at);
+    seen[from ?? 'none']++; texts.add(said);
+  }
+  // Every branch was taken, and each place's text was met.
+  assert.ok(seen['terminal-probe'] > 0 && seen.kernel > 0 && seen.none > 0, JSON.stringify(seen));
+  assert.deepEqual([...texts].sort(), ['5', 'Invalid terminal target', KERNEL, PROBE, kernelText].sort());
+});
+
+test('livenessOrigin: the stand-in for a Herdr row of an older kernel has no speaker; the kernel\'s own reason is the kernel\'s', () => {
+  assert.equal(livenessOrigin({ instance: 'h', sessionTarget }), null);
+  assert.equal(livenessOrigin({ instance: 'h', sessionTarget, runtimeState: 'unreachable', runtimeError: 'spawn herdr ENOENT' }), null);
+  assert.equal(livenessOrigin({ instance: 'h', runtimeState: 'unsupported' }), null);
+  assert.equal(livenessOrigin({ instance: 'h', runtimeState: 'unsupported', runtimeError: '' }), null);
+  assert.equal(livenessOrigin({ instance: 'h', runtimeState: 'unsupported', runtimeError: `${kernelText} (h)` }), 'kernel');
+  // After the Herdr rule: a row the kernel answered unknown, then a probed one; a row that is no row is the check's.
+  assert.equal(livenessOrigin({ instance: 't', running: null, runtimeError: 'no server' }), 'kernel');
+  assert.equal(livenessOrigin({ instance: 't', running: true }), 'terminal-probe');
+  assert.equal(livenessOrigin({ instance: 't' }), 'terminal-probe');
+  assert.equal(livenessOrigin(undefined), 'terminal-probe');
 });

@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { observeLiveness } from '../../client/liveness.mjs';
+import { deploymentStatusData } from '../../client/deployment-data.mjs';
+import { HERDR_REMOVED } from '../../client/terminal-contract.mjs';
 import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry, publicDeployment } from '../../client/deployment-panel.mjs';
 
 /** Frozen at every depth: a function that writes to its input throws (modules are strict). */
@@ -14,7 +16,7 @@ const frozen = value => {
   return value;
 };
 const claim = { since: '2026-10-03T10:00:00.000Z', producer: 'claude-hook', reason: 'question', message: null };
-const UNKNOWN = { running: null, runtimeState: 'unreachable', runtimeError: 'Terminal status is unavailable' };
+const UNKNOWN = { running: null, runtimeState: 'unreachable', runtimeError: 'Terminal status is unavailable', runtimeErrorOrigin: 'terminal-probe' };
 /** A roster as deployment-data.mjs `deploymentStatusData` answers it: two souls, three instances. */
 const roster = () => frozen({
   root: '/d/agents', workspace: { reachable: true }, withheld: [],
@@ -207,13 +209,14 @@ test('composed: a fixture roster becomes the entry the Desktop\'s observeDeploym
   const row = (instance, agent, extra) => ({ instance, agent, description: extra.description, repo: undefined, work: undefined, branch: null, harness: null, model: null,
     running: extra.running, createdAt: undefined, home: `/d/agents/${extra.soul}/instances/${instance}`, agentsRoot: '/d/agents', workspace: '/d', repoName: 'd',
     parentInstance: null, siblingInstance: null, relation: null, relativeTo: null, ...(extra.sessionTarget ? { sessionTarget: extra.sessionTarget } : {}),
-    runtimeState: extra.runtimeState, runtimeError: extra.runtimeError, tmux: extra.tmux, git: null,
+    runtimeState: extra.runtimeState, runtimeError: extra.runtimeError, ...(extra.runtimeErrorOrigin ? { runtimeErrorOrigin: extra.runtimeErrorOrigin } : {}), tmux: extra.tmux, git: null,
     ...(Object.hasOwn(extra, 'waitingOnYou') ? { waitingOnYou: extra.waitingOnYou } : {}), team: extra.team });
   assert.deepEqual(entry, {
     deployment: { status: 'observed', root: '/d/agents', workspace: { name: 'd' }, workspaceStatus, reachable: { reachable: true }, withheld: [],
       souls: [{ name: 'dev', description: 'Writes code', team: 'aweb:oats', dir: '/d/agents/dev' }, { name: 'ops', dir: '/d/agents/ops' }] },
     instances: [
-      row('dev-a', 'dev-renamed', { soul: 'dev', description: 'Writes code', running: true, runtimeState: 'running', runtimeError: 'no server', tmux: { session: 'oats', window: 'dev-a' }, waitingOnYou: null, team: 'aweb:oats' }),
+      // dev-a: this answer named no runtimeError, so the kernel's own text stays, and its speaker is the kernel.
+      row('dev-a', 'dev-renamed', { soul: 'dev', description: 'Writes code', running: true, runtimeState: 'running', runtimeError: 'no server', runtimeErrorOrigin: 'kernel', tmux: { session: 'oats', window: 'dev-a' }, waitingOnYou: null, team: 'aweb:oats' }),
       row('dev-b', 'dev', { soul: 'dev', description: 'Writes code', running: false, runtimeState: 'stopped', runtimeError: undefined, tmux: { session: 'oats', window: 'dev-b' }, waitingOnYou: claim, team: 'aweb:oats' }),
       row('ops-a', 'ops', { soul: 'ops', description: '', running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: gone', tmux: null, sessionTarget: { backend: 'herdr' }, team: null }),
     ],
@@ -277,4 +280,137 @@ test('the collector as a program, with no terminal server to ask: the kernel\'s 
   for (const name of UNKNOWN_ROWS) assert.equal(by[name].running, null, name);
   assert.equal(by['unknown-bare'].runtimeError, 'E_UNIDENTIFIED_INSTANCE_HOME: instance.json cannot be read');
   assert.equal(by['unknown-recorded'].runtimeError, 'error connecting to /x/tmux.sock');
+});
+
+// ── Who made a row's runtimeError (#982) ──────────────────────────────────────
+
+const ORIGINS = ['kernel', 'terminal-probe', 'roster-read'];
+const STAND_IN = `E_HERDR_REMOVED: ${HERDR_REMOVED}`;
+const origins = instances => Object.fromEntries(instances.map(i => [i.instance, [i.runtimeError, i.runtimeErrorOrigin, Object.hasOwn(i, 'runtimeErrorOrigin')]]));
+
+test('livenessAnswers: an answer with a runtimeError says who made it, from the row that was sent; an answer without one has no key', () => {
+  const rows = frozen([
+    { instance: 'probed', running: true }, { instance: 'kept', running: null, runtimeError: 'the kernel could not read the socket' },
+    { instance: 'herdr-new', running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: the kernel\'s own reason' },
+    { instance: 'herdr-old', sessionTarget: { backend: 'herdr' }, runtimeState: 'unreachable', runtimeError: 'spawn herdr ENOENT' },
+    { instance: 7 }, { instance: 'fine', running: false },
+  ]);
+  const printed = [
+    { running: null, runtimeState: 'unreachable', runtimeError: 'Cannot reach terminal server' },
+    { running: null, runtimeState: 'unreachable', runtimeError: 'the kernel could not read the socket' },
+    { running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: the kernel\'s own reason', tmux: null },
+    { running: null, runtimeState: 'unsupported', runtimeError: STAND_IN, tmux: null },
+    { running: null, runtimeState: 'unreachable', runtimeError: 'Invalid terminal target' },
+    { running: false, runtimeState: 'stopped', tmux: { session: 'oats', window: 'fine' } },
+  ];
+  const answers = livenessAnswers(rows, JSON.stringify(printed));
+  assert.deepEqual(answers.map(a => a.runtimeErrorOrigin), ['terminal-probe', 'kernel', 'kernel', undefined, 'terminal-probe', undefined]);
+  assert.deepEqual(answers.map(a => Object.hasOwn(a, 'runtimeErrorOrigin')), [true, true, true, false, true, false], 'the stand-in and an answer without a text carry no key');
+  // Nothing else of an answer changes: each is what was printed, and the text is the same string.
+  assert.deepEqual(answers.map(({ runtimeErrorOrigin: _origin, ...rest }) => rest), printed);
+  // An empty text, and one that is not a string, are not a runtimeError: no key.
+  for (const runtimeError of ['', null, 5, { message: 'x' }]) {
+    const [answer] = livenessAnswers(rows.slice(0, 1), JSON.stringify([{ running: null, runtimeError, runtimeErrorOrigin: 'kernel' }]));
+    assert.deepEqual(answer, { running: null, runtimeError }, JSON.stringify(runtimeError));
+  }
+});
+
+test('livenessAnswers: a runtimeErrorOrigin the collector printed never survives, whatever it says', () => {
+  const rows = frozen([{ instance: 'probed', running: true }, { instance: 'kept', running: null, runtimeError: 'the kernel\'s text' }, { instance: 'herdr-old', sessionTarget: { backend: 'herdr' } }, { instance: 'fine', running: true }]);
+  for (const sent of [...ORIGINS, 'the-collector', '__proto__', 7, null, { kernel: true }]) {
+    const printed = [
+      { running: null, runtimeState: 'unreachable', runtimeError: 'tmux said no', runtimeErrorOrigin: sent },
+      { running: null, runtimeState: 'unreachable', runtimeError: 'the kernel\'s text', runtimeErrorOrigin: sent },
+      { running: null, runtimeState: 'unsupported', runtimeError: STAND_IN, tmux: null, runtimeErrorOrigin: sent },
+      { running: true, runtimeState: 'running', runtimeErrorOrigin: sent },
+    ];
+    const answers = livenessAnswers(rows, JSON.stringify(printed)), at = JSON.stringify(sent);
+    // A probed row whose answer says "kernel" is the terminal check's all the same, and so on for each row.
+    assert.deepEqual(answers.map(a => [a.runtimeErrorOrigin, Object.hasOwn(a, 'runtimeErrorOrigin')]), [['terminal-probe', true], ['kernel', true], [undefined, false], [undefined, false]], at);
+    assert.deepEqual(origins(panelInstances(rows.map(row => ({ ...row, agentsRoot: '/d/agents' })), answers)),
+      { fine: [undefined, undefined, false], probed: ['tmux said no', 'terminal-probe', true], kept: ['the kernel\'s text', 'kernel', true], 'herdr-old': [STAND_IN, undefined, false] }, at);
+  }
+});
+
+test('the collector failed or printed something else: every row is the terminal check\'s, a row the kernel answered itself included', () => {
+  const rows = rosterRows(answered(), WAITING);
+  for (const stdout of [null, '', 'tmux: no server running', '[]', '{"runtimeErrorOrigin":"kernel"}']) {
+    for (const i of panelInstances(rows, livenessAnswers(rows, stdout))) {
+      assert.deepEqual([i.runtimeError, i.runtimeErrorOrigin], ['Terminal status is unavailable', 'terminal-probe'], `${JSON.stringify(stdout)}: ${i.instance}`);
+    }
+  }
+});
+
+test('input, collector, answers and panel together: each row\'s text has the speaker of the place that chose it, and the text is the base\'s', () => {
+  const herdr = [
+    { instance: 'herdr-new', home: '/d/agents/dev/instances/herdr-new', running: null, runtimeState: 'unsupported', runtimeError: `${STAND_IN} (herdr-new)`, sessionTarget: { backend: 'herdr' } },
+    { instance: 'herdr-empty', home: '/d/agents/dev/instances/herdr-empty', running: null, runtimeState: 'unsupported', runtimeError: '' },
+    { instance: 'herdr-old', home: '/d/agents/dev/instances/herdr-old', running: null, runtimeState: 'unreachable', runtimeError: 'spawn herdr ENOENT', sessionTarget: { backend: 'herdr' } },
+  ];
+  const document = answered(), rows = rosterRows({ ...document, agents: [{ ...document.agents[0], instances: [...document.agents[0].instances, ...herdr] }] }, WAITING);
+  const failing = collector(row => ({ tmux: row.tmux, running: null, runtimeState: 'unreachable', runtimeError: 'Cannot reach terminal server' }));
+  assert.deepEqual(origins(panelInstances(rows, livenessAnswers(rows, failing(livenessInput(rows))))), {
+    yes: ['Cannot reach terminal server', 'terminal-probe', true], no: ['Cannot reach terminal server', 'terminal-probe', true],
+    'unknown-recorded': ['error connecting to /x/tmux.sock', 'kernel', true],
+    'unknown-bare': ['E_UNIDENTIFIED_INSTANCE_HOME: instance.json cannot be read', 'kernel', true],
+    // The kernel answered unknown and gave no text: no runtimeError, so no key.
+    'unknown-null': [undefined, undefined, false], 'unknown-empty': [undefined, undefined, false],
+    'herdr-new': [`${STAND_IN} (herdr-new)`, 'kernel', true],
+    // The stand-in is written here for a reason the kernel did not give: it has no speaker.
+    'herdr-empty': [STAND_IN, undefined, false], 'herdr-old': [STAND_IN, undefined, false],
+  });
+  // A probe that finds the window: a row that is running or stopped has no text and no key.
+  const finding = collector(row => ({ tmux: row.tmux, running: row.instance === 'yes', runtimeState: row.instance === 'yes' ? 'running' : 'stopped' }));
+  const found = origins(panelInstances(rows, livenessAnswers(rows, finding(livenessInput(rows)))));
+  assert.deepEqual([found.yes, found.no], [[undefined, undefined, false], [undefined, undefined, false]]);
+});
+
+test('panelInstances: the key is set here or removed, whatever a row or an answer carried', () => {
+  const row = (instance, extra = {}) => ({ instance, agentsRoot: '/d/agents', ...extra });
+  for (const carried of [...ORIGINS, 'someone-else']) {
+    const rows = frozen([
+      row('a-kernel-text', { running: true, runtimeError: 'the kernel sent this beside running: true', runtimeErrorOrigin: carried }),
+      row('b-no-text', { running: false, runtimeErrorOrigin: carried }),
+      row('c-answered', { running: true, runtimeErrorOrigin: carried }),
+      row('d-unmarked-answer', { running: true, runtimeErrorOrigin: carried }),
+      row('e-emptied', { running: null, runtimeError: 'the kernel\'s', runtimeErrorOrigin: carried }),
+    ]);
+    const answers = frozen([{ running: true }, { running: false }, { running: null, runtimeError: 'tmux said no', runtimeErrorOrigin: 'terminal-probe' },
+      { running: null, runtimeError: 'an answer made by hand, with no speaker' }, { running: null, runtimeError: '' }]);
+    assert.deepEqual(origins(panelInstances(rows, answers)), {
+      // The probe's answer named no text, so the kernel's own stays in the merged row: it is the kernel's.
+      'a-kernel-text': ['the kernel sent this beside running: true', 'kernel', true],
+      'b-no-text': [undefined, undefined, false],
+      'c-answered': ['tmux said no', 'terminal-probe', true],
+      'd-unmarked-answer': ['an answer made by hand, with no speaker', undefined, false],
+      'e-emptied': ['', undefined, false],
+    }, carried);
+  }
+});
+
+test('panelInstance: the key only beside a runtimeError, and only as one of the three speakers', () => {
+  const base = { instance: 'a', agentsRoot: '/d/agents' };
+  for (const origin of ORIGINS) assert.equal(panelInstance({ ...base, runtimeError: 'x', runtimeErrorOrigin: origin }).runtimeErrorOrigin, origin);
+  for (const origin of ['Kernel', 'server-probe', '', '__proto__', 'constructor', 7, null, undefined, ['kernel'], { kernel: true }]) {
+    assert.equal(Object.hasOwn(panelInstance({ ...base, runtimeError: 'x', runtimeErrorOrigin: origin }), 'runtimeErrorOrigin'), false, JSON.stringify(origin));
+  }
+  for (const runtimeError of [undefined, null, '', 5, {}]) {
+    assert.equal(Object.hasOwn(panelInstance({ ...base, runtimeError, runtimeErrorOrigin: 'kernel' }), 'runtimeErrorOrigin'), false, JSON.stringify(runtimeError));
+  }
+});
+
+test('a local status row is built from named fields: a runtimeErrorOrigin the kernel sent does not arrive', () => {
+  const instance = (name, extra) => ({ instance: name, home: `/d/agents/dev/instances/${name}`, ...extra });
+  for (const sent of [...ORIGINS, 'someone-else']) {
+    const document = { root: '/d/agents', agents: [{ name: 'dev', dir: '/d/agents/dev', instances: [
+      instance('lost', { running: null, runtimeState: 'unreachable', runtimeError: 'the kernel could not read the socket', runtimeErrorOrigin: sent }),
+      instance('up', { running: true, runtimeErrorOrigin: sent }),
+    ] }] };
+    const read = deploymentStatusData(document, '/d');
+    for (const row of read.agents[0].instances) assert.equal(Object.hasOwn(row, 'runtimeErrorOrigin'), false, `${sent}: ${row.instance}`);
+    // So the panel's key is the shared home's own: the kernel's text, left as it is, is the kernel's.
+    const rows = rosterRows(read, WAITING), print = collector(row => ({ tmux: row.tmux, running: true, runtimeState: 'running' }));
+    assert.deepEqual(origins(panelInstances(rows, livenessAnswers(rows, print(livenessInput(rows))))),
+      { up: [undefined, undefined, false], lost: ['the kernel could not read the socket', 'kernel', true] }, sent);
+  }
 });

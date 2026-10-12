@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import * as roster from '../../client/remote-roster.mjs';
 import { remoteRosterState, remotePanelEntries, remotePanel, unavailableGroups } from '../../client/remote-roster.mjs';
 import { cliReadsRemotes } from '../../client/panel-views.mjs';
+import { cliRemoteRoster } from '../../client/cli-adapter.mjs';
 import { group, identity, remoteRow, LAB } from './helpers/workspace-views-fixture.mjs';
 
 const AT = '2026-10-11T12:00:00.000Z';
@@ -187,6 +188,63 @@ test('nothing given is changed: every outcome over a frozen previous, a frozen o
   const groups = held(), before = JSON.stringify(groups);
   remotePanelEntries(groups, AT);
   assert.equal(JSON.stringify(groups), before);
+});
+
+// Who made the text of a row of a machine that was not reached (#982): the kernel's when the installed CLI
+// printed the error, the client's read otherwise. The kernel's mark is on the error object, set where the
+// answer is parsed, so each case here is read as a client reads it: `cliRemoteRoster` over what was printed,
+// its answer to `remoteRosterState`, the groups it answers to `remotePanel`.
+test('the speaker of a not-reached row through a client\'s whole path: read, held groups, a later failed read, and back', async () => {
+  const printing = (document) => (_bin, _argv, _options, done) => done(null, typeof document === 'string' ? document : JSON.stringify(document));
+  const read = (exec) => cliRemoteRoster('/abs/oats', { exec });
+  const speakers = (groups) => groups.map(g => remotePanel(g, AT).instances.map(i => [i.runtimeError, i.runtimeErrorOrigin]));
+  let state = NONE;
+  const take = (outcome) => { const next = remoteRosterState(state, outcome, AT); state = kept(next); return speakers(next.remoteGroups); };
+
+  // A roster the kernel answered: one server reached, one not, with the kernel's own error for it.
+  const down = { ...vega(), probe: { ok: false, error: { code: 'E_SSH', message: 'ssh: connect to host vega: No route to host' } } };
+  assert.deepEqual(take({ envelope: await read(printing(ok([altair(), down]))) }),
+    [[[undefined, undefined]], [['ssh: connect to host vega: No route to host', 'kernel']]]);
+  // Held, and projected again later from the same objects: still the kernel's.
+  assert.deepEqual(speakers(state.remoteGroups)[1], [['ssh: connect to host vega: No route to host', 'kernel']]);
+
+  // The next read threw: the groups are kept, and each row's text is now the read's own sentence.
+  const thrown = 'Remote roster unavailable: spawn oats ENOENT';
+  assert.deepEqual(take({ thrown: 'spawn oats ENOENT' }), [[[thrown, 'roster-read']], [[thrown, 'roster-read']]]);
+
+  // The kernel refused the whole read, in an envelope it printed: the kernel's, on every kept row.
+  assert.deepEqual(take({ envelope: await read(printing(refused({ code: 'E_LOCK_HELD', message: 'another oats command holds the lock' }))) }),
+    [[['another oats command holds the lock', 'kernel']], [['another oats command holds the lock', 'kernel']]]);
+
+  // The read wrote the envelope itself: it timed out, or what the CLI printed is not the contract's. The client's, never "OATS says".
+  const killed = (_bin, _argv, _options, done) => done(Object.assign(new Error('killed'), { killed: true }), '');
+  assert.deepEqual(take({ envelope: await read(killed) }), [[['oats did not answer within 60s', 'roster-read']], [['oats did not answer within 60s', 'roster-read']]]);
+  for (const garbage of ['', 'not json', '{"schemaVersion":2}', JSON.stringify({ schemaVersion: 1, ok: false })]) {
+    const text = 'oats did not print a valid JSON envelope on stdout';
+    assert.deepEqual(take({ envelope: await read(printing(garbage)) }), [[[text, 'roster-read']], [[text, 'roster-read']]], garbage);
+  }
+
+  // An answer that cannot be kept: no groups array, or a group that cannot be projected. The read's own sentence.
+  assert.deepEqual(take({ envelope: await read(printing({ schemaVersion: 1, ok: true, result: {} })) }),
+    [[['Remote roster unavailable', 'roster-read']], [['Remote roster unavailable', 'roster-read']]]);
+  const [[[unreadable, origin]]] = take({ envelope: await read(printing(ok([altair(), { id: 'rigel:r1', server: 'rigel' }]))) });
+  assert.match(unreadable, /^Remote roster unavailable: /); assert.equal(origin, 'roster-read');
+
+  // An envelope made by hand (not parsed from the CLI) carries no mark, whatever it says of itself.
+  assert.deepEqual(take({ envelope: refused({ code: 'E_SSH', message: 'ssh: no route', origin: 'kernel', runtimeErrorOrigin: 'kernel' }) }),
+    [[['ssh: no route', 'roster-read']], [['ssh: no route', 'roster-read']]]);
+
+  // And the roster is back: the reached server's rows have no text and no key.
+  assert.deepEqual(take({ envelope: await read(printing(ok([altair(), vega()]))) }), [[[undefined, undefined]], [[undefined, undefined]]]);
+});
+
+test('the Desktop\'s server hands the roster\'s answer on as it was read: the same objects reach remoteRosterState, so the kernel\'s mark is kept', () => {
+  const server = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const loop = server.match(/async function refreshRemoteSnapshot\([^]*?\n\}/)[0], take = server.match(/function takeRosterOutcome\([^]*?\n\}/)[0];
+  assert.match(loop, /const envelope = await adapter\.cliRemoteRoster\(probe\.bin\);\s*if \(cliState !== probe\) return;\s*takeRosterOutcome\(\{ envelope \}\);/);
+  assert.match(take, /\(\{ remoteGroups, rosterAnswered, rosterFailure \} = next\);/);
+  // Between the read and the panel nothing copies a group: no clone and no JSON round trip of what is held.
+  for (const body of [loop, take, server.match(/function mergeRemotePanels\([^]*?\n\}/)[0]]) assert.doesNotMatch(body, /structuredClone|JSON\.(parse|stringify)|\.\.\.\s*(g|group|envelope)\b/);
 });
 
 test('the Desktop\'s server holds none of the rule: it calls the shared functions and builds no roster sentence of its own', () => {

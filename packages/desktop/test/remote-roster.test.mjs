@@ -148,3 +148,87 @@ test("a remote panel made without a time throws, naming the argument: there is n
   assert.throws(() => [group].forEach(remotePanel), TypeError);
   assert.equal([group].map((g) => remotePanel(g, AT)).length, 1);
 });
+
+// ── Who made a remote row's runtimeError (#982) ──────────────────────────────
+// The mark of an error the installed CLI printed is set where its answer is parsed (cli-adapter.mjs), so
+// these tests get a marked error the way a client does: by parsing what the CLI printed.
+import { parseEnvelope, cliRemoteRoster } from "../../client/cli-adapter.mjs";
+const printedError = (error) => parseEnvelope(JSON.stringify({ schemaVersion: 1, ok: false, error })).error;
+const ORIGINS = ["kernel", "terminal-probe", "roster-read"];
+const STEM = `E_HERDR_REMOVED: ${HERDR_REMOVED}`;
+const said = (panel) => Object.fromEntries(panel.instances.map((i) => [i.instance, [i.runtimeError, i.runtimeErrorOrigin, Object.hasOwn(i, "runtimeErrorOrigin")]]));
+const NO_KEY = (text) => [text, undefined, false];
+
+test("a remote row's runtimeError says who made it, by the place that chose the text, and the text is the base's", () => {
+  const rows = [kernelRemoteRow("up"), kernelRemoteRow("lost", { running: null, runtimeState: "unreachable", runtimeError: "error connecting to /x/tmux.sock" }),
+    kernelRemoteRow("empty", { running: null, runtimeError: "" })];
+  // The server was read: a row's text is the host's own, relayed by this machine's OATS.
+  assert.deepEqual(said(remotePanel(kernelRemoteGroup(rows), AT)),
+    { up: NO_KEY(undefined), lost: ["error connecting to /x/tmux.sock", "kernel", true], empty: NO_KEY("") });
+  // Not reached, with an error the installed CLI printed: the kernel's, on every row.
+  const refused = printedError({ code: "E_SSH", message: "ssh: connect to host build port 22: Connection refused" });
+  const [kernels] = unavailableGroups([kernelRemoteGroup(rows)], refused);
+  assert.deepEqual(said(remotePanel(kernels, AT)), Object.fromEntries(rows.map((r) => [r.instance, ["ssh: connect to host build port 22: Connection refused", "kernel", true]])));
+  assert.ok(remotePanel(kernels, AT).instances.every((i) => i.serverUnreached === true && i.running === null));
+  // Not reached, with an error written while the roster was read: the client's.
+  const [reads] = unavailableGroups([kernelRemoteGroup(rows)], { code: "E_REMOTE_ROSTER", message: "Remote roster unavailable: spawn oats ENOENT" });
+  assert.deepEqual(said(remotePanel(reads, AT)), Object.fromEntries(rows.map((r) => [r.instance, ["Remote roster unavailable: spawn oats ENOENT", "roster-read", true]])));
+  // Not reached and no message to show: the sentence written here, whoever made the error.
+  for (const error of [undefined, null, {}, { code: "E_X" }, printedError({ code: "E_X" }), printedError({ code: "E_X", message: "" })]) {
+    const [bare] = unavailableGroups([kernelRemoteGroup(rows)], error);
+    assert.deepEqual(said(remotePanel(bare, AT)), Object.fromEntries(rows.map((r) => [r.instance, ["Server is unreachable", "roster-read", true]])), JSON.stringify(error));
+  }
+  // A message that is not a string is shown as the base shows it, and is no runtimeError: no key.
+  const [odd] = unavailableGroups([kernelRemoteGroup([kernelRemoteRow("up")])], printedError({ code: "E_X", message: 5 }));
+  assert.deepEqual(said(remotePanel(odd, AT)), { up: NO_KEY(5) });
+});
+
+test("a remote Herdr row: the kernel for the host's own reason, no speaker for the stand-in, and the Herdr rule wins on a server that was not reached", () => {
+  const rows = [kernelRemoteRow("h-new", { running: null, runtimeState: "unsupported", runtimeError: `${STEM} (h-new)` }),
+    kernelRemoteRow("h-old", { backend: "herdr", runtimeError: "Herdr snapshot unavailable" }), kernelRemoteRow("h-bare", { running: null, runtimeState: "unsupported" })];
+  const expected = { "h-new": [`${STEM} (h-new)`, "kernel", true], "h-old": NO_KEY(STEM), "h-bare": NO_KEY(STEM) };
+  assert.deepEqual(said(remotePanel(kernelRemoteGroup(rows), AT)), expected);
+  for (const error of [printedError({ code: "E_SSH", message: "ssh: no route" }), { code: "E_REMOTE_ROSTER", message: "Remote roster unavailable" }, undefined]) {
+    const [unreached] = unavailableGroups([kernelRemoteGroup(rows)], error);
+    assert.deepEqual(said(remotePanel(unreached, AT)), expected, JSON.stringify(error));
+  }
+});
+
+test("the hostile row: a runtimeErrorOrigin another machine sent never survives, on a server that was reached and on one that was not", () => {
+  for (const sent of [...ORIGINS, "the-host-says-so", "__proto__", 7, null, { kernel: true }]) {
+    const rows = [kernelRemoteRow("up", { runtimeErrorOrigin: sent }), kernelRemoteRow("lost", { running: null, runtimeError: "the host's own text", runtimeErrorOrigin: sent }),
+      kernelRemoteRow("h-old", { backend: "herdr", runtimeError: "Herdr snapshot unavailable", runtimeErrorOrigin: sent }),
+      kernelRemoteRow("h-new", { running: null, runtimeState: "unsupported", runtimeError: `${STEM} (h-new)`, runtimeErrorOrigin: sent })];
+    const herdr = { "h-old": NO_KEY(STEM), "h-new": [`${STEM} (h-new)`, "kernel", true] }, at = JSON.stringify(sent);
+    // Reached: the key is what the shared home decided, or absent. A host that says "terminal-probe" does not
+    // get its own text shown as this client's check speaking.
+    assert.deepEqual(said(remotePanel(kernelRemoteGroup(rows), AT)), { up: NO_KEY(undefined), lost: ["the host's own text", "kernel", true], ...herdr }, at);
+    // Not reached, by each maker of the error.
+    const cases = [[printedError({ code: "E_SSH", message: "ssh: no route" }), "ssh: no route", "kernel"],
+      [{ code: "E_REMOTE_ROSTER", message: "Remote roster unavailable: timeout" }, "Remote roster unavailable: timeout", "roster-read"], [undefined, "Server is unreachable", "roster-read"]];
+    for (const [error, text, origin] of cases) {
+      const [unreached] = unavailableGroups([kernelRemoteGroup(rows)], error);
+      assert.deepEqual(said(remotePanel(unreached, AT)), { up: [text, origin, true], lost: [text, origin, true], ...herdr }, `${at}, ${text}`);
+    }
+  }
+  // And a group that says it of itself, or of its error, changes nothing: the mark is not a key an answer can carry.
+  const claimed = { ...kernelRemoteGroup([kernelRemoteRow("up")]), runtimeErrorOrigin: "kernel", errorOrigin: "kernel", probe: { ok: false, origin: "kernel", error: { code: "E_SSH", message: "the host's words", origin: "kernel", runtimeErrorOrigin: "kernel" } } };
+  assert.deepEqual(said(remotePanel(JSON.parse(JSON.stringify(claimed)), AT)), { up: ["the host's words", "roster-read", true] });
+});
+
+test("the kernel's mark is set where the roster is parsed, and is nothing an answer can carry or a served group shows", async () => {
+  const group = (probe) => ({ ...kernelRemoteGroup([kernelRemoteRow("up")]), probe });
+  const printing = (document) => (_bin, _argv, _options, done) => done(null, JSON.stringify(document));
+  // An answered roster: a group this machine's OATS could not reach carries the kernel's error.
+  const answered = { schemaVersion: 1, ok: true, result: { groups: [group({ ok: false, error: { code: "E_SSH", message: "ssh: no route" } }), group({ ok: true })] } };
+  const envelope = await cliRemoteRoster("/abs/oats", { exec: printing(answered) });
+  assert.deepEqual(envelope, answered, "the envelope is what was printed, field for field");
+  assert.equal(JSON.stringify(envelope), JSON.stringify(answered), "and nothing of the mark is in what a client would serve");
+  assert.deepEqual(said(remotePanel(envelope.result.groups[0], AT)), { up: ["ssh: no route", "kernel", true] });
+  // A copy of the error has no mark: it reads as the client's, never as the kernel's.
+  const copied = structuredClone(envelope.result.groups[0]), spread = { ...envelope.result.groups[0], probe: { ok: false, error: { ...envelope.result.groups[0].probe.error } } };
+  for (const copy of [copied, spread, JSON.parse(JSON.stringify(envelope.result.groups[0]))]) assert.deepEqual(said(remotePanel(copy, AT)), { up: ["ssh: no route", "roster-read", true] });
+  // A probe error that is not an object is left as it is, and a group of an odd shape does not stop the read.
+  const odd = { schemaVersion: 1, ok: true, result: { groups: [group({ ok: false, error: "ssh: no route" }), null, 7, "group", { probe: null }, group({ ok: false, error: null })] } };
+  assert.deepEqual(await cliRemoteRoster("/abs/oats", { exec: printing(odd) }), odd);
+});
