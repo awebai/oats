@@ -27,7 +27,38 @@ they carry `--max-age <seconds>` (see
   package in `packages:` is the trust decision.
 
 A nonzero exit is never success, even with plausible stdout. A kernel refusal
-keeps only its bounded `code`/`message`. Ambient instance/deployment selectors
+keeps only its bounded `code`/`message`, and the reader marks it `origin:
+'kernel'` (`packages/client/deployment-read-cli.mjs`): the error is the one
+the installed CLI printed in its envelope. A failure the reader made itself
+(no accepted CLI, a missing feature, bad arguments, a timeout, the output
+limit, an answer that is not the contract's, a failed run) carries no origin.
+The mark travels with the reason, whole, through the observer, the entry of
+an unavailable deployment and `/api/panel` to the page.
+
+A deployment that is not observed says why in one sentence
+(`packages/client/deployment-facts.mjs`):
+
+| The reason | The sentence |
+|---|---|
+| the kernel's (`origin: 'kernel'`), a message | `OATS answered with an error (<code>). It says: <message>` |
+| the kernel's, a message the display filter withholds | `OATS answered with an error (<code>). [Detail withheld]` |
+| the kernel's, no message to show | `OATS answered with an error (<code>).` |
+| the reader's own (no origin) | `<code>: <message>`, the reader's fixed sentence |
+| a missing feature | the feature and the client that needs it |
+| not read yet | "Reading the deployment through the installed OATS CLI…" |
+
+The kernel's message is shown through the display filter
+(`display-text.mjs`): one line, whole or withheld, never cut by its words,
+parsed or matched. A reason is the kernel's by its mark and a code the reader
+admits, never by the shape of a code alone. `deploymentUnavailableParts`
+answers the same sentence as three parts, `headline`, `lead` and `sentence`;
+`sentence` is the only one that can carry words the client did not write.
+Three places still show a kernel message of a deployment as it came: the
+roster's own failure notice, a row's `runtimeError`, and the text a
+deployment keeps beside its last observation when its re-read failed
+(`E_REMOTE_UNREADABLE`).
+
+Ambient instance/deployment selectors
 (`PI_AGENTS_ROOT`, `OATS_INSTANCE_HOME`, `OATS_DEPLOYMENT`, …) are removed from
 the child environment.
 
@@ -346,7 +377,11 @@ sidebar's Spawn instance, Quick Open and the soul cards spawn.
 `remote-identity.json` in the app's user data (`server/remote-identity.mjs`)
 holds the last identity each remote group reported, keyed by
 `<server>:<targetKey>`. It is written atomically (a temporary file, then
-rename) with mode 0600; a missing or malformed file is an empty memory.
+rename) with mode 0600; a missing or malformed file is an empty memory. The
+file holds at most 256 groups. What one roster answer makes of the memory
+(the rules below) is `packages/client/remote-identity-memory.mjs`
+(`observeIdentities`), a function over two Maps the store keeps; the store
+writes the file when that answer says the memory changed.
 
 - Only a reached group with an identity is a report, and a fresh report
   always wins. A group that reports another workspace moves to that view, and
@@ -507,8 +542,9 @@ A window never waits silently on "Reading the deployment…":
 ## Remote rows
 
 A remote deployment is one group of the kernel's remote roster (`oats server
-roster --json`, projected by `packages/client/remote-roster.mjs`), shown in its
-workspace's view; its rows carry `server`, `home`, and the kernel's
+roster --json`, projected by `packages/client/remote-roster.mjs`, whose
+`remoteRosterState` also decides what a failed or unreadable answer leaves
+held), shown in its workspace's view; its rows carry `server`, `home`, and the kernel's
 `addressable` and `missingRemotely` facts.
 
 - **One predicate.** `canAddressRemote(row)` in `packages/client/remote-address.mjs`

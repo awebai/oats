@@ -22,7 +22,8 @@
  *
  * These functions read no clock: the one time they stamp is `held.at`, and the same `held` gives the
  * same answer. A remote deployment's panel is remote-roster.mjs `remotePanel`, made at `held.at`; what
- * a remote roster's answer becomes is that module's.
+ * a remote roster's answer becomes is that module's `remoteRosterState`, whose answer is the three
+ * roster values of `held`.
  *
  * `remembered` is the client's own store, passed in: this module calls its three reading methods and
  * keeps nothing. `note(id)` answers the sentence left for a machine that moved to another workspace,
@@ -67,7 +68,9 @@ export function rememberedGroups(held) {
     agentsRoot: undefined, workspace: null, souls: [], instances: [], retireFailures: [],
   }));
 }
-const cliReadsRemotes = (held) => !!held.cli.ok && !!held.cli.remote?.includes("roster");
+/** Whether a kernel record (cli-locator.mjs) reads other machines: an accepted CLI whose `remote` lists
+ * `roster`. Without it a client makes no roster read (remote-roster.mjs `remoteRosterState`: "gated"). */
+export const cliReadsRemotes = (cli) => !!cli.ok && !!cli.remote?.includes("roster");
 const identityFeature = (held) => !!held.cli.features?.includes("workspace-identity");
 /** One deployment's identity, attachment, machine label and reason. */
 export function deploymentInfo(held, d, terms) {
@@ -101,7 +104,7 @@ export function deploymentInfo(held, d, terms) {
   const identity = read.status === "identity" ? read.identity : null;
   const attach = attachment(identity);
   const reason = reasonFields(deploymentReasonParts({ local: false, machine, sshHost: g.target?.sshHost, probe: g.probe, identityStatus: read.status, attach,
-    ref: identity?.ref, cliReadsRemotes: cliReadsRemotes(held), rosterError: g.remembered ? held.rosterFailure : null }, terms));
+    ref: identity?.ref, cliReadsRemotes: cliReadsRemotes(held.cli), rosterError: g.remembered ? held.rosterFailure : null }, terms));
   const moved = held.remembered.note(g.id);
   const standalone = attach.note === "standalone" ? deploymentReason({ local: false, attach: { unattached: "standalone" } }, terms) : null;
   return { id: d.id, local: false, machine, path: g.target?.workspace || "", label: shortPath(g.target?.workspace || ""), name: d.name,

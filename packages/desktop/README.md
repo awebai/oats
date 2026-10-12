@@ -122,10 +122,46 @@ Those functions keep nothing. `server/oats-web.mjs` keeps the stores (the
 snapshot, the remote roster's last answer, the remembered remote
 identities), runs the kernel and the collector, and passes what it holds at
 each call as one value, `held()`, with the time of the call: those
-functions read no clock, and the same `held` gives the same answer. One
-clock read is left in what they call: `remotePanel`'s default argument
-(`remote-roster.mjs`), for a caller that gives no time; the views give it
-`held.at`.
+functions read no clock, and the same `held` gives the same answer. Nor
+does what they call: `remotePanel` (`remote-roster.mjs`) takes the time its
+panel is made at as a required argument and throws without one; the views
+give it `held.at`.
+
+And it holds the rules for other machines and for the switcher, each a
+function over what its caller holds:
+
+- **What a roster answer becomes** (`remote-roster.mjs`). `remoteRosterState`
+  takes the three roster values a client holds (the groups, whether an answer
+  has arrived, the failure sentence), the outcome of one read of `oats server
+  roster --json` (not made, an envelope, or what was thrown) and the time, and
+  answers the three values again with `reported`, the groups to hand to the
+  memory. A failed read keeps the groups held, marked not reached; the failure
+  sentence is kept only while no answer has ever arrived. `remotePanelEntries`
+  is each group's panel under its snapshot key. `server/oats-web.mjs` keeps
+  the loop: one read at a time, and an answer read with a kernel record that
+  is no longer the accepted one is dropped and read again. A caller also
+  keeps its own `try`/`catch` around the read and around what it does with
+  `reported`: if that step throws after it took the new state, it takes
+  `{ thrown: <message> }` next, and the groups it just took are marked not
+  reached.
+- **What is remembered of a machine** (`remote-identity-memory.mjs`).
+  `observeIdentities` takes the memory and the notes as two Maps, a roster
+  answer's reported groups and the time, and answers new Maps; it changes
+  none. It caps nothing: an answer drops every machine it no longer lists, so
+  a client's memory is bounded by the roster answer. `identityMemory` gives
+  the three readers the views take as `held.remembered`.
+  `server/remote-identity.mjs` keeps the Maps between answers and the file
+  (at most 256 groups, mode 0600, written atomically). A client that keeps
+  nothing on disk starts with two empty Maps: a machine that answered once in
+  its run and then stops is shown in its workspace as not reached, and one
+  that never answered in that run is shown under its own name.
+- **The words the switcher shows** (`workspace-choices.mjs`).
+  `workspaceChoiceRows` answers, for each view of `workspaceChoices`, its
+  name, its one muted line, how many deployments are not live and the words
+  for that, its tooltip and the deployment an unattached view opens;
+  `choiceMatches` is the menu's filter. `renderer/workspace-switcher.mjs`
+  draws the menu from the rows and keeps what is only its own: the "On this
+  computer" group, the new-window hint and adding a folder.
 
 - **What it holds.** `.mjs` modules and nothing else, in one flat directory:
   no test, fixture, script or manifest, and no subdirectory. A module there
@@ -140,7 +176,9 @@ clock read is left in what they call: `remotePanel`'s default argument
   kernel callers, `deployment-panel.mjs`, `panel-views.mjs`) and are for main,
   the backend and a terminal client only. A function the page needs goes in
   a module that imports none: `deploymentUnavailableText` is in
-  `deployment-facts.mjs` for that reason, not beside the panel's functions.
+  `deployment-facts.mjs` for that reason, not beside the panel's functions,
+  and the switcher's words are in `workspace-choices.mjs`, not beside the
+  views.
   `test/inventory.test.mjs` walks what the page loads and fails on a `node:`
   import anywhere in it.
 - **What goes there, and what stays here.** A function belongs in the shared
@@ -157,6 +195,17 @@ clock read is left in what they call: `remotePanel`'s default argument
   admission). A decision is made there and drawn here: `instanceActs` returns
   verbs and reasons, never a label, an icon or a key, and
   `renderer/instance-actions.mjs` builds the menu from them.
+- **Whose words a deployment's failure carries.** A deployment that is not
+  observed says why in one sentence, `deploymentUnavailableText`
+  (`deployment-facts.mjs`). A reason the reader marked `origin: 'kernel'`
+  (`deployment-read-cli.mjs`: the error the installed CLI printed) reads "OATS
+  answered with an error (<code>). It says: <message>", with the kernel's
+  message through the display filter; a failure the reader made itself reads
+  `<code>: <message>`, its own fixed sentence. `deploymentUnavailableParts`
+  answers the same as `{ headline, lead, sentence }`, where `sentence` is the
+  only part that can carry words the client did not write. A client that
+  shows one line calls the first; one that sets the kernel's words apart (a
+  quote, another style) calls the second. The Desktop's views call the first.
 - **Whose words a sentence uses.** The home also holds the sentence shown for
   a code, one explanation for every client. Where a sentence names the client
   that shows it ("this Desktop", "Update OATS Desktop") or the machine it

@@ -1,6 +1,10 @@
 /** Native workspace-v2 read contract. No filesystem discovery or generation adapters. */
 export const DEPLOYMENT_FEATURES = Object.freeze(['workspace-v2', 'instance-modules', 'served-identity', 'packages-no-approval']);
 export const deploymentRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+/** The code of a kernel error envelope, as the deployment reader admits one (deployment-read-cli.mjs): the one
+ * test of its shape. A reason the reader marks `origin: 'kernel'` always carries such a code, and the sentence
+ * that attributes a reason to the kernel (deployment-facts.mjs) asks for both. */
+export const deploymentErrorCode = value => typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(value);
 
 /* Spec D: why a remote read failed (kernel E_REMOTE_UNREADABLE `details.reason`, e.g. "cache", "network",
  * "timeout"), bounded. Only the reason and the host of `details.url` cross; never paths, pids, locks or the

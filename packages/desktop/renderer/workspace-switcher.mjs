@@ -3,48 +3,10 @@ import { iconElement } from "./shell-icons.mjs";
 import { deploymentMark } from "./view-deployments.mjs";
 import { pathTail } from "../../client/deployment-label.mjs";
 import { requestDeploymentTab } from "./deployment-tabs.mjs";
+// What the menu says for a view (its name, its one line, its not-live count, its tooltip, the filter) is the
+// shared home's: this module draws it. LOCAL_SECTION, the new-window hint and adding a folder are its own.
+import { isLocalPath, workspaceChoiceLabels, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
 
-// A choice id that is this computer's folder (a deployment from an older server, an unattached
-// one): its path may be a tooltip. Any other id (a view's `ws:…`, a remote's `remote:…`) is never
-// shown (#482).
-const isLocalPath = (id) => typeof id === "string" && id.startsWith("/");
-const short = (value, max = 256) => typeof value === "string" && value.length > 0 && value.length <= max ? value : "";
-
-const machinesOf = (choice) => Array.isArray(choice?.machines) ? choice.machines.filter((m) => short(m)) : [];
-
-/** The machines a choice's deployments are on, as one line (UI spec, #482): "This Mac · altair", from
- * the server's `machines`. Never a path or an id: without `machines` (an older server), nothing. */
-export function workspaceChoicePlace(choice) {
-  return machinesOf(choice).join(" · ");
-}
-
-export function workspaceChoiceLabels(choices) {
-  const base = choices.map((choice) => choice.name
-    || (isLocalPath(choice.id) ? String(choice.id).split("/").filter(Boolean).at(-1) : "")
-    || "Workspace");
-  const counts = new Map();
-  for (const name of base) counts.set(name, (counts.get(name) || 0) + 1);
-  return choices.map((choice, index) => {
-    if (counts.get(base[index]) === 1) return base[index];
-    // Two choices of one name: their workspace keys tell them apart, else a folder's last two
-    // segments or the machines; never a ws: or remote: id, never a full path.
-    const which = short(choice.key, 512) || (isLocalPath(choice.id) ? pathTail(choice.id, 2) : workspaceChoicePlace(choice));
-    const suffix = [short(choice.team?.name), which].filter(Boolean).join(" · ");
-    return suffix ? `${base[index]} — ${suffix}` : base[index];
-  });
-}
-
-/** The tooltip of a choice: its deployments' labels (machine and short path) when the server sends
- * them, else a local folder's path; never an id. */
-function choiceTooltip(choice) {
-  const deployments = Array.isArray(choice?.deployments) ? choice.deployments : [];
-  const labels = Array.isArray(choice?.deploymentLabels) && choice.deploymentLabels.length === deployments.length
-    && choice.deploymentLabels.every((l) => short(l, 512)) ? choice.deploymentLabels : [];
-  return labels.join(", ") || (isLocalPath(choice?.id) ? choice.id : "");
-}
-
-/** The section the switcher lists unattached views under (#482, expert decision Q4). */
-export const UNMATCHED_SECTION = "Not matched to a workspace";
 /** The section a window with no workspace lists this computer's deployments under, to add with one click (#518). */
 export const LOCAL_SECTION = "On this computer";
 
@@ -144,7 +106,7 @@ export function createWorkspaceSwitcher({
   const unmatchedHeadingId = `ws-unmatched-${Math.random().toString(36).slice(2, 8)}`;
   const renderOptions = () => {
     const query = menuSearch.value.trim().toLocaleLowerCase();
-    const labels = workspaceChoiceLabels(workspaces);
+    const rows = workspaceChoiceRows(workspaces);
     const focusedId = document.activeElement?.classList?.contains("ws-option")
       ? document.activeElement.dataset.workspaceId || "" : "";
     const focusedPath = document.activeElement?.classList?.contains("ws-local-option") ? document.activeElement.dataset.workspacePath : "";
@@ -158,21 +120,15 @@ export function createWorkspaceSwitcher({
     unmatchedHead.textContent = UNMATCHED_SECTION;
     unmatched.append(unmatchedHead);
     workspaces.forEach((workspace, index) => {
-      const place = workspace.unattached
-        // The machine, unless the entry is already named by it (a remote group is named by its server).
-        ? [machinesOf(workspace)[0] === labels[index] ? "" : machinesOf(workspace)[0] || "", short(workspace.short)].filter(Boolean).join(" · ")
-        : workspaceChoicePlace(workspace);
-      const notLive = !workspace.unattached && Number.isInteger(workspace.notLive) && workspace.notLive > 0 ? workspace.notLive : 0;
-      const haystack = `${labels[index]} ${place}`.toLocaleLowerCase();
-      if (query && !haystack.includes(query)) return;
+      const said = rows[index];
+      if (!choiceMatches(said, query)) return;
       const button = document.createElement("button");
       button.type = "button";
       button.className = "ws-option";
       button.setAttribute("role", "option");
       button.setAttribute("aria-selected", String(workspace.id === activeId));
       button.dataset.workspaceId = workspace.id;
-      const tooltip = choiceTooltip(workspace);
-      if (tooltip) button.title = tooltip;
+      if (said.tooltip) button.title = said.tooltip;
       const check = document.createElement("span");
       check.className = "ws-check";
       check.setAttribute("aria-hidden", "true");
@@ -183,13 +139,13 @@ export function createWorkspaceSwitcher({
       line.className = "ws-option-line";
       const name = document.createElement("span");
       name.className = "ws-option-name";
-      name.textContent = labels[index];
+      name.textContent = said.label;
       line.append(name);
-      if (notLive) line.append(deploymentMark(document, `${notLive} ${notLive === 1 ? "deployment" : "deployments"} not live`));
+      if (said.notLive) line.append(deploymentMark(document, said.notLiveText));
       const meta = document.createElement("span");
       meta.className = "ws-option-meta";
-      meta.textContent = place;
-      meta.hidden = !place;
+      meta.textContent = said.place;
+      meta.hidden = !said.place;
       copy.append(line, meta);
       button.append(createWorkspaceMark(document, workspace), copy, check);
       // Open in new window (#481): a trailing button beside the option, never inside it.
@@ -201,8 +157,8 @@ export function createWorkspaceSwitcher({
         const open = document.createElement("button");
         open.type = "button"; open.className = "ws-open-window"; open.tabIndex = -1;
         open.dataset.workspaceId = workspace.id;
-        open.setAttribute("aria-label", `Open ${labels[index]} in a new window`);
-        open.title = `Open ${labels[index]} in a new window`;
+        open.setAttribute("aria-label", `Open ${said.label} in a new window`);
+        open.title = `Open ${said.label} in a new window`;
         open.append(iconElement(document, "newWindow", { size: 14 }));
         open.addEventListener("click", () => {
           if (menu.hidden || !open.isConnected || !options.contains(open)) return;
@@ -217,10 +173,9 @@ export function createWorkspaceSwitcher({
         if (workspace.id !== activeId) selectWorkspace(workspace.id);
         // A deployment no workspace matched: the Deployments page opens on its tab, where the full
         // reason and its fix are.
-        const deployment = workspace.unattached && Array.isArray(workspace.deployments) ? workspace.deployments[0] : null;
-        if (deployment) requestDeploymentTab(workspace.id, deployment);
+        if (said.deployment) requestDeploymentTab(workspace.id, said.deployment);
       });
-      (workspace.unattached ? unmatched : options).append(row);
+      (said.unattached ? unmatched : options).append(row);
     });
     if (unmatched.querySelector(".ws-option")) options.append(unmatched);
     const offered = choosing ? offeredLocally() : [];

@@ -12,6 +12,8 @@ import { dirname, join } from "node:path";
 
 import { checkRemote, dropRemoteProbes, rosterGroups, routeCommand, runRemote, sshArgv, writeServers } from "../lib/servers.mjs";
 import { remotePanel } from "../packages/client/remote-roster.mjs";
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = "2026-10-11T12:00:00.000Z";
 
 // ssh binds the control socket at `<ControlPath>.<16 random>`: a short
 // OATS_HOME_DIR keeps it inside the 104-byte socket path limit (macOS).
@@ -204,7 +206,7 @@ test("server roster: instance rows carry the remote status facts, null where the
   assert.equal(gone.missingRemotely, true);
   assert.deepEqual(Object.keys(gone).sort(), Object.keys(b).sort(), "remote rows and saved-route rows share one shape");
   // The Desktop's remote panel spreads the row: the relayed work and drift facts reach it unchanged.
-  const panel = Object.fromEntries(remotePanel(out.groups[0]).instances.map((r) => [r.instance, r]));
+  const panel = Object.fromEntries(remotePanel(out.groups[0], AT).instances.map((r) => [r.instance, r]));
   for (const k of ["work", "repo", "branch", "modelFrom", "soul", "modules"]) {
     assert.deepEqual(panel["dev-a"][k], full[k], `panel ${k}`);
     assert.equal(panel["dev-b"][k], null, `panel ${k} (not supplied)`); assert.equal(panel["dev-gone"][k], null, `panel ${k} (gone)`);

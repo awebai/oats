@@ -2,7 +2,7 @@
  * projected by the owning observer, never forwarded wholesale to a renderer. */
 import { execFile } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
-import { deploymentReadGate, deploymentFailure, deploymentRecord, validMaxAge, maxAgeArgv, remoteFailureCause } from './deployment-contract.mjs';
+import { deploymentReadGate, deploymentFailure, deploymentRecord, deploymentErrorCode, validMaxAge, maxAgeArgv, remoteFailureCause } from './deployment-contract.mjs';
 import { withoutInstanceVariables } from './kernel-environment.mjs';
 
 export const DEPLOYMENT_READ_TIMEOUT = 30_000;
@@ -35,12 +35,16 @@ export function cliDeploymentRead(cli, options, io = {}) {
         if (!deploymentRecord(document)) return fail('E_CLI_PROTOCOL');
         if (document.schemaVersion === 1 && document.ok === false) {
           const reason = document.error;
-          if (!deploymentRecord(reason) || typeof reason.code !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(reason.code)
+          if (!deploymentRecord(reason) || !deploymentErrorCode(reason.code)
             || typeof reason.message !== 'string' || reason.message.length > 8192) return fail('E_CLI_PROTOCOL');
           // Only the bounded kernel error envelope, never stderr, argv, stacks or an exec error's message;
           // of `details`, only an unreadable remote's bounded cause (Spec D). A refusal cannot become success.
+          // `origin: 'kernel'`: this reason is the one the installed CLI printed in its envelope, so the
+          // kernel answered, in its own words. The reader's own failures (`deploymentFailure`: the gate, a
+          // timeout, the output limit, a protocol failure, a failed run) carry no origin, and unmarked
+          // reads as not the kernel's: who shows a reason decides by where it came from, never by its shape.
           const cause = reason.code === 'E_REMOTE_UNREADABLE' ? remoteFailureCause(reason.details) : null;
-          return done({ ok: false, reason: { code: reason.code, message: reason.message, ...(cause ? { cause } : {}) } });
+          return done({ ok: false, reason: { code: reason.code, message: reason.message, origin: 'kernel', ...(cause ? { cause } : {}) } });
         }
         if (error) return fail('E_CLI_FAILED');
         if (action === 'status') {

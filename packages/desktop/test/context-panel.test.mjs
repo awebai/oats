@@ -4,6 +4,8 @@ import { JSDOM } from 'jsdom';
 import { createContextPanel, contextPanelCSS } from '../renderer/context-panel.mjs';
 import { remotePanel } from '../../client/remote-roster.mjs';
 import { kernelRemoteRow, kernelGoneRow, kernelRemoteGroup } from './helpers/kernel-remote-row.mjs';
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = '2026-10-11T12:00:00.000Z';
 
 const panelAPI = ['setContext', 'attach', 'release', 'toggle', 'setCollapsed', 'setFocusMode', 'toggleFocusMode', 'isFocusMode', 'dispose'];
 const leaseAPI = ['setPresent', 'isVisible', 'collapse', 'dispose'];
@@ -460,7 +462,7 @@ test('a local row: unchanged — repoName in the sentence, never the remote note
 
 // The kernel's own row shape (helpers/kernel-remote-row.mjs: every REMOTE_ROW_FACTS key, null unless the host
 // reported it) through the shipped remotePanel projection, not a hand-built row.
-const kernelRows = (instances, extra) => remotePanel(kernelRemoteGroup(instances, extra)).instances
+const kernelRows = (instances, extra) => remotePanel(kernelRemoteGroup(instances, extra), AT).instances
   .map(row => ({ ...row, deployment: { id: 'remote:host' } }));
 
 test('kernel-shaped remote rows: a listed row whose host reports null says "doesn\'t report"; saved-route rows say why instead, never "Update OATS on…"', t => {

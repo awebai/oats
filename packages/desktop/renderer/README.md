@@ -373,7 +373,9 @@ split into sections) is `packages/client/roster-sections.mjs`.
   page and the roster headings say where things run (UI spec, after the operator rejected a
   deployments block under the switcher).
 - **Switcher** (`workspace-switcher.mjs`): views first, then unattached views in a
-  "Not matched to a workspace" group (listbox → group → option). Each entry is its name and
+  "Not matched to a workspace" group (listbox → group → option). What an entry says is decided in
+  `packages/client/workspace-choices.mjs` (`workspaceChoiceRows`, and `choiceMatches` for the
+  filter); this module draws it. Each entry is its name and
   ONE muted line: a view's machines (`choice.machines`, "This Mac · altair") with a status
   mark (`deploymentMark`, words as its label) when `notLive > 0`; an unattached view's
   machine and its `short` reason. Choosing an unattached entry also calls

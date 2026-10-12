@@ -12,6 +12,8 @@ import { waitingClaim, waitingLabel, waitingClock } from "../../client/waiting-o
 import { rowStale } from "../../client/roster-sections.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = "2026-10-11T12:00:00.000Z";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const shell = read("shell.mjs"), css = read("shell.css");
@@ -130,7 +132,7 @@ test("a stale, non-running or unreachable row never lights a tab, and a held-sta
   // remotePanel makes of a kernel roster row: runtimeState null, "not reported" (#582).
   const [reached] = remoteRows([kernelRemoteRow("dev-r", { waitingOnYou: claim() })]);
   const [group] = unavailableGroups([kernelRemoteGroup([kernelRemoteRow("dev-r", { waitingOnYou: claim() })])], { code: "E_SSH", message: "Connection refused" });
-  const [lastKnown] = remotePanel(group).instances;
+  const [lastKnown] = remotePanel(group, AT).instances;
   assert.deepEqual([reached.runtimeState, reached.serverUnreached, lastKnown.serverUnreached], [null, false, true]);
   const remoteTab = u.open(reached);
   assert.equal(remoteTab.key, terminalKey("A", lastKnown), "the unreached row is the same tab's row");

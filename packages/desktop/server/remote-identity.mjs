@@ -5,26 +5,17 @@
  * that now reports another identity moves to that view, and the move is noted for the session.
  * Memory never attaches a local deployment: only remote groups are stored.
  *
+ * What is remembered, and what one roster answer makes of it, is the shared home's
+ * (packages/client/remote-identity-memory.mjs): this module keeps the memory between answers and on
+ * disk. The file holds at most MAX_ENTRIES groups; the memory itself is as large as the roster answer.
+ *
  * The file is written atomically (a temporary file in the same directory, then rename) with mode
  * 0600. A missing, unreadable or malformed file is an empty memory; a malformed entry is skipped. */
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
-import { readIdentity, attachment, viewId } from '../../client/workspace-views.mjs';
+import { entryOf, observeIdentities, identityMemory } from '../../client/remote-identity-memory.mjs';
 
 export const REMOTE_IDENTITY_VERSION = 1;
 const MAX_ENTRIES = 256;
-const GROUP_ID = /^[a-z0-9][a-z0-9-]{0,63}:[A-Za-z0-9._-]{1,128}$/;
-const SERVER = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const text = v => typeof v === 'string' && v.length > 0 && v.length <= 2048 && !v.includes('\0');
-
-function entryOf(id, raw) {
-  if (!GROUP_ID.test(id) || !raw || typeof raw !== 'object') return null;
-  const { server, label, targetKey, path, workspace, reportedAt } = raw;
-  if (!SERVER.test(server ?? '') || !text(label) || !text(targetKey) || id !== `${server}:${targetKey}` || !text(path) || !path.startsWith('/')
-    || !text(reportedAt) || Number.isNaN(Date.parse(reportedAt))) return null;
-  const read = readIdentity(workspace);
-  if (read.status !== 'identity') return null;
-  return { server, label, targetKey, path, workspace: read.identity, reportedAt };
-}
 
 /** Parse the file's text into a Map of valid entries (anything else is dropped). */
 export function parseRemoteIdentities(source) {
@@ -39,58 +30,34 @@ export function parseRemoteIdentities(source) {
   return out;
 }
 
-const sameIdentity = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-/** The view an identity attaches to, or null (an unattached identity has no workspace view). */
-const viewOf = identity => { const a = attachment(identity); return a.unattached ? null : viewId(a.key, a.team); };
-/** The name the move note gives the new workspace: the last segment of its key. */
-const workspaceName = identity => identity?.key ? String(identity.key).split('/').filter(Boolean).pop() : null;
-
 /**
  * @param {{ file: string|null, read?: (f:string)=>string, write?: (f:string, s:string)=>void,
  *   now?: () => string }} io  `file` null keeps memory in this process only (a standalone server).
  */
 export function createRemoteIdentityStore({ file, read = f => readFileSync(f, 'utf8'), write = atomicWrite, now = () => new Date().toISOString() }) {
-  let entries = new Map();
-  if (file) { try { entries = parseRemoteIdentities(read(file)); } catch { entries = new Map(); } }
-  const notes = new Map(); // group id → the move sentence, for this session
+  // What this process holds between roster answers: the memory, and each moved group's sentence for this session.
+  let held = { memory: new Map(), notes: new Map() };
+  if (file) { try { held.memory = parseRemoteIdentities(read(file)); } catch { held.memory = new Map(); } }
   const persist = () => {
     if (!file) return;
-    const groups = Object.fromEntries([...entries].slice(0, MAX_ENTRIES));
+    const groups = Object.fromEntries([...held.memory].slice(0, MAX_ENTRIES));
     try { write(file, `${JSON.stringify({ version: REMOTE_IDENTITY_VERSION, groups }, null, 2)}\n`); } catch { /* memory stays; the next report retries */ }
   };
   return {
     /** The remembered entry of a group, or null. */
-    get: id => entries.get(id) ?? null,
+    get: id => identityMemory(held).get(id),
     /** Every remembered entry (for a session with no roster answer at all). */
-    all: () => [...entries.entries()].map(([id, e]) => ({ id, ...e })),
+    all: () => identityMemory(held).all(),
     /** The session note for a group that moved to another workspace, or null. */
-    note: id => notes.get(id) ?? null,
+    note: id => identityMemory(held).note(id),
     /**
-     * One roster answer: remember each fresh report, note a move, and drop the memory of groups
-     * the answer no longer lists. Only a reached group (probe ok) with an identity (a `key` field)
-     * is a report; a failed probe changes nothing. Returns true when the file changed.
+     * One roster answer (remote-identity-memory.mjs `observeIdentities`), stamped with this store's
+     * time; the file is written when the memory changed. Returns true when it did.
      * @param {Array<{id, server, label, target:{workspace}, probe, workspace}>} groups
      */
     observe(groups) {
-      let changed = false;
-      const listed = new Set(groups.map(g => g.id));
-      for (const id of [...entries.keys()]) if (!listed.has(id)) { entries.delete(id); notes.delete(id); changed = true; }
-      for (const g of groups) {
-        if (g?.probe?.ok !== true || !GROUP_ID.test(g.id ?? '') || !SERVER.test(g.server ?? '')) continue;
-        const read = readIdentity(g.workspace);
-        if (read.status !== 'identity') continue;
-        const targetKey = g.id.slice(g.server.length + 1);
-        const path = g.target?.workspace;
-        if (!text(path) || !path.startsWith('/')) continue;
-        const previous = entries.get(g.id);
-        if (previous && sameIdentity(previous.workspace, read.identity) && previous.label === (g.label || g.server) && previous.path === path) continue;
-        if (previous && !sameIdentity(previous.workspace, read.identity) && viewOf(previous.workspace) !== viewOf(read.identity)) {
-          const name = workspaceName(read.identity);
-          notes.set(g.id, name ? `${g.label || g.server} now reports workspace ${name}.` : `${g.label || g.server} now reports another workspace.`);
-        }
-        entries.set(g.id, { server: g.server, label: text(g.label) ? g.label : g.server, targetKey, path, workspace: read.identity, reportedAt: now() });
-        changed = true;
-      }
+      const { memory, notes, changed } = observeIdentities(held, groups, now());
+      held = { memory, notes };
       if (changed) persist();
       return changed;
     },

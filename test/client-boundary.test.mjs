@@ -75,10 +75,13 @@ const SURFACE = Object.freeze({
   // Firm (1d): what one deployment's observation becomes for the panel. A client calls `panelInstances`, not the row's own projection.
   "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry", "publicDeployment"],
   // Firm (1d): the deployments a client holds and the views over them. The rest of the module is the Desktop's own composition.
-  "panel-views.mjs": ["deployments", "deploymentInfo", "deploymentTag", "deploymentEntry", "deploymentPanel", "viewModel", "viewFor", "panelData", "workspaceChoices"],
-  // Provisional: machines and the switcher.
+  "panel-views.mjs": ["deployments", "deploymentInfo", "deploymentTag", "deploymentEntry", "deploymentPanel", "viewModel", "viewFor", "panelData", "workspaceChoices", "cliReadsRemotes"],
+  // Provisional: machines and the switcher. 3a: what a roster answer becomes (`remotePanel` takes the time of its call, required),
+  // what a client remembers of the machines that answered, and the words a switcher shows for a view.
   "cli-adapter.mjs": ["parseEnvelope", "cliRemoteRoster", "cliStart", "launchChoiceArgv", "cliCapability", "writeTaskFile"],
-  "remote-roster.mjs": ["remoteWorkspace", "remotePanel", "remoteAgents", "unavailableGroups"],
+  "remote-roster.mjs": ["remoteWorkspace", "remotePanel", "remoteAgents", "unavailableGroups", "remoteRosterState", "remotePanelEntries"],
+  "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"],
+  "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
   "workspace-views.mjs": ["readIdentity", "attachment", "viewId", "buildViews", "deploymentReason", "deploymentReasonParts"],
   "deployment-label.mjs": ["shortPath", "pathTail", "deploymentLabel", "deploymentLabelParts", "machineLabels", "machineLabelParts"],
   "remote-address.mjs": ["canAddressRemote", "serverLabel", "shownLabel", "unaddressableSentence", "rowReason", "remoteHeadline", "hostReason", "unroutableReason", "kernelCode"],
@@ -554,7 +557,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 41);
+  assert.equal(Object.keys(SURFACE).length, 43);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
@@ -565,6 +568,13 @@ test("the stable surface names what packages/client has: every listed module, ev
   for (const name of ["viewForgeContext", "teamMembersFor", "machineScope", "surfaceDeployment", "deploymentFor", "deploymentRows", "isServed", "rememberedGroups", "workspaceEntry", "reasonFields"])
     assert.ok(!SURFACE["panel-views.mjs"].includes(name), name);
   assert.ok(!Object.hasOwn(SURFACE, "team-members.mjs"));
+  // 3a: what a roster answer becomes, and the gate before its read; where the roster's groups land after a spawn stays the Desktop's.
+  for (const name of ["remoteRosterState", "remotePanelEntries"]) assert.ok(SURFACE["remote-roster.mjs"].includes(name), name);
+  assert.ok(SURFACE["panel-views.mjs"].includes("cliReadsRemotes") && !SURFACE["remote-roster.mjs"].includes("spawnedWorkspace"));
+  // 3a: the memory of identities as two functions over Maps the client holds; the reader of a file's entry is the Desktop's.
+  assert.deepEqual(SURFACE["remote-identity-memory.mjs"], ["observeIdentities", "identityMemory"]);
+  // 3a: a second client's switcher reads the rows; the two functions a row is made of are the Desktop's own importers'.
+  assert.deepEqual(SURFACE["workspace-choices.mjs"], ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"]);
   // Not on it: the Desktop spawn dialog's copy, and the two files nobody imports.
   for (const module of ["spawn-messages.mjs", ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
 });

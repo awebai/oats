@@ -23,6 +23,8 @@ import { createTabChrome } from "../renderer/tab-a11y.mjs";
 import { NO_ANSWER_CODE, unservedError } from "../renderer/deployment-header.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
+/** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
+const AT = "2026-10-11T12:00:00.000Z";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), html = read("index.html"), shell = read("shell.mjs");
@@ -103,7 +105,7 @@ test("never on a row whose Desktop liveness is not running, whose server was not
     instance("kernel-running", undefined, { ...waiting, runtimeState: "shell" }), // the kernel said running; tmux says shell
     // A remote server that did not answer: its last-known kernel rows, as remotePanel projects them.
     ...unavailableGroups([kernelRemoteGroup([kernelRemoteRow("unreached", waiting)])], { code: "E_SSH", message: "Connection refused" })
-      .flatMap(group => remotePanel(group).instances),
+      .flatMap(group => remotePanel(group, AT).instances),
     ...remoteRows([kernelRemoteRow("remote-stopped", { ...waiting, running: false, tmux: undefined }),
       kernelRemoteRow("remote-unreachable", { ...waiting, running: null, runtimeState: "unreachable", runtimeError: "tmux is unavailable" })]),
   ];
@@ -134,7 +136,7 @@ test("a remote row in the kernel's shape (runtimeState null: not reported) shows
   assert.equal(tab.triggerEl.title, `dev-r\nNeeds input: Which branch? since ${waitingClock(SINCE)}`);
   // The same row once its server stops answering: last-known, so nothing is shown.
   const [group] = unavailableGroups([kernelRemoteGroup([kernelRemoteRow("dev-r", { waitingOnYou: waitingRow.waitingOnYou })])], { code: "E_SSH", message: "Connection refused" });
-  u.render(remotePanel(group).instances);
+  u.render(remotePanel(group, AT).instances);
   assert.equal(u.marks("dev-r").length, 0);
   assert.equal(tabCue(tab), null);
 });
