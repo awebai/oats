@@ -114,6 +114,11 @@ is marked `no test passed`. It does not fail the run.
 
 ## What counts as evidence
 
+**A run is evidence for a commit whose diff has been reviewed.** A run of a
+commit that nobody has read proves nothing about it: from its first install
+step on, the commit's own code runs on the runner and can change what the run
+prints (see [What a run does not protect](#what-a-run-does-not-protect)).
+
 On a pull request, a run is macOS evidence when all of this holds:
 
 1. The pull request gives **the run's link**.
