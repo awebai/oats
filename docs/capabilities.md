@@ -548,6 +548,9 @@ Hooks receive:
   compatibility alias), `OATS_AGENT`, `OATS_SOUL`, `OATS_SOUL_ID`,
   `OATS_CONTEXT`, `OATS_WORKSPACE`, `OATS_ROOT`;
 - `OATS_CLI_BIN` (the running kernel's `bin/oats.mjs`);
+- `OATS_NODE_BIN` (the node to write into anything that outlives the hook:
+  the node running the kernel, by a path that survives a Node upgrade,
+  [below](#the-node-a-hook-writes-down));
 - `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, `OATS_META`;
 - the team and workspace variables of
   [Teams in the provider environment](#teams-in-the-provider-environment),
@@ -567,6 +570,8 @@ from the deployment directory) receives:
 
 - `OATS_CAPABILITY`;
 - `OATS_CLI_BIN`;
+- `OATS_NODE_BIN`: the node to write into anything that outlives the command,
+  as hooks get it;
 - `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`: the home's recorded payload, or
   the soul's merged payload from the deployment;
 - the team and workspace variables, as hooks get them;
@@ -734,6 +739,41 @@ and must not be encoded into this persisted spawn command.
 Spawn order is by capability name; retirement reverses successful
 spawn order. Hooks run from the instance's own copy
 (`<home>/.oats/modules/<cap>/`).
+
+### The node a hook writes down
+
+A hook or a command that writes a `node` path into something that outlives it
+(a harness's settings file, a unit, a script) writes `OATS_NODE_BIN`, never
+its own `process.execPath`: on Homebrew that is the versioned keg
+(`…/Cellar/node/<version>/bin/node`), which the next `brew upgrade node`
+removes, and what was written then fails where nobody sees it. To run
+something at once, `process.execPath` is still right.
+
+`OATS_NODE_BIN` is the node running the kernel, the one that runs
+`OATS_CLI_BIN`. A hook is itself run as the `node` first on its `PATH`, which
+can be another one. The kernel computes the path once per process, by the one
+rule it also uses for [the host timer's unit](schedules.md#the-host-timers-unit):
+
+1. the keg's `<prefix>/opt/<formula>/bin/node`, when that is the node running
+   the kernel;
+2. else the first `node` on the kernel's own `PATH` that is that same file.
+   Entries inside an instance home and inside a versioned keg are not looked
+   at;
+3. else the node's own path, as it is.
+
+The second case answers only a `node` that is the same file as the one
+running the kernel. A version manager's shim is another program, so it is
+never the answer: which node a shim runs depends on the directory it is run
+from. With mise the answer is the version's own install, which lasts until
+that version is removed (measured: mise's shim puts that directory on the
+`PATH` of what it starts). Other version managers were not measured.
+
+In the third case a spawn and a start each carry one warning, for every
+harness, that the node path is not stable; a preview carries none. The hook
+itself cannot report it.
+
+A package that also runs under a kernel older than the variable falls back to
+`process.execPath` when `OATS_NODE_BIN` is absent or not an absolute path.
 
 ### The worktree event
 
@@ -972,8 +1012,20 @@ clears it.
   symlink or not a directory.
 - **When it writes.** It writes at spawn, because `oats spawn` runs no
   launch hook, and at every `oats session start|restart`, so the node and
-  CLI paths it bakes in follow the current kernel. A launch preview writes
-  nothing. Every pass answers `{}`: no launch arguments and no env. Codex
+  CLI paths it bakes in follow the current kernel. The node is
+  `OATS_NODE_BIN` ([the node a hook writes down](#the-node-a-hook-writes-down)):
+  the kernel's own node, by a path that survives a Node upgrade. Under a
+  kernel that does not set the variable it is the hook's own
+  `process.execPath`, which on Homebrew is the versioned keg, gone at the
+  next `brew upgrade node`. With mise the variable is the version's own
+  path, as the hook's own node was (other version managers were not
+  measured), and a start rewrites the hooks after the version changes. The
+  hook a start runs is the copy of oats.core
+  in the home (`.oats/modules/oats.core`), which a start does not refresh. A
+  home spawned with an oats.core that does not read the variable therefore
+  writes its hook's own node path at every start: a restart repairs its
+  hooks after each Node upgrade, and a respawn gives it the lasting path. A
+  launch preview writes nothing. Every pass answers `{}`: no launch arguments and no env. Codex
   and pi homes get nothing.
 - **It never hurts the session.** Claude Code reads a hook's stdout and exit
   code as decisions. So every command runs the script through `/bin/sh`
@@ -1214,6 +1266,8 @@ passed as arguments; no shell is involved.
   - `OATS_CAPABILITY`, `OATS_SETTINGS` (the payload as JSON) and
     `OATS_SETTINGS_ORIGINS` (where each leaf came from, as hooks get it);
   - `OATS_CLI_BIN`;
+  - `OATS_NODE_BIN` (the node to write into anything that outlives the check,
+    as hooks get it);
   - `OATS_WORKSPACE` (the deployment);
   - the team variables `OATS_DEFAULT_TEAM`, `OATS_DEFAULT_TEAM_ID`,
     `OATS_DEFAULT_TEAM_FROM`, `OATS_TEAMS`, `OATS_TEAMS_SOURCE` (see
@@ -1388,8 +1442,10 @@ its own; the tick records what it folds.
 **Environment:** the one a `--soul` [readiness check](#readiness-check-bindingcheck)
 gets, for the trigger's soul: every ambient `OATS_*`, `OAS_*` and `PI_*`
 variable removed, the rest inherited, and the kernel's `OATS_CAPABILITY`,
-`OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, `OATS_CLI_BIN`, `OATS_WORKSPACE`,
-the team variables, `OATS_AGENT`, `OATS_SOUL_ID` and `OATS_SOUL`. There is no
+`OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, `OATS_CLI_BIN`, `OATS_NODE_BIN`
+(the node to write into anything that outlives the run, as hooks get it),
+`OATS_WORKSPACE`, the team variables, `OATS_AGENT`, `OATS_SOUL_ID` and
+`OATS_SOUL`. There is no
 `OATS_INSTANCE` or `OATS_INSTANCE_HOME`, and the kernel passes no credential.
 Under the host timer, the inherited environment is the timer's (only `PATH`
 and `OATS_HOME_DIR`): keep the source's login in its own store under `HOME`,

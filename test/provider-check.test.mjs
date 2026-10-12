@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readinessDocument, runProviderCheck } from "../lib/instance-inspect.mjs";
+import { kernelNode } from "../lib/stable-node.mjs";
 
 /** A home target with one bound provider module whose check prints `answer`. */
 function target(base, answer, { script = "bin/check.mjs", body = null } = {}) {
@@ -180,7 +181,7 @@ test("provider-check wire (pinned): the request on stdin, the environment, the c
     assert.deepEqual(seen.argv, ["check", "--wire", "1"], "the manifest command's arguments, no shell");
     const oats = Object.fromEntries(Object.entries(seen.env).filter(([k]) => /^(OATS_|OAS_|PI_)/.test(k)));
     assert.deepEqual(oats, {
-      OATS_CAPABILITY: "fx.provider", OATS_SETTINGS: JSON.stringify(settings), OATS_SETTINGS_ORIGINS: "{}", OATS_CLI_BIN: join(fileURLToPath(new URL("..", import.meta.url)), "bin", "oats.mjs"), OATS_WORKSPACE: base,
+      OATS_CAPABILITY: "fx.provider", OATS_SETTINGS: JSON.stringify(settings), OATS_SETTINGS_ORIGINS: "{}", OATS_CLI_BIN: join(fileURLToPath(new URL("..", import.meta.url)), "bin", "oats.mjs"), OATS_NODE_BIN: kernelNode().node, OATS_WORKSPACE: base,
       OATS_TEAM_NAME: "", OATS_TEAM_SCOPE: base, OATS_DEFAULT_TEAM: "engineering", OATS_DEFAULT_TEAM_ID: "acme:eng", OATS_DEFAULT_TEAM_FROM: "deployment",
       OATS_TEAMS: JSON.stringify([WIRE_TEAMS[0]]), OATS_TEAMS_SOURCE: "live", OATS_WORKSPACE_NAME: "acme", OATS_WORKSPACE_KEY: "github.com/acme/agents",
       OATS_INSTANCE: "rm-1", OATS_INSTANCE_HOME: home, OATS_AGENT: "release-manager", OATS_SOUL_ID: "github.com/acme/agents#release-manager", OATS_SOUL: soulDir,

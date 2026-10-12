@@ -876,7 +876,7 @@ process.stdout.write(${JSON.stringify(`${answer}\n`)});
     assert.deepEqual([...new Set(reports.map((r) => r.kind))].sort(), ["command", "operation", "retire hook", "spawn hook"], "each kind of process reported");
     // Beyond the operator's own: the fixture's CLI environment holds host settings under OATS_.
     const generated = [...new Set(reports.flatMap((r) => r.names))].filter((name) => !(name in dep.env)).sort();
-    for (const name of ["OATS_CAPABILITY", "OATS_SETTINGS", "OATS_CLI_BIN", "OATS_INSTANCE_HOME", "OATS_EVENT", "OATS_OPERATION"]) assert.ok(generated.includes(name), `${name} is among the names reported: ${generated.join(" ")}`);
+    for (const name of ["OATS_CAPABILITY", "OATS_SETTINGS", "OATS_CLI_BIN", "OATS_NODE_BIN", "OATS_INSTANCE_HOME", "OATS_EVENT", "OATS_OPERATION"]) assert.ok(generated.includes(name), `${name} is among the names reported: ${generated.join(" ")}`);
 
     const IDENTITY = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"];
     const socket = join(base, "names.sock");

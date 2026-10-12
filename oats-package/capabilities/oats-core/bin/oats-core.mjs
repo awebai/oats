@@ -17,8 +17,9 @@
  * every other key and entry alone (docs/capabilities.md, oats.core).
  *
  * Hook contract (docs/capabilities.md, Commands and hooks): run with cwd = the
- * home and OATS_EVENT, OATS_INSTANCE_HOME, OATS_HARNESS, OATS_CLI_BIN and, for a
- * launch preview, OATS_LAUNCH_PREVIEW=1. The manifest declares `launchPreview:
+ * home and OATS_EVENT, OATS_INSTANCE_HOME, OATS_HARNESS, OATS_CLI_BIN, OATS_NODE_BIN
+ * (absent under a kernel older than the variable) and, for a launch preview,
+ * OATS_LAUNCH_PREVIEW=1. The manifest declares `launchPreview:
  * true`: a preview writes nothing, and every pass answers the same contribution
  * (`{}`, never launch args or env), apart from a warning. The hooks are
  * advisory (string form): this script never throws and always exits 0 with a
@@ -26,7 +27,8 @@
  *
  * The spawn hook writes the file for `oats spawn` (which runs no launch hook);
  * the launch hook rewrites it at every `oats session start|restart`, so the
- * baked node and CLI paths follow the kernel the home now runs with.
+ * baked node and CLI paths follow the kernel the home now runs with. The hook
+ * that runs is this module copy in the home, whatever oats.core is current.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -238,7 +240,11 @@ export function runHook(event, env = process.env) {
   const dir = markerDir(env);
   const marker = dir ? markerPath(real, dir) : "";
   if (marker) resetMarker(marker);
-  const warning = writeClaudeSettings({ home: real, script, node: process.execPath, cli, marker });
+  // The node the commands name: the one the kernel hands hooks for anything that outlives them
+  // (OATS_NODE_BIN, a path that survives a Node upgrade), else this process's own, as written
+  // before the kernel set it. Never a warning: an older kernel is not a defect.
+  const node = typeof env.OATS_NODE_BIN === "string" && isAbsolute(env.OATS_NODE_BIN) ? env.OATS_NODE_BIN : process.execPath;
+  const warning = writeClaudeSettings({ home: real, script, node, cli, marker });
   return warning ? { warning } : {};
 }
 

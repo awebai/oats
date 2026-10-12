@@ -173,14 +173,36 @@ under npm's global prefix (`npm prefix -g`).
 Both layouts can exist on one host: check the prefix in the shell that
 installs the CLI.
 
-**The `node`'s own path**, whatever the prefix. The Claude Code hooks of a
+**The `node`'s path**, whatever the prefix. The Claude Code hooks of a
 Claude instance and the host timer's unit also record the `node` that runs
-them. Once that `node` no longer exists (an old version removed under a
+them, by one rule
+([the node a hook writes down](capabilities.md#the-node-a-hook-writes-down)):
+
+- **On Homebrew**, the `opt` link (`<prefix>/opt/node/bin/node`) when it is
+  the `node` running the kernel. `brew upgrade node` repoints it, so the
+  recorded path outlasts the upgrade: the hooks and the timer need nothing
+  done.
+- **Otherwise**, a `node` on `PATH` that is the same file as the one running
+  the kernel. With mise that is the version's own install, which does not
+  outlast the version (other version managers were not measured).
+- **When there is neither**, the path of the `node` as it is. A spawn, a
+  start and `oats schedule host install` then warn that it is not stable.
+
+Once the recorded `node` no longer exists (an old version removed under a
 version manager, for example), the hooks fail without a message, so the
 instance stops reporting that it waits on you, and
 `oats schedule host status` reports `node-missing`.
 
-So after moving to another Node version, and before removing the old one:
+**A home spawned with an oats.core that does not read `OATS_NODE_BIN`** does
+not follow the rule. Its hooks record the path of the `node` its hook ran
+under, which on Homebrew is the versioned keg
+(`…/Cellar/node/<version>/bin/node`), and a start writes that again, because
+a start runs the copy of oats.core in the home. `brew upgrade node` removes
+the keg at once, so such a home needs the restart of step 2 after every Node
+upgrade, until it is respawned.
+
+So after moving to another Node version, and before removing the old one,
+wherever a recorded path does not outlast it:
 
 1. Where the prefix is the version's own directory, install the CLI in the
    new version: `npm install -g @awebai/oats`.

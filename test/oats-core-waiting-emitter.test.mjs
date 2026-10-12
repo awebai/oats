@@ -116,7 +116,7 @@ function cleanEnv(extra) {
   return env;
 }
 function runHook(event, env) {
-  const r = spawnSync(process.execPath, [HOOK, event], { cwd: base, encoding: "utf8", timeout: 20000, env: cleanEnv({ OATS_EVENT: event, OATS_LAUNCH_PREVIEW: undefined, TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
+  const r = spawnSync(process.execPath, [HOOK, event], { cwd: base, encoding: "utf8", timeout: 20000, env: cleanEnv({ OATS_EVENT: event, OATS_LAUNCH_PREVIEW: undefined, OATS_NODE_BIN: undefined, TMPDIR: TMP, XDG_RUNTIME_DIR: undefined, ...env }) });
   assert.equal(r.status, 0, r.stderr);
   const last = r.stdout.trim().split("\n").filter(Boolean).pop();
   return JSON.parse(last);
@@ -295,6 +295,46 @@ test("a missing or relative home or CLI path: a warning, nothing written", () =>
   assert.match(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: "bin/oats.mjs" }).warning, /OATS_CLI_BIN/);
   assert.ok(!existsSync(join(h, ".claude")));
   assert.match(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: "relative/home", OATS_CLI_BIN: FAKE_CLI_ABS }).warning, /OATS_INSTANCE_HOME/);
+});
+
+// The node every command names, between the action and the CLI: `… <action> '<node>' '<cli>' …`.
+function nodesOf(h, cli = FAKE_CLI_ABS) {
+  return [...new Set(allEntries(readJson(settingsOf(h))).map((e) => {
+    const at = e.command.indexOf(` ${shq(cli)} `);
+    assert.ok(at > 0 && e.command[at - 1] === "'", e.command);
+    return e.command.slice(e.command.lastIndexOf(" '", at - 1) + 2, at - 1);
+  }))];
+}
+
+test("the commands name OATS_NODE_BIN, the node the kernel hands a hook for what outlives it (awebai/oats#997)", () => {
+  const h = home(), opt = "/opt/homebrew/opt/node/bin/node";
+  for (const event of ["spawn", "launch"]) {
+    assert.deepEqual(runHook(event, { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, OATS_NODE_BIN: opt }), {}, event);
+    assert.deepEqual(nodesOf(h), [opt], `${event}: every command names it, and none names this hook's own node`);
+  }
+  // A preview writes nothing, with the variable as without it.
+  const h2 = home();
+  assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h2, OATS_CLI_BIN: FAKE_CLI_ABS, OATS_NODE_BIN: opt, OATS_LAUNCH_PREVIEW: "1" }), {});
+  assert.ok(!existsSync(join(h2, ".claude")));
+});
+
+test("no OATS_NODE_BIN (an older kernel), an empty or a relative one: this hook's own node, and no warning", () => {
+  for (const given of [undefined, "", "node", "bin/node", "./opt/node/bin/node"]) {
+    const h = home();
+    assert.deepEqual(runHook("launch", { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS, OATS_NODE_BIN: given }), {}, `${JSON.stringify(given)}: the hook answers as before`);
+    assert.deepEqual(nodesOf(h), [process.execPath], JSON.stringify(given));
+  }
+});
+
+test("hooks that name an old node path are rewritten by the next launch pass, in place: the new path, nine entries", () => {
+  const h = home(), keg = "/opt/homebrew/Cellar/node/26.10.0_2/bin/node", opt = "/opt/homebrew/opt/node/bin/node";
+  const env = { OATS_HARNESS: "claude", OATS_INSTANCE_HOME: h, OATS_CLI_BIN: FAKE_CLI_ABS };
+  runHook("spawn", { ...env, OATS_NODE_BIN: keg });
+  assert.deepEqual(nodesOf(h), [keg]);
+  assert.deepEqual(runHook("launch", { ...env, OATS_NODE_BIN: opt }), {});
+  assert.deepEqual(nodesOf(h), [opt]);
+  assert.equal(allEntries(readJson(settingsOf(h))).length, 9, "the old entries were replaced, not kept beside the new");
+  assert.ok(!readFileSync(settingsOf(h), "utf8").includes("Cellar"));
 });
 
 test("the emitter only ever uses producer oats.core: it can never clear the agent's own claim", () => {

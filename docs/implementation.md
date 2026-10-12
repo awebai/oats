@@ -97,6 +97,7 @@ and the rules its tests pin.
 | `launch-preference.mjs` | a soul's launch preference, pure: the layers a new launch reads, the `Launch` report, and `launchKeysUnmatched`, the one function that decides which keys of `souls.launch` name no soul. It decides from a description of one read of the workspace (`soulsOffered` in `instance-resolution.mjs`, built from the discovery and its `soulsUnread`); a reader never computes the answer itself |
 | `soul-launch-verbs.mjs` | `oats soul launch set\|remove`, the writer of `souls.launch` |
 | `schedule.mjs`, `schedule-host.mjs`, `triggers.mjs`, `automations.mjs` | schedules, triggers and the host timer |
+| `stable-node.mjs` | the one rule for a node path written into anything that outlives the process: the host timer's unit and `OATS_NODE_BIN` ([capabilities](capabilities.md#the-node-a-hook-writes-down)). It imports nothing of the kernel |
 | `trigger-sources.mjs` | a capability's `triggerSources`: the use-time validator (per source, never from the manifest contract or discovery) and the source wire's answer and event rules; `triggers.mjs` runs a source with `instance-inspect.mjs`'s `runModuleCommand`, the provider-check runner |
 | `refused-text.mjs` | the one set of characters the kernel never stores or prints in text it did not write (`REFUSED_TEXT`), and `safeText`, which replaces them |
 | `schedule-command.mjs`, `schedule-command-child.mjs` | synchronous scheduler adapter and asynchronous child supervisor: bounded output, TERM/KILL escalation and observed exit; no changes to synchronous tick/lock callbacks |

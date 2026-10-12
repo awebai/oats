@@ -380,6 +380,7 @@ with: `COLORFGBG`, `TMUX`, `TMUX_PANE`; the launch identity and roots
 (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `OATS_HOME`, `OATS_AGENT`,
 `OATS_SOUL`, `OATS_SOUL_ID`, `OATS_ROOT`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
 `OATS_EVENT`, `OATS_SETTINGS`, `OATS_SETTINGS_ORIGINS`, `OATS_CLI_BIN`,
+`OATS_NODE_BIN` (the node a hook writes into anything that outlives it),
 `PI_AGENT_INSTANCE`, `PI_AGENT_HOME`, `PI_AGENTS_ROOT`); what a hook, an
 operation, a retire or a trigger is given (`OATS_CAPABILITY`, `OATS_LAYER`,
 `OATS_LEVEL`, `OATS_META`, `OATS_DEPLOYMENT`, `OATS_RESOLUTION`,
