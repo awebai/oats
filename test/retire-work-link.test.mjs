@@ -45,12 +45,13 @@ function entries(dir, out = new Map(), root = dir) {
 /** A scratch deployment and what the cases do in it. The deployment directory is a Git checkout, so
  *  that a workspace instance's link leads to a repository too. Soul `hooked` has a retire hook that
  *  does nothing until a case asks: with `<flags>/stubborn` it reports incomplete cleanup, and with
- *  `<flags>/swap` (`{home, kind}`) it puts a real directory, or a file, where that home's `work/`
- *  link was. Each run of the hook is a line in `<flags>/ran` (`hookRuns()`). Souls `hooked-chk` and
+ *  `<flags>/swap` (`{home, kind}`) it puts a real directory, a file or a FIFO where that home's
+ *  `work/` link was. Each run of the hook is a line in `<flags>/ran` (`hookRuns()`). Souls `hooked-chk` and
  *  `hooked-wsp` have the same hook in checkout and workspace mode. */
 function deployment(t) {
   const flags = mkdtempSync(join(tmpdir(), "oats-link-flags-")); t.after(() => rmSync(flags, { recursive: true, force: true }));
-  const hook = `import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+  const hook = `import { execFileSync } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 appendFileSync(${JSON.stringify(join(flags, "ran"))}, "ran\\n");
 const swap = ${JSON.stringify(join(flags, "swap"))};
@@ -59,6 +60,7 @@ if (existsSync(swap)) {
   const work = join(home, "work");
   rmSync(work, { force: true });
   if (kind === "file") writeFileSync(work, ${JSON.stringify(BYTES)});
+  else if (kind === "fifo") execFileSync("mkfifo", [work]);
   else { mkdirSync(work); writeFileSync(join(work, ${JSON.stringify(FILE)}), ${JSON.stringify(BYTES)}); }
   rmSync(swap);
 }
@@ -313,24 +315,39 @@ test("a link that leads nowhere, to a file, or to an extra tree of the home is a
   assert.deepEqual(result.warnings, [led(inst.home, null)]);
 });
 
-/** The refusal of a retire whose link at work/ is `now` by its second inspection, up to where the
- *  retire says what it had done by then. */
-const NO_LONGER_A_LINK = (home, instance, now) => `${join(home, "work")} was a link when this retire first read the home, and ${now} is there now. The home is kept and nothing of it was removed. \`oats retire ${instance} --plan\` shows what a retire would do with what is there now, and running the retire again does that. `;
-/** The retire of `inst` during which its hook puts a directory or a file where the link was:
- *  refused, --force included, with the home and what is there now kept. */
+/** What the refusal calls what is at work/ now, and how it says the retire ends, by kind. Only a
+ *  directory is pointed to the plan: no retire removes a file or an entry that is none of the
+ *  three, and the plan does not say so (#1019). */
+const NOW = { directory: "a directory", file: "a file", fifo: "an entry that is neither a link, a directory nor a file" };
+const MOVE_IT_OUT = "No retire removes it: move it out of the home or remove it, then run the retire again";
+const HOW_IT_ENDS = {
+  directory: (instance) => `\`oats retire ${instance} --plan\` shows what a retire would do with what is there now, and running the retire again does that`,
+  file: () => MOVE_IT_OUT,
+  fifo: () => MOVE_IT_OUT,
+};
+/** The refusal of a retire whose link at work/ is a `kind` by its second inspection, up to where
+ *  the retire says what it had done by then. */
+const NO_LONGER_A_LINK = (home, instance, kind) => `${join(home, "work")} was a link when this retire first read the home, and ${NOW[kind]} is there now. The home is kept and nothing of it was removed. ${HOW_IT_ENDS[kind](instance)}. `;
+/** What is at `work` now, as the cases compare it: the bytes the hook wrote, or the name of an
+ *  entry that has none (a FIFO is never opened: reading one waits for a writer). */
+const heldAt = (work, kind) => (kind === "fifo" ? (lstatSync(work).isFIFO() ? "a FIFO" : "not a FIFO") : readFileSync(kind === "file" ? work : join(work, FILE), "utf8"));
+const HELD = (kind) => (kind === "fifo" ? "a FIFO" : BYTES);
+/** The retire of `inst` during which its hook puts a directory, a file or a FIFO where the link
+ *  was: refused, --force included, with the home and what is there now kept. */
 function swappedDuringRetire(d, inst, kind, label) {
   writeFileSync(join(d.flags, "swap"), JSON.stringify({ home: inst.home, kind }));
   const error = d.refused(inst.instance, ["--force"], "E_WORK_INSPECTION_FAILED");
   assert.equal(existsSync(join(d.flags, "swap")), false, "fixture premise: the hook ran");
-  assert.ok(error.message.startsWith(NO_LONGER_A_LINK(inst.home, inst.instance, kind === "file" ? "a file" : "a directory")), `${label}: ${error.message}`);
+  assert.ok(error.message.startsWith(NO_LONGER_A_LINK(inst.home, inst.instance, kind)), `${label}: ${error.message}`);
+  assert.equal(error.message.includes("--plan"), kind === "directory", `${label}: only a directory is pointed to the plan: ${error.message}`);
   assert.match(error.message, /The retire hooks have run; the home, its work and the pre-hook recovery \(if any\) are kept/, label);
-  assert.equal(readFileSync(kind === "file" ? join(inst.home, "work") : join(inst.home, "work", FILE), "utf8"), BYTES, `${label}: the home and what is there now are kept`);
+  assert.equal(heldAt(join(inst.home, "work"), kind), HELD(kind), `${label}: the home and what is there now are kept`);
 }
 
 /** The next retire of a home whose work/ is a directory or a file read as a worktree's without its
  *  Git admin entry: its hooks run, and the entry and the home are kept as an incomplete item, with
  *  --discard-worktree as without it; --force refuses before anything runs. */
-function keptWithoutAdminEntry(d, inst, held, item, label) {
+function keptWithoutAdminEntry(d, inst, held, item, label, expected = BYTES) {
   for (const flags of [[], ["--discard-worktree"]]) {
     const ranBefore = d.hookRuns();
     const kept = d.retire(inst.instance, flags);
@@ -338,13 +355,13 @@ function keptWithoutAdminEntry(d, inst, held, item, label) {
     assert.deepEqual(kept.result.rollbackIncomplete, [item], label);
     assert.equal(kept.result.removedDir, false, label);
     assert.equal(d.hookRuns(), ranBefore + 1, `${label} ${flags.join(" ")}: the retire hook ran`);
-    assert.equal(held(), BYTES, label);
+    assert.equal(held(), expected, label);
   }
   const ranBefore = d.hookRuns();
   const forced = d.refused(inst.instance, ["--force"], "E_WORK_PRESERVATION_FAILED");
   assert.match(forced.message, /has no git admin entry in .*move it out or delete it by hand, then retire again; nothing was run or removed$/, label);
   assert.equal(d.hookRuns(), ranBefore, `${label} --force: no retire hook ran`);
-  assert.equal(held(), BYTES, label);
+  assert.equal(held(), expected, label);
 }
 
 test("a link that became a directory during the retire keeps the home and says how it ends; for a home that was given a link, the next retire copies the directory and removes it with the home (#973)", async (t) => {
@@ -396,34 +413,40 @@ test("what replaced the link is read by the next retire as the record and the sp
     assert.equal(existsSync(inst.home), false, label);
     assert.deepEqual({ git: d.gitState(away), files: entries(away) }, before, `${label}: the tree that was moved away is as it was`);
   }
-  // A home that was given a link whose record says worktree, with a file there now: the record
-  // decides for an entry that is neither a link nor a directory, whatever the receipt says. The
-  // same work directory without its admin entry: the hooks run, and it is kept.
-  const misrecorded = d.attached(owner, "swap-fw", "hooked");
-  d.sayWorktree(misrecorded.home, join(owner.home, "work"));
-  swappedDuringRetire(d, misrecorded, "file", "an attached instance whose record says worktree, a file there now");
-  const file = join(misrecorded.home, "work");
-  keptWithoutAdminEntry(d, misrecorded, () => readFileSync(file, "utf8"), `git worktree ${file}: its admin entry is missing; the directory is kept — move it out or delete it by hand, then retire again`, "an attached instance whose record says worktree, a file there now");
-  rmSync(file);
-  const cleared = d.retired(misrecorded.instance);
-  assert.equal(cleared.removedDir, true);
-  assert.equal(existsSync(misrecorded.home), false);
-  // A home that was given a link, its record as it was, with a file there now: read as a worktree,
-  // and its inspection refuses before any hook runs.
-  const kid = d.attached(owner, "swap-f", "hooked");
-  swappedDuringRetire(d, kid, "file", "a home that was given a link, a file there now");
-  const ranBefore = d.hookRuns();
-  for (const flags of [[], ["--force"]]) {
-    const error = d.refused(kid.instance, flags, "E_WORK_INSPECTION_FAILED");
-    assert.match(error.message, /^could not read the top level of the worktree at .*\. Nothing was stopped, run or removed\.$/s, flags.join(" "));
-    assert.equal(readFileSync(join(kid.home, "work"), "utf8"), BYTES);
+  // A file, and an entry that is none of the three (a FIFO): what the refusal says of both ("no
+  // retire removes it") is what the next retires do, under either record.
+  for (const kind of ["file", "fifo"]) {
+    // A home that was given a link whose record says worktree: the record decides for an entry
+    // that is neither a link nor a directory, whatever the receipt says. The same work directory
+    // without its admin entry: the hooks run, and it is kept.
+    const recorded = `an attached instance whose record says worktree, ${NOW[kind]} there now`;
+    const misrecorded = d.attached(owner, `swap-w-${kind}`, "hooked");
+    d.sayWorktree(misrecorded.home, join(owner.home, "work"));
+    swappedDuringRetire(d, misrecorded, kind, recorded);
+    const entry = join(misrecorded.home, "work");
+    keptWithoutAdminEntry(d, misrecorded, () => heldAt(entry, kind), `git worktree ${entry}: its admin entry is missing; the directory is kept — move it out or delete it by hand, then retire again`, recorded, HELD(kind));
+    rmSync(entry);
+    const cleared = d.retired(misrecorded.instance);
+    assert.equal(cleared.removedDir, true, recorded);
+    assert.equal(existsSync(misrecorded.home), false, recorded);
+    // A home that was given a link, its record as it was: read as a worktree, and its inspection
+    // refuses before any hook runs.
+    const given = `a home that was given a link, ${NOW[kind]} there now`;
+    const kid = d.attached(owner, `swap-a-${kind}`, "hooked");
+    swappedDuringRetire(d, kid, kind, given);
+    const ranBefore = d.hookRuns();
+    for (const flags of [[], ["--force"]]) {
+      const error = d.refused(kid.instance, flags, "E_WORK_INSPECTION_FAILED");
+      assert.match(error.message, /^could not read the top level of the worktree at .*\. Nothing was stopped, run or removed\.$/s, `${given} ${flags.join(" ")}`);
+      assert.equal(heldAt(join(kid.home, "work"), kind), HELD(kind), given);
+    }
+    assert.equal(d.hookRuns(), ranBefore, `${given}: no retire hook ran`);
+    rmSync(join(kid.home, "work"));
+    const done = d.retired(kid.instance);
+    assert.equal(done.removedDir, true, given);
+    assert.equal(done.retention, null, given);
+    assert.equal(existsSync(kid.home), false, given);
   }
-  assert.equal(d.hookRuns(), ranBefore, "no retire hook ran");
-  rmSync(join(kid.home, "work"));
-  const done = d.retired(kid.instance);
-  assert.equal(done.removedDir, true);
-  assert.equal(done.retention, null);
-  assert.equal(existsSync(kid.home), false);
   assert.equal(lstatSync(join(owner.home, "work")).isDirectory(), true, "the owner's tree is where it was");
 });
 

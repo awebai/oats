@@ -1163,15 +1163,21 @@ The retire and its plan read what is at `<home>/work` once, by one rule
   again (a retire hook put a directory or a file in its place) refuses the
   retire (`E_WORK_INSPECTION_FAILED`) and keeps the home, since removing
   the home would take what replaced the link, uncopied. The message says
-  what is there now and to run the retire again, which reads the home as it
+  what is there now and how it ends. For a directory it points to the
+  retire plan and says to run the retire again, which reads the home as it
   is then, by its record as it is then and the spawn's receipt: a directory
   that is a directory of the home (the first case above) is copied to
   recovery and removed with the home; a directory under a `worktree` record
-  and a worktree's receipt, and a file, are kept with the home until a
-  person moves them out, and the retire says so each time (a file under a
-  `worktree` record after the retire hooks have run again, a file under an
-  `attached`, `checkout` or `workspace` record before anything runs). [The
-  retire plan](desktop-cli-api.md#retire) has each case.
+  and a worktree's receipt is kept with the home until a person moves it
+  out. For a file, or an entry that is neither a link, a directory nor a
+  file, it says that no retire removes it and to move it out of the home or
+  remove it, then run the retire again; it does not point to the plan. The
+  next retires keep such an entry with the home and say so each time (under
+  a `worktree` record after the retire hooks have run again, under an
+  `attached`, `checkout` or `workspace` record before anything runs). For
+  an entry that cannot be read it says that the retire reads it again when
+  it is run again. [The retire plan](desktop-cli-api.md#retire) has each
+  case.
 - **A directory instance's `work/`** is held against the spawn's receipt as
   before: a record that says `directory` where the receipt does not, or the
   other way round, refuses the retire.

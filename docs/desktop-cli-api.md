@@ -3983,11 +3983,21 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   its place) refuses with `E_WORK_INSPECTION_FAILED` and keeps the home, in
   every work mode (0.53.0, #973): the home's removal would take what is
   there now, uncopied. The message says what was there and what is there
-  now, that the home is kept and nothing of it was removed, and that `oats
-  retire <instance> --plan` shows what a retire would do with what is there
-  now. Running the retire again reads the home as it is then, by the
-  reading above: the record as it is then and the spawn's receipt decide,
-  not what the home was given alone.
+  now, that the home is kept and nothing of it was removed, and how it
+  ends, by what is there now:
+  - a directory: that `oats retire <instance> --plan` shows what a retire
+    would do with what is there now, and that running the retire again does
+    that;
+  - a file, or an entry that is neither a link, a directory nor a file:
+    that no retire removes it, and the step (`move it out of the home or
+    remove it, then run the retire again`). It does not point to the plan,
+    which does not say that such an entry stays (#1019);
+  - an entry that cannot be read: that the retire reads it again when it is
+    run again.
+
+  Running the retire again reads the home as it is then, by the reading
+  above: the record as it is then and the spawn's receipt decide, not what
+  the home was given alone.
   - A directory that the reading answers is a directory of the home (#962:
     the spawn's receipt says that no tree was given, as an attached, a
     checkout or a workspace instance's does, and the record says
@@ -3995,17 +4005,17 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
     the retire copies it to recovery, checks the copy and removes it with
     the home.
   - A directory under a record that says `worktree` whose spawn's receipt
-    says that a tree was given, and a file under a record that says
-    `worktree` whatever the receipt says (an attached instance whose record
-    was changed to `worktree` included): a work directory with no Git admin
-    entry. The retire runs its hooks and keeps the entry and the home as an
+    says that a tree was given, and a file (or an entry that is none of the
+    three) under a record that says `worktree` whatever the receipt says
+    (an attached instance whose record was changed to `worktree` included):
+    a work directory with no Git admin entry. The retire runs its hooks and keeps the entry and the home as an
     incomplete item (exit 1; with `--force` it refuses with
     `E_WORK_PRESERVATION_FAILED` before anything runs) until a person moves
     the entry out or deletes it; then it completes.
-  - A file under a record that says `attached`, `checkout` or `workspace`:
-    the inspection refuses (`E_WORK_INSPECTION_FAILED`, `--force` included,
-    nothing stopped, run or removed) until a person removes the file; then
-    it completes.
+  - A file, or an entry that is none of the three, under a record that
+    says `attached`, `checkout` or `workspace`: the inspection refuses
+    (`E_WORK_INSPECTION_FAILED`, `--force` included, nothing stopped, run
+    or removed) until a person removes the entry; then it completes.
   - A record that says `directory` by then is held against the spawn's
     receipt as always: the retire refuses (`E_WORK_INSPECTION_FAILED`,
     nothing stopped, run or removed) while the two disagree.
