@@ -93,10 +93,14 @@ starts everything under `env -i`.
 - `node`, `tmux` or `git` missing from `PATH`; Node older than 20; a platform
   other than macOS and Linux;
 - `LIVE_994_BASE` unset, relative, not an existing directory, the root
-  directory, longer than 70 bytes, with a `#` in its path, inside the home
-  directory or holding it,
-  inside an OATS instance home, or with the user name, the host name or a
+  directory, not your own or writable by another user, longer than 70 bytes,
+  with a `#` in its path, inside the home directory or holding it, inside an
+  OATS instance home, or with the user name, the host name or a
   `LIVE_994_ALSO_FORBID` string in its path (every frame names the run folder);
+- inside the base, a `run-<mode>`, a `run-<mode>/home` or a `tmux` that is a
+  link, is not your own directory, or that another user can write; a `TASK.md`
+  there that is a link. A link is never followed: everything this script writes
+  lands inside the base;
 - the executable unset, relative, not an executable file, or ending in a
   semicolon; the same for `LIVE_994_CLAUDE_BINARY` when it is set;
 - `old` without `LIVE_994_OLD_CLAUDE`;
@@ -105,13 +109,15 @@ starts everything under `env -i`.
   `LIVE_994_STUB_SCENARIO` outside a dry run;
 - no `LIVE_994_CONFIG_DIR` (outside a dry run, and outside a `chrome-*` mode
   that has a `HOME` in `LIVE_994_EXTRA_ENV`); one that is not an existing
-  directory;
+  directory; one that holds the base, or that is the base's `run-*`, `out-*`
+  or `tmux` directory or inside one;
 - `LIVE_994_SECONDS` that is not a whole number, shorter than the clean window
   (2 s), or over 600; `LIVE_994_PANE` that is not `WxH` from 20x5 to 500x200;
 - `LIVE_994_EXTRA_ENV` with an entry that is not `NAME=value`; with
   `CLAUDE_CONFIG_DIR`, a `LIVE_994_*` or a `TMUX*` name; with the variable the
-  mode itself sets; or with `HOME` outside the `chrome-*` modes, or a `HOME`
-  that is not an existing directory;
+  mode itself sets; in `approved-optout`, with any of the three opt-out
+  variables (the run sets one, the one it is given); or with `HOME` outside the
+  `chrome-*` modes, or a `HOME` that is not an existing directory;
 - a checkout without the kernel modules below, that is not a git checkout, or
   with uncommitted changes under `lib/`;
 - a run folder that already holds a different `TASK.md`.
@@ -226,7 +232,9 @@ is written outside `LIVE_994_BASE`. Nothing is removed, by any script.
   - **Cleanup:** kills the run's private tmux server by its socket, then asks
     (signal 0, which sends nothing) whether a process of the pane's group is
     left. Nothing else is killed. Interrupted (Ctrl-C, `SIGTERM`, `SIGHUP`), it
-    still writes what it has and does this cleanup.
+    still writes what it has and does this cleanup. The cleanup also runs when
+    the evidence cannot be written (a full disk): the run then exits 1, and the
+    cleanup's result is printed.
 - **`verdict.mjs`:** computes the verdict from `timeline.json` alone.
   `node verdict.mjs <out-dir>` prints it again. Reads that one file, writes
   nothing, executes nothing.
@@ -324,12 +332,14 @@ after it, and that is the point:
 - `markerRuns` lists each stretch of consecutive captures that held a marker,
   with its capture count: a marker on screen for one capture still blocks, and
   shows as `captures: 1`.
-- **`harness`**: `firstRunningMs` and `readingsBeforeRunning` (how many readings
-  passed before the executable was seen under the pane's process);
-  `noLongerRunningMs`, the first of the first **two consecutive** not-running
-  readings; `singleNotRunningReadings`, counted and never judged. One reading is
-  not enough: before the pane's shell has started the executable, the pane reads
-  exactly like one whose harness already exited.
+- **`harness`**: `firstRunningMs` and `capturesBeforeRunning` (how many captures
+  passed before the executable was read as running under the pane's process);
+  `noLongerRunningMs`, the first of the first **two consecutive captures** that
+  both read it as not running; `singleNotRunningReadings`, counted and never
+  judged. One reading is not enough: before the pane's shell has started the
+  executable, the pane reads exactly like one whose harness already exited. A
+  capture whose process could not be read (`harnessRunning: null`) breaks a
+  pair.
 - `exitFile.firstSeenMs` and `exitFile.status`, beside it.
 - `screenOnlyOutcome` is what the rule answers without the pane's process. For
   an executable that exits at once it is `no-prompt`, where `outcome` is
@@ -376,8 +386,9 @@ passed over `probe.json`.
   outcome is whatever the verdict says: a run that observes `blocked` or a
   false `questionMatchedMarker` still exits 0.
 - **1**: three captures in a row failed; the pane could not be created; the run
-  was interrupted; a file holds a forbidden string; or the private tmux server,
-  or a process of the pane's group, is still there.
+  was interrupted; the evidence could not be written; a file holds a forbidden
+  string; or the private tmux server, or a process of the pane's group, is
+  still there.
 - **2**: refused. Nothing was started.
 
 `cleanup.sh`: 0 when no server is left, 1 when it is still there, 2 refused.
@@ -412,28 +423,29 @@ Its output at this head:
 #994 live-run dry runs: Linux x86_64, tmux 3.7c, node v26.8.2, bash 5.3.15
 the stub is not Claude: these runs prove the mechanics and the verdict arithmetic, nothing about Claude
 ok   probe: exit 0
-ok   plain: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   no-chrome: exit 0; no-prompt at 2300 ms; non-blank 200, marker null, window 2300; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   approved: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   trust: exit 0; blocked: unexpected prompt at 499 ms; non-blank 100, marker 499, window null; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   old: exit 0; blocked: harness exited at 0 ms; non-blank 0, marker null, window 2100; harness running after null readings, gone 0; 51 captures, 0 failed
-ok   chrome-offer (a question with no marker): exit 0; no-prompt at 2000 ms; non-blank 0, marker null, window 2000; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   chrome-flag: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   chrome-env (the configuration under a HOME of the extra environment): exit 0; no-prompt at 2299 ms; non-blank 200, marker null, window 2299; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   chrome-yolo: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   approved-optout DISABLE_TELEMETRY: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   approved-optout DO_NOT_TRACK: exit 0; no-prompt at 2200 ms; non-blank 200, marker null, window 2200; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   approved-optout CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: exit 0; no-prompt at 2200 ms; non-blank 199, marker null, window 2200; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   a question first painted at 3 s: exit 0; no-prompt at 2000 ms; non-blank 0, marker 3099, window 2000; harness running after 0 readings, gone null; 61 captures, 0 failed
-ok   a screen that stays blank: exit 0; blocked: observation timeout; non-blank null, marker null, window null; harness running after 0 readings, gone null; 31 captures, 0 failed
-ok   another pane size: exit 0; no-prompt at 2200 ms; non-blank 200, marker null, window 2200; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   the pane resized mid-run: exit 0; no-prompt at 2299 ms; non-blank 200, marker null, window 2299; harness running after 0 readings, gone null; 51 captures, 0 failed
-ok   the pane gone mid-run: exit 1; blocked: observation timeout; non-blank 200, marker null, window null; harness running after 0 readings, gone null; 15 captures, 3 failed
-ok   the driver interrupted mid-run: exit 1; blocked: observation timeout; non-blank 199, marker null, window null; harness running after 0 readings, gone null; 12 captures, 0 failed
-ok   one capture that fails: exit 0; no-prompt at 2600 ms; non-blank 100, marker null, window 2600; harness running after 0 readings, gone null; 51 captures, 1 failed
-ok   a frame that holds the user name: exit 1; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 readings, gone null; 31 captures, 0 failed
-ok   a frame that holds an also-forbidden string: exit 1; no-prompt at 2200 ms; non-blank 100, marker null, window 2200; harness running after 0 readings, gone null; 31 captures, 0 failed
-ok   a frame that holds the HOME of the extra environment: exit 1; no-prompt at 2200 ms; non-blank 200, marker null, window 2200; harness running after 0 readings, gone null; 31 captures, 0 failed
+ok   plain: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   no-chrome: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   approved: exit 0; no-prompt at 2300 ms; non-blank 200, marker null, window 2300; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   trust: exit 0; blocked: unexpected prompt at 500 ms; non-blank 200, marker 500, window null; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   old: exit 0; blocked: harness exited at 0 ms; non-blank 0, marker null, window 2000; harness never read as running, gone 0; 51 captures, 0 failed
+ok   chrome-offer (a question with no marker): exit 0; no-prompt at 2099 ms; non-blank 0, marker null, window 2099; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   chrome-flag: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   chrome-env (the configuration under a HOME of the extra environment): exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   chrome-yolo: exit 0; no-prompt at 2200 ms; non-blank 200, marker null, window 2200; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   approved-optout DISABLE_TELEMETRY: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   approved-optout DO_NOT_TRACK: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   approved-optout CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: exit 0; no-prompt at 2299 ms; non-blank 200, marker null, window 2299; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   a question first painted at 3 s: exit 0; no-prompt at 2000 ms; non-blank 0, marker 3099, window 2000; harness running after 0 captures, gone null; 61 captures, 0 failed
+ok   a screen that stays blank: exit 0; blocked: observation timeout; non-blank null, marker null, window null; harness running after 0 captures, gone null; 31 captures, 0 failed
+ok   another pane size: exit 0; no-prompt at 2200 ms; non-blank 198, marker null, window 2200; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   the pane resized mid-run: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   the pane gone mid-run: exit 1; blocked: observation timeout; non-blank 198, marker null, window null; harness running after 0 captures, gone null; 14 captures, 3 failed
+ok   the driver interrupted mid-run: exit 1; blocked: observation timeout; non-blank 199, marker null, window null; harness running after 0 captures, gone null; 12 captures, 0 failed
+ok   one capture that fails: exit 0; no-prompt at 2499 ms; non-blank 99, marker null, window 2499; harness running after 0 captures, gone null; 51 captures, 1 failed
+ok   a frame that holds the user name: exit 1; no-prompt at 2199 ms; non-blank 198, marker null, window 2199; harness running after 0 captures, gone null; 31 captures, 0 failed
+ok   a frame that holds an also-forbidden string: exit 1; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 31 captures, 0 failed
+ok   a frame that holds the HOME of the extra environment: exit 1; no-prompt at 2200 ms; non-blank 199, marker null, window 2200; harness running after 0 captures, gone null; 31 captures, 0 failed
+ok   the evidence cannot be written: exit 1, and the private server is gone without cleanup.sh
 ok   cleanup.sh after a killed driver: the server was left, cleanup.sh exit 0, no server after it
 ok   refused, an unknown mode: exit 2, nothing started
 ok   refused, an opt-out variable that is not one of the three: exit 2, nothing started
@@ -450,6 +462,10 @@ ok   refused, CLAUDE_CONFIG_DIR in the extra environment: exit 2, nothing starte
 ok   refused, HOME in the extra environment outside the chrome modes: exit 2, nothing started
 ok   refused, a variable the mode sets, in the extra environment: exit 2, nothing started
 ok   refused, an unknown option: exit 2, nothing started
+ok   refused, a second opt-out variable in the extra environment: exit 2, nothing started
+ok   refused, a base other users can write: exit 2, nothing started
+ok   refused, a configuration directory where this script writes: exit 2, nothing written there
+ok   refused, a link where the run folder, its home or its TASK.md goes: exit 2 each, nothing written through it
 ok   refused, a base that is the home directory: exit 2, nothing started
 ok   --prepare: exit 0, the run folder and its nine-line TASK.md, nothing else
 ok   verdict: a marker on screen for one capture still blocks, and shows as one capture
@@ -457,6 +473,7 @@ ok   verdict: a blank capture restarts the window
 ok   verdict: a failed capture restarts the window
 ok   verdict: a marker after the window completed is questionAfterNoPrompt
 ok   verdict: one not-running reading before the executable started is not judged
+ok   verdict: a capture whose process could not be read breaks the pair
 ok   verdict: two not-running readings in a row are a harness that exited
 ok   verdict: the harness gone at the capture that completes the window is harness exited
 ok   verdict: the harness gone after the window completed is no-prompt
@@ -465,7 +482,7 @@ ok   verdict: the settled frame is the last one, with how long it held
 ok   verdict: a screen still changing at the end is not settled
 ok   no script names a tmux command that sends input to a pane
 ok   no process is left from any case
-44 checks passed, 0 failed
+49 checks passed, 0 failed
 ```
 
 ## Integrity

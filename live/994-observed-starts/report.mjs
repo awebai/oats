@@ -87,7 +87,7 @@ function summary(out) {
       + `clean window completed: ${at(v.cleanWindowCompletedMs)}`);
     lines.push(`questionAfterNoPrompt: ${v.questionAfterNoPrompt}${v.questionAfterNoPrompt ? ` (no-prompt at ${v.questionAfterNoPromptTimes.cleanWindowCompletedMs} ms, the first marker at ${v.questionAfterNoPromptTimes.firstMarkerMs} ms)` : ""}`);
     lines.push(`marker captures: ${v.markerCaptures}${v.markerRuns.length ? ` in ${v.markerRuns.map((r) => `${r.captures} from ${r.fromMs} ms`).join(", ")}` : ""}; session banner first at: ${at(v.sessionBannerFirstMs)}`);
-    lines.push(`harness: ${h.firstRunningMs === null ? "never read as running" : `first read as running at ${h.firstRunningMs} ms, after ${h.readingsBeforeRunning} not-running readings`}; `
+    lines.push(`harness: ${h.firstRunningMs === null ? "never read as running" : `first read as running at ${h.firstRunningMs} ms, after ${h.capturesBeforeRunning} earlier captures`}; `
       + `no longer running: ${at(h.noLongerRunningMs)}; single not-running readings: ${h.singleNotRunningReadings}; `
       + `exit file first seen: ${at(v.exitFile.firstSeenMs)}${v.exitFile.status === null ? "" : `, status ${v.exitFile.status}`}`);
     if (s) lines.push(`settled frame: ${s.frame ?? "none"}, held ${s.heldMs} ms to the end (${s.settled ? "settled" : "still changing"}); markers ${s.markers.length}, `

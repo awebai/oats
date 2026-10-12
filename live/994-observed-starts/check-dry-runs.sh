@@ -64,7 +64,7 @@ expect() {
     try { pass = Number(status) === Number(want) && !!eval(expr); } catch (e) { note = ` [${e.message}]`; }
     const facts = v && v.pane !== false && v.harness
       ? `${v.outcome}${v.outcomeMs === null ? "" : ` at ${v.outcomeMs} ms`}; non-blank ${v.firstNonBlankMs}, marker ${v.firstMarkerMs}, window ${v.cleanWindowCompletedMs}; `
-        + `harness ${v.harness.readingsBeforeRunning === null ? "never read as running" : `running after ${v.harness.readingsBeforeRunning} readings`}, gone ${v.harness.noLongerRunningMs}; ${v.captures} captures, ${v.failedCaptures} failed`
+        + `harness ${v.harness.capturesBeforeRunning === null ? "never read as running" : `running after ${v.harness.capturesBeforeRunning} captures`}, gone ${v.harness.noLongerRunningMs}; ${v.captures} captures, ${v.failedCaptures} failed`
       : "";
     console.log(`${pass ? "ok  " : "FAIL"} ${label}: exit ${status}${facts ? `; ${facts}` : ""}${note}`);
     if (!pass) console.log(`     wanted exit ${want} and: ${expr}`);
@@ -196,6 +196,17 @@ expect "a frame that holds an also-forbidden string" $? 1 's.failed.length >= 1 
 newcase; dry session 3 LIVE_994_EXTRA_ENV="HOME=$base/operator-home STUB_994_PAINT=$base/operator-home" -- chrome-offer
 expect "a frame that holds the HOME of the extra environment" $? 1 's.failed.length >= 1 && s.failed.every((row) => row.classes.join() === "extra-env-home") && !log.includes("operator-home")'
 
+# The evidence cannot be written (here, a directory where timeline.json goes): the cleanup still runs.
+newcase; dry session 4 -- plain &
+job=$!
+left=unknown
+if o="$(pane_started)"; then
+  mkdir "$o/timeline.json"; socket="$(socket_of "$o")"; wait "$job"; status=$?
+  left=no; private_tmux "$socket" list-sessions >/dev/null 2>&1 && left=yes
+else wait "$job"; status=99; fi
+if [ "$status" -eq 1 ] && [ "$left" = no ] && grep -q '"serverGone": true' "$o/cleanup.json" 2>/dev/null; then passed=$((passed + 1)); echo "ok   the evidence cannot be written: exit 1, and the private server is gone without cleanup.sh"
+else failed=$((failed + 1)); echo "FAIL the evidence cannot be written: exit $status, server left $left"; fi
+
 # A run whose driver is killed: cleanup.sh kills the private server it left.
 newcase; dry session 30 -- plain &
 job=$!
@@ -226,6 +237,26 @@ refused "CLAUDE_CONFIG_DIR in the extra environment" LIVE_994_DRY_RUN=yes LIVE_9
 refused "HOME in the extra environment outside the chrome modes" LIVE_994_DRY_RUN=yes LIVE_994_EXECUTABLE="$stub" LIVE_994_EXTRA_ENV="HOME=/" -- plain
 refused "a variable the mode sets, in the extra environment" LIVE_994_DRY_RUN=yes LIVE_994_EXECUTABLE="$stub" LIVE_994_EXTRA_ENV="CLAUDE_CODE_ENABLE_CFC=1" -- chrome-env
 refused "an unknown option" LIVE_994_DRY_RUN=yes LIVE_994_EXECUTABLE="$stub" -- plain --send
+refused "a second opt-out variable in the extra environment" LIVE_994_DRY_RUN=yes LIVE_994_EXECUTABLE="$stub" LIVE_994_EXTRA_ENV="DO_NOT_TRACK=1" -- approved-optout DISABLE_TELEMETRY
+newcase; chmod 777 "$c"
+env LIVE_994_BASE="$c" LIVE_994_DRY_RUN=yes LIVE_994_EXECUTABLE="$stub" "$here/run.sh" plain --checkout "$checkout" >"$c/console.log" 2>&1; status=$?
+if [ "$status" -eq 2 ] && grep -q '^refused: LIVE_994_BASE must be a directory of your own' "$c/console.log" && [ -z "$(ls "$c" | grep -v '^console.log$')" ]; then passed=$((passed + 1)); echo "ok   refused, a base other users can write: exit 2, nothing started"
+else failed=$((failed + 1)); echo "FAIL refused, a base other users can write: exit $status"; fi
+newcase; mkdir "$c/run-plain"
+env LIVE_994_BASE="$c" LIVE_994_DRY_RUN=yes LIVE_994_EXECUTABLE="$stub" LIVE_994_CONFIG_DIR="$c/run-plain" "$here/run.sh" plain --checkout "$checkout" >"$c/console.log" 2>&1; status=$?
+if [ "$status" -eq 2 ] && grep -q '^refused: LIVE_994_CONFIG_DIR overlaps' "$c/console.log" && [ -z "$(ls -A "$c/run-plain")" ]; then passed=$((passed + 1)); echo "ok   refused, a configuration directory where this script writes: exit 2, nothing written there"
+else failed=$((failed + 1)); echo "FAIL refused, a configuration directory where this script writes: exit $status"; fi
+# A link where the script would write is never followed: the run folder, its home, its TASK.md.
+mkdir "$base/elsewhere"
+newcase; ln -s "$base/elsewhere" "$c/run-plain"; mkdir "$c/run-trust"; ln -s "$base/elsewhere" "$c/run-trust/home"
+mkdir -p "$c/run-old/home"; ln -s "$base/elsewhere/TASK.md" "$c/run-old/home/TASK.md"
+links=0
+for m in plain trust old; do
+  env LIVE_994_BASE="$c" "$here/run.sh" "$m" --prepare >>"$c/console.log" 2>&1
+  [ $? -eq 2 ] && links=$((links + 1))
+done
+if [ "$links" -eq 3 ] && [ -z "$(ls -A "$base/elsewhere")" ] && [ "$(grep -c '^refused: ' "$c/console.log")" -eq 3 ]; then passed=$((passed + 1)); echo "ok   refused, a link where the run folder, its home or its TASK.md goes: exit 2 each, nothing written through it"
+else failed=$((failed + 1)); echo "FAIL refused, a link where the script would write: $links of 3 refused"; fi
 newcase
 env LIVE_994_BASE="$HOME" LIVE_994_DRY_RUN=yes LIVE_994_EXECUTABLE="$stub" "$here/run.sh" plain --checkout "$checkout" >"$c/console.log" 2>&1; status=$?
 if [ "$status" -eq 2 ] && grep -q '^refused: LIVE_994_BASE must be outside the home directory' "$c/console.log"; then passed=$((passed + 1)); echo "ok   refused, a base that is the home directory: exit 2, nothing started"
@@ -248,7 +279,8 @@ if node --input-type=module -e '
     "a blank capture restarts the window": () => { const v = verdict(4000, (ms) => (ms === 1000 ? { blank: true } : {})); return v.outcome === "no-prompt" && v.cleanWindowStartMs === 1100 && v.outcomeMs === 3100; },
     "a failed capture restarts the window": () => { const v = verdict(4000, (ms) => (ms === 1000 ? { failed: true, error: "tmux-failed" } : {})); return v.outcome === "no-prompt" && v.outcomeMs === 3100 && v.failedCaptures === 1; },
     "a marker after the window completed is questionAfterNoPrompt": () => { const v = verdict(4000, (ms) => (ms >= 3000 ? { markers: ["Esc to cancel"] } : {})); return v.outcome === "no-prompt" && v.outcomeMs === 2000 && v.questionAfterNoPrompt === true && v.questionAfterNoPromptTimes.firstMarkerMs === 3000 && v.questionAfterNoPromptTimes.cleanWindowCompletedMs === 2000; },
-    "one not-running reading before the executable started is not judged": () => { const v = verdict(3000, (ms) => (ms === 0 ? { harnessRunning: false } : {})); return v.outcome === "no-prompt" && v.harness.noLongerRunningMs === null && v.harness.singleNotRunningReadings === 1 && v.harness.readingsBeforeRunning === 1; },
+    "one not-running reading before the executable started is not judged": () => { const v = verdict(3000, (ms) => (ms === 0 ? { harnessRunning: false } : {})); return v.outcome === "no-prompt" && v.harness.noLongerRunningMs === null && v.harness.singleNotRunningReadings === 1 && v.harness.capturesBeforeRunning === 1; },
+    "a capture whose process could not be read breaks the pair": () => { const v = verdict(3000, (ms) => (ms === 100 || ms === 300 ? { harnessRunning: false } : ms === 200 ? { harnessRunning: null } : {})); return v.outcome === "no-prompt" && v.harness.noLongerRunningMs === null && v.harness.singleNotRunningReadings === 2 && v.harness.firstNotRunningMs === 100 && v.harness.readings === 30; },
     "two not-running readings in a row are a harness that exited": () => { const v = verdict(3000, () => ({ harnessRunning: false })); return v.outcome === "blocked: harness exited" && v.outcomeMs === 0 && v.screenOnlyOutcome === "no-prompt" && v.harness.firstRunningMs === null; },
     "the harness gone at the capture that completes the window is harness exited": () => { const v = verdict(3000, (ms) => (ms >= 2000 ? { harnessRunning: false } : {})); return v.outcome === "blocked: harness exited" && v.outcomeMs === 2000 && v.cleanWindowCompletedMs === 2000; },
     "the harness gone after the window completed is no-prompt": () => { const v = verdict(3000, (ms) => (ms >= 2100 ? { harnessRunning: false } : {})); return v.outcome === "no-prompt" && v.harness.noLongerRunningMs === 2100; },

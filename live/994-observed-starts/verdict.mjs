@@ -47,18 +47,19 @@ export function judge(timeline) {
     if (r.ms - began >= CLEAN_WINDOW_MS) { cleanWindowStartMs = began; cleanWindowCompletedMs = r.ms; break; }
   }
 
-  // The harness is no longer running at the first of two consecutive not-running readings: at the
-  // first capture the pane's shell may not have started the executable yet, which reads the same.
-  // A single not-running reading is counted, never judged.
-  const readings = rows.filter((r) => typeof r.harnessRunning === "boolean");
+  // The harness is no longer running at the first of two consecutive captures that both read it
+  // as not running: at the first capture the pane's shell may not have started the executable yet,
+  // which reads the same. A capture whose process could not be read breaks the pair. A single
+  // not-running reading is counted, never judged.
+  const notRunning = (r) => r?.harnessRunning === false;
   let exitedMs = null, singleNotRunningReadings = 0;
-  readings.forEach((r, i) => {
-    if (r.harnessRunning) return;
-    const before = readings[i - 1], after = readings[i + 1];
-    if (exitedMs === null && after && after.harnessRunning === false) exitedMs = r.ms;
-    if ((!before || before.harnessRunning) && (!after || after.harnessRunning)) singleNotRunningReadings += 1;
+  rows.forEach((r, i) => {
+    if (!notRunning(r)) return;
+    if (exitedMs === null && notRunning(rows[i + 1])) exitedMs = r.ms;
+    if (!notRunning(rows[i - 1]) && !notRunning(rows[i + 1])) singleNotRunningReadings += 1;
   });
-  const firstRunning = readings.findIndex((r) => r.harnessRunning);
+  const readings = rows.filter((r) => typeof r.harnessRunning === "boolean");
+  const firstRunning = rows.findIndex((r) => r.harnessRunning === true);
 
   const firstMarkerMs = marked[0]?.ms ?? null;
   // On a tie the process decides before the screen: a harness that is gone asks nothing.
@@ -94,10 +95,10 @@ export function judge(timeline) {
     sessionBannerFirstMs: ok.find((r) => r.sessionBanner)?.ms ?? null,
     harness: {
       readings: readings.length,
-      firstRunningMs: firstRunning < 0 ? null : readings[firstRunning].ms,
-      // How many readings passed before the executable was first seen under the pane's process.
-      readingsBeforeRunning: firstRunning < 0 ? null : firstRunning,
-      firstNotRunningMs: readings.find((r) => !r.harnessRunning)?.ms ?? null,
+      firstRunningMs: firstRunning < 0 ? null : rows[firstRunning].ms,
+      // How many captures passed before the executable was first read as running under the pane's process.
+      capturesBeforeRunning: firstRunning < 0 ? null : firstRunning,
+      firstNotRunningMs: rows.find(notRunning)?.ms ?? null,
       noLongerRunningMs: exitedMs,
       singleNotRunningReadings,
     },

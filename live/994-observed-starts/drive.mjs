@@ -16,7 +16,7 @@
 // Exit status: 0 the run was made; 1 the run failed or its cleanup left something; 2 refused.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, appendFileSync, constants, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, appendFileSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -127,6 +127,9 @@ function scratchBase() {
   try { dir = !!base && statSync(base).isDirectory(); } catch { /* missing */ }
   if (!dir) refuse("LIVE_994_BASE must be an existing directory (create it first; this script creates only what is inside it)");
   if (base === "/") refuse("LIVE_994_BASE must not be the root directory");
+  // Nobody else may plant anything inside it.
+  const owner = statSync(base);
+  if (owner.uid !== process.getuid() || (owner.mode & 0o022)) refuse("LIVE_994_BASE must be a directory of your own that no other user can write (chmod go-w)");
   // tmux expands `#` sequences in a pane's start directory.
   if (base.includes("#")) refuse("LIVE_994_BASE must not hold a # character");
   for (const row of forbidden()) {
@@ -143,12 +146,29 @@ function scratchBase() {
   return base;
 }
 
+/** A directory this script writes into: `name` directly under `parent` (already resolved), created
+ *  if it is missing and never followed if it is a link. Everything written lands inside the base. */
+function ownDirectory(parent, name) {
+  const path = join(parent, name);
+  try { mkdirSync(path, { mode: 0o700 }); } catch (e) { if (e?.code !== "EEXIST") throw e; }
+  const entry = lstatSync(path);
+  if (!entry.isDirectory() || entry.uid !== process.getuid() || (entry.mode & 0o022) || real(path) !== path) {
+    refuse(`${path} must be a directory of this run's own: not a link, and one that no other user can write`);
+  }
+  return path;
+}
+
 function runFolder(base, mode) {
-  const folder = join(base, `run-${mode}`, "home");
-  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  const folder = ownDirectory(ownDirectory(base, `run-${mode}`), "home");
   const task = join(folder, "TASK.md");
-  if (existsSync(task) && readFileSync(task, "utf8") !== TASK) refuse(`the run folder holds another TASK.md: ${task}`);
-  if (!existsSync(task)) writeFileSync(task, TASK);
+  try { writeFileSync(task, TASK, { flag: "wx", mode: 0o600 }); }
+  catch (e) {
+    if (e?.code !== "EEXIST") throw e;
+    // The one already there must be this text, in a plain file: a link is never followed.
+    let same = false;
+    try { const fd = openSync(task, constants.O_RDONLY | constants.O_NOFOLLOW); try { same = lstatSync(task).isFile() && readFileSync(fd, "utf8") === TASK; } finally { closeSync(fd); } } catch { /* a link, or unreadable */ }
+    if (!same) refuse(`the run folder holds another TASK.md: ${task}`);
+  }
   return folder;
 }
 
@@ -194,6 +214,11 @@ function preflight(opts) {
     let dir = false;
     try { dir = isAbsolute(configDir) && statSync(configDir).isDirectory(); } catch { /* missing */ }
     if (!dir) refuse("LIVE_994_CONFIG_DIR must be an existing directory, as an absolute path");
+    // Nothing this script writes may land in the configuration: not the base around it, and
+    // none of the places inside the base this script writes to.
+    const config = real(configDir);
+    const inside = within(config, base) && config !== base ? config.slice(base.length + 1).split("/")[0] : null;
+    if (within(base, config) || (inside !== null && /^(run-|out-|tmux$)/.test(inside))) refuse("LIVE_994_CONFIG_DIR overlaps where this script writes (the base, or its run-*, out-* and tmux directories)");
   } else if (!dryRun && !(mode.chrome && extraHome)) {
     refuse(mode.chrome
       ? "a chrome-* mode needs LIVE_994_CONFIG_DIR, or HOME in LIVE_994_EXTRA_ENV for the operator's own configuration"
@@ -212,6 +237,7 @@ function preflight(opts) {
   for (const [name] of extra) {
     if (/^(LIVE_994_|TMUX)/.test(name) || name === "CLAUDE_CONFIG_DIR") refuse(`LIVE_994_EXTRA_ENV may not set ${name}`);
     if (Object.hasOwn(modeEnv, name)) refuse(`LIVE_994_EXTRA_ENV may not set ${name}: this mode sets it`);
+    if (opts.optOut && OPT_OUTS.includes(name)) refuse(`LIVE_994_EXTRA_ENV may not set ${name}: approved-optout sets one opt-out variable, the one it is given`);
   }
 
   const tmuxPath = onPath("tmux") ?? refuse("tmux is not on PATH");
@@ -261,8 +287,7 @@ async function run(out, cfg) {
   const { inspectSessionTarget } = await load("lib/session-input.mjs");
 
   const folder = runFolder(cfg.base, cfg.mode);
-  const socketDir = join(cfg.base, "tmux");
-  mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+  const socketDir = ownDirectory(cfg.base, "tmux");
   const socket = join(socketDir, `${out.slice(-16)}-${process.pid}`);
   const exitFile = join(out, `exit-${cfg.mode}`);
   const state = { live: LIVE, mode: cfg.mode, out, socket, session: SESSION, panePid: null };
@@ -426,21 +451,26 @@ async function run(out, cfg) {
         }
       }
     } finally {
-      let exitStatus = null;
-      try { exitStatus = Number(readFileSync(exitFile, "utf8").trim()); } catch { /* the executable had not exited */ }
-      timeline = { live: LIVE, mode: cfg.mode, ...(cfg.optOut ? { optOut: cfg.optOut } : {}), intervalMs: INTERVAL, seconds: cfg.seconds,
-        createTookMs, pane: target ? { ...target, pid: Number(target.pid) } : null, exitStatus: Number.isInteger(exitStatus) ? exitStatus : null,
-        failure, interrupted: stop, rows };
-      save("timeline.json", timeline);
-      // Cleanup: kill this run's private tmux server. Nothing else is killed and nothing is removed.
-      try { tmux(["kill-server"], { timeout: 5000 }); } catch { /* no server: never started, or already gone */ }
-      const serverGone = () => { try { tmux(["list-panes", "-a", "-F", "#{pane_id}"]); return false; } catch (e) { return e?.code !== "ETIMEDOUT"; } };
-      // Signal 0 sends nothing: it asks whether any process of the pane's group is left.
-      const groupGone = () => { if (!target) return true; try { process.kill(-Number(target.pid), 0); return false; } catch (e) { return e?.code === "ESRCH"; } };
-      for (let waited = 0; waited < 3000 && !(serverGone() && groupGone()); waited += 100) await sleep(100);
-      cleanup = { serverGone: serverGone(), paneProcessGroupGone: groupGone() };
-      save("cleanup.json", cleanup);
-      log(`cleanup: tmux server gone ${cleanup.serverGone}, pane process group gone ${cleanup.paneProcessGroupGone}`);
+      // The cleanup runs whatever happened above, a failed write of the evidence included: kill
+      // this run's private tmux server. Nothing else is killed and nothing is removed.
+      try {
+        let exitStatus = null;
+        try { exitStatus = Number(readFileSync(exitFile, "utf8").trim()); } catch { /* the executable had not exited */ }
+        timeline = { live: LIVE, mode: cfg.mode, ...(cfg.optOut ? { optOut: cfg.optOut } : {}), intervalMs: INTERVAL, seconds: cfg.seconds,
+          createTookMs, pane: target ? { ...target, pid: Number(target.pid) } : null, exitStatus: Number.isInteger(exitStatus) ? exitStatus : null,
+          failure, interrupted: stop, rows };
+        save("timeline.json", timeline);
+      } finally {
+        try { tmux(["kill-server"], { timeout: 5000 }); } catch { /* no server: never started, or already gone */ }
+        const serverGone = () => { try { tmux(["list-panes", "-a", "-F", "#{pane_id}"]); return false; } catch (e) { return e?.code !== "ETIMEDOUT"; } };
+        // Signal 0 sends nothing: it asks whether any process of the pane's group is left.
+        const groupGone = () => { if (!target) return true; try { process.kill(-Number(target.pid), 0); return false; } catch (e) { return e?.code === "ESRCH"; } };
+        for (let waited = 0; waited < 3000 && !(serverGone() && groupGone()); waited += 100) await sleep(100);
+        cleanup = { serverGone: serverGone(), paneProcessGroupGone: groupGone() };
+        // Said on the terminal first, so it is reported even when nothing can be written.
+        console.log(`cleanup: tmux server gone ${cleanup.serverGone}, pane process group gone ${cleanup.paneProcessGroupGone}`);
+        save("cleanup.json", cleanup);
+      }
     }
   }
 
@@ -471,7 +501,8 @@ try {
     const out = argv.shift();
     const cfg = preflight(parse(argv));
     if (cfg.prepare) refuse("--prepare starts nothing");
-    if (!out || real(out) !== out || dirname(out) !== cfg.base || process.env.HOME !== join(out, "throwaway-home") || !existsSync(process.env.HOME)) refuse("run takes the out dir that plan created, with its throwaway HOME");
+    const own = (path) => { try { const entry = lstatSync(path); return entry.isDirectory() && entry.uid === process.getuid() && real(path) === path; } catch { return false; } };
+    if (!out || dirname(out) !== cfg.base || !own(out) || process.env.HOME !== join(out, "throwaway-home") || !own(process.env.HOME)) refuse("run takes the out dir that plan created, with its throwaway HOME");
     process.exitCode = await run(out, cfg);
   } else refuse("usage: node drive.mjs plan|run ... (run.sh calls this)");
 } catch (e) {
