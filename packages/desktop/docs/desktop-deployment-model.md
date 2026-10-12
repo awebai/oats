@@ -588,7 +588,9 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
 - **The display filter** (`packages/client/display-text.mjs`, `displayLine`) is the
   one way a refusal's `detail` reaches a view. Text that looks like a credential,
   or holds DEL or a C0 control character other than tab and line feed, is
-  withheld whole (`[Detail withheld]`), tested on the text as given. Otherwise it becomes one
+  withheld whole (`[Detail withheld]`), tested on the text as given, in time that
+  grows with the text's length and not with its square
+  (`packages/desktop/test/display-filter-time.test.mjs`). Otherwise it becomes one
   line: tab, line feed and the Unicode line and paragraph separators become a
   space, runs of spaces collapse, the ends are trimmed, each remaining
   character of the waiting note's refused set (control, bidirectional

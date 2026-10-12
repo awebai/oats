@@ -91,7 +91,7 @@ test('the set has one definition; the withholding pattern is the one remote reas
   assert.match(read('waiting-on-you.mjs'), /import \{ NOT_NOTE_TEXT \} from '\.\/display-text\.mjs'/);
   assert.doesNotMatch(read('waiting-on-you.mjs'), /\\p\{Cc\}/, 'waiting-on-you.mjs defines no set of its own');
   assert.equal(UNSAFE.flags, 'i');
-  assert.equal(UNSAFE.source, String.raw`[\x00-\x08\x0b-\x1f\x7f]|[a-z][a-z0-9+.-]*:\/\/[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}`,
+  assert.equal(UNSAFE.source, String.raw`[\x00-\x08\x0b-\x1f\x7f]|:\/\/(?<=[a-z][a-z0-9+.-]*:\/\/)[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}`,
     'unchanged, character for character');
   assert.match(read('remote-address.mjs'), /import \{ displayLine, cleanLine, DETAIL_WITHHELD \} from '\.\/display-text\.mjs'/);
   assert.doesNotMatch(read('remote-address.mjs'), /\\x00|\bUNSAFE\b/, 'remote-address.mjs has no pattern of its own');
