@@ -48,7 +48,7 @@ async function settled(promise, ms = 20_000) {
 /** Stop this process's event loop for `ms`: it reads no pipe and runs no timer, as a stopped process does not. */
 const freeze = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
 
-/** A process's fields after its name in /proc (state, parent, group, session), or what `ps` says of its state. */
+/** A process's fields after its name in /proc (state, parent, group, session); without a /proc, ONE field: what `ps` says of its state. */
 function stateOf(pid) {
   if (existsSync("/proc/self/stat")) {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
@@ -73,7 +73,13 @@ function ours(pid) {
   } catch { return false; }
 }
 const gone = (pids, ms = 2000) => waitFor(`pid ${pids.join(", ")} to be gone`, () => pids.every((pid) => !alive(pid)), ms);
-const OWN_GROUP = quietly(() => Number(stateOf(process.pid)[2])) ?? null;
+/** The process group a process is in: /proc's field where there is a /proc, else what `ps` says (macOS has no /proc). Null unless that is a number. */
+function groupOf(pid) {
+  const text = quietly(() => (existsSync("/proc/self/stat") ? stateOf(pid)[2] : execFileSync("ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8" }).trim()));
+  return /^[0-9]+$/.test(text ?? "") ? Number(text) : null;
+}
+/** This process's own group. Null where neither source names it: there the tests below compare no child's group with it. */
+const OWN_GROUP = groupOf(process.pid);
 
 test.after(() => {
   // Nothing is left behind: whatever a fake wrote down and still runs as that fake is killed.
@@ -224,6 +230,11 @@ test("KERNEL_BIN is this install's own bin/oats.mjs, and its `version --json` is
   assert.equal(probe.ok, true, probe.reason);
   assert.deepEqual([probe.cli.bin, probe.cli.version, probe.cli.source, probe.cli.workspaceApi], [KERNEL_BIN, VERSION, "tui", 2]);
   for (const feature of FEATURES) assert.equal(probe.cli.features.includes(feature), true, feature);
+});
+
+test("this suite knows its own process group on Linux and on macOS: no test that compares a child's group with it is skipped there", () => {
+  if (process.platform !== "linux" && process.platform !== "darwin") return;
+  assert.equal(Number.isInteger(OWN_GROUP) && OWN_GROUP > 0, true, `the group of pid ${process.pid} reads ${OWN_GROUP}`);
 });
 
 test("probeKernel accepts a kernel that answers its record: one exec of `node <bin> version --json`, not detached, and the shared record", async () => {
