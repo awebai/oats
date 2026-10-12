@@ -187,6 +187,19 @@ function preflight(opts) {
     if (!dir) refuse("the HOME in LIVE_994_EXTRA_ENV must be an existing directory, as an absolute path");
   }
   const base = scratchBase();
+  // A configuration directory that is named is checked for every call, --prepare included: nothing
+  // this script writes may land in it.
+  const configDir = process.env.LIVE_994_CONFIG_DIR || null;
+  if (configDir) {
+    let dir = false;
+    try { dir = isAbsolute(configDir) && statSync(configDir).isDirectory(); } catch { /* missing */ }
+    if (!dir) refuse("LIVE_994_CONFIG_DIR must be an existing directory, as an absolute path");
+    // Nothing this script writes may land in the configuration: not the base around it, and
+    // none of the places inside the base this script writes to.
+    const config = real(configDir);
+    const inside = within(config, base) && config !== base ? config.slice(base.length + 1).split("/")[0] : null;
+    if (within(base, config) || (inside !== null && /^(run-|out-|tmux$)/.test(inside))) refuse("LIVE_994_CONFIG_DIR overlaps where this script writes (the base, or its run-*, out-* and tmux directories)");
+  }
   if (opts.prepare) return { ...opts, base };
 
   const checkout = real(opts.checkout);
@@ -209,17 +222,7 @@ function preflight(opts) {
   if (process.env.LIVE_994_STUB_SCENARIO && !dryRun) refuse("LIVE_994_STUB_SCENARIO is for a dry run only");
   const binary = executable("LIVE_994_CLAUDE_BINARY", { required: false });
 
-  const configDir = process.env.LIVE_994_CONFIG_DIR || null;
-  if (configDir) {
-    let dir = false;
-    try { dir = isAbsolute(configDir) && statSync(configDir).isDirectory(); } catch { /* missing */ }
-    if (!dir) refuse("LIVE_994_CONFIG_DIR must be an existing directory, as an absolute path");
-    // Nothing this script writes may land in the configuration: not the base around it, and
-    // none of the places inside the base this script writes to.
-    const config = real(configDir);
-    const inside = within(config, base) && config !== base ? config.slice(base.length + 1).split("/")[0] : null;
-    if (within(base, config) || (inside !== null && /^(run-|out-|tmux$)/.test(inside))) refuse("LIVE_994_CONFIG_DIR overlaps where this script writes (the base, or its run-*, out-* and tmux directories)");
-  } else if (!dryRun && !(mode.chrome && extraHome)) {
+  if (!configDir && !dryRun && !(mode.chrome && extraHome)) {
     refuse(mode.chrome
       ? "a chrome-* mode needs LIVE_994_CONFIG_DIR, or HOME in LIVE_994_EXTRA_ENV for the operator's own configuration"
       : "LIVE_994_CONFIG_DIR is required: the Claude configuration directory prepared for this run");

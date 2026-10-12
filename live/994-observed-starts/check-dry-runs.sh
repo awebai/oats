@@ -244,8 +244,9 @@ if [ "$status" -eq 2 ] && grep -q '^refused: LIVE_994_BASE must be a directory o
 else failed=$((failed + 1)); echo "FAIL refused, a base other users can write: exit $status"; fi
 newcase; mkdir "$c/run-plain"
 env LIVE_994_BASE="$c" LIVE_994_DRY_RUN=yes LIVE_994_EXECUTABLE="$stub" LIVE_994_CONFIG_DIR="$c/run-plain" "$here/run.sh" plain --checkout "$checkout" >"$c/console.log" 2>&1; status=$?
-if [ "$status" -eq 2 ] && grep -q '^refused: LIVE_994_CONFIG_DIR overlaps' "$c/console.log" && [ -z "$(ls -A "$c/run-plain")" ]; then passed=$((passed + 1)); echo "ok   refused, a configuration directory where this script writes: exit 2, nothing written there"
-else failed=$((failed + 1)); echo "FAIL refused, a configuration directory where this script writes: exit $status"; fi
+env LIVE_994_BASE="$c" LIVE_994_CONFIG_DIR="$c/run-plain" "$here/run.sh" plain --prepare >>"$c/console.log" 2>&1; prepared=$?
+if [ "$status" -eq 2 ] && [ "$prepared" -eq 2 ] && [ "$(grep -c '^refused: LIVE_994_CONFIG_DIR overlaps' "$c/console.log")" -eq 2 ] && [ -z "$(ls -A "$c/run-plain")" ]; then passed=$((passed + 1)); echo "ok   refused, a configuration directory where this script writes, with and without --prepare: exit 2 each, nothing written there"
+else failed=$((failed + 1)); echo "FAIL refused, a configuration directory where this script writes: exit $status, with --prepare $prepared"; fi
 # A link where the script would write is never followed: the run folder, its home, its TASK.md.
 mkdir "$base/elsewhere"
 newcase; ln -s "$base/elsewhere" "$c/run-plain"; mkdir "$c/run-trust"; ln -s "$base/elsewhere" "$c/run-trust/home"

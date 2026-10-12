@@ -38,7 +38,9 @@ LIVE_994_CONFIG_DIR=/abs/path/to/the/prepared/config \
 
 - `--checkout` is the OATS checkout the kernel's readings are imported from. The
   default is the checkout that holds these scripts. `host.json` records its head.
-- `--prepare` needs only `LIVE_994_BASE`.
+- `--prepare` needs only `LIVE_994_BASE`. A `LIVE_994_CONFIG_DIR` or a `HOME` in
+  `LIVE_994_EXTRA_ENV` that is set is still checked against where the script
+  writes.
 
 One mode per run. Make the runs one at a time.
 
@@ -425,26 +427,26 @@ the stub is not Claude: these runs prove the mechanics and the verdict arithmeti
 ok   probe: exit 0
 ok   plain: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
 ok   no-chrome: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
-ok   approved: exit 0; no-prompt at 2300 ms; non-blank 200, marker null, window 2300; harness running after 0 captures, gone null; 51 captures, 0 failed
-ok   trust: exit 0; blocked: unexpected prompt at 500 ms; non-blank 200, marker 500, window null; harness running after 0 captures, gone null; 51 captures, 0 failed
-ok   old: exit 0; blocked: harness exited at 0 ms; non-blank 0, marker null, window 2000; harness never read as running, gone 0; 51 captures, 0 failed
+ok   approved: exit 0; no-prompt at 2200 ms; non-blank 199, marker null, window 2200; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   trust: exit 0; blocked: unexpected prompt at 498 ms; non-blank 199, marker 498, window null; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   old: exit 0; blocked: harness exited at 0 ms; non-blank 0, marker null, window 2099; harness never read as running, gone 0; 51 captures, 0 failed
 ok   chrome-offer (a question with no marker): exit 0; no-prompt at 2099 ms; non-blank 0, marker null, window 2099; harness running after 0 captures, gone null; 51 captures, 0 failed
 ok   chrome-flag: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
 ok   chrome-env (the configuration under a HOME of the extra environment): exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
-ok   chrome-yolo: exit 0; no-prompt at 2200 ms; non-blank 200, marker null, window 2200; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   chrome-yolo: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
 ok   approved-optout DISABLE_TELEMETRY: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
-ok   approved-optout DO_NOT_TRACK: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
-ok   approved-optout CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: exit 0; no-prompt at 2299 ms; non-blank 200, marker null, window 2299; harness running after 0 captures, gone null; 51 captures, 0 failed
-ok   a question first painted at 3 s: exit 0; no-prompt at 2000 ms; non-blank 0, marker 3099, window 2000; harness running after 0 captures, gone null; 61 captures, 0 failed
+ok   approved-optout DO_NOT_TRACK: exit 0; no-prompt at 2300 ms; non-blank 200, marker null, window 2300; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   approved-optout CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   a question first painted at 3 s: exit 0; no-prompt at 2099 ms; non-blank 0, marker 3099, window 2099; harness running after 0 captures, gone null; 61 captures, 0 failed
 ok   a screen that stays blank: exit 0; blocked: observation timeout; non-blank null, marker null, window null; harness running after 0 captures, gone null; 31 captures, 0 failed
-ok   another pane size: exit 0; no-prompt at 2200 ms; non-blank 198, marker null, window 2200; harness running after 0 captures, gone null; 51 captures, 0 failed
+ok   another pane size: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
 ok   the pane resized mid-run: exit 0; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 51 captures, 0 failed
-ok   the pane gone mid-run: exit 1; blocked: observation timeout; non-blank 198, marker null, window null; harness running after 0 captures, gone null; 14 captures, 3 failed
-ok   the driver interrupted mid-run: exit 1; blocked: observation timeout; non-blank 199, marker null, window null; harness running after 0 captures, gone null; 12 captures, 0 failed
-ok   one capture that fails: exit 0; no-prompt at 2499 ms; non-blank 99, marker null, window 2499; harness running after 0 captures, gone null; 51 captures, 1 failed
-ok   a frame that holds the user name: exit 1; no-prompt at 2199 ms; non-blank 198, marker null, window 2199; harness running after 0 captures, gone null; 31 captures, 0 failed
+ok   the pane gone mid-run: exit 1; blocked: observation timeout; non-blank 199, marker null, window null; harness running after 0 captures, gone null; 15 captures, 3 failed
+ok   the driver interrupted mid-run: exit 1; blocked: observation timeout; non-blank 200, marker null, window null; harness running after 0 captures, gone null; 12 captures, 0 failed
+ok   one capture that fails: exit 0; no-prompt at 2500 ms; non-blank 100, marker null, window 2500; harness running after 0 captures, gone null; 51 captures, 1 failed
+ok   a frame that holds the user name: exit 1; no-prompt at 2200 ms; non-blank 200, marker null, window 2200; harness running after 0 captures, gone null; 31 captures, 0 failed
 ok   a frame that holds an also-forbidden string: exit 1; no-prompt at 2199 ms; non-blank 199, marker null, window 2199; harness running after 0 captures, gone null; 31 captures, 0 failed
-ok   a frame that holds the HOME of the extra environment: exit 1; no-prompt at 2200 ms; non-blank 199, marker null, window 2200; harness running after 0 captures, gone null; 31 captures, 0 failed
+ok   a frame that holds the HOME of the extra environment: exit 1; no-prompt at 2200 ms; non-blank 200, marker null, window 2200; harness running after 0 captures, gone null; 31 captures, 0 failed
 ok   the evidence cannot be written: exit 1, and the private server is gone without cleanup.sh
 ok   cleanup.sh after a killed driver: the server was left, cleanup.sh exit 0, no server after it
 ok   refused, an unknown mode: exit 2, nothing started
@@ -464,7 +466,7 @@ ok   refused, a variable the mode sets, in the extra environment: exit 2, nothin
 ok   refused, an unknown option: exit 2, nothing started
 ok   refused, a second opt-out variable in the extra environment: exit 2, nothing started
 ok   refused, a base other users can write: exit 2, nothing started
-ok   refused, a configuration directory where this script writes: exit 2, nothing written there
+ok   refused, a configuration directory where this script writes, with and without --prepare: exit 2 each, nothing written there
 ok   refused, a link where the run folder, its home or its TASK.md goes: exit 2 each, nothing written through it
 ok   refused, a base that is the home directory: exit 2, nothing started
 ok   --prepare: exit 0, the run folder and its nine-line TASK.md, nothing else
