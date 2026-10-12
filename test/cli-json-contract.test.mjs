@@ -66,9 +66,9 @@ test("oats version --json emits the exact Desktop API v1 probe payload", () => {
   const r = spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const doc = parseOnly(r.stdout);
-  assert.deepEqual(doc, { schemaVersion: 1, name: "@awebai/oats", version: PKG_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel"], automationsApi: 1, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: 2, operationsApi: 2, capabilityShowApi: 1 });
+  assert.deepEqual(doc, { schemaVersion: 1, name: "@awebai/oats", version: PKG_VERSION, desktopApi: 1, harnesses: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations", "readiness", "instance-events", "instance-git", "lifecycle-plans"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch"], automationsApi: 1, workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: 2, operationsApi: 2, capabilityShowApi: 1 });
   // key order is part of the published fixture — Desktop probes with string compare fallback
-  assert.equal(r.stdout.trim(), `{"schemaVersion":1,"name":"@awebai/oats","version":"${PKG_VERSION}","desktopApi":1,"harnesses":["pi","claude","codex"],"sessionBackends":["tmux"],"launchOptions":["yolo"],"remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations","readiness","instance-events","instance-git","lifecycle-plans"],"features":["retire-home","session-start","session-restart","launch-config","schedule","schedule-host-caps","session-upload","operations","instance-git","instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events","instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins","team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference","preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file","workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you","automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default","server-probe-features","worktree-event","trigger-sources","session-attach-detach-key","lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel"],"automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,"readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,"capabilityShowApi":1}`);
+  assert.equal(r.stdout.trim(), `{"schemaVersion":1,"name":"@awebai/oats","version":"${PKG_VERSION}","desktopApi":1,"harnesses":["pi","claude","codex"],"sessionBackends":["tmux"],"launchOptions":["yolo"],"remote":["spawn","retire","status","session","session-start","session-restart","launch-config","roster","harvest","schedule","session-upload","operations","readiness","instance-events","instance-git","lifecycle-plans"],"features":["retire-home","session-start","session-restart","launch-config","schedule","schedule-host-caps","session-upload","operations","instance-git","instance-git-remote","souls-declarations","lifecycle-plans","retire-retention","readiness","spawn-preview","instance-events","instance-events-2","schedule-history","schedule-read-2","spawn-preview-2","spawn-idempotency","spawn-idempotency-2","spawn-apply-2","workspace-v2","instance-modules","spawn-provider-payload","served-identity","packages-no-approval","spawn-name","settings-origins","team-model-3","settings-declared","capabilities-private","layers-from","harness","package-souls","triggers","automations","desktop-facts","launch-preference","preview-composed-from","observe-max-age","spawn-preview-max-age","launch-config-default","capability-show","capture-file","workspace-identity","server-connect","capability-route","servers-per-workspace","operator-default-soul","waiting-on-you","automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default","server-probe-features","worktree-event","trigger-sources","session-attach-detach-key","lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel","soul-launch"],"automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,"readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,"capabilityShowApi":1}`);
 });
 
 test("oats status reads a workspace soul.yaml with its real shape: nested capabilities stay a map, schemaVersion stays a number", async (t) => {
@@ -167,6 +167,50 @@ test("oats spawn --json failures are one stdout envelope, stable codes, nonzero 
   rmSync(fx.root, { recursive: true });
   const rootless = envelope(fx.cli(["spawn", "dev", "--json", "--no-launch"]), "E_NO_DEPLOYMENT", "spawn in a deployment without agents/");
   assert.match(rootless.error.message, /oats sync/);
+});
+
+test("oats soul launch --json: one stdout envelope for a set, a remove, a plan and each failure path (feature soul-launch)", (t) => {
+  const fx = v2Deployment({ local: { "launch-configs": { fast: { harness: "pi" } }, souls: { launch: { "acme.okf/dev": "fast" } } } }); t.after(fx.cleanup);
+  const run = (...argv) => fx.cli(["soul", "launch", ...argv, "--json"]);
+  const success = (r, what) => {
+    assert.equal(r.status, 0, `${what}: ${r.stderr}`);
+    const doc = parseOnly(r.stdout);
+    assert.deepEqual([doc.schemaVersion, doc.ok], [1, true], what);
+    // The decided answer, its keys in their order, the same for every form.
+    assert.deepEqual(Object.keys(doc.result), ["soulLaunchApi", "action", "plan", "key", "souls", "level", "file", "before", "after", "changed", "launch", "unmatched", "unread"], what);
+    assert.equal(doc.result.soulLaunchApi, 1);
+    return doc.result;
+  };
+  const failure = (r, code, what) => {
+    assert.notEqual(r.status, 0, `${what} exits nonzero`);
+    const doc = parseOnly(r.stdout);
+    assert.deepEqual([doc.schemaVersion, doc.ok, doc.error.code, typeof doc.error.message], [1, false, code, "string"], `${what}: ${r.stdout}`);
+    return doc.error;
+  };
+  assert.deepEqual(Object.keys(success(run("set", "dev", "--launch-config", "fast", "--plan"), "plan").unmatched[0]), ["key", "at", "value", "suggestions"]);
+  assert.deepEqual(Object.keys(success(run("set", "dev", "--launch-config", "fast"), "set").launch), ["declared", "effective", "from", "at", "problem"]);
+  success(run("set", "dev", "--launch-config", "fast"), "set, unchanged");
+  success(run("remove", "acme.okf/dev"), "remove by exact text");
+  success(run("remove", "dev"), "remove");
+  failure(run(), "E_USAGE", "no action");
+  failure(run("set", "dev", "--home", fx.dep), "E_USAGE", "a flag it does not take");
+  failure(run("set", "dev"), "E_BAD_ARGS", "no value");
+  failure(run("set", "dev", "--launch-config"), "E_BAD_ARGS", "a value flag without its value");
+  failure(run("set", "dev", "--launch-config", "fast", "--max-age", "60"), "E_BAD_ARGS", "--max-age");
+  failure(run("set", "nobody", "--launch-config", "fast"), "E_SOUL_UNKNOWN", "an unknown soul");
+  assert.deepEqual(Object.keys(failure(run("set", "dev", "--launch-config", "personal"), "E_LAUNCH_CONFIG_UNKNOWN", "an undeclared configuration").details), ["name", "from", "at"]);
+  assert.deepEqual(failure(run("remove", "dev"), "E_LAUNCH_PREFERENCE_UNKNOWN", "no entry").details, { key: "dev", keys: [] });
+  const bare = temp(); t.after(() => rmSync(bare, { recursive: true, force: true }));
+  failure(fx.cli(["soul", "launch", "remove", "dev", "--dir", bare, "--json"], { cwd: bare }), "E_LOCAL_MISSING", "outside a deployment");
+  // The lock of the deployment's local file held elsewhere.
+  const lock = join(fx.dep, ".agents", "locks", "local.lock");
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: process.pid, at: new Date().toISOString(), what: "a test" }));
+  assert.deepEqual(failure(run("set", "dev", "--launch-config", "fast"), "E_LOCAL_BUSY", "the lock held").details, { path: join(fx.dep, "oats-local.yaml"), lock });
+  rmSync(lock, { recursive: true });
+  // A file the rewrite would leave invalid is refused by the read of it, before the verb starts.
+  writeFileSync(join(fx.dep, "oats-local.yaml"), `${readFileSync(join(fx.dep, "oats-local.yaml"), "utf8")}bogus: 1\n`);
+  failure(run("set", "dev", "--launch-config", "fast"), "E_WORKSPACE_SCHEMA", "an invalid oats-local.yaml");
 });
 
 test("removed okf harvest --json answers E_REMOVED, not an invented empty durable queue", t => {

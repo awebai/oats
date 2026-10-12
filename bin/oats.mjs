@@ -39,7 +39,7 @@ import {
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { harnessTrust } from "../lib/harness-trust-write.mjs";
 import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure } from "../lib/pi-bridge.mjs";
-import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
+import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
@@ -100,7 +100,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1414,7 +1414,8 @@ function maxAgeRefusal(command, head) {
     case "workspace": return word(1) === "status" ? null : refuse(["workspace", word(1)].filter(Boolean).join(" "));
     case "teams": return word(1) === undefined ? null : refuse(`teams ${word(1)}`);
     // `soul teams` only reads (its edit flags were removed in 0.38.0, and refuse as such).
-    case "soul": return word(1) === "teams" ? null : refuse(["soul", word(1)].filter(Boolean).join(" "));
+    // `soul launch set|remove` writes, and names its soul from what the workspace offers now: it reads live.
+    case "soul": return word(1) === "teams" ? null : refuse(["soul", word(1), word(1) === "launch" ? word(2) : undefined].filter(Boolean).join(" "));
     // A capability source's poll resolves its soul as a read (the tick's child passes --max-age 600).
     case "trigger": return word(1) === "poll" ? null : refuse(["trigger", word(1)].filter(Boolean).join(" "));
     default: {
@@ -1637,6 +1638,7 @@ async function performSync(ctx, bail, { onDiscovered, plan = false } = {}) {
     catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
     const kept = (list) => list.filter((p) => typeof p.package !== "string");
     discovery.packageSouls = pkg.souls;
+    discovery.soulsUnread = { ...discovery.soulsUnread, packages: pkg.skipped, unlocked: unlockedPackages(discovery.workspace, lock) };
     discovery.problems = [...kept(discovery.problems), ...pkg.problems];
     discovery.warnings = workspaceWarnings(discovery.workspace, discovery.members, discovery.external || [], pkg.souls);
     problems.splice(0, problems.length, ...kept(problems), ...pkg.problems);
@@ -2072,7 +2074,8 @@ const SOUL_TEAMS_REPLACEMENT = "souls: in oats-workspace.yaml (a PR to the works
  *  model 3: the workspace's `souls:`, and the local teams it allows). Config only, read only. */
 async function soulCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
-  const usage = "usage: oats soul teams <soul>|'*'  [--dir <deployment>] [--max-age <s>] [--json]";
+  const usage = `usage: oats soul teams <soul>|'*'  [--dir <deployment>] [--max-age <s>] [--json] | ${SOUL_LAUNCH_USAGE}`;
+  if (positional(1) === "launch") return soulLaunchCmd(bail, usage);
   const removed = SOUL_TEAMS_REMOVED_FLAGS.find((f) => args.some((a) => a === f || a.startsWith(`${f}=`)));
   if (removed) bail("E_BAD_ARGS", `oats soul teams ${removed} was removed in 0.38.0 (team model 3): which teams a soul may join, and its default, are ${SOUL_TEAMS_REPLACEMENT}`, { flag: removed, replacement: SOUL_TEAMS_REPLACEMENT });
   if (positional(1) !== "teams") bail("E_USAGE", usage);
@@ -2102,6 +2105,62 @@ async function soulCmd() {
   console.log(`${key === "*" ? "unlisted souls (\"*\")" : key} here: default ${doc.defaultTeam ? `${doc.defaultTeam.label} (${doc.defaultTeam.from})` : "(none)"}`);
   console.log(`souls: ${doc.match === null ? "no entry matches" : `teams from ${JSON.stringify(doc.match)}`}${doc.defaultMatch !== null ? `, default from ${JSON.stringify(doc.defaultMatch)}` : ""}`);
   if (doc.teams.length) printTable(["team", "id", "from", "why"], doc.teams.map((t) => [t.default ? `${t.label} (default)` : t.label, t.team ?? "(no id yet)", t.from, t.via.join(",")]));
+}
+
+const SOUL_LAUNCH_USAGE = "oats soul launch set <soul>|'*' (--launch-config <name>|none | --harness pi|claude|codex [--model <id>]) [--plan] [--dir <deployment>] [--json] | oats soul launch remove <soul>|'*'|<exact key> [--plan] [--dir <deployment>] [--json]";
+/** The flags each `oats soul launch` form takes (value flags → true). Anything else is refused, never
+ *  ignored: `--home` and `--soul` among them, since the soul is the argument and the file the deployment's. */
+const SOUL_LAUNCH_FLAGS = {
+  set: { "--launch-config": true, "--harness": true, "--model": true },
+  remove: {},
+};
+/** A souls.launch entry in words: a launch configuration's name, or the inline harness and model. */
+const launchEntryText = (v) => (v === null ? "no entry" : typeof v === "string" ? (v === "none" ? "none (the bare harness)" : `launch configuration ${v}`) : `${v.harness}${v.model ? ` with model ${v.model}` : ""}`);
+
+/** `oats soul launch set <soul>|'*' (--launch-config <name>|none | --harness <h> [--model <id>]) |
+ *  remove <soul>|'*'|<exact key>  [--plan] [--dir <deployment>] [--json]` (feature soul-launch): the
+ *  writer of oats-local.yaml souls.launch (lib/soul-launch-verbs.mjs). It reads the workspace live. */
+async function soulLaunchCmd(bail, usage) {
+  const sub = positional(2);
+  if (!["set", "remove"].includes(sub)) bail("E_USAGE", usage);
+  const takes = { "--dir": true, "--json": false, "--plan": false, ...SOUL_LAUNCH_FLAGS[sub] };
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    if (!a.startsWith("-")) continue;
+    if (!Object.hasOwn(takes, a)) bail("E_USAGE", `oats soul launch ${sub} does not take ${a} (nothing was changed) — usage: ${SOUL_LAUNCH_USAGE}`, { flag: a });
+    if (takes[a] && args[i + 1] !== undefined && !args[i + 1].startsWith("--")) i++;
+  }
+  const name = positional(3);
+  if (name === undefined) bail("E_BAD_ARGS", `oats soul launch ${sub} needs ${sub === "set" ? "a soul (or '*')" : "a soul, '*' or the exact text of a key in souls.launch"} — usage: ${SOUL_LAUNCH_USAGE}`);
+  const V = await import("../lib/soul-launch-verbs.mjs");
+  let value = null;
+  if (sub === "set") {
+    // A value flag with no value (`--launch-config --plan`) is refused by valueFlag, never read as absent.
+    try { value = V.soulLaunchValue({ launchConfig: valueFlag("launch-config"), harness: valueFlag("harness"), model: valueFlag("model") }); }
+    catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
+  }
+  const ctx = workspaceContext(bail);
+  const readSouls = async () => {
+    const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+    return discoverOrStandalone(ctx.local, { lock: readLockIfPresent(ctx.deploymentDir), deployment: ctx.deploymentDir, remoteOptions: ctx.remoteOptions });
+  };
+  let r;
+  try { r = await V.soulLaunch({ deployment: ctx.deploymentDir, localPath: ctx.localPath }, { action: sub, name, value, plan: args.includes("--plan") }, { readSouls }); }
+  catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance); throw e; }
+  if (JSON_MODE) { jsonOk(r); return; }
+  const key = JSON.stringify(r.key), file = shortPath(r.file);
+  if (!r.changed) console.log(`souls.launch ${key} is already ${launchEntryText(r.after)} in ${file}: nothing to change`);
+  else if (r.action === "set") console.log(`${r.plan ? "Would set" : "Set"} souls.launch ${key} to ${launchEntryText(r.after)} in ${file}${r.before === null ? "" : ` (it was ${launchEntryText(r.before)})`}${r.plan ? "; nothing was written" : ""}`);
+  else console.log(`${r.plan ? "Would remove" : "Removed"} souls.launch ${key} (${launchEntryText(r.before)}) from ${file}${r.plan ? "; nothing was written" : ""}`);
+  if (r.unread) { console.log(`The workspace's souls could not be read (${r.unread.code}: ${r.unread.message}), so this says nothing about which soul the key applied to or which keys still match none`); return; }
+  if (r.souls && r.souls.length > 1) console.log(`This entry applies to ${r.souls.length} souls: ${r.souls.join(", ")} (a member's soul is keyed by its bare name)`);
+  if (r.key === "*") console.log(`"*" is the launch of every soul without an entry of its own`);
+  else if (r.launch === null) console.log(`${key} is the key of no soul this workspace offers`);
+  else {
+    const e = r.launch.effective;
+    console.log(`The next spawn of ${r.souls.length > 1 && name !== r.key ? name : r.souls[0]} selects ${e.harness}${e.model ? ` with model ${e.model}` : ""}${e.launchConfig ? ` (launch configuration ${e.launchConfig})` : ""}, from ${r.launch.at ?? "the host default"}${r.launch.problem ? `, and would be refused: ${r.launch.problem.code}: ${r.launch.problem.message}` : ""}`);
+  }
+  for (const u of r.unmatched) console.log(`souls.launch ${JSON.stringify(u.key)} is the key of no soul this workspace offers${u.suggestions.length ? ` (nearest: ${u.suggestions.join(", ")})` : ""}: oats soul launch remove ${shellQuote(u.key)}`);
 }
 
 /** The catalog's rows of `kind` ("capabilities" | "souls") as `oats capabilities` / `oats souls` list them:
@@ -4682,6 +4741,19 @@ Usage:
                                             where there is none / it is <label>
   oats soul teams <soul>|'*' [--dir <d>]    which teams a soul may join here, its default, and
       [--max-age <s>] [--json]              why (the workspace's souls: and local teams)
+  oats soul launch set <soul>|'*' (--launch-config <name>|none | --harness pi|claude|codex [--model <id>])
+      [--plan] [--dir <d>] [--json]         pin a soul's launch on this machine: writes its key
+                                            (its bare name, or <package>/<soul>; '*' = every soul
+                                            without an entry) in oats-local.yaml souls.launch.
+                                            The file is rewritten; every other entry keeps its
+                                            value and its comments. --plan: every check, nothing
+                                            written. It reads the workspace live (no --max-age)
+  oats soul launch remove <soul>|'*'|<exact key> [--plan] [--dir <d>] [--json]
+                                            remove one entry of souls.launch: a soul's, '*', or
+                                            the exact text of a key in the file (that form works
+                                            when the workspace's souls cannot be read, and is how
+                                            a key that names no soul is removed); no such entry is
+                                            E_LAUNCH_PREFERENCE_UNKNOWN
   oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
                                              read-only Git observation of the instance's work
                                              tree: branch, status (renames kept), ahead/behind
