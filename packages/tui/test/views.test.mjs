@@ -91,7 +91,7 @@ function factsOf(lines) {
 const fact = (detail, label) => detail.facts.find((f) => f.label === label) ?? null;
 const labels = (detail) => detail.facts.map((f) => f.label);
 /** An observed entry whose souls are in `team`, through the same shared calls helpers.mjs makes. */
-function observedIn(rows, { team, workspace = "lfx-workspace" } = {}) {
+function observedIn(rows, { team, workspace = "acme-platform" } = {}) {
   const document = rosterOf(rows, { team }), listed = rosterRows(document, CLI);
   const answers = listed.map((row) => ({ running: row.running, runtimeState: row.runtimeState, ...(row.runtimeError ? { runtimeError: row.runtimeError } : {}), tmux: row.tmux }));
   return observedEntry({ roster: document, workspaceStatus: { workspace: { name: workspace } }, observedAt: "2026-10-11T10:00:00.000Z" }, panelInstances(listed, answers), "2026-10-11T10:00:01.000Z");
@@ -111,20 +111,20 @@ const panelRow = (state, name) => panelOf(state, AT).instances.find((row) => row
 // no single instance, where there is no other group for the root to stand among.
 const QUESTION = Object.freeze({ since: "2026-10-11T09:56:00.000Z", producer: "claude", reason: "question", message: "Which base should it use?" });
 const UNREACHABLE = "E_TMUX_UNREACHABLE: no server running on /tmp/tmux-1000/default";
-const KERNEL_EXPERT = "oats-kernel-expert-retire", KERNEL_DEV = "oats-kernel-developer-note-target", REVIEWER = "code-reviewer-note";
-const DESKTOP_EXPERT = "oats-desktop-expert-tui-read", DESKTOP_A = "oats-desktop-developer-panel", DESKTOP_B = "oats-desktop-developer-terms";
-const MAINTAINER = "oats-maintainer-lfx", EXPERT_TUI = "oats-expert-tui";
+const KERNEL_EXPERT = "acme-ledger-expert-retire", KERNEL_DEV = "acme-ledger-developer-note-target", REVIEWER = "peer-reviewer-note";
+const DESKTOP_EXPERT = "acme-console-expert-tui-read", DESKTOP_A = "acme-console-developer-panel", DESKTOP_B = "acme-console-developer-terms";
+const MAINTAINER = "acme-maintainer-ops", EXPERT_TUI = "acme-expert-tui";
 const ROSTER = () => [
-  instanceRow("oats-kernel-expert", KERNEL_EXPERT),
-  instanceRow("oats-kernel-developer", KERNEL_DEV, { parentInstance: KERNEL_EXPERT, waitingOnYou: { ...QUESTION } }),
-  instanceRow("code-reviewer", REVIEWER, { parentInstance: KERNEL_DEV, running: false, runtimeState: "stopped" }),
-  instanceRow("oats-desktop-expert", DESKTOP_EXPERT),
-  instanceRow("oats-desktop-developer", DESKTOP_A, { parentInstance: DESKTOP_EXPERT, waitingOnYou: { since: "2026-10-11T09:58:00.000Z", producer: "claude", reason: "permission" } }),
-  instanceRow("oats-desktop-developer", DESKTOP_B, { parentInstance: DESKTOP_EXPERT, waitingOnYou: { since: "2026-10-11T08:30:00.000Z", producer: "claude", reason: "attention", message: "Ready for review." } }),
-  instanceRow("oats-maintainer", MAINTAINER),
-  instanceRow("oats-expert", EXPERT_TUI, { running: null, runtimeState: "unreachable", runtimeError: UNREACHABLE }),
+  instanceRow("acme-ledger-expert", KERNEL_EXPERT),
+  instanceRow("acme-ledger-developer", KERNEL_DEV, { parentInstance: KERNEL_EXPERT, waitingOnYou: { ...QUESTION } }),
+  instanceRow("peer-reviewer", REVIEWER, { parentInstance: KERNEL_DEV, running: false, runtimeState: "stopped" }),
+  instanceRow("acme-console-expert", DESKTOP_EXPERT),
+  instanceRow("acme-console-developer", DESKTOP_A, { parentInstance: DESKTOP_EXPERT, waitingOnYou: { since: "2026-10-11T09:58:00.000Z", producer: "claude", reason: "permission" } }),
+  instanceRow("acme-console-developer", DESKTOP_B, { parentInstance: DESKTOP_EXPERT, waitingOnYou: { since: "2026-10-11T08:30:00.000Z", producer: "claude", reason: "attention", message: "Ready for review." } }),
+  instanceRow("acme-maintainer", MAINTAINER),
+  instanceRow("acme-expert", EXPERT_TUI, { running: null, runtimeState: "unreachable", runtimeError: UNREACHABLE }),
 ];
-const WITHHELD = [{ agent: "oats-kernel-developer", instance: "oats-kernel-developer-twin", reason: "duplicate-home" }];
+const WITHHELD = [{ agent: "acme-ledger-developer", instance: "acme-ledger-developer-twin", reason: "duplicate-home" }];
 const entry = () => observed(ROSTER(), { withheld: WITHHELD });
 /** The roster as it arrives: everything expanded, the first row selected. */
 const fresh = (options) => stateOf(entry(), options);
@@ -144,21 +144,21 @@ const FOOTER = " / filter   Tab detail   r refresh   ? help   q quit";
 test("the Instances view at 80x24 in UTF-8, cell for cell: the header, the view names and the read time, a rule with a joint at the list's width, the roster beside the selected instance's detail, a rule, the footer", () => {
   const blank = `${" ".repeat(38)}│`;
   assert.deepEqual(draw(golden(), S80).lines, [
-    ` oats  lfx-workspace  ${COUNTS}`,
+    ` oats  acme-platform  ${COUNTS}`,
     " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
-    " ▾ ● oats-desktop-e…  claude          │   oats-kernel-developer-note-target",
-    "     ● oats-desktop…  claude         !│   soul     oats-kernel-developer",
-    "     ● oats-desktop…  claude         !│   state    running",
-    ` ▾ ● oats-kernel-ex…  claude          │   needs    ${NEEDS}`,
-    ">  ▾ ● oats-kernel-…  claude         !│            the agent: \"Which base",
-    "       ○ code-revie…  stopped         │            should it use?\"",
+    " ▾ ● acme-console-e…  claude          │   acme-ledger-developer-note-target",
+    "     ● acme-console…  claude         !│   soul     acme-ledger-developer",
+    "     ● acme-console…  claude         !│   state    running",
+    ` ▾ ● acme-ledger-ex…  claude          │   needs    ${NEEDS}`,
+    ">  ▾ ● acme-ledger-…  claude         !│            the agent: \"Which base",
+    "       ○ peer-revie…  stopped         │            should it use?\"",
     "                                      │   harness  claude, claude-opus-5-5 (so…",
-    "   ● oats-maintaine…  claude          │   work     worktree, agents/oats-kerne…",
-    "   ? oats-expert-tui  unreachable     │   team     lfx",
-    "                                      │   parent   oats-kernel-expert-retire",
+    "   ● acme-maintaine…  claude          │   work     worktree, agents/acme-ledge…",
+    "   ? acme-expert-tui  unreachable     │   team     eng",
+    "                                      │   parent   acme-ledger-expert-retire",
     `                                      │   started  ${STARTED}`,
-    "                                      │   home     …ernel-developer-note-target",
+    "                                      │   home     …edger-developer-note-target",
     blank, blank, blank, blank, blank, blank, blank,
     `${"─".repeat(38)}┴${"─".repeat(41)}`,
     FOOTER,
@@ -168,21 +168,21 @@ test("the Instances view at 80x24 in UTF-8, cell for cell: the header, the view 
 test("the Instances view at 80x24 in ASCII, cell for cell: the same screen with the rules, the joints, the marks and the cut mark in ASCII", () => {
   const blank = `${" ".repeat(38)}|`;
   assert.deepEqual(draw(golden({ ascii: true }), S80).lines, [
-    ` oats  lfx-workspace  ${COUNTS}`,
+    ` oats  acme-platform  ${COUNTS}`,
     " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
     `${"-".repeat(38)}+${"-".repeat(41)}`,
-    " v * oats-desktop...  claude          |   oats-kernel-developer-note-target",
-    "     * oats-deskt...  claude         !|   soul     oats-kernel-developer",
-    "     * oats-deskt...  claude         !|   state    running",
-    ` v * oats-kernel-...  claude          |   needs    ${NEEDS}`,
-    ">  v * oats-kerne...  claude         !|            the agent: \"Which base",
-    "       - code-rev...  stopped         |            should it use?\"",
+    " v * acme-console...  claude          |   acme-ledger-developer-note-target",
+    "     * acme-conso...  claude         !|   soul     acme-ledger-developer",
+    "     * acme-conso...  claude         !|   state    running",
+    ` v * acme-ledger-...  claude          |   needs    ${NEEDS}`,
+    ">  v * acme-ledge...  claude         !|            the agent: \"Which base",
+    "       - peer-rev...  stopped         |            should it use?\"",
     "                                      |   harness  claude, claude-opus-5-5 (...",
-    "   * oats-maintai...  claude          |   work     worktree, agents/oats-ker...",
-    "   ? oats-expert-tui  unreachable     |   team     lfx",
-    "                                      |   parent   oats-kernel-expert-retire",
+    "   * acme-maintai...  claude          |   work     worktree, agents/acme-led...",
+    "   ? acme-expert-tui  unreachable     |   team     eng",
+    "                                      |   parent   acme-ledger-expert-retire",
     `                                      |   started  ${STARTED}`,
-    "                                      |   home     ...nel-developer-note-target",
+    "                                      |   home     ...ger-developer-note-target",
     blank, blank, blank, blank, blank, blank, blank,
     `${"-".repeat(38)}+${"-".repeat(41)}`,
     FOOTER,
@@ -233,37 +233,37 @@ test("from 80 columns up the list takes clamp(floor(cols x 0.48), 36, 60) cells,
 
 test("at 120x40 the names have room: the same roster with the longer names whole and the detail's lines uncut", () => {
   const d = draw(golden(), S120), row = (list, detail) => `${list.padEnd(57)}│${detail}`;
-  assert.equal(d.lines[0], ` oats  lfx-workspace${" ".repeat(42)}${COUNTS}`);
+  assert.equal(d.lines[0], ` oats  acme-platform${" ".repeat(42)}${COUNTS}`);
   assert.equal(d.lines[1], ` 1 Instances   2 Souls   3 Capabilities${" ".repeat(67)}read 10:00:00`);
-  assert.equal(d.lines[3], row(" ▾ ● oats-desktop-expert-tui-read        claude", "   oats-kernel-developer-note-target"));
-  assert.equal(d.lines[4], row("     ● oats-desktop-developer-panel      claude         !", "   soul     oats-kernel-developer"));
-  assert.equal(d.lines[5], row("     ● oats-desktop-developer-terms      claude         !", "   state    running"));
-  assert.equal(d.lines[6], row(" ▾ ● oats-kernel-expert-retire           claude", `   needs    ${NEEDS}`));
-  assert.equal(d.lines[7], row(">  ▾ ● oats-kernel-developer-note-targ…  claude         !", "            the agent: \"Which base should it use?\""));
-  assert.equal(d.lines[8], row("       ○ code-reviewer-note              stopped", "   harness  claude, claude-opus-5-5 (soul)"));
-  assert.equal(d.lines[9], row("", "   work     worktree, agents/oats-kernel-developer-note-targ…"));
-  assert.equal(d.lines[10], row("   ● oats-maintainer-lfx                 claude", "   team     lfx"));
-  assert.equal(d.lines[11], row("   ? oats-expert-tui                     unreachable", `   parent   ${KERNEL_EXPERT}`));
+  assert.equal(d.lines[3], row(" ▾ ● acme-console-expert-tui-read        claude", "   acme-ledger-developer-note-target"));
+  assert.equal(d.lines[4], row("     ● acme-console-developer-panel      claude         !", "   soul     acme-ledger-developer"));
+  assert.equal(d.lines[5], row("     ● acme-console-developer-terms      claude         !", "   state    running"));
+  assert.equal(d.lines[6], row(" ▾ ● acme-ledger-expert-retire           claude", `   needs    ${NEEDS}`));
+  assert.equal(d.lines[7], row(">  ▾ ● acme-ledger-developer-note-targ…  claude         !", "            the agent: \"Which base should it use?\""));
+  assert.equal(d.lines[8], row("       ○ peer-reviewer-note              stopped", "   harness  claude, claude-opus-5-5 (soul)"));
+  assert.equal(d.lines[9], row("", "   work     worktree, agents/acme-ledger-developer-note-targ…"));
+  assert.equal(d.lines[10], row("   ● acme-maintainer-ops                 claude", "   team     eng"));
+  assert.equal(d.lines[11], row("   ? acme-expert-tui                     unreachable", `   parent   ${KERNEL_EXPERT}`));
   assert.equal(d.lines[12], row("", `   started  ${STARTED}`));
-  assert.equal(d.lines[13], row("", "   home     …oper/instances/oats-kernel-developer-note-target"));
+  assert.equal(d.lines[13], row("", "   home     …oper/instances/acme-ledger-developer-note-target"));
   for (let r = 14; r < 38; r++) assert.equal(d.lines[r], row("", ""), `row ${r}`);
   assert.equal(d.lines[39], FOOTER);
 });
 
 test("at 79x24 the list takes the whole width: no rule column, no detail beside it, and the waiting marks at the right edge", () => {
   const d = draw(golden(), S79);
-  assert.equal(d.lines[0], ` oats  lfx-workspa…  ${COUNTS}`);
+  assert.equal(d.lines[0], ` oats  acme-platfo…  ${COUNTS}`);
   assert.equal(d.lines[2], "─".repeat(79));
   assert.deepEqual(d.lines.slice(3, 12), [
-    " ▾ ● oats-desktop-expert-tui-read                              claude",
-    "     ● oats-desktop-developer-panel                            claude         !",
-    "     ● oats-desktop-developer-terms                            claude         !",
-    " ▾ ● oats-kernel-expert-retire                                 claude",
-    ">  ▾ ● oats-kernel-developer-note-target                       claude         !",
-    "       ○ code-reviewer-note                                    stopped",
+    " ▾ ● acme-console-expert-tui-read                              claude",
+    "     ● acme-console-developer-panel                            claude         !",
+    "     ● acme-console-developer-terms                            claude         !",
+    " ▾ ● acme-ledger-expert-retire                                 claude",
+    ">  ▾ ● acme-ledger-developer-note-target                       claude         !",
+    "       ○ peer-reviewer-note                                    stopped",
     "",
-    "   ● oats-maintainer-lfx                                       claude",
-    "   ? oats-expert-tui                                           unreachable",
+    "   ● acme-maintainer-ops                                       claude",
+    "   ? acme-expert-tui                                           unreachable",
   ]);
   assert.deepEqual(d.lines.slice(12, 22), Array.from({ length: 10 }, () => ""));
   assert.equal(d.lines[22], "─".repeat(79));
@@ -281,15 +281,15 @@ test("at 60x15, the smallest size drawn, the frame keeps its shape and the roste
   assert.equal(d.lines[1], " 1 Instances   2 Souls   3 Capabilities       read 10:00:00");
   assert.equal(d.lines[2], "─".repeat(60));
   assert.deepEqual(d.lines.slice(3, 13), [
-    " ▾ ● oats-desktop-expert-tui-read           claude",
-    "     ● oats-desktop-developer-panel         claude         !",
-    "     ● oats-desktop-developer-terms         claude         !",
-    " ▾ ● oats-kernel-expert-retire              claude",
-    ">  ▾ ● oats-kernel-developer-note-target    claude         !",
-    "       ○ code-reviewer-note                 stopped",
+    " ▾ ● acme-console-expert-tui-read           claude",
+    "     ● acme-console-developer-panel         claude         !",
+    "     ● acme-console-developer-terms         claude         !",
+    " ▾ ● acme-ledger-expert-retire              claude",
+    ">  ▾ ● acme-ledger-developer-note-target    claude         !",
+    "       ○ peer-reviewer-note                 stopped",
     "",
-    "   ● oats-maintainer-lfx                    claude",
-    "   ? oats-expert-tui                        unreachable",
+    "   ● acme-maintainer-ops                    claude",
+    "   ? acme-expert-tui                        unreachable",
     "",
   ]);
   assert.equal(d.lines[13], "─".repeat(60));
@@ -324,7 +324,7 @@ test("on a terminal 3000 columns wide the rules still reach edge to edge, the li
   for (const r of [2, 22]) d.cells[r].forEach((cell, x) => assert.equal(cell.text, x === 60 ? (r === 2 ? "┬" : "┴") : "─", `row ${r}, column ${x}`));
   assert.equal(cellText(d, 0).length, 2999);
   assert.equal(cellText(d, 0).endsWith(COUNTS), true);
-  assert.equal(cellText(d, 0, 0, 20), " oats  lfx-workspace");
+  assert.equal(cellText(d, 0, 0, 20), " oats  acme-platform");
   assert.equal(cellText(d, 23), FOOTER);
 });
 
@@ -370,7 +370,7 @@ test("each empty state says so in one line of the list, in the TUI's words: befo
     const said = listLines(d, sz).map((line) => line.trim()).filter(Boolean);
     assert.deepEqual(said, [sentence], `${at}: the list holds that line and nothing else`);
     assert.deepEqual(detailLines(d, sz).filter((line) => sz.cols >= WIDE && line.trim() !== ""), [], `${at}: and no detail`);
-    assert.equal(d.lines.some((line) => /\boats-\w+-/.test(line)), false, `${at}: no instance row`);
+    assert.equal(d.lines.some((line) => /\bacme-\w+-/.test(line)), false, `${at}: no instance row`);
   }
 });
 
@@ -411,11 +411,11 @@ test("the header holds oats, the workspace's name, and the counts right aligned,
 
 test("a count of zero is left out of the header", () => {
   const running = draw(stateOf(observed([instanceRow("soul", "one"), instanceRow("soul", "two")])), S80);
-  assert.equal(running.lines[0], ` oats  lfx-workspace${" ".repeat(50)}2 running`);
+  assert.equal(running.lines[0], ` oats  acme-platform${" ".repeat(50)}2 running`);
   const stopped = draw(stateOf(observed([instanceRow("soul", "one", { running: false, runtimeState: "stopped" })])), S80);
-  assert.equal(stopped.lines[0], ` oats  lfx-workspace${" ".repeat(50)}1 stopped`);
+  assert.equal(stopped.lines[0], ` oats  acme-platform${" ".repeat(50)}1 stopped`);
   const none = draw(stateOf(observed([])), S80);
-  assert.equal(none.lines[0], " oats  lfx-workspace");
+  assert.equal(none.lines[0], " oats  acme-platform");
   for (const line of [running.lines[0], stopped.lines[0], none.lines[0]]) assert.doesNotMatch(line, /\b0 |need|unknown|withheld/);
 });
 
@@ -429,7 +429,7 @@ test("the header says `1 needs input` for one waiting instance and `2 need input
 test("a withheld row is counted in the header and never drawn as a row", () => {
   const d = draw(fresh(), S120);
   assert.equal(d.lines[0].endsWith("1 withheld"), true);
-  for (const line of d.lines) assert.equal(line.includes("oats-kernel-developer-twin"), false);
+  for (const line of d.lines) assert.equal(line.includes("acme-ledger-developer-twin"), false);
 });
 
 test("the second row holds the time of the read, `read HH:MM:SS`, only when the deployment is live: the cycle's own time, not the older time the kernel observed the remotes at", () => {
@@ -488,7 +488,7 @@ test("the not-observed reason of a stale deployment is the shared state's detail
     for (const text of d.lines) assert.equal(text.includes("the kernel:"), false, at);
     // Below it, the rows of the last observation.
     const below = d.lines.slice(reason.rows.at(-1) + 1, sz.rows - 2);
-    assert.equal(below.some((text) => text.includes("oats-kernel-expert") || text.includes("oats-desktop-expert")), true, `${at}: the last observation is still drawn`);
+    assert.equal(below.some((text) => text.includes("acme-ledger-expert") || text.includes("acme-console-expert")), true, `${at}: the last observation is still drawn`);
   }
 });
 
@@ -504,7 +504,7 @@ test("the not-observed reason of an unavailable deployment is the shared state's
     assert.equal(d.cells[4].find((cell) => cell.text !== " ").text, line[0], at);
     for (const text of d.lines) assert.equal(text.includes("the kernel:"), false, at);
     assert.deepEqual(d.lines.slice(reason.rows.at(-1) + 1, sz.rows - 2).filter(Boolean), [], `${at}: the list holds the reason and no rows`);
-    for (const text of d.lines) assert.equal(/oats-(kernel|desktop|maintainer|expert)-/.test(text), false, `${at}: no instance`);
+    for (const text of d.lines) assert.equal(/acme-(ledger|console|maintainer|expert)-/.test(text), false, `${at}: no instance`);
   }
 });
 
@@ -665,12 +665,12 @@ test("a waiting row carries `!` at the right edge of its pane, and an expanded r
 });
 
 test("a collapsed row carries `!N` for the N rows waiting below it, the closed disclosure mark, and the rows below it are not drawn: one cluster and no single instance, cell for cell", () => {
-  const header = (cols) => ` oats  lfx-workspace${" ".repeat(cols - 44)}3 running  2 need input`;
+  const header = (cols) => ` oats  acme-platform${" ".repeat(cols - 44)}3 running  2 need input`;
   const d80 = draw(folded(), S80), a80 = draw(folded({ ascii: true }), S80), d60 = draw(folded(), S60), d120 = draw(folded(), S120);
   assert.equal(d80.lines[0], header(80));
-  assert.equal(cellText(d80, 3, 0, 39), ">▸ ● oats-desktop-expert…  claude   !2│");
-  assert.equal(cellText(a80, 3, 0, 39), ">> * oats-desktop-expe...  claude   !2|");
-  assert.equal(d60.lines[3], ">▸ ● oats-desktop-expert-tui-read                claude   !2");
+  assert.equal(cellText(d80, 3, 0, 39), ">▸ ● acme-console-expert…  claude   !2│");
+  assert.equal(cellText(a80, 3, 0, 39), ">> * acme-console-expe...  claude   !2|");
+  assert.equal(d60.lines[3], ">▸ ● acme-console-expert-tui-read                claude   !2");
   assert.equal(cellText(d120, 3, 0, 58), `>▸ ● ${DESKTOP_EXPERT.padEnd(41)}claude   !2│`);
   for (const [d, sz] of [[d80, S80], [a80, S80], [d60, S60], [d120, S120]]) {
     assert.deepEqual(listLines(d, sz).slice(1).filter((line) => line.trim()), [], "the rows below a collapsed row are not drawn, and no other row is");
@@ -713,7 +713,7 @@ test("a waiting claim on a stale deployment is not drawn: no mark on the row, no
   for (const sz of [S120, S79]) {
     const stale = selecting(stateOf(failed(entry(), STALE("the mirror did not answer"))), KERNEL_DEV), d = draw(stale, sz);
     assert.equal(d.lines[0].includes("input"), false);
-    assert.equal(d.lines.some((line) => line.includes("oats-kernel-developer-note")), true, "the row is drawn");
+    assert.equal(d.lines.some((line) => line.includes("acme-ledger-developer-note")), true, "the row is drawn");
     for (const line of d.lines.slice(3, sz.rows - 2)) assert.equal(/claude\s+!\d*(\u2502|$)/.test(line), false, "no waiting mark");
     for (const line of d.lines) assert.equal(/\bneeds\b/.test(line), false, "no needs line");
     const page = draw(press(stale, ["tab"], S79).state, S79);
@@ -865,15 +865,15 @@ test("the detail is a label and a value per line, the labels the TUI's own and i
   assert.equal(detail.title, KERNEL_DEV);
   assert.deepEqual(labels(detail), ["soul", "state", "needs", "harness", "work", "team", "parent", "started", "home"]);
   assert.equal(new Set(detail.facts.map((f) => f.col)).size, 1, "every value starts at the same column");
-  assert.deepEqual(fact(detail, "soul").rows, ["oats-kernel-developer"]);
+  assert.deepEqual(fact(detail, "soul").rows, ["acme-ledger-developer"]);
   assert.deepEqual(fact(detail, "state").rows, ["running"]);
   assert.deepEqual(fact(detail, "needs").rows, [NEEDS, 'the agent: "Which base should it use?"'], "the reason in words and how long, then the message as an attributed quote");
   assert.deepEqual(fact(detail, "harness").rows, ["claude, claude-opus-5-5 (soul)"], "the harness as its id, the model, and where the model came from in brackets");
   assert.deepEqual(fact(detail, "work").rows, [`worktree, agents/${KERNEL_DEV}`]);
-  assert.deepEqual(fact(detail, "team").rows, ["lfx"]);
+  assert.deepEqual(fact(detail, "team").rows, ["eng"]);
   assert.deepEqual(fact(detail, "parent").rows, [KERNEL_EXPERT]);
   assert.deepEqual(fact(detail, "started").rows, [STARTED]);
-  assert.deepEqual(fact(detail, "home").rows, [`${DEPLOYMENT}/agents/oats-kernel-developer/instances/${KERNEL_DEV}`]);
+  assert.deepEqual(fact(detail, "home").rows, [`${DEPLOYMENT}/agents/acme-ledger-developer/instances/${KERNEL_DEV}`]);
 });
 
 test("the waited time is the time of the paint: the same state drawn later says so, and nothing else on the screen counts up", () => {
@@ -970,7 +970,7 @@ test("a waiting message the shared read withholds is not drawn: the reason in wo
 });
 
 test("the home path is cut from the left, so its end is read: the cut mark first, then the end of the path up to the pane's last cells", () => {
-  const home = `${DEPLOYMENT}/agents/oats-kernel-developer/instances/${KERNEL_DEV}`;
+  const home = `${DEPLOYMENT}/agents/acme-ledger-developer/instances/${KERNEL_DEV}`;
   for (const ascii of [false, true]) for (const sz of [S80, S120, size(100, 24)]) {
     const d = draw(golden({ ascii }), sz), list = listWidth(sz.cols), cut = glyphsOf(ascii).cut;
     const r = bodyRows(sz).find((row) => cellText(d, row, list + 1).trim().startsWith("home "));
@@ -1001,20 +1001,20 @@ test("in the wide layout tab moves the focus to the detail, which says so with `
 test("at 79 columns tab replaces the list by the detail, a page of its own, and tab or Esc returns to the list", () => {
   const list = golden(), paged = press(list, ["tab"], S79).state, d = draw(paged, S79);
   assert.deepEqual(d.lines, [
-    ` oats  lfx-workspa…  ${COUNTS}`,
+    ` oats  acme-platfo…  ${COUNTS}`,
     " 1 Instances   2 Souls   3 Capabilities                          read 10:00:00",
     "─".repeat(79),
     ` > ${KERNEL_DEV}`,
-    "   soul     oats-kernel-developer",
+    "   soul     acme-ledger-developer",
     "   state    running",
     `   needs    ${NEEDS}`,
     "            the agent: \"Which base should it use?\"",
     "   harness  claude, claude-opus-5-5 (soul)",
     `   work     worktree, agents/${KERNEL_DEV}`,
-    "   team     lfx",
+    "   team     eng",
     `   parent   ${KERNEL_EXPERT}`,
     `   started  ${STARTED}`,
-    "   home     …oats-kernel-developer/instances/oats-kernel-developer-note-target",
+    "   home     …acme-ledger-developer/instances/acme-ledger-developer-note-target",
     "", "", "", "", "", "", "", "",
     "─".repeat(79),
     " Tab detail   Esc close   r refresh   ? help   q quit",
@@ -1035,9 +1035,9 @@ test("a resize from 100 to 79 columns with the detail focused shows the detail a
   const focused = press(golden(), ["tab"], size(100, 24)).state;
   const wide = draw(focused, size(100, 24)), narrow = draw(focused, S79);
   assert.equal(wide.cells[3][48].text, "│");
-  assert.equal(wide.lines.some((line) => line.includes("oats-maintainer-lfx")), true, "at 100 columns the list is beside the detail");
+  assert.equal(wide.lines.some((line) => line.includes("acme-maintainer-ops")), true, "at 100 columns the list is beside the detail");
   assert.equal(narrow.lines[3], ` > ${KERNEL_DEV}`);
-  assert.equal(narrow.lines.some((line) => line.includes("oats-maintainer-lfx")), false, "at 79 the detail is the page: no list row");
+  assert.equal(narrow.lines.some((line) => line.includes("acme-maintainer-ops")), false, "at 79 the detail is the page: no list row");
   assert.deepEqual(labels(factsOf(detailLines(narrow, S79))), ["soul", "state", "needs", "harness", "work", "team", "parent", "started", "home"]);
   assert.deepEqual(draw(focused, size(100, 24)).lines, wide.lines);
 });
@@ -1101,10 +1101,10 @@ test("when the footer has no room for every action it shows as many as fit, and 
 
 test("while the filter field is open the footer row holds `/`, the query, and how to keep and clear it", () => {
   for (const sz of SIZES) {
-    const open = press(fresh(), ["/"], sz).state, typed = press(open, ["k", "e", "r", "n", "e", "l", "space", "d", "e", "v"], sz).state;
+    const open = press(fresh(), ["/"], sz).state, typed = press(open, ["l", "e", "d", "g", "e", "r", "space", "d", "e", "v"], sz).state;
     const empty = cellText(draw(open, sz), sz.rows - 1), footer = cellText(draw(typed, sz), sz.rows - 1);
     assert.equal(empty.startsWith(" /"), true);
-    assert.equal(footer.startsWith(" /kernel dev  "), true, `${sz.cols}: ${footer}`);
+    assert.equal(footer.startsWith(" /ledger dev  "), true, `${sz.cols}: ${footer}`);
     for (const line of [empty, footer]) {
       assert.match(line, /Enter keep/);
       assert.match(line, /Esc clear/);
@@ -1305,7 +1305,7 @@ test("help and quit are last and always: a kept filter gives way to them, down t
   assert.equal(long.ok, true);
   const kept = (query, actions, sz) => cellText(draw(press(golden({ actions }), ["/", ...query, "enter"], sz).state, sz), sz.rows - 1);
   assert.equal(kept("a", long.actions, S60), " /a       Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit");
-  assert.equal(kept("oats-kernel", long.actions, S60), " /oats…   Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit", "the query is cut, the two hints are whole");
+  assert.equal(kept("acme-ledger", long.actions, S60), " /acme…   Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit", "the query is cut, the two hints are whole");
   // With room, the kept filter has its whole place and the other hints follow it.
   assert.equal(kept("a", long.actions, S80), " /a                      Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit");
   assert.equal(kept("a", ACTIONS, S60), " /a                      / filter   ? help   q quit", "of the other hints, as many as fit");

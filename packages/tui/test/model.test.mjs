@@ -95,7 +95,7 @@ function cycle(kernelRows, { collect = collector, team } = {}) {
   const document = rosterOf(kernelRows, { team }), rows = rosterRows(document, CLI);
   const input = JSON.parse(JSON.stringify(livenessInput(rows)));
   const answers = livenessAnswers(rows, collect ? JSON.stringify(input.map(collect)) : null);
-  const entry = observedEntry({ roster: document, workspaceStatus: { workspace: { name: "lfx-workspace" } }, observedAt: OBSERVED_AT }, panelInstances(rows, answers), AT);
+  const entry = observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: OBSERVED_AT }, panelInstances(rows, answers), AT);
   return { rows, input, answers, entry };
 }
 
@@ -337,9 +337,9 @@ test("the empty states: reading before the first answer, none for a deployment w
 test("the header's facts of a live deployment: its workspace's name, the time of the read as a local clock time, and what the store holds of the view", () => {
   // The read's own time, not the kernel's observation of the remotes, which a read in the
   // background reuses: here it is a minute older, and the header does not show it.
-  const state = press(stateOf(observed(TREE, { workspace: "lfx-workspace", observedAt: "2026-10-11T14:02:27.000Z", at: "2026-10-11T14:03:27.000Z" })), ["j", "tab"]).state;
+  const state = press(stateOf(observed(TREE, { workspace: "acme-platform", observedAt: "2026-10-11T14:02:27.000Z", at: "2026-10-11T14:03:27.000Z" })), ["j", "tab"]).state;
   const m = view(state);
-  assert.equal(m.workspace, "lfx-workspace");
+  assert.equal(m.workspace, "acme-platform");
   assert.equal(m.readAt, clockTime("2026-10-11T14:03:27.000Z"));
   assert.equal(m.readAt, "14:03:27");
   assert.deepEqual({ view: m.view, focus: m.focus, filter: m.filter, ascii: m.ascii, detailTop: m.detailTop, helpTop: m.helpTop }, { view: "instances", focus: "detail", filter: { editing: false, query: "" }, ascii: false, detailTop: 0, helpTop: 0 });
@@ -535,7 +535,7 @@ test("a filter that matches a row under a collapsed parent shows it with its anc
 });
 
 test("the filter matches by name, by soul and by repository, whatever the case, through the shared matcher", () => {
-  const rows = [instanceRow("oats-expert", "tui-reader"), instanceRow("dev", "plain", { repo: `${DEPLOYMENT}/Desktop-App` }), instanceRow("dev", "other")];
+  const rows = [instanceRow("acme-expert", "tui-reader"), instanceRow("dev", "plain", { repo: `${DEPLOYMENT}/Desktop-App` }), instanceRow("dev", "other")];
   const state = stateOf(observed(rows));
   const query = (text) => names(Object.freeze({ ...state, filter: Object.freeze({ editing: false, query: text }) })).sort();
   assert.deepEqual(query("READER"), ["tui-reader"]);
@@ -609,7 +609,7 @@ test("the detail's facts stand in the order of the spec's table: soul, state, it
   assert.equal(fact(detail, "below").value, waitingBelowText([panelRow(stateOf(observed(rows)), "kid").row]));
   assert.deepEqual(fact(detail, "harness"), { label: "harness", value: `${row.harness}, ${row.model} (${row.modelFrom})`, form: "line" });
   assert.deepEqual(fact(detail, "work"), { label: "work", value: `${row.work}, ${row.branch}`, form: "line" });
-  assert.deepEqual(fact(detail, "team"), { label: "team", value: "lfx", form: "line" });
+  assert.deepEqual(fact(detail, "team"), { label: "team", value: "eng", form: "line" });
   assert.deepEqual(fact(detail, "parent"), { label: "parent", value: "lead", form: "line" });
   assert.deepEqual(fact(detail, "started"), { label: "started", value: waitingClock(row.startedAt, NOW), form: "line" });
   assert.deepEqual(fact(detail, "home"), { label: "home", value: row.home, form: "end" });

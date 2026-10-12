@@ -133,7 +133,7 @@ const shownAs = (extra, options) => stateOf(observed([one(extra)]), options);
 function inTeam(rows, team) {
   const document = rosterOf(rows, { team }), listed = rosterRows(document, CLI);
   const answers = listed.map((row) => ({ running: row.running, runtimeState: row.runtimeState, tmux: row.tmux }));
-  return observedEntry({ roster: document, workspaceStatus: { workspace: { name: "lfx-workspace" } }, observedAt: "2026-10-11T10:00:00.000Z" }, panelInstances(listed, answers), "2026-10-11T10:00:01.000Z");
+  return observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: "2026-10-11T10:00:00.000Z" }, panelInstances(listed, answers), "2026-10-11T10:00:01.000Z");
 }
 /** Every field of the view that holds text the TUI did not write, and a state that shows `value` there. */
 const FIELDS = {

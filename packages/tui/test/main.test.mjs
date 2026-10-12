@@ -52,7 +52,7 @@ async function started(options) { const r = run(options); await r.up; return r; 
 /** The text a run has on screen after its writes, read naively: enough to find a word. */
 const textOf = (output) => readTerminalOutput(output).text;
 const readerDid = (r) => r.log.filter(([what]) => what === "reader").map(([, ...rest]) => rest);
-const ENTRY = observed([instanceRow("oats-expert", "oats-expert-tui"), instanceRow("oats-maintainer", "oats-maintainer-lfx", { running: false, runtimeState: "stopped" })]);
+const ENTRY = observed([instanceRow("acme-expert", "acme-expert-tui"), instanceRow("acme-maintainer", "acme-maintainer-ops", { running: false, runtimeState: "stopped" })]);
 
 test("the action table binds each key to one action, and a key bound twice is refused when the table is read", () => {
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
@@ -180,14 +180,14 @@ test("a run says it is reading, draws the instances when the reader answers, ope
   assert.equal(r.reader.options.getEntry().deployment.status, "pending", "and is told the entry the store holds");
   assert.match(textOf(r.stdout.take()), /oats.*1 Instances.*2 Souls.*3 Capabilities.*Reading the deployment\..*\? help.*q quit/s);
   r.reader.answer(ENTRY);
-  assert.match(textOf(r.stdout.take()), /lfx-workspace.*1 running.*1 stopped.*oats-expert-tui.*claude.*oats-maintainer-lfx.*stopped/s);
+  assert.match(textOf(r.stdout.take()), /acme-platform.*1 running.*1 stopped.*acme-expert-tui.*claude.*acme-maintainer-ops.*stopped/s);
   assert.equal(r.reader.options.getEntry(), ENTRY);
   r.stdin.type("?");
   assert.match(textOf(r.stdout.take()), /Keys.*Ctrl\+Z.*suspend.*more below/s);
   r.stdin.type("G");
   assert.match(textOf(r.stdout.take()), /Not in this version.*oats session attach --home <home>.*closes this help/s, "the movement keys scroll the help to its end");
   r.stdin.type("?");
-  assert.match(textOf(r.stdout.take()), /oats-expert-tui/);
+  assert.match(textOf(r.stdout.take()), /acme-expert-tui/);
   r.log.length = 0;
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -261,7 +261,7 @@ test("a paste into the list is dropped whole: a pasted q, a pasted Ctrl+C and a 
   r.stdin.type("\x1b[200~maintainer\nq\x1b[201~");
   const filtered = textOf(r.stdout.take());
   assert.match(filtered, /maintainer/);
-  assert.doesNotMatch(filtered, /oats-expert-tui/, "the row that does not match is gone");
+  assert.doesNotMatch(filtered, /acme-expert-tui/, "the row that does not match is gone");
   r.stdin.type("q");
   assert.match(textOf(r.stdout.take()), /No instance matches the filter\./, "q is text in the field");
   r.stdin.type("\x03");
@@ -276,12 +276,12 @@ test("a resize redraws in full; below 60x15 the screen is the too-small line, an
   r.stdout.resize(60, 15);
   let out = r.stdout.take();
   assert.equal(out.startsWith("\x1b[0m\x1b[2J"), true, "a resize clears first");
-  assert.match(textOf(out), /oats.*oats-maintainer-lfx.*\? help/s);
+  assert.match(textOf(out), /oats.*acme-maintainer-ops.*\? help/s);
   r.stdout.resize(59, 14);
   out = r.stdout.take();
   assert.equal(textOf(out), "Terminal too small: 59x14, oats tui needs 60x15.");
   r.stdout.resize(80, 24);
-  assert.match(textOf(r.stdout.take()), />.*oats-maintainer-lfx.*soul.*oats-maintainer/s, "the selection is where it was");
+  assert.match(textOf(r.stdout.take()), />.*acme-maintainer-ops.*soul.*acme-maintainer/s, "the selection is where it was");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });

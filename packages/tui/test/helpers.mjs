@@ -127,14 +127,14 @@ export function instanceRow(soul, name, extra = {}) {
 }
 /** A roster as the shared reader hands it on (deployment-data.mjs `deploymentStatusData`), from rows:
  *  one soul per distinct `agent`, in first-seen order. */
-export function rosterOf(rows, { withheld = [], team = "lfx" } = {}) {
+export function rosterOf(rows, { withheld = [], team = "eng" } = {}) {
   const souls = new Map();
   for (const row of rows) { if (!souls.has(row.agent)) souls.set(row.agent, []); souls.get(row.agent).push(row); }
   return { root: `${DEPLOYMENT}/agents`, agents: [...souls].map(([name, instances]) => ({ name, description: "", team, dir: `${DEPLOYMENT}/agents/${name}`, instances })), withheld, workspace: { reachable: true } };
 }
 /** An observed entry for those rows, through the real `rosterRows`, `panelInstances` and
  *  `observedEntry`. `answers(row)` is the collector's answer for a row (default: what the row says). */
-export function observed(rows, { withheld, workspace = "lfx-workspace", observedAt = "2026-10-11T09:59:00.000Z", at = "2026-10-11T10:00:00.000Z", cli = CLI, answers = (row) => ({ running: row.running, runtimeState: row.runtimeState, ...(row.runtimeError ? { runtimeError: row.runtimeError } : {}), tmux: row.tmux }) } = {}) {
+export function observed(rows, { withheld, workspace = "acme-platform", observedAt = "2026-10-11T09:59:00.000Z", at = "2026-10-11T10:00:00.000Z", cli = CLI, answers = (row) => ({ running: row.running, runtimeState: row.runtimeState, ...(row.runtimeError ? { runtimeError: row.runtimeError } : {}), tmux: row.tmux }) } = {}) {
   const document = rosterOf(rows, { withheld }), listed = rosterRows(document, cli);
   return observedEntry({ roster: document, workspaceStatus: { workspace: { name: workspace } }, observedAt }, panelInstances(listed, listed.map(answers)), at);
 }
