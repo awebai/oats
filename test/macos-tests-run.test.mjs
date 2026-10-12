@@ -6,18 +6,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fixtureBase } from "./helpers/host-fixture.mjs";
 import { buildTable, conclude, defaultTmuxSocket, runFile, runFiles, verdict } from "../scripts/macos-tests.mjs";
 
-// Under /tmp: a socket's path has about a hundred bytes, and macOS's own temporary directory takes half.
-const tree = realpathSync(mkdtempSync("/tmp/oats-mtr-"));
+// The shared fixtures' base, for its short path: a socket's path has about a hundred bytes, and
+// macOS's own temporary directory takes half. It is the temporary directory when that is short,
+// /tmp otherwise.
+const tree = fixtureBase("oats-mtr-");
 const started = [];
 test.after(() => {
   for (const pid of started) { try { process.kill(pid, "SIGKILL"); } catch { /* gone, as it should be */ } }
   rmSync(tree, { recursive: true, force: true });
 });
-const fake = (name, body) => { mkdirSync(join(tree, "test"), { recursive: true }); writeFileSync(join(tree, "test", name), body); return `test/${name}`; };
+// The fakes are written while the module loads: a write that throws ends the file before the
+// `after` hook above could run, so the tree is removed here, and the error goes on.
+const fake = (name, body) => {
+  try { mkdirSync(join(tree, "test"), { recursive: true }); writeFileSync(join(tree, "test", name), body); }
+  catch (error) { rmSync(tree, { recursive: true, force: true }); throw error; }
+  return `test/${name}`;
+};
 const HEAD = 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { spawn } from "node:child_process";\nimport { mkdirSync, writeFileSync } from "node:fs";\n';
 // A process that does nothing for a minute, and the line that records who is running.
 const IDLE = 'spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: STDIO, detached: DETACHED })';
@@ -159,6 +168,8 @@ test("macos-tests runFiles: the file after which tmux's default socket first exi
   const env = { ...process.env, TMUX_TMPDIR: mkdtempSync(join(tree, "tmux-")) };
   const socket = defaultTmuxSocket(env);
   assert.equal(socket, join(env.TMUX_TMPDIR, `tmux-${process.getuid()}`, "oats"));
+  // The longest path a fake listens on. macOS takes 104 bytes for a socket's path, Linux 108.
+  assert.ok(Buffer.byteLength(socket) < 104, `the fixture's base is too long for a socket's path on macOS: ${socket}`);
   // No file leaves one: nothing is marked.
   const clean = await runFiles([PASS, PASS], { cwd: tree, env, write: collect().write, timeoutMs: 120_000, tmuxSocket: socket });
   assert.deepEqual(clean.map((run) => run.leak), [false, false]);

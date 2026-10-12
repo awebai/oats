@@ -261,7 +261,7 @@ const FAKE = 'import test from "node:test";\nimport { writeFileSync } from "node
 
 /** origin (bare) with branches, tags and the odd entries, and `runner`, a clone of it as
  *  actions/checkout leaves one: every branch of origin under refs/remotes/origin, every tag. */
-const fixture = (() => {
+function buildFixture() {
   const origin = join(base, "origin.git"), seed = join(base, "seed"), runner = join(base, "runner");
   git(base, "init", "-q", "--bare", "-b", "main", origin);
   git(base, "clone", "-q", origin, seed);
@@ -297,7 +297,10 @@ const fixture = (() => {
   git(runner, "branch", "local-only", git(runner, "commit-tree", "-m", "local", "-p", main, `${main}^{tree}`));
   const localOnly = git(runner, "rev-parse", "local-only");
   return { origin, runner, first, main, feature, gone, dangling, localOnly };
-})();
+}
+// Built while the module loads: a build that throws ends the file before the `after` hook above
+// could run, so the base is removed here, and the error goes on.
+const fixture = (() => { try { return buildFixture(); } catch (error) { rmSync(base, { recursive: true, force: true }); throw error; } })();
 const { runner } = fixture;
 const request = (ref, files = "test/a.test.mjs") => validateRequest({ ref, files }, runner);
 const why = (result) => result.refusals.map(({ entry, why: reason }) => `${entry}: ${reason}`).join("\n");
