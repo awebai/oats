@@ -24,6 +24,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { constants as osConstants, homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { performance } from "node:perf_hooks";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
 import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect } from "../lib/errors.mjs";
 import {
@@ -49,7 +50,7 @@ import { spawnSync as spawnSyncProc } from "node:child_process";
 import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
 import { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe as describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
-import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
+import { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
@@ -3070,14 +3071,26 @@ async function scheduleCmd() {
       case "reconcile": return out(reconcileSchedule(ws(), needId(), { io, clear: args.includes("--clear"), ctx: ctx() }));
       case "tick": {
         const dryRun = args.includes("--dry-run");
-        if (args.includes("--host")) return out(tickHost({ io, dryRun }));
+        // The minute the timer fired this tick for: this process's start, read before any work.
+        const firedAt = new Date(Math.floor(performance.timeOrigin));
+        if (args.includes("--host")) return out(tickHost({ firedAt, io, dryRun }));
         const reg = readRegistry();
         const tctx = scopeAutomations(ws(), { io, refresh: !dryRun });
-        const considered = withHostLock(() => [...(tctx.refresh && !tctx.refresh.ok ? [{ workspace: ws(), action: "error", error: `automations refresh: ${tctx.refresh.error}` }] : []), ...tickWorkspace(ws(), { io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun, ctx: tctx }), ...tickTriggers(ws(), { io, dryRun, ctx: tctx, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()] })]);
+        const considered = withHostLock(() => [...(tctx.refresh && !tctx.refresh.ok ? [{ workspace: ws(), action: "error", error: `automations refresh: ${tctx.refresh.error}` }] : []), ...tickWorkspace(ws(), { firedAt, io, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()], dryRun, ctx: tctx }), ...tickTriggers(ws(), { io, dryRun, ctx: tctx, reg, wsList: reg.workspaces.includes(ws()) ? reg.workspaces : [...reg.workspaces, ws()] })]);
         return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws(), io) });
       }
       case "host": {
         const op = args[2];
+        const os = flag("os");
+        if (os !== undefined && !(op === "install" && args.includes("--print"))) throw scheduleError("E_BAD_ARGS", "--os is for oats schedule host install --print");
+        if (op === "install" && args.includes("--print")) {
+          // What install would write, rendered from this environment; nothing is written or loaded.
+          if (os !== undefined && os !== "darwin" && os !== "linux") throw scheduleError("E_BAD_ARGS", "--os darwin|linux");
+          if (flag("max-concurrent") !== undefined || flag("triggers-max-concurrent") !== undefined) throw scheduleError("E_BAD_ARGS", "--print writes nothing: run install without --print to set a cap");
+          const r = hostUnitFiles(os ? { os } : {});
+          if (!JSON_MODE) for (const w of r.warnings) console.error(`warning: ${w}`);
+          return out(r, (x) => Object.entries(x.files).map(([path, content]) => `==> ${path} <==\n${content}`).join("\n").replace(/\n$/, ""));
+        }
         if (op === "install") {
           const cap = (name, reset) => {
             const occurrences = args.filter((arg) => arg === `--${name}`);
@@ -3091,14 +3104,14 @@ async function scheduleCmd() {
           };
           const caps = { maxConcurrent: cap("max-concurrent", "default"), triggersMaxConcurrent: cap("triggers-max-concurrent", "none") };
           registerWorkspace(ws(), caps);
-          installHostUnit();
-          return out({ scheduler: schedulerStatus(ws(), io) });
+          const { warnings } = installHostUnit();
+          return out({ scheduler: schedulerStatus(ws(), io), warnings });
         }
         if (op === "uninstall") { unregisterWorkspace(ws()); if (!readRegistry().workspaces.length) uninstallHostUnit(); return out({ scheduler: schedulerStatus(ws(), io) }); }
         if (op === "status") return out({ scheduler: schedulerStatus(ws(), io) });
-        throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
+        throw scheduleError("E_BAD_ARGS", "oats schedule host install [--print [--os darwin|linux]]|uninstall|status");
       }
-      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|test <id>|add <id> --file <spec.json> [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> (--file <spec.json> [--description=<text>] | --description=<text>)|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install [--max-concurrent <N|default>] [--triggers-max-concurrent <N|none>]|uninstall|status [--dir <workspace>|--server <id>] [--json]");
+      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|test <id>|add <id> --file <spec.json> [--description=<text>] [--workspace <member> --runs-on <host> --owner <host>/<login>]|update <id> (--file <spec.json> [--description=<text>] | --description=<text>)|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install [--max-concurrent <N|default>] [--triggers-max-concurrent <N|none>] | host install --print [--os darwin|linux]|uninstall|status [--dir <workspace>|--server <id>] [--json]");
     }
   } catch (e) {
     // K8b: typed refusal details travel (identity mismatch: key/declared; a refused file: its integrity source).
