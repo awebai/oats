@@ -43,6 +43,22 @@ Without a terminal (a script, an agent's shell) it runs only with `--yes`.
 plan starts with that install, and the bridges move to that same version in
 the same run.
 
+**`oats update` only moves forward.** It never installs an older CLI or an
+older bridge than the one in place:
+
+- **The CLI** is installed only when the version npm lists is newer than the
+  installed one. When the installed CLI is ahead of it (a checkout, a build
+  that is not published yet), the plan says so in one line and holds no step
+  for the CLI.
+- **The bridges** are brought to the version the CLI has after the run: the
+  one npm lists when the CLI moves to it, the installed one otherwise. A
+  bridge ahead of that version is left alone.
+
+Versions are compared as semver, so a prerelease is below its release:
+`0.53.0-rc.1` is ahead of `0.52.0` and behind `0.53.0`. Build metadata makes
+no other version: a local build `0.53.0+build.1` is `0.53.0`, and nothing is
+installed over it.
+
 ## Which pi folders
 
 pi keeps its packages in one folder: `~/.pi/agent`, or the folder
@@ -85,8 +101,9 @@ The plan lists every folder with the bridge found in it and one of these:
 
 | The plan says | When | What happens |
 |---|---|---|
-| `move to <version>` | the bridge is at another version | `pi install` runs there |
-| `left alone` | the bridge is already at that version | nothing |
+| `move to <version>` | the bridge is at an older version | `pi install` runs there |
+| `left alone, already at <version>` | the bridge is at that version | nothing |
+| `left alone, ahead of <version>` | the bridge is at a newer version | nothing: a bridge is never moved back |
 | `no bridge` | the folder does not exist, or holds no bridge | nothing |
 | `not touched`, with a reason | see below | nothing; the plan prints the command to run there |
 
@@ -102,9 +119,10 @@ A folder is **not touched** when:
 - **its bridge cannot be read** (a `package.json` that does not parse).
 - **only launch configurations with their own `executable` name it.** A
   wrapper is your program: `oats update` never runs one. The plan prints the
-  install command with that executable. A folder that the default, this
-  shell or a configuration without an `executable` also names is moved with
-  the plain `pi`.
+  install command with that executable; when the configurations name several
+  executables, one command for each, with the configurations it is for. A
+  folder that the default, this shell or a configuration without an
+  `executable` also names is moved with the plain `pi`.
 
 For a folder it moves, `oats update` runs the `pi` found on `PATH`, with
 `PI_CODING_AGENT_DIR` set to that folder:
@@ -131,6 +149,30 @@ in a few minutes. The same setting goes to pi's own npm for the install
 (`npm_config_prefer_online=true`). `--check` does not make this lookup: it
 shows what would run, and the run looks again.
 
+When the installed CLI is ahead of the registry, the version asked for is
+the installed one, and it may not be published at all. The plan does not
+know: it makes no lookup. So when it lists a move to that version, it says
+under the folders what the move depends on:
+
+```text
+  A bridge moves to 0.53.0 only if @awebai/oats-pi@0.53.0 is published: the installed kernel is ahead of the registry's 0.52.0, and a run checks that before any step.
+```
+
+When the run's lookup then does not find the version, the message says that
+the installed kernel is ahead of the registry, instead of telling you to wait
+a few minutes.
+
+**What npm answers is checked before it is used.** Both lookups must answer
+one version and nothing else: three numbers and an optional prerelease, on
+one line. Any other answer (nothing, several lines, a list, text around the
+version) stops the update before any step, with nothing changed. The message
+names the lookup and shows the answer cut to 80 characters, with its control
+characters shown as escapes or replaced. Run `oats update` again.
+
+npm's own error output of a lookup is not passed to your terminal either.
+When the first lookup fails, the message says how it ended (`exit 1`) and
+then what npm said, cut to 300 characters and made safe the same way.
+
 The update stops at the first step that fails. Its message names the folder
 and the exact step to run again, says what that folder holds now (the old
 bridge still, or no bridge), and lists the folders it did not reach. A step
@@ -145,6 +187,14 @@ version, naming the folder and why it is looked at:
 
 ```text
 WARNING: version skew — kernel 0.53.0, pi bridge 0.52.0 in /srv/pi-work (launch configuration work); run `oats update` (they publish in lockstep)
+```
+
+A bridge ahead of the kernel is a skew too. `oats update` moves no bridge
+back, and `oats doctor` does not ask the registry, so the warning says what
+ends the skew:
+
+```text
+WARNING: version skew — kernel 0.52.0, pi bridge 0.53.0 in /srv/pi-work (launch configuration work); the bridge is ahead of the kernel, and `oats update` never moves a bridge back. The skew ends when the kernel is at 0.53.0 (`oats update` moves it once npm lists that version), or when the kernel's bridge is installed there by hand (docs/upgrading.md, "By hand")
 ```
 
 It also warns about a folder it could not look at (one that does not

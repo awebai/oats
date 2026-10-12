@@ -38,7 +38,7 @@ import {
   writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { harnessTrust } from "../lib/harness-trust-write.mjs";
-import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure } from "../lib/pi-bridge.mjs";
+import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
@@ -3851,20 +3851,28 @@ function updateCmd() {
   }
   const end = (text) => { console.log(text); if (notLookedAt) console.log(`\n${notLookedAt}`); };
   const fail = (text) => die(notLookedAt ? `${text}\n${notLookedAt}` : text);
-  let latest;
-  try { latest = execFileSync("npm", ["view", "@awebai/oats", "version"], { encoding: "utf8", timeout: 30000 }).trim(); }
-  catch (e) { fail(`cannot check npm for the latest version: ${e.message}`); }
+  // What npm printed is checked to be one version before it reaches a step, an argument or the
+  // screen (awebai/oats#1011). Both streams are captured: spawnSync forwards neither.
+  const asked = kernelLookup();
+  const { version: latest, problem: notChecked } = kernelLookupResult(spawnSync(asked[0], asked.slice(1), { encoding: "utf8", timeout: 30000 }));
+  if (notChecked) fail(notChecked);
   console.log(`@awebai/oats  installed: ${OATS_VERSION}  latest: ${latest}`);
+  // Forward only: the CLI moves to a newer version of the registry, never back to an older one.
+  // `target` is the version the kernel has after the run, which the bridges are brought to.
+  const cli = planCliUpdate(OATS_VERSION, latest), { target } = cli;
+  if (cli.note) console.log(cli.note);
   // The pi bridge, in every pi folder a launch of the deployment uses (lib/pi-bridge.mjs).
-  const plan = planPiBridges(piBridgeFolders({ launchConfigs }), latest);
-  console.log(`\n${PI_BRIDGE} ${latest} (published in lockstep), by pi folder${deployment && !notLookedAt ? ` of ${deployment}` : ""}:`);
-  for (const line of piBridgePlanLines(plan)) console.log(line);
+  const plan = planPiBridges(piBridgeFolders({ launchConfigs }), target);
+  console.log(`\n${PI_BRIDGE} ${target} (published in lockstep), by pi folder${deployment && !notLookedAt ? ` of ${deployment}` : ""}:`);
+  for (const line of piBridgePlanLines(plan, cli)) console.log(line);
   if (notLookedAt) console.log(`  ${notLookedAt}`);
   const moves = plan.filter((entry) => entry.step);
   const untouched = plan.filter((entry) => entry.action === "skip").length;
   const untouchedNote = untouched ? ` ${untouched} pi folder${untouched > 1 ? "s were" : " was"} not touched: see above for what to run there.` : "";
-  const steps = [...(latest !== OATS_VERSION ? [{ argv: ["npm", "install", "-g", `@awebai/oats@${latest}`], display: `npm install -g @awebai/oats@${latest}` }] : []), ...moves.map((entry) => ({ ...entry.step, entry }))];
-  if (!steps.length) return end(untouched ? `\nNothing for \`oats update\` to run.${untouchedNote}` : "\nUp to date.");
+  const steps = [...(cli.step ? [cli.step] : []), ...moves.map((entry) => ({ ...entry.step, entry }))];
+  // "Up to date" is not said over a folder it does not touch, nor over a CLI or a bridge ahead.
+  const ahead = cli.ahead || plan.some((entry) => entry.ahead);
+  if (!steps.length) return end(untouched || ahead ? `\nNothing for \`oats update\` to run.${untouchedNote}` : "\nUp to date.");
   console.log("\nUpdate steps:");
   for (const s of steps) console.log(`  ${s.display}`);
   if (checkOnly) return end("\n(--check: not executing)");
@@ -3880,19 +3888,19 @@ function updateCmd() {
   // lookup that revalidates npm's cache (awebai/oats#852). A version is listed a while after it
   // is published, and the kernel's "latest" says nothing about the bridge's.
   if (moves.length) {
-    console.log(`\n$ npm view ${PI_BRIDGE}@${latest} version --prefer-online`);
-    const seen = spawnSync("npm", ["view", `${PI_BRIDGE}@${latest}`, "version", "--prefer-online"], { encoding: "utf8", timeout: 30000 });
-    const answer = seen.error ? seen.error.message : seen.status !== 0 ? `exit ${seen.status}` : seen.stdout.trim() === latest ? null : seen.stdout.trim() ? `it answered ${JSON.stringify(seen.stdout.trim())}` : "no answer";
-    if (answer) fail(`${PI_BRIDGE}@${latest} was not seen on the registry (npm view: ${answer}): a version is listed a few minutes after it is published. Nothing was changed, and every bridge is in place. Run \`oats update\` again in a few minutes.`);
+    const lookup = bridgeLookup(target);
+    console.log(`\n$ ${lookup.join(" ")}`);
+    const notSeen = bridgeLookupProblem(spawnSync(lookup[0], lookup.slice(1), { encoding: "utf8", timeout: 30000 }), cli);
+    if (notSeen) fail(notSeen);
   }
   for (const [i, s] of steps.entries()) {
     console.log(`\n$ ${s.display}`);
     const r = spawnSync(s.argv[0], s.argv.slice(1), { stdio: "inherit", env: { ...process.env, ...s.env } });
     const ran = r.error ? `${s.argv[0]}: ${r.error.message}` : r.status !== 0 ? (r.signal ? `killed by ${r.signal}` : `exit ${r.status}`) : null;
-    const problem = s.entry ? piBridgeStepProblem(s.entry, latest, ran) : ran;
+    const problem = s.entry ? piBridgeStepProblem(s.entry, target, ran) : ran;
     if (problem) fail(piBridgeFailure({ entry: s.entry, display: s.display, problem, notReached: steps.slice(i + 1).filter((next) => next.entry).map((next) => next.entry) }));
   }
-  end(`\nUpdated to ${latest}.${untouchedNote} Now verify each deployment: run \`oats doctor\` at your workspace/repo scopes — it reports config spellings this version rejects, version skew, and missing requirements. Restart running pi sessions to pick up the new bridge.`);
+  end(`\nUpdated to ${target}.${untouchedNote} Now verify each deployment: run \`oats doctor\` at your workspace/repo scopes — it reports config spellings this version rejects, version skew, and missing requirements. Restart running pi sessions to pick up the new bridge.`);
 }
 
 // ---------- version (Desktop CLI API v1 probe) ----------
