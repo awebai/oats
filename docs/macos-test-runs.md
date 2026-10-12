@@ -62,16 +62,18 @@ that commit, not a symbolic link. A file named twice runs once.
 ## What a run does and prints
 
 The job checks out two trees. `runner/` is the workflow's own commit, and the
-script runs from it. `tested/` is the ref. So the code that validates the
-request and decides the result is never the tested branch's own, and a ref
-older than the workflow can still be tested.
+script runs from it. `tested/` is the ref. Two trees are for two things: a
+ref older than the workflow can be tested, and an honest branch cannot change
+the runner by accident. They are not a defence against a commit that sets out
+to forge its result (see [What a run does not protect](#what-a-run-does-not-protect)).
 
 After the validation the job installs as pull-request CI does (`npm ci` at
 the root, then in `packages/desktop` without the Electron binary). Then it
 runs each file alone, one after another, as a developer does: `node --test
 <file>` from the root of the ref's tree.
 
-Before the first file the log has a header:
+The step **Validate the request and check out its commit** prints a header,
+before any code of the ref has run:
 
 - the commit under test (full id) and the ref that was asked for;
 - the workflow's own ref and commit;
@@ -81,6 +83,11 @@ Before the first file the log has a header:
   then looked for by another case);
 - whether `tmux` is on `PATH`, and its version;
 - whether a socket is at tmux's default place for the server named `oats`.
+
+Its last line says so: `Everything above this line was printed before any code
+of the ref ran.` The step **Run each file alone** prints the header again
+before the first file, read after the installs, and says that it is the second
+reading.
 
 For each file the log has its output, then its counts (tests, passed, failed,
 skipped, cancelled, todo), its exit status and its duration. One table of all
@@ -110,11 +117,11 @@ is marked `no test passed`. It does not fail the run.
 On a pull request, a run is macOS evidence when all of this holds:
 
 1. The pull request gives **the run's link**.
-2. The `commit under test` in the log **equals the head under review**. A
-   run of an earlier head is evidence for that head only.
-3. The `workflow ref` in the log ends in `@refs/heads/main`: **the workflow
-   ran from the default branch**. Started from another branch, the workflow
-   and its script are that branch's, which nobody has reviewed.
+2. The `commit under test` in the validation step's header **equals the head
+   under review**. A run of an earlier head is evidence for that head only.
+3. The `workflow ref` in that header ends in `@refs/heads/main`: **the
+   workflow ran from the default branch**. Started from another branch, the
+   workflow and its script are that branch's, which nobody has reviewed.
 4. The run passed, and no file the pull request relies on is marked `no test
    passed`. **A run of only skips is not evidence.**
 
@@ -153,12 +160,20 @@ So a pull request that asks for a person's run on a Mac still gets one.
 
 After the validation, the ref's own code runs on the runner as the runner's
 user: its install scripts, then its tests. Pull-request CI does the same for
-every branch. Two things follow.
+every branch.
 
-**The result is as honest as the commit.** The header is printed before any
-code of the ref has run. The per-file results and the table are printed while
-it runs, and code that sets out to forge them can. The check is the review of
-that commit's diff: that is why the evidence names the exact commit.
+**Protected: the validation and the header.** They are printed from the
+workflow's own commit, before any code of the ref has run. A commit cannot
+change which commit the header names, or get a refused request past it.
+
+**Not protected: everything after the first install step**, the per-file
+results and the table included. From there on, the ref's code can change
+anything the runner's user can, and so what the later steps print. The result
+is as honest as the commit.
+
+**Where the check is.** A forgery has to be in the commit's own tree, its lock
+file included. The evidence names that exact commit, and the reviewer of the
+pull request reads its diff. Pull-request CI has the same property.
 
 **The cache scope of the default branch.** A run started from the default
 branch belongs to it, and executes another branch's code. Such code can reach

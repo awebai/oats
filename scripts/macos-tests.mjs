@@ -19,14 +19,18 @@
 //
 // Two trees. The workflow checks out its own commit and runs this script from it; the ref
 // under test goes to <tree>, a second directory (`git worktree add --detach`). A ref that
-// predates the workflow has no script, and the validation and the verdict must not be the
-// tested branch's own code. Nothing is installed in the script's tree, so this file imports
+// predates the workflow has no script, and the code that validates and decides is the
+// workflow's, not the tested branch's. Nothing is installed in the script's tree, so this file imports
 // node's built-in modules only: not the kernel (`lib/`), not a package.
 //
-// `prepare` runs before any code of the ref does, so its header is printed by a runner
-// nothing of the ref has touched. From the install steps on, the ref's code runs as the
-// runner's own user: `run` validates again rather than trust a value carried between steps,
-// but what it prints is as honest as the commit it tests (docs/macos-test-runs.md).
+// What is protected, and what is not. `prepare` runs before any code of the ref does: the
+// validation and its header are printed by a runner nothing of the ref has touched. From the
+// first install step on, the ref's code runs as the runner's own user, and nothing printed
+// after that is out of its reach, the per-file results and the table included. `run`
+// validates again rather than trust a value carried between steps, which guards against an
+// accident and not against a commit that sets out to forge its result. The two trees are no
+// boundary either: they let a ref older than the workflow be tested, and keep an honest
+// branch from changing the runner by accident (docs/macos-test-runs.md).
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -568,6 +572,10 @@ function treeRefusal(tree, request, env) {
   return null;
 }
 
+// The boundary, said in the evidence itself. Only the first step's output is out of the ref's reach.
+const BEFORE_THE_REF = "Everything above this line was printed before any code of the ref ran.";
+const AFTER_THE_INSTALLS = "This header was read again after the ref's install scripts ran, and all that follows is printed while its code runs.\nThe header to rely on is the validation step's, printed before any code of the ref ran: the two should agree.";
+
 /** Step one: validate the request, put its commit in `tree`, print the header → the exit status. */
 export function prepare({ tree, repo = REPO_ROOT, env = process.env, write = (chunk) => process.stdout.write(chunk) }) {
   const request = validateRequest({ ref: env.MACOS_TESTS_REF, files: env.MACOS_TESTS_FILES }, repo, env);
@@ -577,7 +585,7 @@ export function prepare({ tree, repo = REPO_ROOT, env = process.env, write = (ch
   if (!added.ok) return refuse([{ entry: `commit ${request.commit}`, why: `could not be checked out: ${added.err}` }], { write, env });
   const wrong = treeRefusal(tree, request, env);
   if (wrong) return refuse([{ entry: `commit ${request.commit}`, why: wrong }], { write, env });
-  write(`${formatHeader(readFacts({ request, tree, repo, env })).join("\n")}\n\nThe request is valid. ${request.commit} is checked out at ${tree}; nothing of it has run yet.\n`);
+  write(`${formatHeader(readFacts({ request, tree, repo, env })).join("\n")}\n\nThe request is valid. ${request.commit} is checked out at ${tree}.\n${BEFORE_THE_REF}\n`);
   return 0;
 }
 
@@ -588,7 +596,7 @@ export async function run({ tree, repo = REPO_ROOT, env = process.env, write = (
   const wrong = treeRefusal(tree, request, env);
   if (wrong) return refuse([{ entry: `commit ${request.commit}`, why: wrong }], { write, env, nothing: NO_FILE });
   const facts = readFacts({ request, tree, repo, env });
-  write(`${formatHeader(facts).join("\n")}\n`);
+  write(`${formatHeader(facts).join("\n")}\n\n${AFTER_THE_INSTALLS}\n`);
   // Read once, before the first file: a socket that is there already is not a file's doing.
   const runs = await runFiles(request.files, { cwd: tree, env, write, timeoutMs, tmuxSocket: facts.tmuxSocket.there ? null : facts.tmuxSocket.path });
   const { ok, lines } = conclude(runs);

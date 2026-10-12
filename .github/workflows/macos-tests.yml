@@ -13,7 +13,10 @@
 #     the ref is checked out, installed or run. The bounds (files a run, time a file) are that
 #     script's constants, not inputs.
 #   * Two trees: `runner/` is this workflow's own commit, and the script runs from it; `tested/` is
-#     the ref. The validation and the verdict are never the tested branch's own code.
+#     the ref. So a ref older than the workflow can be tested, and an honest branch cannot change
+#     the runner by accident. The trees are no security boundary: from the first install step on,
+#     the ref's code runs as the runner's user. Only the validation step's output is printed
+#     before any of it has run.
 name: macOS tests
 
 on:

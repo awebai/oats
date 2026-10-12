@@ -117,4 +117,9 @@ test("macOS tests: the page that owns the workflow states its bounds as the scri
   for (const bound of [`at most ${MAX_FILES} files`, `${FILE_TIMEOUT_MS / 60_000} minutes`, `${JOB_TIMEOUT_MINUTES} minutes`, job["runs-on"]]) {
     assert.ok(page.includes(bound), `docs/macos-test-runs.md does not state: ${bound}`);
   }
+  // The page sends a reader to two steps of the log by name: the names are the workflow's.
+  for (const run of [`${SCRIPT} prepare tested`, `${SCRIPT} run tested`]) {
+    const { name } = steps.find((step) => step.run === run);
+    assert.ok(page.includes(`**${name}**`), `docs/macos-test-runs.md does not name the step: ${name}`);
+  }
 });

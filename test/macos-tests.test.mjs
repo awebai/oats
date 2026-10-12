@@ -423,11 +423,13 @@ test("macos-tests prepare, then run: the commit goes to a second tree, the heade
   assert.equal(git(tree, "rev-parse", "HEAD"), feature);
   assert.equal(git(tree, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD", "detached: no branch of the checkout moves");
   assert.equal(git(runner, "rev-parse", "HEAD"), fixture.main, "the script's own tree stays where it was");
-  for (const line of [`commit under test:   ${feature}`, 'ref asked for:       "feature/x" (a branch)', `script's commit:     ${fixture.main} (the workflow's)`, "tracked files that differ from the commit: none", `${feature} is checked out at ${tree}; nothing of it has run yet.`]) {
+  for (const line of [`commit under test:   ${feature}`, 'ref asked for:       "feature/x" (a branch)', `script's commit:     ${fixture.main} (the workflow's)`, "tracked files that differ from the commit: none", `${feature} is checked out at ${tree}.`]) {
     assert.ok(prepared.text().includes(line), `prepare did not print: ${line}\n${prepared.text()}`);
   }
   assert.match(prepared.text(), /file system:         case-(in)?sensitive \(measured/);
   assert.match(prepared.text(), /tmux default socket: .*no-tmux-here\/tmux-\d+\/oats" is not there/);
+  // The boundary is in the evidence itself: the first step's last line says what is above it.
+  assert.match(prepared.text(), /\nEverything above this line was printed before any code of the ref ran\.\n$/);
   assert.ok(!existsSync(marker), "prepare runs nothing of the ref");
   // A second prepare does not write over a tree that is there.
   assert.equal(prepare({ tree, repo: runner, env, write: collect().write }), 2);
@@ -437,6 +439,9 @@ test("macos-tests prepare, then run: the commit goes to a second tree, the heade
   assert.equal(readFileSync(marker, "utf8"), "ran\nran\n", "each file ran once");
   const text = out.text();
   assert.ok(text.indexOf(`commit under test:   ${feature}`) < text.indexOf("=== 1/2 test/only-feature.test.mjs: node --test test/only-feature.test.mjs ==="), "the header comes before the first file");
+  // The second step's header does not claim what only the first can: it was read after the installs.
+  assert.ok(!text.includes("Everything above this line"));
+  assert.match(text, /This header was read again after the ref's install scripts ran[^]*The header to rely on is the validation step's/);
   assert.match(text, /=== test\/only-feature\.test\.mjs: passed \(exit 0\); tests 1, passed 1, failed 0, skipped 0, cancelled 0, todo 0; exit 0; \d+\.\ds ===/);
   assert.match(text, /test\/a\.test\.mjs +passed +1 +1 +0 +0 +0 +0 +0 +\d+\.\ds\n\n2 files: 2 without a failure, 0 failed or timed out\.\nResult: passed\n$/);
   const page = readFileSync(summary, "utf8");
