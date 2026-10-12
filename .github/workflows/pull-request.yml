@@ -39,10 +39,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            packages/desktop/package-lock.json
 
       - name: Install supported-node dependencies
         run: npm ci
@@ -74,10 +70,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            packages/desktop/package-lock.json
 
       - name: Install supported-node dependencies
         run: npm ci
@@ -123,8 +115,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: packages/desktop/package-lock.json
 
       - name: Install desktop package dependencies only
         # The tests do not need the Electron binary; one that did would fail here, before a tag.
