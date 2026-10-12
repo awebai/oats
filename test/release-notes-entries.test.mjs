@@ -140,6 +140,50 @@ test("checkEntry reads headings outside fenced code only", () => {
   assert.deepEqual(checkEntry("a.md", "## Added\n\n  ## Fixed\n"), []);
 });
 
+test("a file with CRLF line endings is read like any other, and none of its lines is rewritten", (t) => {
+  const crlf = (text) => text.replaceAll("\n", "\r\n");
+  // The fence is seen: a heading in it is text, and one that is never closed is a problem.
+  const shown = crlf("## Added\n\n```markdown\n## Fixed\n# A title\nExample\n```\n");
+  assert.deepEqual(checkEntry("a.md", shown), []);
+  assert.deepEqual(checkEntry("a.md", crlf("## Added\n\n~~~\n```\n## Shown\n~~~\n\n## Fixed  \n- f\n")), []);
+  assert.deepEqual(checkEntry("a.md", crlf("## Added\n\n```markdown\nExample\n")), ["line 3: the fenced block is never closed"]);
+  assert.deepEqual(checkNotes(crlf("## Added\n\n```markdown\nExample\n")), ["line 3: the fenced block is never closed"]);
+  assert.deepEqual(checkNotes(crlf("## Added\n\n```\n## Added\n```\n\n## Fixed\n")), [], "a fenced heading of a CRLF notes file is text");
+  assert.match(checkNotes(crlf("## Added\n\n- a\n\n## Added\n")).join("\n"), /^"## Added" appears 2 times/);
+  assert.match(checkEntry("a.md", crlf("## Added\n\n- x\n\n## News\n\n- y\n")).join("\n"), /^line 5: "## News" is not a section/);
+
+  // A CRLF entry into an LF notes file: its fenced text moves whole, byte for byte, and the
+  // heading it shows makes no section and takes nothing from the one of that name.
+  const notes = "# OATS 1.2.3\n\n## Added\n\n- old added\n\n## Fixed\n\n- old fixed\n";
+  const moved = "# OATS 1.2.3\n\n## Added\n\n- old added\n\n```markdown\r\n## Fixed\r\n# A title\r\nExample\r\n```\r\n\n## Fixed\n\n- old fixed\n";
+  const result = assembleNotes(notes, [{ name: "1-example.md", text: shown }], { version: "1.2.3" });
+  assert.equal(result.text, moved);
+  assert.deepEqual(result.sections, [{ name: "Added", created: false, files: ["1-example.md"] }]);
+  // An LF entry into a CRLF notes file: a fenced heading of the notes file is text, the body
+  // goes to the section, and every line the file had keeps its ending.
+  const windows = crlf("# OATS 1.2.3\n\n## Fixed\n\n```\n## Added\n```\n\n## Added\n\n- old added\n");
+  assert.equal(assembleNotes(windows, [{ name: "1-a.md", text: "## Added\n\n- new\n" }], { version: "1.2.3" }).text, `${windows}\n- new\n`);
+
+  // Through the command: the same text on disk, and the entry file is removed only then.
+  const root = fixture(t, { "v1.2.3.md": notes, "next/1-example.md": shown });
+  const r = command(["--tag", "v1.2.3", "--root", root]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^ {2}## Added: 1-example\.md$/m);
+  assert.doesNotMatch(r.stdout, /## Fixed/, "the fenced heading is no destination");
+  assert.equal(readFileSync(notesFile(root, "v1.2.3"), "utf8"), moved);
+  assert.deepEqual(tree(root), ["v1.2.3.md"]);
+  // An unclosed CRLF fence, in the entry or in the notes file, refuses the run.
+  for (const files of [{ "v1.2.3.md": notes, "next/1-a.md": crlf("## Added\n\n```\nopen\n") }, { "v1.2.3.md": crlf("## Added\n\n```\nopen\n"), "next/1-a.md": "## Added\n\n- new\n" }]) {
+    const refusedRoot = fixture(t, files);
+    const before = tree(refusedRoot);
+    const refused = command(["--tag", "v1.2.3", "--root", refusedRoot]);
+    assert.equal(refused.status, 2, refused.stdout);
+    assert.match(refused.stderr, /line 3: the fenced block is never closed/);
+    assert.deepEqual(tree(refusedRoot), before);
+    for (const [file, text] of Object.entries(files)) assert.equal(readFileSync(join(refusedRoot, "docs", "release-notes", file), "utf8"), text);
+  }
+});
+
 test("checkNotes refuses a notes file whose sections cannot be told apart", () => {
   assert.deepEqual(checkNotes("# OATS 1.2.3\n\nUnreleased\n\n## A highlight\n\n## A highlight\n\n## Added\n\n- x\n"), [], "a hand-written heading may repeat");
   assert.deepEqual(checkNotes("## Added\n\n```\n## Added\n```\n"), [], "a fenced heading is text");

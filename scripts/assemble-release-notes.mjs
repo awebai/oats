@@ -89,7 +89,9 @@ function trimBlank(lines) {
 function scan(lines) {
   let fence = null;
   const rows = lines.map((line, index) => {
-    const mark = /^[ \t]*(`{3,}|~{3,})(.*)$/.exec(line);
+    // `[^]*`, not `.*`: a line of a CRLF file still ends in its carriage return (no line is
+    // rewritten), which `.` does not match. After a closing run it counts as nothing, like a space.
+    const mark = /^[ \t]*(`{3,}|~{3,})([^]*)$/.exec(line);
     if (fence) {
       if (mark && mark[1][0] === fence.char && mark[1].length >= fence.length && blank(mark[2])) fence = null;
       return { line, fenced: true };
