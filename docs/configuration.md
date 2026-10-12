@@ -434,6 +434,36 @@ souls:
   (`E_LAUNCH_CONFIG_AMBIGUOUS`). A preference without `model` uses the
   harness default's model, else the harness's own; it never borrows a lower
   layer's.
+- **A key that names no soul refuses the launches it might have pinned**
+  (0.53). While `souls.launch` holds a key, other than `"*"`, that is the key
+  of no soul the workspace offers, a new launch that names no launch, of a
+  soul with no entry of its own, is refused
+  (`E_LAUNCH_PREFERENCE_UNMATCHED`). `souls.launch."*"`, the soul's `launch:`
+  or the host default would have decided that launch, and the kernel cannot
+  tell which soul the key was meant to pin. Before 0.53 the key was never
+  read, and the soul it was written for ran on the fall-through.
+  - **Refused:** `oats spawn`, preview and apply, and `oats session
+    start|restart --reselect-launch`, before anything is created, stopped or
+    started. `--model` alone names no launch.
+  - **Goes on:** a soul with its own entry; a launch named with
+    `--launch-config` or `--harness`; a plain start or restart of an
+    existing home, which selects nothing again.
+  - **The remedy, in this order:** pin the soul the key was meant for (`oats
+    soul launch set <soul> --launch-config <name>`, or `--harness <h>`),
+    then remove the key (`oats soul launch remove <key>`). Removing first
+    ends the refusal and leaves that soul on the fall-through. The refusal
+    names the keys and, for each, the nearest soul keys.
+  - **Where it shows:** `oats souls` and `oats inspect --soul` carry it on
+    each soul a spawn would refuse and list each such key; `oats doctor`
+    lists each key with the command that removes it, from this machine's
+    last read of the souls.
+  - **A key the kernel could not check refuses nothing:** a bare key while a
+    member is not confirmed or a member's or an external soul failed to
+    read, a `<package>/…` key while that package is declared and not locked
+    or one of its souls failed to read, and every key in the standalone view
+    of a workspace whose host cannot be read. `oats doctor` says so
+    (`launch-preference-unchecked`). The key of a soul listed in
+    `souls.disabled` matches that soul. `"*"` is never reported.
 - **A missing harness is refused**, never replaced: `E_HARNESS_UNAVAILABLE`
   names the layer that chose it and the fix (install the harness, or override
   it here in `souls.launch`). `oats souls` still lists the soul, with the
