@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
-import { PI_BRIDGE, bridgeLookup, bridgeLookupProblem, launchConfigPiFolder, piBridgeFailure, piBridgeFolders, piBridgeSkewWarnings, piBridgeState, piBridgeStepProblem, piFolders, planCliUpdate, planPiBridges, piBridgePlanLines, registryVersion, whyLookedAt } from "../lib/pi-bridge.mjs";
+import { PI_BRIDGE, bridgeLookup, bridgeLookupProblem, kernelLookup, kernelLookupResult, launchConfigPiFolder, piBridgeFailure, piBridgeFolders, piBridgeSkewWarnings, piBridgeState, piBridgeStepProblem, piFolders, planCliUpdate, planPiBridges, piBridgePlanLines, registryVersion, whyLookedAt } from "../lib/pi-bridge.mjs";
 import { compareVersions, parseVersion } from "../lib/resolve.mjs";
 
 const bases = [];
@@ -237,6 +237,7 @@ test("#1011 the ordering the forward-only rule rests on (compareVersions, resolv
   assert.equal(order("0.53.0", "0.52.9"), 1);
   assert.equal(order("0.9.0", "0.10.0"), -1, "numbers, not text");
   assert.equal(order("0.53.0", "0.53.0"), 0);
+  assert.equal(order("0.53.0+build.1", "0.53.0"), 0, "build metadata orders nothing");
 });
 
 test("#1011 planPiBridges: a bridge ahead of the target is left alone and said to be ahead; one behind is moved", () => {
@@ -250,6 +251,8 @@ test("#1011 planPiBridges: a bridge ahead of the target is left alone and said t
   assert.equal(planFor("0.53.0-rc.1").detail, "bridge 0.53.0-rc.1: move to 0.53.0");
   assert.equal(planFor("0.52.0").detail, "bridge 0.52.0: move to 0.53.0");
   assert.equal(planFor("0.53.0").ahead, undefined, "at the target: left alone, and not ahead");
+  // The same version under another spelling (a local build of the kernel): at the target, never moved to it.
+  assert.deepEqual([planFor("0.53.0", "0.53.0+build.1").action, planFor("0.53.0", "0.53.0+build.1").detail], ["leave", "bridge 0.53.0: left alone, already at 0.53.0+build.1"]);
   // Ahead, in a folder only a wrapped configuration names: left alone, and no command to run there.
   const boxed = h.bridge(join(h.base, "boxed"), "0.54.0");
   const wrapped = planPiBridges(piBridgeFolders({ env: h.env, launchConfigs: configs(pi("boxed", { PI_CODING_AGENT_DIR: boxed }, { executable: "/opt/pi-box" })) }), "0.53.0", { env: h.env })[1];
@@ -308,6 +311,30 @@ test("#1011 planCliUpdate: the CLI moves forward only, and the bridges' target i
   assert.deepEqual(planCliUpdate("0.53.0-rc.2", "0.53.0-rc.1").ahead, true);
   assert.deepEqual(planCliUpdate("0.53.0-rc.1", "0.53.0-rc.2").step, step("0.53.0-rc.2"));
   assert.equal(planCliUpdate("0.9.0", "0.10.0").target, "0.10.0", "compared as numbers");
+  // A local build of the version the registry lists: the same version, so no step, and the bridges' target stays the installed kernel's.
+  assert.deepEqual(planCliUpdate("0.53.0+build.1", "0.53.0"), { installed: "0.53.0+build.1", registry: "0.53.0", target: "0.53.0+build.1", ahead: false });
+  assert.deepEqual(planCliUpdate("0.53.0+build.1", "0.54.0").step, step("0.54.0"));
+  assert.equal(planCliUpdate("0.53.0+build.1", "0.52.0").ahead, true);
+  // An installed version that cannot be compared is another version: the step, as before.
+  assert.deepEqual(planCliUpdate("banana", "0.53.0").step, step("0.53.0"));
+});
+
+test("#1011 kernelLookupResult: the version, or the message that stops the update; nothing npm printed is in it as it came, from either stream", () => {
+  assert.deepEqual(kernelLookup(), ["npm", "view", "@awebai/oats", "version"]);
+  assert.deepEqual(kernelLookupResult({ status: 0, stdout: "0.53.0\n", stderr: "" }), { version: "0.53.0" });
+  // A lookup that ended well: its error output (a notice, a warning) is dropped, whatever it holds.
+  assert.deepEqual(kernelLookupResult({ status: 0, stdout: "0.53.0\n", stderr: "\u001b[2Jnpm notice\n" }), { version: "0.53.0" });
+  assert.deepEqual(kernelLookupResult({ status: 0, stdout: "not a version\n", stderr: "\u001b[2Juntrusted\n" }),
+    { problem: '`npm view @awebai/oats version` answered "not a version", which is not a version. Nothing was changed. Run `oats update` again.' });
+  // A failed lookup: how it ended, then what npm said, bounded and safe to print.
+  assert.deepEqual(kernelLookupResult({ status: 17, stdout: "", stderr: "" }), { problem: "cannot check npm for the latest version: exit 17" });
+  assert.deepEqual(kernelLookupResult({ status: 1, stdout: "0.53.0\n", stderr: "npm error code E404\n\u001b[31mnpm error 404\u001b[0m\u009b\u202e\n" }),
+    { problem: 'cannot check npm for the latest version: exit 1: "npm error code E404\\n\\u001b[31mnpm error 404\\u001b[0m\uFFFD\uFFFD"' });
+  const long = kernelLookupResult({ status: 1, stdout: "", stderr: "x".repeat(100_000) }).problem;
+  assert.equal([...long].length, "cannot check npm for the latest version: exit 1: ".length + 300);
+  assert.ok(long.endsWith("…"));
+  assert.deepEqual(kernelLookupResult({ error: new Error("spawnSync npm ENOENT"), status: null, stdout: "", stderr: "" }), { problem: "cannot check npm for the latest version: spawnSync npm ENOENT" });
+  assert.deepEqual(kernelLookupResult({ status: null, signal: "SIGKILL", stdout: "0.53.0\n", stderr: "" }), { problem: "cannot check npm for the latest version: exit SIGKILL" });
 });
 
 test("#1011 bridgeLookupProblem: seen is exit 0 and the checked answer equal to the target; anything else stops the update", () => {
@@ -376,6 +403,7 @@ test("#1011 piBridgeSkewWarnings: a bridge ahead of the kernel is still a skew, 
   assert.deepEqual(warned("0.52.0", "0.53.0"), [behind("0.52.0", "0.53.0")]);
   assert.deepEqual(warned("banana", "0.53.0"), [behind("banana", "0.53.0")], "a version that cannot be compared is not ahead");
   assert.deepEqual(warned("0.53.0", "0.53.0"), []);
+  assert.deepEqual(warned("0.53.0", "0.53.0+build.1"), [], "a local build of the bridge's version is that version: no skew `oats update` would leave in place");
 });
 
 test("piBridgeStepProblem and piBridgeFailure: what the folder holds is read from it after the step", () => {

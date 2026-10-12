@@ -38,7 +38,7 @@ import {
   writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { harnessTrust } from "../lib/harness-trust-write.mjs";
-import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, registryVersion, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
+import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { launchLayers } from "../lib/launch-preference.mjs";
@@ -3851,13 +3851,11 @@ function updateCmd() {
   }
   const end = (text) => { console.log(text); if (notLookedAt) console.log(`\n${notLookedAt}`); };
   const fail = (text) => die(notLookedAt ? `${text}\n${notLookedAt}` : text);
-  let answered;
-  try { answered = execFileSync("npm", ["view", "@awebai/oats", "version"], { encoding: "utf8", timeout: 30000 }); }
-  catch (e) { fail(`cannot check npm for the latest version: ${e.message}`); }
   // What npm printed is checked to be one version before it reaches a step, an argument or the
-  // screen (awebai/oats#1011).
-  const { version: latest, problem: notAVersion } = registryVersion(answered, "npm view @awebai/oats version");
-  if (notAVersion) fail(`${notAVersion}. Nothing was changed. Run \`oats update\` again.`);
+  // screen (awebai/oats#1011). Both streams are captured: spawnSync forwards neither.
+  const asked = kernelLookup();
+  const { version: latest, problem: notChecked } = kernelLookupResult(spawnSync(asked[0], asked.slice(1), { encoding: "utf8", timeout: 30000 }));
+  if (notChecked) fail(notChecked);
   console.log(`@awebai/oats  installed: ${OATS_VERSION}  latest: ${latest}`);
   // Forward only: the CLI moves to a newer version of the registry, never back to an older one.
   // `target` is the version the kernel has after the run, which the bridges are brought to.

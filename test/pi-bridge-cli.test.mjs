@@ -12,18 +12,19 @@ const KERNEL = JSON.parse(readFileSync(new URL("../package.json", import.meta.ur
 const NEXT = "99.0.0", OLD = "0.40.0";
 const SPEC = `npm:@awebai/oats-pi@${NEXT}`;
 
-/** `npm`: `view @awebai/oats version` answers $FAKE_LATEST, byte for byte and a line ending (exits
- *  17 when $FAKE_VIEW_FAILS is set); `view @awebai/oats-pi@X version` answers X, or
- *  $FAKE_BRIDGE_ANSWER when it is set, or fails as npm 11 does when $FAKE_BRIDGE_UNLISTED is set
- *  (prints nothing and exits 0, as an older npm does, when it is "quiet"); `install -g` exits
+/** `npm`: `view @awebai/oats version` prints $FAKE_VIEW_STDERR to its error output when it is set,
+ *  then answers $FAKE_LATEST, byte for byte and a line ending (exits 17 when $FAKE_VIEW_FAILS is
+ *  set); `view @awebai/oats-pi@X version` answers X, or
+ *  $FAKE_BRIDGE_ANSWER when it is set, or fails as npm 11 does when $FAKE_BRIDGE_UNLISTED is set,
+ *  with a coloured error (prints nothing and exits 0, as an older npm does, when it is "quiet"); `install -g` exits
  *  $FAKE_NPM_INSTALL (0). Every call is logged. */
 const FAKE_NPM = `#!/bin/sh
 echo "npm $*" >> "$FAKE_LOG"
 case "$1 $2" in
-  "view @awebai/oats") if [ -n "$FAKE_VIEW_FAILS" ]; then exit 17; fi; printf '%s\\n' "$FAKE_LATEST"; exit 0 ;;
+  "view @awebai/oats") if [ -n "$FAKE_VIEW_STDERR" ]; then printf '%s\\n' "$FAKE_VIEW_STDERR" >&2; fi; if [ -n "$FAKE_VIEW_FAILS" ]; then exit 17; fi; printf '%s\\n' "$FAKE_LATEST"; exit 0 ;;
   "view @awebai/oats-pi@"*)
     if [ "$FAKE_BRIDGE_UNLISTED" = quiet ]; then exit 0; fi
-    if [ -n "$FAKE_BRIDGE_UNLISTED" ]; then echo "npm error code E404" >&2; exit 1; fi
+    if [ -n "$FAKE_BRIDGE_UNLISTED" ]; then printf '\\033[31mnpm error code E404\\033[0m\\n' >&2; exit 1; fi
     if [ -n "$FAKE_BRIDGE_ANSWER" ]; then printf '%s\\n' "$FAKE_BRIDGE_ANSWER"; exit 0; fi
     echo "\${2##*@}"; exit 0 ;;
   "install -g") exit "\${FAKE_NPM_INSTALL:-0}" ;;
@@ -246,6 +247,7 @@ test("#852 oats update --yes: the bridge's version does not resolve on the regis
     const r = fx.run(["update", "--yes"], { env: { FAKE_BRIDGE_UNLISTED: unlisted } });
     assert.equal(r.status, 1, unlisted);
     assert.ok(r.stderr.includes(`oats: @awebai/oats-pi@${NEXT} was not seen on the registry (npm view: ${answer}): a version is listed a few minutes after it is published. Nothing was changed, and every bridge is in place. Run \`oats update\` again in a few minutes.`), r.stderr);
+    assert.ok(!r.stderr.includes("\u001b"), "npm's own error output of the lookup is not sent to the terminal");
     // Not the CLI's own install either: no kernel ahead of its bridges.
     assert.deepEqual(r.calls, [VIEW_KERNEL, VIEW_BRIDGE], unlisted);
     assert.deepEqual([fx.defaultDir, fx.at("behind dir"), fx.at("boxed")].map(bridgeIn), [OLD, OLD, OLD]);
@@ -340,7 +342,7 @@ test("#991 oats update with no deployment in reach: the default folder and this 
   // And when npm cannot say what the latest version is: nothing was looked at at all.
   const early = fx.run(["update", "--check"], { cwd: fx.base, env: { FAKE_VIEW_FAILS: "1" } });
   assert.equal(early.status, 1);
-  assert.match(early.stderr, /^oats: cannot check npm for the latest version: /);
+  assert.match(early.stderr, /^oats: cannot check npm for the latest version: exit 17\n/);
   assert.equal(lastLine(early.stderr), none);
   assert.equal(early.stdout, "");
 });
@@ -510,6 +512,32 @@ test("#1011 oats update: an answer of the registry that is not one version stops
   const outside = fx.run(["update", "--yes"], { cwd: fx.base, env: { FAKE_LATEST: "latest" } });
   assert.equal(outside.status, 1);
   assert.match(outside.stderr, /^oats: `npm view @awebai\/oats version` answered "latest", which is not a version\. Nothing was changed\. Run `oats update` again\.\nNo launch configuration was looked at: /);
+});
+
+test("#1011 oats update: what npm prints to its error output during the lookup never reaches the terminal as it came", (t) => {
+  const fx = everyKind(t);
+  const noise = `\u001b[2Juntrusted \u009b31m${"x".repeat(5000)}`;
+  // The lookup ends well: its error output is dropped, and the plan is the plan.
+  const fine = fx.run(["update", "--check"], { env: { FAKE_VIEW_STDERR: noise } });
+  assert.equal(fine.status, 0, fine.stderr);
+  assert.equal(fine.stderr, "");
+  assert.equal(fine.stdout, fx.run(["update", "--check"]).stdout);
+  for (const mode of ["--yes", "--check"]) {
+    // It ends well with an answer that is not a version: the refusal alone.
+    const refused = fx.run(["update", mode], { env: { FAKE_VIEW_STDERR: noise, FAKE_LATEST: "not a version" } });
+    assert.equal(refused.status, 1);
+    assert.equal(refused.stderr, "oats: `npm view @awebai/oats version` answered \"not a version\", which is not a version. Nothing was changed. Run `oats update` again.\n");
+    // It fails: how it ended, then what npm said, bounded, with its control characters shown or replaced.
+    const failed = fx.run(["update", mode], { env: { FAKE_VIEW_STDERR: noise, FAKE_VIEW_FAILS: "1" } });
+    assert.equal(failed.status, 1);
+    assert.equal(failed.stderr, `oats: cannot check npm for the latest version: exit 17: "\\u001b[2Juntrusted \uFFFD31m${"x".repeat(300 - 1 - '"\\u001b[2Juntrusted \uFFFD31m'.length)}…\n`);
+    for (const r of [refused, failed]) {
+      assert.equal(r.stdout, "");
+      assert.ok(!/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/.test(r.stderr), "no control character but the line ending");
+      assert.deepEqual(r.calls, [VIEW_KERNEL], "no lookup of the bridge, no install");
+    }
+  }
+  assert.deepEqual([fx.defaultDir, fx.at("behind dir"), fx.at("boxed")].map(bridgeIn), [OLD, OLD, OLD]);
 });
 
 test("#1011 oats update --yes: the bridge's own lookup answers something that is not one version: nothing is run, and the message names that lookup", (t) => {

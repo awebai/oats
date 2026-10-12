@@ -55,7 +55,9 @@ older bridge than the one in place:
   bridge ahead of that version is left alone.
 
 Versions are compared as semver, so a prerelease is below its release:
-`0.53.0-rc.1` is ahead of `0.52.0` and behind `0.53.0`.
+`0.53.0-rc.1` is ahead of `0.52.0` and behind `0.53.0`. Build metadata makes
+no other version: a local build `0.53.0+build.1` is `0.53.0`, and nothing is
+installed over it.
 
 ## Which pi folders
 
@@ -158,6 +160,10 @@ one line. Any other answer (nothing, several lines, a list, text around the
 version) stops the update before any step, with nothing changed. The message
 names the lookup and shows the answer cut to 80 characters, with its control
 characters shown as escapes or replaced. Run `oats update` again.
+
+npm's own error output of a lookup is not passed to your terminal either.
+When the first lookup fails, the message says how it ended (`exit 1`) and
+then what npm said, cut to 300 characters and made safe the same way.
 
 The update stops at the first step that fails. Its message names the folder
 and the exact step to run again, says what that folder holds now (the old
