@@ -361,6 +361,31 @@ test("#1011 bridgeLookupProblem: seen is exit 0 and the checked answer equal to 
   assert.match(bridgeLookupProblem({ status: 0, stdout: "" }, ahead), /\(npm view: no answer\): the installed kernel 0\.53\.0 is ahead of the registry's 0\.52\.0/);
 });
 
+test("#1011 a local build of the version the registry lists, with a bridge behind: the bridge moves, npm's `0.53.0` is the version asked for, and the folder at `0.53.0` is the step done", () => {
+  const h = host();
+  h.bridge(h.defaultDir, "0.52.0");
+  const cli = planCliUpdate("0.53.0+build.1", "0.53.0");
+  assert.deepEqual([cli.step, cli.target], [undefined, "0.53.0+build.1"]);
+  const entry = planPiBridges(piBridgeFolders({ env: h.env }), cli.target, { env: h.env })[0];
+  assert.deepEqual([entry.action, entry.detail, entry.step.argv], ["move", "bridge 0.52.0: move to 0.53.0+build.1", ["pi", "install", "npm:@awebai/oats-pi@0.53.0+build.1"]]);
+  // npm resolves the build's spec to the version it lists, and prints that one.
+  assert.deepEqual(bridgeLookup(cli.target), ["npm", "view", "@awebai/oats-pi@0.53.0+build.1", "version", "--prefer-online"]);
+  assert.equal(bridgeLookupProblem({ status: 0, stdout: "0.53.0\n" }, cli), null);
+  // Still the checked value, and still exit 0: another version, a bad answer and a failed run are not "seen".
+  assert.match(bridgeLookupProblem({ status: 0, stdout: "0.52.0\n" }, cli), /^@awebai\/oats-pi@0\.53\.0\+build\.1 was not seen on the registry \(npm view: it answered 0\.52\.0\)/);
+  assert.match(bridgeLookupProblem({ status: 0, stdout: "0.53.0-rc.1\n" }, cli), /\(npm view: it answered 0\.53\.0-rc\.1\)/);
+  assert.match(bridgeLookupProblem({ status: 0, stdout: "0.53.0+build.1\n" }, cli), /answered "0\.53\.0\+build\.1", which is not a version\./);
+  assert.match(bridgeLookupProblem({ status: 1, stdout: "0.53.0\n" }, cli), /\(npm view: exit 1\)/);
+  // After the step: pi wrote the published version, which is the target's.
+  assert.equal(piBridgeStepProblem(entry, cli.target, null), "pi ended without an error, but the bridge there is not 0.53.0+build.1", "the bridge is still 0.52.0");
+  h.bridge(h.defaultDir, "0.53.0");
+  assert.equal(piBridgeStepProblem(entry, cli.target, null), null);
+  assert.equal(piBridgeStepProblem(entry, cli.target, "exit 1"), "exit 1");
+  // And the next run finds nothing to do there, as doctor finds no skew.
+  assert.equal(planPiBridges(piBridgeFolders({ env: h.env }), cli.target, { env: h.env })[0].action, "leave");
+  assert.deepEqual(piBridgeSkewWarnings(piBridgeFolders({ env: h.env }), cli.target), []);
+});
+
 test("piBridgePlanLines: the folder and why, what happens there, and the command where update does not run it", () => {
   const h = host();
   const at = (name) => join(h.base, name);
