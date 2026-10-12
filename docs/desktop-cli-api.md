@@ -3882,7 +3882,14 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   (#962). It is `false` for a directory instance; for an attached, a
   checkout or a workspace instance, whatever the tree its link leads to is
   on; for a real directory that is not the instance's own tree (#962) and
-  for a link (#973), under a record that says `worktree` too. Neither
+  for a link (#973), under a record that says `worktree` too. It is the
+  reading's answer and not a promise that the retire completes: it is
+  `true` for a file (or any entry that is neither a link nor a directory)
+  at `work/` under a record that says `worktree`, and `false` for one under
+  any other record; and it is `true` for a work directory whose Git admin
+  entry is missing when the spawn's receipt says that a tree was given,
+  whatever the record says but `directory`. No retire removes such an
+  entry: it is kept with the home until a person moves it (#1019). Neither
   `facts.workMode` (the record's value, which the instance can write) nor
   `facts.work` (an observation, through any link) says whose tree it is:
   read this key for that. Gate on the probe: from a kernel that lists the
@@ -3909,10 +3916,13 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   plan's text (`oats retire <instance>
   --plan` without `--json`) prints `retain worktree true` in its `defaults:`
   line for the instance's own tree only; for the other homes the line says
-  the above (0.53.0, #959). For a record with no work mode it says `work
-  mode not recorded`, and for one whose work mode the kernel does not know,
-  `work mode not known to this kernel`: the value is never printed, and
-  `facts.workMode` holds it. The text does not print the fact.
+  the above (0.53.0, #959). When the reading of `work/` establishes
+  neither an own tree nor a directory of the home, the line says `work mode
+  not recorded` for a record with no work mode, and `work mode not known to
+  this kernel` for one whose work mode the kernel does not know: the value
+  is never printed, and `facts.workMode` holds it. (An own tree under such
+  a record prints `retain worktree true`, and a directory of the home its
+  own sentence.) The text does not print the fact.
 - What `work/` is comes from one reading, which the plan and the retire
   share (0.53.0, #962). It is **the instance's own tree** when the spawn's
   receipt says the instance was given one; for a home without a valid
