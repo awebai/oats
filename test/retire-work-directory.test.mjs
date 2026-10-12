@@ -37,6 +37,9 @@ function entries(dir, out = new Map(), root = dir) {
  *  checkout, so Git answers for every plain directory under it. */
 function deployment(t, { checkout = false } = {}) {
   const fx = v2Deployment({ souls: SOULS, t });
+  // An in-process spawn looks for the harness's executable on this process's PATH, with
+  // `launch: false` too: the fixture's PATH has the inert harnesses, a bare runner's has none.
+  const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
   const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { encoding: "utf8", env: fx.env, stdio: ["ignore", "pipe", "pipe"] }).trim();
   if (checkout) { execFileSync("git", ["init", "-q", fx.dep], { env: fx.env }); git(fx.dep, "commit", "--allow-empty", "-qm", "the deployment is a checkout"); }
   const envelope = (r) => { try { return r.json(); } catch { assert.fail(`no envelope: ${r.stdout}${r.stderr}`); } };
