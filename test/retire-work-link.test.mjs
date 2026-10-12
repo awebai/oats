@@ -46,11 +46,13 @@ function entries(dir, out = new Map(), root = dir) {
  *  that a workspace instance's link leads to a repository too. Soul `hooked` has a retire hook that
  *  does nothing until a case asks: with `<flags>/stubborn` it reports incomplete cleanup, and with
  *  `<flags>/swap` (`{home, kind}`) it puts a real directory, or a file, where that home's `work/`
- *  link was. Souls `hooked-chk` and `hooked-wsp` have the same hook in checkout and workspace mode. */
+ *  link was. Each run of the hook is a line in `<flags>/ran` (`hookRuns()`). Souls `hooked-chk` and
+ *  `hooked-wsp` have the same hook in checkout and workspace mode. */
 function deployment(t) {
   const flags = mkdtempSync(join(tmpdir(), "oats-link-flags-")); t.after(() => rmSync(flags, { recursive: true, force: true }));
-  const hook = `import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+  const hook = `import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+appendFileSync(${JSON.stringify(join(flags, "ran"))}, "ran\\n");
 const swap = ${JSON.stringify(join(flags, "swap"))};
 if (existsSync(swap)) {
   const { home, kind } = JSON.parse(readFileSync(swap, "utf8"));
@@ -130,7 +132,8 @@ console.log(JSON.stringify({ meta: existsSync(${JSON.stringify(join(flags, "stub
     chmodSync(join(bin, "git"), 0o755);
     return { env: { PATH: `${bin}:${fx.env.PATH}` }, launches: () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : []) };
   };
-  return { fx, flags, git, plan, retire, retired, refused, instanceGit, record, attached, sayWorktree, gitState, loggedGit };
+  const hookRuns = () => (existsSync(join(flags, "ran")) ? readFileSync(join(flags, "ran"), "utf8").split("\n").filter(Boolean).length : 0);
+  return { fx, flags, git, plan, retire, retired, refused, instanceGit, record, attached, sayWorktree, gitState, loggedGit, hookRuns };
 }
 
 /** What a plan says of a link under a record that says `worktree`. */
@@ -324,6 +327,26 @@ function swappedDuringRetire(d, inst, kind, label) {
   assert.equal(readFileSync(kind === "file" ? join(inst.home, "work") : join(inst.home, "work", FILE), "utf8"), BYTES, `${label}: the home and what is there now are kept`);
 }
 
+/** The next retire of a home whose work/ is a directory or a file read as a worktree's without its
+ *  Git admin entry: its hooks run, and the entry and the home are kept as an incomplete item, with
+ *  --discard-worktree as without it; --force refuses before anything runs. */
+function keptWithoutAdminEntry(d, inst, held, item, label) {
+  for (const flags of [[], ["--discard-worktree"]]) {
+    const ranBefore = d.hookRuns();
+    const kept = d.retire(inst.instance, flags);
+    assert.equal(kept.status, 1, `${label} ${flags.join(" ")}: ${JSON.stringify(kept)}`);
+    assert.deepEqual(kept.result.rollbackIncomplete, [item], label);
+    assert.equal(kept.result.removedDir, false, label);
+    assert.equal(d.hookRuns(), ranBefore + 1, `${label} ${flags.join(" ")}: the retire hook ran`);
+    assert.equal(held(), BYTES, label);
+  }
+  const ranBefore = d.hookRuns();
+  const forced = d.refused(inst.instance, ["--force"], "E_WORK_PRESERVATION_FAILED");
+  assert.match(forced.message, /has no git admin entry in .*move it out or delete it by hand, then retire again; nothing was run or removed$/, label);
+  assert.equal(d.hookRuns(), ranBefore, `${label} --force: no retire hook ran`);
+  assert.equal(held(), BYTES, label);
+}
+
 test("a link that became a directory during the retire keeps the home and says how it ends; for a home that was given a link, the next retire copies the directory and removes it with the home (#973)", async (t) => {
   const d = deployment(t);
   const owner = await d.fx.spawn("dev", { instance: "dev-owner" });
@@ -349,7 +372,7 @@ test("a link that became a directory during the retire keeps the home and says h
   assert.equal(lstatSync(join(owner.home, "work")).isDirectory(), true);
 });
 
-test("what replaced the link under a worktree's receipt and record, and a file in any home, are kept by the next retire until a person moves them: it says so, --force included, and completes after that (#973)", async (t) => {
+test("what replaced the link is read by the next retire as the record and the spawn's receipt say then: a directory or a file without its admin entry under a worktree record, and a file under another record, are kept until a person moves them; the retire says so, --force included, and completes after that (#973)", async (t) => {
   const d = deployment(t);
   const owner = await d.fx.spawn("dev", { instance: "dev-owner" });
   // A home that was given a worktree, whose tree was moved away and linked: what replaces the link is
@@ -364,16 +387,7 @@ test("what replaced the link under a worktree's receipt and record, and a file i
     swappedDuringRetire(d, inst, kind, label);
     const held = () => readFileSync(kind === "file" ? work : join(work, FILE), "utf8");
     const ITEM = `git worktree ${work}: its admin entry is missing; the directory is kept — move it out or delete it by hand, then retire again`;
-    for (const flags of [[], ["--discard-worktree"]]) {
-      const kept = d.retire(inst.instance, flags);
-      assert.equal(kept.status, 1, `${label} ${flags.join(" ")}: ${JSON.stringify(kept)}`);
-      assert.deepEqual(kept.result.rollbackIncomplete, [ITEM], label);
-      assert.equal(kept.result.removedDir, false, label);
-      assert.equal(held(), BYTES, label);
-    }
-    const forced = d.refused(inst.instance, ["--force"], "E_WORK_PRESERVATION_FAILED");
-    assert.match(forced.message, /has no git admin entry in .*move it out or delete it by hand, then retire again; nothing was run or removed$/, label);
-    assert.equal(held(), BYTES, label);
+    keptWithoutAdminEntry(d, inst, held, ITEM, label);
     // A person moves it out: the retire then completes.
     rmSync(work, { recursive: true });
     const done = d.retired(inst.instance);
@@ -382,19 +396,35 @@ test("what replaced the link under a worktree's receipt and record, and a file i
     assert.equal(existsSync(inst.home), false, label);
     assert.deepEqual({ git: d.gitState(away), files: entries(away) }, before, `${label}: the tree that was moved away is as it was`);
   }
-  // A home that was given a link, with a file there now: read as a worktree, and its inspection refuses.
+  // A home that was given a link whose record says worktree, with a file there now: the record
+  // decides for an entry that is neither a link nor a directory, whatever the receipt says. The
+  // same work directory without its admin entry: the hooks run, and it is kept.
+  const misrecorded = d.attached(owner, "swap-fw", "hooked");
+  d.sayWorktree(misrecorded.home, join(owner.home, "work"));
+  swappedDuringRetire(d, misrecorded, "file", "an attached instance whose record says worktree, a file there now");
+  const file = join(misrecorded.home, "work");
+  keptWithoutAdminEntry(d, misrecorded, () => readFileSync(file, "utf8"), `git worktree ${file}: its admin entry is missing; the directory is kept — move it out or delete it by hand, then retire again`, "an attached instance whose record says worktree, a file there now");
+  rmSync(file);
+  const cleared = d.retired(misrecorded.instance);
+  assert.equal(cleared.removedDir, true);
+  assert.equal(existsSync(misrecorded.home), false);
+  // A home that was given a link, its record as it was, with a file there now: read as a worktree,
+  // and its inspection refuses before any hook runs.
   const kid = d.attached(owner, "swap-f", "hooked");
   swappedDuringRetire(d, kid, "file", "a home that was given a link, a file there now");
+  const ranBefore = d.hookRuns();
   for (const flags of [[], ["--force"]]) {
     const error = d.refused(kid.instance, flags, "E_WORK_INSPECTION_FAILED");
     assert.match(error.message, /^could not read the top level of the worktree at .*\. Nothing was stopped, run or removed\.$/s, flags.join(" "));
     assert.equal(readFileSync(join(kid.home, "work"), "utf8"), BYTES);
   }
+  assert.equal(d.hookRuns(), ranBefore, "no retire hook ran");
   rmSync(join(kid.home, "work"));
   const done = d.retired(kid.instance);
   assert.equal(done.removedDir, true);
   assert.equal(done.retention, null);
   assert.equal(existsSync(kid.home), false);
+  assert.equal(lstatSync(join(owner.home, "work")).isDirectory(), true, "the owner's tree is where it was");
 });
 
 test("a retry of a rollback marker over a link does nothing through Git to what the link leads to and deletes no branch: Git debt stays unverified, and --force removes the home alone (#973)", async (t) => {

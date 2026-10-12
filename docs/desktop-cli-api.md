@@ -3985,20 +3985,30 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   there now, uncopied. The message says what was there and what is there
   now, that the home is kept and nothing of it was removed, and that `oats
   retire <instance> --plan` shows what a retire would do with what is there
-  now. Running the retire again reads the home as it is now:
-  - a directory, in a home that was given a link (an attached, a checkout
-    or a workspace instance, whatever its record says now): a directory of
-    the home (#962). The retire copies it to recovery, checks the copy and
-    removes it with the home.
-  - a directory or a file, in a home whose record says `worktree` and whose
-    spawn's receipt says it was given a tree: a work directory with no Git
-    admin entry. The retire runs its hooks and keeps the entry and the home
-    as an incomplete item (exit 1; `--force` refuses with
-    `E_WORK_PRESERVATION_FAILED`) until a person moves the entry out or
-    deletes it; then it completes.
-  - a file, in a home that was given a link: the inspection refuses
-    (`E_WORK_INSPECTION_FAILED`, `--force` included, nothing stopped, run
-    or removed) until a person removes the file; then it completes.
+  now. Running the retire again reads the home as it is then, by the
+  reading above: the record as it is then and the spawn's receipt decide,
+  not what the home was given alone.
+  - A directory that the reading answers is a directory of the home (#962:
+    the spawn's receipt says that no tree was given, as an attached, a
+    checkout or a workspace instance's does, and the record says
+    `attached`, `checkout`, `workspace`, `worktree` or holds no work mode):
+    the retire copies it to recovery, checks the copy and removes it with
+    the home.
+  - A directory under a record that says `worktree` whose spawn's receipt
+    says that a tree was given, and a file under a record that says
+    `worktree` whatever the receipt says (an attached instance whose record
+    was changed to `worktree` included): a work directory with no Git admin
+    entry. The retire runs its hooks and keeps the entry and the home as an
+    incomplete item (exit 1; with `--force` it refuses with
+    `E_WORK_PRESERVATION_FAILED` before anything runs) until a person moves
+    the entry out or deletes it; then it completes.
+  - A file under a record that says `attached`, `checkout` or `workspace`:
+    the inspection refuses (`E_WORK_INSPECTION_FAILED`, `--force` included,
+    nothing stopped, run or removed) until a person removes the file; then
+    it completes.
+  - A record that says `directory` by then is held against the spawn's
+    receipt as always: the retire refuses (`E_WORK_INSPECTION_FAILED`,
+    nothing stopped, run or removed) while the two disagree.
 - The two notes about a worktree that is retained, `N changed and M
   untracked file(s) would be retained with the worktree` and `the worktree
   is on <branch>, not the recorded <branch>`, are given for the instance's
