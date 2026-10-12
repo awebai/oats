@@ -523,9 +523,43 @@ inherits it (awebai/oats#816):
   starts with `launchctl` and `systemctl` stubs that answer as a service
   manager with nothing loaded. A test that needs another answer puts its own
   stub ahead of them.
+
+  A fixture also never inherits the session that runs the suite. A developer
+  agent runs it from its own session, which selects a harness account
+  (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`), has a display
+  and a tmux pane (`DISPLAY`, `TMUX`, `TMUX_PANE`) and is an instance (every
+  `OATS_*` and `AWEB_*`, and the legacy `PI_AGENT*`); CI's shards have none of
+  these, and the kernel reads several of them by design. One definition,
+  `SESSION_VARIABLES` in `test/helpers/host-fixture.mjs`, names them, and one
+  rule applies it: a helper leaves a session variable out while it still has
+  the value the worker started with (the helper module is evaluated before
+  any code of the test file that imports it, and keeps that environment), and
+  keeps it once a test has set it. So a test that needs one sets it itself, in
+  `process.env` before the fixture call or as `extra`, and the fixture's own
+  (`OATS_HOME_DIR`, `OATS_TEST_CGROUP`, `OATS_TEST_LOGIN_SHELL`) are kept the
+  same way. Every helper that builds an environment starts from
+  `inheritedEnv()` or removes with `dropInherited(env)`; none has a list of
+  names of its own, and a test that builds an environment itself starts from
+  `inheritedEnv()` too. `npm run test:session`
+  (`scripts/test-session-inheritance.mjs`) is the check: it runs the suites
+  that have followed a session variable with every variable a session has set
+  to a value that cannot work, the names read from the helper's definition
+  (its legacy names, which no session has, are dropped and not set). Give it a
+  test file to run that file alone, and a flag for `node --test` with its
+  value in the same argument (`--test-name-pattern=…`): it refuses a bare flag
+  and any other argument, so it never starts `node --test` without naming the
+  files.
+  Pull-request CI runs it as the
+  `session-inheritance` job, which the gate requires
+  (`test/continuous-integration.test.mjs` pins both), and
+  `test/session-inheritance.test.mjs` pins the rule helper by helper.
 - **The same rules under real tmux.** `isolateSessionEnvironment` applies the
-  same git, XDG and proxy rules. Its PATH stays its own small set of tools, so
-  no host service manager is reachable at all.
+  same git, XDG and proxy rules, and removes the session's variables, by the
+  same definition, from the worker itself: a tmux server holds the environment
+  of the client that started it, so a server the worker starts, through the
+  kernel or with its own tmux call, would otherwise carry the runner's display,
+  pane and instance to the kernel that reads it back. Its PATH stays its own
+  small set of tools, so no host service manager is reachable at all.
 - **No leftover processes.** The fixture's cleanup fails when a process still
   works in its base: `assertNoFixtureProcesses(base)`, over the kernel's own
   `processesInHome` (`/proc` on Linux, lsof where `/proc` is absent). It catches a hook's or a CLI's grandchild that

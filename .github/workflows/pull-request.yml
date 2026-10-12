@@ -127,10 +127,36 @@ jobs:
         run: npm test
         working-directory: packages/desktop
 
+  # A fixture never inherits the session that runs the suite (awebai/oats#972). The shards above
+  # run with none of a session's variables, so a test that reads one passes there and fails for
+  # the next developer agent, whose session has them all. This job is CI's own session: it runs
+  # the suites that followed one with every such variable set to a value that cannot work
+  # (scripts/test-session-inheritance.mjs; the names are the test helpers' own definition).
+  session-inheritance:
+    name: Node 22 / tests under a poisoned session
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Checked out and installed as a shard is, less the Desktop dependencies: none of these
+      # suites loads a Desktop module.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install supported-node dependencies
+        run: npm ci
+
+      - name: The suites that followed a session variable, with every one poisoned
+        run: npm run test:session
+
   # The one check to wait on (the name reviewers and merge tooling already know).
   gate:
     name: Node 22 / test, validate, pack, smoke
-    needs: [tests, verify, desktop-standalone]
+    needs: [tests, verify, desktop-standalone, session-inheritance]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -139,3 +165,4 @@ jobs:
           test "${{ needs.tests.result }}" = success
           test "${{ needs.verify.result }}" = success
           test "${{ needs.desktop-standalone.result }}" = success
+          test "${{ needs.session-inheritance.result }}" = success

@@ -166,6 +166,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
+import { inheritedEnv } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const KERNEL_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -364,8 +365,10 @@ fi
 exit 0
 `, 0o755);
 
+  // From what a fixture inherits (host-fixture.mjs: never the harness account, display or pane of
+  // the session that runs the suite), and of that no OATS or pi variable at all.
   const env = {};
-  for (const [k, v] of Object.entries(process.env)) if (!/^(OATS|PI)_/.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(inheritedEnv())) if (!/^(OATS|PI)_/.test(k)) env[k] = v;
   Object.assign(env, {
     HOME: HERMETIC_HOME,
     OATS_HOME_DIR: join(HERMETIC_HOME, ".oats"),

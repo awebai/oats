@@ -82,10 +82,51 @@ function schedulerStubs(base) {
   }
   return bin;
 }
-/** Names a fixture child never inherits: proxies (a fetch to a fixture's local server must not go
- *  through the host's), the harness session marker, and git configuration passed through the
- *  environment (a credential helper, an askpass). */
-const dropped = (key) => /_proxy$/i.test(key) || key === "CLAUDECODE" || /^GIT_CONFIG_(PARAMETERS|COUNT|KEY_\d+|VALUE_\d+)$/.test(key) || key === "GIT_ASKPASS";
+// ---- what a fixture never inherits (awebai/oats#972) --------------------------------------------
+// ONE place decides what a fixture takes from the process that runs the suite. Every helper that
+// builds an environment, for a child or for an in-process kernel call, starts from inheritedEnv()
+// or removes with dropInherited(): none keeps a list of names of its own. A suite run from an
+// agent's session (a developer agent, from its work tree) otherwise answers for that session's
+// harness account, display, tmux pane and instance, and differs from CI.
+
+/** This worker's environment as it started. This module is evaluated before any code of the test
+ *  file that imports it, so nothing in it was put there by a test. */
+const INHERITED = Object.freeze({ ...process.env });
+/** The variables of the session that runs the suite, which a fixture never inherits: what selects
+ *  a harness's configuration (the kernel's HARNESS_CONFIG_SELECTORS), the display, the tmux client's
+ *  server and pane, and every variable OATS or aweb gives an instance.
+ *  scripts/test-session-inheritance.mjs sets each of `names`, and names under each of `prefixes`,
+ *  to a value that cannot work and runs the suites that have followed one; pull-request CI runs
+ *  it. `legacyPrefixes` are the names OATS_ had before: no session has them now, the kernel still
+ *  reads some, and a fixture drops them the same way. */
+export const SESSION_VARIABLES = Object.freeze({
+  names: Object.freeze(["CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR", "DISPLAY", "TMUX", "TMUX_PANE"]),
+  prefixes: Object.freeze(["OATS_", "AWEB_"]),
+  legacyPrefixes: Object.freeze(["PI_AGENT"]),
+});
+/** Whether `key` names a variable of the session (SESSION_VARIABLES). */
+export function isSessionVariable(key) {
+  return SESSION_VARIABLES.names.includes(key) || [...SESSION_VARIABLES.prefixes, ...SESSION_VARIABLES.legacyPrefixes].some((prefix) => key.startsWith(prefix));
+}
+/** Names a fixture never inherits whoever set them: proxies (a fetch to a fixture's local server
+ *  must not go through the host's), the harness session marker, and git configuration passed
+ *  through the environment (a credential helper, an askpass). */
+const neverKept = (key) => /_proxy$/i.test(key) || key === "CLAUDECODE" || /^GIT_CONFIG_(PARAMETERS|COUNT|KEY_\d+|VALUE_\d+)$/.test(key) || key === "GIT_ASKPASS";
+/** Whether a fixture leaves `key`, held as `value`, out of an environment. A session variable is
+ *  left out only while it still has the value this worker started with: a test that needs one sets
+ *  it itself (in process.env before the fixture call, or as `extra`), and that value is the test's,
+ *  as are the fixture's own (OATS_HOME_DIR, OATS_TEST_CGROUP, …). */
+export function neverInherited(key, value) {
+  return neverKept(key) || (isSessionVariable(key) && value === INHERITED[key]);
+}
+/** Remove from `env`, in place, what a fixture never inherits → `env`. */
+export function dropInherited(env) {
+  for (const key of Object.keys(env)) if (neverInherited(key, env[key])) delete env[key];
+  return env;
+}
+/** A copy of this process's environment as it is now, less what a fixture never inherits: where
+ *  every environment a helper builds starts. */
+export function inheritedEnv() { return dropInherited({ ...process.env }); }
 /** HOME and the XDG base directories under `home`, and git that reads no host configuration file
  *  and never prompts. */
 function isolatedHomeAndGit(home) {
@@ -104,17 +145,17 @@ export function fixtureRules(base, { home = join(base, "home") } = {}) {
   return { set: { ...isolatedHomeAndGit(home), OATS_TEST_CGROUP: FIXTURE_CGROUP }, stubs: schedulerStubs(base) };
 }
 /** Apply a fixture's rules to an environment in place, creating nothing: what it never inherits
- *  removed, its HOME, XDG and git set, and its scheduler stubs ahead on PATH (once). */
+ *  removed (dropInherited), its HOME, XDG and git set, and its scheduler stubs ahead on PATH (once). */
 export function applyFixtureRules(env, rules) {
-  for (const key of Object.keys(env)) if (dropped(key)) delete env[key];
+  dropInherited(env);
   Object.assign(env, rules.set);
   const path = (env.PATH || "").split(delimiter).filter(Boolean);
   if (!path.includes(rules.stubs)) env.PATH = [rules.stubs, ...path].join(delimiter);
   return env;
 }
 /** The environment for every child a fixture starts: this process's, with the fixture's rules
- *  applied, then `extra`. tmux isolation is isolateSessionEnvironment's, which suites that start
- *  sessions install first; this composes with it. */
+ *  applied (so less what a fixture never inherits), then `extra`. tmux isolation is
+ *  isolateSessionEnvironment's, which suites that start sessions install first; this composes with it. */
 export function fixtureEnv(base, { extra = {}, rules = fixtureRules(base) } = {}) {
   return { ...applyFixtureRules({ ...process.env }, rules), ...extra };
 }
@@ -177,6 +218,10 @@ export function removeTmuxTmpdir(tmuxTmpdir, tmux = "tmux") {
   rmSync(tmuxTmpdir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 let isolatedTmpdir = null;
+/** What a shell or a terminal program the worker starts would read from the runner's own shell: the
+ *  files sh and bash source when they start, and the terminal's colours. Removed from a worker that
+ *  starts shells (isolateSessionEnvironment), beside what no fixture inherits. */
+const SHELL_STARTUP = ["ENV", "BASH_ENV", "COLORFGBG"];
 /** A login shell that cannot be run (see isolateSessionEnvironment): named bash, so it is not refused
  *  for its name, under `dir`, where nothing creates it. */
 export function noLoginShell(dir) { return join(dir, "no-login-shell", "bash"); }
@@ -186,7 +231,8 @@ export function isolatedTmuxTmpdir() { return isolatedTmpdir; }
  *  working directory is inside an instance home as that instance (a developer agent runs the suite
  *  from its work tree), and an instance that has to start a tmux server reads the environment of
  *  its own recorded server: a test must not. Moves to `dir`, a directory of the fixture; returns
- *  the function that moves back. The instance's environment names are the caller's to remove. */
+ *  the function that moves back. The instance's environment names are the caller's to remove
+ *  (dropInherited). */
 export function leaveEnclosingInstance(dir) {
   const cwd = process.cwd(), pwd = process.env.PWD;
   process.chdir(dir);
@@ -200,10 +246,12 @@ export function leaveEnclosingInstance(dir) {
 // environment says) and `-S <socket>` for a socket inside the fixture. Even a server recreated by the
 // kernel after kill-server uses the empty config and the fixture's shell; `userConfig: true` drops
 // the forced empty config, so a server reads $HOME/.tmux.conf of the fixture's own HOME as a user's
-// server does. The worker drops CLAUDECODE, the marker of the harness session it may run in: a
-// server it starts would otherwise hold it, and the suite asserts that a pane holds none. Returns
-// the function that restores the environment; it also kills the fixture's `oats` server, by socket,
-// and removes the TMUX_TMPDIR.
+// server does. The worker itself drops what no fixture inherits (dropInherited, above): a server it
+// starts, by the kernel or by a test's own tmux call, holds the worker's environment, so it would
+// otherwise hold the runner's display, pane and instance, and CLAUDECODE, the marker of the harness
+// session it may run in (the suite asserts that a pane holds none). Returns the function that
+// restores the environment; it also kills the fixture's `oats` server, by socket, and removes the
+// TMUX_TMPDIR.
 //
 // A server the kernel starts gets the user's login environment, read by running the login shell
 // (lib/login-environment.mjs). A test never runs the operator's: the kernel runs it only for a process
@@ -259,9 +307,8 @@ exec ${quote(tmux)}${userConfig ? "" : " -f /dev/null"} "$@"
   const home = join(base, "user-home");
   const config = join(home, ".config");
   mkdirSync(config, { recursive: true });
-  for (const key of Object.keys(process.env)) {
-    if (/^(OATS_|PI_AGENT)/.test(key) || ["TMUX", "TMUX_PANE", "ENV", "BASH_ENV", "COLORFGBG", "CLAUDECODE"].includes(key) || dropped(key)) delete process.env[key];
-  }
+  dropInherited(process.env);
+  for (const key of SHELL_STARTUP) delete process.env[key];
   // The fixture's git and XDG rules (fixtureEnv's), with HOME as this worker's; PATH stays system-bin
   // only, so no host service manager is reachable at all.
   Object.assign(process.env, isolatedHomeAndGit(home), { XDG_CONFIG_HOME: config, ZDOTDIR: home, SHELL: "/bin/sh", PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), TMUX_TMPDIR: tmuxTmpdir, OATS_TEST_LOGIN_SHELL: noLoginShell(base), OATS_TEST_CGROUP: FIXTURE_CGROUP });
