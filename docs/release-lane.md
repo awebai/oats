@@ -156,16 +156,22 @@ by the lane, and neither republishes what the other already did.
 ## Release-notes entries
 
 A release ships one notes file, `docs/release-notes/v<version>.md`. Between
-releases a pull request does not write into it: it adds its entry as a file
-of its own, and one command moves the entries into the notes file in the
-release-prep pull request. Two pull requests that share no code therefore
-never conflict over the notes.
+releases a pull request does not write its entry into it: it adds its entry
+as a file of its own, and one command moves the entries into the notes file
+in the release-prep pull request. Two pull requests that share no code
+therefore never conflict over their entries.
 
 ### For the author of a pull request
 
 - **One file, `docs/release-notes/next/<name>.md`**, added by the pull
-  request that makes the change. The pull request does not touch
-  `docs/release-notes/v<next>.md`.
+  request that makes the change. The entry does not go into
+  `docs/release-notes/v<next>.md`, which a pull request touches for one
+  reason only, the next point.
+- **Correcting an entry already in the unreleased notes file.** A pull
+  request that makes an existing entry of the unreleased notes file untrue
+  corrects that entry there, and adds its own in its entry file. In the notes
+  file it changes only the sentences it makes untrue, and its description
+  names them. A released notes file is never corrected this way.
 - **The name** is the issue's number and a short slug:
   `991-update-every-pi-folder.md`. Lower-case letters, digits and hyphens,
   then `.md`. The number is a convention: nothing reads the name but the

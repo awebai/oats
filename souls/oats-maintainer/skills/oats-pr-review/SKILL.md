@@ -27,8 +27,11 @@ whole base and read its warnings.
 
 ## Mergeability: notes
 Every behaviour change carries its release-notes entry as one file under
-`docs/release-notes/next/` and updates the `docs/` page that owns the rule. The pull
-request does not touch `docs/release-notes/<next version>.md`: the release-prep PR moves
-the entries there. `test/release-notes-entries.test.mjs` holds the file to its form (the
-name, the section headings, nothing else), not to what it says: read the entry.
+`docs/release-notes/next/` and updates the `docs/` page that owns the rule. Its entry
+does not go into `docs/release-notes/<next version>.md`: the release-prep PR moves the
+entries there. The pull request touches that file in one case only: it makes an entry
+already there untrue, and corrects it in place. Then check that it changes only the
+sentences it makes untrue, that its description names them, and that no released notes
+file is changed. `test/release-notes-entries.test.mjs` holds the entry file to its form
+(the name, the section headings, nothing else), not to what it says: read the entry.
 `docs/release-lane.md`, "Release-notes entries", is the rule.
