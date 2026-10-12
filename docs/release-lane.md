@@ -167,11 +167,13 @@ therefore never conflict over their entries.
   request that makes the change. The entry does not go into
   `docs/release-notes/v<next>.md`, which a pull request touches for one
   reason only, the next point.
-- **Correcting an entry already in the unreleased notes file.** A pull
-  request that makes an existing entry of the unreleased notes file untrue
-  corrects that entry there, and adds its own in its entry file. In the notes
-  file it changes only the sentences it makes untrue, and its description
-  names them. A released notes file is never corrected this way.
+- **Correcting an unreleased entry.** A pull request that makes an existing
+  unreleased entry untrue corrects that entry where it stands: in the
+  unreleased notes file, or in the entry file of the earlier pull request
+  while that file is still under `docs/release-notes/next/`. It adds its own
+  entry in its own entry file. In the earlier entry it changes only the
+  sentences it makes untrue, and its description names them. A released notes
+  file is never corrected this way.
 - **The name** is the issue's number and a short slug:
   `991-update-every-pi-folder.md`. Lower-case letters, digits and hyphens,
   then `.md`. The number is a convention: nothing reads the name but the
