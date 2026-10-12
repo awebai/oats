@@ -3687,6 +3687,24 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
 - The plan changes nothing except appending a `retire-planned` event to the
   workspace log. `pullRequest` is always `"unknown"`. Branch actions use the
   worktree's branch, never `recordedBranch`.
+- `defaults.retainWorktree` is the default of one option of this retire:
+  whether the instance's OWN work tree is retained (moved, as described
+  below) or removed (`--discard-worktree`). It is `true` only in `worktree`
+  mode. In every other mode it is `false` because the instance has no work
+  tree of its own, never because a tree would be removed: there the retire
+  touches no tree it does not own. `work/` of an attached, a checkout or a
+  workspace instance is a link (to its owner's tree, to the shared checkout,
+  to the deployment directory) that goes with the home, and what it links to
+  is not touched. `work/` of a directory instance is the home's own
+  directory: it is copied to recovery when it is not empty, then removed
+  with the home. Read the field with `facts.workMode`. The plan's text
+  (`oats retire <instance> --plan` without `--json`) prints `retain worktree
+  true` in its `defaults:` line in `worktree` mode only; in the other modes
+  the line says the above for that mode (0.53.0, #959). For a record with no
+  work mode it says `work mode not recorded`, and for one whose work mode
+  the kernel does not know, `work mode not known to this kernel`: the value
+  is never printed, and `facts.workMode` holds it. The JSON is the same as
+  before.
 - A home spawned before 0.25.9 has no session receipt (0.30). Its
   `facts.session` is `{state: "absent", present: false, backend, established:
   true, note}` when the session is observably gone: instance.json records no

@@ -445,6 +445,60 @@ test("existing Git checkout, worktree, attached and workspace modes keep their l
   assert.equal(execFileSync("git", ["-C", f.context, "branch", "--list", worktree.branch], { encoding: "utf8" }).trim().replace(/^[*+] /, ""), worktree.branch, "the worktree's branch is left");
 });
 
+test("the retire plan's text says what is true of each work mode's work, and its JSON defaults are as they were (#959)", async (t) => {
+  const f = fixture(t, { git: true });
+  const tree = await f.spawn("plan-tree", { work: "worktree", repo: "." });
+  const homes = {
+    worktree: tree,
+    attached: await f.spawn("plan-attached", { work: "attached", repo: ".", workDir: join(tree.home, "work") }),
+    checkout: await f.spawn("plan-checkout", { work: "checkout", repo: "." }),
+    workspace: await f.spawn("plan-workspace", { work: "workspace", repo: "." }),
+    directory: await f.spawn("plan-directory"),
+  };
+  /** The plan of one instance through the CLI: its text, the `defaults:` line of it, and the `defaults` of its JSON. */
+  const plan = (instance) => {
+    const text = spawnSync(process.execPath, [CLI, "retire", instance, "--plan", "--dir", f.context], { cwd: f.context, env: process.env, encoding: "utf8" });
+    assert.equal(text.status, 0, text.stdout + text.stderr);
+    const lines = text.stdout.split("\n").filter((l) => l.startsWith("  defaults: "));
+    assert.equal(lines.length, 1, text.stdout);
+    const json = cli(f, ["retire", instance, "--plan"]);
+    assert.equal(json.status, 0, json.stdout + json.stderr);
+    const result = JSON.parse(json.stdout).result;
+    return { text: text.stdout, line: lines[0], defaults: result.defaults, workMode: result.facts.workMode };
+  };
+  const REST = ", delete branch false, stop children true";
+  const LINES = {
+    worktree: `  defaults: retain worktree true${REST}`,
+    attached: `  defaults: no work tree of its own (work/ links to its owner's tree and that tree is not touched)${REST}`,
+    checkout: `  defaults: no work tree of its own (work/ links to the shared checkout and that checkout is not touched)${REST}`,
+    workspace: `  defaults: no work tree of its own (work/ links to the deployment directory and that directory is not touched)${REST}`,
+    directory: `  defaults: no work tree (work/ is the home's own directory: copied to recovery when not empty and then removed with the home)${REST}`,
+  };
+  const defaults = (retainWorktree) => ({ retainWorktree, deleteBranch: false, stopChildren: true, retainChildren: true });
+  for (const [mode, home] of Object.entries(homes)) {
+    const seen = plan(home.instance);
+    assert.equal(seen.workMode, mode);
+    assert.equal(seen.line, LINES[mode], mode);
+    assert.deepEqual(seen.defaults, defaults(mode === "worktree"), `${mode}: the JSON's defaults`);
+    if (mode !== "worktree") assert.doesNotMatch(seen.line, /retain worktree/, mode);
+  }
+  // A record with no work mode, and one with a mode this kernel does not know: said, never "retain
+  // worktree false", and in the kernel's words alone. The value is the record's: none of its text is
+  // printed, whatever it is. A value that is not a string is never read as a mode's name (an array
+  // of one known name would be, as a key), and never fails the text.
+  const record = join(homes.checkout.home, "instance.json"), meta = readJson(record);
+  const UNKNOWN = "work mode not known to this kernel";
+  for (const [work, said, absent] of [[undefined, "work mode not recorded", []], ["zq-some-mode", UNKNOWN, ["zq-"]],
+    [["attached"], UNKNOWN, ["attached", "owner"]], [{ toString: null, "zq-key": "zq-value" }, UNKNOWN, ["zq-", "toString"]]]) {
+    writeFileSync(record, JSON.stringify({ ...meta, work }, null, 2) + "\n");
+    const seen = plan(homes.checkout.instance);
+    assert.deepEqual(seen.workMode, work ?? null, "the JSON holds the value as recorded");
+    assert.equal(seen.line, `  defaults: ${said}${REST}`);
+    for (const part of absent) assert.equal(seen.text.includes(part), false, `no text of the value in the plan's text (${part}): ${seen.text}`);
+    assert.deepEqual(seen.defaults, defaults(false));
+  }
+});
+
 test("a checkout or attached spawn records the branch HEAD names, or null when HEAD is detached or names no branch OATS carries, never \"HEAD\" (#641)", async (t) => {
   const f = fixture(t, { git: true });
   /** The branch as the spawn result, instance.json and `status --json` give it: the key's presence and its value. */
