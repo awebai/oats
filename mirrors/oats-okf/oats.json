@@ -1,7 +1,7 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "5.0.2",
+  "version": "5.0.3",
   "compatibility": {
     "oats": ">=0.29.0"
   },
