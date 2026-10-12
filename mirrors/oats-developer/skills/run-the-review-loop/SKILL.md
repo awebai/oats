@@ -21,10 +21,16 @@ work is in it.
 ## Spawn it once, attached to your tree
 ```bash
 oats spawn code-reviewer --work attached --work-dir <the consolidated worktree> \
+  --parent "$OATS_INSTANCE" --repo <repository> \
   --purpose <short-slug> --task-file <review-brief.md>
 ```
-Attached mode shares your worktree (so it can read the code and run the tests) and makes
-it your child. It must not edit the tree.
+`<repository>` is the absolute path of the clone that worktree belongs to: `repo` in your
+`instance.json`, or the clone you made the worktree from when it is an extra worktree of
+another repository. Give both flags whether the worktree is your `<home>/work` or an extra
+worktree.
+
+Attached mode shares your worktree (so it can read the code and run the tests), and the
+reviewer is your child. It must not edit the tree.
 
 ## Pick a different model
 A reviewer on the same model as you tends to share your blind spots. Before spawning:
@@ -75,7 +81,8 @@ findings and your position on each to your expert, who decides.
 - Keep the reviewer until your expert accepts the branch. If the expert returns it, fix it,
   then send the SAME reviewer the delta and the return's reasons, and hand back again only
   after it approves: every change on the branch is reviewed before a PR exists.
-- Retire the reviewer once your expert accepts.
+- Retire the reviewer once your expert accepts, then remove the worktree it was attached
+  to, if it is an extra worktree (`/worktrees`).
 - Fixes requested on the PR come back to you as a delta: take them through a reviewer (the
   same one, or a new one if it was retired) and report again when it converges, before
   your expert hands over the new head.
