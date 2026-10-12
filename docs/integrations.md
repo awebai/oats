@@ -140,7 +140,10 @@ Building an integration is implementing a contract. The framework's
   its `binding.check` command
   ([capabilities.md](capabilities.md#readiness-check-bindingcheck)).
 - Package commands and hooks reach the kernel only through `OATS_CLI_BIN` and
-  the JSON envelope, never by importing kernel files. Never name target souls
+  the JSON envelope, never by importing kernel files. A `node` path they
+  write into anything that outlives them (settings, a unit, a script) is
+  `OATS_NODE_BIN`, the node to write down, never `process.execPath`
+  ([capabilities.md](capabilities.md#the-node-a-hook-writes-down)). Never name target souls
   in the manifest: which souls get a capability is configuration.
 
 **Knowledge.** The capability owns its complete runtime and format, including

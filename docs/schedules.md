@@ -679,7 +679,9 @@ own shell, not from an instance home:
   link survives an upgrade. With a version manager (mise, nvm, asdf, fnm) the
   node on `PATH` is that version's own install, so the unit records that
   version's path, and `host status` reports `node-missing` once that version
-  is removed.
+  is removed. The same rule answers `OATS_NODE_BIN`, the node a
+  capability writes down
+  ([capabilities](capabilities.md#the-node-a-hook-writes-down)).
 - **oats**: the `oats.mjs` of the oats that runs `install`. When that is inside
   `$OATS_INSTANCE_HOME` or its `work` (a clone in an instance's work tree,
   an attached instance's included), `install` and

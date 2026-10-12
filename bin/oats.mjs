@@ -52,6 +52,7 @@ import { tickTriggers } from "../lib/triggers.mjs";
 import * as A from "../lib/automations.mjs";
 import { parseEnvelopeText, unresolvedScheduleAttempts, scheduleScopeOf, listSchedules, describe as describeSchedule, testSchedule, addSchedule, updateSchedule, updateScheduleDescription, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, scopeAutomations, scheduleKind, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitFiles, hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
+import { kernelNode } from "../lib/stable-node.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
@@ -3813,6 +3814,8 @@ async function capabilityCommand() {
       // canonical absolute executable of THIS CLI; official consumers execFile
       // it directly and never resolve `oats` from PATH or a shell.
       OATS_CLI_BIN: CLI_BIN,
+      // The node a command writes into anything that outlives it (lib/stable-node.mjs).
+      OATS_NODE_BIN: kernelNode().node,
       ...teamEnv(null), ...(teamCtx || {}),
       // The soul the command acts for (an instance home's recorded soul directory):
       // homes carry no soul link, so providers read it here.

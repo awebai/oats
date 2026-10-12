@@ -366,7 +366,7 @@ test("the source's environment: no ambient OATS_*, OAS_* or PI_*, no instance, n
   const check = (env, how) => {
     for (const k of Object.keys(env)) assert.ok(!/^(OAS_|PI_)/.test(k), `${how}: ${k} reached the source`);
     for (const k of ["OATS_FAKE_AMBIENT", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_TRIGGER_POLL_DEADLINE"]) assert.equal(env[k], undefined, `${how}: ${k} reached the source`);
-    for (const k of Object.keys(env).filter((x) => x.startsWith("OATS_"))) assert.match(k, /^OATS_(CAPABILITY|SETTINGS|SETTINGS_ORIGINS|CLI_BIN|WORKSPACE|WORKSPACE_NAME|WORKSPACE_KEY|AGENT|SOUL_ID|SOUL|TEAM_NAME|TEAM_SCOPE|DEFAULT_TEAM\w*|TEAMS\w*)$/, `${how}: ${k} is not providerEnv's`);
+    for (const k of Object.keys(env).filter((x) => x.startsWith("OATS_"))) assert.match(k, /^OATS_(CAPABILITY|SETTINGS|SETTINGS_ORIGINS|CLI_BIN|NODE_BIN|WORKSPACE|WORKSPACE_NAME|WORKSPACE_KEY|AGENT|SOUL_ID|SOUL|TEAM_NAME|TEAM_SCOPE|DEFAULT_TEAM\w*|TEAMS\w*)$/, `${how}: ${k} is not providerEnv's`);
     assert.equal(env.OATS_CAPABILITY, "acme.graph");
     assert.deepEqual(JSON.parse(env.OATS_SETTINGS), {});
   };
