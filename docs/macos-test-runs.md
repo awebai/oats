@@ -191,6 +191,10 @@ cache scope; nothing reads it; a workflow that starts to restore a cache
 reopens this. No workflow of this repository restores an Actions cache, and
 the repository's tests keep it so.
 
+**The job's token.** It is within reach of the code a run executes. It can
+read this repository's contents and nothing else, and that is why this
+workflow's `permissions` never grows.
+
 ## The terms
 
 The maintainers agreed these terms. `test/macos-tests-workflow.test.mjs`
