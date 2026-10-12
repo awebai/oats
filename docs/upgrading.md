@@ -152,6 +152,45 @@ resolve, or a bridge that cannot be read). A folder that does not exist or
 holds no bridge is not a skew, and it says nothing about it. The warnings are
 in the text output only; `oats doctor --json` does not carry them.
 
+## After a change of Node version
+
+The CLI is an npm global package: it is installed under npm's global prefix
+(`npm prefix -g`). What a new Node version means for it depends on where
+that prefix is.
+
+- **The prefix is outside the Node install.** The kernel's path does not
+  change with the Node version, and nothing in this section is needed.
+- **The prefix is the Node version's own directory**, the usual layout of a
+  version manager (mise, nvm, asdf, fnm). Every Node version then has its own
+  global packages: a new version has no `oats`, and removing the old version
+  removes the kernel with it. Three things name that kernel by its path: each
+  instance home's own `oats` (`<home>/.oats/bin/oats`), the Claude Code hooks
+  of a Claude instance, and the host timer's unit. OATS cannot make a path
+  inside a Node version outlast that version.
+
+In the second layout, after moving to another Node version:
+
+1. Install the CLI in it: `npm install -g @awebai/oats`.
+2. Restart the instances (`oats session restart --home <home>`). A start
+   writes the home's `oats` and its Claude Code hooks again, for the kernel
+   that starts it ([Configuration](configuration.md#launch-configurations)).
+3. On a host that runs schedules, run `oats schedule host install` again,
+   from your own shell, not from an instance home. Until then
+   `oats schedule host status` reports `oats-bin-missing` once the old
+   version is removed ([Schedules](schedules.md#the-host-timers-unit)).
+
+Do this before removing the old Node version: until it is removed, the
+instances and the timer keep running its kernel.
+
+Both layouts can exist on one host: check the prefix in the shell that
+installs the CLI.
+
+The host timer's unit also records the `node` it runs, apart from the
+kernel. Under a version manager that is the version's own `node`, whatever
+the prefix: `oats schedule host status` reports `node-missing` once that
+version is removed, and `oats schedule host install` writes the unit again
+([Schedules](schedules.md#the-host-timers-unit)).
+
 ## By hand
 
 In any pi folder, with the `pi` that is launched with it:
