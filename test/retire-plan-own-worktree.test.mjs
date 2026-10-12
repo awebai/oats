@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -108,6 +108,61 @@ test("facts.ownWorktree is true exactly when work/ is the instance's own tree, w
   assert.equal(drifted.facts.work.drift, true, "fixture premise: the tree is not on the recorded branch");
   // The owner's own plan, with the same observation of the same tree: its own.
   assertRow(d.plan(owner.instance), true, "the owner of that tree");
+});
+
+test("for an entry at work/ that no retire removes, the fact is the reading's answer and not a promise: a file is the own tree under a worktree record alone, and a work directory whose Git admin entry is missing is the own tree by the spawn's receipt, whatever the record says (#988, #1019)", async (t) => {
+  const d = deployment(t);
+  const owner = await d.fx.spawn("dev", { instance: "dev-owner" });
+  /** `home`'s work/ made a file, whatever it was: a registered tree, a link or a directory. */
+  const fileAt = (home) => {
+    const work = join(home, "work");
+    if (lstatSync(work).isSymbolicLink()) rmSync(work);
+    else if (existsSync(join(work, ".git"))) d.git(d.fx.member, "worktree", "remove", "--force", work);
+    else rmSync(work, { recursive: true });
+    writeFileSync(work, "a file where work/ was\n");
+    assert.equal(lstatSync(work).isFile(), true);
+  };
+
+  // A file at work/, in a home of each work mode as it was given. An entry that is neither a link
+  // nor a directory is what the record says: the own tree under `worktree`, and nothing of the
+  // instance's under any other record.
+  const given = [
+    ["worktree", await d.fx.spawn("dev", { instance: "dev-file" }), true],
+    ["attached", d.attached(owner, "file"), false],
+    ["checkout", await d.fx.spawn("chk", { instance: "chk-file" }), false],
+    ["workspace", await d.fx.spawn("wsp", { instance: "wsp-file" }), false],
+    ["directory", await d.fx.spawn("dir", { instance: "dir-file" }), false],
+  ];
+  for (const [mode, inst, own] of given) {
+    fileAt(inst.home);
+    const seen = d.plan(inst.instance);
+    assertRow(seen, own, `a file at work/ under a record that says ${mode}`);
+    assert.equal(seen.facts.workMode, mode);
+  }
+  // The same file under each other record of the same home: the record alone decides, not what
+  // the home was given.
+  const [, rewritten] = given[0];
+  for (const [label, work, own] of [["attached", "attached", false], ["no work mode", undefined, false], ["a work mode this kernel does not know", "elsewhere", false], ["worktree again", "worktree", true]]) {
+    d.record(rewritten.home, (meta) => { if (work === undefined) delete meta.work; else meta.work = work; });
+    const seen = d.plan(rewritten.instance);
+    assertRow(seen, own, `a file at work/ in a home that was given a worktree, its record saying ${label}`);
+    assert.equal(seen.facts.workMode, work ?? null);
+  }
+
+  // A work directory whose Git admin entry is missing (the retire runs its hooks and keeps it as
+  // an incomplete item). The spawn's receipt says that a tree was given, so it is the own tree
+  // under every record but `directory`, which the retire holds against the receipt.
+  const orphan = await d.fx.spawn("dev", { instance: "dev-orphan" });
+  const work = join(orphan.home, "work");
+  rmSync(d.git(work, "rev-parse", "--path-format=absolute", "--git-dir"), { recursive: true });
+  assert.throws(() => d.git(work, "rev-parse", "--git-dir"), "fixture premise: Git no longer knows the directory");
+  assert.equal(lstatSync(work).isDirectory(), true);
+  for (const [label, mode, own] of [["worktree", "worktree", true], ["attached", "attached", true], ["no work mode", undefined, true], ["directory", "directory", false]]) {
+    d.record(orphan.home, (meta) => { if (mode === undefined) delete meta.work; else meta.work = mode; });
+    const seen = d.plan(orphan.instance);
+    assertRow(seen, own, `a work directory without its admin entry, the record saying ${label}`);
+    assert.equal(seen.facts.workMode, mode ?? null);
+  }
 });
 
 test("every answer that holds a retire plan holds the fact: the plan, and the fresh plan of a stale guarded apply; a stop plan does not; the feature word is listed (#988)", async (t) => {
