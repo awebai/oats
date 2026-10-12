@@ -547,8 +547,8 @@ test("the shared edit path: a file that changes between the read and the rename 
 /* ───────────────────────────── the CLI ────────────────────────────────── */
 
 const OPUS = { harness: "claude", model: "claude-opus-5-5" };
-function deployment(t, { local = {}, souls } = {}) {
-  return v2Deployment({ t, name: "acme", souls: souls ?? { dev: {}, writer: { soul: { launch: OPUS } }, runner: {} },
+function deployment(t, { local = {}, souls, workspace = {} } = {}) {
+  return v2Deployment({ t, name: "acme", workspace, souls: souls ?? { dev: {}, writer: { soul: { launch: OPUS } }, runner: {} },
     local: { "launch-configs": { private: { harness: "claude", model: "claude-opus-5-5" }, fast: { harness: "pi" } }, ...local } });
 }
 /** The one envelope of a `--json` answer: stdout is exactly one compact JSON object. */
@@ -609,6 +609,18 @@ test("oats soul launch: argument refusals, each one envelope, none writing", (t)
   for (const argv of [["set", "dev", "--launch-config", "--plan"], ["set", "dev", "--harness"], ["set", "dev", "--harness", "claude", "--model"], ["set", "dev", "--launch-config="]]) {
     assert.match(refused(run(...argv), "E_BAD_ARGS", argv.join(" ")).message, /needs a value/);
   }
+  // At every occurrence, and a value flag is taken once: the first reading would drop the second.
+  for (const argv of [["set", "dev", "--harness", "codex", "--harness"], ["set", "dev", "--harness", "codex", "--harness", "--plan"], ["set", "dev", "--launch-config", "fast", "--launch-config"], ["remove", "dev", "--dir", fx.dep, "--dir"]]) {
+    assert.match(refused(run(...argv), "E_BAD_ARGS", argv.join(" ")).message, /needs a value/);
+  }
+  for (const argv of [["set", "dev", "--harness", "codex", "--harness", "pi"], ["set", "dev", "--harness", "codex", "--harness", "pi", "--plan"], ["set", "dev", "--harness", "codex", "--model", "a", "--model", "b"]]) {
+    assert.match(refused(run(...argv), "E_BAD_ARGS", argv.join(" ")).message, /^oats soul launch set takes --(harness|model) once/);
+  }
+  // One name: a second one is refused, never dropped (`remove dev writer` would remove dev alone).
+  for (const argv of [["remove", "dev", "writer"], ["remove", "dev", "writer", "--plan"], ["set", "dev", "writer", "--launch-config", "fast"], ["set", "dev", "--launch-config", "fast", "writer", "--plan"]]) {
+    assert.match(refused(run(...argv), "E_BAD_ARGS", argv.join(" ")).message, /takes one soul( or key)?, and got 2: "dev", "writer"/);
+  }
+  assert.equal(localOf(fx), before, "no argument refusal wrote anything");
   refused(run("set", "dev", "--launch-config", "fast", "--harness", "pi"), "E_BAD_ARGS", "both");
   refused(run("set", "dev"), "E_BAD_ARGS", "neither");
   refused(run("set", "dev", "--model", "o4"), "E_BAD_ARGS", "--model alone");
@@ -647,6 +659,55 @@ test("oats soul launch: argument refusals, each one envelope, none writing", (t)
   assert.equal(localOf(fx), before, "--help wrote nothing");
   // The feature is advertised.
   assert.ok(JSON.parse(fx.cli(["version", "--json"]).stdout).features.includes("soul-launch"));
+});
+
+test("a local file written as JSON is edited as JSON: set, remove and plan, by both verbs' shared path", (t) => {
+  const fx = deployment(t, { workspace: { localTeams: true } });
+  const file = join(fx.dep, LOCAL);
+  // The kernel reader takes a file that opens with `{` as strict JSON: the same deployment, in that syntax.
+  const asJson = (value) => `${JSON.stringify(value)}\n`;
+  const base = { ...YAML.parse(localOf(fx)), souls: { launch: { dev: "none" } } };
+  writeFileSync(file, asJson(base));
+  const strict = () => JSON.parse(localOf(fx));
+  // A plan: the answer of the edit, and not a byte written.
+  const plan = ok(fx.cli(["soul", "launch", "set", "dev", "--harness", "codex", "--plan", "--json"]), "plan on a JSON file");
+  assert.deepEqual([plan.plan, plan.changed, plan.before, plan.after], [true, true, "none", { harness: "codex", model: null }]);
+  assert.equal(localOf(fx), asJson(base), "--plan wrote nothing");
+  // Applied: strict JSON still, the one entry changed and every other value as it was.
+  const set = ok(fx.cli(["soul", "launch", "set", "dev", "--harness", "codex", "--json"]), "set on a JSON file");
+  assert.deepEqual([set.changed, set.after, set.launch.effective.harness, set.launch.from], [true, { harness: "codex", model: null }, "codex", "local"]);
+  assert.deepEqual(strict(), { ...base, souls: { launch: { dev: { harness: "codex" } } } });
+  assert.equal(ok(fx.cli(["spawn", "dev", "--preview", "--json"]), "the kernel reads what was written").launch.from, "local");
+  const pkg = ok(fx.cli(["soul", "launch", "set", "*", "--launch-config", "fast", "--json"]), "a new key in a JSON file");
+  assert.equal(pkg.after, "fast");
+  assert.deepEqual(strict().souls.launch, { dev: { harness: "codex" }, "*": "fast" });
+  ok(fx.cli(["soul", "launch", "remove", "*", "--json"]), "remove on a JSON file");
+  const gone = ok(fx.cli(["soul", "launch", "remove", "dev", "--json"]), "remove the last entry");
+  assert.deepEqual([gone.before, gone.after], [{ harness: "codex", model: null }, null]);
+  const rest = { ...base }; delete rest.souls;
+  assert.deepEqual(strict(), rest, "the emptied souls.launch and souls are gone, and nothing else");
+  // The other writer of the file goes through the same path.
+  ok(fx.cli(["teams", "add", "desk", "--team", "local:desk.example", "--no-default", "--json"]), "teams add on a JSON file");
+  assert.deepEqual(strict().teams?.desk, { team: "local:desk.example" });
+  const { teams: _teams, defaultTeam: _defaultTeam, ...others } = strict();
+  assert.deepEqual(others, rest, "and it changed nothing else");
+  assert.equal(localOf(fx), `${JSON.stringify(strict(), null, 2)}\n`, "written as two-space JSON");
+});
+
+test("text the kernel would not decode is never written: the rewrite is refused as E_WORKSPACE_SCHEMA", (t) => {
+  const fx = fileOf(t, "");
+  const text = fx.text();
+  // An edit that leaves the document with an alias: valid YAML, and not the kernel's portable syntax.
+  const aliased = ({ doc }) => { const node = doc.createNode({ harness: "pi" }); node.anchor = "a"; doc.setIn(["souls", "launch", "dev"], node); doc.setIn(["souls", "launch", "*"], doc.createAlias(node)); return {}; };
+  for (const plan of [false, true]) {
+    assert.throws(() => editLocal(fx.ctx, { verb: "a test", plan }, aliased), (e) => {
+      assert.equal(e.code, "E_WORKSPACE_SCHEMA");
+      assert.match(e.message, /^the rewritten oats-local\.yaml would be invalid \(\/: the kernel would not decode it: .*\); nothing was written$/);
+      assert.deepEqual(Object.keys(e.details), ["problems"]);
+      return true;
+    });
+    assert.equal(fx.text(), text);
+  }
 });
 
 test("oats soul launch finds the deployment as oats soul teams does: from it, a nested directory, an instance home, and --dir", async (t) => {

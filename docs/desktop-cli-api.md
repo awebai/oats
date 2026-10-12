@@ -1444,7 +1444,9 @@ oats teams default <label> [--if-absent | --expect <label>] --json
   answer, as for every command.
 - **Rendering** (0.53.0). The file is written without folding lines: a value
   past 80 columns stays on its line. Before, a write re-wrapped such a line
-  (the same value, over two lines).
+  (the same value, over two lines). A file written as JSON (it opens with
+  `{`, and the kernel reads it as strict JSON) is written back as two-space
+  JSON; before, a write to such a file failed with no answer.
 - A write that would introduce an unknown reference is refused with that
   code; an invalid result is `E_WORKSPACE_SCHEMA`.
 - **Writes** edit `oats-local.yaml` in place and touch only the entries that
@@ -1524,7 +1526,10 @@ One closed answer for `set`, `remove` and their plans.
   `E_SOUL_AMBIGUOUS`) and writes the key that soul has: its bare name, or
   `<package>/<soul>`. `'*'` is the machine default. Exactly one of
   `--launch-config` and `--harness`; `--model` only with `--harness`
-  (`E_BAD_ARGS`). `--launch-config <name>` writes the name (`none` too) and
+  (`E_BAD_ARGS`). Each of them is given once and with a value, and the
+  command takes one name: a flag repeated, a flag with no value at any
+  occurrence, and a second name are `E_BAD_ARGS`, on `remove` too.
+  `--launch-config <name>` writes the name (`none` too) and
   `--harness` the inline `{harness, model?}`. A harness that is not installed
   is not refused: `launch.problem` says what a spawn would refuse.
 - **`remove`** tries its argument **first as the exact text of a key in
@@ -1571,8 +1576,9 @@ One closed answer for `set`, `remove` and their plans.
   report, said before the file holds it), `E_LAUNCH_PREFERENCE_UNKNOWN {key,
   keys}` (a `remove` of an entry the file does not have; `keys` are the
   entries it has), `E_LOCAL_BUSY {path, lock}`, `E_LOCAL_CHANGED {path}`,
-  `E_WORKSPACE_SCHEMA` (the rewritten file would be invalid, `details:
-  {problems}`; or it would not read back as this one edit, `details: {path,
+  `E_WORKSPACE_SCHEMA` (the rewritten file would be invalid, or the kernel
+  would not decode it, `details: {problems}`; or it would not read back as
+  this one edit, `details: {path,
   reason: "read-back", differs}` with `differs` the JSON pointers that
   differ, never their values), and whatever the read of the workspace
   answers when `set`, or a `remove` that names a soul, cannot read the souls.

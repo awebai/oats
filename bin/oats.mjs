@@ -2123,19 +2123,27 @@ const launchEntryText = (v) => (v === null ? "no entry" : typeof v === "string" 
 async function soulLaunchCmd(bail, usage) {
   const sub = positional(2);
   if (!["set", "remove"].includes(sub)) bail("E_USAGE", usage);
+  // Every argument is accounted for before anything is read or written: a flag the form does not take, a
+  // value flag with no value at ANY of its occurrences (`--harness codex --harness`), a value flag given
+  // twice (flag() would read the first and drop the second) and a second name are refused, never ignored.
   const takes = { "--dir": true, "--json": false, "--plan": false, ...SOUL_LAUNCH_FLAGS[sub] };
-  for (let i = 1; i < args.length; i++) {
+  const names = [], given = new Set();
+  for (let i = 3; i < args.length; i++) {
     const a = args[i];
-    if (!a.startsWith("-")) continue;
+    if (!a.startsWith("-")) { names.push(a); continue; }
     if (!Object.hasOwn(takes, a)) bail("E_USAGE", `oats soul launch ${sub} does not take ${a} (nothing was changed) — usage: ${SOUL_LAUNCH_USAGE}`, { flag: a });
-    if (takes[a] && args[i + 1] !== undefined && !args[i + 1].startsWith("--")) i++;
+    if (!takes[a]) continue;
+    if (args[i + 1] === undefined || args[i + 1].startsWith("--")) bail("E_BAD_ARGS", `${a} needs a value`);
+    if (given.has(a)) bail("E_BAD_ARGS", `oats soul launch ${sub} takes ${a} once (nothing was changed)`);
+    given.add(a);
+    i++;
   }
-  const name = positional(3);
-  if (name === undefined) bail("E_BAD_ARGS", `oats soul launch ${sub} needs ${sub === "set" ? "a soul (or '*')" : "a soul, '*' or the exact text of a key in souls.launch"} — usage: ${SOUL_LAUNCH_USAGE}`);
+  if (names.length === 0) bail("E_BAD_ARGS", `oats soul launch ${sub} needs ${sub === "set" ? "a soul (or '*')" : "a soul, '*' or the exact text of a key in souls.launch"} — usage: ${SOUL_LAUNCH_USAGE}`);
+  if (names.length > 1) bail("E_BAD_ARGS", `oats soul launch ${sub} takes one ${sub === "set" ? "soul" : "soul or key"}, and got ${names.length}: ${names.map((n) => JSON.stringify(n)).join(", ")} (nothing was changed) — usage: ${SOUL_LAUNCH_USAGE}`);
+  const name = names[0];
   const V = await import("../lib/soul-launch-verbs.mjs");
   let value = null;
   if (sub === "set") {
-    // A value flag with no value (`--launch-config --plan`) is refused by valueFlag, never read as absent.
     try { value = V.soulLaunchValue({ launchConfig: valueFlag("launch-config"), harness: valueFlag("harness"), model: valueFlag("model") }); }
     catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
   }
