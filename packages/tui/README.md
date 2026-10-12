@@ -4,9 +4,10 @@
 for people who work in terminals and on machines with no display. It ships
 inside `@awebai/oats` and is never published on its own.
 
-**It is a preview.** This version shows one deployment's instances on this
-machine and follows them; it changes nothing. While it is a preview its
-screens and its configuration file may change without notice.
+**It is a preview.** This version shows a workspace's instances, on this
+machine and on the other machines registered on it, in one list, and follows
+them; it changes nothing. While it is a preview its screens and its
+configuration file may change without notice.
 
 [`docs/tui.md`](../../docs/tui.md) is the reference: how to start it, what the
 view shows, the keys and how to change them, what it reads and runs, the
@@ -22,16 +23,16 @@ never does.
 | `lib/actions.mjs` | the action table and its default keys: the reducer, the footer and the help read the effective one |
 | `lib/config.mjs` | `tui.json`: read once, checked, and the effective action table |
 | `lib/client.mjs` | the one module that imports the shared readers (`packages/client/`), and the client's terms |
-| `lib/read.mjs` | the effects of reading: the deployment, the kernel record, the observer, the refresh loop, the liveness collector, and ending every child |
+| `lib/read.mjs` | the effects of reading: the deployment, the kernel record, the observer of every deployment opened in the run, the roster of other machines (`oats server roster --json`), the refresh loop, the liveness collector, ending every child, and the two looks at the file system the switcher needs (the entries of `~/Agents`, and whether a picked folder is a deployment) |
 | `lib/store.mjs` | the state and `reduce(state, event)`: pure |
-| `lib/model.mjs` | from the state to the rows and the detail to draw, by calling the shared readers: pure, no cell position |
+| `lib/model.mjs` | from the state to the rows and the detail to draw, and to the switcher's rows, by calling the shared readers: pure, no cell position |
 | `lib/term/keys.mjs` | bytes to key events: a pure parser with an injected clock |
 | `lib/term/width.mjs` | the cells a grapheme takes |
 | `lib/term/text.mjs` | safe text, the only thing the screen draws: `lit()` and `shown()` |
 | `lib/term/style.mjs` | style values: the sixteen ANSI colours and four attributes |
 | `lib/term/screen.mjs` | the cell buffer and the bytes of a frame |
 | `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame |
-| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the help |
+| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the switcher, the help |
 
 Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 

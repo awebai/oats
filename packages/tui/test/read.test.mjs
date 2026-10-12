@@ -1,16 +1,17 @@
-// The effects of the Instances view (lib/read.mjs), with real child processes wherever the
+// The effects of the TUI (lib/read.mjs): the reads of every served deployment, the roster of other
+// machines and the two looks at the file system, with real child processes wherever the
 // behaviour is about processes. The kernel and the collector are FAKES (fixtures/fake.mjs), copied
 // into a temp directory: no test runs a real `oats` against a deployment, and none starts tmux.
 // A test signals only a pid a fake wrote down, and only after it has seen that the pid is its fake.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile as nodeExecFile, execFileSync, spawn as nodeSpawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLLECTOR, INSTANCE_VARIABLES, acceptProbe, cliRecord, failedEntry, livenessInput } from "../lib/client.mjs";
-import { KERNEL_BIN, createReader, findDeployment, leaveInstance, probeKernel } from "../lib/read.mjs";
+import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, remoteRosterState } from "../lib/client.mjs";
+import { KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/fake.mjs", import.meta.url));
 const LEAVE = fileURLToPath(new URL("./fixtures/leave.mjs", import.meta.url));
@@ -95,13 +96,17 @@ function makeWorld(plan = {}) {
   const world = {
     dir, deployment, bin: path.join(dir, "oats.mjs"), collector: path.join(dir, "collector.mjs"),
     plan(next) { writeFileSync(path.join(dir, "plan.json"), JSON.stringify(next)); },
+    /** One more deployment directory of this world: its path. */
+    another(name) { const more = path.join(dir, name); mkdirSync(more); return more; },
     /** What the fakes wrote down, in order; `calls("status", "start")` narrows it. */
     calls(action, event) {
       const all = existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)) : [];
       return all.filter((call) => (action === undefined || call.action === action) && (event === undefined || call.event === event));
     },
   };
+  // The record of a kernel that reads no other machine, and of one that does (`remote` lists `roster`).
   world.cli = cliRecord({ version: VERSION, workspaceApi: 2, features: FEATURES }, { bin: world.bin, source: "tui" });
+  world.remoteCli = cliRecord({ version: VERSION, workspaceApi: 2, features: FEATURES, remote: ["roster"] }, { bin: world.bin, source: "tui" });
   world.plan(plan);
   worlds.push(world);
   return world;
@@ -126,22 +131,34 @@ function answering(world, rows = [], answers = [], more = {}) {
   return { status: { stdout: JSON.stringify(statusDocument(world.deployment, rows)) }, workspace: { stdout: JSON.stringify(workspaceDocument(world.deployment)) },
     collector: { stdout: typeof answers === "string" ? answers : JSON.stringify(answers) }, ...more };
 }
+/** The kernel's two answers about one deployment, as a plan's steps. */
+const serving = (deployment, rows = []) => ({ status: { stdout: JSON.stringify(statusDocument(deployment, rows)) }, workspace: { stdout: JSON.stringify(workspaceDocument(deployment)) } });
+/** The deployment a kernel call was asked about. */
+const askedAbout = (call) => call.argv[call.argv.indexOf("--dir") + 1];
 /** The `at` of the n-th cycle of a reader made by `reading`. */
 const at = (n) => new Date(Date.UTC(2026, 0, 1, 0, 0, n)).toISOString();
-/** A reader over a world, with the caller's side of it: a store of one entry, what was emitted, every process started. */
-function reading(t, world, options = {}) {
-  const entries = [], spawned = [], store = { entry: null };
+/** What a store holds of the other machines before any read. */
+const noRoster = () => ({ remote: { remoteGroups: [], rosterAnswered: false, rosterFailure: null }, memory: new Map(), notes: new Map() });
+/** A reader over a world, with the caller's side of it: a store (an entry per deployment, `entry` the world's own; what it
+ *  holds of the other machines), what was emitted, every process started. `served` is the list getServed() answers, or the
+ *  function itself; it is the world's one deployment when none is given. `spawn` starts the process; every start is recorded. */
+function reading(t, world, { served = [world.deployment], spawn = nodeSpawn, ...options } = {}) {
+  const entries = [], rosters = [], spawned = [];
+  const store = { entries: new Map(), roster: noRoster(), get entry() { return this.entries.get(world.deployment) ?? null; } };
   let cycles = 0;
   const reader = createReader({
-    deployment: world.deployment, cli: world.cli, env: CLEAN_ENV, collector: world.collector,
-    getEntry: () => store.entry,
-    onEntry: (emitted) => { entries.push(emitted); store.entry = emitted.entry; },
+    cli: world.cli, env: CLEAN_ENV, collector: world.collector,
+    getServed: typeof served === "function" ? served : () => served,
+    getEntry: (id) => store.entries.get(id) ?? null,
+    getRoster: () => store.roster,
+    onEntry: (emitted) => { entries.push(emitted); store.entries.set(emitted.id, emitted.entry); },
+    onRoster: (event) => { rosters.push(event); if (event.roster) store.roster = { remote: event.roster.remote, memory: event.roster.memory, notes: event.roster.notes }; },
     clock: () => at(++cycles),
-    spawn: (file, args, opts) => { spawned.push({ file, args, options: opts }); return nodeSpawn(file, args, opts); },
+    spawn: (file, args, opts) => { spawned.push({ file, args, options: opts }); return spawn(file, args, opts); },
     ...options,
   });
   t.after(() => reader.stop());
-  return { reader, entries, spawned, store, begun: () => cycles };
+  return { reader, entries, rosters, spawned, store, begun: () => cycles };
 }
 /** Timers that fire when the test says so, with node's own names. */
 function fakeTimers() {
@@ -301,7 +318,9 @@ test("a cycle: the kernel's roster goes to the collector as the shared livenessI
   assert.deepEqual(reader.children(), []);
   await reader.request();
   assert.equal(entries.length, 1, "exactly one entry for the cycle");
-  const [{ entry, number }] = entries;
+  const [{ id, entry, number }] = entries;
+  assert.deepEqual(Object.keys(entries[0]).sort(), ["entry", "id", "number"]);
+  assert.equal(id, world.deployment);
   assert.equal(number, 1);
   assert.equal(entry.deployment.status, "observed");
   assert.deepEqual([entry.deployment.root, entry.deployment.workspace.name, entry.generatedAt, typeof entry.observedAt], [path.join(world.deployment, "agents"), "fake-workspace", at(1), "string"]);
@@ -410,7 +429,7 @@ test("the kernel's error envelope becomes the shared failedEntry over the entry 
   world.plan({ ...good, status: kernelError("E_REMOTE_UNREADABLE", "could not read the workspace remote", { reason: "network", url: "https://git.example.com/team/agents.git", path: "/private/cache" }) });
   await reader.request({ live: true });
   const unreadable = { code: "E_REMOTE_UNREADABLE", message: "could not read the workspace remote", origin: "kernel", cause: { reason: "network", host: "git.example.com" } };
-  assert.deepEqual(entries[1], { entry: failedEntry(observed, unreadable, at(2)), number: 2 });
+  assert.deepEqual(entries[1], { id: world.deployment, entry: failedEntry(observed, unreadable, at(2)), number: 2 });
   assert.deepEqual([entries[1].entry.deployment.status, entries[1].entry.error, entries[1].entry.errorCause], ["observed", unreadable.message, { code: unreadable.code, ...unreadable.cause }]);
   assert.deepEqual(entries[1].entry.instances, observed.instances);
   assert.deepEqual(collectors(), [1, 1], "no collector for a read that failed");
@@ -420,7 +439,7 @@ test("the kernel's error envelope becomes the shared failedEntry over the entry 
   const held = store.entry;
   await reader.request();
   const refused = { code: "E_LOCK_HELD", message: "another oats command holds the lock", origin: "kernel" };
-  assert.deepEqual(entries[2], { entry: failedEntry(held, refused, at(3)), number: 3 });
+  assert.deepEqual(entries[2], { id: world.deployment, entry: failedEntry(held, refused, at(3)), number: 3 });
   assert.deepEqual(entries[2].entry, { deployment: { status: "unavailable", reason: refused }, instances: [], generatedAt: at(3) });
 
   // With no observation to keep, an unreadable remote is unavailable too. And a kernel that prints no envelope.
@@ -688,14 +707,15 @@ test("a kernel that ignores SIGTERM keeps neither its cycle nor the reader: it i
 
 test("a whole process that stops its reader ends by itself: it waits for no pipe a grandchild holds, and for no child that ignores the signal", async () => {
   const cases = [
-    ["a kernel that exited and left a grandchild holding its pipes", (world) => ({ stdout: JSON.stringify(statusDocument(world.deployment)), grandchild: true }), "sleeper"],
-    ["a kernel that ignores SIGTERM", () => ({ sleep: true, stubborn: true }), "status"],
+    ["a kernel that exited and left a grandchild holding its pipes", (world) => ({ status: { stdout: JSON.stringify(statusDocument(world.deployment)), grandchild: true } }), "sleeper", (world) => world.cli],
+    ["a kernel that ignores SIGTERM", () => ({ status: { sleep: true, stubborn: true } }), "status", (world) => world.cli],
+    ["a kernel reading the roster of other machines that ignores SIGTERM", () => ({ server: { sleep: true, stubborn: true } }), "server", (world) => world.remoteCli],
   ];
-  for (const [name, status, wait] of cases) {
+  for (const [name, steps, wait, cli] of cases) {
     const world = makeWorld();
-    world.plan({ ...answering(world), status: status(world) });
+    world.plan({ ...answering(world), ...steps(world) });
     // The process is given 60 s; it needs none of them when nothing holds it.
-    const ran = await new Promise((resolve) => { nodeExecFile(process.execPath, [LEAVE, world.dir, JSON.stringify(world.cli), wait], { env: CLEAN_ENV, timeout: 60_000 }, (error, stdout, stderr) => resolve({ error, stdout, stderr })); });
+    const ran = await new Promise((resolve) => { nodeExecFile(process.execPath, [LEAVE, world.dir, JSON.stringify(cli(world)), wait], { env: CLEAN_ENV, timeout: 60_000 }, (error, stdout, stderr) => resolve({ error, stdout, stderr })); });
     assert.equal(ran.error, null, `${name}: the process ended by itself, with status 0 (${ran.stderr})`);
     assert.equal(ran.stdout, "stopped\n", name);
     const left = world.calls(wait, "start")[0].pid;
@@ -861,4 +881,573 @@ test("voidInFlight() before a cycle's reads began starts none of them; a cycle r
   await second;
   assert.deepEqual(entries.map((emitted) => [emitted.number, emitted.entry.deployment.status]), [[2, "observed"]]);
   assert.equal(spawned.length, 2);
+});
+
+// ── several served deployments ────────────────────────────────────────────────
+
+test("several served deployments: each answers once per cycle, all under the cycle's one number and one time, each over the entry held for it", async (t) => {
+  const world = makeWorld();
+  const served = [world.deployment, world.another("deployment-b"), world.another("deployment-c")], [a, b, c] = served;
+  const rows = { [a]: [kernelRow("dev-a")], [b]: [kernelRow("dev-b")], [c]: [kernelRow("dev-c")] };
+  const good = { deployments: Object.fromEntries(served.map((dir) => [dir, serving(dir, rows[dir])])), collector: { stdout: JSON.stringify([{ running: true, runtimeState: "running" }]) } };
+  world.plan(good);
+  const { reader, entries, begun } = reading(t, world, { served });
+  const of = (cycle, dir) => cycle.find((emitted) => emitted.id === dir).entry;
+
+  await reader.request();
+  assert.deepEqual(entries.map((emitted) => emitted.id).sort(), [...served].sort(), "one entry per deployment, and no second");
+  assert.deepEqual(entries.map((emitted) => [emitted.number, emitted.entry.generatedAt, emitted.entry.deployment.status]), served.map(() => [1, at(1), "observed"]));
+  assert.equal(begun(), 1, "one time for the whole cycle");
+  for (const dir of served) {
+    assert.deepEqual([of(entries, dir).deployment.root, shown(of(entries, dir))], [path.join(dir, "agents"), [[rows[dir][0].instance, true, "running"]]], "its own roster, and nobody else's");
+    for (const action of ["status", "workspace"]) assert.deepEqual(world.calls(action, "start").filter((call) => askedAbout(call) === dir).map((call) => call.cwd), [dir], `${action}: read once, in its own directory`);
+  }
+  // One collector per deployment, each over that deployment's rows.
+  assert.deepEqual(world.calls("collector", "start").map((call) => call.stdin).sort(), served.map((dir) => JSON.stringify(livenessInput(rows[dir]))).sort());
+  assert.deepEqual(reader.children(), []);
+
+  // One of them fails: its entry is the shared failedEntry over the entry held for THAT deployment, and the others are observed.
+  world.plan({ ...good, deployments: { ...good.deployments, [b]: { ...good.deployments[b], status: kernelError("E_REMOTE_UNREADABLE", "could not read the workspace remote") } } });
+  const first = entries.splice(0);
+  await reader.request({ live: true });
+  assert.deepEqual(entries.map((emitted) => emitted.id).sort(), [...served].sort());
+  assert.deepEqual(entries.map((emitted) => emitted.number), [2, 2, 2]);
+  assert.deepEqual(of(entries, b), failedEntry(of(first, b), { code: "E_REMOTE_UNREADABLE", message: "could not read the workspace remote", origin: "kernel" }, at(2)));
+  assert.deepEqual(shown(of(entries, b)), [["dev-b", true, "running"]], "the rows kept are its own");
+  assert.deepEqual([a, c].map((dir) => [of(entries, dir).deployment.status, of(entries, dir).generatedAt, shown(of(entries, dir))]), [["observed", at(2), [["dev-a", true, "running"]]], ["observed", at(2), [["dev-c", true, "running"]]]]);
+});
+
+test("several served deployments are read at most MAX_DEPLOYMENT_OBSERVATIONS at a time: a slow one holds one place, and the others go through the rest", async (t) => {
+  const world = makeWorld();
+  const served = [world.deployment, ...Array.from({ length: MAX_DEPLOYMENT_OBSERVATIONS + 2 }, (_, n) => world.another(`deployment-${n + 2}`))];
+  const release = (dir) => path.join(dir, "answer-now");
+  // Every kernel is slow: each `status` answers when the test says so.
+  world.plan({ deployments: Object.fromEntries(served.map((dir) => { const steps = serving(dir); return [dir, { ...steps, status: { ...steps.status, until: release(dir) } }]; })) });
+  const { reader, entries } = reading(t, world, { served });
+  /** The deployments a kernel was started for, and those of them that have not answered. Sorted: two
+   *  kernels started in one turn write their lines in the order the machine ran them. */
+  const begun = () => [...new Set(world.calls("status", "start").map(askedAbout))].sort();
+  const first = (count) => served.slice(0, count).sort();
+  const inFlight = () => begun().filter((dir) => !entries.some((emitted) => emitted.id === dir));
+
+  const cycle = reader.request();
+  await waitFor("the first reads to start", () => begun().length >= MAX_DEPLOYMENT_OBSERVATIONS);
+  await sleep(300);
+  assert.deepEqual(begun(), first(MAX_DEPLOYMENT_OBSERVATIONS), "no more than that many, though every one of them is waiting");
+  assert.equal(reader.children().length, MAX_DEPLOYMENT_OBSERVATIONS, "one kernel still running for each");
+  assert.deepEqual(entries, []);
+
+  // The first stays slow. Each of the others is let go in turn: the next starts only then.
+  for (let n = 1; n < served.length; n++) {
+    writeFileSync(release(served[n]), "");
+    await waitFor(`deployment ${n + 1} to answer`, () => entries.length === n);
+    const next = Math.min(served.length, n + 2);
+    await waitFor("the next read to start", () => begun().length === next);
+    await sleep(100);
+    assert.deepEqual(begun(), first(next), "the next of the served order and no other, through the free place");
+    assert.equal(inFlight().length <= MAX_DEPLOYMENT_OBSERVATIONS, true);
+    assert.equal(inFlight().includes(served[0]), true, "the slow one is still being read");
+  }
+  assert.equal(await settled(cycle, 300), false, "the cycle is over when its last deployment is");
+  writeFileSync(release(served[0]), "");
+  await cycle;
+  assert.deepEqual(entries.map((emitted) => emitted.id), [...served.slice(1), served[0]]);
+  assert.deepEqual(entries.map((emitted) => [emitted.number, emitted.entry.deployment.status]), served.map(() => [1, "observed"]), "every one read, none refused as busy");
+  assert.deepEqual(reader.children(), []);
+});
+
+test("a deployment that is not in getServed() is never read, and the list is read once, at the start of each cycle", async (t) => {
+  const world = makeWorld();
+  const a = world.deployment, b = world.another("deployment-b");
+  world.plan({ deployments: { [a]: serving(a), [b]: serving(b) } });
+  let served = [a], asked = 0;
+  const { reader, entries, spawned } = reading(t, world, { served: () => { asked++; return served; } });
+  const readOf = () => world.calls(undefined, "start").map(askedAbout);
+
+  await reader.request();
+  await reader.request({ live: true });
+  assert.deepEqual([asked, entries.map((emitted) => emitted.id), readOf()], [2, [a, a], [a, a, a, a]]);
+
+  served = [b];
+  await reader.request();
+  assert.deepEqual([asked, entries.map((emitted) => [emitted.id, emitted.number]), readOf().slice(4)], [3, [[a, 1], [a, 2], [b, 3]], [b, b]], "the one that left is read no more");
+  assert.equal(entries[2].entry.deployment.root, path.join(b, "agents"));
+
+  // No served deployment: the cycle runs, and reads nothing.
+  served = [];
+  const count = spawned.length;
+  await reader.request({ live: true });
+  assert.deepEqual([asked, entries.length, spawned.length, world.calls().length > 0], [4, 3, count, true]);
+  assert.deepEqual(reader.children(), []);
+});
+
+// ── the roster of other machines ──────────────────────────────────────────────
+
+// The kernel's own forms: a group's id is `<server>:<targetKey>` with a lower-case server name and no
+// path in it, and a remote row says whether it is addressable. A group in another form is never remembered.
+const WORKSPACE = "git.example.com/acme-platform/agents";
+const reportedWorkspace = () => ({ reachable: true, key: WORKSPACE, ref: `git:${WORKSPACE}`, keyFrom: "workspace", standalone: false, defaultTeam: { label: "default", team: "aweb:acme-platform" }, teams: { default: "aweb:acme-platform" }, teamsFrom: "observed" });
+const remoteRow = (name, root, more = {}) => ({ instance: name, agent: "dev", agentsRoot: `${root}/agents`, home: `${root}/agents/dev/instances/${name}`, running: true, savedRoute: false, addressable: true, missingRemotely: false, createdAt: null, identity: { alias: name, team: "aweb:acme-platform" }, ...more });
+function group(id, root, rows = []) {
+  const server = id.slice(0, id.indexOf(":"));
+  return { id, server, label: server, registrationPresent: true, target: { sshHost: `${server}.example`, workspace: root }, probe: { ok: true }, agentsRoot: `${root}/agents`, workspace: reportedWorkspace(), souls: [], instances: rows, retireFailures: [] };
+}
+const garnet = () => group("garnet:t1", "/srv/acme-platform", [remoteRow("dev-far", "/srv/acme-platform"), remoteRow("dev-held", "/srv/acme-platform", { running: false, addressable: false })]);
+const onyx = () => group("onyx:t2", "/home/builder/acme-platform", [remoteRow("dev-east", "/home/builder/acme-platform")]);
+/** What `oats server roster --json` prints for these groups. */
+const rosterAnswer = (groups) => ({ schemaVersion: 1, ok: true, result: { groups } });
+/** The three values a store keeps of a roster state. */
+const kept = ({ remoteGroups, rosterAnswered, rosterFailure }) => ({ remoteGroups, rosterAnswered, rosterFailure });
+/** The event of one outcome over what a store held, said with the shared functions and nothing else. */
+function taken(held, outcome, time) {
+  const state = remoteRosterState(held.remote, outcome, time);
+  const identities = state.reported === null ? held : observeIdentities({ memory: held.memory, notes: held.notes }, state.reported, time);
+  return { roster: { remote: kept(state), memory: identities.memory, notes: identities.notes, at: time } };
+}
+const outcomes = (rosters) => rosters.filter((event) => event.roster);
+/** The roster reads a reader started: counted where the process is started, so with no delay. */
+const rosterReads = (spawned) => spawned.filter((call) => call.args[1] === "server").length;
+
+test("the roster: an answer, a refusal and a read that threw each reach onRoster as the shared functions make them, each after { collecting: true }", async (t) => {
+  const world = makeWorld();
+  assert.deepEqual([cliReadsRemotes(world.remoteCli), cliReadsRemotes(world.cli)], [true, false]);
+  const local = answering(world), answered = rosterAnswer([garnet(), onyx()]);
+  world.plan({ ...local, server: { stdout: JSON.stringify(answered) } });
+  let throwing = false;
+  const spawn = (file, args, options) => { if (throwing && args[1] === "server") throw new Error("spawn EMFILE"); return nodeSpawn(file, args, options); };
+  const { reader, entries, rosters, store } = reading(t, world, { cli: world.remoteCli, spawn });
+  /** One live cycle, and the roster outcome it began. */
+  const read = async (n) => { await reader.request({ live: true }); await waitFor(`roster answer ${n}`, () => outcomes(rosters).length === n); };
+
+  // An answer: the groups are held, and what they reported is remembered.
+  let held = store.roster;
+  await read(1);
+  assert.deepEqual(rosters, [{ collecting: true }, taken(held, { envelope: answered }, at(1))]);
+  assert.deepEqual([store.roster.remote.rosterAnswered, store.roster.remote.remoteGroups, [...store.roster.memory.keys()]], [true, answered.result.groups, ["garnet:t1", "onyx:t2"]], "the fixture has the kernel's forms: both machines are remembered");
+  assert.deepEqual(Object.keys(rosters[1].roster).sort(), ["at", "memory", "notes", "remote"]);
+  assert.deepEqual(Object.keys(rosters[1].roster.remote).sort(), ["remoteGroups", "rosterAnswered", "rosterFailure"], "the three values a store keeps, and not what was reported");
+
+  // A refusal (the kernel's envelope, exit 1): nothing was reported, so the memory is the one held, untouched.
+  const refusal = { schemaVersion: 1, ok: false, error: { code: "E_ROSTER_BUDGET", message: "the roster read ran out of time" } };
+  world.plan({ ...local, server: { stdout: JSON.stringify(refusal), exit: 1 } });
+  held = store.roster;
+  await read(2);
+  assert.deepEqual(rosters.slice(2), [{ collecting: true }, taken(held, { envelope: refusal }, at(2))]);
+  assert.equal(rosters[3].roster.memory, held.memory);
+  assert.equal(rosters[3].roster.notes, held.notes);
+  assert.notDeepEqual(rosters[3].roster.remote, held.remote, "and the groups held are not what they were");
+
+  // A read that threw (the process could not be started): the message goes to the shared rule as it is.
+  throwing = true;
+  held = store.roster;
+  await read(3);
+  assert.deepEqual(rosters.slice(4), [{ collecting: true }, taken(held, { thrown: "spawn EMFILE" }, at(3))]);
+  assert.equal(JSON.stringify(rosters[5].roster.remote).includes("spawn EMFILE"), true);
+
+  // And an answer again.
+  throwing = false;
+  world.plan({ ...local, server: { stdout: JSON.stringify(answered) } });
+  held = store.roster;
+  await read(4);
+  assert.deepEqual(rosters.slice(6), [{ collecting: true }, taken(held, { envelope: answered }, at(4))]);
+  assert.deepEqual(store.roster.remote, kept(remoteRosterState(noRoster().remote, { envelope: answered }, at(4))));
+  assert.deepEqual(entries.map((emitted) => [emitted.number, emitted.entry.deployment.status]), [[1, "observed"], [2, "observed"], [3, "observed"], [4, "observed"]], "whatever the roster did, this machine was read");
+  assert.deepEqual(reader.children(), []);
+});
+
+test("the roster: when the memory of identities cannot take what an answer reported, the state just made is taken again as a read that threw", async (t) => {
+  const world = makeWorld();
+  const answered = rosterAnswer([garnet()]);
+  world.plan({ ...answering(world), server: { stdout: JSON.stringify(answered) } });
+  // A store whose memory is not a Map: the shared function throws for it.
+  const broken = { remote: noRoster().remote, memory: { not: "a Map" }, notes: new Map() };
+  const { reader, rosters } = reading(t, world, { cli: world.remoteCli, getRoster: () => broken });
+  await reader.request();
+  await waitFor("the roster's answer", () => outcomes(rosters).length === 1);
+
+  const first = remoteRosterState(broken.remote, { envelope: answered }, at(1));
+  assert.deepEqual(first.reported, answered.result.groups);
+  let message = null;
+  try { observeIdentities({ memory: broken.memory, notes: broken.notes }, first.reported, at(1)); } catch (error) { message = error.message; }
+  assert.equal(typeof message, "string", "the shared function did throw");
+  const marked = remoteRosterState(first, { thrown: message }, at(1));
+  assert.deepEqual(rosters, [{ collecting: true }, { roster: { remote: kept(marked), memory: broken.memory, notes: broken.notes, at: at(1) } }]);
+  assert.equal(rosters[1].roster.memory, broken.memory, "the memory as it was held");
+  assert.equal(rosters[1].roster.notes, broken.notes);
+  assert.deepEqual(rosters[1].roster.remote.remoteGroups.map((held) => [held.id, held.probe.ok]), [["garnet:t1", false]], "the groups just taken are marked not reached");
+  assert.notDeepEqual(kept(marked), kept(first));
+});
+
+test("the roster: a cycle begins the read and does not wait for it; while one is in flight no second starts, not for a live request either", async (t) => {
+  const world = makeWorld();
+  const go = path.join(world.dir, "answer-now"), answered = rosterAnswer([garnet()]);
+  world.plan({ ...answering(world, [kernelRow("dev-one")], [{ running: true, runtimeState: "running" }]), server: { stdout: JSON.stringify(answered), until: go } });
+  const { reader, entries, rosters, spawned } = reading(t, world, { cli: world.remoteCli });
+
+  await reader.request();
+  assert.deepEqual([entries.length, shown(entries[0].entry)], [1, [["dev-one", true, "running"]]], "this machine's rows did not wait for the other machines");
+  assert.deepEqual(rosters, [{ collecting: true }]);
+  const pid = await waitFor("the roster's kernel to start", () => world.calls("server", "start")[0]?.pid);
+  assert.deepEqual(reader.children(), [pid], "the cycle is over; the roster read is not");
+
+  await reader.request({ live: true });
+  await reader.request();
+  await reader.request({ live: true });
+  assert.deepEqual([entries.length, rosterReads(spawned), world.calls("server", "start").length], [4, 1, 1]);
+  assert.deepEqual(rosters, [{ collecting: true }], "and nothing more is said of a read already on its way");
+  assert.equal(alive(pid), true);
+
+  writeFileSync(go, "");
+  await waitFor("the roster's answer", () => rosters.length === 2);
+  assert.deepEqual(rosters[1], taken(noRoster(), { envelope: answered }, at(1)), "with the time of the cycle that began it");
+  assert.deepEqual(reader.children(), []);
+  await reader.request({ live: true });
+  assert.equal(rosterReads(spawned), 2, "none in flight: a live request begins one at once");
+  await waitFor("the second answer", () => outcomes(rosters).length === 2);
+  assert.equal(rosters.at(-1).roster.at, at(5));
+});
+
+test("the roster: with nobody asking, the next read begins no sooner than 15 s after the END of the last one; a live request begins one at once", async (t) => {
+  const world = makeWorld();
+  const go = path.join(world.dir, "answer-now");
+  world.plan({ ...answering(world), server: { stdout: JSON.stringify(rosterAnswer([])), until: go } });
+  let ms = 5_000_000;
+  const { reader, rosters, spawned } = reading(t, world, { cli: world.remoteCli, now: () => ms });
+  const answer = (n) => waitFor(`roster answer ${n}`, () => outcomes(rosters).length === n);
+
+  await reader.request();
+  assert.equal(rosterReads(spawned), 1, "none has ended yet: the first cycle begins one");
+  ms += 20_000; // the read takes 20 s
+  await reader.request();
+  assert.equal(rosterReads(spawned), 1, "in flight");
+  writeFileSync(go, "");
+  await answer(1);
+  await reader.request();
+  assert.equal(rosterReads(spawned), 1, "20 s after it began, and no time at all after it ended");
+  ms += 14_999;
+  await reader.request();
+  assert.equal(rosterReads(spawned), 1, "one millisecond short of 15 s");
+  ms += 1;
+  await reader.request();
+  assert.equal(rosterReads(spawned), 2, "15 s after the end");
+  await answer(2);
+  ms += 14_999;
+  await reader.request();
+  assert.equal(rosterReads(spawned), 2, "and the 15 s are counted again from that end");
+  await reader.request({ live: true });
+  assert.equal(rosterReads(spawned), 3, "somebody asked");
+  await answer(3);
+  await reader.request();
+  assert.equal(rosterReads(spawned), 3);
+  assert.deepEqual(rosters.map((event) => Object.keys(event)[0]), ["collecting", "roster", "collecting", "roster", "collecting", "roster"]);
+
+  // The pause is the caller's to set.
+  const other = reading(t, world, { cli: world.remoteCli, now: () => ms, rosterMs: 1000 });
+  await other.reader.request();
+  await waitFor("its first answer", () => outcomes(other.rosters).length === 1);
+  ms += 999;
+  await other.reader.request();
+  assert.equal(rosterReads(other.spawned), 1);
+  ms += 1;
+  await other.reader.request();
+  assert.equal(rosterReads(other.spawned), 2);
+  await waitFor("its second answer", () => outcomes(other.rosters).length === 2);
+});
+
+test("the roster, with a kernel that reads no other machine: no child is ever started for it, and the gated outcome is answered once", async (t) => {
+  const world = makeWorld();
+  world.plan({ ...answering(world), server: { stdout: JSON.stringify(rosterAnswer([garnet()])) } });
+  const { reader, entries, rosters, spawned, store } = reading(t, world);
+  // The store holds groups from somewhere: what the gated outcome makes of them is the shared rule's.
+  const held = store.roster = { ...noRoster(), remote: kept(remoteRosterState(noRoster().remote, { envelope: rosterAnswer([garnet()]) }, at(1))) };
+  await reader.request();
+  await reader.request({ live: true });
+  await reader.request();
+  await sleep(100);
+  assert.deepEqual(rosters, [taken(held, { gated: true }, at(1))], "once in a run, and never { collecting }");
+  assert.equal(rosters[0].roster.memory, held.memory);
+  assert.notDeepEqual(rosters[0].roster.remote, held.remote);
+  assert.deepEqual([entries.length, rosterReads(spawned), world.calls("server").length], [3, 0, 0]);
+});
+
+test("no served deployment: a cycle reads nothing local and still reads the roster", async (t) => {
+  const world = makeWorld();
+  const answered = rosterAnswer([garnet()]);
+  world.plan({ ...answering(world), server: { stdout: JSON.stringify(answered) } });
+  const { reader, entries, rosters, spawned } = reading(t, world, { cli: world.remoteCli, served: [] });
+  await reader.request();
+  await waitFor("the roster's answer", () => outcomes(rosters).length === 1);
+  assert.deepEqual(rosters, [{ collecting: true }, taken(noRoster(), { envelope: answered }, at(1))]);
+  assert.deepEqual(spawned.map((call) => call.args), [[world.bin, "server", "roster", "--json"]]);
+  assert.deepEqual([entries, world.calls("status"), world.calls("workspace"), world.calls("collector")], [[], [], [], []]);
+});
+
+test("the roster's kernel runs `server roster --json` in a session of its own, in the reader's environment, under the shared read's own time limit", async (t) => {
+  const world = makeWorld();
+  world.plan({ ...answering(world), server: { sleep: true } });
+  const env = { ...CLEAN_ENV, OATS_UNRELATED: "kept" }, timers = fakeTimers();
+  const { reader, rosters, spawned } = reading(t, world, { cli: world.remoteCli, env, timers });
+  await reader.request();
+  const call = await waitFor("the roster's kernel to start", () => world.calls("server", "start")[0]);
+
+  assert.deepEqual(call.argv, ["server", "roster", "--json"], "and no --max-age: it is not a flag of this read");
+  assert.equal(call.pgid, call.pid, "it leads its own process group");
+  if (call.sid !== null) assert.equal(call.sid, call.pid, "and its own session");
+  if (OWN_GROUP !== null) {
+    assert.equal(groupOf(call.pid), call.pid);
+    assert.notEqual(call.pgid, OWN_GROUP, "which is not this process's");
+  }
+  assert.deepEqual(EIGHT.filter((name) => name in call.env), [], "no instance variable");
+  assert.equal(call.env.OATS_UNRELATED, "kept");
+  const [started] = spawned.filter((made) => made.args[1] === "server");
+  assert.deepEqual([started.file, started.args], [process.execPath, [world.bin, "server", "roster", "--json"]]);
+  assert.deepEqual({ ...started.options, env: null }, { cwd: process.cwd(), env: null, shell: false, detached: true }, "what the shared read asked for, and detached: no deployment's directory");
+  assert.equal(started.options.env, env, "the reader's environment, where the shared read names none");
+
+  // Its limit is the shared read's 60 s. Past it the child is ended, and the outcome is the envelope
+  // the shared read makes of a child that was ended at its limit, taken by the shared rule.
+  assert.deepEqual(timers.delays(), [60_000]);
+  timers.fire((ms) => ms === 60_000);
+  assert.deepEqual(reader.children(), []);
+  await gone([call.pid]);
+  await waitFor("the roster's outcome", () => outcomes(rosters).length === 1);
+  const envelope = await cliRemoteRoster(world.bin, { exec: (bin, argv, options, callback) => { callback(Object.assign(new Error("ended"), { code: null, signal: "SIGTERM", killed: true }), "", ""); } });
+  assert.equal(envelope.ok, false);
+  assert.deepEqual(rosters, [{ collecting: true }, taken(noRoster(), { envelope }, at(1))]);
+  assert.deepEqual(timers.delays(), []);
+});
+
+/** A reader whose roster read is in flight, its kernel asleep with a grandchild in its group: once both run. */
+async function rosterInFlight(t, world, options = {}) {
+  const made = reading(t, world, { cli: world.remoteCli, ...options });
+  await made.reader.request({ live: true });
+  const pid = await waitFor("the roster's kernel to start", () => world.calls("server", "start").at(-1)?.pid);
+  const inner = await waitFor("its grandchild to start", () => world.calls("sleeper", "start")[0]);
+  assert.equal(inner.pgid, pid, "the grandchild is in the group the roster's kernel leads");
+  if (OWN_GROUP !== null) assert.deepEqual([groupOf(pid), groupOf(inner.pid)], [pid, pid]);
+  assert.deepEqual(made.reader.children(), [pid]);
+  assert.equal([pid, inner.pid].every(alive), true);
+  return { ...made, pid, inner: inner.pid };
+}
+
+test("leaving while the roster is read: stop() ends its child and its process group, no outcome is emitted for it, and nothing is started afterwards", async (t) => {
+  const world = makeWorld();
+  world.plan({ ...answering(world), server: { sleep: true, grandchild: true } });
+  const { reader, entries, rosters, spawned, pid, inner } = await rosterInFlight(t, world);
+  assert.deepEqual(rosters, [{ collecting: true }]);
+
+  assert.equal(reader.stop(), undefined);
+  assert.deepEqual(reader.children(), []);
+  await gone([pid, inner]);
+  await sleep(200);
+  assert.deepEqual(rosters, [{ collecting: true }], "the read that was given up answers nothing: neither an answer nor a failure");
+  const count = spawned.length;
+  await reader.request({ live: true });
+  await sleep(100);
+  assert.deepEqual([spawned.length, rosters.length, entries.length], [count, 1, 1], "a later request starts no process");
+});
+
+test("voidInFlight() while the roster is read: its child and its process group are ended, no outcome is emitted for it, and the next live request begins a new read at once", async (t) => {
+  const world = makeWorld();
+  const answered = rosterAnswer([garnet()]), local = answering(world);
+  world.plan({ ...local, server: { stdout: JSON.stringify(answered) } });
+  // The clock of the 15 s never moves: only a live request, or no read having ended, begins one.
+  const { reader, entries, rosters, spawned, store } = reading(t, world, { cli: world.remoteCli, now: () => 7_000_000 });
+  await reader.request();
+  await waitFor("the first answer", () => outcomes(rosters).length === 1);
+  const before = store.roster;
+
+  world.plan({ ...local, server: { sleep: true, grandchild: true } });
+  await reader.request({ live: true });
+  const pid = await waitFor("the roster's kernel to start", () => world.calls("server", "start")[1]?.pid);
+  const inner = await waitFor("its grandchild to start", () => world.calls("sleeper", "start")[0]);
+  assert.equal(inner.pgid, pid);
+  if (OWN_GROUP !== null) assert.deepEqual([groupOf(pid), groupOf(inner.pid)], [pid, pid]);
+  assert.deepEqual(reader.children(), [pid]);
+
+  assert.equal(reader.voidInFlight(), undefined);
+  assert.deepEqual(reader.children(), []);
+  await gone([pid, inner.pid]);
+  await sleep(200);
+  // The shared read answers for the ended child (a timeout's envelope): that answer arrives after the call, and is dropped.
+  assert.deepEqual(rosters.slice(2), [{ collecting: true }], "no outcome for the read that was in flight");
+  assert.equal(store.roster, before, "what the store holds of the other machines is as it was");
+
+  world.plan({ ...local, server: { stdout: JSON.stringify(answered) } });
+  await reader.request();
+  assert.equal(rosterReads(spawned), 2, "it is not in flight any more, and it is not a read that ended: the 15 s of the last answer still hold");
+  await reader.request({ live: true });
+  assert.equal(rosterReads(spawned), 3, "the live request of the return begins one at once");
+  await waitFor("the answer of the new read", () => outcomes(rosters).length === 2);
+  assert.deepEqual(rosters.slice(3), [{ collecting: true }, taken(before, { envelope: answered }, at(4))]);
+  assert.deepEqual(entries.map((emitted) => emitted.number), [1, 2, 3, 4], "the local cycles were over: none of them was void");
+});
+
+test("voidInFlight() with the roster's answer already waiting in the pipe: the answer is dropped, and the live request after it is taken", async (t) => {
+  // What a stopped TUI leaves behind: the roster's kernel went on in its own session and answered,
+  // and nobody read the pipe. On the return voidInFlight() comes before that pipe is read.
+  const world = makeWorld();
+  const answered = rosterAnswer([garnet(), onyx()]);
+  world.plan({ ...answering(world), server: { stdout: JSON.stringify(answered) } });
+  const { reader, entries, rosters, spawned, store } = reading(t, world, { cli: world.remoteCli });
+  const before = store.roster;
+
+  const first = reader.request();
+  for (let i = 0; i < 100 && rosterReads(spawned) < 1; i++) await Promise.resolve();
+  assert.deepEqual([rosterReads(spawned), rosters], [1, [{ collecting: true }]], "the read began");
+  // From here to voidInFlight() this process reads nothing: no await, as a stopped process has none.
+  const until = Date.now() + 30_000;
+  while (world.calls("server", "written").length === 0 && Date.now() < until) freeze(20);
+  freeze(300);
+  assert.equal(world.calls("server", "written").length, 1, "the kernel answered, whole, into the pipe");
+
+  reader.voidInFlight();
+  assert.deepEqual(reader.children(), []);
+  assert.equal(await settled(first), true);
+  await sleep(200);
+  assert.deepEqual([rosters, entries], [[{ collecting: true }], []], "neither the answer nor a failure in its place");
+  assert.equal(store.roster, before);
+
+  await reader.request({ live: true });
+  await waitFor("the answer of the new read", () => outcomes(rosters).length === 1);
+  assert.deepEqual(rosters.slice(1), [{ collecting: true }, taken(before, { envelope: answered }, at(2))]);
+  assert.deepEqual(entries.map((emitted) => [emitted.number, emitted.entry.deployment.status]), [[2, "observed"]]);
+});
+
+test("a roster read that ignores SIGTERM keeps neither the reader nor the next read: voidInFlight() forgets it at once", async (t) => {
+  const world = makeWorld();
+  const answered = rosterAnswer([onyx()]), local = answering(world);
+  world.plan({ ...local, server: { sleep: true, stubborn: true } });
+  const { reader, rosters, spawned } = reading(t, world, { cli: world.remoteCli });
+  await reader.request();
+  const pid = await waitFor("the roster's kernel to start", () => world.calls("server", "start")[0]?.pid);
+  reader.voidInFlight();
+  assert.deepEqual(reader.children(), []);
+  world.plan({ ...local, server: { stdout: JSON.stringify(answered) } });
+  await reader.request({ live: true });
+  assert.equal(rosterReads(spawned), 2);
+  await waitFor("the answer of the new read", () => outcomes(rosters).length === 1);
+  assert.deepEqual(rosters, [{ collecting: true }, { collecting: true }, taken(noRoster(), { envelope: answered }, at(2))]);
+  assert.equal(alive(pid), true, "it was asked to end, once, and nobody waited for it");
+  assert.equal(ours(pid), true);
+  process.kill(pid, "SIGKILL"); // the fake wrote this pid down, and it is still that fake
+  await gone([pid], 5000);
+});
+
+// ── the two looks at the file system, for the switcher ────────────────────────
+
+/** A directory that is a deployment: it holds a regular oats-local.yaml. Its path. */
+function deploymentAt(dir) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, "oats-local.yaml"), "");
+  return dir;
+}
+const NOTHING = { offered: [], limited: false };
+
+test("offeredDeployments: the deployments directly inside ~/Agents that the run does not serve, by folder name, with canonical paths; no link is followed", () => {
+  const base = path.join(ROOT, "offer"), home = path.join(base, "home"), agents = path.join(home, "Agents");
+  const [alpha, beta, served] = ["alpha", "beta", "served"].map((name) => deploymentAt(path.join(agents, name)));
+  const outside = deploymentAt(path.join(base, "elsewhere", "outside"));
+  deploymentAt(path.join(alpha, "nested")); // a deployment, but not directly inside
+  mkdirSync(path.join(agents, "plain")); // a folder that is no deployment
+  writeFileSync(path.join(agents, "notes.txt"), "a file");
+  symlinkSync(outside, path.join(agents, "linked")); // a link to a deployment: not a folder of ~/Agents
+  mkdirSync(path.join(agents, "linked-file"));
+  symlinkSync(path.join(alpha, "oats-local.yaml"), path.join(agents, "linked-file", "oats-local.yaml"));
+  mkdirSync(path.join(agents, "folder", "oats-local.yaml"), { recursive: true });
+  const offered = { offered: [{ path: alpha, name: "alpha" }, { path: beta, name: "beta" }], limited: false };
+
+  assert.deepEqual(offeredDeployments(home, [served]), offered);
+  assert.deepEqual(offeredDeployments(home, []).offered.map((one) => one.name), ["alpha", "beta", "served"], "sorted by name, as the shared function lists them");
+  assert.deepEqual(offeredDeployments(home, [outside]), { ...offered, offered: [...offered.offered, { path: served, name: "served" }] }, "the link was not followed: what it leads to is not offered, served or not");
+  assert.deepEqual(offeredDeployments(home, [alpha, beta, served]), NOTHING);
+
+  // A home, or an ~/Agents, reached through a link: the paths offered are canonical, so a served one is still left out.
+  symlinkSync(home, path.join(base, "home-link"));
+  assert.deepEqual(offeredDeployments(path.join(base, "home-link"), [served]), offered);
+  mkdirSync(path.join(base, "other-home"));
+  symlinkSync(agents, path.join(base, "other-home", "Agents"));
+  assert.deepEqual(offeredDeployments(path.join(base, "other-home"), [served]), offered);
+
+  // A missing ~/Agents, one that is a file, one that cannot be read: nothing offered, and no exception.
+  assert.deepEqual(offeredDeployments(path.join(base, "nobody"), []), NOTHING);
+  mkdirSync(path.join(base, "filed"));
+  writeFileSync(path.join(base, "filed", "Agents"), "a file");
+  assert.deepEqual(offeredDeployments(path.join(base, "filed"), []), NOTHING);
+  if (process.getuid?.() !== 0) {
+    const locked = path.join(base, "locked", "Agents");
+    deploymentAt(path.join(locked, "hidden"));
+    chmodSync(locked, 0o000);
+    try { assert.deepEqual(offeredDeployments(path.join(base, "locked"), []), NOTHING); } finally { chmodSync(locked, 0o700); }
+  }
+  for (const [badHome, badServed] of [[undefined, []], [null, null], [42, undefined], [home, 42]]) assert.doesNotThrow(() => offeredDeployments(badHome, badServed));
+  assert.deepEqual(offeredDeployments(undefined, []), NOTHING);
+});
+
+test("offeredDeployments with its io replaced: one look at <home>/Agents, a path that cannot be resolved left out, no canonical path offered twice, `limited` as it was answered", () => {
+  const looks = [];
+  const entries = [{ name: "b", isDirectory: true }, { name: "a", isDirectory: true }, { name: "gone", isDirectory: true }, { name: "twin", isDirectory: true }, { name: "link", isDirectory: false }];
+  const io = {
+    list: (dir, limit) => { looks.push([dir, limit]); return { entries, limited: true }; },
+    isDeployment: () => true,
+    realpath: (given) => { if (given.endsWith("/gone")) throw new Error("ENOENT"); return given.endsWith("/twin") ? "/real/Agents/a" : given.replace("/home/someone", "/real"); },
+  };
+  assert.deepEqual(offeredDeployments("/home/someone", ["/real/Agents/b"], io), { offered: [{ path: "/real/Agents/a", name: "a" }], limited: true });
+  assert.deepEqual([looks.length, looks[0][0], Number.isInteger(looks[0][1]) && looks[0][1] > 0], [1, "/home/someone/Agents", true]);
+  assert.deepEqual(offeredDeployments("/home/someone", [], { ...io, isDeployment: (dir) => dir === "/home/someone/Agents/b" }), { offered: [{ path: "/real/Agents/b", name: "b" }], limited: true });
+  assert.deepEqual(offeredDeployments("/home/someone", [], { ...io, list: () => { throw new Error("EACCES"); } }), NOTHING);
+  assert.deepEqual(offeredDeployments("/home/someone", [], { ...io, realpath: () => 42 }), { offered: [], limited: true });
+});
+
+test("offeredDeployments reads no more of ~/Agents than the shared limit, and says `limited` only when the folder holds more", () => {
+  let limit = null;
+  offeredDeployments("/nowhere", [], { list: (dir, given) => { limit = given; return { entries: [], limited: false }; } });
+  assert.equal(Number.isInteger(limit) && limit > 0 && limit <= 5000, true, `the shared limit reads ${limit}`);
+  const home = path.join(ROOT, "many"), agents = path.join(home, "Agents");
+  const names = Array.from({ length: limit + 3 }, (_, n) => `d-${String(n).padStart(5, "0")}`);
+  for (const name of names) deploymentAt(path.join(agents, name));
+
+  const more = offeredDeployments(home, []);
+  assert.deepEqual([more.offered.length, more.limited], [limit, true]);
+  assert.equal(new Set(more.offered.map((one) => one.name)).size, limit);
+  assert.equal(more.offered.every((one) => names.includes(one.name) && one.path === path.join(agents, one.name)), true);
+
+  for (const name of names.slice(limit)) rmSync(path.join(agents, name), { recursive: true });
+  const exact = offeredDeployments(home, []);
+  assert.deepEqual([exact.offered.map((one) => one.name), exact.limited], [names.slice(0, limit), false], "a folder that holds exactly the limit holds no more");
+});
+
+test("admitDeployment: a folder is admitted by what it is now, as its canonical path, and nothing above it is asked", () => {
+  const base = path.join(ROOT, "admit"), outer = deploymentAt(path.join(base, "outer")), inner = path.join(outer, "inner"), picked = deploymentAt(path.join(base, "picked"));
+  mkdirSync(inner);
+  symlinkSync(picked, path.join(base, "to-picked"));
+  assert.deepEqual(admitDeployment(picked), { ok: true, deployment: picked });
+  assert.deepEqual(admitDeployment(`${picked}${path.sep}`), { ok: true, deployment: picked }, "a trailing separator");
+  assert.deepEqual(admitDeployment(path.join(base, "to-picked")), { ok: true, deployment: picked }, "through a link: the directory it leads to");
+  assert.deepEqual(findDeployment(inner), { ok: true, deployment: outer });
+  assert.deepEqual(admitDeployment(inner), { ok: false }, "no walking up: the deployment above is not the folder that was picked");
+
+  // Offered at one look, no longer a deployment at the pick.
+  const home = path.join(base, "home"), was = deploymentAt(path.join(home, "Agents", "was"));
+  const [offer] = offeredDeployments(home, []).offered;
+  assert.deepEqual(offer, { path: was, name: "was" });
+  assert.deepEqual(admitDeployment(offer.path), { ok: true, deployment: was });
+  rmSync(path.join(was, "oats-local.yaml"));
+  assert.deepEqual(admitDeployment(offer.path), { ok: false }, "a folder that stopped being a deployment is refused");
+  symlinkSync(path.join(picked, "oats-local.yaml"), path.join(was, "oats-local.yaml"));
+  assert.deepEqual(admitDeployment(offer.path), { ok: false }, "oats-local.yaml as a link is not a deployment's file");
+  rmSync(was, { recursive: true });
+  assert.deepEqual(admitDeployment(offer.path), { ok: false }, "and so is one that is gone");
+  assert.deepEqual(admitDeployment(path.join(picked, "oats-local.yaml")), { ok: false }, "a file");
+  for (const given of [undefined, null, 42, "", "relative/path"]) assert.deepEqual(admitDeployment(given), { ok: false }, String(given));
+
+  // With its io replaced: the canonical directory is asked about, once, and no other.
+  const asked = [];
+  const io = (isDeployment, realpath = () => "/real/dir") => ({ realpath, isDeployment: (dir) => { asked.push(dir); return isDeployment(dir); } });
+  assert.deepEqual(admitDeployment("/given/link", io(() => true)), { ok: true, deployment: "/real/dir" });
+  assert.deepEqual(admitDeployment("/given/link", io(() => false)), { ok: false });
+  assert.deepEqual(asked.splice(0), ["/real/dir", "/real/dir"]);
+  assert.deepEqual(admitDeployment("/given", io(() => { throw new Error("EACCES"); })), { ok: false });
+  assert.deepEqual(admitDeployment("/given", io(() => true, () => { throw new Error("ENOENT"); })), { ok: false });
+  assert.deepEqual(admitDeployment("/given", io(() => true, () => "not/absolute")), { ok: false });
 });

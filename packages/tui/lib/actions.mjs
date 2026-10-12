@@ -15,6 +15,8 @@ export const ACTIONS = Object.freeze([
   { id: "filter", keys: ["/"], label: "filter" },
   { id: "refresh", keys: ["r"], label: "refresh" },
   { id: "instances", keys: ["1"], label: "instances" },
+  { id: "workspaces", keys: ["w"], label: "workspaces" },
+  { id: "open-workspace", keys: ["enter"], label: "open" },
   { id: "help", keys: ["?"], label: "help" },
   { id: "close", keys: ["escape"], label: "close" },
   { id: "quit", keys: ["q", "ctrl+c"], label: "quit" },

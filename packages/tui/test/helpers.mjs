@@ -145,15 +145,18 @@ export const pending = (at = "2026-10-11T09:59:59.000Z") => pendingEntry(null, a
 /** The state of a run that took `entry` (pending when none is given). */
 export function stateOf(entry = null, options = {}) {
   const first = initialState({ deployment: DEPLOYMENT, cli: CLI, home: "/home/u", entry: pending(), ...options });
-  return entry ? reduce(first, { entry, number: 1 }).state : first;
+  return entry ? took(first, entry, 1) : first;
 }
-/** Draw a state as the main loop does: `{ rows, page, extent, room, cells, lines }`. `cells` is the
+/** A state after the reader gave `entry` for the fixture's deployment, as cycle `number`. */
+export const took = (state, entry, number, id = DEPLOYMENT) => reduce(state, { id, entry, number }).state;
+/** Draw a state as the main loop does: `{ rows, page, extent, room, cols, cells, lines }`. `cells` is the
  *  screen's cell buffer (term/screen.mjs `cells`), `lines` its rows as strings, one character per
  *  cell (the second cell of a wide character is empty), trailing blanks cut. */
 export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = true } = {}) {
-  const r = roster(state);
-  const page = layout(r.notice, size, { observed: r.status === "observed", ascii: state.ascii }).page;
-  const made = frame(model(state, { page, now, at: new Date(now).toISOString() }), size);
+  const at = new Date(now).toISOString();
+  const r = (state.view === "help" ? state.back : state.view) === "switcher" ? { notice: null, note: null, observed: true } : roster(state, at);
+  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii });
+  const made = { ...frame(model(state, { page: g.page, now, at, cols: g.listCols }), size), cols: g.listCols };
   const cells = createScreen({ utf8, ascii: state.ascii }).cells(made.rows, size);
   return { ...made, cells, lines: cells.map((line) => line.map((cell) => cell.text).join("").trimEnd()) };
 }
@@ -162,9 +165,9 @@ export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = t
 export function press(state, keys, size = { cols: 80, rows: 24 }) {
   const effects = [];
   for (const key of keys) {
-    const { page, extent, room } = draw(state, size);
+    const { page, extent, room, cols } = draw(state, size);
     const text = key === "space" ? " " : [...new Intl.Segmenter().segment(key)].length === 1 ? key : undefined;
-    const next = reduce(state, { key, ...(text ? { text } : {}), page, extent, room });
+    const next = reduce(state, { key, ...(text ? { text } : {}), page, extent, room, cols });
     state = next.state;
     if (next.effect) effects.push(next.effect);
   }

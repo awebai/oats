@@ -49,9 +49,13 @@ from it, and the test lists the stable surface a second client may import.
 layers that each do one thing. `lib/term/` is the terminal: the key parser,
 cell widths, safe text, the screen and the guard that restores the terminal;
 only the screen and the guard write an escape byte. `lib/read.mjs` is every
-effect of reading: it runs the kernel of the same install and the shared
-liveness collector as children, through the shared observer and refresh
-loop, and ends them. `lib/store.mjs` is the state and a pure
+effect of reading: for each deployment opened in a run it runs the kernel
+of the same install and the shared liveness collector as children, through
+the shared observer and refresh loop; it runs that kernel's read of the
+other machines (`oats server roster --json`), one at a time and awaited by
+no cycle; it ends every child; and it makes the two looks at the file
+system the workspace switcher needs (the entries of `~/Agents`, and whether
+a picked folder is a deployment). `lib/store.mjs` is the state and a pure
 `reduce(state, event)`; `lib/model.mjs` turns the state into the rows to
 draw by calling the shared readers through `lib/client.mjs`, the one module
 that imports `packages/client/`; `lib/views/` are pure functions from that

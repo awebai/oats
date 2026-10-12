@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { NO_TERMINAL, USAGE } from "../packages/tui/lib/main.mjs";
-import { NOT_YET, VIEWS } from "../packages/tui/lib/views/help.mjs";
+import { MACHINES, NOT_YET, VIEWS } from "../packages/tui/lib/views/help.mjs";
 import { fixtureBase, fixtureEnv } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -71,6 +71,13 @@ test("oats tui takes no other argument: --server and the rest are E_BAD_ARGS wit
 test("every command the help names for what this version does not do is one the kernel has: its word answers --help, and its usage holds the command", () => {
   const commands = [...NOT_YET.map((entry) => entry.command), ...VIEWS.flatMap((view) => view.commands)];
   assert.equal(commands.length >= 8, true, commands.join(" | "));
+  // What this version leaves to the kernel about other machines and other deployments is among
+  // them, so each of the four is held to the kernel's usage below. `oats server roster` is not: the
+  // TUI reads the roster itself now.
+  for (const command of ["oats server connect <id> --ssh <alias>", "oats server check <id>", "oats server remove <id>", "oats tui --dir <path>"]) assert.equal(commands.filter((each) => each === command).length, 1, command);
+  assert.deepEqual(commands.filter((command) => /\broster\b/.test(command)), []);
+  // The sentences about machines name no command: a command the help names is always in one of the two tables read here.
+  assert.equal(MACHINES.length >= 1 && MACHINES.every((sentence) => typeof sentence === "string" && !/\boats [a-z]/.test(sentence) && !sentence.includes("`")), true);
   const usageOf = new Map();
   for (const command of commands) {
     const [program, word, ...rest] = command.split(" ");
@@ -93,6 +100,11 @@ test("every command the help names for what this version does not do is one the 
     });
     assert.ok(line, `the kernel's usage of \`oats ${word}\` has no line with ${JSON.stringify(literal)}:\n${usageOf.get(word)}`);
   }
+  // The three words of `oats server` were each found in a line of its usage, and the client's own
+  // word in the usage the client prints: `--dir <path>` is the flag of both.
+  assert.deepEqual([...usageOf.keys()].filter((word) => word === "server" || word === "tui").sort(), ["server", "tui"]);
+  for (const part of ["connect <id> --ssh <alias>", "check <id>", "remove <id>"]) assert.equal(usageOf.get("server").includes(part), true, `oats server ${part}`);
+  assert.equal(usageOf.get("tui").includes(`  ${USAGE} `) && USAGE.includes("--dir <path>"), true);
   // And the reading itself refuses a command that does not exist.
   assert.notEqual(oats("no-such-word", "--help", "--json").status, 0);
 });

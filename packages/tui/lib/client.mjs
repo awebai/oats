@@ -9,17 +9,22 @@ import { clientTerms } from "../../client/client-terms.mjs";
 export { displayLine, DETAIL_WITHHELD } from "../../client/display-text.mjs";
 export { parseProbeStdout, acceptProbe, cliRecord } from "../../client/cli-locator.mjs";
 export { cliDeploymentRead } from "../../client/deployment-read-cli.mjs";
-export { createDeploymentObserver } from "../../client/deployment-observer.mjs";
+export { cliRemoteRoster } from "../../client/cli-adapter.mjs";
+export { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
 export { createRefreshLoop } from "../../client/refresh-loop.mjs";
 export { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
-export { panelData } from "../../client/panel-views.mjs";
+export { panelData, cliReadsRemotes, workspaceChoices, viewModel } from "../../client/panel-views.mjs";
+export { remoteRosterState } from "../../client/remote-roster.mjs";
+export { observeIdentities, identityMemory } from "../../client/remote-identity-memory.mjs";
+export { workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
+export { shortPath } from "../../client/deployment-label.mjs";
 export { instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree, hasInstanceChildren, heldHome } from "../../client/instance-tree.mjs";
-export { rosterSections, deploymentState, rowStale, primaryDeployment } from "../../client/roster-sections.mjs";
+export { rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
 export { runtimeState, runtimeCounts } from "../../client/instance-presentation.mjs";
 export { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from "../../client/waiting-on-you.mjs";
 export { instanceActs } from "../../client/instance-acts.mjs";
 export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
-export { validateWorkspace } from "../../client/workspace-admission.mjs";
+export { validateWorkspace, deploymentsInside } from "../../client/workspace-admission.mjs";
 
 /** The words a shared sentence uses where it names the client that shows it (client-terms.mjs).
  *  Made once, here: every shared function that takes `terms` is passed this constant, and refuses

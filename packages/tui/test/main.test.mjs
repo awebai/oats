@@ -2,12 +2,20 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { INSTANCE_VARIABLES } from "../lib/client.mjs";
+import { DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, cliRecord, deploymentState, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
 import { ENTER, LEAVE } from "../lib/term/tty.mjs";
-import { CLI, DEPLOYMENT, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
 
+/** One outcome of the roster read as an event for the store, made as lib/read.mjs `takeRoster`
+ *  makes it: the shared rule over the roster held, then what it reported into the memory of
+ *  identities, with the time of the cycle that began the read. */
+function rosterEvent(held, outcome, at) {
+  const state = remoteRosterState(held.remote, outcome, at);
+  const identities = state.reported === null ? { memory: held.memory, notes: held.notes } : observeIdentities({ memory: held.memory, notes: held.notes }, state.reported, at);
+  return { roster: { remote: { remoteGroups: state.remoteGroups, rosterAnswered: state.rosterAnswered, rosterFailure: state.rosterFailure }, memory: identities.memory, notes: identities.notes, at } };
+}
 /** The reader of a run, faked: what the loop asked of it, in order, and a way to answer. */
 function fakeReader(log, options) {
   let number = 0;
@@ -20,13 +28,18 @@ function fakeReader(log, options) {
     voidInFlight() { did("void"); },
     stop() { did("stop"); },
     children: () => [],
-    /** An answer of a cycle, as lib/read.mjs gives it. */
-    answer(entry) { options.onEntry({ entry, number: ++number }); },
+    /** A served deployment's answer of a cycle, as lib/read.mjs gives it: every answer under a
+     *  number of its own, as every cycle has. */
+    answer(entry, id = DEPLOYMENT) { options.onEntry({ id, entry, number: ++number }); },
+    /** A roster read begun, as lib/read.mjs says it. */
+    collecting() { options.onRoster({ collecting: true }); },
+    /** One outcome of the roster read, over what the loop holds of the other machines now. */
+    roster(outcome) { options.onRoster(rosterEvent(options.getRoster(), outcome, options.clock())); },
   };
 }
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
  *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
-function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here" } = {}) {
+function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", offered = { offered: [], limited: false }, admit = (path) => ({ ok: true, deployment: path }) } = {}) {
   const log = [];
   const stdin = fakeStdin({ log, isTTY: stdinTTY }), stdout = fakeStdout({ log, columns, rows, isTTY: stdoutTTY }), proc = fakeProcess(), timers = fakeTimers();
   const kill = proc.kill;
@@ -34,7 +47,8 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   const errors = [];
   const stderr = { write(text) { errors.push(text); log.push(["stderr", text]); return true; } };
   let clock = Date.parse("2026-10-11T10:00:30.000Z");
-  const r = { stdin, stdout, proc, timers, errors, log, reader: null, tick(ms) { clock += ms; } };
+  // `offered`: what ~/Agents holds that the run does not serve; a test may put another answer there.
+  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, tick(ms) { clock += ms; } };
   let up;
   r.up = new Promise((resolve) => { up = resolve; });
   const effects = {
@@ -42,6 +56,8 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     findDeployment(start) { log.push(["effect", "deployment", start]); return deployment; },
     async probeKernel(asked) { log.push(["effect", "kernel", { ...asked.env }]); return kernel; },
     createReader(options) { r.reader = fakeReader(log, options); const start = r.reader.start; r.reader.start = () => { const answer = start(); queueMicrotask(up); return answer; }; return r.reader; },
+    offeredDeployments(home, served) { log.push(["effect", "offered", home, [...served]]); return r.offered; },
+    admitDeployment(path) { log.push(["effect", "admit", path]); return admit(path); },
   };
   r.status = main({ argv, stdin, stdout, stderr, env, proc, now: () => clock, setTimer: timers.setTimer, clearTimer: timers.clearTimer, cwd: () => cwd, home: "/home/u", effects });
   r.status.then(up);
@@ -54,17 +70,71 @@ const textOf = (output) => readTerminalOutput(output).text;
 const readerDid = (r) => r.log.filter(([what]) => what === "reader").map(([, ...rest]) => rest);
 const ENTRY = observed([instanceRow("acme-expert", "acme-expert-tui"), instanceRow("acme-maintainer", "acme-maintainer-ops", { running: false, runtimeState: "stopped" })]);
 
+// ── Other machines and the switcher: fixtures in the kernel's own forms. A workspace is the
+// identity a kernel reports; a roster group's id is `<server>:<targetKey>` with a lower-case server
+// name and no path in it; a remote row says whether it is addressable. A group in another form is
+// never remembered, and a deployment that reports no identity is matched to no workspace.
+const reportedWorkspace = (key = "git.example.com/acme-platform/agents", team = "aweb:acme-platform") => ({ reachable: true, key, ref: `git:${key}`, keyFrom: "workspace", standalone: false, defaultTeam: { label: "default", team }, teams: { default: team }, teamsFrom: "observed" });
+/** An observed entry of the deployment at `root`, through the real `rosterRows`, `panelInstances`
+ *  and `observedEntry`, as helpers.mjs `observed` makes one, with the workspace it reports. */
+function observedAt(root, rows, { workspace = reportedWorkspace(), name = "acme-platform" } = {}) {
+  const local = rows.map((row) => ({ ...row, home: `${root}/agents/${row.agent}/instances/${row.instance}`, repo: `${root}/oats` }));
+  const base = rosterOf(local);
+  const document = { ...base, root: `${root}/agents`, agents: base.agents.map((soul) => ({ ...soul, dir: `${root}/agents/${soul.name}` })), workspace };
+  const listed = rosterRows(document, CLI);
+  return observedEntry({ roster: document, workspaceStatus: { workspace: { name } }, observedAt: "2026-10-11T09:59:00.000Z" }, panelInstances(listed, listed.map((row) => ({ running: row.running, runtimeState: row.runtimeState, tmux: row.tmux }))), "2026-10-11T10:00:00.000Z");
+}
+/** The fixture's deployment, reporting the workspace `garnet` reports too. */
+const HOME_ENTRY = observedAt(DEPLOYMENT, [instanceRow("acme-expert", "acme-expert-tui"), instanceRow("acme-maintainer", "acme-maintainer-ops", { running: false, runtimeState: "stopped" })]);
+const remoteRow = (name, root, more = {}) => ({ instance: name, agent: "dev", agentsRoot: `${root}/agents`, home: `${root}/agents/dev/instances/${name}`, running: true, savedRoute: false, addressable: true, missingRemotely: false, createdAt: null, identity: { alias: name, team: "aweb:acme-platform" }, ...more });
+function group(id, root, rows, workspace = reportedWorkspace()) {
+  const server = id.slice(0, id.indexOf(":"));
+  return { id, server, label: server, registrationPresent: true, target: { sshHost: `${server}.example`, workspace: root }, probe: { ok: true }, agentsRoot: `${root}/agents`, workspace, souls: [], instances: rows, retireFailures: [] };
+}
+/** A machine in the fixture's workspace, and one that reports a workspace of its own. */
+const garnet = () => group("garnet:t1", "/srv/acme-platform", [remoteRow("dev-far", "/srv/acme-platform"), remoteRow("dev-held", "/srv/acme-platform", { running: false, addressable: false })]);
+const onyx = () => group("onyx:t2", "/home/builder/acme-atlas", [remoteRow("dev-east", "/home/builder/acme-atlas", { identity: { alias: "dev-east", team: "aweb:acme-atlas" } })], reportedWorkspace("git.example.com/acme-atlas/charts", "aweb:acme-atlas"));
+/** What `oats server roster --json` prints for these groups. */
+const rosterAnswer = (groups) => ({ schemaVersion: 1, ok: true, result: { groups } });
+/** A kernel record that reads other machines, made by the shared `cliRecord` as the probe makes it. */
+const REMOTE_CLI = cliRecord({ version: CLI.version, workspaceApi: CLI.workspaceApi, features: [...CLI.features], remote: ["roster"] }, { bin: CLI.bin, source: "tui" });
+/** A folder of ~/Agents this run does not serve, as lib/read.mjs `offeredDeployments` answers. */
+const LEDGER = "/home/u/Agents/acme-ledger";
+const OFFERED = Object.freeze({ offered: Object.freeze([Object.freeze({ path: LEDGER, name: "acme-ledger" })]), limited: false });
+/** What a run asked of the file system and the kernel, in order: the effects with their arguments
+ *  (the user's file and the kernel are asked with the environment, which is not repeated here). */
+const effectsOf = (r) => r.log.filter(([what]) => what === "effect").map(([, which, ...rest]) => (which === "config" || which === "kernel" ? [which] : [which, ...rest]));
+/** The whole screen as the run draws it now. Ctrl+L redraws in full, so the text read does not
+ *  depend on which cells the last frame left as they were. */
+function screenOf(r) {
+  r.stdout.take();
+  r.stdin.type("\x0c");
+  return textOf(r.stdout.take());
+}
+/** The reason the shared home gives for the fixture's deployment holding `entry`, asked directly. */
+function sharedReason(entry) {
+  const held = { ctxs: [DEPLOYMENT], snapshot: { byWs: new Map([[DEPLOYMENT, entry]]) }, remoteGroups: [], remembered: identityMemory({ memory: new Map(), notes: new Map() }), rosterAnswered: false, rosterFailure: null, cli: CLI, observing: new Set(), remoteCollecting: false, home: "/home/u", at: "2026-10-11T10:00:30.000Z" };
+  return deploymentState(primaryDeployment(panelData(held, DEPLOYMENT, TERMS).deployments)).detail;
+}
+const CONTROL = /[\x00-\x1f\x7f-\x9f]/;
+/** Every byte a run wrote to its terminal, from its first. */
+const written = (r) => r.log.filter(([what]) => what === "write").map(([, bytes]) => bytes).join("");
+/** A screen's text with every run of blanks as one: two screens that differ in a sentence's length compare by their words. */
+const words = (text) => text.replace(/ +/g, " ");
+
 test("the action table binds each key to one action, and a key bound twice is refused when the table is read", () => {
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances",
+    w: "workspaces", enter: "open-workspace",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
   assert.equal(Object.isFrozen(ACTIONS) && ACTIONS.every((a) => Object.isFrozen(a) && Object.isFrozen(a.keys)), true);
   assert.deepEqual(["?", "q", "escape", "ctrl+c", "shift+tab", "f5", "ctrl+alt+up", "space", "alt+x"].map(keyLabel), ["?", "q", "Esc", "Ctrl+C", "Shift+Tab", "F5", "Ctrl+Alt+Up", "Space", "Alt+X"]);
-  // Enter opens an agent in a later version and the capitals are that version's acts: neither is bound, but for G.
-  assert.equal(bindings(ACTIONS).has("enter"), false);
+  // Enter opens a workspace in the switcher and does nothing else yet: opening an agent is a later
+  // version's. The capitals are that version's acts: none is bound, but for G.
+  assert.equal(bindings(ACTIONS).get("enter"), "open-workspace");
   assert.deepEqual([...bindings(ACTIONS).keys()].filter((key) => /^[A-Z]$/.test(key)), ["G"]);
 });
 
@@ -138,7 +208,8 @@ test("before the alternate screen, in this order and each a line on stderr with 
   const lines = ["oats: `oats tui` cannot use /home/u/.config/oats/tui.json: quit has no key; give it one (E_TUI_CONFIG)", "oats: `oats tui` cannot use /home/u/.config/oats/tui.json: unknown action reload; the actions are up (E_TUI_CONFIG)"];
   const cases = [
     [{ config: { ok: false, lines } }, lines.map((line) => `${line}\n`).join(""), ["config"]],
-    [{ deployment: { ok: false, dir: "/work/here" } }, `${noDeployment("/work/here")}\n`, ["config", "deployment"]],
+    // No deployment where the user is, and none named: ~/Agents is looked at before the run gives up.
+    [{ deployment: { ok: false, dir: "/work/here" } }, `${noDeployment("/work/here")}\n`, ["config", "deployment", "offered"]],
     [{ kernel: { ok: false, reason: "version 0.24.0 outside >=0.25.8 <0.53.0" } }, `${noKernel("version 0.24.0 outside >=0.25.8 <0.53.0")}\n`, ["config", "deployment", "kernel"]],
   ];
   for (const [options, said, asked] of cases) {
@@ -176,14 +247,15 @@ test("the deployment is looked for from --dir, a relative one from where the use
 
 test("a run says it is reading, draws the instances when the reader answers, opens and closes the help, and q quits with status 0, the terminal restored and the reader stopped before the run is over", async () => {
   const r = await started();
-  assert.deepEqual([r.reader.options.deployment, r.reader.options.cli], [DEPLOYMENT, CLI], "the reader reads the deployment that was found, with the kernel that was accepted");
-  assert.equal(r.reader.options.getEntry().deployment.status, "pending", "and is told the entry the store holds");
+  assert.deepEqual([r.reader.options.getServed(), r.reader.options.cli], [[DEPLOYMENT], CLI], "the reader reads the deployment that was found, with the kernel that was accepted");
+  assert.equal(r.reader.options.getEntry(DEPLOYMENT).deployment.status, "pending", "and is told the entry the store holds");
   assert.match(textOf(r.stdout.take()), /oats.*1 Instances.*2 Souls.*3 Capabilities.*Reading the deployment\..*\? help.*q quit/s);
   r.reader.answer(ENTRY);
   assert.match(textOf(r.stdout.take()), /acme-platform.*1 running.*1 stopped.*acme-expert-tui.*claude.*acme-maintainer-ops.*stopped/s);
-  assert.equal(r.reader.options.getEntry(), ENTRY);
+  assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
-  assert.match(textOf(r.stdout.take()), /Keys.*Ctrl\+Z.*suspend.*more below/s);
+  // The table gained two actions (w and Enter): at 24 rows its first page now ends at Esc.
+  assert.match(textOf(r.stdout.take()), /Keys.*w.*workspaces.*Enter.*open.*Esc.*close.*more below/s);
   r.stdin.type("G");
   assert.match(textOf(r.stdout.take()), /Not in this version.*oats session attach --home <home>.*closes this help/s, "the movement keys scroll the help to its end");
   r.stdin.type("?");
@@ -210,7 +282,7 @@ test("every key press tells the reader the user is there; r asks for a live read
 });
 
 test("the modes a whole run switches are exactly the list: four on at the start, the same four off and on again at Ctrl+L, the four back at the end, and nothing else, with the view drawn, filtered and scrolled", async () => {
-  const r = await started();
+  const r = await started({ offered: OFFERED });
   r.reader.answer(ENTRY);
   r.stdin.type("?");
   r.stdout.resize(100, 30);
@@ -221,6 +293,15 @@ test("the modes a whole run switches are exactly the list: four on at the start,
   r.stdin.type("\x1b[200~pasted q\nand a second line\x1b[201~");
   r.stdin.type("\r");
   r.reader.answer(failed(ENTRY, { code: "E_NEW_CODE", message: "a refusal with \x1b[2J in it" }));
+  // The same refusal as the kernel's own (the reader marks it): the shared sentence names the speaker.
+  r.reader.answer(failed(ENTRY, { code: "E_NEW_CODE", message: "a refusal with \x1b[2J in it", origin: "kernel" }));
+  // And with the switcher drawn, over a machine's roster and a folder of ~/Agents.
+  r.reader.collecting();
+  r.reader.roster({ envelope: rosterAnswer([garnet(), onyx()]) });
+  r.stdin.type("w");
+  r.stdin.type("j/");
+  r.stdin.type("\x1b[200~onyx\x1b]0;owned\x07\x1b[201~");
+  r.stdin.type("\r");
   r.stdin.type("\x03"); // Ctrl+C
   assert.equal(await r.status, 0);
   const output = r.stdout.written.join("");
@@ -441,4 +522,273 @@ test("a reader that throws when asked ends the run as an internal error, with th
   assert.equal(await r.status, 1);
   assert.match(r.errors.join(""), /stopped on an internal error.*the reader broke/s);
   assert.equal(r.stdin.raw, false);
+});
+
+// ── Other machines and the workspace switcher ────────────────────────────────
+
+test("started outside every deployment with a folder of ~/Agents to offer, it opens on the switcher: the folder is listed, nothing is served, and the reader is started, which reads the roster of other machines", async () => {
+  const r = await started({ deployment: { ok: false, dir: "/work/here" }, offered: OFFERED, kernel: { ok: true, cli: REMOTE_CLI } });
+  assert.deepEqual(r.errors, [], "there is something to list, so no line that there is no deployment");
+  assert.deepEqual(effectsOf(r), [["config"], ["deployment", "/work/here"], ["offered", "/home/u", []], ["kernel"]], "~/Agents is looked at for what a run that serves nothing can offer, before the kernel is asked");
+  assert.deepEqual(r.reader.options.getServed(), [], "nothing is served");
+  assert.deepEqual(r.reader.options.getRoster(), { remote: { remoteGroups: [], rosterAnswered: false, rosterFailure: null }, memory: new Map(), notes: new Map() });
+  assert.deepEqual(readerDid(r), [["start"]], "the reader is started all the same: its cycles read the other machines");
+  const first = textOf(r.stdout.take());
+  assert.match(first, /oats\s+workspaces.*On this machine, not opened.*acme-ledger\s+~\/Agents\/acme-ledger.*Enter open.*\/ filter.*r refresh.*\? help.*q quit/s);
+  assert.doesNotMatch(first, /Reading the deployment|Esc close/, "no deployment is being read, and there is no view to close the switcher onto");
+  // What the reader's first cycle found of the other machines is listed too.
+  r.reader.collecting();
+  r.reader.roster({ envelope: rosterAnswer([garnet()]) });
+  assert.match(screenOf(r), /oats\s+workspaces.*garnet.*On this machine, not opened.*acme-ledger/s);
+  assert.deepEqual(r.reader.options.getServed(), []);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("started outside every deployment with nothing in ~/Agents to offer, it exits 1 with the E_NO_DEPLOYMENT line and no byte on stdout; a --dir that is in no deployment exits the same way, and ~/Agents is not looked at for it", async () => {
+  const none = run({ deployment: { ok: false, dir: "/work/here" } });
+  assert.equal(await none.status, 1);
+  assert.deepEqual(effectsOf(none), [["config"], ["deployment", "/work/here"], ["offered", "/home/u", []]], "~/Agents was looked at, and the kernel is not asked for a run that has nothing to show");
+  assert.deepEqual(none.errors, [`${noDeployment("/work/here")}\n`]);
+  assert.deepEqual(none.stdout.written, [], "no byte, so no escape byte");
+  assert.deepEqual([none.reader, none.stdin.raw, none.proc.eventNames()], [null, false, []]);
+
+  // What was asked for is not there: a folder of ~/Agents is no answer to a path that was named.
+  for (const argv of [["--dir", "/srv/nowhere"], ["--dir=/srv/nowhere"], ["--ascii", "--dir", "/srv/nowhere"]]) {
+    const named = run({ argv, deployment: { ok: false, dir: "/srv/nowhere" }, offered: OFFERED });
+    assert.equal(await named.status, 1, argv.join(" "));
+    assert.deepEqual(effectsOf(named), [["config"], ["deployment", "/srv/nowhere"]], argv.join(" "));
+    assert.deepEqual(named.errors, [`${noDeployment("/srv/nowhere")}\n`]);
+    assert.deepEqual(named.stdout.written, []);
+    assert.deepEqual([named.reader, named.stdin.raw, named.proc.eventNames()], [null, false, []]);
+  }
+});
+
+test("w opens the switcher: ~/Agents is looked at for the folders this run does not serve and they are listed under the workspaces; r there looks again and asks for a live read", async () => {
+  const r = await started({ offered: OFFERED });
+  r.reader.answer(HOME_ENTRY);
+  assert.deepEqual(effectsOf(r).filter(([which]) => which === "offered"), [], "a run started in a deployment does not look at ~/Agents until it is asked to");
+  r.stdout.take();
+  r.log.length = 0;
+  // In the list of instances Enter does nothing yet: it opens a workspace, and only in the switcher.
+  r.stdin.type("\r");
+  assert.deepEqual([r.stdout.take(), effectsOf(r), readerDid(r)], ["", [], [["touch"]]]);
+  r.log.length = 0;
+  r.stdin.type("w");
+  assert.deepEqual(effectsOf(r), [["offered", "/home/u", [DEPLOYMENT]]], "asked with the deployments the run serves, which it leaves out");
+  assert.deepEqual(readerDid(r), [["touch"]], "opening the switcher reads no deployment");
+  assert.notEqual(r.stdout.take(), "");
+  const listed = screenOf(r);
+  assert.match(listed, /oats\s+workspaces.*> \* acme-platform\s+This machine.*On this machine, not opened.*acme-ledger\s+~\/Agents\/acme-ledger.*Enter open.*\/ filter.*r refresh.*Esc close.*\? help.*q quit/s);
+  assert.doesNotMatch(listed, /acme-expert-tui|More folders/);
+
+  // Another folder appeared, and ~/Agents now holds more than a look reads.
+  r.offered = { offered: [...OFFERED.offered, { path: "/home/u/Agents/acme-ledger-archive", name: "acme-ledger-archive" }], limited: true };
+  r.log.length = 0;
+  r.stdin.type("r");
+  assert.deepEqual(effectsOf(r), [["offered", "/home/u", [DEPLOYMENT]]]);
+  assert.deepEqual(readerDid(r), [["touch"], ["request", { live: true }]]);
+  assert.notEqual(r.stdout.take(), "");
+  assert.match(screenOf(r), /acme-ledger\s+~\/Agents\/acme-ledger.*acme-ledger-archive\s+~\/Agents\/acme-ledger-archive.*More folders than are listed here\./s);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("Enter on a folder of ~/Agents asks whether it is a deployment now; admitted, it is served from then on under the path it was admitted as, its Instances view is shown and a live read is asked for", async () => {
+  // The folder is a link: what is admitted is where it leads.
+  const r = await started({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
+  r.reader.answer(HOME_ENTRY);
+  r.stdin.type("w");
+  r.stdin.type("j"); // from the workspace that is open to the folder under it
+  assert.match(screenOf(r), /\* acme-platform.*>\s+acme-ledger\s+~\/Agents\/acme-ledger/s);
+  r.stdout.take();
+  r.log.length = 0;
+  r.stdin.type("\r");
+  assert.deepEqual(effectsOf(r), [["admit", LEDGER]]);
+  assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT, "/srv/acme-ledger"], "served after the one the run started in");
+  assert.equal(r.reader.options.getEntry("/srv/acme-ledger").deployment.status, "pending", "not read yet");
+  assert.equal(r.reader.options.getEntry(DEPLOYMENT), HOME_ENTRY, "and the first deployment is held as it was");
+  assert.deepEqual(readerDid(r), [["touch"], ["request", { live: true }]], "it is read at once");
+  assert.notEqual(r.stdout.take(), "");
+  const opened = screenOf(r);
+  assert.match(opened, /oats\s+acme-ledger.*1 Instances.*Reading the deployment\..*\/ filter.*w workspaces.*\? help.*q quit/s);
+  assert.doesNotMatch(opened, /acme-expert-tui|On this machine, not opened/, "the switcher is closed, and the view is the new deployment's");
+  // From then on: the reader's answer for it is taken and drawn.
+  r.reader.answer(observedAt("/srv/acme-ledger", [instanceRow("acme-clerk", "acme-clerk-books")], { workspace: reportedWorkspace("git.example.com/acme-ledger/books", "aweb:acme-ledger"), name: "acme-ledger" }), "/srv/acme-ledger");
+  assert.match(textOf(r.stdout.take()), /acme-clerk-books/);
+  assert.match(screenOf(r), /oats\s+acme-ledger\s+1 running.*acme-clerk-books/s);
+  // And the switcher no longer offers it: the next look is told that it is served.
+  r.offered = { offered: [], limited: false };
+  r.log.length = 0;
+  r.stdin.type("w");
+  assert.deepEqual(effectsOf(r), [["offered", "/home/u", [DEPLOYMENT, "/srv/acme-ledger"]]]);
+  assert.doesNotMatch(screenOf(r), /On this machine, not opened/);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("Enter on a folder of ~/Agents that is no deployment any more: its row says so, and nothing else changed", async () => {
+  const r = await started({ offered: OFFERED, admit: () => ({ ok: false }) });
+  r.reader.answer(HOME_ENTRY);
+  r.stdin.type("w");
+  r.stdin.type("j");
+  const before = screenOf(r);
+  r.stdout.take();
+  r.log.length = 0;
+  r.stdin.type("\r");
+  assert.deepEqual(effectsOf(r), [["admit", LEDGER]]);
+  assert.deepEqual(readerDid(r), [["touch"]], "nothing is read for it");
+  assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT]);
+  assert.equal(r.reader.options.getEntry(LEDGER), null);
+  assert.notEqual(r.stdout.take(), "");
+  const after = screenOf(r);
+  assert.match(after, /oats\s+workspaces.*\* acme-platform\s+This machine.*On this machine, not opened.*>\s+acme-ledger\s+Not an OATS deployment any more\..*Enter open.*Esc close/s);
+  assert.equal(words(after), words(before).replace("~/Agents/acme-ledger", "Not an OATS deployment any more."), "the switcher as it was, but for what that row says");
+  // The view the switcher was opened over is still there to go back to.
+  r.stdin.type("\x1b");
+  r.tick(50);
+  r.timers.fire();
+  assert.match(screenOf(r), /oats\s+acme-platform.*acme-expert-tui.*acme-maintainer-ops/s);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("Enter on a workspace opens its view and asks for a live read", async () => {
+  const r = await started({ kernel: { ok: true, cli: REMOTE_CLI } });
+  r.reader.answer(HOME_ENTRY);
+  r.reader.collecting();
+  r.reader.roster({ envelope: rosterAnswer([onyx()]) }); // a machine that reports a workspace of its own
+  r.stdin.type("w");
+  const two = screenOf(r);
+  assert.match(two, /\* acme-platform\s+This machine/, "the open workspace is marked");
+  assert.match(two, / {2}charts\s+onyx/, "and the machine's own workspace is listed beside it, unmarked");
+  // Whatever order the shared home lists them in, the filter leaves the one that is wanted.
+  r.stdin.type("/");
+  r.stdin.type("onyx");
+  r.stdin.type("\r"); // keeps the filter
+  assert.deepEqual(readerDid(r).filter(([what]) => what !== "touch" && what !== "start"), [], "Enter in the open field opens nothing");
+  r.stdout.take();
+  r.log.length = 0;
+  r.stdin.type("\r");
+  assert.deepEqual(readerDid(r), [["touch"], ["request", { live: true }]]);
+  assert.deepEqual(effectsOf(r), [], "a workspace is not a folder: nothing is asked of the file system");
+  assert.notEqual(r.stdout.take(), "");
+  const opened = screenOf(r);
+  assert.match(opened, /oats\s+charts.*1 Instances.*read 10:00:30.*dev-east.*\/ filter.*w workspaces/s, "the machine's view, with the time of the roster read it is drawn from");
+  assert.doesNotMatch(opened, /acme-expert-tui/);
+  assert.deepEqual(r.reader.options.getServed(), [DEPLOYMENT], "a machine's workspace is no deployment this run serves");
+  r.stdin.type("w");
+  const back = screenOf(r);
+  assert.match(back, /\* charts\s+onyx/, "and it is the open one now");
+  assert.match(back, / {2}acme-platform\s+This machine/);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("the roster of other machines: a read that began changes nothing on the screen, and its answer lists the machine's instances under a heading that names the machine and the time of that read", async () => {
+  const r = await started({ kernel: { ok: true, cli: REMOTE_CLI } });
+  assert.equal(cliReadsRemotes(REMOTE_CLI), true);
+  r.reader.answer(HOME_ENTRY);
+  assert.doesNotMatch(screenOf(r), /machine|garnet/, "one deployment: no heading");
+  r.reader.collecting();
+  assert.equal(r.stdout.take(), "");
+  r.tick(15_000);
+  const held = r.reader.options.getRoster();
+  r.reader.roster({ envelope: rosterAnswer([garnet()]) });
+  assert.notEqual(r.stdout.take(), "", "the answer is drawn when it arrives");
+  assert.match(screenOf(r), /oats\s+acme-platform\s+\+1 machine\s+2 running\s+2 stopped.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*dev-far.*dev-held/s);
+  // What the loop holds is what the shared rule made of the answer, and the reader is told it.
+  const now = r.reader.options.getRoster(), made = rosterEvent(held, { envelope: rosterAnswer([garnet()]) }, "2026-10-11T10:00:45.000Z").roster;
+  assert.deepEqual(now, { remote: made.remote, memory: made.memory, notes: made.notes });
+  assert.deepEqual([now.remote.rosterAnswered, now.remote.remoteGroups.map((g) => g.id), [...now.memory.keys()]], [true, ["garnet:t1"], ["garnet:t1"]], "the fixture has the kernel's forms: the machine is remembered");
+
+  // The next read throws: the machine keeps its heading, says it was not reached, and nothing of it reads as stopped.
+  r.reader.collecting();
+  r.reader.roster({ thrown: "spawn EMFILE" });
+  const lost = screenOf(r);
+  assert.match(lost, /\+1 machine.*1 running\s+1 stopped\s+2 unknown.*This machine.*garnet\s+remembered\s+Not reached.*dev-far\s+unknown.*dev-held\s+unknown/s);
+  assert.doesNotMatch(lost, /garnet\s+read /, "a heading that is not live carries no time");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("Ctrl+Z with a roster read in flight: every read is made void before the process group is stopped, the return asks for a live read, and the answer of the read it begins is taken", async () => {
+  const r = await started({ kernel: { ok: true, cli: REMOTE_CLI } });
+  r.reader.answer(HOME_ENTRY);
+  r.reader.collecting();
+  r.stdout.take();
+  r.log.length = 0;
+  r.stdin.type("\x1a");
+  assert.deepEqual(r.log.filter(([what]) => what !== "raw"), [["reader", "touch"], ["write", LEAVE], ["reader", "void"], ["kill", 0, "SIGTSTP"]]);
+  r.log.length = 0;
+  r.proc.emit("SIGCONT", "SIGCONT");
+  assert.deepEqual(readerDid(r), [["request", { live: true }]], "the return reads at once, and has nothing more to drop");
+  // The read that was in flight answers nothing (lib/read.mjs); the one the return began does.
+  r.stdout.take();
+  r.reader.collecting();
+  r.reader.roster({ envelope: rosterAnswer([garnet()]) });
+  assert.match(screenOf(r), /\+1 machine.*garnet\s+read 10:00:30.*dev-far/s);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("what the reader gives after the run ended is dropped: an entry, the start of a roster read and its answer change nothing the loop holds, and nothing is written", async () => {
+  const r = await started({ kernel: { ok: true, cli: REMOTE_CLI } });
+  r.reader.answer(HOME_ENTRY);
+  const held = r.reader.options.getRoster();
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  r.stdout.take();
+  r.reader.answer(observedAt(DEPLOYMENT, [instanceRow("acme-expert", "acme-expert-late")]));
+  r.reader.collecting();
+  r.reader.roster({ envelope: rosterAnswer([garnet()]) });
+  r.reader.roster({ thrown: "spawn EMFILE" });
+  assert.equal(r.reader.options.getEntry(DEPLOYMENT), HOME_ENTRY);
+  const now = r.reader.options.getRoster();
+  for (const part of ["remote", "memory", "notes"]) assert.equal(now[part], held[part], part);
+  assert.deepEqual([now.remote.rosterAnswered, now.remote.remoteGroups, now.memory.size], [false, [], 0]);
+  assert.equal(r.stdout.take(), "");
+  assert.deepEqual(r.errors, []);
+});
+
+test("a deployment that could not be observed says why in the shared sentence: the kernel's refusal in each of its three forms (with its message, with a message withheld, with none), and the reader's own failure as it is", async () => {
+  const hostile = "a refusal with \x1b[2J in it";
+  const cases = [
+    [{ code: "E_NEW_CODE", message: "the workspace is locked", origin: "kernel" }, "OATS answered with an error (E_NEW_CODE). It says: the workspace is locked"],
+    [{ code: "E_NEW_CODE", message: hostile, origin: "kernel" }, `OATS answered with an error (E_NEW_CODE). ${DETAIL_WITHHELD}`],
+    [{ code: "E_NEW_CODE", message: "", origin: "kernel" }, "OATS answered with an error (E_NEW_CODE)."],
+    // Without the reader's mark the reason is one the reader made itself: no speaker is named.
+    [{ code: "E_NEW_CODE", message: "the workspace is locked" }, "E_NEW_CODE: the workspace is locked"],
+  ];
+  for (const [reason, sentence] of cases) {
+    const entry = failed(null, reason), label = JSON.stringify(reason);
+    assert.equal(sharedReason(entry), sentence, `the shared home's sentence for ${label}`);
+    const r = await started();
+    r.stdout.take();
+    r.reader.answer(entry);
+    assert.notEqual(r.stdout.take(), "", label);
+    const text = screenOf(r);
+    assert.equal(text.split(sentence).length, 2, `drawn once, whole: ${label}`);
+    assert.match(text, /not observed/, label);
+    assert.equal(/It says:/.test(text), sentence.includes("It says:"), `a message that is withheld or absent is not introduced: ${label}`);
+    assert.equal(text.includes(DETAIL_WITHHELD), sentence.includes(DETAIL_WITHHELD), label);
+    assert.doesNotMatch(text, /Reading the deployment/, label);
+    r.stdin.type("q");
+    assert.equal(await r.status, 0);
+    const all = readTerminalOutput(written(r));
+    assert.deepEqual(all.foreign, [], label);
+    assert.doesNotMatch(all.text, CONTROL, label);
+  }
+  // The hand-made reason of this file, unmarked and with the kernel's message withheld by the TUI's own filter.
+  const unmarked = failed(null, { code: "E_NEW_CODE", message: hostile });
+  assert.equal(sharedReason(unmarked), `E_NEW_CODE: ${hostile}`, "the shared home hands an unmarked message on as it came");
+  const r = await started();
+  r.reader.answer(unmarked);
+  const text = screenOf(r);
+  assert.match(text, /not observed/);
+  assert.doesNotMatch(text, /2J in it|OATS answered/);
+  assert.doesNotMatch(text, CONTROL);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  assert.deepEqual(readTerminalOutput(written(r)).foreign, []);
 });
