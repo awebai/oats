@@ -31,7 +31,7 @@ import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
   officialPackageCatalog, officialCatalogFile, officialCapabilityAliases, resolvedFromHome, resolvedFromPrepared, teamEnv, isWorkspaceHome, preWorkspaceHome, isCapturedHome, capturedHomeRefusal, composeInstanceAgentsMd, parseYamlNested, withConfigFile,
-  findInstanceHome, findInstanceHomes, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
+  findInstanceHome, findInstanceHomes, homeLaunchLayers, processScanInformation, enclosingInstanceHome, logicalCwd, readableInstanceHomes, workspaceOf, ensureRoot, findRoot, findAgent, findAgentAt, legacyLocalAgents, legacyCapturedHomes, listAgents, listInstances, servedIdentityLine, spawnInstanceAsync, instanceSoulDir, stableSoulId, preparedSoulIdOf, recordedKernelBin, launchConfigsAt, launchStartNotices, launchReportFor, explicitInstanceName, retireInstance, RETIRE_SELECTED_HOME, RETIRE_UNDER_CLAIM, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, defaultRepo, RELATIONS, validateLaunchConfig, validateLaunchConfigDefaults, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, withSafeTaskPrompt, LAUNCH_HARNESSES, planLaunch, redactLaunchCommand, restartInstanceSession,
   FAILED_SPAWN_BRANCH_LEFT, RETIRE_DELETE_BRANCH_REFUSED,
 } from "../lib/core.mjs";
 import {
@@ -41,7 +41,8 @@ import { harnessTrust } from "../lib/harness-trust-write.mjs";
 import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
-import { launchLayers } from "../lib/launch-preference.mjs";
+import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeysUnmatched, launchLayers, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
+import { soulsOffered } from "../lib/instance-resolution.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import { activateLocalInputs, localRevision } from "../lib/local-inputs.mjs";
@@ -298,6 +299,38 @@ async function doctorOperator(ws) {
   const unknown = found.find((p) => p.code === "operator-coverage-unknown");
   if (unknown) return { problems: [], information: [`${unknown.code}: ${unknown.message}; ${unknown.remedy}`] };
   return { problems: found.map(({ code, label, message, remedy }) => ({ code, ...(label ? { label } : {}), message, remedy })), information: [] };
+}
+
+/** The keys of oats-local.yaml souls.launch that name no soul (awebai/oats#989), in doctor, OFFLINE like
+ *  doctorOperator: the souls are discovered from this machine's cache only, and the one function
+ *  (launchKeysUnmatched) decides. A problem per unmatched key, which speaks about this machine's last
+ *  read of the souls: a spawn reads the workspace itself and is the authority. A key that could not be
+ *  checked, or a cache that cannot answer, is an information line (`launch-preference-unchecked`),
+ *  never silence and never a failure of doctor. "*" is never reported.
+ *  → { problems: [{ code, key, at, value, suggestions, message, remedy }], information: [string] } */
+async function doctorLaunchPreferences(ws) {
+  const local = ws.local.value;
+  const entries = local?.souls?.launch && typeof local.souls.launch === "object" && !Array.isArray(local.souls.launch) ? local.souls.launch : {};
+  const keys = Object.keys(entries).filter((k) => k !== "*").sort();
+  if (!keys.length) return { problems: [], information: [] };
+  const shown = (list) => (list.length > 3 ? `${list.slice(0, 3).map((k) => JSON.stringify(k)).join(", ")} and ${list.length - 3} more` : list.map((k) => JSON.stringify(k)).join(", "));
+  let found;
+  try {
+    const { cacheOnlyRemote } = await import("../lib/operator-coverage.mjs");
+    const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+    const deployment = dirname(ws.local.path);
+    const discovery = await discoverOrStandalone(local, { lock: readLockIfPresent(deployment), deployment, remoteOptions: remoteOptionsFromEnv(), remote: cacheOnlyRemote() });
+    found = launchKeysUnmatched({ local, offered: soulsOffered(discovery) });
+  } catch (e) {
+    const why = e?.code === "E_REMOTE_UNREADABLE" ? `this machine's cache cannot answer (${e.message})` : `${e?.code ? `${e.code}: ` : ""}${e?.message ?? e}`;
+    return { problems: [], information: [`launch-preference-unchecked: the keys of oats-local.yaml souls.launch (${shown(keys)}) were not checked against the souls this workspace offers: ${why}; oats sync, then oats souls, then run doctor again (a spawn reads the workspace itself and refuses a key that names no soul)`] };
+  }
+  return {
+    problems: found.unmatched.map((row) => ({ code: LAUNCH_PREFERENCE_UNMATCHED, key: row.key, at: row.at, value: row.value, suggestions: row.suggestions,
+      message: unmatchedKeyMessage(row, { lastRead: true }),
+      remedy: `pin the soul it was meant for (oats soul launch set <soul> --launch-config <name> | --harness <h>), then: oats soul launch remove ${shellQuote(row.key)}` })),
+    information: found.unchecked.map((row) => `launch-preference-unchecked: oats-local.yaml souls.launch ${JSON.stringify(row.key)} was not checked against the souls this workspace offers: ${LAUNCH_KEY_UNCHECKED[row.reason] ?? row.reason}; this is this machine's last read, and a spawn reads the workspace itself`),
+  };
 }
 
 /** What the deployment's capabilities declare and this kernel ignores (an unknown hook event), for
@@ -596,6 +629,19 @@ async function homeLiveTeams(home) {
   return Array.isArray(teams) ? { teams, defaultTeam, teamsSource: source } : {};
 }
 
+/** For `--reselect-launch`: what the home's launch layers need of the workspace to say which keys of
+ *  souls.launch name no soul (lib/core.mjs homeLaunchLayers), read only when they need it and the layers
+ *  decide (`named`: --harness names the launch, so no key is consulted). A home the start will refuse
+ *  anyway (no record, no deployment) asks for nothing here: the start says why. A read that fails is
+ *  this command's answer, before anything is stopped or started. */
+async function homeLaunchOffered(home, { named = false } = {}) {
+  if (named) return null;
+  let needed = false;
+  try { needed = homeLaunchLayers(realpathSync(home), JSON.parse(readFileSync(join(home, "instance.json"), "utf8"))).needsOffered; } catch { return null; }
+  const { homeSoulsOffered } = await import("../lib/instance-resolution.mjs");
+  return homeSoulsOffered(realpathSync(home), { needed, remoteOptions: remoteOptionsFromEnv() });
+}
+
 // ---------- operation run: generic invoke through the capability engine ----------
 /** `oats operation run <layer>:<name>`: resolve the provider that fills
  *  <layer> for a running home (its snapshot) or for a soul in a scope (the
@@ -761,14 +807,15 @@ async function doctorWorkspaceJson(ctx, soulName, ws) {
   const localTeams = doctorLocalTeams(ws.local.value);
   const schedules = unresolvedScheduleAttempts(dirname(ws.local.path));
   const operator = await doctorOperator(ws);
+  const launchPreferences = await doctorLaunchPreferences(ws);
   // With --soul, the soul's composition; without, the deployment's capabilities (doctorHookWarnings).
   const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
-  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...localTeams.problems, ...schedules.problems, ...operator.problems].filter(Boolean);
+  const problems = [...legacyLayoutProblems(agentsRoot), readableInstanceHomes(agentsRoot), ...localTeams.problems, ...schedules.problems, ...operator.problems, ...launchPreferences.problems].filter(Boolean);
   return {
     schemaVersion: 1, workspaceApi: 2, context: ctx,
     workspace: { file: ws.local.path, ref: ws.local.workspace },
     workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
-    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...hookEvents.information, ...processScanInformation(), ...doctorRetained(ws).flat()],
+    information: [...(operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : []), ...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation(), ...doctorRetained(ws).flat()],
     composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
     ...(problems.length ? { problems } : {}),
     warnings: hookEvents.warnings,
@@ -814,9 +861,11 @@ async function doctor(dir) {
   for (const p of schedules.problems) console.log(`\n! ${p.code}: ${p.message}`);
   const operator = await doctorOperator(ws);
   for (const p of operator.problems) console.log(`\n! ${p.code}: ${p.message}\n  ${p.remedy}`);
+  const launchPreferences = await doctorLaunchPreferences(ws);
+  for (const p of launchPreferences.problems) console.log(`\n! ${p.code}: ${p.message}\n  ${p.remedy}`);
   const hookEvents = composition ? { warnings: composition.warnings, information: [] } : await doctorHookWarnings(ws);
   for (const w of hookEvents.warnings) console.log(`\nwarning  ${w.code}  ${w.message}`);
-  for (const line of [...localTeams.information, ...schedules.information, ...operator.information, ...hookEvents.information, ...processScanInformation()]) console.log(`\nINFO: ${line}`);
+  for (const line of [...localTeams.information, ...schedules.information, ...operator.information, ...launchPreferences.information, ...hookEvents.information, ...processScanInformation()]) console.log(`\nINFO: ${line}`);
   for (const block of doctorRetained(ws)) console.log(`\n${block.map((line) => `INFO: ${line}`).join("\n")}`);
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
@@ -1536,8 +1585,8 @@ const originOf = (item) => (item.package ? `package ${item.package} v${item.vers
 /** A soul's launch here (feature launch-preference): the `Launch` report a spawn with no flags would decide
  *  (souls.launch, the soul's own launch, the host default), and the desktop-facts `harness`, `model`,
  *  `harnessFrom` equal to its effective launch (`harnessFrom` "kernel-default" for the host default). */
-function soulLaunchFacts(entry, local, { launchConfigs, contextDir }) {
-  const launch = launchReportFor({ layers: launchLayers({ definition: entry.definition, entry, key: soulKeyOf(entry), local }), launchConfigs, contextDir });
+function soulLaunchFacts(entry, local, { launchConfigs, contextDir, offered }) {
+  const launch = launchReportFor({ layers: launchLayers({ definition: entry.definition, entry, key: soulKeyOf(entry), local, offered }), launchConfigs, contextDir });
   return { harness: launch.effective.harness, model: launch.effective.model, harnessFrom: launch.from === "host" ? "kernel-default" : launch.from, launch };
 }
 
@@ -1550,7 +1599,9 @@ function workspaceItems(discovery, lock, local, deploymentDir) {
   const souls = [];
   let launchConfigs = {};
   try { launchConfigs = deploymentDir ? launchConfigsAt(deploymentDir) : {}; } catch { launchConfigs = {}; }
-  const soulDefaults = (entry) => soulLaunchFacts(entry, local, { launchConfigs, contextDir: deploymentDir });
+  // One description of this read for every soul's launch: which keys of souls.launch name no soul.
+  const offered = soulsOffered(discovery);
+  const soulDefaults = (entry) => soulLaunchFacts(entry, local, { launchConfigs, contextDir: deploymentDir, offered });
   const capabilities = [];
   const model = teamModel(discovery.standalone === true ? null : discovery.workspace, local, { workspaceKey: discovery.key ?? null });
   const teamsHere = (entry) => {
@@ -2196,13 +2247,23 @@ async function itemsCmd(kind) {
   if (kind === "capabilities") await capabilityFacts(items, discovery, lock, ctx, remote);
   if (kind === "souls") await soulFacts(items, discovery, lock, ctx, remote);
   const standalone = discovery.standalone === true;
-  if (JSON_MODE) { jsonOk(withObservation({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems })); return; }
+  // `oats souls` reads souls.launch for every soul it lists: a key that names none of them is a problem
+  // of this read, one row per key (the souls a spawn would refuse carry it as launch.problem).
+  const unmatched = kind === "souls" ? launchKeysUnmatched({ local: ctx.local, offered: soulsOffered(discovery) }).unmatched.map(unmatchedProblemRow) : [];
+  if (JSON_MODE) { jsonOk(withObservation({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: [...discovery.problems, ...unmatched] })); return; }
   console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
   if (!items.length) console.log("  (none)");
   else if (kind === "souls") printTable(["name", "origin", "teams here", "work"], items.map((s) => [s.name, s.origin, s.teams === null ? "(invalid: oats teams)" : s.teams.map((t) => (t.default ? `${t.label}*` : t.label)).join(",") || "—", s.work ?? "—"]));
   else printTable(["name", "origin", "layer"], items.map((c) => [c.private ? `${c.name} (repo-owned)` : c.name, c.origin, c.layer ?? "—"]));
   const unsynced = Object.keys(discovery.workspace?.packages || {}).filter((id) => !lock.packages[id]);
   if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
+  for (const p of unmatched) console.log(`\n! ${p.code}: ${p.message}`);
+}
+
+/** A key of souls.launch that names no soul (lib/launch-preference.mjs launchKeysUnmatched's row) as a
+ *  row of `oats souls --json` `problems`: `path` is where the key is. */
+function unmatchedProblemRow(row) {
+  return { code: LAUNCH_PREFERENCE_UNMATCHED, path: row.at, message: unmatchedKeyMessage(row), key: row.key, value: row.value, suggestions: row.suggestions };
 }
 
 /** `oats capabilities` argv after the command: its words (the subcommand first) with every flag and a value
@@ -3380,7 +3441,7 @@ async function sessionCmd() {
       // recorded launch stays frozen (a changed preference never reaches an existing home on its own).
       const reselectLaunch = args.includes("--reselect-launch");
       if (reselectLaunch && launchConfig !== undefined) bad("--reselect-launch applies the launch preferences; --launch-config names one explicitly — choose one");
-      const opts = { model: model || undefined, launchConfig, harness, yolo: yoloFlag(), ...(reselectLaunch ? { reselectLaunch: true } : {}), env: process.env, ...(await homeLiveTeams(home)) };
+      const opts = { model: model || undefined, launchConfig, harness, yolo: yoloFlag(), ...(reselectLaunch ? { reselectLaunch: true, launchOffered: await homeLaunchOffered(home, { named: harness !== undefined }) } : {}), env: process.env, ...(await homeLiveTeams(home)) };
       if (args[1] === "restart") {
         const grace = flag("stop-grace");
         if (grace !== undefined) { if (grace === true || !/^\d+$/.test(String(grace)) || Number(grace) < 1 || Number(grace) > 300) bad("--stop-grace needs a number of seconds (1..300) to wait for the harness after SIGTERM"); opts.stopGraceMs = Number(grace) * 1000; }

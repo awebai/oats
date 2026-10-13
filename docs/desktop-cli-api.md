@@ -959,6 +959,16 @@ problem`, (feature `souls-capabilities`) `capabilities`, and (feature
   share a bare name share one entry (spawning that name is
   `E_SOUL_AMBIGUOUS`).
 - `launch` is a [Launch](#the-launch-report-launch).
+- **`problems` rows for `souls.launch`** (0.53). `oats souls` adds, after the
+  read's own rows, one row per key of `souls.launch` that names no soul:
+  `{code: "E_LAUNCH_PREFERENCE_UNMATCHED", path, message, key, value,
+  suggestions}`, sorted by key. `path` is where the key is
+  (`oats-local.yaml#/souls/launch/<key>`), `key`, `value` and `suggestions`
+  as in the refusal's `details.keys`. `message` is at most 1024 characters
+  and ends with the two commands, in their order. Each soul a spawn would
+  refuse carries the refusal as `launch.problem`: the souls with no entry of
+  their own. Text mode prints each row under the table as `! <code>:
+  <message>`.
 - `teams` and `defaultTeam` (feature `team-model-3`) are a
   [TeamRow](#the-team-row-teamrow) list and a
   [DefaultTeam](#the-default-defaultteam); both `null` when the soul's teams
@@ -1780,6 +1790,59 @@ a running or existing home until `--reselect-launch` or a respawn.** Readiness
 shows the drift as `launch-changed`.
 
 **Refusals** (spawn, preview, and a reselecting start):
+- `E_LAUNCH_PREFERENCE_UNMATCHED {soul, from, at, keys, fix}` (0.53): the
+  launch names none (no `--launch-config`, no `--harness`; `--model` alone
+  names none), its soul has no `souls.launch` entry of its own, and
+  `souls.launch` holds a key that is the key of no soul the workspace offers.
+  The kernel cannot tell which soul that key was meant to pin, so the launch
+  the fall-through would decide is refused. It is checked before the three
+  refusals below, which describe that fall-through launch. Refused: `oats
+  spawn`, preview and apply, with the same code and `details`, and `session
+  start|restart --reselect-launch`, before anything is created, stopped or
+  started. A soul with its own entry, a launch named by a flag, and a plain
+  start or restart go on.
+  - `soul`: the soul key of the launch refused. `from`, `at`: the layer that
+    would have decided it (`"local-default"`, `"soul"` or `"host"`; `at` as
+    in the `Launch` report, `null` for the host).
+  - `keys`: every such key, sorted by key, `[{key, at, value,
+    suggestions}]`, the rows of `unmatched` in
+    [`oats soul launch`](#oats-soul-launch). A client builds the two
+    commands from `key` and `value`; it does not parse the sentence.
+  - `fix`: "pin the soul each key was meant for (oats soul launch set), then
+    remove the key (oats soul launch remove <key>); or name this launch with
+    --launch-config <name> or --harness <h>". The order is `set`, then
+    `remove`: removing first ends the refusal and leaves the soul on the
+    fall-through.
+  - The message names at most three keys, then "and K more", and it and
+    `fix` are at most 1024 characters each, with no line break, whatever the
+    file holds. `keys` is complete.
+  - **Unmatched, or not checked.** A key other than `"*"` matches when an
+    offered soul has that soul key (a soul in `souls.disabled` included).
+    A key that matches nothing is *not checked*, and refuses nothing, when
+    the source that could hold its soul was not read: a bare key while a
+    member is not confirmed or a member's or an external soul was skipped
+    with a problem; `<package>/…` while that package is declared and not
+    locked, or one of its souls was skipped; every key in the standalone
+    view of a workspace whose host cannot be read. What a read did not
+    record, it did not establish: a read that carries no record of what it
+    skipped leaves every key not checked, and a member whose listing carries
+    none counts as one with a soul skipped. Every other key that
+    matches nothing is unmatched, `<member>/<soul>` among them (a member's
+    soul is keyed by its bare name). When the workspace cannot be read at
+    all, the answer is that read's own error. `"*"` is never reported.
+  - **Where else it is said.** `oats souls` and `inspect --soul`: `launch.problem`
+    on each soul a spawn would refuse, and `oats souls` `problems` gains one
+    row per key (below). `oats doctor`, offline, from this machine's cache:
+    `problems[]` gains `{code, key, at, value, suggestions, message,
+    remedy}` per key (text: `! <code>: <message>`, then the remedy), whose
+    message says that it speaks about this machine's last read of the souls
+    and that a spawn reads the workspace itself and is the authority. For a
+    key that read could not check, and when the cache cannot answer, doctor
+    adds an `information[]` line that starts `launch-preference-unchecked:`.
+    The line is information: it changes no exit status and refuses nothing.
+    `inspect --home` `launchCurrent` and readiness `launch-changed` make no
+    read of the workspace and do not carry this problem; the
+    `--reselect-launch` they point to refuses.
 - `E_HARNESS_UNAVAILABLE {harness, from, at, fix}`: the chosen harness has no
   executable on this machine. There is no fallback to another harness. `fix`
   is "install <harness>, or override it on this machine in oats-local.yaml
@@ -1822,7 +1885,9 @@ shows the drift as `launch-changed`.
   `"oats-local.yaml#/souls/launch/*"`, `"<repoKey>:<path>/soul.yaml#/launch"`,
   or `"package:<id>:<path>/soul.yaml#/launch"`.
 - `problem`: `null`, or `{code, message, fix}` when a spawn would refuse
-  (`E_HARNESS_UNAVAILABLE`, `E_LAUNCH_CONFIG_UNKNOWN`,
+  (`E_LAUNCH_PREFERENCE_UNMATCHED`, before any other, with `effective` the
+  launch the fall-through would have given; `E_HARNESS_UNAVAILABLE`,
+  `E_LAUNCH_CONFIG_UNKNOWN`,
   `E_LAUNCH_CONFIG_AMBIGUOUS` with `effective.launchConfig` `null`, or
   `E_LAUNCH_EXECUTABLE` for a configuration whose own executable is missing). Only reports carry it;
   spawn and preview refuse instead. With `E_LAUNCH_CONFIG_UNKNOWN`,
