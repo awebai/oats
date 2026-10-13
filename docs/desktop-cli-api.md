@@ -3565,11 +3565,17 @@ that target's row `ok: false`, `E_SESSION_STOP_FAILED`, a `message` that
 ends `its harness was signalled (SIGTERM) and has exited`, and
 [`stillRunning: []`](#still-running): the row of a stop in a home that
 cannot be written, as it was. Read `stillRunning`, not `ok`: `[]` says
-stopped. Text mode prints that row and exits 1, as for any target that
+stopped. Text mode prints that row, closes with `the stop did not complete
+its record; nothing is still running`, and exits 1, as for any target that
 failed. The receipt cannot be stored either, so **its key cannot be
 replayed**: the same apply again runs, and is answered `E_PLAN_STALE` with
 the fresh plan, in which the session is stopped; an apply with that plan's
-revision answers `alreadyIdle`, and prints the warning again.
+revision answers `alreadyIdle`, and prints the warning again. Such a stop
+leaves nothing of its own in the home: the private file each of the two
+writes goes through (`.oats-stop.json.tmp-<pid>`,
+`.oats-stop-receipt.<key>.json.<pid>.tmp`) is removed when its write or its
+rename fails. Before 0.53.0 each apply on a full disk left both there,
+empty.
 
 In 0.52.0 a stop whose claim could not be written for one of those five
 codes was refused like the others, before anything was signalled
@@ -3616,7 +3622,14 @@ in flight.
   defect's stack is printed on stderr; a stop that fails on a refusal without
   a code (a `tmux` command that failed) is that row and prints no stack. The
   same holds for a child's stop in a retire's `childrenStopped`.
-- `ok: false`: at least one target still runs (text mode exits 1).
+- `ok: false`: at least one target's row is not `ok` (text mode exits 1).
+  Whether something still runs is each such row's `stillRunning`, and the
+  sentence text mode closes with follows it: `some targets are still
+  running; nothing was escalated` when one of those rows names a process or
+  establishes nothing (`null`, or no `stillRunning` in the row), and `the
+  stop did not complete its record; nothing is still running` when every
+  one of them says `[]` (from 0.53.0; before, the first sentence closed
+  every such answer).
 - A replay is the stored receipt (`<home>/.oats-stop-receipt.<key>.json`)
   with `replayed: true`, and it follows the same rules as a first answer. The
   file a kernel with feature `lifecycle-kernel-codes` stores says so in a
