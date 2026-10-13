@@ -405,6 +405,14 @@ test("a row that cannot open says who made its text in its title and description
   rows.push([instance("dev-control", undefined, { running: null, runtimeState: "unknown", runtimeError: CONTROL, runtimeErrorOrigin: "kernel" }), DETAIL_WITHHELD]);
   // A row with no text of its own keeps the sentence written for it, under no speaker's name whatever mark it carries.
   rows.push([instance("dev-bare", undefined, { running: null, runtimeState: "unknown", runtimeErrorOrigin: "kernel" }), "dev-bare: status unknown"]);
+  // A text beside no speaker, or beside a mark that is none of the three: its reason is unattributed, so it is shown filtered, with no lead.
+  for (const [n, mark] of [{}, { runtimeErrorOrigin: "someone-else" }, { runtimeErrorOrigin: "unattributed" }].entries()) {
+    rows.push([instance(`dev-lost-${n}`, undefined, { running: null, runtimeState: "unknown", runtimeError: CONTROL, ...mark }), DETAIL_WITHHELD]);
+    rows.push([instance(`dev-bidi-${n}`, undefined, { running: null, runtimeState: "unknown", runtimeError: "safe\u202Etxt.exe", ...mark }), "safe\uFFFDtxt.exe"]);
+    rows.push([instance(`dev-odd-${n}`, undefined, { running: null, runtimeState: "unknown", runtimeError: { message: "x" }, ...mark }), "state unknown"]);
+  }
+  // A sentence the shared home wrote is shown as written: the filter reads no credential's shape in an instance's name.
+  rows.push([instance("vault-secret", undefined, { running: null, runtimeState: "unknown" }), "vault-secret: status unknown"]);
   u.render(rows.map(([row]) => row));
   for (const [row, line] of rows) {
     const el = u.row(row.instance);

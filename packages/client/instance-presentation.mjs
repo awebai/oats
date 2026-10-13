@@ -5,6 +5,10 @@ export function runtimeState(instance) {
   return instance.running === true ? "running" : instance.running === false ? "stopped" : "unknown";
 }
 
+/** The stand-in `unsupportedSession` writes for an older kernel's Herdr row: the one text of a row that is
+ * this home's own sentence. Not on the stable surface. */
+export const HERDR_STAND_IN = `E_HERDR_REMOVED: ${HERDR_REMOVED}`;
+
 /** The row carries the kernel's own reason for a removed session backend, which `unsupportedSession` answers as it is. */
 const kernelsOwnReason = (instance) => instance?.runtimeState === "unsupported" && typeof instance.runtimeError === "string" && !!instance.runtimeError;
 
@@ -14,7 +18,7 @@ const kernelsOwnReason = (instance) => instance?.runtimeState === "unsupported" 
  * older kernel only records a sessionTarget (local) or a herdr backend
  * (remote), and its runtimeError is a Herdr probe's, so the stem stands in. */
 export function unsupportedSession(instance) {
-  const stem = `E_HERDR_REMOVED: ${HERDR_REMOVED}`;
+  const stem = HERDR_STAND_IN;
   if (instance?.runtimeState === "unsupported") return kernelsOwnReason(instance) ? instance.runtimeError : stem;
   return (instance?.sessionTarget !== undefined && instance?.sessionTarget !== null) || instance?.backend === "herdr" ? stem : null;
 }
@@ -37,7 +41,12 @@ export const unsupportedSessionOrigin = (instance) => (kernelsOwnReason(instance
  *
  * A text with no speaker (the stand-in above) has no key. The marks are written here, in the shared home,
  * at the place that chooses the text, and never taken from an answer: a key a kernel, a host or the
- * liveness collector sent is dropped on every path. */
+ * liveness collector sent is dropped on every path.
+ *
+ * A reason's `origin` has one more value, "unattributed", with no words: remote-address.mjs `rowReason`
+ * writes it for a row's text that reached it beside no speaker. It names nobody, so it is not in this
+ * table, `originLead` answers null for it, and it is never a row's `runtimeErrorOrigin` nor a kept
+ * failure's `errorOrigin`. */
 const LEADS = Object.freeze({
   kernel: () => "OATS says:",
   "terminal-probe": (terms) => `${terms.name}'s terminal check says:`,
@@ -57,19 +66,18 @@ export const knownOrigin = (value) => typeof value === "string" && Object.hasOwn
  *
  * The two checks name the client: the kernel's own text can be about a terminal server too, so "the
  * terminal check" alone would not say whose check it was. A text with no lead is shown as the client's
- * own words always were: never under "OATS says:". `terms` is required, also where no term is used. */
+ * own words always were: never under "OATS says:". A reason's "unattributed" is such a value: no words.
+ * `terms` is required, also where no term is used. */
 export function originLead(origin, terms) {
   requireTerms(terms, "originLead");
   return knownOrigin(origin) ? LEADS[origin](terms) : null;
 }
 /** Whether a row has a `runtimeError`: a string that is not empty. Only such a row carries `runtimeErrorOrigin`. */
 export const hasRuntimeError = (row) => typeof row?.runtimeError === "string" && !!row.runtimeError;
-/** The speaker of a sentence a reason carries, or null: the row's `runtimeErrorOrigin` when the sentence
- * is the row's own `runtimeError` and the key names one of the three. A sentence written for the row (it
- * was not reached, its state is unknown) and the Herdr stand-in have none. The key is a panel row's, set
- * by the shared home (deployment-panel.mjs, remote-roster.mjs). Not on the stable surface. */
-export const runtimeErrorSpeaker = (row, sentence) =>
-  (hasRuntimeError(row) && sentence === row.runtimeError && knownOrigin(row.runtimeErrorOrigin) ? row.runtimeErrorOrigin : null);
+/** The speaker of a row's own `runtimeError`, or null: the row's `runtimeErrorOrigin` when the row has a
+ * text and the key names one of the three. The key is a panel row's, set by the shared home
+ * (deployment-panel.mjs, remote-roster.mjs). Not on the stable surface. */
+export const runtimeErrorSpeaker = (row) => (hasRuntimeError(row) && knownOrigin(row.runtimeErrorOrigin) ? row.runtimeErrorOrigin : null);
 
 export function runtimeCounts(instances) {
   const counts = { running: 0, stopped: 0, unknown: 0 };

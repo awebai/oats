@@ -41,17 +41,36 @@ test("the answer is always one display line: nothing to show is null, an unsafe 
   assert.equal(speakerLine("roster-read", "OATS says: all is well"), "Desktop's read of other machines says: OATS says: all is well");
 });
 
-test("a reason is shown with its origin; a row's own text with the row's mark, and only when the mark is one of the three", () => {
+test("a reason's sentence: with an origin it is a text from outside, filtered and under its speaker's words; with none it is the shared home's own, shown as written", () => {
   assert.equal(reasonLine({ sentence: "tmux said no", origin: "terminal-probe" }), "Desktop's terminal check says: tmux said no");
+  // "unattributed" names nobody: the line alone, filtered all the same. So does any value that is no speaker.
+  for (const origin of ["unattributed", "someone-else", "", null, 7, false]) {
+    assert.equal(reasonLine({ sentence: "tmux said no", origin }), "tmux said no", JSON.stringify(origin));
+    assert.equal(reasonLine({ sentence: "wipe \u001b[2J the screen", origin }), DETAIL_WITHHELD, JSON.stringify(origin));
+    assert.equal(reasonLine({ sentence: "first\nsecond", origin }), "first second", JSON.stringify(origin));
+    assert.equal(reasonLine({ sentence: "safe\u202Etxt.exe", origin }), "safe\uFFFDtxt.exe", JSON.stringify(origin));
+  }
+  for (const origin of Object.keys(LEADS)) assert.equal(reasonLine({ sentence: "bell\u0007", origin }), DETAIL_WITHHELD, "an unsafe text is never put under a speaker's name");
+  // A text with an origin that is not a string has nothing to show: the row then keeps its label.
+  for (const sentence of [7, true, { message: "x" }, ["x"], "", "   "]) assert.equal(reasonLine({ sentence, origin: "unattributed" }), null, JSON.stringify(sentence));
+  assert.equal(rowReasonLine({ label: "state unknown", sentence: 7, origin: "unattributed" }), "state unknown");
+  assert.equal(rowReasonLine({ label: "state unknown", sentence: "a\u0007", origin: "kernel" }), DETAIL_WITHHELD);
+  // No origin: the shared home wrote it. Shown as written, never under a speaker's name.
   assert.equal(reasonLine({ sentence: "written here" }), "written here");
-  assert.equal(reasonLine(null), null); assert.equal(reasonLine({}), null);
+  assert.equal(reasonLine({ sentence: "written here", origin: undefined }), "written here");
+  assert.equal(reasonLine(null), null); assert.equal(reasonLine({}), null); assert.equal(reasonLine({ sentence: "" }), null); assert.equal(reasonLine({ sentence: 7 }), null);
   assert.equal(rowReasonLine(null), null, "no reason, no line");
   assert.equal(rowReasonLine({ label: "state unknown", sentence: "" }), "state unknown", "a reason with nothing to show keeps its label");
-  assert.equal(rowReasonLine({ label: "state unknown", sentence: "a\u0007", origin: "kernel" }), DETAIL_WITHHELD);
+});
+
+test("a row's own text is always filtered, with the row's mark as its speaker and only when the mark is one of the three", () => {
   for (const [origin, lead] of Object.entries(LEADS)) {
     assert.equal(runtimeErrorLine({ runtimeError: "no session", runtimeErrorOrigin: origin }), `${lead} no session`, origin);
   }
-  for (const origin of [undefined, null, "other", 3]) assert.equal(runtimeErrorLine({ runtimeError: "no session", runtimeErrorOrigin: origin }), "no session", String(origin));
+  for (const origin of [undefined, null, "other", "unattributed", 3]) {
+    assert.equal(runtimeErrorLine({ runtimeError: "no session", runtimeErrorOrigin: origin }), "no session", String(origin));
+    assert.equal(runtimeErrorLine({ runtimeError: "bell\u0007", runtimeErrorOrigin: origin }), DETAIL_WITHHELD, String(origin));
+  }
   for (const row of [undefined, null, {}, { runtimeError: "" }, { runtimeError: null, runtimeErrorOrigin: "kernel" }, { runtimeError: 5, runtimeErrorOrigin: "kernel" }]) {
     assert.equal(runtimeErrorLine(row), null, JSON.stringify(row) ?? String(row));
   }
@@ -88,11 +107,33 @@ test("each sentence written here reads byte for byte through the helper as it di
   }
 });
 
-test("a name or a label inside a sentence written here is another party's text: an unsafe one withholds the line whole", () => {
-  // The filter reads a credential's shape in "<name>: status unknown" when the name ends in one of its words.
-  for (const name of ["api-token", "vault-secret", "db-password", "x-authorization", "svc-api-key"]) {
-    assert.equal(rowReasonLine(rowReason({ instance: name, running: null })), DETAIL_WITHHELD, name);
+test("a sentence the shared home wrote keeps the names it holds as they are: no filter reads a credential's shape in an instance's name or a label", () => {
+  for (const name of ["api-token", "vault-secret", "db-password", "x-authorization", "svc-api-key", "token-dev"]) {
+    const reason = rowReason({ instance: name, running: null });
+    assert.equal(Object.hasOwn(reason, "origin"), false, name);
+    assert.equal(rowReasonLine(reason), `${name}: status unknown`, name);
   }
-  assert.equal(rowReasonLine(rowReason({ instance: "token-dev", running: null })), "token-dev: status unknown", "a name that only begins with one reads as before");
-  assert.equal(rowReasonLine(rowReason({ instance: "dev-a", server: "box", repoName: "box\u0007", addressable: true, serverUnreached: true })), DETAIL_WITHHELD);
+  // A label is shown raw in the sentence it enters, as on the base (the filter of a name where it enters its sentence is not this change).
+  const unreached = rowReason({ instance: "dev-a", server: "box", repoName: "box\u0007", addressable: true, serverUnreached: true });
+  assert.equal(Object.hasOwn(unreached, "origin"), false); assert.equal(rowReasonLine(unreached), "box\u0007 was not reached.");
+});
+
+test("a row that reaches the Desktop with a text and no speaker: its reason is unattributed, and the text is shown filtered with no lead", () => {
+  for (const mark of [{}, { runtimeErrorOrigin: "someone-else" }, { runtimeErrorOrigin: "unattributed" }]) {
+    const at = JSON.stringify(mark);
+    const row = (runtimeError, extra = {}) => ({ instance: "dev-a", running: null, runtimeError, ...mark, ...extra });
+    assert.equal(rowReason(row("no session")).origin, "unattributed", at);
+    assert.equal(rowReasonLine(rowReason(row("no session"))), "no session", at);
+    assert.equal(rowReasonLine(rowReason(row("wipe \u001b[2J the screen"))), DETAIL_WITHHELD, at);
+    assert.equal(rowReasonLine(rowReason(row("token: abc123"))), DETAIL_WITHHELD, at);
+    assert.equal(rowReasonLine(rowReason(row("safe\u202Etxt.exe"))), "safe\uFFFDtxt.exe", at);
+    // The same row's text shown directly reads the same: filtered, no lead.
+    assert.equal(runtimeErrorLine(row("no session")), "no session", at); assert.equal(runtimeErrorLine(row("wipe \u001b[2J the screen")), DETAIL_WITHHELD, at);
+    // A Herdr row with the kernel's text and no speaker: unattributed too; the stand-in stays the shared home's own.
+    assert.equal(unsupportedLine(row("E_HERDR_REMOVED: wipe \u001b[2J", { runtimeState: "unsupported" })), DETAIL_WITHHELD, at);
+    assert.equal(unsupportedLine(row("E_HERDR_REMOVED: gone", { runtimeState: "unsupported" })), "E_HERDR_REMOVED: gone", at);
+  }
+  // A text that is not a string: the reason carries it as on the base, unattributed, and the filter has nothing to show.
+  const odd = rowReason({ instance: "dev-a", running: null, runtimeError: { message: "x" } });
+  assert.deepEqual([odd.origin, rowReasonLine(odd), reasonLine(odd)], ["unattributed", "state unknown", null]);
 });

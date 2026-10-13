@@ -6,7 +6,9 @@
  *   speakerLine(origin, text) -> "<lead> <line>" | "<line>" | null
  *
  * `line` is the text as one display line (packages/client/display-text.mjs `displayLine`), always: the
- * guarantee does not rest on which caller had a speaker. The lead stands in front only when `origin` names
+ * guarantee does not rest on which caller had a speaker. Every text the shared home did not write goes
+ * through it: a row's `runtimeError`, a kept failure's message, and a reason's sentence when the reason
+ * carries an `origin` (`reasonLine`). The lead stands in front only when `origin` names
  * one of the three speakers and there is a line to introduce: a text the filter withholds reads
  * "[Detail withheld]" alone, and a text with nothing to show answers null, so the caller says what it said
  * before for a row without a text. A text with no origin is shown without a lead, as the Desktop's own
@@ -38,15 +40,24 @@ export function speakerLine(origin, text) {
  * line's: a failure with nothing to show is still one. */
 export const keptFailureLine = (kept) => speakerLine(kept.origin, kept.message);
 
-/** A reason's sentence (remote-address.mjs `rowReason`, instance-acts.mjs `instanceActs`) with its speaker, or null. */
-export const reasonLine = (reason) => speakerLine(reason?.origin, reason?.sentence);
+/** A reason's sentence (remote-address.mjs `rowReason`, instance-acts.mjs `instanceActs`), or null when it
+ * has nothing to show. The reason's `origin` says which it is, and the shared home sets it in the same
+ * expression that picks a row's text (the contract of `rowReason`):
+ *
+ *   with an `origin`   a text the shared home did not write: one display line, after the speaker's words
+ *                      when the value names a speaker ("unattributed" names none: the line alone)
+ *   with none          the shared home's own sentence, shown as written, as it always was
+ *
+ * Only an absent key reads as the shared home's own; any value, also one that is no speaker, is filtered. */
+export const reasonLine = (reason) => (reason?.origin === undefined ? written(reason?.sentence) : speakerLine(reason.origin, reason.sentence));
+const written = (sentence) => (typeof sentence === 'string' && sentence ? sentence : null);
 
 /** A row reason as the row says it: its sentence with its speaker, or its own short label when the sentence
  * has nothing to show. Null for no reason. */
 export const rowReasonLine = (reason) => (reason ? reasonLine(reason) ?? reason.label : null);
 
 /** A row's own `runtimeError` with its speaker, or null for a row without one. */
-export const runtimeErrorLine = (row) => speakerLine(runtimeErrorSpeaker(row, row?.runtimeError), row?.runtimeError);
+export const runtimeErrorLine = (row) => speakerLine(runtimeErrorSpeaker(row), row?.runtimeError);
 
 /** Why a row whose session backend OATS no longer has cannot start or open, with its speaker when the
  * kernel gave the reason, or null for any other row. The row reason of such a row is always this one. */
