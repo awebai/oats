@@ -70,6 +70,19 @@ duplicates coalesce before await. No unbounded queue. **30s / 4MiB CLI,
 35s proxy**, clean exit and JSON-v1 envelope. Admission revalidation applies to
 success and rejection.
 
+**What travels of a kernel refusal.** The code, the message, and of `details`
+the `fix` alone. The exec owner (`packages/client/spawn-preview-cli.mjs`)
+answers a refusal in the kernel's own shape, `{code, message, details: {fix}}`;
+the boundary reads it there and serves the three as the view's `reason`,
+`{code, message, fix}`; the Electron proxy reads that reason again. Each of the
+three decides with `previewFailure`: the kernel's message travels when it is
+printable and at most 2,048 characters, and otherwise the reason holds the
+sentence of the contract's table for that code; the `fix` travels only beside
+the kernel's own message, printable and at most 1,024 characters. A reason
+with a `fix` is therefore one whose `message` is the kernel's. A test of what
+reaches the dialog starts from the CLI's printed envelope, through the exec
+owner: the boundary's `invoke` seam is after it.
+
 **The reuse window.** This route and `/api/spawn` prepare (below) answer from one
 bounded settled-answer cache (`spawnPreviewCache`, `server/spawn-preview.mjs`):
 64 entries, **60 s**, keyed by the admission identity (workspace id and scope,
@@ -716,5 +729,72 @@ on this machine, none is `default: true`, and the spawn names none.
   configurations. Its refusal shows as any host refusal does: "Couldn't spawn
   on <server>: <the host's message>", the code behind Details, never the
   sentence above.
-- **The soul's page** shows a launch `problem` in the kernel's words, this one
-  included.
+- **The soul's page and panel** show a launch `problem`, this one included, in
+  their launch box (below).
+
+### A soul's launch problem
+
+`oats souls` and `oats inspect --soul` carry a soul's `Launch` report, and a
+report's `problem` is `{code, message, fix}`: the kernel computes the report
+for a spawn that names no launch, and sets a problem only where it would
+refuse that spawn. The soul page and the soul panel show it in one box, by
+one rule for every code (`soul-inspector.mjs` `launchProblem`):
+
+- the Desktop's line, "A spawn of this soul with no launch chosen would be
+  refused here.";
+- the kernel's `message` and `fix`, each on its own line and through the
+  display filter alone, the kernel's name before the first of them that has
+  a line to show ("OATS says: <message>", then `<fix>`), by `kernelLines`
+  (`renderer/speaker-line.mjs`);
+- the code behind Details.
+
+The line says what the box shows. It does not say that a soul without a box
+will spawn: the report probes no model catalogue, so a spawn can be refused
+for more than a report holds.
+
+### An unmatched launch preference
+
+OATS 0.53 refuses a spawn, and its preview, with
+`E_LAUNCH_PREFERENCE_UNMATCHED` when `oats-local.yaml` `souls.launch` holds a
+key that names no soul the workspace offers, the soul has no entry of its
+own, and the spawn names no launch. The kernel sends a `message` and a `fix`,
+each at most 1,024 characters.
+
+- **As the dialog opens, the sentence is the Desktop's** (`spawn-messages.mjs`),
+  as the status and in the preview's place: "This machine's launch preferences
+  name a soul this workspace doesn't offer, so OATS won't choose a launch for
+  this soul. To spawn now, pick a harness above, or a launch configuration in
+  Developer settings. To fix it for every spawn, correct the preference
+  (Details)." Picking either names the launch, so the kernel no longer
+  refuses the spawn; the key stays in the file and keeps refusing every other
+  soul with no entry of its own.
+- **Details hold the code, then the kernel's two texts, each on its own
+  line**: "OATS says: <message>", then `<fix>`. `spawnProblem` answers them as
+  parts (`kernel: { message, fix }`, with the code alone as `detail`), and the
+  dialog draws them with `kernelLines` (`renderer/speaker-line.mjs`): each
+  text through the display filter alone and whole, the kernel's name before
+  the first of them that has a line to show, `[Detail withheld]` with no name
+  for a text the filter withholds. Nothing is taken out of the texts and
+  nothing is compared: a remedy the kernel says in both is read in both.
+  Details stay as the person left them while neither the detail nor a line
+  changed.
+- **The shorter sentence is read wherever Details hold no kernel text**: "…
+  To spawn now, pick a harness or a launch configuration for this spawn. To
+  fix it for every spawn, correct the preference." That is a press, and a
+  preview whose reason carries no `fix` (a kernel that sends none, or a
+  message over the reader's bound). Its Details read `code · message`
+  as for any code. A `fix` decides it because `previewFailure` keeps one only
+  beside the kernel's own message, never beside a sentence of its table.
+- **The code is in the preview contract's fixed table**, so it survives a
+  press. When the key appeared after the preview on screen settled, prepare's
+  own read is refused: the dialog reads the preview again at once and shows
+  the first sentence with the kernel's texts, and the background notice says
+  the shorter one and that nothing was created.
+- **A refusal from the apply's own CLI call** is an unknown outcome, as every
+  kernel refusal at that stage is. The kernel's message says nothing was
+  created; a client does not read that from a message.
+- **A spawn routed to a server** shows the host's refusal as any host refusal
+  does, neither sentence above.
+- **Every soul with no entry of its own** carries the refusal as its launch
+  `problem` while the key is in the file, and shows it in its launch box
+  (above).

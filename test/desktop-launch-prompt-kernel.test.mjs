@@ -234,7 +234,8 @@ test("the kernel's own E_LAUNCH_CONFIG_AMBIGUOUS reads as the Desktop's sentence
     assert.deepEqual(execs[0], ["/installed/oats", ["spawn", "dev", "--dir", "/inert/ws", "--agents-root", "/inert/ws/agents", "--preview", "--json"]]);
     assert.equal(read.ok, false);
     const reason = read.error;
-    assert.deepEqual(reason, { code: "E_LAUNCH_CONFIG_AMBIGUOUS", message: error.message });
+    // The exec owner keeps the kernel's shape: the code, the message, and of `details` the `fix` alone.
+    assert.deepEqual(reason, { code: "E_LAUNCH_CONFIG_AMBIGUOUS", message: error.message, details: { fix: error.details.fix } });
     // The kernel names at most ten configurations, so its message stays within the readers' bounds.
     assert.ok(error.message.length <= 1024, String(error.message.length));
     for (const stage of ["preview", "spawn"]) {

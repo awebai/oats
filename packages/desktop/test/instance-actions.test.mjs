@@ -308,6 +308,9 @@ test("Start on a Herdr row says who made its reason: each speaker, none, and hos
   assert.equal(doc.querySelector("small b, small script"), null, "the reason is text");
   const withheld = start({ runtimeError: `E_HERDR_REMOVED: ${CONTROL}`, runtimeErrorOrigin: "kernel" });
   assert.equal(withheld.title, DETAIL_WITHHELD, "an unsafe reason is withheld, under no speaker's name"); assert.equal(withheld.disabled, true);
+  // A reason with nothing to show: the act is listed as not enabled all the same, with no words.
+  const blank = start({ runtimeError: "   ", runtimeErrorOrigin: "kernel" });
+  assert.equal(blank.title, ""); assert.equal(blank.disabled, true);
   dom.window.close();
 });
 

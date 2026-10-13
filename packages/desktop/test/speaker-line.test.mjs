@@ -3,7 +3,7 @@
 // own fixed sentences byte for byte. Each place that shows such a line has its own DOM test beside its view.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { speakerLine, reasonLine, rowReasonLine, runtimeErrorLine, unsupportedLine } from "../renderer/speaker-line.mjs";
+import { speakerLine, reasonLine, rowReasonLine, runtimeErrorLine, unsupportedLine, kernelLines } from "../renderer/speaker-line.mjs";
 import { DETAIL_WITHHELD } from "../../client/display-text.mjs";
 import { originLead } from "../../client/instance-presentation.mjs";
 import { rowReason } from "../../client/remote-address.mjs";
@@ -136,4 +136,38 @@ test("a row that reaches the Desktop with a text and no speaker: its reason is u
   // A text that is not a string: the reason carries it as on the base, unattributed, and the filter has nothing to show.
   const odd = rowReason({ instance: "dev-a", running: null, runtimeError: { message: "x" } });
   assert.deepEqual([odd.origin, rowReasonLine(odd), reasonLine(odd)], ["unattributed", "state unknown", null]);
+});
+
+/* ── A kernel refusal's two texts, its message and its fix (#1015): the launch box and the spawn dialog's
+ *    Details show them as lines. No text of the kernel's stands without the lead. ── */
+test("kernelLines: each text is filtered alone, and the lead stands before the first of them that has a line to show", () => {
+  const M = 'the file points "ghost" at a launch', F = 'point the entry at a soul, then drop "ghost"';
+  const HIDDEN = "token: abc123", NOTHING = " \n\t ";
+  const rows = [
+    [M, F, [`OATS says: ${M}`, F]],
+    [HIDDEN, F, [DETAIL_WITHHELD, `OATS says: ${F}`]],
+    [NOTHING, F, [`OATS says: ${F}`]],
+    [M, HIDDEN, [`OATS says: ${M}`, DETAIL_WITHHELD]],
+    [M, NOTHING, [`OATS says: ${M}`]],
+    [HIDDEN, HIDDEN, [DETAIL_WITHHELD, DETAIL_WITHHELD]],
+    [HIDDEN, NOTHING, [DETAIL_WITHHELD]],
+    [NOTHING, HIDDEN, [DETAIL_WITHHELD]],
+    [NOTHING, NOTHING, []],
+  ];
+  for (const [message, fix, lines] of rows) assert.deepEqual(kernelLines(message, fix), lines, JSON.stringify([message, fix]));
+  // A text that is not a string has nothing to show.
+  for (const absent of [undefined, null, 7, {}, ["x"]]) {
+    assert.deepEqual(kernelLines(absent, F), [`OATS says: ${F}`], String(absent));
+    assert.deepEqual(kernelLines(M, absent), [`OATS says: ${M}`], String(absent));
+  }
+  // Each is one display line, whole: several lines fold, a control character withholds that text alone, markup is text.
+  assert.deepEqual(kernelLines("first\nsecond", "third\nfourth"), ["OATS says: first second", "third fourth"]);
+  assert.deepEqual(kernelLines("wipe \u001b[2J", F), [DETAIL_WITHHELD, `OATS says: ${F}`]);
+  assert.deepEqual(kernelLines("<b>bold</b>", "<i>it</i>"), ["OATS says: <b>bold</b>", "<i>it</i>"]);
+  const long = "word ".repeat(204).trim(), longer = "step ".repeat(204).trim();
+  assert.equal(long.length, 1019);
+  assert.deepEqual(kernelLines(long, longer), [`OATS says: ${long}`, longer], "a text at the kernel's bound is not cut");
+  // The same text in both is shown in both: nothing is compared, nothing is said once.
+  assert.deepEqual(kernelLines(F, F), [`OATS says: ${F}`, F]);
+  assert.equal(originLead("kernel", DESKTOP_TERMS), "OATS says:");
 });

@@ -28,6 +28,7 @@ import { previewSupported, previewChoices, previewData, previewTarget, previewFa
 import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
 import { sameSpawnDecision } from '../../client/spawn-decision.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
+import { kernelLines } from './speaker-line.mjs';
 import { RECOVER_POLL_MS, FOLLOW_MARGIN_MS } from './spawn-jobs.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
@@ -280,6 +281,8 @@ export const spawnDialogCSS = `
 .spawn-details-toggle:hover { color:var(--fg); }
 .spawn-details-toggle[hidden], .spawn-problem-detail[hidden] { display:none; }
 .spawn-problem-detail { order:9; flex:1 0 100%; margin:0; padding:8px 10px; border-radius:6px; background:var(--surface-2); color:var(--muted); font-size:11.5px; line-height:1.5; overflow-wrap:anywhere; max-height:96px; overflow:auto; }
+/* A kernel text quoted under the code, each on its own line (speaker-line.mjs kernelLines). */
+.spawn-problem-line { display:block; color:var(--muted); }
 /* What a blocked launch differed in: under the status, on its own line, never inside it. Its host's CSS holds the quote treatment. */
 .spawn-status-differed { order:8; flex:1 0 100%; min-width:0; }
 ${launchDifferedCSS}
@@ -1275,8 +1278,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       || !recovering && (!!draftChoice.error || defaultBlocked() || !!deploymentField?.blocked() || (local() ? !applicable() || refused : false));
   }
   /** A problem shows one plain sentence; its code and technical text wait behind Details. `differed`: what a
-   * blocked launch differed in, shown under the sentence for as long as that sentence is the status. */
-  let differedDrawn = '';
+   * blocked launch differed in, shown under the sentence for as long as that sentence is the status.
+   * Details hold the problem's `detail`, then, for a problem with the kernel's own texts (`kernel`: its
+   * message and fix), each of them as a line under the kernel's name (speaker-line.mjs kernelLines). */
+  let differedDrawn = '', detailDrawn = '';
   function setStatus(text, error = false, problem = null, ok = false, differed = null) {
     const differedKey = differed ? JSON.stringify(differed) : '';
     if (differedKey !== differedDrawn) {
@@ -1287,8 +1292,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (status.textContent !== text) status.textContent = text; // an unchanged status is not re-announced
     status.classList.toggle('err', error); status.classList.toggle('ok', ok && !error);
     status.dataset.code = problem?.code || '';
-    if (details.textContent !== (problem?.detail || '')) {
+    // Details stay as the person left them while nothing in them changed: the detail and each line count.
+    const lines = problem?.kernel ? kernelLines(problem.kernel.message, problem.kernel.fix) : [];
+    const detailKey = JSON.stringify([problem?.detail || '', lines]);
+    if (detailKey !== detailDrawn) {
+      detailDrawn = detailKey;
       details.textContent = problem?.detail || ''; details.hidden = true;
+      for (const line of lines) details.append(el('span', line, 'spawn-problem-line'));
       detailsToggle.setAttribute('aria-expanded', 'false'); detailsToggle.textContent = 'Details';
     }
     detailsToggle.hidden = !problem;

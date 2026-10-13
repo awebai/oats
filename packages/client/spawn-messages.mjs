@@ -8,6 +8,8 @@
 import { displayLine } from './display-text.mjs';
 import { ROLLED_BACK_CODES } from './spawn-apply-contract.mjs';
 
+const UNMATCHED = 'E_LAUNCH_PREFERENCE_UNMATCHED';
+
 const COMMON = {
   E_BAD_ARGS: 'Some of these values can’t be used. Check the name and Developer settings.',
   E_BUSY: 'Another spawn is in progress. Try again in a moment.',
@@ -39,6 +41,11 @@ const COMMON = {
   // 0.30 launch preferences: shown in the kernel's own words when it sends them (spawnProblem: the
   // message, then the reason's flat `fix`), which name the harness and where it was chosen; this is the fallback.
   E_HARNESS_UNAVAILABLE: 'The harness this soul would run isn’t installed on this machine. Install it, or pick another harness above.',
+  // 0.53.0: the kernel refuses a spawn that names no launch while `souls.launch` holds a key that names no
+  // soul. This sentence points at the controls above it and at Details, so it is read only where both are
+  // there: at the preview, with the kernel's message and fix quoted under Details (spawnProblem's `kernel`
+  // parts). Everywhere else the shorter one of SPAWN is read.
+  [UNMATCHED]: 'This machine’s launch preferences name a soul this workspace doesn’t offer, so OATS won’t choose a launch for this soul. To spawn now, pick a harness above, or a launch configuration in Developer settings. To fix it for every spawn, correct the preference (Details).',
   E_MODEL_UNKNOWN: 'That model isn’t available for this harness. Pick another model, or keep the default.',
   E_INSTANCE_NAME_INVALID: 'Use lowercase letters, numbers and dashes, at most 64 characters, and don’t reuse a soul’s name.',
   E_INSTANCE_NAME_TAKEN: 'An instance with this name already exists. Choose another name.',
@@ -71,16 +78,33 @@ const SPAWN = {
   E_CLI_OUTPUT_LIMIT: 'OATS couldn’t confirm the spawn. Use Check result before spawning again.',
   E_CLI_PROTOCOL: 'OATS couldn’t complete the spawn. Try again, or see Details.',
   E_CLI_FAILED: 'OATS couldn’t complete the spawn. Try again, or see Details.',
+  // An unmatched launch preference where nothing is above the sentence and Details hold no kernel text: the
+  // notice after a press has left the dialog, and a preview whose reason carries no `fix`.
+  [UNMATCHED]: 'This machine’s launch preferences name a soul this workspace doesn’t offer, so OATS won’t choose a launch for this soul. To spawn now, pick a harness or a launch configuration for this spawn. To fix it for every spawn, correct the preference.',
 };
 
-/** { text, detail } for a { code, message } reason. `stage` is 'preview'
- * (reading defaults) or 'spawn' (after the operator pressed Spawn). */
+/** { text, code, detail } for a { code, message } reason. `stage` is 'preview'
+ * (reading defaults) or 'spawn' (after the operator pressed Spawn).
+ *
+ * For an unmatched launch preference whose reason carries the kernel's `fix`, the answer also has
+ * `kernel: { message, fix }`: the kernel's two texts, the strings as they came, for the client to quote
+ * under the kernel's name (the lead is the client's, `originLead` with its terms). `detail` is then the
+ * code alone, so that no reader of `detail` shows a kernel text without its speaker. A `fix` decides it
+ * because `previewFailure` keeps one only beside the kernel's own message, never beside a table's sentence:
+ * a reason without one (a press, a kernel that sent none, a message that did not travel) reads
+ * `code · message` as every other code does. */
 export function spawnProblem(reason, stage = 'preview') {
   const code = typeof reason?.code === 'string' ? reason.code : 'E_CLI_FAILED';
   const own = stage === 'spawn' ? SPAWN : PREVIEW;
   const message = typeof reason?.message === 'string' ? reason.message.trim() : '';
   // A missing harness is said as the kernel words it, with its fix (launch preferences, 0.30).
   const fix = typeof reason?.fix === 'string' ? reason.fix.trim() : '';
+  if (code === UNMATCHED) {
+    const kernel = fix ? { message: typeof reason.message === 'string' ? reason.message : '', fix: reason.fix } : null;
+    // The sentence that says "above" and "(Details)" is read only where Details hold the kernel's texts.
+    if (kernel) return { text: stage === 'preview' ? COMMON[UNMATCHED] : SPAWN[UNMATCHED], code, detail: code, kernel };
+    return { text: SPAWN[UNMATCHED], code, detail: message ? `${code} · ${message}` : code };
+  }
   // The kernel's message usually already ends with its fix: said once.
   const kernelWords = code === 'E_HARNESS_UNAVAILABLE' && message ? (fix && !message.includes(fix) ? `${message.replace(/[.\s]+$/, '')}: ${fix}` : message) : null;
   const text = kernelWords ?? own[code] ?? COMMON[code] ?? (stage === 'spawn' ? SPAWN.E_CLI_FAILED : PREVIEW.E_CLI_FAILED);

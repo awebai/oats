@@ -1,6 +1,6 @@
 {
   "source": "oats-desktop-engineer, extended by ux-designer: launch preferences on the real kernel (0.30, feature launch-preference); the kernel's test/helpers/v2-deployment.mjs: souls dev (soul claude/claude-opus-5-5), reviewer (soul codex, local pi), plain (host); later local dev codex; later codex uninstalled; later plain spawned from local claude, then that preference removed (reverse drift); a second deployment with team model v2 (local default mine, shared oats/night): dev spawned, then `oats teams default oats` (default-team-changed); hermetic PATH (inert stubs); capture-launch.mjs",
-  "kernelTree": "oats main @69d76a910f115f4bd58d149d348909de7d144787 (kernel #290 merged)",
+  "kernelTree": "oats main @69d76a910f115f4bd58d149d348909de7d144787 (kernel #290 merged; `oats version` 0.29.4, the launch preferences that shipped in 0.30). Every kernel text in these files is that kernel's wording; the fixtures are not refreshed when a later kernel rewords one",
   "redactions": [
     "<base> (deployment scratch) → /fixture/base",
     "<oats> (kernel tree) → /fixture/oats"

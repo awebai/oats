@@ -94,6 +94,29 @@ test('a kernel refusal keeps its code and message (the remedy); an unprintable o
   const unknown = (await createSpawnPreviewBoundary({ invoke: async () => ({ schemaVersion: 1, ok: false, error: { code: 'not-a-kernel-code', message: 'x' } }) })(request(), context)).reason;
   assert.equal(unknown.code, 'E_CLI_FAILED');
 });
+test('a kernel refusal\'s fix travels from the CLI\'s printed envelope: beside the kernel\'s own message, within the bound, and no other key of details', async () => {
+  const MESSAGE = 'the launch this soul would get is not one this machine can run', FIX = 'name a launch for this spawn, or correct the preference';
+  const printed = (error) => ({ schemaVersion: 1, ok: false, error });
+  const through = (error) => cliSpawnPreview(cli, { target, choices: {} }, { exec: (_b, _a, _o, done) => done({ code: 1 }, JSON.stringify(printed(error))) });
+  const answer = await through({ code: 'E_LAUNCH_REFUSED', message: MESSAGE, details: { fix: FIX, harness: 'codex', at: 'a-file#/a/key', keys: ['one', 'two'] } });
+  assert.deepEqual(answer, printed({ code: 'E_LAUNCH_REFUSED', message: MESSAGE, details: { fix: FIX } }), 'the kernel\'s shape, and of details the fix alone');
+  assert.deepEqual((await createSpawnPreviewBoundary({ invoke: () => answer })(request(), context)).reason, { code: 'E_LAUNCH_REFUSED', message: MESSAGE, fix: FIX }, 'the boundary reads it where the kernel puts it');
+  // A fix of exactly the bound travels; nothing that is not a printable string within it does.
+  assert.deepEqual((await through({ code: 'E_LAUNCH_REFUSED', message: MESSAGE, details: { fix: 'f'.repeat(1024) } })).error.details, { fix: 'f'.repeat(1024) });
+  for (const fix of ['f'.repeat(1025), 'bad\u0007bell', 'two\nlines', '', '   ', 42, null, { fix: FIX }, [FIX]])
+    assert.deepEqual((await through({ code: 'E_LAUNCH_REFUSED', message: MESSAGE, details: { fix } })).error, { code: 'E_LAUNCH_REFUSED', message: MESSAGE }, JSON.stringify(fix));
+  for (const details of [undefined, null, 'fix', [], {}]) assert.deepEqual((await through({ code: 'E_LAUNCH_REFUSED', message: MESSAGE, details })).error, { code: 'E_LAUNCH_REFUSED', message: MESSAGE }, JSON.stringify(details));
+  // Never beside a sentence of the Desktop's table: a message that does not travel takes its fix with it.
+  for (const message of ['bad\u0000byte', 'x'.repeat(2049), '', 42]) {
+    const { error } = await through({ code: 'E_CLONE_MISSING', message, details: { fix: FIX } });
+    assert.deepEqual(error, { code: 'E_CLONE_MISSING', message: 'This soul works in a member repository that is not cloned on this machine.' }, JSON.stringify(message));
+  }
+  const unknown = (await through({ code: 'not-a-kernel-code', message: MESSAGE, details: { fix: FIX } })).error;
+  assert.equal(unknown.code, 'E_CLI_FAILED'); assert.deepEqual(Object.keys(unknown), ['code', 'message']); assert.notEqual(unknown.message, MESSAGE);
+  // The exec owner's own failures carry no details.
+  const timedOut = await cliSpawnPreview(cli, { target, choices: {} }, { exec: (_b, _a, _o, done) => done({ killed: true }, JSON.stringify(printed({ code: 'E_LAUNCH_REFUSED', message: MESSAGE, details: { fix: FIX } }))) });
+  assert.deepEqual(Object.keys(timedOut.error), ['code', 'message']); assert.equal(timedOut.error.code, 'E_CLI_TIMEOUT');
+});
 test('projection rejects API1, wrong echoes and inconsistent decisions; drops task/env/executable', () => {
   const v = data(); v.task = 'PRIVATE'; v.env = { SECRET: 'PRIVATE' }; v.executable = 'PRIVATE'; assert.doesNotMatch(JSON.stringify(previewData(v, target)), /PRIVATE/);
   for (const alter of [v => v.spawnPreviewApi = 1, v => v.preview = false, v => v.subject.agentsRoot = '/other', v => v.subject.dir = '/other',

@@ -249,6 +249,7 @@ test('a kept failure with no words is still a failure: the rows go stale and the
     u.mouse(u.nodes()[0], 'click'); assert.equal(u.one('.pterm').disabled, false, 'live before the failure');
     u.setRead(() => panel([instance()], currentWorkspace(), extra)); await u.poll(); await tick();
     assert.equal(u.nodes().length, 1, 'the last observation stays'); assert.equal(u.one('.pterm').disabled, true, JSON.stringify(extra));
+    assert.match(u.one('.pstate').textContent, / \(last observation\)$/, JSON.stringify(extra));
     assert.match(u.notice(), /^Roster unavailable[.:]/, JSON.stringify(extra)); assert.equal(u.status(), "Couldn't refresh roster.");
     u.setRead(() => panel([instance()])); await u.poll(); await tick();
     assert.equal(u.notice(), ''); assert.equal(u.one('.pterm').disabled, false, 'an observed roster is live again');
