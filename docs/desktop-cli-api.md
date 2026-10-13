@@ -2958,6 +2958,19 @@ that name: `E_AMBIGUOUS_INSTANCE {candidates: [{root, agent, home}]}` (pass
 `--home`; a wrong one is `E_HOME_MISMATCH`). Unknown: `E_SESSION_UNKNOWN`. No
 tree: `E_NO_WORKTREE`.
 
+`E_NO_WORKTREE` is answered when nothing is at `<home>/work`, when it is not
+inside a Git work tree, and (0.53.0, #962) when it is a real directory that
+is not the top level Git names for it. Git answers for any directory inside
+a work tree, so a plain `work/` in a home whose deployment directory is a
+Git checkout was read as that checkout before: its branch and its files,
+none of them the instance's. The rule is the path, in every work mode: a
+`directory` instance in such a deployment has no work tree, and one whose
+`work/` is the top level of a repository of its own is observed as before.
+A `work/` that is a link is read as what it leads to, wherever that is: a
+`workspace` instance's leads to the deployment directory, which is above its
+home, and is observed as before. A [stop plan](#stop)'s and a
+[retire plan](#retire)'s `work` read the same way, with the code as `reason`.
+
 ```json
 {"instanceGitApi":1,"instance":"dev-1","agent":"dev","home":"/w/agents/dev/instances/dev-1","workMode":"worktree",
  "observation":{"revision":"46c20668…","indexRevision":"3147fef2…","at":"2026-09-26T18:15:26.487Z","worktree":"/w/agents/dev/instances/dev-1/work",
@@ -3334,10 +3347,12 @@ oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>]
   what failed (`E_SESSION_UNAVAILABLE` for an error that has none).
 - `work` is the Git observation summarized (`changed` counts changed,
   renamed, copied and unmerged rows), or `{observed: false, reason}`:
-  `"no-worktree"`, or the kernel code of what failed (`E_GIT_FAILED` for an
-  error that has none; `E_WORK_INSPECTION_FAILED` for a home the kernel
-  cannot look into, where whether it has a `work/` cannot be told; OATS
-  0.52.0).
+  `"no-worktree"` when nothing is at `work/`, or the kernel code of what
+  failed (`E_NO_WORKTREE` for a `work/` that is no work tree of the
+  instance's, as [`oats instance git`](#git-and-diff) answers it;
+  `E_GIT_FAILED` for an error that has none; `E_WORK_INSPECTION_FAILED` for
+  a home the kernel cannot look into, where whether it has a `work/` cannot
+  be told; OATS 0.52.0).
 - `midTask`: `true`, `false` or `"unknown"`.
 - `retiring` and `stopPending`, booleans on every target, say who holds the
   target's home when the plan is read (OATS 0.52.0, feature
@@ -3845,21 +3860,30 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
 - `facts.session` and `facts.work` read as a [stop plan](#stop)'s
   `session` and `work`. Work that was not observed is `{observed: false,
   reason}`: `"no-worktree"`, or the kernel code of what failed
-  (`E_GIT_FAILED` for an error that has none; `E_WORK_INSPECTION_FAILED` for
+  (`E_NO_WORKTREE` for a `work/` that is no work tree of the instance's;
+  `E_GIT_FAILED` for an error that has none; `E_WORK_INSPECTION_FAILED` for
   a home the kernel cannot look into, where whether it has a `work/` cannot be
-  told; OATS 0.52.0).
+  told; OATS 0.52.0). `facts.work` never reads a checkout that encloses the
+  home as the instance's work (0.53.0, #962).
 - The plan changes nothing except appending a `retire-planned` event to the
   workspace log. `pullRequest` is always `"unknown"`. Branch actions use the
   worktree's branch, never `recordedBranch`.
 - `defaults.retainWorktree` is the default of one option of this retire:
   whether the instance's OWN work tree is retained (moved, as described
-  below) or removed (`--discard-worktree`). It is `true` only in `worktree`
-  mode. In every other mode it is `false` because the instance has no work
+  below) or removed (`--discard-worktree`). It is `true` exactly when
+  `work/` is the instance's own tree: in `worktree` mode, and (0.53.0, #962)
+  for a record with no work mode whose `work/` Git confirms is a registered
+  linked worktree, which the retire retains. In every other mode it is
+  `false` because the instance has no work
   tree of its own, never because a tree would be removed: there the retire
   touches no tree it does not own. `work/` of an attached, a checkout or a
   workspace instance is a link (to its owner's tree, to the shared checkout,
   to the deployment directory) that goes with the home, and what it links to
-  is not touched. `work/` of a directory instance is the home's own
+  is not touched. Where a real directory is found at `work/` of such an
+  instance and no link, it is a directory of the home: the retire copies it
+  to recovery when it is not empty and removes it with the home, and the
+  plan says so (0.53.0, #962: the next item). `work/` of a directory
+  instance is the home's own
   directory: it is copied to recovery when it is not empty, then removed
   with the home. Read the field with `facts.workMode`. The plan's text
   (`oats retire <instance> --plan` without `--json`) prints `retain worktree
@@ -3869,6 +3893,46 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   the kernel does not know, `work mode not known to this kernel`: the value
   is never printed, and `facts.workMode` holds it. The JSON is the same as
   before.
+- What `work/` is comes from one reading, which the plan and the retire
+  share (0.53.0, #962). It is **the instance's own tree** when the spawn's
+  receipt says the instance was given one; for a home without a valid
+  receipt, when the record says `worktree`, or holds no work mode (or one
+  the kernel does not know) and Git confirms that `work/` is a registered
+  linked worktree whose top level it is (the test of an
+  [extra tree](souls-and-instances.md#extra-trees-at-retire)). A real
+  directory at `work/` that is not that is **a directory of the home**: one
+  found where the work mode has a link (an attached, a checkout or a
+  workspace instance, or a record with no work mode), or under a valid
+  receipt that says no tree was given, whatever the record says now. A link
+  is what it was. For a directory of the home the plan has:
+  - `defaults.retainWorktree: false`, and in the text's `defaults:` line `no
+    work tree of its own (work/ is a real directory of the home: copied to
+    recovery when not empty and then removed with the home)`.
+  - the note `work/ is a real directory of the home and not a work tree of
+    the instance's own: the retire copies it to recovery when it is not
+    empty (a .git in it included), checks the copy, and removes it with the
+    home`, and `recovery: work/ is copied there when it is not empty`. The
+    notes that say a worktree is retained, and the drift note, are not said.
+  - when Git confirms that the directory is a registered worktree, the note
+    `work/ is registered as a worktree of <repository>: the retire leaves its
+    entry there until a prune (git -C '<repository>' worktree prune), and does
+    not touch its branch or its commits`.
+  - `facts.work` by the path alone: observed when `work/` is the top level of
+    a repository of its own, else `{observed: false, reason:
+    "E_NO_WORKTREE"}`.
+
+  For an own tree whose record names no repository, the plan has the note
+  `the record names no repository for the work tree: the retire uses the
+  one Git names for it, <repository>, and does not write it into the
+  record`. No key of the plan is new.
+
+  What `work/` is decides what the retire does with it, so it is part of
+  `planRevision` wherever it is not what the work mode alone says: when an
+  own tree became a directory of the home, or the other way round, between
+  the plan and the apply (a record's work mode that changed, a receipt that
+  is gone), or the repository read from Git changed, a guarded apply refuses
+  with `E_PLAN_STALE` before anything runs. Every other home has the
+  revision it had.
 - A home spawned before 0.25.9 has no session receipt (0.30). Its
   `facts.session` is `{state: "absent", present: false, backend, established:
   true, note}` when the session is observably gone: instance.json records no
