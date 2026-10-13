@@ -737,7 +737,9 @@ index, stands at it. The retire then refuses with Git's message: for the
 instance's own tree at the inspection (`E_WORK_INSPECTION_FAILED`, before
 anything is stopped, run or removed), for a nested repository when its state
 is read for the copy (`E_WORK_PRESERVATION_FAILED`, the home and the work
-kept). An index that cannot be read refuses at the inspection in both.
+kept). An index that cannot be read refuses at the inspection in both,
+unless it is a nested repository's and a link leads to it: the retire then
+refuses when that repository's state is read, as for a directory there.
 
 <a id="no-index-file"></a>
 **A tree with no index file is copied with none.** A work tree made by
