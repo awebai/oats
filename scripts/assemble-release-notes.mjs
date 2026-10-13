@@ -2,11 +2,12 @@
 // Release-notes entries: one file per pull request, moved into the version's
 // notes file by this command.
 //
-// A pull request writes its entry under docs/release-notes/next/ and never
-// touches docs/release-notes/v<next>.md, so two pull requests that share no
-// code do not conflict there. The release-prep pull request runs this command,
-// which moves every entry into docs/release-notes/<tag>.md and removes the
-// entry files. docs/release-lane.md, "Release-notes entries", owns the rule.
+// A pull request writes its entry under docs/release-notes/next/ and not into
+// docs/release-notes/v<next>.md, so two pull requests that share no code do
+// not conflict over their entries. The release-prep pull request runs this
+// command, which moves every entry into docs/release-notes/<tag>.md and
+// removes the entry files. docs/release-lane.md, "Release-notes entries", owns
+// the rule.
 //
 // The module exports what its test, the validator and the release lane read
 // (the sections, the checker, the listing, the assembly of a text) and runs as

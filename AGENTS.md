@@ -21,7 +21,8 @@ adapter and the Desktop (`packages/`), the `oats.framework` package
   the reference page in `docs/` that owns the rule, and adds its release-notes
   entry as a file of its own under `docs/release-notes/next/`
   ([Release-notes entries](docs/release-lane.md#release-notes-entries)); it
-  does not edit the version's notes file.
+  edits the version's notes file only to correct an entry there that it makes
+  untrue.
 - **Tests pin behaviour.** A behaviour change changes its test in the same
   commit. Never weaken an assertion to make a change pass.
 - The package mirrors in `mirrors/` (`mirrors/oats-okf*` and the other

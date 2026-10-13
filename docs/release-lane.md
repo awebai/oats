@@ -156,16 +156,24 @@ by the lane, and neither republishes what the other already did.
 ## Release-notes entries
 
 A release ships one notes file, `docs/release-notes/v<version>.md`. Between
-releases a pull request does not write into it: it adds its entry as a file
-of its own, and one command moves the entries into the notes file in the
-release-prep pull request. Two pull requests that share no code therefore
-never conflict over the notes.
+releases a pull request does not write its entry into it: it adds its entry
+as a file of its own, and one command moves the entries into the notes file
+in the release-prep pull request. Two pull requests that share no code
+therefore never conflict over their entries.
 
 ### For the author of a pull request
 
 - **One file, `docs/release-notes/next/<name>.md`**, added by the pull
-  request that makes the change. The pull request does not touch
-  `docs/release-notes/v<next>.md`.
+  request that makes the change. The entry does not go into
+  `docs/release-notes/v<next>.md`, which a pull request touches for one
+  reason only, the next point.
+- **Correcting an unreleased entry.** A pull request that makes an existing
+  unreleased entry untrue corrects that entry where it stands: in the
+  unreleased notes file, or in the entry file of the earlier pull request
+  while that file is still under `docs/release-notes/next/`. It adds its own
+  entry in its own entry file. In the earlier entry it changes only the
+  sentences it makes untrue, and its description names them. A released notes
+  file is never corrected this way.
 - **The name** is the issue's number and a short slug:
   `991-update-every-pi-folder.md`. Lower-case letters, digits and hyphens,
   then `.md`. The number is a convention: nothing reads the name but the
@@ -211,6 +219,16 @@ node scripts/assemble-release-notes.mjs --tag v0.54.0
 - **All or nothing.** With a problem in any entry, or a notes file that holds
   a section twice or a fenced block that is never closed, it prints every
   problem, writes nothing, removes nothing and exits 2.
+- **An interrupted run.** The command writes the notes file first and removes
+  the entry files after it. A run that stops in between leaves entry files
+  beside a notes file that already holds their text, and a second run would
+  add that text again. Put the tree back first, one of two ways: delete the
+  entry files that are left, whose text the notes file holds, and the run is
+  complete; or return all of `docs/release-notes/` to what Git has, which is
+  the notes file (deleted, if this run created it) and the entry files
+  already removed, and run the command again. A run that stops before it
+  writes the notes file has changed neither; at most it leaves a `.tmp` file
+  beside the notes file.
 - **Running it more than once in a release is normal.** The pull request that
   moves the manifests to a new version runs it to create that version's notes
   file, which `test/release-packaging.test.mjs` requires for the version the
