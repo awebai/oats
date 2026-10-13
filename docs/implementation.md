@@ -318,7 +318,8 @@ the commit whole and is complete whatever the cache holds
 wording. git does not remove the pack file of a fetch that dies
 (`objects/pack/tmp_pack_*`), and the cache runs no gc, so every fetch, under
 the write lock, first removes the temporary files of the object store that
-are older than the longest fetch: `tmp_*` in `objects/pack`, in `objects` and
+are older than the longest fetch (`temporaryStaleMs` in `lib/remote.mjs`
+says what that is): `tmp_*` in `objects/pack`, in `objects` and
 in its two-character directories, where git's own `prune` looks, and nowhere
 behind a symbolic link. Age is the only rule, the one of a stale git lock
 below and of `git prune`. A failed fetch's own pack is not removed at once,
