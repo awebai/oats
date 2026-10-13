@@ -27,8 +27,13 @@ The command writes only the canonical deployment root's native trust leaf:
 It writes that leaf into every configuration file a launch of the deployment
 reads. The targets of each selected harness are:
 
-- the ambient file, selected by the operator's own `CLAUDE_CONFIG_DIR` or
-  `CODEX_HOME`, else the default above;
+- the ambient file: the one a launch of this deployment with no launch
+  configuration reads. It is read as every check of a launch reads it
+  ([the checks read the pane](execution-targets.md#the-checks-read-the-pane)):
+  the `CLAUDE_CONFIG_DIR` or `CODEX_HOME` of the deployment's tmux
+  session, else of the OATS tmux server, else the default above under that
+  session's or server's `HOME`. It is not the operator's own shell's when
+  the server holds another account;
 - one file for each launch configuration (`launch-configs:` in the
   deployment's `oats-local.yaml`) of that harness whose `env` sets
   `CLAUDE_CONFIG_DIR` (claude) or `CODEX_HOME` (codex), as a literal or a
@@ -48,6 +53,27 @@ that harness (`--harness codex`) makes it a problem. Any problem refuses the
 whole plan before a write, as an unsupported file does.
 Each file is verified through the reader under the environment that selects
 it.
+
+The plan shows what will be written before anything is. `warnings` says
+what selects the ambient file when a selector does (`CLAUDE_CONFIG_DIR
+selects <dir> (the global CLAUDE_CONFIG_DIR of the OATS tmux server
+(<socket>)); effective file <file>`). Two cases have no pane to read:
+
+- **No OATS tmux server runs.** The command does not start one, and does not
+  start your login shell to find out what one would hold. The ambient file
+  is then the operator's own, and `warnings` says so: `claude: the pane's
+  environment is not established until a spawn starts the OATS tmux server
+  (none runs); read instead: this process's CLAUDE_CONFIG_DIR (not set),
+  this process's HOME`.
+- **A server runs and its environment cannot be read** (the read fails, or
+  the value holds a `$`, a line break or a character tmux prints encoded;
+  `HOME` cleared or missing when there is no selector). The ambient target
+  is `refused` with a `problem` that names which name, where it was read
+  and what would make it readable, and nothing is written, to any file: the
+  command answers `E_RUNTIME_ENDPOINT_UNKNOWN`. It never writes to a file
+  guessed from the operator's shell. When a launch configuration's target is
+  refused as well, the code is `E_CONFIG_BROKEN`, as for that target alone,
+  and the details hold both.
 
 Nonempty override directories must be absolute. Directory aliases are resolved;
 symlink/nonregular/hardlinked leaves, foreign ownership and ACLs refuse. On Linux, GNU ls's single `.` security-context marker is accepted;
@@ -118,18 +144,39 @@ do not automatically write a second root or answer a trust dialog.
 
 Spawn, `session start|restart`, `launch-config preview` and `oats readiness`
 read folder trust from the file the launch's own environment selects: the
-host's environment plus the launch configuration's `env`. Codex's
-per-invocation home trust follows the same file. They never write it.
+launch configuration's `env`, else the environment the launch's tmux pane
+will have, never the calling process's in its place
+([the checks read the pane](execution-targets.md#the-checks-read-the-pane)).
+Codex's per-invocation home trust follows the same file. They never write
+it.
 
 Readiness reports one `harness-trust` item (in `checks.configured`, never
 required) for the launch a home recorded, or for the launch a soul selects.
 It passes, naming the file, when that file trusts the deployment root or an
 ancestor (for Claude, up to a Git boundary; a yolo Codex launch always
-passes). Otherwise it warns, and the spawn warns with the same text:
+passes). Otherwise it warns, and the spawn warns with the same text, which
+names where the launch gets the file from:
 
 ```text
-<harness> folder trust is not established in <file>: oats harness trust --dir <deployment>
+<harness> folder trust is not established in <file> (<where from>): oats harness trust --dir <deployment>
 ```
+
+`<where from>` is, for example, `the CLAUDE_CONFIG_DIR of launch
+configuration work`, `the CODEX_HOME of tmux session agents` or `under the
+global HOME of the OATS tmux server (<socket>)`. Two more answers:
+
+- **The pane's environment could not be read** (a spawn or a start, and
+  readiness with a server running): `<harness> folder trust: the
+  configuration file this launch will read could not be established (<why,
+  and what would make it readable>); nothing is said about its trust`. The
+  readiness item is `unknown`, with `file` null.
+- **No pane to read** (readiness with no server running, a spawn with
+  `--no-launch`): the file read is the calling process's, and `<where
+  from>` says so (`the pane's environment is not established until a spawn
+  starts the OATS tmux server (none runs); read instead: this process's
+  CODEX_HOME (not set), this process's HOME`). The readiness item is then
+  `unknown` whether or not that file establishes trust; a spawn with
+  `--no-launch` warns only when it does not.
 
 A missing root entry does not prove that the harness will prompt (a native
 gate can skip the question), so neither says the session will stop. A launch

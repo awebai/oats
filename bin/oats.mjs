@@ -38,6 +38,7 @@ import {
   writeFileAtomic, LOCK_FILE, canonicalLock, readLock, readLockIfPresent, writeLock, resolvePackages, memoizedRemote,
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { harnessTrust } from "../lib/harness-trust-write.mjs";
+import { previewLaunchEnvironment, previewPaneEnvironment } from "../lib/core.mjs";
 import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
@@ -1034,8 +1035,10 @@ function launchPreview(bail) {
   let r;
   try { r = meta ? resolvedFromHome(home, meta) : { capabilities: [], launchConfigs: launchConfigsAt(context) }; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message, e.details); }
   // The same planner a start uses, in preview mode: failed checks are listed, nothing is touched.
+  // Its checks read the pane a launch would run in, as a command that only reads can know it (a
+  // home's recorded session, a soul's session default; with no server running, not established).
   let plan;
-  try { plan = planLaunch({ home, instance, meta, contextDir: context, agentLike, selection: sel, resolvedCfg: r, preview: true }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+  try { plan = planLaunch({ home, instance, meta, contextDir: context, agentLike, selection: sel, resolvedCfg: r, preview: true, pane: () => previewPaneEnvironment(meta ? { home, meta } : { deployment: context }) }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
   const { recipe } = plan;
   const command = renderLaunchRecipe(recipe, { home, instance, redact: true, trustHome: plan.trustHome });
   const d = describeLaunchCommand(command);
@@ -1526,7 +1529,9 @@ function harnessTrustCmd() {
   };
   try {
     // Every configuration file a launch of this deployment reads: its launch configurations' too.
-    const result = harnessTrust(context.deploymentDir, { harness: selected, plan: args.includes("--plan"), launchConfigs: launchConfigsAt(context.deploymentDir) });
+    // The ambient one is the file a launch with no launch configuration reads there (its session's
+    // environment over the server's), by the answer every launch check reads; never this shell's own.
+    const result = harnessTrust(context.deploymentDir, { harness: selected, plan: args.includes("--plan"), launchConfigs: launchConfigsAt(context.deploymentDir), launch: previewLaunchEnvironment({ deployment: context.deploymentDir }) });
     if (JSON_MODE) jsonOk(result);
     else show(result);
   } catch (e) {

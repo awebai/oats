@@ -254,7 +254,10 @@ environment the server will be created with (your login environment, or its
 fallback, below) for its first check, never this process's `PATH`. A recorded executable (a start that reuses the home's launch) is
 kept as it is: it then runs with its pane's environment, but it is not looked
 up again. A `--no-launch` spawn, and a preview with no server running, look
-the harness up on the process's own `PATH`, as before.
+the harness up on the process's own `PATH`, as before, and the harness
+packages such a spawn records (`composition.materialized.harnessPackages`)
+are the ones found from the calling process; a preview says so
+([below](#no-prediction)).
 
 A session's `PATH` can be in four states, and the lookup tells them apart:
 no entry (the server's `PATH` is used), a value, even an empty one (used as
@@ -270,6 +273,129 @@ the OATS tmux server (<socket>)`, or the launch configuration's) and the
 remedies: declare the executable's absolute path in the launch configuration,
 set `PATH` in the launch configuration, or start the server from your own
 shell. It never prints a `PATH`'s contents.
+
+<a id="the-checks-read-the-pane"></a>
+**Every check of a launch reads the environment its pane will have.** The
+lookup above is one of them. The others read the account the harness will
+run with: the folder-trust check (the file that harness reads its trusted
+folders from), the harness package check
+([capabilities.md](capabilities.md#manifest), the probe and the command
+its refusal names), the `harness-trust` item of `oats readiness`, a
+preview's items, and `oats harness trust`. They read five names, each by
+the same precedence and each with where it was read from: `PATH`, `HOME`,
+and the variable that moves a harness's folder (`CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`, `PI_CODING_AGENT_DIR`), called its selector here.
+
+1. The launch configuration's `env`: a literal, or a `fromEnv` reference,
+   which is resolved on this host from the process that runs the command, by
+   design. The pane's command line applies it, so nothing of tmux is read
+   for that name.
+2. When a server runs: the session's entry, and the server's global one only
+   when the session has no entry for that name. Both are read with the
+   strict reader below, in one `show-environment` each for all five names,
+   and only when a check needs a name that row 1 does not decide.
+3. When this spawn or start starts the server: the environment the server is
+   created with (your login environment, or its fallback, below).
+
+None of them reads the calling process's value in place of the pane's. The
+folder-trust check and the package check once read the process's own `HOME`
+and selector, so a spawn from a shell or an instance with another account
+than the server's checked one account and launched with another
+([#993](https://github.com/awebai/oats/issues/993)).
+
+- **"Not set" is an answer for a selector.** No entry in the session or the
+  server, or a session that clears it (`unset NAME;`, and the server's is
+  then not used, as tmux does), means the harness reads its default folder
+  under the pane's `HOME`: the checks read that file, and the package
+  check's command starts with no selector. An empty selector counts as not
+  set. A relative one read from tmux is read against the home, the pane's
+  working directory. For `PATH` and `HOME`, no entry anywhere and a clear
+  are problems, as for the lookup.
+- **A name that cannot be read is never replaced.** The read failed, the
+  strict reader left the value out (it holds a `$`, a line break or a
+  character tmux prints encoded), or `PATH` or `HOME` is cleared or
+  missing. Two behaviours:
+  - **The package check refuses** with `E_RUNTIME_ENDPOINT_UNKNOWN`, before
+    it probes anything: `cannot verify the harness packages this <harness>
+    launch requires: <which name, read from where, and why not>. The probe
+    runs with the <NAME> the launch's pane will have, never with this
+    process's in its place; nothing was probed. To make it readable: set
+    <NAME> in the launch configuration (env), or <what would make it
+    readable in tmux>`. It needs `PATH`, `HOME` and the launching
+    harness's selector; a selector of another harness refuses nothing. It
+    reads nothing, and so refuses nothing, when no requirement applies to
+    the launch. A lookup that already refused a `PATH` is the one refusal
+    of that read: the package check does not refuse it again.
+  - **The folder-trust check only warns**: `<harness> folder trust: the
+    configuration file this launch will read could not be established
+    (<why, and what would make it readable>); nothing is said about its
+    trust`. A codex launch then does not trust its home from a file nobody
+    read (a codex launch under `yolo` trusts its home whatever a file says,
+    and is not affected).
+- **A spawn judges again on the session it gets.** Like the lookup, the
+  package check and the folder-trust check run before anything is created,
+  on the pane the spawn expects, and again once the session exists (another
+  creator may have won the race to create the server, with another
+  account). The package check probes again only when `PATH`, `HOME` or
+  the selector differ from what it judged; a requirement that does not hold
+  there refuses the spawn, which is rolled back as any failed launch is. The
+  folder-trust warning and the codex trust of the home follow the session
+  the spawn got. A start that creates its session makes the first check
+  only; a start that reuses its recorded pane reads that pane.
+- **A warning names where the file comes from** when the pane's environment
+  is established: `claude folder trust is not established in <file> (the
+  CLAUDE_CONFIG_DIR of tmux session <name>): oats harness trust --dir
+  <deployment>`, or `(under the global HOME of the OATS tmux server
+  (<socket>))`, or the launch configuration's.
+- **Through `oats spawn` the refusal's code is `E_SPAWN_FAILED`**, with
+  the same message, as for a missing package: the kernel raises
+  `E_RUNTIME_ENDPOINT_UNKNOWN`, and `oats session start` and `restart`
+  answer it as it is
+  ([#1047](https://github.com/awebai/oats/issues/1047)).
+- **One limit.** A spawn's package check runs before the spawn hooks, so it
+  does not know a selector a capability's hook sets for the launch
+  ([#1041](https://github.com/awebai/oats/issues/1041)); a start's does.
+  The folder-trust check does not read the capabilities' variables.
+
+<a id="no-prediction"></a>
+**When no pane can be predicted, the check says what it read instead.** No
+server runs and the command only reads (a preview, `oats readiness`, `oats
+harness trust`: none of them starts your login shell to find out); a
+preview could not read the server; a start's session was refused; the spawn
+launches nothing (`--no-launch`). The checks then read the launch
+configuration's value when it sets one, else the calling process's, and say
+so, for `PATH` too:
+
+```
+the pane's environment is not established until a spawn starts the OATS tmux server (none runs); read instead: this process's PATH
+```
+
+- A preview carries that sentence in the `executable` item's `detail`, in
+  the `harness-packages` item's when a requirement was probed, and a spawn
+  preview in `warnings`, in one line that names the checks (`the harness
+  lookup: …`, `the harness lookup, the harness package check: …`). The
+  package check does not refuse on that alone.
+- The `harness-trust` item of `oats readiness` is then `unknown`, with
+  the sentence in `reason`: in the warning, in place of where the file comes
+  from, when the calling process's file does not establish trust; and when it
+  does, `<harness> folder trust is established in <file>; that file is this
+  process's, not known to be the one a launch will read: <the sentence>`. The item is optional,
+  as before, and `ready` does not change with it. A launch configuration
+  that sets the selector is read as before (`pass` or `fail`). When the
+  server runs and the read fails, the item is `unknown` with the "could not
+  be established" sentence above, and `file` is null.
+- **A spawn that launches nothing says it only where it already says
+  something.** Its checks read the calling process by design, and the start
+  that follows checks again on its own session. When its checks pass it says
+  nothing. A folder-trust warning says whose file it read, where an
+  established one says where the file comes from: `claude folder trust is
+  not established in <file> (the pane's environment is not established: this
+  spawn launches nothing (--no-launch), and a start reads its own session's;
+  read instead: this process's CLAUDE_CONFIG_DIR (not set), this process's
+  HOME): oats harness trust --dir <deployment>`. A refusal for a missing
+  package ends with `The account this probe read is not known to be the
+  launch's: <the same sentence, naming PATH, HOME and the selector>`; a
+  preview's refusal with no server running does too.
 
 Who starts the `oats` server, after an install, a reboot or its last session
 ending, decides that ambient environment.
@@ -1047,9 +1173,10 @@ Unattended execution never implies yolo.
 
 Use `oats harness trust --dir <deployment> --harness claude|codex|all --plan`,
 then the same command without `--plan`, on the execution host. It covers the ambient
-configuration file and each launch configuration's `CLAUDE_CONFIG_DIR` /
-`CODEX_HOME`; launch-time checks read the file the launch's own environment
-selects. This is the explicit
+configuration file (the one a launch with no launch configuration reads,
+[by the pane's environment](#the-checks-read-the-pane)) and each launch
+configuration's `CLAUDE_CONFIG_DIR` / `CODEX_HOME`; launch-time checks read
+the file the launch's own environment selects. This is the explicit
 operator-only native-config write path; spawn/start/retire remain read-only with
 respect to native trust. See [native trust](harness-trust.md) for qualified formats,
 Git-boundary limits, audit evidence and partial-failure recovery. Root trust does
