@@ -686,7 +686,9 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   otherwise `<line>` is the contract's fixed Git notice. Permitted text remains
   one line of at most 300 characters with control characters removed. This
   supersedes the earlier rule that a scrubbed Git line was always shown.
-  When Git said nothing, the message ends at `(unknown)`.
+  With neither Git text nor an error-message fallback, the message ends at
+  `(unknown)`. The fallback uses the same original-operation context and
+  disclosure rule.
   `cache` (OATS 0.33.0) is local: the
   remote cache on this machine could not be written (a git lock still held,
   another oats process still writing it, or a lock file one left when it

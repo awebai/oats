@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { oatsError } from "../lib/errors.mjs";
-import { redactUrl, scrubGitLine, parseRepoRef, observeRemote, readRemoteFile, runGit } from "../lib/remote.mjs";
+import { redactUrl, scrubGitLine, parseRepoRef, observeRemote, readRemoteFile, listRemoteTree, listRemoteFiles, contentDigest, fetchRemoteTree, runGit } from "../lib/remote.mjs";
 import { confirmMembership, observeWorkspace, validateWorkspace, validateLocal, validateMembership, readDeclaration, loadLocal } from "../lib/workspace.mjs";
 import { parsePackageRequest, resolvePackages } from "../lib/packages.mjs";
 import { remoteFailureCause } from "../packages/client/deployment-contract.mjs";
@@ -48,7 +48,7 @@ const gitError = (stderr, extra = {}) => Object.assign(new Error("fixture Git fa
 // Pin that construction, not a list of the currently known failure messages.
 test("every remote diagnostic uses the renderer at its error boundary", () => {
   const source = readFileSync(new URL("../lib/remote.mjs", import.meta.url), "utf8");
-  const definition = source.match(/function fail\(code, message, details\) \{[\s\S]*?\n\}/)?.[0];
+  const definition = source.match(/function fail\(code, message, details, \{ rejected = \[\] \} = \{\}\) \{[\s\S]*?\n\}/)?.[0];
   assert.ok(definition);
   assert.equal((source.match(/\boatsError\(/g) || []).length, 1, "new diagnostic constructors must use fail");
   const diagnostic = new Function("oatsError", "redactUrl", `${definition}; return fail;`)(oatsError, redactUrl);
@@ -81,11 +81,63 @@ test("parser refusals redact strings, malformed URLs, nested objects and auxilia
     { bad: [malformed[0], { [malformed[1]]: malformed[2] }] },
   ];
   for (const ref of bad) safeError(await refused(() => parseRepoRef(ref)), "E_REPO_REF");
-  // Invalid non-reference options also cross the module's diagnostic boundary.
-  safeError(await refused(() => parseRepoRef("git:example.invalid/org/repo", { transport: https[0] })), "E_REPO_REF");
-  safeError(await refused(() => readRemoteFile(ssh, https[0], "x")), "E_REPO_REF");
   assert.equal(parseRepoRef(ssh).url, ssh);
   assert.equal(parseRepoRef(`ssh://${USER}@${host}/${path}`).url, `ssh://${USER}@${host}/${path}`);
+});
+
+test("rejected transport is selected diagnostic data and successful transport stays exact", async () => {
+  for (const value of [...https, "ftp", "transport", "must", { https: [https[0]], ssh: https[1] }]) {
+    const e = await refused(() => parseRepoRef("git:example.invalid/org/repo", { transport: value }));
+    safeError(e, "E_REPO_REF");
+    const display = redactUrl(value, null, { reference: true });
+    assert.deepEqual(e.details, { transport: display });
+    assert.deepEqual(e.provenance, e.details);
+    assert.equal(e.message, `remoteOptions.transport must be "https" or "ssh", got ${JSON.stringify(display)} ${typeof value === "object" || display === WITHHELD ? withheldClause : clause}`);
+  }
+  assert.equal(parseRepoRef("git:example.invalid/org/repo", { transport: "https" }).url, "https://example.invalid/org/repo.git");
+  assert.equal(parseRepoRef("git:example.invalid/org/repo", { transport: "ssh" }).url, "git@example.invalid:org/repo.git");
+});
+
+test("rejected commit is selected diagnostic data and valid OIDs on other errors stay exact", async () => {
+  for (const value of [...https, "invalid-oid", "commit", "must", "OID"]) {
+    const e = await refused(() => readRemoteFile(ssh, value, "x"));
+    safeError(e, "E_REPO_REF");
+    const display = redactUrl(value, null, { reference: true });
+    assert.deepEqual(e.details, { commit: display });
+    assert.deepEqual(e.provenance, e.details);
+    assert.equal(e.message, `commit must be a full 40-hex OID ${display === WITHHELD ? withheldClause : clause}`);
+  }
+  const commit = "1".repeat(40);
+  const e = await refused(() => readRemoteFile(ssh, commit, "x", { cacheDir: scratch(), exec: async (args, opts) => {
+    if (args.includes("fetch")) throw gitError("fixture error", { timedOut: true });
+    return runGit(args, opts);
+  } }));
+  assert.equal(e.code, "E_REMOTE_UNREADABLE");
+  assert.equal(e.details.commit, commit);
+});
+
+test("other rejected inputs use boundary-specific display without changing accepted data", async () => {
+  const commit = "1".repeat(40), input = https[0];
+  const cases = [
+    ["at", input, () => observeRemote(ssh, { at: input })],
+    ["at", { nested: input }, () => observeRemote(ssh, { at: { nested: input } })],
+    ["path", { nested: input }, () => readRemoteFile(ssh, commit, { nested: input })],
+    ["path", `${input}/../x`, () => readRemoteFile(ssh, commit, `${input}/../x`)],
+    ["depth", input, () => listRemoteTree(ssh, commit, "", { depth: input })],
+    ["limit", input, () => listRemoteFiles(ssh, commit, "", { limit: input })],
+    ["path", input, () => contentDigest(input)],
+    ["destDir", input, () => fetchRemoteTree(ssh, commit, "", input)],
+  ];
+  for (const [field, value, call] of cases) {
+    const e = await refused(call);
+    safeError(e, "E_REPO_REF");
+    assert.deepEqual(e.details, { [field]: redactUrl(value, null, { reference: true }) });
+    assert.deepEqual(e.provenance, e.details);
+    assert.ok(e.message.includes(clause) || e.message.includes(withheldClause));
+  }
+  const raw = { nested: input };
+  await refused(() => observeRemote(ssh, { at: raw }));
+  assert.equal(raw.nested, input, "refusing diagnostics never mutate caller input");
 });
 
 test("refusals explain omission or withholding once, without changing diagnostic field shapes", async () => {
@@ -170,10 +222,6 @@ test("the omission clause is absent without removed userinfo in the named refuse
   assert.equal(redactUrl("@host:repo", null, { reference: true }), WITHHELD);
   assert.equal(redactUrl("refused @host:repo", "@host:repo", { known: false, refusal: true }), `refused ${WITHHELD} ${withheldClause}`,
     "an unrecognised SCP value is withheld without claiming userinfo omission");
-  for (const e of [
-    await refused(() => parseRepoRef("git:example.invalid/org/repo", { transport: https[0] })),
-    await refused(() => readRemoteFile(ssh, https[0], "x")),
-  ]) { safeError(e, "E_REPO_REF"); assert.ok(!e.message.includes(clause), "unrelated fields do not annotate a refusal"); }
   for (const ref of [ssh, `ssh://${USER}@${host}/${path}`, `git@${host}:${path}`]) {
     assert.equal(parseRepoRef(ref).url, ref, "successful parsing keeps transport and adds no explanation");
   }
@@ -392,7 +440,7 @@ function assertGitQuoting(source) {
     (sites[owner] ??= []).push(match[0]);
   }
   assert.deepEqual(sites, {
-    fail: ["safe.message"], runGit: ["child.stderr", "child.stderr"],
+    fail: ["safe.message", "safe.message"], runGit: ["child.stderr", "child.stderr"],
     stderrText: ["error?.stderr", "error?.message"], classifyText: ["stderrText("],
     gitLastLine: ["stderrText(", "error?.message"], lockFileOf: ["stderrText("], isLocalWriteFailure: ["stderrText("],
     cacheFailure: ["stderrText(", "error?.message"], isLockRace: ["stderrText("],
@@ -463,6 +511,8 @@ test("Git-line display requires unchanged operation references and an original l
     assert.equal(redactUrl(line, operation), GIT_WITHHELD, "inspect the original entire line for @ before any formatting");
     assert.equal(scrubGitLine(line, operation), GIT_WITHHELD);
   }
+  assert.equal(scrubGitLine(`${"x".repeat(500)}@late`, operation), GIT_WITHHELD, "the original line is inspected before truncation");
+  assert.equal(scrubGitLine("fatal: screen control \x1b[@", operation), GIT_WITHHELD, "control-sequence removal cannot erase the original at-sign");
   assert.equal(scrubGitLine(""), "");
   assert.equal(scrubGitLine(" \r\n\t", ssh), "", "an absent line does not invent Git text");
   for (const local of ["file:///owned/path@name/repo", "/owned/path@name/repo"]) {

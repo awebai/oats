@@ -182,6 +182,13 @@ The same decision applies to the selected reference in error messages,
 `details.ref`, `details.url`, `details.value`, `provenance.value`, nested
 reference keys and values, and reference-bearing workspace and soul schema
 problems. Discovery problem rows' `source` is also a diagnostic display.
+A rejection boundary can also select the invalid input it is explaining,
+including rejected `transport`, `commit`, `at`, `path`, `depth`, `limit` and
+`destDir` arguments. Their quoted message value
+and matching details/provenance use the same constructor or whole-value
+withholding, with the renderer's explanation. Selection belongs to that
+particular rejection; a field's name alone never selects it. Valid transport,
+commit and other operational values remain exact.
 Quoted or JSON-escaped copies and host/path fragments derived from a withheld
 value cannot reveal its remainder. Unrelated schema values and opaque provider
 payloads are not scanned. Query and fragment contents are not searched for
