@@ -19,8 +19,8 @@
   was there. The instance could not be retired until someone ran
   `git reset` in its tree. The recovery now carries "no index" as no index:
   its `repo/` has no index file, and Git reads it as it read the tree, file
-  for file. The same holds for a nested repository with no index file.
-  `git reset` in the recovery makes an index from `HEAD`. An extra tree
-  with no index file was never refused: a retire re-homes it as it is, as
-  before.
+  for file. The same holds for a nested repository that has a commit and no
+  index file. `git reset` in the recovery makes an index from `HEAD`. An
+  extra tree with no index file was never refused: a retire re-homes it as
+  it is, as before.
   [The rule](../souls-and-instances.md#no-index-file).
