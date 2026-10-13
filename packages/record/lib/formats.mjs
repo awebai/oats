@@ -16,7 +16,7 @@
 // snapshots, queue operations, mode flips) yields no docs — but its
 // native line is still stored verbatim in the turn, so nothing is lost.
 
-import { lstatSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, opendirSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { nativeDirectory } from "./session-roots.mjs";
@@ -55,38 +55,39 @@ function* parsedLines(bytes) {
   }
 }
 
-function listJsonlFiles(root, maxDepth, { strict = false } = {}, allowCaptured = false) {
+// Public list APIs keep their sorted inventories; ordinary capture consumes
+// directory entries incrementally and retains only the fixed-depth walk.
+function* directoryEntries(path, optional = false, sorted = false) {
+  let dir;
+  try {
+    if (sorted) { yield* readdirSync(path, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)); return; }
+    dir = opendirSync(path);
+  } catch (err) { if (optional && err.code === "ENOENT") return; throw err; }
+  try { for (let entry; (entry = dir.readSync()) !== null;) yield entry; }
+  finally { dir.closeSync(); }
+}
+function* iterateJsonlFiles(root, maxDepth, { strict = false, sorted = false } = {}, allowCaptured = false) {
   const capturedPi = typeof root === "object" && root !== null ? root.capturedPi : undefined;
   if (typeof root !== "string") {
     if (!allowCaptured || !capturedPi || Object.keys(root).some(k => !["path", "capturedPi"].includes(k))) throw new Error("unsupported protected session inventory");
     root = root.path;
   }
-  guardCapturedPath(root, capturedPi);
-  const out = [];
-  const walk = (dir, depth) => {
+  function* walk(dir, depth) {
     guardCapturedPath(dir, capturedPi);
-    let names;
-    try {
-      names = readdirSync(dir, { withFileTypes: true });
-    } catch (err) {
-      // An optional, absent root is normal; an unreadable directory or a
-      // subtree that disappeared during discovery is not an empty scan.
-      if (!strict && depth === 0 && err.code === "ENOENT") return;
-      throw err;
-    }
-    for (const entry of names.sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of directoryEntries(dir, !strict && depth === 0, sorted)) {
       const path = join(dir, entry.name);
-      guardCapturedPath(path, capturedPi); // protected links refuse before traversal or native reads
-      if (entry.name.endsWith(".jsonl") && !entry.isDirectory()) {
-        out.push(capturedPi ? { path, capturedPi } : path); // privacy rules precede opening/statting source links
-      } else if (entry.isDirectory() || (entry.isSymbolicLink() && statSync(path).isDirectory())) {
-        if (depth < maxDepth) walk(path, depth + 1);
+      guardCapturedPath(path, capturedPi);
+      if (entry.name.endsWith(".jsonl") && !entry.isDirectory()) yield capturedPi ? { path, capturedPi } : path;
+      else if (entry.isDirectory() || (entry.isSymbolicLink() && statSync(path).isDirectory())) {
+        if (depth < maxDepth) yield* walk(path, depth + 1);
       }
     }
-  };
-  walk(root, 0);
+  }
+  yield* walk(root, 0);
   guardCapturedPath(root, capturedPi);
-  return out;
+}
+function listJsonlFiles(root, depth, options, allowCaptured) {
+  return [...iterateJsonlFiles(root, depth, { ...options, sorted: true }, allowCaptured)];
 }
 
 // Only absence makes a default root optional. existsSync also hides access
@@ -138,24 +139,22 @@ function ccRoots(home = homedir(), env = process.env, options = {}) {
 // Native Claude child transcripts live at
 // projects/<project>/<sessionId>/subagents/agent-*.jsonl, not beside the
 // parent's file. Enumerate only this layout, never arbitrary project files.
-function listCcFiles(root, { strict = false } = {}) {
-  const out = [];
+function* iterateCcFiles(root, { strict = false, sorted = false } = {}) {
   const entries = (dir, optional = false) => {
     guardCapturedPath(dir);
-    try { return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)); }
-    catch (err) { if (optional && err.code === "ENOENT") return []; throw err; }
+    return directoryEntries(dir, optional, sorted);
   };
   const directory = (entry, path) => entry.isDirectory() || (entry.isSymbolicLink() && !entry.name.endsWith(".jsonl") && statSync(path).isDirectory());
   for (const project of entries(root, !strict)) {
     const projectPath = join(root, project.name);
     if (!directory(project, projectPath)) {
-      if (project.name.endsWith(".jsonl")) out.push(projectPath);
+      if (project.name.endsWith(".jsonl")) yield projectPath;
       continue;
     }
     for (const entry of entries(projectPath)) {
       const path = join(projectPath, entry.name);
       if (!directory(entry, path)) {
-        if (entry.name.endsWith(".jsonl")) out.push(path);
+        if (entry.name.endsWith(".jsonl")) yield path;
         continue;
       }
       // Listing the session directory (rather than treating ENOENT at an
@@ -165,13 +164,13 @@ function listCcFiles(root, { strict = false } = {}) {
         const children = join(path, childDir.name);
         if (!directory(childDir, children)) throw new Error(`session subagents root is not a directory: ${children}`);
         for (const child of entries(children)) {
-          if (child.name.endsWith(".jsonl")) out.push(join(children, child.name));
+          if (child.name.endsWith(".jsonl")) yield join(children, child.name);
         }
       }
     }
   }
-  return out;
-}
+ }
+function listCcFiles(root, options) { return [...iterateCcFiles(root, { ...options, sorted: true })]; }
 
 function ccParentId(path) {
   return basename(dirname(path)) === "subagents" ? basename(dirname(dirname(path))) : null;
@@ -366,6 +365,7 @@ export const SESSION_FORMATS = {
     source: "cc",
     defaultRoots: ccRoots,
     listFiles: (roots, options) => roots.flatMap((r) => listCcFiles(r, options)),
+    *iterateFiles(roots) { for (const root of roots) yield* iterateCcFiles(root); },
     sessionId: ccSessionId,
     ignoreKeys: (path) => [basename(path, ".jsonl"), ccParentId(path)].filter(Boolean),
     extractText: extractCcText,
@@ -374,6 +374,7 @@ export const SESSION_FORMATS = {
     source: "pi",
     defaultRoots: piRoots,
     listFiles: (roots, options) => roots.flatMap((r) => listJsonlFiles(r, 1, options, true)),
+    *iterateFiles(roots) { for (const root of roots) yield* iterateJsonlFiles(root, 1, {}, true); },
     sessionId: piSessionId,
     extractText: extractPiText,
   },
@@ -381,6 +382,7 @@ export const SESSION_FORMATS = {
     source: "codex",
     defaultRoots: codexRoots,
     listFiles: (roots, options) => roots.flatMap((r) => listJsonlFiles(r, 3, options)),
+    *iterateFiles(roots) { for (const root of roots) yield* iterateJsonlFiles(root, 3); },
     sessionId: codexSessionId,
     extractText: extractCodexText,
   },

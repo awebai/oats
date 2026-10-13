@@ -364,3 +364,7 @@ Anything that binds nothing is an error,
 | `E_NO_TURNS` | 1 | no records: an empty file, or only blank lines |
 | `E_FORMAT` | 1 | records, but no session header of the stated format; the message names the format whose header it does carry |
 | `E_CAPTURE_FAILED` | 1 | the pass failed (`appended: null`: part of the file may be in the record) |
+
+See [capture algorithms and recovery](docs/capture-service.md) for the shared
+append-only input assumption, reset/retry commands, bounded status inventory,
+resource accounting and v0.53.0 downgrade/re-upgrade contract.

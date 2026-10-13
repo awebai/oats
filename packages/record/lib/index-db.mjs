@@ -183,7 +183,7 @@ export class RecordIndex {
     const getState = this.db.prepare("SELECT * FROM index_bytes WHERE stream = ?");
     const setCount = this.db.prepare("INSERT INTO index_state VALUES (?, ?) ON CONFLICT(stream) DO UPDATE SET indexed_count=excluded.indexed_count");
     const setBytes = this.db.prepare("INSERT INTO index_bytes VALUES (?, ?, ?, ?) ON CONFLICT(stream) DO UPDATE SET bytes=excluded.bytes, indexed_count=excluded.indexed_count, epoch=excluded.epoch");
-    for (const streamId of this.store.listStreams()) {
+    for (const streamId of this.store.iterateStreams()) {
       this.store.withStreamLock(streamId, () => this.store.withDerived(state => {
         const checkpoint = this.store.validateJournal(streamId, state);
         const previous = getState.get(streamId);

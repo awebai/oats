@@ -2,6 +2,7 @@ import { fixtureEnv } from "./fixture-env.mjs";
 // Completion receipts are native CLI results, not exit-code heuristics.
 // All sources/stores here are isolated fixtures; no harness is launched.
 import assert from "node:assert/strict";
+import { DerivedState } from "../lib/derived-state.mjs";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -130,8 +131,9 @@ Buffer.prototype.toString = function (...args) {
     assert.equal(out.issues[0].reason, "oversized-line");
     assert.equal(out.incomplete, 1); assert.equal(out.sessions[0].turns, 1);
     assert.doesNotMatch(JSON.stringify(out), /oversized-private-marker/);
-    const offsets = JSON.parse(readFileSync(join(f.root, "index", "capture-offsets.json")));
-    assert.equal(offsets[`${f.stream}:${f.file}`].bytes, Buffer.byteLength(header));
+    const offsets = new DerivedState(f.root);
+    try { assert.equal(offsets.get("cc", `${f.stream}:${f.file}`).bytes, Buffer.byteLength(header)); }
+    finally { offsets.close(); }
   }
   const done = JSON.parse(f.run().stdout);
   assert.equal(done.complete, true); assert.equal(done.appended, 2); assert.equal(done.sessions[0].turns, 3);
@@ -162,7 +164,7 @@ fs.readSync = (fd, ...args) => { if (fd === sourceFd) throw Object.assign(new Er
   ["source short read during capture", `const open = fs.openSync, read = fs.readSync; let opens = 0, captureFd;
 fs.openSync = (p, ...args) => { const fd = open(p, ...args); if (String(p) === source && ++opens === 2) captureFd = fd; return fd; };
 fs.readSync = (fd, ...args) => fd === captureFd ? 0 : read(fd, ...args);`],
-  ["source disappears after capture append", `const write = fs.writeFileSync; fs.writeFileSync = (p, ...args) => { const result = write(p, ...args); if (String(p).endsWith('capture-offsets.json')) fs.rmSync(source, { force: true }); return result; };`],
+  ["source disappears after capture append", `const sync = fs.fsyncSync; fs.fsyncSync = (fd) => { const result = sync(fd); fs.rmSync(source, { force: true }); return result; };`],
 ]) {
   test(`home capture fails closed on ${name}`, (t) => {
     const f = fixture(t);

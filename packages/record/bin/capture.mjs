@@ -28,6 +28,7 @@ import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { withReceiptSummaries } from "../lib/receipt-summary.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
+import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 
 // Fail closed but actionably: an unreadable ignore file must stop capture,
@@ -47,8 +48,11 @@ function loadIgnoreOrExit(recordRoot) {
 // hostname-derived owner, which forked the whole record into a second owner
 // namespace: 571 duplicate journals from one typo. Parsing must refuse what
 // it does not understand before anything can be written.
-const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format"]);
+const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format", "source"]);
 const BOOL_FLAGS = new Set([
+  "reset-cursors",
+  "retry-set-aside",
+  "health",
   "watch",
   "status",
   "install-hint",
@@ -69,6 +73,12 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
   capture --watch              pass now, then re-pass on filesystem change
                                (debounced) and every 15 minutes regardless
   capture --status             show store/stream summary, capture nothing
+  capture --health [--json]    read capture set-aside diagnosis, capture nothing
+  capture --reset-cursors [--source aw|cc|pi|codex]
+                               reset selected source cursors and exit; the next
+                               pass reprocesses them with journal deduplication
+  capture --retry-set-aside    revalidate set-aside inputs in one reconciliation;
+                               does not authorize changing captured transcripts
   capture --home <dir>         capture the sessions that ran inside <dir> (an
                                OATS instance home) and print them as JSON:
                                thread, stream, turn count, first/last turn id;
@@ -148,6 +158,10 @@ function parseArgs(argv) {
 let args;
 try {
   args = parseArgs(process.argv.slice(2));
+  const recovery = ["reset-cursors", "retry-set-aside", "health"].filter(key => args[key]);
+  if (recovery.length > 1) throw new UsageError("choose one recovery or health operation");
+  if (args.source !== undefined && (!args["reset-cursors"] || !CAPTURE_SOURCES.includes(args.source))) throw new UsageError("--source requires --reset-cursors and aw|cc|pi|codex");
+  if (recovery.length && ["home", "file", "format", "watch", "status", "install-hint", "current-roots", "sessions-only", "aw-only"].some(key => args[key])) throw new UsageError("recovery/health cannot be combined with another capture mode");
 } catch (err) {
   if (!(err instanceof UsageError)) throw err;
   // --file --json answers JSON even for a usage error: it is for programs.
@@ -167,8 +181,36 @@ if (args.help) {
 const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
 const ownerExplicit = args.owner !== undefined || process.env.TURN_RECORD_OWNER !== undefined;
 const owner = args.owner ?? process.env.TURN_RECORD_OWNER ?? hostname().split(".")[0];
-const quiet = Boolean(args.quiet);
+const quiet = Boolean(args.quiet || args.json && (args["reset-cursors"] || args["retry-set-aside"]));
 const store = new RecordStore(root, { owner });
+
+if (args.health) {
+  const health = captureHealth(root);
+  if (args.json) console.log(JSON.stringify(health, null, 2));
+  else {
+    console.log(`capture: ${health.status}`);
+    for (const row of health.rows) console.log(`${row.code}: ${row.message}`);
+    for (const entry of health.backlog.setAside) console.log(`${entry.source}: ${entry.path}:${entry.line ?? "?"} offset ${entry.offset}: ${entry.reason}`);
+    if (health.backlog.truncated) console.log("showing first 100 set-aside inputs");
+  }
+  process.exit(0);
+}
+if (args["reset-cursors"] || args["retry-set-aside"]) {
+  try {
+    const result = args["reset-cursors"]
+      ? withCaptureLock(() => { resetSourceCursors(root, owner, args.source); return { reset: true, sources: args.source ? [args.source] : CAPTURE_SOURCES }; })
+      : pass({ retry: true });
+    if (result.skipped) throw new Error("capture lock held; recovery was not performed");
+    if (process.exitCode) throw new Error("recovery failed to release its capture lock");
+    if (args.json) console.log(JSON.stringify(result));
+    else if (args["reset-cursors"]) log(`capture: reset source cursors (${result.sources.join(", ")})`);
+  } catch (err) {
+    if (args.json) console.log(JSON.stringify({ status: "failed", complete: false, error: err.message }));
+    else console.error(`capture: ${err.message}`);
+    process.exitCode = 1;
+  }
+  process.exit(process.exitCode ?? 0);
+}
 
 // The owner decides the stream namespace, and turn ids hash it into the
 // canonical core — so the same conversation captured under two owners yields
@@ -242,7 +284,8 @@ function withCaptureLock(fn) {
     return { appended: 0, skipped: true, lock: lock.held };
   }
   try {
-    return fn();
+    try { return fn(); }
+    finally { writeCaptureStatus(root); }
   } finally {
     const r = lock.release();
     if (!r.released) {
@@ -258,14 +301,15 @@ function withCaptureLock(fn) {
   }
 }
 
-function pass() {
+function pass({ retry = false } = {}) {
   // The privacy loader fails closed by exiting; it runs before the lock is
   // taken so that exit never leaves the lock behind.
   const ignore = loadIgnoreOrExit(root);
   return withCaptureLock(() => {
+  if (retry) retrySetAside(root);
   const out = { appended: 0 };
   if (!args["aw-only"]) {
-    for (const r of captureAllSessions(store, { owner, ignore })) {
+    for (const r of captureAllSessions(store, { owner, ignore, collectIssues: false })) {
       out.appended += r.appended;
       const extras = [r.ignored ? `${r.ignored} ignored` : "", r.held ? `${r.held} held` : "", r.incomplete ? `${r.incomplete} incomplete` : ""]
         .filter(Boolean)
@@ -281,7 +325,7 @@ function pass() {
     let awFailed = 0;
     let awFiles = 0;
     let awIgnored = 0;
-    for (const r of captureAwLogs(store, { owner, ignore })) {
+    for (const r of captureAwLogs(store, { owner, ignore, collect: false })) {
       if (r.ignored) {
         awIgnored++;
         continue;

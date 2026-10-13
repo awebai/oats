@@ -60,7 +60,7 @@ test("session capture: one turn per event, incremental, keeps unknown lines", (t
   assert.equal(turns.map((x) => x.body.line).join("\n") + "\n", readFileSync(file, "utf8"));
 
   // Offset cache lost: recapture is a no-op (rebuilt from the journal).
-  rmSync(join(store.root, "index", "capture-offsets.json"));
+  rmSync(join(store.root, "index", "capture.db"));
   const r4 = captureSessions(store, { owner: "mac", roots });
   assert.equal(r4.appended, 0, "journal-derived offset prevents re-append");
 });
