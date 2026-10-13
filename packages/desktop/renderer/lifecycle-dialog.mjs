@@ -61,12 +61,33 @@ const sessionText = s => !s.established ? "Unknown (couldn't be checked)" : s.pr
  * never inline, only in the row's title. */
 const workText = w => !w.observed ? "Unknown (couldn't be checked)" : !w.changed && !w.untracked ? 'None'
   : [w.changed && `${w.changed} changed`, w.untracked && `${w.untracked} untracked`].filter(Boolean).join(', ');
-/** The worktree's branch as observed, else the one recorded at spawn; null when detached or unknown. */
+/** The worktree's branch as observed, else the one recorded at spawn; null when detached or unknown. Not asked
+ * for a tree the kernel's fact answers and that was not observed (treeOf `unchecked`): no branch is named there. */
 const branchOf = f => f.work.observed ? f.work.branch : f.recordedBranch;
 /** A retire the kernel refuses as busy for a home a spawn left (`rollbackIncomplete`): the spawn may still run.
  * For a kernel that does not say who holds the claim. One that does (feature lifecycle-claim-stop) has its
  * answer read by `details.holder`, and its own sentence names the check and the command: never this one. */
 const LEFTOVER_BUSY = "OATS can't confirm that the spawn which left this home has stopped, so it won't retire it yet. Check the process it names, then retire it from the CLI with --force.";
+/** How a retire plan's tree reads, for the words about it. `own`: the tree at `work/` is the instance's
+ * (ownWorktreeOf), by the kernel's fact or, for a plan without one, by the record. The other two are for a
+ * plan with the fact alone; a plan without one is `own` or neither, by the record.
+ *   unchecked  the kernel says the tree is the instance's and `work/` was not observed. The fact is the
+ *              reading's answer by the record where nothing, or a file, is at `work/`, so the words promise
+ *              no tree and name no branch: the only branch known there is the record's. One wording for
+ *              every reason of unobserved work; no code of `facts.work.reason` is read.
+ *   notOwn     the kernel says the tree is not the instance's: no worktree is kept or deleted, and
+ *              `facts.work`, an observation through any link, is another's tree. */
+const treeOf = value => { const whose = ownWorktreeOf(value), fact = whose.from === 'fact';
+  return { own: whose.own, unchecked: fact && whose.own && !value.facts.work.observed, notOwn: fact && !whose.own }; };
+/** The worktree line of "What will happen" and the warning under the checked choice, for an own tree that
+ * could not be checked. They follow the line for a session that could not be checked. */
+const KEEPS_UNCHECKED = "Keeps its worktree, moved aside, if there is one. It couldn't be checked.";
+const DELETES_UNCHECKED = "Deletes its worktree, if there is one. It couldn't be checked.";
+const WARNS_UNCHECKED = "Deletes the worktree folder, if there is one, with any uncommitted changes (a recovery copy is saved first). It couldn't be checked.";
+/** In the place of the worktree line when the kernel says the tree is not the instance's. True of every such
+ * home: it names no owner and does not claim there is a link. What happens to what is at `work/` is the
+ * line above it (the recovery copy and the home). */
+const NOT_ITS_OWN = 'It has no worktree of its own, so no worktree is kept or deleted. A tree it links to is not touched.';
 const ambiguousText = v => `Not included: ${v.instance} (another instance has the same parent name, so OATS can't tell whose child it is).`;
 let dialogs = 0;
 /** A fresh explicit confirmation every time; no Don't-ask-again bypass.
@@ -120,7 +141,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.stateSection.hidden = !before;
     for (const region of [ui.happen, ui.facts]) region.setAttribute('aria-busy', String(phase === 'loading' || phase === 'updating'));
     // The worktree choice is offered for the instance's own tree, and stays while it is checked so that it can be undone.
-    const option = shown && (retire() ? ownWorktreeOf(shown).own || choices.discardWorktree : true);
+    const option = shown && (retire() ? treeOf(shown).own || choices.discardWorktree : true);
     ui.options.hidden = !(phase === 'loading' || planned && option);
     ui.optionSkeleton.hidden = phase !== 'loading';
     ui.recursive.parentElement.hidden = phase === 'loading' || retire(); ui.discard.parentElement.hidden = phase === 'loading' || !retire();
@@ -196,7 +217,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       if (value.skipped.length) lines.push(line(`Not stopped: ${names(value.skipped)} (children not included).`, undefined, 'lifecycle-note'));
       return list(lines);
     }
-    const f = value.facts, b = branchOf(f);
+    const f = value.facts, tree = treeOf(value);
     if (f.session.established && f.session.present) lines.push(line('Stops its session.'));
     else if (!f.session.established) lines.push(line("Stops its session, if one is running (its state couldn't be checked)."));
     if (f.children.length) {
@@ -204,8 +225,10 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       children.title = f.children.map(c => c.home).join('\n'); lines.push(children);
     }
     lines.push(line('Saves a recovery copy of any uncommitted work, then deletes its home folder.', value.home));
-    if (ownWorktreeOf(value).own) lines.push(line(requested.discardWorktree ? `Deletes its worktree.${stays(b)}`
-      : `Keeps its worktree, moved aside${b ? `, on branch ${b}` : ''}.`));
+    if (tree.notOwn) lines.push(line(NOT_ITS_OWN));
+    else if (tree.unchecked) lines.push(line(requested.discardWorktree ? DELETES_UNCHECKED : KEEPS_UNCHECKED));
+    else if (tree.own) { const b = branchOf(f); lines.push(line(requested.discardWorktree ? `Deletes its worktree.${stays(b)}`
+      : `Keeps its worktree, moved aside${b ? `, on branch ${b}` : ''}.`)); }
     // A home a spawn left (rollbackIncomplete): retire finishes its compensation, which deletes the branch
     // the spawn created when it holds no work (the result's spawnCompensation says which).
     lines.push(line(leftover ? 'Branches and pull requests are not changed, except a branch an interrupted spawn left with no work, which is deleted.'
@@ -224,16 +247,21 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       const f = value.facts;
       row('Session', sessionText(f.session));
       // Without a worktree of its own there is no Git work to report: the recovery line under What will happen covers it.
-      if (f.work.observed || ownWorktreeOf(value).own) row('Uncommitted work', workText(f.work), f.work.observed ? '' : f.work.reason);
+      if (f.work.observed || treeOf(value).own) row('Uncommitted work', workText(f.work), f.work.observed ? '' : f.work.reason);
       if (f.work.observed) row('Branch', f.work.detached ? 'Detached' : f.work.branch);
       if (f.work.observed && f.work.drift) notes.push(node('p', `The worktree is on ${f.work.detached ? 'a detached commit' : f.work.branch}, not the branch it was spawned on${f.recordedBranch ? ` (${f.recordedBranch})` : ''}.`, 'lifecycle-attention'));
       for (const v of f.ambiguous) { const p = node('p', ambiguousText(v), 'lifecycle-note'); p.title = v.home; notes.push(p); }
     }
     return [dl, ...notes];
   }
-  /** The warning under a checked "Also delete the worktree": in words, not colour alone. */
+  /** The warning under a checked "Also delete the worktree": in words, not colour alone. None when the kernel
+   * says the tree is not the instance's: the choice then stays on screen only to be undone, the status says
+   * that it cannot be confirmed, and a warning would count another tree's changes and promise their deletion. */
   function discardWarning(value) {
-    const f = value.facts, n = f.work.observed ? f.work.changed + f.work.untracked : null;
+    const f = value.facts, tree = treeOf(value);
+    if (tree.notOwn) return '';
+    if (tree.unchecked) return WARNS_UNCHECKED;
+    const n = f.work.observed ? f.work.changed + f.work.untracked : null;
     const including = n === null ? ', including uncommitted changes, if any (a recovery copy is saved first)'
       : n ? `, including ${plural(n, 'uncommitted change')} (a recovery copy is saved first)` : '';
     return `Deletes the worktree folder${including}.${stays(branchOf(f))}`;
