@@ -4100,17 +4100,41 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   one Git names for it, <repository>, and does not write it into the
   record`. No key of the plan is new.
 
-  <a id="retire-revision-work"></a>The record's work mode (`facts.workMode`)
-  and what `work/` is by this reading, with the repository Git names for
-  `work/` wherever it is a registered work tree, are part of every retire
-  plan's `planRevision`, in every home (0.53.0, #1065). So no two plans of
-  one home that the record or the reading makes different, in
-  `facts.workMode`, `facts.ownWorktree`, `defaults.retainWorktree`, a note
-  or the text's `defaults:` line, share a revision, and a guarded apply
-  after one of them moved (a record's work mode that was rewritten, a
-  receipt that is gone, an own tree that became a directory of the home, a
-  directory of the home that became a work tree of another repository) is
-  refused with `E_PLAN_STALE` and the fresh plan, before anything runs. Before 0.53.0 neither was part of the revision, and a record
+  <a id="retire-revision-work"></a>**What a retire plan shows that the
+  instance can rewrite is part of its `planRevision`, in every home**
+  (0.53.0, #1065):
+  - what the plan reports of the record about `work/`: its work mode
+    (`facts.workMode`), its repository (`facts.repo`) and its branch
+    (`facts.recordedBranch`);
+  - what `work/` is by this reading, with the repository Git names for
+    `work/` wherever it is a registered work tree;
+  - the session as the plan shows it (`facts.session`, whole: its state,
+    and the `reason` or the `note` of one that is not established), which
+    the record's launch and endpoint decide where the session's receipt
+    does not;
+  - of other homes' records: the children by their homes, the edges that
+    could not be followed (`facts.ambiguous`) and the children attached to
+    this home's `work/`.
+
+  So no two plans of one home that the record or the reading makes
+  different, in a fact, a default, a note or the text's `defaults:` line,
+  share a revision, and a guarded apply after one of them moved (a record's
+  work mode, repository or branch that was rewritten, a receipt that is
+  gone, an own tree that became a directory of the home, a directory of the
+  home that became a work tree of another repository) is refused with
+  `E_PLAN_STALE` and the fresh plan, before anything runs. Two reads of a
+  home that nobody touched give one revision.
+
+  **Not part of the revision, by decision,** because it moves by itself or
+  decides nothing: what a remote has (`facts.work.upstream`,
+  `facts.work.base`, `facts.work.remote`) and `facts.work.detached`; a
+  child's session (`facts.children[].session`: a child that will not stop
+  refuses the retire by itself, `E_CHILDREN_RUNNING`);
+  `facts.pullRequest`; the recovery notes (where a recovery would be
+  written and the declared roots it leaves out); and `at`.
+
+  Before 0.53.0 the revision held none of the record's fields but its
+  launch, the session's state alone, and nothing of the reading: a record
   rewritten between a plan and its apply did not make the plan stale.
   **Every retire plan read under an older kernel is stale under this one,
   once:** its apply is refused with `E_PLAN_STALE` and the fresh plan, and

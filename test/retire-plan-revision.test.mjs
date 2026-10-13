@@ -23,8 +23,14 @@
 //   - the repository Git names for work/ is bound wherever work/ is a registered work tree, a
 //     directory of the home included: with the record, the receipt and Git's answer as they were,
 //     a plan is stale once work/ is a work tree of another repository, or was none and is one;
-//   - and the repository the retire takes from Git because the record names none stays bound: the
-//     plan of an own tree is stale once its record names no repository;
+//   - what the plan reports of the record is bound, field by field: a rewrite of any field of the
+//     record that a retire plan reads either leaves the plan as it was, whole, or gives it another
+//     revision, and the apply is then stale before any hook; in a home without its session receipt
+//     the record decides what the plan shows of the session, and each such plan has its revision;
+//   - what a plan shows of other homes' records is bound too: the children attached to this work
+//     and the edges it could not follow;
+//   - and the other half: two reads of a home nobody touched give one revision, in every session
+//     state these fixtures reach, the ones that are not established included;
 //   - what a client relies on: the revision's form, the fresh plan in the refusal, and a repeated
 //     apply with the same key answered from its stored receipt whatever revision it carries;
 //   - the revision of a plain `worktree` home is not the one the rule before #1065 gave it: every
@@ -32,10 +38,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
 
 /** A retire hook that records each run in `<agents root>/retire-hook-ran-<instance>`, outside every home. */
 const HOOK = `import { appendFileSync } from "node:fs";
@@ -62,13 +69,22 @@ function deployment(t) {
   const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
   const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", env: fx.env, stdio: ["ignore", "pipe", "pipe"] }).trim();
   const envelope = (r) => { try { return r.json(); } catch { assert.fail(`no envelope: ${r.stdout}${r.stderr}`); } };
+  /** `--home <home>` for a name that more than one home has. */
+  const at = (home) => (home === undefined ? [] : ["--home", home]);
   const d = {
     fx, git, envelope,
     /** The retire plan of `instance`, as the CLI answers it. */
-    plan(instance) { const e = envelope(fx.cli(["retire", instance, "--plan", "--json"])); assert.equal(e.ok, true, `a plan of ${instance}: ${JSON.stringify(e.error)}`); return e.result; },
+    plan(instance, home) { const e = envelope(fx.cli(["retire", instance, "--plan", "--json", ...at(home)])); assert.equal(e.ok, true, `a plan of ${instance}: ${JSON.stringify(e.error)}`); return e.result; },
+    /** The plan, read twice: an unchanged home gives the same revision both times, whatever its
+     *  session reads as. → the plan. */
+    planTwice(instance, home, what = instance) {
+      const plan = d.plan(instance, home), again = d.plan(instance, home);
+      assert.equal(again.planRevision, plan.planRevision, `${what}: two reads of a home nobody touched, one revision\n${JSON.stringify(plan.facts.session)}\n${JSON.stringify(again.facts.session)}`);
+      return plan;
+    },
     /** The `defaults:` line of the plan's text. */
-    line(instance) {
-      const r = fx.cli(["retire", instance, "--plan"]);
+    line(instance, home) {
+      const r = fx.cli(["retire", instance, "--plan", ...at(home)]);
       assert.equal(r.status, 0, r.stdout + r.stderr);
       const lines = r.stdout.split("\n").filter((l) => /^\s*defaults:/.test(l));
       assert.equal(lines.length, 1, `one defaults: line in the text of a plan:\n${r.stdout}`);
@@ -84,8 +100,8 @@ function deployment(t) {
     /** A guarded apply: → `{ status, ok: true, result }` or `{ status, ok: false, error }`. A
      *  retire that is done prints its receipt, over several lines; one that is refused prints the
      *  envelope. */
-    apply(instance, revision, key) {
-      const r = fx.cli(["retire", instance, "--plan-revision", revision, "--idempotency-key", key, "--json"]);
+    apply(instance, revision, key, home) {
+      const r = fx.cli(["retire", instance, "--plan-revision", revision, "--idempotency-key", key, "--json", ...at(home)]);
       let out;
       try { out = JSON.parse(r.stdout); } catch { assert.fail(`no JSON: ${r.stdout}${r.stderr}`); }
       return out.ok === false ? { status: r.status, ok: false, error: out.error } : { status: r.status, ok: true, result: out.ok === true ? out.result : out };
@@ -315,7 +331,7 @@ test("the repository Git names for work/ is part of the revision for a directory
   }
 });
 
-test("the repository the retire takes from Git because the record names none stays part of the revision: the plan of an own tree whose record names its repository, and the plan of the same tree once the record names none, differ in a note and do not share a revision (#962, kept by #1065)", async (t) => {
+test("the repository the retire takes from Git because the record names none is part of the revision through the record's own: the plan of an own tree whose record names its repository, and the plan of the same tree once the record names none, differ in a note and do not share a revision (#962, kept by #1065)", async (t) => {
   const d = deployment(t);
   const inst = await d.fx.spawn("dev", { instance: "dev-unnamed" });
   const NOTE = "the record names no repository for the work tree: the retire uses the one Git names for it, ";
@@ -334,6 +350,158 @@ test("the repository the retire takes from Git because the record names none sta
   assert.deepEqual([stale.status, stale.ok, stale.error?.code], [1, false, "E_PLAN_STALE"], JSON.stringify(stale.error ?? stale.result));
   assert.deepEqual(timeless(stale.error.details.plan), timeless(unnamed), "the refusal carries the fresh plan, whole");
   assert.equal(d.hookRan(inst.instance), false, "no retire hook ran");
+});
+
+/** A plan as a whole, with the text's line, without the instant it was read at and its revision:
+ *  everything a plan shows. */
+const whole = (plan, line) => ({ ...plan, at: null, planRevision: null, line });
+
+test("a rewrite of any field of the record that a retire plan reads either leaves the plan as it was, whole, or gives it another revision, and a guarded apply with the first revision is then stale before any hook: work, repo, branch, launched, the session's endpoint and target fields, each in turn; the fields a plan reads and does not show leave plan and revision as they were (#1065)", async (t) => {
+  const d = deployment(t);
+  const inst = await d.fx.spawn("dev", { instance: "dev-fields" });
+  const path = join(inst.home, "instance.json"), asSpawned = readFileSync(path, "utf8");
+  const rewrite = (change) => { const meta = JSON.parse(asSpawned); change(meta); writeFileSync(path, JSON.stringify(meta, null, 2) + "\n"); };
+  const read = (what) => { const plan = d.planTwice(inst.instance, undefined, what); return { plan, shown: whole(plan, d.line(inst.instance)) }; };
+  const first = read("as spawned");
+  assert.deepEqual([typeof first.plan.facts.repo, typeof first.plan.facts.recordedBranch, first.plan.facts.session.state], ["string", "string", "not-launched"], "fixture premise: a worktree home as spawned, not launched, its record naming its repository and its branch");
+  // Each field of the record that planRetire and what it calls read (the list is on the issue), and
+  // whether the plan shows another thing once it is rewritten. A field missing here that a plan
+  // reads is a hole in this test.
+  const REWRITES = [
+    ["work: another mode", (m) => { m.work = "attached"; }, true],
+    ["work: removed", (m) => { delete m.work; }, true],
+    ["work: a mode the kernel does not know", (m) => { m.work = "elsewhere"; }, true],
+    ["repo: a path that is no repository", (m) => { m.repo = join(d.fx.base, "no-repository"); }, true],
+    ["repo: removed", (m) => { delete m.repo; }, true],
+    ["branch: another name", (m) => { m.branch = "agents/some-other-branch"; }, true],
+    ["branch: removed", (m) => { delete m.branch; }, true],
+    ["branch: the word HEAD", (m) => { m.branch = "HEAD"; }, true],
+    ["launched: true, against the session's receipt", (m) => { m.launched = true; }, true],
+    ["sessionTarget: set", (m) => { m.sessionTarget = { kind: "elsewhere" }; }, true],
+    ["backend: herdr", (m) => { m.backend = "herdr"; }, true],
+    // Read, and deciding nothing in a home that was not launched: the endpoint is compared with
+    // the receipt's only for a launch, and the prompt's status only excuses a record that says
+    // no launch against a receipt that says one.
+    ["tmux: another socket, in a home that was not launched", (m) => { m.tmux = { ...(m.tmux ?? {}), socket: join(d.fx.base, "another-socket") }; }, false],
+    ["tmux: removed, in a home that was not launched", (m) => { delete m.tmux; }, false],
+    ["launchPrompts.status: blocked, in a home that was not launched", (m) => { m.launchPrompts = { ...(m.launchPrompts ?? {}), status: "blocked" }; }, false],
+    // Read on the way, and shown by no plan.
+    ["instance: another name", (m) => { m.instance = "another-name"; }, false],
+    ["agent: another name", (m) => { m.agent = "another-agent"; }, false],
+    ["parentInstance: a name", (m) => { m.parentInstance = "nobody"; }, false],
+    ["createdAt: another instant", (m) => { m.createdAt = "2001-01-01T00:00:00.000Z"; }, false],
+  ];
+  const seen = new Map();
+  for (const [n, [what, change, moves]] of REWRITES.entries()) {
+    rewrite(change);
+    const now = read(what);
+    seen.set(what, now);
+    assert.equal(!same(now.shown, first.shown), moves, `${what}: the plan ${moves ? "shows another thing" : "is what it was, whole"}\n${JSON.stringify(now.shown)}\n${JSON.stringify(first.shown)}`);
+    if (!moves) { assert.equal(now.plan.planRevision, first.plan.planRevision, `${what}: and so is its revision`); continue; }
+    assert.match(now.plan.planRevision, FORM);
+    assert.notEqual(now.plan.planRevision, first.plan.planRevision, `${what}: the plan shows another thing under the revision ${first.plan.planRevision}`);
+    const stale = d.apply(inst.instance, first.plan.planRevision, `as-spawned-${n}`);
+    assert.deepEqual([stale.status, stale.ok, stale.error?.code], [1, false, "E_PLAN_STALE"], `${what}: ${JSON.stringify(stale.error ?? stale.result)}`);
+    assert.deepEqual(timeless(stale.error.details.plan), timeless(now.plan), `${what}: the refusal carries the fresh plan, whole`);
+    assert.equal(d.hookRan(inst.instance), false, `${what}: no retire hook ran`);
+    assert.equal(existsSync(join(inst.home, "work", ".git")), true, `${what}: the tree is where it was`);
+  }
+  // Every pair of these plans, not only each against the first: what differs has another revision.
+  const all = [["as spawned", first], ...seen];
+  for (const [i, [a, x]] of all.entries()) for (const [b, y] of all.slice(i + 1)) {
+    if (!same(x.shown, y.shown)) assert.notEqual(x.plan.planRevision, y.plan.planRevision, `the plans after "${a}" and after "${b}" differ in what they show and share a revision`);
+  }
+  // The word HEAD and no branch are one value to a plan (a home from before #641).
+  assert.deepEqual(seen.get("branch: the word HEAD").shown, seen.get("branch: removed").shown);
+  writeFileSync(path, asSpawned);
+  assert.equal(d.plan(inst.instance).planRevision, first.plan.planRevision, "the record as spawned again: the first revision");
+});
+
+test("in a home without its session receipt the record decides what the plan shows of the session, and each of those plans has a revision of its own: no launch recorded, a launch with no endpoint, an endpoint on one socket, on another, another window (#1065)", async (t) => {
+  const d = deployment(t);
+  const inst = await d.fx.spawn("dev", { instance: "dev-legacy" });
+  const baselines = join(dirname(inst.home), ".oats-retirement", "baselines"), files = readdirSync(baselines);
+  assert.equal(files.length, 1, `fixture premise: one receipt, this home's: ${files}`);
+  rmSync(join(baselines, files[0]));
+  const path = join(inst.home, "instance.json"), asSpawned = readFileSync(path, "utf8");
+  const rewrite = (change) => { const meta = JSON.parse(asSpawned); change(meta); writeFileSync(path, JSON.stringify(meta, null, 2) + "\n"); };
+  const socket = (name) => join(d.fx.base, name);
+  const STATES = [
+    ["no launch recorded", (m) => { m.launched = false; delete m.tmux; }],
+    ["a launch with no endpoint", (m) => { m.launched = true; delete m.tmux; }],
+    ["a launch with an incomplete endpoint", (m) => { m.launched = true; m.tmux = { session: "s" }; }],
+    ["an endpoint on one socket", (m) => { m.launched = true; m.tmux = { session: "s", window: "w", socket: socket("no-server-a") }; }],
+    ["the same on another socket", (m) => { m.launched = true; m.tmux = { session: "s", window: "w", socket: socket("no-server-b") }; }],
+  ];
+  const rows = STATES.map(([what, change]) => {
+    rewrite(change);
+    const plan = d.planTwice(inst.instance, undefined, what);
+    assert.equal(typeof plan.facts.session.note, "string", `${what}: fixture premise, the session is read without its receipt: ${JSON.stringify(plan.facts.session)}`);
+    t.diagnostic(`${what} | ${plan.planRevision.slice(0, 8)} | ${plan.facts.session.state} | ${plan.facts.session.note.replaceAll(d.fx.base, "<base>")}`);
+    return { what, plan, shown: whole(plan, d.line(inst.instance)) };
+  });
+  // A process that works in the home: the note names it, and two reads name it alike.
+  writeFileSync(path, asSpawned);
+  const worker = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: inst.home, stdio: "ignore" });
+  try {
+    await waitUntil(() => /a process works in this home/.test(d.plan(inst.instance).facts.session.note), "the plan to see the process that works in the home");
+    const plan = d.planTwice(inst.instance, undefined, "a process works in the home");
+    assert.equal(plan.facts.session.state, "unestablished");
+    assert.match(plan.facts.session.note, new RegExp(`pid ${worker.pid} `));
+    t.diagnostic(`a process works in the home | ${plan.planRevision.slice(0, 8)} | ${plan.facts.session.state} | ${plan.facts.session.note.replaceAll(d.fx.base, "<base>").replace(/pid \d+/, "pid <n>")}`);
+    rows.push({ what: "a process works in the home", plan, shown: whole(plan, d.line(inst.instance)) });
+  } finally { await killAndReap(worker.pid); }
+  for (const [i, x] of rows.entries()) for (const y of rows.slice(i + 1)) {
+    assert.equal(same(x.shown, y.shown), false, `fixture premise: "${x.what}" and "${y.what}" differ in what the plan shows of the session`);
+    assert.notEqual(x.plan.planRevision, y.plan.planRevision, `"${x.what}" and "${y.what}" differ in what they show and share the revision ${x.plan.planRevision}`);
+  }
+});
+
+test("what a plan shows of other homes' records is part of its revision: the children attached to this home's work (a note), and the edges it could not follow because the parent's name is not unique (facts.ambiguous and a note); a child's record rewritten into and out of each gives another revision, and a guarded apply with the earlier one is stale (#1065)", async (t) => {
+  const d = deployment(t);
+  const parent = await d.fx.spawn("dev", { instance: "dev-parent" });
+  const kid = d.attached(parent, "kid");
+  const kidPath = join(kid.home, "instance.json"), kidAsSpawned = readFileSync(kidPath, "utf8");
+  const kidSays = (change) => { const meta = JSON.parse(kidAsSpawned); change(meta); writeFileSync(kidPath, JSON.stringify(meta, null, 2) + "\n"); };
+  assert.equal(JSON.parse(kidAsSpawned).parentInstance, parent.instance, "fixture premise: an attached instance is its owner's child");
+  const ATTACHED = /^attached child instance\(s\) .* use this home's work\/ as their work/, AMBIGUOUS = /record this name as parent but the name is not unique/;
+  const read = (what, home) => { const plan = d.planTwice(parent.instance, home, what); return { what, plan, shown: whole(plan, d.line(parent.instance, home)) }; };
+  const stale = (earlier, fresh, key, home) => {
+    assert.equal(same(earlier.shown, fresh.shown), false, `fixture premise: "${earlier.what}" and "${fresh.what}" differ in what the plan shows`);
+    assert.notEqual(fresh.plan.planRevision, earlier.plan.planRevision, `"${earlier.what}" and "${fresh.what}" differ in what they show and share the revision ${earlier.plan.planRevision}`);
+    const refused = d.apply(parent.instance, earlier.plan.planRevision, key, home);
+    assert.deepEqual([refused.status, refused.ok, refused.error?.code], [1, false, "E_PLAN_STALE"], `${fresh.what}: ${JSON.stringify(refused.error ?? refused.result)}`);
+    assert.deepEqual(timeless(refused.error.details.plan), timeless(fresh.plan), `${fresh.what}: the refusal carries the fresh plan, whole`);
+    assert.equal(d.hookRan(parent.instance), false, `${fresh.what}: no retire hook ran`);
+  };
+
+  // The children attached to this work. The child stays a child throughout: only its record's
+  // work mode is rewritten, out of `attached` and back.
+  const attached = read("a child attached to this work");
+  assert.deepEqual([attached.plan.facts.children.map((c) => c.home), attached.plan.notes.filter((n) => ATTACHED.test(n)).length], [[kid.home], 1]);
+  kidSays((m) => { m.work = "directory"; });
+  const notAttached = read("the same child, its record no longer saying attached");
+  assert.deepEqual([notAttached.plan.facts.children.map((c) => c.home), notAttached.plan.notes.filter((n) => ATTACHED.test(n)).length], [[kid.home], 0]);
+  stale(attached, notAttached, "shown-with-an-attached-child");
+  writeFileSync(kidPath, kidAsSpawned);
+  assert.equal(d.plan(parent.instance).planRevision, attached.plan.planRevision, "attached again: the first revision");
+
+  // The edges a plan could not follow. A second home of the parent's name, under another agent,
+  // makes the name not unique; the plan is then asked for by its home.
+  const twin = join(d.fx.root, "twin", "instances", parent.instance);
+  mkdirSync(join(d.fx.root, "twin", "soul"), { recursive: true });
+  writeFileSync(join(d.fx.root, "twin", "soul", "soul.yaml"), "name: twin\nwork: directory\n");
+  writeFileSync(join(d.fx.root, "twin", "soul", "AGENTS.md"), "# twin\n");
+  mkdirSync(twin, { recursive: true });
+  writeFileSync(join(twin, "instance.json"), JSON.stringify({ agent: "twin", instance: parent.instance, home: twin, work: "directory", launched: false }) + "\n");
+  const ambiguous = read("the child's edge not followed: the parent's name is not unique", parent.home);
+  assert.deepEqual([ambiguous.plan.facts.children, ambiguous.plan.facts.ambiguous.map((c) => c.home), ambiguous.plan.notes.filter((n) => AMBIGUOUS.test(n)).length], [[], [kid.home], 1]);
+  kidSays((m) => { delete m.parentInstance; });
+  const noEdge = read("no edge: the child's record names no parent", parent.home);
+  assert.deepEqual([noEdge.plan.facts.children, noEdge.plan.facts.ambiguous, noEdge.plan.notes.filter((n) => AMBIGUOUS.test(n)).length], [[], [], 0]);
+  stale(ambiguous, noEdge, "shown-with-an-ambiguous-edge", parent.home);
+  kidSays((m) => { m.parentInstance = parent.instance; });
+  assert.equal(d.plan(parent.instance, parent.home).planRevision, ambiguous.plan.planRevision, "the edge again: the revision it had");
 });
 
 test("a repeated apply with the same idempotency key, for a retire that did run, is answered from its stored receipt whatever revision it carries: the one it was applied with, the one the rule before #1065 gave the home, and one no plan has (#1065)", async (t) => {
