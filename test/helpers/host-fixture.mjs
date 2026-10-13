@@ -355,9 +355,11 @@ export function expectLoginFallback({ reason = loginFallbackReason(), tmuxTmpdir
   const line = reason === null ? null : LOGIN_FALLBACK_WARNING[reason];
   if (line === undefined) throw new Error(`no login-environment fallback warning is known for the reason ${JSON.stringify(reason)}: ${Object.keys(LOGIN_FALLBACK_WARNING).join(", ")}`);
   if (line === null) return { end: () => 0 };
+  // Read first: a socket that cannot be read throws here, before anything is put on process.stderr.
+  const mark = socketMark(tmuxTmpdir);
   const inFront = captureInFront(), watched = inFront && !lifetime;
   if (watched) watch();
-  const expectation = { line, reason }, mark = socketMark(tmuxTmpdir), had = captured.get(line) ?? 0, replaced = replacements;
+  const expectation = { line, reason }, had = captured.get(line) ?? 0, replaced = replacements;
   expecting.push(expectation);
   let seen = null;
   return {
@@ -368,9 +370,10 @@ export function expectLoginFallback({ reason = loginFallbackReason(), tmuxTmpdir
       const held = !inFront || replacements !== replaced;
       if (watched) unwatch();
       if (!expecting.length) captureAway();
+      // Nothing is read for a call that is not asserted: its own error is the one to give.
+      if (!assert) return seen;
       const now = socketMark(tmuxTmpdir);
       const started = now.socket !== null && now.socket !== mark.socket, created = started || now.directory !== mark.directory;
-      if (!assert) return seen;
       if (lifetime && seen > 0 && !created) throw new Error(`the kernel wrote this session environment's expected warning ${seen} time${seen === 1 ? "" : "s"} and nothing was ever created under its TMUX_TMPDIR (${tmuxTmpdir}): it planned to start a tmux server that is not the fixture's.\n${line}(test/helpers/host-fixture.mjs expectLoginFallback)`);
       if (!lifetime && !held && started && seen === 0) throw new Error(`a tmux server appeared at ${oatsSocket(tmuxTmpdir)} during this fixture's call and the kernel never wrote the warning the fixture expects where its login shell cannot run:\n${line}A test that gives the fixture a login shell that answers names it in OATS_TEST_LOGIN_SHELL before the call; one that asserts the line itself holds process.stderr.write around the kernel call (test/helpers/host-fixture.mjs expectLoginFallback).`);
       return seen;

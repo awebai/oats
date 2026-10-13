@@ -27,8 +27,8 @@ function inFixture(t, body, { isolated = false } = {}) {
   const dir = join(base, "tmux");
   mkdirSync(join(base, "home"), { recursive: true });
   writeFileSync(join(base, "driver.mjs"), `import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 const H = await import(${JSON.stringify(HOST)});
 const base = ${JSON.stringify(base)}, dir = ${JSON.stringify(dir)}, line = H.LOGIN_FALLBACK_WARNING["no-shell"], out = {};
 const pristine = process.stderr.write;
@@ -184,6 +184,40 @@ delete process.stderr.write;
   assert.deepEqual([out.passed, out.passedEnd], [[LINE], 1], "what the test passes on is captured");
   assert.deepEqual([out.before, out.beforeEnd], [[LINE], 0]);
   assert.deepEqual([out.duringHeld, out.afterHeld], ["data", "data, the test's"]);
+  assert.equal(stderr, "");
+});
+
+test("a socket that cannot be read: nothing is left on process.stderr, an unread socket is not an absent one, and a call's own error stays the one given", (t) => {
+  const { out, stderr } = inFixture(t, `
+// A TMUX_TMPDIR that is a link to itself: every path under it fails with ELOOP, for any user.
+const unreadable = (name) => { symlinkSync(name, join(base, name)); return join(base, name); };
+
+// When the expectation begins: it throws, and it has put nothing on process.stderr.
+try { H.expectLoginFallback({ reason: "no-shell", tmuxTmpdir: unreadable("first") }); } catch (e) { out.begin = e.code; }
+out.afterBegin = own();
+const a = expect(), b = expect(); out.nested = own();
+process.stderr.write(line);
+out.counted = [b.end(), a.end()]; out.afterNested = own();
+
+// Inside a call that then throws: the end that asserts nothing reads nothing.
+const failure = Object.assign(new Error("the callback's own error"), { code: "EXPECTED_CALLBACK_FAILURE" });
+const c = H.expectLoginFallback({ reason: "no-shell", tmuxTmpdir: join(base, "second") });
+try {
+  try { unreadable("second"); throw failure; } finally { c.end({ assert: false }); }
+} catch (e) { out.given = e === failure ? "the callback's own error" : e.code; }
+out.afterThrown = own();
+
+// Inside a call that returns: the end that asserts says that it could not read, and has released the capture.
+const d = H.expectLoginFallback({ reason: "no-shell", tmuxTmpdir: join(base, "third") });
+unreadable("third");
+try { d.end(); } catch (e) { out.end = e.code; }
+out.afterEnd = own();
+`);
+  const none = "none, the earlier write";
+  assert.deepEqual([out.begin, out.afterBegin], ["ELOOP", none]);
+  assert.deepEqual([out.nested, out.counted, out.afterNested], ["accessor", [1, 1], none], "later calls work as if the failed one had not been");
+  assert.deepEqual([out.given, out.afterThrown], ["the callback's own error", none]);
+  assert.deepEqual([out.end, out.afterEnd], ["ELOOP", none]);
   assert.equal(stderr, "");
 });
 
