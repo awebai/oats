@@ -448,9 +448,10 @@ beside the homes, which names its holder by pid and start time. Any other
 retire of that instance (plain, guarded or `--self`, `--force` included) is
 refused at once with `E_LIFECYCLE_BUSY`, before it stops anything, copies
 anything or runs a hook: a retire hook releases things that exist once, such
-as a messaging identity or a scheduled job. A self-retire's completion is
-refused the same way, after it has waited up to 3 s for the retire that
-scheduled it to release the claim. A self-retire that is scheduled counts from the moment it is scheduled,
+as a messaging identity or a scheduled job. A self-retire's completion
+waits for the retire that scheduled it to release the claim, for up to ten
+minutes (OATS 0.53.0; before, it gave up after 3 s). Beside any other
+holder it is refused the same way, after it has waited up to 3 s. A self-retire that is scheduled counts from the moment it is scheduled,
 while its completion lives. A retire killed while it holds the claim leaves
 the file behind until that name is retired again: the next retire takes the
 claim over, because its holder is verifiably gone, and the file is safe to
@@ -830,10 +831,12 @@ clean. Such an entry refuses the retire, at one of three points:
   again in the same home with `oats session start --home <abs>`. A
   self-retire (`--self`) is completed by its detached completion, which stops
   the session and refuses in the same way; the refusal is recorded beside the
-  home, as described below. After a refused self-retire only `oats retire
-  <instance>` continues: `oats session start` refuses while the self-retire's
-  pending marker is there, and a retire clears it. Of the refusals at this
-  point, only that of `--self --keep-dir`, which stays in the calling
+  home, as described [below](#self-retire-not-completed). No hook has run at
+  this point, so from OATS 0.53.0 the completion removes the self-retire's
+  pending marker: the instance is a stopped instance like any other, and
+  both `oats retire <instance>` and `oats session start` continue. Before
+  0.53.0 the marker stayed, and only a retire continued. Of the refusals at
+  this point, only that of `--self --keep-dir`, which stays in the calling
   process, comes with the session still running;
 - **after the hooks**, when a retire hook left the entry behind: the hooks
   have run, and the home, the work and the recovery written before the hooks
@@ -1044,10 +1047,73 @@ status before its tmux window dies a few seconds later. The completion then
 retires the instance exactly as an external `oats retire` would: quiesce the
 harness, preserve uncommitted work, run retire hooks, repair lineage, remove
 the worktree and the home. Success leaves nothing behind: the home and the
-marker are gone. A failure writes `.oats-retired-<instance>.json` beside the
-retained home (plus the usual quarantine marker when hooks reported incomplete
-cleanup), shows in `oats status` and the Desktop as a failed deferred
-retirement, and is retried and cleared with `oats retire <instance>`.
+marker are gone.
+
+<a id="self-retire-not-completed"></a>A completion that does not complete,
+because the retire was refused or failed part way, answers nobody. It
+leaves what happened on disk (OATS 0.53.0):
+
+- **Its outcome, always.** `.oats-retired-<instance>.json` beside the home
+  holds `ok: false`, the code and the sentence the retire answered, and
+  `retry`, the command that retries it. Its log is
+  `.oats-retired-<instance>.log`. `oats status` and the Desktop show the
+  outcome as a failed deferred retirement until a retire of the instance
+  completes. No other command clears it: to drop it without retiring the
+  instance, remove those two files by hand.
+- **Its pending marker, only when the home is owed a retire:** when a retire
+  hook was started or the removal of the home began. The usual quarantine
+  marker is there too when hooks reported incomplete cleanup. The instance
+  then reads as retiring: `oats instance stop --apply` and `oats session
+  start` answer `E_INSTANCE_RETIRING`, and `oats retire <instance>`
+  continues. In every other case the completion removes its marker.
+  Nothing of the home was changed, so the instance is a stopped or a
+  running instance like any other: a start works, and a wake schedule may
+  start it. A session or a child that the completion stopped on its way
+  does not keep the marker.
+- **One event,** `retire-refused`, which says which of the two it was
+  ([Events](desktop-cli-api.md#retire-refused-event)).
+
+Nothing retries by itself: `oats retire <instance>` does. A completion
+removes only the marker of its own scheduling, so the marker of a later
+`--self` is left for that one's completion.
+
+A completion does not start its retire while its scheduling still holds
+the home's claim (OATS 0.53.0). A scheduling that the host holds up
+therefore delays the retire and does not fail it. The completion waits for
+that one command only, which it knows by the pid and the start time it was
+given when it was started: a holder that has died, one whose liveness
+cannot be read, and any other holder are not waited for here, and the
+retire answers for them as every retire does.
+
+While a completion waits, the instance reads as live in `oats status`
+until the scheduling has written its marker, which is the last thing it
+does before it releases the claim; from then on it reads `RETIRING`, as
+every scheduled self-retire does. Throughout, the scheduling is a retire
+that runs, so a stop plan shows `retiring: true`, and a stop apply
+(`E_INSTANCE_RETIRING`) and another retire (`E_LIFECYCLE_BUSY`) are refused
+with its pid. The wait ends
+when that command returns, fails or dies; ending it by hand lets the
+completion go on and retire the instance, which is what the instance asked
+for. It also ends after ten minutes (`SCHEDULING_WAIT_MS`): the completion
+then goes on to its retire, which is refused by the holder that is still
+there like any retire, and a scheduling that comes back afterwards answers
+`E_SELF_RETIRE_SCHEDULE_FAILED`, having found its completion's outcome.
+
+A `--self` whose completion has already ended when the scheduling writes
+its marker answers `E_SELF_RETIRE_SCHEDULE_FAILED`, and nothing is
+scheduled: the completion left its outcome, or it is gone and left none
+(it was killed, for one). The scheduling removes the marker it wrote, with
+the completion's outcome and log if there are any, and the instance is
+still live.
+
+**A home that a refused completion left stuck under 0.52.0 or earlier**
+still has its marker, and reads as retiring although nothing of it was
+changed. To retire it after all, run `oats retire <instance>`. To keep it,
+no command does this. Check that the completion the marker names is gone
+(its pid is `completionPid` in the marker), then remove by hand
+`.oats-retire-pending-<instance>.json`, `.oats-retired-<instance>.json` and
+`.oats-retired-<instance>.log` beside the home. The kernel does not do this
+for such a home, because it cannot date a refusal that it did not record.
 
 When a retire hook reports incomplete cleanup, the home is quarantined before
 any worktree step: the worktree, its git admin entry and the branch stay
