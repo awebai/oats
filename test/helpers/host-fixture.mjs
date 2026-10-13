@@ -340,8 +340,10 @@ function socketMark(tmuxTmpdir) {
  * - One kernel call (the default; fx.inEnv): a server appeared at the `oats` socket under
  *   `tmuxTmpdir` during the call and the line never came → it fails. Nothing is asserted for a call
  *   in which the test replaced process.stderr.write itself, before it or inside it: the test holds
- *   the line then, and asserts it. A child that plans the start writes its line on its own stderr,
- *   so a test starts such a child outside the call. The reverse is not held: the kernel writes the line where it
+ *   the line then, and asserts it. A child that plans the start writes its line on its own stderr:
+ *   a test starts such a child outside the call, and where the kernel call itself launches through
+ *   a child (a tick that runs `oats spawn`) the test holds stderr around that call and asserts what
+ *   this process wrote. The reverse is not held: the kernel writes the line where it
  *   plans a start, and a stand-in tmux or a refusal after planning leaves no server.
  * - `lifetime` (a session environment, isolateSessionEnvironment, whose only tmux is the real one):
  *   the line was captured and nothing was ever created under `tmuxTmpdir` → it fails: the kernel
@@ -376,7 +378,7 @@ export function expectLoginFallback({ reason = loginFallbackReason(), tmuxTmpdir
       const now = socketMark(tmuxTmpdir);
       const started = now.socket !== null && now.socket !== mark.socket, created = started || now.directory !== mark.directory;
       if (lifetime && seen > 0 && !created) throw new Error(`the kernel wrote this session environment's expected warning ${seen} time${seen === 1 ? "" : "s"} and nothing was ever created under its TMUX_TMPDIR (${tmuxTmpdir}): it planned to start a tmux server that is not the fixture's.\n${line}(test/helpers/host-fixture.mjs expectLoginFallback)`);
-      if (!lifetime && !held && started && seen === 0) throw new Error(`a tmux server appeared at ${oatsSocket(tmuxTmpdir)} during this fixture's call, and the warning the fixture expects where its login shell cannot run never came on this process's stderr:\n${line}One of three things is so. The fixture has a login shell that answers: name it in OATS_TEST_LOGIN_SHELL before the call. The test asserts the line itself: it holds process.stderr.write around the kernel call. Or a child of the call planned the start, and its line is on the child's stderr: start that child outside fx.inEnv (a child given fx.env needs no forced environment) and read its stderr there (test/helpers/host-fixture.mjs expectLoginFallback).`);
+      if (!lifetime && !held && started && seen === 0) throw new Error(`a tmux server appeared at ${oatsSocket(tmuxTmpdir)} during this fixture's call, and the warning the fixture expects where its login shell cannot run never came on this process's stderr:\n${line}One of three things is so. The fixture has a login shell that answers: name it in OATS_TEST_LOGIN_SHELL before the call. The test asserts the line itself: it holds process.stderr.write around the kernel call. Or a child planned the start, and its line is on the child's stderr. A child the test starts: start it outside fx.inEnv (a child given fx.env needs no forced environment) and read its stderr there. A kernel call that itself launches through a child (a tick that runs "oats spawn", a retire that schedules its completion): hold process.stderr.write around that call and assert what this process wrote (test/helpers/host-fixture.mjs expectLoginFallback).`);
       return seen;
     },
   };

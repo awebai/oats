@@ -35,10 +35,17 @@ test("a scheduled spawn that starts the server unscoped inside a service records
   const spec = { kind: "spawn", cron: "* * * * *", tz: "UTC", agent: "dev", harness: "claude", task: "fixture task" };
   answer(fx.cli(["schedule", "add", "nightly", `--spec-json=${JSON.stringify(spec)}`, "--json"]));
   // The fixture's PATH (its inert harnesses), never this test runner's: a host's own claude must not decide the launch.
+  // The tick launches through a child, its `oats spawn`: what that launch says is on the child's
+  // stderr and goes to the run's record, and the tick writes nothing on this process's own stderr.
+  // The test holds stderr around the tick to say so.
   const tick = () => fx.inEnv(() => {
-    const path = process.env.PATH;
+    const path = process.env.PATH, write = process.stderr.write;
+    let written = "", considered;
     process.env.PATH = fx.env.PATH;
-    try { return S.withHostLock(() => S.tickWorkspace(fx.dep, { io, reg: S.readRegistry(), wsList: [fx.dep] })); } finally { process.env.PATH = path; }
+    process.stderr.write = (chunk) => { written += String(chunk); return true; };
+    try { considered = S.withHostLock(() => S.tickWorkspace(fx.dep, { io, reg: S.readRegistry(), wsList: [fx.dep] })); } finally { process.stderr.write = write; process.env.PATH = path; }
+    assert.equal(written, "", "the tick writes nothing on its own stderr: what its launch says is the run's record's");
+    return considered;
   });
 
   const first = await tick();
