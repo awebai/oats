@@ -272,19 +272,29 @@ into an orphaned inode until it restarts.
 
 ## Memory
 
-A capture pass runs in bounded memory, whatever the size of the record.
-Journals are streamed, never parsed whole: the first append to a stream
-validates its journal one line at a time. Comm logs are read in chunks, and
-the aw dedupe looks up only the changed log's own turn ids, in one streamed
-read of the journal. A session's new lines are walked, never collected, and
-appended in 8 MB batches. A lost offset is rebuilt from the journal's tail.
+Content processing uses fixed read chunks, bounded batches and SQLite caches,
+plus memory proportional to the largest processable native record. Journals,
+transcript tails and comm logs are streamed; persistent ID lookup avoids keeping
+history IDs or a changed log's candidate IDs in memory. Per-input offsets live
+in derived database rows rather than a rewritten global JSON map. Initial
+capture, recovery validation and explicit final proofs may read all applicable
+content; ordinary unchanged and suffix-growth passes use only new content and
+bounded checkpoint probes. The streaming and work-count tests pin these distinct
+paths; the small-heap regression remains supplementary evidence.
 
-So the heap a pass needs grows with one changed comm log's entry count, not
-with the record. A host job can keep a small `--max-old-space-size`;
-`packages/record/test/capture-bounded-memory.test.mjs` captures a record four
-times its 64 MB heap. One cost is not on the heap: the new bytes of one
-session are read as one buffer, so resident memory grows with a single
-session's backlog.
+Filesystem discovery is a separate cost: root/path metadata inventories may grow
+with file and profile counts. Roots and each directory retain their existing
+`localeCompare` sorting and depth-first traversal, including stable ties. Public
+list APIs return full arrays. Metadata enumeration, sorting and per-input probes
+still run on unchanged passes; this is not a constant-memory or new-byte-only
+claim for the whole pass. Explicit receipts likewise retain the issue/session
+inventories their public contract returns. Background capture suppresses those
+output inventories without suppressing error counts.
+
+Verified snapshots and prefix comparisons use private temporary disk, which can
+expand with source size; journal and derived-index disk space also grow with
+captured content. Staging is cleaned on success and failure. No new heap, record
+size, elapsed-time or service policy limit is imposed by these algorithms.
 
 ## Known costs, accepted for v1
 

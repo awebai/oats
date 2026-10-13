@@ -16,7 +16,7 @@
 // snapshots, queue operations, mode flips) yields no docs — but its
 // native line is still stored verbatim in the turn, so nothing is lost.
 
-import { lstatSync, opendirSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { nativeDirectory } from "./session-roots.mjs";
@@ -55,18 +55,16 @@ function* parsedLines(bytes) {
   }
 }
 
-// Public list APIs keep their sorted inventories; ordinary capture consumes
-// directory entries incrementally and retains only the fixed-depth walk.
-function* directoryEntries(path, optional = false, sorted = false) {
-  let dir;
-  try {
-    if (sorted) { yield* readdirSync(path, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)); return; }
-    dir = opendirSync(path);
-  } catch (err) { if (optional && err.code === "ENOENT") return; throw err; }
-  try { for (let entry; (entry = dir.readSync()) !== null;) yield entry; }
-  finally { dir.closeSync(); }
+// Preserve the public inventory's per-directory localeCompare order and stable
+// ties for ordinary capture too. Path metadata grows with directory size;
+// source contents are streamed independently of this discovery inventory.
+function* directoryEntries(path, optional = false) {
+  let entries;
+  try { entries = readdirSync(path, { withFileTypes: true }); }
+  catch (err) { if (optional && err.code === "ENOENT") return; throw err; }
+  yield* entries.sort((a, b) => a.name.localeCompare(b.name));
 }
-function* iterateJsonlFiles(root, maxDepth, { strict = false, sorted = false } = {}, allowCaptured = false) {
+function* iterateJsonlFiles(root, maxDepth, { strict = false } = {}, allowCaptured = false) {
   const capturedPi = typeof root === "object" && root !== null ? root.capturedPi : undefined;
   if (typeof root !== "string") {
     if (!allowCaptured || !capturedPi || Object.keys(root).some(k => !["path", "capturedPi"].includes(k))) throw new Error("unsupported protected session inventory");
@@ -74,7 +72,7 @@ function* iterateJsonlFiles(root, maxDepth, { strict = false, sorted = false } =
   }
   function* walk(dir, depth) {
     guardCapturedPath(dir, capturedPi);
-    for (const entry of directoryEntries(dir, !strict && depth === 0, sorted)) {
+    for (const entry of directoryEntries(dir, !strict && depth === 0)) {
       const path = join(dir, entry.name);
       guardCapturedPath(path, capturedPi);
       if (entry.name.endsWith(".jsonl") && !entry.isDirectory()) yield capturedPi ? { path, capturedPi } : path;
@@ -87,7 +85,7 @@ function* iterateJsonlFiles(root, maxDepth, { strict = false, sorted = false } =
   guardCapturedPath(root, capturedPi);
 }
 function listJsonlFiles(root, depth, options, allowCaptured) {
-  return [...iterateJsonlFiles(root, depth, { ...options, sorted: true }, allowCaptured)];
+  return [...iterateJsonlFiles(root, depth, options, allowCaptured)];
 }
 
 // Only absence makes a default root optional. existsSync also hides access
@@ -139,10 +137,10 @@ function ccRoots(home = homedir(), env = process.env, options = {}) {
 // Native Claude child transcripts live at
 // projects/<project>/<sessionId>/subagents/agent-*.jsonl, not beside the
 // parent's file. Enumerate only this layout, never arbitrary project files.
-function* iterateCcFiles(root, { strict = false, sorted = false } = {}) {
+function* iterateCcFiles(root, { strict = false } = {}) {
   const entries = (dir, optional = false) => {
     guardCapturedPath(dir);
-    return directoryEntries(dir, optional, sorted);
+    return directoryEntries(dir, optional);
   };
   const directory = (entry, path) => entry.isDirectory() || (entry.isSymbolicLink() && !entry.name.endsWith(".jsonl") && statSync(path).isDirectory());
   for (const project of entries(root, !strict)) {
@@ -170,7 +168,7 @@ function* iterateCcFiles(root, { strict = false, sorted = false } = {}) {
     }
   }
  }
-function listCcFiles(root, options) { return [...iterateCcFiles(root, { ...options, sorted: true })]; }
+function listCcFiles(root, options) { return [...iterateCcFiles(root, options)]; }
 
 function ccParentId(path) {
   return basename(dirname(path)) === "subagents" ? basename(dirname(dirname(path))) : null;

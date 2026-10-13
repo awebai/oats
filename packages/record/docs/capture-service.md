@@ -109,13 +109,16 @@ Source and journal reads use 64 KiB chunks. Batches commit at 2,000 records or
 can exceed that batch target. SQLite connections use a 2 MiB page-cache target
 and disk-backed temporary tables. Metadata query pages hold at most 128 rows;
 keyset queries support the declared Node 22.5 SQLite API without rescanning
-prior pages. Memory therefore depends on fixed buffers,
+prior pages. Content-processing memory therefore depends on fixed buffers,
 bounded batches/caches and the largest processable individual record, rather
-than total source bytes, all historical IDs or the full input inventory. These
+than total source bytes or all historical IDs. These
 are algorithm settings, **not** a memory/deadline policy or record-size limit.
 
-Ordinary background capture streams directory enumeration and source records;
-metadata enumeration still costs one visit per discovered input. Per-input
+Root and path discovery retain in-memory metadata inventories, sorted by the
+existing per-directory `localeCompare` order with stable ties and depth-first
+traversal. Their memory grows with file/profile counts, separately from streamed
+content processing; metadata enumeration and sorting still run on unchanged
+passes. Public list APIs retain their full sorted-array output. Per-input
 cursors in `index/capture.db` replace whole-map JSON loads and rewrites. The
 background caller requests capture counts without collecting a receipt inventory;
 it does not run the explicit full-index count query merely to print progress.

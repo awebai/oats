@@ -10,7 +10,9 @@
   use `capture --retry-set-aside`, or exclude the source through the existing
   ignore list (which also excludes its later turns). `capture --health` reports
   these inputs. This changes capture algorithms; it introduces no service
-  schedule, record-size policy, or bounded-runner guarantee.
+  schedule, record-size policy, or bounded-runner guarantee. Content buffers and
+  caches are bounded apart from the largest record; sorted path/root metadata
+  and explicit receipt inventories can still grow with input counts.
 
 - Capture health reads current set-aside issues, including direct library calls,
   while command snapshots retain their historical run fields. Reading an existing

@@ -11,24 +11,22 @@ import { captureSessions } from "../lib/capture-cc.mjs";
 
 const line = n => JSON.stringify({ timestamp: "2026-01-01T00:00:00Z", text: String(n).padEnd(200, "x") }) + "\n";
 
-test("many-input no-op capture does not read/rewrite global offset JSON or collect a directory inventory", t => {
+test("many-input no-op capture does not read/rewrite global offset JSON", t => {
   const base = fs.mkdtempSync(join(tmpdir(), "capture-metadata-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const sources = join(base, "projects"), root = join(base, "record"); fs.mkdirSync(sources);
   for (let i = 0; i < 200; i++) fs.writeFileSync(join(sources, `s${i}.jsonl`), line(i));
   const store = new RecordStore(root, { owner: "fixture" });
   assert.equal(captureSessions(store, { owner: "fixture", roots: [sources] }).appended, 200);
-  const read = fs.readFileSync, write = fs.writeFileSync, list = fs.readdirSync;
-  let mapBytes = 0, inventoryEntries = 0;
+  const read = fs.readFileSync, write = fs.writeFileSync;
+  let mapBytes = 0;
   fs.readFileSync = (path, ...args) => { const result = read(path, ...args); if (String(path).endsWith("capture-offsets.json")) mapBytes += Buffer.byteLength(result); return result; };
   fs.writeFileSync = (path, data, ...args) => { if (String(path).endsWith("capture-offsets.json")) mapBytes += Buffer.byteLength(data); return write(path, data, ...args); };
-  fs.readdirSync = (path, ...args) => { const entries = list(path, ...args); if (path === sources) inventoryEntries += entries.length; return entries; };
   syncBuiltinESMExports();
   try {
     assert.equal(captureSessions(store, { owner: "fixture", roots: [sources], collectIssues: false }).appended, 0);
-  } finally { fs.readFileSync = read; fs.writeFileSync = write; fs.readdirSync = list; syncBuiltinESMExports(); }
+  } finally { fs.readFileSync = read; fs.writeFileSync = write; syncBuiltinESMExports(); }
   assert.ok(mapBytes <= 4096, `no-op loaded/rewrote ${mapBytes} global-map bytes for 200 inputs`);
-  assert.equal(inventoryEntries, 0, "background discovery materialized the whole directory");
 });
 
 test("fresh-process unchanged and one-record transcript growth read only bounded source/journal probes", t => {
