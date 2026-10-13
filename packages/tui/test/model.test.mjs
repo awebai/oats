@@ -10,10 +10,11 @@ import {
   filterInstanceTree, heldHome, rosterSections, deploymentState, rowStale, primaryDeployment, runtimeState as sharedState, runtimeCounts,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs,
   identityMemory, remoteRosterState, observeIdentities, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, isMultiDeployment,
+  cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD,
 } from "../lib/client.mjs";
 import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX, clockTime, disclosure, heldOf as modelHeld, model, panelOf, roster, switcher } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
-import { textOf } from "../lib/term/text.mjs";
+import { shown, shownLines, textOf } from "../lib/term/text.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
 import { CLI, DEPLOYMENT, NOW, failed, instanceRow, observed, press, rosterOf, stateOf, took } from "./helpers.mjs";
 
@@ -108,6 +109,26 @@ function cycle(kernelRows, { collect = collector, team } = {}) {
   const entry = observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: OBSERVED_AT }, panelInstances(rows, answers), AT);
   return { rows, input, answers, entry };
 }
+/** What the shared home answers for a row whose session backend OATS no longer has, or null for
+ *  any other row: the kernel's own reason, or the home's stand-in for an older kernel's row. It is
+ *  read from the reason of the row's start act (instance-acts.mjs), so no byte of the stand-in
+ *  is written in this file. */
+const unsupportedText = (row) => {
+  const reason = instanceActs(row).acts.find((act) => act.verb === "start")?.reason ?? null;
+  return reason?.code === "unsupported-session" ? reason.sentence : null;
+};
+/** A sentence of the terminal check's own, as it answers for a probe that failed (tmux-status.mjs). */
+const CHECK_FAILED = "Instance window has multiple panes; check its terminal before starting";
+/** The collector's documented answer for the rows `collector` leaves out (`observeLiveness`
+ *  again). Before anything else, a row whose session backend OATS no longer has is never probed:
+ *  it reads unsupported, with that text and no tmux. And a probed row whose check fails reads
+ *  unknown, with the check's text. `failing`: an instance's name to the text its check gives. */
+const collecting = (failing = {}) => (row) => {
+  const unsupported = unsupportedText(row);
+  if (unsupported !== null) return { running: null, runtimeState: "unsupported", runtimeError: unsupported, tmux: null };
+  if (row.running !== null && Object.hasOwn(failing, row.instance)) return { tmux: row.tmux, running: null, runtimeState: "unreachable", runtimeError: failing[row.instance] };
+  return collector(row);
+};
 
 // --- The roster is the Desktop's --------------------------------------------------------
 
@@ -241,13 +262,13 @@ test("a row the kernel answered running null and unreachable keeps the kernel's 
   assert.deepEqual([acts.blocked, acts.limited], [null, null]);
   const detail = detailOf(state, "lost");
   assert.equal(fact(detail, "state").value, "unreachable");
-  assert.deepEqual(after(detail, "state"), { label: "", value: `"${kernel.runtimeError}"`, form: "wrap" }, "the kernel's text on the next line, as a quote");
+  assert.deepEqual(after(detail, "state"), { label: "", value: `OATS says: ${kernel.runtimeError}`, form: "wrap" }, "the kernel's text on the next line, after the words that say the kernel gave it");
   assert.equal(fact(detail, "held"), null, "nothing of the TUI's own is said about it");
   assert.deepEqual(view(state).counts.map((count) => [count.n, count.word]), Object.entries(runtimeCounts(sharedPanel(state).instances)).filter(([, n]) => n > 0).map(([word, n]) => [n, word]));
   assert.equal(runtimeCounts(sharedPanel(state).instances).unknown, 1);
 });
 
-test("when the collector fails as a whole every row reads unknown, with the shared sentence in its detail", () => {
+test("when the collector fails as a whole every row reads unknown, with the shared sentence in its detail after the words that say the terminal check gave it", () => {
   const rows = [instanceRow("dev", "fine"), instanceRow("dev", "idle", STOPPED), instanceRow("dev", "lost", { running: null, runtimeState: "unreachable", runtimeError: "the kernel's own reason" })];
   const { answers, entry } = cycle(rows, { collect: null });
   const sentence = answers[0].runtimeError;
@@ -259,7 +280,8 @@ test("when the collector fails as a whole every row reads unknown, with the shar
     assert.equal(drawn.mark, "unknown", name);
     assert.equal(drawn.word, panelRow(state, name).row.runtimeState, name);
     assert.equal(fact(detail, "state").value, panelRow(state, name).row.runtimeState, name);
-    assert.deepEqual(after(detail, "state"), { label: "", value: `"${sentence}"`, form: "wrap" }, name);
+    // Also for the row the kernel had answered with a reason of its own: the collector's failure is what is known of it now.
+    assert.deepEqual(after(detail, "state"), { label: "", value: `oats tui's terminal check says: ${sentence}`, form: "wrap" }, name);
     assert.deepEqual(instanceActs(panelRow(state, name).row).acts.map((act) => act.verb), ["inspect", "stop", "retire"], name);
   }
   assert.deepEqual(view(state).counts, [{ n: 3, word: "unknown", shared: true }]);
@@ -388,8 +410,13 @@ test("a row's mark is the shared word for its state, and its word is its harness
   for (const [name, word] of [["runs", "running"], ["idle", "stopped"], ["shelly", "shell"], ["herdr", "unsupported"], ["lost", "unreachable"], ["old-idle", "stopped"], ["old-lost", "unknown"]]) {
     assert.equal(fact(detailOf(state, name), "state").value, word, name);
   }
-  assert.deepEqual(after(detailOf(state, "herdr"), "state"), { label: "", value: `"${panelRow(state, "herdr").row.runtimeError}"`, form: "wrap" });
-  assert.equal(after(detailOf(state, "idle"), "state").label, "harness", "no reason, no quote line");
+  // The reason under the state, read from the row as a read makes it (the collector's answer taken
+  // by the shared functions, which say whose text it is): `observed` above writes its answers
+  // itself, and a text of such an answer has no speaker.
+  const read = stateOf(cycle([rows[3]], { collect: collecting() }).entry);
+  assert.equal(panelRow(read, "herdr").row.runtimeError, rows[3].runtimeError);
+  assert.deepEqual(after(detailOf(read, "herdr"), "state"), { label: "", value: `OATS says: ${rows[3].runtimeError}`, form: "wrap" });
+  assert.equal(after(detailOf(state, "idle"), "state").label, "harness", "no reason, no line under the state");
 });
 
 const HELD = [
@@ -609,15 +636,18 @@ test("the detail's facts stand in the order of the spec's table: soul, state, it
     instanceRow("dev", "mid", { parentInstance: "lead", runtimeError: "the last probe was slow", rollbackIncomplete: true, waitingOnYou: claimOf("question", "Go on?") }),
     instanceRow("dev", "kid", { parentInstance: "mid", waitingOnYou: claimOf("permission") }),
   ];
-  const state = on(folded(stateOf(observed(rows)), "mid"), "mid");
+  // Read as a cycle reads it: the row is probed, the check has nothing to say of it, and the
+  // reason the kernel's row carried stays the kernel's.
+  const read = stateOf(cycle(rows).entry), state = on(folded(read, "mid"), "mid");
   const { row } = panelRow(state, "mid"), detail = view(state).detail;
   assert.equal(detail.title, "mid");
   assert.deepEqual(labels(detail), ["soul", "state", "", "held", "needs", "", "below", "harness", "work", "team", "parent", "started", "home"]);
   assert.deepEqual(fact(detail, "soul"), { label: "soul", value: "dev", form: "line" });
-  assert.deepEqual(after(detail, "state"), { label: "", value: `"${row.runtimeError}"`, form: "wrap" });
+  assert.equal(row.runtimeError, "the last probe was slow");
+  assert.deepEqual(after(detail, "state"), { label: "", value: `OATS says: ${row.runtimeError}`, form: "wrap" });
   assert.equal(fact(detail, "held").value, instanceActs(row).limited.sentence);
   assert.equal(after(detail, "needs").value, `the agent: "${waitingClaim(row).message}"`);
-  assert.equal(fact(detail, "below").value, waitingBelowText([panelRow(stateOf(observed(rows)), "kid").row]));
+  assert.equal(fact(detail, "below").value, waitingBelowText([panelRow(read, "kid").row]));
   assert.deepEqual(fact(detail, "harness"), { label: "harness", value: `${row.harness}, ${row.model} (${row.modelFrom})`, form: "line" });
   assert.deepEqual(fact(detail, "work"), { label: "work", value: `${row.work}, ${row.branch}`, form: "line" });
   assert.deepEqual(fact(detail, "team"), { label: "team", value: "eng", form: "line" });
@@ -1181,13 +1211,16 @@ test("the detail names the machine only in a view of two or more deployments, an
   assert.deepEqual(labels(detailOf(there, "garnet-a")).slice(0, 2), ["soul", "state"]);
 });
 
-test("a remote row that cannot be addressed: when its server was not reached its reason stands once, as the quote under its state, with no held line; on a reached machine the held line carries the shared sentence", () => {
+test("a remote row that cannot be addressed: when its server was not reached its reason stands once, under its state after the words that say the read of other machines gave it, with no held line; on a reached machine the held line carries the shared sentence", () => {
   const { answered, timedOut, thrown } = walk();
+  // Neither failure was printed by a kernel: a read that threw, and an envelope made in walk() as
+  // the read makes its own for a timeout (it is not parsed from a CLI's answer, so its error
+  // carries no kernel's mark). Both are the read's to say.
   for (const state of [timedOut, thrown]) {
     const { row } = panelRow(state, "garnet-b"), acts = instanceActs(row), detail = detailOf(state, "garnet-b");
     assert.equal(row.addressable, false);
     assert.equal(acts.blocked.sentence, row.runtimeError, "the shared reason is the very text the row carries");
-    assert.deepEqual(after(detail, "state"), { label: "", value: `"${row.runtimeError}"`, form: "wrap" });
+    assert.deepEqual(after(detail, "state"), { label: "", value: `oats tui's read of other machines says: ${row.runtimeError}`, form: "wrap" });
     assert.equal(fact(detail, "held"), null);
     assert.equal(detail.facts.filter((f) => f.value.includes(row.runtimeError)).length, 1, "once");
     // The row beside it can be addressed: the shared acts hold nothing against it, and its text stands once too.
@@ -1200,7 +1233,7 @@ test("a remote row that cannot be addressed: when its server was not reached its
   assert.equal(row.serverUnreached, false);
   assert.equal(acts.blocked.code, "unaddressable");
   assert.deepEqual(fact(detail, "held"), { label: "held", value: acts.blocked.sentence, form: "wrap" });
-  assert.equal(after(detail, "state").label, "held", "nothing was reported about its state: no quote");
+  assert.equal(after(detail, "state").label, "held", "nothing was reported about its state: no text under it");
   assert.equal(acts.blocked.sentence.includes("does not report whether"), false, "the kernel said it cannot be addressed: the sentence is not the one for a kernel that says nothing");
   assert.equal(fact(detailOf(answered, "garnet-a"), "held"), null);
 });
@@ -1551,4 +1584,512 @@ test("a row keeps its group while a filter or a collapse hides the rest of its c
   assert.deepEqual(names(closed), ["lead", null, "lead-alone"]);
   // With nothing before it, the group of single instances needs no empty item.
   assert.deepEqual(names(press(state, ["/", "a", "l", "o", "n", "e", "enter"]).state), ["lead-alone"]);
+});
+
+// --- A row's own text, and who said it (awebai/oats#855, after #982) ---------------------
+//
+// A row's `runtimeError` is text the TUI did not write. The shared home says who made it: by the
+// row's mark (`runtimeErrorOrigin`), or by a reason of the row that names no origin and is that
+// very text. The detail draws the text under the state in one of three forms. Every row here is
+// made by the functions the reader calls: a cycle for a row of this machine; for a row of another
+// machine the roster read over a fake exec, then the shared rule and the store's event. A row
+// changed by hand after that is in a test whose title says so. A speaker's words are written out
+// in each expected value: the TUI holds none of them, and this file is where they are pinned.
+
+/** The facts under a detail's `state`: the ones with no label that follow it. */
+function underState(detail) {
+  const rest = detail.facts.slice(detail.facts.findIndex((f) => f.label === "state") + 1), end = rest.findIndex((f) => f.label !== "");
+  return rest.slice(0, end < 0 ? rest.length : end);
+}
+/** What stands under the state of an instance of a state, by name. */
+const saidUnder = (state, name) => underState(detailOf(state, name));
+/** A row's text as the one fact it is. */
+const textFact = (value) => [{ label: "", value, form: "wrap" }];
+/** A wrapped fact as the detail's view draws it (views/detail.mjs asks shownLines for its value),
+ *  in a pane wide enough for one row: the strings that reach the screen. */
+const drawnFact = (f) => shownLines(f.value, 200, 6).map(textOf);
+/** How many facts of a detail hold a text. */
+const times = (detail, text) => detail.facts.filter((f) => f.value.includes(text)).length;
+/** A state whose rows were changed by hand after the shared functions made them. For the edge
+ *  cases only: no reader makes such a row, and each test that uses this says so in its title. */
+const handMade = (entry, change) => stateOf({ ...entry, instances: entry.instances.map(change) });
+/** A row without the mark of who made its text. */
+const unmarked = ({ runtimeErrorOrigin: _mark, ...row }) => row;
+
+const KERNEL_TEXT = "tmux: the socket /run/user/1000/oats/agents.sock could not be read";
+/** A Herdr row as a kernel of 0.31 or later answers it: unsupported, with a reason of its own. */
+const HERDR_NOW = Object.freeze({ running: null, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: this backend is gone", tmux: null });
+/** A Herdr row of an older kernel: a session target, and a text of its Herdr probe. */
+const HERDR_OLD = Object.freeze({ running: null, runtimeState: "unreachable", runtimeError: "herdr: the session server did not answer", sessionTarget: { backend: "herdr" }, tmux: null });
+/** Two errors of a kernel's own: for one machine it did not reach, and for a roster read it refused whole. */
+const SSH_FAILED = Object.freeze({ code: "E_SSH", message: "ssh: connect to host garnet.example port 22: No route to host" });
+const BUSY = Object.freeze({ code: "E_SERVERS_BUSY", message: "the server registry is locked (another oats command holds it); nothing was changed" });
+
+const GARNET_ROOT = "/home/dev/Agents/garnet";
+/** A route saved on this machine, as the kernel lists it for a machine it did not reach, or that
+ *  no longer lists the instance (lib/servers.mjs `rosterGroups`): a row with no state of its own. */
+const savedRoute = (name, extra = {}) => remoteRow(GARNET_ROOT, name, { running: null, runtimeState: null, savedRoute: true, missingRemotely: false, ...extra });
+/** garnet as the kernel lists it when it did not reach it: its error on the probe (none when
+ *  `error` is undefined), no identity, and the routes saved here as its rows. */
+const notReached = (error) => machine("garnet", { probe: { ok: false, ...(error === undefined ? {} : { error }) }, workspace: null, instances: [savedRoute("garnet-a"), savedRoute("garnet-b")] });
+/** What the installed CLI prints for a roster read: an answer that lists these groups, or its error. */
+const printedRoster = (...groups) => ({ schemaVersion: 1, ok: true, result: { groups } });
+const printedError = (error) => ({ schemaVersion: 1, ok: false, error });
+/** An exec (execFile's signature) of a CLI that prints this and exits 0. */
+const printing = (document) => (bin, argv, options, callback) => { callback(null, typeof document === "string" ? document : JSON.stringify(document), ""); };
+/** One roster read as lib/read.mjs `readRoster` makes it: the shared cliRemoteRoster over an exec,
+ *  and its answer, or the message of what it threw, as the outcome `takeRoster` is given. `heard`
+ *  above is the rest of that path: the shared rule, the memory of identities, the store's event. */
+const rosterRead = (exec) => cliRemoteRoster(READS.bin, { exec }).then((envelope) => ({ envelope }), (error) => ({ thrown: String(error?.message ?? error) }));
+/** This machine's deployment, and garnet after an answer that lists these rows. */
+const withGarnet = async (...instances) => heard(stateOf(reporting(NEAR), { cli: READS }), await rosterRead(printing(printedRoster(machine("garnet", instances.length ? { instances } : {})))), tick(0));
+
+// --- What a row carries -----------------------------------------------------------------
+
+test("what a row of this machine carries is drawn under its state after the words of who made it: the kernel's text after \"OATS says:\" whatever key the kernel or the collector sent beside it, the terminal check's after the check's words, a Herdr row's reason of the kernel's own as the kernel's, the stand-in for an older kernel's Herdr row as the sentence it is, and a row with no text has no such line", () => {
+  const kernelRows = [
+    // The kernel answered unknown with its reason, and SENT a speaker's key that is not its own.
+    instanceRow("dev", "lost", { running: null, runtimeState: "unreachable", runtimeError: KERNEL_TEXT, runtimeErrorOrigin: "terminal-probe" }),
+    // Probed, and the check fails.
+    instanceRow("dev", "probed"),
+    instanceRow("dev", "herdr-now", HERDR_NOW),
+    instanceRow("dev", "herdr-old", HERDR_OLD),
+    // Probed, and the check has nothing to say: the text the kernel's row carried stays the kernel's.
+    instanceRow("dev", "told", { ...STOPPED, runtimeError: "the session was last seen an hour ago" }),
+    instanceRow("dev", "fine"),
+    // A key with no text beside it.
+    instanceRow("dev", "keyed", { ...STOPPED, runtimeErrorOrigin: "kernel" }),
+  ];
+  const standIn = unsupportedText(kernelRows[3]);
+  assert.equal(typeof standIn === "string" && standIn !== "" && standIn !== HERDR_OLD.runtimeError, true, "the stand-in is the shared home's sentence, not the text the older kernel sent");
+  // Each row: the mark the shared home set, and the fact under the state (null: none).
+  const expected = {
+    lost: ["kernel", `OATS says: ${KERNEL_TEXT}`],
+    probed: ["terminal-probe", `oats tui's terminal check says: ${CHECK_FAILED}`],
+    "herdr-now": ["kernel", `OATS says: ${HERDR_NOW.runtimeError}`],
+    "herdr-old": [undefined, standIn],
+    told: ["kernel", "OATS says: the session was last seen an hour ago"],
+    fine: [undefined, null],
+    keyed: [undefined, null],
+  };
+  const honest = collecting({ probed: CHECK_FAILED });
+  // The collector's answer is what a child printed: one that names a speaker on every answer is
+  // believed no more than the kernel is.
+  for (const [what, collect] of [["the collector as it is", honest], ["a collector that names the kernel on every answer", (row) => ({ ...honest(row), runtimeErrorOrigin: "kernel" })]]) {
+    const { rows, input, entry } = cycle(kernelRows, { collect });
+    assert.equal(rows.find((row) => row.instance === "lost").runtimeErrorOrigin, "terminal-probe", "the key the kernel sent is on the row the shared functions are given");
+    assert.equal(input.some((row) => Object.hasOwn(row, "runtimeErrorOrigin")), false, "and it is not sent on to the collector");
+    const state = stateOf(entry);
+    for (const [name, [mark, value]] of Object.entries(expected)) {
+      const { row } = panelRow(state, name), detail = detailOf(state, name);
+      assert.equal(row.runtimeErrorOrigin, mark, `${what}, ${name}: the mark is the shared home's`);
+      assert.deepEqual(underState(detail), value === null ? [] : textFact(value), `${what}, ${name}`);
+      assert.equal(fact(detail, "held"), null, `${what}, ${name}`);
+    }
+    for (const name of ["fine", "keyed"]) assert.equal(after(detailOf(state, name), "state").label, "harness", `${what}, ${name}: the next fact is the next label`);
+  }
+});
+
+test("what a row of another machine carries is drawn the same way: the text of a reached machine's row after \"OATS says:\" whatever key its host sent, the error the installed CLI printed for a machine it did not reach after \"OATS says:\", and the failure of a roster read that itself failed after the words of the read of other machines", async () => {
+  const hostText = "tmux: the server on the host did not answer";
+  const answered = await withGarnet(
+    remoteRow(GARNET_ROOT, "garnet-a"),
+    remoteRow(GARNET_ROOT, "garnet-told", { running: null, runtimeState: "unreachable", runtimeError: hostText, runtimeErrorOrigin: "roster-read" }),
+    remoteRow(GARNET_ROOT, "garnet-herdr", { running: null, runtimeState: "unsupported", runtimeError: HERDR_NOW.runtimeError }),
+  );
+  const carried = (state, name) => { const { row } = panelRow(state, name); return [row.serverUnreached, row.runtimeErrorOrigin]; };
+  // Reached: the host's kernel wrote the row's text, and this machine's kernel relayed it.
+  assert.deepEqual(carried(answered, "garnet-told"), [false, "kernel"]);
+  assert.deepEqual(saidUnder(answered, "garnet-told"), textFact(`OATS says: ${hostText}`));
+  assert.deepEqual(saidUnder(answered, "garnet-herdr"), textFact(`OATS says: ${HERDR_NOW.runtimeError}`));
+  assert.deepEqual([carried(answered, "garnet-a"), saidUnder(answered, "garnet-a")], [[false, undefined], []], "a row with no text has no line");
+  // Not reached, and the kernel said why in its answer: the error on the machine's probe is the kernel's.
+  const down = heard(answered, await rosterRead(printing(printedRoster(notReached(SSH_FAILED)))), tick(1));
+  for (const name of ["garnet-a", "garnet-b"]) {
+    assert.deepEqual(carried(down, name), [true, "kernel"], name);
+    assert.deepEqual(saidUnder(down, name), textFact(`OATS says: ${SSH_FAILED.message}`), name);
+  }
+  // Not reached, because the read itself failed: no kernel answered, and the sentence is the read's own.
+  const lost = heard(answered, await rosterRead(() => { throw new Error("spawn oats ENOENT"); }), tick(1));
+  for (const name of ["garnet-a", "garnet-told"]) {
+    const { row } = panelRow(lost, name);
+    assert.equal(row.runtimeError.endsWith("spawn oats ENOENT"), true, "the shared sentence holds what was thrown");
+    assert.deepEqual(carried(lost, name), [true, "roster-read"], name);
+    assert.deepEqual(saidUnder(lost, name), textFact(`oats tui's read of other machines says: ${row.runtimeError}`), name);
+  }
+  assert.equal(saidUnder(lost, "garnet-told")[0].value.includes(hostText), false, "the text of its last report is not what is known of it now");
+});
+
+test("a machine that was not reached and whose error has no message reads, after the words of the read of other machines, the shared sentence for it: also when the installed CLI printed that error, on the machine's probe or for the whole read", async () => {
+  const answered = await withGarnet();
+  const cases = {
+    "the kernel's error for the machine, with a code and no message": printedRoster(notReached({ code: "E_SSH" })),
+    "no error at all on the machine's probe": printedRoster(notReached(undefined)),
+    "the kernel's error for the whole read, with a code and no message": printedError({ code: BUSY.code }),
+  };
+  for (const [what, printed] of Object.entries(cases)) {
+    const state = heard(answered, await rosterRead(printing(printed)), tick(1));
+    for (const name of ["garnet-a", "garnet-b"]) {
+      // The sentence is the shared home's for a machine with no message, taken from the row.
+      const { row } = panelRow(state, name);
+      assert.equal(typeof row.runtimeError === "string" && row.runtimeError !== "", true, `${what}, ${name}`);
+      assert.deepEqual([row.serverUnreached, row.runtimeErrorOrigin], [true, "roster-read"], `${what}, ${name}`);
+      assert.deepEqual(saidUnder(state, name), textFact(`oats tui's read of other machines says: ${row.runtimeError}`), `${what}, ${name}`);
+    }
+  }
+});
+
+test("the alarm for a copied error object: the row of a machine that was not reached, whose error the installed CLI printed, reads \"OATS says:\" from the roster read through the store to the detail, and at every later paint; the same read when it failed by itself reads as the read of other machines, and so does a copy of the kernel's error made by hand here", async () => {
+  const answered = await withGarnet();
+  const rows = (state, value, what) => { for (const name of ["garnet-a", "garnet-b"]) assert.deepEqual(saidUnder(state, name), textFact(value), `${what}, ${name}`); };
+  // The kernel refused the whole read, in an envelope it printed.
+  const calls = [];
+  const outcome = await rosterRead((bin, argv, options, callback) => { calls.push([bin, argv]); callback(null, JSON.stringify(printedError(BUSY)), ""); });
+  assert.deepEqual(calls, [[READS.bin, ["server", "roster", "--json"]]], "the read is the shared one, over the exec it is given");
+  assert.deepEqual(outcome, { envelope: printedError(BUSY) }, "its answer is what was printed, field for field");
+  const refused = heard(answered, outcome, tick(1));
+  // THE KERNEL'S MARK IS ON THE `probe.error` OBJECT (kernel-made.mjs): a property no answer can
+  // carry and no copy keeps, set where the CLI's answer is parsed and read again each time a
+  // panel is made. So this test fails if a later change copies that object anywhere between
+  // cliRemoteRoster and the model: a spread of the error, a JSON round trip, a structured clone
+  // of the groups or of the state that holds them. A lost mark reads as the client's own read,
+  // which is the safe side, and wrong. (A shallow copy of a group that still points at the same
+  // error is harmless.)
+  for (const group of refused.remote.remoteGroups) assert.equal(group.probe.error, outcome.envelope.error, "the store holds the very object the read answered");
+  rows(refused, `OATS says: ${BUSY.message}`, "after the read");
+  rows(press(refused, ["j", "k", "tab"]).state, `OATS says: ${BUSY.message}`, "after keys");
+  rows(took(refused, reporting(NEAR), 2), `OATS says: ${BUSY.message}`, "after a later read of this machine's deployment");
+  rows(reduce(refused, { collecting: true }).state, `OATS says: ${BUSY.message}`, "while the next roster read runs");
+  // The same for the error of one machine inside an answer the kernel printed.
+  const down = heard(answered, await rosterRead(printing(printedRoster(notReached(SSH_FAILED)))), tick(1));
+  rows(down, `OATS says: ${SSH_FAILED.message}`, "the machine's own probe");
+  rows(press(down, ["j", "k", "tab"]).state, `OATS says: ${SSH_FAILED.message}`, "the machine's own probe, after keys");
+  // The contrast: the read failed by itself, and wrote its own envelope or threw. No kernel said these words.
+  // The sentence of each is the shared read's own, taken from the row and not written here.
+  const itself = {
+    "the CLI did not answer in time": (bin, argv, options, callback) => { callback(Object.assign(new Error("killed"), { killed: true }), "", ""); },
+    "the CLI printed no envelope": printing("not an envelope"),
+    "the read threw": () => { throw new Error("spawn oats ENOENT"); },
+  };
+  for (const [what, exec] of Object.entries(itself)) {
+    const state = heard(answered, await rosterRead(exec), tick(1)), sentence = panelRow(state, "garnet-a").row.runtimeError;
+    assert.equal(typeof sentence === "string" && sentence !== "" && sentence !== BUSY.message, true, what);
+    rows(state, `oats tui's read of other machines says: ${sentence}`, what);
+  }
+  // What the alarm rings for, made by hand once so that it is known to ring: the refused read's
+  // state with its groups cloned. The kernel's words are then under the client's name.
+  const copied = reduce(refused, { roster: { remote: structuredClone(refused.remote), memory: refused.memory, notes: refused.notes, at: tick(1) } }).state;
+  assert.deepEqual(copied.remote.remoteGroups, refused.remote.remoteGroups, "field for field the same groups");
+  rows(copied, `oats tui's read of other machines says: ${BUSY.message}`, "a copy");
+});
+
+// --- The three forms --------------------------------------------------------------------
+
+test("the three forms of a row's text: after the words of a speaker; as the sentence it is, once, when a reason of the row that names no origin is that very text (the stand-in for an older kernel's Herdr row, on this machine and on another, also where that sentence blocks the row); and in quotation marks, after no words, when nobody vouches for it (a row made by hand: by the contract no read gives one)", async () => {
+  const kernelRows = [
+    instanceRow("dev", "lost", { running: null, runtimeState: "unreachable", runtimeError: KERNEL_TEXT }),
+    instanceRow("dev", "herdr-old", HERDR_OLD),
+    instanceRow("dev", "odd"),
+  ];
+  const { entry } = cycle(kernelRows, { collect: collecting({ odd: CHECK_FAILED }) }), state = stateOf(entry);
+
+  // A speaker: the row's mark names one, and the shared home's words for it go first.
+  assert.equal(panelRow(state, "lost").row.runtimeErrorOrigin, "kernel");
+  assert.deepEqual(saidUnder(state, "lost"), textFact(`OATS says: ${KERNEL_TEXT}`));
+  assert.deepEqual(drawnFact(saidUnder(state, "lost")[0]), [`OATS says: ${KERNEL_TEXT}`], "and the view draws it whole");
+
+  // The shared home's own sentence: no mark, and a reason with no origin that is this very text.
+  const old = panelRow(state, "herdr-old").row, standIn = old.runtimeError, start = instanceActs(old).acts.find((act) => act.verb === "start");
+  assert.equal(standIn, unsupportedText(kernelRows[1]), "the row's text is what the shared home answers for an older kernel's Herdr row");
+  assert.notEqual(standIn, HERDR_OLD.runtimeError);
+  assert.equal(Object.hasOwn(old, "runtimeErrorOrigin"), false);
+  assert.deepEqual(start.reason, { code: "unsupported-session", sentence: standIn }, "the reason of its start act vouches for it: the same text, and no origin");
+  assert.deepEqual(saidUnder(state, "herdr-old"), textFact(standIn), "as it is: no words before it and no quotation marks");
+  assert.deepEqual([times(detailOf(state, "herdr-old"), standIn), fact(detailOf(state, "herdr-old"), "held")], [1, null], "once");
+  // The same sentence on another machine's rows, one of them blocked by it.
+  const far = await withGarnet(
+    remoteRow(GARNET_ROOT, "garnet-old", { backend: "herdr", running: null, runtimeError: "herdr: the session server did not answer" }),
+    remoteRow(GARNET_ROOT, "garnet-old-held", { backend: "herdr", addressable: false, running: null, runtimeError: "herdr: the session server did not answer" }),
+  );
+  for (const name of ["garnet-old", "garnet-old-held"]) {
+    const { row } = panelRow(far, name), detail = detailOf(far, name);
+    assert.deepEqual([row.runtimeError === standIn, Object.hasOwn(row, "runtimeErrorOrigin")], [true, false], name);
+    assert.deepEqual(underState(detail), textFact(standIn), name);
+    assert.deepEqual([times(detail, standIn), fact(detail, "held")], [1, null], `${name}: once, and no held line repeats it`);
+  }
+  assert.deepEqual(instanceActs(panelRow(far, "garnet-old-held").row).blocked, { code: "unaddressable", key: "herdr", sentence: standIn }, "the row is blocked by that very sentence, which names no origin");
+  assert.equal(instanceActs(panelRow(far, "garnet-old").row).blocked, null);
+
+  // Nobody vouches: no mark, and no reason at all. Made by hand: the read gives this row the
+  // terminal check's mark, which is taken off here. By the contract the stand-in is the only
+  // text of a row with no mark, so no read is asked for another: what is pinned is that a text
+  // whose mark did not arrive claims nobody.
+  assert.deepEqual(saidUnder(state, "odd"), textFact(`oats tui's terminal check says: ${CHECK_FAILED}`), "as the read made it");
+  const bare = handMade(entry, (row) => (row.instance === "odd" ? unmarked(row) : row)), odd = panelRow(bare, "odd").row;
+  assert.deepEqual([odd.runtimeError, Object.hasOwn(odd, "runtimeErrorOrigin")], [CHECK_FAILED, false]);
+  assert.deepEqual([instanceActs(odd).blocked, instanceActs(odd).limited, instanceActs(odd).acts.map((act) => act.reason)], [null, null, [null, null, null]]);
+  assert.deepEqual(saidUnder(bare, "odd"), textFact(`"${CHECK_FAILED}"`));
+  assert.deepEqual(drawnFact(saidUnder(bare, "odd")[0]), [`"${CHECK_FAILED}"`]);
+  assert.equal(fact(detailOf(bare, "odd"), "held"), null);
+});
+
+test("a text the filter withholds goes to the view as it came, with no words before it and no quotation marks around it, and the view draws the withheld word alone: for each of the three speakers and for a text nobody vouches for, also where the text blocks its row", async () => {
+  const SECRET = "tmux: token: ghp_abcdefghijklmnopqrstuvwxyz0123456789 was refused";
+  const CONTROL = "tmux: \x1b[2J\x1b[Hno server";
+  const URL_WITH_PASSWORD = "fetch https://user:hunter2@example.com/roster failed";
+  const local = stateOf(cycle([
+    instanceRow("dev", "lost", { running: null, runtimeState: "unreachable", runtimeError: SECRET }),
+    instanceRow("dev", "probed"),
+    instanceRow("dev", "odd", { backend: "herdr" }),
+  ], { collect: collecting({ probed: CONTROL, odd: URL_WITH_PASSWORD }) }).entry);
+  const answered = await withGarnet();
+  const refused = heard(answered, await rosterRead(printing(printedError({ code: BUSY.code, message: CONTROL }))), tick(1));
+  const threw = heard(answered, await rosterRead(() => { throw new Error(URL_WITH_PASSWORD); }), tick(1));
+  // Each: the state, the instance, its mark, the text, and whether the text blocks the row.
+  const cases = [
+    [local, "lost", "kernel", SECRET, false], [local, "probed", "terminal-probe", CONTROL, false], [local, "odd", undefined, URL_WITH_PASSWORD, false],
+    [refused, "garnet-a", "kernel", CONTROL, false], [refused, "garnet-b", "kernel", CONTROL, true],
+    [threw, "garnet-b", "roster-read", panelRow(threw, "garnet-b").row.runtimeError, true],
+  ];
+  assert.equal(panelRow(threw, "garnet-b").row.runtimeError.endsWith(URL_WITH_PASSWORD), true);
+  for (const [state, name, mark, text, blocks] of cases) {
+    const { row } = panelRow(state, name), detail = detailOf(state, name), [f] = underState(detail), where = `${name}, ${mark}`;
+    assert.deepEqual([row.runtimeError, row.runtimeErrorOrigin], [text, mark], where);
+    assert.equal(displayLine(text), DETAIL_WITHHELD, `${where}: the shared filter withholds it`);
+    assert.deepEqual(underState(detail), textFact(text), `${where}: the model's fact is the text as it came`);
+    assert.deepEqual(drawnFact(f), ["[withheld]"], `${where}: the view draws the TUI's withheld word, alone`);
+    assert.equal(textOf(shown(f.value)), "[withheld]", where);
+    assert.equal(detail.facts.some((other) => other.value.includes("says:") || other.value.startsWith("\"")), false, `${where}: no lead introduces a withheld text or stands alone, and nothing is quoted`);
+    assert.equal(instanceActs(row).blocked?.sentence === text, blocks, where);
+    assert.deepEqual([fact(detail, "held"), times(detail, text)], [null, 1], `${where}: once, and no held line holds it again`);
+  }
+});
+
+test("a text with nothing to show draws no line under the state, beside a speaker's mark or beside none: not a string, empty, or only spaces and line ends, on this machine and on another; and a row blocked by such a text has no held line either", async () => {
+  const BLANK = " \n \n  ";
+  const kernelRows = [
+    instanceRow("dev", "blank", { running: null, runtimeState: "unreachable", runtimeError: BLANK }),
+    instanceRow("dev", "empty", { running: null, runtimeState: "unreachable", runtimeError: "" }),
+    // Probed rows whose check has nothing to say: what the kernel sent stays on the row as it came.
+    instanceRow("dev", "number", { ...STOPPED, runtimeError: 7 }),
+    instanceRow("dev", "record", { ...STOPPED, runtimeError: { message: "not a text" } }),
+    instanceRow("dev", "list", { ...STOPPED, runtimeError: ["not a text"] }),
+    instanceRow("dev", "none", STOPPED),
+  ];
+  const local = stateOf(cycle(kernelRows).entry);
+  const none = (state, name, text, mark) => {
+    const { row } = panelRow(state, name), detail = detailOf(state, name);
+    assert.deepEqual([row.runtimeError, row.runtimeErrorOrigin], [text, mark], name);
+    assert.equal(displayLine(text), null, `${name}: the shared filter has nothing to show`);
+    assert.deepEqual(underState(detail), [], name);
+    assert.equal(detail.facts.some((f) => f.value.includes("says:") || f.value.startsWith("\"")), false, `${name}: no lead stands alone, and nothing is quoted`);
+    return detail;
+  };
+  // Only a text is given a mark: spaces and line ends are a text, and still nothing to show.
+  for (const [name, mark] of [["blank", "kernel"], ["empty", undefined], ["number", undefined], ["record", undefined], ["list", undefined], ["none", undefined]]) {
+    const detail = none(local, name, kernelRows.find((row) => row.instance === name).runtimeError, mark);
+    assert.equal(after(detail, "state").label, "harness", name);
+  }
+  // Another machine: a reached machine's rows, then every kept row when the kernel's error for the read is such a text.
+  const answered = await withGarnet(
+    remoteRow(GARNET_ROOT, "garnet-a"), remoteRow(GARNET_ROOT, "garnet-b", { addressable: false, ...STOPPED }),
+    remoteRow(GARNET_ROOT, "garnet-blank", { running: null, runtimeState: "unreachable", runtimeError: BLANK }),
+    remoteRow(GARNET_ROOT, "garnet-number", { running: null, runtimeState: "unreachable", runtimeError: 7 }),
+  );
+  none(answered, "garnet-blank", BLANK, "kernel");
+  none(answered, "garnet-number", 7, undefined);
+  const refused = heard(answered, await rosterRead(printing(printedError({ code: BUSY.code, message: BLANK }))), tick(1));
+  for (const name of ["garnet-a", "garnet-b"]) assert.equal(fact(none(refused, name, BLANK, "kernel"), "held"), null, name);
+  // The row that cannot be addressed is blocked by that text, with its speaker: the reason is the
+  // row's text, so no held line is drawn for it, and the text has nothing to show.
+  assert.deepEqual(instanceActs(panelRow(refused, "garnet-b").row).blocked, { code: "unaddressable", key: "unreached", sentence: BLANK, origin: "kernel" });
+  assert.equal(after(detailOf(refused, "garnet-b"), "state").label, "harness", "the state word says what is known");
+});
+
+// --- Nobody vouches ---------------------------------------------------------------------
+
+test("hand-made rows: a text whose mark is absent, or is anything but one of the three speakers (\"unattributed\", another word, a speaker's name not as it is written, a number, an object, a list that reads as a speaker, a string with an escape byte, a lead's own words), stands in quotation marks through the filter, after no words, and the mark is in no fact", () => {
+  const text = "tmux:\tno server\non \u202Ethat socket", line = displayLine(text);
+  assert.equal(line, "tmux: no server on \uFFFDthat socket", "one line, and the override replaced: what the shared filter shows of the text");
+  const { entry } = cycle([instanceRow("dev", "lost", { running: null, runtimeState: "unreachable", runtimeError: text })]);
+  // As the reader makes it the row has a speaker. Every row below is this one with its mark changed by hand.
+  assert.deepEqual(saidUnder(stateOf(entry), "lost"), textFact(`OATS says: ${line}`));
+  const marks = {
+    absent: undefined,
+    "the word of a reason nobody attributed": "unattributed",
+    "another word": "desktop",
+    "a speaker's name in another case": "Kernel",
+    "a speaker's name with a space after it": "kernel ",
+    "a name every object answers to": "toString",
+    "the name of an object's prototype": "__proto__",
+    "the empty string": "",
+    "a number": 4711,
+    null: null,
+    "an object": { kernel: true },
+    "a list that reads as a speaker's name": ["kernel"],
+    "a string with an escape byte": "\x1b[2Jkernel",
+    "a lead's own words": "OATS says:",
+    "the client's own lead": "oats tui's terminal check says:",
+  };
+  for (const [what, mark] of Object.entries(marks)) {
+    const state = handMade(entry, (row) => (what === "absent" ? unmarked(row) : { ...row, runtimeErrorOrigin: mark }));
+    const { row } = panelRow(state, "lost"), detail = detailOf(state, "lost");
+    assert.deepEqual([Object.hasOwn(row, "runtimeErrorOrigin"), row.runtimeErrorOrigin], [what !== "absent", mark], `${what}: the mark reaches the model as it was made`);
+    assert.equal(originLead(mark, TERMS), null, `${what}: the shared home has no words for it`);
+    assert.deepEqual(instanceActs(row).acts.map((act) => act.reason), [null, null, null], `${what}: and no reason of the row vouches for the text`);
+    assert.deepEqual(underState(detail), textFact(`"${line}"`), what);
+    assert.deepEqual(drawnFact(underState(detail)[0]), [`"${line}"`], `${what}: the view draws the same`);
+    assert.equal(detail.facts.some((f) => f.value.includes("says:")), false, `${what}: no lead`);
+    if (what !== "absent" && String(mark) !== "") assert.equal(detail.facts.some((f) => f.value.includes(String(mark))), false, `${what}: the mark is in no fact`);
+    assert.equal(fact(detail, "held"), null, what);
+  }
+});
+
+test("hand-made, the corner of awebai/oats#1026 item 7: a probed row of this machine that names the Herdr backend, with no session target and a state other than unsupported, carries the terminal check's text beside no mark, and its one reason, which names no origin, holds the stand-in and not that text: the text stands in quotation marks and names nobody, and no held line is drawn", () => {
+  const { entry } = cycle([instanceRow("dev", "odd")], { collect: collecting({ odd: CHECK_FAILED }) });
+  // By hand, all of it, so that the test says what the TUI does with such a row whatever the
+  // shared home comes to make of the corner: a probed row whose check failed, as a read makes
+  // it, then given the backend's name and stripped of its mark.
+  const state = handMade(entry, (row) => ({ ...unmarked(row), backend: "herdr" }));
+  const { row } = panelRow(state, "odd"), acts = instanceActs(row), start = acts.acts.find((act) => act.verb === "start"), detail = detailOf(state, "odd");
+  assert.deepEqual([row.backend, row.sessionTarget, row.runtimeState, row.runtimeError, Object.hasOwn(row, "runtimeErrorOrigin")], ["herdr", undefined, "unreachable", CHECK_FAILED, false]);
+  assert.deepEqual(start.reason, { code: "unsupported-session", sentence: unsupportedText(instanceRow("dev", "any", HERDR_OLD)) }, "its reason is the stand-in, and names no origin");
+  assert.notEqual(start.reason.sentence, row.runtimeError, "which is not the row's text: nothing vouches for that");
+  assert.deepEqual(underState(detail), textFact(`"${CHECK_FAILED}"`));
+  assert.equal(detail.facts.some((f) => f.value.includes("says:")), false);
+  // "Done when" 2: the held line is for the reason that blocks or limits the row, and an act's
+  // reason is neither. So the stand-in is drawn nowhere here: no act is drawn yet.
+  assert.deepEqual([acts.blocked, acts.limited], [null, null]);
+  assert.deepEqual([fact(detail, "held"), times(detail, start.reason.sentence)], [null, 0]);
+});
+
+test("hand-made: a text beside no mark that ends in a secret's name and its sign goes to the view in quotation marks, and there the closing mark makes the filter withhold it; the filter shows that text alone, and the view shows it whole after a speaker's words", () => {
+  const text = "tmux: password:";
+  assert.equal(displayLine(text), text, "the shared filter shows the text itself: the sign has nothing after it");
+  const { entry } = cycle([instanceRow("dev", "lost", { running: null, runtimeState: "unreachable", runtimeError: text })]);
+  // As the reader makes it: after the kernel's lead, and whole on the screen.
+  const [led] = saidUnder(stateOf(entry), "lost");
+  assert.deepEqual(led, textFact(`OATS says: ${text}`)[0]);
+  assert.deepEqual(drawnFact(led), [`OATS says: ${text}`]);
+  // By hand, with no mark: quoted, and the closing mark is what stands after the sign. Withheld,
+  // which is the safe side (main's behaviour since the quote was introduced), and the one place
+  // where what is put around a text decides whether it is shown.
+  const [quoted] = saidUnder(handMade(entry, unmarked), "lost");
+  assert.deepEqual(quoted, textFact(`"${text}"`)[0]);
+  assert.equal(displayLine(quoted.value), DETAIL_WITHHELD);
+  assert.deepEqual(drawnFact(quoted), ["[withheld]"], "the view draws the withheld word alone");
+});
+
+// --- The held line ----------------------------------------------------------------------
+
+test("the held line is drawn only for a reason the shared home wrote that is not the row's text: a reason with a speaker is the row's text and stands once under the state, a sentence of the shared home's beside a row's text stands with it, and a reason with no origin that is the row's text stands once", async () => {
+  const goneText = "the route was saved before the host was moved";
+  const answered = await withGarnet(
+    remoteRow(GARNET_ROOT, "garnet-a"), remoteRow(GARNET_ROOT, "garnet-b", { addressable: false, ...STOPPED }),
+    // A route saved here that the host no longer lists, as the kernel reports one (gone there,
+    // and not addressable), with a text of its own beside it.
+    savedRoute("garnet-gone", { addressable: false, missingRemotely: true, runtimeError: goneText }),
+    remoteRow(GARNET_ROOT, "garnet-old", { backend: "herdr", addressable: false, running: null, runtimeError: "herdr: the session server did not answer" }),
+  );
+  const side = (state, name) => { const { row } = panelRow(state, name), acts = instanceActs(row); return { row, held: acts.blocked ?? acts.limited, detail: detailOf(state, name) }; };
+
+  // A reason with an origin: it is the row's text. No held line; the text once, after its speaker.
+  const refused = heard(answered, await rosterRead(printing(printedError(BUSY))), tick(1));
+  const threw = heard(answered, await rosterRead(() => { throw new Error("the pipe closed"); }), tick(1));
+  for (const [state, origin, lead] of [[refused, "kernel", "OATS says:"], [threw, "roster-read", "oats tui's read of other machines says:"]]) {
+    const { row, held, detail } = side(state, "garnet-b");
+    assert.deepEqual(held, { code: "unaddressable", key: "unreached", sentence: row.runtimeError, origin }, origin);
+    assert.deepEqual(underState(detail), textFact(`${lead} ${row.runtimeError}`), origin);
+    assert.deepEqual([fact(detail, "held"), times(detail, row.runtimeError)], [null, 1], `${origin}: once`);
+  }
+  assert.equal(panelRow(refused, "garnet-b").row.runtimeError, BUSY.message);
+
+  // A reason with no origin whose sentence is not the row's text: both stand, each once.
+  const gone = side(answered, "garnet-gone");
+  assert.deepEqual([gone.held.code, gone.held.key, Object.hasOwn(gone.held, "origin"), gone.held.sentence === gone.row.runtimeError], ["unaddressable", "missing", false, false]);
+  assert.deepEqual(underState(gone.detail), textFact(`OATS says: ${goneText}`), "the row's text, with its speaker");
+  assert.deepEqual(fact(gone.detail, "held"), { label: "held", value: gone.held.sentence, form: "wrap" }, "and the shared sentence on the held line");
+  assert.deepEqual(labels(gone.detail).slice(0, 5), ["soul", "machine", "state", "", "held"]);
+  assert.deepEqual([times(gone.detail, goneText), times(gone.detail, gone.held.sentence)], [1, 1]);
+  // The same on this machine: a home the kernel holds, whose row carries a text of the kernel's.
+  const local = stateOf(cycle([instanceRow("dev", "half", { ...STOPPED, rollbackIncomplete: true, runtimeError: "the worktree could not be removed" })]).entry);
+  const half = side(local, "half");
+  assert.deepEqual([half.held.code, Object.hasOwn(half.held, "origin")], ["held", false]);
+  assert.deepEqual(underState(half.detail), textFact("OATS says: the worktree could not be removed"));
+  assert.deepEqual(fact(half.detail, "held"), { label: "held", value: half.held.sentence, form: "wrap" });
+  // And with no text on the row, the shared sentence alone.
+  const plain = side(answered, "garnet-b");
+  assert.deepEqual([underState(plain.detail), fact(plain.detail, "held")], [[], { label: "held", value: plain.held.sentence, form: "wrap" }]);
+  assert.equal(Object.hasOwn(plain.held, "origin"), false);
+
+  // A reason with no origin whose sentence IS the row's text: once, under the state, as it is.
+  const old = side(answered, "garnet-old");
+  assert.deepEqual([Object.hasOwn(old.held, "origin"), old.held.sentence === old.row.runtimeError, Object.hasOwn(old.row, "runtimeErrorOrigin")], [false, true, false]);
+  assert.deepEqual(underState(old.detail), textFact(old.row.runtimeError));
+  assert.deepEqual([fact(old.detail, "held"), times(old.detail, old.row.runtimeError)], [null, 1]);
+});
+
+test("hand-made: a row blocked by its own text beside no speaker, which the shared reason marks \"unattributed\", has no held line, and the text stands once under the state, in quotation marks", () => {
+  const { entry } = cycle([instanceRow("dev", "lost", { running: null, runtimeState: "unreachable", runtimeError: KERNEL_TEXT })]);
+  // By hand: no reader gives a row of another machine a text with no mark (but the stand-in).
+  // This is the reader's row with its mark taken off and the three facts of a row of a machine
+  // that was not reached and cannot be addressed.
+  const state = handMade(entry, (row) => ({ ...unmarked(row), server: "garnet", serverUnreached: true, addressable: false }));
+  const { row } = panelRow(state, "lost"), acts = instanceActs(row), detail = detailOf(state, "lost");
+  assert.deepEqual(acts.blocked, { code: "unaddressable", key: "unreached", sentence: KERNEL_TEXT, origin: "unattributed" });
+  assert.equal(originLead(acts.blocked.origin, TERMS), null, "the shared home has no words for it");
+  assert.deepEqual(underState(detail), textFact(`"${KERNEL_TEXT}"`));
+  assert.deepEqual([fact(detail, "held"), times(detail, KERNEL_TEXT)], [null, 1], "an origin of any value says the reason is the row's text");
+  assert.equal(detail.facts.some((f) => f.value.includes("says:") || f.value.includes("unattributed")), false);
+});
+
+// --- The leads --------------------------------------------------------------------------
+
+test("each of the three leads is ASCII whole, and joined to a line by one space it is shown as it is whenever the line is: a lead is never why the filter withholds a text, and past the filter's bound only the end is cut", () => {
+  const leads = ["kernel", "terminal-probe", "roster-read"].map((speaker) => originLead(speaker, TERMS));
+  assert.deepEqual(leads, ["OATS says:", "oats tui's terminal check says:", "oats tui's read of other machines says:"]);
+  for (const lead of leads) assert.equal(/^[\x20-\x7e]+$/.test(lead) && displayLine(lead) === lead, true, `${lead}: ASCII (its apostrophe is U+0027), and a display line itself`);
+  // The same words reach a row made by the shared functions (the tests above read them there).
+  const texts = [
+    // The texts of this file's rows.
+    KERNEL_TEXT, CHECK_FAILED, HERDR_NOW.runtimeError, HERDR_OLD.runtimeError, unsupportedText(instanceRow("dev", "any", HERDR_OLD)), SSH_FAILED.message, BUSY.message, TIMED_OUT.message,
+    "Terminal status is unavailable", "Server is unreachable", "Remote roster unavailable: spawn oats ENOENT", "the last probe was slow", "tmux: password:",
+    // The beginning of what the filter withholds, with nothing before it: a lead's colon and its
+    // space must not be what completes a credentialed address or a secret's name and sign.
+    "//user:hunter2@example.com/repo.git", "://user:hunter2@example.com", "/user:hunter2@example.com", "@example.com", ": hunter2", "= hunter2", "=hunter2", "hunter2",
+    "password", "token", "secret", "api key", "authorization", "ghp_short", "says: nothing", "OATS says: OATS says:",
+    // Folded or replaced by the filter, and still a line.
+    "tmux:\tno server\non \u202Ethat socket", "safe \u202Eevil", "one\u2028two\u2029three", "ad\u200Bmin", "caf\u00E9 \u4E2D\u6587", "ab\uD83Dcd",
+    // Longer than the filter's bound.
+    "n".repeat(3000), "word ".repeat(600),
+    // Withheld whole, or nothing to show: the model puts no lead before these (it hands a
+    // withheld text on as it came, and draws nothing for the others).
+    "token: ghp_abcdefghijklmnopqrstuvwxyz0123456789", "https://user:hunter2@example.com/repo.git", "run \x1b[31mthis\x07", "safe\rEVIL", "tmux: password: hunter2", "", " \n \n ",
+  ];
+  // The bound of the shared filter (display-text.mjs MAX_DISPLAY_LINE; not a name the TUI takes).
+  const BOUND = 2048;
+  const met = { whole: 0, cut: 0, withheld: 0, nothing: 0 };
+  for (const text of texts) {
+    const line = displayLine(text);
+    if (line === null) { met.nothing++; continue; }
+    if (line === DETAIL_WITHHELD) { met.withheld++; continue; }
+    for (const lead of leads) {
+      const joined = `${lead} ${line}`, again = displayLine(joined), where = `${lead} ${JSON.stringify(line.slice(0, 40))}`;
+      const drawn = shownLines(joined, BOUND, 1).map(textOf);
+      assert.notEqual(again, DETAIL_WITHHELD, `${where}: not withheld`);
+      if (joined.length <= BOUND) {
+        assert.equal(again, joined, where);
+        // (Not `[joined]`: the screen replaces a character it must not write, with a lead or without.)
+        assert.deepEqual(drawn, [`${lead} ${shownLines(line, BOUND, 1).map(textOf).join("")}`], `${where}: the view draws the lead, and then what it draws of the line alone`);
+        met.whole++;
+      } else {
+        // The value the model hands on is longer than one display line may be: the view's filter
+        // cuts its end, as it cuts any long text. Nothing is withheld and the lead stays.
+        assert.equal(again.length <= BOUND && joined.startsWith(again) && again.startsWith(`${lead} `) && again.length > BOUND - 8, true, where);
+        assert.deepEqual(drawn, [again], `${where}: the view draws what is left`);
+        met.cut++;
+      }
+    }
+  }
+  assert.deepEqual(met, { whole: 3 * (texts.length - 2 - 5 - 2), cut: 3 * 2, withheld: 5, nothing: 2 }, "every kind of text was among them");
 });

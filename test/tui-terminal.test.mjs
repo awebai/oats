@@ -12,8 +12,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, fixtureEnv, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -426,9 +427,9 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
  *  and then becomes the CLI (so the pid is the TUI's, and the shell's job is the TUI). `args` are
  *  the word's arguments: the deployment by `--dir`, unless a test says otherwise. The shell
  *  records the exit status unless `record` is false. Resolves once the Instances view of that
- *  deployment is on the screen, read (or once `first(run)` has seen the first screen of a run
- *  that starts on another): `at` is what `viewFaults` is told about every screen of this run (its
- *  size, its look). */
+ *  deployment is on the screen, read (or once `first(run, term)` has seen the first screen of a
+ *  run that starts on another): `at` is what `viewFaults` is told about every screen of this run
+ *  (its size, its look). */
 async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir ${shq(world.dep)}`, first = (run) => run.view("after the start") } = {}) {
   const n = ++started;
   const pidFile = join(base, `tui-${n}.pid`), statusFile = join(base, `tui-${n}.status`);
@@ -496,7 +497,7 @@ async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir 
     },
   };
   term.after(world.release); // a held read of a failed test holds no later one
-  await first(run);
+  await first(run, term);
   const pid = Number(readFileSync(pidFile, "utf8").trim());
   assert.ok(Number.isInteger(pid) && pid > 1, `the wrapper wrote the pid (${pid})`);
   run.pid = pid;
@@ -742,6 +743,87 @@ test("the terminal is intact after q with the switcher open and a roster read in
       assertRunningModes(term, "with the switcher open");
       assert.ok(reading.every(alive), `the roster read is still in flight with the switcher open (${reading})`);
       return reading;
+    },
+  });
+});
+
+/** What the fixture's tmux says for the one socket it does not read: an invented sentence. The
+ *  kernel's reason for an instance whose terminal server it could not read is that tmux's own
+ *  words (lib/core.mjs `recordedTmuxWindows`). */
+const NOT_READ = "tmux: the socket of acme-platform could not be read";
+
+/** Make the kernel answer that it does not know whether the instance in `home` runs, with `said`
+ *  as its reason. The TUI runs no kernel but its install's own, so the answer is the real
+ *  kernel's: it reads a launched home's windows from the tmux socket the home recorded, and where
+ *  that tmux fails with anything but "no server" it answers `running: null`, the state
+ *  `unreachable` and what tmux wrote on stderr. So the home is recorded as launched on a socket in
+ *  the fixture, receipt included (as `recordedHome` of test/status-recorded-socket.test.mjs
+ *  records one), and for that socket `front/tmux` writes `said` on stderr and exits 1. Nothing is
+ *  started and no socket file is made: the path only names the server that is asked for. The
+ *  shared collector leaves a row the kernel answered so as it is (packages/client/liveness.mjs):
+ *  the reason that reaches the screen is the kernel's. */
+function serverNotRead(world, home, said) {
+  const socket = join(world.fx.base, "not-read.sock");
+  const record = join(home, "instance.json"), meta = JSON.parse(readFileSync(record, "utf8"));
+  const runtime = { launched: true, tmux: { session: "oats-agents", window: meta.instance, socket } };
+  writeFileSync(record, `${JSON.stringify({ ...meta, ...runtime }, null, 2)}\n`);
+  const receipt = join(dirname(home), ".oats-retirement", "baselines", `${createHash("sha256").update(home).digest("hex")}.json`);
+  writeFileSync(receipt, `${JSON.stringify({ ...JSON.parse(readFileSync(receipt, "utf8")), runtime }, null, 2)}\n`);
+  // After the script's first line: for this socket nothing else of it runs, and no tmux is asked.
+  const front = join(world.front, "tmux");
+  writeFileSync(front, readFileSync(front, "utf8").replace("\n", `\ncase " $* " in *" -S "${shq(socket)}" "*) echo ${shq(said)} >&2; exit 1 ;; esac\n`));
+}
+
+test("the reason the kernel gives for an instance it could not observe stands in the detail under the state, after `OATS says:` and with no quotation mark: with a tmux that fails for the socket one instance is recorded on, that instance is `unreachable` in the list and counted as unknown, its detail has the kernel's text wrapped under `state`, and the others are stopped as before; after q the terminal is intact", { skip: NO_TMUX }, async (t) => {
+  const world = await deployment(t); // its own: this test changes a home's record and the fixture's tmux
+  serverNotRead(world, join(world.fx.root, "reviewer", "instances", "gamma"), NOT_READ);
+
+  const two = (left, right) => `${left.padEnd(38)}│${right}`.trimEnd();
+  // The state column is as wide as its widest word, which is `unreachable` here: it starts at cell 22.
+  const listed = (row, word) => `${row.padEnd(22)}${word}`;
+  /** The whole screen with `selected` selected and `detail` as the rows of its detail. */
+  const screenOf = (selected, detail) => {
+    const at = (name) => (name === selected ? ">" : " ");
+    const list = [listed(`${at("alpha")}▾ ○ alpha`, "stopped"), listed(`${at("beta")}    ○ beta`, "stopped"), "", listed(`${at("gamma")}  ? gamma`, "unreachable")];
+    return [
+      `${" oats  fixture".padEnd(59)}2 stopped  1 unknown`,
+      `${" 1 Instances   2 Souls   3 Capabilities".padEnd(66)}read HH:MM:SS`,
+      `${"─".repeat(38)}┬${"─".repeat(41)}`,
+      ...Array.from({ length: 19 }, (_, i) => two(list[i] ?? "", detail[i] ?? "")),
+      `${"─".repeat(38)}┴${"─".repeat(41)}`,
+      FOOTER,
+    ];
+  };
+  /** What keeps a screen from being `want`, row for row, but for its two clock times: when it was
+   *  read (the header) and when the instance was started (the detail of a launched home). */
+  const faults = (want) => (screen) => {
+    const got = screen.map((row) => row.replace(/read \d\d:\d\d:\d\d$/, "read HH:MM:SS").replace(/(│ {3}started {2})\S.*$/, "$1HH:MM"));
+    return [...(got.length === want.length ? [] : [`the screen has ${got.length} rows, not ${want.length}`]), ...want.flatMap((row, i) => (got[i] === row ? [] : [`row ${i + 1} is ${JSON.stringify(got[i])}, not ${JSON.stringify(row)}`]))];
+  };
+  const ALPHA = ["   alpha", "   soul     dev", "   state    stopped", "   harness  claude", "   work     directory", "   home     …/agents/dev/instances/alpha"];
+  // The reason is one fact with no label: it continues the state above it, on as many rows as it
+  // needs in the 28 cells a value has here.
+  const GAMMA = [
+    "   gamma", "   soul     reviewer", "   state    unreachable",
+    "            OATS says: tmux: the socket", "            of acme-platform could not", "            be read",
+    "   harness  claude", "   work     directory", "   started  HH:MM", "   home     …ts/reviewer/instances/gamma",
+  ];
+
+  await leavesTheTerminalIntact(t, {
+    how: "q with the detail of an instance the kernel could not observe", status: 0, world, leave: (term) => term.press("q"),
+    start: { first: (run, term) => untilScreen(term, faults(screenOf("alpha", ALPHA)), "the Instances view with one instance the kernel could not observe") },
+    arrive: async (term, run) => {
+      term.press("j", "j");
+      await untilScreen(term, faults(screenOf("gamma", GAMMA)), "the detail of the instance the kernel could not observe, after j and j");
+      assert.equal(run.status(), null, "oats tui still runs with that detail drawn");
+      // However the reason wraps, the rows under the state are the speaker's words and the
+      // kernel's text, and nothing around them.
+      const pane = term.screen().slice(3, 22).map((row) => [...row].slice(listCols(80) + 1).join(""));
+      const state = pane.indexOf("   state    unreachable"), under = [];
+      for (let i = state + 1; /^ {12}\S/.test(pane[i] ?? ""); i++) under.push(pane[i].trim());
+      assert.equal(under.join(" "), `OATS says: ${NOT_READ}`, `the rows under the state:\n${term.shows()}`);
+      assert.equal(term.screen().some((row) => row.includes('"')), false, `no quotation mark is on the screen:\n${term.shows()}`);
+      return []; // no read is held
     },
   });
 });
