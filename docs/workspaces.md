@@ -159,6 +159,23 @@ facts for automations, and launch configurations. The full reference is
 Written by `oats sync`; the only persisted state at the deployment besides
 `oats-local.yaml`. See [packages.md](packages.md).
 
+## Repository references in diagnostics
+
+No remote diagnostic or workspace `cannot-read` answer prints a URL's user
+information: both `user:password@` and a bare `user@` are removed. This also
+applies when a repository or package reference is refused, including malformed
+references and references nested in invalid input. The message and its
+reference-bearing fields (`details.ref`, `details.url`, `details.value` and
+`provenance.value`) use the same rendering rule, as do workspace schema problem
+messages that quote repository references and Git stderr quoted in a diagnostic.
+Unrelated schema values and opaque provider payloads are not scanned for secrets.
+
+An SSH URL such as `ssh://git@host/org/repo` is shown as
+`ssh://host/org/repo`; an scp-style `git@host:org/repo` is also shown as
+`ssh://host/org/repo`, so clients can still extract the hostname. These are
+display values: accepted syntax, repository identity keys and the original
+reference used by Git are unchanged. Diagnostic fields are not transport URLs.
+
 ## Membership and trust
 
 **Reciprocal membership is a hard gate.** A repo is a member only when

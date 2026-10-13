@@ -1154,7 +1154,7 @@ test("what git could not explain is unknown, with git's last line scrubbed; netw
   assert.equal(scrubGitLine("fatal: unable to access 'https://x-access-token:ghp_secret@example.com/org/repo.git/': \tbad\x1b[31m thing\x07"),
     "fatal: unable to access 'https://example.com/org/repo.git/': bad thing");
   assert.equal(scrubGitLine("ssh://bot:s3cr%40t@example.com/org/repo refused s3cr@t (bot:s3cr%40t), also s3cr%40t", "ssh://bot:s3cr%40t@example.com/org/repo"), "ssh://example.com/org/repo refused (), also");
-  assert.equal(scrubGitLine("git@example.com:org/repo.git: a user name alone is no secret", "git@example.com:org/repo.git"), "git@example.com:org/repo.git: a user name alone is no secret");
+  assert.equal(scrubGitLine("git@example.com:org/repo.git: a user name alone is no secret", "git@example.com:org/repo.git"), "ssh://example.com/org/repo.git: a user name alone is no secret");
   assert.equal(scrubGitLine("bot is not allowed here", "ssh://bot@example.com/org/repo"), "bot is not allowed here", "nor is the user of an ssh url");
   // On http(s) the user information is a secret whether or not it holds a colon (a bare token), each part of it, as written and decoded.
   assert.equal(scrubGitLine("remote: tok%5Fbare was refused (tok_bare)", "https://tok%5Fbare@example.com/org/repo"), "remote: was refused ()");
@@ -1167,7 +1167,7 @@ test("what git could not explain is unknown, with git's last line scrubbed; netw
   const url = "ssh://bot:s3cret@example.com/org/repo";
   const said = (stderr) => refusedRead(observeRemote(url, { cacheDir: join(scratch(), "cache"), exec: async (args) => { if (args.includes("ls-remote")) throw gitError(stderr); return runGit(args); } }));
   const e = await said(`warning: redirecting\nfatal: '${url}' is being difficult: s3cret\n`);
-  assert.deepEqual(e.details, { url, key: "example.com/org/repo", reason: "unknown", at: null }, "no field added; the url is as written");
+  assert.deepEqual(e.details, { url: "ssh://example.com/org/repo", key: "example.com/org/repo", reason: "unknown", at: null }, "no field added; the url has no user information");
   // The message prints the url as the cache's messages do, without its user information (redactUrl).
   assert.equal(e.message, "cannot read remote ssh://example.com/org/repo (unknown): fatal: 'ssh://example.com/org/repo' is being difficult:");
   assert.ok(!e.message.includes("s3cret"));
@@ -1175,10 +1175,10 @@ test("what git could not explain is unknown, with git's last line scrubbed; netw
   assert.equal((await said("\x1b[0m\n \n")).message, "cannot read remote ssh://example.com/org/repo (unknown)");
   // A reason the kernel names: the same url, and no line of git's.
   const named = await said(`fatal: unable to access '${url}/': Could not resolve host: example.com\n`);
-  assert.deepEqual([named.details.reason, named.details.url, named.message], ["network", url, "cannot read remote ssh://example.com/org/repo (network)"]);
+  assert.deepEqual([named.details.reason, named.details.url, named.message], ["network", "ssh://example.com/org/repo", "cannot read remote ssh://example.com/org/repo (network)"]);
   // The user of an ssh url is no secret, and the message still prints the url without it: one function says how.
   const plain = await refusedRead(observeRemote("ssh://bot@example.com/org/repo", { cacheDir: join(scratch(), "cache"), exec: async (args) => { if (args.includes("ls-remote")) throw gitError("fatal: bot was refused\n"); return runGit(args); } }));
-  assert.deepEqual([plain.details.url, plain.message], ["ssh://bot@example.com/org/repo", "cannot read remote ssh://example.com/org/repo (unknown): fatal: bot was refused"]);
+  assert.deepEqual([plain.details.url, plain.message], ["ssh://example.com/org/repo", "cannot read remote ssh://example.com/org/repo (unknown): fatal: bot was refused"]);
   // A token as the user of an http(s) url never reaches a read: such a url is no repository reference, so no
   // read's message is built over one. The scrub above is what holds for git's line, whatever url it is handed.
   for (const ref of ["https://tok_bare0secret@example.com/org/repo", "https://bot:s3cret@example.com/org/repo.git", "http://tok_bare0secret@example.com/org/repo"]) {
