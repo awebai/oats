@@ -50,7 +50,7 @@ jobs:
   # applied, exactly as the serial run did; publication waits for every shard.
   tests:
     name: tests (shard ${{ matrix.shard }}/6)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -89,7 +89,7 @@ jobs:
           npm test -- --test-shard=${{ matrix.shard }}/6
 
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Exact tag SHA — releases are built from the tag, not from a moving
       # branch head. The on-main check below still gates provenance.
@@ -219,7 +219,7 @@ jobs:
           - os: macos-14          # macOS x64 cross-build: DMG + ZIP (no sunset macos-13 dependency)
             arch: x64
             builder_args: --x64
-          - os: ubuntu-latest     # Linux x64: AppImage + DEB
+          - os: ubuntu-24.04      # Linux x64: AppImage + DEB
             arch: x64
             builder_args: --x64
     runs-on: ${{ matrix.os }}
@@ -326,7 +326,7 @@ jobs:
   # (every test shard included).
   publish:
     needs: [build-and-test, tests, desktop-build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

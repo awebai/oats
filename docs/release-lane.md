@@ -174,7 +174,8 @@ comment beside an id is the row's version. In every other workflow a `uses:`
 is the major of a row's version.
 
 **An id is moved by a pull request, reviewed like any change to that
-workflow.** It changes together, and nothing else:
+workflow.** It changes these together, and nothing else in the two workflow
+files:
 
 - the id and the version comment, on every `uses:` line of that action in
   `release.yml` and `build-installers.yml`;
@@ -208,6 +209,41 @@ and packages it depends on, and what its entry points call of a cache.
 - A version of `actions/setup-node` that caches by itself (v5 and later)
   needs `package-manager-cache: false` on every step. The test takes the
   version of an id from the row, so it refuses a step without it.
+
+**The two files name their runners by version too** (`ubuntu-24.04`, as they
+name `macos-14`), never by a label that GitHub moves to another system by
+itself (`ubuntu-latest`). The Linux installers are built on that runner, and
+what they need of a system follows the system that built them.
+`pull-request.yml` keeps `ubuntu-latest` on purpose: when the label moves, a
+break on the new system shows in pull-request CI first and not at a release.
+
+Moving the runner of the two files is a pull request that says what the
+installers then need. The same test holds the two files to it: every job of
+theirs runs on a label that names a version, and both build on the same
+Linux.
+
+**What the Linux installer needs today**, to compare with at the next move.
+Read from `oats-desktop-0.52.0-linux-amd64.deb`, built on `ubuntu-24.04`
+(sha256
+`a6148c8a7b49404d73e46c81523568accc560843ed2fab0c54ca501f09c481b7`):
+
+| part of the DEB | highest glibc symbol version it needs |
+|---|---|
+| the Electron binary, `oats-desktop` | `GLIBC_2.25` |
+| the native module, `node-pty`'s `pty.node` | `GLIBC_2.34` |
+
+```bash
+ar x oats-desktop-<version>-linux-amd64.deb && tar -xf data.tar.xz
+# for the binary and for each native module under resources/app.asar.unpacked:
+objdump -T <file> | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+```
+
+Nothing of the package is run to read it. The numbers are what the DEB's files
+ask of the system's glibc, not a floor anybody tested on an older system. The
+AppImage, built in the same leg from the same build, was not read. The
+module's number follows the runner that builds it: the symbols it needs at
+2.34 are the ones a module gets when it is built on a system whose glibc is
+2.34 or later.
 
 ## Release-notes entries
 

@@ -43,7 +43,7 @@ jobs:
           - os: macos-14          # macOS x64 cross-build: DMG + ZIP (no sunset macos-13 dependency)
             arch: x64
             builder_args: --x64
-          - os: ubuntu-latest     # Linux x64: AppImage + DEB
+          - os: ubuntu-24.04      # Linux x64: AppImage + DEB
             arch: x64
             builder_args: --x64
     runs-on: ${{ matrix.os }}
