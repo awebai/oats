@@ -1,3 +1,15 @@
+## Changed
+
+- **On btrfs, a retire that went through with an empty directory where its
+  recovery copies one file is now refused
+  ([#1029](https://github.com/awebai/oats/issues/1029)).** With an empty
+  directory at `info/attributes`, at the stash's log or at the log of a
+  nested repository's branch, `oats retire` completed there. It now answers
+  `E_WORK_PRESERVATION_FAILED`, the code every other file system already
+  gave for it. On every file system, such a path whose parent directory
+  cannot be searched is refused the same way, where it was left out of the
+  copy. See the entry under Fixed.
+
 ## Fixed
 
 - **Whether a retire refuses no longer depends on the file system
