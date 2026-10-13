@@ -79,7 +79,7 @@ and the rules its tests pin.
 | `souls/` | this repository's own souls (a workspace member) |
 | `docs/` | the reference pages, schemas, design records and release notes |
 | `packages/` | the pi adapter, the Desktop, the terminal client (`tui/`), the readers both clients share (`client/`), the turn-record package and experiments |
-| `scripts/` | the test runner, validators, packaging checks, the release lane and the assembly of release-notes entries |
+| `scripts/` | the test runner (`run-tests.mjs`) and its reporter of unasserted warnings, the session-inheritance check (`test-session-inheritance.mjs`), validators, packaging checks, the release lane and the assembly of release-notes entries |
 | `test/` | the kernel and CLI suites, with their fixtures |
 
 ## Kernel modules
@@ -387,7 +387,8 @@ scaling by call count.
 
 | command | what it checks |
 |---|---|
-| `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs` |
+| `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs`, which also fails the run when an `oats: warning:` line is left in a test file's output |
+| `npm run test:session` | the suites that have followed a variable of the session that runs them, with every such variable set to a value that cannot work (`scripts/test-session-inheritance.mjs`) |
 | `npm run check` | syntax of every shipped file |
 | `npm run check:pi` | the pi adapter's TypeScript |
 | `npm run validate` | the JSON schemas, the example manifests and configs, every local link and anchor in the public docs (a release-notes entry under `docs/release-notes/next/` has its links read from `docs/release-notes/`, where its text is moved), the repository's own `oats-workspace.yaml` and `package-catalog.json` read by the kernel's readers, and no unresolved merge-conflict marker in a tracked text file (`scripts/check-workspace-files.mjs`) |
@@ -400,6 +401,20 @@ runs the full suite (sharded), the Desktop suite again with only Desktop
 dependencies installed, `check`, `validate`, `pack:check` and the smoke test,
 and is the gate. Tests use local bare repositories and fakes; none contacts
 GitHub, aweb, Jira or Linear.
+
+**Test output is pristine.** A warning that a test expects is captured and
+asserted by the test, or by its fixture, and never left in the output: a line
+nobody asserted is then one nobody expected. The root run holds the rule
+(awebai/oats#910). Beside the reporter a person reads, which stays the one
+`node --test` would pick, `scripts/run-tests.mjs` gives the run a second
+reporter (`scripts/test-warnings-reporter.mjs`) that reads what each test file
+wrote to its stderr and stdout and records every line that holds
+`oats: warning:`. When there is one the run fails, even if every test passed,
+and names each file, its count and the lines. A file's output is what its
+worker wrote and what a child wrote that has the worker's stderr or stdout as
+its own; a line a child wrote into a pipe the test reads is the test's, and
+does not count. `test/unasserted-warnings.test.mjs` pins the rule with nested
+runs.
 
 Desktop's standalone tests (`cd packages/desktop && npm ci && npm test`) must
 load with only Desktop dependencies installed. The release builds Desktop that
@@ -596,10 +611,14 @@ inherits it (awebai/oats#816):
   keeps it once a test has set it. So a test that needs one sets it itself, in
   `process.env` before the fixture call or as `extra`, and the fixture's own
   (`OATS_HOME_DIR`, `OATS_TEST_CGROUP`, `OATS_TEST_LOGIN_SHELL`) are kept the
-  same way. Every helper that builds an environment starts from
+  same way. A test that sets a session variable to the very value the session
+  has is taken for the session's, and the variable is dropped; no test does
+  today. Every helper that builds an environment starts from
   `inheritedEnv()` or removes with `dropInherited(env)`; none has a list of
   names of its own, and a test that builds an environment itself starts from
-  `inheritedEnv()` too. `npm run test:session`
+  `inheritedEnv()` too. A helper that starts a child for a caller who gives no
+  `env` (`startGated` and `runFaulted` in `test/helpers/fs-gate-preload.mjs`)
+  gives it `inheritedEnv()`. `npm run test:session`
   (`scripts/test-session-inheritance.mjs`) is the check: it runs the suites
   that have followed a session variable with every variable a session has set
   to a value that cannot work, the names read from the helper's definition
@@ -619,6 +638,36 @@ inherits it (awebai/oats#816):
   kernel or with its own tmux call, would otherwise carry the runner's display,
   pane and instance to the kernel that reads it back. Its PATH stays its own
   small set of tools, so no host service manager is reachable at all.
+- **The fixture's expected warning.** A fixture's login environment cannot be
+  read, by construction: its `HOME` is not the user's and its login shell
+  (`OATS_TEST_LOGIN_SHELL`) does not exist. So where the kernel plans to start
+  the fixture's tmux server it says, in one line on the worker's stderr, that
+  it could not read the login environment and falls back. The fixture owns
+  that line (`expectLoginFallback` in `test/helpers/host-fixture.mjs`). It
+  takes the line out of the output only when the whole write is exactly the
+  sentence the kernel writes for the fixture's reason, and only while the
+  fixture's premise holds at that moment; any other line stays in the output
+  and fails the root run. Every capture also asserts something that can fail:
+  - `fx.inEnv`, for one kernel call: a server that appeared under the
+    fixture's `TMUX_TMPDIR` during the call with no line fails the call.
+    Nothing is asserted for a call in which the test replaced
+    `process.stderr.write` itself: the test holds the line then, and asserts
+    it. A child that plans the start writes the line on its own stderr: a
+    test starts such a child outside the call, and where the kernel call
+    itself launches through a child (a tick that runs `oats spawn`) the test
+    holds stderr around that call and asserts what the worker wrote.
+  - `isolateSessionEnvironment`, for as long as it is installed: a captured
+    line with nothing ever created under its `TMUX_TMPDIR` fails its restore.
+  - A test file whose fixture has no server to observe (a stand-in `tmux`)
+    wraps each kernel call that plans a start and asserts the count the
+    capture returns.
+
+  The kernel writes the line where it plans a start, in the process that
+  plans, so a socket shows neither who planned nor whether a start followed:
+  no capture asserts that the warning comes. That is pinned by
+  `test/login-environment.test.mjs`, `test/schedule-gone-server.test.mjs` and
+  `test/fixture-expected-warning.test.mjs`, which start a real server and read
+  the line.
 - **No leftover processes.** The fixture's cleanup fails when a process still
   works in its base: `assertNoFixtureProcesses(base)`, over the kernel's own
   `processesInHome` (`/proc` on Linux, lsof where `/proc` is absent). It catches a hook's or a CLI's grandchild that

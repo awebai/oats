@@ -21,6 +21,16 @@ function seedRegistry(extra = {}) {
   mkdirSync(S.hostScheduleDir(), { recursive: true });
   writeFileSync(registryPath(), JSON.stringify({ version: 1, tickIntervalSec: 120, workspaces: [], ...extra }) + "\n");
 }
+/** The line the write that persists the migration of a legacy `maxConcurrent: 1` puts on stderr. */
+const MIGRATED = "oats: warning: migrated legacy maxConcurrent: 1 to the default of 5; an old explicit 1 cannot be distinguished from the old implicit default. To restore one slot, run oats schedule host install --max-concurrent 1 --dir <deployment>. Stop older oats binaries from writing this shared registry.\n";
+/** What `fn` writes on this process's stderr. */
+function stderrOf(fn) {
+  const write = process.stderr.write;
+  let written = "";
+  process.stderr.write = (chunk) => { written += String(chunk); return true; };
+  try { fn(); } finally { process.stderr.write = write; }
+  return written;
+}
 function workspace() {
   const ws = join(base, `ws-${++serial}`);
   mkdirSync(join(ws, "agents", "dev", "soul"), { recursive: true });
@@ -69,13 +79,17 @@ test("legacy one migrates once, preserving registry data and a later deliberate 
   const before = readFileSync(registryPath(), "utf8");
   const migrated = S.readRegistry();
   assert.equal(readFileSync(registryPath(), "utf8"), before, "reads only project migration");
-  S.registerWorkspace(ws); // Even unchanged membership must persist migration.
+  // Even unchanged membership must persist migration, and the write that does says so.
+  assert.equal(stderrOf(() => S.registerWorkspace(ws)), MIGRATED);
   assert.equal(Object.hasOwn(migrated, "maxConcurrent"), false);
   assert.deepEqual(diskRegistry(), { version: 1, capsVersion: 2, tickIntervalSec: 120, triggersMaxConcurrent: 3, workspaces: [ws], extension: { keep: true } });
   assert.equal(S.schedulerStatus(ws).maxConcurrent, 5);
-  S.registerWorkspace(ws, { maxConcurrent: 1 });
-  assert.equal(S.readRegistry().maxConcurrent, 1);
-  S.registerWorkspace(ws);
+  const later = stderrOf(() => {
+    S.registerWorkspace(ws, { maxConcurrent: 1 });
+    assert.equal(S.readRegistry().maxConcurrent, 1);
+    S.registerWorkspace(ws);
+  });
+  assert.equal(later, "", "said once: a deliberate one is not a legacy one");
   assert.equal(diskRegistry().maxConcurrent, 1);
   assert.equal(S.schedulerStatus(ws).maxConcurrent, 1);
 });
@@ -273,7 +287,7 @@ test("CLI rejects invalid and missing cap values before migration or host servic
 test("unregister persists legacy migration even when membership is unchanged", () => {
   const ws = workspace();
   seedRegistry({ maxConcurrent: 1, triggersMaxConcurrent: 2 });
-  S.unregisterWorkspace(ws);
+  assert.equal(stderrOf(() => S.unregisterWorkspace(ws)), MIGRATED);
   assert.equal(diskRegistry().capsVersion, 2);
   assert.equal(Object.hasOwn(diskRegistry(), "maxConcurrent"), false);
   assert.equal(diskRegistry().triggersMaxConcurrent, 2);
