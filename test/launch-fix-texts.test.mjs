@@ -7,7 +7,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -144,6 +145,49 @@ test("the ambiguous message stays within the bound where \"*\" decided: it names
     assert.ok(byDefault.message.includes(`(${shown.join(", ")}, and ${n - shown.length} more)`), byDefault.message);
     assert.ok(byDefault.message.endsWith(byDefault.details.fix));
     assert.deepEqual(byDefault.details.configurations, names, "details keep the full list");
+  }
+});
+
+test("a missing harness whose layer has a long location: the message keeps its fix whole and stays within the bound", (t) => {
+  // A PATH with no harness on it: the report below looks codex up on this process's PATH.
+  const saved = process.env.PATH, empty = mkdtempSync(join(tmpdir(), "oats-fix-texts-"));
+  process.env.PATH = empty;
+  t.after(() => { process.env.PATH = saved; rmSync(empty, { recursive: true, force: true }); });
+  // A soul's own launch in a repository whose key is long, and a soul's own entry under a long key: each
+  // location is within what a client reads for `at`, and the message with it would not be.
+  const deep = { repoKey: `/srv/${Array.from({ length: 8 }, () => "a".repeat(100)).join("/")}/repo`, path: "souls/dev" };
+  const longKey = `${"k".repeat(900)}/dev`;
+  for (const [given, from, named] of [
+    [{ definition: { launch: { harness: "codex" } }, entry: deep, key: "dev", local: {} }, "soul", "the soul's own launch"],
+    [{ definition: {}, entry: ENTRY, key: longKey, local: { souls: { launch: { [longKey]: { harness: "codex" } } } } }, "local", "the soul's own entry of souls.launch"],
+  ]) {
+    const report = core.launchReportFor({ layers: launchLayers(given), launchConfigs: {}, contextDir: empty });
+    assert.deepEqual([report.from, report.problem.code, report.problem.fix], [from, "E_HARNESS_UNAVAILABLE", harnessFix("codex", from)]);
+    assert.ok(report.at.length > 800 && report.at.length <= LAUNCH_PROBLEM_TEXT_MAX, `at is ${report.at.length} characters`);
+    assert.equal(report.problem.message, `codex is not installed on this machine (codex binary not found on PATH); ${named} chose it — ${report.problem.fix}`);
+    assert.ok(report.problem.message.length <= LAUNCH_PROBLEM_TEXT_MAX);
+    assert.notEqual(launchOf(report, REPORT_FROM), undefined, "the Desktop decodes it");
+    // The refusal a spawn throws is the same text, and its details keep the location.
+    const e = harnessUnavailable({ harness: "codex", from, at: report.at, why: "codex binary not found on PATH" });
+    assert.deepEqual([e.message, e.details.at], [report.problem.message, report.at]);
+  }
+  // A location that fits is named, as before.
+  const short = harnessUnavailable({ harness: "codex", from: "soul", at: "github.com/acme/agents:souls/dev/soul.yaml#/launch", why: "codex binary not found on PATH" });
+  assert.equal(short.message, `codex is not installed on this machine (codex binary not found on PATH); github.com/acme/agents:souls/dev/soul.yaml#/launch chose it — ${short.details.fix}`);
+  // The longest location that fits is still named; one character more and the layer's name stands for it.
+  for (const from of ["soul", "local", "local-default"]) {
+    const room = LAUNCH_PROBLEM_TEXT_MAX - harnessUnavailable({ harness: "codex", from, at: "", why: "w" }).message.length;
+    const fits = harnessUnavailable({ harness: "codex", from, at: "x".repeat(room), why: "w" });
+    assert.ok(fits.message.length === LAUNCH_PROBLEM_TEXT_MAX && fits.message.includes("x".repeat(room)), from);
+    const over = harnessUnavailable({ harness: "codex", from, at: "x".repeat(room + 1), why: "w" });
+    assert.ok(over.message.length < LAUNCH_PROBLEM_TEXT_MAX && !over.message.includes("xx") && over.message.endsWith(` chose it — ${over.details.fix}`), from);
+  }
+  // A reason too long for the bound is cut, never the fix.
+  for (const from of ["flag", "host", "soul", "local", "local-default"]) {
+    const e = harnessUnavailable({ harness: "codex", from, at: "y".repeat(2000), why: "z".repeat(5000) });
+    assert.equal(e.message.length, LAUNCH_PROBLEM_TEXT_MAX, from);
+    assert.ok(e.message.startsWith("codex is not installed on this machine (zzz") && e.message.includes("z…); ") && e.message.endsWith(` chose it — ${harnessFix("codex", from)}`), from);
+    assert.ok(!/[\n\r]/.test(e.message));
   }
 });
 

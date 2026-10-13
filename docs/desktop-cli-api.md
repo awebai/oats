@@ -1869,6 +1869,11 @@ shows the drift as `launch-changed`.
     --harness <h>), or pin this soul to its own (oats soul launch set <soul>
     --launch-config <name> | --harness <h>)";
   - a flag: "install <harness>, or choose another --harness / --launch-config".
+
+  The message says why, names the layer's location (`at`) and ends with the
+  `fix`. It stays within 1024 characters: a location too long for that gives
+  way to the layer in words ("the soul's own launch", for example), and
+  `details.at` keeps it.
 - `E_LAUNCH_CONFIG_UNKNOWN {name, from, at}`: `souls.launch` names a launch
   configuration this `oats-local.yaml` does not declare. As a `Launch`
   report's `problem`, its `fix` is "declare launch configuration <name> (oats
