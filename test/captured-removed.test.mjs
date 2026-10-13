@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { setProcessEnvironment, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const fail = (r, what) => { const j = r.json(); assert.equal(j.ok, false, `${what}: ${r.stdout}${r.stderr}`); assert.notEqual(r.status, 0, what); return j.error; };
 
@@ -153,5 +153,5 @@ test("captured (versioned) schedules are refused on add and update; a stored one
     S.removeSchedule(ws, "old", { force: true });
     assert.equal(S.jobLockInfo(ws, "old"), null);
     assert.equal("old" in S.readDefinitions(ws).jobs, false);
-  } finally { process.env = saved; rmSync(base, { recursive: true, force: true }); }
+  } finally { setProcessEnvironment(saved); rmSync(base, { recursive: true, force: true }); }
 });

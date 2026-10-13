@@ -84,8 +84,15 @@ export function capabilityFiles(id, manifest = {}, files = {}) {
 /** What is in force on this process, if anything: the fixture (`owner`, `name`), what was there
  *  before its first call (`before`), and its calls in flight, oldest first. */
 let inForce = null;
-/** Make the real process.env hold exactly `target` (a name whose value is undefined is absent). */
-function setProcessEnvironment(target) {
+/** Make the real process.env hold exactly `target` (a name whose value is undefined is absent).
+ *
+ *  A test file uses it for one thing: to hold one environment for the whole of a test and give the
+ *  saved one back when the test ends. It takes `const saved = { ...process.env }`, sets what it
+ *  needs (this function, or one name at a time), and calls `setProcessEnvironment(saved)` in
+ *  `t.after` or a `finally`; never `process.env = saved`. For everything else, an in-process
+ *  kernel call in a fixture's environment, `fx.inEnv` is the way: it also refuses another
+ *  fixture's call in flight, which this does not. */
+export function setProcessEnvironment(target) {
   for (const key of Object.keys(process.env)) if (target[key] === undefined) delete process.env[key];
   for (const [key, value] of Object.entries(target)) if (value !== undefined && process.env[key] !== String(value)) process.env[key] = value;
 }

@@ -527,7 +527,12 @@ inherits it (awebai/oats#816):
   never by assigning another object to `process.env`: a child the kernel
   starts with no `env` option gets a replaced object on some Node versions
   only (not from v26.11.0). Calls of one fixture may nest or overlap; a
-  call of another fixture while one is in flight is refused. The fixture's
+  call of another fixture while one is in flight is refused. A test that
+  holds one environment for its whole length saves `{ ...process.env }`, sets
+  names on the real one and gives the saved one back with
+  `setProcessEnvironment` when it ends; everything else goes through
+  `fx.inEnv`. `test/fixture-real-environment.test.mjs` refuses an assignment
+  to `process.env` in any test script. The fixture's
   environment sets `HOME` and the XDG base directories under the base, and
   `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null` and
   `GIT_TERMINAL_PROMPT=0`, so no host git

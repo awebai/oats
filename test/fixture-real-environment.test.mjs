@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixtureBase, linkExecutables } from "./helpers/host-fixture.mjs";
 import { inFixture } from "./helpers/trigger-source-fixture.mjs";
@@ -206,12 +206,18 @@ test("a call of another fixture while one is in flight is refused by name, and r
   assert.deepEqual({ ...process.env }, before);
 });
 
-test("no test helper replaces process.env", () => {
-  const dir = new URL("./helpers/", import.meta.url);
-  const replaced = [];
-  for (const name of ["v2-deployment.mjs", "trigger-source-fixture.mjs", "host-fixture.mjs", "recorded-tmux-server.mjs", "okf-v2.mjs", "runtime-stub.mjs", "package-repo.mjs"]) {
-    const lines = readFileSync(new URL(name, dir), "utf8").split("\n");
-    lines.forEach((line, i) => { if (/\bprocess\.env\s*=[^=]/.test(line.replace(/\/\/.*$/, ""))) replaced.push(`${name}:${i + 1}`); });
+test("no test file and no test helper assigns to process.env", () => {
+  // Every script under test/, tests/ and packages/*/test/, read as code: comments are left out.
+  const root = new URL("../", import.meta.url);
+  const packages = readdirSync(new URL("packages/", root), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => `packages/${e.name}/test/`);
+  const scripts = (dir) => (existsSync(new URL(dir, root)) ? readdirSync(new URL(dir, root), { withFileTypes: true }) : []).flatMap((e) => (
+    e.isDirectory() ? (e.name === "node_modules" ? [] : scripts(`${dir}${e.name}/`)) : /\.[cm]?js$/.test(e.name) ? [`${dir}${e.name}`] : []));
+  const files = ["test/", "tests/", ...packages].flatMap(scripts);
+  for (const expected of ["test/helpers/v2-deployment.mjs", "test/capabilities.test.mjs", "tests/tmux-config.test.mjs", "packages/pi/test/opening-task.test.mjs"]) assert.ok(files.includes(expected), `the search reads ${expected}`);
+  const assigned = [];
+  for (const file of files) {
+    const lines = readFileSync(new URL(file, root), "utf8").split("\n");
+    lines.forEach((line, i) => { if (/\bprocess\.env\s*=[^=]/.test(line.replace(/^\s*(\/\*|\*).*$/, "").replace(/\/\/.*$/, ""))) assigned.push(`${file}:${i + 1}`); });
   }
-  assert.deepEqual(replaced, [], "a helper sets names on the real process.env (v2-deployment.mjs forceEnvironment): a child started with no env does not get a replaced object on every Node");
+  assert.deepEqual(assigned, [], "a test sets names on the real process.env and puts them back (test/helpers/v2-deployment.mjs: forceEnvironment for a fixture's call, setProcessEnvironment for a test's own): a child started with no env does not get a replaced object on every Node");
 });

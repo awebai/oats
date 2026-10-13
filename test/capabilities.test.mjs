@@ -11,7 +11,7 @@ import {
 } from "@awebai/oats/core";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 import { DISPOSABLE_HOME_ACCEPTED, DISPOSABLE_HOME_REFUSED, disposableHomeRefusal } from "./helpers/disposable-home.mjs";
-import { capabilityFiles, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { capabilityFiles, setProcessEnvironment, soulFiles, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
 import { killAndReap } from "./helpers/host-fixture.mjs";
 
@@ -101,12 +101,14 @@ function fixtureSoul(base, harness = "pi", type) {
 
 /** A workspace-model deployment for one test (test/helpers/v2-deployment.mjs):
  *  souls and member capabilities of one repo, spawned through the real prepared
- *  path. The test runs in the fixture's isolated environment (process.env is
- *  swapped for fx.env, and restored after). */
+ *  path. The test runs in the fixture's isolated environment: the real process.env
+ *  is made to hold exactly fx.env, and what was there is put back after. (Never by
+ *  assigning another object to process.env: a child the kernel starts with no `env`
+ *  does not get a replaced object on every Node, helpers/v2-deployment.mjs.) */
 function v2(t, opts = {}) {
   const fx = v2Deployment(opts);
-  const saved = process.env;
-  process.env = { ...fx.env };
+  const saved = { ...process.env };
+  setProcessEnvironment(fx.env);
   const baseline = { ...fx.env };
   // fx.spawn/fx.prepare run in the fixture's environment; a test's own changes to
   // process.env since (a fake PATH, a polluted identity, a fault switch) ride along.
@@ -115,7 +117,7 @@ function v2(t, opts = {}) {
     const delta = Object.keys({ ...baseline, ...process.env }).filter((k) => process.env[k] !== baseline[k]).map((k) => [k, process.env[k]]);
     return inEnv(() => { for (const [k, v] of delta) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } return fn(); });
   };
-  t.after(() => { process.env = saved; fx.cleanup(); });
+  t.after(() => { setProcessEnvironment(saved); fx.cleanup(); });
   return fx;
 }
 /** soul.yaml `capabilities:` declaring member capabilities of the same repo. */
