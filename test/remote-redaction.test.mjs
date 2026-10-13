@@ -93,17 +93,18 @@ test("refusals explain removed userinfo once, without changing diagnostic fields
   for (const ref of refs) {
     const e = await refused(() => parseRepoRef(ref));
     safeError(e, "E_REPO_REF");
-    assert.ok(e.message.endsWith(clause), ref);
-    assert.equal(e.message.split(clause).length - 1, 1);
+    const explanation = malformed.includes(ref) || ref.includes("bad_host") || ref.includes("bad path") ? withheldClause : clause;
+    assert.ok(e.message.endsWith(explanation), ref);
+    assert.equal(e.message.split(explanation).length - 1, 1);
     assert.equal(e.details.ref, redactUrl(ref, null, { reference: true }));
     assert.ok(!JSON.stringify(e.details).includes(clause), "only the message carries the explanation");
     const value = `git:${ref}@v1`;
     const pkg = await refused(() => parsePackageRequest("p", value, {}));
     safeError(pkg, "E_REPO_REF");
-    assert.ok(pkg.message.endsWith(clause), value);
+    assert.ok(pkg.message.endsWith(withheldClause), value);
     assert.doesNotMatch(pkg.message, /give credentials|credential helper/, "package refusal keeps its own cause, without HTTP parser advice");
-    assert.equal(pkg.message.split(clause).length - 1, 1);
-    assert.deepEqual(pkg.details, { id: "p", value: redactUrl(value, null, { reference: true }),
+    assert.equal(pkg.message.split(withheldClause).length - 1, 1);
+    assert.deepEqual(pkg.details, { id: "p", value: WITHHELD,
       path: "/packages/p", problems: ["a git package carries exactly one @<ref> (a repo ref has no @ except the git@host: ssh form)"] });
   }
   // Non-git package refusals have a schema code but still quote the refused value.
@@ -115,8 +116,10 @@ test("refusals explain removed userinfo once, without changing diagnostic fields
     { key: "other.invalid/o/r", url: ssh }]) {
     const e = await refused(() => parseRepoRef(ref));
     safeError(e, "E_REPO_REF");
-    assert.equal(e.message.split(clause).length - 1, 1);
+    const explanation = ref.bad ? withheldClause : clause;
+    assert.equal(e.message.split(explanation).length - 1, 1);
     assert.ok(!JSON.stringify(e.details).includes(clause));
+    assert.ok(!JSON.stringify(e.details).includes(withheldClause));
     assert.equal(redactUrl(`forwarded: ${e.message}`, [https[0], ssh], { known: false, refusal: true }), `forwarded: ${e.message}`);
   }
   const workspaceObs = { key: "example.invalid/org/workspace", commit: "1".repeat(40),
@@ -126,7 +129,7 @@ test("refusals explain removed userinfo once, without changing diagnostic fields
   assert.equal(row.detail.split(clause).length - 1, 1, "membership forwards the refusal once");
 });
 
-test("HTTP userinfo refusals name their cause and remedy, while SSH host/path refusals only explain omission", async () => {
+test("HTTP userinfo refusals name their cause and remedy, while malformed SSH refusals explain withholding", async () => {
   for (const scheme of ["http", "https"]) for (const info of [USER, `${USER}:${PASSWORD}`, `:${PASSWORD}`]) {
     const ref = `${scheme}://${info}@${host}/${path}`;
     const e = await refused(() => parseRepoRef(ref));
@@ -136,20 +139,20 @@ test("HTTP userinfo refusals name their cause and remedy, while SSH host/path re
     assert.deepEqual(e.details, { ref: shown });
   }
   for (const [ref, shown, field, value] of [
-    ["git@my_host:org/repo", "ssh://my_host/org/repo", "host", "my_host"],
-    ["ssh://git@host.x/bad path", "ssh://host.x/bad path", "path", "bad path"],
-    ["git@host.x:bad path", "ssh://host.x/bad path", "path", "bad path"],
-    [`ssh://${USER}:${PASSWORD}@bad_host/o/r`, "ssh://bad_host/o/r", "host", "bad_host"],
+    ["git@my_host:org/repo", WITHHELD, "host", WITHHELD],
+    ["ssh://git@host.x/bad path", WITHHELD, "path", WITHHELD],
+    ["git@host.x:bad path", WITHHELD, "path", WITHHELD],
+    [`ssh://${USER}:${PASSWORD}@bad_host/o/r`, WITHHELD, "host", WITHHELD],
   ]) {
     const e = await refused(() => parseRepoRef(ref));
     safeError(e, "E_REPO_REF");
-    assert.equal(e.message, `repository reference has an invalid ${field}: ${shown} ${clause}`);
+    assert.equal(e.message, `repository reference has an invalid ${field}: ${shown} ${withheldClause}`);
     assert.deepEqual(e.details, { ref: shown, [field]: value });
     assert.doesNotMatch(e.message, /give credentials|credential helper|http\(s\)/);
   }
   // An @ in a path is not authority userinfo, and the accepted grammar stays intact.
   const pathError = await refused(() => parseRepoRef("https://host.x/org/repo@bad"));
-  assert.equal(pathError.message, "repository reference has an invalid path: https://host.x/org/repo@bad");
+  assert.equal(pathError.message, `repository reference has an invalid path: ${WITHHELD} ${withheldClause}`);
   assert.equal(parseRepoRef("https://host.x/org/repo").url, "https://host.x/org/repo.git");
 });
 
@@ -163,9 +166,9 @@ test("the omission clause is absent without removed userinfo in the named refuse
     const e = await refused(() => parsePackageRequest("p", value, {}));
     assert.ok(!e.message.includes(clause), value);
   }
-  assert.equal(redactUrl("@host:repo", null, { reference: true }), "ssh://host/repo");
-  assert.equal(redactUrl("refused @host:repo", "@host:repo", { known: false, refusal: true }), "refused ssh://host/repo",
-    "SCP display normalization without nonempty userinfo is not omission");
+  assert.equal(redactUrl("@host:repo", null, { reference: true }), WITHHELD);
+  assert.equal(redactUrl("refused @host:repo", "@host:repo", { known: false, refusal: true }), `refused ${WITHHELD} ${withheldClause}`,
+    "an unrecognised SCP value is withheld without claiming userinfo omission");
   for (const e of [
     await refused(() => parseRepoRef("git:example.invalid/org/repo", { transport: https[0] })),
     await refused(() => readRemoteFile(ssh, https[0], "x")),
@@ -206,9 +209,9 @@ test("one renderer handles quoted URLs, SCP host display and credentials echoed 
     assert.equal(remoteFailureCause({ reason: "unknown", url: displayed }).host, host);
   }
   assert.equal(redactUrl(`git@${host}:${path}`), clean);
-  for (const prefix of ["url=", "(git:", "fatal:", "[", "{", ",", ";"]) assert.equal(redactUrl(prefix + ssh), prefix + clean);
+  for (const prefix of ["url=", "(git:", "fatal:", "[", "{", ",", ";"]) assert.equal(redactUrl(prefix + ssh), WITHHELD, "mixed tokens are withheld as a whole");
   assert.equal(redactUrl(`failure '${https[0]}' and '${ssh}'`), `failure 'https://${host}/${path}' and '${clean}'`);
-  assert.equal(redactUrl(`failure '${https[0]},${ssh}'`), `failure 'https://${host}/${path},${clean}'`);
+  assert.equal(redactUrl(`failure '${https[0]},${ssh}'`), `failure '${WITHHELD}'`);
   noTokens(scrubGitLine(`fatal: '${ssh}': ${PASSWORD}`, ssh));
   noTokens(scrubGitLine(`fatal: ${USER} and ${PASSWORD}`, https[1]));
   assert.equal(scrubGitLine("secret%5Fvalue and secret_value", "ssh://bot:secret%5Fvalue@example.invalid/org/repo"), "and");
@@ -295,48 +298,49 @@ test("refusal rendering preserves hosts, paths, fixed prose and schema patterns 
   for (const [ref, clean] of [
     ["https://git@github.com/org/repo.git", "https://github.com/org/repo.git"],
     ["https://u:a@h.x/o/r", "https://h.x/o/r"],
-    ["git@", ""],
+    ["git@", WITHHELD],
   ]) {
     const e = await refused(() => parseRepoRef(ref));
-    const reason = clean ? httpUserinfoReason(clean) : `unrecognized repository reference: ${clean}`;
-    assert.equal(e.message, `${reason} ${clause}`);
+    const reason = clean === WITHHELD ? `unrecognized repository reference: ${clean}` : httpUserinfoReason(clean);
+    const explanation = clean === WITHHELD ? withheldClause : clause;
+    assert.equal(e.message, `${reason} ${explanation}`);
     assert.equal(e.details.ref, clean);
     const before = validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] });
     assert.deepEqual(before, [
       { path: "/members/0", message: `${JSON.stringify(clean)} does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` },
-      { path: "/members/0", message: `not a repo ref: ${reason} ${clause}` },
+      { path: "/members/0", message: `not a repo ref: ${reason} ${explanation}` },
     ]);
-    if (!clean) continue; // The userinfo-only reference has no repository to retain in a package.
+    if (clean === WITHHELD) continue; // This malformed value has no display components.
     const pkg = await refused(() => parsePackageRequest("p", `git:${ref}@v1`, {}));
-    assert.equal(pkg.details.value, `git:${clean}@v1`);
+    assert.equal(pkg.details.value, WITHHELD);
     assert.match(pkg.message, /^packages.p: a git package carries exactly one @<ref>/);
   }
 });
 
-test("parser fragments remove only userinfo overlap, preserving equal text in a refused path", async () => {
+test("parser fragments follow the whole-source withholding decision", async () => {
   const e = await refused(() => parseRepoRef("ssh://u:a@h.x/a bad/path"));
-  assert.equal(e.details.path, "a bad/path");
-  assert.equal(e.details.ref, "ssh://h.x/a bad/path");
+  assert.equal(e.details.path, WITHHELD);
+  assert.equal(e.details.ref, WITHHELD);
   const split = await refused(() => parseRepoRef(`https://${USER}:${PASSWORD}/extra@h.x/o/r`));
   safeError(split, "E_REPO_REF");
 });
 
 test("quoted URL boundaries preserve unrelated Git words and path at-signs", () => {
-  for (const text of [
-    "fatal: 'ssh://host' does not appear to be a git repository; mail admin@corp.com",
-    "… see https://host.x:8443/a@b",
-  ]) assert.equal(redactUrl(text), text);
+  for (const [text, shown] of [
+    ["fatal: 'ssh://host' does not appear to be a git repository; mail admin@corp.com", `fatal: '${WITHHELD}' does not appear to be a git repository; mail admin@corp.com`],
+    ["… see https://host.x:8443/a@b", `… see ${WITHHELD}`],
+  ]) assert.equal(redactUrl(text), shown);
   assert.equal(scrubGitLine("fatal: git rejected https://git@github.com/org/repo.git", "https://git@github.com/org/repo.git"),
     "fatal: rejected https://github.com/org/repo.git");
   assert.equal(scrubGitLine("u a https://h.x/a/u", "https://u:a@h.x/a/u"), "https://h.x/a/u");
 });
 
 
-test("refused package suffixes retain the repository host, port and path", async () => {
+test("refused package suffixes withhold the whole selected value", async () => {
   for (const value of ["git:https://host:8443/org/repo.git@v1@x", "git:ssh://host:2222/org/repo.git@v1@x", "git:https://host:8443/repo.git@v1@x"]) {
     const e = await refused(() => parsePackageRequest("p", value, {}));
-    assert.equal(e.details.value, value);
-    assert.ok(e.message.endsWith(`got ${JSON.stringify(value)}`));
+    assert.equal(e.details.value, WITHHELD);
+    assert.ok(e.message.endsWith(`got ${JSON.stringify(WITHHELD)} ${withheldClause}`));
   }
 });
 
@@ -445,8 +449,8 @@ test("all Git quoting helpers remove known secrets outside URLs in stderr and me
 test("no-path slash-in-password refusal removes userinfo from every error field", async () => {
   const e = await refused(() => parseRepoRef("https://TOKSECRET:P/extra@h.x"));
   assert.equal(e.code, "E_REPO_REF");
-  assert.equal(e.message, `repository reference has an invalid host: https://h.x ${clause}`);
-  assert.deepEqual(e.details, { ref: "https://h.x", host: "" });
+  assert.equal(e.message, `repository reference has an invalid host: ${WITHHELD} ${withheldClause}`);
+  assert.deepEqual(e.details, { ref: WITHHELD, host: WITHHELD });
   assert.equal(e.provenance, e.details);
 });
 
@@ -477,14 +481,13 @@ test("every composed reference output sanitizes later authorities in all rendere
   for (const ref of refs) {
     const rendered = redactUrl(ref, null, { reference: true });
     noTokens(rendered); authorityInvariant(rendered);
-    assert.ok(rendered.includes("github.com/a/b") || rendered.includes("github.com:8443/a/b"), rendered);
-    assert.ok(rendered.includes("/c/d"), "later host/path must survive");
+    assert.equal(rendered, WITHHELD, "composed values lose all input components");
     const e = await refused(() => parseRepoRef(ref));
     safeError(e, "E_REPO_REF"); authorityInvariant({ message: e.message, details: e.details });
     assert.equal(e.details.ref, rendered);
     const nested = await refused(() => parseRepoRef({ nested: { [ref]: [ref] } }));
     safeError(nested, "E_REPO_REF"); authorityInvariant(nested.details);
-    assert.equal(e.message.split(clause).length - 1, 1, "one clause, including later-only removal");
+    assert.equal(e.message.split(withheldClause).length - 1, 1, "one explanation for the whole composed refusal");
     const outputs = [
       redactUrl(ref), redactUrl(ref, ref, { known: false }),
       redactUrl(`refused ${JSON.stringify(ref)}`, ref, { known: false, refusal: true }),
@@ -511,10 +514,10 @@ test("every composed reference output sanitizes later authorities in all rendere
   noTokens(declaration.problems); authorityInvariant(declaration.problems);
 });
 
-test("HTTP and SSH three-or-more-slash authorities are defensive display values, while file paths retain their meaning", async () => {
+test("HTTP and SSH extra-slash values are withheld whole, while standalone file paths retain their meaning", async () => {
   for (const scheme of ["http", "https", "ssh"]) for (const slashes of ["///", "////", "/////"]) {
     const ref = `${scheme}:${slashes}${USER}:${PASSWORD}@github.com/a/b`;
-    const displayed = `${scheme}:${slashes}github.com/a/b`;
+    const displayed = WITHHELD;
     for (const result of [redactUrl(ref), redactUrl(ref, null, { reference: true }),
       redactUrl(`quoted ${JSON.stringify(ref)}`, ref, { known: false }),
       redactUrl(`https://github.com/c/d\n${ref}`, null, { reference: true })]) {
@@ -523,7 +526,7 @@ test("HTTP and SSH three-or-more-slash authorities are defensive display values,
     const e = await refused(() => parseRepoRef(ref));
     safeError(e, "E_REPO_REF");
     assert.equal(e.details.ref, displayed);
-    assert.equal(e.message.split(clause).length - 1, 1);
+    assert.equal(e.message.split(withheldClause).length - 1, 1);
     noTokens(validateLocal({ schemaVersion: 2, workspace: ref }));
     noTokens(validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] }));
     noTokens(validateMembership({ schemaVersion: 2, workspace: ref }));
@@ -539,17 +542,19 @@ test("HTTP and SSH three-or-more-slash authorities are defensive display values,
   }
   const query = "https://github.com/a/b?token=QUERY_TOKEN#FRAGMENT_TOKEN";
   assert.equal(redactUrl(query, null, { reference: true }), WITHHELD);
-  assert.equal(redactUrl(query), query, "ordinary prose does not scan query or fragment tokens");
+  assert.equal(redactUrl(query), WITHHELD, "selected prose tokens use the same component rules");
 });
 
-test("literal fragment overlap uses the last complete occurrence, including repeated and absent matches", () => {
+test("derived fragments display only recognized complete components, including repeated and absent matches", () => {
   for (const [source, fragment, expected] of [
-    ["https://aaaaa@host/path", "aaa", ""],
-    ["https://ababab@host/path", "abab", ""],
-    ["https://ababab@host/path", "aaba", "aaba"],
-    ["https://aaaaa@host/aaa", "aaa", "aaa"],
-    ["https://aaaaa@host/path", "aa@host", "host"],
-    ["https://aaaaa@host/path", "host/path", "host/path"],
+    ["https://aaaaa@host/path", "aaa", WITHHELD],
+    ["https://ababab@host/path", "abab", WITHHELD],
+    ["https://ababab@host/path", "aaba", WITHHELD],
+    ["https://aaaaa@host/aaa", "aaa", WITHHELD],
+    ["https://aaaaa@host/path", "aa@host", WITHHELD],
+    ["https://aaaaa@host/path", "host/path", WITHHELD],
+    ["https://aaaaa@host/org/repo", "org/repo", "org/repo"],
+    ["https://aaaaa@host/org/repo", "host", "host"],
   ]) assert.equal(redactUrl(fragment, source, { fragment: true, known: false }), expected);
 });
 
@@ -567,8 +572,8 @@ test("periodic host fragments remain bounded through full parser refusals and de
         if (mode === "parse") {
           assert.throws(() => parseRepoRef(ref), e => {
             assert.equal(e.code, "E_REPO_REF");
-            assert.equal(e.details.ref, "https://y/z");
-            assert.equal(e.details.host, "");
+            assert.equal(e.details.ref, "[repository reference withheld]");
+            assert.equal(e.details.host, "[repository reference withheld]");
             assert.ok(e.message.includes("invalid host"));
             return true;
           });
@@ -605,16 +610,17 @@ test("scheme tokens own punctuation-bearing userinfo with ports, without hiding 
       `${ref};https://${PASSWORD}@other.invalid/c/d`]) {
       const e = await refused(() => parseRepoRef(value));
       safeError(e, "E_REPO_REF"); authorityInvariant(e.details);
-      assert.ok(e.details.ref.startsWith(shown));
-      assert.equal(e.message.split(clause).length - 1, 1);
-      if (value !== ref) assert.ok(e.details.ref.endsWith("https://other.invalid/c/d"));
+      const expected = value === ref ? shown : WITHHELD;
+      const explanation = value === ref ? clause : withheldClause;
+      assert.equal(e.details.ref, expected);
+      assert.equal(e.message.split(explanation).length - 1, 1);
       const nested = await refused(() => parseRepoRef({ nested: { [value]: [value] } }));
       safeError(nested, "E_REPO_REF"); authorityInvariant(nested.details);
       for (const problems of [validateLocal({ schemaVersion: 2, workspace: value }),
         validateMembership({ schemaVersion: 2, workspace: value }),
         validateWorkspace({ schemaVersion: 2, name: "fixture", members: [value] })]) {
         noTokens(problems); authorityInvariant(problems);
-        assert.ok(problems.some(p => p.message.includes(shown)), "host, port and path survive in schema diagnostics");
+        assert.ok(problems.some(p => p.message.includes(expected)), "schema diagnostics use the same whole-value decision");
       }
     }
     const rawSSH = ref.replace("https:", "ssh:");
@@ -631,23 +637,23 @@ test("scheme tokens own punctuation-bearing userinfo with ports, without hiding 
     assert.ok(!e.message.includes(clause));
     assert.ok(argsSeen.some(args => args.includes(`remote.origin.url=${rawSSH}`)));
   }
-  // An SCP-shaped substring in a URL's path is owned by that URL, not a new span.
+  // An SCP-shaped substring joined to a URL is mixed input, not a separate safe display.
   const pathText = "https://github.com/a/b;git@other.invalid:c/d";
-  assert.equal(redactUrl(pathText), pathText);
+  assert.equal(redactUrl(pathText), WITHHELD);
 });
 
-test("later malformed reference spans share the segment rule and exact source accounting", async () => {
+test("later malformed references withhold the whole selected value and derived fragments", async () => {
   for (const separator of [" ", "\n", ", ", ";"]) for (const tail of ["", ":443", ":443/c/d"]) {
     const later = `https://${USER}:${PASSWORD}/extra@other.invalid${tail}`;
     const ref = `https://github.com/a/b${separator}${later}`;
-    const shown = `https://github.com/a/b${separator}https://other.invalid${tail}`;
+    const shown = WITHHELD;
     assert.equal(redactUrl(ref, null, { reference: true }), shown);
     assert.equal(redactUrl(ref, ref, { known: false }), shown);
     assert.equal(redactUrl(`quoted ${JSON.stringify(ref)}`, ref, { known: false }), `quoted ${JSON.stringify(shown)}`);
     const e = await refused(() => parseRepoRef(ref));
     safeError(e, "E_REPO_REF");
     assert.equal(e.details.ref, shown);
-    assert.equal(e.message.split(clause).length - 1, 1);
+    assert.equal(e.message.split(withheldClause).length - 1, 1);
     for (const problems of [validateLocal({ schemaVersion: 2, workspace: ref }),
       validateMembership({ schemaVersion: 2, workspace: ref }),
       validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] })]) {
@@ -660,36 +666,36 @@ test("later malformed reference spans share the segment rule and exact source ac
   const ref = `https://github.com/a/b https://${USER}:${PASSWORD}/q@other.invalid/c/d https://${USER}:${PASSWORD}/z@third.invalid/e/f`;
   const e = await refused(() => parseRepoRef(ref));
   safeError(e, "E_REPO_REF");
-  assert.equal(e.details.path, "a/b https://other.invalid/c/d https://third.invalid/e/f");
-  assert.equal(e.message.split(clause).length - 1, 1);
+  assert.equal(e.details.path, WITHHELD);
+  assert.equal(e.message.split(withheldClause).length - 1, 1);
   const boundedProse = `fatal: 'https://host.x:8443/a@b' remains a URL; mail admin@corp.com`;
-  assert.equal(redactUrl(boundedProse), boundedProse);
-  // The same segment rule must retain its numeric host:port/path ambiguity and
-  // must not reinterpret query/fragment tokens as authority userinfo.
+  assert.equal(redactUrl(boundedProse), `fatal: '${WITHHELD}' remains a URL; mail admin@corp.com`);
+  // These selected values are outside the component grammar, including query
+  // suffixes. They are withheld whole rather than scanned for query secrets.
   for (const tail of ["https://host.x:8443/repo@v1@x", "https://abc:4567/x@h.x",
     "https://host.x:443/o?value=user:QUERY_SECRET/q@h.x/c/d",
     "https://host.x:443/o#user:FRAGMENT_SECRET/q@h.x/c/d"]) {
     const value = `https://github.com/a/b ${tail}`;
-    assert.equal(redactUrl(value, null, { reference: true }), value);
-    assert.equal(redactUrl(value, value, { known: false, refusal: true }), value);
+    assert.equal(redactUrl(value, null, { reference: true }), WITHHELD);
+    assert.equal(redactUrl(value, value, { known: false, refusal: true }), `${WITHHELD} ${withheldClause}`);
   }
 });
 
 
-test("selected authorities retain delimiter data until their first slash", async () => {
+test("recognized userinfo delimiters retain safe components and mixed values are withheld", async () => {
   for (const delimiter of ["?", "#", "'", '"']) for (const combo of [delimiter, `=${delimiter},;`]) {
     const ref = `https://${USER}:${PASSWORD}${combo}x@github.com:443/a/b`;
     const shown = "https://github.com:443/a/b";
     for (const [value, output] of [[ref, shown],
-      [`https://host.x/o/r ${ref}`, `https://host.x/o/r ${shown}`],
-      [`${ref},https://${PASSWORD}@other.invalid/c/d`, `${shown},https://other.invalid/c/d`]]) {
+      [`https://host.x/o/r ${ref}`, WITHHELD],
+      [`${ref},https://${PASSWORD}@other.invalid/c/d`, WITHHELD]]) {
       assert.equal(redactUrl(value, null, { reference: true }), output);
       assert.equal(redactUrl(value, value, { known: false }), output);
       assert.equal(redactUrl(`quoted ${JSON.stringify(value)}`, value, { known: false }), `quoted ${JSON.stringify(output)}`);
       const e = await refused(() => parseRepoRef(value));
       safeError(e, "E_REPO_REF"); authorityInvariant(e.details);
       assert.equal(e.details.ref, output);
-      assert.equal(e.message.split(clause).length - 1, 1);
+      assert.equal(e.message.split(output === WITHHELD ? withheldClause : clause).length - 1, 1);
       for (const problems of [validateLocal({ schemaVersion: 2, workspace: value }),
         validateMembership({ schemaVersion: 2, workspace: value }),
         validateWorkspace({ schemaVersion: 2, name: "fixture", members: [value] })]) {
@@ -714,11 +720,11 @@ test("selected authorities retain delimiter data until their first slash", async
   }
   for (const suffix of ["?Q", "#F"]) {
     const value = `https://host:443${suffix}@h.x`;
-    assert.equal(redactUrl(value, null, { reference: true }), "https://h.x",
-      "ambiguous pre-slash text uses the conservative userinfo interpretation");
+    assert.equal(redactUrl(value, null, { reference: true }), WITHHELD,
+      "an authority without a recognized repository path is withheld");
   }
   const prose = "fatal: 'ssh://host' does not appear to be a repository; mail admin@corp.com";
-  assert.equal(redactUrl(prose), prose, "unselected prose still stops at quotes");
+  assert.equal(redactUrl(prose), `fatal: '${WITHHELD}' does not appear to be a repository; mail admin@corp.com`, "surrounding prose stays outside the selected token");
 });
 
 
@@ -757,7 +763,7 @@ test("seeded generated reference diagnostics never retain injected credential ma
     const parts = [make(form, slash, delimiter)], width = 1 + random(3), separator = separators[random(3)];
     while (parts.length < width) parts.push(make(forms[random(forms.length)], random(6), delimiters[random(delimiters.length)]));
     cases.push({ width, input: parts.map(p => p.raw).join(separator), tokens: parts.flatMap(p => p.tokens),
-      controls: parts.flatMap(p => p.controls), prose: parts.every(p => p.prose) });
+      controls: parts.flatMap(p => p.controls), prose: parts.every(p => p.prose), separator });
     coverage.cases++; count(coverage.widths, width); count(coverage.separators, separator);
   }
   const failures = [];
@@ -765,7 +771,7 @@ test("seeded generated reference diagnostics never retain injected credential ma
     coverage.checks++;
     const text = JSON.stringify(output);
     const leaked = sample.tokens.filter(token => text.includes(token));
-    const preservePath = preserve && (mode === "prose" || sample.width === 1);
+    const preservePath = preserve && (sample.width === 1 || (mode === "prose" && sample.separator !== ","));
     const lost = preservePath ? sample.controls.filter(token => !text.includes(token)) : [];
     if (preserve && mode !== "prose" && sample.width > 1 && !text.includes(WITHHELD))
       failures.push({ mode, input: sample.input, expected: WITHHELD, output });
@@ -788,7 +794,7 @@ test("seeded generated reference diagnostics never retain injected credential ma
   }
   const query = "https://h.invalid/o/r?value=QUERY_CONTROL#FRAGMENT_CONTROL";
   assert.equal(redactUrl(query, null, { reference: true }), WITHHELD);
-  assert.equal(redactUrl(query), query, "ordinary prose does not scan query or fragment tokens");
+  assert.equal(redactUrl(query), WITHHELD, "a selected prose token with unsupported suffixes is withheld whole, not query-scanned");
   const unrelated = validateWorkspace({ schemaVersion: 2, name: "https://UNRELATED_CONTROL@h.invalid/o/r" });
   assert.ok(unrelated.some(p => p.path === "/name" && p.message.includes("UNRELATED_CONTROL")));
   const failuresByMode = {};

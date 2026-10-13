@@ -180,10 +180,13 @@ Standalone `file:` references and filesystem paths retain their path meanings.
 
 The same decision applies to the selected reference in error messages,
 `details.ref`, `details.url`, `details.value`, `provenance.value`, nested
-reference keys and values, and reference-bearing workspace schema problems.
+reference keys and values, and reference-bearing workspace and soul schema
+problems. Discovery problem rows' `source` is also a diagnostic display.
 Quoted or JSON-escaped copies and host/path fragments derived from a withheld
 value cannot reveal its remainder. Unrelated schema values and opaque provider
-payloads are not scanned. This is not a general query or fragment token scrubber.
+payloads are not scanned. Query and fragment contents are not searched for
+individual secret values; a selected remote token with an unrecognised suffix
+is withheld as a whole.
 
 A refusal retains its code and reason. When the whole reference is withheld,
 the kernel message explains that once per originating refusal. When a
@@ -199,13 +202,20 @@ remain available beside the safe diagnostic value; APIs that do not know a
 location do not invent one.
 
 Git stderr quoted in a diagnostic is ordinary prose: its scrubber keeps a
-bounded line, delegates URL display to the same policy and removes known
-credential echoes. It does not treat the entire line as a selected repository
-reference. Transport failures do not gain a repository-refusal clause.
+bounded line and removes known credential echoes.
+Prose selects each maximal token delimited by whitespace, single or double quotes, or angle brackets that contains a scheme followed by ://, a git/http/https/ssh/file scheme followed by :, or an SCP-shaped user@host: prefix.
+Each selected token uses the same construction or whole-value withholding
+policy; there is no fallback to its raw text. Punctuation does not split a
+token into individually safe pieces. A remote reference joined to a harmless
+file path, or followed by an unrecognised query or path suffix, therefore loses
+the whole token. Ordinary text outside selected tokens remains, and standalone
+file references and paths retain their meanings. Transport failures do not
+gain a repository-refusal clause.
 
 These diagnostic fields are for people. Accepted parser results, repository
-identity keys and other values consumed by commands remain exact, as does the
-original reference handed to Git. Diagnostic rendering changes neither the
+identity keys and other values consumed by commands remain exact, including
+operational `from` values and external rows' `source`; so does the original
+reference handed to Git. Diagnostic rendering changes neither the
 accepted syntax nor transport. A client may extract a host from a constructed
 display; it must also handle the fixed withheld display without a host.
 
