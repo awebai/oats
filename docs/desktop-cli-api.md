@@ -4100,13 +4100,24 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   one Git names for it, <repository>, and does not write it into the
   record`. No key of the plan is new.
 
-  What `work/` is decides what the retire does with it, so it is part of
-  `planRevision` wherever it is not what the work mode alone says: when an
-  own tree became a directory of the home, or the other way round, between
-  the plan and the apply (a record's work mode that changed, a receipt that
-  is gone), or the repository read from Git changed, a guarded apply refuses
-  with `E_PLAN_STALE` before anything runs. Every other home has the
-  revision it had.
+  <a id="retire-revision-work"></a>The record's work mode (`facts.workMode`)
+  and what `work/` is by this reading, with the repository read from Git
+  where the reading takes it from there, are part of every retire plan's
+  `planRevision`, in every home (0.53.0, #1065). So no two plans of one home
+  that the record or the reading makes different, in `facts.workMode`,
+  `facts.ownWorktree`, `defaults.retainWorktree`, a note or the text's
+  `defaults:` line, share a revision, and a guarded apply after either moved
+  (a record's work mode that was rewritten, a receipt that is gone, an own
+  tree that became a directory of the home, another repository read from
+  Git) is refused with `E_PLAN_STALE` and the fresh plan, before anything
+  runs. Before 0.53.0 neither was part of the revision, and a record
+  rewritten between a plan and its apply did not make the plan stale.
+  **Every retire plan read under an older kernel is stale under this one,
+  once:** its apply is refused with `E_PLAN_STALE` and the fresh plan, and
+  the person confirms again. A repeated apply with the idempotency key of a
+  retire that did run is answered from its stored receipt as before,
+  whatever revision it carries: the receipt is looked for before any plan
+  is read.
 - A link at `work/` is never the instance's own tree: the retire removes
   the link with the home and does not touch what it leads to, whatever the
   record says (0.53.0, #973). The record is a file the instance can write;
