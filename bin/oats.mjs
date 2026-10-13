@@ -41,7 +41,7 @@ import { harnessTrust } from "../lib/harness-trust-write.mjs";
 import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
-import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeysUnmatched, launchLayers, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
+import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
 import { soulsOffered } from "../lib/instance-resolution.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
@@ -313,7 +313,7 @@ async function doctorLaunchPreferences(ws) {
   const entries = local?.souls?.launch && typeof local.souls.launch === "object" && !Array.isArray(local.souls.launch) ? local.souls.launch : {};
   const keys = Object.keys(entries).filter((k) => k !== "*").sort();
   if (!keys.length) return { problems: [], information: [] };
-  const shown = (list) => (list.length > 3 ? `${list.slice(0, 3).map((k) => JSON.stringify(k)).join(", ")} and ${list.length - 3} more` : list.map((k) => JSON.stringify(k)).join(", "));
+  const shown = (list) => (list.length > 3 ? `${list.slice(0, 3).map(launchKeyQuoted).join(", ")} and ${list.length - 3} more` : list.map(launchKeyQuoted).join(", "));
   let found;
   try {
     const { cacheOnlyRemote } = await import("../lib/operator-coverage.mjs");
@@ -328,8 +328,8 @@ async function doctorLaunchPreferences(ws) {
   return {
     problems: found.unmatched.map((row) => ({ code: LAUNCH_PREFERENCE_UNMATCHED, key: row.key, at: row.at, value: row.value, suggestions: row.suggestions,
       message: unmatchedKeyMessage(row, { lastRead: true }),
-      remedy: `pin the soul it was meant for (oats soul launch set <soul> --launch-config <name> | --harness <h>), then: oats soul launch remove ${shellQuote(row.key)}` })),
-    information: found.unchecked.map((row) => `launch-preference-unchecked: oats-local.yaml souls.launch ${JSON.stringify(row.key)} was not checked against the souls this workspace offers: ${LAUNCH_KEY_UNCHECKED[row.reason] ?? row.reason}; this is this machine's last read, and a spawn reads the workspace itself`),
+      remedy: `pin the soul it was meant for (${soulLaunchCommand("set")}), then: ${soulLaunchCommand("remove", { key: row.key })}` })),
+    information: found.unchecked.map((row) => `launch-preference-unchecked: oats-local.yaml souls.launch ${launchKeyQuoted(row.key)} was not checked against the souls this workspace offers: ${LAUNCH_KEY_UNCHECKED[row.reason] ?? row.reason}; this is this machine's last read, and a spawn reads the workspace itself`),
   };
 }
 
@@ -2220,7 +2220,7 @@ async function soulLaunchCmd(bail, usage) {
     const e = r.launch.effective;
     console.log(`The next spawn of ${r.souls.length > 1 && name !== r.key ? name : r.souls[0]} selects ${e.harness}${e.model ? ` with model ${e.model}` : ""}${e.launchConfig ? ` (launch configuration ${e.launchConfig})` : ""}, from ${r.launch.at ?? "the host default"}${r.launch.problem ? `, and would be refused: ${r.launch.problem.code}: ${r.launch.problem.message}` : ""}`);
   }
-  for (const u of r.unmatched) console.log(`souls.launch ${JSON.stringify(u.key)} is the key of no soul this workspace offers${u.suggestions.length ? ` (nearest: ${u.suggestions.join(", ")})` : ""}: oats soul launch remove ${shellQuote(u.key)}`);
+  for (const u of r.unmatched) console.log(`souls.launch ${launchKeyQuoted(u.key)} is the key of no soul this workspace offers${u.suggestions.length ? ` (nearest: ${u.suggestions.join(", ")})` : ""}: ${soulLaunchCommand("remove", { key: u.key })}`);
 }
 
 /** The catalog's rows of `kind` ("capabilities" | "souls") as `oats capabilities` / `oats souls` list them:

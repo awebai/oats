@@ -96,13 +96,18 @@ test("it comes before the refusals that describe the fall-through launch, and a 
   // "*" names a configuration this host does not have: alone that is E_LAUNCH_CONFIG_UNKNOWN.
   assert.equal(refusal(layersOf({ "*": "gone" }))?.code, "E_LAUNCH_CONFIG_UNKNOWN");
   assert.equal(refusal(layersOf({ "*": "gone", ghost: "private" }))?.code, CODE);
-  // The report: what the fall-through would have given, and the refusal as {code, message, fix}.
+  // The report: what the fall-through would have given, and the condition as {code, message, fix}. Nobody asked
+  // for a launch, so its message says that one would be refused, in the refusal's sentence up to there, and
+  // leaves the remedy to `fix`.
   const layers = layersOf({ "*": "private", ghost: "fast" });
   const report = launchReportFor({ layers, launchConfigs: NAMED, contextDir: tmpdir() });
   const e = launchPreferenceUnmatched({ choice: selectionFrom({ layers }), layers });
   assert.deepEqual(Object.keys(report), ["declared", "effective", "from", "at", "problem"]);
   assert.deepEqual([report.effective, report.from, report.at], [{ harness: "claude", model: "claude-opus-5-5", launchConfig: "private" }, "local-default", at("*")]);
-  assert.deepEqual(report.problem, { code: CODE, message: e.message, fix: UNMATCHED_FIX });
+  const said = `oats-local.yaml souls.launch names "ghost", which is no soul this workspace offers. A new launch of planner that names no launch has no entry of its own, so souls.launch."*" would decide it, and the kernel cannot tell which soul that key was meant to pin: `;
+  assert.ok(e.message.startsWith(`${said}it is refused, and nothing was created or started. Pin the soul it was meant for (`), e.message);
+  assert.deepEqual(report.problem, { code: CODE, message: `${said}it would be refused.`, fix: UNMATCHED_FIX });
+  assert.equal(e.details.fix, UNMATCHED_FIX, "the refusal's fix and the report's are one text");
   assert.notEqual(launchOf(report, REPORT_FROM), undefined, "the Desktop's Launch reader decodes it");
   // A soul with its own entry reports no such problem.
   assert.equal(launchReportFor({ layers: layersOf({ "*": "private", ghost: "fast", planner: "fast" }), launchConfigs: NAMED, contextDir: tmpdir() }).problem?.code ?? null, null);
@@ -125,8 +130,12 @@ test("the message names at most three keys, then \"and K more\", and stays withi
     assert.match(e.message, / more, which are no soul this workspace offers\. /);
     assert.match(e.message, /\(oats soul launch set .*\(oats soul launch remove /, "the remedy stays in the sentence");
     assert.deepEqual(e.details.keys.map((k) => k.key), Object.keys(long).sort());
+    // The report's message is the same sentence without the remedy, within the same bound.
     const report = launchReportFor({ layers, launchConfigs: NAMED, contextDir: tmpdir() });
-    assert.equal(report.problem.message, e.message);
+    assert.ok(report.problem.message.length <= LAUNCH_PROBLEM_TEXT_MAX, `the report's message is ${report.problem.message.length} characters`);
+    assert.match(report.problem.message, /^oats-local\.yaml souls\.launch names .* more, which are no soul this workspace offers\. .* which soul those keys were meant to pin: it would be refused\.$/);
+    assert.ok(!report.problem.message.includes("oats soul launch"), "the remedy is the report's fix");
+    assert.equal(report.problem.fix, e.details.fix);
     assert.notEqual(launchOf(report, REPORT_FROM), undefined, "the Desktop's Launch reader decodes it");
   }
   // One key longer than the bound allows a sentence to name: still bounded.

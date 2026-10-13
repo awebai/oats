@@ -45,7 +45,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "retire-plan-own-worktree"],
+             "soul-launch","retire-plan-own-worktree"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -1827,6 +1827,15 @@ shows the drift as `launch-changed`.
   - The message names at most three keys, then "and K more", and it and
     `fix` are at most 1024 characters each, with no line break, whatever the
     file holds. `keys` is complete.
+  - No text of a launch answer holds a character the kernel never prints (a
+    control character, a line or paragraph separator, a bidi control, an
+    invisible hider, a tag character): a refusal's `message` and `fix`, a
+    report's `problem`, a problems row. The schema of `oats-local.yaml`
+    admits no key with one, so the file brings none. Were one handed to an
+    answer all the same, the sentence names it with each such character
+    replaced by U+FFFD and gives no command for it: it says the key is
+    deleted from `souls.launch` in the file by hand. `keys[].key` is always
+    the exact key.
   - **Unmatched, or not checked.** A key other than `"*"` matches when an
     offered soul has that soul key (a soul in `souls.disabled` included).
     A key that matches nothing is *not checked*, and refuses nothing, when
@@ -1856,22 +1865,46 @@ shows the drift as `launch-changed`.
     `--reselect-launch` they point to refuses.
 - `E_HARNESS_UNAVAILABLE {harness, from, at, fix}`: the chosen harness has no
   executable on this machine. There is no fallback to another harness. `fix`
-  is "install <harness>, or override it on this machine in oats-local.yaml
-  souls.launch" (from the soul or the host), "install <harness>, or change
-  oats-local.yaml souls.launch" (from local layers), or "install <harness>, or
-  choose another --harness / --launch-config" (from a flag).
+  names the command that pins the soul (0.53), by the layer that chose the
+  harness:
+  - the soul's own `launch:` or the host default: "install <harness>, or pin
+    this soul on this machine (oats soul launch set <soul> --launch-config
+    <name> | --harness <h>)";
+  - the soul's own entry of `souls.launch`: "install <harness>, or pin this
+    soul to another launch (oats soul launch set <soul> --launch-config <name>
+    | --harness <h>)";
+  - `souls.launch."*"`: "install <harness>, name another launch for every soul
+    without an entry (oats soul launch set '*' --launch-config <name> |
+    --harness <h>), or pin this soul to its own (oats soul launch set <soul>
+    --launch-config <name> | --harness <h>)";
+  - a flag: "install <harness>, or choose another --harness / --launch-config".
+
+  The message says why, names the layer's location (`at`) and ends with the
+  `fix`. It stays within 1024 characters: a location too long for that gives
+  way to the layer in words ("the soul's own launch", for example), and
+  `details.at` keeps it.
 - `E_LAUNCH_CONFIG_UNKNOWN {name, from, at}`: `souls.launch` names a launch
-  configuration this `oats-local.yaml` does not declare.
+  configuration this `oats-local.yaml` does not declare. As a `Launch`
+  report's `problem`, its `fix` is "declare launch configuration <name> (oats
+  launch-config set), or pin the soul to another (oats soul launch set <soul>
+  --launch-config <name>)"; where `souls.launch."*"` named it, "declare launch
+  configuration <name> (oats launch-config set), name another for every soul
+  without an entry (oats soul launch set '*' --launch-config <name>), or pin
+  the soul to one (oats soul launch set <soul> --launch-config <name>)".
 - `E_LAUNCH_CONFIG_AMBIGUOUS {harness, configurations, fix}` (spawn and its
   preview only, 0.52): the chosen harness has more than one launch
   configuration here (`configurations`, all their names, sorted; the message
-  names the first 10, then "and K more", so it stays within 1024 characters),
+  names the first 10, then "and K more", and fewer where it would otherwise
+  pass 1024 characters),
   none is
   `default: true`, and the spawn named none. Named means `--launch-config
   <name>`, `--launch-config none`, or a `souls.launch` string; an inline or
   soul preference and `--harness` alone are not. `fix` is "name one with
-  --launch-config <name> (or souls.launch in oats-local.yaml), or mark one
-  default: true (oats launch-config set)". A start or restart of an existing
+  --launch-config <name>, pin the soul to one (oats soul launch set <soul>
+  --launch-config <name>), or mark one default: true (oats launch-config
+  set)"; where `souls.launch."*"` chose the harness it also says, before the
+  soul's own pin, "name one for every soul without an entry (oats soul launch
+  set '*' --launch-config <name>)". A start or restart of an existing
   home, `--reselect-launch` included, is never refused this way.
 - `E_WORKSPACE_SCHEMA`: a malformed `launch` or `souls.launch`, path named.
 
@@ -1901,7 +1934,13 @@ shows the drift as `launch-changed`.
   `E_LAUNCH_CONFIG_UNKNOWN`,
   `E_LAUNCH_CONFIG_AMBIGUOUS` with `effective.launchConfig` `null`, or
   `E_LAUNCH_EXECUTABLE` for a configuration whose own executable is missing). Only reports carry it;
-  spawn and preview refuse instead. With `E_LAUNCH_CONFIG_UNKNOWN`,
+  spawn and preview refuse instead. A `fix`, here and in a refusal's
+  `details`, is a sentence for a person: its wording may change between
+  releases, so a client shows it and never parses it. A report states a
+  condition, where a refusal states what was refused: for
+  `E_LAUNCH_PREFERENCE_UNMATCHED` the report's `message` names the keys and
+  the layer that would decide, and ends "it would be refused."; it does not
+  repeat the remedy, which is its `fix` (the refusal's `details.fix`). With `E_LAUNCH_CONFIG_UNKNOWN`,
   `effective` is the host default (`pi`, `null`, `null`): the named
   configuration launches nothing here.
 - In listings (`oats souls`, `inspect --soul`, `launchCurrent`) `model` is the
