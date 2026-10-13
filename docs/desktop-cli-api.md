@@ -2383,7 +2383,7 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_INTERRUPTED` | `{signal, hooks}` | SIGINT, SIGTERM or SIGHUP while the spawn's `worktree` hooks ran (feature `worktree-event`): the running hook's process group is ended, the spawn is rolled back as for a required hook failure, and the process exits 128 + the signal number |
 | `E_REQUIRED_HOOK_FAILED` | `{hooks}`, plus `unconfirmed: true` when compensation cannot finish | a required `spawn` or `worktree` hook failed or timed out; the spawn is rolled back. `hooks` holds the receipt of the event that failed: one entry per hook that ran, `{capability, ok, required, log, exitCode?, signal?, timedOut?, contract?}`, paths only. `log` is `null` for a spawn hook (it keeps no log) and once the rollback removed the home; a retained home keeps a `worktree` hook's log path. Never `home`. Before 0.49.0 a required spawn hook's failure answered `E_SPAWN_FAILED` |
 | `E_HOOK_ENVIRONMENT_CONTRACT` | the same as `E_REQUIRED_HOOK_FAILED`, the failed entry with `contract: "environment"` | a `spawn` hook answered an `env` its manifest does not allow, or a `worktree` hook answered `env` at all |
-| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else |
+| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else. Among them the two refusals of the harness package check, with the kernel's message: a required package that is not installed (`E_HARNESS_RESOURCE_MISSING` in the kernel), and a pane whose `PATH`, `HOME` or harness folder cannot be read for the probe (`E_RUNTIME_ENDPOINT_UNKNOWN` in the kernel: [the checks read the pane](execution-targets.md#the-checks-read-the-pane)). `oats session start` and `restart` answer the second under its own code. Passing the codes through a spawn is [#1047](https://github.com/awebai/oats/issues/1047) |
 
 Spawn failure envelopes carry `error.details.unconfirmed: true` when an existing
 keyed spawn is incomplete (`E_SPAWN_INCOMPLETE`) or compensation cannot confirm
@@ -5455,8 +5455,11 @@ It uses the existing success/error JSON envelope. Result:
 There is one entry per target file: the ambient file of each selected harness,
 then one per launch configuration whose `env` sets `CLAUDE_CONFIG_DIR` or
 `CODEX_HOME`, deduplicated by canonical directory. `ambient` says whether the
-operator's own environment selects the file; `launchConfigs` names the launch
-configurations that do (sorted). A launch configuration whose directory cannot
+file is the one a launch with no launch configuration reads (by the
+environment its tmux pane will have, or the operator's own when no OATS tmux
+server runs, which `warnings` then says:
+[harness-trust.md](harness-trust.md)); `launchConfigs` names the launch
+configurations that select it (sorted). A launch configuration whose directory cannot
 be resolved (an unset reference, a relative path) or does not exist is a
 `refused` entry with a `problem` string naming it; `file` is null when the path
 is unresolved. The directory is never created.
@@ -5472,7 +5475,13 @@ unverifiable observations). The intent retains the candidate digest. Apply's aud
 in warnings, without native configuration contents.
 
 Preflight failures, including any entry `problem`, use `E_CONFIG_BROKEN` with the
-result in details; the message names each problem. Apply failures
+result in details; the message names each problem. One case has its own code:
+when the only refused entries are ambient ones whose file could not be
+established, because a server runs and the environment of its panes cannot be
+read, the code is `E_RUNTIME_ENDPOINT_UNKNOWN` (`Harness trust targets cannot be
+established; nothing was written: …`), with the same details: the entry is
+`refused`, `file` null, with its `problem`. With a refused launch
+configuration's entry beside it, `E_CONFIG_BROKEN` wins. Apply failures
 use `E_HARNESS_TRUST_INCOMPLETE`, details `{...result,reason,mayHaveChanged}`;
 reason is the closed set `locked|changed|audit|write|verify`; the message names the
 failed files. Partial writes are
