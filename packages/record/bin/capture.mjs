@@ -23,6 +23,7 @@ import { sessionsForHome } from "../lib/sessions-for-home.mjs";
 import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { cwdOfLine } from "../lib/sessions-for-home.mjs";
 import { stageSnapshot } from "../lib/session-snapshot.mjs";
+import { cleanupCaptureScratch } from "../lib/capture-scratch.mjs";
 import { bufferLines } from "../lib/file-lines.mjs";
 import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { withReceiptSummaries } from "../lib/receipt-summary.mjs";
@@ -288,7 +289,7 @@ function withCaptureLock(fn) {
   }
   try {
     let result, failure;
-    try { result = fn(); return result; }
+    try { cleanupCaptureScratch(root, lock); result = fn(); return result; }
     catch (err) { failure = err; throw err; }
     finally {
       try { writeCaptureStatus(root, { pending: Boolean(failure || result?.pending || result?.held || result?.incomplete || result?.failed) }); }
@@ -484,7 +485,7 @@ function fileCapture() {
   try {
     stat = fstatSync(fd);
     if (!stat.isFile()) return fail("E_NOT_REGULAR_FILE", `${path} is ${fileKind(stat)}, not a regular file`, where);
-    pinned = stageSnapshot(fd, stat, path);
+    pinned = stageSnapshot(fd, stat, path, undefined, root);
   } catch (err) {
     return fail("E_FILE_UNREADABLE", `cannot read ${path}: ${err.message}`, where);
   } finally { closeSync(fd); }

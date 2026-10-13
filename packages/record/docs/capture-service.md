@@ -19,6 +19,13 @@ witness resumes from the boundary. The witness does **not** prove that the
 unobserved prefix is untouched. Explicit `captureCommLog` and
 `captureInteractionLog` library calls retain their full-reprojection default.
 
+A complete aweb entry refused by projection is counted when encountered and
+consumed; later unchanged passes do not retry it. Use
+`capture --reset-cursors --source aw` to request another projection attempt.
+Malformed complete lines are similarly skipped once per scan. Unfinished final
+lines keep their boundary for later growth; source read errors and failed durable
+appends do not become successful consumed checkpoints.
+
 Detected changes have two outcomes:
 
 - Aweb logs reproject from the beginning. Persistent journal IDs suppress
@@ -125,13 +132,16 @@ it does not run the explicit full-index count query merely to print progress.
 Explicit API and receipt defaults retain complete issue/source/session
 inventories, so their metadata memory may grow with the output they must return.
 They do not retain whole source contents or journals to compute counts and
-first/last visible IDs; receipt summaries use disk-backed tombstone claims.
+first/last visible IDs; receipt summaries use file-backed tombstone claims.
 
 Final/attributed/Pi-custody capture and changed-transcript comparison can require
 a complete verified snapshot before mutation. Those paths stream the source to
-a private temporary file, hash it while reading, and append from the same pinned
-bytes. Staging costs one source-sized temporary copy and is removed on success
-or failure. Full receipt verification and recovery may read historical bytes;
+a private temporary file under `<root>/.capture-tmp`, hash it while reading,
+and append from the same pinned bytes. Receipt claims databases use that same
+record-root scratch area. Staging costs one source-sized temporary copy and is
+removed on ordinary success or failure. These files are colocated on the record
+root volume, not the system temp volume; the chosen record volume may itself
+be memory-backed. Full receipt verification and recovery may read historical bytes;
 this necessary proof work is distinct from unchanged/small-growth accounting.
 
 Journal IDs and validation checkpoints are accelerators, never authority.
@@ -143,6 +153,30 @@ commits bounded progress; search rows and byte/count cursors commit together in
 bounded transactions. Ordinary passes seek new journal bytes without parsing
 consumed prefixes. Inconsistent identities or cursors invalidate derived state;
 recovery can cost a historical scan. No journal format or turn ID changes.
+
+Scratch directories are private per synchronous caller (0700 directories, 0600
+owner/payload files), with a same-host PID and nonce marker. No supported path
+transfers their ownership or open descriptors to a subprocess. A command holding
+the capture lock removes recognized allocations only after positively proving
+the local allocator dead and rechecking directory and marker identity. Public
+synchronous callers still do not acquire an implicit capture lock; their live
+allocations are preserved by command cleanup. Live/reused PIDs, unknown or foreign
+owners, permission failures, links, special files and incomplete/missing markers
+are preserved. A kill before ownership publication can leave an unowned directory.
+For such leftovers, stop all capture/library users, establish that no caller is
+using the specific allocation, and remove only that confirmed orphan; do not
+blanket-delete the scratch area while callers may be active. No age-only cleanup.
+
+## First-upgrade cost
+
+The first capture after upgrade must reconcile existing journals and rebuild the
+search index. Per-input capture checkpoints and per-stream index transactions
+still incur substantial synchronous commit costs on storage where sync is costly.
+Connection/transaction amortization is unresolved by these algorithm changes;
+bounded memory and incremental content work do not imply a cheap first pass.
+The bounded service must separately qualify first-upgrade and unchanged passes
+beside actual v0.53.0 on a Linux runner, including filesystem/runtime details,
+connection/transaction/sync counts, resumable prefix proof and deadline progress.
 
 ## Downgrade and re-upgrade
 

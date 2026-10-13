@@ -12,7 +12,12 @@
   these inputs. This changes capture algorithms; it introduces no service
   schedule, record-size policy, or bounded-runner guarantee. Content buffers and
   caches are bounded apart from the largest record; sorted path/root metadata
-  and explicit receipt inventories can still grow with input counts.
+  and explicit receipt inventories can still grow with input counts. The first
+  capture after upgrade reconciles existing journals and rebuilds the index,
+  with substantial per-input/per-stream synchronous commit cost still unresolved.
+  Refused aweb entries are counted and consumed; reset source cursors to retry
+  them. Snapshot and receipt scratch stays on the record-root volume, with
+  conservative cleanup of proven abandoned allocations under the capture lock.
 
 - Capture health reads current set-aside issues, including direct library calls,
   while command snapshots retain their historical run fields. Reading an existing

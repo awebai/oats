@@ -62,7 +62,7 @@ function* logEntries(fd, start, end, onSkipped) {
       if (text.trim() === "") continue;
       entry = JSON.parse(text);
     } catch {
-      if (!final) onSkipped();
+      if (!final) onSkipped(offset);
       continue;
     }
     yield { entry, start: lineStart, end: final ? lineStart : offset, bytes: line.length };
@@ -103,11 +103,11 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
       if (old.dev === version.dev && old.ino === version.ino && (version.size > old.size || sameVersion(old, version)) &&
           previous.bytes <= end && boundaryWitness(fd, previous.bytes) === previous.witness) start = previous.bytes;
     }
-    let entries = 0, skipped = 0, failed = 0, appended = 0, batch = [], batchBytes = 0, consumed = start, firstFailure = null, complete = false;
+    let entries = 0, skipped = 0, failed = 0, appended = 0, batch = [], batchBytes = 0, consumed = start, complete = false;
     const checkpoint = () => {
       if (!incremental) return;
-      const bytes = firstFailure ?? consumed;
-      state.set("aw", key, { bytes, version, witness: boundaryWitness(fd, bytes), epoch: journal.epoch, generation, complete: complete && failed === 0 });
+      const bytes = consumed;
+      state.set("aw", key, { bytes, version, witness: boundaryWitness(fd, bytes), epoch: journal.epoch, generation, complete });
     };
     const flush = () => {
       if (batch.length) {
@@ -117,18 +117,21 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
       }
       checkpoint();
     };
-    for (const record of logEntries(fd, start, end, () => skipped++)) {
+    for (const record of logEntries(fd, start, end, (offset) => { skipped++; consumed = offset; })) {
       entries++;
       let turn;
-      try { turn = project(record.entry); }
-      catch { failed++; firstFailure ??= record.start; continue; }
+      // Projection refusal consumes this complete entry just like a skipped
+      // malformed line. Resetting source cursors is the explicit retry path;
+      // an old refusal must not pin every background pass to historical bytes.
       consumed = record.end;
+      try { turn = project(record.entry); }
+      catch { failed++; continue; }
       if (knownIds) { if (knownIds.has(turn.id)) continue; knownIds.add(turn.id); }
       batch.push(turn); batchBytes += record.bytes;
       if (batch.length >= APPEND_BATCH || batchBytes >= 8 * 1024 * 1024) flush();
     }
-    // A completed scan may skip malformed complete lines, but not a torn
-    // fragment. Keeping the last projected boundary only adds bounded replay.
+    // Complete refused/malformed entries are consumed; an unfinished final
+    // fragment keeps its starting boundary so later growth can finish it.
     complete = true;
     flush();
     return { entries, appended, skipped, failed };

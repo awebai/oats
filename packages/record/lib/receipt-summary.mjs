@@ -1,8 +1,8 @@
 // Explicit capture receipts prove visible boundaries without retaining journal
 // contents or the IDs of the record in memory. Claims use the same first-seen
 // non-session union and tombstone authority as RecordStore.tombstoneClaims().
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
+import { createCaptureScratch } from "./capture-scratch.mjs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -11,9 +11,10 @@ import { RecordStore } from "./store.mjs";
 
 export function withReceiptSummaries(store, fn) {
   const { DatabaseSync } = require("node:sqlite");
-  const dir = mkdtempSync(join(tmpdir(), "turn-record-receipt-"));
+  const scratch = createCaptureScratch(store.root, "receipt"), dir = scratch.path;
   let db;
   try {
+    writeFileSync(join(dir, "claims.db"), "", { flag: "wx", mode: 0o600 });
     db = new DatabaseSync(join(dir, "claims.db"));
     db.exec(`PRAGMA cache_size = -2048; PRAGMA temp_store = FILE;
       CREATE TABLE streams (stream TEXT PRIMARY KEY);
@@ -56,6 +57,6 @@ export function withReceiptSummaries(store, fn) {
     return fn(summary);
   } finally {
     try { db?.close(); }
-    finally { rmSync(dir, { recursive: true, force: true }); }
+    finally { scratch.close(); }
   }
 }

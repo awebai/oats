@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { RecordStore } from "../lib/store.mjs";
@@ -87,4 +88,58 @@ test("collected and background AW capture preserve code-unit account and journal
       assert.deepEqual(store.readStream("fixture~aw").map(turn => turn.provenance.origin["~"].account), expected);
     }
   } finally { fs.opendirSync = open; syncBuiltinESMExports(); }
+});
+
+
+test("refused AW entries advance durable cursors across fresh no-op, growth and reset retry", t => {
+  const f = fixture(t), pkg = resolve(import.meta.dirname, "..");
+  const lines = Array.from({ length: 3000 }, (_, i) => i === 10 ? JSON.stringify({ note: "no timestamp", n: i }) + "\n" : entry(i));
+  fs.writeFileSync(f.path, lines.join(""));
+  const env = { HOME: f.root, TMPDIR: f.logs, PATH: process.env.PATH };
+  const run = () => {
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+      const open=fs.openSync,close=fs.closeSync,read=fs.readSync;const tracked=new Set();let bytes=0;
+      fs.openSync=(p,...a)=>{const fd=open(p,...a);if(p===${JSON.stringify(f.path)})tracked.add(fd);return fd};
+      fs.closeSync=fd=>{tracked.delete(fd);return close(fd)};
+      fs.readSync=(fd,...a)=>{const n=read(fd,...a);if(tracked.has(fd))bytes+=n;return n};syncBuiltinESMExports();
+      const {RecordStore}=await import(${JSON.stringify(join(pkg, "lib/store.mjs"))});
+      const {captureAwLogs}=await import(${JSON.stringify(join(pkg, "lib/capture-aw.mjs"))});
+      const result=captureAwLogs(new RecordStore(${JSON.stringify(f.root)},{owner:'fixture'}),{owner:'fixture',commLogDir:${JSON.stringify(f.logs)}});
+      console.log(JSON.stringify({bytes,result}));
+    `], { env, encoding: "utf8" });
+    assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout);
+  };
+  const first = run(); assert.equal(first.result[0].failed, 1); assert.equal(first.result[0].appended, 2999);
+  for (let i = 0; i < 2; i++) { const noOp = run(); assert.equal(noOp.bytes, 0); assert.deepEqual(noOp.result, []); }
+  fs.appendFileSync(f.path, entry(3000));
+  const growth = run(); assert.equal(growth.result[0].failed, 0); assert.equal(growth.result[0].appended, 1);
+  assert.ok(growth.bytes < 65536, `growth read ${growth.bytes} historical bytes`);
+  const reset = spawnSync(process.execPath, [join(pkg, "bin/capture.mjs"), "--root", f.root, "--owner", "fixture", "--reset-cursors", "--source", "aw"], { env, encoding: "utf8" });
+  assert.equal(reset.status, 0, reset.stderr);
+  const replay = run(); assert.equal(replay.result[0].failed, 1); assert.equal(replay.result[0].appended, 0);
+  assert.ok(replay.bytes >= fs.statSync(f.path).size, "reset really retries the refused entry");
+  assert.equal(run().bytes, 0);
+  const turns = f.store().readStream("fixture~aw"); assert.equal(turns.length, 3000);
+  assert.equal(new Set(turns.map(turn => turn.id)).size, turns.length);
+});
+
+test("AW append failures and incomplete final lines do not advance past undurable data", t => {
+  const f = fixture(t), refused = JSON.stringify({ note: "no timestamp" }) + "\n";
+  fs.writeFileSync(f.path, refused + entry(1));
+  const store = f.store(); store.appendUniqueBatch = () => { throw new Error("injected append failure"); };
+  assert.throws(() => captureAwLogs(store, { owner: "fixture", commLogDir: f.logs }), /injected append failure/);
+  const retry = captureAwLogs(f.store(), { owner: "fixture", commLogDir: f.logs });
+  assert.equal(retry[0].failed, 1); assert.equal(retry[0].appended, 1);
+  const next = entry(2), split = next.length - 8;
+  fs.appendFileSync(f.path, next.slice(0, split));
+  assert.equal(captureAwLogs(f.store(), { owner: "fixture", commLogDir: f.logs })[0].appended, 0);
+  fs.appendFileSync(f.path, next.slice(split));
+  assert.equal(captureAwLogs(f.store(), { owner: "fixture", commLogDir: f.logs })[0].appended, 1);
+  assert.equal(f.store().readStream("fixture~aw").length, 2);
+  fs.appendFileSync(f.path, ("malformed " + "x".repeat(200) + "\n").repeat(1000));
+  assert.equal(captureAwLogs(f.store(), { owner: "fixture", commLogDir: f.logs })[0].skipped, 1000);
+  fs.appendFileSync(f.path, entry(3));
+  const bytes = contentReads(() => assert.equal(captureAwLogs(f.store(), { owner: "fixture", commLogDir: f.logs })[0].appended, 1));
+  assert.ok(bytes < 65536, `growth replayed ${bytes} bytes of consumed malformed lines`);
 });

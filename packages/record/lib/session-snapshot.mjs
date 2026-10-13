@@ -2,8 +2,8 @@
 // are not attribution: a renamed/replaced source must never donate bytes to
 // the previous source's stream. Reads and validation use the SAME descriptor.
 import { createHash } from "node:crypto";
-import { closeSync, fstatSync, lstatSync, mkdtempSync, openSync, readSync, rmSync, statSync, writeSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { closeSync, fstatSync, lstatSync, openSync, readSync, statSync, writeSync } from "node:fs";
+import { createCaptureScratch } from "./capture-scratch.mjs";
 import { join } from "node:path";
 import { fileChunks } from "./file-lines.mjs";
 import { guardCapturedPath } from "./native-history.mjs";
@@ -60,10 +60,10 @@ export function* sourceChunks(fd, start, end, path, capturedPi) {
 }
 
 // Attribution must be verified before the first journal mutation. Keep its
-// immutable bytes on private temporary disk, not in a source-sized Buffer.
+// immutable bytes in private record-root scratch, not in a source-sized Buffer.
 // The caller owns close(), including when header checks or appends fail.
-export function stageSnapshot(fd, stat, path, capturedPi) {
-  const dir = mkdtempSync(join(tmpdir(), "turn-record-snapshot-"));
+export function stageSnapshot(fd, stat, path, capturedPi, root) {
+  const scratch = createCaptureScratch(root, "snapshot"), dir = scratch.path;
   let stagedFd;
   try {
     stagedFd = openSync(join(dir, "snapshot"), "wx+", 0o600);
@@ -86,12 +86,12 @@ export function stageSnapshot(fd, stat, path, capturedPi) {
       },
       close() {
         try { if (stagedFd !== undefined) closeSync(stagedFd); }
-        finally { stagedFd = undefined; rmSync(dir, { recursive: true, force: true }); }
+        finally { stagedFd = undefined; scratch.close(); }
       },
     };
   } catch (err) {
     try { if (stagedFd !== undefined) closeSync(stagedFd); }
-    finally { rmSync(dir, { recursive: true, force: true }); }
+    finally { scratch.close(); }
     throw err;
   }
 }

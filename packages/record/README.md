@@ -107,10 +107,13 @@ including UTF-8 characters split across chunks. It appends batches of at most
 One very large native record can still require memory proportional to that
 record; capture does not impose a new record-size policy.
 Final, attributed and protected Pi capture stage the descriptor's snapshot on
-private temporary disk before the first append, preserving attribution and
-custody checks without keeping the source in memory. Staging is removed on
-success or failure. Exact `--file` capture uses the same staging, and receipt
-counts/boundaries stream the journals with disk-backed tombstone lookup.
+private scratch under `<root>/.capture-tmp` before the first append, preserving
+attribution and custody checks without retaining the source in process memory.
+Exact `--file` capture and receipt claims databases use the same record-root
+volume, which may itself be memory-backed. Ordinary success/failure cleans each
+caller's allocation; lock-held cleanup reclaims only proven dead local owners.
+See [scratch ownership and upgrade costs](docs/capture-service.md#resource-model)
+for preserved uncertain leftovers and the unresolved synchronous first-pass cost.
 Explicit final proofs may read the full snapshot; their output inventories
 remain proportional to the issues and sessions the receipt must return.
 
@@ -292,8 +295,8 @@ claim for the whole pass. Explicit receipts likewise retain the issue/session
 inventories their public contract returns. Background capture suppresses those
 output inventories without suppressing error counts.
 
-Verified snapshots and prefix comparisons use private temporary disk, which can
-expand with source size; journal and derived-index disk space also grow with
+Verified snapshots and prefix comparisons use private record-root scratch, which
+can expand with source size; journal and derived-index disk space also grow with
 captured content. Staging is cleaned on success and failure. No new heap, record
 size, elapsed-time or service policy limit is imposed by these algorithms.
 

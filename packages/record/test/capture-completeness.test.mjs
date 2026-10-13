@@ -423,8 +423,9 @@ fs.readSync = (fd, ...args) => { if (fd === captureFd && !grown) { grown = true;
 test("home attribution does not read/hash the remaining body of an unrelated transcript", (t) => {
   const f = fixture(t);
   writeFileSync(f.file, line(join(f.base, "sibling")) + "x".repeat(300000));
-  const preload = f.inject(`const open = fs.openSync, read = fs.readSync; let sourceFd, reads = 0;
+  const preload = f.inject(`const open = fs.openSync, read = fs.readSync, close = fs.closeSync; let sourceFd, reads = 0;
 fs.openSync = (p, ...args) => { const fd = open(p, ...args); if (String(p) === source) sourceFd = fd; return fd; };
+fs.closeSync = (fd) => { if (fd === sourceFd) sourceFd = undefined; return close(fd); };
 fs.readSync = (fd, ...args) => { if (fd === sourceFd && ++reads > 1) throw new Error('unrelated body was read'); return read(fd, ...args); };`);
   const r = f.run({ native: true, preload }); assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout); assert.equal(out.complete, true); assert.deepEqual(out.sessions, []);

@@ -189,7 +189,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     if (expected) assertIdentity(stat, expected, path); // BEFORE reading bytes
     // Final home capture stages a descriptor-pinned snapshot. All attribution
     // and stability checks precede the first append, never a post-write alarm.
-    staged = !pinned && (final || expected || capturedPi) ? stageSnapshot(fd, stat, path, capturedPi) : null;
+    staged = !pinned && (final || expected || capturedPi) ? stageSnapshot(fd, stat, path, capturedPi, store.root) : null;
     let source = pinned ?? staged;
     const chunks = (start = 0, end = stat.size) => source
       ? source.bytes ? [source.bytes.subarray(start, end)] : source.chunks(start, end)
@@ -225,7 +225,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       // A complete comparison precedes ANY append from this input. Pin the
       // bytes on disk so a later batch cannot reopen a mutable source.
       if (!source && journalVersion?.size) {
-        staged = stageSnapshot(fd, stat, path, capturedPi);
+        staged = stageSnapshot(fd, stat, path, capturedPi, store.root);
         source = staged; snapshot.hash = staged.hash;
       }
       state = compareTranscriptPrefix(store, streamId, offsets, completeLines(chunks(), {}));

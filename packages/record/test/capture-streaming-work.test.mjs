@@ -84,13 +84,13 @@ test("staging releases its private directory on success and a read failure", asy
   process.env.TMPDIR = base;
   const fd = fs.openSync(path, "r");
   try {
-    const staged = stageSnapshot(fd, fs.fstatSync(fd), path);
+    const staged = stageSnapshot(fd, fs.fstatSync(fd), path, undefined, base);
     assert.deepEqual(Buffer.concat([...staged.chunks()]), Buffer.from("record\n"));
     assert.equal(fs.readdirSync(base).length, 2);
     staged.close();
-    assert.deepEqual(fs.readdirSync(base), ["source"]);
-    assert.throws(() => stageSnapshot(fd, { size: 99 }, path), /short read/);
-    assert.deepEqual(fs.readdirSync(base), ["source"]);
+    assert.deepEqual(fs.readdirSync(join(base, ".capture-tmp")), []);
+    assert.throws(() => stageSnapshot(fd, { size: 99 }, path, undefined, base), /short read/);
+    assert.deepEqual(fs.readdirSync(join(base, ".capture-tmp")), []);
   } finally {
     fs.closeSync(fd);
     if (originalTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = originalTmp;
