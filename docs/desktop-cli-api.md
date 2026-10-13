@@ -940,8 +940,8 @@ preserving the kernel code and message. A row with an owner (`repoKey`,
 only; the source reference is never printed in the bracket. Context uses
 the kernel's terminal text escaping. Ownerless rows, including unmatched
 launch keys, have no bracket. Partial listings still exit 0; JSON success
-semantics and fatal refusals are unchanged. A problem does not necessarily mean an item
-is absent from the table.
+semantics and fatal refusals are unchanged. A problem does not necessarily
+mean an item is absent from the table.
 
 ```json
 {"soulsApi":1,"workspace":{"name":"northwind","key":"github.com/nw/agents","commit":"66566512…"},

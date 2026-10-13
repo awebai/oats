@@ -59,6 +59,7 @@ for (const kind of ["souls", "capabilities"]) {
     assert.deepEqual(json.problems.slice(2).map((p) => [p.code, p.key]), kind === "souls"
       ? [["E_LAUNCH_PREFERENCE_UNMATCHED", "absent/alpha"], ["E_LAUNCH_PREFERENCE_UNMATCHED", "absent/zulu"]] : []);
     const result = compare(fx, kind);
+    assert.ok(result.text.stdout.includes(`! E_REMOTE_UNREADABLE: ${reads[0].message} [acme.pkg: package:acme.pkg:oats-package/souls/keeper/soul.yaml]`), "package owner and soul path are printed together");
     assert.deepEqual(result.json.problems, json.problems, "the same failed state produces the same ordered problems");
     assert.ok(result.json[kind].some((item) => item.name === (kind === "souls" ? "dev" : "house")));
     if (kind === "souls") assert.ok(!result.json.souls.some((s) => s.kind === "package"));

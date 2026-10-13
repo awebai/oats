@@ -174,8 +174,8 @@ oats status
 Read the diagnostics below the `oats souls` table before choosing a soul.
 Both `oats souls` and `oats capabilities` print all catalog problems there,
 on stdout, while partial listings still exit 0. `--json` carries the same
-ordered `problems` rows with their source fields; a problem does not always
-mean an item is absent.
+ordered `problems` rows with their owner and path fields (`repoKey`,
+`package`, `source`, `path`); a problem does not always mean an item is absent.
 
 OATS confirms Claude's development-channel prompt by itself whenever it
 launches Claude with `--dangerously-load-development-channels
