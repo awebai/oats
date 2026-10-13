@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { accessSync, constants, existsSync, lstatSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 import { FAILED_SPAWN_BRANCH_LEFT, listInstances, retireInstance } from "../lib/core.mjs";
@@ -239,14 +239,27 @@ test("(b) a removal owed where work/ is gone and the repository cannot be read i
   assert.equal(existsSync(w.home), false, "--force removes the home, as the operator's override");
 });
 
-test("(b) a dangling symbolic link at work/ is not absent: with the repository unreadable, the owed removal refuses, --force included, and the link and the home are kept", async (t) => {
-  const w = await goneWithUnreadableRepository(t, "dev-dangling", (w) => symlinkSync(join(w.fx.base, "nowhere"), w.work));
-  for (const o of [{ discardWorktree: true }, { discardWorktree: true, force: true }]) {
-    await assert.rejects(w.retire(o), (e) => e.code === "E_WORK_PRESERVATION_FAILED" && e.message.includes(`the worktree at ${w.work} could not be removed, or its removal could not be verified`));
-    assert.equal(lstatSync(w.work).isSymbolicLink(), true, "the link is kept");
-    assert.equal(existsSync(join(w.home, "instance.json")), true, "and so is the home");
-  }
-});
+// Before awebai/oats#973 this test pinned that a dangling link here was an entry at work/ whose owed removal could not
+// be verified, so the retry refused (E_WORK_PRESERVATION_FAILED, --force included); #973 changed that by decision: a
+// link at work/ is never the instance's own tree, so no worktree step runs for it and nothing is owed or verified through it.
+for (const [o, label] of [[{ discardWorktree: true }, "--discard-worktree"], [{ discardWorktree: true, force: true }, "--discard-worktree --force"]]) {
+  test(`(b) ${label}: a dangling symbolic link at work/ is a link, not a worktree whose removal is owed: with the repository unreadable the retry completes, the link goes with the home, and the receipt says it led nowhere`, async (t) => {
+    const w = await goneWithUnreadableRepository(t, "dev-dangling", (w) => symlinkSync(join(w.fx.base, "nowhere"), w.work));
+    const r = await w.retire(o);
+    assert.equal(r.rollbackIncomplete, undefined, JSON.stringify(r.rollbackIncomplete));
+    assert.equal(r.forcedIncomplete, undefined, JSON.stringify(r.forcedIncomplete));
+    // The line a reader could get wrong: --discard-worktree was passed, and no worktree was removed or found
+    // absent. No worktree step ran, and the receipt says so as data.
+    assert.equal(r.retention, null, "no worktree step: not { worktree: \"absent\" }, not removed, not retained");
+    assert.notEqual(r.retention?.worktree, "absent");
+    assert.equal(r.worktreeRemoved, false, "although --discard-worktree was passed");
+    assert.equal(r.branchDeleted, false);
+    assert.equal(r.removedDir, true);
+    assert.deepEqual(r.warnings, [`${w.work} was a link though the record says work mode worktree: nothing was retained or removed as a work tree, and it led nowhere that could be read`]);
+    assert.equal(existsSync(w.home), false, "the home is removed, and the link with it");
+    assert.equal(existsSync(`${w.meta.repo}-moved`), true, "the repository is where the fixture left it");
+  });
+}
 
 test("--force with an incomplete hook retains the worktree before the home goes: no admin entry is left dangling", async (t) => {
   const w = await stubbornInstance(t, "dev-forced");

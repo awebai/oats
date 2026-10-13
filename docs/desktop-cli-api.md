@@ -3873,7 +3873,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   below) or removed (`--discard-worktree`). It is `true` exactly when
   `work/` is the instance's own tree: in `worktree` mode, and (0.53.0, #962)
   for a record with no work mode whose `work/` Git confirms is a registered
-  linked worktree, which the retire retains. In every other mode it is
+  linked worktree, which the retire retains. A link at `work/` is never that
+  tree, under a record that says `worktree` too (0.53.0, #973, below). In
+  every other mode it is
   `false` because the instance has no work
   tree of its own, never because a tree would be removed: there the retire
   touches no tree it does not own. `work/` of an attached, a checkout or a
@@ -3903,8 +3905,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   directory at `work/` that is not that is **a directory of the home**: one
   found where the work mode has a link (an attached, a checkout or a
   workspace instance, or a record with no work mode), or under a valid
-  receipt that says no tree was given, whatever the record says now. A link
-  is what it was. For a directory of the home the plan has:
+  receipt that says no tree was given, whatever the record says now. **A
+  link** at `work/` is never the instance's own tree, whatever the record
+  says (0.53.0, #973, below). For a directory of the home the plan has:
   - `defaults.retainWorktree: false`, and in the text's `defaults:` line `no
     work tree of its own (work/ is a real directory of the home: copied to
     recovery when not empty and then removed with the home)`.
@@ -3933,6 +3936,96 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   is gone), or the repository read from Git changed, a guarded apply refuses
   with `E_PLAN_STALE` before anything runs. Every other home has the
   revision it had.
+- A link at `work/` is never the instance's own tree: the retire removes
+  the link with the home and does not touch what it leads to, whatever the
+  record says (0.53.0, #973). The record is a file the instance can write;
+  what the link leads to is not the instance's. So a home whose record says
+  `worktree` and whose `work/` is a symbolic link plans and retires as a
+  home that was given a link. Before 0.53.0 its plan said
+  `defaults.retainWorktree: true` and its retire was refused with
+  `E_WORK_PRESERVATION_FAILED`. Its plan has:
+  - `defaults.retainWorktree: false`, and in the text's `defaults:` line `no
+    work tree of its own (work/ is a link, though the record says worktree:
+    what it leads to is not touched)`. `facts.workMode` is the record's
+    value, as always.
+  - the note `the record says work mode worktree, but work/ is a link and
+    not a work tree of the instance's own: the retire removes the link with
+    the home and does not touch what it leads to, with --discard-worktree as
+    well`. The note names no target. It names the flag because a plan takes
+    no option: `--plan --discard-worktree` answers this same plan, and no
+    worktree step runs for the link with the flag either.
+  - `facts.work` as for every home whose `work/` is a link: an observation
+    of what the link leads to, which says nothing of whose tree it is.
+  - a `planRevision` that binds it, by the rule above: a plan read while
+    `work/` was a link is stale once `work/` is the instance's own tree, and
+    the other way round.
+
+  Its retire completes with the receipt of a home that was given a link
+  (`retention: null`, `worktreeRemoved: false`, no copy of the work in
+  `workRecovery`; with `--discard-worktree` too, since no worktree step
+  runs), with and without `--discard-worktree` and `--force`, and one string
+  in `warnings`: `<home>/work was a link though the record says
+  work mode worktree: nothing was retained or removed as a work tree, and
+  what it led to (<path>) was not touched`. `<path>` is what the system
+  resolves the link to just before the home is removed, never the text
+  stored in the link; nothing acts on it. When the link does not resolve,
+  the string ends `and it led nowhere that could be read`. The receipt holds
+  the path as the system gave it. The retire's text (without `--json`)
+  prints every warning of the receipt on one line and spells each character
+  a terminal would act on, or that hides or reorders text (a control
+  character such as an escape or a newline, a bidi override: the set the
+  kernel never prints in text it did not write), as `\u{<hex>}`, so that a
+  name cannot clear the screen or write a line of its own. The JSON is not
+  changed by that: its strings are what they were. No key of the plan or of
+  the receipt is new.
+- A link at `work/` that is no longer a link when the retire inspects the
+  home again (a retire hook, or anything else, put a directory or a file in
+  its place) refuses with `E_WORK_INSPECTION_FAILED` and keeps the home, in
+  every work mode (0.53.0, #973): the home's removal would take what is
+  there now, uncopied. The message says what was there and what is there
+  now, that the home is kept and nothing of it was removed, and how it
+  ends, by what is there now:
+  - a directory: that `oats retire <instance> --plan` shows what a retire
+    would do with what is there now, and that running the retire again does
+    that;
+  - a file, or an entry that is neither a link, a directory nor a file:
+    that no retire removes it, and the step (`move it out of the home or
+    remove it, then run the retire again`). It does not point to the plan,
+    which does not say that such an entry stays (#1019);
+  - an entry that cannot be read: that the retire reads it again when it is
+    run again.
+
+  Running the retire again reads the home as it is then, by the reading
+  above: the record as it is then and the spawn's receipt decide, not what
+  the home was given alone.
+  - A directory that the reading answers is a directory of the home (#962:
+    the spawn's receipt says that no tree was given, as an attached, a
+    checkout or a workspace instance's does, and the record says
+    `attached`, `checkout`, `workspace`, `worktree` or holds no work mode):
+    the retire copies it to recovery, checks the copy and removes it with
+    the home.
+  - A directory under a record that says `worktree` whose spawn's receipt
+    says that a tree was given, and a file (or an entry that is none of the
+    three) under a record that says `worktree` whatever the receipt says
+    (an attached instance whose record was changed to `worktree` included):
+    a work directory with no Git admin entry. The retire runs its hooks and keeps the entry and the home as an
+    incomplete item (exit 1; with `--force` it refuses with
+    `E_WORK_PRESERVATION_FAILED` before anything runs) until a person moves
+    the entry out or deletes it; then it completes.
+  - A file, or an entry that is none of the three, under a record that
+    says `attached`, `checkout` or `workspace`: the inspection refuses
+    (`E_WORK_INSPECTION_FAILED`, `--force` included, nothing stopped, run
+    or removed) until a person removes the entry; then it completes.
+  - A record that says `directory` by then is held against the spawn's
+    receipt as always: the retire refuses (`E_WORK_INSPECTION_FAILED`,
+    nothing stopped, run or removed) while the two disagree.
+- The two notes about a worktree that is retained, `N changed and M
+  untracked file(s) would be retained with the worktree` and `the worktree
+  is on <branch>, not the recorded <branch>`, are given for the instance's
+  own tree alone (0.53.0, #973). `facts.work` of an attached, a checkout or
+  a workspace instance observes the tree its link leads to, and before
+  0.53.0 its plan gave both notes for that tree, which the retire neither
+  keeps nor moves. `facts.work` is unchanged.
 - A home spawned before 0.25.9 has no session receipt (0.30). Its
   `facts.session` is `{state: "absent", present: false, backend, established:
   true, note}` when the session is observably gone: instance.json records no
