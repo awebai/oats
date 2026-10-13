@@ -6,7 +6,7 @@
 // selector. Elsewhere there is no unit, and the operator starts custody by hand.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { custodyPreflight } from "./grant-custody.mjs";
 
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
@@ -19,12 +19,13 @@ export function samePath(a, b) {
 
 /** The unit's PATH: aw's directory (and its target's, for a linked aw), the
  *  directory of the node an npm-installed aw needs, and the system's. It
- *  depends on where aw is, not on the PATH of the shell that ran the command,
- *  so a rerun from another shell finds the unit unchanged. */
-export function unitSearchPath(aw) {
+ *  uses the kernel-selected node path without resolving its stable link. Older
+ *  kernels supply no OATS_NODE_BIN and keep the previous execPath fallback. */
+export function unitSearchPath(aw, env = process.env) {
   let target = aw;
   try { target = realpathSync(aw); } catch { /* aw itself is the target */ }
-  const dirs = [dirname(aw), dirname(target), dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"];
+  const node = typeof env.OATS_NODE_BIN === "string" && isAbsolute(env.OATS_NODE_BIN) ? env.OATS_NODE_BIN : process.execPath;
+  const dirs = [dirname(aw), dirname(target), dirname(node), "/usr/local/bin", "/usr/bin", "/bin"];
   return dirs.filter((d, i) => dirs.indexOf(d) === i).join(":");
 }
 
@@ -119,7 +120,8 @@ function servedRoot(platform, text) {
   return m ? m[1].trim().replace(/%%/g, "%") : undefined;
 }
 
-/** Every custody unit of resident `name` this user has, whatever its namespace. */
+/** Recognised custody units of resident `name`, whatever their namespace.
+ *  Arbitrarily named services are outside this discovery boundary. */
 export function residentUnits(where, name) {
   const dir = unitDir(where);
   const suffix = where.platform === "darwin" ? ".plist" : ".service";
@@ -137,6 +139,18 @@ export function residentUnits(where, name) {
 
 export function conflictMessage(unit, root) {
   return `custody unit ${unit.path} already serves ${unit.root ?? "an unreadable directory"}, not ${root}; remove that unit or choose another name`;
+}
+
+/** Retiring a discovered unit is the operator's act; never remove or adopt it. */
+export function retireUnitStep(unit, { platform, uid }) {
+  const quote = (s) => /^[A-Za-z0-9/_.-]+$/.test(s) ? s : "'" + s.replace(/'/g, "'\\''") + "'";
+  return platform === "darwin"
+    ? `run \`launchctl bootout ${quote(`gui/${uid}/${unit.label}`)}\`, then move ${unit.path} out of ~/Library/LaunchAgents`
+    : `run \`systemctl --user disable --now ${quote(`${unit.label}.service`)}\`, then remove the unit file ${unit.path} and run \`systemctl --user daemon-reload\``;
+}
+
+export function foreignUnitMessage(unit, root, where) {
+  return `custody unit ${unit.label} (${unit.path}) already serves ${root} under another label; ${retireUnitStep(unit, where)}, then rerun; this command never adopts or removes another unit`;
 }
 
 /** A unit manager command's environment: PATH and HOME, and the variables
@@ -181,7 +195,7 @@ export function ensureCustodyUnit({ platform, label, aw, root, home, address, ui
     if (!served || !samePath(served, root)) fail("E_RESIDENT_UNIT_CONFLICT", conflictMessage({ path, root: served }, root));
   }
   // A unit serving the same directory under another spelling keeps its own.
-  const desired = renderUnit({ platform, label, aw, root: served, path: unitSearchPath(aw), home, address });
+  const desired = renderUnit({ platform, label, aw, root: served, path: unitSearchPath(aw, env), home, address });
   const changed = existing !== desired;
   if (changed) {
     mkdirSync(unitDir({ platform, home, xdgConfigHome }), { recursive: true });

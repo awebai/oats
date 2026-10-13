@@ -19,7 +19,7 @@ import { assertAwebSettingRecordable, recordAwebSetting } from "./local-settings
 import { querySelectedKernel } from "./session-readiness.mjs";
 import { selectedTeamKernel } from "./setup-team-default.mjs";
 import { normalizeAwebTeamName, selectedDeployment } from "./team-roots.mjs";
-import { conflictMessage, custodyLabel, ensureCustodyUnit, handStep, lingerProblem, ownUnitServes, residentUnits, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
+import { conflictMessage, custodyLabel, ensureCustodyUnit, foreignUnitMessage, handStep, lingerProblem, ownUnitServes, residentUnits, retireUnitStep, samePath, unitManager, unitPath, waitForCustody } from "./custody-unit.mjs";
 
 export const RESIDENT_USAGE = "usage: AWEB_API_KEY=<key> AWEB_URL=<url> oats aweb resident create <name> [--dir <deployment>] [--root <dir>] [--team-label <label>] [--plan] [--json]";
 const ALIAS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
@@ -322,7 +322,7 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     };
 
     // ---- preflight: nothing here has a remote effect
-    const where = { platform, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME };
+    const where = { platform, uid: process.getuid?.(), home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME };
     const { state, rejected } = rootState(root);
     const awebUrl = typeof env.AWEB_URL === "string" && env.AWEB_URL.trim() ? env.AWEB_URL : undefined;
     // A plan has no remote effect: it names the URL the init would use.
@@ -343,7 +343,13 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     const notOurCustody = async (label, status) => {
       const own = await ownUnitServes({ platform, label, root, home: env.HOME || "", xdgConfigHome: env.XDG_CONFIG_HOME, uid: process.getuid(), env, socketPath: String(status?.socket_path || "") });
       if (own.serves) return undefined;
-      const step = `run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
+      const units = residentUnits(where, name).filter((u) => u.root && samePath(u.root, root));
+      // Our unit just failed ownership verification; retiring it cannot stop
+      // the custody that is actually answering. Only name another unit.
+      const supervisor = units.find((u) => u.label !== label);
+      const step = supervisor
+        ? `recognised custody unit ${supervisor.label} (${supervisor.path}) is configured for this root: ${retireUnitStep(supervisor, where)}, then rerun; a unit started beside it would restart in a loop against it`
+        : `no ${units.length ? "other " : ""}recognised unit was found; find and stop any supervisor outside the recognised units: run \`aw custody stop\` in ${root} (or stop whatever supervises it), then rerun; a unit started beside it would restart in a loop against it`;
       return own.why === "no unit of this command serves it"
         ? `custody for ${name} is already running in ${root}, and not from this command's unit ${label}: ${step}`
         : `custody for ${name} is already running in ${root}, and this command's unit ${label} is not what serves it (${own.why}): ${step}`;
@@ -361,6 +367,14 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
         const problem = await notOurCustody(label, status);
         if (problem) throw failure("E_RESIDENT_CUSTODY_RUNNING", "preflight", problem);
       }
+    }
+
+    // A same-root unit under another label must not remain to load at login.
+    // Before init no address is known, so no existing label is ours to adopt.
+    if (manager) {
+      const label = known ? custodyLabel(known.address, name) : undefined;
+      const foreign = residentUnits(where, name).find((u) => u.label !== label);
+      if (foreign) throw failure("E_RESIDENT_UNIT_CONFLICT", "preflight", foreignUnitMessage(foreign, root, where));
     }
 
     if (opts.plan) {
@@ -427,6 +441,8 @@ export async function createResident(opts, { env, stdin, stderr, platform }) {
     if (manager) {
       const conflict = residentUnits(where, name).find((u) => !u.root || !samePath(u.root, root));
       if (conflict) throw failure("E_RESIDENT_UNIT_CONFLICT", "custody", conflictMessage(conflict, root));
+      const foreign = residentUnits(where, name).find((u) => u.label !== label);
+      if (foreign) throw failure("E_RESIDENT_UNIT_CONFLICT", "custody", foreignUnitMessage(foreign, root, where));
       try {
         const unit = ensureCustodyUnit({ platform, label, aw, root, home: env.HOME || "", address: identity.address, uid: process.getuid(), env, xdgConfigHome: env.XDG_CONFIG_HOME });
         custody = { manager: unit.manager, label: unit.label, path: unit.path };
