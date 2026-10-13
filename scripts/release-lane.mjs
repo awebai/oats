@@ -333,7 +333,9 @@ class Lane {
     this.manifest = {
       lane: "scripts/release-lane.mjs", tag: this.tag, version: this.version, sha,
       createdAt: new Date().toISOString(),
-      node: process.version, npm: capture("npm", ["--version"]).stdout.trim(), platform: `${process.platform}-${process.arch}`,
+      // npm's version has a key of its own: `npm` is the tarball list (below), which the later
+      // phases and the stage directories already written read.
+      node: process.version, npmVersion: capture("npm", ["--version"]).stdout.trim(), platform: `${process.platform}-${process.arch}`,
       export: null, phases: {}, npm: { tarballs: [] }, assets: this.manifest?.assets ?? [],
     };
     this.saveManifest();

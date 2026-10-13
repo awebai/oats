@@ -28,7 +28,9 @@ post-publish Desktop check, mirroring a released `oats.okf` and releasing
 
 Every phase takes `--tag vX.Y.Z` and reads or writes `stage/<tag>/`
 (gitignored; `--stage <dir>` overrides). `MANIFEST.json` there records the
-SHA, the tarballs and their digests, the assets, and which phases completed.
+SHA, the Node and npm versions it was built with (`node`, `npmVersion`), the
+tarballs and their digests (`npm.tarballs`), the assets, and which phases
+completed.
 Every external command is printed before it runs and its output is logged
 under `stage/<tag>/logs/`; a failing step exits non-zero with the log path.
 
