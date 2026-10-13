@@ -22,8 +22,8 @@ stays usable with it. Alone, with "Keep recorded harness", it starts the
 recorded harness bare; beside a picked harness, that one. It sends the word the
 kernel reads as no configuration, `--launch-config none`, from one constant
 (`LAUNCH_CONFIG_NONE`, `packages/client/launch-contract.mjs`) and never from a
-row of the list: a row that carries the word as its name is not drawn as a
-configuration. Preview invocation sends the same choice.
+row of the list: a row whose name is the word, or is not a string at all, is
+not drawn as a configuration. Preview invocation sends the same choice.
 
 The entry is offered only where the kernel that would answer the start is
 known to read the word. The server says so in a key of its own on the list
@@ -100,6 +100,28 @@ reader into its creation receipt, and the notice is the same
 (`packages/desktop/docs/desktop-spawn-preview.md`, A spawn where Claude Code
 ignored the channel option).
 
+When OATS refuses a start or a restart with `E_LAUNCH_CONFIG_AMBIGUOUS` (the
+start names a harness and no configuration, several configurations are declared
+for that harness, and none is the default), the dialog says it in its own
+words. Its status reads: "More than one launch configuration is declared for
+the chosen harness, and none is the default. Choose one under Launch
+configuration, or choose "No launch configuration" to run the harness as
+installed." Under it stands OATS's message as one line, "OATS says:
+`<message>`", through the display filter: whole, or "[Detail withheld]" with no
+name before it when the message is withheld, and no line when there is no
+message (`kernelLines`, `packages/client/kernel-lines.mjs`). The message
+quoted is the answer's own (`answered`, set by the page's transport in
+`packages/desktop/renderer/views/common.mjs`), never the transport's stand-in
+for an answer without one, such as "HTTP 409". The
+sentence is chosen by the code alone (`startRefusalSentence`,
+`packages/client/start-messages.mjs`); no part of OATS's message is read to
+choose it. It names the dialog's two controls and no machine, so it is the
+same for an instance on this computer and on a server. A **Preview
+invocation** refused with that code reads the same sentence, then "Preview
+only. No agent was started or stopped.", with OATS's line under it. Every
+other refusal of a start, a restart or a preview reads as before: the answer's
+message as the status.
+
 If an ordinary Start dialog finds the instance already running, its action becomes
 **Open terminal**. A failed or timed-out start requires **Refresh status** before
 another attempt, because the launch may have succeeded before the reply was
@@ -139,7 +161,14 @@ the bare harness), `--harness` or `--yolo`/`--no-yolo`.
 Restart uses `POST /api/restart/<instance>?ws=…&home=…` and the single kernel
 command `oats session restart` with the same selectors and choices.
 Configuration inspection and editing use `POST /api/launch-configs?ws=…`,
-routed through `oats launch-config list/set/remove/preview`. These features
+routed through `oats launch-config list/set/remove/preview`. A refusal on that
+route answers its code and the first 300 characters of its message; for
+`E_LAUNCH_CONFIG_AMBIGUOUS` alone it answers the display filter's line over
+OATS's message as it came (`displayLine`, `packages/client/display-text.mjs`):
+withheld whole, or folded and bounded at `MAX_DISPLAY_LINE`, so the line the
+dialog shows under its sentence is not cut short and nothing withheld survives
+a cut. It answers an empty message when OATS gave none, never the stand-in text
+a refusal without a message is given. These features
 require the CLI's `launch-config` and `session-restart` capabilities; old
 clients/hosts receive an update explanation instead of unsupported arguments.
 The installed CLI must advertise `session-start`; remote starting also needs

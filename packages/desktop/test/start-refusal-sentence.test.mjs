@@ -1,7 +1,7 @@
 // The Start and Restart dialog says one refusal in the Desktop's words (awebai/oats#1079): a start, a restart
 // or a launch preview refused with E_LAUNCH_CONFIG_AMBIGUOUS reads the Desktop's sentence
 // (packages/client/start-messages.mjs), which names the dialog's own two controls, with the kernel's message
-// as one filtered line under it (renderer/speaker-line.mjs `kernelLines`). Every other refusal reads as before.
+// as one filtered line under it (packages/client/kernel-lines.mjs `kernelLines`). Every other refusal reads as before.
 // Also held: how much of that message the launch-configs route answers, and that no other route changed.
 // No kernel sentence is written in this file: every message is a text of the tests' own.
 import test from 'node:test';
