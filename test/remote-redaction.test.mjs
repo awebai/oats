@@ -15,6 +15,11 @@ const host = "example.invalid", path = "org/repo.git", key = "example.invalid/or
 const ssh = `ssh://${USER}:${PASSWORD}@${host}/${path}`;
 const clean = `ssh://${host}/${path}`;
 const https = [`https://${USER}@${host}/${path}`, `https://${USER}:${PASSWORD}@${host}/${path}`];
+const malformed = [
+  `git:${USER}@${host}/${path}`, `${USER}@${host}/${path}`,
+  `${USER}@my_host:org/repo`, `https:/${USER}@${host}/${path}`,
+  `https:${USER}@${host}/${path}`,
+];
 const roots = [];
 const scratch = () => { const dir = mkdtempSync(join(tmpdir(), "oats-redaction-")); roots.push(dir); return dir; };
 test.after(() => { for (const dir of roots) rmSync(dir, { recursive: true, force: true }); });
@@ -39,7 +44,7 @@ test("every remote diagnostic uses the renderer at its error boundary", () => {
   assert.equal((source.match(/\boatsError\(/g) || []).length, 1, "new diagnostic constructors must use fail");
   const diagnostic = new Function("oatsError", "redactUrl", `${definition}; return fail;`)(oatsError, redactUrl);
   const details = { url: ssh, ref: { nested: [https[0]], [https[1]]: true }, path: https[1], reason: "unknown" };
-  const e = diagnostic("E_REMOTE_UNREADABLE", `new diagnostic: ${ssh}; ${PASSWORD}`, details);
+  const e = diagnostic("E_REMOTE_UNREADABLE", `new diagnostic: ${ssh}`, details);
   safeError(e, "E_REMOTE_UNREADABLE");
   assert.equal(e.details.reason, "unknown");
   assert.equal(details.url, ssh, "never mutate the operational source");
@@ -52,9 +57,10 @@ test("every remote diagnostic uses the renderer at its error boundary", () => {
 
 test("parser refusals redact strings, malformed URLs, nested objects and auxiliary fields", async () => {
   const bad = [
-    ...https, `http://${USER}:${PASSWORD}@${host}/${path}`,
+    ...malformed, ...https, `http://${USER}:${PASSWORD}@${host}/${path}`,
     `https://${USER}:${PASSWORD}@@${host}/${path}`,
     `https://${USER}:${PASSWORD}/extra@${host}/${path}`,
+    `https://${USER}:123/extra@${host}/${path}`,
     `https://${USER} ${PASSWORD}@${host}/${path}`,
     `https://${USER}\n${PASSWORD}@${host}/${path}`,
     `https://${USER}:${PASSWORD}@bad host/${path}`,
@@ -63,6 +69,7 @@ test("parser refusals redact strings, malformed URLs, nested objects and auxilia
     `ssh://${USER}:${PASSWORD}@${host}/bad path`,
     { key, url: https[0] }, { key: https[0], url: ssh },
     { bad: [https[0], { [https[1]]: ssh }] },
+    { bad: [malformed[0], { [malformed[1]]: malformed[2] }] },
   ];
   for (const ref of bad) safeError(await refused(() => parseRepoRef(ref)), "E_REPO_REF");
   // Invalid non-reference options also cross the module's diagnostic boundary.
@@ -127,11 +134,11 @@ test("membership answers redact both cannot-read and invalid-ref diagnostics, in
   const injected = { parseRepoRef, observeRemote: async () => { throw Object.assign(new Error("unreadable"), { code: "E_REMOTE_UNREADABLE", details: { url: ssh, reason: "auth" } }); }, readRemoteFile, listRemoteTree: async () => [] };
   const other = await confirmMembership(workspaceObs, ssh, { remote: injected });
   noTokens(other); assert.equal(other.reason, "cannot-read"); assert.equal(other.url, clean);
-  for (const ref of https) { const invalid = await confirmMembership(workspaceObs, ref); noTokens(invalid); assert.equal(invalid.reason, "not-listed"); }
+  for (const ref of [...https, ...malformed]) { const invalid = await confirmMembership(workspaceObs, ref); noTokens(invalid); assert.equal(invalid.reason, "not-listed"); }
 });
 
 test("configured reference fields and package refusals redact without admitting new syntax or filtering unrelated values", async () => {
-  for (const ref of [...https, ssh, `ssh://${USER}@${host}/${path}`]) {
+  for (const ref of [...https, ...malformed, ssh, `ssh://${USER}@${host}/${path}`]) {
     const workspace = { schemaVersion: 2, name: "fixture", members: [ref], packages: { "fixture.pkg": `git:${ref}@v1` } };
     const problems = validateWorkspace(workspace);
     assert.ok(problems.some((p) => p.path === "/members/0"));
@@ -158,4 +165,42 @@ test("catalog source reaches real remote refusal rendering", async () => {
     const e = await refused(() => resolvePackages({ packages: { "fixture.pkg": "v1" } }, { catalog: { "fixture.pkg": { url: ref, ref: "v1" } }, remoteOptions: { cacheDir: scratch(), exec } }));
     safeError(e, ref === ssh ? "E_REMOTE_UNREADABLE" : "E_REPO_REF");
   }
+});
+
+
+test("refusal rendering preserves hosts, paths, fixed prose and schema patterns with short credentials", async () => {
+  for (const [ref, clean] of [
+    ["https://git@github.com/org/repo.git", "https://github.com/org/repo.git"],
+    ["https://u:a@h.x/o/r", "https://h.x/o/r"],
+  ]) {
+    const e = await refused(() => parseRepoRef(ref));
+    assert.equal(e.message, `unrecognized repository reference: ${clean}`);
+    assert.equal(e.details.ref, clean);
+    const before = validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] });
+    assert.deepEqual(before, [
+      { path: "/members/0", message: `${JSON.stringify(clean)} does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` },
+      { path: "/members/0", message: `not a repo ref: unrecognized repository reference: ${clean}` },
+    ]);
+    const pkg = await refused(() => parsePackageRequest("p", `git:${ref}@v1`, {}));
+    assert.equal(pkg.details.value, `git:${clean}@v1`);
+    assert.match(pkg.message, /^packages.p: a git package carries exactly one @<ref>/);
+  }
+});
+
+test("parser fragments remove only userinfo overlap, preserving equal text in a refused path", async () => {
+  const e = await refused(() => parseRepoRef("ssh://u:a@h.x/a bad/path"));
+  assert.equal(e.details.path, "a bad/path");
+  assert.equal(e.details.ref, "ssh://h.x/a bad/path");
+  const split = await refused(() => parseRepoRef(`https://${USER}:${PASSWORD}/extra@h.x/o/r`));
+  safeError(split, "E_REPO_REF");
+});
+
+test("quoted URL boundaries preserve unrelated Git words and path at-signs", () => {
+  for (const text of [
+    "fatal: 'ssh://host' does not appear to be a git repository; mail admin@corp.com",
+    "… see https://host.x:8443/a@b",
+  ]) assert.equal(redactUrl(text), text);
+  assert.equal(scrubGitLine("fatal: git rejected https://git@github.com/org/repo.git", "https://git@github.com/org/repo.git"),
+    "fatal: rejected https://github.com/org/repo.git");
+  assert.equal(scrubGitLine("u a https://h.x/a/u", "https://u:a@h.x/a/u"), "https://h.x/a/u");
 });

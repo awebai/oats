@@ -86,7 +86,7 @@ and the rules its tests pin.
 
 | module | owns |
 |---|---|
-| `remote.mjs` | repo refs, reading Git remotes, content digests; `redactUrl` owns [reference rendering in diagnostics](workspaces.md#repository-references-in-diagnostics), including refused references and quoted Git text. `scrubGitLine` delegates credential removal to it and owns only the line's control-character and length formatting. Workspace and package refusals use the same renderer; raw refs remain available for transport |
+| `remote.mjs` | repo refs, reading Git remotes, content digests; `redactUrl` owns [reference rendering in diagnostics](workspaces.md#repository-references-in-diagnostics), including refused references and quoted Git text. `scrubGitLine` delegates credential removal to it and owns only the line's control-character and length formatting. Workspace and package refusals supply reference context to the same renderer; known-credential echo removal applies to Git text, while fixed prose and already-rendered URLs are preserved. Raw refs remain available for transport |
 | `local-inputs.mjs` | the local configuration a command read, for `observation.localRevision` |
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
