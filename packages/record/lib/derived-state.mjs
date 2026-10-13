@@ -1,14 +1,23 @@
 // Local accelerators only. Journal bytes remain authority; removing this
 // database costs bounded rebuild work, never changes a turn or its ID.
-import { mkdirSync, statSync } from "node:fs";
+import { mkdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+export function invalidateLegacyMaps(root) {
+  for (const name of ["capture-offsets.json", "capture-aw-seen.json"]) {
+    try { unlinkSync(join(root, "index", name)); }
+    catch (err) { if (err.code !== "ENOENT") throw err; }
+  }
+}
+export function statVersion(st) {
+  return { dev: String(st.dev), ino: String(st.ino), size: Number(st.size), mtime: String(st.mtimeNs ?? st.mtimeMs), ctime: String(st.ctimeNs ?? st.ctimeMs) };
+}
 export function fileVersion(path) {
   try {
     const st = statSync(path, { bigint: true });
     if (!st.isFile()) throw new Error(`not a regular file: ${path}`);
-    return { dev: String(st.dev), ino: String(st.ino), size: Number(st.size), mtime: String(st.mtimeNs), ctime: String(st.ctimeNs) };
+    return statVersion(st);
   } catch (err) { if (err.code === "ENOENT") return null; throw err; }
 }
 export const sameVersion = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -26,6 +35,12 @@ export class DerivedState {
   }
   get(kind, key) { const row = this.read.get(kind, key); return row ? JSON.parse(row.value) : null; }
   set(kind, key, value) { this.write.run(kind, key, JSON.stringify(value)); }
+  delete(kind, key) { this.db.prepare("DELETE FROM state WHERE kind = ? AND key = ?").run(kind, key); }
+  *entries(kind) {
+    for (const row of this.db.prepare("SELECT key, value FROM state WHERE kind = ? ORDER BY key").iterate(kind)) {
+      yield { key: row.key, value: JSON.parse(row.value) };
+    }
+  }
   transaction(fn) {
     this.db.exec("BEGIN IMMEDIATE");
     try { const result = fn(); this.db.exec("COMMIT"); return result; }

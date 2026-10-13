@@ -23,6 +23,7 @@ import {
   linkSync,
   mkdirSync,
   openSync,
+  opendirSync,
   readdirSync,
   readFileSync,
   readSync,
@@ -31,7 +32,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { DerivedState, fileVersion, sameVersion } from "./derived-state.mjs";
+import { DerivedState, fileVersion, sameVersion, invalidateLegacyMaps } from "./derived-state.mjs";
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -400,6 +401,17 @@ export class RecordStore {
       .sort();
   }
 
+  *iterateStreams() {
+    let dir;
+    try { dir = opendirSync(this.streamsDir()); }
+    catch (err) { if (err.code === "ENOENT") return; throw err; }
+    try {
+      for (let entry; (entry = dir.readSync()) !== null;) {
+        if (validStreamId(entry.name) && existsSync(join(this.streamsDir(), entry.name, "journal.jsonl"))) yield entry.name;
+      }
+    } finally { dir.closeSync(); }
+  }
+
   readStream(streamId) {
     const path = this.journalPath(streamId);
     if (!existsSync(path)) return [];
@@ -610,7 +622,9 @@ export class RecordStore {
       if (!verifyTurnId(turn)) throw new StoreError("turn id missing or does not match content");
     }
     const path = this.journalPath(streamId);
-    return this.withStreamLock(streamId, () => this.withDerived(state => {
+    return this.withStreamLock(streamId, () => {
+      invalidateLegacyMaps(this.root);
+      return this.withDerived(state => {
       const checkpoint = this.validateJournal(streamId, state);
       repairTail(path);
       const hasId = state.db.prepare("SELECT 1 FROM journal_ids WHERE stream = ? AND id = ?");
@@ -639,7 +653,8 @@ export class RecordStore {
         state.set("journal", streamId, checkpoint);
         return appended;
       });
-    }));
+      });
+    });
   }
 
   // ------------------------------------------------------------- objects
