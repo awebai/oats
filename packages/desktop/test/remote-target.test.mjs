@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareRemoteTerm, remoteTargetKey, createTerminalPrepareGate, remoteTerminalEnvironment } from "../remote-target.mjs";
+import { createTerminalPrepareGate, remoteTerminalEnvironment } from "../remote-target.mjs";
+import { prepareRemoteTerm, remoteTargetKey } from "../../client/session-attach.mjs";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { HERDR_REMOVED } from "../../client/terminal-contract.mjs";
-import { runTerminalCommand } from "../terminal-exec.mjs";
+import { runTerminalCommand } from "../../client/terminal-exec.mjs";
 
 /** The real runner over an exec double that exits `code` after printing `stdout`, as the CLI does for a JSON refusal. */
 const exiting = (code, stdout, calls = []) => (bin, args, opts) => runTerminalCommand(bin, args, opts, (_bin, argv, _opts, callback) => {

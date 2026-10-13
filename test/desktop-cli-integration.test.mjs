@@ -383,7 +383,7 @@ test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches t
 
 
 test("desktop server: remote capability survives discovery and HTTP projection into terminal preparation", async () => {
-  const { prepareRemoteTerm } = await import("../packages/desktop/remote-target.mjs");
+  const { prepareRemoteTerm } = await import("../packages/client/session-attach.mjs");
   const dir = mkdtempSync(join(tmpdir(), "oats-cliremote-"));
   const fake = fakeCli(dir, { remote: ["spawn", "retire", "status", "session"] });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: fake.bin, PATH: "/nonexistent", SHELL: "/bin/false" });

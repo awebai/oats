@@ -3,7 +3,7 @@
 // introduced here. A Herdr session target is refused with E_HERDR_REMOVED.
 import { tmuxAttachTarget } from './tmux-target.mjs';
 import { tmuxSocketArgs } from './local-tmux-io.mjs';
-import { remoteTargetKey } from './remote-target.mjs';
+import { remoteTargetKey } from '../client/session-attach.mjs';
 import { HERDR_REMOVED, terminalGeometry } from '../client/terminal-contract.mjs';
 
 const invalid = () => { throw new Error('Invalid terminal target'); };

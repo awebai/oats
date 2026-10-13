@@ -38,7 +38,7 @@ test("the same absolute home on two servers stays two instances for every routed
   const { cliReadiness } = await import("../readiness-cli.mjs");
   const { cliInstanceEvents } = await import("../instance-events-cli.mjs");
   const { cliInstanceGit } = await import("../../client/cli-adapter.mjs");
-  const { remoteTargetKey } = await import("../remote-target.mjs");
+  const { remoteTargetKey } = await import("../../client/session-attach.mjs");
   const home = "/work/agents/dev/instances/dev-one", cwd = "/Users/me/work";
   const cli = { ok: true, bin: "/installed/oats", eventsApi: 2, features: ["instance-events-2"],
     remote: ["readiness", "instance-events", "instance-git", "lifecycle-plans"] };
