@@ -5,6 +5,7 @@ import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
 import { DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, cliRecord, deploymentState, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
+import { shown, textOf as textShown } from "../lib/term/text.mjs";
 import { ENTER, LEAVE } from "../lib/term/tty.mjs";
 import { CLI, DEPLOYMENT, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
 
@@ -781,7 +782,7 @@ test("a deployment that could not be observed says why in the shared sentence: t
   }
   // The hand-made reason of this file, unmarked and with the kernel's message withheld by the TUI's own filter.
   const unmarked = failed(null, { code: "E_NEW_CODE", message: hostile });
-  assert.equal(sharedReason(unmarked), `E_NEW_CODE: ${hostile}`, "the shared home hands an unmarked message on as it came");
+  assert.doesNotMatch(textShown(shown(hostile)), CONTROL, "the TUI's own filter leaves no control character of the message as it came");
   const r = await started();
   r.reader.answer(unmarked);
   const text = screenOf(r);
