@@ -66,6 +66,7 @@ function fakeNpm(t) {
     `printf '%s\\n' "$*" >> "$FAKE_NPM_LOG"`,
     `if [ -n "$NPM_CONFIG_USERCONFIG" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then printf 'userconfig: %s\\n' "$(cat "$NPM_CONFIG_USERCONFIG")" >> "$FAKE_NPM_LOG"; fi`,
     'case "$1" in',
+    '  --version) echo 99.8.7; exit 0;;',
     '  view) case ",$FAKE_NPM_LIVE," in *",$2,"*) echo 1.2.3; exit 0;; *) echo "npm ERR! 404" >&2; exit 1;; esac;;',
     '  publish) echo "+ fake publish $2"; exit 0;;',
     "esac",
@@ -154,6 +155,9 @@ test("build refuses while a release-notes entry is left unassembled at the SHA, 
   assert.equal(manifest.sha, sha);
   assert.deepEqual(manifest.phases, {});
   assert.deepEqual(npm.calls(), ["--version"]);
+  // and its answer is recorded under a key of its own: `npm` is the tarball list (#1030)
+  assert.equal(manifest.npmVersion, "99.8.7", "the manifest records the npm that built the release");
+  assert.deepEqual(manifest.npm, { tarballs: [] }, "and the tarball list keeps its key");
   assert.equal(run("status", "--porcelain"), "", "the checkout is untouched");
 
   // With the entries assembled away, the same build passes this gate and goes on to the bump.
