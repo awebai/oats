@@ -111,12 +111,21 @@ runs.
   related to no other follow, after an empty row.
 - **Each row** has a mark for its state, the name, then the harness when it
   runs, else its state in a word, then `!` when it needs input.
-- **The detail** shows the selected instance: its soul, its state (and the
-  reason the kernel or the terminal probe gave, when there is one), what it
-  needs from you with how long it has waited and its own message, harness
-  and model, work mode and branch, team, parent, when it last started, and
-  its home. From 80 columns up it stands beside the list; on a narrower
-  terminal `Tab` opens it as a page.
+- **The detail** shows the selected instance: its soul, its state, and
+  under it the reason when there is one, after the words that say who gave
+  it: `OATS says:` for a kernel (this machine's, or the instance's
+  machine's as this machine's kernel relayed it),
+  `oats tui's terminal check says:` for the check of the terminals, and
+  `oats tui's read of other machines says:` for the read of the other
+  machines. Three reasons stand without such words. The sentence about a
+  session backend OATS no longer has, when the instance's kernel is too old
+  to give its own, stands as it is. A reason whose speaker is not known is
+  shown in quotation marks, and names nobody. A reason that is withheld is
+  `[withheld]` alone. Then it shows what it needs from you with how long
+  it has waited and its own message, harness and model, work mode and
+  branch, team, parent, when it last started, and its home. From 80
+  columns up it stands beside the list; on a narrower terminal `Tab` opens
+  it as a page.
 
 **A view of more than one deployment** (this machine and another, or two
 deployments on one machine) is one list, grouped as the Desktop groups it:
@@ -529,7 +538,10 @@ read that was in flight runs to its own end. It only reads.
   it is drawn: text holding a control character or a secret shape is shown
   as `[withheld]`, and bidi controls, invisible characters and C1 controls
   are replaced. The screen accepts only text that went through that filter
-  or the TUI's own words.
+  or the TUI's own words. The words that name who gave a reason are the
+  shared home's (`packages/client/`), and the TUI writes none of its own
+  for a speaker. They never stand before a withheld text: a reason that is
+  withheld is `[withheld]` alone.
 - It changes nothing in tmux: no option, key binding, server, session,
   window or pane. Its probe only lists panes.
 - It starts no daemon, opens no socket and writes no file. The processes it

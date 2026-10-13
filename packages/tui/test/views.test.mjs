@@ -3,13 +3,15 @@ process.env.TZ = "UTC";
 // through the real model, the frame and the screen's cell buffer. What a test claims about the
 // screen (a width, a pane, a line of its own) it reads from the cells, never from a string's length.
 // Every entry is made by the shared functions, and every sentence of the shared home is computed by
-// calling it: the tests quote the TUI's own words only.
+// calling it: the tests quote the TUI's own words only. One exception: the words that say who gave a
+// row's text (`OATS says:` and the two that name the client) are the shared home's and are written
+// out where a test expects them on the screen, because a test is the place that pins them.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS } from "../lib/actions.mjs";
 import {
-  DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, deploymentState, displayLine, heldHome, instanceActs, observeIdentities, observedEntry, panelInstances, primaryDeployment,
-  remoteRosterState, rosterRows, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
+  DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, cliRemoteRoster, deploymentState, displayLine, heldHome, instanceActs, livenessAnswers, livenessInput, observeIdentities, observedEntry,
+  originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, heldOf, model, panelOf } from "../lib/model.mjs";
@@ -97,6 +99,26 @@ function observedIn(rows, { team, workspace = "acme-platform" } = {}) {
   const document = rosterOf(rows, { team }), listed = rosterRows(document, CLI);
   const answers = listed.map((row) => ({ running: row.running, runtimeState: row.runtimeState, ...(row.runtimeError ? { runtimeError: row.runtimeError } : {}), tmux: row.tmux }));
   return observedEntry({ roster: document, workspaceStatus: { workspace: { name: workspace } }, observedAt: "2026-10-11T10:00:00.000Z" }, panelInstances(listed, answers), "2026-10-11T10:00:01.000Z");
+}
+/** What the liveness collector prints for a row: the answers the shared home documents for it
+ *  (liveness.mjs `observeLiveness`, a program a test of the TUI does not load), in its order. A row
+ *  of a session backend OATS no longer has, which a kernel reports with its own reason, is not
+ *  probed and reads unsupported with that reason; a row the kernel answered `running: null` is not
+ *  probed either and keeps the kernel's state and text; any other row is probed, and the probe
+ *  agrees with the kernel unless `found(row)` says what it found instead. */
+const collector = (found = () => ({})) => (row) => (row.runtimeState === "unsupported" && row.runtimeError ? { running: null, runtimeState: "unsupported", runtimeError: row.runtimeError, tmux: null }
+  : row.running === null ? { running: null, runtimeState: row.runtimeState ?? "unreachable", ...(row.runtimeError ? { runtimeError: row.runtimeError } : {}) }
+    : { tmux: row.tmux, running: row.running, runtimeState: row.runtimeState, ...found(row) });
+/** An observed entry made by one read cycle as lib/read.mjs runs it, every step a shared function:
+ *  the kernel's rows, the collector's input as the JSON it is given, what it printed, the answers,
+ *  the panel's rows. Who gave a row's text is decided on this path (`livenessAnswers`, then
+ *  `panelInstances`) and on no other: helpers.mjs `observed` hands `panelInstances` answers it
+ *  made itself, so a text in one of its rows carries no speaker where a read would name one. A
+ *  test about who gave a text makes its rows here. */
+function readCycle(kernelRows, { collect = collector(), withheld } = {}) {
+  const document = rosterOf(kernelRows, { withheld }), rows = rosterRows(document, CLI);
+  const answers = livenessAnswers(rows, JSON.stringify(JSON.parse(JSON.stringify(livenessInput(rows))).map(collect)));
+  return observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: "2026-10-11T09:59:00.000Z" }, panelInstances(rows, answers), "2026-10-11T10:00:00.000Z");
 }
 /** The state of a deployment as the shared home words it, for a state of the store. */
 const sharedState = (state) => deploymentState(primaryDeployment(panelOf(state, AT).deployments));
@@ -625,7 +647,7 @@ test("the kernel's own refusal is drawn in each of its three forms as the shared
   assert.equal(bare.length > 0 && !bare.includes(lead), true, "an empty message leaves the first sentence alone");
 });
 
-test("the unattributed lines keep 2b's two conditions, through the display filter and with no text of the TUI's on their rows: the stale reason whatever its message is (a line, one the filter withholds, spaces only), and a remote row's runtimeError under its state", () => {
+test("the stale reason, which no line attributes, keeps 2b's two conditions, through the display filter and with no text of the TUI's on its rows, whatever its message is (a line, one the filter withholds, spaces only); a remote row's runtimeError stands under its state after its speaker's words, which are what the shared originLead answers for that row, and a text the filter withholds stands alone, with no speaker", () => {
   // The stale reason holds the kept message with no speaker. Whether the shared sentence filters the
   // message itself is the shared home's: what is pinned is that the rows are its sentence through
   // shown(), and that they hold nothing else.
@@ -645,22 +667,34 @@ test("the unattributed lines keep 2b's two conditions, through the display filte
     d.cells.forEach((cells, r) => cells.forEach((cell, x) => assert.doesNotMatch(cell.text, CONTROL, `${at}: row ${r}, column ${x}`)));
   }
   // A remote row's runtimeError: what its host reported, or what the read of its machine failed
-  // with. In quotation marks on rows of its own under `state`, as 2b draws a local row's.
+  // with. On rows of its own under `state`, after the words that say who gave it. Those words are
+  // on its rows and are not the TUI's: they are what the shared originLead answers for the mark
+  // the shared home put on the row. A host's text is its kernel's, relayed; both failed reads are
+  // the read's own (an envelope the shared read writes for a child it ended is not one the
+  // installed CLI printed). A text the filter withholds is not introduced: the withheld word alone.
   const erring = (runtimeError) => heard(local(), answered(group({ instances: [farRow(FAR_A, { running: null, runtimeState: "unreachable", runtimeError })] })), T1);
   const cases = {
-    "a reached machine's row with the error its host reported": erring(UNREACHABLE),
-    "a reached machine's row with an error the display filter withholds": erring("wipe \x1b[2J the screen"),
-    "a row kept from a machine whose read answered an error": lost(),
-    "a row kept from a machine whose read threw": heard(reached(), { thrown: "spawn oats ENOENT" }, T2),
+    "a reached machine's row with the error its host reported": [erring(UNREACHABLE), "OATS says:"],
+    "a reached machine's row with an error the display filter withholds": [erring("wipe \x1b[2J the screen"), "OATS says:"],
+    "a row kept from a machine whose read answered an error": [lost(), "oats tui's read of other machines says:"],
+    "a row kept from a machine whose read threw": [heard(reached(), { thrown: "spawn oats ENOENT" }, T2), "oats tui's read of other machines says:"],
   };
-  for (const [kind, made] of Object.entries(cases)) for (const sz of [S160, S80]) {
-    const state = selecting(made, FAR_A, sz), error = panelRow(state, FAR_A).runtimeError, d = draw(state, sz), detail = factsOf(detailLines(d, sz)), at = `${kind}, at ${sz.cols}x${sz.rows}`;
+  for (const [kind, [made, lead]] of Object.entries(cases)) for (const sz of [S160, S80]) {
+    const state = selecting(made, FAR_A, sz), row = panelRow(state, FAR_A), error = row.runtimeError, d = draw(state, sz), detail = factsOf(detailLines(d, sz)), at = `${kind}, at ${sz.cols}x${sz.rows}`;
     assert.equal(typeof error === "string" && error.trim() !== "", true, `${at}: the shared home gave the row an error`);
-    const rows = fact(detail, "state").rows;
-    assert.equal(rows.slice(1).join(" "), textOf(shown(`"${error.trim()}"`)), `${at}: through the display filter: the rows under the state are the error in quotation marks`);
-    assert.equal(rows.length >= 2, true, `${at}: on rows of its own`);
-    assert.equal(labels(detail)[labels(detail).indexOf("state") + 1], "harness", `${at}: and no label, speaker or held line stands with it`);
-    for (const text of d.lines) assert.equal(text.includes("the kernel:") || text.includes("the host:"), false, at);
+    assert.equal(originLead(row.runtimeErrorOrigin, TERMS), lead, `${at}: and said who gave it: the words are the shared originLead's for the row`);
+    const rows = fact(detail, "state").rows, withheld = displayLine(error) === DETAIL_WITHHELD;
+    assert.equal(withheld, kind.includes("withholds"), at);
+    if (withheld) {
+      assert.deepEqual(rows.slice(1), ["[withheld]"], `${at}: a withheld text is the TUI's withheld word alone`);
+      // Every lead ends in `says:`, one word, which no wrap breaks: none of it is on the screen.
+      for (const text of d.lines) assert.equal(text.includes("says:") || text.includes("\""), false, `${at}: no speaker introduces it, and no quotation mark stands around it`);
+    } else {
+      assert.equal(rows.slice(1).join(" "), `${lead} ${textOf(shown(error))}`, `${at}: through the display filter: the rows under the state are the speaker's words and the error's display line`);
+      assert.equal(rows.length >= 2, true, `${at}: on rows of its own`);
+    }
+    assert.equal(labels(detail)[labels(detail).indexOf("state") + 1], "harness", `${at}: and no label or held line stands with it`);
+    for (const text of d.lines) assert.equal(text.includes("the kernel:") || text.includes("the host:"), false, `${at}: no word of the TUI's names a speaker`);
     d.cells.forEach((cells, r) => cells.forEach((cell, x) => assert.doesNotMatch(cell.text, CONTROL, `${at}: row ${r}, column ${x}`)));
   }
 });
@@ -1024,20 +1058,23 @@ test("the detail's parent line holds the parent, and `sibling of <name>` for an 
   assert.equal(both.startsWith("root-a") && both.endsWith("sibling of child"), true);
 });
 
-test("the detail's state line holds the kernel's own name for the state, and the kernel's runtimeError on the rows under it, as a quote", () => {
-  const state = selecting(golden(), EXPERT_TUI);
+test("the detail's state line holds the kernel's own name for the state, and the kernel's runtimeError on the rows under it, after `OATS says:`", () => {
+  // The roster as a read cycle makes it: the kernel answered `running: null` for this row, with
+  // its text, so the collector did not probe it and the text is the kernel's.
+  const state = selecting(stateOf(readCycle(ROSTER(), { withheld: WITHHELD })), EXPERT_TUI);
   for (const sz of [S160, S120, S80]) {
     const detail = detailOf(state, sz), rows = fact(detail, "state").rows;
     assert.equal(rows[0], "unreachable", `${sz.cols}`);
-    assert.equal(rows.slice(1).join(" "), `"${textOf(shown(UNREACHABLE))}"`, `${sz.cols}: the error, whole, in quotation marks, on rows of its own`);
+    assert.equal(rows.slice(1).join(" "), `OATS says: ${textOf(shown(UNREACHABLE))}`, `${sz.cols}: who gave it and the error, whole, with no quotation mark, on rows of its own`);
     assert.equal(labels(detail)[labels(detail).indexOf("state") + 1], "harness", "and no line of its own label");
   }
   assert.equal(fact(detailOf(state, S80), "state").rows.length > 2, true, "at 80 columns it wraps");
   assert.deepEqual(fact(detailOf(selecting(golden(), REVIEWER)), "state").rows, ["stopped"]);
   const shell = stateOf(observed([instanceRow("soul", "sh", { running: false, runtimeState: "shell" })]));
   assert.deepEqual(fact(detailOf(shell), "state").rows, ["shell"]);
-  const unsupported = stateOf(observed([instanceRow("soul", "old", { running: false, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: gone" })]));
-  assert.deepEqual(fact(detailOf(unsupported), "state").rows, ["unsupported", '"E_HERDR_REMOVED: gone"']);
+  // A session backend OATS no longer has, reported by a kernel that gives its own reason.
+  const unsupported = stateOf(readCycle([instanceRow("soul", "old", { running: false, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: gone" })]));
+  assert.deepEqual(fact(detailOf(unsupported), "state").rows, ["unsupported", "OATS says: E_HERDR_REMOVED: gone"]);
 });
 
 test("the detail's held line is the sentence the shared home gives for a home the kernel holds, wrapped under its label", () => {
@@ -1647,7 +1684,9 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
         "   machine  garnet",
         ...wrap(textOf(shown(said.detail)), 28).map((row) => `            ${row}`),
         `   state    ${UNKNOWN}`,
-        "            \"garnet did not answer\"",
+        "            oats tui's read of other",
+        "            machines says: garnet did",
+        "            not answer",
         "   harness  claude",
         "   work     worktree",
         `   home     ${g.cut}${`instances/${FAR_B}`.slice(g.cut.length - 1)}`,
@@ -1930,28 +1969,200 @@ test("the detail of a row whose deployment is not live says why under `machine`,
   assert.deepEqual(page.lines.slice(5, 7), ["   machine  garnet", ...wrap(textOf(shown(said.detail)), 66).map((row) => `            ${row}`)].slice(0, 2));
 });
 
-test("the reason of a row that cannot be addressed on a machine that was not reached is drawn once, as the quote under its state, with no `held` line; on a reached machine the `held` line holds the shared sentence", () => {
+test("the reason of a row that cannot be addressed on a machine that was not reached is drawn once, under its state after the words that say who gave it, with no `held` line; on a reached machine the `held` line holds the shared sentence", () => {
+  // Both failures are the read's own, so both texts are given by the read of other machines: the
+  // envelope of a read that did not answer in time is written by the shared read, never printed
+  // by the installed CLI, and what a read threw is the client's by its nature.
   const outcomes = { "an answer that is an error": TIMEOUT, "a read that threw": { thrown: "spawn oats ENOENT" } };
   for (const [kind, outcome] of Object.entries(outcomes)) for (const sz of [S160, S80]) {
     const state = selecting(heard(reached(), outcome, T2), FAR_B, sz), row = panelRow(state, FAR_B), acts = instanceActs(row), at = `${kind} at ${sz.cols}`;
     assert.equal(row.addressable === false && acts.blocked !== null && acts.blocked.sentence === row.runtimeError, true, `${at}: the shared home blocks the row with the very text it carries as its runtimeError`);
-    const d = draw(state, sz), detail = factsOf(detailLines(d, sz)), quote = textOf(shown(`"${row.runtimeError}"`));
+    const d = draw(state, sz), detail = factsOf(detailLines(d, sz)), said = `oats tui's read of other machines says: ${textOf(shown(row.runtimeError))}`;
+    assert.equal(originLead(row.runtimeErrorOrigin, TERMS), "oats tui's read of other machines says:", `${at}: the words are the shared home's for the row`);
     assert.equal(fact(detail, "held"), null, `${at}: no held line`);
-    assert.deepEqual([fact(detail, "state").rows[0], fact(detail, "state").rows.slice(1).join(" ")], [UNKNOWN, quote], `${at}: the reason stands under the state, in quotation marks`);
+    assert.deepEqual([fact(detail, "state").rows[0], fact(detail, "state").rows.slice(1).join(" ")], [UNKNOWN, said], `${at}: the reason stands under the state, after who gave it, with no quotation mark`);
     const whole = detailLines(d, sz).map((line) => line.trim()).filter(Boolean).join(" ");
-    assert.equal(whole.split(quote).length - 1, 1, `${at}: once`);
+    assert.equal(whole.split(said).length - 1, 1, `${at}: once`);
     assert.deepEqual(labels(detail), ["soul", "machine", "state", "harness", "work", "home"], at);
-    // A row of the same machine that can be addressed has the quote and nothing held either.
+    // A row of the same machine that can be addressed has the same line and nothing held either.
     const other = factsOf(detailLines(draw(selecting(state, FAR_A, sz), sz), sz));
-    assert.equal(fact(other, "held") === null && fact(other, "state").rows.slice(1).join(" ") === quote, true, `${at}: ${FAR_A}`);
+    assert.equal(fact(other, "held") === null && fact(other, "state").rows.slice(1).join(" ") === said, true, `${at}: ${FAR_A}`);
   }
   // Reached: the kernel does not report the row addressable, and the shared sentence says so.
   for (const sz of [S160, S80]) {
     const state = selecting(reached(), FAR_B, sz), acts = instanceActs(panelRow(state, FAR_B)), detail = factsOf(detailLines(draw(state, sz), sz));
     assert.equal(acts.blocked !== null && typeof acts.blocked.sentence === "string", true);
     assert.equal(fact(detail, "held").rows.join(" "), textOf(shown(acts.blocked.sentence)), `${sz.cols}: the held line is the shared sentence`);
-    assert.deepEqual(fact(detail, "state").rows, ["stopped"], `${sz.cols}: and the state is the row's own, with no quote`);
+    assert.deepEqual(fact(detail, "state").rows, ["stopped"], `${sz.cols}: and the state is the row's own, with no text under it`);
     assert.equal(fact(factsOf(detailLines(draw(selecting(reached(), FAR_A, sz), sz), sz)), "held"), null, `${sz.cols}: a row that can be addressed is not held`);
+  }
+});
+
+// ── Who gave a row's text ────────────────────────────────────────────────────────────────────────
+// A row's own text stands under `state` after the words that say who gave it. Each row here is made
+// on the path that decides its speaker, as lib/read.mjs runs it: this machine's by a read cycle
+// (`readCycle`), a machine's by the shared roster read over a fake `exec`. No test sets a row's mark:
+// where a row has none it was made by hand, and the test's title says so.
+
+/** One roster read as lib/read.mjs makes it: the shared cliRemoteRoster over an `exec`, and its
+ *  outcome as the loop hands it to the shared rule: what the read answered, or the message of what
+ *  it threw. */
+const rosterRead = (exec) => cliRemoteRoster(CLI.bin, { exec }).then((envelope) => ({ envelope }), (error) => ({ thrown: String(error?.message ?? error) }));
+/** An installed CLI that prints a roster of `groups`, and a read that fails with `message` before a
+ *  child answers. */
+const printing = (...groups) => (bin, argv, options, callback) => { callback(null, JSON.stringify({ schemaVersion: 1, ok: true, result: { groups } }), ""); };
+const failing = (message) => () => { throw new Error(message); };
+/** A row whose text is `text`, by who gives it. `lead`: the speaker's words as the shared home writes
+ *  them, written out because this is where they are pinned; `name`: the row; `make`: a state that
+ *  holds the row, selected.
+ *    the kernel                  it answered `running: null` with the text, and such a row is not probed
+ *    the terminal check          the kernel said running, and the collector's probe failed with the text
+ *    the read of other machines  a machine reached once, then a roster read that failed with the text:
+ *                                the shared rule keeps the machine's rows, and their text is its
+ *                                sentence for a failed read, which ends in what was thrown
+ *    nobody                      a row made by hand: helpers.mjs `observed` hands the panel an answer
+ *                                that holds the text and no speaker, which no read does */
+const SPEAKERS = {
+  "the kernel": { lead: "OATS says:", name: KERNEL_DEV, make: (text, options) => stateOf(readCycle([instanceRow("acme-ledger-developer", KERNEL_DEV, { running: null, runtimeState: "unreachable", runtimeError: text })]), options) },
+  "the terminal check": { lead: "oats tui's terminal check says:", name: KERNEL_DEV, make: (text, options) => stateOf(readCycle([instanceRow("acme-ledger-developer", KERNEL_DEV)], { collect: collector(() => ({ running: null, runtimeState: "unreachable", runtimeError: text })) }), options) },
+  "the read of other machines": { lead: "oats tui's read of other machines says:", name: FAR_A, make: async (text, options) => selecting(heard(heard(local(options), await rosterRead(printing(group())), T1), await rosterRead(failing(text)), T2), FAR_A) },
+  "nobody, on a row made by hand": { lead: null, name: KERNEL_DEV, make: (text, options) => stateOf(observed([instanceRow("acme-ledger-developer", KERNEL_DEV, { running: null, runtimeState: "unreachable", runtimeError: text })]), options) },
+};
+/** The four messages of the reason tests above, by what each tries. The display filter withholds
+ *  the two that hold an ESC whole, and shows the two others with the character replaced. */
+const HOSTILE_TEXTS = {
+  "an erase sequence": "wipe \x1b[2J the screen",
+  "a bidi override": "safe\u202Etxt.exe was read",
+  "a C1 control, the 8-bit CSI": "red \u009B31m alert \u009B2J",
+  "an OSC that sets the title": "\x1b]0;owned\x07 and a tail",
+};
+const WITHHELD_WHOLE = new Set(["an erase sequence", "an OSC that sets the title"]);
+
+test("the four hostile messages as a row's runtimeError, given by each of the three speakers and by nobody (a row made by hand), in the detail at 80x24 and at 60x15, in UTF-8 and in ASCII: a message the filter shows stands after its speaker's words, one it withholds is the withheld word once with no speaker and no quotation mark, and none leaves a control character in a text or a cell, a sequence that is not the TUI's own or a row wider than the terminal", async () => {
+  for (const [speaker, { lead, name, make }] of Object.entries(SPEAKERS)) for (const [tries, text] of Object.entries(HOSTILE_TEXTS)) for (const ascii of [false, true]) for (const sz of [S80, S60]) {
+    const made = await make(text, { ascii }), state = sz.cols < WIDE ? press(made, ["tab"], sz).state : made, row = panelRow(state, name);
+    const at = `${speaker}, ${tries}, at ${sz.cols}x${sz.rows}${ascii ? ", not UTF-8" : ""}`;
+    // The row is the shared home's: its text ends in the message, and its mark, which no line here
+    // wrote, names the speaker.
+    assert.equal(row.runtimeError.endsWith(text), true, `${at}: the row's text holds the message`);
+    assert.equal(originLead(row.runtimeErrorOrigin, TERMS), lead, `${at}: the shared home says who gave it`);
+    const d = draw(state, sz, { utf8: !ascii }), detail = factsOf(detailLines(d, sz)), under = fact(detail, "state").rows.slice(1), line = displayLine(row.runtimeError);
+    assert.equal(line === DETAIL_WITHHELD, WITHHELD_WHOLE.has(tries), `${at}: what the display filter makes of the text`);
+    if (line === DETAIL_WITHHELD) {
+      assert.deepEqual(under, ["[withheld]"], `${at}: under the state, the TUI's withheld word alone`);
+      assert.equal(d.lines.join("\n").split("[withheld]").length - 1, 1, `${at}: once on the screen`);
+      // Every lead ends in `says:`, one word, which no wrap breaks: no part of one is on the screen.
+      for (const drawn of d.lines) assert.equal(drawn.includes("says:") || drawn.includes("\""), false, `${at}: no speaker introduces a withheld text and no quotation mark stands around it: ${drawn}`);
+    } else {
+      // With a speaker: its words, then the display line. With none, and no reason of the row
+      // that vouches for the text: the display line in quotation marks, which names nobody.
+      const said = lead === null ? `"${line}"` : `${lead} ${line}`;
+      assert.equal(under.join(" "), ascii ? said.replace(/[^\x20-\x7e]/g, "?") : said, `${at}: under the state`);
+      if (lead === null) for (const drawn of d.lines) assert.equal(drawn.includes("says:"), false, `${at}: nobody is named: ${drawn}`);
+    }
+    assert.equal(labels(detail)[labels(detail).indexOf("state") + 1], "harness", `${at}: and no held line repeats it`);
+    // Whatever was shown: the bytes the real screen writes, every text of the frame, every cell.
+    const out = readTerminalOutput(createScreen({ utf8: !ascii, ascii }).render(d.rows, sz, { full: true }));
+    assert.deepEqual(out.foreign, [], `${at}: every ESC written begins a sequence of the TUI's own`);
+    assert.deepEqual([...new Set(out.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr"].includes(kind)), [], `${at}: a frame writes positions, erases and styles, and nothing else`);
+    assert.doesNotMatch(out.text, CONTROL, `${at}: no control character is written`);
+    if (ascii) assert.match(out.text, PRINTABLE_ASCII, `${at}: with a locale that is not UTF-8, nothing outside printable ASCII`);
+    for (const spans of d.rows) for (const span of spans) if (Object.hasOwn(span, "text")) assert.doesNotMatch(textOf(span.text), CONTROL, `${at}: no text of the frame holds a control character`);
+    d.cells.forEach((cells, r) => cells.forEach((cell, x) => assert.doesNotMatch(cell.text, CONTROL, `${at}: row ${r}, column ${x}`)));
+    assert.equal(d.lines.some((drawn) => drawn.includes("owned")), false, `${at}: nothing of a withheld text is shown`);
+    fits(d, sz, at);
+  }
+});
+
+/** A text a kernel could give, long enough to take the six rows a wrapped value may. */
+const TOLD = "tmux did not answer on /tmp/tmux-1000/default within 5 seconds; the session may still be live, so its state is left unknown";
+
+test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8 and in ASCII, cell for cell: `OATS says:` starts the fact under `state`, the rows after it stand under the value like any wrapped fact, no quotation mark stands around it, and the six rows are the same in both", () => {
+  assert.equal(TOLD.length >= 120 && TOLD.length <= 200, true);
+  const told = (options) => selecting(stateOf(readCycle(ROSTER().map((row) => (row.instance === EXPERT_TUI ? { ...row, runtimeError: TOLD } : row)), { withheld: WITHHELD }), options), EXPERT_TUI);
+  const said = [
+    "            OATS says: tmux did not",
+    "            answer on",
+    "            /tmp/tmux-1000/default",
+    "            within 5 seconds; the",
+    "            session may still be live,",
+    "            so its state is left unknown",
+  ];
+  const blank = Array.from({ length: 5 }, () => "");
+  assert.deepEqual(draw(told(), S80).lines, [
+    ` oats  acme-platform  ${COUNTS}`,
+    " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+    `${"─".repeat(38)}┬${"─".repeat(41)}`,
+    ...beside([
+      " ▾ ● acme-console-e…  claude",
+      "     ● acme-console…  claude         !",
+      "     ● acme-console…  claude         !",
+      " ▾ ● acme-ledger-ex…  claude",
+      "   ▾ ● acme-ledger-…  claude         !",
+      "       ○ peer-revie…  stopped",
+      "",
+      "   ● acme-maintaine…  claude",
+      ">  ? acme-expert-tui  unreachable",
+    ], [
+      "   acme-expert-tui",
+      "   soul     acme-expert",
+      "   state    unreachable",
+      ...said,
+      "   harness  claude, claude-opus-5-5 (so…",
+      "   work     worktree, agents/acme-exper…",
+      "   team     eng",
+      `   started  ${STARTED}`,
+      "   home     …t/instances/acme-expert-tui",
+      ...blank,
+    ]),
+    `${"─".repeat(38)}┴${"─".repeat(41)}`,
+    FOOTER,
+  ]);
+  assert.deepEqual(draw(told({ ascii: true }), S80).lines, [
+    ` oats  acme-platform  ${COUNTS}`,
+    " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+    `${"-".repeat(38)}+${"-".repeat(41)}`,
+    ...beside([
+      " v * acme-console...  claude",
+      "     * acme-conso...  claude         !",
+      "     * acme-conso...  claude         !",
+      " v * acme-ledger-...  claude",
+      "   v * acme-ledge...  claude         !",
+      "       - peer-rev...  stopped",
+      "",
+      "   * acme-maintai...  claude",
+      ">  ? acme-expert-tui  unreachable",
+    ], [
+      "   acme-expert-tui",
+      "   soul     acme-expert",
+      "   state    unreachable",
+      ...said,
+      "   harness  claude, claude-opus-5-5 (...",
+      "   work     worktree, agents/acme-exp...",
+      "   team     eng",
+      `   started  ${STARTED}`,
+      "   home     ...instances/acme-expert-tui",
+      ...blank,
+    ], "|"),
+    `${"-".repeat(38)}+${"-".repeat(41)}`,
+    FOOTER,
+  ]);
+});
+
+test("with `--ascii` and a locale that is not UTF-8 the words that say who gave a text are drawn as without: each of the three is ASCII whole, so the same cells hold the same characters and the screen writes the same bytes", async () => {
+  for (const [speaker, { lead, name, make }] of Object.entries(SPEAKERS)) {
+    if (lead === null) continue;
+    assert.match(lead, PRINTABLE_ASCII, `${speaker}: every character of the words is ASCII, the apostrophe too`);
+    const drawn = [];
+    for (const ascii of [false, true]) {
+      const state = await make("tmux: no server", { ascii }), d = draw(state, S160, { utf8: !ascii }), at = `${speaker}${ascii ? ", not UTF-8" : ""}`;
+      const said = `${lead} ${textOf(shown(panelRow(state, name).runtimeError))}`;
+      assert.deepEqual(fact(factsOf(detailLines(d, S160)), "state").rows.slice(1), [said], `${at}: the words and the text, on one row at this width`);
+      assert.equal(readTerminalOutput(createScreen({ utf8: !ascii, ascii }).render(d.rows, S160, { full: true })).text.includes(said), true, `${at}: and so they are written`);
+      const r = bodyRows(S160).find((i) => cellText(d, i, listWidth(S160.cols) + 1).trim() === said);
+      drawn.push(d.cells[r].slice(listWidth(S160.cols) + 1).map((cell) => cell.text));
+    }
+    assert.deepEqual(drawn[1], drawn[0], `${speaker}: cell for cell the same row`);
   }
 });
 

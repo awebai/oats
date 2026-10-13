@@ -236,7 +236,7 @@ test("through the shared read a hostile waiting message does not arrive: the det
 // can put on the screen. Every outcome of the roster read reaches the store as the loop hands it on
 // (lib/read.mjs): through the shared remoteRosterState and observeIdentities. A group has the
 // kernel's form except in the one field a case makes hostile.
-import { observeIdentities, remoteRosterState } from "../lib/client.mjs";
+import { DETAIL_WITHHELD, cliRemoteRoster, displayLine, observeIdentities, remoteRosterState } from "../lib/client.mjs";
 import { reduce } from "../lib/store.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { cutNote } from "../lib/views/instances.mjs";
@@ -272,6 +272,11 @@ function heard(state, outcome, at) {
   return reduce(state, { roster: { remote: { remoteGroups: next.remoteGroups, rosterAnswered: next.rosterAnswered, rosterFailure: next.rosterFailure }, memory: kept.memory, notes: kept.notes, at } }).state;
 }
 const answered = (...groups) => ({ envelope: { ok: true, result: { groups } } });
+/** The same answer as the reader takes it: read by the shared cliRemoteRoster from an installed CLI
+ *  that printed it. Where it parses the answer the shared read marks a probe's error as the
+ *  kernel's, and who gave the text of that machine's rows is read from the mark; an envelope made
+ *  here (`answered`) has none, and its probe's error would read as the client's own. */
+const printed = async (...groups) => ({ envelope: await cliRemoteRoster(CLI.bin, { exec: (bin, argv, options, callback) => { callback(null, JSON.stringify({ schemaVersion: 1, ok: true, result: { groups } }), ""); } }) });
 /** A key on a state, with the geometry of an 80x24 frame: these keys read none of it. */
 const key = (state, ...ids) => ids.reduce((s, id) => reduce(s, { key: id, page: 19, extent: 0, room: 19, cols: 38 }).state, state);
 /** The second choice of the switcher, opened: the view of a machine that is in no view with this one. */
@@ -280,13 +285,15 @@ const second = (state) => key(state, "w", "j", "enter");
 const named = (value) => ({ ...IDENTITY, key: `acme/${value}` });
 
 /** Each place a machine, a registration, a roster read or a folder can put text, and a state in the
- *  Instances view that shows `value` there. `seen`: the view that draws plain text put there. */
+ *  Instances view that shows `value` there. `seen`: the view that draws plain text put there.
+ *  `lead`: where the text is a row's own, the words the detail puts before it to say who gave it
+ *  (the shared home's, written out here: a test is the place that pins them). */
 const MACHINE_FIELDS = {
   "a machine's label": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ label: value })), T1) },
   "a machine's server name, which names it when it has no label": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ label: "", server: value })), T1) },
   "a machine's label where the header alone names it, `on <machine>`": { seen: "the list and the detail", make: (value, options) => second(heard(reporting(options), answered(group({ label: value, workspace: ELSEWHERE })), T1)) },
   "the workspace's name a machine reports": { seen: "the list and the detail", make: (value, options) => second(heard(reporting(options), answered(group({ workspace: named(value) })), T1)) },
-  "a probe's error message, of a machine reached earlier": { seen: "the list and the detail", make: (value, options) => heard(heard(reporting(options), answered(group()), T1), answered(group({ probe: { ok: false, error: { code: "E_SSH", message: value } } })), T2) },
+  "a probe's error message, of a machine reached earlier": { seen: "the list and the detail", lead: "OATS says:", make: async (value, options) => heard(heard(reporting(options), answered(group()), T1), await printed(group({ probe: { ok: false, error: { code: "E_SSH", message: value } } })), T2) },
   "a probe's error message, of a machine never reached": { seen: null, make: (value, options) => heard(reporting(options), answered(group({ probe: { ok: false, error: { code: "E_REMOTE", message: value } }, workspace: null, instances: [] })), T1) },
   "the thrown message of the roster read, before any answer": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), { thrown: value }, T1) },
   "the thrown message of the roster read, after an answer": { seen: "the list and the detail", make: (value, options) => heard(heard(reporting(options), answered(group()), T1), { thrown: value }, T2) },
@@ -300,7 +307,7 @@ const MACHINE_FIELDS = {
     make: (value, options) => second(heard(heard(reporting(options), answered(group()), T1), answered(group({ workspace: named(value) })), T2)),
   },
   "the instance name of a machine's row": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ instances: [farRow(value)] })), T1) },
-  "the runtime error of a machine's row": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ instances: [farRow("acme-ledger-far-a", { running: null, runtimeState: "unreachable", runtimeError: value })] })), T1) },
+  "the runtime error of a machine's row": { seen: "the list and the detail", lead: "OATS says:", make: (value, options) => heard(reporting(options), answered(group({ instances: [farRow("acme-ledger-far-a", { running: null, runtimeState: "unreachable", runtimeError: value })] })), T1) },
   "an offered folder's name and path": { seen: "the switcher", folder: true, make: (value, options) => reduce(reporting(options), { offered: { offered: [{ path: `/home/u/Agents/${value}`, name: value }], limited: true } }).state },
 };
 /** The views a state's text can reach, each with the sizes it is drawn at: the list with its
@@ -333,25 +340,32 @@ const LONG_MACHINE_FIELDS = new Set(["a machine's label", "the thrown message of
 /** What a folder directly inside `~/Agents` cannot be named: the shared listing reads no such entry. */
 const noFolder = (value) => value.includes("/") || value.includes("\0");
 
-for (const [field, { make, seen, folder = false }] of Object.entries(MACHINE_FIELDS)) {
-  test(`the hostile fixture as ${field}, drawn in the list with its headings, the detail, the switcher and the help over each, leaves only the TUI's own sequences in the output, and no row is wider than the terminal`, () => {
+for (const [field, { make, seen, folder = false, lead = null }] of Object.entries(MACHINE_FIELDS)) {
+  test(`the hostile fixture as ${field}, drawn in the list with its headings, the detail, the switcher and the help over each, leaves only the TUI's own sequences in the output, and no row is wider than the terminal`, async () => {
     for (const [name, value] of Object.entries(FIXTURE)) {
       if (folder && noFolder(value)) continue;
       if (name === SLOW) {
         if (!LONG_MACHINE_FIELDS.has(field)) continue;
-        const drawn = draw(key(make(value, { ascii: false }), "G"), S80), at = `${name}, the list, 80x24`;
+        const drawn = draw(key(await make(value, { ascii: false }), "G"), S80), at = `${name}, the list, 80x24`;
         census(drawn.rows, S80, UTF8, at, drawn.cells);
         within(drawn, S80, at);
         continue;
       }
-      for (const [view, state, sizes] of viewsOf(make(value, { ascii: false }))) for (const size of sizes) {
+      for (const [view, state, sizes] of viewsOf(await make(value, { ascii: false }))) for (const size of sizes) {
         const at = `${name}, ${view}, ${size.cols}x${size.rows}`, drawn = draw(state, size), text = census(drawn.rows, size, UTF8, at, drawn.cells);
         within(drawn, size, at);
         // The field is on the screen: plain text put there is read there.
         if (name === "plain text, for comparison" && view === seen && size !== S60 && (size === S120 || view === "the switcher")) assert.equal(text.includes("dev-1 café 中文"), true, `${at}: ${field} is drawn`);
+        // A row's own text: the detail says who gave it, in the shared home's words, before a text
+        // the display filter shows, and never before one it withholds. The value is the row's text.
+        if (lead !== null && view === "the list and the detail") {
+          const line = displayLine(value);
+          assert.equal(text.includes(lead), line !== null && line !== DETAIL_WITHHELD, `${at}: the speaker's words stand before a text that is shown, and before no other`);
+          if (name === "plain text, for comparison" && size === S120) assert.equal(text.includes(`${lead} dev-1 café 中文`), true, `${at}: the words, then the text`);
+        }
       }
       // With a locale that is not UTF-8: the list and the switcher, where the screen has the most to replace.
-      const plain = make(value, { ascii: true });
+      const plain = await make(value, { ascii: true });
       for (const [view, state] of [["the list and the detail", key(plain, "G")], ["the switcher", key(plain, "G", "w")]]) {
         const at = `${name}, ${view}, 80x24, not UTF-8`, drawn = draw(state, S80, { utf8: false });
         census(drawn.rows, S80, NOT_UTF8, at, drawn.cells);

@@ -6,7 +6,7 @@
 // their answers, and holds no rule of its own about which group a row is in or what state it is
 // in. What it adds is the TUI's: the window, the clock times, and which fact stands on which line.
 import {
-  TERMS, panelData, displayLine, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
+  TERMS, panelData, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
   hasInstanceChildren, heldHome, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs,
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
@@ -187,8 +187,8 @@ function build(state, at) {
     note: !multi && text(primary?.note) ? primary.note : null,
     // Why no instance is listed. "none" is a statement about the deployment, so it is made only
     // of one that was read: a machine that is not live and has no row kept is not known to have
-    // none, and its notice is all there is to say.
-    empty: status === "pending" ? "reading" : !observed ? null : !instances.length ? (local || live ? "none" : null) : !rows.length ? "nomatch" : null,
+    // none (it is not `observed`), and its notice is all there is to say.
+    empty: status === "pending" ? "reading" : !observed ? null : !instances.length ? "none" : !rows.length ? "nomatch" : null,
     // As wide as the widest word among all the rows of the list, so the column does not move
     // while the list scrolls.
     wordWidth: Math.min(WORD_MAX, rows.reduce((widest, { row }) => Math.max(widest, textWidth(displayLine(wordOf(row)) ?? "")), 0)),
@@ -270,12 +270,30 @@ function detailOf(state, r, item, now) {
     if (said && said.key !== "live") add("", said.detail, "wrap");
   }
   add("state", heldHome(row)?.state ?? stateWord(row)); // the word of its list row, harness apart
-  // A command's message ends in a newline; one that is only spaces says nothing to quote.
-  if (text(row.runtimeError) && row.runtimeError.trim()) add("", `"${row.runtimeError.trim()}"`, "wrap");
   const acts = instanceActs(row), held = acts.blocked ?? acts.limited;
-  // A row of a machine that was not reached is held by the very text it carries as its
-  // `runtimeError` (compared as given): that text stands once, as the quote above.
-  if (held && !(text(row.runtimeError) && held.sentence === row.runtimeError)) add("held", held.sentence, "wrap");
+  // The row's own text stands under its state, in the form that says who made it. Who made it is
+  // the shared home's to say, in two ways, and the TUI writes no word and no sentence of its own
+  // for either: the row's mark, which originLead turns into the words that go before the text;
+  // or a reason of the row that carries no `origin`, which is a sentence the shared home wrote
+  // itself, when that sentence is this very text (compared as given). A text with neither is
+  // vouched for by nobody: it stands in quotation marks and names no one. A missing mark is
+  // never read as "the shared home wrote this".
+  // The filter is asked about the text alone, before anything is put around it, so the words in
+  // front are never why a text is shown. What it withholds goes to the view as it came, which
+  // draws the withheld word and nothing else. (The view asks again about the whole value: words
+  // in front never change the answer; a closing quotation mark can, for a text that ends in a
+  // secret's name and its sign, and that text is then withheld.)
+  const line = displayLine(row.runtimeError);
+  if (line === DETAIL_WITHHELD) add("", row.runtimeError, "wrap");
+  else if (line !== null) {
+    const lead = originLead(row.runtimeErrorOrigin, TERMS);
+    const vouched = [acts.blocked, acts.limited, ...acts.acts.map((act) => act.reason)].some((reason) => reason && reason.origin === undefined && reason.sentence === row.runtimeError);
+    add("", lead !== null ? `${lead} ${line}` : vouched ? line : `"${line}"`, "wrap");
+  }
+  // What holds the row, when that is a sentence of the shared home's and not the row's text: a
+  // reason with an `origin` is the row's text, and so is one whose sentence is that text. Either
+  // stands once, under the state.
+  if (held && held.origin === undefined && held.sentence !== row.runtimeError) add("held", held.sentence, "wrap");
   const claim = waitingClaim(row, { stale: r.stale(row) });
   if (claim) {
     add("needs", `${waitingLabel(claim)}, ${waitedText(claim.since, now)}`);

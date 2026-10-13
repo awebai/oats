@@ -81,7 +81,7 @@ const TAKEN = Object.freeze({
   "deployment-label.mjs": ["shortPath"],
   "instance-tree.mjs": ["instanceId", "instanceVisibleInTree", "waitingRollup", "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome"],
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
-  "instance-presentation.mjs": ["runtimeState", "runtimeCounts"],
+  "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingBelowText"],
   "instance-acts.mjs": ["instanceActs"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
@@ -130,6 +130,28 @@ test("the shared functions that make a machine's panel are never named in packag
   for (const path of TUI_FILES) {
     for (const clause of code(read(path)).matchAll(/\bimport\s*\{([^}]*)\}/g)) assert.doesNotMatch(clause[1], /\bremotePanelEntries\b/, `${path} imports remotePanelEntries`);
   }
+});
+
+test("who made a row's text is said by the shared home: no module of packages/tui/lib holds a speaker's name or the words that go before a text as a string of its own, and the row's mark is read once, as what originLead is handed", () => {
+  // The marks a row's text can carry and the words a client puts before the text
+  // (packages/client/instance-presentation.mjs `originLead`; the two that name the client are
+  // given here without its name). A module that held one could name a speaker by itself, and
+  // the two clients would then say who spoke in two ways.
+  const speakers = ["kernel", "terminal-probe", "roster-read"];
+  const leads = ["OATS says:", "terminal check says:", "read of other machines says:"];
+  const lib = filesUnder("packages/tui/lib");
+  for (const path of lib) {
+    const source = code(read(path));
+    for (const name of speakers) assert.doesNotMatch(source, new RegExp(`["'\`]${name}["'\`]`), `${path} holds the speaker "${name}" as a string`);
+    for (const words of leads) assert.equal(source.includes(words), false, `${path} holds the words "${words}"`);
+  }
+  // The mark is a value passed on, never one the TUI looks into: it stands in one place, as the
+  // argument of originLead. A reason's `origin` is asked only whether it is there.
+  const marks = lib.flatMap((path) => [...code(read(path)).matchAll(/[^\n]*\bruntimeErrorOrigin\b[^\n]*/g)].map((match) => [path, match[0].trim()]));
+  assert.deepEqual(marks.map(([path]) => path), ["packages/tui/lib/model.mjs"], "the mark is read in the model, once");
+  assert.match(marks[0][1], /\boriginLead\(row\.runtimeErrorOrigin, TERMS\)/);
+  assert.equal(marks[0][1].match(/\bruntimeErrorOrigin\b/g).length, 1);
+  for (const path of lib) for (const use of code(read(path)).matchAll(/\.origin\b(.{0,16})/g)) assert.match(use[1], /^ === undefined\b/, `${path} looks into a reason's origin: .origin${use[1]}`);
 });
 
 test("lib/read.mjs gives the shared observer no reader of its own: the one observer of the package is handed the shared cliDeploymentRead, so a failed read has the same reasons as in the Desktop", () => {
