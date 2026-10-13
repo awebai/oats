@@ -1,3 +1,27 @@
+## Changed
+
+- **Three answers a client reads are different for some homes, by the fix of
+  #962 under Fixed.**
+  - A retire plan's `defaults.retainWorktree`. A record with no work mode
+    whose `work/` Git confirms is a registered linked worktree has
+    `defaults.retainWorktree: true` in its plan, where it was `false`; the
+    retire already retained that tree. For a home whose record says
+    `worktree` while its spawn's receipt says that no tree was given, a real
+    directory at `work/` is a directory of the home, and its plan has
+    `defaults.retainWorktree: false` where it was `true`.
+  - A refusal's code. A `directory` instance whose record was changed to say
+    `worktree` is refused with `E_WORK_INSPECTION_FAILED` (the record
+    disagrees with the spawn's receipt) with `--force` as without it; with
+    `--force` the code was `E_WORK_PRESERVATION_FAILED`. Nothing is stopped,
+    run or removed in either case, as before.
+  - `E_NO_WORKTREE` where an enclosing checkout was read. For a real
+    directory at `work/` that is not the top level Git names for it, `oats
+    instance git` and `oats instance diff` answer `E_NO_WORKTREE`, and a
+    stop plan's and a retire plan's `work` is `{observed: false, reason:
+    "E_NO_WORKTREE"}`.
+
+  See [what `work/` is at retire](../souls-and-instances.md#what-work-is-at-retire).
+
 ## Fixed
 
 - **`oats retire`: a real directory at `work/` is no longer removed without
@@ -18,12 +42,12 @@
     Git. Three refusals of such a home are now a completed retire with a
     recovery copy. An entry the copy cannot take (a FIFO, a socket) still
     refuses before anything is touched.
-  - The instance's own tree is retained as before. A record with no work
-    mode whose `work/` Git confirms is a registered linked worktree has
-    `defaults.retainWorktree: true` in its plan, where it was `false`; the
-    retire already retained that tree. When the record names no repository,
-    the retire uses the one Git names for the tree, does not write it into
-    the record, and says so in the plan's note and the receipt's `warnings`.
+  - The instance's own tree is retained as before, under a record with no
+    work mode too when Git confirms that `work/` is a registered linked
+    worktree (its plan's default is under Changed). When the record names no
+    repository, the retire uses the one Git names for the tree, does not
+    write it into the record, and says so in the plan's note and the
+    receipt's `warnings`.
     What such a tree holds uncommitted is copied to recovery as a `worktree`
     instance's is. An own tree with no repository at all is refused
     (`E_WORK_PRESERVATION_FAILED`, nothing stopped, run or removed) and
@@ -39,16 +63,6 @@
     copied to recovery and removed with the home, as the plan's recovery
     note and its text's `defaults:` line say. The plan's `facts.work` for
     that home is unchanged.
-  - Two answers change for homes whose record was changed after the spawn.
-    A default: for a home whose record says `worktree` while its spawn's
-    receipt says that no tree was given, a real directory at `work/` is a
-    directory of the home, and its plan has `defaults.retainWorktree: false`
-    where it was `true`. A refusal's code: a `directory` instance whose
-    record was changed to say `worktree` is refused with
-    `E_WORK_INSPECTION_FAILED` (the record disagrees with the spawn's
-    receipt) with `--force` as without it; with `--force` the code was
-    `E_WORK_PRESERVATION_FAILED`. Nothing is stopped, run or removed in
-    either case, as before.
 
   See [what `work/` is at retire](../souls-and-instances.md#what-work-is-at-retire).
 - **`oats instance git` and the plans no longer read an enclosing checkout
@@ -56,10 +70,8 @@
   work tree, so a plain `work/` in a home whose deployment directory is a
   Git checkout was reported with that checkout's branch and files. A real
   directory at `work/` is now the instance's work tree only when it is the
-  top level Git names for it; otherwise `oats instance git` and `oats
-  instance diff` answer `E_NO_WORKTREE`, and a stop plan's and a retire
-  plan's `work` is `{observed: false, reason: "E_NO_WORKTREE"}`. The rule
-  is the path, in every work mode. A `directory` instance in such a
+  top level Git names for it (what is answered otherwise is under Changed).
+  The rule is the path, in every work mode. A `directory` instance in such a
   deployment has no work tree observed (its retire is unchanged: its bytes
   are copied to recovery and removed with the home); one whose `work/` is
   the top level of a repository of its own is observed as before. A `work/`
