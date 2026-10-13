@@ -18,6 +18,12 @@ every version between yours and the new one in the
 changes, and what else must change with it (the Desktop, another tool, a
 package pin). This page is the part that is the same for every release.
 
+**Where the Desktop is installed, it goes first.** Install the Desktop of
+the new version before the CLI. A Desktop accepts a CLI up to its own minor
+version and refuses a newer one: with the CLI moved first, the Desktop that
+is still running lists no instance until it is replaced. The new Desktop
+accepts the older CLI in the meantime.
+
 **Package versions are a different thing.** `oats update` moves the CLI and
 the bridge, never a package. A deployment's capabilities come from the
 packages pinned in `oats-workspace.yaml`; change a pin, then run `oats sync`
