@@ -719,6 +719,18 @@ cannot carry at all (an entry that is not a file, a directory or a symbolic
 link, or a nested repository whose path is not valid UTF-8) refuses the copy,
 here as anywhere.
 
+<a id="copied-as-one-file"></a>
+**What the copy takes as one file must be a regular file.** The index,
+`info/attributes`, the stash's log and a nested repository's reflogs are each
+copied as one file. A link at such a path is followed, as Git follows it: the
+recovery holds a plain file with what Git reads through the link. A path
+that is not there, or a link that leads nowhere, is left out of the copy, as
+Git reads nothing there; only the index must exist. Anything else at such a
+path (a directory, empty or not, a FIFO, an entry that cannot be read)
+refuses the copy with `E_WORK_PRESERVATION_FAILED`, naming the path and what
+is there. The retire looks before it copies, so the answer is the same on
+every file system.
+
 **A worktree that cannot be proven unchanged.** Two things make a worktree
 not provable:
 

@@ -3425,6 +3425,113 @@ test("a retire hook that leaves the worktree's Git state unreadable and its copy
   assert.deepEqual(readdirSync(recovery).filter((name) => name.includes("after-hooks")), [], "nothing was added to it, and no staging is left in it");
 });
 
+// ---- What the copy takes "as a file" is a regular file, by the kernel's look (awebai/oats#1029) ----
+// The tests above ask for a refusal that names the path. These ask for the kernel's own sentence, which
+// it gives before it copies: the system's call answers differently by file system (an empty directory
+// copied "as a file" fails on one and leaves an empty file on another, where a directory's size is 0),
+// so a test that waited for the call would pass on one and see a retire on the other.
+
+/** The copier's refusal for `what` at a path that ends in `...path`, as regular-expression source. */
+const notCopiedAsFile = (what, ...path) => String.raw`the recovery copies \S*/${path.join("/")} as a file, and ${what} is there`;
+/** Retire an instance whose work must be copied and cannot be: → the refusal, checked to keep everything. */
+function refusedAtTheCopy(f, spawned) {
+  const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+  assert.notEqual(retired.status, 0, `a path that is not a file was copied as one, or left out: ${retired.stdout}`);
+  const error = JSON.parse(retired.stdout).error;
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", retired.stdout);
+  assert.doesNotMatch(error.message, /EISDIR|ENOENT|copyfile/, "the kernel's words, not the system call's");
+  assert.match(error.message, new RegExp(refusedBeforeHooks(basename(spawned.home))), "the message says what this retire did and did not do");
+  assert.deepEqual(readdirSync(recoveryRootOf(spawned.home)), [], "neither a recovery nor its staging is left behind");
+  assert.equal(readFileSync(join(spawned.home, "work", "scratch.txt"), "utf8"), "untracked\n", "the home and the work are kept");
+  return error;
+}
+
+for (const { state, fill } of [
+  { state: "an empty directory", fill: () => {} },
+  { state: "a directory with a file in it", fill: (dir) => write(join(dir, "inside"), "x\n") },
+]) {
+  test(`${state} where info/attributes belongs refuses the copy in the kernel's words, on any file system`, () => {
+    const f = fixture();
+    const spawned = spawn(f, "attributes-directory");
+    const work = join(spawned.home, "work");
+    unreadableAttributes(work);
+    fill(join(commonDirOf(work), "info", "attributes"));
+    write(join(work, "scratch.txt"), "untracked\n");
+    assert.match(refusedAtTheCopy(f, spawned).message, new RegExp(notCopiedAsFile("a directory", "info", "attributes")));
+  });
+}
+
+test("a directory where the log of a stash that is there belongs refuses the copy in the kernel's words", () => {
+  const f = fixture();
+  const spawned = spawn(f, "stash-log-directory");
+  const work = join(spawned.home, "work");
+  stashEntries(work, "tracked.txt", 1);
+  const log = join(commonDirOf(work), "logs", "refs", "stash");
+  rmSync(log);
+  mkdirSync(log);
+  assert.match(fixtureGit(work, ["rev-parse", "--verify", "--quiet", "refs/stash"], { encoding: "utf8" }), /^[0-9a-f]{40,64}\n$/, "fixture premise: the stash is there, so the copy carries its log");
+  write(join(work, "scratch.txt"), "untracked\n");
+  assert.match(refusedAtTheCopy(f, spawned).message, new RegExp(notCopiedAsFile("a directory", "logs", "refs", "stash")));
+});
+
+test("a directory where a nested repository keeps a branch's log refuses the copy in the kernel's words", () => {
+  const f = fixture();
+  const spawned = spawn(f, "nested-log-directory");
+  const work = join(spawned.home, "work");
+  const nested = nestedRepository(work);
+  // A branch made with no log, and an empty directory at its log's path: Git reads no log for it.
+  fixtureGit(nested, ["-c", "core.logAllRefUpdates=false", "branch", "quiet"]);
+  mkdirSync(join(nested, ".git", "logs", "refs", "heads", "quiet"), { recursive: true });
+  assert.equal(fixtureGit(nested, ["reflog", "show", "quiet"], { encoding: "utf8" }), "", "fixture premise: Git reads no log there");
+  write(join(work, "scratch.txt"), "untracked\n");
+  assert.match(refusedAtTheCopy(f, spawned).message, new RegExp(notCopiedAsFile("a directory", "nested", ".git", "logs", "refs", "heads", "quiet")));
+});
+
+test("a worktree with no index file refuses the copy in the kernel's words: the clone's own index would stand for one that lists nothing", () => {
+  const f = fixture();
+  const spawned = spawn(f, "no-index");
+  const work = join(spawned.home, "work");
+  write(join(work, "scratch.txt"), "untracked\n");
+  rmSync(join(gitDirOf(work), "index"));
+  assert.match(porcelain(work), /D  tracked\.txt\0/, "fixture premise: Git reads an index that lists nothing, so every committed file is a staged deletion");
+  assert.match(refusedAtTheCopy(f, spawned).message, new RegExp(notCopiedAsFile("nothing", "index")));
+});
+
+test("a link where info/attributes and a nested repository's log belong is followed, as Git follows it: the recovery holds a plain file with what Git reads through it, and a link that leads nowhere is a path that is not there", () => {
+  const f = fixture();
+  const spawned = spawn(f, "copied-through-links");
+  const work = join(spawned.home, "work");
+  const elsewhere = join(f.base, "elsewhere");
+  // info/attributes of the worktree's repository: a link to a file that sets an attribute.
+  write(join(elsewhere, "attributes"), "*.txt oats-fixture=through-the-link\n");
+  symlinkSync(join(elsewhere, "attributes"), join(commonDirOf(work), "info", "attributes"));
+  const attributeOf = (repo) => fixtureGit(repo, ["check-attr", "oats-fixture", "tracked.txt"], { encoding: "utf8" });
+  assert.equal(attributeOf(work), "tracked.txt: oats-fixture: through-the-link\n", "fixture premise: Git reads info/attributes through the link");
+  // A nested repository: HEAD's log moved elsewhere and linked, its branch's log a link that leads nowhere.
+  const nested = nestedRepository(work);
+  const branch = fixtureGit(nested, ["symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).trim();
+  const headLog = readFileSync(join(nested, ".git", "logs", "HEAD"), "utf8");
+  renameSync(join(nested, ".git", "logs", "HEAD"), join(elsewhere, "head-log"));
+  symlinkSync(join(elsewhere, "head-log"), join(nested, ".git", "logs", "HEAD"));
+  rmSync(join(nested, ".git", "logs", "refs", "heads", branch));
+  symlinkSync(join(elsewhere, "no-such-log"), join(nested, ".git", "logs", "refs", "heads", branch));
+  assert.equal(fixtureGit(nested, ["reflog", "show", "HEAD"], { encoding: "utf8" }).split("\n").filter(Boolean).length, 1, "fixture premise: Git reads HEAD's log through the link");
+  assert.equal(fixtureGit(nested, ["reflog", "show", branch], { encoding: "utf8" }), "", "fixture premise: Git reads no log through a link that leads nowhere");
+  write(join(work, "scratch.txt"), "untracked\n");
+
+  const retired = cli(f, ["retire", basename(spawned.home), "--discard-worktree", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const repo = join(JSON.parse(retired.stdout).workRecovery.path, "repo");
+  const copied = join(repo, ".git", "info", "attributes");
+  assert.equal(lstatSync(copied).isFile(), true, "the recovery's info/attributes is a plain file, not a link");
+  assert.equal(readFileSync(copied, "utf8"), "*.txt oats-fixture=through-the-link\n");
+  assert.equal(attributeOf(repo), "tracked.txt: oats-fixture: through-the-link\n", "and Git reads from it what it read through the link");
+  const nestedCopy = nestedUnder(repo);
+  assert.equal(lstatSync(join(nestedCopy, ".git", "logs", "HEAD")).isFile(), true, "the nested recovery's log of HEAD is a plain file");
+  assert.equal(readFileSync(join(nestedCopy, ".git", "logs", "HEAD"), "utf8"), headLog, "with the bytes the link led to");
+  assert.equal(entryIsThere(join(nestedCopy, ".git", "logs", "refs", "heads", branch)), false, "a log that is not there is not in the copy: the clone's own was removed");
+});
+
 // ---- The one recovery of an instance that had nothing to preserve before its hooks ----
 // It is written after the hooks, whole and verified, before the worktree step and before the home
 // is removed. It is a complete recovery of its own: nothing in it says a snapshot was taken before.
