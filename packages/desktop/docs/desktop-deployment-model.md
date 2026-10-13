@@ -188,6 +188,9 @@ version number: `workspaceApi === 2`, `workspace-v2` and
 `packages-no-approval` for the header, plus `instance-modules` and
 `served-identity` for the roster. A missing feature is
 shown by name in the header and roster; nothing is invoked optimistically.
+A deployment whose read is refused for a missing feature is unavailable: it
+lists no instance and no soul, so nothing can be spawned in it until OATS is
+updated.
 Matching deployments into workspace views needs `workspace-identity`; without
 it each deployment keeps a view of its own under its deployment id, the switcher
 lists them as before (not under "Not matched to a workspace"), and the

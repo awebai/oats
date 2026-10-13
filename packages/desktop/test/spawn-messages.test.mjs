@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { spawnProblem, catalogProblem } from '../../client/spawn-messages.mjs';
 import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { spawnApplyReason } from '../../client/spawn-apply-contract.mjs';
+import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
+import { cli, target } from './helpers/spawn-preview-fixture.mjs';
 
 // Every code the preview and apply contracts can report, read from their tables.
 const codes = file => {
@@ -35,6 +37,26 @@ test('kernel refusals keep their own text only behind Details; unknown codes sti
   assert.equal(spawnProblem(undefined).code, 'E_CLI_FAILED'); assert.equal(spawnProblem({ code: 'E_BUSY' }).detail, 'E_BUSY');
   assert.notEqual(spawnProblem({ code: 'E_CLI_TIMEOUT' }, 'preview').text, spawnProblem({ code: 'E_CLI_TIMEOUT' }, 'spawn').text,
     'a timed-out spawn may have created the instance; a timed-out read did not');
+});
+
+// A kernel of the 0.25 line, which the Desktop still accepts, refuses a spawn with E_REQUIREMENT_INACTIVE; no later kernel
+// writes that code, and the Desktop holds no sentence for it. The refusal's texts here are this file's own.
+test('a kernel code the Desktop has no sentence for reads as the general one, its message under Details; at a press it is the general failure (E_REQUIREMENT_INACTIVE)', async () => {
+  const CODE = 'E_REQUIREMENT_INACTIVE', SAID = 'soul "planner" asks for a capability this deployment has not turned on: turn it on in the workspace, then spawn again';
+  assert.equal(PREVIEW.includes(CODE) || APPLY.includes(CODE), false, 'the code is in no table of the contracts');
+  // The dialog's preview, from what the CLI prints: the exec owner keeps the kernel's code and message.
+  const printed = { schemaVersion: 1, ok: false, error: { code: CODE, message: SAID, details: { soul: 'planner', capabilities: ['example.pkg'], context: 'soul', remedy: 'turn it on' } } };
+  const read = await cliSpawnPreview(cli, { target, choices: {} }, { env: {}, exec: (_bin, _argv, _options, done) => done(Object.assign(new Error('exit 1'), { code: 1 }), JSON.stringify(printed)) });
+  assert.deepEqual(read.error, { code: CODE, message: SAID });
+  const reason = previewFailure(read.error.code, null, read.error.message).reason;
+  assert.deepEqual(reason, { code: CODE, message: SAID });
+  assert.deepEqual(spawnProblem(reason, 'preview'), { text: 'OATS couldn’t work out this soul’s defaults. Try again, or see Details.', code: CODE, detail: `${CODE} · ${SAID}` });
+  // A message that cannot travel leaves no code of the tables to fall back on: the general failure.
+  assert.equal(previewFailure(CODE, null, `${SAID} ${'x'.repeat(2048)}`).reason.code, 'E_CLI_FAILED');
+  // A press: no kernel text travels, and the code is in no table.
+  const pressed = spawnApplyReason(CODE);
+  assert.equal(pressed.code, 'E_CLI_FAILED');
+  assert.equal(spawnProblem(pressed, 'spawn').text, 'OATS couldn’t complete the spawn. Try again, or see Details.');
 });
 
 test('the soul chooser explains a catalog problem without codes', () => {

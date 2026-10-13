@@ -209,7 +209,8 @@ ${soulTeamsHereCSS}
 `;
 
 /** What a launch problem of a soul's report means, in the Desktop's words: the report is the launch a spawn
- * that names none would get, and each problem is the kernel's refusal of that spawn. */
+ * that names none would get, and each problem is what the kernel reports of that spawn: why it would be
+ * refused, in the report's own message and fix. */
 export const LAUNCH_REFUSED_HERE = 'A spawn of this soul with no launch chosen would be refused here.';
 
 /** presentation is an optional host lease. Presence belongs to this controller;
