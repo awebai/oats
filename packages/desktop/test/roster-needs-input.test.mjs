@@ -23,6 +23,7 @@ import { createTabChrome } from "../renderer/tab-a11y.mjs";
 import { NO_ANSWER_CODE, unservedError } from "../renderer/deployment-header.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { kernelRemoteRow, kernelRemoteGroup, remoteRows } from "./helpers/kernel-remote-row.mjs";
+import { SPEAKERS, HERDR, MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
 /** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
 const AT = "2026-10-11T12:00:00.000Z";
 
@@ -394,4 +395,81 @@ test("a reset subject's pending paint clears the tabs and the last-painted roste
   assert.equal(tabCue(tab), null, "no observation: unknown, so no cue");
   const cached = u.context.tabNeedsInputRoster; // the VM's own objects: compared by fields, not prototypes
   assert.equal(cached.instances.length, 0, "a restored tab syncs against no rows"); assert.equal(cached.workspace, "A");
+});
+
+/* ── #982: a row's own text is shown with who made it ── */
+test("a row that cannot open says who made its text in its title and description: each speaker, none, and hostile text as text", t => {
+  const u = fixture(t), text = "the session did not answer";
+  const rows = shown(text).map(([origin, line], n) => [instance(`dev-${n}`, undefined, { running: null, runtimeState: "unknown", runtimeError: text, ...(origin ? { runtimeErrorOrigin: origin } : {}) }), line]);
+  rows.push([instance("dev-markup", undefined, { running: null, runtimeState: "unknown", runtimeError: MARKUP, runtimeErrorOrigin: "kernel" }), `OATS says: ${MARKUP}`]);
+  rows.push([instance("dev-control", undefined, { running: null, runtimeState: "unknown", runtimeError: CONTROL, runtimeErrorOrigin: "kernel" }), DETAIL_WITHHELD]);
+  // A row with no text of its own keeps the sentence written for it, under no speaker's name whatever mark it carries.
+  rows.push([instance("dev-bare", undefined, { running: null, runtimeState: "unknown", runtimeErrorOrigin: "kernel" }), "dev-bare: status unknown"]);
+  // A text beside no speaker, or beside a mark that is none of the three: its reason is unattributed, so it is shown filtered, with no lead.
+  for (const [n, mark] of [{}, { runtimeErrorOrigin: "someone-else" }, { runtimeErrorOrigin: "unattributed" }].entries()) {
+    rows.push([instance(`dev-lost-${n}`, undefined, { running: null, runtimeState: "unknown", runtimeError: CONTROL, ...mark }), DETAIL_WITHHELD]);
+    rows.push([instance(`dev-bidi-${n}`, undefined, { running: null, runtimeState: "unknown", runtimeError: "safe\u202Etxt.exe", ...mark }), "safe\uFFFDtxt.exe"]);
+    rows.push([instance(`dev-odd-${n}`, undefined, { running: null, runtimeState: "unknown", runtimeError: { message: "x" }, ...mark }), "state unknown"]);
+  }
+  // A sentence the shared home wrote is shown as written: the filter reads no credential's shape in an instance's name.
+  rows.push([instance("vault-secret", undefined, { running: null, runtimeState: "unknown" }), "vault-secret: status unknown"]);
+  u.render(rows.map(([row]) => row));
+  for (const [row, line] of rows) {
+    const el = u.row(row.instance);
+    assert.equal(el.title, line, row.instance); assert.equal(el.getAttribute("aria-description"), line, row.instance);
+    assert.equal(el.getAttribute("aria-disabled"), "true");
+  }
+  assert.equal(u.list.querySelector("b, script"), null, "no element is made from a row's text");
+});
+
+test("another machine's row: the kernel's text reads under OATS, the reader's own under the Desktop's read of other machines", t => {
+  const u = fixture(t), remote = (name, extra) => instance(name, undefined, { server: "box", repoName: "box-repo", addressable: true, running: null, runtimeState: "unknown", serverUnreached: true, ...extra });
+  u.render([remote("dev-k", { runtimeError: "E_SSH: no route", runtimeErrorOrigin: "kernel" }), remote("dev-r", { runtimeError: "the read did not answer", runtimeErrorOrigin: "roster-read" }), remote("dev-n", {})]);
+  assert.equal(u.row("dev-k").title, "OATS says: E_SSH: no route");
+  assert.equal(u.row("dev-r").title, "Desktop's read of other machines says: the read did not answer");
+  assert.equal(u.row("dev-n").title, "box-repo was not reached.", "a sentence written here has no lead");
+});
+
+test("the hover card's Status says who made the row's text; the card shows it as text", async t => {
+  const text = "the session did not answer";
+  for (const [origin, line] of shown(text)) {
+    const facts = rosterTipFacts(instance("dev-a", undefined, { running: false, runtimeState: "stopped", runtimeError: text, ...(origin ? { runtimeErrorOrigin: origin } : {}) }), "Start dev-a");
+    assert.equal(facts.rows.find(([key]) => key === "Status")[1], `stopped · ${line}`, String(origin));
+  }
+  const status = extra => rosterTipFacts(instance("dev-a", undefined, { running: false, runtimeState: "stopped", ...extra })).rows.find(([key]) => key === "Status")[1];
+  assert.equal(status({ runtimeErrorOrigin: "kernel" }), "stopped", "a mark beside no text shows nothing");
+  assert.equal(status({ runtimeError: CONTROL, runtimeErrorOrigin: "terminal-probe" }), `stopped · ${DETAIL_WITHHELD}`, "an unsafe text is withheld, under no speaker's name");
+  const dom = new JSDOM("<!doctype html><body></body>", { pretendToBeVisual: true });
+  t.after(() => dom.window.close());
+  const doc = dom.window.document, tip = createRosterTip(doc);
+  const row = doc.createElement("button"); row.dataset.treeInstance = "/synthetic/dev-a"; doc.body.append(row);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  tip.bind(row, () => rosterTipFacts(instance("dev-a", undefined, { running: false, runtimeState: "stopped", runtimeError: MARKUP, runtimeErrorOrigin: "terminal-probe" }), "Start dev-a"));
+  row.dispatchEvent(new dom.window.Event("mouseenter"));
+  t.mock.timers.tick(400);
+  const card = doc.querySelector(".ctx-tip");
+  const fact = [...card.querySelectorAll(".ctx-tip-fact")].find(f => f.querySelector("dt").textContent === "Status");
+  assert.equal(fact.querySelector("dd").textContent, `stopped · ${SPEAKERS["terminal-probe"]} ${MARKUP}`);
+  assert.equal(card.querySelector("b, script"), null, "no element created from the text");
+});
+
+test("a row that still opens carries its text with its speaker into the card's sentence", t => {
+  const u = fixture(t);
+  u.render([instance("dev-a", undefined, { running: false, runtimeState: "stopped", runtimeError: "the last start failed", runtimeErrorOrigin: "kernel" })]);
+  assert.equal(u.facts("dev-a").why, "OATS says: the last start failed");
+  assert.equal(u.fact("dev-a", "Status"), "stopped · OATS says: the last start failed");
+});
+
+test("Open in split on a Herdr row: the kernel's reason under OATS, the stand-in for an older kernel's row with no lead", t => {
+  const u = fixture(t);
+  u.render([instance("dev-k", undefined, { running: null, runtimeState: "unsupported", runtimeError: `${HERDR} (dev-k)`, runtimeErrorOrigin: "kernel" }),
+    instance("dev-lost", undefined, { running: null, runtimeState: "unsupported", runtimeError: `${HERDR} (dev-lost)` }),
+    instance("dev-old", undefined, { backend: "herdr" }),
+    instance("dev-markup", undefined, { running: null, runtimeState: "unsupported", runtimeError: `E_HERDR_REMOVED: ${MARKUP}`, runtimeErrorOrigin: "kernel" })]);
+  const split = name => u.row(name).closest(".ctx-tree-row").querySelector('[data-action="open-split"]');
+  for (const [name, line] of [["dev-k", `OATS says: ${HERDR} (dev-k)`], ["dev-lost", `${HERDR} (dev-lost)`], ["dev-old", HERDR], ["dev-markup", `OATS says: E_HERDR_REMOVED: ${MARKUP}`]]) {
+    assert.equal(split(name).disabled, true, name); assert.equal(split(name).title, line, name);
+    assert.equal(split(name).querySelector("small").textContent, line, name);
+  }
+  assert.equal(u.list.querySelector("b, script"), null);
 });

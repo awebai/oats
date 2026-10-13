@@ -1,5 +1,6 @@
 import { harnessOf } from "./harness-names.mjs";
-import { unsupportedSession } from "./instance-presentation.mjs";
+import { unsupportedSession, unsupportedSessionOrigin, hasRuntimeError } from "./instance-presentation.mjs";
+import { madeByKernel } from "./kernel-made.mjs";
 import { waitingOnYouData } from "./waiting-on-you.mjs";
 /** Projection of the installed CLI's remote roster. Never reads remote paths locally. */
 export function remoteWorkspace(group) {
@@ -18,16 +19,33 @@ function requireTime(at, table) {
 }
 
 /** A remote deployment's panel. `at` is the time the panel is made, an ISO string, and is required: the
- * caller holds the time of its call (panel-views.mjs passes `held.at`) and no clock is read here. */
+ * caller holds the time of its call (panel-views.mjs passes `held.at`) and no clock is read here.
+ *
+ * A row is the host's row, spread whole, so a row with a `runtimeError` gets its speaker here
+ * (`runtimeErrorOrigin`; instance-presentation.mjs names the three) and any other row gets none: a
+ * `runtimeErrorOrigin` a host sent never survives, on any path. Which text it is decides:
+ *
+ *   a Herdr row                          "kernel" for the host's own reason, no key for the stand-in
+ *   a reached server                     the host's row text: "kernel" (a host's OATS, relayed)
+ *   a server not reached, an error the   "kernel": the mark of kernel-made.mjs, set where the roster's
+ *     installed CLI printed                answer is parsed (cli-adapter.mjs `cliRemoteRoster`)
+ *   a server not reached, any other      "roster-read": written while the roster was read (a read
+ *     error, or none ("Server is           that threw, a timeout, an answer that is not the contract's)
+ *     unreachable")
+ *
+ * No code and no message is read to decide it. The mark is on the error object: a group is held and
+ * passed back as it was answered (`remoteRosterState`), and a copy of its `probe.error` reads as
+ * "roster-read", never as the kernel's. */
 export function remotePanel(group, at) {
   requireTime(at, "remotePanel");
   const ws = remoteWorkspace(group);
   // A row's soul subtitle: its own group's soul list only, a string as the host reported it, never synthesized.
   const described = name => { const soul = (group.souls || []).find((a) => a?.name === name); return typeof soul?.description === "string" ? soul.description : null; };
   // A Herdr-recorded row is unsupported whatever the host's probe said: it cannot open or start.
-  const instances = (group.instances || []).map(({ runtime: _released, ...i }) => {
+  const instances = (group.instances || []).map(({ runtime: _released, runtimeErrorOrigin: _sent, ...i }) => {
     const unsupported = unsupportedSession(i);
-    return {
+    const origin = unsupported ? unsupportedSessionOrigin(i) : group.probe.ok || (group.probe.error?.message && madeByKernel(group.probe.error)) ? "kernel" : "roster-read";
+    const row = {
       ...i, server: group.server, savedRoute: i.savedRoute === true,
       // The last roster read of this server failed: its rows are last-known, their state unknown.
       serverUnreached: !group.probe.ok,
@@ -41,6 +59,7 @@ export function remotePanel(group, at) {
       ...(Object.hasOwn(i, "waitingOnYou") ? { waitingOnYou: waitingOnYouData(i.waitingOnYou) } : {}),
       ...(unsupported ? { running: null, runtimeState: "unsupported", runtimeError: unsupported } : {}),
     };
+    return hasRuntimeError(row) && origin ? { ...row, runtimeErrorOrigin: origin } : row;
   });
   return {
     workspace: { id: ws.id, name: ws.name, scope: ws.scope, team: null, server: ws.server,

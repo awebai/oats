@@ -364,6 +364,21 @@ test('a Herdr-recorded instance: the footer shows Start disabled with the kernel
   assert.equal(control('start').disabled, false); assert.equal(control('start').title, '', 'a tmux row carries no Herdr reason');
 });
 
+test("a Herdr-recorded instance: Start's title says who made the reason (#982), and shows a hostile one as text or withholds it", t => {
+  const u = fixture(t), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+  let n = 0;
+  const title = (extra) => { u.select(instance(`/A/h${++n}`, { running: null, runtimeState: 'unsupported', ...extra })); return u.query('[data-lifecycle="start"]'); };
+  for (const [origin, lead] of [['kernel', 'OATS says: '], ['terminal-probe', "Desktop's terminal check says: "], ['roster-read', "Desktop's read of other machines says: "], [undefined, ''], ['server-probe', '']]) {
+    const start = title({ runtimeError: `${reason} (h1)`, ...(origin ? { runtimeErrorOrigin: origin } : {}) });
+    assert.equal(start.title, `${lead}${reason} (h1)`, String(origin)); assert.equal(start.disabled, true);
+  }
+  // The stand-in for an older kernel's row is written here: no lead, whatever mark the row carries.
+  assert.equal(title({ runtimeState: undefined, running: true, backend: 'herdr', runtimeError: 'another text', runtimeErrorOrigin: 'kernel' }).title, reason);
+  assert.equal(title({ runtimeError: 'E_HERDR_REMOVED: <b>bold</b>', runtimeErrorOrigin: 'kernel' }).title, 'OATS says: E_HERDR_REMOVED: <b>bold</b>');
+  const withheld = title({ runtimeError: 'E_HERDR_REMOVED: gone\u001b[2J', runtimeErrorOrigin: 'kernel' });
+  assert.equal(withheld.title, '[Detail withheld]'); assert.equal(withheld.disabled, true);
+});
+
 test('the Session card names a tmux session only when one was recorded: an unknown row with none shows no session line', t => {
   // A row whose state OATS could not establish is not probed, so its `tmux` is the kernel's own and no default
   // session is filled in (packages/client/liveness.mjs). Every shape the projection lets through.

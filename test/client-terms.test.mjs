@@ -13,6 +13,7 @@ import { LIFECYCLE_CODES, lifecycleReason, lifecycleFailure, lifecycleCode, life
 import { WORKSPACE_FAILURE_CODES, workspaceFailure, workspaceGate, cliWorkspace } from "../packages/client/workspace-cli.mjs";
 import { capabilityShowUnreadable } from "../packages/client/capability-show-contract.mjs";
 import { deploymentReasonParts, deploymentReason } from "../packages/client/workspace-views.mjs";
+import { originLead } from "../packages/client/instance-presentation.mjs";
 import { deploymentLabelParts, deploymentLabel, machineLabels, machineLabelParts } from "../packages/client/deployment-label.mjs";
 import { rosterSections } from "../packages/client/roster-sections.mjs";
 import { deploymentUnavailableText, deploymentUnavailableParts } from "../packages/client/deployment-facts.mjs";
@@ -117,7 +118,7 @@ const WORKSPACE_PATHS = [
 function reasonInputs() {
   const fields = {
     local: [true, false], machine: [undefined, "altair"], sshHost: [undefined, "altair.lan"], unavailable: [undefined, "E_CLI_FAILED: boom"],
-    readError: [undefined, "the cache is locked"], identityStatus: [undefined, "identity", "feature", "old", "none", "invalid"],
+    readError: [undefined, "the cache is locked", ""], readErrorOrigin: [undefined, "kernel"], identityStatus: [undefined, "identity", "feature", "old", "none", "invalid"],
     cliReadsRemotes: [undefined, false], rosterError: [undefined, "no route to host"],
     probe: [undefined, { ok: true }, { ok: false }, { ok: false, error: { code: "E_SSH", message: "Host key verification failed." } },
       { ok: false, error: { code: "E_SSH", message: "Connection timed out" } }, { ok: false, error: { code: "E_ROSTER_BUDGET" } }, { ok: false, error: { code: "E_OTHER", message: "x" } }],
@@ -183,6 +184,7 @@ async function everyAnswer(terms) {
   }
   assert.deepEqual(reached.sort(), [...WORKSPACE_FAILURE_CODES].sort(), "one cliWorkspace path for every failure the adapter has a sentence for");
   say("capabilityShowUnreadable", capabilityShowUnreadable(terms));
+  for (const origin of ["kernel", "terminal-probe", "roster-read", "not-a-speaker"]) say(`originLead ${origin}`, originLead(origin, terms));
   REASON_INPUTS.forEach((d, n) => {
     const parts = deploymentReasonParts(d, terms);
     assert.equal(deploymentReason(d, terms), parts?.detail ?? null);
@@ -259,6 +261,7 @@ test("two clients at once: each answer is in its own client's words, and neither
     "lifecycleFailure E_CLI_OUTPUT_LIMIT", "lifecycleFailure E_CLI_PROTOCOL", "lifecycleFailure E_LIFECYCLE_UNAVAILABLE", "lifecycleFailure E_PLAN_LIMIT",
     "lifecycleReason E_CLI_OUTPUT_LIMIT", "lifecycleReason E_CLI_PROTOCOL", "lifecycleReason E_LIFECYCLE_UNAVAILABLE", "lifecycleReason E_PLAN_LIMIT",
     "machineLabelParts", "machineLabels", "rosterSections",
+    "originLead roster-read", "originLead terminal-probe",
     "undescribedAnswer E_NOT_IN_THE_TABLE", "undescribedRefusal E_NOT_IN_THE_TABLE",
     "workspaceFailure E_WORKSPACE_FEATURE", "workspaceGate old cli",
   ].sort());
@@ -296,6 +299,7 @@ const TABLES = {
   workspaceGate: (terms) => workspaceGate(CLI, terms),
   cliWorkspace: (terms) => cliWorkspace(CLI, { action: "sync", context: "/w" }, terms, { exec: assert.fail, env: {} }),
   capabilityShowUnreadable: (terms) => capabilityShowUnreadable(terms),
+  originLead: (terms) => originLead("kernel", terms),
   deploymentReasonParts: (terms) => deploymentReasonParts({ local: true }, terms),
   deploymentReason: (terms) => deploymentReason({ local: true }, terms),
   deploymentLabelParts: (terms) => deploymentLabelParts({ machine: "altair" }, terms),
@@ -345,6 +349,29 @@ test("no terms: every table throws without them, and with an object clientTerms 
   assert.equal(requireTerms(real, "a table"), real);
 });
 
+// ── The speaker of a text (#982) ──────────────────────────────────────────────
+
+test("originLead: the three phrases, each in the client's own words where it names the client, and null for anything else", () => {
+  const desktop = clientTerms(DESKTOP), tui = clientTerms(TUI);
+  assert.deepEqual(["kernel", "terminal-probe", "roster-read"].map((origin) => originLead(origin, desktop)),
+    ["OATS says:", "Desktop's terminal check says:", "Desktop's read of other machines says:"]);
+  assert.deepEqual(["kernel", "terminal-probe", "roster-read"].map((origin) => originLead(origin, tui)),
+    ["OATS says:", `${TUI.name}'s terminal check says:`, `${TUI.name}'s read of other machines says:`]);
+  // The kernel's lead takes no term: it is the same for every client.
+  assert.equal(originLead("kernel", desktop), originLead("kernel", tui));
+  // Absent, or any value that is not one of the three: no lead, so a client shows the text as its own.
+  for (const origin of [undefined, null, "", "Kernel", "KERNEL", "kernel ", "server-probe", "terminal probe", "__proto__", "constructor", "toString", "hasOwnProperty",
+    0, 7, NaN, true, ["kernel"], { kernel: true }, Symbol("kernel"), () => "kernel"]) {
+    assert.equal(originLead(origin, desktop), null, String(origin));
+  }
+  // Terms are required, also for the phrase that uses none and for an origin that has no lead.
+  for (const origin of ["kernel", "terminal-probe", undefined, "__proto__"]) {
+    for (const terms of [undefined, null, { ...TUI }, { name: "Desktop" }]) {
+      assert.throws(() => originLead(origin, terms), { name: "TypeError", message: "originLead: terms must be the object clientTerms() returned" });
+    }
+  }
+});
+
 test("what needs only the code needs no terms", () => {
   for (const code of LIFECYCLE_CODES) assert.equal(lifecycleCode(code), code);
   for (const unknown of ["E_NOT_IN_THE_TABLE", "E_FORBIDDEN_FRAME", "toString", "", undefined, null, 7]) assert.equal(lifecycleCode(unknown), "E_CLI_FAILED");
@@ -360,7 +387,7 @@ test("what needs only the code needs no terms", () => {
 test("the shared home holds no terms of its own: none of its modules calls clientTerms", () => {
   const home = new URL("../packages/client/", import.meta.url);
   for (const name of ["lifecycle-contract.mjs", "workspace-cli.mjs", "capability-show-contract.mjs", "workspace-views.mjs", "deployment-label.mjs", "roster-sections.mjs",
-    "deployment-facts.mjs", "panel-views.mjs"]) {
+    "deployment-facts.mjs", "panel-views.mjs", "instance-presentation.mjs"]) {
     const source = readFileSync(new URL(name, home), "utf8");
     assert.match(source, /import \{ requireTerms \} from '\.\/client-terms\.mjs';/, `${name} checks the terms it is given`);
     assert.doesNotMatch(source, /\bclientTerms\(/, `${name} makes terms of its own`);

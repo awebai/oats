@@ -4,7 +4,7 @@
  * of the serving process is liveness-main.mjs (see packages/desktop/server/oats-web.mjs), so a slow
  * terminal server cannot stall request handling. */
 import { createTmuxStatusReader, DEFAULT_TMUX_SESSION } from './tmux-status.mjs';
-import { unsupportedSession } from './instance-presentation.mjs';
+import { unsupportedSession, unsupportedSessionOrigin } from './instance-presentation.mjs';
 
 export { DEFAULT_TMUX_SESSION };
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -32,4 +32,17 @@ export function observeLiveness(rows, { tmuxReader = createTmuxStatusReader(), s
     const { tmux: observed, running, runtimeState, runtimeError } = tmuxReader({ instance: row.instance, tmux }, session);
     return { tmux: observed, running, runtimeState, ...(runtimeError ? { runtimeError: String(runtimeError).slice(0, 300) } : {}) };
   });
+}
+
+/** Who makes the `runtimeError` of a row's answer, when the answer has one: "kernel", "terminal-probe",
+ * or null for the stand-in of an older kernel's Herdr row. By the order `observeLiveness` takes, which is
+ * a function of the row alone: an invalid row and a probed one are the terminal check's, a Herdr row's
+ * text is the kernel's or the stand-in, and a row the kernel answered `running: null` keeps the kernel's.
+ * The collector's answer crosses a process as JSON, so the speaker is not put on that wire: the reader of
+ * the answers asks here, of the row it sent (deployment-panel.mjs `livenessAnswers`). Not on the stable surface. */
+export function livenessOrigin(row) {
+  if (!record(row) || typeof row.instance !== 'string') return 'terminal-probe';
+  if (unsupportedSession(row)) return unsupportedSessionOrigin(row);
+  if (row.running === null) return 'kernel';
+  return 'terminal-probe';
 }

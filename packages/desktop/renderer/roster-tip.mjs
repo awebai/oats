@@ -5,6 +5,7 @@
 import { prText } from './roster-pr.mjs';
 import { createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { runtimeState } from '../../client/instance-presentation.mjs';
+import { runtimeErrorLine } from './speaker-line.mjs';
 import { instanceRepoLabel, heldHome } from '../../client/instance-tree.mjs';
 import { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from '../../client/waiting-on-you.mjs';
 
@@ -40,7 +41,8 @@ export function rosterTipFacts(instance, why = '', pr = null, { below = [], now 
       ['Repo', text(instanceRepoLabel(instance)), 'mono'],
       ['Branch', text(instance.branch), 'mono'],
       ['Harness', text(instance.harness) ? { harness: instance.harness, model: text(instance.model) } : null],
-      ['Status', held ?? [state === 'unknown' ? 'status unknown' : state, text(instance.runtimeError)].filter(Boolean).join(' · ')],
+      // The row's own text is said with who made it (speaker-line.mjs), as one display line.
+      ['Status', held ?? [state === 'unknown' ? 'status unknown' : state, runtimeErrorLine(instance)].filter(Boolean).join(' · ')],
       ['Waiting', claim ? `${waitingLabel(claim)} · ${waitedText(claim.since, now)} (since ${waitingClock(claim.since, now)})` : null],
       // Text only (the card sets textContent): never parsed, never linkified.
       ['Message', claim?.message ?? null],

@@ -4,6 +4,8 @@ import { JSDOM } from 'jsdom';
 import { canAddressRemote, serverLabel, rowReason, remoteHeadline, hostReason, remoteReason, unroutableReason, readingFrom,
   unaddressableSentence, codeLineNodes, kernelCode } from '../../client/remote-address.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
+import { originLead } from '../../client/instance-presentation.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { canAddressRemote as serverCanAddressRemote, admitInstance } from '../../client/instance-admission.mjs';
 
 const remote = (extra = {}) => ({ instance: 'dev-a', agent: 'dev', home: '/srv/agents/dev/instances/dev-a', server: 'build',
@@ -26,7 +28,8 @@ test('serverLabel: the registration label the roster reports, else the server id
 
 test('rowReason: one function for the meta-line label and the full sentence, keyed by the reason', () => {
   const herdr = rowReason(remote({ running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: Herdr is gone.' }));
-  assert.deepEqual(herdr, { key: 'herdr', label: 'Herdr no longer supported', sentence: 'E_HERDR_REMOVED: Herdr is gone.' });
+  // The row's own text beside no speaker carries `origin: 'unattributed'` (#982), here and for the unreached row below.
+  assert.deepEqual(herdr, { key: 'herdr', label: 'Herdr no longer supported', sentence: 'E_HERDR_REMOVED: Herdr is gone.', origin: 'unattributed' });
   const localHerdr = rowReason({ instance: 'h', home: '/w/h', running: null, sessionTarget: 'x' });
   assert.equal(localHerdr.label, 'Herdr no longer supported', 'a local Herdr row too');
   assert.deepEqual(rowReason(remote({ addressable: false, missingRemotely: true, running: null })), { key: 'missing',
@@ -35,13 +38,79 @@ test('rowReason: one function for the meta-line label and the full sentence, key
   assert.deepEqual(rowReason(remote({ addressable: false })), { key: 'unaddressable', label: 'not reachable on Build box',
     sentence: 'Build box did not report this instance as reachable.' });
   assert.deepEqual(rowReason(remote({ running: null, serverUnreached: true, runtimeError: 'ssh failed: timeout' })),
-    { key: 'unreached', label: 'Build box not reached', sentence: 'ssh failed: timeout' });
+    { key: 'unreached', label: 'Build box not reached', sentence: 'ssh failed: timeout', origin: 'unattributed' });
   assert.deepEqual(rowReason(remote({ running: null })), { key: 'unknown', label: 'state unknown', sentence: 'dev-a: status unknown' });
   assert.equal(rowReason(remote()), null, 'a running addressable row has no reason');
   assert.equal(rowReason(remote({ running: false })), null);
   assert.equal(rowReason({ instance: 'x', home: '/w/x', running: null }).label, 'state unknown');
   // The server not being reached wins over a stale addressable fact from its last good read.
   assert.equal(rowReason(remote({ running: null, serverUnreached: true, addressable: false, missingRemotely: true })).key, 'unreached');
+});
+
+// Who made a reason's sentence (#982): `origin`, when the sentence is the row's own runtimeError.
+const ORIGINS = ['kernel', 'terminal-probe', 'roster-read'];
+const HERDR_STAND_IN = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
+
+test('rowReason: origin is the row\'s runtimeErrorOrigin when the sentence is the row\'s runtimeError, for herdr, unreached and unknown', () => {
+  for (const origin of ORIGINS) {
+    const own = { runtimeError: 'the text the row carries', runtimeErrorOrigin: origin };
+    assert.deepEqual(rowReason(remote({ running: null, runtimeState: 'unsupported', ...own })),
+      { key: 'herdr', label: 'Herdr no longer supported', sentence: 'the text the row carries', origin });
+    assert.deepEqual(rowReason(remote({ running: null, serverUnreached: true, ...own })), { key: 'unreached', label: 'Build box not reached', sentence: 'the text the row carries', origin });
+    assert.deepEqual(rowReason(remote({ running: null, ...own })), { key: 'unknown', label: 'state unknown', sentence: 'the text the row carries', origin });
+    assert.deepEqual(rowReason({ instance: 'x', home: '/w/x', running: null, ...own }), { key: 'unknown', label: 'state unknown', sentence: 'the text the row carries', origin }, 'a local row too');
+  }
+});
+
+test('rowReason: no origin for a sentence written here and for the Herdr stand-in, whatever key the row carries', () => {
+  const none = (row, key, sentence) => { const reason = rowReason(row); assert.deepEqual([reason.key, reason.sentence, Object.hasOwn(reason, 'origin')], [key, sentence, false], JSON.stringify(row)); };
+  for (const origin of [...ORIGINS, 'someone-else']) {
+    // Written here: the row has no text of its own, whatever key it carries.
+    none(remote({ running: null, serverUnreached: true, runtimeErrorOrigin: origin }), 'unreached', 'Build box was not reached.');
+    none(remote({ running: null, runtimeErrorOrigin: origin }), 'unknown', 'dev-a: status unknown');
+    none(remote({ running: null, runtimeError: '', runtimeErrorOrigin: origin }), 'unknown', 'dev-a: status unknown');
+    // `missing` and `unaddressable` are sentences about the row, never its text.
+    none(remote({ addressable: false, missingRemotely: true, running: null, runtimeError: 'a text', runtimeErrorOrigin: origin }), 'missing',
+      'dev-a is no longer on Build box. Remove it from this computer with: oats server forget build --instance dev-a');
+    none(remote({ addressable: false, runtimeError: 'a text', runtimeErrorOrigin: origin }), 'unaddressable', 'Build box did not report this instance as reachable.');
+    // The stand-in for an older kernel's Herdr row: the row's runtimeError is a Herdr probe's, not the sentence.
+    none(remote({ backend: 'herdr', runtimeError: 'Herdr snapshot unavailable', runtimeErrorOrigin: origin }), 'herdr', HERDR_STAND_IN);
+    none({ instance: 'h', home: '/w/h', running: null, sessionTarget: 'x', runtimeErrorOrigin: origin }, 'herdr', HERDR_STAND_IN);
+  }
+  // "unattributed" is no speaker either: beside no text, or beside a sentence written here, it changes nothing.
+  none(remote({ running: null, runtimeErrorOrigin: 'unattributed' }), 'unknown', 'dev-a: status unknown');
+  none(remote({ addressable: false, runtimeError: 'a text', runtimeErrorOrigin: 'unattributed' }), 'unaddressable', 'Build box did not report this instance as reachable.');
+  // A sentence written here keeps the names it holds as they are: the reason says it is this home's own.
+  for (const name of ['api-token', 'vault-secret', 'db-password']) none({ instance: name, home: `/w/${name}`, running: null }, 'unknown', `${name}: status unknown`);
+  // A panel's row of an older kernel's Herdr instance holds the stand-in as its runtimeError and no key: no speaker.
+  none(remote({ running: null, runtimeState: 'unsupported', runtimeError: HERDR_STAND_IN }), 'herdr', HERDR_STAND_IN);
+});
+
+test('rowReason: the row\'s own text beside no speaker carries origin "unattributed", written here and never copied from the row', () => {
+  const quoted = (row, key, sentence) => assert.deepEqual(rowReason(row), { key, label: rowReason(row).label, sentence, origin: 'unattributed' }, JSON.stringify(row));
+  // No mark, a value that is none of the three (a hostile string among them), and the word itself as the row's mark.
+  for (const mark of [undefined, null, '', 'Kernel', 'server-probe', '__proto__', 'constructor', 7, { kernel: true }, 'wipe \x1b[2J', 'token: abc123', 'unattributed']) {
+    for (const text of ['a text', 'wipe \x1b[2J the screen', 'token: abc123']) {
+      const own = { runtimeError: text, ...(mark === undefined ? {} : { runtimeErrorOrigin: mark }) };
+      quoted(remote({ running: null, ...own }), 'unknown', text);
+      quoted(remote({ running: null, serverUnreached: true, ...own }), 'unreached', text);
+      quoted(remote({ running: null, runtimeState: 'unsupported', ...own }), 'herdr', text);
+      quoted({ instance: 'x', home: '/w/x', running: null, ...own }, 'unknown', text);
+    }
+  }
+  // The value is the reason's own: a row that carries the word beside one of the three speakers' texts reads by the speaker, and
+  // the word is never taken from the row as a speaker.
+  for (const origin of ORIGINS) assert.equal(rowReason(remote({ running: null, runtimeError: 'a text', runtimeErrorOrigin: origin })).origin, origin);
+  assert.equal(originLead('unattributed', DESKTOP_TERMS), null, 'it names nobody: no words for it');
+  // A truthy text that is not a string (another machine's row is spread whole): the reason is as on the base, the sentence
+  // the value as it came, and it is unattributed whatever key stands beside it. A client's filter then has nothing to show.
+  for (const text of [7, true, { message: 'x' }, ['x']]) for (const mark of [undefined, 'kernel', 'roster-read']) {
+    const own = { runtimeError: text, ...(mark === undefined ? {} : { runtimeErrorOrigin: mark }) };
+    quoted(remote({ running: null, ...own }), 'unknown', text);
+    quoted(remote({ running: null, serverUnreached: true, ...own }), 'unreached', text);
+  }
+  // A falsy one is no text: the sentence written here, no origin.
+  for (const text of [0, false, null, undefined, '']) assert.deepEqual(rowReason(remote({ running: null, runtimeError: text, runtimeErrorOrigin: 'kernel' })), { key: 'unknown', label: 'state unknown', sentence: 'dev-a: status unknown' });
 });
 
 test('remoteHeadline: the host-refusal table, with the view\'s own sentence for every other code', () => {

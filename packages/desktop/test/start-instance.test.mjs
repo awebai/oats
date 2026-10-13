@@ -4,12 +4,13 @@ import { JSDOM } from "jsdom";
 import { createInstanceStarter } from "../renderer/start-instance.mjs";
 import { setWorkspace } from "../renderer/views/common.mjs";
 import { cliStart } from "../../client/cli-adapter.mjs";
+import { MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
 
 const tick = () => new Promise((r) => setImmediate(r));
-function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start, ready = true, restart = false, server } = {}) {
+function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start, ready = true, restart = false, server, row = {} } = {}) {
   const dom = new JSDOM("<body><button id='opener'>Start</button></body>");
   setWorkspace("/workspace");
-  const instance = { instance: "accountant-minerva", home: "/workspace/agents/accountant/instances/accountant-minerva", runtime: "claude", model: "sonnet", running, ...(server ? { server, addressable: true } : {}) };
+  const instance = { instance: "accountant-minerva", home: "/workspace/agents/accountant/instances/accountant-minerva", runtime: "claude", model: "sonnet", running, ...(server ? { server, addressable: true } : {}), ...row };
   const calls = [], opened = [], notified = [];
   const ctx = { api: async (path, opts) => {
     calls.push({ path, opts });
@@ -202,4 +203,20 @@ test("a remote home never offers the default checkbox: this computer can't tell 
     assert.equal(s.modal.querySelector('.start-configurations').hidden, false);
     assert.equal(s.modal.querySelector('.lc-default-label').hidden, true);
   } finally { s.cleanup(); }
+});
+
+/* ── #982: the status of a start that cannot be checked says who made the row's text ── */
+test("an instance whose state is not known: the dialog's status carries the row's text with its speaker, as text, and Start stays off", async () => {
+  const status = async (row) => {
+    const s = setup({ running: null, row });
+    try { await tick(); assert.equal(s.modal.querySelector(".start-submit").disabled, true); return s.modal.querySelector(".start-status"); } finally { s.cleanup(); }
+  };
+  const text = "the session did not answer";
+  for (const [origin, line] of shown(text)) assert.equal((await status({ runtimeError: text, ...(origin ? { runtimeErrorOrigin: origin } : {}) })).textContent, line, String(origin));
+  const own = "Could not verify whether this instance is running. Refresh its status before starting.";
+  assert.equal((await status({})).textContent, own, "a row with no text keeps the sentence written here");
+  assert.equal((await status({ runtimeErrorOrigin: "kernel" })).textContent, own, "a mark beside no text names nobody");
+  const markup = await status({ runtimeError: MARKUP, runtimeErrorOrigin: "terminal-probe" });
+  assert.equal(markup.textContent, `Desktop's terminal check says: ${MARKUP}`); assert.equal(markup.querySelector("b, script"), null);
+  assert.equal((await status({ runtimeError: CONTROL, runtimeErrorOrigin: "kernel" })).textContent, DETAIL_WITHHELD);
 });

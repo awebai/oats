@@ -536,6 +536,91 @@ test('Spec D: a remote (server) panel without the cause renders exactly as befor
   assert.equal(notice.title, 'Server is unreachable'); assert.match(notice.textContent, /^Couldn't refresh instances/);
 });
 
+/* ── #982: the kept failure's message is shown with who made it; a failure with no words is still one ── */
+test("the roster's failure notice says who made the kept message, in each spot it shows it: the stale line's title and Details, the cache problem's own line, the failed block, the spoken status", async t => {
+  const stale = async (extra) => { const s = shell(t); await s.reply(0, panelOf('A', roster, { observedAt: '2026-09-29T14:00:00.000Z', ...extra })); return { s, notice: s.status().querySelector('.loading-notice[data-kind="stale"]') }; };
+  // The kernel's message beside the last observation: the title and the Details line.
+  let { s, notice } = await stale({ error: 'cannot read it', errorOrigin: 'kernel' });
+  assert.equal(notice.title, 'OATS says: cannot read it'); assert.equal(notice.querySelector('.loading-notice-cause').textContent, 'OATS says: cannot read it');
+  assert.equal(s.rows().length, 3); assert.equal(s.live().textContent, "Couldn't refresh instances.");
+  ({ notice } = await stale({ error: 'cannot read it', errorOrigin: 'kernel', errorCause: { code: 'E_REMOTE_UNREADABLE', reason: 'network', host: 'github.com' } }));
+  assert.equal(notice.title, 'OATS says: cannot read it (E_REMOTE_UNREADABLE)'); assert.equal(notice.querySelector('.loading-notice-cause').textContent, 'OATS says: cannot read it (E_REMOTE_UNREADABLE)');
+  // A cache problem's remedy is on the line itself.
+  ({ notice } = await stale({ error: CACHE_MESSAGE, errorOrigin: 'kernel', errorCause: { code: 'E_REMOTE_UNREADABLE', reason: 'cache' } }));
+  assert.equal(notice.querySelector('.loading-notice-message').textContent, `OATS says: ${CACHE_MESSAGE}`);
+  assert.equal(notice.querySelector('.loading-notice-cause').textContent, 'E_REMOTE_UNREADABLE', 'Details keeps only the code');
+  // A message with no speaker, or with a value that is not the kernel's: as before, with no lead.
+  for (const errorOrigin of [undefined, 'roster-read', 'terminal-probe', 'Kernel', true]) {
+    ({ notice } = await stale({ error: 'cannot read it', ...(errorOrigin === undefined ? {} : { errorOrigin }) }));
+    assert.equal(notice.title, 'cannot read it', String(errorOrigin)); assert.equal(notice.querySelector('.loading-notice-cause').textContent, 'cannot read it', String(errorOrigin));
+  }
+  // Another machine's panel carries no mark: its message reads as before.
+  ({ notice } = await stale({ workspace: { id: 'A', name: 'A', remote: true }, error: 'Server is unreachable' }));
+  assert.equal(notice.title, 'Server is unreachable');
+  // The message is one display line: markup stays text, an unsafe one is withheld under no speaker's name, several lines are one.
+  ({ notice } = await stale({ error: '<b>bold</b>', errorOrigin: 'kernel' }));
+  assert.equal(notice.title, 'OATS says: <b>bold</b>'); assert.equal(notice.querySelector('b'), null);
+  for (const errorOrigin of ['kernel', undefined]) {
+    ({ notice } = await stale({ error: 'wipe \x1b[2J the screen', ...(errorOrigin ? { errorOrigin } : {}) }));
+    assert.equal(notice.title, '[Detail withheld]', String(errorOrigin)); assert.equal(notice.querySelector('.loading-notice-cause').textContent, '[Detail withheld]');
+  }
+  ({ notice } = await stale({ error: 'first\nsecond', errorOrigin: 'kernel' }));
+  assert.equal(notice.title, 'OATS says: first second');
+  // With nothing observed before: the failed block and the spoken status.
+  const failed = async (extra) => { const f = shell(t); await f.reply(0, panelOf('A', [], extra)); return f; };
+  let f = await failed({ error: 'cannot read it', errorOrigin: 'kernel' });
+  assert.equal(f.context.rosterState.state, 'failed');
+  assert.equal(f.list().querySelector('.loading-failed-message').textContent, 'OATS says: cannot read it'); assert.equal(f.live().textContent, "Couldn't refresh instances. OATS says: cannot read it");
+  f = await failed({ error: 'cannot read it' });
+  assert.equal(f.list().querySelector('.loading-failed-message').textContent, 'cannot read it'); assert.equal(f.live().textContent, "Couldn't refresh instances. cannot read it");
+});
+
+test('a kept failure with no words is still a failure: the rows go stale and their actions are disabled; with nothing observed it is a failed read, never "No instances."', async t => {
+  for (const extra of [{ error: '' }, { error: '', errorOrigin: 'kernel' }, { error: ' \n ', errorOrigin: 'kernel' }]) {
+    const s = shell(t);
+    await s.reply(0, panelOf('A', roster));
+    assert.equal(s.context.rosterState.state, 'ready'); assert.equal(s.list().querySelector('.ctx-start').getAttribute('aria-disabled'), null);
+    s.refreshContextRoster(); await s.reply(1, panelOf('A', roster, extra));
+    assert.equal(s.context.rosterState.state, 'stale', JSON.stringify(extra)); assert.equal(s.rows().length, 3, 'the last observation stays');
+    const notice = s.status().querySelector('.loading-notice[data-kind="stale"]');
+    assert.match(notice.querySelector('.loading-notice-text').textContent, /^Couldn't refresh instances/); assert.equal(notice.hasAttribute('title') && notice.title !== '', false, 'no words, no title');
+    assert.equal(notice.querySelector('.loading-notice-details, details').hidden, true, 'and no Details');
+    assert.equal(s.list().querySelector('.ctx-start').getAttribute('aria-disabled'), 'true'); assert.equal(s.live().textContent, "Couldn't refresh instances.");
+    // The same failure with no rows over rows already shown keeps them, stale; a good read clears it.
+    s.refreshContextRoster(); await s.reply(2, panelOf('A', [], extra));
+    assert.equal(s.context.rosterState.state, 'stale'); assert.equal(s.rows().length, 3); assert.doesNotMatch(s.text(), /No instances/);
+    s.refreshContextRoster(); await s.reply(3, panelOf('A', roster));
+    assert.equal(s.context.rosterState.state, 'ready'); assert.equal(s.status().children.length, 0);
+    // With nothing observed: the failed block, with the roster's own words.
+    const f = shell(t);
+    await f.reply(0, panelOf('A', [], extra));
+    assert.equal(f.context.rosterState.state, 'failed', JSON.stringify(extra));
+    assert.equal(f.list().querySelector('.loading-failed-message').textContent, "Couldn't refresh instances."); assert.doesNotMatch(f.text(), /No instances/);
+    assert.equal(f.live().textContent, "Couldn't refresh instances.");
+  }
+});
+
+test("a cache problem with nothing observed says who made its message, from the reason's own mark on this computer's deployment", async t => {
+  const failed = async (reason, extra = {}) => { const s = shell(t); await s.reply(0, panelOf('A', [], { deployment: { status: 'unavailable', reason: { code: 'E_REMOTE_UNREADABLE', cause: { reason: 'cache' }, ...reason } }, ...extra })); return s; };
+  let s = await failed({ message: CACHE_MESSAGE, origin: 'kernel' });
+  assert.equal(s.context.rosterState.state, 'failed');
+  assert.equal(s.list().querySelector('.loading-failed-message').textContent, `OATS says: ${CACHE_MESSAGE}`);
+  assert.equal(s.list().querySelector('.loading-failed-code').textContent, 'E_REMOTE_UNREADABLE'); assert.equal(s.live().textContent, `Couldn't refresh instances. OATS says: ${CACHE_MESSAGE}`);
+  // A reason with no mark, or with a value that is not the kernel's: the message as before.
+  for (const origin of [undefined, 'roster-read', 'terminal-probe', 'Kernel', true]) {
+    s = await failed({ message: CACHE_MESSAGE, ...(origin === undefined ? {} : { origin }) });
+    assert.equal(s.list().querySelector('.loading-failed-message').textContent, CACHE_MESSAGE, String(origin));
+  }
+  s = await failed({ message: 'wipe \x1b[2J the screen', origin: 'kernel' });
+  assert.equal(s.list().querySelector('.loading-failed-message').textContent, '[Detail withheld]');
+  s = await failed({ message: '<b>bold</b>', origin: 'kernel' });
+  assert.equal(s.list().querySelector('.loading-failed-message').textContent, 'OATS says: <b>bold</b>'); assert.equal(s.list().querySelector('.loading-failed b'), null);
+  // Another machine's panel is never read for this reason: its deployment, whatever it carried, is not this computer's.
+  s = await failed({ message: CACHE_MESSAGE, origin: 'kernel' }, { workspace: { id: 'A', name: 'A', remote: true } });
+  assert.equal(s.list().querySelector('.loading-failed'), null, 'no failed read is made from a remote panel\'s deployment');
+  assert.doesNotMatch(s.rosterEl.textContent, /OATS says/);
+});
+
 /* ── #461: a deployment the server does not serve, or does not answer for ── */
 const notServedError = () => { const e = new Error("This Desktop's server isn't serving this deployment."); e.code = NOT_SERVED_CODE; e.status = 404; return e; };
 // A local deployment is selected by its path; only a path can be re-added.

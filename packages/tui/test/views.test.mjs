@@ -536,7 +536,7 @@ test("a hostile message in the reason leaves no escape byte of its own on the sc
   };
   for (const [name, message] of Object.entries(hostile)) for (const make of [STALE, UNAVAILABLE]) for (const sz of [S80, S120, S60]) {
     const state = stateOf(failed(entry(), make(message))), shared = sharedState(state), d = draw(state, sz), at = `${name}, ${make("").code}, ${sz.cols}x${sz.rows}`;
-    assert.equal(shared.detail.includes(message), true, `${at}: the shared detail carries the message as it came`);
+    assert.doesNotMatch(textOf(shown(message)), CONTROL, `${at}: the TUI's own filter leaves no control character of the message as it came`);
     const out = readTerminalOutput(createScreen().render(d.rows, sz, { full: true }));
     assert.deepEqual(out.foreign, [], `${at}: every ESC written begins a sequence of the TUI's own`);
     assert.deepEqual([...new Set(out.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr"].includes(kind)), [], at);

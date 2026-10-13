@@ -11,6 +11,10 @@
  * observed is in deployment-facts.mjs (`deploymentUnavailableText`), and the Desktop's
  * test/inventory.test.mjs holds that its page reaches no module that imports a Node builtin. */
 import { dirname } from 'node:path';
+import { livenessOrigin } from './liveness.mjs';
+import { knownOrigin, hasRuntimeError } from './instance-presentation.mjs';
+
+const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** One row per instance of a roster (deployment-data.mjs `deploymentStatusData`): the kernel's row,
  * with `agent`, `description` and `team` from its soul and `agentsRoot` from the roster.
@@ -35,14 +39,27 @@ export function livenessInput(rows) {
 
 /** The collector's answers, one per row. `stdout` is what the collector printed, or `null` when it
  * failed, timed out or could not start. Anything that is not JSON for an array of exactly
- * `rows.length` answers gives every row the unknown answer; no rows give `[]`, whatever was printed. */
+ * `rows.length` answers gives every row the unknown answer; no rows give `[]`, whatever was printed.
+ *
+ * An answer with a `runtimeError` says who made it, in `runtimeErrorOrigin` (instance-presentation.mjs
+ * names the speakers). The speaker is decided here, in this process, and never read from what the
+ * collector printed: a `runtimeErrorOrigin` in its output is dropped, and the key is set from the row
+ * that was sent (liveness.mjs `livenessOrigin`: which answer `observeLiveness` gives is a function of
+ * the row alone). So `rows` are the rows whose `livenessInput` the collector was given. The unknown
+ * answer written here is the terminal check's own. */
 export function livenessAnswers(rows, stdout) {
   if (!rows.length) return [];
-  const unknown = () => rows.map(() => ({ running: null, runtimeState: "unreachable", runtimeError: "Terminal status is unavailable" }));
+  const unknown = () => rows.map(() => ({ running: null, runtimeState: "unreachable", runtimeError: "Terminal status is unavailable", runtimeErrorOrigin: "terminal-probe" }));
   if (typeof stdout !== "string") return unknown();
   try {
     const parsed = JSON.parse(stdout);
-    return Array.isArray(parsed) && parsed.length === rows.length ? parsed : unknown();
+    if (!Array.isArray(parsed) || parsed.length !== rows.length) return unknown();
+    return parsed.map((printed, index) => {
+      if (!record(printed)) return printed;
+      const { runtimeErrorOrigin: _printed, ...answer } = printed;
+      const origin = hasRuntimeError(answer) ? livenessOrigin(rows[index]) : null;
+      return origin ? { ...answer, runtimeErrorOrigin: origin } : answer;
+    });
   } catch { return unknown(); }
 }
 
@@ -66,6 +83,8 @@ export function panelInstance(i) {
     relativeTo: i.relativeTo || null,
     ...(i.sessionTarget ? { sessionTarget: i.sessionTarget } : {}),
     runtimeState: i.runtimeState, runtimeError: i.runtimeError,
+    // Who made that text: only beside a `runtimeError`, and only one of the three speakers.
+    ...(hasRuntimeError(i) && knownOrigin(i.runtimeErrorOrigin) ? { runtimeErrorOrigin: i.runtimeErrorOrigin } : {}),
     tmux: i.tmux, git: null,
     // Workspace-model v2 facts exactly as `oats status --json` reported them:
     // module drift rows (or the recorded map when the workspace is
@@ -90,10 +109,18 @@ export function panelInstance(i) {
   };
 }
 
-/** The panel's rows: each row merged with its liveness answer and projected, running first, then by name. */
+/** The panel's rows: each row merged with its liveness answer and projected, running first, then by name.
+ * `answers` are `livenessAnswers`'.
+ *
+ * The merged row's `runtimeErrorOrigin` is set here or removed, whatever the row carried: when the
+ * answer holds the `runtimeError`, the answer's speaker; when the answer has none and the kernel's row
+ * had one (a probed row the kernel reported with a text), the text is the kernel's, so "kernel". */
 export function panelInstances(rows, answers) {
-  return rows.map((row, index) => panelInstance({ ...row, ...answers[index] }))
-    .sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
+  return rows.map((row, index) => {
+    const answer = answers[index], { runtimeErrorOrigin: _carried, ...merged } = { ...row, ...answer };
+    const origin = record(answer) && Object.hasOwn(answer, "runtimeError") ? answer.runtimeErrorOrigin : "kernel";
+    return panelInstance(hasRuntimeError(merged) ? { ...merged, runtimeErrorOrigin: origin } : merged);
+  }).sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
 }
 
 /** A deployment's entry before the first CLI probe has settled, when there is no verdict to report:
@@ -105,16 +132,27 @@ export function pendingEntry(previous, at) {
 /** A deployment's entry after a read that failed with `reason` (deployment-contract.mjs).
  * A transient busy or stale read keeps the entry held, as it is. A remote the kernel could not read
  * (a cache problem, the network, a timeout) does not erase what was observed: the last observation
- * stays, marked with the failure, the kernel's message and its bounded cause (Spec D); an `error` and
- * an `errorCause` it already carried are replaced, the cause removed when this reason has none.
+ * stays, marked with the failure, the kernel's message and its bounded cause (Spec D); an `error`, an
+ * `errorOrigin` and an `errorCause` it already carried are replaced, the origin and the cause removed
+ * when this reason has none.
  * Every other failure, and each of those without an entry to keep, is shown as unavailable with the
- * reason, never as an empty roster. */
+ * reason, never as an empty roster.
+ *
+ * The kept entry's `error` is always a string: the reason's message, or "" when it carries none. That
+ * `error` is a string is the fact "a failure is kept" (deployment-facts.mjs `keptFailure`, the one place
+ * that reads it); what the string holds decides nothing.
+ * `errorOrigin: "kernel"` stands beside it when the reason is one the installed CLI printed (the reader's
+ * `origin: 'kernel'`, deployment-read-cli.mjs), and is absent for any other reason: who shows `error`
+ * names its speaker from this key (instance-presentation.mjs `originLead`), and shows a message with no
+ * origin as its own, never under the kernel's name. The key is written here only, from the reason given:
+ * one the entry already carried never survives. */
 export function failedEntry(previous, reason, at) {
   if (previous && ["E_DEPLOYMENT_BUSY", "E_DEPLOYMENT_STALE"].includes(reason?.code)) return previous;
   if (previous?.deployment?.status === "observed" && reason?.code === "E_REMOTE_UNREADABLE") {
-    const { error: _error, errorCause: _cause, ...kept } = previous;
+    const { error: _error, errorCause: _cause, errorOrigin: _origin, ...kept } = previous;
     const cause = reason.cause;
-    return { ...kept, error: reason.message, ...(cause ? { errorCause: { code: reason.code, ...cause } } : {}) };
+    return { ...kept, error: typeof reason.message === "string" ? reason.message : "", ...(reason.origin === "kernel" ? { errorOrigin: "kernel" } : {}),
+      ...(cause ? { errorCause: { code: reason.code, ...cause } } : {}) };
   }
   return { deployment: { status: "unavailable", reason }, instances: [], generatedAt: at };
 }

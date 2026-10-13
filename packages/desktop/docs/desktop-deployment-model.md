@@ -53,14 +53,133 @@ parsed or matched. A reason is the kernel's by its mark and a code the reader
 admits, never by the shape of a code alone. `deploymentUnavailableParts`
 answers the same sentence as three parts, `headline`, `lead` and `sentence`;
 `sentence` is the only one that can carry words the client did not write.
-Three places still show a kernel message of a deployment as it came: the
-roster's own failure notice, a row's `runtimeError`, and the text a
-deployment keeps beside its last observation when its re-read failed
-(`E_REMOTE_UNREADABLE`).
+The other texts a client shows that it did not write (a row's
+`runtimeError`, the message a deployment keeps beside its last observation
+when its re-read failed, the roster's own failure notice) say who made them
+too: [Who made a shown text](#who-made-a-shown-text).
 
 Ambient instance/deployment selectors
 (`PI_AGENTS_ROOT`, `OATS_INSTANCE_HOME`, `OATS_DEPLOYMENT`, …) are removed from
 the child environment.
+
+## Who made a shown text
+
+Three texts a client shows can hold words it did not write: a row's
+`runtimeError`, a reason's `sentence` when it is that text, and the message a
+deployment keeps beside its last observation when its re-read failed. Each
+says who made it, in a key the shared home writes beside the text
+(`packages/client/`):
+
+| The text | The key | Written by |
+|---|---|---|
+| a row's `runtimeError` | `runtimeErrorOrigin` on the row | `deployment-panel.mjs` (`livenessAnswers`, `panelInstances`) for this computer's rows, `remote-roster.mjs` (`remotePanel`) for another machine's |
+| a reason's `sentence` | `origin` on the reason | `remote-address.mjs` (`rowReason`), passed on by `instance-acts.mjs` (`instanceActs`) |
+| a kept failure's `error` | `errorOrigin` on the entry and the panel | `deployment-panel.mjs` (`failedEntry`), served by `panel-views.mjs` |
+
+**The marks are never taken from an answer.** Only the shared home writes
+them, in the client's own process, from the path the text took: a key that
+arrives in a kernel's answer, a host's row, another machine's panel or the
+liveness collector's output is set again or removed on every path. No code
+and no message is read to decide one. **A text with no origin is shown as
+before, with no speaker in front, and never under "OATS says:".**
+
+A reason's `origin` also says whose sentence it is: **it is there exactly
+when the sentence is not the shared home's own.** `rowReason` puts a row's
+`runtimeError` in a reason in one expression, which answers the text and
+its `origin` together, so no path picks the row's text without one. A
+client hangs its display filter on the key: a sentence with an `origin` is
+text from outside, and a sentence with none is one the shared home wrote
+(the row is "not reached", its state is unknown, the stand-in for an older
+kernel's Herdr row) and is shown as written.
+
+### The speakers and their words
+
+A client puts the speaker's words in front of the text, on the same line.
+These are all the speaker phrases a client shows; another is added here or
+nowhere.
+
+| The speaker | The key's value | The words |
+|---|---|---|
+| OATS: this computer's, or a host's relayed by it | `kernel` | `OATS says:` |
+| the client's check of this computer's terminals | `terminal-probe` | `Desktop's terminal check says:` |
+| the client's read of the other machines' roster | `roster-read` | `Desktop's read of other machines says:` |
+| OATS, refusing to read a deployment (a reason marked `origin: 'kernel'`, above) | | `OATS answered with an error (<code>). It says:` |
+| nobody: a row's text that reached `rowReason` beside no speaker | `unattributed`, on a reason's `origin` only | none: the text alone |
+
+The first three are `originLead(origin, terms)`
+(`instance-presentation.mjs`), which answers `null` for any other value; the
+client's name in them is its own term (`terms.name`). `kernel` covers this
+computer's OATS (it could not reach a server, and said why) and another
+host's OATS whose row this computer's OATS relayed; the row's
+`serverUnreached` says which read it is.
+
+`unattributed` stands for a text nobody attributed, and has no phrase. Every
+text a row carries gets a speaker where the panel is made, so the value is
+reached only by a row whose mark did not arrive with it, and by a
+`runtimeError` that is not a string (another machine's row is spread whole).
+`rowReason` writes it and nothing else does: it is never read from a row or
+an answer, never a row's `runtimeErrorOrigin` and never a kept failure's
+`errorOrigin`. Such a text is shown through the display filter, with no
+speaker in front; one that is not a string has nothing to show, and the row
+keeps its label.
+
+### Which text gets which
+
+| Where the text is chosen | `runtimeErrorOrigin` |
+|---|---|
+| a row the kernel answered `running: null`, left as it is | `kernel` |
+| a row whose session backend OATS no longer has, with the kernel's own reason (`runtimeState: "unsupported"` and a `runtimeError`) | `kernel` |
+| another machine's row, its server reached: the host's own text | `kernel` |
+| another machine's row, its server not reached, by an error the installed CLI printed | `kernel` |
+| the kernel's text that a terminal check's answer leaves on the row | `kernel` |
+| the terminal check: its own sentences, the message of a failed `tmux` or `ps` run, "Invalid terminal target", "Terminal status is unavailable" | `terminal-probe` |
+| another machine's row, its server not reached, by an error the client wrote while reading the roster ("Server is unreachable", "Remote roster unavailable", a timeout, an answer that is not the contract's) | `roster-read` |
+| the stand-in written for an older kernel's Herdr row (`E_HERDR_REMOVED: …`) | none: it is the client's own sentence |
+
+A row without a `runtimeError` (a non-empty string) never has the key. An
+error the installed CLI printed is known by a mark set where its answer is
+parsed (`cli-adapter.mjs`, `kernel-made.mjs`), on the object and not in its
+fields: it cannot arrive in an answer, and a copy of the error loses it and
+then reads as the client's own, never as the kernel's.
+
+### How the Desktop shows them
+
+One helper makes the line for every place (`renderer/speaker-line.mjs`): the
+speaker's words, a space, and the text as one display line
+(`display-text.mjs`). Every text the shared home did not write goes through
+that filter: a row's `runtimeError`, a kept failure's message, and a
+reason's sentence when the reason carries an `origin`. A text of several
+lines is shown as one; a text the filter withholds (control characters, a
+credential's shape) reads "[Detail withheld]" alone, with no speaker in
+front; a text with nothing to show leaves the place saying what it said
+before for a row without one. The places: a roster row's title and
+description and its hover card's Status, the actions menu (its trigger,
+Start's reason, Open in split's reason), the notice of a terminal that
+cannot open, the start dialog's status, the context panel's Start, the
+overview's Terminal and Restart, the roster's failure notice and the
+overview's.
+
+### A kept failure
+
+A deployment whose re-read failed and whose last observation is kept holds
+the failure's message as `error`, always a string: the message, or `""`
+when the failure had none. **That `error` is a string is the fact "a failure
+is kept"; what it holds decides nothing** (`deployment-facts.mjs`
+`keptFailure`, the one place that reads it). So a failure with no message, a
+blank one or one the filter withholds leaves the deployment `stale` like any
+other, and the shared reason and each of the Desktop's notices agree.
+`errorOrigin` is `"kernel"` when the installed CLI printed the message and
+absent otherwise; another machine's panel never carries it.
+
+The reason of a stale deployment is under "Reasons". The overview's notes
+of a kept failure have the same shape, composed in one place
+(`keptFailureNote`, `renderer/views/hierarchy.mjs`): "Roster unavailable.
+Showing a reported observation, not current state; actions disabled. OATS
+says: <message>" for the kernel's message, the Desktop's sentences alone
+when there is none to show, and "Roster unavailable: <message>. Showing…"
+for a message with no speaker (another machine's panel). A failed read that
+kept no rows reads the same way around the sentence for what is on screen:
+"Roster unavailable. No current observation. OATS says: <message>".
 
 ## Capability gates
 
@@ -293,7 +412,10 @@ answers the view that holds it; no `?ws=` answers the first view.
   (`reachable`), not reached (with its `reason`), remembered
   (`identityFrom: "remembered"`, the last report, not live), or stale
   (`stale`: this computer's deployment whose last re-read failed, its rows
-  the last observation, "Last read failed" with the kernel's message). A
+  the last observation, "Last read failed" with the kernel's message after
+  the Desktop's own sentence, under "OATS says:"). It is stale because the
+  read failed, whatever the message holds: a failure with no message is
+  stale too. A
   stale deployment's rows wait for a current read, as on a stale roster:
   Start and the actions menu in the sidebar, the overview's actions. It stays
   `reachable`, so spawning there is not blocked. `note` is information, not a
@@ -415,8 +537,15 @@ sentence already says what happens next, as for a timeout). The sentences:
 - An invalid reference (`null` key): the ref and "fix oats-local.yaml"; the
   fix step names the ref.
 - This computer's deployment whose re-read failed (the last observation kept,
-  `E_REMOTE_UNREADABLE`): "This deployment's last read failed: <the
-  kernel's message>. It shows what was last observed." It is `stale`.
+  `E_REMOTE_UNREADABLE`): "This deployment's last read failed. It shows what
+  was last observed. OATS says: <the kernel's message>" It is `stale`. The
+  Desktop's sentence comes first and the kernel's words after their
+  speaker, as one display line. A message the display filter withholds reads
+  "[Detail withheld]" in its place, with no "OATS says:" in front; a
+  failure with no message reads the Desktop's sentence alone. A kept
+  message that carries no speaker (the reader makes none today) stays inside the
+  sentence as before, filtered the same way: "This deployment's last read
+  failed: <message>. It shows what was last observed."
 - An unknown team: "This host hasn't observed its workspace yet; run oats
   sync there."
 - Standalone and unmapped: "Teams are local only on this host
@@ -560,8 +689,11 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   source of a row's reason: a short label on the roster meta line (Herdr no
   longer supported, gone from `<server>`, not reachable on `<server>`,
   `<server>` not reached, state unknown), and the full sentence used as the
-  row's `title`, `aria-description` and the actions menu's reason. The server
-  label is the registration's label, else the server id.
+  row's `title`, `aria-description` and the actions menu's reason. When the
+  sentence is the row's own `runtimeError` the reason carries its `origin`
+  ([Who made a shown text](#who-made-a-shown-text)); a sentence written
+  there carries none. The server label is the registration's label, else
+  the server id.
 - **Admission.** `admitInstance` admits a remote selector only in its own
   remote deployment (the same server id in another group is another
   deployment), for a row that passes `canAddressRemote`, when this machine's

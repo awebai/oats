@@ -4,14 +4,22 @@
  *   instanceActs(instance) -> { blocked: Reason | null, limited: Reason | null, acts: Act[] }
  *   Act    = { verb, enabled, reason: Reason | null }
  *   Reason = { code, sentence } and, by code:
- *     { code: 'unaddressable', key, sentence }   key: the row reason's own (remote-address.mjs rowReason)
- *     { code: 'held', kind, sentence }           kind: 'spawning' | 'spawn-incomplete' | 'retire-incomplete'
- *     { code: 'unsupported-session', sentence }
+ *     { code: 'unaddressable', key, sentence, origin? }   key: the row reason's own (remote-address.mjs rowReason)
+ *     { code: 'held', kind, sentence }                    kind: 'spawning' | 'spawn-incomplete' | 'retire-incomplete'
+ *     { code: 'unsupported-session', sentence, origin? }
  *
  * A client may switch on `code`, and on `key` or `kind` when it needs to; never on the sentence.
- * The sentences are the ones the shared tables already produce. Two of them can be kernel text (an
- * unaddressable row's `runtimeError`, the kernel's reason for a removed session backend): a client
- * shows a sentence only through display-text.mjs `displayLine`.
+ * The sentences are the ones the shared tables already produce. Two of them can be text this home did
+ * not write (an unaddressable row's `runtimeError`, the kernel's reason for a removed session backend): a
+ * client shows a sentence only through display-text.mjs `displayLine`.
+ *
+ * `origin` is there exactly when the sentence is not this home's own (the rule of `rowReason`, whose
+ * answer's `origin` is passed on as it is, never decided again here): "kernel", "terminal-probe" or
+ * "roster-read" when the row names the speaker of its `runtimeError`, "unattributed" when the row's text
+ * stands beside no speaker. It is absent on a sentence this home wrote and on the stand-in for an older
+ * kernel's Herdr row, and a `held` reason never has one. A client shows a sentence with an `origin`
+ * through its display filter, after instance-presentation.mjs `originLead`'s words when the value names
+ * a speaker, and a sentence with none as written, as this home's own.
  *
  * `blocked`: the row offers nothing, and this is why; `acts` is then empty.
  * `limited`: the row offers fewer acts than a home normally does, and this is why. It is about the
@@ -36,8 +44,8 @@ const act = (verb, reason = null) => ({ verb, enabled: !reason, reason });
 
 export function instanceActs(instance) {
   if (!canAddressRemote(instance)) {
-    const { key, sentence } = rowReason(instance);
-    return { blocked: { code: 'unaddressable', key, sentence }, limited: null, acts: [] };
+    const { key, sentence, origin } = rowReason(instance);
+    return { blocked: { code: 'unaddressable', key, sentence, ...(origin !== undefined ? { origin } : {}) }, limited: null, acts: [] };
   }
   // #802: a home the kernel holds starts, stops and opens nothing. Retire only when a spawn or a retire left it
   // half cleaned (the kernel's retire completes it), nothing while its spawn sets up the worktree.
@@ -47,8 +55,9 @@ export function instanceActs(instance) {
     return held.retire ? { blocked: null, limited: reason, acts: [act('retire')] } : { blocked: reason, limited: null, acts: [] };
   }
   // A Herdr-recorded row cannot start or restart: Start stays listed, not enabled, with the kernel's reason.
-  const unsupported = unsupportedSession(instance);
-  const launch = unsupported ? [act('start', { code: 'unsupported-session', sentence: unsupported })]
+  // Its sentence and its `origin` are the row reason's own (rowReason answers this reason first for such a row).
+  const herdr = unsupportedSession(instance) ? rowReason(instance) : null;
+  const launch = herdr ? [act('start', { code: 'unsupported-session', sentence: herdr.sentence, ...(herdr.origin !== undefined ? { origin: herdr.origin } : {}) })]
     : instance.running === true ? [act('restart')] : instance.running === false ? [act('start')] : [];
   return { blocked: null, limited: null, acts: [act('inspect'), ...launch, act('stop'), act('retire')] };
 }

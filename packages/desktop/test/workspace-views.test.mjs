@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readIdentity, attachment, viewId, deploymentReason, deploymentReasonParts, buildViews } from '../../client/workspace-views.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
+import { clientTerms } from '../../client/client-terms.mjs';
 
 const KEY = 'github.com/awebai/oats';
 const identity = (over = {}) => ({ key: KEY, ref: 'git:github.com/awebai/oats', keyFrom: 'workspace', standalone: false,
@@ -210,7 +211,8 @@ test('reason parts: a short label for headings and the switcher, the full senten
   assert.deepEqual(deploymentReasonParts({ local: true, attach: { unattached: 'invalid-ref' }, ref: null }, DESKTOP_TERMS).fix, ['Fix the workspace reference in its oats-local.yaml.']);
   // A failed re-read of this computer's deployment (the last observation kept): the kernel's message, first.
   assert.deepEqual(deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' }, readError: 'the cache is locked' }, DESKTOP_TERMS),
-    { short: 'Last read failed', detail: 'This deployment\'s last read failed: the cache is locked. It shows what was last observed.', fix: [] });
+    { short: 'Last read failed', headline: 'This deployment\'s last read failed: the cache is locked. It shows what was last observed.', lead: null, sentence: null,
+      detail: 'This deployment\'s last read failed: the cache is locked. It shows what was last observed.', fix: [] });
   // Every reason the sentence form gives has a short label (never a heading without words).
   for (const d of [{ local: true, unavailable: 'Reading…' }, { local: true, identityStatus: 'feature' }, { local: false, cliReadsRemotes: false },
     { local: false, rosterError: 'boom' }, { local: false, probe: { ok: false, error: { code: 'E_X' } } }, { local: true, identityStatus: 'invalid' },
@@ -219,4 +221,41 @@ test('reason parts: a short label for headings and the switcher, the full senten
     assert.ok(parts.short && parts.detail && Array.isArray(parts.fix), JSON.stringify(d));
     assert.equal(deploymentReason(d, DESKTOP_TERMS), parts.detail);
   }
+});
+
+/* ── #982: a kept failure's reason sets the kernel's words apart, and its message is one display line in every form ── */
+test("a kept failure's reason: the kernel's words after the client's sentence and the speaker's lead, a message with no speaker inside the sentence as before", () => {
+  const OWN = "This deployment's last read failed. It shows what was last observed.";
+  const parts = (readError, readErrorOrigin) => deploymentReasonParts({ local: true, identityStatus: 'identity', attach: { key: 'k', team: 't' }, readError, ...(readErrorOrigin === undefined ? {} : { readErrorOrigin }) }, DESKTOP_TERMS);
+  const hostile = ['wipe \x1b[2J the screen', 'bell\u0007', 'token: abc123', 'https://user:pw@example.invalid/x'], nothing = ['', '   ', ' \n\t '];
+  // The six forms.
+  assert.deepEqual(parts('the cache is locked', 'kernel'), { short: 'Last read failed', headline: OWN, lead: 'OATS says:', sentence: 'the cache is locked',
+    detail: `${OWN} OATS says: the cache is locked`, fix: [] });
+  for (const message of hostile) assert.deepEqual(parts(message, 'kernel'), { short: 'Last read failed', headline: OWN, lead: null, sentence: '[Detail withheld]', detail: `${OWN} [Detail withheld]`, fix: [] }, JSON.stringify(message));
+  for (const message of nothing) assert.deepEqual(parts(message, 'kernel'), { short: 'Last read failed', headline: OWN, lead: null, sentence: null, detail: OWN, fix: [] }, JSON.stringify(message));
+  const inside = line => `This deployment's last read failed: ${line}. It shows what was last observed.`;
+  assert.deepEqual(parts('the cache is locked'), { short: 'Last read failed', headline: inside('the cache is locked'), lead: null, sentence: null, detail: inside('the cache is locked'), fix: [] });
+  for (const message of hostile) assert.deepEqual(parts(message), { short: 'Last read failed', headline: inside('[Detail withheld]'), lead: null, sentence: null, detail: inside('[Detail withheld]'), fix: [] }, JSON.stringify(message));
+  for (const message of nothing) assert.deepEqual(parts(message), { short: 'Last read failed', headline: OWN, lead: null, sentence: null, detail: OWN, fix: [] }, JSON.stringify(message));
+  // The detail is the parts that are there, joined by one space, in every form; and the one-line reason is the detail.
+  for (const origin of ['kernel', undefined]) for (const message of ['the cache is locked', ...hostile, ...nothing]) {
+    const p = parts(message, origin);
+    assert.equal(p.detail, [p.headline, p.lead, p.sentence].filter(part => part !== null).join(' '), `${origin}: ${JSON.stringify(message)}`);
+    assert.equal(deploymentReason({ local: true, readError: message, readErrorOrigin: origin }, DESKTOP_TERMS), p.detail);
+    assert.doesNotMatch(p.detail, /[\u0000-\u001f\u007f]/, 'no control character of the message is in the reason');
+  }
+  // A message is one line: line breaks fold, and a long one is cut by the filter, whoever made it.
+  assert.equal(parts('first\nsecond\tthird', 'kernel').sentence, 'first second third');
+  assert.equal(parts('first\nsecond', undefined).detail, inside('first second'));
+  // Only the one value names the kernel: anything else is a message with no speaker, never under "OATS says:".
+  for (const origin of [null, '', 'Kernel', 'terminal-probe', 'roster-read', true, 1, {}, ['kernel'], '__proto__']) {
+    assert.equal(parts('the cache is locked', origin).detail, inside('the cache is locked'), JSON.stringify(origin));
+  }
+  // A message that carries a speaker's words is still only a message.
+  assert.equal(parts('OATS says: all is well').detail, inside('OATS says: all is well'));
+  // That a failure is kept does not depend on its text: a string, whatever it holds. No string, no kept failure.
+  for (const none of [undefined, null, 0, false, {}, ['x']]) assert.equal(parts(none, 'kernel'), null, JSON.stringify(none));
+  // The lead is the shared home's for any client: it names OATS, not the client.
+  const TUI = clientTerms({ name: 'oats tui', self: 'oats tui', selfInitial: 'oats tui', update: 'OATS', thisMachine: 'This machine' });
+  assert.deepEqual(deploymentReasonParts({ local: true, readError: 'the cache is locked', readErrorOrigin: 'kernel' }, TUI), parts('the cache is locked', 'kernel'));
 });

@@ -31,8 +31,8 @@ export function servedIdentityText(identity) {
  *                                                     (client-terms.mjs: the client that needs it)
  *   the kernel refused (`reason.origin === 'kernel'`  headline: "OATS answered with an error (<code>)."
  *     and a code the reader admits)                   lead: "It says:"; sentence: the kernel's message
- *   any other reason                                  headline: `<code>: <message>`, or the message, or that
- *                                                     the deployment could not be observed
+ *   any other reason                                  headline: `<code>: <message>`, or the message, as one
+ *                                                     display line; or that the deployment could not be observed
  *
  * `sentence` is the only part that can carry words the client did not write: the kernel's message through
  * the display filter (display-text.mjs `displayLine`), one line, whole or DETAIL_WITHHELD, never cut by its
@@ -41,7 +41,9 @@ export function servedIdentityText(identity) {
  * its mark, which the reader gives to the error the installed CLI printed (deployment-read-cli.mjs); any other
  * value of `origin`, or the mark with a code the reader would not have admitted, reads as none. A reason
  * without the mark is one the client made itself (deployment-contract.mjs `deploymentFailure`): its message is
- * the client's own sentence, shown as it is.
+ * the client's own sentence, and each of those reads through the filter byte for byte as it is written. The
+ * line goes through the filter all the same, whole: a reason of that shape that holds anything else is one
+ * line too, or DETAIL_WITHHELD alone, or (with nothing to show) that the deployment could not be observed.
  *
  * A client that sets the kernel's words apart from its own (a quote, another style) calls this; one that
  * shows one line calls `deploymentUnavailableText`.
@@ -57,8 +59,31 @@ export function deploymentUnavailableParts(deployment, terms) {
     const sentence = displayLine(reason.message);
     return { headline: `OATS answered with an error (${reason.code}).`, lead: sentence !== null && sentence !== DETAIL_WITHHELD ? 'It says:' : null, sentence };
   }
+  // The reader's own reason, through the display filter like every other form: the whole line at once, so
+  // the guarantee does not rest on where the callers are (a hand-made reason, a code that is not a code).
   const code = text(reason.code), message = text(reason.message);
-  return own(code && message ? `${code}: ${message}` : message || 'The deployment could not be observed.');
+  return own(displayLine(code && message ? `${code}: ${message}` : message) ?? 'The deployment could not be observed.');
+}
+
+/** Whether what a client holds for a deployment is a kept failure: its last read failed and what was
+ * observed before is still shown (deployment-panel.mjs `failedEntry`). `held` is a deployment's entry or
+ * a panel made from one (panel-views.mjs `deploymentPanel`, `panelData`); the answer is null, or
+ *
+ *   { message, origin }     message: the failure's text, a string, possibly empty
+ *                           origin: "kernel" when the installed CLI printed it, else null
+ *
+ * **The fact does not depend on the text.** `error` is a string exactly when a failure is kept, and an
+ * empty, blank or withheld message is as much a kept failure as any other: a kernel that fails with no
+ * words has still failed. This is the one place that decides it. A client asks here whether a deployment
+ * is stale and never tests `error` for truth, so the shared reason and each of a client's notices agree.
+ *
+ * `origin` is `errorOrigin` read strictly: the one value `failedEntry` writes, anything else null. A
+ * panel of another machine (remote-roster.mjs `remotePanel`) never carries the key; its `error` is a
+ * string while that machine was not reached, and reads here as a failure with no speaker.
+ * Not on the stable surface. */
+export function keptFailure(held) {
+  if (held === null || typeof held !== 'object' || typeof held.error !== 'string') return null;
+  return { message: held.error, origin: held.errorOrigin === 'kernel' ? 'kernel' : null };
 }
 
 /** The sentence a client shows in place of a deployment's rows when the kernel could not observe it: the parts

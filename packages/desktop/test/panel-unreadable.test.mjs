@@ -57,11 +57,14 @@ test('without an earlier observation, or for another failure, the read is unavai
   assert.equal((await u.observe('/d')).deployment.status, 'unavailable', 'nothing observed to keep');
 });
 
-test('panelData serves error and errorCause for a local workspace only when the snapshot carries them', () => {
+test('panelData serves error, errorOrigin and errorCause for a local workspace only when the snapshot carries them', () => {
   // One deployment's panel is deploymentPanel (#482); a view's panel is its PRIMARY deployment's, spread whole.
   assert.match(fn('panelData'), /return \{\n\s*\.\.\.primary,/);
   const body = fn('deploymentPanel');
-  assert.match(body, /typeof observed\?\.error === "string" \? \{ error: observed\.error \}/);
+  // Whether a failure is kept is the shared home's one rule (deployment-facts.mjs keptFailure), asked of the entry; the
+  // message is served beside who made it (#982).
+  assert.match(body, /const instances = observed\?\.instances \|\| \[\], kept = keptFailure\(observed\);/);
+  assert.match(body, /\.\.\.\(kept \? \{ error: kept\.message, \.\.\.\(kept\.origin \? \{ errorOrigin: kept\.origin \} : \{\}\) \} : \{\}\),/);
   assert.match(body, /observed\?\.errorCause \? \{ errorCause: observed\.errorCause \}/);
   assert.ok(body.indexOf('if (ws?.remote)') < body.indexOf('errorCause'), 'a remote panel returns before: unchanged');
 });

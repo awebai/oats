@@ -30,16 +30,20 @@ import { isAbsolute, join } from "node:path";
 import { gitFileId, gitRevision, gitIndexRevision, gitObservation } from './instance-git-contract.mjs';
 import { validMaxAge, maxAgeArgv } from './deployment-contract.mjs';
 import { MACHINE_ID, machineFieldProblem } from './machine-contract.mjs';
+import { kernelMade } from './kernel-made.mjs';
 
 const ENVELOPE_TIMEOUT_MS = 60_000;
 
-/** Parse the single-JSON-object stdout contract; null when contaminated. */
+/** Parse the single-JSON-object stdout contract; null when contaminated.
+ * The error of an `ok: false` envelope is marked the kernel's here (kernel-made.mjs), where the CLI's
+ * answer is parsed and nowhere else: an envelope a reader writes itself (a timeout, a protocol failure,
+ * `parseRetireEnvelope`'s incomplete cleanup) is never parsed, so its error carries no mark. */
 export function parseEnvelope(stdout) {
   try {
     const doc = JSON.parse(String(stdout));
     if (!doc || typeof doc !== "object" || doc.schemaVersion !== 1) return null;
     if (doc.ok === true && doc.result && typeof doc.result === "object") return doc;
-    if (doc.ok === false && doc.error && typeof doc.error === "object") return doc;
+    if (doc.ok === false && doc.error && typeof doc.error === "object") { kernelMade(doc.error); return doc; }
     return null;
   } catch { return null; }
 }
@@ -404,9 +408,18 @@ export function cliSoulTeams(bin, { soul, add, remove, defaultLabel, clearDefaul
   return runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout || 15_000 });
 }
 
+/** The roster's envelope as the CLI printed it. A group the kernel could not reach carries the kernel's
+ * own error in `probe.error`: each is marked the kernel's here (kernel-made.mjs), as `parseEnvelope` marks
+ * the envelope's own. remote-roster.mjs `remotePanel` reads the mark to say who made a row's text. */
+function parseRosterEnvelope(stdout) {
+  const doc = parseEnvelope(stdout);
+  if (doc?.ok === true && Array.isArray(doc.result.groups)) for (const group of doc.result.groups) kernelMade(group?.probe?.error);
+  return doc;
+}
+
 /** One bounded aggregate read; the CLI owns registry and saved-route resolution. */
 export function cliRemoteRoster(bin, io = {}) {
-  return runJson(bin, ["server", "roster", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000 });
+  return runJson(bin, ["server", "roster", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000, parse: parseRosterEnvelope });
 }
 
 /** Local retire predates the envelope; preserve its incomplete-cleanup result. */
