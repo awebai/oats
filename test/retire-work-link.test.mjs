@@ -72,6 +72,9 @@ console.log(JSON.stringify({ meta: existsSync(${JSON.stringify(join(flags, "stub
       "hooked-chk": { soul: { work: "checkout", capabilities: { "test.link": { from: "here" } } } },
       "hooked-wsp": { soul: { work: "workspace", capabilities: { "test.link": { from: "here" } } } } },
     capabilities: { "test.link": { manifest: { hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": hook } } } });
+  // An in-process spawn looks for the harness's executable on this process's PATH, with
+  // `launch: false` too: the fixture's PATH has the inert harnesses, a bare runner's has none.
+  const hostPath = process.env.PATH; process.env.PATH = fx.env.PATH; t.after(() => { process.env.PATH = hostPath; });
   const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { encoding: "utf8", env: fx.env, stdio: ["ignore", "pipe", "pipe"] }).trim();
   execFileSync("git", ["init", "-q", fx.dep], { env: fx.env });
   writeFileSync(join(fx.dep, "tracked.txt"), "of the deployment's checkout\n");
