@@ -4,9 +4,10 @@ import { isAbsolute } from 'node:path';
 import { admitTerminalTarget } from './terminal-target.mjs';
 import { openTerm } from './tmux-target.mjs';
 import { localTmuxIo, tmuxSocketArgs } from './local-tmux-io.mjs';
-import { prepareRemoteTerm, remoteTerminalEnvironment } from './remote-target.mjs';
+import { remoteTerminalEnvironment } from './remote-target.mjs';
+import { prepareRemoteTerm } from '../client/session-attach.mjs';
 import { copyTerminalAttachments, prepareTerminalAttachments } from './terminal-attachments.mjs';
-import { runTerminalCommand } from './terminal-exec.mjs';
+import { runTerminalCommand } from '../client/terminal-exec.mjs';
 import { cliEnvironment } from '../client/cli-environment.mjs';
 
 const changed = code => Object.assign(new Error('Terminal context changed'), { code });

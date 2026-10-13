@@ -7,7 +7,7 @@ import { runInNewContext } from 'node:vm';
 import { join } from 'node:path';
 import { createTerminalOwnerBroker, installTerminalHandlers } from '../terminal-owner.mjs';
 import { createTerminalIo, readTerminalCli } from '../terminal-io.mjs';
-import { runTerminalCommand } from '../terminal-exec.mjs';
+import { runTerminalCommand } from '../../client/terminal-exec.mjs';
 import { prepareTerminalAttachments } from '../terminal-attachments.mjs';
 import { handle, opened, confirmed, ready } from './helpers/terminal-wire.mjs';
 import { workspaceHash, trustedRendererUrl } from '../renderer/window-binding.mjs';

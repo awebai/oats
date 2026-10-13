@@ -3,7 +3,8 @@
 // own fixed sentences byte for byte. Each place that shows such a line has its own DOM test beside its view.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { speakerLine, reasonLine, rowReasonLine, runtimeErrorLine, unsupportedLine, kernelLines } from "../renderer/speaker-line.mjs";
+import { speakerLine, reasonLine, rowReasonLine, runtimeErrorLine, unsupportedLine } from "../renderer/speaker-line.mjs";
+import { kernelLines } from "../../client/kernel-lines.mjs";
 import { DETAIL_WITHHELD } from "../../client/display-text.mjs";
 import { originLead } from "../../client/instance-presentation.mjs";
 import { rowReason } from "../../client/remote-address.mjs";
@@ -154,20 +155,20 @@ test("kernelLines: each text is filtered alone, and the lead stands before the f
     [NOTHING, HIDDEN, [DETAIL_WITHHELD]],
     [NOTHING, NOTHING, []],
   ];
-  for (const [message, fix, lines] of rows) assert.deepEqual(kernelLines(message, fix), lines, JSON.stringify([message, fix]));
+  for (const [message, fix, lines] of rows) assert.deepEqual(kernelLines(message, fix, DESKTOP_TERMS), lines, JSON.stringify([message, fix]));
   // A text that is not a string has nothing to show.
   for (const absent of [undefined, null, 7, {}, ["x"]]) {
-    assert.deepEqual(kernelLines(absent, F), [`OATS says: ${F}`], String(absent));
-    assert.deepEqual(kernelLines(M, absent), [`OATS says: ${M}`], String(absent));
+    assert.deepEqual(kernelLines(absent, F, DESKTOP_TERMS), [`OATS says: ${F}`], String(absent));
+    assert.deepEqual(kernelLines(M, absent, DESKTOP_TERMS), [`OATS says: ${M}`], String(absent));
   }
   // Each is one display line, whole: several lines fold, a control character withholds that text alone, markup is text.
-  assert.deepEqual(kernelLines("first\nsecond", "third\nfourth"), ["OATS says: first second", "third fourth"]);
-  assert.deepEqual(kernelLines("wipe \u001b[2J", F), [DETAIL_WITHHELD, `OATS says: ${F}`]);
-  assert.deepEqual(kernelLines("<b>bold</b>", "<i>it</i>"), ["OATS says: <b>bold</b>", "<i>it</i>"]);
+  assert.deepEqual(kernelLines("first\nsecond", "third\nfourth", DESKTOP_TERMS), ["OATS says: first second", "third fourth"]);
+  assert.deepEqual(kernelLines("wipe \u001b[2J", F, DESKTOP_TERMS), [DETAIL_WITHHELD, `OATS says: ${F}`]);
+  assert.deepEqual(kernelLines("<b>bold</b>", "<i>it</i>", DESKTOP_TERMS), ["OATS says: <b>bold</b>", "<i>it</i>"]);
   const long = "word ".repeat(204).trim(), longer = "step ".repeat(204).trim();
   assert.equal(long.length, 1019);
-  assert.deepEqual(kernelLines(long, longer), [`OATS says: ${long}`, longer], "a text at the kernel's bound is not cut");
+  assert.deepEqual(kernelLines(long, longer, DESKTOP_TERMS), [`OATS says: ${long}`, longer], "a text at the kernel's bound is not cut");
   // The same text in both is shown in both: nothing is compared, nothing is said once.
-  assert.deepEqual(kernelLines(F, F), [`OATS says: ${F}`, F]);
+  assert.deepEqual(kernelLines(F, F, DESKTOP_TERMS), [`OATS says: ${F}`, F]);
   assert.equal(originLead("kernel", DESKTOP_TERMS), "OATS says:");
 });

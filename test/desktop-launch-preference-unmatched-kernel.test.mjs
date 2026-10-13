@@ -6,7 +6,7 @@
 // then read the way the Desktop reads it: the preview's reason (packages/client/spawn-preview-contract.mjs
 // `previewFailure`), the dialog's problem (spawn-messages.mjs `spawnProblem`), the press's reason
 // (spawn-apply-contract.mjs `spawnApplyReason`), the soul's Launch report (launch-contract.mjs `launchOf`)
-// and the lines both places show (packages/desktop/renderer/speaker-line.mjs `kernelLines`). The refusal is
+// and the lines both places show (packages/client/kernel-lines.mjs `kernelLines`). The refusal is
 // also read from the CLI's printed envelope on, through the preview's own exec owner (spawn-preview-cli.mjs
 // `cliSpawnPreview`) and the server's boundary (packages/desktop/server/spawn-preview.mjs), so that no reader
 // between the kernel's output and the dialog is skipped. That seam carries every refusal's `fix`, so the
@@ -27,7 +27,7 @@ import { spawnProblem } from "../packages/client/spawn-messages.mjs";
 import { launchOf, REPORT_FROM } from "../packages/client/launch-contract.mjs";
 import { displayLine, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from "../packages/client/display-text.mjs";
 import { originLead } from "../packages/client/instance-presentation.mjs";
-import { kernelLines } from "../packages/desktop/renderer/speaker-line.mjs";
+import { kernelLines } from "../packages/client/kernel-lines.mjs";
 import { DESKTOP_TERMS } from "../packages/desktop/renderer/desktop-terms.mjs";
 
 const CODE = LAUNCH_PREFERENCE_UNMATCHED, MAX = LAUNCH_PROBLEM_TEXT_MAX, LEAD = originLead("kernel", DESKTOP_TERMS);
@@ -86,7 +86,7 @@ for (const [name, keys] of CASES) test(`${name}: the refusal travels to the dial
   // Each part is its own display line, whole: the filter neither withholds, cuts nor changes it.
   assert.equal(displayLine(message), message); assert.equal(displayLine(fix), fix);
   assert.notEqual(displayLine(message), DETAIL_WITHHELD);
-  assert.deepEqual(kernelLines(problem.kernel.message, problem.kernel.fix), [`${LEAD} ${message}`, fix]);
+  assert.deepEqual(kernelLines(problem.kernel.message, problem.kernel.fix, DESKTOP_TERMS), [`${LEAD} ${message}`, fix]);
 
   // A press: the code survives where no kernel text travels, with the shorter sentence and no parts.
   const pressed = spawnApplyReason(error.code);
@@ -109,7 +109,7 @@ for (const [name, keys] of CASES) test(`${name}: the soul's Launch report reads 
   const launch = launchOf(report, REPORT_FROM);
   assert.notEqual(launch, undefined, "the Launch reader decodes the report");
   assert.deepEqual(launch.problem, report.problem);
-  assert.deepEqual(kernelLines(launch.problem.message, launch.problem.fix), [`${LEAD} ${message}`, UNMATCHED_FIX]);
+  assert.deepEqual(kernelLines(launch.problem.message, launch.problem.fix, DESKTOP_TERMS), [`${LEAD} ${message}`, UNMATCHED_FIX]);
 });
 
 /* ── From the CLI's output on: the envelope `oats spawn --preview --json` prints for the refusal, read by the
@@ -144,7 +144,7 @@ for (const [name, keys] of CASES) test(`${name}: from the CLI's printed envelope
   const problem = spawnProblem(view.reason, "preview");
   assert.deepEqual(problem.kernel, { message: error.message, fix: UNMATCHED_FIX }); assert.equal(problem.detail, CODE);
   assert.match(problem.text, /\(Details\)\.$/);
-  assert.deepEqual(kernelLines(problem.kernel.message, problem.kernel.fix), [`${LEAD} ${error.message}`, UNMATCHED_FIX]);
+  assert.deepEqual(kernelLines(problem.kernel.message, problem.kernel.fix, DESKTOP_TERMS), [`${LEAD} ${error.message}`, UNMATCHED_FIX]);
 });
 
 /* ── The same seam carries every refusal's `fix`. The other launch refusal whose `fix` the dialog reads is a

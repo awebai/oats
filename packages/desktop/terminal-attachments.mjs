@@ -2,8 +2,8 @@
 import { stat, mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { remoteTargetKey } from "./remote-target.mjs";
-import { runTerminalCommand } from './terminal-exec.mjs';
+import { remoteTargetKey } from "../client/session-attach.mjs";
+import { runTerminalCommand } from '../client/terminal-exec.mjs';
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const imageExtensions = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
 

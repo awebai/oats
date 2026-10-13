@@ -39,7 +39,8 @@ import { createSoulInstructions } from './soul-instructions.mjs';
 import { composedSupported, routedComposedSupported } from './composed-gate.mjs';
 import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, WARNINGS_COPY } from './capability-warnings.mjs';
-import { kernelLines } from './speaker-line.mjs';
+import { kernelLines } from '../../client/kernel-lines.mjs';
+import { DESKTOP_TERMS } from './desktop-terms.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
@@ -698,12 +699,12 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   /** The soul's launch (0.30): `inspect --soul`'s own, else its roster row's; null without the feature. */
   function soulLaunch(inspected) { return shownLaunch(inspected.launch ?? selection?.agent?.launch, cliStatus()); }
   /** A launch problem of the soul's report: the Desktop's own line, then the kernel's message and fix, each a
-   * line of its own under the kernel's name and through the display filter (speaker-line.mjs kernelLines),
+   * line of its own under the kernel's name and through the display filter (packages/client/kernel-lines.mjs),
    * and the code behind Details. One rule for every problem, keyed on no code: the kernel computes the
    * report for a spawn that names no launch and sets a problem only where it would refuse that spawn. */
   function launchProblem(p) {
     const box = node('div', undefined, 'launch-problem'); box.setAttribute('role', 'note');
-    box.append(node('p', LAUNCH_REFUSED_HERE, 'launch-problem-own'), ...kernelLines(p.message, p.fix).map(line => node('p', line, 'launch-problem-said')));
+    box.append(node('p', LAUNCH_REFUSED_HERE, 'launch-problem-own'), ...kernelLines(p.message, p.fix, DESKTOP_TERMS).map(line => node('p', line, 'launch-problem-said')));
     const more = node('details'); more.append(node('summary', 'Details'), node('p', p.code, 'muted')); box.append(more);
     return box;
   }

@@ -116,8 +116,8 @@ resize go to the current lease only.
 the next one stops. An `E_TERM_REMOTE_UNREACHABLE` answer or a successful attach
 resets that count; a timeout neither resets nor counts. Any other refusal stops
 with its message and "Close this tab". So does a non-255 exit ("session ended")
-or a ready failure. `remote-target.mjs` `prepareRemoteTerm` codes the prepare's
-failures:
+or a ready failure. `packages/client/session-attach.mjs` `prepareRemoteTerm`
+codes the prepare's failures:
 
 - an `E_SSH` envelope whose `details.sshStarted` is `false` (ssh could not be
   run on this computer) → `E_TERM_REMOTE_NO_SSH`, final: nothing reached the

@@ -42,7 +42,7 @@ module.exports = {
     "remote-target.mjs",
     "terminal-registry.mjs",
     "terminal-attachments.mjs",
-    "terminal-owner.mjs", "terminal-target.mjs", "terminal-io.mjs", "terminal-exec.mjs", "terminal-bridge.cjs",
+    "terminal-owner.mjs", "terminal-target.mjs", "terminal-io.mjs", "terminal-bridge.cjs",
     "workspace-registry.mjs",
     "picker-default-path.mjs",
     "login-path.mjs",
