@@ -1891,21 +1891,50 @@ shows the drift as `launch-changed`.
   configuration <name> (oats launch-config set), name another for every soul
   without an entry (oats soul launch set '*' --launch-config <name>), or pin
   the soul to one (oats soul launch set <soul> --launch-config <name>)".
-- `E_LAUNCH_CONFIG_AMBIGUOUS {harness, configurations, fix}` (spawn and its
-  preview only, 0.52): the chosen harness has more than one launch
-  configuration here (`configurations`, all their names, sorted; the message
+- `E_LAUNCH_CONFIG_AMBIGUOUS {harness, configurations, fix}` (0.52): a
+  launch that is selected anew names no configuration, and its harness has
+  more than one here (`configurations`, all their names, sorted; the message
   names the first 10, then "and K more", and fewer where it would otherwise
-  pass 1024 characters),
-  none is
-  `default: true`, and the spawn named none. Named means `--launch-config
-  <name>`, `--launch-config none`, or a `souls.launch` string; an inline or
-  soul preference and `--harness` alone are not. `fix` is "name one with
-  --launch-config <name>, pin the soul to one (oats soul launch set <soul>
-  --launch-config <name>), or mark one default: true (oats launch-config
-  set)"; where `souls.launch."*"` chose the harness it also says, before the
-  soul's own pin, "name one for every soul without an entry (oats soul launch
-  set '*' --launch-config <name>)". A start or restart of an existing
-  home, `--reselect-launch` included, is never refused this way.
+  pass 1024 characters), none of them `default: true`. Named means
+  `--launch-config <name>`, `--launch-config none`, or a `souls.launch`
+  string; an inline or soul preference and `--harness` alone are not.
+  - **Whichever command selects.** A spawn and its preview; `oats session
+    start|restart --reselect-launch`, with or without `--harness`; `oats
+    session start|restart --harness <h>` alone, also when `<h>` is the
+    harness the home already runs; and `oats launch-config preview`, which
+    plans as a start does. Before 0.53 only a spawn and its preview were
+    refused, and such a start ran the bare harness.
+  - **Never refused this way:** a plain start or restart, which runs the
+    recorded recipe and selects nothing; `--launch-config <name>`; and
+    `--launch-config none`, alone or with `--harness`, which asks for the
+    bare harness.
+  - **A refused start or restart stopped nothing:** the refusal comes before
+    the stop, so a session that was running still runs, on the same process,
+    and `instance.json` and the session's receipt are as they were.
+  - **The way out is in the message as well as in `fix`,** and every way it
+    names works for the command that was refused, as written:
+    - a spawn: "name one with --launch-config <name>, ask for the bare
+      harness with --launch-config none --harness <h>, pin the soul to one
+      (oats soul launch set <soul> --launch-config <name>), or mark one
+      default: true (oats launch-config set)". Where `souls.launch."*"` chose
+      the harness it also says, before the soul's own pin, "name one for
+      every soul without an entry (oats soul launch set '*' --launch-config
+      <name>)".
+    - `--reselect-launch`, which refuses `--launch-config` beside it:
+      "without --reselect-launch, name one with --launch-config <name> or ask
+      for the bare harness with --launch-config none --harness <h>; or pin
+      the soul to one (oats soul launch set <soul> --launch-config <name>) or
+      mark one default: true (oats launch-config set), then reselect again",
+      with the same addition for `"*"`.
+    - `--harness <h>`, on a spawn or a start: "name one with --launch-config
+      <name>, ask for the bare harness with --launch-config none --harness
+      <h>, or mark one default: true (oats launch-config set)". No way
+      through the soul is named, here or with `--reselect-launch --harness
+      <h>`: the flag decides before any layer, so a pin changes nothing for
+      that command line.
+  - The bare harness is asked for with its name because `--launch-config
+    none` alone drops the harness a layer chose: on a spawn it starts the
+    host default's harness.
 - `E_WORKSPACE_SCHEMA`: a malformed `launch` or `souls.launch`, path named.
 
 ### The launch report (`Launch`)
@@ -1934,7 +1963,8 @@ shows the drift as `launch-changed`.
   `E_LAUNCH_CONFIG_UNKNOWN`,
   `E_LAUNCH_CONFIG_AMBIGUOUS` with `effective.launchConfig` `null`, or
   `E_LAUNCH_EXECUTABLE` for a configuration whose own executable is missing). Only reports carry it;
-  spawn and preview refuse instead. A `fix`, here and in a refusal's
+  spawn and preview refuse instead. For `E_LAUNCH_CONFIG_AMBIGUOUS` the `fix`
+  is the sentence a spawn with no flag would get. A `fix`, here and in a refusal's
   `details`, is a sentence for a person: its wording may change between
   releases, so a client shows it and never parses it. A report states a
   condition, where a refusal states what was refused: for
@@ -1983,7 +2013,9 @@ shows the drift as `launch-changed`.
   `soul` or `host`) is compared: one launched with explicit flags, or from
   before 0.30, never warns.
 - **`--reselect-launch`** with `--launch-config` is `E_BAD_ARGS` (choose one);
-  with `--harness` the flag decides, as at spawn.
+  with `--harness` the flag decides, as at spawn. It selects anew, so it is
+  refused like a spawn where the harness it arrives at has several
+  configurations and no default (`E_LAUNCH_CONFIG_AMBIGUOUS`, above).
 
 No verb writes `souls.launch`; it is plain YAML. A GUI that edits it checks
 the result with `oats inspect --soul <name> --json`.
@@ -4832,6 +4864,16 @@ selection flags. See [the start workflow](desktop-instance-start.md).
 - Restart is one command: the kernel validates the new selection before
   stopping, and owns the stop, lock, launch recovery and metadata. Never
   restart by retiring and spawning.
+- **A start or restart that selects anew and names no configuration is
+  refused where its harness has several and none is the default:**
+  `E_LAUNCH_CONFIG_AMBIGUOUS {harness, configurations, fix}`, for `--harness
+  <h>` alone (also the harness the home already runs) and for
+  `--reselect-launch`. Nothing was stopped or started: a session that was
+  running still runs, on the same process. The message carries the way out,
+  for a client that shows only the message: `--launch-config <name>`, or
+  `--launch-config none --harness <h>` for the bare harness
+  ([Launch preferences](#launch-preferences)). A plain start or restart is
+  never refused this way.
 - Launch recovery (0.44.0). A start keeps its launch receipt in the home
   until the next start replaces it. The next start **adopts** a receipt only
   for a start `instance.json` does not record (one whose metadata write
@@ -4858,7 +4900,7 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   `restart`),
   `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*` (among them
   `E_LAUNCH_SHIM`: the home's `oats` link cannot be written, nothing was
-  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`
+  started; and `E_LAUNCH_CONFIG_AMBIGUOUS`, above), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`
   (any error that is not the kernel's; with
   [`details.cause`](#kernel-codes) when it has a code of its own or is a
   defect, and without it when it is a refusal without a code).
@@ -4936,7 +4978,13 @@ object is unchanged: its `effective.launchConfig` names the default
 configuration.
 
 A successful envelope can carry `ok: false`: show the failed `preflight`
-checks. The prompt is named, never the task body. A home predating launch
+checks. A selection the planner refuses is an error envelope instead,
+`{code, message}` with no `details` for any code: among them
+`E_LAUNCH_CONFIG_AMBIGUOUS`, for `--home <abs> --harness <h>` where a start
+with that flag would be refused, and for `--soul` where the soul's harness is
+in that state. Its message carries the way out
+([Launch preferences](#launch-preferences)). The preview takes no
+`--reselect-launch`. The prompt is named, never the task body. A home predating launch
 recipes answers its frozen command with `selection.source: "frozen-command"`
 and `hooks: null`; a selection on it is `E_LAUNCH_LEGACY`. Editing a
 definition never changes a running instance's recipe.

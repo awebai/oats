@@ -3,7 +3,9 @@
 // never an edit of oats-local.yaml `souls.launch`. Which command a `fix` gives follows the layer that
 // decided the launch (`from`): the soul's own entry, souls.launch."*" (the command for '*' first, then the
 // soul's own pin), the soul's `launch:` or the host default; from a flag it names the flags. A `fix` is a
-// sentence for a person: one line, within a reader's bound.
+// sentence for a person: one line, within a reader's bound. Every way a `fix` names works for the command
+// that was refused (awebai/oats#999): no pin where --harness decided, and under --reselect-launch the flags
+// in its place.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -117,16 +119,40 @@ test("a configuration that is not declared, and several with no default: the fix
     assert.notEqual(launchOf(report, REPORT_FROM), undefined, "the Desktop decodes it");
   }
   // Ambiguous: an inline or soul preference, --harness alone, or the host default chose a harness with two configurations.
+  // The bare harness is asked for with its name: --launch-config none alone drops the harness a layer chose.
   const two = { personal: { harness: "claude" }, work: { harness: "claude" } };
-  const ambiguous = `name one with --launch-config <name>, pin the soul to one (${SET_CONFIG}), or mark one default: true (oats launch-config set)`;
-  const ambiguousDefault = `name one with --launch-config <name>, name one for every soul without an entry (${SET_DEFAULT_CONFIG}), pin the soul to one (${SET_CONFIG}), or mark one default: true (oats launch-config set)`;
-  for (const [given, from] of [[{ flags: { harness: "claude" } }, "flag"], [{ launch: { dev: { harness: "claude" } } }, "local"], [{ launch: { "*": { harness: "claude" } } }, "local-default"], [{ soul: { harness: "claude" } }, "soul"]]) {
+  const flags = "name one with --launch-config <name>, ask for the bare harness with --launch-config none --harness claude";
+  const reselectFlags = "without --reselect-launch, name one with --launch-config <name> or ask for the bare harness with --launch-config none --harness claude";
+  const mark = "mark one default: true (oats launch-config set)";
+  const FIX = {
+    // A spawn, or any selection that does not reselect.
+    false: {
+      flag: `${flags}, or ${mark}`,
+      layer: `${flags}, pin the soul to one (${SET_CONFIG}), or ${mark}`,
+      "local-default": `${flags}, name one for every soul without an entry (${SET_DEFAULT_CONFIG}), pin the soul to one (${SET_CONFIG}), or ${mark}`,
+    },
+    // A start or restart with --reselect-launch, which refuses --launch-config beside it.
+    true: {
+      flag: `${reselectFlags}; or ${mark}, then reselect again`,
+      layer: `${reselectFlags}; or pin the soul to one (${SET_CONFIG}) or ${mark}, then reselect again`,
+      "local-default": `${reselectFlags}; or name one for every soul without an entry (${SET_DEFAULT_CONFIG}), pin the soul to one (${SET_CONFIG}), or ${mark}, then reselect again`,
+    },
+  };
+  for (const reselect of [false, true]) for (const [given, from] of [[{ flags: { harness: "claude" } }, "flag"], [{ launch: { dev: { harness: "claude" } } }, "local"], [{ launch: { "*": { harness: "claude" } } }, "local-default"], [{ soul: { harness: "claude" } }, "soul"], [{}, "host"]]) {
     const choice = choiceOf(given);
     assert.equal(choice.from, from);
-    const e = launchConfigAmbiguous({ launchConfigs: two, harness: "claude", config: null, choice });
-    assert.equal(e.details.fix, from === "local-default" ? ambiguousDefault : ambiguous, from);
+    const e = launchConfigAmbiguous({ launchConfigs: two, harness: "claude", config: null, choice, reselect });
+    assert.equal(e.details.fix, FIX[reselect][from] ?? FIX[reselect].layer, `${from}, reselect ${reselect}`);
     assert.equal(e.message, `${LOCAL} declares 2 claude launch configurations (personal, work) and none is default: true, and this launch names none; ${e.details.fix}`);
+    assert.deepEqual(Object.keys(e.details), ["harness", "configurations", "fix"]);
+    // Where --harness decided, a pin of the soul changes nothing for that command line: none is named.
+    assert.equal(e.details.fix.includes("oats soul launch"), from !== "flag", `${from}, reselect ${reselect}`);
+    // What decides the sentence is what was selected, not the layer's name: the selection and the preference alone give the same.
+    assert.equal(launchConfigAmbiguous({ launchConfigs: two, harness: "claude", config: null, choice: { selection: choice.selection, preference: choice.preference }, reselect }).details.fix, e.details.fix);
   }
+  // The harness in the sentence is the refused one.
+  const pi = launchConfigAmbiguous({ launchConfigs: { a: { harness: "pi" }, b: { harness: "pi" } }, harness: "pi", config: null, choice: choiceOf({ flags: { harness: "pi" } }) });
+  assert.equal(pi.details.fix, FIX.false.flag.replace("--harness claude", "--harness pi"));
 });
 
 test("the ambiguous message stays within the bound where \"*\" decided: it names fewer configurations, never a cut one", () => {
@@ -138,6 +164,12 @@ test("the ambiguous message stays within the bound where \"*\" decided: it names
     const bySoul = launchConfigAmbiguous({ launchConfigs, harness: "claude", config: null, choice: choiceOf({ soul: { harness: "claude" } }) });
     assert.ok(bySoul.message.includes(`(${names.slice(0, 10).join(", ")}, and ${n - 10} more)`), bySoul.message);
     assert.ok(bySoul.message.length <= LAUNCH_PROBLEM_TEXT_MAX, `${bySoul.message.length} characters`);
+    // The longest sentence: a reselection where "*" decided. Whole names, at least seven, the fix whole.
+    const reselected = launchConfigAmbiguous({ launchConfigs, harness: "claude", config: null, choice: choiceOf({ launch: { "*": { harness: "claude" } } }), reselect: true });
+    assert.ok(reselected.message.length <= LAUNCH_PROBLEM_TEXT_MAX && reselected.details.fix.length <= LAUNCH_PROBLEM_TEXT_MAX, `${reselected.message.length} characters`);
+    const kept = names.filter((name) => reselected.message.includes(name));
+    assert.ok(kept.length >= 7 && kept.length <= 10, `${kept.length} names`);
+    assert.ok(reselected.message.includes(`(${kept.join(", ")}, and ${n - kept.length} more)`) && reselected.message.endsWith(reselected.details.fix), reselected.message);
     // Where "*" decided, the fix is longer: the message names as many whole names as fit.
     const byDefault = launchConfigAmbiguous({ launchConfigs, harness: "claude", config: null, choice: choiceOf({ launch: { "*": { harness: "claude" } } }) });
     assert.ok(byDefault.message.length <= LAUNCH_PROBLEM_TEXT_MAX, `${byDefault.message.length} characters`);
@@ -207,6 +239,7 @@ function launchTexts() {
     add(`unknown configuration (${from})`, launchConfigUnknown({ name: "gone", from, at: choice.at }));
     texts.push([`unknown configuration (${from}) fix`, launchConfigUnknownFix("gone", from)]);
     add(`ambiguous (${from})`, launchConfigAmbiguous({ launchConfigs: many, harness: "claude", config: null, choice }));
+    add(`ambiguous under --reselect-launch (${from})`, launchConfigAmbiguous({ launchConfigs: many, harness: "claude", config: null, choice, reselect: true }));
     const layers = launchLayers({ definition: given.soul ? { launch: given.soul } : {}, entry: ENTRY, key: "dev", local: { souls: { launch: { ...stale, ...(given.launch ?? {}) } } }, offered });
     const refusal = launchPreferenceUnmatched({ choice, layers });
     if (refusal) add(`unmatched (${from})`, refusal);
