@@ -27,9 +27,18 @@
   operator's own shell's before. `--plan` shows the file and what selects
   it. With no server running it is the operator's own, as before, and
   `warnings` says so. When a server runs and its environment cannot be read,
+  or tmux could not say whether one runs (`tmux -L oats list-sessions`
+  refused or cut off),
   nothing is written and the answer is `E_RUNTIME_ENDPOINT_UNKNOWN`
   (`E_CONFIG_BROKEN` when a launch configuration's target is refused as
   well).
+  - **What you do:** run it where `tmux -L oats list-sessions` answers.
+    With no tmux on its `PATH` the command makes no read and writes the
+    operator's own file, as before, and `warnings` says so.
+  - **One more target.** A launch configuration that sets `HOME` and no
+    `CLAUDE_CONFIG_DIR` or `CODEX_HOME` gets the default file under that
+    `HOME` written, when the session and the server set no such variable
+    either: that is the file its launch reads. It had no target before.
 - **The `harness-trust` item of `oats readiness` is `unknown` when no OATS
   tmux server runs** and the launch configuration does not set the harness
   folder: the file it can read is the calling process's, not known to be the
@@ -83,6 +92,10 @@
     before, and the start that follows checks again on its own session. It
     now says whose values it read where it already says something: in the
     folder-trust warning and in a refusal for a missing package.
+  - **The package check runs the program the lookup selected**, by its
+    full path, with the pane's `PATH` as the pane reads it. With a relative
+    entry in that `PATH`, the check could run another program, found from
+    the directory the command ran in, than the one the launch starts.
   - **A spawn judges again on the session it gets**, as the lookup already
     did: when another creator won the race to start the server, the package
     check and the folder-trust check are made on that server's account.

@@ -66,6 +66,16 @@ esac
 exec ${shq(TMUX)} "$@"
 ` });
 const shown = () => { try { return lines(readFileSync(SHOWN, "utf8")); } catch { return []; } };
+// A tmux that cannot ask the server whether it runs: its list-sessions is refused, or cut off
+// (FIXTURE_LIST_SESSIONS=cut). Everything else is the fixture's tmux.
+const unasked = bin("unasked-bin", { tmux: `#!/bin/sh
+case " $* " in *" list-sessions "*)
+  [ "$FIXTURE_LIST_SESSIONS" = cut ] && kill -TERM $$
+  echo 'permission denied' >&2
+  exit 1 ;;
+esac
+exec ${shq(TMUX)} "$@"
+` });
 // `ls`, which the trust writer reads a file's security context with: the isolated PATH has none.
 const lsBin = join(base, "ls-bin");
 mkdirSync(lsBin);
@@ -142,7 +152,7 @@ async function startServer(env = {}, session = "base") {
 }
 const newSession = (session) => tmuxOn("new-session", "-d", "-s", session, "-n", "hq", "-c", base);
 /** The CLI as a process whose HOME is the spawner's and whose PATH holds the harness too. */
-const cli = (args, { session = "base", env = {} } = {}) => fx.cli(args, { env: { OATS_TMUX_SESSION: session, PI_AGENTS_TMUX_SESSION: session, LANG: "C.UTF-8", PATH: SERVER_PATH, FIXTURE_PROBE_LOG: PROBE_LOG, ...env } });
+const cli = (args, { session = "base", env = {}, cwd } = {}) => fx.cli(args, { ...(cwd ? { cwd } : {}), env: { OATS_TMUX_SESSION: session, PI_AGENTS_TMUX_SESSION: session, LANG: "C.UTF-8", PATH: SERVER_PATH, FIXTURE_PROBE_LOG: PROBE_LOG, ...env } });
 const spawn = (name, { soul = "dev", config, harness = "claude", extra = [], ...at } = {}) => cli(["spawn", soul, "--name", name, ...(config ? ["--launch-config", config] : ["--launch-config", "none", "--harness", harness]), ...extra, "--json"], at);
 const spawned = (r) => { assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result; };
 const ready = (home) => waitUntil(() => existsSync(join(home, "harness-ready")), `${home} harness started`);
@@ -650,4 +660,138 @@ test("a spawn that launches nothing says whose values its checks read only where
   // A launch configuration that sets the selector: its file is the launch's, and the warning says so.
   child = noLaunch("quiet-config", { config: "own" });
   assert.deepEqual(child.warnings, [trustWarning(configAccount.claude, "the CLAUDE_CONFIG_DIR of launch configuration own")]);
+});
+
+test("a tmux that cannot say whether the server runs is a read that failed, not a server that does not run: oats harness trust refuses (E_RUNTIME_ENDPOINT_UNKNOWN) and writes nothing, this process's file least of all; readiness and a preview still answer, and say what they read instead; with no tmux on its PATH no prediction is made, and the command writes this process's file and says so", async () => {
+  await startServer({ CLAUDE_CONFIG_DIR: serverAccount.dir });
+  const asking = `${unasked}:${SERVER_PATH}:${lsBin}`;
+  const audit = () => { try { return readFileSync(join(fx.dep, ".agents", "harness-trust.jsonl"), "utf8"); } catch { return null; } };
+  const auditBefore = audit();
+  const tail = "\\. What has to answer, as this process: `tmux -L oats list-sessions`\\. A server that could not be asked may run under another account than this process's, so this process's file is not written in its place$";
+  for (const [path, more, failure] of [
+    [asking, {}, "permission denied"],
+    [asking, { FIXTURE_LIST_SESSIONS: "cut" }, "tmux list-sessions did not exit by itself \\(SIGTERM\\)"],
+  ]) for (const mode of [["--plan"], []]) {
+    const r = cli(["harness", "trust", "--harness", "claude", ...mode, "--json"], { env: { CLAUDE_CONFIG_DIR: spawnerAccount.dir, FIXTURE_ACCOUNT: configAccount.dir, PATH: path, ...more } });
+    assert.notEqual(r.status, 0, r.stdout);
+    const error = r.json().error;
+    assert.equal(error.code, "E_RUNTIME_ENDPOINT_UNKNOWN", error.message);
+    assert.match(error.message, new RegExp(`^Harness trust targets cannot be established; nothing was written: the file a claude launch with no launch configuration reads could not be established: could not read the OATS tmux server for session base: ${failure}${tail}`));
+    assert.equal(error.details.operation, "harness-trust");
+    assert.deepEqual(error.details.entries.filter((e) => e.ambient).map((e) => [e.status, e.file]), [["refused", null]]);
+    assert.deepEqual(error.details.entries.filter((e) => !e.ambient).map((e) => e.file), [configAccount.claude], "the plan is still there, with the launch configurations' file");
+    for (const a of everyAccount) assert.deepEqual(readJson(a.claude), {}, `nothing was written (${a.dir})`);
+    assert.equal((r.stdout + r.stderr).includes(spawnerAccount.dir), false, "this process's file is not named either");
+    assert.equal(audit(), auditBefore, "no audit row: nothing was attempted");
+  }
+  // What only reads keeps answering: this process's file, and whose it is.
+  const env = { CLAUDE_CONFIG_DIR: spawnerAccount.dir, PATH: asking };
+  const unread = "the pane's environment is not established: this process could not read the OATS tmux server; read instead: this process's";
+  const i = harnessTrustItem(cli(["readiness", "--soul", "dev", "--json"], { env }));
+  assert.deepEqual([i.status, i.required, i.file], ["unknown", false, spawnerAccount.claude]);
+  assert.equal(i.reason, trustWarning(spawnerAccount.claude, `${unread} CLAUDE_CONFIG_DIR`));
+  const r = cli(["spawn", "dev", "--name", "preview-unasked", "--launch-config", "none", "--harness", "claude", "--preview", "--json"], { env });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(r.json().result.warnings, [`the harness lookup: ${unread} PATH`]);
+  // No tmux on this process's PATH: no read is made, so none failed. No prediction, as with no
+  // server: this process's file, said, in the plan and in what is written.
+  const noTmux = "claude: the pane's environment is not established: this process has no tmux on its PATH to read the OATS tmux server with; read instead: this process's CLAUDE_CONFIG_DIR";
+  for (const mode of [["--plan"], []]) {
+    const t = cli(["harness", "trust", "--harness", "claude", ...mode, "--json"], { env: { CLAUDE_CONFIG_DIR: spawnerAccount.dir, FIXTURE_ACCOUNT: configAccount.dir, PATH: `${probeBin}:${lsBin}` } });
+    assert.equal(t.status, 0, t.stdout + t.stderr);
+    assert.deepEqual(t.json().result.entries.filter((e) => e.ambient).map((e) => e.file), [spawnerAccount.claude]);
+    assert.deepEqual(t.json().result.warnings, [noTmux, `CLAUDE_CONFIG_DIR selects ${spawnerAccount.dir} (this process's CLAUDE_CONFIG_DIR); effective file ${spawnerAccount.claude}`]);
+  }
+  assert.equal(readJson(spawnerAccount.claude).projects[DEP.path].hasTrustDialogAccepted, true);
+  assert.deepEqual(readJson(serverAccount.claude), {}, "the running server's account is not this command's to guess");
+  // Readiness and a preview say the same of that case: what was established is that this
+  // process has no tmux, never that no server runs.
+  spawnerAccount.trust(false);
+  const gitBin = join(base, "git-bin"); // readiness reads the workspace with git; still no tmux
+  mkdirSync(gitBin);
+  symlinkSync(systemExecutable("git"), join(gitBin, "git"));
+  const bare = { env: { CLAUDE_CONFIG_DIR: spawnerAccount.dir, PATH: `${probeBin}:${gitBin}` } };
+  const j = harnessTrustItem(cli(["readiness", "--soul", "dev", "--json"], bare));
+  assert.deepEqual([j.status, j.file], ["unknown", spawnerAccount.claude]);
+  assert.equal(j.reason, trustWarning(spawnerAccount.claude, noTmux.slice("claude: ".length)));
+  const p = cli(["launch-config", "preview", "--soul", "dev", "--harness", "claude", "--json"], bare);
+  assert.equal(p.json().result.preflight.find((c) => c.check === "executable").detail, `${join(probeBin, "claude")} (PATH); the pane's environment is not established: this process has no tmux on its PATH to read the OATS tmux server with; read instead: this process's PATH`);
+  const s = cli(["spawn", "dev", "--name", "preview-no-tmux", "--launch-config", "none", "--harness", "claude", "--preview", "--json"], bare);
+  assert.equal(s.status, 0, s.stdout + s.stderr);
+  assert.deepEqual(s.json().result.warnings, [`the harness lookup: ${noTmux.slice("claude: ".length).replace("CLAUDE_CONFIG_DIR", "PATH")}`]);
+});
+
+test("oats harness trust writes for a launch configuration that sets HOME and no selector: the default file under that HOME, which its launch's check reads; with a selector in the pane that launch reads the pane's, and the configuration has no file of its own", async () => {
+  const ownHome = account(join(ACCOUNTS, "own-home")).trust(false), refHome = account(join(ACCOUNTS, "ref-home")).trust(false);
+  const local = join(fx.dep, "oats-local.yaml"), before = readFileSync(local, "utf8");
+  writeFileSync(local, before.replace("referenced:", `ownhome:\n    harness: claude\n    env:\n      HOME: ${ownHome.dir}\n  refhome:\n    harness: claude\n    env:\n      HOME:\n        fromEnv: FIXTURE_HOME\n  referenced:`));
+  try {
+    const trust = (extra = [], env = { FIXTURE_HOME: refHome.dir }) => cli(["harness", "trust", "--harness", "claude", ...extra, "--json"], { env: { FIXTURE_ACCOUNT: configAccount.dir, PATH: `${SERVER_PATH}:${lsBin}`, ...env } });
+    const targets = (r) => { assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result.entries.map((e) => [e.file, e.ambient, e.launchConfigs]); };
+    const withSelector = [configAccount.claude, false, ["both", "own", "referenced"]];
+    // No selector in the pane: each such launch reads the default file under its own HOME.
+    await startServer();
+    assert.deepEqual(targets(trust(["--plan"])), [[serverHome.claude, true, []], withSelector, [ownHome.claude, false, ["ownhome"]], [refHome.claude, false, ["refhome"]]]);
+    const warning = trustWarning(ownHome.claude, "under the HOME of launch configuration ownhome");
+    assert.deepEqual(trustWarnings(spawned(spawn("own-home-before", { config: "ownhome" }))), [warning], "the file the launch's check reads");
+    assert.equal(targets(trust()).length, 4);
+    for (const a of [serverHome, configAccount, ownHome, refHome]) assert.equal(readJson(a.claude).projects[DEP.path].hasTrustDialogAccepted, true, a.dir);
+    assert.deepEqual(readJson(spawnerHome.claude), {}, "this process's own file is none of them");
+    assert.deepEqual(trustWarnings(spawned(spawn("own-home-after", { config: "ownhome" }))), [], "and the launch's check reads it as trusted");
+    // A reference that is not set names no directory: refused as a configuration's problem.
+    let r = trust(["--plan"], {});
+    assert.notEqual(r.status, 0, r.stdout);
+    assert.equal(r.json().error.code, "E_CONFIG_BROKEN", r.json().error.message);
+    assert.ok(r.json().error.message.includes("launch configuration refhome: HOME references FIXTURE_HOME, not set on this host"), r.json().error.message);
+    // A selector in the pane: every launch that sets none reads that one, whatever its HOME.
+    await startServer({ CLAUDE_CONFIG_DIR: serverAccount.dir });
+    r = trust(["--plan"], {});
+    assert.deepEqual(targets(r), [[serverAccount.claude, true, []], withSelector]);
+    assert.deepEqual(trustWarnings(spawned(spawn("own-home-selector", { config: "ownhome" }))), [trustWarning(serverAccount.claude, serverGlobal("CLAUDE_CONFIG_DIR"))]);
+  } finally { writeFileSync(local, before); }
+});
+
+test("the package probe runs the program the launch's lookup selected, with the pane's PATH as the pane reads it: a relative entry is the pane's directory, never the directory this command runs in", async () => {
+  const INSTALLED = JSON.stringify([{ id: PLUGIN, scope: "user", enabled: true }]);
+  const ran = join(base, "which-claude-ran");
+  const who = () => { try { return lines(readFileSync(ran, "utf8")); } catch { return []; } };
+  // The directory the command runs in holds a claude of its own, with its own answer.
+  const callerAnswer = join(base, "caller-plugins.json");
+  const callerDir = bin("caller-cwd", { claude: `#!/bin/sh\necho caller >> ${shq(ran)}\nexec ${CAT} ${shq(callerAnswer)}\n` });
+  const from = { cwd: callerDir, env: { CLAUDE_CONFIG_DIR: spawnerAccount.dir } };
+  await startServer({ PATH: `.:${SERVER_PATH}`, CLAUDE_CONFIG_DIR: serverAccount.dir });
+  // A spawn: its home is not there yet, so the pane's "." holds no claude and the lookup goes on
+  // to the next entry. The caller's claude says the plugin is installed; the selected one does not.
+  writeFileSync(callerAnswer, INSTALLED);
+  const message = refused(spawn("rel-refused", { soul: "gated", extra: ["--dir", fx.dep], ...from }), "rel-refused");
+  assert.match(message, /require harness packages that are not installed/);
+  assert.deepEqual(who(), [], "the caller's claude was never run");
+  assert.equal(probed().PATH, `${homeOf("rel-refused", "gated")}:${SERVER_PATH}`, "the probe's PATH: the pane's, its relative entry resolved against the pane's directory");
+  // The selected one has it: the spawn goes on, and the pane's own PATH is what the server holds.
+  serverAccount.plugin(true);
+  const child = spawned(spawn("rel-start", { soul: "gated", extra: ["--dir", fx.dep], ...from }));
+  await ready(child.home);
+  assert.equal(paneEnv(child.home).PATH, `${join(child.home, ".oats", "bin")}:.:${SERVER_PATH}`, "the launch itself does not change: the server's PATH, behind the launch's own directory");
+  assert.equal(readJson(join(child.home, "instance.json")).launch.executable, join(probeBin, "claude"));
+  assert.deepEqual(who(), []);
+  // A start: the home is the pane's directory, and it now holds a claude: the one the pane's "."
+  // selects. It lacks the plugin; the caller's and the one further down the PATH have it.
+  const pid = Number(readFileSync(join(child.home, "harness-ready"), "utf8").trim());
+  const ownAnswer = join(child.home, "own-plugins.json");
+  writeFileSync(ownAnswer, "[]");
+  writeFileSync(join(child.home, "claude"), `#!/bin/sh\nif [ "$1" = plugin ]; then echo pane >> ${shq(ran)}; exec ${CAT} ${shq(ownAnswer)}; fi\nexec ${SLEEP} 600\n`);
+  chmodSync(join(child.home, "claude"), 0o755);
+  const restart = () => cli(["session", "restart", "--home", child.home, "--harness", "claude", "--json"], from);
+  let r = restart();
+  assert.notEqual(r.status, 0, r.stdout);
+  assert.equal(r.json().error.code, "E_HARNESS_PACKAGE", r.json().error.message);
+  assert.deepEqual(who(), ["pane"], "the probe ran the claude the pane's PATH selects");
+  assert.doesNotThrow(() => process.kill(pid, 0), "the running harness was not stopped");
+  // The other way round: the selected one has it and the caller's does not.
+  writeFileSync(ownAnswer, INSTALLED);
+  writeFileSync(callerAnswer, "[]");
+  r = restart();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.json().result.launch?.executable ?? readJson(join(child.home, "instance.json")).launch.executable, join(child.home, "claude"));
+  assert.equal(who().includes("caller"), false, "the caller's claude was never run");
 });

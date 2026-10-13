@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { claudeTrusts, codexTrustsRoot } from '../lib/harness-trust.mjs';
 import { harnessTrust } from '../lib/harness-trust-write.mjs';
+import { launchEnvironment } from '../lib/core.mjs';
 // The operator has run both harnesses: their ambient configuration directories exist (OATS never creates one).
 const fixture = t => { const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-write-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const root=join(base,'deployment');fs.mkdirSync(root);fs.mkdirSync(join(base,'native','.codex'),{recursive:true});return {base,root,env:{HOME:join(base,'native')}}; };
 test('plan creates nothing; apply writes exact leaves and durable audit; repeat is config no-op', t => {
@@ -269,4 +270,83 @@ test('a missing ambient config directory is never created: skipped for that harn
  const gone={HOME:join(base,'no-home')};
  assert.throws(()=>harnessTrust(root,{env:gone,harness:'claude'}),e=>e.code==='E_CONFIG_BROKEN'&&/does not exist/.test(e.message));
  assert.equal(fs.existsSync(gone.HOME),false);
+});
+// A launch whose configuration sets HOME and no selector reads its harness's default file under THAT
+// home (core.mjs launchFolderTrust): the writer writes for it, by the same answer.
+test('a launch configuration that sets HOME and no selector is a target: the default file under its HOME, literal or referenced, deduplicated with the ambient one', t => {
+ const {base,root,env}=fixture(t);
+ const own=join(base,'own-home'), ref=join(base,'ref-home');for(const d of [own,ref])fs.mkdirSync(join(d,'.codex'),{recursive:true});
+ const launchConfigs=configs({ lit:{harness:'claude',env:{HOME:own}}, refd:{harness:'claude',env:{HOME:{fromEnv:'REF_HOME'}}}, cxlit:{harness:'codex',env:{HOME:own}},
+  same:{harness:'claude',env:{HOME:env.HOME+'/'}}, plain:{harness:'claude',env:{PATH:'/usr/bin'}}, pi:{harness:'pi',env:{HOME:ref}} });
+ const host={...env,REF_HOME:ref}, real=d=>fs.realpathSync.native(d);
+ const planned=harnessTrust(root,{plan:true,env:host,launchConfigs});
+ assert.deepEqual(planned.entries.map(e=>[e.harness,e.file,e.ambient,e.launchConfigs,e.status]),[
+  ['claude',join(real(env.HOME),'.claude.json'),true,['same'],'change'],
+  ['claude',join(real(own),'.claude.json'),false,['lit'],'change'],
+  ['claude',join(real(ref),'.claude.json'),false,['refd'],'change'],
+  ['codex',join(real(env.HOME),'.codex/config.toml'),true,[],'change'],
+  ['codex',join(real(own),'.codex/config.toml'),false,['cxlit'],'change'],
+ ]);
+ assert.deepEqual(Object.keys(planned.entries[1]).sort(),Object.keys(planned.entries[0]).sort(),'an entry of the same shape as every other');
+ assert.deepEqual([fs.readdirSync(own),fs.readdirSync(ref)],[['.codex'],['.codex']],'plan writes nothing');
+ const applied=harnessTrust(root,{env:host,launchConfigs});
+ assert.deepEqual(applied.entries.map(e=>e.status),['applied','applied','applied','applied','applied']);
+ // Each file is the one the reader reads with that HOME and no selector.
+ for(const home of [own,ref])assert.equal(claudeTrusts(root,{env:{HOME:home}}),true,home);
+ assert.equal(codexTrustsRoot(root,{env:{HOME:own}}),true);
+ assert.equal(codexTrustsRoot(root,{env:{HOME:ref}}),false,'no codex configuration sets that HOME');
+});
+test('a HOME-only launch configuration is no target when its launch has a selector: it reads that one, as a launch with no configuration does', t => {
+ const {base,root,env}=fixture(t);
+ const own=join(base,'own-home'), selected=join(base,'selected');for(const d of [own,selected])fs.mkdirSync(d);
+ // NOT_SET is not resolved: the configuration's HOME names no file here.
+ const launchConfigs=configs({ lit:{harness:'claude',env:{HOME:own}}, refd:{harness:'claude',env:{HOME:{fromEnv:'NOT_SET'}}} });
+ const planned=harnessTrust(root,{plan:true,harness:'claude',env:{...env,CLAUDE_CONFIG_DIR:selected},launchConfigs});
+ assert.deepEqual(planned.entries.map(e=>[e.file,e.ambient,e.launchConfigs]),[[join(fs.realpathSync.native(selected),'.claude.json'),true,[]]]);
+ // The same from a pane's selector, whatever this process holds.
+ const pane={of:name=>name==='CLAUDE_CONFIG_DIR'?{value:selected,source:'the pane CLAUDE_CONFIG_DIR'}:{value:env.HOME,source:'the pane HOME'}};
+ assert.deepEqual(harnessTrust(root,{plan:true,harness:'claude',env,launchConfigs,launch:launchEnvironment({env,pane})}).entries.map(e=>e.file),[join(fs.realpathSync.native(selected),'.claude.json')]);
+ assert.deepEqual(fs.readdirSync(own),[]);
+});
+test('a HOME-only launch configuration whose HOME is unset, relative or without the harness directory is a named problem; nothing is written or created', t => {
+ for (const [name,c,host,problem] of [
+  ['unset',{harness:'claude',env:{HOME:{fromEnv:'NOT_SET'}}},{},'launch configuration unset: HOME references NOT_SET, not set on this host'],
+  ['rel',{harness:'codex',env:{HOME:{fromEnv:'REL'}}},{REL:'some/dir'},'launch configuration rel: HOME "some/dir" is not an absolute path'],
+  ['empty',{harness:'claude',env:{HOME:''}},{},'launch configuration empty: the HOME of launch configuration empty is empty'],
+  ['gone',{harness:'claude',env:{HOME:'<base>/missing'}},{},"launch configuration gone: <base>/missing (claude's directory under its HOME) does not exist; OATS never creates a harness configuration directory: create it, or start claude with it once, then rerun"],
+  ['bare',{harness:'codex',env:{HOME:'<base>/bare'}},{},"launch configuration bare: <base>/bare/.codex (codex's directory under its HOME) does not exist; OATS never creates a harness configuration directory: create it, or start codex with it once, then rerun"],
+ ]) {
+  const {base,root,env}=fixture(t);fs.mkdirSync(join(base,'bare'));
+  const fix=v=>typeof v==='string'?v.replaceAll('<base>',fs.realpathSync.native(base)):v;
+  const launchConfigs=configs({[name]:{...c,env:Object.fromEntries(Object.entries(c.env).map(([k,v])=>[k,fix(v)]))}});
+  for(const plan of [true,false]) assert.throws(()=>harnessTrust(root,{plan,env:{...env,...host},launchConfigs}),e=>{
+   assert.equal(e.code,'E_CONFIG_BROKEN',e.message);assert.equal(e.details.mode,plan?'plan':'apply');
+   const refused=e.details.entries.find(x=>x.problem);assert.equal(refused.problem,fix(problem));assert.equal(refused.status,'refused');assert.deepEqual(refused.launchConfigs,[name]);
+   return true;
+  });
+  assert.deepEqual(fs.readdirSync(env.HOME),['.codex'],name);assert.deepEqual(fs.readdirSync(join(env.HOME,'.codex')),[],name);assert.deepEqual(fs.readdirSync(join(base,'bare')),[],name);
+  assert.equal(fs.existsSync(join(base,'missing')),false);assert.equal(fs.existsSync(join(root,'.agents')),false);
+ }
+});
+// "No server runs" leaves this process's file as the one to write, and says so. "The server could
+// not be asked" does not: it may run under another account.
+test('a server that could not be asked whether it runs refuses the ambient target (E_RUNTIME_ENDPOINT_UNKNOWN), plan and apply; a server known not to run does not', t => {
+ const {root,env}=fixture(t);
+ const unread='could not read the OATS tmux server for session s: permission denied';
+ const asked=pane=>launchEnvironment({env,pane});
+ for (const plan of [true,false]) assert.throws(()=>harnessTrust(root,{plan,env,launch:asked({unestablished:': this process could not read the OATS tmux server',unread})}),e=>{
+  assert.equal(e.code,'E_RUNTIME_ENDPOINT_UNKNOWN',e.message);assert.equal(e.details.operation,'harness-trust');assert.equal(e.details.mode,plan?'plan':'apply');
+  assert.deepEqual(e.details.entries.map(x=>[x.harness,x.ambient,x.status,x.file]),[['claude',true,'refused',null],['codex',true,'refused',null]]);
+  assert.equal(e.details.entries[0].problem,`the file a claude launch with no launch configuration reads could not be established: ${unread}. A server that could not be asked may run under another account than this process's, so this process's file is not written in its place`);
+  return true;
+ });
+ assert.deepEqual(fs.readdirSync(env.HOME),['.codex']);assert.deepEqual(fs.readdirSync(join(env.HOME,'.codex')),[]);assert.equal(fs.existsSync(join(root,'.agents')),false);
+ // Beside a target refused for its configuration, that one's code.
+ const launchConfigs=configs({rel:{harness:'claude',env:{CLAUDE_CONFIG_DIR:'some/dir'}}});
+ assert.throws(()=>harnessTrust(root,{env,harness:'claude',launchConfigs,launch:asked({unestablished:': x',unread})}),e=>e.code==='E_CONFIG_BROKEN'&&e.message.includes(unread)&&e.message.includes('launch configuration rel:'));
+ assert.deepEqual(fs.readdirSync(env.HOME),['.codex']);
+ // Known not to run: this process's file, and the plan says whose it is.
+ const none=harnessTrust(root,{plan:true,env,harness:'claude',launch:asked({unestablished:' until a spawn starts the OATS tmux server (none runs)'})});
+ assert.deepEqual(none.entries.map(e=>[e.file,e.status]),[[join(fs.realpathSync.native(env.HOME),'.claude.json'),'change']]);
+ assert.deepEqual(none.warnings,["claude: the pane's environment is not established until a spawn starts the OATS tmux server (none runs); read instead: this process's CLAUDE_CONFIG_DIR (not set), this process's HOME"]);
 });
