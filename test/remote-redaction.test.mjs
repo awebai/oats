@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { oatsError } from "../lib/errors.mjs";
 import { redactUrl, scrubGitLine, parseRepoRef, observeRemote, readRemoteFile, runGit } from "../lib/remote.mjs";
@@ -19,6 +20,8 @@ const malformed = [
   `git:${USER}@${host}/${path}`, `${USER}@${host}/${path}`,
   `${USER}@my_host:org/repo`, `https:/${USER}@${host}/${path}`,
   `https:${USER}@${host}/${path}`,
+  `https://${USER}:${PASSWORD}/extra@${host}/${path}`,
+  `https://${USER}:123/extra@${host}/${path}`,
 ];
 const roots = [];
 const scratch = () => { const dir = mkdtempSync(join(tmpdir(), "oats-redaction-")); roots.push(dir); return dir; };
@@ -86,7 +89,9 @@ test("one renderer handles quoted URLs, SCP host display and credentials echoed 
     assert.equal(remoteFailureCause({ reason: "unknown", url: displayed }).host, host);
   }
   assert.equal(redactUrl(`git@${host}:${path}`), clean);
+  for (const prefix of ["url=", "(git:", "fatal:", "[", "{", ",", ";"]) assert.equal(redactUrl(prefix + ssh), prefix + clean);
   assert.equal(redactUrl(`failure '${https[0]}' and '${ssh}'`), `failure 'https://${host}/${path}' and '${clean}'`);
+  assert.equal(redactUrl(`failure '${https[0]},${ssh}'`), `failure 'https://${host}/${path},${clean}'`);
   noTokens(scrubGitLine(`fatal: '${ssh}': ${PASSWORD}`, ssh));
   noTokens(scrubGitLine(`fatal: ${USER} and ${PASSWORD}`, https[1]));
   assert.equal(scrubGitLine("secret%5Fvalue and secret_value", "ssh://bot:secret%5Fvalue@example.invalid/org/repo"), "and");
@@ -172,6 +177,7 @@ test("refusal rendering preserves hosts, paths, fixed prose and schema patterns 
   for (const [ref, clean] of [
     ["https://git@github.com/org/repo.git", "https://github.com/org/repo.git"],
     ["https://u:a@h.x/o/r", "https://h.x/o/r"],
+    ["git@", ""],
   ]) {
     const e = await refused(() => parseRepoRef(ref));
     assert.equal(e.message, `unrecognized repository reference: ${clean}`);
@@ -181,6 +187,7 @@ test("refusal rendering preserves hosts, paths, fixed prose and schema patterns 
       { path: "/members/0", message: `${JSON.stringify(clean)} does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` },
       { path: "/members/0", message: `not a repo ref: unrecognized repository reference: ${clean}` },
     ]);
+    if (!clean) continue; // The userinfo-only reference has no repository to retain in a package.
     const pkg = await refused(() => parsePackageRequest("p", `git:${ref}@v1`, {}));
     assert.equal(pkg.details.value, `git:${clean}@v1`);
     assert.match(pkg.message, /^packages.p: a git package carries exactly one @<ref>/);
@@ -203,4 +210,110 @@ test("quoted URL boundaries preserve unrelated Git words and path at-signs", () 
   assert.equal(scrubGitLine("fatal: git rejected https://git@github.com/org/repo.git", "https://git@github.com/org/repo.git"),
     "fatal: rejected https://github.com/org/repo.git");
   assert.equal(scrubGitLine("u a https://h.x/a/u", "https://u:a@h.x/a/u"), "https://h.x/a/u");
+});
+
+
+test("refused package suffixes retain the repository host, port and path", async () => {
+  for (const value of ["git:https://host:8443/org/repo.git@v1@x", "git:ssh://host:2222/org/repo.git@v1@x"]) {
+    const e = await refused(() => parsePackageRequest("p", value, {}));
+    assert.equal(e.details.value, value);
+    assert.ok(e.message.endsWith(`got ${JSON.stringify(value)}`));
+  }
+});
+
+test("large remote declaration diagnostics finish without pathological backtracking", (t) => {
+  // A subprocess timeout makes a quadratic regression fail promptly instead of stalling
+  // this test runner. The generous bounds cover shared-host load, not a microbenchmark.
+  const probe = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { performance } from "node:perf_hooks";
+    import { redactUrl } from ${JSON.stringify(new URL("../lib/remote.mjs", import.meta.url).href)};
+    import { readDeclaration } from ${JSON.stringify(new URL("../lib/workspace.mjs", import.meta.url).href)};
+    const timings = [];
+    for (const size of [32768, 65536, 1048576]) {
+      for (const kind of ["prose", "scheme-candidates", "reference", "membership", "credential-membership"]) {
+        const valueSize = kind.endsWith("membership") ? Math.min(size, 1047000) : size;
+        const value = kind === "reference" ? ":".repeat(size) + " " : kind === "scheme-candidates" ? "a-".repeat(size / 2) : "-".repeat(valueSize) + " x";
+        const start = performance.now();
+        let output;
+        if (kind.endsWith("membership")) {
+          const workspace = kind === "credential-membership" ? "https://" + "-".repeat(valueSize) + "@host/org/repo" : value;
+          output = readDeclaration("membership", Buffer.from(JSON.stringify({schemaVersion:2, workspace})), {path:"oats-membership.yaml"});
+          if (output.value?.workspace !== workspace || !output.problems?.some(p => p.path === "/workspace")) throw Error("expected decoded membership reference refusal, not a byte-budget or syntax failure");
+          if (kind === "credential-membership" && JSON.stringify(output.problems).includes("-".repeat(100))) throw Error("credential leaked");
+        } else output = redactUrl(value, null, {reference:kind === "reference"});
+        timings.push({kind, size, ms:performance.now() - start});
+      }
+    }
+    console.log(JSON.stringify(timings));
+  `], { encoding: "utf8", timeout: 10000 });
+  assert.equal(probe.error, undefined, `large-input probe timed out: ${probe.error}`);
+  assert.equal(probe.status, 0, probe.stderr);
+  const timings = JSON.parse(probe.stdout);
+  for (const row of timings) assert.ok(row.ms < 2000, `${row.kind} (${row.size} bytes) took ${row.ms} ms`);
+  t.diagnostic(JSON.stringify(timings));
+});
+
+
+// This is an explicit audit of raw error-text access, rather than a check that a scrubber
+// merely exists. Any added access requires review; the output routes also pin their source
+// URL and reject interpolating the unrendered local text into fail(). Mutation probes below
+// demonstrate that adding a quoting site or bypassing a scrubber actually fails the guard.
+function assertGitQuoting(source) {
+  const declarations = [...source.matchAll(/^(?:export )?(?:(?:async )?function|const) (\w+)/gm)];
+  const sites = {};
+  for (const match of source.matchAll(/\bstderrText\s*\(|\b\w+(?:\?\.|\.)(?:message|stderr)\b/g)) {
+    if (source.slice(match.index - 9, match.index) === "function ") continue;
+    const owner = declarations.findLast((d) => d.index <= match.index)?.[1];
+    (sites[owner] ??= []).push(match[0]);
+  }
+  assert.deepEqual(sites, {
+    fail: ["safe.message"], runGit: ["child.stderr", "child.stderr"],
+    stderrText: ["error?.stderr", "error?.message"], classifyText: ["stderrText("],
+    gitLastLine: ["stderrText("], lockFileOf: ["stderrText("], isLocalWriteFailure: ["stderrText("],
+    cacheFailure: ["stderrText(", "error?.message"], isLockRace: ["stderrText("],
+    // Filesystem failures on the owned cache lock, not Git's error/transport text.
+    withCacheWriteLock: ["error.message", "error.message", "error.message"],
+    isRefusedWant: ["stderrText("], lsTree: ["stderrText("],
+    listingUnreadable: ["stderrText(", "error?.message"], openBatch: ["child.stderr", "child.stderr"],
+  }, "new raw error-text access must be classified and its diagnostic route guarded");
+  const body = (name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0] ?? "";
+  assert.match(body("gitLastLine"), /map\(\(line\) => scrubGitLine\(line, url\)\)/);
+  assert.match(body("unreadable"), /gitLastLine\(error, ref\.url\)/);
+  assert.match(body("cacheFailure"), /const why = redactUrl\(stderrText\(error\)[^\n]+, ref\.url\);/);
+  assert.match(body("listingUnreadable"), /scrubGitLine\(text\.trim\(\)\.split\("\\n"\)\[0\], ref\?\.url\)/);
+  assert.match(body("listingUnreadable"), /scrubGitLine\(error\?\.message, ref\?\.url\)/);
+  for (const name of ["classifyText", "gitLastLine", "lockFileOf", "cacheFailure", "lsTree", "listingUnreadable"]) {
+    for (const line of body(name).split("\n").filter((line) => /\bfail\(/.test(line))) {
+      assert.doesNotMatch(line, /\b(?:text|lines|stderrText|stderr)\b|error\??\.message/, "raw Git text cannot be quoted directly by fail");
+    }
+  }
+}
+
+test("every Git error-text quoting route is guarded, including newly introduced sites", () => {
+  const source = readFileSync(new URL("../lib/remote.mjs", import.meta.url), "utf8");
+  assertGitQuoting(source);
+  for (const mutation of [
+    source + '\nfunction newQuote(error) { return fail("E_REMOTE_UNREADABLE", stderrText(error)); }',
+    source + '\nfunction newQuote(error) { return fail("E_REMOTE_UNREADABLE", error.message); }',
+    source.replace("scrubGitLine(line, url)", "String(line)"),
+    source.replace("const why = redactUrl(stderrText(error)", "const why = String(stderrText(error)"),
+    source.replace('scrubGitLine(text.trim().split("\\n")[0], ref?.url)', 'text.trim().split("\\n")[0]'),
+    source.replace('scrubGitLine(error?.message, ref?.url)', 'String(error?.message)'),
+    source.replace('  const missingObject =', '  fail("E_REMOTE_UNREADABLE", `raw git: ${text}`);\n  const missingObject ='),
+  ]) {
+    assert.notEqual(mutation, source, "mutation must exercise the guard");
+    assert.throws(() => assertGitQuoting(mutation), assert.AssertionError);
+  }
+});
+
+test("all Git quoting helpers remove known secrets outside URLs in stderr and message fallbacks", () => {
+  const source = readFileSync(new URL("../lib/remote.mjs", import.meta.url), "utf8");
+  const definitions = ["fail", "stderrText", "gitLastLine", "unreadable", "cacheFailure", "listingUnreadable"]
+    .map((name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0]).join("\n");
+  const helpers = new Function("oatsError", "redactUrl", "scrubGitLine", "classifyRemoteFailure", "keychainHint", "isLockRace", "isLocalWriteFailure", "markCacheDamaged", "KEYCHAIN_REMEDY",
+    `${definitions}; return [unreadable, cacheFailure, (ref, error) => listingUnreadable(error, {ref,repo:{dir:"fixture"},spec:"HEAD"})];`)(
+    oatsError, redactUrl, scrubGitLine, () => "unknown", () => null, () => false, () => false, () => {}, "");
+  for (const fn of helpers) for (const error of [gitError(`unexpected ${ssh}; ${PASSWORD}`), new Error(`unexpected ${ssh}; ${PASSWORD}`)]) {
+    safeError(fn({ url: ssh, key }, error), "E_REMOTE_UNREADABLE");
+  }
 });
