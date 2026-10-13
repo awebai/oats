@@ -315,12 +315,16 @@ negotiating, so `fetchCommit` makes a fetch that failed as `unknown` once
 more without negotiation (`fetch.negotiationAlgorithm=noop`), which brings
 the commit whole and is complete whatever the cache holds
 (awebai/oats#1059). One second attempt, never a third, and never on git's
-wording. A fetch that fails removes the temporary files it left in the object
-store (`objects/pack/tmp_*`, and `tmp_*` in `objects` and its two-character
-directories, where git's own `prune` looks), and every fetch first removes
-those earlier failures left that are older than the longest fetch, the rule
-of a stale git lock below: a file an older kernel's live fetch may still be
-writing is never removed.
+wording. git does not remove the pack file of a fetch that dies
+(`objects/pack/tmp_pack_*`), and the cache runs no gc, so every fetch, under
+the write lock, first removes the temporary files of the object store that
+are older than the longest fetch: `tmp_*` in `objects/pack`, in `objects` and
+in its two-character directories, where git's own `prune` looks, and nowhere
+behind a symbolic link. Age is the only rule, the one of a stale git lock
+below and of `git prune`. A failed fetch's own pack is not removed at once,
+because a file that appeared during a fetch cannot be told from one another
+git is writing: an older kernel's fetch takes no write lock, and git names
+the file itself.
 
 A failed git call is classified from what it shows (`classifyRemoteFailure`):
 our own timer's kill is `timeout`, another signal `killed`, a failed write of

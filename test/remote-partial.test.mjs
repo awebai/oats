@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import {
@@ -1011,14 +1011,14 @@ function objectStore(repoDir) {
 }
 const temporaries = (repoDir) => Object.keys(objectStore(repoDir)).filter((file) => /(^|\/)tmp_/.test(file));
 /** An exec that counts the fetches of `commit` and keeps what git said when one failed; `fail(n, args)` may
- *  return an error to reject the n-th of them with, instead of running git. */
+ *  return (or resolve to) an error to reject the n-th of them with, instead of running git. */
 function commitFetches(commit, fail = () => null) {
   const fetches = [];
   const exec = async (args, o) => {
     if (!args.includes("fetch") || !args.includes(commit)) return runGit(args, o);
     const seen = { args, negotiates: !args.includes("fetch.negotiationAlgorithm=noop"), stderr: null };
     fetches.push(seen);
-    const stubbed = fail(fetches.length, args);
+    const stubbed = await fail(fetches.length, args);
     if (stubbed) { seen.stderr = String(stubbed.stderr ?? ""); throw stubbed; }
     try { return await runGit(args, o); } catch (error) { seen.stderr = String(error.stderr ?? ""); throw error; }
   };
@@ -1049,7 +1049,9 @@ test("a pinned commit is fetched into a cache that holds a newer head: the pack 
       assert.ok(fetches[0].stderr.includes(f.blobAt(head)), "and the base it lacked is the head's version of the file");
       assert.equal(fetches[1].stderr, null);
       assert.deepEqual(fetches[1].args.slice(fetches[1].args.indexOf("fetch")), fetches[0].args.slice(fetches[0].args.indexOf("fetch")), "otherwise the same fetch");
-      assert.deepEqual(temporaries(f.repoDir), [], "the first attempt's pack is gone");
+      // The first attempt's pack stays for now: it cannot be told from one another git is writing, so it goes by its age.
+      const left = temporaries(f.repoDir);
+      assert.deepEqual(left.map((file) => file.replace(/_[^_]+$/, "_")), ["pack/tmp_pack_"], "one pack, the failed attempt's");
       assert.equal(git(f.repoDir, "rev-parse", `refs/oats/commits/${f.first}`), f.first, "pinned");
       assert.equal(f.holds(f.blobAt(head)), false, "git fetched nothing on its own: the head's large file is still out");
       assert.deepEqual(session?.notices ?? [], [], "no notice: the fetch succeeded");
@@ -1057,6 +1059,10 @@ test("a pinned commit is fetched into a cache that holds a newer head: the pack 
       const again = commitFetches(f.first);
       await readRemoteFile(f.bare, f.first, "souls/dev/soul.yaml", { cacheDir: f.cacheDir, exec: again.exec });
       assert.equal(again.fetches.length, 0);
+      // Once it is older than the longest fetch, the next fetch into the entry (here, of the head's large file) removes it.
+      utimesSync(join(f.repoDir, "objects", left[0]), HOUR_AGO(), HOUR_AGO());
+      assert.equal((await readRemoteFile(f.bare, head, "test/crossing.txt", { cacheDir: f.cacheDir, ...(session ? { session } : {}) })).bytes.toString(), f.two);
+      assert.deepEqual(temporaries(f.repoDir), [], "nothing is left in the object store");
     } finally { await session?.close(); }
   }
 });
@@ -1072,7 +1078,7 @@ test("the default branch's new head is fetched into a cache that holds the last 
   assert.deepEqual(fetches.map((x) => x.negotiates), [true, false]);
   assert.match(fetches[0].stderr, /could not fetch [0-9a-f]{40} from promisor remote/);
   assert.equal((await readRemoteFile(f.bare, head, "test/crossing.txt", { cacheDir: f.cacheDir })).bytes.toString(), f.two);
-  assert.deepEqual(temporaries(f.repoDir), []);
+  assert.equal(temporaries(f.repoDir).length, 1, "the failed attempt's pack, which goes by its age");
   // A head beside the last one where nothing crosses the filter still arrives in one negotiated fetch.
   write(f.work, "souls/dev/AGENTS.md", "# dev\n");
   git(f.work, "add", "-A"); git(f.work, "commit", "-q", "-m", "third"); git(f.work, "push", "-q", "origin", "HEAD:main");
@@ -1163,7 +1169,7 @@ test("what git could not explain is unknown, with git's last line scrubbed; netw
   assert.equal((await said("\x1b[0m\n \n")).message, "cannot read remote ssh://bot@example.com/org/repo (unknown)");
 });
 
-test("a fetch that fails leaves the object store as it was; an earlier failure's old leftover goes, a young one stays (#1059)", { skip: skipPartialMechanics }, async () => {
+test("a fetch first removes the temporary files older than the longest fetch, and no younger one: not its own failed attempt's, not another writer's (#1059)", { skip: skipPartialMechanics }, async () => {
   const f = crossing("grows");
   const head = f.advance();
   await observeRemote(f.bare, { cacheDir: f.cacheDir, at: head });
@@ -1175,18 +1181,62 @@ test("a fetch that fails leaves the object store as it was; an earlier failure's
   const kept = [leftover("pack/not_tmp_pack", { old: true }), leftover("info/tmp_elsewhere", { old: true })];
   symlinkSync(join(f.repoDir, "objects", kept[0]), join(f.repoDir, "objects", "pack", "tmp_pack_link"));
   lutimesSync(join(f.repoDir, "objects", "pack", "tmp_pack_link"), HOUR_AGO(), HOUR_AGO());
+  // Never outside the cache entry: a directory of the object store that is a symbolic link is not looked into.
+  const outside = join(f.base, "outside");
+  mkdirSync(outside);
+  const sentinel = join(outside, "tmp_obj_unrelated");
+  writeFileSync(sentinel, "not the cache's"); utimesSync(sentinel, HOUR_AGO(), HOUR_AGO());
+  symlinkSync(outside, join(f.repoDir, "objects", "00"));
   const before = objectStore(f.repoDir);
-  // The real failing fetch (it receives a pack it cannot complete), and a second attempt that fails too.
-  const { fetches, exec } = commitFetches(f.first, (n) => (n === 2 ? gitError("fatal: the second attempt failed as well\n") : null));
-  const e = await refusedRead(readRemoteFile(f.bare, f.first, "test/crossing.txt", { cacheDir: f.cacheDir, exec }));
-  assert.deepEqual([e.details.reason, fetches.length], ["unknown", 2]);
-  assert.match(fetches[0].stderr, /promisor remote/, "the first attempt ran git, which left its pack behind");
-  const after = objectStore(f.repoDir);
-  assert.deepEqual(Object.keys(before).filter((file) => !(file in after)).sort(), [...old].sort(), "the old leftovers are gone, and nothing else");
-  assert.deepEqual(Object.keys(after).filter((file) => !(file in before)), [], "the failed fetch left nothing of its own");
-  for (const file of [...young, ...kept, "pack/tmp_pack_link"]) assert.ok(file in after, `${file} stays`);
-  assert.deepEqual(Object.fromEntries(Object.entries(after).filter(([file]) => file in before && before[file] !== after[file])), {}, "no file changed");
-  // The fetch that then succeeds removes nothing more: a young file may be another writer's.
-  assert.equal((await readRemoteFile(f.bare, f.first, "test/crossing.txt", { cacheDir: f.cacheDir })).bytes.toString(), f.one);
-  for (const file of [...young, ...kept, "pack/tmp_pack_link"]) assert.ok(file in objectStore(f.repoDir), `${file} still stays`);
+  // The real failing fetch (it receives a pack it cannot complete), then a second attempt that fails too. While
+  // that one runs, another git starts writing a pack into the entry, as an older kernel's fetch would (it takes
+  // no write lock), and a file appears that nobody holds.
+  let writer = null, writerPack = null;
+  const { fetches, exec } = commitFetches(f.first, async (n) => {
+    if (n !== 2) return null;
+    const had = new Set(temporaries(f.repoDir));
+    writer = spawn("git", ["-C", f.repoDir, "index-pack", "--stdin"], { stdio: ["pipe", "ignore", "ignore"] });
+    for (let i = 0; i < 250 && !writerPack; i++) { await new Promise((r) => setTimeout(r, 20)); writerPack = temporaries(f.repoDir).find((file) => !had.has(file)) ?? null; if (!writerPack) writer.stdin.write(Buffer.from("PACK")); }
+    leftover("pack/tmp_pack_during", { old: false });
+    return gitError("fatal: the second attempt failed as well\n");
+  });
+  try {
+    const e = await refusedRead(readRemoteFile(f.bare, f.first, "test/crossing.txt", { cacheDir: f.cacheDir, exec }));
+    assert.deepEqual([e.details.reason, fetches.length], ["unknown", 2]);
+    assert.match(fetches[0].stderr, /promisor remote/, "the first attempt ran git, which left its pack behind");
+    assert.ok(writerPack, "the other writer made its temporary pack while the fetch was failing");
+    const after = objectStore(f.repoDir);
+    assert.deepEqual(Object.keys(before).filter((file) => !(file in after)).sort(), [...old].sort(), "the old leftovers are gone, and nothing else");
+    assert.equal(writer.exitCode, null, "the other writer is still running");
+    for (const file of [...young, ...kept, "pack/tmp_pack_link", "pack/tmp_pack_during", writerPack]) assert.ok(file in after, `${file} stays`);
+    const appeared = Object.keys(after).filter((file) => !(file in before)).sort();
+    assert.equal(appeared.length, 3, `the failed attempt's own pack is there too, with the two that appeared beside it: ${appeared}`);
+    assert.ok(appeared.every((file) => /^pack\/tmp_pack_/.test(file)));
+    assert.deepEqual(Object.fromEntries(Object.entries(after).filter(([file]) => file in before && before[file] !== after[file])), {}, "no file changed");
+    assert.equal(existsSync(sentinel), true, "a file behind a linked directory is outside the cache, whatever its name and age");
+    // The fetch that then succeeds removes nothing more: a young file may be another writer's.
+    assert.equal((await readRemoteFile(f.bare, f.first, "test/crossing.txt", { cacheDir: f.cacheDir })).bytes.toString(), f.one);
+    const later = objectStore(f.repoDir);
+    for (const file of [...young, ...kept, "pack/tmp_pack_link", ...appeared]) assert.ok(file in later, `${file} still stays`);
+    assert.equal(writer.exitCode, null);
+    assert.equal(existsSync(sentinel), true);
+    // A session whose own fetch may run longer than the longest fetch waits that long before it calls a file old.
+    const patient = createReadSession({ fetchTimeoutMs: 2 * 60 * 60 * 1000 });
+    const hourOld = leftover("pack/tmp_pack_hour01", { old: true });
+    try {
+      await readRemoteFile(f.bare, head, "test/crossing.txt", { cacheDir: f.cacheDir, session: patient });
+      assert.ok(hourOld in objectStore(f.repoDir), "an hour is not old to a session that allows a fetch two");
+    } finally { await patient.close(); }
+  } finally { writer?.stdin.destroy(); writer?.kill("SIGKILL"); }
+  // Nor when the object store itself is a link: nothing is looked for there at all.
+  const g = crossing("grows");
+  const gHead = g.advance();
+  await observeRemote(g.bare, { cacheDir: g.cacheDir, at: gHead });
+  const moved = join(g.base, "moved-objects");
+  renameSync(join(g.repoDir, "objects"), moved);
+  symlinkSync(moved, join(g.repoDir, "objects"));
+  const old2 = join(moved, "pack", "tmp_pack_old001");
+  writeFileSync(old2, "x"); utimesSync(old2, HOUR_AGO(), HOUR_AGO());
+  assert.equal((await readRemoteFile(g.bare, g.first, "test/crossing.txt", { cacheDir: g.cacheDir })).bytes.toString(), g.one, "the fetch itself still works through the link, as git does");
+  assert.equal(existsSync(old2), true, "the kernel removes nothing through a link");
 });

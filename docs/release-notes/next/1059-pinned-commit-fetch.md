@@ -29,9 +29,11 @@
   it was deleted. The kernel now makes that fetch once more, whole, and it
   succeeds. Nothing needs to be done on a host that was affected: the next
   read fetches the commit.
-- **A fetch that fails leaves nothing in the cache**
+- **The pack of a fetch that failed no longer stays in the cache for good**
   ([#1059](https://github.com/awebai/oats/issues/1059)). Each failed fetch
   left a temporary pack file in the cache's object store, which nothing
-  removed; a host that retried for an hour held dozens. A failed fetch now
-  removes its own, and the next fetch into a cache removes those earlier
-  failures left once they are older than the longest fetch.
+  removed; a host that retried for an hour held dozens. Every fetch into a
+  cache now first removes the temporary files there that are older than the
+  longest fetch (11 minutes). It goes by age and not at once, because a file
+  that appeared during a fetch cannot be told from one another Git process
+  is still writing.
