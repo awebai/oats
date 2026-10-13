@@ -652,7 +652,8 @@ inherits it (awebai/oats#816):
     fixture's `TMUX_TMPDIR` during the call with no line fails the call.
     Nothing is asserted for a call in which the test replaced
     `process.stderr.write` itself: the test holds the line then, and asserts
-    it.
+    it. A child that plans the start writes the line on its own stderr, so a
+    test starts such a child outside the call.
   - `isolateSessionEnvironment`, for as long as it is installed: a captured
     line with nothing ever created under its `TMUX_TMPDIR` fails its restore.
   - A test file whose fixture has no server to observe (a stand-in `tmux`)

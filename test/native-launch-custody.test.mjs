@@ -81,7 +81,7 @@ function readJson(file) { return JSON.parse(readFileSync(file, "utf8")); }
 function planningStart(fn) {
   const warning = expectLoginFallback({ reason: "not-home" });
   let result;
-  try { result = fn(); } catch (e) { warning.end(); throw e; }
+  try { result = fn(); } catch (e) { warning.end({ assert: false }); throw e; } // the call's own error is the one given
   assert.equal(warning.end(), 1, "the kernel says once that it could not read the login environment, where it plans the start");
   return result;
 }

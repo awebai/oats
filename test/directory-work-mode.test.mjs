@@ -76,15 +76,23 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
   const agent = () => findAgent(root, "worker");
   /** The kernel spawn exactly as `oats spawn` drives it: a prepared resolution,
    *  the deployment as the directory context; `options` override everything. */
+  /** How many times the kernel said, during the last `spawn`, that it could not read the login environment. */
+  let loginFallbacks = 0;
   const spawn = async (purpose, options = {}, pre) => {
     const { prepared, agent: soul } = pre || await prepare();
     // A launch plans the start of the OATS tmux server from this fixture's environment, whose HOME is
     // not the user's and which names no login shell: the kernel says, once, that it could not read
-    // the login environment, whatever the spawn then answers. That line is asserted here, never left
-    // in the output (host-fixture.mjs expectLoginFallback); a spawn that launches nothing says none.
+    // the login environment. That line is asserted here, never left in the output (host-fixture.mjs
+    // expectLoginFallback): once for a spawn that launches, never for one that does not. A spawn
+    // that throws gives its own error, and the test that expects the refusal asserts the count
+    // (`loginFallbacks`).
     const warning = expectLoginFallback({ reason: "not-home" });
-    try { return await spawnInstanceAsync(root, soul, { purpose, launch: false, repo: context, ...options, prepared }); }
-    finally { assert.equal(warning.end(), options.launch === true ? 1 : 0, "the kernel says that it could not read the login environment once where it plans a launch, and nowhere else"); }
+    let result;
+    try { result = await spawnInstanceAsync(root, soul, { purpose, launch: false, repo: context, ...options, prepared }); }
+    catch (e) { loginFallbacks = warning.end({ assert: false }); throw e; }
+    loginFallbacks = warning.end();
+    assert.equal(loginFallbacks, options.launch === true ? 1 : 0, "the kernel says that it could not read the login environment once where it plans a launch, and nowhere else");
+    return result;
   };
   /** Change the soul's work mode in its member repository. */
   const setWork = (work) => {
@@ -92,7 +100,7 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
     writeFileSync(file, readFileSync(file, "utf8").replace(/^work: .*$/m, `work: ${work}`));
     commitMember();
   };
-  return { fx, base, context, root, cap, agent, spawn, prepare, setWork };
+  return { fx, base, context, root, cap, agent, spawn, prepare, setWork, loginFallbacks: () => loginFallbacks };
 }
 function cli(f, args, cwd = f.context) {
   return spawnSync(process.execPath, [CLI, ...args, "--dir", f.context, "--json"], { cwd, env: process.env, encoding: "utf8" });
@@ -759,6 +767,7 @@ writeFileSync(process.env.OATS_CONTEXT + '/retired.json', process.env.OATS_META)
 console.log(JSON.stringify({meta: {retired: true}}));`);
     const home = join(f.root, "worker/instances/worker-substituted");
     await assert.rejects(f.spawn("substituted", { launch, tmuxSession: "inert-fixture-only" }), (e) => e.code === "E_WORK_INSPECTION_FAILED" && /RETAINED/.test(e.message));
+    assert.equal(f.loginFallbacks(), launch ? 1 : 0, "the refused spawn had planned its launch, once, before it was refused; with no launch it plans none");
     // A launch reads the OATS server before any hook runs (its harness is looked up where its pane will look):
     // that read is all. Nothing is created, killed or sent, so no command can reach the substituted root.
     const afterSpawn = existsSync(events) ? readFileSync(events, "utf8") : "";
