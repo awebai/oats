@@ -729,8 +729,28 @@ on this machine, none is `default: true`, and the spawn names none.
   configurations. Its refusal shows as any host refusal does: "Couldn't spawn
   on <server>: <the host's message>", the code behind Details, never the
   sentence above.
-- **The soul's page** shows a launch `problem` in the kernel's words, this one
-  included.
+- **The soul's page and panel** show a launch `problem`, this one included, in
+  their launch box (below).
+
+### A soul's launch problem
+
+`oats souls` and `oats inspect --soul` carry a soul's `Launch` report, and a
+report's `problem` is `{code, message, fix}`: the kernel computes the report
+for a spawn that names no launch, and sets a problem only where it would
+refuse that spawn. The soul page and the soul panel show it in one box, by
+one rule for every code (`soul-inspector.mjs` `launchProblem`):
+
+- the Desktop's line, "A spawn of this soul with no launch chosen would be
+  refused here.";
+- the kernel's `message` and `fix`, each on its own line and through the
+  display filter alone, the kernel's name before the first of them that has
+  a line to show ("OATS says: <message>", then `<fix>`), by `kernelLines`
+  (`renderer/speaker-line.mjs`);
+- the code behind Details.
+
+The line says what the box shows. It does not say that a soul without a box
+will spawn: the report probes no model catalogue, so a spawn can be refused
+for more than a report holds.
 
 ### An unmatched launch preference
 
@@ -775,3 +795,6 @@ each at most 1,024 characters.
   created; a client does not read that from a message.
 - **A spawn routed to a server** shows the host's refusal as any host refusal
   does, neither sentence above.
+- **Every soul with no entry of its own** carries the refusal as its launch
+  `problem` while the key is in the file, and shows it in its launch box
+  (above).

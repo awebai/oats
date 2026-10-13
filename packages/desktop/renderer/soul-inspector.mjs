@@ -39,6 +39,7 @@ import { createSoulInstructions } from './soul-instructions.mjs';
 import { composedSupported, routedComposedSupported } from './composed-gate.mjs';
 import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, WARNINGS_COPY } from './capability-warnings.mjs';
+import { kernelLines } from './speaker-line.mjs';
 
 
 const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
@@ -174,8 +175,8 @@ ${soulTeamsHereCSS}
 .inspector-launch > .launch-at, .inspector-launch > .launch-problem { margin-top:8px; }
 .launch-problem { border-left:2px solid var(--warn); padding-left:8px; font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
 .launch-problem > p { margin:0; }
-.launch-problem-message { color:var(--warn); font-weight:600; }
-.launch-problem-fix { color:var(--fg); }
+.launch-problem-own { color:var(--warn); font-weight:600; }
+.launch-problem-said { color:var(--fg); }
 .launch-problem details { color:var(--muted); font-size:11.5px; }
 .inspector-refusal { margin:6px 0 0; color:var(--warn); font-size:12.5px; font-weight:600; line-height:1.45; overflow-wrap:anywhere; }
 .inspector-card { border:1px solid var(--border); border-radius:8px; background:var(--surface); padding:10px 12px; }
@@ -206,6 +207,10 @@ ${soulTeamsHereCSS}
  .soul-inspector { width:100%; max-width:none; overflow:visible; border-left:0; border-top:1px solid var(--border); }
 }
 `;
+
+/** What a launch problem of a soul's report means, in the Desktop's words: the report is the launch a spawn
+ * that names none would get, and each problem is the kernel's refusal of that spawn. */
+export const LAUNCH_REFUSED_HERE = 'A spawn of this soul with no launch chosen would be refused here.';
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
@@ -691,10 +696,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   }
   /** The soul's launch (0.30): `inspect --soul`'s own, else its roster row's; null without the feature. */
   function soulLaunch(inspected) { return shownLaunch(inspected.launch ?? selection?.agent?.launch, cliStatus()); }
-  /** A launch a spawn here would refuse (E_HARNESS_UNAVAILABLE…): the kernel's message and fix, verbatim. */
+  /** A launch problem of the soul's report: the Desktop's own line, then the kernel's message and fix, each a
+   * line of its own under the kernel's name and through the display filter (speaker-line.mjs kernelLines),
+   * and the code behind Details. One rule for every problem, keyed on no code: the kernel computes the
+   * report for a spawn that names no launch and sets a problem only where it would refuse that spawn. */
   function launchProblem(p) {
     const box = node('div', undefined, 'launch-problem'); box.setAttribute('role', 'note');
-    box.append(node('p', p.message, 'launch-problem-message'), node('p', p.fix, 'launch-problem-fix'));
+    box.append(node('p', LAUNCH_REFUSED_HERE, 'launch-problem-own'), ...kernelLines(p.message, p.fix).map(line => node('p', line, 'launch-problem-said')));
     const more = node('details'); more.append(node('summary', 'Details'), node('p', p.code, 'muted')); box.append(more);
     return box;
   }
@@ -711,7 +719,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (launch) {
       // 0.30 launch preferences: the effective harness and model with where that came from; below the
       // facts, the soul's own preference when this computer runs something else, where to change it,
-      // and a problem a spawn would hit (the kernel's words).
+      // and a problem a spawn would hit (launchProblem: the Desktop's line, then the kernel's words under its name).
       const e = launch.effective, fact = node('span', undefined, 'page-fact'); fact.dataset.fact = 'harness';
       fact.append(createRuntimeBadge(doc, e.harness), node('span', launchHarnessName(e.harness), 'strong'),
         node('span', [launchModelText(e), e.launchConfig ? `launch configuration ${e.launchConfig}` : null, launchFromText(launch.from)].filter(Boolean).join(' · '), 'muted'));

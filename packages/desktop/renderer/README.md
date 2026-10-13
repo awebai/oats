@@ -590,7 +590,10 @@ behind a **Details** toggle and in `data-code`; no decision depends on wording.
 For an unmatched launch preference (`E_LAUNCH_PREFERENCE_UNMATCHED`) Details
 hold the code and then the kernel's message and fix, each on its own line
 under "OATS says:" (`speaker-line.mjs` `kernelLines`, one
-`span.spawn-problem-line` each).
+`span.spawn-problem-line` each). A soul's launch problem (the soul page and
+panel, `soul-inspector.mjs` `launchProblem`) is drawn by the same function for
+every code: the Desktop's line (`p.launch-problem-own`), then one
+`p.launch-problem-said` per kernel line, and the code behind Details.
 
 Model suggestions are advisory (`/api/models`), custom entries stay valid, and
 a remote target never borrows local model/configuration facts. No capability

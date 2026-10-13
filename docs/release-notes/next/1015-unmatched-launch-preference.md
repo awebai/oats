@@ -28,6 +28,21 @@
   [The spawn dialog](../../packages/desktop/docs/desktop-spawn-preview.md#an-unmatched-launch-preference)
   has the whole of it.
 
+- **Desktop: a soul's launch problem says who is speaking**
+  ([#1015](https://github.com/awebai/oats/issues/1015)). The soul page and
+  the soul panel show a box when a spawn of that soul with no launch chosen
+  would be refused: a harness that is not installed, a launch configuration
+  that is gone or ambiguous, and from 0.53.0 a launch preference that names
+  no soul, which every soul with no entry of its own then carries. The box
+  showed OATS's message and its fix as two paragraphs, with no word on whose
+  they were. It now starts with the Desktop's own line, "A spawn of this soul
+  with no launch chosen would be refused here.", then reads "OATS says:
+  `<message>`" and the fix under it, with the code under Details as before.
+  Each of OATS's two texts is one line and whole; one that holds control
+  characters or looks like a credential reads "[Detail withheld]", and "OATS
+  says:" then stands before the other. This is so for every launch problem,
+  not only the new one.
+
 ## Fixed
 
 - **Desktop: the fix OATS sends with a refused preview reaches the Spawn
