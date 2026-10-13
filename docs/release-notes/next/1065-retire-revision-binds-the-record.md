@@ -35,6 +35,6 @@
   `defaults:` line shared one `planRevision` (an own tree under `worktree`
   and `directory`; nothing or a file at `work/` under every record; a link
   under every record but `worktree`). Both are now part of every retire
-  plan's revision, with the repository read from Git where the reading
-  takes it from there, so no two plans of one home that the record or the
-  reading makes different share a revision. 0.52.0 has the defect too.
+  plan's revision, with the repository Git names for `work/` wherever it is
+  a registered work tree, so no two plans of one home that the record or
+  the reading makes different share a revision. 0.52.0 has the defect too.
