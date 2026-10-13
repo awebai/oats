@@ -1076,18 +1076,13 @@ async function launchConfigCmd() {
   if (!file) bail("E_LOCAL_MISSING", `launch-config ${sub} writes the deployment's oats-local.yaml, and none is in reach of ${dir} — run it from the deployment (\`oats onboard\` creates one)`);
   const name = args[2];
   if (!name || name.startsWith("--")) bail("E_BAD_ARGS", `launch-config ${sub} needs a configuration name`);
-  const text = readFileSync(file, "utf8");
-  let model;
-  try { model = readLaunchConfigsModel(found.local); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
-  const declaredHere = Object.hasOwn(model, name);
-  const before = declaredHere ? publicLaunchConfig(model[name]) : null;
-  if (sub === "remove") {
-    if (!declaredHere) bail("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared in ${shortPath(file)}`);
-    delete model[name];
-  } else {
-    const f = flag("file");
+  // What needs only the arguments is read and refused here, before the lock is taken: the definition
+  // (stdin is read asynchronously, and the edit below is synchronous) and its own validity.
+  let entry, f;
+  const keepEnv = sub === "set" && args.includes("--keep-env");
+  if (sub === "set") {
+    f = flag("file");
     if (!f || f === true) bail("E_BAD_ARGS", "launch-config set needs --file <json> (an object with harness and optional executable, args, env, model, yolo)");
-    let entry;
     // A parse error is reported without the parser's text: its message can
     // quote the document, and a definition may carry environment literals.
     let raw;
@@ -1100,34 +1095,59 @@ async function launchConfigCmd() {
       try { raw = readFileSync(f, "utf8"); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.code === "ENOENT" ? "no such file" : e.code || "cannot read"}`); }
     }
     try { entry = JSON.parse(raw); } catch { bail("E_BAD_ARGS", `--file ${f} is not valid JSON (one object with harness and optional executable, args, env, model, yolo)`); }
-    if (args.includes("--keep-env")) {
-      // An editor that saw only redacted values keeps the environment of the
-      // declared definition of that name: a one-time copy into the complete
-      // replacement entry.
-      if (entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment of the declared definition; omit env from --file");
-      const current = declaredHere ? model[name] : undefined;
-      if (!current) bail("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is declared in ${shortPath(file)}, so there is no environment to keep; declare it with env`);
-      if (entry && typeof entry === "object" && Object.keys(current.env || {}).length) entry.env = { ...current.env };
-    }
+    if (keepEnv && entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment of the declared definition; omit env from --file");
+    // As given. With --keep-env it is judged again under the lock, with the environment it keeps.
     try { validateLaunchConfig(name, entry, `--file ${f}`); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
     if (!Object.hasOwn(entry, "harness")) noteRuntimeName(`runtime in the --file definition (written as harness)`);
-    model[name] = normalizeLaunchConfig(entry);
-    // One default per harness, over the file as it would be written (no automatic move).
-    try { validateLaunchConfigDefaults(model, shortPath(file)); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message, e.details); }
   }
-  let next;
-  try { next = replaceLaunchConfigsBlock(text, serializeLaunchConfigs(model)); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", `${e.message}; nothing was written`); }
-  // What is written must read back as exactly what was asked, by the kernel's
-  // own reader, before a byte of the file changes.
-  let readBack;
-  let nextLocal;
-  try { nextLocal = parseConfigData(next, { origin: { kind: "local", path: file } }).value; readBack = nextLocal["launch-configs"] || {}; } catch (e) { bail("E_LAUNCH_CONFIG_INVALID", `the rewritten block does not parse: ${e.message}; nothing was written`); }
-  const schemaProblems = validateLocal(nextLocal);
-  if (schemaProblems.length) bail("E_LAUNCH_CONFIG_INVALID", `the rewritten oats-local.yaml would be invalid (${schemaProblems.map((p) => `${p.path || "/"}: ${p.message}`).join("; ")}); nothing was written`);
-  const canonical = (m) => JSON.stringify(Object.keys(m).sort().map((n) => [n, normalizeLaunchConfig(m[n])]));
-  const same = canonical(readBack) === canonical(model);
-  if (!same) bail("E_LAUNCH_CONFIG_INVALID", `${name} would not read back as written; nothing was written`);
-  writeFileAtomic(file, next);
+  // The write goes through the one path that rewrites oats-local.yaml (lib/local-edit.mjs editLocal): the
+  // deployment's local lock, and the file as it is under it. Everything this command derives from the
+  // file, it derives there: whether the name is declared, `before`, the environment --keep-env keeps and
+  // the one default per harness. The edit runs with the lock held, so it never ends the process: a
+  // refusal is thrown with the code, the text and the details it is answered with, and answered below,
+  // once the lock is released.
+  const refusal = (code, message, details) => Object.assign(new Error(message), { code, details });
+  let model, before;
+  const { editLocal } = await import("../lib/local-edit.mjs");
+  try {
+    editLocal({ deployment: level, localPath: file }, { verb: `oats launch-config ${sub}` }, ({ text, local }) => {
+      try { model = readLaunchConfigsModel(local); } catch (e) { throw refusal(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
+      const declaredHere = Object.hasOwn(model, name);
+      before = declaredHere ? publicLaunchConfig(model[name]) : null;
+      if (sub === "remove") {
+        if (!declaredHere) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared in ${shortPath(file)}`);
+        delete model[name];
+      } else {
+        let written = entry;
+        if (keepEnv) {
+          // An editor that saw only redacted values keeps the environment of the
+          // declared definition of that name: a one-time copy into the complete
+          // replacement entry.
+          const current = declaredHere ? model[name] : undefined;
+          if (!current) throw refusal("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is declared in ${shortPath(file)}, so there is no environment to keep; declare it with env`);
+          if (Object.keys(current.env || {}).length) written = { ...entry, env: { ...current.env } };
+          try { validateLaunchConfig(name, written, `--file ${f}`); } catch (e) { throw refusal(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
+        }
+        model[name] = normalizeLaunchConfig(written);
+        // One default per harness, over the file as it would be written (no automatic move).
+        try { validateLaunchConfigDefaults(model, shortPath(file)); } catch (e) { throw refusal(e.code || "E_LAUNCH_CONFIG_INVALID", e.message, e.details); }
+      }
+      let next;
+      try { next = replaceLaunchConfigsBlock(text, serializeLaunchConfigs(model)); } catch (e) { throw refusal(e.code || "E_CONFIG_BROKEN", `${e.message}; nothing was written`); }
+      // What is written must read back as exactly what was asked, by the kernel's
+      // own reader, before a byte of the file changes. These refusals are this command's, with its
+      // code: editLocal's own look at the text (E_WORKSPACE_SCHEMA) then finds nothing to refuse.
+      let readBack;
+      let nextLocal;
+      try { nextLocal = parseConfigData(next, { origin: { kind: "local", path: file } }).value; readBack = nextLocal["launch-configs"] || {}; } catch (e) { throw refusal("E_LAUNCH_CONFIG_INVALID", `the rewritten block does not parse: ${e.message}; nothing was written`); }
+      const schemaProblems = validateLocal(nextLocal);
+      if (schemaProblems.length) throw refusal("E_LAUNCH_CONFIG_INVALID", `the rewritten oats-local.yaml would be invalid (${schemaProblems.map((p) => `${p.path || "/"}: ${p.message}`).join("; ")}); nothing was written`);
+      const canonical = (m) => JSON.stringify(Object.keys(m).sort().map((n) => [n, normalizeLaunchConfig(m[n])]));
+      const same = canonical(readBack) === canonical(model);
+      if (!same) throw refusal("E_LAUNCH_CONFIG_INVALID", `${name} would not read back as written; nothing was written`);
+      return { text: next };
+    });
+  } catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
   let eff = null;
   try { eff = effective().find((c) => c.name === name) || null; } catch (e) { eff = { error: e.message }; }
   const receipt = { name, action: sub, level, file, before, after: Object.hasOwn(model, name) ? publicLaunchConfig(model[name]) : null, effective: eff };
@@ -1837,7 +1857,7 @@ const printWorkspaceAdd = (r) => r.written
  *  `triggers.disabled` / `schedules.disabled`. */
 function setDisabledHereCli(ws, kind, qid, enabled) {
   const { path } = loadLocal(ws);
-  return A.setDisabledHere(path, kind, qid, !enabled, { validate: validateLocal });
+  return A.setDisabledHere({ deployment: dirname(path), localPath: path }, kind, qid, !enabled);
 }
 
 const SYNC_USAGE = "usage: oats sync [--dir <deployment>] [--plan] [--json]";

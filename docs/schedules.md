@@ -550,6 +550,10 @@ add` / `oats schedule add` definitions need no trust.
 **Opting out on one host.** `oats trigger disable <member>/<id>` writes
 `triggers.disabled`, and `oats schedule disable <member>/<id>` writes
 `schedules.disabled`, in `oats-local.yaml`; `enable` removes the entry. The
+write changes that list and no other entry, and takes the lock every kernel
+command that rewrites `oats-local.yaml` holds, so it never drops another
+command's change (`E_LOCAL_BUSY` when the lock stays held, `E_LOCAL_CHANGED`
+when the file kept changing: run it again). The
 schedule part of a qualified ID accepts up to 100 characters in both
 `schedules.disabled` and named `automations.trust` entries. Trigger definitions
 and `triggers.disabled` keep their 40-character limit; the shared trust list

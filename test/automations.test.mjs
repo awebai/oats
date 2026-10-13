@@ -374,7 +374,7 @@ test("qualified host-list schema retains schedule 101 and trigger 41 refusals, s
     assert.equal(readFileSync(localPath, "utf8"), before);
   }
   for (const [kind, invalid] of [["schedule", tooLong], ["trigger", `ws/${"t".repeat(41)}`]]) {
-    assert.throws(() => A.setDisabledHere(localPath, kind, invalid, true, { validate: validateLocal }), { code: "E_WORKSPACE_SCHEMA" });
+    assert.throws(() => A.setDisabledHere({ deployment: fx.dep, localPath }, kind, invalid, true), { code: "E_WORKSPACE_SCHEMA" });
     assert.equal(readFileSync(localPath, "utf8"), before, "schema refuses before the shared writer mutates config");
   }
   const config = (section, list) => ({ schemaVersion: 2, workspace: fx.ref, [section]: { [section === "automations" ? "trust" : "disabled"]: list } });
