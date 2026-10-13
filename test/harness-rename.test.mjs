@@ -14,7 +14,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { setProcessEnvironment, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { soulHarnessField, requirementHarness, applicableRequirements, assertLaunchRecipe, upgradeHomeMeta, upgradeLaunchRecipe, LAUNCH_RECIPE_VERSION } from "../lib/core.mjs";
 import { runtimeNameWarning, resetRuntimeNames } from "../lib/deprecation.mjs";
 import { checkRemote } from "../lib/servers.mjs";
@@ -247,7 +247,7 @@ test("schedules: a definition's `runtime` is its harness at add and when stored,
     assert.equal(stored().old.harness, "codex");
   } finally {
     resetRuntimeNames();
-    process.env = saved;
+    setProcessEnvironment(saved);
     rmSync(base, { recursive: true, force: true });
   }
 });
@@ -284,7 +284,7 @@ test("remote schedules and probes: a spec is sent in the host's names; a pre-0.2
     const silent = probe({});
     assert.deepEqual(silent.harnesses, ["pi", "claude"]); assert.equal(silent.advertised, false);
   } finally {
-    process.env = saved;
+    setProcessEnvironment(saved);
     rmSync(base, { recursive: true, force: true });
   }
 });
