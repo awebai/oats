@@ -1,7 +1,9 @@
 # Upgrading OATS on a host
 
-Upgrading OATS means three things, in this order, on each host:
+Upgrading OATS means three things, in this order, on each host, and one
+before them where the Desktop is installed:
 
+0. **The Desktop**, where it is installed: the new version's, before the CLI.
 1. **The CLI** (`@awebai/oats`, the kernel).
 2. **The pi bridge** (`@awebai/oats-pi`), in every pi folder the host's
    deployments launch pi with: `oats update`, in each deployment.
@@ -18,6 +20,13 @@ every version between yours and the new one in the
 changes, and what else must change with it (the Desktop, another tool, a
 package pin). This page is the part that is the same for every release.
 
+**Why the Desktop goes first.** A Desktop accepts a CLI up to its own minor
+version and refuses a newer one: with the CLI moved first, the Desktop that
+is still running lists no instance until it is replaced. The new Desktop
+accepts the older CLI in the meantime. The CLI can move by two commands, the
+`npm install` below and an `oats update` whose plan installs it: step 0 comes
+before either.
+
 **Package versions are a different thing.** `oats update` moves the CLI and
 the bridge, never a package. A deployment's capabilities come from the
 packages pinned in `oats-workspace.yaml`; change a pin, then run `oats sync`
@@ -26,6 +35,7 @@ packages pinned in `oats-workspace.yaml`; change a pin, then run `oats sync`
 ## The steps
 
 ```sh
+                              # 0. where the Desktop is installed: the new version's Desktop first
 npm install -g @awebai/oats   # 1. the CLI
 oats update                   # 2. in a deployment: the plan, then it asks before it runs
 oats doctor                   # 3. in the same deployment
@@ -41,7 +51,9 @@ Without a terminal (a script, an agent's shell) it runs only with `--yes`.
 
 `oats update` also does step 1: when npm lists a newer `@awebai/oats`, its
 plan starts with that install, and the bridges move to that same version in
-the same run.
+the same run. So where the Desktop is installed, step 0 comes before such an
+`oats update` too: `oats update --check` shows whether the plan holds that
+install, and runs nothing.
 
 **`oats update` only moves forward.** It never installs an older CLI or an
 older bridge than the one in place:
