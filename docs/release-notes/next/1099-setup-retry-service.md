@@ -9,3 +9,7 @@
   `--dry-run` and `--no-service` do not contact the manager. The capture pass
   still determines setup's exit status; see
   [Upgrading](../upgrading.md#after-a-change-of-node-version).
+  Starting with the release carrying this fix, the manual Linux enable
+  workaround in the [0.53.0 Upgrade notes](v0.53.0.md#upgrade) is no longer
+  needed after setup successfully enables and starts the watcher. Actual
+  service errors still require the remedy reported by setup.
