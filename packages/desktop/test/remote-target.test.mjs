@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTerminalPrepareGate, remoteTerminalEnvironment } from "../remote-target.mjs";
-import { prepareRemoteTerm, remoteTargetKey } from "../../client/session-attach.mjs";
+import { prepareRemoteTerm, remoteTargetKey, preflightFailure } from "../../client/session-attach.mjs";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
-import { HERDR_REMOVED } from "../../client/terminal-contract.mjs";
+import { HERDR_REMOVED, terminalFailure, terminalMessage } from "../../client/terminal-contract.mjs";
 import { runTerminalCommand } from "../../client/terminal-exec.mjs";
 
 /** The real runner over an exec double that exits `code` after printing `stdout`, as the CLI does for a JSON refusal. */
@@ -124,5 +124,113 @@ test("only an E_SSH whose details say ssh never started is no ssh; any other E_S
   for (const [details, code] of [[{ sshStarted: false }, "E_TERM_REMOTE_NO_SSH"], [undefined, "E_TERM_REMOTE_UNREACHABLE"],
     [{ sshStarted: true }, "E_TERM_REMOTE_UNREACHABLE"], [{}, "E_TERM_REMOTE_UNREACHABLE"], [{ sshStarted: "false" }, "E_TERM_REMOTE_UNREACHABLE"]]) {
     await assert.rejects(prepareRemoteTerm(cli, remote, { run: exiting(1, envelope(details), []) }), error => error.code === code, JSON.stringify(details));
+  }
+});
+
+/* ── preflightFailure: what a failed preflight says to a client that shows more than the Desktop's
+ *    sentence. The Desktop does not call it; it reads the errors the tests above hold. ── */
+const SERVER = "Build box", GENERAL = terminalFailure("E_TERM_OPEN_FAILED").message;
+const thrownBy = (run, options = {}) => prepareRemoteTerm(cli, remote, { run, ...options }).then(() => assert.fail("the preflight must fail"), error => error);
+const refusing = error => exiting(1, JSON.stringify({ schemaVersion: 1, ok: false, error }));
+
+test("preflightFailure over the preflight's own outcomes: the table's code, its sentence naming the server where it has a place for one, and nothing of the kernel's", async () => {
+  const killed = async () => { throw Object.assign(new Error("Command failed"), { code: null, killed: true, signal: "SIGTERM", stdout: "" }); };
+  const kernelMessage = `E_HERDR_REMOVED: ${HERDR_REMOVED} Retire it (\`oats retire dev-task\`) and spawn a new instance; it opens in tmux.`;
+  const outcomes = [
+    [await thrownBy(exiting(1, captured("unreachable"))), "E_TERM_REMOTE_UNREACHABLE", true],
+    [await thrownBy(exiting(1, captured("no-ssh"))), "E_TERM_REMOTE_NO_SSH", true],
+    [await thrownBy(exiting(0, captured("not-present"))), "E_TERM_REMOTE_GONE", true],
+    [await thrownBy(exiting(255, "")), "E_TERM_REMOTE_NO_ANSWER", true],
+    [await thrownBy(killed), "E_TERM_PREPARE_TIMEOUT", false],
+    [await thrownBy(refusing({ code: "E_HERDR_REMOVED", message: kernelMessage, details: { fix: "retire it" } })), "E_HERDR_REMOVED", false],
+    [await thrownBy(assert.fail, { current: () => false }), "E_TERM_CONTEXT_CHANGED", false],
+  ];
+  for (const [error, code, named] of outcomes) {
+    assert.equal(error.code, code);
+    const failure = preflightFailure(error, SERVER);
+    assert.deepEqual(failure, { code, sentence: terminalMessage(code, SERVER), said: null }, code);
+    assert.equal(failure.sentence.includes(SERVER), named, `${code}: ${failure.sentence}`);
+    if (!named) assert.equal(failure.sentence, terminalFailure(code).message, code);
+    // With no label the sentence is the table's static one, the Desktop's as it is.
+    assert.equal(preflightFailure(error).sentence, terminalFailure(code).message, code);
+  }
+});
+
+test("preflightFailure over a host's refusal the table has no sentence for: the general sentence, and what the host said as it came", async () => {
+  // A real capture: an id with no registration. The expected texts are read from the capture.
+  const answered = JSON.parse(captured("unknown-server")).error;
+  const error = await thrownBy(exiting(1, captured("unknown-server")));
+  assert.equal(error.code, answered.code);
+  assert.deepEqual(preflightFailure(error, SERVER), { code: "E_TERM_OPEN_FAILED", sentence: GENERAL, said: { code: answered.code, message: answered.message, fix: null } });
+  assert.equal(GENERAL, terminalMessage(answered.code, SERVER), "the Desktop's sentence for it, unchanged");
+  // The answer is the caller's own copy: changing it changes nothing a later read answers.
+  preflightFailure(error, SERVER).said.message = "changed";
+  assert.equal(preflightFailure(error, SERVER).said.message, answered.message);
+  // Also for a refusal the CLI printed with exit 0, and one a caller's own runner returned.
+  const printed = await thrownBy(async () => ({ stdout: captured("unknown-server") }));
+  assert.deepEqual(preflightFailure(printed, SERVER).said, { code: answered.code, message: answered.message, fix: null });
+});
+
+test("preflightFailure's said holds the envelope's own strings, each null where it gave none, and is null when all three are", async () => {
+  const CODE = "E_HOST_SAYS_NO", MESSAGE = "the host refused this", FIX = "ask its owner, then try again";
+  for (const [answered, said] of [
+    [{ code: CODE, message: MESSAGE, details: { fix: FIX } }, { code: CODE, message: MESSAGE, fix: FIX }],
+    [{ code: CODE, message: MESSAGE, details: { feature: "something" } }, { code: CODE, message: MESSAGE, fix: null }],
+    [{ code: CODE, message: MESSAGE, details: { fix: 7 } }, { code: CODE, message: MESSAGE, fix: null }],
+    [{ code: CODE, message: MESSAGE, details: { fix: [FIX] } }, { code: CODE, message: MESSAGE, fix: null }],
+    [{ code: CODE, message: MESSAGE, details: FIX }, { code: CODE, message: MESSAGE, fix: null }],
+    [{ code: CODE, message: MESSAGE, details: null }, { code: CODE, message: MESSAGE, fix: null }],
+    [{ code: CODE, message: 7 }, { code: CODE, message: null, fix: null }],
+    [{ code: CODE, message: { text: MESSAGE } }, { code: CODE, message: null, fix: null }],
+    [{ code: CODE }, { code: CODE, message: null, fix: null }],
+    [{ message: MESSAGE }, { code: null, message: MESSAGE, fix: null }],
+    [{ code: 7, message: MESSAGE }, { code: null, message: MESSAGE, fix: null }],
+    [{ details: { fix: FIX } }, { code: null, message: null, fix: FIX }],
+    [{ code: "E_TERM_OPEN_FAILED", message: MESSAGE }, { code: "E_TERM_OPEN_FAILED", message: MESSAGE, fix: null }],
+    [{}, null], [{ details: {} }, null], [{ code: 7, message: null, details: { fix: false } }, null], [undefined, null],
+  ]) {
+    const error = await thrownBy(refusing(answered));
+    assert.deepEqual(preflightFailure(error, SERVER), { code: "E_TERM_OPEN_FAILED", sentence: GENERAL, said }, JSON.stringify(answered));
+  }
+  // A refusal that gave no code and no message is still thrown as it always was.
+  const bare = await thrownBy(refusing({}));
+  assert.equal(bare.code, "E_TERM_OPEN_FAILED");
+  assert.equal(bare.message, "remote session inspection failed");
+});
+
+test("preflightFailure keeps what the kernel said only where the table has no sentence of its own, and only for a refusal the preflight read", async () => {
+  const MESSAGE = "the host refused this", FIX = "ask its owner";
+  // A refusal kept as it came whose code the table knows: the table's sentence, and nothing beside it.
+  for (const code of ["E_TERM_REMOTE_GONE", "E_TERM_BUSY", "E_TERM_CAP"]) {
+    const error = await thrownBy(refusing({ code, message: MESSAGE, details: { fix: FIX } }));
+    assert.equal(error.code, code);
+    assert.equal(error.message, MESSAGE);
+    assert.deepEqual(preflightFailure(error, SERVER), { code, sentence: terminalMessage(code, SERVER), said: null }, code);
+  }
+  // A CLI that did not start: Node's own code is a string and its message holds a path. Never shown.
+  const missing = await thrownBy(async () => { throw Object.assign(new Error("spawn /selected/oats ENOENT"), { code: "ENOENT" }); });
+  assert.equal(missing.code, "ENOENT");
+  assert.deepEqual(preflightFailure(missing, SERVER), { code: "E_TERM_OPEN_FAILED", sentence: GENERAL, said: null });
+  // An error made by hand with a real refusal's code and message is not one the preflight read.
+  const real = await thrownBy(refusing({ code: "E_HOST_SAYS_NO", message: MESSAGE, details: { fix: FIX } }));
+  assert.deepEqual(preflightFailure(real, SERVER).said, { code: "E_HOST_SAYS_NO", message: MESSAGE, fix: FIX });
+  const forged = Object.assign(new Error(real.message), { code: real.code, details: { fix: FIX } });
+  assert.deepEqual(preflightFailure(forged, SERVER), { code: "E_TERM_OPEN_FAILED", sentence: GENERAL, said: null });
+  assert.deepEqual(preflightFailure({ ...real }, SERVER).said, null, "nor is a copy of one");
+  // No envelope, an invalid target, a CLI without remote support, and what is no error at all.
+  const others = [await thrownBy(async () => ({ stdout: "not json" })),
+    await prepareRemoteTerm(cli, { serverId: "build", instance: "dev-task" }, { run: assert.fail }).catch(error => error),
+    await prepareRemoteTerm({ bin: "/old/oats", version: "0.22.1" }, remote, { run: assert.fail }).catch(error => error),
+    undefined, null, "E_TERM_REMOTE_GONE", 7, {}, { code: "E_HOST_SAYS_NO", message: MESSAGE }];
+  for (const error of others) assert.deepEqual(preflightFailure(error, SERVER), { code: "E_TERM_OPEN_FAILED", sentence: GENERAL, said: null }, String(error));
+});
+
+test("a refusal is thrown with the properties it always had: what it said is kept beside the error, not on it", async () => {
+  for (const answered of [{ code: "E_HOST_SAYS_NO", message: "the host refused this", details: { fix: "ask its owner" } }, JSON.parse(captured("unknown-server")).error, {}]) {
+    const error = await thrownBy(refusing(answered));
+    assert.deepEqual(Object.keys(error), ["code"]);
+    assert.deepEqual(Reflect.ownKeys(error).sort(), ["code", "message", "stack"]);
+    for (const key of ["said", "fix", "details", "kernel"]) assert.equal(key in error, false, key);
+    assert.equal(Object.getPrototypeOf(error), Error.prototype);
   }
 });

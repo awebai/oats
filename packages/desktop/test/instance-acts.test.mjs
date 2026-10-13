@@ -2,7 +2,7 @@
 // own menu from. Pure: a row in, verbs and reasons out; no label, icon or key.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { instanceActs } from "../../client/instance-acts.mjs";
+import { instanceActs, openAct } from "../../client/instance-acts.mjs";
 import { heldHome } from "../../client/instance-tree.mjs";
 import { unsupportedSession } from "../../client/instance-presentation.mjs";
 import { rowReason } from "../../client/remote-address.mjs";
@@ -201,4 +201,91 @@ test("no sentence it returns names the Desktop, its window or its menus", () => 
     for (const reason of [blocked, limited, ...acts.map((act) => act.reason)].filter(Boolean))
       assert.doesNotMatch(reason.sentence, /\b(desktop|window|menu|sidebar|click|tab)\b/i, `${name}: ${reason.sentence}`);
   }
+});
+
+/* ── openAct: whether a row's terminal can be opened, and why not. It is read from instanceActs' answer
+ *    and from nothing else of the row, and it is not one of that answer's acts. ── */
+const NO_TERMINAL = "No live terminal is reported.";
+const closed = (reason) => ({ verb: "open", enabled: false, reason });
+
+test("openAct, row by row: a row that runs opens; a stopped one and one whose liveness is unknown do not, each with its own code and one sentence", () => {
+  assert.deepEqual(openAct({ ...LOCAL, running: true }), { verb: "open", enabled: true, reason: null });
+  assert.deepEqual(openAct({ ...LOCAL, running: false }), closed({ code: "not-running", sentence: NO_TERMINAL }));
+  for (const running of [null, undefined, "yes", 1]) assert.deepEqual(openAct({ ...LOCAL, running }), closed({ code: "state-unknown", sentence: NO_TERMINAL }), String(running));
+  assert.deepEqual(openAct({ ...LOCAL }), closed({ code: "state-unknown", sentence: NO_TERMINAL }));
+  // A remote row the kernel reports addressable answers as a local one does, and so does a saved route on a kernel that reports none.
+  for (const running of [true, false, null]) assert.deepEqual(openAct({ ...REMOTE, running }), openAct({ ...LOCAL, running }), String(running));
+  assert.deepEqual(openAct({ ...REMOTE, addressable: undefined, savedRoute: true, running: false }), closed({ code: "not-running", sentence: NO_TERMINAL }));
+});
+
+test("openAct on a session backend OATS no longer has: not enabled, with the reason the Start act carries, its origin included when it has one", () => {
+  const rows = [{ ...LOCAL, running: null, runtimeState: "unsupported", runtimeError: HERDR },
+    { ...LOCAL, running: true, sessionTarget: "herdr:pane-1" }, { ...REMOTE, running: true, backend: "herdr" }, { ...LOCAL, running: false, backend: "herdr" }];
+  for (const row of rows) {
+    const start = instanceActs(row).acts.find((act) => act.verb === "start");
+    assert.equal(start.reason.code, "unsupported-session");
+    assert.deepEqual(openAct(row), closed(start.reason));
+  }
+  // The kernel's own text carries its mark on; the stand-in, this home's own, has none. A row that runs on such a backend still opens nothing.
+  assert.deepEqual(openAct(rows[0]).reason, { code: "unsupported-session", sentence: HERDR, origin: "unattributed" });
+  assert.deepEqual(Object.keys(openAct(rows[1]).reason), ["code", "sentence"]);
+  assert.equal(openAct(rows[1]).enabled, false);
+});
+
+test("openAct is null exactly when instanceActs answers blocked or limited: such a row says why itself, and a client adds no act to it", () => {
+  for (const row of [{ ...LOCAL, running: false, spawnInProgress: true }, { ...LOCAL, running: false, rollbackIncomplete: true }, { ...LOCAL, running: true, retirePending: true },
+    { ...REMOTE, addressable: false, running: true }, { ...REMOTE, addressable: false, running: true, retirePending: true },
+    { ...LOCAL, rollbackIncomplete: true, runtimeState: "unsupported", runtimeError: HERDR }]) {
+    const { blocked, limited } = instanceActs(row);
+    assert.ok(blocked || limited, JSON.stringify(row));
+    assert.equal(openAct(row), null, JSON.stringify(row));
+  }
+  let answered = 0, silent = 0;
+  for (const [name, row] of Object.entries(ROWS)) {
+    const { blocked, limited } = instanceActs(row), open = openAct(row);
+    assert.equal(open === null, !!(blocked || limited), name);
+    if (open === null) silent += 1; else answered += 1;
+  }
+  assert.ok(answered > 0 && silent > 0, "the table has rows of both kinds");
+});
+
+test("openAct's answer, on every row the menu's parity test draws: one act's shape, and instanceActs' own answer as it was", () => {
+  const codes = new Set();
+  for (const [name, row] of Object.entries(ROWS)) {
+    const frozen = Object.freeze({ ...row }), before = instanceActs(frozen), open = openAct(frozen);
+    assert.deepEqual(instanceActs(frozen), before, `${name}: instanceActs answers the same after it`);
+    assert.ok(!before.acts.some((act) => act.verb === "open"), `${name}: open is not one of the row's acts`);
+    assert.deepEqual(openAct(frozen), open, `${name}: the same row answers the same`);
+    if (open === null) continue;
+    assert.deepEqual(Object.keys(open), ["verb", "enabled", "reason"], name);
+    assert.equal(open.verb, "open", name);
+    assert.equal(open.enabled, open.reason === null, `${name}: enabled exactly when it has no reason`);
+    // It is read from the row's launch act: Restart listed, Start listed and enabled, Start with its reason, or neither.
+    const launch = before.acts.find((act) => act.verb === "restart" || act.verb === "start");
+    const expected = !launch ? "state-unknown" : launch.reason ? launch.reason.code : launch.verb === "restart" ? null : "not-running";
+    assert.equal(open.reason?.code ?? null, expected, name);
+    if (open.reason) {
+      codes.add(open.reason.code);
+      assert.ok(typeof open.reason.sentence === "string" && open.reason.sentence.length > 0, `${name}: a reason has a sentence`);
+      assert.doesNotMatch(open.reason.sentence, /\b(desktop|window|menu|sidebar|click|tab)\b/i, `${name}: ${open.reason.sentence}`);
+      if (open.reason.code !== "unsupported-session") assert.deepEqual(open.reason, { code: open.reason.code, sentence: NO_TERMINAL }, name);
+    } else codes.add(null);
+  }
+  assert.deepEqual([...codes].sort(), [null, "not-running", "state-unknown", "unsupported-session"].sort(), "the table draws every answer");
+});
+
+test("openAct reads the row only through instanceActs: it touches no key of the row that instanceActs does not", () => {
+  const read = (fn, row) => {
+    const keys = new Set(), note = (key) => { if (typeof key === "string") keys.add(key); };
+    fn(new Proxy(row, {
+      get(target, key, receiver) { note(key); return Reflect.get(target, key, receiver); },
+      has(target, key) { note(key); return Reflect.has(target, key); },
+      getOwnPropertyDescriptor(target, key) { note(key); return Reflect.getOwnPropertyDescriptor(target, key); },
+      ownKeys(target) { keys.add("(all keys)"); return Reflect.ownKeys(target); },
+    }));
+    return [...keys].sort();
+  };
+  for (const [name, row] of Object.entries(ROWS)) assert.deepEqual(read(openAct, row), read(instanceActs, row), name);
+  // Not vacuous: the reading sees what a row is asked.
+  assert.ok(read(instanceActs, ROWS.running).includes("running"));
 });

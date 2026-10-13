@@ -110,8 +110,21 @@ backend and the page import them by a plain relative path (`../client/`,
 Beside the readers it holds what a client decides from the kernel's rows
 alone, with no document to draw in: the roster as a tree
 (`instance-tree.mjs`), its sections by deployment (`roster-sections.mjs`),
-which acts a row offers and why (`instance-acts.mjs`), and whether a directory
-is a deployment (`workspace-admission.mjs`).
+which acts a row offers and why, and whether its terminal can be opened
+(`instance-acts.mjs`), and whether a directory is a deployment
+(`workspace-admission.mjs`).
+
+It holds how an agent's terminal is opened with the kernel's own viewer,
+`oats session attach` (`session-attach.mjs`): the viewer's arguments for this
+machine and for another, whether its detach key can be used, and the
+preflight that runs before a viewer on another machine, with the runner it
+starts the CLI with (`terminal-exec.mjs`) and what a failed preflight says.
+The word for the viewer's exit status is in `attach-exit.mjs`, which imports
+nothing. The Desktop calls the preflight and the key of a remote target; its
+own gate, PTY and reconnect rule stay in this package
+([terminal-owner-leases.md](docs/terminal-owner-leases.md)). The rest is for a
+client that starts the viewer itself. The lines of a kernel refusal's two
+texts are `kernel-lines.mjs` `kernelLines`, which each client gives its terms.
 
 It also holds what the backend serves as `/api/panel`, as functions the
 backend calls: what one deployment's observation becomes

@@ -7,6 +7,8 @@
  *     { code: 'unaddressable', key, sentence, origin? }   key: the row reason's own (remote-address.mjs rowReason)
  *     { code: 'held', kind, sentence }                    kind: 'spawning' | 'spawn-incomplete' | 'retire-incomplete'
  *     { code: 'unsupported-session', sentence, origin? }
+ *     { code: 'not-running', sentence }                   an `open` act's only (`openAct`)
+ *     { code: 'state-unknown', sentence }                 an `open` act's only
  *
  * A client may switch on `code`, and on `key` or `kind` when it needs to; never on the sentence.
  * The sentences are the ones the shared tables already produce. Two of them can be text this home did
@@ -35,12 +37,27 @@
  *   running === true                                      inspect, restart, stop, retire
  *   running === false                                     inspect, start, stop, retire
  *   running unknown                                       inspect, stop, retire
+ *
+ *   openAct(instance) -> { verb: 'open', enabled, reason: Reason | null } | null
+ *
+ * Whether the row's terminal can be opened, and why not. It is not one of `acts`: it is read from
+ * `instanceActs`'s answer and from nothing else of the row, so the order above is written once.
+ *   blocked or limited is set       null: the row's own reason says why, and a client adds no act
+ *   restart is listed, enabled      enabled: the row runs
+ *   start is listed, enabled        not enabled (not-running)
+ *   start is listed, not enabled    not enabled, with that act's own reason (unsupported-session)
+ *   neither is listed               not enabled (state-unknown)
+ * A client's own condition for opening a terminal (a recorded session on this machine, say) is the
+ * client's, and is not here.
  */
 import { heldHome } from './instance-tree.mjs';
 import { unsupportedSession } from './instance-presentation.mjs';
 import { canAddressRemote, rowReason } from './remote-address.mjs';
 
 const act = (verb, reason = null) => ({ verb, enabled: !reason, reason });
+// An `open` act's own two codes, and the one sentence both carry.
+const NOT_RUNNING = 'not-running', STATE_UNKNOWN = 'state-unknown';
+const NO_LIVE_TERMINAL = 'No live terminal is reported.';
 
 export function instanceActs(instance) {
   if (!canAddressRemote(instance)) {
@@ -60,4 +77,14 @@ export function instanceActs(instance) {
   const launch = herdr ? [act('start', { code: 'unsupported-session', sentence: herdr.sentence, ...(herdr.origin !== undefined ? { origin: herdr.origin } : {}) })]
     : instance.running === true ? [act('restart')] : instance.running === false ? [act('start')] : [];
   return { blocked: null, limited: null, acts: [act('inspect'), ...launch, act('stop'), act('retire')] };
+}
+
+export function openAct(instance) {
+  const { blocked, limited, acts } = instanceActs(instance);
+  if (blocked || limited) return null;
+  const restart = acts.find(({ verb }) => verb === 'restart'), start = acts.find(({ verb }) => verb === 'start');
+  if (restart?.enabled) return act('open');
+  if (start?.enabled) return act('open', { code: NOT_RUNNING, sentence: NO_LIVE_TERMINAL });
+  if (start) return act('open', start.reason);
+  return act('open', { code: STATE_UNKNOWN, sentence: NO_LIVE_TERMINAL });
 }

@@ -92,7 +92,7 @@ const SURFACE = Object.freeze({
   "lifecycle-cli.mjs": ["cliLifecycle", "lifecycleArgv"],
   "lifecycle-contract.mjs": ["LIFECYCLE_API", "MAX_LIFECYCLE_TARGETS", "planRevision", "planReference", "lifecyclePlan", "lifecycleOptions", "lifecycleChoicesApplicable",
     "lifecycleReceipt", "stoppedTargets", "spawnCompensationOf", "lifecycleReason", "lifecycleFailure", "lifecycleDetailCode"],
-  "instance-acts.mjs": ["instanceActs"],
+  "instance-acts.mjs": ["instanceActs", "openAct"],
   // Provisional: souls, inspect, spawn.
   "inspect-contract.mjs": ["inspectSupported", "inspectData", "originText", "inspectFacts"],
   "spawn-preview-cli.mjs": ["cliSpawnPreview"],
@@ -105,6 +105,10 @@ const SURFACE = Object.freeze({
   // Provisional: capabilities.
   "workspace-cli.mjs": ["cliWorkspace", "workspaceGate", "workspaceFailure", "WORKSPACE_ACTIONS"],
   "capability-show-contract.mjs": ["capabilityShowSupported", "capabilitySelector", "sameSelector", "capabilityShowData", "capabilityFileData", "listedFiles", "skillFilePath", "skillRelativePath"],
+  // Provisional: opening an agent.
+  "session-attach.mjs": ["prepareRemoteTerm", "sessionAttachArgv", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
+  "attach-exit.mjs": ["attachExit"],
+  "kernel-lines.mjs": ["kernelLines"],
 });
 /** Never importable, by anyone but the one the comment names. */
 const ENVIRONMENT = "own-environment.mjs"; // changes the environment of whoever imports it; the collector's entry does, first
@@ -445,7 +449,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 43);
+  assert.equal(Object.keys(SURFACE).length, 46);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
