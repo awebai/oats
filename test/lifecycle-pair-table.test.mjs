@@ -1,5 +1,6 @@
 // The pair table, walked (awebai/oats#866, feature `lifecycle-claim-stop`). A retire and a stop
-// apply hold the home's claim, and `oats worktree add` reads it. What each of the three answers
+// apply hold the home's claim, and `oats worktree add` reads it; a stop apply that cannot WRITE
+// its claim reads it too (awebai/oats#946), and has a column of its own. What each of them answers
 // when it ARRIVES on a home that another command is on is one table, docs/desktop-cli-api.md
 // "Commands that meet on one home" (anchor `lifecycle-pairs`), which the kernel builds from one
 // place (lib/core.mjs lifecycleClaimRefusals). The table is a contract a client reads cell by cell:
@@ -45,7 +46,7 @@ import { BEFORE_EFFECT_CODES, BUSY_HOLDERS } from "../lib/errors.mjs";
 import { processStartToken } from "../lib/worktree-hooks.mjs";
 import { CLI, git, v2Deployment } from "./helpers/v2-deployment.mjs";
 import { hostProcessState, killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
-import { startGated } from "./helpers/fs-gate-preload.mjs";
+import { runFaulted, startGated } from "./helpers/fs-gate-preload.mjs";
 import { tableAfter } from "./helpers/docs-table.mjs";
 
 const DOC = fileURLToPath(new URL("../docs/desktop-cli-api.md", import.meta.url));
@@ -73,9 +74,9 @@ function pairTable() {
   const { header, body } = tableAfter(DOC, "lifecycle-pairs");
   assert.equal(header[0], CORNER, "the first header cell of the pair table says which way it reads");
   const columns = header.slice(1).map((cell) => {
-    const m = /^`([^`]+)`$/.exec(cell);
-    assert.ok(m, `a column of the pair table is one command in backticks: ${cell}`);
-    return m[1];
+    const m = /^`([^`]+)`( [a-z ]+)?$/.exec(cell);
+    assert.ok(m, `a column of the pair table is one command in backticks, and, after it, the words for the case of it that the column is: ${cell}`);
+    return m[1] + (m[2] ?? "");
   });
   const rows = body.map(([state, ...cells]) => ({ state, cells: Object.fromEntries(cells.map((cell, n) => {
     if (cell === "not refused") return [columns[n], null];
@@ -137,11 +138,15 @@ function fixture(t) {
   const bystander = spawnChild(process.execPath, ["-e", "setInterval(() => {}, 1 << 30)"], { cwd: "/", stdio: "ignore" });
   fx.beforeCleanup(() => { bystander.kill("SIGKILL"); });
   const f = { fx, bystander: bystander.pid };
-  /** The CLI's answer to `argv`, in JSON mode, as { ok, code, doc, said }: exactly one JSON document
-   *  on stdout, exit 0 or 1, no stack. `receipt: true` admits the one answer that is no envelope, the
-   *  raw receipt of a retire that retires (docs/desktop-cli-api.md, "Not an envelope"). */
+  let faulted = 0;
+  /** The CLI's answer to `argv`, in JSON mode, as { ok, code, doc, said, stderr, fired }: exactly one
+   *  JSON document on stdout, exit 0 or 1, no stack. `receipt: true` admits the one answer that is no
+   *  envelope, the raw receipt of a retire that retires (docs/desktop-cli-api.md, "Not an envelope").
+   *  With `options.faults` (gates that throw, test/helpers/fs-gate-preload.mjs) the CLI is run with
+   *  those calls of its own failing, and `fired` names the ones it met. */
   f.answer = (argv, options, { receipt = false } = {}) => {
-    const r = fx.cli(argv, options);
+    const { faults, ...cliOptions } = options ?? {};
+    const r = faults ? runFaulted([CLI, ...argv], { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "faults", String(++faulted)), gates: faults }) : fx.cli(argv, cliOptions);
     const said = `\`oats ${argv.join(" ")}\`\n  exit status: ${r.status}${r.signal ? ` (signal ${r.signal})` : ""}\n  stdout: ${r.stdout}\n  stderr: ${r.stderr}`;
     assert.equal(r.error, undefined, `the CLI could not be run (${r.error?.message}): ${said}`);
     assert.equal(r.signal, null, `the CLI was ended by a signal: ${said}`);
@@ -149,11 +154,11 @@ function fixture(t) {
     assert.equal(hasStack(r.stderr), false, `no stack on stderr: ${said}`);
     let doc;
     try { doc = JSON.parse(r.stdout); } catch (e) { assert.fail(`stdout is not exactly one JSON document (${e.message}): ${said}`); }
-    if (receipt && doc.schemaVersion === undefined) return { ok: r.status === 0, code: "receipt", doc, said };
+    if (receipt && doc.schemaVersion === undefined) return { ok: r.status === 0, code: "receipt", doc, said, stderr: r.stderr };
     assert.equal(r.stdout.trim().split("\n").length, 1, `stdout is exactly one envelope, on one line: ${said}`);
     assert.equal(doc.schemaVersion, 1, said);
     assert.equal(r.status, doc.ok ? 0 : 1, `an ok envelope exits 0 and an error envelope exits 1: ${said}`);
-    return { ok: doc.ok, code: doc.ok ? "ok" : doc.error.code, doc, said };
+    return { ok: doc.ok, code: doc.ok ? "ok" : doc.error.code, doc, said, stderr: r.stderr, fired: r.fired };
   };
   /** The stop plan of `i` as it reads now: `--plan` takes no claim and is never refused by one. */
   f.stopPlan = (i, when) => {
@@ -302,10 +307,32 @@ const ROWS = {
 // every one of them, each on the home as the one before left it (which is as it was), and each is
 // answered with the cell's code; a cell that is not refused runs the first. `nothing` is what the
 // verb's refusals say it did not do; `verb` its key in lib/errors.mjs BEFORE_EFFECT_CODES;
-// `takesClaim` whether it takes the home's claim; `succeeded` asserts what it does when it runs.
+// `takesClaim` whether it takes the home's claim; `succeeded` asserts what it does when it runs;
+// `stop` marks the two columns of a stop apply, whose refusals carry the plan.
 
 const stopApply = (i, revision, key) => ["instance", "stop", i.name, "--apply", "--plan-revision", revision, "--idempotency-key", key, "--json"];
 const treeBranch = (i) => `agents/${i.name}-p`;
+/** What a stop apply does when it is not refused: its receipt is ok, stored under its key, and
+ *  the session there was is stopped. */
+async function stopSucceeded(f, i, a) {
+  assert.equal(a.code, "ok", `a stop apply that is not refused stops: ${a.said}`);
+  const receipt = a.doc.result;
+  assert.deepEqual({ ok: receipt.ok, replayed: receipt.replayed, results: receipt.results.map((row) => [row.instance, row.home, row.ok, row.stopped]) },
+    { ok: true, replayed: false, results: [[i.name, i.home, true, i.harness !== null]] }, `its receipt is ok, and says it stopped the session there was: ${a.said}`);
+  assert.deepEqual({ ...readJson(join(i.home, ".oats-stop-receipt.pair-now.json")), replayed: false }, { ...receipt, lifecycleKernelCodes: true }, "the receipt is stored under its key, with the one field that is the file's alone");
+  if (i.harness) await waitUntil(() => !alive(i.harness), `the harness of ${i.name} to be gone: the stop stopped it`);
+}
+/** The invocations of a stop apply: with the revision of the plan as it reads now, and (the note
+ *  under the table: a holder is answered before a stale plan) with a revision no plan has. Not
+ *  beside a scheduled self-retire, which holds no claim: there a stale plan is answered first (its
+ *  own test, below). `options` are the same for both. */
+const stopInvocations = (i, row, plan, options) => [
+  { label: "a stop apply with the revision of the plan as it reads now", argv: stopApply(i, plan.planRevision, "pair-now"), options },
+  ...(row.claim === false ? [] : [{ label: "a stop apply with a revision no plan has", argv: stopApply(i, STALE, "pair-stale"), options }]),
+];
+/** The fault of the column "that cannot write its claim": no space for the private file of the
+ *  claim of `i`, at every attempt (lib/claim.mjs takeClaim writes it first, then links it). */
+const noSpaceForClaim = (i) => [{ name: "claim", fn: "writeFileSync", prefix: `${i.lock}.tmp-`, throws: "ENOSPC", every: true }];
 const ARRIVING = {
   "oats retire": { key: "retire", verb: "retire", nothing: "nothing was done", takesClaim: true, receipt: true,
     invocations: (i) => [
@@ -319,20 +346,17 @@ const ARRIVING = {
       assert.equal(existsSync(i.home), false, "the home is removed");
       if (i.harness) await waitUntil(() => !alive(i.harness), `the harness of ${i.name} to be gone: the retire stopped its session`);
     } },
-  "oats instance stop --apply": { key: "stop", verb: "instance stop", nothing: "nothing was stopped", takesClaim: true,
-    invocations: (i, row, plan) => [
-      { label: "a stop apply with the revision of the plan as it reads now", argv: stopApply(i, plan.planRevision, "pair-now") },
-      // The same note, for a stop. Not beside a scheduled self-retire, which holds no claim: there a
-      // stale plan is answered first (its own test, below).
-      ...(row.claim === false ? [] : [{ label: "a stop apply with a revision no plan has", argv: stopApply(i, STALE, "pair-stale") }]),
-    ],
+  "oats instance stop --apply": { key: "stop", stop: true, verb: "instance stop", nothing: "nothing was stopped", takesClaim: true,
+    invocations: (i, row, plan) => stopInvocations(i, row, plan),
+    succeeded: stopSucceeded },
+  // The same command, when the write of its claim finds no space: it reads the claim where it
+  // would have taken it (awebai/oats#946). Refused, it is the stop's cell and the stop's answer;
+  // not refused, it stops, holding nothing, and says so on stderr.
+  "oats instance stop --apply that cannot write its claim": { key: "stop-unwritable", stop: true, unwritable: true, verb: "instance stop", nothing: "nothing was stopped", takesClaim: false,
+    invocations: (i, row, plan) => stopInvocations(i, row, plan, { faults: noSpaceForClaim(i) }),
     succeeded: async (f, i, a) => {
-      assert.equal(a.code, "ok", `a stop apply that is not refused stops: ${a.said}`);
-      const receipt = a.doc.result;
-      assert.deepEqual({ ok: receipt.ok, replayed: receipt.replayed, results: receipt.results.map((row) => [row.instance, row.home, row.ok, row.stopped]) },
-        { ok: true, replayed: false, results: [[i.name, i.home, true, i.harness !== null]] }, `its receipt is ok, and says it stopped the session there was: ${a.said}`);
-      assert.deepEqual({ ...readJson(join(i.home, ".oats-stop-receipt.pair-now.json")), replayed: false }, { ...receipt, lifecycleKernelCodes: true }, "the receipt is stored under its key, with the one field that is the file's alone");
-      if (i.harness) await waitUntil(() => !alive(i.harness), `the harness of ${i.name} to be gone: the stop stopped it`);
+      await stopSucceeded(f, i, a);
+      assert.equal(a.stderr, `oats: warning: ${i.name}: stopping without its claim: ${i.lock} could not be written (ENOSPC), and nobody holds it. A retire or a stop of ${i.name} that starts while this one runs will not see it.\n`, `it says, on stderr and nowhere else, that it stopped without its claim: ${a.said}`);
     } },
   "oats worktree add": { key: "tree", verb: null, nothing: "no tree was made", takesClaim: false,
     invocations: (i) => [{ label: "oats worktree add", argv: ["worktree", "add", "--purpose", "p", "--branch", treeBranch(i), "--base", "main", "--json"], options: { env: { OATS_INSTANCE_HOME: i.home } } }],
@@ -358,8 +382,8 @@ function assertRefusal(a, { state, command, code, row, column, i, on }) {
   const { message, details } = a.doc.error;
   assert.equal(typeof message, "string", where);
   assert.equal(message.includes("\n"), false, `the refusal is one line: ${where}`);
-  for (const other of Object.values(ARRIVING)) {
-    assert.equal(count(message, other.nothing), other === column ? 1 : 0, `the refusal says what ${command} did not do, in its own words (${JSON.stringify(column.nothing)}), once, and in no other verb's: ${where}`);
+  for (const nothing of new Set(Object.values(ARRIVING).map((other) => other.nothing))) {
+    assert.equal(count(message, nothing), nothing === column.nothing ? 1 : 0, `the refusal says what ${command} did not do, in its own words (${JSON.stringify(column.nothing)}), once, and in no other verb's: ${where}`);
   }
   if (column.verb) {
     // The table's own claim, "given at once and before any effect", as the kernel holds it.
@@ -371,13 +395,13 @@ function assertRefusal(a, { state, command, code, row, column, i, on }) {
   // E_LIFECYCLE_BUSY alone, `unknown` for a liveness that cannot be read, and a stop's plan.
   const busy = code === "E_LIFECYCLE_BUSY";
   const named = row.action !== undefined;
-  const plan = column.key === "stop" ? { plan: details?.plan } : {};
+  const plan = column.stop ? { plan: details?.plan } : {};
   let expected;
   if (row.claim === false) {
     // The pending marker is no claim. A retire reads it under the claim and names its completion;
     // a stop reads it in its plan; a worktree add reads that the file is there.
     expected = column.key === "retire" ? { instance: i.name, home: i.home, lock: on.lock, pid: on.pid, since: on.since, action: row.action, holder: row.holder }
-      : column.key === "stop" ? plan : undefined;
+      : column.stop ? plan : undefined;
   } else {
     expected = { instance: i.name, home: i.home, lock: on.lock,
       ...(named ? { pid: on.pid, since: on.since, action: row.action } : {}),
@@ -395,7 +419,7 @@ function assertRefusal(a, { state, command, code, row, column, i, on }) {
     assert.ok(typeof details.unknown === "string" && details.unknown.length > 0 && message.includes(details.unknown), `details.unknown is the reason the liveness cannot be read, and the message says it: ${where}`);
     assert.ok(message.includes(`pid ${on.pid}`) && message.includes(`remove ${on.lock}, then retry`), `the message names the pid to check and the way out: ${where}`);
   }
-  if (column.key === "stop") {
+  if (column.stop) {
     assert.deepEqual({ action: details.plan?.action, instance: details.plan?.instance, revision: typeof details.plan?.planRevision }, { action: "stop", instance: i.name, revision: "string" }, `a stop apply's refusal carries the plan it read: ${where}`);
   }
 }
@@ -411,7 +435,9 @@ test("the pair table of docs/desktop-cli-api.md (\"Commands that meet on one hom
   assert.deepEqual([...codes].sort(), ["E_INSTANCE_RETIRING", "E_LIFECYCLE_BUSY"], "the table's refusals are E_LIFECYCLE_BUSY and E_INSTANCE_RETIRING");
   // What the notes under the table say of whole rows and columns, read off the cells.
   const cell = (state, command) => rows.find((row) => row.state === state).cells[command];
-  assert.deepEqual(Object.values(rows.find((row) => row.state === "the holder of the claim is gone").cells), [null, null, null], "a holder that is gone refuses nothing");
+  assert.deepEqual(Object.values(rows.find((row) => row.state === "the holder of the claim is gone").cells), columns.map(() => null), "a holder that is gone refuses nothing");
+  // The note on the stop that cannot write its claim: it is answered as the stop that can, cell for cell.
+  assert.deepEqual(rows.map((row) => row.cells["oats instance stop --apply that cannot write its claim"]), rows.map((row) => row.cells["oats instance stop --apply"]), "a stop apply that cannot write its claim is answered as the stop that can, in every state");
   assert.deepEqual([cell("a stop apply is running", "oats worktree add"), cell("a stop whose liveness cannot be read holds the claim", "oats worktree add")], [null, null], "a stop does not refuse a worktree add");
 });
 
@@ -437,7 +463,7 @@ test("every cell of the pair table, through the real CLI in JSON mode: the arriv
             try {
               on.undisturbed("fixture premise");
               let plan;
-              if (column.key === "stop") {
+              if (column.stop) {
                 // `--plan` of either verb takes no claim and is never refused by one, and a stop plan
                 // reports the holder.
                 plan = f.stopPlan(i, state);
@@ -450,14 +476,23 @@ test("every cell of the pair table, through the real CLI in JSON mode: the arriv
                 const a = f.answer(invocations[0].argv, invocations[0].options, { receipt: column.receipt });
                 await column.succeeded(f, i, a);
                 // What became of the claim: a verb that takes it took it over from a holder that is
-                // gone and released it; a worktree add takes nothing, and leaves the file as it is.
+                // gone and released it; a worktree add, and a stop that cannot write its claim,
+                // take nothing, and leave the file as it is.
                 if (column.takesClaim) assert.deepEqual(f.claimFiles(i), [], "the claim of the holder that is gone was taken over, and released: no file of it is left");
                 else on.undisturbed(`after \`${command}\`, which reads the claim and takes nothing`);
+                if (column.unwritable) {
+                  assert.deepEqual(a.fired, ["claim"], `the write of the claim was reached, and failed: ${a.said}`);
+                  assert.deepEqual(f.claimFiles(i), [`${i.name}.lock`], "the dead holder's claim is left, and nothing of this stop's is beside it");
+                }
               } else {
                 for (const { label, argv, options } of invocations) {
                   const before = snapshot(f.fx.dep);
                   const a = f.answer(argv, options, { receipt: column.receipt });
                   assertRefusal(a, { state, command: label, code, row, column, i, on });
+                  if (column.unwritable) {
+                    assert.deepEqual(a.fired, ["claim"], `the write of the claim was reached, and failed: the answer is the one to a claim that cannot be written, after ${label}`);
+                    assert.equal(a.stderr, "", `a refusal warns of nothing, after ${label}`);
+                  }
                   assert.deepEqual(changes(before, snapshot(f.fx.dep)), [], `nothing happened: the home of ${i.name} and everything else in the deployment (the claims, receipts and markers beside the homes, the clone's branches and worktrees, the event logs) is byte for byte what it was, after ${label}`);
                   if (i.harness) assert.equal(alive(i.harness) && !String(hostProcessState(i.harness)).startsWith("Z"), true, `nothing was stopped: the harness of ${i.name} (pid ${i.harness}) runs as before, after ${label}`);
                   on.undisturbed(`after ${label}`);

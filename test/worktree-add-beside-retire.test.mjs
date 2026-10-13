@@ -15,8 +15,8 @@
 //   - `oats worktree remove` does not read it  → as before.
 //
 // The live retire and the live stop are the real CLI, each started as a child and HELD right after
-// the link that makes its claim file has returned (test/helpers/fs-gate-preload.mjs: a pause, and
-// nothing else): it holds the claim and has done nothing else. No outcome rests on a sleep.
+// the link that makes its claim file has returned (test/helpers/fs-gate-preload.mjs: here a pause,
+// and nothing else): it holds the claim and has done nothing else. No outcome rests on a sleep.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn as spawnChild, spawnSync } from "node:child_process";
