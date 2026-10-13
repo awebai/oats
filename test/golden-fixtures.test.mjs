@@ -235,6 +235,8 @@ const write = (path, content, mode) => {
 
 const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oats-golden-home-"));
 const BASES = [];
+/** Every deployment fixture made: ended, not only removed, when the file has ended (fx.cleanup). */
+const FIXTURES = [];
 
 /** The stub knowledge capability: a knowledge layer with a spawn hook
  *  (STATE.md + notes/ in the home), an injection block and one skill. A member
@@ -336,7 +338,7 @@ function fixture(kase) {
       agents: "# dev\n\nYou are the golden-fixture developer soul.\n\n## Operating notes\n\n- Do repository work in `./work`.\n" } },
     capabilities,
   });
-  BASES.push(fx.base);
+  FIXTURES.push(fx);
   const base = fx.base;
   const bin = join(base, "bin");
   // `claude` is never executed here: under --no-launch spawn only RESOLVES it on
@@ -604,8 +606,10 @@ function golden(caseId, name, actual) {
 if (UPDATE && !UPDATE_ARTIFACT) rmSync(GOLDEN_ROOT, { recursive: true, force: true });
 
 test.after(() => {
-  for (const b of BASES.splice(0)) rmSync(b, { recursive: true, force: true });
-  rmSync(HERMETIC_HOME, { recursive: true, force: true });
+  try { for (const fx of FIXTURES.splice(0)) fx.cleanup(); } finally {
+    for (const b of BASES.splice(0)) rmSync(b, { recursive: true, force: true });
+    rmSync(HERMETIC_HOME, { recursive: true, force: true });
+  }
 });
 
 // ---------- normalization regressions (no CLI or harness) ----------

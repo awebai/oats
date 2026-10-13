@@ -17,7 +17,8 @@ import { SESSION, alive, endServers, killServer, recordLaunch, startServer, tmux
 import { processScanAvailability } from "../lib/core.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
-const temporaryDirectories = [];
+/** The fixtures of the test that runs: ended, not only removed, when it has ended (fx.cleanup). */
+const fixtures = [];
 
 function write(path, content, options) {
   mkdirSync(dirname(path), { recursive: true });
@@ -33,7 +34,7 @@ function fixture() {
     capabilities: { "acme.undo": { manifest: { description: "undo", hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": hook } } },
     files: { "tracked.txt": "base\n" },
   });
-  temporaryDirectories.push(fx.base);
+  fixtures.push(fx);
   execFileSync("git", ["-C", fx.member, "config", "user.email", "test@example.invalid"]);
   execFileSync("git", ["-C", fx.member, "config", "user.name", "Test"]);
   return { base: fx.base, dep: fx.dep, env: fx.env };
@@ -72,7 +73,7 @@ function refused(f, { home, instance }, message) {
 
 test.afterEach(() => {
   endServers();
-  for (const dir of temporaryDirectories.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const fx of fixtures.splice(0)) fx.cleanup();
 });
 
 test("retire of a launched instance succeeds when its recorded server was killed and the socket file is gone", async (t) => {

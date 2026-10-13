@@ -7,15 +7,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import YAML from "yaml";
 import { v2Deployment, CLI } from "./helpers/v2-deployment.mjs";
 import { cliTeams, cliSoulTeams } from "../packages/client/cli-adapter.mjs";
 
 function deployment(t, { workspace = {}, localTeams } = {}) {
-  const fx = v2Deployment({ workspace: { teams: { global: { team: "global:acme.aweb.ai" } }, defaultTeam: "global", ...workspace } });
-  t.after(() => rmSync(fx.base, { recursive: true, force: true }));
+  const fx = v2Deployment({ t, workspace: { teams: { global: { team: "global:acme.aweb.ai" } }, defaultTeam: "global", ...workspace } });
   const file = join(fx.dep, "oats-local.yaml");
   if (localTeams) writeFileSync(file, YAML.stringify({ ...YAML.parse(readFileSync(file, "utf8")), teams: localTeams }, { lineWidth: 0 }));
   // The kernel runs with the fixture's isolated environment (HOME, caches, no operator identity).
