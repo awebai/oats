@@ -169,6 +169,21 @@ from whether the plan observed `work/` (`facts.work.observed`):
   a deletion that cannot be confirmed. This is for a plan that carries the
   fact: with no fact and a record that is not `worktree`, a stale choice
   keeps its warning.
+- **Current state shows nothing of `facts.work` for a tree the kernel says
+  is not the instance's.**
+  `facts.work` is an observation through any link, so for an attached
+  instance it is the state of its owner's tree, which this retire does not
+  touch. When the fact is `false` the dialog shows no row of it: no
+  "Uncommitted work", no "Branch", no sentence about the branch it was
+  spawned on. It shows no pull request row either, and makes no Git or forge
+  read for one: the row's `correlation` is null for such a plan, the one
+  place that decides it, and a row on screen leaves when a fresh plan says
+  the tree is not the instance's. When the fact is `true`, and for a plan
+  with no fact, the rows are: "Uncommitted work" when `work/` was observed
+  or the tree is the instance's own; "Branch", the drift sentence and the
+  pull request row when it was observed. So from a kernel that does not list
+  `retire-plan-own-worktree`, an attached instance shows the rows of the
+  tree its link leads to.
 - The plan's notes are not shown and not read.
 
 ## Effects are reported individually
@@ -464,8 +479,9 @@ its reason in the visible status line (`aria-describedby`).
 - **Copy.** Plain words, no timestamps and no kernel vocabulary: the plan's
   `at` is shown as an age, a session as Running / Not running / Unknown.
   Work the kernel did not observe reads "Unknown (couldn't be checked)", its
-  reason (a code such as `E_NO_WORKTREE`) only in the row's title; an instance
-  without its own worktree has no Uncommitted work row. The
+  reason (a code such as `E_NO_WORKTREE`) only in the row's title; which
+  instances have an Uncommitted work row is under
+  [Whose tree `work/` is](#whose-tree-work-is). The
   fixed sentences live in `packages/client/lifecycle-contract.mjs`, with the
   functions that choose a sentence from an answer's data (a row's kind and
   line, the sentence above a stop's rows, a refused retire's sentence, a busy

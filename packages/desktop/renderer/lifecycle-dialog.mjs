@@ -244,12 +244,17 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       for (const t of value.targets) row(t.instance, sessionText(t.session));
       for (const v of value.ambiguous) notes.push(node('p', ambiguousText(v), 'lifecycle-note'));
     } else {
-      const f = value.facts;
+      const f = value.facts, tree = treeOf(value);
       row('Session', sessionText(f.session));
       // Without a worktree of its own there is no Git work to report: the recovery line under What will happen covers it.
-      if (f.work.observed || treeOf(value).own) row('Uncommitted work', workText(f.work), f.work.observed ? '' : f.work.reason);
-      if (f.work.observed) row('Branch', f.work.detached ? 'Detached' : f.work.branch);
-      if (f.work.observed && f.work.drift) notes.push(node('p', `The worktree is on ${f.work.detached ? 'a detached commit' : f.work.branch}, not the branch it was spawned on${f.recordedBranch ? ` (${f.recordedBranch})` : ''}.`, 'lifecycle-attention'));
+      // When the kernel says the tree is not the instance's, nothing of `facts.work` is shown: it is an observation
+      // through any link, so for an attached instance it is its owner's tree, which this retire does not touch.
+      // A plan with no fact keeps the rows it had: what was observed, whoever's it is.
+      if (!tree.notOwn) {
+        if (f.work.observed || tree.own) row('Uncommitted work', workText(f.work), f.work.observed ? '' : f.work.reason);
+        if (f.work.observed) row('Branch', f.work.detached ? 'Detached' : f.work.branch);
+        if (f.work.observed && f.work.drift) notes.push(node('p', `The worktree is on ${f.work.detached ? 'a detached commit' : f.work.branch}, not the branch it was spawned on${f.recordedBranch ? ` (${f.recordedBranch})` : ''}.`, 'lifecycle-attention'));
+      }
       for (const v of f.ambiguous) { const p = node('p', ambiguousText(v), 'lifecycle-note'); p.title = v.home; notes.push(p); }
     }
     return [dl, ...notes];
@@ -270,8 +275,10 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
    * interrupted spawn created when it holds no work, so the plan's next line is the only word on branches. */
   const stays = b => b && !leftover ? ` Branch ${b} stays in the repository.` : '';
   /** What a PR row is correlated to: the observed revision and branch, and the remote's host and path. Null
-   * when the work is not observed (no PR row then). The connection account is held beside it, on the link. */
-  const correlation = value => value?.action === 'retire' && value.facts.work.observed
+   * when the work is not observed, and when the kernel says the tree is not the instance's (treeOf): no PR row
+   * then, and no Git or forge read for it. This is the one place that decides it: overlayForge reads nothing
+   * on a null, and a row on screen leaves at the swap. The connection account is held beside it, on the link. */
+  const correlation = value => value?.action === 'retire' && value.facts.work.observed && !treeOf(value).notOwn
     ? JSON.stringify([value.facts.work.revision, value.facts.work.branch, value.facts.work.remote?.host ?? null, value.facts.work.remote?.path ?? null]) : null;
   /** The PR row's link, or null: { anchor, url, account, key }. Its click reads this record, never the read
    * that drew it, so a link kept across a plan swap stays live exactly while its correlation and account hold. */

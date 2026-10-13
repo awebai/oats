@@ -29,3 +29,13 @@
   server is read by its host's features, not this computer's. From a kernel
   that does not list the word every sentence stays as before, from the
   record. See [Whose tree `work/` is](../../packages/desktop/docs/desktop-lifecycle-confirmations.md#whose-tree-work-is).
+
+- **Desktop: the Retire dialog no longer shows another instance's tree as
+  the one being retired.** When the plan says the tree at `work/` is not the
+  instance's own (an attached, a checkout or a workspace instance; a link or
+  a directory of the home under a record that says `worktree`), Current
+  state shows no "Uncommitted work", no "Branch", no sentence about the
+  branch it was spawned on and no "Pull request" row, and the dialog makes
+  no Git or forge read for one. Those rows described the tree the link leads
+  to, which the retire does not touch. From a kernel that does not list
+  `retire-plan-own-worktree` these rows stay as before.
