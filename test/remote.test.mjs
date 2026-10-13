@@ -530,7 +530,7 @@ test("M2: the fetch url is the form written — an ssh ref is fetched over ssh, 
 
   const sshRef = "git@example.invalid:org/repo.git";
   const e1 = await caughtAsync(observeRemote(sshRef, { cacheDir, exec }));
-  assert.equal(e1.code, "E_REMOTE_UNREADABLE"); assert.equal(e1.details.url, sshRef, "the error names the ssh url as written");
+  assert.equal(e1.code, "E_REMOTE_UNREADABLE"); assert.equal(e1.details.url, "ssh://example.invalid/org/repo.git", "the diagnostic removes the SSH user while preserving the host");
   assert.deepEqual(urlOf("ls-remote"), [sshRef], "ls-remote asked the SSH url, not an https rewrite");
   await caughtAsync(observeRemote(sshRef, { cacheDir, exec, at: oid }));
   assert.deepEqual(urlOf("fetch"), [sshRef], "fetch asked the SSH url too");

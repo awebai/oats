@@ -86,7 +86,7 @@ and the rules its tests pin.
 
 | module | owns |
 |---|---|
-| `remote.mjs` | repo refs, reading Git remotes, content digests |
+| `remote.mjs` | repo refs, reading Git remotes, content digests; `redactUrl` owns [reference display construction and withholding](workspaces.md#repository-references-in-diagnostics). Selected original refused references first use the contract's bounded plain-value rule; other values supply only validated scheme/SCP, host, supported port and path components, or are withheld whole. Raw host/path fragments inherit plain eligibility only from the original selected source, never from the fragment alone; nonplain originals cannot use that exception. Plain-reference recognition is not a secret detector: credential-like text within the permitted alphabet stays visible. Display recognition shares the parser's character rules without calling its error path, and never changes admission or transport. Explicit pinned-source context retains only a constructed reference plus a validated 40-hex commit, remains idempotent, and has no plain fallback; the default context does not infer pins. Each rejection boundary explicitly names its rejected-input fields; the seven selected argument fields use the same bounded plain-value predicate through the renderer, including spaces and colons and without trimming or decoding, never a global field-name rule. Rejected-input messages quote the rendered fields through a formatter at that boundary, so rejected words cannot replace identical words in the fixed reason. Valid operational values are untouched. Refusal context owns the explanation once; forwarding preserves it. `scrubGitLine` delegates the linked whole-Git-line disclosure rule to the renderer before control/length formatting: only proven unchanged original operation refs plus an original line without `@` permit disclosure; all other lines become the fixed notice, with no substring recovery. Construction tests audit raw Git error-text access and quoting routes; generated invariants cover selected diagnostic routes |
 | `local-inputs.mjs` | the local configuration a command read, for `observation.localRevision` |
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
@@ -332,9 +332,17 @@ A failed git call is classified from what it shows (`classifyRemoteFailure`):
 our own timer's kill is `timeout`, another signal `killed`, a failed write of
 the cache `cache`, and otherwise git's text decides, read without the object
 ids it names. A text that shows nothing the kernel recognises is `unknown`,
-never `network`, and the message of an `unknown` failure carries git's own
-line through one scrub (`scrubGitLine`): one line, bounded, with no control
-character and no URL's user information.
+never `network`. `gitLastLine` reads only stderr for an `unknown` failure:
+empty or whitespace-only stderr supplies no line; an output overflow without
+a stderr line supplies a kernel-owned budget notice. It does not substitute an error message; other
+routes' existing error-message fallbacks are unchanged. A stderr line passes
+through `scrubGitLine`, which delegates the
+[whole-line disclosure rule](workspaces.md#repository-references-in-diagnostics)
+to the renderer with the original line and original operation references before
+formatting.
+When disclosure is not proved safe, it returns the contract's fixed Git notice;
+it does not try to recover a safe fragment. Classification and kernel-owned
+reason text do not depend on whether Git's words can be shown.
 
 Every write to a cache repo (its `git init`, config, fetches and pins) holds
 the repo's cross-process write lock, `<cache>/.locks/<repo>.lock`

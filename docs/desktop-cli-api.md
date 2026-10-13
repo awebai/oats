@@ -680,10 +680,17 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   not resolve, a connection refused, reset or closed, a transport that could
   not reach the remote). A failure whose text shows nothing the kernel
   recognises is `unknown` (0.53.0; it read `network` before), and its message
-  then ends with Git's own last line: `cannot read remote <url> (unknown):
-  <line>`. The line is one line of at most 300 characters, with control
-  characters and the user information of any URL removed; when Git said
-  nothing, the message ends at `(unknown)`.
+  then ends with a last-line diagnostic: `cannot read remote <url> (unknown):
+  <line>`. Git's words are shown only under the
+  [whole-line disclosure rule](workspaces.md#repository-references-in-diagnostics);
+  otherwise `<line>` is the contract's fixed Git notice. Permitted text remains
+  one line of at most 300 characters with control characters removed. This
+  supersedes the earlier rule that a scrubbed Git line was always shown.
+  Only stderr supplies this last-line diagnostic. Empty or whitespace-only
+  stderr leaves the message at `(unknown)`, without an error-message fallback;
+  an output overflow without a stderr line uses a kernel-owned budget notice. Other diagnostic routes'
+  existing error-message fallbacks retain the same original-operation context
+  and disclosure rule.
   `cache` (OATS 0.33.0) is local: the
   remote cache on this machine could not be written (a git lock still held,
   another oats process still writing it, or a lock file one left when it
@@ -694,7 +701,10 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   `status` / `workspace status`, the Desktop keeps the `message` (shown as
   given) and only a bounded cause: `details.reason` (matching
   `^[a-z][a-z-]{0,31}$`) and the host of `details.url`. No path, pid, lock,
-  `cacheDir` or other detail field crosses to the renderer. It keys only on
+  `cacheDir` or other detail field crosses to the renderer. `details.url` is a
+  display value under the [repository diagnostic contract](workspaces.md#repository-references-in-diagnostics),
+  so it may withhold the reference and supply no host; it is not a transport URL.
+  It keys only on
   `code` + `details.reason`: `cache` words the roster "OATS cache
   problem" with the message in full; `network` / `timeout` read "Couldn't
   reach <host>"; any other reason, `unknown` among them, keeps the generic
@@ -936,8 +946,10 @@ the table, in the same order as JSON: discovery problems, then unmatched
 `souls.launch` keys for `oats souls`. The line is `! <code>: <message>`,
 preserving the kernel code and message. A row with an owner (`repoKey`,
 `package` or `source`) adds ` [<where>]`: its existing `path`, preceded by
-`repoKey: ` or `package: ` when present. A source-owned row uses its path
-only; the source reference is never printed in the bracket. Context uses
+`repoKey: ` or `package: ` when present. A source-owned row shows its diagnostic
+source display followed by its path; the source uses the shared
+[repository-reference display policy](workspaces.md#repository-references-in-diagnostics)
+and may be withheld as a whole. Operational external sources remain exact. Context uses
 the kernel's terminal text escaping. Ownerless rows, including unmatched
 launch keys, have no bracket. Partial listings still exit 0; JSON success
 semantics and fatal refusals are unchanged. A problem does not necessarily

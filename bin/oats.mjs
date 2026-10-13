@@ -2282,11 +2282,11 @@ async function itemsCmd(kind) {
   for (const p of problems) console.log(`\n${catalogProblemLine(p)}`);
 }
 
-/** Owner fields decide context, never the message text. External sources are not display-safe
- *  repository references: their existing path identifies the external declaration instead. */
+/** Owner fields decide context, never message text. A problem source is display data;
+ * render that projection without changing the operational external source. */
 function catalogProblemLine(p) {
-  const owner = p.repoKey || p.package;
-  const where = owner || p.source ? ` [${terminalText(owner ? `${owner}: ${p.path}` : p.path)}]` : "";
+  const owner = p.repoKey || p.package || (p.source ? remoteModule.redactUrl(p.source, null, { pinned: true }) : null);
+  const where = owner ? ` [${terminalText(`${owner}: ${p.path}`)}]` : "";
   return `! ${p.code}: ${p.message}${where}`;
 }
 

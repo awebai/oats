@@ -1107,7 +1107,7 @@ test("a commit's fetch that fails for a reason the kernel names is made once: no
   // Nor is a read the command gave up: it shows nothing the kernel classifies, and is still not asked again.
   const aborted = commitFetches(f.commit, () => Object.assign(new Error("The operation was aborted"), { name: "AbortError", code: "ABORT_ERR", overflowed: false, timedOut: false }));
   const e = await refusedRead(observeRemote(f.bare, { cacheDir: join(f.base, "cache-aborted"), at: f.commit, exec: aborted.exec }));
-  assert.deepEqual([e.details.reason, aborted.fetches.length, e.message], ["unknown", 1, `cannot read remote ${f.bare} (unknown): The operation was aborted`]);
+  assert.deepEqual([e.details.reason, aborted.fetches.length, e.message], ["unknown", 1, `cannot read remote ${f.bare} (unknown)`]);
 });
 
 test("a commit's fetch the kernel cannot classify gets its second attempt, whatever an object id in git's words spells; a second failure is the answer (#1059)", async () => {
@@ -1150,35 +1150,38 @@ test("what git could not explain is unknown, with git's last line scrubbed; netw
     "kex_exchange_identification: Connection closed by remote host", "fetch-pack: unexpected disconnect while reading sideband packet", "fatal: the remote end hung up unexpectedly", "fatal: early EOF",
     "ssh: connect to host h port 22: Network is unreachable", "error: RPC failed; curl 56 Recv failure: Connection reset by peer",
   ]) assert.equal(classifyRemoteFailure(gitError(`${text}\n`)), "network", text);
-  // The scrub: one line, bounded, no control character, no url's user information; the fetch url's wherever it appears.
-  assert.equal(scrubGitLine("fatal: unable to access 'https://x-access-token:ghp_secret@example.com/org/repo.git/': \tbad\x1b[31m thing\x07"),
-    "fatal: unable to access 'https://example.com/org/repo.git/': bad thing");
-  assert.equal(scrubGitLine("ssh://bot:s3cr%40t@example.com/org/repo refused s3cr@t (bot:s3cr%40t), also s3cr%40t", "ssh://bot:s3cr%40t@example.com/org/repo"), "ssh://example.com/org/repo refused (), also");
-  assert.equal(scrubGitLine("git@example.com:org/repo.git: a user name alone is no secret", "git@example.com:org/repo.git"), "git@example.com:org/repo.git: a user name alone is no secret");
-  assert.equal(scrubGitLine("bot is not allowed here", "ssh://bot@example.com/org/repo"), "bot is not allowed here", "nor is the user of an ssh url");
-  // On http(s) the user information is a secret whether or not it holds a colon (a bare token), each part of it, as written and decoded.
-  assert.equal(scrubGitLine("remote: tok%5Fbare was refused (tok_bare)", "https://tok%5Fbare@example.com/org/repo"), "remote: was refused ()");
-  assert.equal(scrubGitLine("remote: tok_user was refused with x-oauth-basic, and tok_user:x-oauth-basic too", "https://tok_user:x-oauth-basic@example.com/org/repo"), "remote: was refused with , and too");
-  assert.equal(scrubGitLine("remote: TOK_UPPER was refused", "HTTP://TOK_UPPER@example.com/org/repo"), "remote: was refused");
-  assert.equal(scrubGitLine(" \x00‮\t "), "");
-  const long = scrubGitLine(`fatal: ${"x".repeat(5000)}`);
+  // Git prose is one disclosure decision, never a partially recovered sentence.
+  const notice = "Git's diagnostic was withheld; run the same Git operation by hand to see Git's own words.";
+  const safe = "https://example.com/org/repo";
+  for (const [line, source] of [
+    ["fatal: unable to access 'https://x-access-token:ghp_secret@example.com/org/repo.git/': bad thing", undefined],
+    ["ssh://bot:s3cr%40t@example.com/org/repo refused s3cr@t (bot:s3cr%40t)", "ssh://bot:s3cr%40t@example.com/org/repo"],
+    ["git@example.com:org/repo.git: a user name alone is no secret", "git@example.com:org/repo.git"],
+    ["bot is not allowed here", "ssh://bot@example.com/org/repo"],
+    ["remote: tok%5Fbare was refused (tok_bare)", "https://tok%5Fbare@example.com/org/repo"],
+    ["remote: tok_user was refused with x-oauth-basic", "https://tok_user:x-oauth-basic@example.com/org/repo"],
+    ["remote: TOK_UPPER was refused", "HTTP://TOK_UPPER@example.com/org/repo"],
+  ]) assert.equal(scrubGitLine(line, source), notice);
+  assert.equal(scrubGitLine(" \x00‮\t ", safe), "");
+  assert.equal(scrubGitLine("ssh: bad\tthing\x1b[31m\x07", safe), "ssh: bad thing");
+  const long = scrubGitLine(`fatal: ${"x".repeat(5000)}`, safe);
   assert.deepEqual([[...long].length, long.endsWith("…")], [GIT_LINE_MAX, true]);
   // Through a read: the message ends with git's last line, and a credential of the url is in neither.
   const url = "ssh://bot:s3cret@example.com/org/repo";
   const said = (stderr) => refusedRead(observeRemote(url, { cacheDir: join(scratch(), "cache"), exec: async (args) => { if (args.includes("ls-remote")) throw gitError(stderr); return runGit(args); } }));
   const e = await said(`warning: redirecting\nfatal: '${url}' is being difficult: s3cret\n`);
-  assert.deepEqual(e.details, { url, key: "example.com/org/repo", reason: "unknown", at: null }, "no field added; the url is as written");
+  assert.deepEqual(e.details, { url: "ssh://example.com/org/repo", key: "example.com/org/repo", reason: "unknown", at: null }, "no field added; the url has no user information");
   // The message prints the url as the cache's messages do, without its user information (redactUrl).
-  assert.equal(e.message, "cannot read remote ssh://example.com/org/repo (unknown): fatal: 'ssh://example.com/org/repo' is being difficult:");
+  assert.equal(e.message, `cannot read remote ssh://example.com/org/repo (unknown): ${notice}`);
   assert.ok(!e.message.includes("s3cret"));
-  assert.equal((await said("")).message, "cannot read remote ssh://example.com/org/repo (unknown)", "with nothing said, the message ends at the reason");
-  assert.equal((await said("\x1b[0m\n \n")).message, "cannot read remote ssh://example.com/org/repo (unknown)");
+  assert.equal((await said("")).message, "cannot read remote ssh://example.com/org/repo (unknown)", "no stderr means no Git line, even when Node supplies error.message");
+  assert.equal((await said("\x1b[0m\n \n")).message, `cannot read remote ssh://example.com/org/repo (unknown): ${notice}`, "control removal cannot bypass the original-reference decision");
   // A reason the kernel names: the same url, and no line of git's.
   const named = await said(`fatal: unable to access '${url}/': Could not resolve host: example.com\n`);
-  assert.deepEqual([named.details.reason, named.details.url, named.message], ["network", url, "cannot read remote ssh://example.com/org/repo (network)"]);
-  // The user of an ssh url is no secret, and the message still prints the url without it: one function says how.
+  assert.deepEqual([named.details.reason, named.details.url, named.message], ["network", "ssh://example.com/org/repo", "cannot read remote ssh://example.com/org/repo (network)"]);
+  // Rebuilding even ordinary SSH userinfo withholds the whole Git line; its safe URL stays.
   const plain = await refusedRead(observeRemote("ssh://bot@example.com/org/repo", { cacheDir: join(scratch(), "cache"), exec: async (args) => { if (args.includes("ls-remote")) throw gitError("fatal: bot was refused\n"); return runGit(args); } }));
-  assert.deepEqual([plain.details.url, plain.message], ["ssh://bot@example.com/org/repo", "cannot read remote ssh://example.com/org/repo (unknown): fatal: bot was refused"]);
+  assert.deepEqual([plain.details.url, plain.message], ["ssh://example.com/org/repo", `cannot read remote ssh://example.com/org/repo (unknown): ${notice}`]);
   // A token as the user of an http(s) url never reaches a read: such a url is no repository reference, so no
   // read's message is built over one. The scrub above is what holds for git's line, whatever url it is handed.
   for (const ref of ["https://tok_bare0secret@example.com/org/repo", "https://bot:s3cret@example.com/org/repo.git", "http://tok_bare0secret@example.com/org/repo"]) {

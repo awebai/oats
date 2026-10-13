@@ -62,6 +62,9 @@ symlink enters as `symlink:<target>`; empty directories and a top-level `.git/` 
   The cache may be wiped at any time. Operations on one cache repo are serialized.
 - Failures: `E_REMOTE_UNREADABLE { url, key, reason }`, `reason` ∈ `auth`, `not-found`, `network`,
   `timeout`, `unknown`. Nothing half-succeeds.
+- Reference-bearing diagnostics use `redactUrl`, including parser refusals, package and
+  workspace validation errors, and quoted Git text; the [display rule](../workspaces.md#repository-references-in-diagnostics)
+  removes user information without changing the reference used for transport.
 
 ---
 
