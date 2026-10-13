@@ -9,6 +9,12 @@
 // preference removed: host, at null); then, in a second deployment of the same helper, default-team-changed
 // (spawn, then `oats teams default` moves the deployment's default). PATH is hermetic: the
 // helper's inert harness stubs + node + /usr/bin:/bin (no host harness leaks in).
+//
+// The committed capture is from the kernel at main 69d76a91 (`oats version` 0.29.4, the tree with #290, whose
+// launch preferences shipped in 0.30). Every kernel text in it (a refusal's message, a problem's fix) is that
+// kernel's wording. The fixtures are not refreshed when a later kernel rewords a text: to the Desktop a
+// fixture's text is any text, and a test that passed only with today's words would be parsing them. The
+// kernel's present answers are read live by the root tests (test/desktop-*-kernel.test.mjs).
 // Usage: OUT=out-launch CAPTURE_COMMIT=<oid> node capture-launch.mjs <kernel-tree>
 import { mkdirSync, writeFileSync, rmSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";

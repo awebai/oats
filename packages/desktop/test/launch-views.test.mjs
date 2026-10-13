@@ -179,7 +179,8 @@ test('spawn dialog: a missing harness is said as the kernel words it, with its f
   assert.equal(p.detail, 'E_HARNESS_UNAVAILABLE · harness codex is not installed on this machine.');
   assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed' }).text, 'harness codex is not installed', 'no fix sent: the message alone');
   assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed', details: { fix: 'x' } }).text, 'harness codex is not installed', 'details.fix never reaches the renderer: not read');
-  // The REAL kernel's message already ends with its fix (fixtures/launch-preference): said once, verbatim.
+  // The REAL kernel's message already ends with its fix (fixtures/launch-preference, captured from 0.29.4 at
+  // main 69d76a91: that kernel's wording, not a later one's): said once, verbatim.
   const real = JSON.parse(readFileSync(new URL('./fixtures/launch-preference/preview-dev-unavailable.json', import.meta.url), 'utf8')).error;
   assert.equal(spawnProblem({ code: real.code, message: real.message, fix: real.details.fix }).text, real.message);
   assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE' }).text, 'The harness this soul would run isn’t installed on this machine. Install it, or pick another harness above.');

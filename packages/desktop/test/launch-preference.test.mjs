@@ -2,6 +2,9 @@
 // launch preferences"). The REAL kernel's documents (fixtures/launch-preference, main with #290:
 // every from layer, a drift, a missing harness) are the ground truth below; the shape-edge cases are
 // DERIVED scenarios (marked): the contract's Launch example on a real 0.30 capture.
+// The capture is from `oats version` 0.29.4 at main 69d76a91 (fixtures/launch-preference/provenance.json): a
+// kernel text read from it below (a problem's fix, a refusal's message) is that kernel's wording, not a later
+// one's, and the fixtures are not refreshed to follow the kernel's words.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -106,7 +109,7 @@ test('readiness launch-changed (--home; derived on the real instance readiness c
   assert.ok(readinessData(data(instanceTarget), instanceTarget).checks.configured.items.every(i => !Object.hasOwn(i, 'recorded') && !Object.hasOwn(i, 'from')), 'no keys invented');
 });
 
-// ── The REAL kernel (fixtures/launch-preference/provenance.json) ──
+// ── The REAL kernel, as captured from 0.29.4 at main 69d76a91 (fixtures/launch-preference/provenance.json) ──
 const real = name => JSON.parse(readFileSync(new URL(`./fixtures/launch-preference/${name}.json`, import.meta.url), 'utf8'));
 const LP = '/fixture/base/deployment';
 

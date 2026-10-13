@@ -1,5 +1,7 @@
 // Import the launch-preference capture (capture-launch.mjs): the REAL kernel (provenance.json kernelTree,
 // with #290) on its own test helper's deployment: every launch `from` layer, a drift, a missing harness.
+// The committed fixtures are that capture, from `oats version` 0.29.4 at main 69d76a91: their kernel texts
+// are that kernel's wording and are not refreshed to follow a later one (capture-launch.mjs says why).
 // NEVER runs a CLI itself. <base>/<oats> placeholders become absolute fixture paths.
 // Usage: node import-capture.mjs CAPTURE_OUT_DIR
 import { readFileSync, writeFileSync } from 'node:fs';
