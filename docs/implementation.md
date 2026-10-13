@@ -359,6 +359,12 @@ file and when it is safe to remove; so is any other local write failure
 (a `FETCH_HEAD` git cannot open, a read-only or full disk), with git's own
 words.
 
+Nothing but the kernel runs git in a cache entry. What an entry is
+(partial, with no url, pinned by its own refs, no blob fetched lazily)
+holds only through the kernel's own commands, and a git command named for a
+read still writes there: a `git fetch --dry-run` writes the objects it
+receives, and takes no write lock.
+
 Across commands, `memoAtCommit` keeps parsed reads under
 `<cache>/.parsed/<kernel fingerprint>/`, keyed by (repo key, full commit,
 item). The items: `workspace` (the workspace file), `membership` (a member's
