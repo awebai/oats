@@ -20,10 +20,12 @@ import process from "node:process";
 import { RecordStore } from "../lib/store.mjs";
 import { captureAllSessions, captureSessions } from "../lib/capture-cc.mjs";
 import { sessionsForHome } from "../lib/sessions-for-home.mjs";
-import { jsonlLines, SESSION_FORMATS } from "../lib/formats.mjs";
+import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { cwdOfLine } from "../lib/sessions-for-home.mjs";
-import { digest, readRange } from "../lib/session-snapshot.mjs";
+import { stageSnapshot } from "../lib/session-snapshot.mjs";
+import { bufferLines } from "../lib/file-lines.mjs";
 import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
+import { withReceiptSummaries } from "../lib/receipt-summary.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
@@ -335,12 +337,6 @@ function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, is
   });
 }
 
-/** A stream's turns that no tombstone hides. A tombstoned turn is hidden everywhere; a boundary naming one
- *  would be refused by recall, so boundaries come from the visible turns only. */
-function visibleTurns(recordStore, stream, claims = recordStore.tombstoneClaims()) {
-  return recordStore.readStream(stream).filter((t) => !recordStore.claimHides(claims, t));
-}
-
 /** The outcome vocabulary: complete only with no failure, skip, hold or incomplete tail (and, for --home, no
  *  unattributed source). */
 function statusOf(outcome, unattributed = 0) {
@@ -366,21 +362,18 @@ function isFormat(found, stated) {
 /** Records (non-blank lines, an undecodable one included) and the formats whose session header a COMPLETE
  *  line carries. A pi or codex file is settled at its header; a cc file is judged whole. A line its writer
  *  never terminated is no header. */
-function sessionHeaders(bytes, stated) {
+function sessionHeaders(chunks, stated) {
   let records = 0;
   const found = new Set();
-  const terminated = bytes.length > 0 && bytes[bytes.length - 1] === 10;
-  const take = (text, complete) => {
+  for (const line of bufferLines(chunks)) {
+    const complete = line[line.length - 1] === 10;
+    let text = null;
+    try { text = (complete ? line.subarray(0, -1) : line).toString("utf8"); }
+    catch (err) { if (err.code !== "ERR_STRING_TOO_LONG") throw err; }
     if (text === null || text.trim() !== "") records++;
     if (complete && text !== null) for (const source of HEADER_ORDER) if (cwdOfLine(source, text) !== undefined) found.add(source);
-  };
-  let pending;
-  for (const { text } of jsonlLines(bytes)) {
-    if (pending !== undefined) take(pending, true);
-    if (stated !== "cc" && found.has(stated)) return { records, found };
-    pending = text;
+    if (stated !== "cc" && found.has(stated)) break;
   }
-  if (pending !== undefined) take(pending, terminated);
   return { records, found };
 }
 
@@ -430,17 +423,18 @@ function fileCapture() {
     if (err.code === "ELOOP" || err.code === "EMLINK") return fail("E_NOT_REGULAR_FILE", `${path} is a symbolic link; pass the file it names`, where);
     return fail("E_FILE_UNREADABLE", `cannot open ${path}: ${err.message}`, where);
   }
-  let stat, bytes;
+  let stat, pinned;
   try {
     stat = fstatSync(fd);
     if (!stat.isFile()) return fail("E_NOT_REGULAR_FILE", `${path} is ${fileKind(stat)}, not a regular file`, where);
-    bytes = readRange(fd, 0, stat.size, path);
+    pinned = stageSnapshot(fd, stat, path);
   } catch (err) {
     return fail("E_FILE_UNREADABLE", `cannot read ${path}: ${err.message}`, where);
   } finally { closeSync(fd); }
 
-  const { records, found } = sessionHeaders(bytes, args.format);
-  if (!records) return fail("E_NO_TURNS", `${path} has no records${bytes.length ? " (only blank lines)" : " (it is empty)"}`, where);
+  try {
+  const { records, found } = sessionHeaders(pinned.chunks(), args.format);
+  if (!records) return fail("E_NO_TURNS", `${path} has no records${stat.size ? " (only blank lines)" : " (it is empty)"}`, where);
   if (!isFormat(found, args.format)) {
     const other = HEADER_ORDER.find((f) => f !== args.format && isFormat(found, f));
     return fail("E_FORMAT", other
@@ -448,12 +442,12 @@ function fileCapture() {
       : `${path} has no ${args.format} session header (${SESSION_HEADER[args.format]})`, where);
   }
 
-  const sha256 = digest(bytes);
+  const sha256 = pinned.hash;
   const fileStore = new RecordStore(root, { owner: fileOwner });
   const outcome = { appended: 0, skipped: false, held: 0, incomplete: 0, failed: 0, ignored: 0 };
   const issues = [];
   try {
-    Object.assign(outcome, captureUnderLock(fileStore, fileOwner, [[args.format, [{ path, pinned: { bytes, stat } }]]], ignore, outcome, issues));
+    Object.assign(outcome, captureUnderLock(fileStore, fileOwner, [[args.format, [{ path, pinned }]]], ignore, outcome, issues));
   } catch (err) {
     // A failed pass may have appended part of the file: never claim a count for it.
     return fail("E_CAPTURE_FAILED", err.message || String(err), { ...where, sha256, appended: null });
@@ -461,17 +455,18 @@ function fileCapture() {
   if (process.exitCode) return fail("E_CAPTURE_FAILED", "capture lock release failed; see stderr for recovery", { ...where, sha256 });
 
   const stream = `${fileOwner}~${fmt.source}.${sessionId}`;
-  const turns = visibleTurns(fileStore, stream);
+  const turns = withReceiptSummaries(fileStore, summary => summary(stream));
   const status = statusOf(outcome);
   const { lock: _lock, ...counts } = outcome;
   const receipt = {
     ...where, instance, thread: `${fmt.source}:session:${sessionId}`, stream, sessionId,
-    turns: turns.length, firstTurnId: turns[0]?.id ?? null, lastTurnId: turns.at(-1)?.id ?? null,
+    turns: turns.count, firstTurnId: turns.first?.id ?? null, lastTurnId: turns.last?.id ?? null,
     ...counts, status, complete: status === "complete", sha256, ...(issues.length ? { issues } : {}),
   };
   if (json) console.log(JSON.stringify(receipt, null, 2));
   else console.log(`capture --file: ${status}, ${receipt.turns} turns (${outcome.appended} new) in ${stream}, sha256 ${sha256}`);
   return 0;
+  } finally { pinned.close(); }
 }
 
 if (args.file !== undefined || args.format !== undefined || args.json) process.exit(fileCapture());
@@ -535,11 +530,11 @@ if (args.home) {
       formats.get(s.source).push(s);
     }
     Object.assign(outcome, captureUnderLock(store, owner, formats, ignore, outcome, issues));
-    const claims = store.tombstoneClaims();
+    withReceiptSummaries(store, summary => {
     for (const s of found) {
       const stream = `${owner}~${s.source}.${s.sessionId}`;
-      const turns = visibleTurns(store, stream, claims);
-      if (!turns.length) continue; // ignored by rule, nothing capturable yet, or all hidden
+      const turns = summary(stream);
+      if (!turns.count) continue; // ignored by rule, nothing capturable yet, or all hidden
       sessions.push({
         thread: s.thread,
         source: s.source,
@@ -547,12 +542,13 @@ if (args.home) {
         path: s.path,
         cwd: s.cwd,
         stream,
-        turns: turns.length,
-        firstTurnId: turns[0].id,
-        lastTurnId: turns[turns.length - 1].id,
-        lastTs: turns[turns.length - 1].ts,
+        turns: turns.count,
+        firstTurnId: turns.first.id,
+        lastTurnId: turns.last.id,
+        lastTs: turns.last.ts,
       });
     }
+    });
   } catch (err) {
     error = err.message || String(err);
     console.error(`capture pass failed: ${error}`);

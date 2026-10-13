@@ -101,6 +101,19 @@ their shape, quoted or not, and replaces their command; a command it cannot
 read as its own is left alone and a new hook is added beside it.
 Stream owner: `--owner`, else `$TURN_RECORD_OWNER`, else the short hostname.
 
+Transcript capture reads 64 KiB chunks and frames complete native records,
+including UTF-8 characters split across chunks. It appends batches of at most
+8 MiB of source bytes plus the last record and checkpoints after each batch.
+One very large native record can still require memory proportional to that
+record; capture does not impose a new record-size policy.
+Final, attributed and protected Pi capture stage the descriptor's snapshot on
+private temporary disk before the first append, preserving attribution and
+custody checks without keeping the source in memory. Staging is removed on
+success or failure. Exact `--file` capture uses the same staging, and receipt
+counts/boundaries stream the journals with disk-backed tombstone lookup.
+Explicit final proofs may read the full snapshot; their output inventories
+remain proportional to the issues and sessions the receipt must return.
+
 ## Ignoring sessions and paths (privacy)
 
 `<root>/ignore` is a plain text file of glob patterns, one per line (blank

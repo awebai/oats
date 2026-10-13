@@ -27,9 +27,9 @@ import { basename, dirname, join } from "node:path";
 import { finishTurn } from "./canonical.mjs";
 import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
 import { loadIgnore } from "./ignore.mjs";
-import { assertIdentity, assertProtectedDescriptor, digest, identity, readRange, verifySnapshot } from "./session-snapshot.mjs";
+import { assertIdentity, assertProtectedDescriptor, digest, identity, sourceChunks, stageSnapshot, verifySnapshot } from "./session-snapshot.mjs";
 import { guardCapturedPath } from "./native-history.mjs";
-import { fileChunks } from "./file-lines.mjs";
+import { bufferLines, fileChunks } from "./file-lines.mjs";
 import { isDeepStrictEqual } from "node:util";
 
 export const SESSION_STREAM_SOURCE = "cc";
@@ -164,10 +164,10 @@ function lastJournalTurn(store, streamId) {
 // Both are read in bounded memory: the journal's last turn from its tail, the
 // source's lines counted chunk by chunk (awebai/oats#456).
 // `last` is the journal's last turn (lastJournalTurn), null when it has none.
-function offsetFromJournal(last, sourcePath, final, sourceBytes) {
+function offsetFromJournal(last, sourcePath, final, chunks) {
   if (!last) return { bytes: 0, line: 0, lastTs: "" };
   const lastLine = last.provenance?.origin?.line ?? 0;
-  const { line, offset } = sourceBytes ? lineOffset([sourceBytes], lastLine) : lineOffsetOfFile(sourcePath, lastLine);
+  const { line, offset } = chunks ? lineOffset(chunks(), lastLine) : lineOffsetOfFile(sourcePath, lastLine);
   if (final && line < lastLine) throw new Error(`session source is shorter than its captured journal: ${sourcePath}`);
   return { bytes: offset, line, lastTs: last.ts ?? "" };
 }
@@ -201,19 +201,18 @@ function lineOffsetOfFile(path, lastLine) {
 // transcript at once, whatever its size.
 const FLUSH_BYTES = 8 * 1024 * 1024;
 
-// The COMPLETE lines of `chunk`, one at a time, with their stamps:
+// The COMPLETE lines of `chunks`, one at a time, with their stamps:
 // { text, ts, bytes }. `walk` records where the walk ended (`scanned`, bytes)
 // and why it stopped early (`reason`): a torn tail, invalid UTF-8 (decoding
 // replacement characters would change both the verbatim line and its byte
 // offset, possibly treating a later fragment as a record) or a line beyond
 // V8's string limit.
-function* completeLines(chunk, walk) {
+function* completeLines(chunks, walk) {
   let scanned = 0;
   walk.scanned = 0;
-  while (scanned < chunk.length) {
-    const nl = chunk.indexOf(10, scanned);
-    if (nl === -1) { walk.reason = "torn-tail"; return; }
-    const bytes = chunk.subarray(scanned, nl);
+  for (const line of bufferLines(chunks)) {
+    if (line[line.length - 1] !== 10) { walk.reason = "torn-tail"; return; }
+    const bytes = line.subarray(0, -1);
     if (!isUtf8(bytes)) { walk.reason = "invalid-utf8"; return; }
     let text;
     try { text = bytes.toString("utf8"); }
@@ -222,7 +221,7 @@ function* completeLines(chunk, walk) {
       walk.reason = "oversized-line";
       return;
     }
-    const lineBytes = nl - scanned + 1;
+    const lineBytes = line.length;
     let ts = "";
     if (text.trim() !== "") {
       try {
@@ -240,7 +239,7 @@ function* completeLines(chunk, walk) {
 
 // One reconciliation pass for one format: one turn per NEW complete line
 // of every session file under `roots`. Unstamped leading lines are held
-// until the file shows its first timestamp (then they carry it forward),
+// until the file shows its first timestamp (then they carry it backward),
 // so every turn is stamped and ts stays a pure function of the source.
 // `files` accepts discovery entries (including their attribution snapshot) or
 // explicit paths for callers not making home-attribution claims. It pins a set,
@@ -250,7 +249,7 @@ function* completeLines(chunk, walk) {
 // stability through the pass. The caller must quiesce writers for retirement;
 // a performed pass is a snapshot, not a promise about future writes.
 //
-// A file given as `{ path, pinned: { bytes, stat } }` is PINNED: its caller opened it once and read these bytes from
+// A file given as `{ path, pinned }` is PINNED (stageSnapshot or legacy { bytes, stat }): its caller opened it once and read these bytes from
 // that descriptor (`capture --file`). It is captured from them as a final pass, never opened again, so the
 // turns are exactly those bytes; `path` keys its offsets as for any other file.
 export function captureSessions(store, { owner, roots, files, format = "cc", ignore = null, final = false }) {
@@ -281,6 +280,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       continue; // never opened: nothing stored, nothing remembered
     }
     const fd = pinned ? null : openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
+    let staged;
     try {
     if (capturedPi) assertProtectedDescriptor(fd, path, capturedPi);
     const stat = pinned ? pinned.stat : fstatSync(fd);
@@ -288,15 +288,19 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     if (expected) assertIdentity(stat, expected, path); // BEFORE reading bytes
     // Final home capture stages a descriptor-pinned snapshot. All attribution
     // and stability checks precede the first append, never a post-write alarm.
-    const sourceBytes = pinned ? pinned.bytes : final || expected || capturedPi ? readRange(fd, 0, stat.size, path, capturedPi) : undefined;
-    if (expected && digest(sourceBytes.subarray(0, expected.size)) !== expected.hash) {
+    staged = !pinned && (final || expected || capturedPi) ? stageSnapshot(fd, stat, path, capturedPi) : null;
+    const source = pinned ?? staged;
+    const chunks = (start = 0) => source
+      ? source.bytes ? [source.bytes.subarray(start)] : source.chunks(start)
+      : sourceChunks(fd, start, stat.size, path, capturedPi);
+    if (expected && (source.bytes ? digest(source.bytes.subarray(0, expected.size)) : source.prefixHash(expected.size)) !== expected.hash) {
       throw new Error(`session source content changed since attribution: ${path}`);
     }
-    if (sourceBytes) snapshot.hash = digest(sourceBytes);
+    if (source) snapshot.hash = source.bytes ? digest(source.bytes) : source.hash;
     const verifySource = () => {
       if (pinned) return; // the bytes are the source: nothing is read from the path again
       guardCapturedPath(path, capturedPi);
-      if (sourceBytes) verifySnapshot(fd, path, snapshot);
+      if (source) verifySnapshot(fd, path, snapshot);
     };
     verifySource();
     const streamId = `${owner}~${fmt.source}.${sessionId}`;
@@ -318,7 +322,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     if (state && (final || stat.size > state.bytes) && state.line !== (lastTurn()?.provenance?.origin?.line ?? 0)) {
       state = null;
     }
-    if (!state) state = offsetFromJournal(lastTurn(), path, final, sourceBytes);
+    if (!state) state = offsetFromJournal(lastTurn(), path, final, source ? chunks : null);
     if (stat.size <= state.bytes) {
       unchanged++;
       offsets[offKey] = state;
@@ -326,7 +330,6 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       continue;
     }
 
-    const chunk = sourceBytes ? sourceBytes.subarray(state.bytes) : readRange(fd, state.bytes, stat.size, path, capturedPi);
     // Every turn needs a stamp. Leading lines before the file's first stamp
     // carry it backward (deterministic: the file's first stamp is invariant
     // however capture is scheduled); if the file has shown no stamp at all
@@ -342,7 +345,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     if (!lastTs) {
       const scan = {};
       let any = false;
-      for (const l of completeLines(chunk, scan)) {
+      for (const l of completeLines(chunks(state.bytes), scan)) {
         any = true;
         if (l.ts) { lastTs = l.ts; break; }
       }
@@ -369,13 +372,15 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       store.appendBatch(streamId, fresh);
       streams.add(streamId);
       appended += fresh.length;
+      offsets[offKey] = { bytes: state.bytes + consumed, line: lineNo, lastTs };
+      saveOffsets(store, offsets);
       fresh = [];
       freshBytes = 0;
     };
     let lineNo = state.line;
     let consumed = 0;
     const walk = {};
-    for (const l of completeLines(chunk, walk)) {
+    for (const l of completeLines(chunks(state.bytes), walk)) {
       if (l.ts) lastTs = l.ts;
       lineNo++;
       consumed += l.bytes;
@@ -400,7 +405,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     // wasted append-only bytes).
     if (grew) saveOffsets(store, offsets);
     verifySource();
-    } finally { if (fd !== null) closeSync(fd); }
+    } finally { try { staged?.close(); } finally { if (fd !== null) closeSync(fd); } }
   }
   saveOffsets(store, offsets);
   return {
