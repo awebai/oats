@@ -42,6 +42,7 @@ import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBrid
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
+import { terminalText } from "../lib/refused-text.mjs";
 import { soulsOffered } from "../lib/instance-resolution.mjs";
 import { parseConfigData } from "../lib/config-data.mjs";
 import * as remoteModule from "../lib/remote.mjs";
@@ -2270,14 +2271,23 @@ async function itemsCmd(kind) {
   // `oats souls` reads souls.launch for every soul it lists: a key that names none of them is a problem
   // of this read, one row per key (the souls a spawn would refuse carry it as launch.problem).
   const unmatched = kind === "souls" ? launchKeysUnmatched({ local: ctx.local, offered: soulsOffered(discovery) }).unmatched.map(unmatchedProblemRow) : [];
-  if (JSON_MODE) { jsonOk(withObservation({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: [...discovery.problems, ...unmatched] })); return; }
+  const problems = [...discovery.problems, ...unmatched];
+  if (JSON_MODE) { jsonOk(withObservation({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems })); return; }
   console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
   if (!items.length) console.log("  (none)");
   else if (kind === "souls") printTable(["name", "origin", "teams here", "work"], items.map((s) => [s.name, s.origin, s.teams === null ? "(invalid: oats teams)" : s.teams.map((t) => (t.default ? `${t.label}*` : t.label)).join(",") || "—", s.work ?? "—"]));
   else printTable(["name", "origin", "layer"], items.map((c) => [c.private ? `${c.name} (repo-owned)` : c.name, c.origin, c.layer ?? "—"]));
   const unsynced = Object.keys(discovery.workspace?.packages || {}).filter((id) => !lock.packages[id]);
   if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
-  for (const p of unmatched) console.log(`\n! ${p.code}: ${p.message}`);
+  for (const p of problems) console.log(`\n${catalogProblemLine(p)}`);
+}
+
+/** Owner fields decide context, never the message text. External sources are not display-safe
+ *  repository references: their existing path identifies the external declaration instead. */
+function catalogProblemLine(p) {
+  const owner = p.repoKey || p.package;
+  const where = owner || p.source ? ` [${terminalText(owner ? `${owner}: ${p.path}` : p.path)}]` : "";
+  return `! ${p.code}: ${p.message}${where}`;
 }
 
 /** A key of souls.launch that names no soul (lib/launch-preference.mjs launchKeysUnmatched's row) as a
