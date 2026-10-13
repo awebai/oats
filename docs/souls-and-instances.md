@@ -98,7 +98,8 @@ is a code change, reviewed in its repo.
 ### OATS operational knowledge is a capability
 
 An agent's knowledge of OATS itself (status, spawn, retire, finding other
-souls) is ordinary capability content: **`oats.core`** (package
+souls, and keeping its messages to other instances few and short:
+`/oats-token-saving`) is ordinary capability content: **`oats.core`** (package
 `oats.framework`). Workspaces give it to every soul through
 `defaults.capabilities: { oats.core: { from: package } }`; a soul may say
 `oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
