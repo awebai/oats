@@ -22,7 +22,7 @@
   <home>`), stop one (`oats instance stop <instance>`), start or restart one
   (`oats session start --home <home>`), retire one (`oats retire
   <instance>`), show souls or spawn an agent (`oats souls`, `oats spawn
-  <soul>`), show capabilities (`oats capabilities`), register, check or
+  <soul>`), show capabilities (`oats capabilities`), add, check or
   remove a machine (`oats server connect`, `oats server check`, `oats server
   remove`), or open from its switcher a deployment outside `~/Agents` (`oats
   tui --dir <path>`): its help screen names the same commands.

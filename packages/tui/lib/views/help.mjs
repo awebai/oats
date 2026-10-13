@@ -33,7 +33,7 @@ export const NOT_YET = Object.freeze([
   Object.freeze({ what: "stop an agent", command: "oats instance stop <instance>" }),
   Object.freeze({ what: "start or restart an agent", command: "oats session start --home <home>" }),
   Object.freeze({ what: "retire an agent", command: "oats retire <instance>" }),
-  Object.freeze({ what: "register a machine", command: "oats server connect <id> --ssh <alias>" }),
+  Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias>" }),
   Object.freeze({ what: "check a machine", command: "oats server check <id>" }),
   Object.freeze({ what: "remove a machine", command: "oats server remove <id>" }),
   // The switcher lists the deployments opened in this run and those in ~/Agents, and no other.

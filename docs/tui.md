@@ -16,7 +16,7 @@ install.
   nothing.** The registered machines are the ones `oats server list` names.
   It follows the instances as they start, stop and wait for you. It cannot
   open an agent's terminal, stop, start, restart or retire one, spawn one,
-  or register, check or remove a machine: [what it does not do
+  or add, check or remove a machine: [what it does not do
   yet](#what-this-version-does-not-do) names the `oats` command for each.
 - **Its screens and its configuration file may change without notice** while
   it is a preview.
@@ -434,7 +434,7 @@ with the Desktop (`packages/client/`).
 | retire an agent | `oats retire <instance>` |
 | see souls, spawn an agent | `oats souls`, `oats spawn <soul>` |
 | see capabilities | `oats capabilities` |
-| register a machine | `oats server connect <id> --ssh <alias>` |
+| add a machine to this workspace | `oats server connect <id> --ssh <alias>` |
 | check a machine | `oats server check <id>` |
 | remove a machine | `oats server remove <id>` |
 | open a deployment outside `~/Agents` | `oats tui --dir <path>` |
