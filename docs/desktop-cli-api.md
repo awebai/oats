@@ -1856,22 +1856,41 @@ shows the drift as `launch-changed`.
     `--reselect-launch` they point to refuses.
 - `E_HARNESS_UNAVAILABLE {harness, from, at, fix}`: the chosen harness has no
   executable on this machine. There is no fallback to another harness. `fix`
-  is "install <harness>, or override it on this machine in oats-local.yaml
-  souls.launch" (from the soul or the host), "install <harness>, or change
-  oats-local.yaml souls.launch" (from local layers), or "install <harness>, or
-  choose another --harness / --launch-config" (from a flag).
+  names the command that pins the soul (0.53), by the layer that chose the
+  harness:
+  - the soul's own `launch:` or the host default: "install <harness>, or pin
+    this soul on this machine (oats soul launch set <soul> --launch-config
+    <name> | --harness <h>)";
+  - the soul's own entry of `souls.launch`: "install <harness>, or pin this
+    soul to another launch (oats soul launch set <soul> --launch-config <name>
+    | --harness <h>)";
+  - `souls.launch."*"`: "install <harness>, name another launch for every soul
+    without an entry (oats soul launch set '*' --launch-config <name> |
+    --harness <h>), or pin this soul to its own (oats soul launch set <soul>
+    --launch-config <name> | --harness <h>)";
+  - a flag: "install <harness>, or choose another --harness / --launch-config".
 - `E_LAUNCH_CONFIG_UNKNOWN {name, from, at}`: `souls.launch` names a launch
-  configuration this `oats-local.yaml` does not declare.
+  configuration this `oats-local.yaml` does not declare. As a `Launch`
+  report's `problem`, its `fix` is "declare launch configuration <name> (oats
+  launch-config set), or pin the soul to another (oats soul launch set <soul>
+  --launch-config <name>)"; where `souls.launch."*"` named it, "declare launch
+  configuration <name> (oats launch-config set), name another for every soul
+  without an entry (oats soul launch set '*' --launch-config <name>), or pin
+  the soul to one (oats soul launch set <soul> --launch-config <name>)".
 - `E_LAUNCH_CONFIG_AMBIGUOUS {harness, configurations, fix}` (spawn and its
   preview only, 0.52): the chosen harness has more than one launch
   configuration here (`configurations`, all their names, sorted; the message
-  names the first 10, then "and K more", so it stays within 1024 characters),
+  names the first 10, then "and K more", and fewer where it would otherwise
+  pass 1024 characters),
   none is
   `default: true`, and the spawn named none. Named means `--launch-config
   <name>`, `--launch-config none`, or a `souls.launch` string; an inline or
   soul preference and `--harness` alone are not. `fix` is "name one with
-  --launch-config <name> (or souls.launch in oats-local.yaml), or mark one
-  default: true (oats launch-config set)". A start or restart of an existing
+  --launch-config <name>, pin the soul to one (oats soul launch set <soul>
+  --launch-config <name>), or mark one default: true (oats launch-config
+  set)"; where `souls.launch."*"` chose the harness it also says, before the
+  soul's own pin, "name one for every soul without an entry (oats soul launch
+  set '*' --launch-config <name>)". A start or restart of an existing
   home, `--reselect-launch` included, is never refused this way.
 - `E_WORKSPACE_SCHEMA`: a malformed `launch` or `souls.launch`, path named.
 
@@ -1901,7 +1920,9 @@ shows the drift as `launch-changed`.
   `E_LAUNCH_CONFIG_UNKNOWN`,
   `E_LAUNCH_CONFIG_AMBIGUOUS` with `effective.launchConfig` `null`, or
   `E_LAUNCH_EXECUTABLE` for a configuration whose own executable is missing). Only reports carry it;
-  spawn and preview refuse instead. With `E_LAUNCH_CONFIG_UNKNOWN`,
+  spawn and preview refuse instead. A `fix`, here and in a refusal's
+  `details`, is a sentence for a person: its wording may change between
+  releases, so a client shows it and never parses it. With `E_LAUNCH_CONFIG_UNKNOWN`,
   `effective` is the host default (`pi`, `null`, `null`): the named
   configuration launches nothing here.
 - In listings (`oats souls`, `inspect --soul`, `launchCurrent`) `model` is the

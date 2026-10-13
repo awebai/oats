@@ -111,11 +111,11 @@ test("an unavailable harness is refused naming its source and the fix — never 
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(minimal, "git"));
   const PATH = `${stubs}:${minimal}`;
   const e = refused(fx.cli(["spawn", "dev", "--preview", "--json"], { env: { PATH } }), "E_HARNESS_UNAVAILABLE", "preview");
-  assert.deepEqual(e.details, { harness: "codex", from: "local", at: `${LOCAL}#/souls/launch/dev`, fix: `install codex, or change ${LOCAL} souls.launch` });
+  assert.deepEqual(e.details, { harness: "codex", from: "local", at: `${LOCAL}#/souls/launch/dev`, fix: "install codex, or pin this soul to another launch (oats soul launch set <soul> --launch-config <name> | --harness <h>)" });
   const row = ok(fx.cli(["souls", "--json"], { env: { PATH } }), "souls").souls.find((s) => s.name === "dev");
-  assert.deepEqual([row.launch.problem.code, row.launch.problem.fix], ["E_HARNESS_UNAVAILABLE", `install codex, or change ${LOCAL} souls.launch`], "the soul still lists");
+  assert.deepEqual([row.launch.problem.code, row.launch.problem.fix], ["E_HARNESS_UNAVAILABLE", e.details.fix], "the soul still lists");
   decodes(row.launch);
-  // From a flag, the fix names the flags; the soul's own launch names the override.
+  // From a flag, the fix names the flags (the fix of every layer: test/launch-fix-texts.test.mjs).
   const f = refused(fx.cli(["spawn", "dev", "--harness", "codex", "--preview", "--json"], { env: { PATH } }), "E_HARNESS_UNAVAILABLE", "flag");
   assert.deepEqual([f.details.from, f.details.at, f.details.fix], ["flag", null, "install codex, or choose another --harness / --launch-config"]);
   // A configuration the layer names but this oats-local.yaml lacks.
