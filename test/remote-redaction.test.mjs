@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { oatsError } from "../lib/errors.mjs";
 import { redactUrl, scrubGitLine, parseRepoRef, observeRemote, readRemoteFile, runGit } from "../lib/remote.mjs";
-import { confirmMembership, observeWorkspace, validateWorkspace, validateLocal, loadLocal } from "../lib/workspace.mjs";
+import { confirmMembership, observeWorkspace, validateWorkspace, validateLocal, validateMembership, readDeclaration, loadLocal } from "../lib/workspace.mjs";
 import { parsePackageRequest, resolvePackages } from "../lib/packages.mjs";
 import { remoteFailureCause } from "../packages/client/deployment-contract.mjs";
 
@@ -25,6 +25,8 @@ const malformed = [
   `https://${USER}:${PASSWORD}/extra@${host}`,
 ];
 const clause = "(its user information is not shown)";
+const WITHHELD = "[repository reference withheld]";
+const withheldClause = "(the repository reference was withheld)";
 const httpUserinfoReason = (ref) => `repository reference ${ref} carries user information, which an http(s) reference may not: give credentials to Git (a credential helper), not in the URL`;
 const roots = [];
 const scratch = () => { const dir = mkdtempSync(join(tmpdir(), "oats-redaction-")); roots.push(dir); return dir; };
@@ -347,9 +349,9 @@ test("large remote declaration diagnostics finish without pathological backtrack
     import { readDeclaration } from ${JSON.stringify(new URL("../lib/workspace.mjs", import.meta.url).href)};
     const timings = [];
     for (const size of [32768, 65536, 1048576]) {
-      for (const kind of ["prose", "scheme-candidates", "reference", "membership", "credential-membership"]) {
+      for (const kind of ["prose", "scheme-candidates", "scp-candidates", "adjacent-schemes", "reference", "membership", "credential-membership"]) {
         const valueSize = kind.endsWith("membership") ? Math.min(size, 1047000) : size;
-        const value = kind === "reference" ? ":".repeat(size) + " " : kind === "scheme-candidates" ? "a-".repeat(size / 2) : "-".repeat(valueSize) + " x";
+        const value = kind === "reference" ? ":".repeat(size) + " " : kind === "scheme-candidates" ? "a-".repeat(size / 2) : kind === "scp-candidates" ? String.fromCharCode(92).repeat(size) : kind === "adjacent-schemes" ? "a://".repeat(Math.min(size, 262144) / 4) : "-".repeat(valueSize) + " x";
         const start = performance.now();
         let output;
         if (kind.endsWith("membership")) {
@@ -446,4 +448,351 @@ test("no-path slash-in-password refusal removes userinfo from every error field"
   assert.equal(e.message, `repository reference has an invalid host: https://h.x ${clause}`);
   assert.deepEqual(e.details, { ref: "https://h.x", host: "" });
   assert.equal(e.provenance, e.details);
+});
+
+
+// Inspect output values and object keys, not just the fixture's known markers. Every
+// supported scheme authority is safe even when another URL precedes it in a scalar.
+function authorityInvariant(value) {
+  if (typeof value === "string") {
+    for (const match of value.matchAll(/([a-z][a-z0-9+.-]*):\/\/(\/*)([^/\s'"<>]*)/gi)) {
+      if (match[2] && !/^(?:https?|ssh)$/i.test(match[1])) continue; // file:/// remains a path
+      assert.ok(!match[3].includes("@"), `userinfo remains in authority: ${match[0]}`);
+    }
+  } else if (value && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) { authorityInvariant(key); authorityInvariant(item); }
+  }
+}
+
+test("every composed reference output sanitizes later authorities in all renderer modes", async () => {
+  const later = `https://${PASSWORD}@github.com/c/d`;
+  const refs = [
+    ...[" ", "\n", ", ", ";", "|"].map(separator => `https://${USER}@github.com/a/b${separator}${later}`),
+    `https://github.com/a/b ${later}`, `git@github.com:a/b ${later}`,
+    `https://github.com:8443/a/b ${later}`,
+    `https://${USER}@github.com/a/b -${later}`,
+    `https://${USER}@github.com/a/b; git@other.invalid:c/d`,
+    `https://${USER}@github.com/a/b ssh://git:${PASSWORD}@other.invalid:22/c/d`,
+  ];
+  for (const ref of refs) {
+    const rendered = redactUrl(ref, null, { reference: true });
+    noTokens(rendered); authorityInvariant(rendered);
+    assert.ok(rendered.includes("github.com/a/b") || rendered.includes("github.com:8443/a/b"), rendered);
+    assert.ok(rendered.includes("/c/d"), "later host/path must survive");
+    const e = await refused(() => parseRepoRef(ref));
+    safeError(e, "E_REPO_REF"); authorityInvariant({ message: e.message, details: e.details });
+    assert.equal(e.details.ref, rendered);
+    const nested = await refused(() => parseRepoRef({ nested: { [ref]: [ref] } }));
+    safeError(nested, "E_REPO_REF"); authorityInvariant(nested.details);
+    assert.equal(e.message.split(clause).length - 1, 1, "one clause, including later-only removal");
+    const outputs = [
+      redactUrl(ref), redactUrl(ref, ref, { known: false }),
+      redactUrl(`refused ${JSON.stringify(ref)}`, ref, { known: false, refusal: true }),
+      redactUrl(ref, ref, { fragment: true, known: false }),
+      redactUrl({ [ref]: { nested: [ref] } }, null, { reference: true }),
+      redactUrl({ [ref]: { nested: [ref] } }, ref, { known: false }),
+    ];
+    noTokens(outputs); authorityInvariant(outputs);
+    for (const [problems, location] of [
+      [validateLocal({ schemaVersion: 2, workspace: ref }), "/workspace"],
+      [validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] }), "/members/0"],
+      [validateMembership({ schemaVersion: 2, workspace: ref }), "/workspace"],
+    ]) {
+      assert.ok(problems.some(p => p.path === location));
+      noTokens(problems); authorityInvariant(problems);
+      for (const p of problems.filter(p => p.message.includes("does not match"))) assert.ok(!p.message.includes(clause));
+    }
+  }
+  // Missing YAML list marker folds the second URL into the first member scalar.
+  const yaml = `schemaVersion: 2\nname: fixture\nmembers:\n  - https://${USER}@github.com/a/b\n    ${later}\n`;
+  const declaration = readDeclaration("workspace", Buffer.from(yaml), { path: "oats-workspace.yaml" });
+  assert.equal(declaration.value.members[0], refs[0], "must reach decoded member validation");
+  assert.ok(declaration.problems.some(p => p.path === "/members/0"));
+  noTokens(declaration.problems); authorityInvariant(declaration.problems);
+});
+
+test("HTTP and SSH three-or-more-slash authorities are defensive display values, while file paths retain their meaning", async () => {
+  for (const scheme of ["http", "https", "ssh"]) for (const slashes of ["///", "////", "/////"]) {
+    const ref = `${scheme}:${slashes}${USER}:${PASSWORD}@github.com/a/b`;
+    const displayed = `${scheme}:${slashes}github.com/a/b`;
+    for (const result of [redactUrl(ref), redactUrl(ref, null, { reference: true }),
+      redactUrl(`quoted ${JSON.stringify(ref)}`, ref, { known: false }),
+      redactUrl(`https://github.com/c/d\n${ref}`, null, { reference: true })]) {
+      noTokens(result); authorityInvariant(result); assert.ok(result.includes(displayed));
+    }
+    const e = await refused(() => parseRepoRef(ref));
+    safeError(e, "E_REPO_REF");
+    assert.equal(e.details.ref, displayed);
+    assert.equal(e.message.split(clause).length - 1, 1);
+    noTokens(validateLocal({ schemaVersion: 2, workspace: ref }));
+    noTokens(validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] }));
+    noTokens(validateMembership({ schemaVersion: 2, workspace: ref }));
+  }
+  for (const prefix of ["-", ".", "_", "123", "\\n"]) {
+    const output = redactUrl(`${prefix}https:///${USER}@github.com/a/b`);
+    noTokens(output); authorityInvariant(output);
+  }
+  for (const slashes of ["///", "////", "/////"]) {
+    const file = `file:${slashes}${USER}@github.com/a/b`;
+    assert.equal(redactUrl(file), file);
+    assert.equal(redactUrl(file, null, { reference: true }), file);
+  }
+  const query = "https://github.com/a/b?token=QUERY_TOKEN#FRAGMENT_TOKEN";
+  assert.equal(redactUrl(query, null, { reference: true }), WITHHELD);
+  assert.equal(redactUrl(query), query, "ordinary prose does not scan query or fragment tokens");
+});
+
+test("literal fragment overlap uses the last complete occurrence, including repeated and absent matches", () => {
+  for (const [source, fragment, expected] of [
+    ["https://aaaaa@host/path", "aaa", ""],
+    ["https://ababab@host/path", "abab", ""],
+    ["https://ababab@host/path", "aaba", "aaba"],
+    ["https://aaaaa@host/aaa", "aaa", "aaa"],
+    ["https://aaaaa@host/path", "aa@host", "host"],
+    ["https://aaaaa@host/path", "host/path", "host/path"],
+  ]) assert.equal(redactUrl(fragment, source, { fragment: true, known: false }), expected);
+});
+
+test("periodic host fragments remain bounded through full parser refusals and decoded members", (t) => {
+  const probe = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import assert from "node:assert/strict";
+    import { performance } from "node:perf_hooks";
+    import { parseRepoRef } from ${JSON.stringify(new URL("../lib/remote.mjs", import.meta.url).href)};
+    import { readDeclaration } from ${JSON.stringify(new URL("../lib/workspace.mjs", import.meta.url).href)};
+    const timings = [];
+    for (const n of [5000, 10000, 20000, 240000]) {
+      const ref = "https://" + "a:".repeat(n) + "/" + "x@".repeat(n) + "y/z";
+      for (const mode of ["parse", "member"]) {
+        const start = performance.now();
+        if (mode === "parse") {
+          assert.throws(() => parseRepoRef(ref), e => {
+            assert.equal(e.code, "E_REPO_REF");
+            assert.equal(e.details.ref, "https://y/z");
+            assert.equal(e.details.host, "");
+            assert.ok(e.message.includes("invalid host"));
+            return true;
+          });
+        } else {
+          const bytes = Buffer.from(JSON.stringify({schemaVersion:2, name:"fixture", members:[ref]}));
+          assert.ok(bytes.length < 1048576);
+          const decoded = readDeclaration("workspace", bytes, {path:"oats-workspace.yaml"});
+          assert.equal(decoded.value?.members?.[0], ref, "must decode rather than hit a byte/syntax refusal");
+          assert.ok(decoded.problems.some(p => p.path === "/members/0" && p.message.includes("invalid host")));
+          assert.ok(!JSON.stringify(decoded.problems).includes("a:".repeat(10)));
+        }
+        timings.push({mode, size:ref.length, ms:performance.now() - start});
+      }
+    }
+    console.log(JSON.stringify(timings));
+  `], { encoding: "utf8", timeout: 15000 });
+  assert.equal(probe.error, undefined, `full refusal probe timed out: ${probe.error}`);
+  assert.equal(probe.status, 0, probe.stderr);
+  const timings = JSON.parse(probe.stdout);
+  assert.equal(timings.length, 8);
+  for (const row of timings) assert.ok(row.ms < 3000, `${row.mode} (${row.size} bytes) took ${row.ms} ms`);
+  t.diagnostic(JSON.stringify(timings));
+});
+
+
+test("scheme tokens own punctuation-bearing userinfo with ports, without hiding later URLs", async () => {
+  for (const punctuation of ["=", ",", ";", "(", "[", "{", "|", "\\"]) {
+    const ref = `https://${USER}:${PASSWORD}${punctuation}x@github.com:443/a/b`;
+    const shown = "https://github.com:443/a/b";
+    assert.equal(redactUrl(ref), shown);
+    assert.equal(redactUrl(ref, null, { reference: true }), shown);
+    assert.equal(scrubGitLine(`fatal: '${ref}': unexpected`), `fatal: '${shown}': unexpected`);
+    for (const value of [ref, `${ref} https://${PASSWORD}@other.invalid/c/d`,
+      `${ref};https://${PASSWORD}@other.invalid/c/d`]) {
+      const e = await refused(() => parseRepoRef(value));
+      safeError(e, "E_REPO_REF"); authorityInvariant(e.details);
+      assert.ok(e.details.ref.startsWith(shown));
+      assert.equal(e.message.split(clause).length - 1, 1);
+      if (value !== ref) assert.ok(e.details.ref.endsWith("https://other.invalid/c/d"));
+      const nested = await refused(() => parseRepoRef({ nested: { [value]: [value] } }));
+      safeError(nested, "E_REPO_REF"); authorityInvariant(nested.details);
+      for (const problems of [validateLocal({ schemaVersion: 2, workspace: value }),
+        validateMembership({ schemaVersion: 2, workspace: value }),
+        validateWorkspace({ schemaVersion: 2, name: "fixture", members: [value] })]) {
+        noTokens(problems); authorityInvariant(problems);
+        assert.ok(problems.some(p => p.message.includes(shown)), "host, port and path survive in schema diagnostics");
+      }
+    }
+    const rawSSH = ref.replace("https:", "ssh:");
+    assert.equal(parseRepoRef(rawSSH).url, rawSSH);
+    const argsSeen = [];
+    const exec = async (args, opts) => {
+      argsSeen.push(args);
+      if (args.includes("fetch")) throw gitError(`fatal: unexpected refusal for '${rawSSH}'`);
+      return runGit(args, opts);
+    };
+    const e = await refused(() => readRemoteFile(rawSSH, "1".repeat(40), "small", { cacheDir: scratch(), exec }));
+    safeError(e, "E_REMOTE_UNREADABLE");
+    assert.equal(e.details.url, "ssh://github.com:443/a/b");
+    assert.ok(!e.message.includes(clause));
+    assert.ok(argsSeen.some(args => args.includes(`remote.origin.url=${rawSSH}`)));
+  }
+  // An SCP-shaped substring in a URL's path is owned by that URL, not a new span.
+  const pathText = "https://github.com/a/b;git@other.invalid:c/d";
+  assert.equal(redactUrl(pathText), pathText);
+});
+
+test("later malformed reference spans share the segment rule and exact source accounting", async () => {
+  for (const separator of [" ", "\n", ", ", ";"]) for (const tail of ["", ":443", ":443/c/d"]) {
+    const later = `https://${USER}:${PASSWORD}/extra@other.invalid${tail}`;
+    const ref = `https://github.com/a/b${separator}${later}`;
+    const shown = `https://github.com/a/b${separator}https://other.invalid${tail}`;
+    assert.equal(redactUrl(ref, null, { reference: true }), shown);
+    assert.equal(redactUrl(ref, ref, { known: false }), shown);
+    assert.equal(redactUrl(`quoted ${JSON.stringify(ref)}`, ref, { known: false }), `quoted ${JSON.stringify(shown)}`);
+    const e = await refused(() => parseRepoRef(ref));
+    safeError(e, "E_REPO_REF");
+    assert.equal(e.details.ref, shown);
+    assert.equal(e.message.split(clause).length - 1, 1);
+    for (const problems of [validateLocal({ schemaVersion: 2, workspace: ref }),
+      validateMembership({ schemaVersion: 2, workspace: ref }),
+      validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] })]) {
+      noTokens(problems);
+      assert.ok(problems.some(p => p.message.includes(JSON.stringify(shown))));
+    }
+    const nested = await refused(() => parseRepoRef({ nested: { [ref]: [ref] } }));
+    safeError(nested, "E_REPO_REF");
+  }
+  const ref = `https://github.com/a/b https://${USER}:${PASSWORD}/q@other.invalid/c/d https://${USER}:${PASSWORD}/z@third.invalid/e/f`;
+  const e = await refused(() => parseRepoRef(ref));
+  safeError(e, "E_REPO_REF");
+  assert.equal(e.details.path, "a/b https://other.invalid/c/d https://third.invalid/e/f");
+  assert.equal(e.message.split(clause).length - 1, 1);
+  const boundedProse = `fatal: 'https://host.x:8443/a@b' remains a URL; mail admin@corp.com`;
+  assert.equal(redactUrl(boundedProse), boundedProse);
+  // The same segment rule must retain its numeric host:port/path ambiguity and
+  // must not reinterpret query/fragment tokens as authority userinfo.
+  for (const tail of ["https://host.x:8443/repo@v1@x", "https://abc:4567/x@h.x",
+    "https://host.x:443/o?value=user:QUERY_SECRET/q@h.x/c/d",
+    "https://host.x:443/o#user:FRAGMENT_SECRET/q@h.x/c/d"]) {
+    const value = `https://github.com/a/b ${tail}`;
+    assert.equal(redactUrl(value, null, { reference: true }), value);
+    assert.equal(redactUrl(value, value, { known: false, refusal: true }), value);
+  }
+});
+
+
+test("selected authorities retain delimiter data until their first slash", async () => {
+  for (const delimiter of ["?", "#", "'", '"']) for (const combo of [delimiter, `=${delimiter},;`]) {
+    const ref = `https://${USER}:${PASSWORD}${combo}x@github.com:443/a/b`;
+    const shown = "https://github.com:443/a/b";
+    for (const [value, output] of [[ref, shown],
+      [`https://host.x/o/r ${ref}`, `https://host.x/o/r ${shown}`],
+      [`${ref},https://${PASSWORD}@other.invalid/c/d`, `${shown},https://other.invalid/c/d`]]) {
+      assert.equal(redactUrl(value, null, { reference: true }), output);
+      assert.equal(redactUrl(value, value, { known: false }), output);
+      assert.equal(redactUrl(`quoted ${JSON.stringify(value)}`, value, { known: false }), `quoted ${JSON.stringify(output)}`);
+      const e = await refused(() => parseRepoRef(value));
+      safeError(e, "E_REPO_REF"); authorityInvariant(e.details);
+      assert.equal(e.details.ref, output);
+      assert.equal(e.message.split(clause).length - 1, 1);
+      for (const problems of [validateLocal({ schemaVersion: 2, workspace: value }),
+        validateMembership({ schemaVersion: 2, workspace: value }),
+        validateWorkspace({ schemaVersion: 2, name: "fixture", members: [value] })]) {
+        noTokens(problems); authorityInvariant(problems);
+        assert.ok(problems.some(p => p.message.includes(JSON.stringify(output))));
+      }
+      safeError(await refused(() => parseRepoRef({ [value]: [value] })), "E_REPO_REF");
+    }
+    assert.equal(scrubGitLine(`fatal: '${ref}': unexpected`, ref), `fatal: '${shown}': unexpected`);
+    const rawSSH = ref.replace("https:", "ssh:"), argsSeen = [];
+    assert.equal(parseRepoRef(rawSSH).url, rawSSH);
+    const exec = async (args, opts) => {
+      argsSeen.push(args);
+      if (args.includes("fetch")) throw gitError(`fatal: unexpected refusal for '${rawSSH}'`);
+      return runGit(args, opts);
+    };
+    const e = await refused(() => readRemoteFile(rawSSH, "1".repeat(40), "small", { cacheDir: scratch(), exec }));
+    safeError(e, "E_REMOTE_UNREADABLE");
+    assert.equal(e.details.url, "ssh://github.com:443/a/b");
+    assert.ok(!e.message.includes(clause));
+    assert.ok(argsSeen.some(args => args.includes(`remote.origin.url=${rawSSH}`)));
+  }
+  for (const suffix of ["?Q", "#F"]) {
+    const value = `https://host:443${suffix}@h.x`;
+    assert.equal(redactUrl(value, null, { reference: true }), "https://h.x",
+      "ambiguous pre-slash text uses the conservative userinfo interpretation");
+  }
+  const prose = "fatal: 'ssh://host' does not appear to be a repository; mail admin@corp.com";
+  assert.equal(redactUrl(prose), prose, "unselected prose still stops at quotes");
+});
+
+
+test("seeded generated reference diagnostics never retain injected credential markers", (t) => {
+  const seed = 0x10771090;
+  let state = seed, serial = 0;
+  const random = (n) => { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; return (state >>> 0) % n; };
+  const forms = ["http", "https", "ssh", "scp", "file"];
+  const delimiters = ["@", ":", "/", "?", "#", "=", ",", ";", "'", '"', " "];
+  const separators = [" ", "\n", ","];
+  const coverage = { seed, cases: 0, components: 0, checks: 0, parserSuccesses: 0,
+    ordinaryProseChecked: 0, ordinaryProseExcluded: 0, filePathControls: 0, forms: {}, slashes: {}, delimiters: {}, ports: {}, widths: {}, separators: {} };
+  const count = (record, key) => { record[key] = (record[key] ?? 0) + 1; };
+  const make = (form, slashes, delimiter) => {
+    const id = serial++, port = random(2) ? ":443" : "";
+    coverage.components++; count(coverage.forms, form); count(coverage.slashes, slashes);
+    count(coverage.delimiters, delimiter); count(coverage.ports, port || "none");
+    if (form === "file" && slashes >= 3) {
+      coverage.filePathControls++;
+      const control = `PATH_CONTROL_${id}`;
+      return { raw: `file:${"/".repeat(slashes)}${control}@name/o/r`, tokens: [], controls: [control], prose: true };
+    }
+    const token = `CRED_MARKER_${id}_END`;
+    const info = `u:${token}${delimiter}x`, host = `h${id}.invalid`;
+    const raw = form === "scp" ? `${info}@${host}:${"/".repeat(slashes)}o/r`
+      : `${form}:${"/".repeat(slashes)}${info}@${host}${port}/o/r`;
+    // Ordinary prose does not interpret partial schemes or malformed slash/quote/space
+    // userinfo. Every such case still exercises ALL selected-reference/source routes.
+    const prose = form !== "scp" && slashes >= 2 && !["/", "'", '"', " "].includes(delimiter);
+    return { raw, tokens: [token], controls: [], prose };
+  };
+  const cases = [];
+  // Exhaustive primary axes; seeded suffixes/width/separators supply mixed compositions.
+  // No case is discarded based on parsing, rendering, or the invariant's outcome.
+  for (const form of forms) for (let slash = 0; slash <= 5; slash++) for (const delimiter of delimiters) {
+    const parts = [make(form, slash, delimiter)], width = 1 + random(3), separator = separators[random(3)];
+    while (parts.length < width) parts.push(make(forms[random(forms.length)], random(6), delimiters[random(delimiters.length)]));
+    cases.push({ width, input: parts.map(p => p.raw).join(separator), tokens: parts.flatMap(p => p.tokens),
+      controls: parts.flatMap(p => p.controls), prose: parts.every(p => p.prose) });
+    coverage.cases++; count(coverage.widths, width); count(coverage.separators, separator);
+  }
+  const failures = [];
+  const check = (sample, mode, output, preserve = false) => {
+    coverage.checks++;
+    const text = JSON.stringify(output);
+    const leaked = sample.tokens.filter(token => text.includes(token));
+    const preservePath = preserve && (mode === "prose" || sample.width === 1);
+    const lost = preservePath ? sample.controls.filter(token => !text.includes(token)) : [];
+    if (preserve && mode !== "prose" && sample.width > 1 && !text.includes(WITHHELD))
+      failures.push({ mode, input: sample.input, expected: WITHHELD, output });
+    if (leaked.length || lost.length) failures.push({ mode, input: sample.input, leaked, lost, output });
+  };
+  for (const sample of cases) {
+    check(sample, "reference", redactUrl(sample.input, null, { reference: true }), true);
+    check(sample, "source", redactUrl(sample.input, sample.input, { known: false }), true);
+    check(sample, "quoted-source", redactUrl(`quoted ${JSON.stringify(sample.input)}`, sample.input, { known: false }), true);
+    check(sample, "nested-reference", redactUrl({ [sample.input]: [sample.input] }, null, { reference: true }), true);
+    if (sample.prose) { coverage.ordinaryProseChecked++; check(sample, "prose", redactUrl(sample.input), true); }
+    else coverage.ordinaryProseExcluded++;
+    try { parseRepoRef(sample.input); coverage.parserSuccesses++; }
+    catch (e) { check(sample, "parser", { code: e.code, message: e.message, details: e.details, provenance: e.provenance }); }
+    try { parseRepoRef({ nested: { [sample.input]: [sample.input] } }); assert.fail("object must be refused"); }
+    catch (e) { check(sample, "nested-parser", { code: e.code, message: e.message, details: e.details, provenance: e.provenance }); }
+    check(sample, "local", validateLocal({ schemaVersion: 2, workspace: sample.input }));
+    check(sample, "membership", validateMembership({ schemaVersion: 2, workspace: sample.input }));
+    check(sample, "workspace", validateWorkspace({ schemaVersion: 2, name: "fixture", members: [sample.input] }));
+  }
+  const query = "https://h.invalid/o/r?value=QUERY_CONTROL#FRAGMENT_CONTROL";
+  assert.equal(redactUrl(query, null, { reference: true }), WITHHELD);
+  assert.equal(redactUrl(query), query, "ordinary prose does not scan query or fragment tokens");
+  const unrelated = validateWorkspace({ schemaVersion: 2, name: "https://UNRELATED_CONTROL@h.invalid/o/r" });
+  assert.ok(unrelated.some(p => p.path === "/name" && p.message.includes("UNRELATED_CONTROL")));
+  const failuresByMode = {};
+  for (const failure of failures) count(failuresByMode, failure.mode);
+  t.diagnostic(JSON.stringify({ coverage, failureCount: failures.length, failuresByMode, firstFailures: failures.slice(0, 5) }));
+  assert.equal(failures.length, 0, `seed=${seed}; failures=${failures.length}; first=${JSON.stringify(failures[0])}`);
 });

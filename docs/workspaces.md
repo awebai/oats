@@ -161,36 +161,53 @@ Written by `oats sync`; the only persisted state at the deployment besides
 
 ## Repository references in diagnostics
 
-No remote diagnostic or workspace `cannot-read` answer prints a URL's user
-information: both `user:password@` and a bare `user@` are removed. This also
-applies when a repository or package reference is refused, including malformed
-references and references nested in invalid input. The message and its
-reference-bearing fields (`details.ref`, `details.url`, `details.value` and
-`provenance.value`) use the same rendering rule, as do workspace schema problem
-messages that quote repository references and Git stderr quoted in a diagnostic.
-Unrelated schema values and opaque provider payloads are not scanned for secrets.
+Selected repository references in diagnostics are display values, constructed
+from recognised components rather than copied from the supplied reference.
+An unambiguous scheme or scp-style reference supplies only its scheme, host,
+supported port and path, using the repository parser's character rules. User
+information is never a display component: `ssh://git@host/org/repo` and
+`git@host:org/repo` both display as `ssh://host/org/repo`. Display recognition
+can also remove user information from a well-formed HTTP(S) URL that the
+repository parser refuses; it does not admit that URL for use by Git.
 
-When rendering removes user information from the reference of an `E_REPO_REF`
-refusal, or from the value quoted by a package refusal, the renderer adds the
-neutral clause “(its user information is not shown)”. This states what was
-removed, including an ordinary SSH username, without changing the refusal's
-cause or giving credential advice for an SSH host/path error. The parser's
-HTTP(S) userinfo refusal instead names its specific cause: an HTTP(S) reference
-may not carry user information, and credentials belong in Git (a credential
-helper), not in the URL. Package refusals retain their own reason.
-The renderer adds the clause once, including when the refusal is forwarded;
-reference fields contain only the rendered value. Refusals without removed user
-information and `E_REMOTE_UNREADABLE` transport failures do not gain the clause.
-Existing workspace and membership message slots retain the explanation when
-they forward the refusal, including schema `problems[].message`; pattern-only
-schema problems (including local configuration) remain unchanged. Valid SSH
-references still pass the parser unchanged.
+**The fixed withheld display is `[repository reference withheld]`.** It replaces
+the whole selected value when safe components cannot be recognised
+unambiguously, including malformed references, several references in one value
+and references mixed with other text. Harmless host or path text in that value
+is withheld too. A literal input equal to the fixed display looks the same;
+the display is not an identifier or a value to pass back to a command.
+Standalone `file:` references and filesystem paths retain their path meanings.
 
-An SSH URL such as `ssh://git@host/org/repo` is shown as
-`ssh://host/org/repo`; an scp-style `git@host:org/repo` is also shown as
-`ssh://host/org/repo`, so clients can still extract the hostname. These are
-display values: accepted syntax, repository identity keys and the original
-reference used by Git are unchanged. Diagnostic fields are not transport URLs.
+The same decision applies to the selected reference in error messages,
+`details.ref`, `details.url`, `details.value`, `provenance.value`, nested
+reference keys and values, and reference-bearing workspace schema problems.
+Quoted or JSON-escaped copies and host/path fragments derived from a withheld
+value cannot reveal its remainder. Unrelated schema values and opaque provider
+payloads are not scanned. This is not a general query or fragment token scrubber.
+
+A refusal retains its code and reason. When the whole reference is withheld,
+the kernel message explains that once per originating refusal. When a
+constructed display omits user information, the refusal carries the neutral
+clause “(its user information is not shown)”. An HTTP(S) userinfo refusal keeps
+its specific cause and advice to give credentials to Git through a credential
+helper, rather than in the URL; package refusals keep their own reason.
+Workspace and membership message slots carry an existing refusal's explanation
+when they forward it, including schema `problems[].message`, without adding
+another copy. Pattern-only schema problems use the same selected-value display
+without inventing a parser refusal. Known declaration files and key locations
+remain available beside the safe diagnostic value; APIs that do not know a
+location do not invent one.
+
+Git stderr quoted in a diagnostic is ordinary prose: its scrubber keeps a
+bounded line, delegates URL display to the same policy and removes known
+credential echoes. It does not treat the entire line as a selected repository
+reference. Transport failures do not gain a repository-refusal clause.
+
+These diagnostic fields are for people. Accepted parser results, repository
+identity keys and other values consumed by commands remain exact, as does the
+original reference handed to Git. Diagnostic rendering changes neither the
+accepted syntax nor transport. A client may extract a host from a constructed
+display; it must also handle the fixed withheld display without a host.
 
 ## Membership and trust
 

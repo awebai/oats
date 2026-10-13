@@ -694,7 +694,10 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   `status` / `workspace status`, the Desktop keeps the `message` (shown as
   given) and only a bounded cause: `details.reason` (matching
   `^[a-z][a-z-]{0,31}$`) and the host of `details.url`. No path, pid, lock,
-  `cacheDir` or other detail field crosses to the renderer. It keys only on
+  `cacheDir` or other detail field crosses to the renderer. `details.url` is a
+  display value under the [repository diagnostic contract](workspaces.md#repository-references-in-diagnostics),
+  so it may withhold the reference and supply no host; it is not a transport URL.
+  It keys only on
   `code` + `details.reason`: `cache` words the roster "OATS cache
   problem" with the message in full; `network` / `timeout` read "Couldn't
   reach <host>"; any other reason, `unknown` among them, keeps the generic
