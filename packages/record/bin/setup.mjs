@@ -66,11 +66,19 @@ function shellWord(value) {
 // anything else outside quotes (an expansion, an operator, a redirection, a
 // double quote, a newline, which ends a command) or a quote left open: the
 // shell would do more with it than run those words, so it is not read.
+//
+// A character beyond ASCII is part of a word too, as an earlier setup wrote
+// it bare in a path (shellWord now quotes it). bash, dash and zsh end a word
+// only at a space, a tab, a newline or an operator, all ASCII, so a command
+// of such words carries nothing a rewrite would lose. POSIX lets a shell end
+// a word at any blank of its locale, so a Unicode space is not taken, nor a
+// control or format character.
+const BEYOND_ASCII = /^[^\0-\x7F\p{Z}\p{C}]$/u;
 function shellWords(command) {
   const words = [];
   let word = null;
   for (let i = 0; i < command.length; ) {
-    const c = command[i];
+    const c = String.fromCodePoint(command.codePointAt(i));
     if (c === " " || c === "\t") {
       if (word !== null) words.push(word);
       word = null;
@@ -83,9 +91,9 @@ function shellWords(command) {
     } else if (c === "\\" && command[i + 1] === "'") {
       word = (word ?? "") + "'";
       i += 2;
-    } else if (SHELL_PLAIN.test(c)) {
+    } else if (SHELL_PLAIN.test(c) || BEYOND_ASCII.test(c)) {
       word = (word ?? "") + c;
-      i++;
+      i += c.length;
     } else return null;
   }
   if (word !== null) words.push(word);
@@ -199,9 +207,9 @@ function installHooks() {
     // (shellWords), and only a command that reads whole that way can be
     // ours: one that also carries a second command, an operator or a
     // redirection would lose it when rewritten. It reads the quoted form and
-    // every command written before paths were quoted, except one with a
-    // character outside the plain set left bare in a path (`=`, `~`, a
-    // letter that is not ASCII) or with a space in one, which was split.
+    // every command written before paths were quoted, except one with `=`,
+    // `~` or another ASCII character outside the plain set left bare in a
+    // path, or with a space in one, which was split.
     const ours = (h) => {
       if (h?.type !== "command") return false;
       const tokens = shellWords(String(h.command));

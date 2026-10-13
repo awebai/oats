@@ -351,6 +351,26 @@ test("over the old form (unquoted, the keg's path) a run replaces the hooks and 
   }
 });
 
+test("an old command with a letter beyond ASCII bare in a path is replaced, and written quoted", () => {
+  // Composed, decomposed (a base letter and a combining mark), another script,
+  // and a letter outside the Basic Multilingual Plane.
+  const olds = ["/home/zo\u00eb/.nvm/bin/node", "/home/zoe\u0308/.nvm/bin/node", "/home/\u5c71\u7530/bin/node", "/home/\u{20000}/bin/node"];
+  const node = join(base, "zo\u00eb", "bin", "node");
+  const current = `'${node}' ${captureOf()} --owner ${OWNER} --quiet`;
+  for (const old of olds) {
+    const home = newHome({ hooks: { Stop: [{ hooks: [oldHook(old)] }], SessionEnd: [{ hooks: [oldHook(old, "/old/inst\u00e4ll/bin/capture.mjs")] }] } });
+    run(home, ["--no-service"], { node });
+    for (const event of ["Stop", "SessionEnd"]) {
+      assert.deepEqual(commands(home, event), [current], `${event}, over ${old}`);
+      assert.equal(readSettings(home).hooks[event].length, 1, "no group added");
+    }
+    // The quoted form it wrote is its own at the next run.
+    const text = readFileSync(settingsPath(home), "utf8");
+    run(home, ["--no-service"], { node });
+    assert.equal(readFileSync(settingsPath(home), "utf8"), text);
+  }
+});
+
 test("over the new form (quoted, a path with a space) a run replaces the hooks and the unit", () => {
   const first = join(base, "node one", "node");
   const second = join(base, "node two", "node");
@@ -390,10 +410,13 @@ test("a command that is not provably setup's is left alone, and setup's own is a
     "/usr/bin/node /x/capture.mjs --owner a --quiet `date`",
     "( /usr/bin/node /x/capture.mjs --owner a --quiet )",
     "/usr/bin/node /x/capture.mjs --owner a --quiet # for the record",
-    // A named limit: setup's own old command with a character outside the
-    // plain set bare in a path. Not read, so not replaced.
+    "/home/zo\u00eb/bin/node /old/install/bin/capture.mjs --owner a --quiet && other", // beyond ASCII, and more
+    "/opt/no\u3000de/bin/node /old/install/bin/capture.mjs --owner a --quiet", // a Unicode space: a blank in some locales
+    "/opt/no\u200bde/bin/node /old/install/bin/capture.mjs --owner a --quiet", // a format character
+    "/opt/no\u0085de/bin/node /old/install/bin/capture.mjs --owner a --quiet", // a control character
+    // A named limit: setup's own old command with an ASCII character outside
+    // the plain set bare in a path. Not read, so not replaced.
     "/opt/node~22=lts/bin/node /old/install/bin/capture.mjs --owner a --quiet",
-    "/home/zo\u00eb/bin/node /old/install/bin/capture.mjs --owner a --quiet",
     // The same with quoted paths:
     "'/usr/bin/node' '/x/capture.mjs' --owner a --quiet; echo done", // an operator
     "'/a b/tool' '/x/capture.mjs' --owner a --quiet $EXTRA", // an expansion
