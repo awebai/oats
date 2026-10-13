@@ -11,7 +11,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -87,6 +88,53 @@ test("a returned text is held to what a rendered one is: the kernel's reader, th
     (e) => e.code === "E_LOCAL_CHANGED" && e.details.path === fx.localPath && /nothing was written/.test(e.message));
   assert.deepEqual([n, fx.text()], [5, `${HEAD}defaultTeam: theirs-5\n`]);
   assert.equal(existsSync(localLock(fx.dir)), false, "the lock is released");
+});
+
+test("the file that replaces oats-local.yaml has its permission bits, from before its first byte: a private file stays private", { skip: process.platform === "win32" }, (t) => {
+  const WORKSPACE = { schemaVersion: 2, name: "acme", teams: {}, localTeams: true };
+  const umask = process.umask(0o022);
+  t.after(() => process.umask(umask));
+  const mode = (path) => statSync(path).mode & 0o7777;
+  // Whatever the umask would give a new file: kept private, kept group-writable, kept as it was.
+  for (const bits of [0o600, 0o664, 0o640, 0o644]) {
+    const fx = fileOf(t, "host:\n  name: kb-host\n");
+    chmodSync(fx.localPath, bits);
+    // Each kind of writer: an edit of the document, an edit that returns its text, and the two verbs' own.
+    editLocal(fx.ctx, { verb: "a test" }, ({ doc }) => { doc.set("defaultTeam", "mine"); doc.set("teams", doc.createNode({ mine: { team: "mine:me.example" } })); return {}; });
+    assert.equal(mode(fx.localPath), bits, `a rendered edit keeps ${bits.toString(8)}`);
+    editLocal(fx.ctx, { verb: "a test" }, ({ text }) => ({ text: `${text}clones: {}\n` }));
+    assert.equal(mode(fx.localPath), bits, `a returned text keeps ${bits.toString(8)}`);
+    setDisabledHere(fx.ctx, "schedule", "ws/nightly", true);
+    assert.equal(mode(fx.localPath), bits, `setDisabledHere keeps ${bits.toString(8)}`);
+    teamsAdd({ ...fx.ctx, local: fx.value(), workspace: WORKSPACE, workspaceKey: "github.com/acme/agents" }, "other", { team: "other:me.example" });
+    assert.equal(mode(fx.localPath), bits, `oats teams keeps ${bits.toString(8)}`);
+    assert.deepEqual([fx.value().schedules.disabled, Object.keys(fx.value().teams)], [["ws/nightly"], ["mine", "other"]]);
+  }
+  // The temporary file gets its text only once it has those bits: at the write into it, it is empty and
+  // already as private (or as open) as the file it replaces, whatever the umask made of it at its creation.
+  const atWrite = (bits, mask) => {
+    const fx = fileOf(t, "host:\n  name: kb-host\n");
+    chmodSync(fx.localPath, bits);
+    const original = fs.writeFileSync, seen = [], before = process.umask(mask);
+    fs.writeFileSync = function (target, ...rest) {
+      if (typeof target === "number") { const s = fs.fstatSync(target); seen.push([s.mode & 0o7777, s.size]); }
+      return original.call(this, target, ...rest);
+    };
+    syncBuiltinESMExports();
+    try { setDisabledHere(fx.ctx, "schedule", "ws/nightly", true); }
+    finally { fs.writeFileSync = original; syncBuiltinESMExports(); process.umask(before); }
+    return [seen, mode(fx.localPath)];
+  };
+  assert.deepEqual(atWrite(0o600, 0o022), [[[0o600, 0]], 0o600]);
+  assert.deepEqual(atWrite(0o664, 0o077), [[[0o664, 0]], 0o664], "set exactly, not only narrowed by the umask");
+  // A file left under the temporary name by a killed process (here: wide open, and a link) is not written into.
+  const fx = fileOf(t, "host:\n  name: kb-host\n");
+  chmodSync(fx.localPath, 0o600);
+  const tmp = join(fx.dir, `.${LOCAL}.oats-tmp-${process.pid}`), elsewhere = join(fx.dir, "elsewhere");
+  writeFileSync(elsewhere, "not ours\n"); chmodSync(elsewhere, 0o666);
+  symlinkSync(elsewhere, tmp);
+  setDisabledHere(fx.ctx, "trigger", "ws/kb-review", true);
+  assert.deepEqual([mode(fx.localPath), fx.value().triggers, readFileSync(elsewhere, "utf8"), existsSync(tmp)], [0o600, { disabled: ["ws/kb-review"] }, "not ours\n", false]);
 });
 
 /* ───────────────────────────── the opt-out writer, over a file ────────── */
@@ -409,6 +457,12 @@ test("a launch-config refusal made on the file under the lock keeps its code, wr
   assert.equal(ok(fx.cli(["trigger", "enable", "ws/kb-review", "--json"]), "enable, in a JSON file").trigger.enabledHere, true);
   assert.deepEqual(JSON.parse(fx.text()), YAML.parse(yaml));
   writeFileSync(fx.local, yaml);
+  // A file its operator made private stays private through each writer.
+  chmodSync(fx.local, 0o600);
+  ok(fx.cli(["launch-config", "set", "private-too", "--file", fx.def(PI), "--json"]), "set, on a 0600 file");
+  ok(fx.cli(["trigger", "disable", "ws/kb-review", "--json"]), "disable, on a 0600 file");
+  ok(fx.cli(["teams", "add", "mine", "--team", "mine:me.example", "--json"]), "teams add, on a 0600 file");
+  assert.equal(statSync(fx.local).mode & 0o7777, 0o600);
   // A deployment that has no .agents/locks yet: the lock's parents are made.
   rmSync(join(fx.dep, ".agents", "locks"), { recursive: true, force: true });
   ok(fx.cli(["launch-config", "remove", "second", "--json"]), "remove with no locks directory");

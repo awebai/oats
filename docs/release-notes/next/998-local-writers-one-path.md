@@ -38,3 +38,12 @@
   JSON could not opt out at all (the command failed with
   `invalid-declaration` and wrote nothing): the opt-out is now written, and
   the file stays JSON.
+- **A kernel command that rewrites `oats-local.yaml` keeps the file's
+  permission bits ([#998](https://github.com/awebai/oats/issues/998)).**
+  `oats teams`, `oats soul launch` and `oats launch-config set|remove`
+  replace the file by a rename, and the new file got the bits the process's
+  umask gives: a file its operator had made private (`0600`) came back
+  readable by others (`0644` under the usual umask). The new file now has
+  the bits of the one it replaces, from before its first byte is written.
+  `oats schedule|trigger enable|disable` keeps them too, as it did when it
+  wrote in place.

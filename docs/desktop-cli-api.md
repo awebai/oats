@@ -1475,9 +1475,11 @@ oats teams default <label> [--if-absent | --expect <label>] --json
   code; an invalid result is `E_WORKSPACE_SCHEMA`.
 - **Writes** edit `oats-local.yaml` in place and touch only the entries that
   change: comments and styles elsewhere, including inline comments on sibling
-  entries, are kept. Each verb re-reads the file and judges its refusals on it
-  as it is now, and writes only if the file did not change meanwhile (else it
-  redoes the edit on the new content). A file that keeps changing is
+  entries, are kept. The file is replaced whole, by a rename, and the new
+  file keeps the permission bits of the old one. Each verb re-reads the file
+  and judges its refusals on it as it is now, and writes only if the file
+  did not change meanwhile (else it redoes the edit on the new content). A
+  file that keeps changing is
   `E_LOCAL_CHANGED {path}`; nothing was written. The condition of `--if-absent`
   and `--expect` is judged the same way, on the file as it is now and again on
   every redo.
@@ -4935,8 +4937,11 @@ accept `--server <id>`.
   definition (`--file`, or stdin) is read and judged before the lock is
   taken. A lock still held after 5 s is `E_LOCAL_BUSY`, and a file that kept
   changing while the edit ran is `E_LOCAL_CHANGED`; nothing was written, and
-  the same command can be run again. A definition equal to the declared one
-  writes nothing and answers the same receipt.
+  the same command can be run again. When the text it would write is the
+  file's text already, nothing is written; the receipt is the same either
+  way. (The same definition set again is such a case only once this command
+  has written the block: a block written by hand in another form is
+  rewritten in this command's.)
 - **preview** (read-only) answers `{context, selected, selection: {source,
   launchConfig, harness, model, yolo}, harness, model, modelSource, yolo,
   launchConfig, launchConfigSource, launchConfigDefault, executable: {path,
