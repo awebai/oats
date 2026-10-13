@@ -11,8 +11,14 @@
 export const NOT_NOTE_TEXT = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069\u200B\u2060\uFEFF\u{E0000}-\u{E007F}]/u;
 const EVERY_NOT_NOTE_TEXT = new RegExp(NOT_NOTE_TEXT.source, 'gu');
 
-/** Text withheld whole: secrets, credentialed URLs, C0 controls other than tab and line feed, DEL. */
-export const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f]|[a-z][a-z0-9+.-]*:\/\/[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/i;
+/** Text withheld whole: secrets, credentialed URLs, C0 controls other than tab and line feed, DEL.
+ * Its time grows with the length of the text, which is tested as given and may be long (#976). So the URL
+ * alternative finds `://` first and looks behind it for the scheme: written scheme first, it read a run of
+ * letters to its end from each letter of the run, and its time grew with the square of the run. The
+ * look-behind reads only scheme characters and `://` holds none, so each `://` reads its own run once;
+ * what follows stops at the next `/`, and every `://` holds one. Asked only whether it matches: this form
+ * and the scheme-first one match the same texts, not the same part of them. */
+export const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f]|:\/\/(?<=[a-z][a-z0-9+.-]*:\/\/)[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/i;
 export const DETAIL_WITHHELD = '[Detail withheld]';
 export const MAX_DISPLAY_LINE = 2048;
 

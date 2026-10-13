@@ -14,7 +14,9 @@ export const absolute = v => typeof v === 'string' && v.startsWith('/') && v.len
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const states = ['pass', 'fail', 'unknown', 'not-applicable'];
-const unsafe = /[\x00-\x08\x0b-\x1f\x7f]|[a-z][a-z0-9+.-]*:\/\/[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+/i;
+// The URL alternative finds `://` first and looks behind it for the scheme, as display-text.mjs `UNSAFE`
+// does and for its reason: time that grows with the length of the text, not with the square of a run.
+const unsafe = /[\x00-\x08\x0b-\x1f\x7f]|:\/\/(?<=[a-z][a-z0-9+.-]*:\/\/)[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+/i;
 function text(v, max = 1024) { if (typeof v !== 'string' || v.length > max) throw Error(); return unsafe.test(v) ? '[Detail withheld]' : v; }
 const nullable = v => v == null ? null : text(v);
 export function readinessSelector(v) {
