@@ -293,6 +293,14 @@ nothing open.
 | `Ctrl+Z` | suspends: the shell gets the terminal back as it was; `fg` returns, redraws and reads at once |
 | `Ctrl+L` | redraws the whole screen, and sets the terminal's modes again if something reset them |
 
+The selection stands on instances only, and in the switcher on its rows: a
+heading, a reason and a note are passed over. What stands above the first
+instance or under the last one comes into view with it. When a movement key
+has no instance to go to (the selection is on the first or the last one, or
+the list has none), it scrolls the list instead, so the rows after the last
+instance can always be read, however many they are. The selection stays
+where it is, and the list returns to it at the next key that moves it.
+
 In the list of instances `Enter` does nothing. The help screen is generated
 from the table the program acts on, so it always lists the keys that work,
 with the marks and with what this version does not do. The movement keys

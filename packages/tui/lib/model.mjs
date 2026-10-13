@@ -349,7 +349,7 @@ export function model(state, { page, now, at, cols }) {
     const at_ = s.selected === null ? -1 : s.items.findIndex((item) => item.key === s.selected);
     // The line that says what happened to the open workspace stands above the rows and takes one
     // of the pane's: the window is that much shorter, so no choice is hidden for it.
-    const win = windowOf({ top: state.switcher.top, count: s.items.length, height: Math.max(1, page - (state.switcher.line ? 1 : 0)), keep: at_ });
+    const win = windowOf({ top: state.switcher.top, count: s.items.length, height: Math.max(1, page - (state.switcher.line ? 1 : 0)), keep: state.switcher.loose ? -1 : at_ });
     return {
       ...common, under, list: [], above: 0, below: 0, wordWidth: 0, detail: null,
       // Nothing of a workspace stands in the header while the switcher is shown.
@@ -362,7 +362,8 @@ export function model(state, { page, now, at, cols }) {
     };
   }
   const selected = state.selected === null ? -1 : r.index.get(state.selected) ?? -1;
-  const win = windowOf({ top: state.top, count: r.items.length, height: page, keep: selected });
+  // The window holds the selection, unless the list was scrolled away from it on purpose.
+  const win = windowOf({ top: state.top, count: r.items.length, height: page, keep: state.loose ? -1 : selected });
   return {
     ...common, under,
     list: r.items.slice(win.top, win.top + win.size).map((item) => (item?.id !== undefined ? { kind: "row", ...listRow(state, r, item) } : item)),

@@ -28,7 +28,10 @@ const NO_FILTER = Object.freeze({ editing: false, query: "" });
  *  `numbers`: each served deployment's entry and the number of the cycle that gave it. `remote`,
  *  `rosterAt`, `memory`, `notes`, `collecting`: the roster of other machines as the shared rule
  *  left it, the time of the last outcome taken, what the machines reported, and whether a roster
- *  read is in flight. `selected`, `top`, `detailTop` are the open view's; `places` keeps them for
+ *  read is in flight. `unread`: per served deployment whose read failed with nothing kept, the
+ *  instances it last held (see `took`). `loose`: the list was scrolled away from the selection
+ *  on purpose (see `scrolledList`); the switcher has its own.
+ *  `selected`, `top`, `detailTop` are the open view's; `places` keeps them for
  *  the views left behind, and `collapsed` holds every view's keys (each carries its `open`).
  *  `back`: the view under the help. `offered`: the deployments of `~/Agents` not served. */
 export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false }) {
@@ -38,8 +41,8 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     entries: new Map(deployment === null ? [] : [[deployment, entry]]), numbers: new Map(),
     remote: Object.freeze({ remoteGroups: Object.freeze([]), rosterAnswered: false, rosterFailure: null }), rosterAt: null,
     memory: new Map(), notes: new Map(), collecting: false, cli, home,
-    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, detailTop: 0, places: new Map(),
-    switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, line: null, refused: null }),
+    selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
+    switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
     helpTop: 0, actions, ascii,
   });
@@ -50,12 +53,15 @@ const indexOf = (r, id) => (id === null ? -1 : r.index.get(id) ?? -1);
 /** Whether an item of the list is an instance: the only kind the selection stands on. */
 const isRow = (item) => item?.id !== undefined;
 
-/** The list's `top` as the screen shows it for this state in a pane `page` rows tall. */
-const settledTop = (state, r, page) => windowOf({ top: state.top, count: r.items.length, height: page, keep: indexOf(r, state.selected) }).top;
+/** The list's `top` as the screen shows it for this state in a pane `page` rows tall. The
+ *  window holds the selected instance, unless it was scrolled away from it on purpose (`loose`). */
+const settledTop = (state, r, page) => windowOf({ top: state.top, count: r.items.length, height: page, keep: state.loose ? -1 : indexOf(r, state.selected) }).top;
 
 /** Select the instance at `index` of the drawn order (an item that is not an instance is passed
- *  over in the direction of travel), and scroll the least that shows it. A new selection starts
- *  its detail at the top. */
+ *  over in the direction of travel), and scroll the least that shows it. The first instance
+ *  brings what stands above it into the pane (its heading), and the last what stands under it
+ *  (a deployment without rows, the roster's failure), as far as the pane holds them beside it.
+ *  A new selection starts its detail at the top. */
 function selectAt(state, r, index, page, step = 1) {
   const count = r.items.length;
   if (!r.rows.length) return state;
@@ -63,8 +69,19 @@ function selectAt(state, r, index, page, step = 1) {
   while (at >= 0 && at < count && !isRow(r.items[at])) at += step;
   if (at < 0 || at >= count) { at = Math.min(Math.max(0, index), count - 1); while (!isRow(r.items[at])) at -= step; }
   const id = r.items[at].id;
-  const top = windowOf({ top: settledTop(state, r, page), count, height: page, keep: at }).top;
-  return next(state, { selected: id, top, detailTop: id === state.selected ? state.detailTop : 0 });
+  const from = id === r.rows[0].id ? 0 : id === r.rows.at(-1).id ? count : settledTop(state, r, page);
+  const top = windowOf({ top: from, count, height: page, keep: at }).top;
+  return next(state, { selected: id, top, loose: false, detailTop: id === state.selected ? state.detailTop : 0 });
+}
+
+/** A movement key with no instance to go to in its direction (the selection is on the first or
+ *  the last one, or the list holds none): the list scrolls instead, by what the key moves, so
+ *  whatever stands beyond the instances can always be read, however much of it there is. The
+ *  selection stays where it is and may leave the pane (`loose`) until it moves again. */
+function scrolledList(state, r, action, page) {
+  const count = r.items.length, from = settledTop(state, r, page);
+  const top = windowOf({ top: moved(action, from, count, page), count, height: page }).top;
+  return top === from ? state : next(state, { top, loose: true });
 }
 
 /** After the rows changed (a read, the filter, a collapse): the selection stays on its instance
@@ -78,38 +95,52 @@ function rehomed(before, state) {
   if (state.selected !== null && now.rows.length === 0 && now.instances.some((row) => instanceId(row) === state.selected)) return state;
   const place = state.selected === null ? 0 : Math.max(0, before.rows.findIndex((item) => item.id === state.selected));
   const item = now.rows[Math.min(place, now.rows.length - 1)] ?? null;
-  return next(state, { selected: item ? item.id : null, detailTop: 0 });
+  return next(state, { selected: item ? item.id : null, loose: false, detailTop: 0 });
 }
 
 /** The switcher, shown: over whatever view was there. `said`: a line of its own to show. */
-const toSwitcher = (state, said = null) => next(state, { view: "switcher", switcher: Object.freeze({ ...state.switcher, editing: false, line: said, refused: null }) });
+const toSwitcher = (state, said = null) => next(state, { view: "switcher", switcher: Object.freeze({ ...state.switcher, editing: false, loose: false, line: said, refused: null }) });
 
 /** After what the reader gave changed: when no view holds what was open any more (a machine that
  *  is no longer listed), the switcher is shown and says so, and nothing is open. Else the
  *  collapse keys of this view whose instance is gone are forgotten, and the selection finds its
- *  place. */
+ *  place.
+ *  THAT AN INSTANCE IS GONE IS KNOWN ONLY OF A DEPLOYMENT THAT WAS READ. One whose read failed
+ *  with nothing kept draws no row (and, reporting no workspace, is in no view but its own): its
+ *  instances are not gone, they are not known. `unread` holds them (see `took`): the collapse of
+ *  such an instance is not forgotten and a selection on one is not moved, whoever answered
+ *  meanwhile (another deployment, the roster of other machines), so the next good read finds
+ *  the user where they were. A machine's rows are kept by the shared rule while it does not
+ *  answer, so they need no such care. */
 function settled(state, taken) {
   const now = roster(taken);
   if (taken.open !== null && now.gone) {
     const places = new Map(taken.places); places.delete(taken.open);
-    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher" }), "gone"), effect: { offer: true } };
+    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher" }), "gone"), effect: { offer: true } };
   }
   const before = roster(state);
+  const unknown = new Set([...taken.unread.values()].flatMap((ids) => [...ids]));
   const mine = `${collapseKey(taken.open, "")}`;
   const present = new Set(now.instances.map((row) => collapseKey(taken.open, instanceId(row))));
-  const stillThere = [...taken.collapsed].filter((key) => !key.startsWith(mine) || present.has(key));
+  const stillThere = [...taken.collapsed].filter((key) => !key.startsWith(mine) || present.has(key) || unknown.has(key.slice(mine.length)));
   const pruned = stillThere.length === taken.collapsed.size ? taken : next(taken, { collapsed: new Set(stillThere) });
-  return { state: rehomed(before, pruned), effect: null };
+  return { state: unknown.has(pruned.selected) ? pruned : rehomed(before, pruned), effect: null };
 }
 
 /** A served deployment's entry from the reader, with the number of the cycle that gave it. An
  *  answer for a deployment that is not served, or one that is not newer than the last taken for
  *  it, is dropped. Only an observed entry moves the selection or forgets a collapse: a failed
- *  read has no rows to move to, and the next good one finds the user where they were. */
+ *  read has no rows to move to, and the next good one finds the user where they were.
+ *  `unread`: for a deployment whose read failed with nothing kept, the instances it held when it
+ *  was last read, until it is read again. They are what `settled` must not take for gone. */
 function took(state, { id, entry, number }) {
   if (!state.ctxs.includes(id) || !(number > (state.numbers.get(id) ?? 0))) return { state, effect: null };
-  const taken = next(state, { entries: new Map(state.entries).set(id, entry), numbers: new Map(state.numbers).set(id, number) });
-  return entry?.deployment?.status === "observed" ? settled(state, taken) : { state: taken, effect: null };
+  const observed = entry?.deployment?.status === "observed", held = state.entries.get(id);
+  let unread = state.unread;
+  if (observed && unread.has(id)) { unread = new Map(unread); unread.delete(id); }
+  else if (!observed && held?.deployment?.status === "observed") unread = new Map(unread).set(id, new Set((Array.isArray(held.instances) ? held.instances : []).map(instanceId)));
+  const taken = next(state, { entries: new Map(state.entries).set(id, entry), numbers: new Map(state.numbers).set(id, number), unread });
+  return observed ? settled(state, taken) : { state: taken, effect: null };
 }
 
 /** The roster of other machines after one outcome, as the shared rule made it (lib/read.mjs),
@@ -126,7 +157,7 @@ function opened(state, id) {
   const places = new Map(state.places);
   if (state.open !== null) places.set(state.open, Object.freeze({ selected: state.selected, top: state.top, detailTop: state.detailTop }));
   const place = places.get(id) ?? { selected: null, top: 0, detailTop: 0 };
-  return rehomed({ rows: [] }, next(shown, { open: id, places, focus: "list", filter: NO_FILTER, ...place }));
+  return rehomed({ rows: [] }, next(shown, { open: id, places, focus: "list", filter: NO_FILTER, loose: false, ...place }));
 }
 
 /** A picked folder of `~/Agents` that is a deployment (lib/read.mjs made it canonical and asked
@@ -141,7 +172,7 @@ function admitted(state, { admitted: id, at }) {
 function queried(state, query) {
   if (query === state.filter.query) return state;
   const before = roster(state);
-  return rehomed(before, next(state, { filter: Object.freeze({ ...state.filter, query }), top: 0 }));
+  return rehomed(before, next(state, { filter: Object.freeze({ ...state.filter, query }), top: 0, loose: false }));
 }
 
 /** Text for a filter field: the query with it added when the filter stays within its limit and
@@ -164,8 +195,8 @@ const FIELDS = Object.freeze({
   }),
   switcher: Object.freeze({
     query: (state) => state.switcher.query,
-    put: (state, query) => (query === state.switcher.query ? state : next(state, { switcher: Object.freeze({ ...state.switcher, query, top: 0 }) })),
-    close: (state, query) => next(state, { switcher: Object.freeze({ ...state.switcher, query, editing: false, top: 0 }) }),
+    put: (state, query) => (query === state.switcher.query ? state : next(state, { switcher: Object.freeze({ ...state.switcher, query, top: 0, loose: false }) })),
+    close: (state, query) => next(state, { switcher: Object.freeze({ ...state.switcher, query, editing: false, top: 0, loose: false }) }),
   }),
 });
 /** The filter field that is open now, or null. */
@@ -210,18 +241,26 @@ function switched(state, action, page) {
   switch (action) {
     case "filter": return { state: put({ editing: true }), effect: null };
     case "close":
-      if (sw.query !== "") return { state: put({ query: "", top: 0 }), effect: null };
+      if (sw.query !== "") return { state: put({ query: "", top: 0, loose: false }), effect: null };
       // Back to the view it was opened over; with nothing open there is none.
       return state.open === null ? stay : { state: next(put({ line: null, refused: null }), { view: "instances", back: "instances" }), effect: null };
     case "instances": return state.open === null ? stay : { state: next(put({ line: null, refused: null }), { view: "instances", back: "instances" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
-      if (!s.keys.length) return stay;
+      // The rows of the pane the choices have: the line that says what happened takes one (lib/model.mjs).
+      const count = s.items.length, height = Math.max(1, page - (sw.line ? 1 : 0));
+      const drawn = windowOf({ top: sw.top, count, height, keep: sw.loose ? -1 : s.items.findIndex((item) => item.key !== undefined && item.key === s.selected) }).top;
       const from = Math.max(0, s.keys.indexOf(s.selected));
-      const key = s.keys[Math.min(Math.max(0, moved(action, from, s.keys.length, page)), s.keys.length - 1)];
+      const key = s.keys.length ? s.keys[Math.min(Math.max(0, moved(action, from, s.keys.length, page)), s.keys.length - 1)] : null;
+      // No choice to go to in that direction (the first, the last, or none at all): the rows
+      // scroll instead, so a line under the last choice (that the folder holds more) is read.
+      if (key === null || key === s.selected) {
+        const top = windowOf({ top: moved(action, drawn, count, height), count, height }).top;
+        return top === drawn ? stay : { state: put({ top, loose: true }), effect: null };
+      }
       const at = s.items.findIndex((item) => item.key === key);
-      // The headings above the first choice come into the pane with it.
-      const top = windowOf({ top: key === s.keys[0] ? 0 : windowOf({ top: sw.top, count: s.items.length, height: page }).top, count: s.items.length, height: page, keep: at }).top;
-      return { state: put({ selected: key, top }), effect: null };
+      // The headings above the first choice come into the pane with it, and what stands under the last one.
+      const top = windowOf({ top: key === s.keys[0] ? 0 : key === s.keys.at(-1) ? count : drawn, count, height, keep: at }).top;
+      return { state: put({ selected: key, top, loose: false }), effect: null };
     }
     case "open-workspace": {
       const item = s.items.find((each) => each.key !== undefined && each.key === s.selected);
@@ -297,7 +336,8 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
       if (state.focus === "detail") return { state: next(state, { detailTop: scrolled(state.detailTop) }), effect: null };
       // With nothing selected, any movement selects the first row.
       const target = at < 0 ? 0 : moved(action, at, r.items.length, page);
-      return { state: selectAt(state, r, target, page, target < at ? -1 : 1), effect: null };
+      const picked = selectAt(state, r, target, page, target < at ? -1 : 1);
+      return { state: picked.selected === state.selected ? scrolledList(state, r, action, page) : picked, effect: null };
     }
     case "collapse": case "expand": {
       if (state.focus !== "list" || at < 0) return stay;
@@ -306,7 +346,7 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
       if (!r.filtering && fold === (action === "collapse" ? "open" : "closed")) {
         const collapsed = new Set(state.collapsed);
         if (action === "collapse") collapsed.add(key); else collapsed.delete(key);
-        return { state: rehomed(r, next(settledState, { collapsed })), effect: null };
+        return { state: rehomed(r, next(settledState, { collapsed, loose: false })), effect: null };
       }
       // Nothing to fold or unfold: collapse goes to the parent, the nearest row above that is one
       // level less deep; expand to the first child, the next row when it is one level deeper.

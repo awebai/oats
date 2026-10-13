@@ -1511,6 +1511,29 @@ test("two hundred roster groups: the switcher lists every one in the order the s
   assert.deepEqual([seen(read).machines, shape(seen(read).list)], [0, NEAR_DRAWN]);
 });
 
+// --- A list scrolled away from its selection --------------------------------------------
+
+test("while the store says a list is loose the model's window is where the list was scrolled, with the selected row in it or not, and the detail is still the selected instance's; else the window holds the selection", () => {
+  const state = on(stateOf(observed(CROWD)), "inst-000");
+  const at = (top, loose) => view(Object.freeze({ ...state, top, loose }), 10);
+  const cut = (m) => [m.above, m.list.length, m.below, m.list[0].name, m.list.some((row) => row.selected)];
+  assert.deepEqual(cut(at(50, false)), [0, 9, 291, "inst-000", true], "held: the window moves to the selected row");
+  assert.deepEqual(cut(at(50, true)), [50, 9, 241, "inst-050", false], "loose: the window is the store's, and the selected row is not in it");
+  assert.equal(at(50, true).detail.title, "inst-000");
+  assert.deepEqual(cut(at(0, true)), [0, 9, 291, "inst-000", true], "loose, with the selected row in the window: it is drawn selected");
+  assert.deepEqual(cut(at(5000, true)), [291, 9, 0, "inst-291", false], "a top past the end is the last window");
+  assert.equal(stateOf(observed(CROWD)).loose, false, "a list is not loose until a key made it so");
+  // The switcher's rows, by the switcher's own flag.
+  const shown = press(crowded(), ["w"]).state;
+  const sw = (top, loose) => seen(Object.freeze({ ...shown, loose: !loose, switcher: Object.freeze({ ...shown.switcher, top, loose }) }), 80, 3).switcher;
+  const rows = (s) => [s.above, s.rows.length, s.below, s.rows.some((row) => row.selected)];
+  assert.equal(switcher(shown, AT).items.length, 7);
+  assert.deepEqual(rows(sw(4, false)), [0, 2, 5, true], "held: the first choice, the selected one, is in the window");
+  assert.deepEqual(rows(sw(4, true)), [4, 2, 1, false], "loose: the window is the store's");
+  assert.deepEqual(rows(sw(0, true)), [0, 2, 5, true]);
+  assert.equal(shown.switcher.loose, false);
+});
+
 // --- A row keeps its group (awebai/oats#971, fixed on main) ------------------------------
 
 test("a row keeps its group while a filter or a collapse hides the rest of its cluster: the one row left of a cluster is not drawn among the single instances", () => {
