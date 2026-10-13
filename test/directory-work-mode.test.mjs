@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { findAgent, fingerprintTree, listInstances, RETIRE_DELETE_BRANCH_REFUSED, retireInstance, spawnInstanceAsync, startInstanceSession } from "../lib/core.mjs";
-import { leaveEnclosingInstance } from "./helpers/host-fixture.mjs";
+import { expectLoginFallback, leaveEnclosingInstance } from "./helpers/host-fixture.mjs";
 import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
@@ -78,7 +78,13 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
    *  the deployment as the directory context; `options` override everything. */
   const spawn = async (purpose, options = {}, pre) => {
     const { prepared, agent: soul } = pre || await prepare();
-    return spawnInstanceAsync(root, soul, { purpose, launch: false, repo: context, ...options, prepared });
+    // A launch plans the start of the OATS tmux server from this fixture's environment, whose HOME is
+    // not the user's and which names no login shell: the kernel says, once, that it could not read
+    // the login environment, whatever the spawn then answers. That line is asserted here, never left
+    // in the output (host-fixture.mjs expectLoginFallback); a spawn that launches nothing says none.
+    const warning = expectLoginFallback({ reason: "not-home" });
+    try { return await spawnInstanceAsync(root, soul, { purpose, launch: false, repo: context, ...options, prepared }); }
+    finally { assert.equal(warning.end(), options.launch === true ? 1 : 0, "the kernel says that it could not read the login environment once where it plans a launch, and nowhere else"); }
   };
   /** Change the soul's work mode in its member repository. */
   const setWork = (work) => {

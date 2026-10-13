@@ -22,7 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
 import { inertHarnessDir } from "./runtime-stub.mjs";
-import { applyFixtureRules, assertNoFixtureProcesses, fixtureBase, fixtureEnv, fixtureRules, inheritedEnv, isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
+import { applyFixtureRules, assertNoFixtureProcesses, expectLoginFallback, fixtureBase, fixtureEnv, fixtureRules, inheritedEnv, isolatedTmuxTmpdir, noLoginShell, privateTmuxTmpdir, removeTmuxTmpdir } from "./host-fixture.mjs";
 
 export const CLI = resolve(new URL("../../bin/oats.mjs", import.meta.url).pathname);
 const DATE = "2026-09-25T09:00:00Z";
@@ -231,9 +231,21 @@ function buildDeployment(base, ownTmuxTmpdir, { souls = { dev: {} }, capabilitie
   };
   // Forced on the real process.env, never by replacing it (forceEnvironment, above), and put back
   // also when `fn` throws or rejects.
+  // The call owns the fixture's expected warning (host-fixture.mjs expectLoginFallback): the line
+  // the kernel writes where it plans to start the fixture's server is captured, and when `fn` has
+  // returned (a call that throws has its own error to give) a server that appeared during the call
+  // with no line fails it.
   fx.inEnv = async (fn) => {
     const end = forceEnvironment(fx, base, fixtureProcessEnv);
-    try { return await fn(); } finally { end(); }
+    let warning, returned = false;
+    try {
+      warning = expectLoginFallback();
+      const result = await fn();
+      returned = true;
+      return result;
+    } finally {
+      try { warning?.end({ assert: returned }); } finally { end(); }
+    }
   };
   /** What bin/oats.mjs hands spawnInstanceAsync for a soul: the prepared resolution and the fetched soul. */
   fx.prepare = (soul, opts) => fx.inEnv(() => prepareIn(soul, opts));

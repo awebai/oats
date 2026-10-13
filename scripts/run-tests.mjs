@@ -22,8 +22,9 @@
 // Any extra arguments are forwarded to node --test.
 
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 import {
   DESKTOP_TEST_DEPS_INSTALL,
   REPO_ROOT,
@@ -70,13 +71,60 @@ if (!desktopReady) console.log(`\n${notice}\n`);
 // only narrow, alongside the default globs).
 const extra = process.argv.slice(2);
 const flags = extra.filter((a) => a.startsWith("-")), files = extra.filter((a) => !a.startsWith("-"));
-const args = ["--test", ...flags, ...KERNEL_GLOBS, ...packageGlobs, ...desktopIntegration, ...files];
+
+// Test output is pristine (awebai/oats#910): an expected warning is captured and
+// asserted by the test or by its fixture, never left in the output. So the run
+// fails when a test file's output holds an `oats: warning:` line, even if every
+// test passed. A second reporter reads each file's stderr and stdout as the run
+// received them (scripts/test-warnings-reporter.mjs: it knows the file, and sees
+// a line whether the worker wrote it or a child that has the worker's stderr)
+// and writes what it finds to a file of this run.
+//
+// node --test picks its reporter only when none is named, so the one a person
+// reads is named here as node would pick it: spec on a terminal and, in a pipe,
+// tap before Node 23 and spec from it. A reporter given on the command line
+// stays the one that is read.
+const namesReporter = flags.some((f) => /^--test-reporter(=|$)/.test(f));
+const namesDestination = flags.some((f) => /^--test-reporter-destination(=|$)/.test(f));
+const shown = namesReporter
+  ? (namesDestination ? [] : ["--test-reporter-destination=stdout"])
+  : [`--test-reporter=${process.stdout.isTTY || Number(process.versions.node.split(".")[0]) >= 23 ? "spec" : "tap"}`, "--test-reporter-destination=stdout"];
+const warningsDir = mkdtempSync(join(tmpdir(), "oats-test-warnings-"));
+const warningsFile = join(warningsDir, "found.jsonl");
+const guard = [`--test-reporter=${new URL("./test-warnings-reporter.mjs", import.meta.url).href}`, `--test-reporter-destination=${warningsFile}`];
+
+const args = ["--test", ...flags, ...shown, ...guard, ...KERNEL_GLOBS, ...packageGlobs, ...desktopIntegration, ...files];
 const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit" });
+
+// The file is node's to create: it is absent only when node never started the run.
+let found = "";
+try { found = readFileSync(warningsFile, "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; } finally { rmSync(warningsDir, { recursive: true, force: true }); }
+const warnings = found.split("\n").filter(Boolean).map((line) => JSON.parse(line));
 
 if (run.error) throw run.error;
 
 // Repeat it after node --test's summary so the last thing on screen says the
 // desktop suites did not run, whatever the counts above claim.
 if (!desktopReady) console.log(`\n${notice}`);
+
+if (warnings.length) {
+  const byFile = new Map();
+  for (const { file, line } of warnings) byFile.set(file, [...(byFile.get(file) ?? []), line]);
+  const named = [...byFile].map(([file, lines]) => {
+    const distinct = [...new Set(lines.map((line) => line.trim()))];
+    return [`  ${relative(REPO_ROOT, file) || file}: ${lines.length} line${lines.length === 1 ? "" : "s"}`,
+      ...distinct.slice(0, 3).map((line) => `    ${line.length > 300 ? `${line.slice(0, 300)}…` : line}`),
+      ...(distinct.length > 3 ? [`    … and ${distinct.length - 3} more different lines`] : [])].join("\n");
+  });
+  console.error([
+    "", RULE,
+    `UNASSERTED WARNINGS: ${warnings.length} \`oats: warning:\` line${warnings.length === 1 ? "" : "s"} reached the test output, from ${byFile.size} test file${byFile.size === 1 ? "" : "s"}. The run FAILS.`,
+    "Test output is pristine: an expected warning is captured and asserted by the test or by its fixture",
+    "(docs/implementation.md, \"Tests and gates\"; test/helpers/host-fixture.mjs expectLoginFallback).",
+    ...named,
+    RULE,
+  ].join("\n"));
+  process.exit(run.status || 1);
+}
 
 process.exit(run.status ?? 1);

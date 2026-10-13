@@ -4,6 +4,7 @@ import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { DESKTOP_TEST_DEPS } from "../scripts/desktop-test-deps.mjs";
 
 for (const desktopInstalled of [false, true]) {
@@ -41,7 +42,13 @@ syncBuiltinESMExports();\n`);
       assert.equal(calls.length, 1);
       const call = JSON.parse(calls[0].slice("RUNNER_CALL=".length));
       assert.equal(call.bin, process.execPath);
+      // The reporter a person reads, named as node would pick it for this pipe, then the one that
+      // looks for an unasserted warning, with a file of this run as its destination.
+      const found = call.args[6];
+      assert.match(found, /^--test-reporter-destination=.*oats-test-warnings-[^/]+[/\\]found\.jsonl$/);
       assert.deepEqual(call.args, ["--test", "--test-shard=2/6", "--test-name-pattern=roundtrip",
+        `--test-reporter=${Number(process.versions.node.split(".")[0]) >= 23 ? "spec" : "tap"}`, "--test-reporter-destination=stdout",
+        `--test-reporter=${pathToFileURL(join(realpathSync(root), "scripts", "test-warnings-reporter.mjs")).href}`, found,
         "test/**/*.test.mjs", "tests/**/*.test.mjs", "capabilities/**/*.test.mjs",
         ...(desktopInstalled ? ["packages/**/*.test.mjs", "test/desktop-schedule-roundtrip.integration.mjs", "tests/desktop-views.integration.mjs"]
           : ["packages/pi/**/*.test.mjs", "packages/record/**/*.test.mjs"]),

@@ -161,7 +161,8 @@ function installGates(specs, dir) {
   syncBuiltinESMExports(); // `import { lstatSync } from "node:fs"` reads the gated one too
 }
 
-if (process.env[GATES]) {
+const PRELOADED = !!process.env[GATES];
+if (PRELOADED) {
   const specs = JSON.parse(process.env[GATES]), dir = process.env[GATE_DIR];
   delete process.env[GATES];
   delete process.env[GATE_DIR];
@@ -169,6 +170,11 @@ if (process.env[GATES]) {
 }
 
 // ---- 2. the driver ----------------------------------------------------------------------------
+
+// The child's environment, when a caller gives none: this worker's, less what a fixture never
+// inherits (host-fixture.mjs inheritedEnv), never the raw one. Loaded only where the driver runs: a
+// gated child preloads this file and loads nothing beside it.
+const inheritedEnv = PRELOADED ? null : (await import("./host-fixture.mjs")).inheritedEnv;
 
 /** This file's path: what `node --import` is given. */
 export const FS_GATE_PRELOAD = fileURLToPath(import.meta.url);
@@ -188,7 +194,7 @@ function newGateDir(who, gates, gateDir) {
  *    fired     the names of the gates that were met, in the order they were given: a test asserts
  *              that its fault was reached, or its answer is not an answer to that fault
  *    json()    the last line of stdout, parsed (the one envelope of a JSON-mode answer) */
-export function runFaulted(args, { cwd, env = process.env, gates, gateDir } = {}) {
+export function runFaulted(args, { cwd, env = inheritedEnv(), gates, gateDir } = {}) {
   newGateDir("runFaulted", gates, gateDir);
   const held = gates.filter((g) => g.throws === undefined).map((g) => g.name);
   if (held.length) throw new Error(`runFaulted runs a child that nothing holds: the gates ${held.join(", ")} would pause it (startGated drives those)`);
@@ -198,8 +204,8 @@ export function runFaulted(args, { cwd, env = process.env, gates, gateDir } = {}
 
 /** Start `node --import <this file> ...args` as a child with `gates` installed, and return the
  *  handle that drives it. `cwd` and `env` are the child's (a fixture's `fx.dep` and `fx.env`: the
- *  gate variables are added to `env` here). `gateDir` is a directory outside the deployment, made
- *  here, for this one child: it must be new or empty.
+ *  gate variables are added to `env` here; with no `env`, the child gets inheritedEnv()). `gateDir`
+ *  is a directory outside the deployment, made here, for this one child: it must be new or empty.
  *  → { child, done, waitGate(name, timeoutMs?), entered(name), release(name), finish() }
  *    done      resolves when the child has exited and its output is read:
  *              { code, signal, stdout, stderr, timedOut }, `timedOut` the gates that were never
@@ -210,7 +216,7 @@ export function runFaulted(args, { cwd, env = process.env, gates, gateDir } = {}
  *    release   lets the call held at that gate go on (before or after it is reached)
  *    finish    releases every gate and waits for the exit: for a `finally`
  *  A gate that throws holds nothing: `waitGate` and `release` are for the others. */
-export function startGated(args, { cwd, env = process.env, gates, gateDir } = {}) {
+export function startGated(args, { cwd, env = inheritedEnv(), gates, gateDir } = {}) {
   newGateDir("startGated", gates, gateDir);
   const file = (name, suffix) => join(gateDir, `${name}.${suffix}`);
   const child = spawn(process.execPath, ["--import", FS_GATE_PRELOAD, ...args], { cwd, env: { ...env, [GATE_DIR]: gateDir, [GATES]: JSON.stringify(gates) }, stdio: ["ignore", "pipe", "pipe"] });

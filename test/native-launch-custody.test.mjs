@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { dirname, join } from "node:path";
 import { startInstanceSession, restartInstanceSession } from "../lib/core.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
-import { leaveEnclosingInstance } from "./helpers/host-fixture.mjs";
+import { expectLoginFallback, leaveEnclosingInstance } from "./helpers/host-fixture.mjs";
 
 import { nativeHistoryPath, historicalSessionRoots } from "../packages/record/lib/native-history.mjs";
 import { sessionsForHome } from "../packages/record/lib/sessions-for-home.mjs";
@@ -74,6 +74,17 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
   return f;
 }
 function readJson(file) { return JSON.parse(readFileSync(file, "utf8")); }
+/** A kernel call that plans to start the OATS tmux server from this file's fixture, whose backend
+ *  is a log and no server: the fixture's HOME is not the user's and it names no login shell, so the
+ *  kernel says, once for the call, that it could not read the login environment. That line is
+ *  asserted here, never left in the output (host-fixture.mjs expectLoginFallback). */
+function planningStart(fn) {
+  const warning = expectLoginFallback({ reason: "not-home" });
+  let result;
+  try { result = fn(); } catch (e) { warning.end(); throw e; }
+  assert.equal(warning.end(), 1, "the kernel says once that it could not read the login environment, where it plans the start");
+  return result;
+}
 
 
 
@@ -150,7 +161,7 @@ fs.writeFileSync(path.join(dir,'s1.jsonl'),JSON.stringify(header)+String.fromCha
    const result=await f.spawn('root-history',kind==='fromEnv-retargeted'?{launchConfig:'custom',harness:undefined}:{});
    const meta=readJson(join(result.home,'instance.json'));
    installBackend(f, { execute: true });
-   startInstanceSession(result.home);
+   planningStart(() => startInstanceSession(result.home));
    assert.ok(existsSync(join(actual,suffix,'s1.jsonl')));
    const control=sessionsForHome(result.home);assert.equal(control.length,1);assert.equal(control[0].source,source);
    assert.ok(control[0].path.startsWith(actual));
@@ -265,11 +276,11 @@ test('actual spawn, resumed start and harness switch retain every execution root
   const r=await f.spawn('history',{launch:true}); // actual spawn dispatch, not a scaffold template replay
   assert.equal(sessionsForHome(r.home).length,1);
   process.env.CLAUDE_CONFIG_DIR=join(f.base,'second');
-  startInstanceSession(r.home);
+  planningStart(() => startInstanceSession(r.home));
   process.env.PI_CODING_AGENT_DIR=join(f.base,'third');
-  restartInstanceSession(r.home,{harness:'pi'});
+  planningStart(() => restartInstanceSession(r.home,{harness:'pi'}));
   process.env.CODEX_HOME=join(f.base,'fourth');
-  restartInstanceSession(r.home,{harness:'codex'});
+  planningStart(() => restartInstanceSession(r.home,{harness:'codex'}));
   const roots=historicalSessionRoots(r.home);
   assert.deepEqual(roots.cc.sort(),[join(f.base,'first/projects'),join(f.base,'second/projects')].sort());
   assert.deepEqual(roots.pi,[join(f.base,'third/sessions')]);assert.deepEqual(roots.codex,[join(f.base,'fourth/sessions')]);
@@ -284,12 +295,12 @@ test('actual spawn, resumed start and harness switch retain every execution root
 test('unexecuted dispatch stays pending; legacy recipes cannot certify historical roots', async t => {
   const f=fixture(t);installBackend(f);
   const r=await f.spawn('pending-history');
-  startInstanceSession(r.home);
+  planningStart(() => startInstanceSession(r.home));
   assert.throws(()=>sessionsForHome(r.home),/pending/);
   rmSync(nativeHistoryPath(r.home),{recursive:true});
   assert.throws(()=>sessionsForHome(r.home),/ENOENT/);
   // Legacy restart may record a new location, but must never erase the gap.
-  startInstanceSession(r.home);
+  planningStart(() => startInstanceSession(r.home));
   assert.throws(()=>sessionsForHome(r.home),/earlier launches are unknown/);
 });
 

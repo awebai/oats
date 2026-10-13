@@ -1,10 +1,10 @@
 // Host-independent executables and shells for real, temporary process fixtures.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, sep } from "node:path";
+import { tmpdir, userInfo } from "node:os";
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
@@ -240,6 +240,144 @@ export function leaveEnclosingInstance(dir) {
   return () => { process.chdir(cwd); if (pwd === undefined) delete process.env.PWD; else process.env.PWD = pwd; };
 }
 
+// ---- a fixture's expected warning (awebai/oats#910) -------------------------------------------
+// Test output is pristine: an expected warning is captured and asserted, never left in the output.
+// A fixture's login environment cannot be read, by construction, so when the kernel plans to start
+// the fixture's tmux server it says so in one line on this process's stderr. The fixture owns that
+// line. It takes the line out of the output only when the whole write is exactly the sentence the
+// kernel writes for the fixture's reason and fallback, and only while the fixture's premise holds at
+// that moment (loginFallbackReason). A line that differs in any way stays in the output, where the
+// root run fails on it (scripts/run-tests.mjs). And every capture asserts something that can fail
+// (expectLoginFallback): none only removes a line.
+//
+// No capture asserts that the warning comes. The kernel writes it where it PLANS a start, in the
+// process that plans, and a socket shows neither who planned nor whether a start followed. That the
+// warning comes is pinned by test/login-environment.test.mjs, test/schedule-gone-server.test.mjs and
+// test/fixture-expected-warning.test.mjs, which start a real server and read the line.
+
+const OWN_ENVIRONMENT = "; the OATS tmux server is started with this process's own environment instead: a fallback, neither a login environment nor a working agent socket is assured\n";
+/** The kernel's line (lib/core.mjs oatsSessionEnvironment, lib/login-environment.mjs), whole, for
+ *  each reason a fixture can have: its login shell does not exist (`no-shell`: noLoginShell), or
+ *  it names no shell at all and its HOME is not the user's (`not-home`). */
+export const LOGIN_FALLBACK_WARNING = Object.freeze({
+  "no-shell": `oats: warning: could not read your login environment (your login shell could not be started (ENOENT))${OWN_ENVIRONMENT}`,
+  "not-home": `oats: warning: could not read your login environment (this process's HOME is not your home directory, so it does not run in your login session)${OWN_ENVIRONMENT}`,
+});
+/** The reason the kernel has for the fallback in the environment `env`, as a fixture can have it,
+ *  else null: a HOME that is the user's own (the kernel runs the user's shell there, never a test's),
+ *  or a named shell that exists, gives no warning a fixture expects. */
+export function loginFallbackReason(env = process.env) {
+  let user;
+  try { user = userInfo(); } catch { return null; }
+  const same = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
+  if (typeof env.HOME === "string" && env.HOME !== "" && same(env.HOME, user.homedir)) return null;
+  if (!env.OATS_TEST_LOGIN_SHELL) return "not-home";
+  return existsSync(env.OATS_TEST_LOGIN_SHELL) ? null : "no-shell";
+}
+
+/** process.stderr.write as it was when this module was evaluated: before any code of the test file. */
+const PRISTINE_STDERR_WRITE = process.stderr.write;
+/** The expectations in force, and how many times this process has captured each line so far: every
+ *  expectation in force counts a line, whichever is innermost. */
+const expecting = [], captured = new Map();
+/** In front of process.stderr.write while an expectation is in force. */
+function captureWrite(chunk, encoding, callback) {
+  const text = typeof chunk === "string" ? chunk : Buffer.isBuffer(chunk) ? chunk.toString("utf8") : null;
+  if (text === null || !expecting.some((e) => e.line === text && loginFallbackReason() === e.reason)) return PRISTINE_STDERR_WRITE.apply(this, arguments);
+  captured.set(text, (captured.get(text) ?? 0) + 1);
+  const done = typeof encoding === "function" ? encoding : callback;
+  if (typeof done === "function") process.nextTick(done);
+  return true;
+}
+/** While the capture is in front: process.stderr's own `write` property as it was before (none, as
+ *  a rule: the method is the prototype's). */
+let before = null;
+/** Put the capture in front of process.stderr.write → whether it is in front. Never over a test's
+ *  own replacement: the test sees the line first then, and holds it. */
+function captureInFront() {
+  if (process.stderr.write === captureWrite) { before ??= { own: undefined }; return true; }
+  if (process.stderr.write !== PRISTINE_STDERR_WRITE) return false;
+  before = { own: Object.getOwnPropertyDescriptor(process.stderr, "write") };
+  Object.defineProperty(process.stderr, "write", { value: captureWrite, writable: true, enumerable: true, configurable: true });
+  return true;
+}
+/** Take the capture away, once no expectation is left: process.stderr has the own properties it had.
+ *  A replacement a test has left there is the test's to take away. */
+function captureAway() {
+  if (!before) return;
+  if (process.stderr.write === captureWrite) { if (before.own) Object.defineProperty(process.stderr, "write", before.own); else delete process.stderr.write; }
+  before = null;
+}
+/** For the length of a call's expectation, process.stderr.write is an accessor that counts every
+ *  assignment: a test that replaces the method inside the call (and puts it back) is seen to have
+ *  held it. Calls nest and overlap: the accessor is there from the first to the last of them. */
+let watching = 0, watchedWrite, replacements = 0;
+function watch() {
+  if (watching++ > 0) return;
+  watchedWrite = process.stderr.write;
+  Object.defineProperty(process.stderr, "write", { configurable: true, enumerable: true, get: () => watchedWrite, set: (value) => { watchedWrite = value; replacements += 1; } });
+}
+function unwatch() {
+  if (--watching > 0) return;
+  Object.defineProperty(process.stderr, "write", { value: watchedWrite, writable: true, enumerable: true, configurable: true });
+}
+/** The `oats` socket under a TMUX_TMPDIR as it is now: which file it is, and when its directory
+ *  last gained or lost an entry. */
+function socketMark(tmuxTmpdir) {
+  if (!tmuxTmpdir) return { socket: null, directory: null };
+  const socket = statSync(oatsSocket(tmuxTmpdir), { throwIfNoEntry: false }), directory = statSync(dirname(oatsSocket(tmuxTmpdir)), { throwIfNoEntry: false });
+  return { socket: socket ? socket.ino : null, directory: directory ? directory.mtimeMs : null };
+}
+/**
+ * Expect the kernel's fallback warning from now on → `{ end({ assert }) }`; `end` returns how many
+ * times the line was captured.
+ *
+ * While it is in force, a write on stderr that is exactly LOGIN_FALLBACK_WARNING[reason], made while
+ * loginFallbackReason() is that reason, is taken out of the output and counted. With `reason` null
+ * (the default, when the environment in force gives a fixture no reason) nothing is captured.
+ * `end` stops that and, unless `assert` is false, asserts what the expectation can know:
+ *
+ * - One kernel call (the default; fx.inEnv): a server appeared at the `oats` socket under
+ *   `tmuxTmpdir` during the call and the line never came → it fails. Nothing is asserted for a call
+ *   in which the test replaced process.stderr.write itself, before it or inside it: the test holds
+ *   the line then, and asserts it. The reverse is not held: the kernel writes the line where it
+ *   plans a start, and a stand-in tmux or a refusal after planning leaves no server.
+ * - `lifetime` (a session environment, isolateSessionEnvironment, whose only tmux is the real one):
+ *   the line was captured and nothing was ever created under `tmuxTmpdir` → it fails: the kernel
+ *   planned a start that went elsewhere, or nowhere. The other direction is NOT held here, and must
+ *   not be added: a server that a child of the worker starts writes the line on the child's stderr,
+ *   which the test reads, and a socket does not show who planned its server.
+ *   test/login-environment.test.mjs starts every server that way and asserts the child's line.
+ * - A caller that knows how many starts it planned asserts the count `end` returns (a file-local
+ *   wrapper around one kernel call, where no server can be observed at all).
+ */
+export function expectLoginFallback({ reason = loginFallbackReason(), tmuxTmpdir = process.env.TMUX_TMPDIR, lifetime = false } = {}) {
+  const line = reason === null ? null : LOGIN_FALLBACK_WARNING[reason];
+  if (line === undefined) throw new Error(`no login-environment fallback warning is known for the reason ${JSON.stringify(reason)}: ${Object.keys(LOGIN_FALLBACK_WARNING).join(", ")}`);
+  if (line === null) return { end: () => 0 };
+  const inFront = captureInFront(), watched = inFront && !lifetime;
+  if (watched) watch();
+  const expectation = { line, reason }, mark = socketMark(tmuxTmpdir), had = captured.get(line) ?? 0, replaced = replacements;
+  expecting.push(expectation);
+  let seen = null;
+  return {
+    end({ assert = true } = {}) {
+      if (seen !== null) return seen;
+      expecting.splice(expecting.indexOf(expectation), 1);
+      seen = (captured.get(line) ?? 0) - had;
+      const held = !inFront || replacements !== replaced;
+      if (watched) unwatch();
+      if (!expecting.length) captureAway();
+      const now = socketMark(tmuxTmpdir);
+      const started = now.socket !== null && now.socket !== mark.socket, created = started || now.directory !== mark.directory;
+      if (!assert) return seen;
+      if (lifetime && seen > 0 && !created) throw new Error(`the kernel wrote this session environment's expected warning ${seen} time${seen === 1 ? "" : "s"} and nothing was ever created under its TMUX_TMPDIR (${tmuxTmpdir}): it planned to start a tmux server that is not the fixture's.\n${line}(test/helpers/host-fixture.mjs expectLoginFallback)`);
+      if (!lifetime && !held && started && seen === 0) throw new Error(`a tmux server appeared at ${oatsSocket(tmuxTmpdir)} during this fixture's call and the kernel never wrote the warning the fixture expects where its login shell cannot run:\n${line}A test that gives the fixture a login shell that answers names it in OATS_TEST_LOGIN_SHELL before the call; one that asserts the line itself holds process.stderr.write around the kernel call (test/helpers/host-fixture.mjs expectLoginFallback).`);
+      return seen;
+    },
+  };
+}
+
 // Applies only to this test worker and its children. The fixture owns a private TMUX_TMPDIR and a
 // `tmux` wrapper, the only tmux on PATH, which admits two addresses and refuses every other call:
 // `-L oats` (the fixture's own `oats` server, under that TMUX_TMPDIR, whatever the caller's
@@ -315,13 +453,19 @@ exec ${quote(tmux)}${userConfig ? "" : " -f /dev/null"} "$@"
   // Neither the environment (above) nor the working directory makes this worker an OATS instance.
   const comeBack = leaveEnclosingInstance(base);
   isolatedTmpdir = tmuxTmpdir;
+  // For as long as this environment is installed the worker's own kernel calls start its server
+  // with the missing shell above: the expected warning is this environment's (expectLoginFallback).
+  const warning = expectLoginFallback({ reason: "no-shell", tmuxTmpdir, lifetime: true });
   return () => {
+    try { warning.end(); } finally { restore(); }
+  };
+  function restore() {
     comeBack();
     removeTmuxTmpdir(tmuxTmpdir, tmux);
     isolatedTmpdir = null;
     for (const key of Object.keys(process.env)) if (!(key in original)) delete process.env[key];
     Object.assign(process.env, original);
-  };
+  }
 }
 
 // Readiness is a condition, not an assumed delay. A timeout must fail the test,

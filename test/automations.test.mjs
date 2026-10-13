@@ -61,10 +61,28 @@ function fixture({ local = { host: { name: "kb-host" }, automations: { trust: "*
   fx.gh.login("kb-bot");
   fx.env.PATH = `${fx.gh.bin}:${fx.env.PATH}`;
   fx.setLocal = (extra) => writeFileSync(join(fx.dep, "oats-local.yaml"), YAML.stringify({ schemaVersion: 2, workspace: fx.ref, ...extra }));
-  /** In process, as the host tick runs it: the fake gh on PATH. */
-  fx.inGh = (fn) => fx.inEnv(() => { const path = process.env.PATH; process.env.PATH = fx.env.PATH; try { return fn(); } finally { process.env.PATH = path; } });
+  /** In process, as the host tick runs it: the fake gh on PATH, until the work has ended (an
+   *  asynchronous `fn` goes on after it has returned its promise). */
+  fx.inGh = (fn) => fx.inEnv(async () => { const path = process.env.PATH; process.env.PATH = fx.env.PATH; try { return await fn(); } finally { process.env.PATH = path; } });
   return fx;
 }
+
+test("fx.inGh keeps the fake gh first on PATH until the work it was given has ended, then gives PATH back", async (t) => {
+  const fx = fixture();
+  t.after(() => fx.cleanup());
+  const before = process.env.PATH;
+  const first = () => process.env.PATH.split(":")[0];
+  const seen = await fx.inGh(async () => {
+    const atStart = first();
+    await new Promise((resolve) => setImmediate(resolve)); // the work goes on after the wrapper has its promise
+    return [atStart, first()];
+  });
+  assert.deepEqual(seen, [fx.gh.bin, fx.gh.bin], "for the whole of an asynchronous work, not only up to its first await");
+  assert.equal(process.env.PATH, before, "and PATH is the worker's again when the work has ended");
+  await assert.rejects(fx.inGh(async () => { await null; throw new Error("fixture failure"); }), /fixture failure/);
+  assert.equal(process.env.PATH, before, "also when the work fails");
+  assert.equal(await fx.inGh(() => first()), fx.gh.bin, "a synchronous work as before");
+});
 
 test("the file contract: where a trigger or schedule file is, its self-describing header, and each kind's own body", () => {
   assert.deepEqual(A.candidateOf("oats-triggers/a.yaml", KINDS), { kind: "trigger", stem: "a" });
