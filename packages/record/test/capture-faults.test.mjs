@@ -126,3 +126,25 @@ test("invalid durable journal cursor cannot qualify old content or skip ID recov
   assert.equal(f.store.appendUniqueBatch("fixture~cc.s", [turn]), 0);
   assert.equal(f.store.readStream("fixture~cc.s").length, 1);
 });
+
+test("Node 22.5 null-valued missing rows do not suppress appends, prefix recovery or visible receipts", async t => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { withReceiptSummaries } = await import("../lib/receipt-summary.mjs");
+  const f = fixture(t), db = new DatabaseSync(":memory:");
+  const proto = Object.getPrototypeOf(db.prepare("SELECT 1")), original = proto.get;
+  proto.get = function(...args) {
+    return original.apply(this, args) ?? Object.fromEntries(this.columns().map(column => [column.name, null]));
+  };
+  try {
+    fs.writeFileSync(f.path, line(1)); assert.equal(f.capture().appended, 1);
+    assert.equal(f.capture().appended, 0);
+    resetSourceCursors(f.root, "fixture", "cc"); assert.equal(f.capture().appended, 0);
+    fs.appendFileSync(f.path, line(2)); assert.equal(f.capture().appended, 1);
+    let state = new DerivedState(f.root); state.db.exec("DROP TABLE journal_ids"); state.close();
+    assert.equal(f.capture().appended, 0);
+    const turn = f.store.readStream("fixture~cc.s")[0];
+    assert.equal(new RecordStore(f.root, { owner: "fixture" }).appendUniqueBatch("fixture~cc.s", [turn]), 0);
+    assert.equal(f.store.readStream("fixture~cc.s").length, 2);
+    withReceiptSummaries(f.store, summary => assert.equal(summary("fixture~cc.s").count, 2));
+  } finally { proto.get = original; db.close(); }
+});

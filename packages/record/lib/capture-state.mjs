@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, fsyncSync, openSync, readSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DerivedState, invalidateLegacyMaps } from "./derived-state.mjs";
+import { readCurrentIssueBacklog, readIssueBacklog } from "./capture-issues.mjs";
 
 export const CAPTURE_SOURCES = ["aw", "cc", "pi", "codex"];
 export const SET_ASIDE_REMEDY = "Restore the captured prefix and run capture --retry-set-aside; or add the source to <root>/ignore (later turns from that session will not be captured). Retry revalidates; it never authorizes a changed prefix.";
@@ -34,14 +35,7 @@ export function writeCaptureStatus(root, { pending = false } = {}) {
   const state = new DerivedState(root);
   let backlog;
   try {
-    const count = Number(state.db.prepare("SELECT count(*) AS n FROM state WHERE kind = 'set-aside'").get().n);
-    const sample = state.db.prepare(`SELECT value FROM state WHERE kind = 'set-aside'
-      ORDER BY json_extract(value, '$.source'), json_extract(value, '$.path'), key LIMIT 100`).all();
-    backlog = { pending: pending || count > 0, setAsideCount: count,
-      setAside: sample.map(({ value }) => {
-        const { source, path, offset, reason, line } = JSON.parse(value);
-        return { source, path, offset, reason, ...(line === undefined ? {} : { line }) };
-      }), truncated: count > sample.length };
+    backlog = readIssueBacklog(state.db, { pending });
   } finally { state.close(); }
   const status = { schemaVersion: 1, policy: null, lastRun: null, lastSuccess: null, lastFailure: null, lastProgressAt: null, backlog };
   const path = join(root, "capture-status.json"), temp = `${path}.${randomUUID()}.tmp`;
@@ -67,7 +61,7 @@ function validStatus(status) {
       Number.isSafeInteger(e.offset) && e.offset >= 0 && (e.line === undefined || Number.isSafeInteger(e.line) && e.line > 0));
 }
 
-// Read-only, including a never-installed/absent root: no DB construction,
+// Read-only, including a never-installed/absent root: no writable DB construction,
 // directory creation, manager query, index rebuild or capture.
 export function captureHealth(root) {
   const path = join(root, "capture-status.json");
@@ -98,8 +92,14 @@ export function captureHealth(root) {
   } catch (err) {
     if (err.code !== "ENOENT") rows.push({ code: "capture-status-invalid", message: `Cannot read capture status at ${path}: ${err.message}` });
   }
-  if (status.backlog.setAsideCount) rows.push({ code: "capture-input-set-aside", message:
-    `${status.backlog.setAsideCount} capture inputs set aside. ${SET_ASIDE_REMEDY.replace("<root>", root)}` });
+  let backlog;
+  try {
+    backlog = readCurrentIssueBacklog(root);
+    if (!backlog && status.backlog.setAsideCount) throw new Error("capture.db is missing but the last command reported active set-aside inputs");
+  } catch (err) { throw new Error(`Cannot read current capture issues at ${join(root, "index", "capture.db")}: ${err.message}`, { cause: err }); }
+  backlog ??= { pending: false, setAsideCount: 0, setAside: [], truncated: false };
+  if (backlog.setAsideCount) rows.push({ code: "capture-input-set-aside", message:
+    `${backlog.setAsideCount} capture inputs set aside. ${SET_ASIDE_REMEDY.replace("<root>", root)}` });
   return { schemaVersion: 1, status: rows.length ? "warning" : "ok", rows,
-    lastRun: status.lastRun, lastSuccess: status.lastSuccess, lastFailure: status.lastFailure, backlog: status.backlog };
+    lastRun: status.lastRun, lastSuccess: status.lastSuccess, lastFailure: status.lastFailure, backlog };
 }

@@ -3,7 +3,8 @@
 import { mkdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { keysetRows } from "./sqlite-rows.mjs";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 export function invalidateLegacyMaps(root) {
   for (const name of ["capture-offsets.json", "capture-aw-seen.json"]) {
@@ -25,12 +26,13 @@ export const sameVersion = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 export class DerivedState {
   constructor(root) {
+    const { DatabaseSync } = require("node:sqlite");
     mkdirSync(join(root, "index"), { recursive: true });
     this.db = new DatabaseSync(join(root, "index", "capture.db"));
     this.db.exec("PRAGMA busy_timeout = 60000; PRAGMA cache_size = -2048; PRAGMA temp_store = FILE");
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const hadIds = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='journal_ids'").get());
+      const hadIds = this.db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type='table' AND name='journal_ids'").get()?.found === 1;
       this.db.exec(`CREATE TABLE IF NOT EXISTS state (kind TEXT, key TEXT, value TEXT NOT NULL, PRIMARY KEY(kind, key));
         CREATE TABLE IF NOT EXISTS journal_ids (stream TEXT, id TEXT, PRIMARY KEY(stream, id));`);
       // Recreating a lost lookup atomically revokes the old validation witness.

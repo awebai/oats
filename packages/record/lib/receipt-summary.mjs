@@ -4,11 +4,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 import { keysetRows } from "./sqlite-rows.mjs";
 import { RecordStore } from "./store.mjs";
 
 export function withReceiptSummaries(store, fn) {
+  const { DatabaseSync } = require("node:sqlite");
   const dir = mkdtempSync(join(tmpdir(), "turn-record-receipt-"));
   let db;
   try {
@@ -40,11 +42,11 @@ export function withReceiptSummaries(store, fn) {
       }
     }
     db.exec("COMMIT");
-    const hidden = db.prepare("SELECT 1 FROM claims WHERE ref = ? AND (author = ? OR author = ?) LIMIT 1");
+    const hidden = db.prepare("SELECT 1 AS found FROM claims WHERE ref = ? AND (author = ? OR author = ?) LIMIT 1");
     const summary = (stream) => {
       let count = 0, first = null, last = null;
       for (const turn of store.iterateStream(stream)) {
-        if (typeof turn.id === "string" && hidden.get(turn.id, authorKey(turn.from), authorKey(store.owner ?? turn.from))) continue;
+        if (typeof turn.id === "string" && hidden.get(turn.id, authorKey(turn.from), authorKey(store.owner ?? turn.from))?.found === 1) continue;
         count++;
         first ??= turn;
         last = turn;

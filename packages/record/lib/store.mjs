@@ -330,11 +330,6 @@ export class RecordStore {
     this.owner = owner ?? null;
     this.lockTimeoutMs = lockTimeoutMs;
     this.lockStaleMs = lockStaleMs;
-    // Streams whose full journal this instance has parsed without error.
-    // The write path validates each journal once before its first append
-    // (interior corruption must fail loud, never accept appends after the
-    // damage); its own appends are trusted afterwards.
-
   }
 
   // Serialize every read-repair-write sequence on one stream across
@@ -630,7 +625,9 @@ export class RecordStore {
       return this.withDerived(state => {
       const checkpoint = this.validateJournal(streamId, state);
       repairTail(path);
-      const hasId = state.db.prepare("SELECT 1 FROM journal_ids WHERE stream = ? AND id = ?");
+      // Node 22.5 returns a null-valued row on no match; object truthiness
+      // is not an existence test across the supported SQLite runtimes.
+      const hasId = state.db.prepare("SELECT 1 AS found FROM journal_ids WHERE stream = ? AND id = ?");
       const addId = state.db.prepare("INSERT OR IGNORE INTO journal_ids VALUES (?, ?)");
       let chunk = [], chunkBytes = 0, appended = 0;
       const flush = () => {
@@ -642,7 +639,7 @@ export class RecordStore {
       // checkpoint then fails qualification and a later pass validates/rebuilds.
       return state.transaction(() => {
         for (const turn of turns) {
-          if (unique && hasId.get(streamId, turn.id)) continue;
+          if (unique && hasId.get(streamId, turn.id)?.found === 1) continue;
           const line = JSON.stringify(turn), bytes = Buffer.byteLength(line) + 1;
           if (chunkBytes && chunkBytes + bytes > maxChunkBytes) flush();
           chunk.push(line); chunkBytes += bytes;

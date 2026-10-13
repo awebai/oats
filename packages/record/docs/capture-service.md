@@ -59,12 +59,39 @@ lock. An interruption after marking leaves the warning active. It is not yet a
 policy-bounded pass. Resetting cursors does not replace retry or clear a refusal.
 
 `capture --status` keeps its existing store summary. `capture --health [--json]`
-reads the shared `capture-status.json` snapshot without capturing, rebuilding,
-creating an absent root/database, or contacting a service manager. The diagnosis
-contains at most 100 deterministic set-aside entries, the total count and a
-`truncated` flag; text output has the same bound. Each diagnosis explains both
-remedies. Missing status on a never-installed root is not a warning. Malformed
-or unreadable status is reported as `capture-status-invalid`.
+reads current active set-aside rows from `index/capture.db`, without capturing,
+rebuilding, creating an absent root/database, or contacting a service manager.
+The shared `capture-status.json` is the atomic **last command snapshot**: direct
+synchronous library calls update active issues but do not rewrite that snapshot
+or acquire an implicit root capture lock. Health gets historical run fields from
+the snapshot and never advances them from current issues. A database with no
+snapshot still exposes its active issues.
+
+Both command snapshots and health use the same transactional count/sample
+projection: at most 100 deterministic entries, total count and `truncated`.
+Text output has the same bound and explains both remedies. Absent state on a
+never-installed root is not a warning or a reason to create files. A missing
+current database cannot erase a known nonempty command snapshot. Malformed or
+unreadable status is reported as `capture-status-invalid`; an unavailable current
+issue reader fails the command rather than returning successful stale/empty
+health JSON.
+
+Reading an existing database requires Node's read-only SQLite support: 22.12+
+on the 22.x line (22.13+ avoids needing `--experimental-sqlite`), 23.2+ on 23.x,
+or a newer major. Normal capture retains its declared runtime floor. Missing
+SQLite support, unsupported schemas, lock/recovery errors, and WAL databases
+fail health without migration or repair. Supported `capture.db` writers retain
+rollback journaling. The health reader rejects WAL from its fixed header before
+opening SQLite; it never creates WAL sidecars, switches mode, recovers a hot
+journal or uses immutable/no-lock shortcuts. This does not protect against an
+external actor racing a mode change or file replacement.
+
+Header validation and the read-only transaction run in one private child using
+the current Node executable, only the explicit SQLite runtime flag, and a clean
+environment. It has a ten-second deadline, a 1 MiB output cap and no retries.
+This costs one short process per health read and keeps a raw descriptor close
+from releasing POSIX locks belonging to another SQLite connection in the caller.
+Command snapshots reuse their owned connection for the shared projection.
 
 The shared schema is [capture-status.schema.json](capture-status.schema.json).
 In this algorithm-only phase `policy`, `lastRun`, `lastSuccess`, `lastFailure`

@@ -185,15 +185,21 @@ const quiet = Boolean(args.quiet || args.json && (args["reset-cursors"] || args[
 const store = new RecordStore(root, { owner });
 
 if (args.health) {
-  const health = captureHealth(root);
-  if (args.json) console.log(JSON.stringify(health, null, 2));
-  else {
-    console.log(`capture: ${health.status}`);
-    for (const row of health.rows) console.log(`${row.code}: ${row.message}`);
-    for (const entry of health.backlog.setAside) console.log(`${entry.source}: ${entry.path}:${entry.line ?? "?"} offset ${entry.offset}: ${entry.reason}`);
-    if (health.backlog.truncated) console.log("showing first 100 set-aside inputs");
+  try {
+    const health = captureHealth(root);
+    if (args.json) console.log(JSON.stringify(health, null, 2));
+    else {
+      console.log(`capture: ${health.status}`);
+      for (const row of health.rows) console.log(`${row.code}: ${row.message}`);
+      for (const entry of health.backlog.setAside) console.log(`${entry.source}: ${entry.path}:${entry.line ?? "?"} offset ${entry.offset}: ${entry.reason}`);
+      if (health.backlog.truncated) console.log("showing first 100 set-aside inputs");
+    }
+  } catch (err) {
+    if (args.json) console.log(JSON.stringify({ status: "failed", error: err.message }));
+    else console.error(`capture: ${err.message}`);
+    process.exitCode = 1;
   }
-  process.exit(0);
+  process.exit(process.exitCode ?? 0);
 }
 if (args["reset-cursors"] || args["retry-set-aside"]) {
   try {

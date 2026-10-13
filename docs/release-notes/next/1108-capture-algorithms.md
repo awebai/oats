@@ -11,3 +11,10 @@
   ignore list (which also excludes its later turns). `capture --health` reports
   these inputs. This changes capture algorithms; it introduces no service
   schedule, record-size policy, or bounded-runner guarantee.
+
+- Capture health reads current set-aside issues, including direct library calls,
+  while command snapshots retain their historical run fields. Reading an existing
+  capture database requires read-only SQLite support (Node 22.12+/23.2+; prefer
+  22.13+ on 22.x without an experimental flag). Unsupported runtimes, schemas,
+  WAL databases and unavailable readers fail closed; normal capture's runtime
+  floor is unchanged.

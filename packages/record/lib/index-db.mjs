@@ -14,7 +14,8 @@
 import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { keysetRows } from "./sqlite-rows.mjs";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 
 // Bump whenever the derived schema changes shape. The index is cache:
 // a version mismatch self-heals by deleting the database and rebuilding
@@ -109,6 +110,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS turn_text USING fts5(
 
 export class RecordIndex {
   constructor(store) {
+    const { DatabaseSync } = require("node:sqlite");
     this.store = store;
     const dir = join(store.root, "index");
     mkdirSync(dir, { recursive: true });
@@ -187,7 +189,8 @@ export class RecordIndex {
     for (const streamId of this.store.iterateStreams()) {
       this.store.withStreamLock(streamId, () => this.store.withDerived(state => {
         const checkpoint = this.store.validateJournal(streamId, state);
-        const previous = getState.get(streamId);
+        const row = getState.get(streamId);
+        const previous = row?.stream != null ? row : null;
         let position = previous?.bytes ?? 0, count = previous?.indexed_count ?? 0;
         if (previous && previous.epoch !== checkpoint.epoch) throw new Error("journal changed during index update; retry to rebuild derived state");
         if (previous && position === checkpoint.bytes) return;
@@ -255,8 +258,8 @@ export class RecordIndex {
 
     const fromName = String(turn.from ?? "");
     // Hidden if a valid tombstone already arrived for this id.
-    const hidden = this.db.prepare("SELECT 1 FROM tombstones WHERE ref = ? AND (from_name = ? OR from_name = ?) LIMIT 1")
-      .get(turn.id, fromName, owner ?? fromName) ? 1 : 0;
+    const hidden = this.db.prepare("SELECT 1 AS found FROM tombstones WHERE ref = ? AND (from_name = ? OR from_name = ?) LIMIT 1")
+      .get(turn.id, fromName, owner ?? fromName)?.found === 1 ? 1 : 0;
 
     // Sessions are one turn per native event (no snapshots, nothing to
     // supersede); events/superseded columns remain for schema stability.
