@@ -9,9 +9,11 @@
 //      unit on Linux (printed instructions elsewhere);
 //   3. then runs the first capture pass (the expensive one) unless --dry-run.
 //
-// Everything is derived from the running install: node = process.execPath,
-// scripts resolved relative to this file, so it works from a global npm
-// install, npx, or a repo checkout alike.
+// Everything is derived from the running install: scripts resolved relative
+// to this file, so it works from a global npm install, npx, or a repo
+// checkout alike. The node written into the hooks and the service is the one
+// handed in (OATS_NODE_BIN, which `oats setup` sets to a path that survives
+// an upgrade of Node), else process.execPath: see recordedNode().
 //
 //   --owner <name>   stream owner (default: LocalHostName on macOS, hostname)
 //   --no-hooks       skip step 1
@@ -21,7 +23,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, hostname, platform } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Config files deserve the same crash safety as the store's objects:
@@ -32,9 +34,89 @@ function writeFileAtomic(path, content) {
   renameSync(tmp, path);
 }
 
+// The node written into what outlives this process: the hooks and the
+// service. `oats setup` hands in the kernel's answer for a node that survives
+// an upgrade of Node, as OATS_NODE_BIN; this package has no such rule of its
+// own, so run alone it records the node it runs under. What runs at once (the
+// first capture pass) runs under process.execPath whatever is recorded.
+function recordedNode(env = process.env) {
+  const handed = env.OATS_NODE_BIN;
+  return typeof handed === "string" && isAbsolute(handed) ? handed : process.execPath;
+}
+
 const HERE = dirname(fileURLToPath(import.meta.url));
-const NODE = process.execPath;
+const NODE = recordedNode();
 const CAPTURE = join(HERE, "capture.mjs");
+
+// Each path is written for the reader it has: a shell (the hook's command),
+// systemd (ExecStart) or an XML parser (the plist). A path of plain
+// characters is written bare by all three, so the files of an install that
+// needs no quoting do not change.
+const SHELL_PLAIN = /^[A-Za-z0-9_./:@%+,-]+$/;
+const SYSTEMD_PLAIN = /^[A-Za-z0-9_./:@+,-]+$/;
+
+// A shell word: POSIX single quotes, a quote itself as '\''.
+function shellWord(value) {
+  return SHELL_PLAIN.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// The words of a command as /bin/sh reads them, for what setup writes: plain
+// characters, single-quoted runs and \' for a quote, adjacent pieces joined
+// into one word, words apart by spaces or tabs. null when the command holds
+// anything else outside quotes (an expansion, an operator, a redirection, a
+// double quote, a newline, which ends a command) or a quote left open: the
+// shell would do more with it than run those words, so it is not read.
+//
+// Any character above U+007F is part of a word too, as an earlier setup
+// wrote it bare in a path (shellWord now quotes it). bash, dash and zsh end
+// a word only at a space, a tab, a newline or an operator, all ASCII, so a
+// command of such words carries nothing a rewrite would lose. POSIX lets a
+// shell end a word at any blank of its locale (U+3000, say): such a shell
+// would see one more argument of the same command, which a rewrite does not
+// lose either, so no character above U+007F is refused.
+function shellWords(command) {
+  const words = [];
+  let word = null;
+  for (let i = 0; i < command.length; ) {
+    const c = command[i];
+    if (c === " " || c === "\t") {
+      if (word !== null) words.push(word);
+      word = null;
+      i++;
+    } else if (c === "'") {
+      const end = command.indexOf("'", i + 1);
+      if (end < 0) return null;
+      word = (word ?? "") + command.slice(i + 1, end);
+      i = end + 1;
+    } else if (c === "\\" && command[i + 1] === "'") {
+      word = (word ?? "") + "'";
+      i += 2;
+    } else if (SHELL_PLAIN.test(c) || c > "\x7F") {
+      word = (word ?? "") + c;
+      i++;
+    } else return null;
+  }
+  if (word !== null) words.push(word);
+  return words;
+}
+
+// A word of a systemd command line: `%` is a specifier (`%%`), a
+// double-quoted string protects spaces, backslash and double quote are
+// escaped. In an argument `${VAR}` is substituted and a literal dollar is
+// `$$`; the executable is not substituted, and `$$` there names another file.
+// (systemd itself starts no executable whose path holds a quote or a
+// backslash, however it is written: its refusal is what setup reports.)
+function systemdWord(value, { argument = false } = {}) {
+  if (SYSTEMD_PLAIN.test(value)) return value;
+  let v = value.replace(/%/g, "%%").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  if (argument) v = v.replace(/\$/g, "$$$$");
+  return `"${v}"`;
+}
+
+// Text of an XML element.
+function xmlText(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -77,7 +159,7 @@ if (!/^[A-Za-z0-9._-]+$/.test(owner)) {
   process.exit(2);
 }
 
-const hookCommand = `${NODE} ${CAPTURE} --owner ${owner} --quiet`;
+const hookCommand = `${shellWord(NODE)} ${shellWord(CAPTURE)} --owner ${owner} --quiet`;
 const HOOK = { type: "command", command: hookCommand, async: true, timeout: 120 };
 
 console.log(`owner: ${owner}`);
@@ -120,10 +202,19 @@ function installHooks() {
     // whole tokens) keep it from firing on unrelated hooks that merely
     // mention similar words; when in doubt it errs toward appending a new
     // group, never toward overwriting someone else's command.
+    //
+    // The tokens are the command's words as the shell reads them
+    // (shellWords), and only a command that reads whole that way can be
+    // ours: one that also carries a second command, an operator or a
+    // redirection would lose it when rewritten. It reads the quoted form and
+    // every command written before paths were quoted, except one with `=`,
+    // `~` or another ASCII character outside the plain set left bare in a
+    // path, or with a space in one, which was split.
     const ours = (h) => {
       if (h?.type !== "command") return false;
-      const tokens = String(h.command).trim().split(/\s+/);
+      const tokens = shellWords(String(h.command));
       return (
+        tokens !== null &&
         tokens.length >= 2 &&
         tokens[1].endsWith("/capture.mjs") &&
         tokens.includes("--owner") &&
@@ -133,6 +224,8 @@ function installHooks() {
     for (const event of ["Stop", "SessionEnd"]) {
       const groups = (settings.hooks[event] = settings.hooks[event] ?? []);
       let found = false;
+      // Every hook that is ours gets the current command and none is removed,
+      // two in one event included: the shape is not proof of ownership.
       for (const group of groups) {
         for (const hook of group.hooks ?? []) {
           if (!ours(hook)) continue;
@@ -173,8 +266,8 @@ function installServiceDarwin() {
   <string>${label}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${NODE}</string>
-    <string>${CAPTURE}</string>
+    <string>${xmlText(NODE)}</string>
+    <string>${xmlText(CAPTURE)}</string>
     <string>--watch</string>
     <string>--owner</string>
     <string>${owner}</string>
@@ -186,9 +279,9 @@ function installServiceDarwin() {
   <key>ThrottleInterval</key>
   <integer>60</integer>
   <key>StandardOutPath</key>
-  <string>${logPath}</string>
+  <string>${xmlText(logPath)}</string>
   <key>StandardErrorPath</key>
-  <string>${logPath}</string>
+  <string>${xmlText(logPath)}</string>
 </dict>
 </plist>
 `;
@@ -211,7 +304,7 @@ function installServiceDarwin() {
   } else {
     console.error(
       `service: wrote ${path} but launchctl bootstrap failed (${(boot.stderr || "").trim()}); ` +
-        `load it manually: launchctl bootstrap gui/${uid} ${path}`,
+        `load it manually: launchctl bootstrap gui/${uid} ${shellWord(path)}`,
     );
   }
 }
@@ -222,7 +315,7 @@ function installServiceLinux() {
 Description=turn-record capture watcher
 
 [Service]
-ExecStart=${NODE} ${CAPTURE} --watch --owner ${owner}
+ExecStart=${systemdWord(NODE)} ${systemdWord(CAPTURE, { argument: true })} --watch --owner ${owner}
 Restart=always
 RestartSec=60
 
@@ -262,7 +355,7 @@ function installService() {
   else {
     console.log(
       `service: no service template for ${os}; run this in the background yourself:\n` +
-        `  ${NODE} ${CAPTURE} --watch --owner ${owner}`,
+        `  ${shellWord(NODE)} ${shellWord(CAPTURE)} --watch --owner ${owner}`,
     );
   }
 }
@@ -276,6 +369,6 @@ if (dry) {
   console.log("dry run: no first capture pass");
 } else {
   console.log("running first capture pass (the initial one can take minutes)...");
-  const pass = spawnSync(NODE, [CAPTURE, "--owner", owner], { stdio: "inherit" });
+  const pass = spawnSync(process.execPath, [CAPTURE, "--owner", owner], { stdio: "inherit" });
   process.exit(pass.status ?? 1);
 }

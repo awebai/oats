@@ -78,6 +78,27 @@ turn-record recall --reindex                    # full rebuild of the derived in
 ```
 
 Store root: `--root`, else `$TURN_RECORD_ROOT`, else `~/.turn-record`.
+
+**The `node` that `setup` writes down.** The hooks and the watcher's unit name
+a `node` by its path, and only `setup` run again rewrites them. Which path
+depends on how it is run:
+
+- **`oats setup`** records a path that survives an upgrade of Node where there
+  is one (on Homebrew the `opt` link, not the versioned keg), and warns when
+  there is none. The kernel works it out and hands it in as `OATS_NODE_BIN`.
+- **`turn-record setup`**, run alone, has no such rule. It records
+  `OATS_NODE_BIN` when that is set to an absolute path, else the `node` it runs
+  under (`process.execPath`). On Homebrew that is the versioned keg, which
+  `brew upgrade node` removes: run `setup` again after an upgrade.
+
+`--dry-run` prints the `node` it would record. The first capture pass always
+runs under the `node` that runs `setup`.
+
+Each path is written for what reads it: a shell word in the hook's command,
+systemd's quoting in `ExecStart`, XML text in the launchd plist. A path of
+plain characters is written bare. A run finds the hooks of an earlier run by
+their shape, quoted or not, and replaces their command; a command it cannot
+read as its own is left alone and a new hook is added beside it.
 Stream owner: `--owner`, else `$TURN_RECORD_OWNER`, else the short hostname.
 
 ## Ignoring sessions and paths (privacy)

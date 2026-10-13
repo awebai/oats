@@ -775,6 +775,12 @@ itself cannot report it.
 A package that also runs under a kernel older than the variable falls back to
 `process.execPath` when `OATS_NODE_BIN` is absent or not an absolute path.
 
+`oats setup` is given the same answer: the kernel sets `OATS_NODE_BIN` in its
+own process, over any value the caller's environment held, before it runs the
+turn record's setup script (`packages/record/bin/setup.mjs`), which writes it
+into the capture hooks and the capture watcher's unit. In the third case
+`oats setup` carries the warning, a dry run included.
+
 ### The worktree event
 
 `OATS_EVENT=worktree` (OATS 0.49.0) lets a capability set up a Git tree the
