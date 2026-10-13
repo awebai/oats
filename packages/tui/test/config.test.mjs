@@ -9,7 +9,7 @@ import { CONFIG_LIMIT, MAX_PROBLEMS, configPath, effectiveConfig, loadConfig } f
 import { isKeyId } from "../lib/term/keys.mjs";
 
 const FILE = "/cfg/oats/tui.json";
-const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, help, close, quit, suspend, redraw";
+const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, workspaces, open-workspace, help, close, quit, suspend, redraw";
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
 /** The whole line of a refusal, as it is printed. */
 const line = (clause, file = FILE) => `oats: \`oats tui\` cannot use ${file}: ${clause} (E_TUI_CONFIG)`;
@@ -295,6 +295,13 @@ test("refused: one key given to two actions, naming the key and both; a user's k
     line("the key escape is given to close and to help; a key does one thing"),
   ]);
   assert.deepEqual(effectiveConfig({ keys: { refresh: ["q"] } }), { ok: false, problems: ["the key q is given to quit and to refresh; a key does one thing"] });
+  // The switcher's two actions hold `w` and `enter` by default: a file written before they
+  // existed that gives one of them to another action is refused like any other, and is
+  // honoured once it gives the switcher's action another key, or none.
+  assert.deepEqual(load({ keys: { refresh: ["w"] } }).lines, [line("the key w is given to workspaces and to refresh; a key does one thing")]);
+  assert.deepEqual(load({ keys: { detail: ["enter"] } }).lines, [line("the key enter is given to open-workspace and to detail; a key does one thing")]);
+  assert.equal(load({ keys: { refresh: ["w"], workspaces: ["f2"] } }).ok, true);
+  assert.equal(load({ keys: { detail: ["enter"], "open-workspace": [] } }).ok, true);
 });
 
 test("refused: one key given to two actions by two lists of the file, found at the second", () => {
