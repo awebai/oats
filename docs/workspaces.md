@@ -170,6 +170,18 @@ reference-bearing fields (`details.ref`, `details.url`, `details.value` and
 messages that quote repository references and Git stderr quoted in a diagnostic.
 Unrelated schema values and opaque provider payloads are not scanned for secrets.
 
+When rendering removes user information from the reference of an `E_REPO_REF`
+refusal, or from the value quoted by a package refusal, the message explains
+that it was omitted to keep credentials out of diagnostics and directs the
+operator to give credentials to Git instead of embedding them in the reference.
+The renderer adds this clause once, including when the refusal is forwarded;
+reference fields contain only the rendered value. Refusals without removed user
+information and `E_REMOTE_UNREADABLE` transport failures do not gain the clause.
+Existing workspace and membership message slots retain the explanation when
+they forward the refusal, including schema `problems[].message`; pattern-only
+schema problems (including local configuration) remain unchanged. Valid SSH
+references still pass the parser unchanged.
+
 An SSH URL such as `ssh://git@host/org/repo` is shown as
 `ssh://host/org/repo`; an scp-style `git@host:org/repo` is also shown as
 `ssh://host/org/repo`, so clients can still extract the hostname. These are

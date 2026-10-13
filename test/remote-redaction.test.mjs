@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { oatsError } from "../lib/errors.mjs";
 import { redactUrl, scrubGitLine, parseRepoRef, observeRemote, readRemoteFile, runGit } from "../lib/remote.mjs";
-import { confirmMembership, validateWorkspace, validateLocal, loadLocal } from "../lib/workspace.mjs";
+import { confirmMembership, observeWorkspace, validateWorkspace, validateLocal, loadLocal } from "../lib/workspace.mjs";
 import { parsePackageRequest, resolvePackages } from "../lib/packages.mjs";
 import { remoteFailureCause } from "../packages/client/deployment-contract.mjs";
 
@@ -24,6 +24,7 @@ const malformed = [
   `https://${USER}:123/extra@${host}/${path}`,
   `https://${USER}:${PASSWORD}/extra@${host}`,
 ];
+const clause = "(its user information is omitted to keep credentials out of diagnostics; give credentials to Git, not in the repository reference)";
 const roots = [];
 const scratch = () => { const dir = mkdtempSync(join(tmpdir(), "oats-redaction-")); roots.push(dir); return dir; };
 test.after(() => { for (const dir of roots) rmSync(dir, { recursive: true, force: true }); });
@@ -83,6 +84,90 @@ test("parser refusals redact strings, malformed URLs, nested objects and auxilia
   assert.equal(parseRepoRef(`ssh://${USER}@${host}/${path}`).url, `ssh://${USER}@${host}/${path}`);
 });
 
+test("refusals explain removed userinfo once, without changing diagnostic fields", async () => {
+  const refs = [...https, `https://:${PASSWORD}@${host}/${path}`,
+    `ssh://${USER}:${PASSWORD}@bad_host/${path}`, `ssh://${USER}:${PASSWORD}@${host}/bad path`, ...malformed];
+  for (const ref of refs) {
+    const e = await refused(() => parseRepoRef(ref));
+    safeError(e, "E_REPO_REF");
+    assert.ok(e.message.endsWith(clause), ref);
+    assert.equal(e.message.split(clause).length - 1, 1);
+    assert.equal(e.details.ref, redactUrl(ref, null, { reference: true }));
+    assert.ok(!JSON.stringify(e.details).includes(clause), "only the message carries the explanation");
+    const value = `git:${ref}@v1`;
+    const pkg = await refused(() => parsePackageRequest("p", value, {}));
+    safeError(pkg, "E_REPO_REF");
+    assert.ok(pkg.message.endsWith(clause), value);
+    assert.equal(pkg.message.split(clause).length - 1, 1);
+    assert.deepEqual(pkg.details, { id: "p", value: redactUrl(value, null, { reference: true }),
+      path: "/packages/p", problems: ["a git package carries exactly one @<ref> (a repo ref has no @ except the git@host: ssh form)"] });
+  }
+  // Non-git package refusals have a schema code but still quote the refused value.
+  const pkg = await refused(() => parsePackageRequest("p", https[0], {}));
+  safeError(pkg, "E_WORKSPACE_SCHEMA");
+  assert.ok(pkg.message.endsWith(clause));
+  // Invalid object inputs and validated objects forwarded to the string parser.
+  for (const ref of [{ bad: [https[0], { [https[1]]: ssh }] }, { key, url: https[0] },
+    { key: "other.invalid/o/r", url: ssh }]) {
+    const e = await refused(() => parseRepoRef(ref));
+    safeError(e, "E_REPO_REF");
+    assert.equal(e.message.split(clause).length - 1, 1);
+    assert.ok(!JSON.stringify(e.details).includes(clause));
+    assert.equal(redactUrl(`forwarded: ${e.message}`, [https[0], ssh], { known: false, refusal: true }), `forwarded: ${e.message}`);
+  }
+  const workspaceObs = { key: "example.invalid/org/workspace", commit: "1".repeat(40),
+    workspace: { schemaVersion: 2, name: "fixture", members: ["git:example.invalid/org/repo"] } };
+  const row = await confirmMembership(workspaceObs, https[0]);
+  noTokens(row);
+  assert.equal(row.detail.split(clause).length - 1, 1, "membership forwards the refusal once");
+});
+
+test("the omission clause is absent without removed userinfo in the named refused reference", async () => {
+  for (const ref of ["not-a-ref", "https://host", "ssh://host/bad path", "https://host:8443/repo@v1@x", "https://@host/o/r"]) {
+    const e = await refused(() => parseRepoRef(ref));
+    assert.equal(e.code, "E_REPO_REF");
+    assert.ok(!e.message.includes(clause), ref);
+  }
+  for (const value of ["wat", "git:https://host:8443/org/repo.git@v1@x", "git:https://@host/o/r@v1", "git:@host:repo"]) {
+    const e = await refused(() => parsePackageRequest("p", value, {}));
+    assert.ok(!e.message.includes(clause), value);
+  }
+  assert.equal(redactUrl("@host:repo", null, { reference: true }), "ssh://host/repo");
+  assert.equal(redactUrl("refused @host:repo", "@host:repo", { known: false, refusal: true }), "refused ssh://host/repo",
+    "SCP display normalization without nonempty userinfo is not omission");
+  for (const e of [
+    await refused(() => parseRepoRef("git:example.invalid/org/repo", { transport: https[0] })),
+    await refused(() => readRemoteFile(ssh, https[0], "x")),
+  ]) { safeError(e, "E_REPO_REF"); assert.ok(!e.message.includes(clause), "unrelated fields do not annotate a refusal"); }
+  for (const ref of [ssh, `ssh://${USER}@${host}/${path}`, `git@${host}:${path}`]) {
+    assert.equal(parseRepoRef(ref).url, ref, "successful parsing keeps transport and adds no explanation");
+  }
+  // Rendering ordinary text may change it without annotating any refusal.
+  assert.equal(redactUrl(`plain: ${https[0]}`, null, { refusal: true }), `plain: https://${host}/${path}`);
+});
+
+test("configured member refusals retain the clause through schema wrapping, while pattern-only local refusals stay unchanged", async () => {
+  const dir = scratch();
+  writeFileSync(join(dir, "oats-workspace.yaml"), JSON.stringify({ schemaVersion: 2, name: "fixture", members: https }));
+  await runGit(["init", "-q", dir]);
+  await runGit(["-C", dir, "add", "oats-workspace.yaml"]);
+  await runGit(["-C", dir, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"]);
+  const e = await refused(() => observeWorkspace(dir, { remoteOptions: { cacheDir: scratch() } }));
+  safeError(e, "E_WORKSPACE_SCHEMA");
+  assert.equal(e.details.path, "oats-workspace.yaml");
+  assert.equal(e.message.split(clause).length - 1, 2, "once per originating refusal, not once per combined error");
+  assert.deepEqual(e.details.problems, https.flatMap((_, i) => [
+    { path: `/members/${i}`, message: `"https://${host}/${path}" does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` },
+  ]).concat(https.map((_, i) => ({ path: `/members/${i}`, message: `not a repo ref: unrecognized repository reference: https://${host}/${path} ${clause}` }))));
+  assert.equal(e.provenance.problems, e.details.problems);
+  const local = scratch();
+  writeFileSync(join(local, "oats-local.yaml"), JSON.stringify({ schemaVersion: 2, workspace: https[0] }));
+  const localError = await refused(() => loadLocal(local));
+  safeError(localError, "E_WORKSPACE_SCHEMA");
+  assert.ok(!localError.message.includes(clause));
+  assert.deepEqual(localError.details.problems, [{ path: "/workspace", message: `"https://${host}/${path}" does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` }]);
+});
+
 test("one renderer handles quoted URLs, SCP host display and credentials echoed outside URLs", () => {
   for (const ref of [...https, ssh, `ssh://${USER}@${host}/${path}`, `git@${host}:${path}`]) {
     const displayed = redactUrl(ref);
@@ -115,6 +200,7 @@ test("SSH read, cache stderr and explicit fetch timeout redact output but preser
     const e = await refused(() => readRemoteFile(ssh, "1".repeat(40), "small", { cacheDir: scratch(), exec }));
     safeError(e, "E_REMOTE_UNREADABLE");
     assert.equal(e.details.reason, kind);
+    assert.ok(!e.message.includes(clause), "transport failures do not explain a reference refusal");
     assert.equal(e.details.url, clean);
     assert.ok(argsSeen.some((args) => args.includes(`remote.origin.url=${ssh}`)), "Git receives the credential-bearing URL unchanged");
     if (kind === "timeout") { assert.equal(e.details.operation, "fetch"); assert.match(e.message, /git fetch.*timed out/); }
@@ -181,12 +267,12 @@ test("refusal rendering preserves hosts, paths, fixed prose and schema patterns 
     ["git@", ""],
   ]) {
     const e = await refused(() => parseRepoRef(ref));
-    assert.equal(e.message, `unrecognized repository reference: ${clean}`);
+    assert.equal(e.message, `unrecognized repository reference: ${clean} ${clause}`);
     assert.equal(e.details.ref, clean);
     const before = validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] });
     assert.deepEqual(before, [
       { path: "/members/0", message: `${JSON.stringify(clean)} does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` },
-      { path: "/members/0", message: `not a repo ref: unrecognized repository reference: ${clean}` },
+      { path: "/members/0", message: `not a repo ref: unrecognized repository reference: ${clean} ${clause}` },
     ]);
     if (!clean) continue; // The userinfo-only reference has no repository to retain in a package.
     const pkg = await refused(() => parsePackageRequest("p", `git:${ref}@v1`, {}));
@@ -327,7 +413,7 @@ test("all Git quoting helpers remove known secrets outside URLs in stderr and me
 test("no-path slash-in-password refusal removes userinfo from every error field", async () => {
   const e = await refused(() => parseRepoRef("https://TOKSECRET:P/extra@h.x"));
   assert.equal(e.code, "E_REPO_REF");
-  assert.equal(e.message, "repository reference has an invalid host: https://h.x");
+  assert.equal(e.message, `repository reference has an invalid host: https://h.x ${clause}`);
   assert.deepEqual(e.details, { ref: "https://h.x", host: "" });
   assert.equal(e.provenance, e.details);
 });
