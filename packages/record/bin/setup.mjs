@@ -67,18 +67,15 @@ function shellWord(value) {
 // double quote, a newline, which ends a command) or a quote left open: the
 // shell would do more with it than run those words, so it is not read.
 //
-// A character beyond ASCII is part of a word too, as an earlier setup wrote
-// it bare in a path (shellWord now quotes it). bash, dash and zsh end a word
-// only at a space, a tab, a newline or an operator, all ASCII, so a command
-// of such words carries nothing a rewrite would lose. POSIX lets a shell end
-// a word at any blank of its locale, so a Unicode space is not taken, nor a
-// control or format character.
-const BEYOND_ASCII = /^[^\0-\x7F\p{Z}\p{C}]$/u;
+// Any character above U+007F is part of a word too, as an earlier setup
+// wrote it bare in a path (shellWord now quotes it). bash, dash and zsh end
+// a word only at a space, a tab, a newline or an operator, all ASCII, so a
+// command of such words carries nothing a rewrite would lose.
 function shellWords(command) {
   const words = [];
   let word = null;
   for (let i = 0; i < command.length; ) {
-    const c = String.fromCodePoint(command.codePointAt(i));
+    const c = command[i];
     if (c === " " || c === "\t") {
       if (word !== null) words.push(word);
       word = null;
@@ -91,9 +88,9 @@ function shellWords(command) {
     } else if (c === "\\" && command[i + 1] === "'") {
       word = (word ?? "") + "'";
       i += 2;
-    } else if (SHELL_PLAIN.test(c) || BEYOND_ASCII.test(c)) {
+    } else if (SHELL_PLAIN.test(c) || c > "\x7F") {
       word = (word ?? "") + c;
-      i += c.length;
+      i++;
     } else return null;
   }
   if (word !== null) words.push(word);

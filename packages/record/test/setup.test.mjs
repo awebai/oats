@@ -351,10 +351,15 @@ test("over the old form (unquoted, the keg's path) a run replaces the hooks and 
   }
 });
 
-test("an old command with a letter beyond ASCII bare in a path is replaced, and written quoted", () => {
-  // Composed, decomposed (a base letter and a combining mark), another script,
-  // and a letter outside the Basic Multilingual Plane.
-  const olds = ["/home/zo\u00eb/.nvm/bin/node", "/home/zoe\u0308/.nvm/bin/node", "/home/\u5c71\u7530/bin/node", "/home/\u{20000}/bin/node"];
+test("an old command with a character above U+007F bare in a path is replaced, and written quoted", () => {
+  // Letters: composed, decomposed (a base letter and a combining mark),
+  // another script, one outside the Basic Multilingual Plane. And what is no
+  // letter and still no word's end for a shell: a Unicode space, a private-use
+  // character, a format character, a C1 control.
+  const olds = [
+    "/home/zo\u00eb/.nvm/bin/node", "/home/zoe\u0308/.nvm/bin/node", "/home/\u5c71\u7530/bin/node", "/home/\u{20000}/bin/node",
+    "/opt/old\u3000node/bin/node", "/opt/old\ue000node/bin/node", "/opt/old\u200bnode/bin/node", "/opt/old\u0085node/bin/node",
+  ];
   const node = join(base, "zo\u00eb", "bin", "node");
   const current = `'${node}' ${captureOf()} --owner ${OWNER} --quiet`;
   for (const old of olds) {
@@ -411,9 +416,6 @@ test("a command that is not provably setup's is left alone, and setup's own is a
     "( /usr/bin/node /x/capture.mjs --owner a --quiet )",
     "/usr/bin/node /x/capture.mjs --owner a --quiet # for the record",
     "/home/zo\u00eb/bin/node /old/install/bin/capture.mjs --owner a --quiet && other", // beyond ASCII, and more
-    "/opt/no\u3000de/bin/node /old/install/bin/capture.mjs --owner a --quiet", // a Unicode space: a blank in some locales
-    "/opt/no\u200bde/bin/node /old/install/bin/capture.mjs --owner a --quiet", // a format character
-    "/opt/no\u0085de/bin/node /old/install/bin/capture.mjs --owner a --quiet", // a control character
     // A named limit: setup's own old command with an ASCII character outside
     // the plain set bare in a path. Not read, so not replaced.
     "/opt/node~22=lts/bin/node /old/install/bin/capture.mjs --owner a --quiet",
