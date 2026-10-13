@@ -5,8 +5,9 @@
   link, `oats retire` was refused with `E_WORK_PRESERVATION_FAILED`,
   `--force` included. It now completes, removes no tree, with
   `--discard-worktree` as without it (`retention: null`, `worktreeRemoved:
-  false`), and says in the receipt's `warnings` where the link led. See the
-  entry under Fixed.
+  false`), and says in the receipt's `warnings` where the link led. Its
+  plan has `defaults.retainWorktree: false` where it was `true`, and a plan
+  of it read before the upgrade is stale. See the entry under Fixed.
 - **A retire plan no longer gives two notes for a tree that is not the
   instance's own (#973).** The plan of an attached, a checkout or a
   workspace instance gave `N changed and M untracked file(s) would be
