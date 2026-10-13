@@ -217,10 +217,14 @@ what they need of a system follows the system that built them.
 `pull-request.yml` keeps `ubuntu-latest` on purpose: when the label moves, a
 break on the new system shows in pull-request CI first and not at a release.
 
-Moving the runner of the two files is a pull request that says what the
-installers then need. The same test holds the two files to it: every job of
-theirs runs on a label that names a version, and both build on the same
-Linux.
+The labels the two files may name are a list beside the table of actions in
+`test/workflow-no-cache.test.mjs`: `ubuntu-24.04` and `macos-14`. Every job
+of the two files runs on a label of that list, and both files build on the
+same Linux. A label is added to the list by whoever decides the runner, as an
+action's row is by whoever read it.
+
+**Moving the runner is a pull request** that changes the label in the two
+files and in the list together, and says what the installers then need.
 
 **What the Linux installer needs today**, to compare with at the next move.
 Read from `oats-desktop-0.52.0-linux-amd64.deb`, built on `ubuntu-24.04`

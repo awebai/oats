@@ -13,6 +13,12 @@ test("direct main pushes retain the same read-only CI gates as pull requests", (
   assert.deepEqual(workflow.on.pull_request.branches, workflow.on.push.branches);
   assert.equal(workflow.permissions.contents, "read");
   assert.match(workflow.concurrency.group, /github\.event\.pull_request\.number \|\| github\.sha/);
+  // Every job runs on `ubuntu-latest`, on purpose: when GitHub moves that label to another
+  // system, a break on it shows here first and not at a release. release.yml and
+  // build-installers.yml name their runners by version (test/workflow-no-cache.test.mjs holds
+  // their list), and moving them is then a decision with this workflow's evidence.
+  assert.ok(Object.keys(workflow.jobs).length >= 5);
+  for (const [name, job] of Object.entries(workflow.jobs)) assert.equal(job["runs-on"], "ubuntu-latest", `pull-request.yml, job ${name}`);
   const steps = workflow.jobs.verify.steps, commands = steps.map((step) => step.run);
   for (const command of ["npm run check", "npm run check:pi", "npm run validate", "npm run pack:check", "npm run smoke:tarball"]) {
     assert.ok(commands.includes(command), `missing gate: ${command}`);
