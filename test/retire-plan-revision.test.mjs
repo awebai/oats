@@ -20,6 +20,11 @@
 //   - the reading is bound by itself: with the record, the session and Git's answer as they were,
 //     a plan is stale once the spawn's receipt says that no tree was given and the same directory
 //     reads as a directory of the home;
+//   - the repository Git names for work/ is bound wherever work/ is a registered work tree, a
+//     directory of the home included: with the record, the receipt and Git's answer as they were,
+//     a plan is stale once work/ is a work tree of another repository, or was none and is one;
+//   - and the repository the retire takes from Git because the record names none stays bound: the
+//     plan of an own tree is stale once its record names no repository;
 //   - what a client relies on: the revision's form, the fresh plan in the refusal, and a repeated
 //     apply with the same key answered from its stored receipt whatever revision it carries;
 //   - the revision of a plain `worktree` home is not the one the rule before #1065 gave it: every
@@ -28,7 +33,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -249,6 +254,85 @@ test("the reading of work/ is part of the revision by itself: under a record tha
   assert.deepEqual([stale.status, stale.ok, stale.error?.code], [1, false, "E_PLAN_STALE"], JSON.stringify(stale.error ?? stale.result));
   assert.deepEqual(timeless(stale.error.details.plan), timeless(fresh), "the refusal carries the fresh plan, whole");
   assert.deepEqual(snapshot(inst.home), before, "the home is as it was");
+  assert.equal(d.hookRan(inst.instance), false, "no retire hook ran");
+});
+
+test("the repository Git names for work/ is part of the revision for a directory of the home too: under a record and a receipt that stay as they are, with the same commit checked out clean at work/, the plans of a repository of its own, of a registered work tree of one repository and of a registered work tree of another differ in a note and never share a revision, and a guarded apply with the revision of one is stale under the next (#1065)", async (t) => {
+  const d = deployment(t);
+  const owner = await d.fx.spawn("dev", { instance: "dev-owner" });
+  const inst = d.attached(owner, "registered"), work = join(inst.home, "work");
+  // Two disposable repositories outside every home that hold one commit: B is a clone of A.
+  const a = join(d.fx.base, "repository-a"), b = join(d.fx.base, "repository-b");
+  mkdirSync(a);
+  d.git(a, "init", "-q");
+  d.git(a, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "one commit");
+  const commit = d.git(a, "rev-parse", "HEAD");
+  d.git(d.fx.base, "clone", "-q", a, b);
+  const registered = (repository) => `work/ is registered as a worktree of ${repository}:`;
+  const noteOf = (plan) => plan.notes.filter((note) => note.startsWith("work/ is registered as a worktree of "));
+  /** The plan now, with what the case holds fixed stated: the record, the reading, Git's answer. */
+  const read = (what) => {
+    const plan = d.plan(inst.instance);
+    assert.deepEqual([plan.facts.workMode, plan.facts.ownWorktree, plan.defaults.retainWorktree], ["attached", false, false], what);
+    assert.deepEqual([plan.facts.work.observed, plan.facts.work.revision, plan.facts.work.branch, plan.facts.work.changed, plan.facts.work.untracked], [true, commit, null, 0, 0], `${what}: Git's answer for work/`);
+    return { what, plan, line: d.line(inst.instance) };
+  };
+  const steps = [];
+  // A repository of its own at work/, on that commit, detached and clean: no work tree of another's.
+  rmSync(work);
+  d.git(d.fx.base, "clone", "-q", a, work);
+  d.git(work, "checkout", "-q", "--detach", commit);
+  steps.push(read("a repository of its own at work/"));
+  assert.deepEqual(noteOf(steps[0].plan), [], "fixture premise: no note of a registered work tree");
+  // The same commit as a registered work tree of A, then of B, at the same path.
+  rmSync(work, { recursive: true });
+  d.git(a, "worktree", "add", "-q", "--detach", work, commit);
+  steps.push(read("a registered work tree of repository A"));
+  d.git(a, "worktree", "remove", "--force", work);
+  d.git(b, "worktree", "add", "-q", "--detach", work, commit);
+  steps.push(read("a registered work tree of repository B"));
+  for (const [step, repository] of [[steps[1], a], [steps[2], b]]) {
+    const notes = noteOf(step.plan);
+    assert.equal(notes.length, 1, `${step.what}: ${JSON.stringify(step.plan.notes)}`);
+    assert.equal(notes[0].startsWith(registered(realpathSync(repository))), true, `${step.what}: the note names that repository: ${notes[0]}`);
+  }
+  assert.deepEqual(steps.map((step) => step.plan.facts.session), [steps[0].plan.facts.session, steps[0].plan.facts.session, steps[0].plan.facts.session], "the session is the same throughout");
+  // The property: the three plans differ in a note, pairwise, so no two share a revision.
+  const shared = [];
+  for (const [i, x] of steps.entries()) for (const y of steps.slice(i + 1)) {
+    assert.notDeepEqual(x.plan.notes, y.plan.notes, `fixture premise: ${x.what} and ${y.what} differ in a note`);
+    if (x.plan.planRevision === y.plan.planRevision) shared.push(`${x.what} / ${y.what}`);
+  }
+  assert.deepEqual(shared, [], "pairs of plans that differ in a note and share a revision");
+  // And the apply: the revision of each earlier plan is stale now, with the plan of repository B.
+  const fresh = steps[2].plan, before = snapshot(inst.home);
+  for (const [n, earlier] of steps.slice(0, 2).entries()) {
+    const stale = d.apply(inst.instance, earlier.plan.planRevision, `shown-${n}`);
+    assert.deepEqual([stale.status, stale.ok, stale.error?.code], [1, false, "E_PLAN_STALE"], `${earlier.what}: ${JSON.stringify(stale.error ?? stale.result)}`);
+    assert.deepEqual(timeless(stale.error.details.plan), timeless(fresh), `${earlier.what}: the refusal carries the fresh plan, whole`);
+    assert.deepEqual(snapshot(inst.home), before, `${earlier.what}: the home is as it was`);
+    assert.equal(d.hookRan(inst.instance), false, `${earlier.what}: no retire hook ran`);
+  }
+});
+
+test("the repository the retire takes from Git because the record names none stays part of the revision: the plan of an own tree whose record names its repository, and the plan of the same tree once the record names none, differ in a note and do not share a revision (#962, kept by #1065)", async (t) => {
+  const d = deployment(t);
+  const inst = await d.fx.spawn("dev", { instance: "dev-unnamed" });
+  const NOTE = "the record names no repository for the work tree: the retire uses the one Git names for it, ";
+  const named = d.plan(inst.instance);
+  assert.equal(typeof named.facts.repo, "string", "fixture premise: the record names the repository");
+  assert.equal(named.notes.some((note) => note.startsWith(NOTE)), false);
+  const path = join(inst.home, "instance.json"), meta = JSON.parse(readFileSync(path, "utf8"));
+  delete meta.repo;
+  writeFileSync(path, JSON.stringify(meta, null, 2) + "\n");
+  const unnamed = d.plan(inst.instance);
+  assert.deepEqual([unnamed.facts.repo, unnamed.facts.workMode, unnamed.facts.ownWorktree, unnamed.defaults.retainWorktree], [null, "worktree", true, true]);
+  assert.equal(unnamed.notes.filter((note) => note.startsWith(NOTE)).length, 1, JSON.stringify(unnamed.notes));
+  assert.deepEqual({ ...unnamed.facts.work, upstream: null }, { ...named.facts.work, upstream: null }, "what Git says of work/ is the same");
+  assert.notEqual(unnamed.planRevision, named.planRevision, "the two plans differ in a note: not one revision");
+  const stale = d.apply(inst.instance, named.planRevision, "shown-as-named");
+  assert.deepEqual([stale.status, stale.ok, stale.error?.code], [1, false, "E_PLAN_STALE"], JSON.stringify(stale.error ?? stale.result));
+  assert.deepEqual(timeless(stale.error.details.plan), timeless(unnamed), "the refusal carries the fresh plan, whole");
   assert.equal(d.hookRan(inst.instance), false, "no retire hook ran");
 });
 

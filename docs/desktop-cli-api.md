@@ -4101,16 +4101,16 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   record`. No key of the plan is new.
 
   <a id="retire-revision-work"></a>The record's work mode (`facts.workMode`)
-  and what `work/` is by this reading, with the repository read from Git
-  where the reading takes it from there, are part of every retire plan's
-  `planRevision`, in every home (0.53.0, #1065). So no two plans of one home
-  that the record or the reading makes different, in `facts.workMode`,
-  `facts.ownWorktree`, `defaults.retainWorktree`, a note or the text's
-  `defaults:` line, share a revision, and a guarded apply after either moved
-  (a record's work mode that was rewritten, a receipt that is gone, an own
-  tree that became a directory of the home, another repository read from
-  Git) is refused with `E_PLAN_STALE` and the fresh plan, before anything
-  runs. Before 0.53.0 neither was part of the revision, and a record
+  and what `work/` is by this reading, with the repository Git names for
+  `work/` wherever it is a registered work tree, are part of every retire
+  plan's `planRevision`, in every home (0.53.0, #1065). So no two plans of
+  one home that the record or the reading makes different, in
+  `facts.workMode`, `facts.ownWorktree`, `defaults.retainWorktree`, a note
+  or the text's `defaults:` line, share a revision, and a guarded apply
+  after one of them moved (a record's work mode that was rewritten, a
+  receipt that is gone, an own tree that became a directory of the home, a
+  directory of the home that became a work tree of another repository) is
+  refused with `E_PLAN_STALE` and the fresh plan, before anything runs. Before 0.53.0 neither was part of the revision, and a record
   rewritten between a plan and its apply did not make the plan stale.
   **Every retire plan read under an older kernel is stale under this one,
   once:** its apply is refused with `E_PLAN_STALE` and the fresh plan, and
