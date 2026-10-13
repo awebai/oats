@@ -135,7 +135,7 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
 // schema, not a copied validator; files must survive acquiring each own root.
 const OPERATIONAL_CAPABILITIES = [
   {
-    slug: "oats-core", names: ["oats-operate", "oats-souls"], injection: "injects/oats.md",
+    slug: "oats-core", names: ["oats-operate", "oats-souls", "oats-token-saving"], injection: "injects/oats.md",
     // 0.40.0: `oats instance waiting`, which the emitter calls, and `oats instance attention`, which the skills teach.
     compatibility: ">=0.40.0",
     executable: { hooks: { spawn: "bin/oats-core.mjs spawn", launch: "bin/oats-core.mjs launch" }, launchPreview: true, files: ["bin/claude-waiting.sh", "bin/oats-core.mjs"] },

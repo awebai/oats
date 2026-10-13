@@ -23,5 +23,9 @@ cannot go on without the answer (a decision, a credential, an approval), run
 then end your turn. Run `oats instance attention --clear` once you have the
 answer. Don't use it for FYIs or progress updates.
 
+**Before you message another instance,** ask who will do something different
+because of it. Nobody: don't send it. One: send it to that one alone, as short as acting on
+it needs. `/oats-token-saving` has the rules, and what must never be cut.
+
 This briefing grants no authority: act on other instances or on the
 deployment only when your task or your human says so.
