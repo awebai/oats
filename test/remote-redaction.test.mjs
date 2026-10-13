@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { oatsError } from "../lib/errors.mjs";
-import { redactUrl, scrubGitLine, parseRepoRef, observeRemote, readRemoteFile, listRemoteTree, listRemoteFiles, contentDigest, fetchRemoteTree, runGit } from "../lib/remote.mjs";
+import { redactUrl, scrubGitLine, parseRepoRef, classifyRemoteFailure, observeRemote, readRemoteFile, listRemoteTree, listRemoteFiles, contentDigest, fetchRemoteTree, runGit } from "../lib/remote.mjs";
 import { confirmMembership, observeWorkspace, validateWorkspace, validateLocal, validateMembership, readDeclaration, loadLocal } from "../lib/workspace.mjs";
 import { parsePackageRequest, resolvePackages } from "../lib/packages.mjs";
 import { remoteFailureCause } from "../packages/client/deployment-contract.mjs";
@@ -27,6 +27,8 @@ const malformed = [
 const clause = "(its user information is not shown)";
 const WITHHELD = "[repository reference withheld]";
 const withheldClause = "(the repository reference was withheld)";
+const VALUE_WITHHELD = "[value withheld]";
+const valueWithheldClause = "(the value was withheld)";
 const GIT_WITHHELD = "Git's diagnostic was withheld; run the same Git operation by hand to see Git's own words.";
 const httpUserinfoReason = (ref) => `repository reference ${ref} carries user information, which an http(s) reference may not: give credentials to Git (a credential helper), not in the URL`;
 const roots = [];
@@ -85,27 +87,34 @@ test("parser refusals redact strings, malformed URLs, nested objects and auxilia
   assert.equal(parseRepoRef(`ssh://${USER}@${host}/${path}`).url, `ssh://${USER}@${host}/${path}`);
 });
 
-test("rejected transport is selected diagnostic data and successful transport stays exact", async () => {
-  for (const value of [...https, "ftp", "transport", "must", { https: [https[0]], ssh: https[1] }]) {
+test("rejected transport preserves safe words and successful transport stays exact", async () => {
+  for (const [value, display, withheld] of [
+    ...https.map(value => [value, VALUE_WITHHELD, true]),
+    ...["ftp", "transport", "must", "abc123", "v1..2"].map(value => [value, value, false]),
+    [{ https: [https[0]], ssh: https[1] }, { https: [VALUE_WITHHELD], ssh: VALUE_WITHHELD }, true],
+    [42, 42, false], [false, false, false],
+  ]) {
     const e = await refused(() => parseRepoRef("git:example.invalid/org/repo", { transport: value }));
     safeError(e, "E_REPO_REF");
-    const display = redactUrl(value, null, { reference: true });
     assert.deepEqual(e.details, { transport: display });
     assert.deepEqual(e.provenance, e.details);
-    assert.equal(e.message, `remoteOptions.transport must be "https" or "ssh", got ${JSON.stringify(display)} ${typeof value === "object" || display === WITHHELD ? withheldClause : clause}`);
+    assert.equal(e.message, `remoteOptions.transport must be "https" or "ssh", got ${JSON.stringify(display)}${withheld ? ` ${valueWithheldClause}` : ""}`);
+    assert.ok(!e.message.includes(clause) && !e.message.includes(withheldClause), "rejected options do not claim reference omission");
   }
   assert.equal(parseRepoRef("git:example.invalid/org/repo", { transport: "https" }).url, "https://example.invalid/org/repo.git");
   assert.equal(parseRepoRef("git:example.invalid/org/repo", { transport: "ssh" }).url, "git@example.invalid:org/repo.git");
 });
 
-test("rejected commit is selected diagnostic data and valid OIDs on other errors stay exact", async () => {
-  for (const value of [...https, "invalid-oid", "commit", "must", "OID"]) {
+test("rejected commit preserves safe words and valid OIDs on other errors stay exact", async () => {
+  for (const [value, display, withheld] of [
+    ...https.map(value => [value, VALUE_WITHHELD, true]),
+    ...["invalid-oid", "commit", "must", "OID", "abc123", "v1..2"].map(value => [value, value, false]),
+  ]) {
     const e = await refused(() => readRemoteFile(ssh, value, "x"));
     safeError(e, "E_REPO_REF");
-    const display = redactUrl(value, null, { reference: true });
     assert.deepEqual(e.details, { commit: display });
     assert.deepEqual(e.provenance, e.details);
-    assert.equal(e.message, `commit must be a full 40-hex OID ${display === WITHHELD ? withheldClause : clause}`);
+    assert.equal(e.message, `commit must be a full 40-hex OID${withheld ? ` ${valueWithheldClause}` : ""}`);
   }
   const commit = "1".repeat(40);
   const e = await refused(() => readRemoteFile(ssh, commit, "x", { cacheDir: scratch(), exec: async (args, opts) => {
@@ -116,28 +125,78 @@ test("rejected commit is selected diagnostic data and valid OIDs on other errors
   assert.equal(e.details.commit, commit);
 });
 
-test("other rejected inputs use boundary-specific display without changing accepted data", async () => {
+test("other rejected inputs use value display without changing accepted data", async () => {
   const commit = "1".repeat(40), input = https[0];
   const cases = [
-    ["at", input, () => observeRemote(ssh, { at: input })],
-    ["at", { nested: input }, () => observeRemote(ssh, { at: { nested: input } })],
-    ["path", { nested: input }, () => readRemoteFile(ssh, commit, { nested: input })],
-    ["path", `${input}/../x`, () => readRemoteFile(ssh, commit, `${input}/../x`)],
-    ["depth", input, () => listRemoteTree(ssh, commit, "", { depth: input })],
-    ["limit", input, () => listRemoteFiles(ssh, commit, "", { limit: input })],
-    ["path", input, () => contentDigest(input)],
-    ["destDir", input, () => fetchRemoteTree(ssh, commit, "", input)],
+    ["at", VALUE_WITHHELD, () => observeRemote(ssh, { at: input })],
+    ["at", { nested: VALUE_WITHHELD }, () => observeRemote(ssh, { at: { nested: input } })],
+    ["path", { nested: VALUE_WITHHELD }, () => readRemoteFile(ssh, commit, { nested: input })],
+    ["path", VALUE_WITHHELD, () => readRemoteFile(ssh, commit, `${input}/../x`)],
+    ["depth", VALUE_WITHHELD, () => listRemoteTree(ssh, commit, "", { depth: input })],
+    ["limit", VALUE_WITHHELD, () => listRemoteFiles(ssh, commit, "", { limit: input })],
+    ["path", VALUE_WITHHELD, () => contentDigest(input)],
+    ["destDir", VALUE_WITHHELD, () => fetchRemoteTree(ssh, commit, "", input)],
   ];
-  for (const [field, value, call] of cases) {
+  for (const [field, display, call] of cases) {
     const e = await refused(call);
     safeError(e, "E_REPO_REF");
-    assert.deepEqual(e.details, { [field]: redactUrl(value, null, { reference: true }) });
+    assert.deepEqual(e.details, { [field]: display });
     assert.deepEqual(e.provenance, e.details);
-    assert.ok(e.message.includes(clause) || e.message.includes(withheldClause));
+    assert.equal(e.message.split(valueWithheldClause).length - 1, 1);
+    assert.ok(!e.message.includes(clause) && !e.message.includes(withheldClause));
+  }
+  for (const [field, value, call] of [
+    ["at", "v1..2", () => observeRemote(ssh, { at: "v1..2" })],
+    ["path", "../escape", () => readRemoteFile(ssh, commit, "../escape")],
+    ["depth", "2", () => listRemoteTree(ssh, commit, "", { depth: "2" })],
+    ["limit", -1, () => listRemoteFiles(ssh, commit, "", { limit: -1 })],
+    ["destDir", "relative/path", () => fetchRemoteTree(ssh, commit, "", "relative/path")],
+  ]) {
+    const e = await refused(call);
+    assert.equal(e.code, "E_REPO_REF");
+    assert.deepEqual(e.details, { [field]: value });
+    assert.ok(!e.message.includes(valueWithheldClause) && !e.message.includes(clause) && !e.message.includes(withheldClause));
   }
   const raw = { nested: input };
   await refused(() => observeRemote(ssh, { at: raw }));
   assert.equal(raw.nested, input, "refusing diagnostics never mutate caller input");
+});
+
+test("rejected-value display accepts only the complete bounded ASCII spelling", async () => {
+  const allowed = ["a", "0", ".", "_", "/", "+", "-", "ftp", "abc123", "v1..2", "AZaz09._/+-", "a".repeat(256)];
+  const forbidden = ["", "a".repeat(257), " a", "a ", "a b", "café", "漢字", "😀", "a\u0301", "a\u0085b", "a\u00a0b", "a\u200bb", "a\u2028b", "a\u2029b", "a\ufeffb",
+    ...Array.from({ length: 32 }, (_, i) => `a${String.fromCharCode(i)}b`),
+    `a${String.fromCharCode(127)}b`, `a${String.fromCharCode(128)}b`,
+    ...[":", "@", "'", '"', "%", "?", "#", "=", ",", ";", "\\", "[", "]", "{", "}", "(", ")", "<", ">", "!", "$", "&", "*", "|", "~", "^", "`"].map(character => `a${character}b`),
+    ...https];
+  for (const [values, expectedWithheld] of [[allowed, false], [forbidden, true]]) for (const value of values) {
+    const display = expectedWithheld ? VALUE_WITHHELD : value;
+    assert.equal(redactUrl(value, null, { rejectedValue: true, reference: true }), display, JSON.stringify(value));
+    const e = await refused(() => parseRepoRef("git:example.invalid/org/repo", { transport: value }));
+    assert.equal(e.code, "E_REPO_REF");
+    assert.deepEqual(e.details, { transport: display });
+    assert.equal(e.details, e.provenance);
+    assert.equal(e.message, `remoteOptions.transport must be "https" or "ssh", got ${JSON.stringify(display)}${expectedWithheld ? ` ${valueWithheldClause}` : ""}`);
+  }
+  // The explicit context leaves non-string data and valid operational values alone.
+  for (const value of [null, undefined, true, false, 0, -1, 1.5]) {
+    assert.equal(redactUrl(value, null, { rejectedValue: true, reference: true }), value);
+  }
+  const original = { keep: ["abc123", https[0], 4, null], [https[1]]: { nested: "ftp" } };
+  const expected = { keep: ["abc123", VALUE_WITHHELD, 4, null], [VALUE_WITHHELD]: { nested: "ftp" } };
+  assert.deepEqual(redactUrl(original, null, { rejectedValue: true, reference: true }), expected);
+  assert.equal(original.keep[1], https[0]);
+  assert.ok(Object.hasOwn(original, https[1]));
+  const collision = { [https[0]]: "first", [https[1]]: "second", [VALUE_WITHHELD]: "third" };
+  assert.deepEqual(redactUrl(collision, null, { rejectedValue: true, reference: true }), { [VALUE_WITHHELD]: "third" },
+    "distinct withheld keys deliberately share the fixed display key");
+  const message = "transport must be a supported value";
+  const explained = `${message} ${valueWithheldClause}`;
+  assert.equal(redactUrl(message, original, { rejectedValue: true, known: false, refusal: true, substitute: false }), explained);
+  assert.equal(redactUrl(explained, original, { rejectedValue: true, known: false, refusal: true, substitute: false }), explained);
+  assert.equal(redactUrl(message, ["ftp", "abc123"], { rejectedValue: true, known: false, refusal: true, substitute: false }), message);
+  assert.equal(redactUrl(https[0], null, { reference: true }), `https://${host}/${path}`, "reference display is a separate explicit context");
+  assert.equal(parseRepoRef(ssh).url, ssh, "accepted transport still contains its exact user information");
 });
 
 test("refusals explain omission or withholding once, without changing diagnostic field shapes", async () => {
@@ -442,7 +501,7 @@ function assertGitQuoting(source) {
   assert.deepEqual(sites, {
     fail: ["safe.message", "safe.message"], runGit: ["child.stderr", "child.stderr"],
     stderrText: ["error?.stderr", "error?.message"], classifyText: ["stderrText("],
-    gitLastLine: ["stderrText(", "error?.message"], lockFileOf: ["stderrText("], isLocalWriteFailure: ["stderrText("],
+    gitLastLine: ["error?.stderr"], lockFileOf: ["stderrText("], isLocalWriteFailure: ["stderrText("],
     cacheFailure: ["stderrText(", "error?.message"], isLockRace: ["stderrText("],
     // Filesystem failures on the owned cache lock, not Git's error/transport text.
     withCacheWriteLock: ["error.message", "error.message", "error.message"],
@@ -451,7 +510,9 @@ function assertGitQuoting(source) {
   }, "new raw error-text access must be classified and its diagnostic route guarded");
   const body = (name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0] ?? "";
   assert.match(body("gitLastLine"), /map\(\(line\) => scrubGitLine\(line, url\)\)/);
-  assert.match(body("gitLastLine"), /\(stderrText\(error\) \|\| error\?\.message \|\| ""\)\.split\(/);
+  assert.match(body("gitLastLine"), /const stderr = error\?\.stderr;/);
+  assert.match(body("gitLastLine"), /const text = Buffer\.isBuffer\(stderr\) \? stderr\.toString\("utf8"\) : typeof stderr === "string" \? stderr : "";/);
+  assert.match(body("gitLastLine"), /const lines = text\.split\(/);
   assert.match(body("unreadable"), /gitLastLine\(error, ref\.url\)/);
   assert.match(body("cacheFailure"), /const why = scrubGitLine\(stderrText\(error\) \|\| error\?\.message \|\| error\?\.code \|\| "git failed", ref\.url\);/);
   assert.match(body("listingUnreadable"), /scrubGitLine\(text\.split\("\\n"\)\[0\], ref\?\.url\)/);
@@ -474,6 +535,7 @@ test("every Git error-text quoting route is guarded, including newly introduced 
       source + '\nfunction newQuote(' + name + ') { return fail("E_REMOTE_UNREADABLE", String(' + name + ')); }',
     ]),
     source.replace("scrubGitLine(line, url)", "String(line)"),
+    source.replace("const stderr = error?.stderr;", "const stderr = error?.message;"),
     source.replace("const why = scrubGitLine(stderrText(error)", "const why = String(stderrText(error)"),
     source.replace('scrubGitLine(text.split("\\n")[0], ref?.url)', 'text.trim().split("\\n")[0]'),
     source.replace('scrubGitLine(error?.message, ref?.url)', 'String(error?.message)'),
@@ -528,11 +590,46 @@ test("all Git quoting helpers withhold known credentials outside URLs in stderr 
   const helpers = new Function("oatsError", "redactUrl", "scrubGitLine", "classifyRemoteFailure", "keychainHint", "isLockRace", "isLocalWriteFailure", "markCacheDamaged", "KEYCHAIN_REMEDY",
     `${definitions}; return [unreadable, cacheFailure, (ref, error) => listingUnreadable(error, {ref,repo:{dir:"fixture"},spec:"HEAD"})];`)(
     oatsError, redactUrl, scrubGitLine, () => "unknown", () => null, () => false, () => false, () => {}, "");
-  for (const fn of helpers) for (const text of [`unexpected ${ssh}; ${PASSWORD}`, `unexpected ${USER}; ${PASSWORD}`]) {
+  for (const [index, fn] of helpers.entries()) for (const text of [`unexpected ${ssh}; ${PASSWORD}`, `unexpected ${USER}; ${PASSWORD}`]) {
     for (const error of [gitError(text), new Error(text)]) {
       const e = fn({ url: ssh, key }, error);
       safeError(e, "E_REMOTE_UNREADABLE");
-      assert.ok(e.message.includes(GIT_WITHHELD), "stderr and message fallbacks both use whole-line withholding");
+      if (index === 0 && error.stderr === undefined) {
+        assert.equal(e.message, `cannot read remote ${clean} (unknown)`, "ordinary read failures do not invent stderr from Error.message");
+      } else assert.ok(e.message.includes(GIT_WITHHELD), "existing stderr and fallback routes use whole-line withholding");
+    }
+  }
+});
+
+
+test("read failures with no stderr keep the reason and output-budget fallback without a Git notice", () => {
+  const source = readFileSync(new URL("../lib/remote.mjs", import.meta.url), "utf8");
+  const definitions = ["fail", "gitLastLine", "unreadable"]
+    .map(name => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0]).join("\n");
+  const unreadable = new Function("oatsError", "redactUrl", "scrubGitLine", "classifyRemoteFailure", "keychainHint", "cacheFailure", "KEYCHAIN_REMEDY",
+    `${definitions}; return unreadable;`)(oatsError, redactUrl, scrubGitLine, classifyRemoteFailure, () => null,
+    () => assert.fail("fixture must take the ordinary remote-read route"), "");
+  for (const [url, shown] of [
+    [`https://${host}/${path}`, `https://${host}/${path}`],
+    [`git@${host}:${path}`, clean],
+    [ssh, clean],
+  ]) {
+    const ref = { key, url };
+    for (const stderr of [undefined, Buffer.alloc(0), "", " \n\r\t"]) for (const overflowed of [false, true]) {
+      const error = Object.assign(new Error(`fixture command failed ${PASSWORD}`), { code: 128, overflowed });
+      if (stderr !== undefined) error.stderr = stderr;
+      const e = unreadable(ref, error);
+      safeError(e, "E_REMOTE_UNREADABLE");
+      assert.equal(e.details.reason, "unknown");
+      assert.equal(e.message, `cannot read remote ${shown} (unknown)${overflowed ? ": git's output exceeded its budget" : ""}`);
+      assert.ok(!e.message.includes(GIT_WITHHELD), "no stderr means no quoted Git text and no withholding notice");
+    }
+    const gitText = "fatal: fixture failure";
+    for (const stderr of [gitText, Buffer.from(gitText)]) {
+      const e = unreadable(ref, Object.assign(new Error("ignored wrapper message"), { code: 128, stderr }));
+      const said = url.startsWith("https:") ? gitText : GIT_WITHHELD;
+      assert.equal(e.message, `cannot read remote ${shown} (unknown): ${said}`, "actual nonempty stderr still follows the Git display policy");
+      assert.equal(e.details.reason, "unknown");
     }
   }
 });

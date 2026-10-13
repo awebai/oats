@@ -178,17 +178,32 @@ is withheld too. A literal input equal to the fixed display looks the same;
 the display is not an identifier or a value to pass back to a command.
 Standalone `file:` references and filesystem paths retain their path meanings.
 
+A diagnostic field that explicitly carries a pinned source uses the same
+constructor with pinned-source context: a recognised reference followed by `@`
+and a validated 40-hex-character commit can retain that commit in its display.
+If either part cannot be recognised, the whole source is withheld. This
+context does not change default reference rendering or admit a new source
+form. Local/file reference semantics and operational external-source values
+remain unchanged.
+
 The same decision applies to the selected reference in error messages,
 `details.ref`, `details.url`, `details.value`, `provenance.value`, nested
 reference keys and values, and reference-bearing workspace and soul schema
 problems. Discovery problem rows' `source` is also a diagnostic display.
-A rejection boundary can also select the invalid input it is explaining,
-including rejected `transport`, `commit`, `at`, `path`, `depth`, `limit` and
-`destDir` arguments. Their quoted message value
-and matching details/provenance use the same constructor or whole-value
-withholding, with the renderer's explanation. Selection belongs to that
-particular rejection; a field's name alone never selects it. Valid transport,
-commit and other operational values remain exact.
+Seven explicitly rejected argument fields have a separate context in the same
+renderer: `transport`, `commit`, `at`, `path`, `depth`, `limit` and `destDir`.
+A rejected string is preserved only when it is nonempty, at most 256 ASCII
+characters, and every character matches `[A-Za-z0-9._/+\-]`. The check uses the
+whole original string, without trimming or decoding.
+**The fixed rejected-value display is `[value withheld]`, and its neutral explanation is “(the value was withheld)”.**
+Every other rejected string uses that display in the quoted message value and
+matching details/provenance. Existing nonstring and container handling is
+unchanged; nested strings use this same context. The renderer owns the
+explanation once per originating refusal. This is a bounded display rule, not
+a secret detector: a plain token made only of the permitted characters is not
+protected. Selection belongs to the particular rejection; a field's name
+alone never selects it. Valid argument values and other operational values
+remain exact, and reference, schema and Git-line defaults are unchanged.
 Quoted or JSON-escaped copies and host/path fragments derived from a withheld
 value cannot reveal its remainder. Unrelated schema values and opaque provider
 payloads are not scanned. Query and fragment contents are not searched for
@@ -215,6 +230,12 @@ Missing original-reference evidence fails that check. Check the original text
 before removing control characters or shortening the line; formatting must not
 hide a reason to withhold it. A permitted line keeps the existing control
 handling and length bound.
+
+For an unknown Git failure, the last-line diagnostic comes only from stderr.
+Empty or whitespace-only stderr leaves the message at the failure reason;
+there is no error-message fallback on this route. An output overflow without a stderr line uses a
+kernel-owned budget notice. Other diagnostic routes that already use an error
+message fallback keep their behavior and the whole-line disclosure rule.
 
 **The fixed Git notice is “Git's diagnostic was withheld; run the same Git operation by hand to see Git's own words.”**
 Every other Git line is replaced by that notice. No substring or token is

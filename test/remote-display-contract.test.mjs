@@ -56,21 +56,28 @@ test("configured mixed-member refusal retains file, pointer, commit and reposito
 });
 
 test("external problem source is display-only while successful and configured sources remain exact", async () => {
-  const source = `git:host.invalid/org/external@${commit}`;
-  const workspace = { schemaVersion: 2, name: "fixture", external: [{ source, soul: "souls/fixture" }] };
-  const invalid = soul(`https://${TOKEN}@host.invalid/org/cap`);
-  const discovery = await discoverWorkspace(workspaceRef, { remote: remoteFor(workspace, invalid) });
-  const problem = discovery.problems.find(p => p.path === "external/0:souls/fixture/soul.yaml#/capabilities/fixture.cap/from");
-  assert.ok(problem);
-  assert.equal(problem.source, WITHHELD, "pinned source is outside repository display grammar");
-  assert.ok(!JSON.stringify(problem).includes(TOKEN));
-  assert.equal(discovery.workspace.external[0].source, source);
-  assert.equal(discovery.soulsUnread.external[0], source, "deduplication still uses the exact configured source");
-  const success = await discoverWorkspace(workspaceRef, { remote: remoteFor(workspace) });
-  assert.equal(success.external[0].source, source, "resolver repo/name matching needs the original source");
-  assert.equal(success.external[0].soul.definition.capabilities["fixture.cap"].from, "here");
-  assert.equal(redactUrl(success.external[0].source, null, { reference: true }), WITHHELD);
-  assert.equal(success.external[0].source, source, "display projection cannot mutate its source");
+  for (const [ref, display] of [
+    ["git:host.invalid/org/external", "git:host.invalid/org/external"],
+    ["https://host.invalid/org/external", "https://host.invalid/org/external"],
+  ]) {
+    const source = `${ref}@${commit}`;
+    const workspace = { schemaVersion: 2, name: "fixture", external: [{ source, soul: "souls/fixture" }] };
+    const invalid = soul(`https://${TOKEN}@host.invalid/org/cap`);
+    const discovery = await discoverWorkspace(workspaceRef, { remote: remoteFor(workspace, invalid) });
+    const problem = discovery.problems.find(p => p.path === "external/0:souls/fixture/soul.yaml#/capabilities/fixture.cap/from");
+    assert.ok(problem);
+    assert.equal(problem.source, `${display}@${commit}`);
+    assert.ok(!JSON.stringify(problem).includes(TOKEN));
+    assert.equal(discovery.workspace.external[0].source, source);
+    assert.equal(discovery.soulsUnread.external[0], source, "deduplication still uses the exact configured source");
+    const success = await discoverWorkspace(workspaceRef, { remote: remoteFor(workspace) });
+    assert.equal(success.external[0].source, source, "resolver repo/name matching needs the original source");
+    assert.equal(success.external[0].soul.definition.capabilities["fixture.cap"].from, "here");
+    assert.equal(redactUrl(success.external[0].source, null, { reference: true }), WITHHELD, "pinned sources require explicit context");
+    assert.equal(redactUrl(success.external[0].source, null, { pinned: true }), problem.source);
+    assert.equal(redactUrl(problem.source, null, { pinned: true }), problem.source, "listing projection is idempotent");
+    assert.equal(success.external[0].source, source, "display projection cannot mutate its source");
+  }
 });
 
 
@@ -84,4 +91,43 @@ test("literal reference collisions cannot rename fixed diagnostic field keys", (
       return true;
     });
   }
+});
+
+
+test("pinned display requires an explicit usable reference and a full OID", () => {
+  const refs = ["git:host.invalid/org/repo", "https://host.invalid/org/repo", `ssh://u:${TOKEN}@host.invalid:22/org/repo`, "/owned/repo", "file:///owned/repo"];
+  for (const ref of refs) {
+    const display = ref.startsWith("ssh:") ? "ssh://host.invalid:22/org/repo" : ref;
+    const input = `${ref}@${commit}`;
+    assert.equal(redactUrl(input, null, { pinned: { ref, commit } }), `${display}@${commit}`);
+    assert.equal(redactUrl(input, null, { pinned: true }), `${display}@${commit}`);
+    assert.equal(redactUrl(`${display}@${commit}`, null, { pinned: true }), `${display}@${commit}`);
+    for (const bad of ["", "a".repeat(39), "a".repeat(41), "A".repeat(40), `${commit}\n`, "not-an-oid"]) {
+      assert.equal(redactUrl(`${ref}@${bad}`, null, { pinned: { ref, commit: bad } }), WITHHELD);
+      assert.equal(redactUrl(`${ref}@${bad}`, null, { pinned: true }), WITHHELD);
+    }
+  }
+  for (const ref of [`https://u:${TOKEN}/extra@host.invalid/org/repo`, `https://host.invalid/org/repo https://${TOKEN}@other.invalid/a/b`]) {
+    assert.equal(redactUrl(`${ref}@${commit}`, null, { pinned: { ref, commit } }), WITHHELD);
+    assert.equal(redactUrl(`${ref}@${commit}`, null, { pinned: true }), WITHHELD);
+  }
+  assert.equal(redactUrl("https://host.invalid/org/repo", null, { pinned: true }), WITHHELD);
+  assert.equal(redactUrl(WITHHELD, null, { pinned: true }), WITHHELD);
+  assert.equal(redactUrl(`https://host.invalid/org/repo@${commit}`, null, { pinned: { ref: "https://other.invalid/a/b", commit } }), WITHHELD);
+  for (const path of ["/owned/a@b/repo", "file:///owned/a@b/repo"]) assert.equal(redactUrl(path, null, { reference: true }), path);
+});
+
+
+test("credentialed SSH pinned display does not expand configured external admission", async () => {
+  const source = `ssh://user:${TOKEN}@host.invalid:2222/org/external@${commit}`;
+  const workspace = { schemaVersion: 2, name: "fixture", external: [{ source, soul: "souls/fixture" }] };
+  await assert.rejects(discoverWorkspace(workspaceRef, { remote: remoteFor(workspace) }), e => {
+    assert.equal(e.code, "E_WORKSPACE_SCHEMA");
+    assert.equal(e.details.path, "oats-workspace.yaml");
+    assert.ok(e.details.problems.some(p => p.path === "/external/0/source"));
+    assert.ok(!JSON.stringify({ message: e.message, details: e.details }).includes(TOKEN));
+    return true;
+  });
+  assert.equal(redactUrl(source, null, { pinned: true }), `ssh://host.invalid:2222/org/external@${commit}`);
+  assert.equal(workspace.external[0].source, source);
 });

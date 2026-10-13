@@ -1107,7 +1107,7 @@ test("a commit's fetch that fails for a reason the kernel names is made once: no
   // Nor is a read the command gave up: it shows nothing the kernel classifies, and is still not asked again.
   const aborted = commitFetches(f.commit, () => Object.assign(new Error("The operation was aborted"), { name: "AbortError", code: "ABORT_ERR", overflowed: false, timedOut: false }));
   const e = await refusedRead(observeRemote(f.bare, { cacheDir: join(f.base, "cache-aborted"), at: f.commit, exec: aborted.exec }));
-  assert.deepEqual([e.details.reason, aborted.fetches.length, e.message], ["unknown", 1, `cannot read remote ${f.bare} (unknown): The operation was aborted`]);
+  assert.deepEqual([e.details.reason, aborted.fetches.length, e.message], ["unknown", 1, `cannot read remote ${f.bare} (unknown)`]);
 });
 
 test("a commit's fetch the kernel cannot classify gets its second attempt, whatever an object id in git's words spells; a second failure is the answer (#1059)", async () => {
@@ -1174,7 +1174,7 @@ test("what git could not explain is unknown, with git's last line scrubbed; netw
   // The message prints the url as the cache's messages do, without its user information (redactUrl).
   assert.equal(e.message, `cannot read remote ssh://example.com/org/repo (unknown): ${notice}`);
   assert.ok(!e.message.includes("s3cret"));
-  assert.equal((await said("")).message, `cannot read remote ssh://example.com/org/repo (unknown): ${notice}`, "the error.message fallback uses the same original reference");
+  assert.equal((await said("")).message, "cannot read remote ssh://example.com/org/repo (unknown)", "no stderr means no Git line, even when Node supplies error.message");
   assert.equal((await said("\x1b[0m\n \n")).message, `cannot read remote ssh://example.com/org/repo (unknown): ${notice}`, "control removal cannot bypass the original-reference decision");
   // A reason the kernel names: the same url, and no line of git's.
   const named = await said(`fatal: unable to access '${url}/': Could not resolve host: example.com\n`);

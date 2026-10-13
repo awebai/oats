@@ -686,9 +686,11 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   otherwise `<line>` is the contract's fixed Git notice. Permitted text remains
   one line of at most 300 characters with control characters removed. This
   supersedes the earlier rule that a scrubbed Git line was always shown.
-  With neither Git text nor an error-message fallback, the message ends at
-  `(unknown)`. The fallback uses the same original-operation context and
-  disclosure rule.
+  Only stderr supplies this last-line diagnostic. Empty or whitespace-only
+  stderr leaves the message at `(unknown)`, without an error-message fallback;
+  an output overflow without a stderr line uses a kernel-owned budget notice. Other diagnostic routes'
+  existing error-message fallbacks retain the same original-operation context
+  and disclosure rule.
   `cache` (OATS 0.33.0) is local: the
   remote cache on this machine could not be written (a git lock still held,
   another oats process still writing it, or a lock file one left when it

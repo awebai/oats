@@ -5,6 +5,7 @@ import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
 import * as remoteModule from "../lib/remote.mjs";
+import { discoverWorkspace } from "../lib/workspace.mjs";
 import { terminalText } from "../lib/refused-text.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
 
@@ -23,7 +24,7 @@ function compare(fx, kind) {
   assert.equal(text.stderr, "");
   assert.deepEqual(text.stdout.split("\n").filter((line) => line.startsWith("! ")),
     json.problems.map((p) => {
-      const context = p.repoKey ? `${p.repoKey}: ${p.path}` : p.package ? `${p.package}: ${p.path}` : p.source ? `${remoteModule.redactUrl(p.source, null, { reference: true })}: ${p.path}` : null;
+      const context = p.repoKey ? `${p.repoKey}: ${p.path}` : p.package ? `${p.package}: ${p.path}` : p.source ? `${remoteModule.redactUrl(p.source, null, { pinned: true })}: ${p.path}` : null;
       return `! ${p.code}: ${p.message}${context === null ? "" : ` [${terminalText(context)}]`}`;
     }));
   for (const item of json[kind]) {
@@ -127,7 +128,9 @@ test("catalog bracket constructs or withholds diagnostic source and escapes its 
   assert.ok(definition);
   const line = new Function("remoteModule", "terminalText", `${definition}; return catalogProblemLine;`)(remoteModule, terminalText);
   for (const [raw, display] of [
-    ["https://CATALOG_MARKER@host.invalid/org/repo", "https://host.invalid/org/repo"],
+    [`https://CATALOG_MARKER@host.invalid/org/repo@${"a".repeat(40)}`, `https://host.invalid/org/repo@${"a".repeat(40)}`],
+    ["https://host.invalid/org/repo", "[repository reference withheld]"],
+    [`ssh://user:CATALOG_MARKER@host.invalid:2222/org/repo@${"a".repeat(40)}`, `ssh://host.invalid:2222/org/repo@${"a".repeat(40)}`],
     ["https://CATALOG_MARKER@host.invalid/org/repo,https://other.invalid/a/b", "[repository reference withheld]"],
     ["[repository reference withheld]", "[repository reference withheld]"],
   ]) {
@@ -136,5 +139,41 @@ test("catalog bracket constructs or withholds diagnostic source and escapes its 
     assert.equal(line(problem), `! E_WORKSPACE_SCHEMA: invalid soul [${display}: ${terminalText(problem.path)}]`);
     assert.ok(!line(problem).includes("CATALOG_MARKER"));
     assert.deepEqual(problem, before, "listing is a display projection only");
+  }
+});
+
+
+test("hosted external discovery rows reach the actual catalog formatter with source and pointer", async () => {
+  const cli = readFileSync(new URL("../bin/oats.mjs", import.meta.url), "utf8");
+  const definition = cli.match(/function catalogProblemLine\(p\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(definition);
+  const line = new Function("remoteModule", "terminalText", `${definition}; return catalogProblemLine;`)(remoteModule, terminalText);
+  const commit = "a".repeat(40);
+  for (const [ref, display] of [
+    ["git:host.invalid/org/external", "git:host.invalid/org/external"],
+    ["https://host.invalid/org/external", "https://host.invalid/org/external"],
+  ]) {
+    const source = `${ref}@${commit}`;
+    const workspace = { schemaVersion: 2, name: "fixture", external: [{ source, soul: "souls/fixture" }] };
+    const remote = {
+      parseRepoRef: remoteModule.parseRepoRef,
+      async observeRemote(ref) { return { ...remoteModule.parseRepoRef(ref), commit, observedAt: "2026-10-13T00:00:00Z" }; },
+      async listRemoteTree() { assert.fail("no member trees"); },
+      async readRemoteFile(ref, at, path) {
+        assert.equal(at, commit);
+        if (path === "oats-workspace.yaml") return { bytes: Buffer.from(JSON.stringify(workspace)) };
+        assert.equal(ref, source.slice(0, source.lastIndexOf("@")), "raw source reaches the transport seam");
+        return { bytes: Buffer.from(JSON.stringify({ schemaVersion: 2, name: "fixture", description: "fixture", work: "directory", capabilities: { "fixture.cap": { from: "bad source" } } })) };
+      },
+    };
+    const discovery = await discoverWorkspace("git:host.invalid/org/workspace", { remote });
+    const row = discovery.problems.find(p => p.path.endsWith("#/capabilities/fixture.cap/from"));
+    assert.ok(row);
+    assert.equal(row.source, `${display}@${commit}`);
+    const before = structuredClone(row);
+    assert.equal(line(row), `! ${row.code}: ${row.message} [${display}@${commit}: external/0:souls/fixture/soul.yaml#/capabilities/fixture.cap/from]`);
+    assert.ok(!line(row).includes("CATALOG_MARKER"));
+    assert.deepEqual(row, before);
+    assert.equal(discovery.workspace.external[0].source, source);
   }
 });

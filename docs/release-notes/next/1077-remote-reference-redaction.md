@@ -23,6 +23,11 @@
   See the [diagnostic display contract](../workspaces.md#repository-references-in-diagnostics).
   Standalone file/path meanings, command-consumed values and Git's original
   transport reference are unchanged.
+  Explicit pinned-source diagnostics keep a constructed reference and its
+  validated commit, or withhold the whole source. Rejected argument values use
+  the contract's bounded ASCII display rule and neutral withholding notice;
+  valid operational arguments are unchanged. Unknown Git failures quote only
+  stderr: empty stderr adds no line unless output overflow needs a kernel budget notice.
 
 - **Repository and package refusals explain an omitted reference without
   exposing it ([#1077](https://github.com/awebai/oats/issues/1077)).** The
