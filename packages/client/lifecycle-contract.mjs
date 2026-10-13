@@ -150,9 +150,45 @@ export function lifecycleOptions(operation, v) {
     && typeof v.discardWorktree === 'boolean') return { discardWorktree: v.discardWorktree };
   return null;
 }
+/** Whether the choices made for `plan` apply to it. A stop's always do. Deleting the worktree applies only to
+ * an instance's own tree (ownWorktreeOf). */
 export function lifecycleChoicesApplicable(plan, choices) {
   if (plan.action === 'stop') return true;
-  return !choices.discardWorktree || plan.facts.workMode === 'worktree';
+  return !choices.discardWorktree || ownWorktreeOf(plan).own;
+}
+/** The kernel feature from which a retire plan says as a fact whether `work/` is the instance's own work
+ * tree, the one the retire keeps or deletes: `facts.ownWorktree`, a boolean (docs/desktop-cli-api.md, the
+ * retire plan). A stop plan does not carry it. */
+export const OWN_WORKTREE_FEATURE = 'retire-plan-own-worktree';
+/** A retire plan's `facts.ownWorktree` as the answering kernel's `features` (answeringFeatures) have it read:
+ * `{ value }` when it is read, `{}` when the plan has none, `null` for a malformed plan.
+ *   the kernel lists the feature   the key is required and a boolean: anything else is no plan, as every
+ *                                  other malformed fact (a plan authorizes a removal: no fallback to the record);
+ *   it does not list it            the key is not read, whatever it holds;
+ *   its features are not known     the key is read when it is there as a boolean, else the plan has none.
+ * "Not known" is anything but a list: null, nothing, and the renderer's second pass over a plan the server
+ * already read, which holds the key exactly when the server read it. */
+function ownWorktreeFact(facts, features) {
+  const known = Array.isArray(features), listed = known && features.includes(OWN_WORKTREE_FEATURE);
+  if (known && !listed) return {};
+  if (typeof facts.ownWorktree === 'boolean') return { value: facts.ownWorktree };
+  return listed ? null : {};
+}
+/** Whether `work/` is the instance's own work tree, the one a retire keeps or deletes, from a retire plan
+ * that lifecyclePlan read: `{ own, from }`.
+ *   from 'fact'    the plan holds `facts.ownWorktree`, the kernel's answer of the one reading of `work/` its
+ *                  retire acts on. `own` is that boolean, whatever the record says.
+ *   from 'record'  the plan holds none (a kernel that does not list the feature), and the record's work mode
+ *                  answers. The record can disagree with what is at `work/` (a link or a directory of the
+ *                  home under a record that says the tree is the instance's), and such a plan cannot tell:
+ *                  a reader words it from the record alone.
+ * Every reader that asks whose tree it is asks this (lifecycleChoicesApplicable, the Remove dialog), and this
+ * is the one place a plan's work mode is compared with a word: packages/desktop/test/lifecycle-own-worktree.test.mjs
+ * holds that. Neither `defaults.retainWorktree` (the default of an option) nor a note is read for it. */
+export function ownWorktreeOf(plan) {
+  const facts = plan.facts;
+  return typeof facts.ownWorktree === 'boolean' ? { own: facts.ownWorktree, from: 'fact' }
+    : { own: facts.workMode === 'worktree', from: 'record' };
 }
 export function lifecycleSession(v) {
   if (!object(v) || !text(v.state, 128) || !v.state || typeof v.established !== 'boolean' || ![null, true, false].includes(v.present)
@@ -185,7 +221,11 @@ function rows(value, project) {
   return result.some(v => !v) || new Set(result.map(v => v.home)).size !== result.length ? null : result;
 }
 const excluded = v => { const i = identity(v); return i && text(v.reason) ? { ...i, reason: v.reason } : null; };
-export function lifecyclePlan(v, target, operation, options) {
+/** Read a plan: a kernel's own answer, or the server's projection of one. `features`: the answering kernel's
+ * (answeringFeatures), which decide how a retire plan's `facts.ownWorktree` is read (ownWorktreeFact). The
+ * server gives them, for a relayed plan its host's; the renderer, which reads the server's projection, gives
+ * none. The plan read holds the key only when it was read. */
+export function lifecyclePlan(v, target, operation, options, { features = null } = {}) {
   if (!object(v) || v.lifecycleApi !== 1 || v.action !== operation || v.instance !== target.instance || v.home !== target.home
     || !planRevision(v.planRevision) || !at(v.at) || !strings(v.notes)) return null;
   const common = { lifecycleApi: 1, action: operation, instance: v.instance, home: v.home, planRevision: v.planRevision, at: v.at, notes: [...v.notes] };
@@ -210,9 +250,10 @@ export function lifecyclePlan(v, target, operation, options) {
   const session = lifecycleSession(f.session), work = lifecycleWork(f.work);
   const children = rows(f.children, t => { const i = identity(t), s = lifecycleSession(t?.session); return i && s ? { ...i, session: s } : null; });
   const ambiguous = rows(f.ambiguous, excluded);
-  if (!session || !work || !children || !ambiguous || children.length + ambiguous.length + 1 > MAX_LIFECYCLE_TARGETS
+  const own = ownWorktreeFact(f, features);
+  if (!session || !work || !own || !children || !ambiguous || children.length + ambiguous.length + 1 > MAX_LIFECYCLE_TARGETS
     || [...children, ...ambiguous].some(t => t.home === target.home) || ambiguous.some(t => children.some(c => c.home === t.home))) return null;
-  return { ...common, facts: { session, work, workMode: f.workMode, repo: f.repo, recordedBranch: f.recordedBranch,
+  return { ...common, facts: { session, work, workMode: f.workMode, ...(Object.hasOwn(own, 'value') ? { ownWorktree: own.value } : {}), repo: f.repo, recordedBranch: f.recordedBranch,
     children, ambiguous, pullRequest: 'unknown' }, defaults: { retainWorktree: d.retainWorktree, stopChildren: true, retainChildren: true } };
 }
 /** The kernel feature from which `stillRunning: []` in a failed row says the harness exited

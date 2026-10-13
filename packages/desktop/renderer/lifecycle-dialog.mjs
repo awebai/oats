@@ -1,7 +1,7 @@
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs';
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowKind, stoppedRowText,
-  stopResultWords, childrenRefusedMessage, busyRefusal, undescribedRefusal, lifecycleChoicesApplicable } from '../../client/lifecycle-contract.mjs';
+  stopResultWords, childrenRefusedMessage, busyRefusal, undescribedRefusal, lifecycleChoicesApplicable, ownWorktreeOf } from '../../client/lifecycle-contract.mjs';
 import { LIFECYCLE_FORBIDDEN_FRAME } from './lifecycle-frame.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
@@ -119,7 +119,8 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.happenSection.hidden = !before && phase !== 'running';
     ui.stateSection.hidden = !before;
     for (const region of [ui.happen, ui.facts]) region.setAttribute('aria-busy', String(phase === 'loading' || phase === 'updating'));
-    const option = shown && (retire() ? shown.facts.workMode === 'worktree' || choices.discardWorktree : true);
+    // The worktree choice is offered for the instance's own tree, and stays while it is checked so that it can be undone.
+    const option = shown && (retire() ? ownWorktreeOf(shown).own || choices.discardWorktree : true);
     ui.options.hidden = !(phase === 'loading' || planned && option);
     ui.optionSkeleton.hidden = phase !== 'loading';
     ui.recursive.parentElement.hidden = phase === 'loading' || retire(); ui.discard.parentElement.hidden = phase === 'loading' || !retire();
@@ -203,7 +204,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       children.title = f.children.map(c => c.home).join('\n'); lines.push(children);
     }
     lines.push(line('Saves a recovery copy of any uncommitted work, then deletes its home folder.', value.home));
-    if (f.workMode === 'worktree') lines.push(line(requested.discardWorktree ? `Deletes its worktree.${stays(b)}`
+    if (ownWorktreeOf(value).own) lines.push(line(requested.discardWorktree ? `Deletes its worktree.${stays(b)}`
       : `Keeps its worktree, moved aside${b ? `, on branch ${b}` : ''}.`));
     // A home a spawn left (rollbackIncomplete): retire finishes its compensation, which deletes the branch
     // the spawn created when it holds no work (the result's spawnCompensation says which).
@@ -223,7 +224,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
       const f = value.facts;
       row('Session', sessionText(f.session));
       // Without a worktree of its own there is no Git work to report: the recovery line under What will happen covers it.
-      if (f.work.observed || f.workMode === 'worktree') row('Uncommitted work', workText(f.work), f.work.observed ? '' : f.work.reason);
+      if (f.work.observed || ownWorktreeOf(value).own) row('Uncommitted work', workText(f.work), f.work.observed ? '' : f.work.reason);
       if (f.work.observed) row('Branch', f.work.detached ? 'Detached' : f.work.branch);
       if (f.work.observed && f.work.drift) notes.push(node('p', `The worktree is on ${f.work.detached ? 'a detached commit' : f.work.branch}, not the branch it was spawned on${f.recordedBranch ? ` (${f.recordedBranch})` : ''}.`, 'lifecycle-attention'));
       for (const v of f.ambiguous) { const p = node('p', ambiguousText(v), 'lifecycle-note'); p.title = v.home; notes.push(p); }
