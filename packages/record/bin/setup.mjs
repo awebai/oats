@@ -70,7 +70,10 @@ function shellWord(value) {
 // Any character above U+007F is part of a word too, as an earlier setup
 // wrote it bare in a path (shellWord now quotes it). bash, dash and zsh end
 // a word only at a space, a tab, a newline or an operator, all ASCII, so a
-// command of such words carries nothing a rewrite would lose.
+// command of such words carries nothing a rewrite would lose. POSIX lets a
+// shell end a word at any blank of its locale (U+3000, say): such a shell
+// would see one more argument of the same command, which a rewrite does not
+// lose either, so no character above U+007F is refused.
 function shellWords(command) {
   const words = [];
   let word = null;
