@@ -1,3 +1,12 @@
+## Changed
+
+- **Diagnostic messages, details, provenance and workspace `cannot-read` values
+  now omit user information (including SSH users) or withhold the reference,
+  while Git lines are shown only for unchanged original operation references
+  and no literal `@` in the original line, replacing
+  [#1075](https://github.com/awebai/oats/issues/1075)'s scrubbed-line behavior
+  ([#1077](https://github.com/awebai/oats/issues/1077)).**
+
 ## Fixed
 
 - **Repository diagnostics no longer copy user information from selected
