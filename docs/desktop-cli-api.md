@@ -939,8 +939,10 @@ the table, in the same order as JSON: discovery problems, then unmatched
 `souls.launch` keys for `oats souls`. The line is `! <code>: <message>`,
 preserving the kernel code and message. A row with an owner (`repoKey`,
 `package` or `source`) adds ` [<where>]`: its existing `path`, preceded by
-`repoKey: ` or `package: ` when present. A source-owned row uses its path
-only; the source reference is never printed in the bracket. Context uses
+`repoKey: ` or `package: ` when present. A source-owned row shows its diagnostic
+source display followed by its path; the source uses the shared
+[repository-reference display policy](workspaces.md#repository-references-in-diagnostics)
+and may be withheld as a whole. Operational external sources remain exact. Context uses
 the kernel's terminal text escaping. Ownerless rows, including unmatched
 launch keys, have no bracket. Partial listings still exit 0; JSON success
 semantics and fatal refusals are unchanged. A problem does not necessarily

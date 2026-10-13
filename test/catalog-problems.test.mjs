@@ -1,9 +1,10 @@
 // Exercise the real CLI and Git discovery with disposable deployments and remotes.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renameSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { git, v2Deployment } from "./helpers/v2-deployment.mjs";
+import * as remoteModule from "../lib/remote.mjs";
 import { terminalText } from "../lib/refused-text.mjs";
 import { packageRepo } from "./helpers/package-repo.mjs";
 
@@ -22,7 +23,7 @@ function compare(fx, kind) {
   assert.equal(text.stderr, "");
   assert.deepEqual(text.stdout.split("\n").filter((line) => line.startsWith("! ")),
     json.problems.map((p) => {
-      const context = p.repoKey ? `${p.repoKey}: ${p.path}` : p.package ? `${p.package}: ${p.path}` : p.source ? p.path : null;
+      const context = p.repoKey ? `${p.repoKey}: ${p.path}` : p.package ? `${p.package}: ${p.path}` : p.source ? `${remoteModule.redactUrl(p.source, null, { reference: true })}: ${p.path}` : null;
       return `! ${p.code}: ${p.message}${context === null ? "" : ` [${terminalText(context)}]`}`;
     }));
   for (const item of json[kind]) {
@@ -101,18 +102,39 @@ for (const kind of ["souls", "capabilities"]) {
 }
 
 for (const kind of ["souls", "capabilities"]) {
-  test(`${kind}: source-owned diagnostics show their existing path without the source reference`, (t) => {
+  test(`${kind}: source-owned diagnostics show their display source and existing path`, (t) => {
     const pkg = packageRepo();
     t.after(pkg.cleanup);
     git(pkg.bare, "config", "uploadpack.allowFilter", "true");
     git(pkg.bare, "config", "uploadpack.allowAnySHA1InWant", "true");
     const source = `${pkg.ref.slice(4)}@${pkg.commit1}`;
-    const fx = v2Deployment({ t, workspace: { external: [{ source, soul: "missing" }] } });
+    const workspace = { external: [{ source, soul: "missing" }] };
+    const fx = v2Deployment({ t, workspace });
     const { json, text } = compare(fx, kind);
     assert.equal(json.problems.length, 1);
     assert.equal(json.problems[0].source, source);
     assert.equal(json.problems[0].path, "external/0:missing/soul.yaml");
-    const suffix = text.stdout.split("\n").find((line) => line.startsWith("! ")).slice(-" [external/0:missing/soul.yaml]".length);
-    assert.equal(suffix, " [external/0:missing/soul.yaml]");
+    const expected = ` [${terminalText(source)}: external/0:missing/soul.yaml]`;
+    assert.ok(text.stdout.split("\n").find(line => line.startsWith("! ")).endsWith(expected));
+    assert.equal(workspace.external[0].source, source);
   });
 }
+
+
+test("catalog bracket constructs or withholds diagnostic source and escapes its known location", () => {
+  const source = readFileSync(new URL("../bin/oats.mjs", import.meta.url), "utf8");
+  const definition = source.match(/function catalogProblemLine\(p\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(definition);
+  const line = new Function("remoteModule", "terminalText", `${definition}; return catalogProblemLine;`)(remoteModule, terminalText);
+  for (const [raw, display] of [
+    ["https://CATALOG_MARKER@host.invalid/org/repo", "https://host.invalid/org/repo"],
+    ["https://CATALOG_MARKER@host.invalid/org/repo,https://other.invalid/a/b", "[repository reference withheld]"],
+    ["[repository reference withheld]", "[repository reference withheld]"],
+  ]) {
+    const problem = { code: "E_WORKSPACE_SCHEMA", message: "invalid soul", source: raw, path: "external/0:souls/x/soul.yaml#/capabilities/bad\u202ename/from" };
+    const before = structuredClone(problem);
+    assert.equal(line(problem), `! E_WORKSPACE_SCHEMA: invalid soul [${display}: ${terminalText(problem.path)}]`);
+    assert.ok(!line(problem).includes("CATALOG_MARKER"));
+    assert.deepEqual(problem, before, "listing is a display projection only");
+  }
+});

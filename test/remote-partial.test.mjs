@@ -1154,7 +1154,7 @@ test("what git could not explain is unknown, with git's last line scrubbed; netw
   assert.equal(scrubGitLine("fatal: unable to access 'https://x-access-token:ghp_secret@example.com/org/repo.git/': \tbad\x1b[31m thing\x07"),
     "fatal: unable to access 'https://example.com/org/repo.git/': bad thing");
   assert.equal(scrubGitLine("ssh://bot:s3cr%40t@example.com/org/repo refused s3cr@t (bot:s3cr%40t), also s3cr%40t", "ssh://bot:s3cr%40t@example.com/org/repo"), "ssh://example.com/org/repo refused (), also");
-  assert.equal(scrubGitLine("git@example.com:org/repo.git: a user name alone is no secret", "git@example.com:org/repo.git"), "ssh://example.com/org/repo.git: a user name alone is no secret");
+  assert.equal(scrubGitLine("git@example.com:org/repo.git: a user name alone is no secret", "git@example.com:org/repo.git"), "[repository reference withheld] a user name alone is no secret", "the trailing colon belongs to the whole selected token");
   assert.equal(scrubGitLine("bot is not allowed here", "ssh://bot@example.com/org/repo"), "bot is not allowed here", "nor is the user of an ssh url");
   // On http(s) the user information is a secret whether or not it holds a colon (a bare token), each part of it, as written and decoded.
   assert.equal(scrubGitLine("remote: tok%5Fbare was refused (tok_bare)", "https://tok%5Fbare@example.com/org/repo"), "remote: was refused ()");

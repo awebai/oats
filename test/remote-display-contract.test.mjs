@@ -72,3 +72,16 @@ test("external problem source is display-only while successful and configured so
   assert.equal(redactUrl(success.external[0].source, null, { reference: true }), WITHHELD);
   assert.equal(success.external[0].source, source, "display projection cannot mutate its source");
 });
+
+
+test("literal reference collisions cannot rename fixed diagnostic field keys", () => {
+  for (const input of ["ref", "url", "host", "path", "reason", "[repository reference withheld]"]) {
+    assert.throws(() => parseRepoRef(input), e => {
+      assert.equal(e.code, "E_REPO_REF");
+      assert.deepEqual(Object.keys(e.details), ["ref"]);
+      assert.equal(e.details.ref, WITHHELD);
+      assert.equal(e.details, e.provenance);
+      return true;
+    });
+  }
+});

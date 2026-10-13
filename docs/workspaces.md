@@ -551,7 +551,8 @@ below their tables on stdout, in the same order as `--json` `problems`.
 `oats souls` adds unmatched `souls.launch` keys after discovery problems.
 Each line preserves `! <code>: <message>`. When the problem has an owner,
 a bracket identifies its path and, where present, repository key or package;
-external problems show their declaration path. These listings still exit 0
+external problems show their [diagnostic source display](#repository-references-in-diagnostics)
+and declaration path, while operational external sources remain exact. These listings still exit 0
 when some items cannot be read. A diagnostic can also describe an item that
 remains listed; inspect its code and message.
 
