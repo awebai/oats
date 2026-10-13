@@ -17,6 +17,14 @@
   lists commands: it says to remove the lock "if no oats command that edits
   this file is running". See [`oats teams`](../desktop-cli-api.md#oats-teams)
   for what the lock covers.
+- **`oats schedule|trigger enable|disable` replaces an `oats-local.yaml`
+  that is a symbolic link ([#998](https://github.com/awebai/oats/issues/998)).**
+  A symlinked `oats-local.yaml` is replaced by a regular file with the
+  target's permission bits, and the target is left as it was. `oats teams`,
+  `oats soul launch` and `oats launch-config` already did so; `oats
+  schedule|trigger enable|disable` wrote through the link before. A
+  deployment that keeps its local file elsewhere behind a link finds the
+  opt-out in the deployment's own file from then on, not in the linked one.
 
 ## Fixed
 

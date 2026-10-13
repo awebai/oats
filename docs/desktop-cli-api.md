@@ -1476,10 +1476,12 @@ oats teams default <label> [--if-absent | --expect <label>] --json
 - **Writes** edit `oats-local.yaml` in place and touch only the entries that
   change: comments and styles elsewhere, including inline comments on sibling
   entries, are kept. The file is replaced whole, by a rename, and the new
-  file keeps the permission bits of the old one. Each verb re-reads the file
-  and judges its refusals on it as it is now, and writes only if the file
-  did not change meanwhile (else it redoes the edit on the new content). A
-  file that keeps changing is
+  file keeps the permission bits of the old one. An `oats-local.yaml` that
+  is a symbolic link is replaced by a regular file with its target's bits,
+  and the target is not written. Each verb re-reads the file and judges its
+  refusals on it as it is now, and writes only if the file did not change
+  meanwhile (else it redoes the edit on the new content). A file that keeps
+  changing is
   `E_LOCAL_CHANGED {path}`; nothing was written. The condition of `--if-absent`
   and `--expect` is judged the same way, on the file as it is now and again on
   every redo.

@@ -11,7 +11,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import fs, { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -135,6 +135,32 @@ test("the file that replaces oats-local.yaml has its permission bits, from befor
   symlinkSync(elsewhere, tmp);
   setDisabledHere(fx.ctx, "trigger", "ws/kb-review", true);
   assert.deepEqual([mode(fx.localPath), fx.value().triggers, readFileSync(elsewhere, "utf8"), existsSync(tmp)], [0o600, { disabled: ["ws/kb-review"] }, "not ours\n", false]);
+});
+
+test("an oats-local.yaml that is a link is replaced by a file with the target's permission bits; the target is left as it was", { skip: process.platform === "win32" }, (t) => {
+  const WORKSPACE = { schemaVersion: 2, name: "acme", teams: {}, localTeams: true };
+  const umask = process.umask(0o022);
+  t.after(() => process.umask(umask));
+  // Each writer on a link of its own: the opt-out, an edit that returns its text, and `oats teams`.
+  const writers = {
+    "setDisabledHere": (fx) => setDisabledHere(fx.ctx, "schedule", "ws/nightly", true),
+    "a returned text": (fx) => editLocal(fx.ctx, { verb: "a test" }, ({ text }) => ({ text: `${text}schedules:\n  disabled:\n    - ws/nightly\n` })),
+    "oats teams": (fx) => teamsAdd({ ...fx.ctx, local: fx.value(), workspace: WORKSPACE, workspaceKey: "github.com/acme/agents" }, "mine", { team: "mine:me.example" }),
+  };
+  for (const [what, write] of Object.entries(writers)) {
+    const fx = fileOf(t, "host:\n  name: kb-host\n");
+    // The file lives in another directory, private; the deployment holds a link to it.
+    const elsewhere = mkdtempSync(join(tmpdir(), "oats-local-writers-target-")); t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+    const target = join(elsewhere, "local.yaml"), original = fx.text();
+    writeFileSync(target, original); chmodSync(target, 0o600);
+    rmSync(fx.localPath); symlinkSync(target, fx.localPath);
+    write(fx);
+    assert.equal(lstatSync(fx.localPath).isSymbolicLink(), false, `${what}: the link is replaced by a file`);
+    assert.equal(lstatSync(fx.localPath).mode & 0o7777, 0o600, `${what}: with the target's permission bits, not the umask's`);
+    assert.notEqual(fx.text(), original, `${what}: which holds the edit`);
+    assert.deepEqual([readFileSync(target, "utf8"), statSync(target).mode & 0o7777], [original, 0o600], `${what}: the target is as it was`);
+    assert.deepEqual(readdirSync(elsewhere), ["local.yaml"], `${what}: nothing is written beside the target`);
+  }
 });
 
 /* ───────────────────────────── the opt-out writer, over a file ────────── */
