@@ -41,7 +41,7 @@ arrives from.
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
   oats.okf: v5.0.3
-  oats.aweb: v1.27.0
+  oats.aweb: v1.27.1
   oats.linear: v1.0.1
   oats.jira: v1.0.1
 defaults:
