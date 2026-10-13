@@ -4134,14 +4134,15 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
     not the note made from them, which is shortened past its budget and
     then reads alike for two lists of one length. A changed recovery
     exclusion changes the revision (it did not before 0.53.0);
-  - of other homes' records: the children by their homes, the edges that
-    could not be followed (`facts.ambiguous`, whole) and the children
-    attached to this home's `work/`.
+  - of other homes: the children as the plan names them (`instance`,
+    `agent`, `home`; a child's agent is the name its soul's file gives),
+    the edges that could not be followed (`facts.ambiguous`, whole) and the
+    children attached to this home's `work/`.
 
   A key that is derived is bound through what it is derived from:
   `facts.ownWorktree` and `defaults.retainWorktree` (the reading),
-  `facts.work.drift` (the two branches), a child's `instance` and `agent`
-  (its home), and every note and every line of the plan's text.
+  `facts.work.drift` (the two branches), and every note and every line of
+  the plan's text.
   `lifecycleApi`, `action`, `facts.pullRequest` and the defaults
   `deleteBranch`, `stopChildren` and `retainChildren` have one value in
   every plan of a kernel.
