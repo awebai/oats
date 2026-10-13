@@ -182,9 +182,13 @@ executes can reach more than the workflow's own steps do: see
   that timed out. A tmux server has left that group by design, so a tmux
   server of a killed file stays, and it is that test's to explain.
 - **Nothing about `main`.** A run started from `main` is listed among the
-  runs of main's head commit (`gh run list --commit <sha>`). Its result is
-  about the ref under test. It says nothing about `main`, a failed run
-  included.
+  runs of main's head commit (`gh run list --commit <sha>`) and among that
+  commit's check runs, as `Named test files on macOS`. Its result is about
+  the ref under test. It says nothing about `main`, a failed run included.
+  The commit's status rollup does not hold these runs. A macOS run can be the
+  newest run on `main`, so whoever checks `main` after a merge lists the runs
+  by workflow (`gh run list --workflow CI --branch main`) or reads the
+  commit's status rollup.
 
 So a pull request that asks for a person's run on a Mac still gets one.
 

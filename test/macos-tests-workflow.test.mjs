@@ -122,4 +122,6 @@ test("macOS tests: the page that owns the workflow states its bounds as the scri
     const { name } = steps.find((step) => step.run === run);
     assert.ok(page.includes(`**${name}**`), `docs/macos-test-runs.md does not name the step: ${name}`);
   }
+  // And says under which name a run is among a commit's check runs: the job's.
+  assert.ok(page.includes(`\`${job.name}\``), `docs/macos-test-runs.md does not name the job: ${job.name}`);
 });
