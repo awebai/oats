@@ -15,3 +15,24 @@
     configuration, or use the command line there.
   [Starting an existing instance](../desktop-instance-start.md) has the
   whole of it.
+
+## Changed
+
+- **Desktop: the Start and Restart dialog says a start refused for want of a
+  configuration in its own words**
+  ([#1079](https://github.com/awebai/oats/issues/1079)). OATS refuses a start
+  or a restart that names a harness and no configuration when several
+  configurations are declared for that harness and none is the default
+  ([#999](https://github.com/awebai/oats/issues/999)). The dialog showed OATS's
+  message, written in command-line flags, as its own status. It now reads
+  "More than one launch configuration is declared for the chosen harness, and
+  none is the default. Choose one under Launch configuration, or choose "No
+  launch configuration" to run the harness as installed.", and under it "OATS
+  says: `<message>`" as one line. A message that looks like a credential reads
+  "[Detail withheld]", with no name before it.
+  - **"Preview invocation"** refused for the same reason reads the same
+    sentence, then "Preview only. No agent was started or stopped.", with
+    OATS's line under it. That message is no longer cut at 300 characters.
+  - **Unchanged:** every other refusal of a start, a restart or a preview
+    reads as before, and after any refusal Start is offered again once
+    "Refresh status" is pressed.

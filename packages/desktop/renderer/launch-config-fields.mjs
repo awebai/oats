@@ -1,10 +1,13 @@
 import { harnessOf, HARNESS_NAMES } from '../../client/harness-names.mjs';
 import { LAUNCH_CONFIG_NONE } from '../../client/launch-contract.mjs';
+import { startRefusalSentence } from '../../client/start-messages.mjs';
+import { kernelLines } from "./speaker-line.mjs";
 import { postJson, currentWorkspace, workspaceGeneration } from "./views/common.mjs";
 
 /** The choice of the bare harness: its entry in the list and the line under the list while it is chosen. */
 const BARE_HARNESS = "No launch configuration (the harness as installed)";
 const BARE_HARNESS_LINE = "Runs the harness itself, with no configuration's executable, arguments or environment.";
+const PREVIEW_ONLY = "Preview only. No agent was started or stopped.";
 
 /** Shared launch configuration selector/editor. The kernel resolves every preview.
  * The list's second entry asks for the bare harness: its value is the word that selects no configuration
@@ -38,8 +41,18 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
       <label>Permissions<select class="field lc-yolo"><option value="">Use defaults</option><option value="true">YOLO — skip permission prompts</option><option value="false">Use native permission policy</option></select></label>
       <label class="lc-default-label" hidden><span><input type="checkbox" class="lc-default"> <span class="lc-default-text"></span></span></label>
       <div class="start-buttons"><button class="act lc-new" type="button">New</button><button class="act lc-save" type="button">Save configuration</button><button class="act lc-remove" type="button" disabled>Remove from this scope</button></div>
-    </details><p class="launch-config-status" role="status" aria-live="polite"></p>`;
+    </details><p class="launch-config-status" role="status" aria-live="polite"></p>
+    <div class="launch-config-said" hidden></div>`;
   const select = el.querySelector(".launch-config-select"), status = el.querySelector(".launch-config-status");
+  // The status, and under it the kernel's own lines when the status is the Desktop's sentence for a refusal
+  // (speaker-line.mjs kernelLines: attributed, filtered, one <p> each). The lines belong to that status:
+  // whatever is said next replaces both.
+  const said = el.querySelector(".launch-config-said");
+  const say = (text, lines = []) => {
+    status.textContent = text;
+    said.replaceChildren(...lines.map(line => { const p = doc.createElement("p"); p.className = "start-kernel-says"; p.textContent = line; return p; }));
+    said.hidden = !lines.length;
+  };
   const output = el.querySelector(".launch-preview-output"), editor = el.querySelector(".launch-config-editor");
   editor.addEventListener("keydown", event => {
     // These fields edit a configuration inside a start/spawn dialog. Enter
@@ -90,7 +103,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
     if (!field("keep-env").checked) field("env").value = "{}";
   });
   const load = async (prefer = select.value) => {
-    const id = ++listRequest; loading = true; reload = false; status.textContent = "Loading launch configurations…";
+    const id = ++listRequest; loading = true; reload = false; say("Loading launch configurations…");
     try {
       const data = await api({ action: "list", selector: selector() });
       if (!current() || id !== listRequest) return;
@@ -105,13 +118,13 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
       select.value = (prefer === LAUNCH_CONFIG_NONE ? offered : configurations.some(c => c.name === prefer)) ? prefer : "";
       editor.hidden = !context;
       el.querySelector(".launch-config-scope").textContent = context ? `Configuration scope: ${context}` : "";
-      status.textContent = configurations.length ? "" : "No named configurations in this scope yet.";
+      say(configurations.length ? "" : "No named configurations in this scope yet.");
       selectionChanged(!!previous || !!selected());
-    } catch (e) { if (current() && id === listRequest) status.textContent = e.message; }
+    } catch (e) { if (current() && id === listRequest) say(e.message); }
     finally { if (id === listRequest) loading = false; }
   };
   el.querySelector(".launch-preview").addEventListener("click", async () => {
-    const id = ++previewRequest; status.textContent = "Checking invocation…";
+    const id = ++previewRequest; say("Checking invocation…");
     try {
       const preview = await api({ action: "preview", selector: selector(), choices: { ...choices(), ...(select.value ? { launchConfig: select.value } : {}) } });
       if (!current() || id !== previewRequest) return;
@@ -119,10 +132,17 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
       const command = typeof preview.command === "string" ? preview.command : JSON.stringify(preview, null, 2);
       output.textContent = [command, ...checks.map(c => `${c.ok === false ? "Needs attention" : "Check"}: ${c.check || "launch"}${c.detail ? ` — ${c.detail}` : ""}`)].join("\n");
       output.hidden = false;
-      status.textContent = preview.ok === false || checks.some(c => c.ok === false)
+      say(preview.ok === false || checks.some(c => c.ok === false)
         ? "This launch is not ready. Resolve the failed checks above. No agent was started or stopped."
-        : "Preview only. No agent was started or stopped.";
-    } catch (e) { if (current() && id === previewRequest) { output.hidden = true; status.textContent = e.message; } }
+        : PREVIEW_ONLY);
+    } catch (e) {
+      if (!current() || id !== previewRequest) return;
+      output.hidden = true;
+      // A refusal the Desktop has a sentence for (start-messages.mjs) reads as that sentence, then that this
+      // was a preview only, with the kernel's message under it; every other one as the answer's message.
+      const sentence = startRefusalSentence(e.code);
+      if (sentence) say(`${sentence} ${PREVIEW_ONLY}`, kernelLines(e.message)); else say(e.message);
+    }
   });
   field("new").addEventListener("click", () => { fillEditor(); field("name").focus(); });
   const save = async action => {
@@ -147,10 +167,10 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
         if (keepDefault) definition.default = true;
       }
       busy = true; invalidate(); updateControls();
-      status.textContent = action === "set" ? "Saving…" : "Removing configuration…";
+      say(action === "set" ? "Saving…" : "Removing configuration…");
       await api({ action, selector: { context }, name, ...(definition ? { definition, keepEnv: field("keep-env").checked } : {}) });
       if (current()) await load(action === "set" ? name : "");
-    } catch (e) { if (current()) status.textContent = e.message; }
+    } catch (e) { if (current()) say(e.message); }
     finally { busy = false; if (current()) updateControls(); }
   };
   field("save").addEventListener("click", () => void save("set"));

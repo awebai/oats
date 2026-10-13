@@ -7,7 +7,8 @@ import { captureFocusReturn } from "./focus-return.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
 import { retainedStartMessage, launchFlagIgnored, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 import { displayLine } from "../../client/display-text.mjs";
-import { runtimeErrorLine } from "./speaker-line.mjs";
+import { startRefusalSentence } from "../../client/start-messages.mjs";
+import { runtimeErrorLine, kernelLines } from "./speaker-line.mjs";
 import { sourceQuoteCSS } from "./source-quote.mjs";
 import { launchDiffered, launchDifferedCSS } from "./launch-differed.mjs";
 
@@ -58,6 +59,14 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
       let says = null;
       if (line) { says = doc.createElement("p"); says.className = "start-kernel-says"; const text = doc.createElement("bdi"); text.textContent = line; says.append("OATS says: ", text); }
       outcome.replaceChildren(...[differed, says].filter(Boolean)); outcome.hidden = !outcome.children.length;
+    };
+    // A refusal the Desktop has a sentence for (start-messages.mjs): the sentence is the status, and under it
+    // the kernel's message, attributed and filtered by the shared rule (speaker-line.mjs kernelLines), one <p>
+    // for each line it answers. No name stands before a text that is not shown.
+    const showRefused = (sentence, error) => {
+      status.textContent = sentence;
+      outcome.replaceChildren(...kernelLines(error.message).map(line => { const says = doc.createElement("p"); says.className = "start-kernel-says"; says.textContent = line; return says; }));
+      outcome.hidden = !outcome.children.length;
     };
     modal.querySelector("h2").textContent = `${restart ? "Restart" : "Start"} ${instance.instance}`;
     modal.querySelector(".start-context").textContent = `${instance.harness || "Harness not reported"} · ${instance.server || "This machine"} · ${instance.home}`;
@@ -187,9 +196,10 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         void openWhenReady(ctx.watchSelection?.() ?? (() => true));
       } catch (error) {
         if (!owns()) return;
-        // A start that stopped at a launch prompt says what happened in the Desktop's words; any other
-        // refusal shows the server's message, as before.
-        if (error.incomplete) showRetained(error); else status.textContent = error.message;
+        // A start that stopped at a launch prompt says what happened in the Desktop's words, and so does a
+        // refusal the Desktop has a sentence for; any other refusal shows the server's message, as before.
+        const sentence = error.incomplete ? null : startRefusalSentence(error.code);
+        if (error.incomplete) showRetained(error); else if (sentence) showRefused(sentence, error); else status.textContent = error.message;
         // A timeout may have happened after launch, and a retained session is still there. Recheck before
         // offering another start.
         canStart = false;

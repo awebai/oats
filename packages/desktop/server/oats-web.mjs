@@ -71,6 +71,7 @@ import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
+import { MAX_DISPLAY_LINE } from "../../client/display-text.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
@@ -1053,7 +1054,16 @@ const server = createServer(async (req, res) => {
           instances: workspace ? deploymentRows(held(), workspace) : [],
         }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreviewCache.invalidate(workspace.id); }); // the default launch a preview reports
         return send(res, 200, result);
-      } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
+      } catch (e) {
+        const { status, body } = spawnErrorPayload(e);
+        // One code's message is answered up to the shared home's display bound, not cut at 300: the Start
+        // dialog shows this refusal's message as a line under its own sentence, whole or withheld. A cut at
+        // the bound never leaves half a surrogate pair. #1026 lifts the cut for every refusal and removes
+        // this exception.
+        if (e.code !== "E_LAUNCH_CONFIG_AMBIGUOUS") return send(res, status, body);
+        const message = String(e.message || e), half = message.charCodeAt(MAX_DISPLAY_LINE - 1);
+        return send(res, status, { ...body, error: message.slice(0, message.length > MAX_DISPLAY_LINE && half >= 0xD800 && half <= 0xDBFF ? MAX_DISPLAY_LINE - 1 : MAX_DISPLAY_LINE) });
+      }
     }
     if (["/api/forge-connections", "/api/instance-forge", "/api/forge-roster", "/api/instance-review-threads"].includes(path) && req.method === "POST") {
       try {

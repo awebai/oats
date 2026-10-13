@@ -96,6 +96,25 @@ reader into its creation receipt, and the notice is the same
 (`packages/desktop/docs/desktop-spawn-preview.md`, A spawn where Claude Code
 ignored the channel option).
 
+When OATS refuses a start or a restart with `E_LAUNCH_CONFIG_AMBIGUOUS` (the
+start names a harness and no configuration, several configurations are declared
+for that harness, and none is the default), the dialog says it in its own
+words. Its status reads: "More than one launch configuration is declared for
+the chosen harness, and none is the default. Choose one under Launch
+configuration, or choose "No launch configuration" to run the harness as
+installed." Under it stands OATS's message as one line, "OATS says:
+`<message>`", through the display filter: whole, or "[Detail withheld]" with no
+name before it when the message is withheld, and no line when there is no
+message (`kernelLines`, `packages/desktop/renderer/speaker-line.mjs`). The
+sentence is chosen by the code alone (`startRefusalSentence`,
+`packages/client/start-messages.mjs`); no part of OATS's message is read to
+choose it. It names the dialog's two controls and no machine, so it is the
+same for an instance on this computer and on a server. A **Preview
+invocation** refused with that code reads the same sentence, then "Preview
+only. No agent was started or stopped.", with OATS's line under it. Every
+other refusal of a start, a restart or a preview reads as before: the answer's
+message as the status.
+
 If an ordinary Start dialog finds the instance already running, its action becomes
 **Open terminal**. A failed or timed-out start requires **Refresh status** before
 another attempt, because the launch may have succeeded before the reply was
@@ -135,7 +154,11 @@ the bare harness), `--harness` or `--yolo`/`--no-yolo`.
 Restart uses `POST /api/restart/<instance>?ws=…&home=…` and the single kernel
 command `oats session restart` with the same selectors and choices.
 Configuration inspection and editing use `POST /api/launch-configs?ws=…`,
-routed through `oats launch-config list/set/remove/preview`. These features
+routed through `oats launch-config list/set/remove/preview`. A refusal on that
+route answers its code and the first 300 characters of its message; for
+`E_LAUNCH_CONFIG_AMBIGUOUS` alone it answers the message up to the display
+filter's bound (`MAX_DISPLAY_LINE`, `packages/client/display-text.mjs`), so the
+line the dialog shows under its sentence is not cut short. These features
 require the CLI's `launch-config` and `session-restart` capabilities; old
 clients/hosts receive an update explanation instead of unsupported arguments.
 The installed CLI must advertise `session-start`; remote starting also needs
