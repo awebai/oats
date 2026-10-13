@@ -213,7 +213,7 @@ const errors = {
   E_UNSUPPORTED_OPTION: 'A chosen option is not supported for this soul or installed CLI.',
   E_BRANCH_EXISTS: 'The proposed branch already exists. Choose another branch and preview again.',
   E_BASE_UNKNOWN: 'The proposed base does not resolve to a commit.', E_CHILD_SPAWNS_DISABLED: 'The selected parent does not allow child spawns.',
-  E_REQUIREMENT_INACTIVE: 'A declared soul requirement is not active.', E_LAUNCH_ENV_MISSING: 'Required launch environment references are unavailable.',
+  E_LAUNCH_ENV_MISSING: 'Required launch environment references are unavailable.',
   E_LAUNCH_EXECUTABLE: 'The selected launch executable is unavailable.', E_LAUNCH_PROBE_UNSUPPORTED: 'The selected launch cannot be preflighted safely.',
   E_LAUNCH_CONFIG_UNKNOWN: 'The selected launch configuration is unavailable.', E_MODEL_UNKNOWN: 'The selected model could not be resolved.',
   // 0.52.0: several launch configurations for the harness, no default, and the spawn names none. Listed so the

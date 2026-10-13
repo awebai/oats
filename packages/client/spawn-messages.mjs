@@ -29,7 +29,6 @@ const COMMON = {
   E_BRANCH_EXISTS: 'That branch already exists. Choose another branch in Developer settings.',
   E_BASE_UNKNOWN: 'That base isn’t a branch, tag or commit in this soul’s repository. Check it in Developer settings.',
   E_CLONE_MISSING: 'This soul’s repository isn’t cloned on this machine yet. Clone it, then try again — Details shows how.',
-  E_REQUIREMENT_INACTIVE: 'Something this soul needs isn’t set up yet. Check the soul in the Workspace view.',
   E_LAUNCH_ENV_MISSING: 'The chosen launch configuration can’t start on this machine. Choose another in Developer settings.',
   E_LAUNCH_EXECUTABLE: 'The chosen launch configuration can’t start on this machine. Choose another in Developer settings.',
   E_LAUNCH_PROBE_UNSUPPORTED: 'The chosen launch configuration can’t be checked safely. Choose another in Developer settings.',
