@@ -15,7 +15,6 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SKILLS = [
   "oats-package/capabilities/oats-core/skills/oats-operate/SKILL.md",
   "oats-package/capabilities/oats-core/skills/oats-souls/SKILL.md",
-  "oats-package/capabilities/oats-core/skills/oats-token-saving/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-setup-model/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-onboarding/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-workspace-config/SKILL.md",

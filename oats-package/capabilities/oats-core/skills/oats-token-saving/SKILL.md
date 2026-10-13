@@ -29,7 +29,7 @@ what?**
 ## What not to send
 
 - **Acknowledgements and courtesy:** "received", "on it", "will do", "thanks", "sounds
-  good". A message that asks nothing needs no reply, and silence means it arrived.
+  good". A message that asks nothing needs no reply.
 - **Progress and status:** "started", "halfway", "tests running", "still waiting".
 - **What a shared record already shows:** the pull request, the tracker, `oats status`, a
   file both of you can read. The reader reads the record. When the receiver must act on
