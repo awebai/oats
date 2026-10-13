@@ -557,7 +557,11 @@ test("started outside every deployment with nothing in ~/Agents to offer, it exi
   // What was asked for is not there: a folder of ~/Agents is no answer to a path that was named.
   for (const argv of [["--dir", "/srv/nowhere"], ["--dir=/srv/nowhere"], ["--ascii", "--dir", "/srv/nowhere"]]) {
     const named = run({ argv, deployment: { ok: false, dir: "/srv/nowhere" }, offered: OFFERED });
-    assert.equal(await named.status, 1, argv.join(" "));
+    // A run that took the terminal instead would wait for a key and never end, and this file with
+    // it: such a run is seen as soon as it has started, and is ended here before it is judged.
+    const how = await Promise.race([named.status, named.up.then(() => "it took the terminal")]);
+    if (how !== 1) { named.stdin.type("q"); await named.status; }
+    assert.equal(how, 1, argv.join(" "));
     assert.deepEqual(effectsOf(named), [["config"], ["deployment", "/srv/nowhere"]], argv.join(" "));
     assert.deepEqual(named.errors, [`${noDeployment("/srv/nowhere")}\n`]);
     assert.deepEqual(named.stdout.written, []);
