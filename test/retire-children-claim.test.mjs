@@ -293,6 +293,9 @@ for (const holder of HOLDERS) {
         if (what === "guarded") {
           assert.deepEqual({ action: error.details.plan.action, instance: error.details.plan.instance, planRevision: error.details.plan.planRevision },
             { action: "retire", instance: "parent", planRevision: plan.planRevision }, "the guarded apply returns the plan it acted on");
+          // A retire plan wherever one is answered: the fact of what work/ is (awebai/oats#988).
+          assert.equal(typeof plan.facts.ownWorktree, "boolean", "fixture premise: the plan carries the fact");
+          assert.equal(error.details.plan.facts.ownWorktree, plan.facts.ownWorktree, "and so does the plan in the refusal");
         }
         // Nothing was retired: the three homes are what they were, and the held command still holds its claim.
         assert.deepEqual(snapshot(parent.home), before.parent, `${what}: the parent's home is byte for byte what it was`);
