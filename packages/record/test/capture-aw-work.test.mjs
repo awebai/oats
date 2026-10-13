@@ -143,3 +143,36 @@ test("AW append failures and incomplete final lines do not advance past undurabl
   const bytes = contentReads(() => assert.equal(captureAwLogs(f.store(), { owner: "fixture", commLogDir: f.logs })[0].appended, 1));
   assert.ok(bytes < 65536, `growth replayed ${bytes} bytes of consumed malformed lines`);
 });
+
+for (const withEntry of [false, true]) {
+  test(`terminated whitespace advances AW growth cursors without changing counters (initial entry: ${withEntry})`, t => {
+    const f = fixture(t), blanks = (" \t".repeat(150) + "\n").repeat(1000);
+    fs.writeFileSync(f.path, (withEntry ? entry(0) : "") + blanks);
+    const pass = (store = f.store()) => captureAwLogs(store, { owner: "fixture", commLogDir: f.logs });
+    // Progress over blanks must not survive a failed append of the preceding
+    // entry. It is persisted together with successful completion of the batch.
+    if (withEntry) {
+      const failing = f.store(); failing.appendUniqueBatch = () => { throw new Error("undurable whitespace batch"); };
+      assert.throws(() => pass(failing), /undurable whitespace batch/);
+    }
+    const first = pass()[0];
+    assert.equal(first.entries, Number(withEntry)); assert.equal(first.appended, Number(withEntry));
+    assert.equal(first.skipped, 0); assert.equal(first.failed, 0);
+    assert.equal(contentReads(() => assert.deepEqual(pass(), [])), 0);
+    fs.appendFileSync(f.path, entry(1));
+    const bytes = contentReads(() => {
+      const growth = pass()[0]; assert.equal(growth.entries, 1); assert.equal(growth.appended, 1);
+      assert.equal(growth.skipped, 0); assert.equal(growth.failed, 0);
+    });
+    assert.ok(bytes < 65536, `growth reread ${bytes} bytes of terminated whitespace`);
+    // An unterminated whitespace prefix still belongs to the next input line.
+    fs.appendFileSync(f.path, " \t ");
+    const unfinished = pass()[0]; assert.equal(unfinished.entries, 0); assert.equal(unfinished.skipped, 0);
+    fs.appendFileSync(f.path, entry(2));
+    const completed = pass()[0]; assert.equal(completed.entries, 1); assert.equal(completed.appended, 1);
+    const turns = f.store().readStream("fixture~aw");
+    assert.equal(turns.length, Number(withEntry) + 2);
+    assert.equal(new Set(turns.map(turn => turn.id)).size, turns.length);
+    assert.deepEqual(turns.map(turn => turn.body.text), (withEntry ? [0, 1, 2] : [1, 2]).map(n => `${n} ${"x".repeat(300)}`));
+  });
+}

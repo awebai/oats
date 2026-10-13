@@ -49,12 +49,15 @@ export function listCommLogs(dir = defaultCommLogDir()) {
 // A final line without its newline is still an entry when it parses; when it
 // does not, it is a torn tail the client is still writing, never counted. An
 // interior bad line is skipped and counted (`onSkipped`), never fatal.
-function* logEntries(fd, start, end, onSkipped) {
+function* logEntries(fd, start, end, onSkipped, onConsumed) {
   let offset = start;
   for (const line of bufferLines(fileChunks(fd, { start, end, size: 65536 }))) {
     const lineStart = offset;
     offset += line.length;
     const final = line[line.length - 1] !== 10;
+    // Even ignored whitespace is scanned progress when newline-terminated.
+    // The caller persists it only after its pending append batch is durable.
+    if (!final) onConsumed(offset);
     let entry;
     try {
       // Inside the try: a line beyond V8's string limit is a bad line like any other.
@@ -62,7 +65,7 @@ function* logEntries(fd, start, end, onSkipped) {
       if (text.trim() === "") continue;
       entry = JSON.parse(text);
     } catch {
-      if (!final) onSkipped(offset);
+      if (!final) onSkipped();
       continue;
     }
     yield { entry, start: lineStart, end: final ? lineStart : offset, bytes: line.length };
@@ -117,7 +120,7 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
       }
       checkpoint();
     };
-    for (const record of logEntries(fd, start, end, (offset) => { skipped++; consumed = offset; })) {
+    for (const record of logEntries(fd, start, end, () => skipped++, (offset) => { consumed = offset; })) {
       entries++;
       let turn;
       // Projection refusal consumes this complete entry just like a skipped
@@ -130,7 +133,7 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
       batch.push(turn); batchBytes += record.bytes;
       if (batch.length >= APPEND_BATCH || batchBytes >= 8 * 1024 * 1024) flush();
     }
-    // Complete refused/malformed entries are consumed; an unfinished final
+    // Complete refused/malformed/blank lines are consumed; an unfinished final
     // fragment keeps its starting boundary so later growth can finish it.
     complete = true;
     flush();
