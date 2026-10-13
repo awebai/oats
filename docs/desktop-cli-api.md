@@ -45,7 +45,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "retire-plan-own-worktree"],
+             "soul-launch","retire-plan-own-worktree"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
