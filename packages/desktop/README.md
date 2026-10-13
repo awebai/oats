@@ -258,6 +258,15 @@ function over what its caller holds:
   client in the same change, and anything not listed is this package's own
   composition. `test/client-loading.test.mjs` loads every module of the home
   under plain Node, which is the proof that none needs a DOM to load.
+- **Its own error codes.** The home writes error codes of its own that have
+  the kernel's shape (`E_` and capitals) and reads them where it reads the
+  kernel's, so a kernel code that took one of those names would be read as the
+  client's own. `own-codes.mjs` lists them (`CLIENT_OWN_CODES`), and the root
+  test `test/client-own-codes.test.mjs` reads the sources both ways: the code
+  of `lib/` and `bin/` writes none of them, and every name of that shape
+  written in the home is on the list or is the kernel's. A code of the home's
+  own that a table or a reader gains goes on the list in the same change. The
+  test's header says what it does not read.
 - **Where it is in the installed app.** The builder places it beside
   `app.asar`, as `client/` in the resources directory (`extraResources` in
   `electron-builder.config.cjs`): `Contents/Resources/client/` in the macOS
