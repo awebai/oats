@@ -115,3 +115,18 @@ test("health never creates an absent root; status caps deterministic issue sampl
   assert.match(health.rows[0].message, /later turns.*will not be captured/);
   assert.equal(fs.statSync(join(f.root, "capture-status.json")).mode & 0o777, 0o600);
 });
+
+test("command status truthfully records pending unstamped input without inventing run evidence", t => {
+  const f = fixture(t); fs.writeFileSync(f.path, '{"unstamped":true}\n');
+  const result = f.cli("--no-index", "--quiet"); assert.equal(result.status, 0, result.stderr);
+  const status = JSON.parse(fs.readFileSync(join(f.root, "capture-status.json")));
+  assert.equal(status.backlog.pending, true); assert.equal(status.lastSuccess, null); assert.equal(status.policy, null);
+});
+
+test("ignored missing default root clears its set-aside warning on reconciliation", t => {
+  const f = fixture(t); fs.writeFileSync(f.path, line(1)); f.capture();
+  fs.writeFileSync(f.path, line(2)); assert.equal(f.capture().complete, false);
+  fs.rmSync(join(f.home, ".claude"), { recursive: true }); fs.writeFileSync(join(f.root, "ignore"), "session\n");
+  const result = f.cli("--no-index", "--quiet"); assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(join(f.root, "capture-status.json"))).backlog.setAsideCount, 0);
+});

@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { keysetRows } from "./sqlite-rows.mjs";
 import { RecordStore } from "./store.mjs";
 
 export function withReceiptSummaries(store, fn) {
@@ -13,6 +14,7 @@ export function withReceiptSummaries(store, fn) {
   try {
     db = new DatabaseSync(join(dir, "claims.db"));
     db.exec(`PRAGMA cache_size = -2048; PRAGMA temp_store = FILE;
+      CREATE TABLE streams (stream TEXT PRIMARY KEY);
       CREATE TABLE seen (id TEXT PRIMARY KEY);
       CREATE TABLE claims (ref TEXT, author TEXT, PRIMARY KEY(ref, author));`);
     const seen = db.prepare("INSERT OR IGNORE INTO seen VALUES (?)");
@@ -20,7 +22,12 @@ export function withReceiptSummaries(store, fn) {
     const authorKey = (value) => JSON.stringify(value) ?? "undefined";
     let batch = 0;
     db.exec("BEGIN");
-    for (const stream of store.listStreams()) {
+    const addStream = db.prepare("INSERT INTO streams VALUES (?)");
+    for (const stream of store.iterateStreams()) {
+      if (!RecordStore.isSessionStream(stream)) addStream.run(stream);
+      if (++batch >= 2000) { db.exec("COMMIT; BEGIN"); batch = 0; }
+    }
+    for (const { stream } of keysetRows(db, "SELECT stream FROM streams", "stream")) {
       if (RecordStore.isSessionStream(stream)) continue;
       for (const turn of store.iterateStream(stream)) {
         if (typeof turn.id !== "string" || !seen.run(turn.id).changes) continue;

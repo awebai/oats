@@ -93,7 +93,8 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
     state = new DerivedState(store.root);
     const generation = state.get("reset", streamId.split("~")[0] + ":aw") ?? "";
     const key = `${streamId}:${path}`;
-    const previous = incremental ? state.get("aw", key) : null;
+    let previous = incremental ? state.get("aw", key) : null;
+    if (previous && (!Number.isSafeInteger(previous.bytes) || previous.bytes < 0 || previous.bytes > end || !previous.version)) previous = null;
     const journal = store.journalCheckpoint(streamId);
     let start = 0;
     if (previous && previous.generation === generation && previous.epoch === journal.epoch) {

@@ -461,6 +461,9 @@ export class RecordStore {
   validateJournal(streamId, state) {
     const path = this.journalPath(streamId), version = fileVersion(path);
     let checkpoint = state.get("journal", streamId);
+    if (checkpoint && (!Number.isSafeInteger(checkpoint.bytes) || checkpoint.bytes < 0 || checkpoint.bytes > (version?.size ?? 0) ||
+        !Number.isSafeInteger(checkpoint.count) || checkpoint.count < 0 || checkpoint.count > checkpoint.bytes ||
+        typeof checkpoint.epoch !== "string" || typeof checkpoint.complete !== "boolean")) checkpoint = null;
     if (checkpoint && sameVersion(checkpoint.version, version) && checkpoint.complete) return checkpoint;
     if (!checkpoint || !sameVersion(checkpoint.version, version)) {
       checkpoint = { version, epoch: randomBytes(16).toString("hex"), bytes: 0, count: 0, complete: false };

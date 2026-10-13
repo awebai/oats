@@ -12,8 +12,8 @@
 // original transcript is reconstructible by concatenating body.line.
 //
 // Incremental by source byte offset (cache under index/, derived state:
-// losing it is recovered from the journal's own last line number, never
-// by re-appending). Reconciliation is the capture: hooks and watchers
+// losing it requires comparison against the journal's positional prefix
+// before resuming, never blind re-appending). Reconciliation is the capture: hooks and watchers
 // only decide when to run it.
 //
 // Files matching the record's ignore list (`<root>/ignore`, see
@@ -213,6 +213,8 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     let state = offsets.get(fmt.source, offKey);
     const generation = offsets.get("reset", `${owner}:${fmt.source}`) ?? "";
     const journalVersion = fileVersion(store.journalPath(streamId));
+    if (state && (!Number.isSafeInteger(state.bytes) || state.bytes < 0 || state.bytes > stat.size ||
+        !Number.isSafeInteger(state.line) || state.line < 0 || typeof state.lastTs !== "string")) state = null;
     const prior = state?.version;
     const sameInput = prior && sameVersion(prior, version);
     const appendGrowth = prior && prior.dev === version.dev && prior.ino === version.ino && version.size > prior.size &&

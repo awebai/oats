@@ -2,6 +2,7 @@
 // database costs bounded rebuild work, never changes a turn or its ID.
 import { mkdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { keysetRows } from "./sqlite-rows.mjs";
 import { DatabaseSync } from "node:sqlite";
 
 export function invalidateLegacyMaps(root) {
@@ -26,10 +27,17 @@ export class DerivedState {
   constructor(root) {
     mkdirSync(join(root, "index"), { recursive: true });
     this.db = new DatabaseSync(join(root, "index", "capture.db"));
-    this.db.exec(`PRAGMA busy_timeout = 60000; PRAGMA cache_size = -2048;
-      PRAGMA temp_store = FILE;
-      CREATE TABLE IF NOT EXISTS state (kind TEXT, key TEXT, value TEXT NOT NULL, PRIMARY KEY(kind, key));
-      CREATE TABLE IF NOT EXISTS journal_ids (stream TEXT, id TEXT, PRIMARY KEY(stream, id));`);
+    this.db.exec("PRAGMA busy_timeout = 60000; PRAGMA cache_size = -2048; PRAGMA temp_store = FILE");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const hadIds = Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='journal_ids'").get());
+      this.db.exec(`CREATE TABLE IF NOT EXISTS state (kind TEXT, key TEXT, value TEXT NOT NULL, PRIMARY KEY(kind, key));
+        CREATE TABLE IF NOT EXISTS journal_ids (stream TEXT, id TEXT, PRIMARY KEY(stream, id));`);
+      // Recreating a lost lookup atomically revokes the old validation witness.
+      // A crash cannot qualify an empty replacement table with that witness.
+      if (!hadIds) this.db.exec("DELETE FROM state WHERE kind = 'journal'");
+      this.db.exec("COMMIT");
+    } catch (err) { this.db.exec("ROLLBACK"); this.db.close(); throw err; }
     this.read = this.db.prepare("SELECT value FROM state WHERE kind = ? AND key = ?");
     this.write = this.db.prepare("INSERT INTO state VALUES (?, ?, ?) ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value");
   }
@@ -37,7 +45,7 @@ export class DerivedState {
   set(kind, key, value) { this.write.run(kind, key, JSON.stringify(value)); }
   delete(kind, key) { this.db.prepare("DELETE FROM state WHERE kind = ? AND key = ?").run(kind, key); }
   *entries(kind) {
-    for (const row of this.db.prepare("SELECT key, value FROM state WHERE kind = ? ORDER BY key").iterate(kind)) {
+    for (const row of keysetRows(this.db, "SELECT key, value FROM state WHERE kind = ?", "key", [kind])) {
       yield { key: row.key, value: JSON.parse(row.value) };
     }
   }

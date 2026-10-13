@@ -13,6 +13,7 @@
 
 import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { keysetRows } from "./sqlite-rows.mjs";
 import { DatabaseSync } from "node:sqlite";
 
 // Bump whenever the derived schema changes shape. The index is cache:
@@ -158,9 +159,9 @@ export class RecordIndex {
   // cursor rather than trusting a byte position left behind by a downgrade.
   update() {
     let reset = false;
-    for (const row of this.db.prepare(`SELECT s.stream, s.indexed_count, b.bytes,
+    for (const row of keysetRows(this.db, `SELECT s.stream, s.indexed_count, b.bytes,
       b.indexed_count AS byte_count, b.epoch FROM index_state s
-      LEFT JOIN index_bytes b ON s.stream = b.stream`).iterate()) {
+      LEFT JOIN index_bytes b ON s.stream = b.stream`, "stream")) {
       const checkpoint = this.store.journalCheckpoint(row.stream);
       let boundary = true;
       if (Number.isSafeInteger(row.bytes) && row.bytes > 0 && row.bytes < checkpoint.bytes) {
@@ -254,10 +255,8 @@ export class RecordIndex {
 
     const fromName = String(turn.from ?? "");
     // Hidden if a valid tombstone already arrived for this id.
-    const tombs = this.db.prepare("SELECT from_name FROM tombstones WHERE ref = ?").all(turn.id);
-    const hidden = tombs.some((t) => t.from_name === fromName || (owner && t.from_name === owner))
-      ? 1
-      : 0;
+    const hidden = this.db.prepare("SELECT 1 FROM tombstones WHERE ref = ? AND (from_name = ? OR from_name = ?) LIMIT 1")
+      .get(turn.id, fromName, owner ?? fromName) ? 1 : 0;
 
     // Sessions are one turn per native event (no snapshots, nothing to
     // supersede); events/superseded columns remain for schema stability.

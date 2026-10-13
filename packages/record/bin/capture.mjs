@@ -222,21 +222,18 @@ if (args["reset-cursors"] || args["retry-set-aside"]) {
 // root, no other owners, and nothing is printed.
 function warnOnStrangerOwner() {
   if (ownerExplicit) return;
-  let others;
+  let example;
   try {
-    others = new Set(
-      store
-        .listStreams()
-        .map((id) => id.slice(0, id.indexOf("~")))
-        .filter(Boolean),
-    );
-  } catch {
-    return; // unreadable or absent root: not this function's business
-  }
-  if (others.size === 0 || others.has(owner)) return;
+    for (const stream of store.iterateStreams()) {
+      const existing = stream.slice(0, stream.indexOf("~"));
+      if (existing === owner) return;
+      if (existing) example ??= existing;
+    }
+  } catch { return; }
+  if (!example) return;
   console.error(
     `capture: writing as owner "${owner}" (from hostname), but this record holds ` +
-      `streams only under ${[...others].sort().map((o) => `"${o}"`).join(", ")}. ` +
+      `streams under another owner such as "${example}". ` +
       `Pass --owner or set TURN_RECORD_OWNER if that is not what you meant — ` +
       `capturing under a second owner duplicates the record rather than extending it.`,
   );
@@ -284,8 +281,16 @@ function withCaptureLock(fn) {
     return { appended: 0, skipped: true, lock: lock.held };
   }
   try {
-    try { return fn(); }
-    finally { writeCaptureStatus(root); }
+    let result, failure;
+    try { result = fn(); return result; }
+    catch (err) { failure = err; throw err; }
+    finally {
+      try { writeCaptureStatus(root, { pending: Boolean(failure || result?.pending || result?.held || result?.incomplete || result?.failed) }); }
+      catch (err) {
+        if (failure) throw new Error(`${failure.message}; capture status persistence also failed: ${err.message}`, { cause: failure });
+        throw err;
+      }
+    }
   } finally {
     const r = lock.release();
     if (!r.released) {
@@ -307,10 +312,11 @@ function pass({ retry = false } = {}) {
   const ignore = loadIgnoreOrExit(root);
   return withCaptureLock(() => {
   if (retry) retrySetAside(root);
-  const out = { appended: 0 };
+  const out = { appended: 0, pending: false };
   if (!args["aw-only"]) {
     for (const r of captureAllSessions(store, { owner, ignore, collectIssues: false })) {
       out.appended += r.appended;
+      out.pending ||= !r.complete;
       const extras = [r.ignored ? `${r.ignored} ignored` : "", r.held ? `${r.held} held` : "", r.incomplete ? `${r.incomplete} incomplete` : ""]
         .filter(Boolean)
         .join(", ");
@@ -334,6 +340,7 @@ function pass({ retry = false } = {}) {
       awEntries += r.entries;
       awAppended += r.appended;
       awFailed += r.failed;
+      out.pending ||= r.failed > 0;
       out.appended += r.appended;
       if (r.failed) console.error(`aw-log ${r.account}: ${r.failed} entries failed to project`);
     }
@@ -348,7 +355,7 @@ function pass({ retry = false } = {}) {
     const index = new RecordIndex(store);
     try {
       index.update();
-      log(`index: updated (${JSON.stringify(index.counts())})`);
+      log("index: updated");
     } finally {
       index.close();
     }

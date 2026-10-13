@@ -80,7 +80,9 @@ persistence failure is an operation failure, not a fabricated success.
 Source and journal reads use 64 KiB chunks. Batches commit at 2,000 records or
 8 MiB of accumulated raw bytes; a single larger record is still supported and
 can exceed that batch target. SQLite connections use a 2 MiB page-cache target
-and disk-backed temporary tables. Memory therefore depends on fixed buffers,
+and disk-backed temporary tables. Metadata query pages hold at most 128 rows;
+keyset queries support the declared Node 22.5 SQLite API without rescanning
+prior pages. Memory therefore depends on fixed buffers,
 bounded batches/caches and the largest processable individual record, rather
 than total source bytes, all historical IDs or the full input inventory. These
 are algorithm settings, **not** a memory/deadline policy or record-size limit.
@@ -88,7 +90,8 @@ are algorithm settings, **not** a memory/deadline policy or record-size limit.
 Ordinary background capture streams directory enumeration and source records;
 metadata enumeration still costs one visit per discovered input. Per-input
 cursors in `index/capture.db` replace whole-map JSON loads and rewrites. The
-background caller requests counts without collecting a receipt inventory.
+background caller requests capture counts without collecting a receipt inventory;
+it does not run the explicit full-index count query merely to print progress.
 Explicit API and receipt defaults retain complete issue/source/session
 inventories, so their metadata memory may grow with the output they must return.
 They do not retain whole source contents or journals to compute counts and

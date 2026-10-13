@@ -1,7 +1,7 @@
 // Shared capture status and operator recovery. Service supervision later fills
 // policy/run evidence; null means no such evidence has been supplied.
 import { randomUUID } from "node:crypto";
-import { closeSync, fsyncSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, fsyncSync, openSync, readSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DerivedState, invalidateLegacyMaps } from "./derived-state.mjs";
 
@@ -75,8 +75,24 @@ export function captureHealth(root) {
     backlog: { pending: false, setAsideCount: 0, setAside: [], truncated: false } };
   const rows = [];
   try {
-    if (statSync(path).size > 1024 * 1024) throw new Error("status exceeds 1 MiB");
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    let text;
+    try {
+      const stat = fstatSync(fd);
+      if (!stat.isFile()) throw new Error("status is not a regular file");
+      const limit = 1024 * 1024;
+      if (stat.size > limit) throw new Error("status exceeds 1 MiB");
+      const bytes = Buffer.alloc(limit + 1);
+      let size = 0;
+      while (size < bytes.length) {
+        const count = readSync(fd, bytes, size, bytes.length - size, size);
+        if (!count) break;
+        size += count;
+      }
+      if (size > limit) throw new Error("status exceeds 1 MiB");
+      text = bytes.toString("utf8", 0, size);
+    } finally { closeSync(fd); }
+    const parsed = JSON.parse(text);
     if (!validStatus(parsed)) throw new Error("unsupported or malformed status");
     status = parsed;
   } catch (err) {
