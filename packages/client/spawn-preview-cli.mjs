@@ -2,7 +2,13 @@
 import { execFile } from 'node:child_process';
 import { parseEnvelope } from './cli-adapter.mjs';
 import { previewChoices, previewTarget, previewSupported, previewFailure, choiceArgv } from './spawn-preview-contract.mjs';
-const failure = (code, message) => ({ schemaVersion: 1, ok: false, error: previewFailure(code, null, message).reason });
+/** A refusal, in the kernel's own shape (`{ code, message, details: { fix } }`). `previewFailure` decides what of the
+ *  kernel's travels: its message when that is printable and within the bound, and its `fix` only beside that message.
+ *  No other key of `details` travels. */
+function failure(code, message, kernelFix) {
+  const { fix, ...error } = previewFailure(code, null, message, kernelFix).reason;
+  return { schemaVersion: 1, ok: false, error: fix === undefined ? error : { ...error, details: { fix } } };
+}
 /** `io.exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`). */
 export function cliSpawnPreview(cli, options = {}, io = {}) {
   // Defense at the actual exec owner as well as at HTTP admission.
@@ -23,7 +29,7 @@ export function cliSpawnPreview(cli, options = {}, io = {}) {
         if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return resolve(failure('E_CLI_OUTPUT_LIMIT'));
         if (err?.killed) return resolve(failure('E_CLI_TIMEOUT'));
         const doc = parseEnvelope(stdout);
-        if (doc?.ok === false) return resolve(failure(doc.error?.code, doc.error?.message));
+        if (doc?.ok === false) return resolve(failure(doc.error?.code, doc.error?.message, doc.error?.details?.fix));
         if (err) return resolve(failure('E_CLI_FAILED'));
         resolve(doc?.ok === true ? doc : failure('E_CLI_PROTOCOL'));
       });

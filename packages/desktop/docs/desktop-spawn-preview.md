@@ -70,6 +70,19 @@ duplicates coalesce before await. No unbounded queue. **30s / 4MiB CLI,
 35s proxy**, clean exit and JSON-v1 envelope. Admission revalidation applies to
 success and rejection.
 
+**What travels of a kernel refusal.** The code, the message, and of `details`
+the `fix` alone. The exec owner (`packages/client/spawn-preview-cli.mjs`)
+answers a refusal in the kernel's own shape, `{code, message, details: {fix}}`;
+the boundary reads it there and serves the three as the view's `reason`,
+`{code, message, fix}`; the Electron proxy reads that reason again. Each of the
+three decides with `previewFailure`: the kernel's message travels when it is
+printable and at most 2,048 characters, and otherwise the reason holds the
+sentence of the contract's table for that code; the `fix` travels only beside
+the kernel's own message, printable and at most 1,024 characters. A reason
+with a `fix` is therefore one whose `message` is the kernel's. A test of what
+reaches the dialog starts from the CLI's printed envelope, through the exec
+owner: the boundary's `invoke` seam is after it.
+
 **The reuse window.** This route and `/api/spawn` prepare (below) answer from one
 bounded settled-answer cache (`spawnPreviewCache`, `server/spawn-preview.mjs`):
 64 entries, **60 s**, keyed by the admission identity (workspace id and scope,

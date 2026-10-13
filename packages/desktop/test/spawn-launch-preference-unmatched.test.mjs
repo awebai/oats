@@ -8,6 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnApplyReason } from '../../client/spawn-apply-contract.mjs';
+import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
 import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { cli as CLI } from './helpers/spawn-preview-fixture.mjs';
 
@@ -17,10 +18,17 @@ const OPENS = 'This machine’s launch preferences name a soul this workspace do
 const PRESSED = 'This machine’s launch preferences name a soul this workspace doesn’t offer, so OATS won’t choose a launch for this soul. To spawn now, pick a harness or a launch configuration for this spawn. To fix it for every spawn, correct the preference.';
 const TABLE = 'A launch preference on this machine names a soul the workspace does not offer, and this spawn names no launch.';
 const refusal = (message = SAID, fix = REMEDY) => ({ schemaVersion: 1, ok: false, error: { code: CODE, message,
-  details: { soul: 'release-manager', from: 'local-default', at: 'oats-local.yaml#/souls/launch/*', keys: [{ key: 'ghost', at: 'oats-local.yaml#/souls/launch/ghost', value: 'fast', suggestions: [] }], ...(fix === undefined ? {} : { fix }) } } });
-/** The kernel refuses while the spawn names no launch (no harness, no launch configuration), as it does. */
+  details: { soul: 'release-manager', from: 'local-default', at: 'oats-local.yaml#/souls/launch/*', keys: [{ key: 'ghost', at: 'oats-local.yaml#/souls/launch/ghost', value: 'fast', suggestions: [] }], ...(fix === null ? {} : { fix }) } } });
+/** The kernel refuses while the spawn names no launch (no harness, no launch configuration), as it does.
+ * Its answer is what the CLI prints: it reaches the dialog through the preview's own exec owner
+ * (packages/client/spawn-preview-cli.mjs `cliSpawnPreview`), with a refusal on exit 1, so every reader between
+ * the CLI's output and the screen is the shipped one. */
 const kernelFor = (host, { answer = () => refusal(), refused = () => true } = {}) =>
-  (_cli, { target, choices }) => refused() && !choices.launchConfig && !choices.harness ? answer() : host.kernel(host.kernelPreviewName(target.selector.soul, choices));
+  (cli, args) => cliSpawnPreview(cli, args, { env: {}, exec: (_bin, _argv, _options, done) => {
+    const { target, choices } = args;
+    const printed = refused() && !choices.launchConfig && !choices.harness ? answer() : host.kernel(host.kernelPreviewName(target.selector.soul, choices));
+    done(printed.ok === false ? Object.assign(new Error('exit 1'), { code: 1 }) : null, JSON.stringify(printed));
+  } });
 /** Details: the element's own text (the code, or `code · message`), then one line per kernel text. */
 const details = u => { const p = u.q('.spawn-problem-detail'); return { own: [...p.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(''), lines: [...p.querySelectorAll('.spawn-problem-line')].map(n => n.textContent), children: [...p.children].map(n => `${n.tagName.toLowerCase()}.${n.className}`) }; };
 
@@ -71,7 +79,7 @@ test('Spawn dialog: no text of the kernel\'s stands without its name, and each g
 test('Spawn dialog: when the kernel\'s texts did not travel, the shorter sentence is read, so "(Details)" never points at Details with no kernel text', async t => {
   const host = await import('./helpers/spawn-dialog-host.mjs');
   // No fix beside the message (a kernel that sends none): the message stays in Details as for any code.
-  const noFix = await host.mountSpawn(t, { kernel: kernelFor(host, { answer: () => refusal(SAID, undefined) }) });
+  const noFix = await host.mountSpawn(t, { kernel: kernelFor(host, { answer: () => refusal(SAID, null) }) });
   await noFix.open(); await noFix.type('.fpurpose', 'api-v2');
   assert.equal(noFix.q('.fstatus').textContent, PRESSED); assert.equal(noFix.q('.fstatus').dataset.code, CODE);
   assert.equal(noFix.text('.spawn-preview-failure'), PRESSED);
