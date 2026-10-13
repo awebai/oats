@@ -782,7 +782,7 @@ each at most 1,024 characters.
   To spawn now, pick a harness or a launch configuration for this spawn. To
   fix it for every spawn, correct the preference." That is a press, and a
   preview whose reason carries no `fix` (a kernel that sends none, or a
-  message `previewFailure` does not pass). Its Details read `code · message`
+  message over the reader's bound). Its Details read `code · message`
   as for any code. A `fix` decides it because `previewFailure` keeps one only
   beside the kernel's own message, never beside a sentence of its table.
 - **The code is in the preview contract's fixed table**, so it survives a

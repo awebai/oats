@@ -84,8 +84,9 @@ test('Spawn dialog: when the kernel\'s texts did not travel, the shorter sentenc
   assert.equal(noFix.q('.fstatus').textContent, PRESSED); assert.equal(noFix.q('.fstatus').dataset.code, CODE);
   assert.equal(noFix.text('.spawn-preview-failure'), PRESSED);
   assert.deepEqual(details(noFix), { own: `${CODE} · ${SAID}`, lines: [], children: [] });
-  // A message the preview's reader does not pass (a control character in it): the code survives with the table's sentence.
-  for (const message of [`${SAID}\tmore`, `${SAID} \u001b[2J`, '   ', `${SAID} ${'x'.repeat(2048)}`]) {
+  // A message over the reader's bound: the code survives with the table's sentence, and no fix beside it. The
+  // reader passes no blank message and none with a control character either (hostile input; no kernel sends one).
+  for (const message of [`${SAID} ${'x'.repeat(2048)}`, '   ', `${SAID}\tmore`, `${SAID} \u001b[2J`]) {
     const u = await host.mountSpawn(t, { kernel: kernelFor(host, { answer: () => refusal(message, REMEDY) }) });
     await u.open(); await u.type('.fpurpose', 'api-v2');
     assert.equal(u.q('.fstatus').textContent, PRESSED, JSON.stringify(message).slice(0, 40)); assert.equal(u.q('.fstatus').dataset.code, CODE);

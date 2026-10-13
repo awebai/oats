@@ -12,8 +12,8 @@
   configuration in Developer settings. To fix it for every spawn, correct
   the preference (Details)." Details hold the code, then "OATS says:
   `<message>`", then the fix on its own line. Each text is one line and
-  whole; one that holds control characters or looks like a credential reads
-  "[Detail withheld]", and "OATS says:" then stands before the other.
+  whole; one that looks like a credential reads "[Detail withheld]", and
+  "OATS says:" then stands before the other.
   - **At a press**, when the key appeared after the dialog had read its
     preview, the notice read "OATS couldn't complete the spawn. Try again, or
     see Details. Nothing was created." It now reads "This machine's launch
@@ -38,10 +38,9 @@
   they were. It now starts with the Desktop's own line, "A spawn of this soul
   with no launch chosen would be refused here.", then reads "OATS says:
   `<message>`" and the fix under it, with the code under Details as before.
-  Each of OATS's two texts is one line and whole; one that holds control
-  characters or looks like a credential reads "[Detail withheld]", and "OATS
-  says:" then stands before the other. This is so for every launch problem,
-  not only the new one.
+  Each of OATS's two texts is one line and whole; one that looks like a
+  credential reads "[Detail withheld]", and "OATS says:" then stands before
+  the other. This is so for every launch problem, not only the new one.
 
 ## Fixed
 
