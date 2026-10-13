@@ -726,11 +726,21 @@ here as anywhere.
 copied as one file. A link at such a path is followed, as Git follows it: the
 recovery holds a plain file with what Git reads through the link. A path
 that is not there, or a link that leads nowhere, is left out of the copy, as
-Git reads nothing there; only the index must exist. Anything else at such a
-path (a directory, empty or not, a FIFO, an entry that cannot be read)
-refuses the copy with `E_WORK_PRESERVATION_FAILED`, naming the path and what
-is there. The retire looks before it copies, so the answer is the same on
-every file system.
+Git reads nothing there. Anything else at such a path (a directory, empty or
+not, a FIFO, an entry that cannot be read) refuses the copy with
+`E_WORK_PRESERVATION_FAILED`, naming the path and what is there. The retire
+looks before it copies, so the answer is the same on every file system.
+
+<a id="no-index-file"></a>
+**A tree with no index file is copied with none.** A work tree made by
+`git worktree add --no-checkout`, or one whose index file was removed, has no
+index file, and Git reads it as a tree whose index lists nothing: every
+committed file is a staged deletion, and every file in the tree is
+untracked. A retire copies it as it copies any tree that holds work, and
+the recovery's `repo/` then has no index file either: Git reads it as it
+read the tree. The same holds for a nested repository with no index file.
+`git reset` in the recovery makes an index from `HEAD`: the committed files
+are tracked again, and a file that was changed in the tree shows as changed.
 
 **A worktree that cannot be proven unchanged.** Two things make a worktree
 not provable:
