@@ -15,3 +15,12 @@
   for a person: its wording may change between releases, so a client shows it
   and never parses it
   ([Launch preferences](../desktop-cli-api.md#launch-preferences)).
+- **A listing says that a launch would be refused, not that one was**
+  ([#1049](https://github.com/awebai/oats/issues/1049)). On `oats souls` and
+  `oats inspect --soul`, the `launch.problem` of a soul that
+  `E_LAUNCH_PREFERENCE_UNMATCHED` reaches carried the refusal's own sentence
+  ("it is refused, and nothing was created or started", then the remedy),
+  about a launch nobody had asked for. Its `message` now states the
+  condition and ends "it would be refused."; the remedy is its `fix`, as
+  before. The refusal a spawn gets is unchanged, and so is the shape of
+  `problem`.

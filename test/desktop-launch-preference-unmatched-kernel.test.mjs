@@ -1,6 +1,7 @@
 // The Desktop's readers on the REAL refusal of an unmatched launch preference (OATS 0.53.0, awebai/oats#989;
 // docs/desktop-cli-api.md § "Launch preferences"). Nothing here is a hand-written kernel shape, and no kernel
-// sentence is written in this file: the refusal is the error lib/launch-preference.mjs
+// sentence is written in this file but the ending by which a report's differs from the refusal's
+// (WOULD_BE_REFUSED): the refusal is the error lib/launch-preference.mjs
 // `launchPreferenceUnmatched` builds over the kernel's own layers, the report is lib/core.mjs
 // `launchReportFor`'s, and the code, the bound of each text and the `fix` are the kernel's constants. Each is
 // then read the way the Desktop reads it: the preview's reason (packages/client/spawn-preview-contract.mjs
@@ -100,13 +101,21 @@ for (const [name, keys] of CASES) test(`${name}: the refusal travels to the dial
   for (const key of keys) assert.equal(atPress.text.includes(key) || atPress.detail.includes(key), false, key);
 });
 
+/** How a report's message ends: a listing states the condition, where the refusal states what was refused (awebai/oats#1049). */
+const WOULD_BE_REFUSED = "it would be refused.";
 for (const [name, keys] of CASES) test(`${name}: the soul's Launch report reads as the lead and both texts, whole`, () => {
   const { error, report } = refused(keys);
-  assert.deepEqual(report.problem, { code: CODE, message: error.message, fix: UNMATCHED_FIX });
+  // The report's own message: for these keys the refusal's sentence up to its ending, then that a launch would
+  // be refused, and no remedy, which is the report's `fix`.
+  const message = report.problem.message, shared = message.slice(0, -WOULD_BE_REFUSED.length);
+  assert.deepEqual(report.problem, { code: CODE, message, fix: UNMATCHED_FIX });
+  assert.ok(message.endsWith(WOULD_BE_REFUSED) && message.length <= MAX, message);
+  assert.ok(shared.length > 0 && error.message.startsWith(shared) && error.message.length > message.length, `${message} / ${error.message}`);
+  assert.deepEqual([/oats soul launch/.test(error.message), /oats soul launch/.test(message)], [true, false], "the refusal's message holds the remedy; the report's leaves it to the fix");
   const launch = launchOf(report, REPORT_FROM);
   assert.notEqual(launch, undefined, "the Launch reader decodes the report");
   assert.deepEqual(launch.problem, report.problem);
-  assert.deepEqual(kernelLines(launch.problem.message, launch.problem.fix), [`${LEAD} ${error.message}`, UNMATCHED_FIX]);
+  assert.deepEqual(kernelLines(launch.problem.message, launch.problem.fix), [`${LEAD} ${message}`, UNMATCHED_FIX]);
 });
 
 /* ── From the CLI's output on: the envelope `oats spawn --preview --json` prints for the refusal, read by the

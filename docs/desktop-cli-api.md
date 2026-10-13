@@ -1927,7 +1927,11 @@ shows the drift as `launch-changed`.
   `E_LAUNCH_EXECUTABLE` for a configuration whose own executable is missing). Only reports carry it;
   spawn and preview refuse instead. A `fix`, here and in a refusal's
   `details`, is a sentence for a person: its wording may change between
-  releases, so a client shows it and never parses it. With `E_LAUNCH_CONFIG_UNKNOWN`,
+  releases, so a client shows it and never parses it. A report states a
+  condition, where a refusal states what was refused: for
+  `E_LAUNCH_PREFERENCE_UNMATCHED` the report's `message` names the keys and
+  the layer that would decide, and ends "it would be refused."; it does not
+  repeat the remedy, which is its `fix` (the refusal's `details.fix`). With `E_LAUNCH_CONFIG_UNKNOWN`,
   `effective` is the host default (`pi`, `null`, `null`): the named
   configuration launches nothing here.
 - In listings (`oats souls`, `inspect --soul`, `launchCurrent`) `model` is the
