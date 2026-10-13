@@ -3,9 +3,14 @@
 // entry would stand between a job and its result. Nothing here reads a cache at all, and this
 // pins it for every file under .github/workflows/, whatever files exist there.
 //
-// The rule can only speak for an action somebody has read. So a workflow may use the actions on
-// the list below and no other: not an action off the list, not a local action, not a reusable
+// The rule can only speak for an action somebody has read, at the version that was read. So one
+// table below says what was read, and a workflow may use what it holds and nothing else: not an
+// action off the table, not another ref of a listed one, not a local action, not a reusable
 // workflow, whose steps are in another file.
+//
+// The same table holds the release workflow to the code that was read. release.yml publishes, so
+// it names every action by the full commit id of a row, and so does build-installers.yml, whose
+// installer steps are release.yml's. Every other workflow names the major of a row by its tag.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -21,11 +26,38 @@ const WHY = "No workflow in this repository restores an Actions cache: a workflo
  *  warn about it, so a v4 step is kept from caching by its major, a later one by the input. */
 const SETUP_NODE_WITHOUT_AUTOMATIC_CACHE = /^v[1-4](\.\d+){0,2}$/;
 
-/** The actions a workflow here may use: the ones the workflows use, each read for whether it
- *  saves or restores a cache by itself. Of these only actions/setup-node can, and the rule
- *  below holds it. */
-const ALLOWED_ACTIONS = ["actions/checkout", "actions/setup-node", "actions/upload-artifact", "actions/download-artifact", "actions/attest-build-provenance"];
-const HOW_TO_ALLOW = "An action is added to the list of allowed actions by whoever has read whether it saves or restores a cache by itself.";
+/** What was read: each action a workflow here may use, at the commit that was read for whether
+ *  the action saves or restores a cache by itself, with the exact version whose tag pointed at
+ *  that commit. Both rules of this file read it, and there is no other list.
+ *
+ *  A row gives a workflow two refs and no other. Its `id` is the ref of the two files that name
+ *  actions by commit. The major of its `version` (`v4` of `v4.4.0`) is the ref of every other
+ *  workflow, by its tag. A later major is another program until it is read; a minor or patch
+ *  tag, a branch and a commit that is not a row are not in the table either.
+ *
+ *  Of these only actions/setup-node can cache, and two rules hold it together. The table says
+ *  which of its versions were read. `restoresCache` below says what a step of a version must
+ *  carry, and it takes the version of a commit id from the row: adding a row does not satisfy
+ *  it. A version that caches by itself (v5 and later) still needs `package-manager-cache: false`
+ *  on every step, by its id as by its tag. */
+const ACTIONS_READ = [
+  { action: "actions/checkout", id: "11d5960a326750d5838078e36cf38b85af677262", version: "v4.4.0" },
+  { action: "actions/setup-node", id: "49933ea5288caeca8642d1e84afbd3f7d6820020", version: "v4.4.0" },
+  { action: "actions/upload-artifact", id: "ea165f8d65b6e75b540449e92b4886f43607fa02", version: "v4.6.2" },
+  { action: "actions/download-artifact", id: "d3f86a106a0bac45b974a628896c90dbdf5c8093", version: "v4.3.0" },
+  { action: "actions/attest-build-provenance", id: "ef244123eb79f2f7a7e75d99086184180e6d0018", version: "v1.4.4" },
+];
+/** The two files that name every action by a row's commit id. The workflows outside them keep
+ *  tags, and that is the decision, not an oversight: nothing is published from them, and an id
+ *  there is upkeep nobody decided to take on. `usesUnreadAction` holds both halves. */
+const BY_ID = ["release.yml", "build-installers.yml"];
+const FULL_ID = /^[0-9a-f]{40}$/;
+const HOW_TO_ADD = "A row is added to the table of actions that were read by whoever has read that commit for whether the action saves or restores a cache by itself: its action.yml, the actions and packages it depends on, and what its entry points call of a cache. Its id is the commit that an exact version tag of the action's own repository points at (docs/release-lane.md, \"The workflow's actions are named by commit\").";
+
+const majorOf = (version) => version.split(".")[0];
+const rowsOf = (action, table) => table.filter((row) => row.action === action);
+const majorsOf = (rows) => [...new Set(rows.map((row) => majorOf(row.version)))];
+const held = (rows) => rows.map((row) => `${row.id} (${row.version})`).join(", ");
 
 /** A `uses` value as { action, ref }: the action's name in lower case (the runner matches it
  *  whatever its case) and what follows the last `@`. A local action has no ref. */
@@ -33,21 +65,58 @@ function parseUses(uses) {
   const at = uses.lastIndexOf("@");
   return { action: (at < 0 ? uses : uses.slice(0, at)).toLowerCase(), ref: at < 0 ? "" : uses.slice(at + 1) };
 }
-/** Why `step` uses an action nobody has read for this rule; null when its action is on the list
- *  or it uses none. The name must be the listed one exactly: a path under a listed action
- *  (`actions/cache/save`) is another action. */
-function usesUnlistedAction(step) {
+/** Why `step` uses an action, or a ref of one, nobody has read for this rule; null when the
+ *  table holds it, or the step uses no action. The name must be a row's exactly: a path under a
+ *  listed action (`actions/cache/save`) is another action. So must the ref. With `byId` (a step
+ *  of the two files) it is a row's id, 40 lower-case hexadecimal characters; otherwise it is the
+ *  major of a row's version: `v4`, and not `v4.1.0`, `V4`, `main` or an id. */
+function usesUnreadAction(step, { byId = false, table = ACTIONS_READ } = {}) {
   if (step?.uses === undefined) return null;
   if (typeof step.uses !== "string") return "its `uses` is not a string";
-  const { action } = parseUses(step.uses);
+  const { action, ref } = parseUses(step.uses);
   if (action.startsWith("./") || action.startsWith("../")) return `it uses the local action ${step.uses}: its steps are not in the workflow file, so the rule cannot read them`;
-  if (!ALLOWED_ACTIONS.includes(action)) return `it uses ${step.uses}, which is not on the list of allowed actions (${ALLOWED_ACTIONS.join(", ")}). ${HOW_TO_ALLOW}`;
-  return null;
+  const rows = rowsOf(action, table);
+  if (!rows.length) return `it uses ${step.uses}, which is not in the table of actions that were read (${[...new Set(table.map((row) => row.action))].join(", ")}). ${HOW_TO_ADD}`;
+  if (byId) {
+    if (rows.some((row) => row.id === ref)) return null;
+    if (!FULL_ID.test(ref)) return `it uses ${step.uses}: ${BY_ID.join(" and ")} name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds ${action} at ${held(rows)}`;
+    return `it uses ${step.uses}, a commit that is not in the table of actions that were read, which holds ${action} at ${held(rows)}. ${HOW_TO_ADD}`;
+  }
+  const majors = majorsOf(rows);
+  if (majors.includes(ref)) return null;
+  if (/^[0-9a-f]{40}$/i.test(ref)) return `it uses ${step.uses}: only ${BY_ID.join(" and ")} name an action by commit id, and every other workflow keeps the tag of a major that was read (${majors.map((major) => `${action}@${major}`).join(", ")})`;
+  return `it uses ${step.uses}, and the table of actions that were read holds ${action} at ${majors.join(", ")}: a ref is the major of a version that was read exactly, not a later major, a minor or patch tag, or a branch. ${HOW_TO_ADD}`;
 }
 /** Why a job is refused as a whole; null when its steps are its own. A job that calls a reusable
  *  workflow (`uses:` on the job) has its steps in another file, or another repository. */
 function callsWorkflow(definition) {
   return definition?.uses === undefined ? null : `it calls the reusable workflow ${definition.uses}: its steps are not in the workflow file, so the rule cannot read them`;
+}
+
+/** The actions that `steps` name by more than one ref, as `action: ref, ref`. The two files are
+ *  one release's steps: the same action is one commit in both, whatever the table holds. */
+function namedBySeveralRefs(steps) {
+  const refs = new Map();
+  for (const step of steps) {
+    if (typeof step?.uses !== "string") continue;
+    const { action, ref } = parseUses(step.uses);
+    refs.set(action, (refs.get(action) ?? new Set()).add(ref));
+  }
+  return [...refs].filter(([, of]) => of.size > 1).map(([action, of]) => `${action}: ${[...of].join(", ")}`);
+}
+/** Every `uses:` line of a workflow's text, as { uses, comment }: the comment is what follows the
+ *  `#` on that line. The reader of YAML drops comments, and the version beside an id is one. */
+function usesLines(text) {
+  return text.split("\n").map((line) => /^\s*(?:-\s+)?uses:\s*(\S+)(?:\s+#\s*(.*?))?\s*$/.exec(line)).filter(Boolean).map(([, uses, comment]) => ({ uses, comment: comment ?? "" }));
+}
+/** Why the comment beside an id misleads its reader; null when it is the row's version exactly,
+ *  or the id is no row's (which `usesUnreadAction` refuses). An id says nothing to a reviewer:
+ *  the version beside it is what a pull request that moves it is read by. */
+function versionNotBeside({ uses, comment }, table = ACTIONS_READ) {
+  const { action, ref } = parseUses(uses);
+  const row = rowsOf(action, table).find(({ id }) => id === ref);
+  if (!row || comment === row.version) return null;
+  return `${uses} is ${row.version} in the table of actions that were read, and the comment beside it ${comment ? `says \`${comment}\`` : "is missing"}: the id and its version are changed together`;
 }
 
 const isFalse = (value) => value === false || value === "false";
@@ -56,15 +125,22 @@ const isFalse = (value) => value === false || value === "false";
 const inputsOf = (step) => new Map(Object.entries(step?.with ?? {}).map(([name, value]) => [name.toLowerCase(), value]));
 /** Why `step` restores an Actions cache, or could begin to by itself; null when it cannot. A
  *  `cache` input is refused whatever its value: no step names a cache at all, and what turns a
- *  later actions/setup-node's own caching off is its `package-manager-cache`, not `cache`. */
-function restoresCache(step) {
+ *  later actions/setup-node's own caching off is its `package-manager-cache`, not `cache`.
+ *
+ *  An actions/setup-node named by a commit id is the version its row gives: the row's `v4.4.0`
+ *  is kept from caching by its major, as the tag `v4` is, and needs no input it does not know.
+ *  An id that is no row's has no version to go by, and is refused whatever its inputs. */
+function restoresCache(step, table = ACTIONS_READ) {
   if (typeof step?.uses !== "string") return null;
   const { action, ref } = parseUses(step.uses);
   const inputs = inputsOf(step);
   if (action === "actions/cache" || action === "actions/cache/restore") return `it uses ${step.uses}`;
   if (inputs.has("cache")) return `it gives ${step.uses} the input \`cache: ${inputs.get("cache")}\``;
-  if (action === "actions/setup-node" && !SETUP_NODE_WITHOUT_AUTOMATIC_CACHE.test(ref) && !isFalse(inputs.get("package-manager-cache"))) {
-    return `it uses ${step.uses} without \`package-manager-cache: false\`: from v5 on, actions/setup-node caches by itself when package.json names a package manager (a v4 step needs no input)`;
+  if (action !== "actions/setup-node") return null;
+  const row = rowsOf(action, table).find(({ id }) => id === ref);
+  if (!row && /^[0-9a-f]{40}$/i.test(ref)) return `it uses ${step.uses}, a commit that is not in the table of actions that were read: the rule cannot tell whether that actions/setup-node caches by itself`;
+  if (!SETUP_NODE_WITHOUT_AUTOMATIC_CACHE.test(row ? row.version : ref) && !isFalse(inputs.get("package-manager-cache"))) {
+    return `it uses ${step.uses}${row ? ` (${row.version})` : ""} without \`package-manager-cache: false\`: from v5 on, actions/setup-node caches by itself when package.json names a package manager (a v4 step needs no input)`;
   }
   return null;
 }
@@ -81,66 +157,235 @@ function workflowSteps() {
 }
 
 test("no workflow under .github/workflows/ restores an Actions cache, and no setup action can begin to by itself", () => {
-  const { files, jobs, steps } = workflowSteps();
+  const { files, steps } = workflowSteps();
   // The directory is read, not listed here: a workflow added later is held to the same rule.
   assert.ok(files.includes("pull-request.yml") && files.length >= 3, `the workflows are read from the directory: ${files.join(", ")}`);
   const setupNode = steps.filter(({ step }) => /^actions\/setup-node@/i.test(step.uses ?? ""));
   assert.ok(setupNode.length > 0, "the rule is checked against real steps: the workflows set up Node");
+  // By its tag and by its commit id: the rule is checked against real steps of both kinds.
+  for (const kind of [/@v\d+$/, /@[0-9a-f]{40}$/]) assert.ok(setupNode.some(({ step }) => kind.test(step.uses)), `no actions/setup-node step is named as ${kind}`);
   const found = steps.map(({ file, job, step }) => ({ file, job, why: restoresCache(step) })).filter(({ why }) => why);
   assert.deepEqual(found.map(({ file, job, why }) => `${file}, job ${job}: ${why}`), [], WHY);
   // A cache-dependency-path without a cache names a cache that is not there: it goes with it.
   for (const { file, job, step } of steps) assert.equal(inputsOf(step).has("cache-dependency-path"), false, `${file}, job ${job}: \`cache-dependency-path\` is an input of a cache. ${WHY}`);
 });
 
-test("a workflow uses only the actions that were read for the rule: no other action, no local action, no reusable workflow", () => {
-  const { jobs, steps } = workflowSteps();
-  const unlisted = steps.map(({ file, job, step }) => ({ file, job, why: usesUnlistedAction(step) })).filter(({ why }) => why);
-  assert.deepEqual(unlisted.map(({ file, job, why }) => `${file}, job ${job}: ${why}`), [], `${WHY} ${HOW_TO_ALLOW}`);
+test("a workflow uses only what the table of actions that were read holds: no other action or ref, no local action, no reusable workflow", () => {
+  const { files, jobs, steps } = workflowSteps();
+  for (const file of BY_ID) assert.ok(files.includes(file), `${file} is one of the two files that name actions by commit id`);
+  // The two files by a row's commit id; every other workflow by the tag of a row's major.
+  const refused = steps.map(({ file, job, step }) => ({ file, job, why: usesUnreadAction(step, { byId: BY_ID.includes(file) }) })).filter(({ why }) => why);
+  assert.deepEqual(refused.map(({ file, job, why }) => `${file}, job ${job}: ${why}`), [], `${WHY} ${HOW_TO_ADD}`);
   const called = jobs.map(({ file, job, definition }) => ({ file, job, why: callsWorkflow(definition) })).filter(({ why }) => why);
   assert.deepEqual(called.map(({ file, job, why }) => `${file}, job ${job}: ${why}`), [], WHY);
   assert.ok(steps.some(({ step }) => step.uses !== undefined) && jobs.length > 0, "the rule is checked against real jobs and steps");
+  assert.ok(steps.some(({ file, step }) => !BY_ID.includes(file) && step.uses !== undefined), "and against a workflow that keeps tags");
 });
 
-test("the rule: which actions a step may use, and what a job may not do", () => {
+test("release.yml and build-installers.yml name every action by a full commit id of the table, one id an action, its version beside it", () => {
+  const { steps } = workflowSteps();
+  const pair = steps.filter(({ file, step }) => BY_ID.includes(file) && step.uses !== undefined);
+  // Every `uses:` of the two files is a row's id: 40 lower-case hexadecimal characters, read.
+  for (const { file, job, step } of pair) {
+    assert.match(parseUses(String(step.uses)).ref, FULL_ID, `${file}, job ${job}: ${step.uses} is not named by a full commit id`);
+    assert.equal(usesUnreadAction(step, { byId: true }), null, `${file}, job ${job}`);
+  }
+  // The same action is the same commit in both files, and in every step of each.
+  assert.deepEqual(namedBySeveralRefs(pair.map(({ step }) => step)), [], "release.yml and build-installers.yml name one commit for an action");
+  // Checked against the real files: each uses actions, and the second one's are all the first's.
+  const usedBy = (name) => [...new Set(pair.filter(({ file }) => file === name).map(({ step }) => parseUses(step.uses).action))];
+  assert.ok(usedBy("release.yml").length > 0 && usedBy("build-installers.yml").length > 0);
+  assert.deepEqual(usedBy("build-installers.yml").filter((action) => !usedBy("release.yml").includes(action)), [], "an action of build-installers.yml that release.yml does not use");
+  // Beside each id, the exact version the table gives it. The lines are read as text, since a
+  // comment is not in the parsed document, and they are the parsed steps' own, in order.
+  for (const file of BY_ID) {
+    const lines = usesLines(readFileSync(new URL(file, WORKFLOWS), "utf8"));
+    assert.deepEqual(lines.map((line) => line.uses), pair.filter((entry) => entry.file === file).map(({ step }) => step.uses), `${file}: every \`uses:\` line is a step's`);
+    assert.deepEqual(lines.map((line) => versionNotBeside(line)).filter(Boolean), [], `${file}: the comment beside an id names its version`);
+  }
+});
+
+/** A table for the tests of the rule itself, with ids nobody could take for a commit's. The
+ *  rule is tested against it and not against the table above, so that moving an id, or adding a
+ *  row, changes that row and the workflows' lines and no test. */
+const CHECKOUT = "1".repeat(40), SETUP_NODE = "2".repeat(40), UPLOAD = "3".repeat(40), UNREAD = "0".repeat(40);
+const FIXTURE = [
+  { action: "actions/checkout", id: CHECKOUT, version: "v4.4.0" },
+  { action: "actions/setup-node", id: SETUP_NODE, version: "v4.4.0" },
+  { action: "actions/upload-artifact", id: UPLOAD, version: "v4.6.2" },
+  { action: "actions/attest-build-provenance", id: "4".repeat(40), version: "v1.4.4" },
+];
+const unread = (step, options = {}) => usesUnreadAction(step, { table: FIXTURE, ...options });
+
+test("the rule: which actions a step may use and at which ref, and what a job may not do", () => {
+  const how = /A row is added to the table of actions that were read by whoever has read that commit for whether the action saves or restores a cache by itself: its action\.yml, the actions and packages it depends on, and what its entry points call of a cache\. Its id is the commit that an exact version tag of the action's own repository points at \(docs\/release-lane\.md, "The workflow's actions are named by commit"\)\.$/;
   const refused = [
-    // The three that passed before the list existed.
+    // The three that passed before the table existed.
     [{ uses: "./.github/actions/setup" }, /it uses the local action \.\/\.github\/actions\/setup/],
-    [{ uses: "actions/setup-go@v5" }, /actions\/setup-go@v5, which is not on the list of allowed actions/],
-    [{ uses: "actions/cache/save@v4", with: { path: "~/.npm", key: "k" } }, /actions\/cache\/save@v4, which is not on the list/],
-    [{ uses: "actions/cache@v4" }, /not on the list/],
-    [{ uses: "actions/cache/restore@v4" }, /not on the list/],
-    [{ uses: "actions/setup-python@v5" }, /not on the list/],
-    [{ uses: "someone/some-action@v1" }, /not on the list/],
-    [{ uses: "docker://alpine:3" }, /not on the list/],
+    [{ uses: "actions/setup-go@v5" }, /actions\/setup-go@v5, which is not in the table of actions that were read/],
+    [{ uses: "actions/cache/save@v4", with: { path: "~/.npm", key: "k" } }, /actions\/cache\/save@v4, which is not in the table/],
+    [{ uses: "actions/cache@v4" }, /not in the table/],
+    [{ uses: "actions/cache/restore@v4" }, /not in the table/],
+    [{ uses: "actions/setup-python@v5" }, /not in the table/],
+    [{ uses: "someone/some-action@v1" }, /not in the table/],
+    [{ uses: "docker://alpine:3" }, /not in the table/],
     [{ uses: "../actions/setup" }, /local action/],
     // The listed name exactly: not a path under it, not a longer or a shorter name.
-    [{ uses: "actions/checkout/sub@v4" }, /not on the list/],
-    [{ uses: "actions/upload-artifact/merge@v4" }, /not on the list/],
-    [{ uses: "actions/checkout-extra@v4" }, /not on the list/],
-    [{ uses: "actions@v4" }, /not on the list/],
-    [{ uses: "" }, /not on the list/],
+    [{ uses: "actions/checkout/sub@v4" }, /not in the table/],
+    [{ uses: "actions/upload-artifact/merge@v4" }, /not in the table/],
+    [{ uses: "actions/checkout-extra@v4" }, /not in the table/],
+    [{ uses: "actions@v4" }, /not in the table/],
+    [{ uses: "" }, /not in the table/],
     [{ uses: 4 }, /is not a string/],
   ];
-  for (const [step, why] of refused) assert.match(String(usesUnlistedAction(step)), why, JSON.stringify(step));
-  // What to do about it is in the message, once.
-  assert.match(usesUnlistedAction({ uses: "actions/setup-go@v5" }), /An action is added to the list of allowed actions by whoever has read whether it saves or restores a cache by itself\.$/);
-  const accepted = [
-    ...ALLOWED_ACTIONS.map((action) => ({ uses: `${action}@v4` })),
-    // An action's name is matched whatever its case, and whatever its ref: the ref is the cache rule's.
-    { uses: "Actions/Checkout@v4" },
-    { uses: "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683" },
-    { uses: "actions/setup-node@v7" },
-    { run: "npm ci" },
-    { name: "a step that names an action in a command uses none", run: "echo actions/cache@v4" },
-  ];
-  for (const step of accepted) assert.equal(usesUnlistedAction(step), null, JSON.stringify(step));
+  // Whichever kind of file the step is in.
+  for (const byId of [false, true]) for (const [step, why] of refused) assert.match(String(unread(step, { byId })), why, JSON.stringify(step));
+  // What to do about it, and what to read first, is in the message, once. An action off the
+  // table is told the actions it holds.
+  assert.match(unread({ uses: "actions/setup-go@v5" }), how);
+  assert.match(unread({ uses: "actions/setup-go@v5" }), /\(actions\/checkout, actions\/setup-node, actions\/upload-artifact, actions\/attest-build-provenance\)/);
 
   assert.match(callsWorkflow({ uses: "./.github/workflows/build.yml" }), /it calls the reusable workflow \.\/\.github\/workflows\/build\.yml/);
   assert.match(callsWorkflow({ uses: "someone/somewhere/.github/workflows/build.yml@v1", with: { cache: false } }), /it calls the reusable workflow/);
   assert.equal(callsWorkflow({ "runs-on": "ubuntu-latest", steps: [{ run: "npm ci" }] }), null);
+
+  // A workflow that keeps tags: a listed action at the major of a version that was read, exactly.
+  const exactly = /a ref is the major of a version that was read exactly/;
+  const onTags = [
+    // A later or an earlier major, a minor or patch tag, a branch, no ref, another spelling.
+    [{ uses: "actions/checkout@v5" }, /actions\/checkout@v5, and the table of actions that were read holds actions\/checkout at v4: a ref is the major of a version that was read exactly/],
+    [{ uses: "actions/checkout@v3" }, exactly],
+    [{ uses: "actions/setup-node@v7" }, /holds actions\/setup-node at v4: a ref is the major/],
+    [{ uses: "actions/setup-node@v4.1.0" }, exactly],
+    // The very version that was read is not the ref either: the tag of a workflow is the major.
+    [{ uses: "actions/setup-node@v4.4.0" }, exactly],
+    [{ uses: "actions/checkout@v4.2" }, exactly],
+    [{ uses: "actions/checkout@main" }, exactly],
+    [{ uses: "actions/checkout@releases/v4" }, exactly],
+    [{ uses: "actions/checkout" }, exactly],
+    [{ uses: "actions/checkout@" }, exactly],
+    [{ uses: "actions/checkout@V4" }, exactly],
+    [{ uses: "actions/checkout@4" }, exactly],
+    [{ uses: "actions/checkout@1111111" }, exactly],
+    // A major is one action's: v4 of the others is not v4 of this one, nor v1 the others'.
+    [{ uses: "actions/attest-build-provenance@v4" }, /holds actions\/attest-build-provenance at v1/],
+    [{ uses: "actions/checkout@v1" }, /holds actions\/checkout at v4/],
+    // A commit id, a row's or not, in either case of its digits: these workflows keep tags.
+    [{ uses: `actions/checkout@${CHECKOUT}` }, /only release\.yml and build-installers\.yml name an action by commit id, and every other workflow keeps the tag of a major that was read \(actions\/checkout@v4\)$/],
+    [{ uses: `actions/checkout@${UNREAD}` }, /only release\.yml and build-installers\.yml name an action by commit id/],
+    [{ uses: "actions/setup-node@ABCDEF0123456789ABCDEF0123456789ABCDEF01" }, /only release\.yml and build-installers\.yml name an action by commit id/],
+  ];
+  for (const [step, why] of onTags) assert.match(String(unread(step)), why, JSON.stringify(step));
+  assert.match(unread({ uses: "actions/checkout@v5" }), how);
+  // An id is refused there without the way to add a row: no reading makes it that workflow's ref.
+  assert.doesNotMatch(unread({ uses: `actions/checkout@${CHECKOUT}` }), /A row is added/);
+  const acceptedOnTags = [
+    ...FIXTURE.map((row) => ({ uses: `${row.action}@${majorOf(row.version)}` })),
+    // An action's name is matched whatever its case. Its ref is not.
+    { uses: "Actions/Checkout@v4" },
+    { run: "npm ci" },
+    { name: "a step that names an action in a command uses none", run: "echo actions/cache@v4" },
+  ];
+  for (const step of acceptedOnTags) assert.equal(unread(step), null, JSON.stringify(step));
+
+  // One of the two files: a listed action at a row's commit id, exactly.
+  const byFullId = /release\.yml and build-installers\.yml name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds/;
+  const inThePair = [
+    // A tag, the major's or the version's; a branch; a shortened id; no ref.
+    [{ uses: "actions/checkout@v4" }, /actions\/checkout@v4: release\.yml and build-installers\.yml name every action by a full commit id, 40 lower-case hexadecimal characters, and the table of actions that were read holds actions\/checkout at 1{40} \(v4\.4\.0\)$/],
+    [{ uses: "actions/checkout@v4.4.0" }, byFullId],
+    [{ uses: "actions/checkout@main" }, byFullId],
+    [{ uses: "actions/checkout@1111111" }, byFullId],
+    [{ uses: `actions/checkout@${CHECKOUT.slice(0, 39)}` }, byFullId],
+    [{ uses: "actions/checkout" }, byFullId],
+    // A full id is in lower case, and has not a character more.
+    [{ uses: "actions/checkout@ABCDEF0123456789ABCDEF0123456789ABCDEF01" }, byFullId],
+    [{ uses: `actions/checkout@${CHECKOUT}1` }, byFullId],
+    // A full id that is no row's of that action: unread, or another action's.
+    [{ uses: `actions/checkout@${UNREAD}` }, /a commit that is not in the table of actions that were read, which holds actions\/checkout at 1{40} \(v4\.4\.0\)\. A row is added/],
+    [{ uses: `actions/checkout@${SETUP_NODE}` }, /a commit that is not in the table/],
+  ];
+  for (const [step, why] of inThePair) assert.match(String(unread(step, { byId: true })), why, JSON.stringify(step));
+  assert.match(unread({ uses: `actions/checkout@${UNREAD}` }, { byId: true }), how);
+  const acceptedInThePair = [
+    ...FIXTURE.map((row) => ({ uses: `${row.action}@${row.id}` })),
+    { uses: `Actions/Checkout@${CHECKOUT}` },
+    { run: "npm ci" },
+  ];
+  for (const step of acceptedInThePair) assert.equal(unread(step, { byId: true }), null, JSON.stringify(step));
+});
+
+test("the table of actions that were read: full commit ids, exact versions, and no id twice", () => {
+  for (const { action, id, version } of ACTIONS_READ) {
+    assert.match(id, FULL_ID, action);
+    assert.match(version, /^v\d+\.\d+\.\d+$/, `${action}: an exact version, not a major`);
+    assert.equal(action, action.toLowerCase(), "a row's name is in lower case, as a step's is compared");
+  }
+  assert.equal(new Set(ACTIONS_READ.map((row) => row.id)).size, ACTIONS_READ.length);
+});
+
+test("the rule: the two files name one commit for an action, and the comment beside an id is its version", () => {
+  const A = CHECKOUT, B = SETUP_NODE, beside = (line) => versionNotBeside(line, FIXTURE);
+  assert.deepEqual(namedBySeveralRefs([{ uses: `actions/checkout@${A}` }, { uses: `actions/setup-node@${B}` }, { uses: `Actions/Checkout@${A}` }, { run: "npm ci" }]), []);
+  // Two commits for one action, wherever the two steps are; a tag beside an id is a second ref too.
+  assert.deepEqual(namedBySeveralRefs([{ uses: `actions/checkout@${A}` }, { uses: `actions/checkout@${B}` }]), [`actions/checkout: ${A}, ${B}`]);
+  assert.deepEqual(namedBySeveralRefs([{ uses: `actions/checkout@${A}` }, { uses: "actions/checkout@v4" }, { uses: `actions/setup-node@${B}` }]), [`actions/checkout: ${A}, v4`]);
+
+  const text = [
+    "    steps:",
+    `      - uses: actions/checkout@${A} # v4.4.0`,
+    "        with:",
+    "          ref: ${{ github.sha }}",
+    "      - name: Set up Node",
+    `        uses: actions/setup-node@${B}   #   v4.4.0  `,
+    `      - uses: actions/upload-artifact@${UPLOAD}`,
+    "      - run: echo uses nothing",
+  ].join("\n");
+  assert.deepEqual(usesLines(text), [
+    { uses: `actions/checkout@${A}`, comment: "v4.4.0" },
+    { uses: `actions/setup-node@${B}`, comment: "v4.4.0" },
+    { uses: `actions/upload-artifact@${UPLOAD}`, comment: "" },
+  ]);
+  assert.equal(beside({ uses: `actions/checkout@${A}`, comment: "v4.4.0" }), null);
+  // No comment, the major only, another version, a version with more beside it.
+  assert.match(beside({ uses: `actions/checkout@${A}`, comment: "" }), /is v4\.4\.0 in the table of actions that were read, and the comment beside it is missing: the id and its version are changed together$/);
+  assert.match(beside({ uses: `actions/checkout@${A}`, comment: "v4" }), /the comment beside it says `v4`/);
+  assert.match(beside({ uses: `actions/checkout@${A}`, comment: "v4.4.1" }), /says `v4\.4\.1`/);
+  assert.match(beside({ uses: `actions/checkout@${A}`, comment: "v4.4.0, pinned" }), /says `v4\.4\.0, pinned`/);
+  // An id that is no row's is the other rule's to refuse.
+  assert.equal(beside({ uses: `actions/checkout@${UNREAD}`, comment: "v9.9.9" }), null);
+});
+
+test("the two rules together: a version of actions/setup-node added to the table is still kept from caching by itself", () => {
+  // Today a later major is refused by the table, whatever its inputs.
+  const bare = { uses: "actions/setup-node@v6", with: { "node-version": 22 } };
+  const told = { uses: "actions/setup-node@v6", with: { "node-version": 22, "package-manager-cache": false } };
+  for (const step of [bare, told]) assert.match(unread(step), /holds actions\/setup-node at v4/, JSON.stringify(step));
+  // The day somebody reads a v6 and adds its row, the table accepts both steps by its major, and
+  // the cache rule still refuses the one that does not turn the action's own caching off.
+  const V6 = "6666666666666666666666666666666666666666";
+  const later = [...FIXTURE, { action: "actions/setup-node", id: V6, version: "v6.1.0" }];
+  for (const step of [bare, told]) assert.equal(usesUnreadAction(step, { table: later }), null, JSON.stringify(step));
+  assert.match(restoresCache(bare, later), /without `package-manager-cache: false`/);
+  assert.equal(restoresCache(told, later), null);
+  // By its commit id as by its tag: the rule takes the version from the row.
+  const bareById = { uses: `actions/setup-node@${V6}`, with: { "node-version": 22 } };
+  const toldById = { uses: `actions/setup-node@${V6}`, with: { "node-version": 22, "package-manager-cache": false } };
+  for (const step of [bareById, toldById]) assert.equal(usesUnreadAction(step, { byId: true, table: later }), null, JSON.stringify(step));
+  assert.match(restoresCache(bareById, later), /actions\/setup-node@6{40} \(v6\.1\.0\) without `package-manager-cache: false`/);
+  assert.equal(restoresCache(toldById, later), null);
+  // Without the row that id has no version: both rules refuse it, whatever its inputs.
+  for (const step of [bareById, toldById]) {
+    assert.match(unread(step, { byId: true }), /a commit that is not in the table/, JSON.stringify(step));
+    assert.match(restoresCache(step, FIXTURE), /a commit that is not in the table of actions that were read: the rule cannot tell whether that actions\/setup-node caches by itself$/, JSON.stringify(step));
+  }
+  // A major the table holds is still the only tag of it: the table does not open its minors.
+  assert.match(usesUnreadAction({ uses: "actions/setup-node@v6.1.0" }, { table: later }), /holds actions\/setup-node at v4, v6: a ref is the major/);
+  assert.match(usesUnreadAction({ uses: "actions/setup-node@v5" }, { table: later }), /a ref is the major/);
 });
 
 test("the rule: what counts as restoring a cache, and what keeps actions/setup-node from caching by itself", () => {
+  const V4 = SETUP_NODE;
   const refused = [
     { uses: "actions/cache@v4", with: { path: "~/.npm", key: "k" } },
     { uses: "actions/cache/restore@v4", with: { path: "~/.npm", key: "k" } },
@@ -152,29 +397,39 @@ test("the rule: what counts as restoring a cache, and what keeps actions/setup-n
     // An input's name is matched whatever its case.
     { uses: "actions/setup-node@v4", with: { "node-version": 22, CACHE: "npm" } },
     { uses: "actions/setup-node@v4", with: { "node-version": 22, Cache: "npm" } },
-    // No `cache` input at all, whatever it says: not `false` either.
+    // No `cache` input at all, whatever it says: not `false` either, and not beside a row's id.
     { uses: "actions/setup-go@v5", with: { cache: false } },
     { uses: "actions/setup-node@v4", with: { "node-version": 22, cache: "false" } },
     { uses: "actions/setup-node@v6", with: { "package-manager-cache": false, CACHE: false } },
+    { uses: `actions/setup-node@${V4}`, with: { "node-version": 22, cache: "npm" } },
     // A later major caches by itself unless told not to; so may a ref whose major cannot be read.
     { uses: "actions/setup-node@v5", with: { "node-version": 22 } },
     { uses: "actions/setup-node@v6" },
     { uses: "actions/setup-node@v7", with: { "package-manager-cache": true } },
     { uses: "actions/setup-node@main", with: { "node-version": 22 } },
-    { uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020", with: { "node-version": 22 } },
     { uses: "actions/setup-node", with: { "node-version": 22 } },
+    // A commit id that is no row's has no version: refused with the input and without it, in
+    // either case of its digits.
+    { uses: `actions/setup-node@${UNREAD}`, with: { "node-version": 22 } },
+    { uses: `actions/setup-node@${UNREAD}`, with: { "package-manager-cache": false } },
+    { uses: "actions/setup-node@ABCDEF0123456789ABCDEF0123456789ABCDEF01", with: { "package-manager-cache": false } },
+    // Another action's id is not this action's row.
+    { uses: `actions/setup-node@${CHECKOUT}`, with: { "package-manager-cache": false } },
   ];
-  for (const step of refused) assert.equal(typeof restoresCache(step), "string", JSON.stringify(step));
+  for (const step of refused) assert.equal(typeof restoresCache(step, FIXTURE), "string", JSON.stringify(step));
   const accepted = [
     { uses: "actions/setup-node@v4", with: { "node-version": 22 } },
     { uses: "actions/setup-node@v4.4.0", with: { "node-version": 22, "registry-url": "https://registry.npmjs.org" } },
     { uses: "actions/setup-node@v6", with: { "node-version": 22, "package-manager-cache": false } },
-    { uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020", with: { "package-manager-cache": "false" } },
     { uses: "actions/setup-node@v6", with: { "node-version": 22, "Package-Manager-Cache": false } },
+    // A row's id is its version: the v4.4.0 that was read needs no input it does not know.
+    { uses: `actions/setup-node@${V4}`, with: { "node-version": 22 } },
+    { uses: `Actions/Setup-Node@${V4}`, with: { "node-version": 22, "registry-url": "https://registry.npmjs.org" } },
     { uses: "actions/checkout@v4", with: { "fetch-depth": 0 } },
+    { uses: `actions/checkout@${CHECKOUT}`, with: { ref: "${{ github.sha }}" } },
     { uses: "actions/upload-artifact@v4", with: { name: "dist", path: "dist" } },
     { run: "npm ci" },
     { name: "a step that names a cache in a command restores none", run: "npm ci --cache .npm" },
   ];
-  for (const step of accepted) assert.equal(restoresCache(step), null, JSON.stringify(step));
+  for (const step of accepted) assert.equal(restoresCache(step, FIXTURE), null, JSON.stringify(step));
 });

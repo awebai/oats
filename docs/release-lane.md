@@ -153,6 +153,62 @@ logic against fixtures, with `npm` stubbed. The two can run in either order:
 a lane release followed by a workflow run, or a broken workflow run finished
 by the lane, and neither republishes what the other already did.
 
+## The workflow's actions are named by commit
+
+`release.yml` holds the publishing rights, so it names every action it uses
+by a full commit id, with the exact version in a comment beside it:
+
+```yaml
+- uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+```
+
+A tag is the action owner's to move, and a commit is not: the code that runs
+with the publishing rights is the code that was read. `build-installers.yml`
+runs the same installer steps, so it names the same commits. Every other
+workflow keeps tags (`actions/checkout@v4`): nothing is published from them.
+
+`test/workflow-no-cache.test.mjs` holds this. Its table of the actions that
+were read has a row for each action: `action`, `id`, `version`. In the two files
+every `uses:` is a row's id, the same action is the same id in both, and the
+comment beside an id is the row's version. In every other workflow a `uses:`
+is the major of a row's version.
+
+**An id is moved by a pull request, reviewed like any change to that
+workflow.** It changes together, and nothing else:
+
+- the id and the version comment, on every `uses:` line of that action in
+  `release.yml` and `build-installers.yml`;
+- the action's row in the table.
+
+**The id is read from an exact version tag of the action's own repository**
+(`v4.4.0`, not the moving `v4`). For an annotated tag it is the commit the tag
+object points at:
+
+```bash
+gh api repos/actions/checkout/git/ref/tags/v4.4.0 --jq '.object.type, .object.sha'
+# type `commit`: that is the id. Type `tag`: the id is the tag object's commit:
+gh api repos/actions/checkout/git/tags/<sha of the tag object> --jq '.object.sha'
+
+# The same with git. For an annotated tag, the line that ends in ^{} has the id.
+git ls-remote https://github.com/actions/checkout refs/tags/v4.4.0 'refs/tags/v4.4.0^{}'
+```
+
+Never take an id because it resolves, and never copy one from another
+project's workflow. GitHub resolves `owner/action@<id>` for a commit of any
+fork of that action, so an id that works says nothing about whose commit it
+is. The pull request gives, for each id it moves, the tag, the id and the
+command that read it, so that its reviewer repeats the reading.
+
+**The commit is read before its row is written**, for whether the action
+saves or restores an Actions cache by itself: its `action.yml`, the actions
+and packages it depends on, and what its entry points call of a cache.
+
+- A composite action names other actions. Check, at the id, that its inner
+  `uses:` are full commit ids too: then the outer id fixes them.
+- A version of `actions/setup-node` that caches by itself (v5 and later)
+  needs `package-manager-cache: false` on every step. The test takes the
+  version of an id from the row, so it refuses a step without it.
+
 ## Release-notes entries
 
 A release ships one notes file, `docs/release-notes/v<version>.md`. Between
