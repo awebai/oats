@@ -650,7 +650,7 @@ test("L4: a maxBuffer overflow is NOT a timeout; a timeout kill is; an unclassif
   assert.equal(oom.signal, "SIGKILL"); assert.equal(oom.timedOut, false, "only our own timer makes a timeout");
   assert.equal(classifyRemoteFailure(oom), "killed");
   // Synthetic shapes classifyRemoteFailure must get right.
-  assert.equal(classifyRemoteFailure({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", killed: true, signal: "SIGKILL", stderr: Buffer.alloc(0) }), "network", "a maxBuffer kill is not a timeout even when Node reports killed/signal");
+  assert.equal(classifyRemoteFailure({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", killed: true, signal: "SIGKILL", stderr: Buffer.alloc(0) }), "unknown", "a maxBuffer kill is not a timeout even when Node reports killed/signal, and with no text it shows nothing (awebai/oats#1059)");
   // #387: a signal is a timeout only when our timer sent it (timedOut), whatever the signal.
   assert.equal(classifyRemoteFailure({ killed: true, signal: "SIGKILL", stderr: Buffer.alloc(0) }), "killed");
   assert.equal(classifyRemoteFailure({ signal: "SIGTERM", stderr: Buffer.alloc(0) }), "killed");

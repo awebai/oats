@@ -304,6 +304,32 @@ caches need git 2.45 or later (`PARTIAL_FETCH_GIT`, the first git with
 partial cache it meets is deleted and fetched again whole, and the same
 notice says why.
 
+The fetch of a commit negotiates: git tells the server the commits the cache
+holds (its pins), and the pack holds only what they lack, a few kilobytes for
+a new head beside the last one. The server may then send an object as a delta
+against one it takes the cache to hold, and the cache does not hold the blobs
+its filter left out: git cannot complete that pack, may not fetch the missing
+base on its own, and the fetch fails with words the kernel cannot classify.
+`git fetch` cannot ask for a pack that is complete by itself while
+negotiating, so `fetchCommit` makes a fetch that failed as `unknown` once
+more without negotiation (`fetch.negotiationAlgorithm=noop`), which brings
+the commit whole and is complete whatever the cache holds
+(awebai/oats#1059). One second attempt, never a third, and never on git's
+wording. A fetch that fails removes the temporary files it left in the object
+store (`objects/pack/tmp_*`, and `tmp_*` in `objects` and its two-character
+directories, where git's own `prune` looks), and every fetch first removes
+those earlier failures left that are older than the longest fetch, the rule
+of a stale git lock below: a file an older kernel's live fetch may still be
+writing is never removed.
+
+A failed git call is classified from what it shows (`classifyRemoteFailure`):
+our own timer's kill is `timeout`, another signal `killed`, a failed write of
+the cache `cache`, and otherwise git's text decides, read without the object
+ids it names. A text that shows nothing the kernel recognises is `unknown`,
+never `network`, and the message of an `unknown` failure carries git's own
+line through one scrub (`scrubGitLine`): one line, bounded, with no control
+character and no URL's user information.
+
 Every write to a cache repo (its `git init`, config, fetches and pins) holds
 the repo's cross-process write lock, `<cache>/.locks/<repo>.lock`
 (`withCacheWriteLock`): an exclusive file holding `{pid, token, startedAt}`,

@@ -180,7 +180,8 @@ test("batch: a header over the budget is E_REMOTE_FILE_OVERSIZE with today's det
 });
 
 test("batch: a non-blob answer, `missing`, a dying child and ENOENT are typed E_REMOTE_UNREADABLE with today's reasons; no child is left", async () => {
-  for (const [mode, reason] of [["tree", "network"], ["missing", "not-found"], ["die", "network"]]) {
+  // A non-blob answer and a reader that died say nothing the kernel recognises: unknown, never the network (awebai/oats#1059).
+  for (const [mode, reason] of [["tree", "unknown"], ["missing", "not-found"], ["die", "unknown"]]) {
     await withShim(mode, async (fx, pids) => {
       const session = createReadSession();
       const e = (await outcome(readRemoteFile(fx.bare, fx.commit, "README.md", { cacheDir: fx.cacheDir, session }))).error;
@@ -202,7 +203,7 @@ test("batch: a non-blob answer, `missing`, a dying child and ENOENT are typed E_
   try {
     const e = (await outcome(readRemoteFile(fx.bare, fx.commit, "souls/dev/soul.yaml", { cacheDir: fx.cacheDir, session }))).error;
     assert.equal(e.code, "E_REMOTE_UNREADABLE");
-    assert.equal(e.details.reason, "network");
+    assert.equal(e.details.reason, "unknown", "a git that cannot be started is not the network");
   } finally { process.env.PATH = saved; }
   await session.close();
 });
@@ -400,7 +401,7 @@ test("fetchRemoteTree: a batch reader that dies, times out or is ended mid-tree 
     await settle(pids);
     assert.deepEqual(pids().filter(alive), [], "missing: no batch child outlives the session");
   });
-  for (const [mode, reason] of [["die", "network"], ["hang", "timeout"]]) {
+  for (const [mode, reason] of [["die", "unknown"], ["hang", "timeout"]]) {
     await withShim(mode, async (fx, pids) => {
       const session = createReadSession({ batchTimeoutMs: 300 });
       const dest = join(fx.base, "out", "dev");

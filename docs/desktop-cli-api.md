@@ -676,6 +676,14 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   never prompting: `E_REMOTE_UNREADABLE {url, reason: "auth" | "not-found" |
   "network" | "timeout" | "killed" | "cache" | "unknown"}`. `killed` (the
   system killed git, for example out of memory) also carries `signal`.
+  `network` is what Git's own text shows to be the network (a host that does
+  not resolve, a connection refused, reset or closed, a transport that could
+  not reach the remote). A failure whose text shows nothing the kernel
+  recognises is `unknown` (0.53.0; it read `network` before), and its message
+  then ends with Git's own last line: `cannot read remote <url> (unknown):
+  <line>`. The line is one line of at most 300 characters, with control
+  characters and the user information of any URL removed; when Git said
+  nothing, the message ends at `(unknown)`.
   `cache` (OATS 0.33.0) is local: the
   remote cache on this machine could not be written (a git lock still held,
   another oats process still writing it, or a lock file one left when it
@@ -689,7 +697,8 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   `cacheDir` or other detail field crosses to the renderer. It keys only on
   `code` + `details.reason`: `cache` words the roster "OATS cache
   problem" with the message in full; `network` / `timeout` read "Couldn't
-  reach <host>"; any other reason keeps the generic wording. When the
+  reach <host>"; any other reason, `unknown` among them, keeps the generic
+  wording with the message in full. When the
   deployment was observed before, the failed read keeps that observation:
   `/api/panel` serves it with `error` (the message) and `errorCause {code,
   reason, host?}`, and the roster shows it stale instead of empty.
