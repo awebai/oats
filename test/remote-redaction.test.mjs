@@ -87,6 +87,56 @@ test("parser refusals redact strings, malformed URLs, nested objects and auxilia
   assert.equal(parseRepoRef(`ssh://${USER}@${host}/${path}`).url, `ssh://${USER}@${host}/${path}`);
 });
 
+test("plain refused references retain exact selected spelling and original-source fragments", async () => {
+  const cases = [
+    ["notaref", "unrecognized repository reference: notaref", undefined],
+    ["https://github.com/org", "repository reference has an invalid path: https://github.com/org", "org"],
+    ["htps://github.com/org/repo", "unrecognized repository reference: htps://github.com/org/repo", undefined],
+    ["github.com:org/repo", "unrecognized repository reference: github.com:org/repo", undefined],
+  ];
+  for (const [input, reason, derived] of cases) {
+    const e = await refused(() => parseRepoRef(input));
+    assert.equal(e.code, "E_REPO_REF");
+    assert.equal(e.message, reason);
+    assert.deepEqual(e.details, derived === undefined ? { ref: input } : { ref: input, path: derived });
+    assert.equal(e.details, e.provenance);
+    const workspace = { schemaVersion: 2, name: "fixture", members: [input] };
+    assert.ok(validateWorkspace(workspace).some(p => p.path === "/members/0" && p.message === `not a repo ref: ${reason}`));
+    const remote = {
+      parseRepoRef,
+      async observeRemote(ref) { return { ...parseRepoRef(ref), commit: "a".repeat(40) }; },
+      async listRemoteTree() { assert.fail("no member trees are read on a refused workspace"); },
+      async readRemoteFile() { return { bytes: Buffer.from(JSON.stringify(workspace)) }; },
+    };
+    const wrapped = await refused(() => observeWorkspace("git:github.com/org/workspace", { remote }));
+    assert.equal(wrapped.code, "E_WORKSPACE_SCHEMA");
+    assert.equal(wrapped.details.path, "oats-workspace.yaml");
+    assert.ok(wrapped.details.problems.some(p => p.path === "/members/0" && p.message === `not a repo ref: ${reason}`));
+    assert.ok(wrapped.message.includes(reason));
+    assert.equal(wrapped.details, wrapped.provenance);
+  }
+  for (const input of ["a".repeat(256), " ", " : ", "  notaref  ", "AZaz09 ._/+:-", "https://h/o/r mixed text"]) {
+    assert.equal(redactUrl(input, null, { reference: true }), input, JSON.stringify(input));
+    assert.equal(redactUrl(`value ${JSON.stringify(input)}`, input, { known: false, refusal: true }), `value ${JSON.stringify(input)}`);
+  }
+  for (const input of ["", "a".repeat(257), "notaref?query", "notaref@host", "notaref\n", "café", "a\u0000b"]) {
+    assert.equal(redactUrl(input, null, { reference: true }), WITHHELD, JSON.stringify(input));
+  }
+  assert.equal(redactUrl("org", "https://github.com/org", { fragment: true, known: false }), "org");
+  for (const ref of [`https://${USER}:${PASSWORD}/org@github.com/repo`, `ssh://${USER}:${PASSWORD}@github.com/org`]) {
+    const e = await refused(() => parseRepoRef(ref));
+    safeError(e, "E_REPO_REF");
+    assert.equal(e.details.ref, WITHHELD);
+    for (const name of ["host", "path"]) if (name in e.details) assert.equal(e.details[name], WITHHELD);
+    assert.equal(redactUrl(PASSWORD, ref, { fragment: true, known: false }), WITHHELD, "a plain fragment cannot override its credentialed original source");
+  }
+  assert.equal(redactUrl("org/repo", https[0], { fragment: true, known: false }), WITHHELD, "only the validated exact path may survive a nonplain source");
+  assert.equal(redactUrl(path, https[0], { fragment: true, known: false }), path);
+  for (const source of ["notaref", "https://github.com/org", "htps://github.com/org/repo", "github.com:org/repo"]) {
+    assert.equal(scrubGitLine("plain Git line", source), GIT_WITHHELD, "plain fallback cannot establish safe Git operation provenance");
+  }
+});
+
 test("rejected transport preserves safe words and successful transport stays exact", async () => {
   for (const [value, display, withheld] of [
     ...https.map(value => [value, VALUE_WITHHELD, true]),
@@ -163,11 +213,11 @@ test("other rejected inputs use value display without changing accepted data", a
 });
 
 test("rejected-value display accepts only the complete bounded ASCII spelling", async () => {
-  const allowed = ["a", "0", ".", "_", "/", "+", "-", "ftp", "abc123", "v1..2", "AZaz09._/+-", "a".repeat(256)];
-  const forbidden = ["", "a".repeat(257), " a", "a ", "a b", "café", "漢字", "😀", "a\u0301", "a\u0085b", "a\u00a0b", "a\u200bb", "a\u2028b", "a\u2029b", "a\ufeffb",
+  const allowed = ["a", "0", ".", "_", "/", "+", "-", "ftp", "abc123", "v1..2", "AZaz09 ._/+:-", " ", ":", " a", "a ", "a b", "https://host/org", "a".repeat(256)];
+  const forbidden = ["", "a".repeat(257), "café", "漢字", "😀", "a\u0301", "a\u0085b", "a\u00a0b", "a\u200bb", "a\u2028b", "a\u2029b", "a\ufeffb",
     ...Array.from({ length: 32 }, (_, i) => `a${String.fromCharCode(i)}b`),
     `a${String.fromCharCode(127)}b`, `a${String.fromCharCode(128)}b`,
-    ...[":", "@", "'", '"', "%", "?", "#", "=", ",", ";", "\\", "[", "]", "{", "}", "(", ")", "<", ">", "!", "$", "&", "*", "|", "~", "^", "`"].map(character => `a${character}b`),
+    ...["@", "'", '"', "%", "?", "#", "=", ",", ";", "\\", "[", "]", "{", "}", "(", ")", "<", ">", "!", "$", "&", "*", "|", "~", "^", "`"].map(character => `a${character}b`),
     ...https];
   for (const [values, expectedWithheld] of [[allowed, false], [forbidden, true]]) for (const value of values) {
     const display = expectedWithheld ? VALUE_WITHHELD : value;
@@ -228,7 +278,8 @@ test("refusals explain omission or withholding once, without changing diagnostic
     { key: "other.invalid/o/r", url: ssh }]) {
     const e = await refused(() => parseRepoRef(ref));
     safeError(e, "E_REPO_REF");
-    const explanation = ref.bad ? withheldClause : clause;
+    const explanation = clause; // Plain object keys remain visible; these nested references only omit userinfo.
+    if (ref.bad) assert.ok(Object.hasOwn(e.details.ref, "bad"));
     assert.equal(e.message.split(explanation).length - 1, 1);
     assert.ok(!JSON.stringify(e.details).includes(clause));
     assert.ok(!JSON.stringify(e.details).includes(withheldClause));

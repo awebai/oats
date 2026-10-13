@@ -86,7 +86,7 @@ test("literal reference collisions cannot rename fixed diagnostic field keys", (
     assert.throws(() => parseRepoRef(input), e => {
       assert.equal(e.code, "E_REPO_REF");
       assert.deepEqual(Object.keys(e.details), ["ref"]);
-      assert.equal(e.details.ref, WITHHELD);
+      assert.equal(e.details.ref, input === WITHHELD ? WITHHELD : input);
       assert.equal(e.details, e.provenance);
       return true;
     });
@@ -107,7 +107,7 @@ test("pinned display requires an explicit usable reference and a full OID", () =
       assert.equal(redactUrl(`${ref}@${bad}`, null, { pinned: true }), WITHHELD);
     }
   }
-  for (const ref of [`https://u:${TOKEN}/extra@host.invalid/org/repo`, `https://host.invalid/org/repo https://${TOKEN}@other.invalid/a/b`]) {
+  for (const ref of ["notaref", "https://github.com/org", "htps://github.com/org/repo", "github.com:org/repo", "https://host.invalid/org/repo mixed", `https://u:${TOKEN}/extra@host.invalid/org/repo`, `https://host.invalid/org/repo https://${TOKEN}@other.invalid/a/b`]) {
     assert.equal(redactUrl(`${ref}@${commit}`, null, { pinned: { ref, commit } }), WITHHELD);
     assert.equal(redactUrl(`${ref}@${commit}`, null, { pinned: true }), WITHHELD);
   }

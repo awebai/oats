@@ -161,8 +161,12 @@ Written by `oats sync`; the only persisted state at the deployment besides
 
 ## Repository references in diagnostics
 
-Selected repository references in diagnostics are display values, constructed
-from recognised components rather than copied from the supplied reference.
+Selected repository references in diagnostics are display values. A selected
+original refused reference is shown verbatim when it is 1–256 characters long
+and contains only ASCII letters, digits, spaces, `.`, `_`, `/`, `+`, `-` and
+`:`. This bounded plain-value rule tests the whole original string: no trimming,
+decoding, control-character removal or truncation makes a value eligible.
+Otherwise, display is constructed from recognised components.
 An unambiguous scheme or scp-style reference supplies only its scheme, host,
 supported port and path, using the repository parser's character rules. User
 information is never a display component: `ssh://git@host/org/repo` and
@@ -171,9 +175,9 @@ can also remove user information from a well-formed HTTP(S) URL that the
 repository parser refuses; it does not admit that URL for use by Git.
 
 **The fixed withheld display is `[repository reference withheld]`.** It replaces
-the whole selected value when safe components cannot be recognised
-unambiguously, including malformed references, several references in one value
-and references mixed with other text. Harmless host or path text in that value
+the whole selected value when neither the bounded plain-value rule nor
+unambiguous component construction applies, including malformed or mixed
+references outside the plain rule. Harmless host or path text in that value
 is withheld too. A literal input equal to the fixed display looks the same;
 the display is not an identifier or a value to pass back to a command.
 Standalone `file:` references and filesystem paths retain their path meanings.
@@ -181,10 +185,11 @@ Standalone `file:` references and filesystem paths retain their path meanings.
 A diagnostic field that explicitly carries a pinned source uses the same
 constructor with pinned-source context: a recognised reference followed by `@`
 and a validated 40-hex-character commit can retain that commit in its display.
-If either part cannot be recognised, the whole source is withheld. This
-context does not change default reference rendering or admit a new source
-form. Local/file reference semantics and operational external-source values
-remain unchanged.
+If either part cannot be recognised, the whole source is withheld: pinned
+sources have no bounded plain-value fallback. Rendering an already constructed
+pinned source does not change it. This context does not change default
+reference rendering or admit a new source form. Local/file reference semantics
+and operational external-source values remain unchanged.
 
 The same decision applies to the selected reference in error messages,
 `details.ref`, `details.url`, `details.value`, `provenance.value`, nested
@@ -192,9 +197,10 @@ reference keys and values, and reference-bearing workspace and soul schema
 problems. Discovery problem rows' `source` is also a diagnostic display.
 Seven explicitly rejected argument fields have a separate context in the same
 renderer: `transport`, `commit`, `at`, `path`, `depth`, `limit` and `destDir`.
-A rejected string is preserved only when it is nonempty, at most 256 ASCII
-characters, and every character matches `[A-Za-z0-9._/+\-]`. The check uses the
-whole original string, without trimming or decoding.
+A rejected string is preserved only when the whole original string satisfies
+the same bounded plain-value rule above, including its space and colon
+characters. No trimming, decoding, control handling or truncation is applied
+to establish eligibility.
 **The fixed rejected-value display is `[value withheld]`, and its neutral explanation is “(the value was withheld)”.**
 Every other rejected string uses that display in the quoted message value and
 matching details/provenance. Existing nonstring and container handling is
@@ -203,12 +209,15 @@ explanation once per originating refusal. This is a bounded display rule, not
 a secret detector: a plain token made only of the permitted characters is not
 protected. Selection belongs to the particular rejection; a field's name
 alone never selects it. Valid argument values and other operational values
-remain exact, and reference, schema and Git-line defaults are unchanged.
+remain exact; pinned-source, schema and Git-line contexts keep their own rules.
 Quoted or JSON-escaped copies and host/path fragments derived from a withheld
-value cannot reveal its remainder. Unrelated schema values and opaque provider
+value cannot reveal its remainder. A raw host/path fragment can use the plain
+exception only when its original selected source qualifies for that exception;
+a fragment from a credential-bearing original never becomes eligible merely
+because the fragment looks plain. Unrelated schema values and opaque provider
 payloads are not scanned. Query and fragment contents are not searched for
-individual secret values; a selected remote reference with an unrecognised suffix
-is withheld as a whole.
+individual secret values; a selected remote reference with an unrecognised
+suffix outside the plain rule is withheld as a whole.
 
 A refusal retains its code and reason. When the whole reference is withheld,
 the kernel message explains that once per originating refusal. When a
