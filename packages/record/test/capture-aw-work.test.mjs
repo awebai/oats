@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { RecordStore } from "../lib/store.mjs";
-import { captureAwLogs, captureCommLog } from "../lib/capture-aw.mjs";
+import { captureAwLogs, captureCommLog, listCommLogs } from "../lib/capture-aw.mjs";
 
 const entry = (n) => JSON.stringify({ ts: "2026-01-01T00:00:00Z", dir: "recv", ch: "mail", msg_id: String(n), from: "alice", to: "bob", body: `${n} ${"x".repeat(300)}` }) + "\n";
 function fixture(t) {
@@ -63,4 +63,28 @@ test("unknown journal changes validate corruption before append; cache removal r
   fs.writeFileSync(path, "corrupt\n" + before.toString());
   assert.throws(() => captureCommLog(f.store(), { owner: "fixture", path: f.path }), /corrupt interior/);
   assert.deepEqual(fs.readFileSync(path), Buffer.concat([Buffer.from("corrupt\n"), before]));
+});
+
+
+test("collected and background AW capture preserve code-unit account and journal order", t => {
+  const f = fixture(t), names = ["z", "a", "B", "é"];
+  for (const name of names) fs.writeFileSync(join(f.logs, name + ".jsonl"), entry(name));
+  const expected = [...names].sort();
+  assert.deepEqual(listCommLogs(f.logs).map(path => path.slice(f.logs.length + 1, -6)), expected);
+  const open = fs.opendirSync;
+  fs.opendirSync = (...args) => {
+    const dir = open(...args), entries = [];
+    for (let value; (value = dir.readSync()) !== null;) entries.push(value);
+    entries.sort((a, b) => a.name < b.name ? 1 : a.name > b.name ? -1 : 0);
+    let i = 0; dir.readSync = () => entries[i++] ?? null; return dir;
+  };
+  syncBuiltinESMExports();
+  try {
+    for (const collect of [true, false]) {
+      const store = new RecordStore(join(f.root, String(collect)), { owner: "fixture" });
+      const results = [...captureAwLogs(store, { owner: "fixture", commLogDir: f.logs, collect })];
+      assert.deepEqual(results.map(result => result.account), expected);
+      assert.deepEqual(store.readStream("fixture~aw").map(turn => turn.provenance.origin["~"].account), expected);
+    }
+  } finally { fs.opendirSync = open; syncBuiltinESMExports(); }
 });

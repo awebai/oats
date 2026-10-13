@@ -114,9 +114,9 @@ bounded batches/caches and the largest processable individual record, rather
 than total source bytes or all historical IDs. These
 are algorithm settings, **not** a memory/deadline policy or record-size limit.
 
-Root and path discovery retain in-memory metadata inventories, sorted by the
-existing per-directory `localeCompare` order with stable ties and depth-first
-traversal. Their memory grows with file/profile counts, separately from streamed
+Native root and path discovery retain in-memory metadata inventories, sorted by
+the existing per-directory `localeCompare` order with stable ties and depth-first
+traversal. Aweb account logs retain their code-unit sorted basename order. Their memory grows with file/profile counts, separately from streamed
 content processing; metadata enumeration and sorting still run on unchanged
 passes. Public list APIs retain their full sorted-array output. Per-input
 cursors in `index/capture.db` replace whole-map JSON loads and rewrites. The

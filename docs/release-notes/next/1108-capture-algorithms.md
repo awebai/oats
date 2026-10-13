@@ -1,4 +1,4 @@
-### Fixed
+## Fixed
 
 - Capture streams transcript content, stores per-input cursors and journal IDs on
   disk, and indexes only new journal bytes in bounded transactions ([#1108](https://github.com/awebai/oats/issues/1108)).

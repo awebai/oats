@@ -15,7 +15,7 @@
 // witness and byte cursor; explicit per-file calls retain full reprojection.
 // Persistent journal ID lookup makes either path use bounded memory.
 
-import { closeSync, constants, existsSync, fstatSync, openSync, opendirSync, readdirSync, readSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readSync } from "node:fs";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
@@ -159,15 +159,14 @@ export function captureInteractionLog(store, { owner, path, selfName, workspace,
   return { stream: streamId, ...r };
 }
 
-// Background discovery is streamed; the public default still returns its
-// complete result inventory. The bin asks for an iterator instead.
+// Retain sorted basename metadata, preserving listCommLogs' code-unit account
+// order in both background capture and public results. Content is streamed;
+// discovery metadata still grows with the number of log files.
 function* iterateCommLogs(dir) {
-  let entries;
-  try { entries = opendirSync(dir); }
+  let names;
+  try { names = readdirSync(dir); }
   catch (err) { if (err.code === "ENOENT") return; throw err; }
-  try {
-    for (let entry; (entry = entries.readSync()) !== null;) if (entry.name.endsWith(".jsonl")) yield join(dir, entry.name);
-  } finally { entries.closeSync(); }
+  for (const name of names.sort()) if (name.endsWith(".jsonl")) yield join(dir, name);
 }
 function* captureAwEntries(store, { owner, commLogDir, ignore }) {
   const ign = ignore ?? loadIgnore(store.root);

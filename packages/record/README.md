@@ -283,8 +283,9 @@ bounded checkpoint probes. The streaming and work-count tests pin these distinct
 paths; the small-heap regression remains supplementary evidence.
 
 Filesystem discovery is a separate cost: root/path metadata inventories may grow
-with file and profile counts. Roots and each directory retain their existing
-`localeCompare` sorting and depth-first traversal, including stable ties. Public
+with file and profile counts. Native roots and each directory retain their
+existing `localeCompare` sorting and depth-first traversal, including stable ties.
+Aweb account logs retain code-unit sorted basename order. Public
 list APIs return full arrays. Metadata enumeration, sorting and per-input probes
 still run on unchanged passes; this is not a constant-memory or new-byte-only
 claim for the whole pass. Explicit receipts likewise retain the issue/session
