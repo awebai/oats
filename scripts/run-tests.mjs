@@ -89,16 +89,44 @@ const namesDestination = flags.some((f) => /^--test-reporter-destination(=|$)/.t
 const shown = namesReporter
   ? (namesDestination ? [] : ["--test-reporter-destination=stdout"])
   : [`--test-reporter=${process.stdout.isTTY || Number(process.versions.node.split(".")[0]) >= 23 ? "spec" : "tap"}`, "--test-reporter-destination=stdout"];
-const warningsDir = mkdtempSync(join(tmpdir(), "oats-test-warnings-"));
-const warningsFile = join(warningsDir, "found.jsonl");
+
+// A test file leaves nothing behind (awebai/oats#1025): where a directory is made, its removal is
+// registered. So the run fails, too, when a file leaves something in its temporary directory, and
+// names the file and what is left. Each file's process is preloaded with scripts/test-file-tmpdir.mjs,
+// which gives it a directory of its own inside this run's directory as its temporary directory and
+// as tmux's default place; the fixture helpers that go to /tmp when the temporary directory's path
+// is long make theirs there as well. When the run has ended every such directory is empty, but for
+// Node's own compile cache (NODE_COMPILE_CACHE below).
+//
+// The run's directory holds everything of the run, and is removed when the run has ended, whatever
+// its files left. A run that is killed leaves that one directory. It is under the temporary
+// directory, or under /tmp when that path is long (macOS: about 49 characters): a file's directory
+// is the start of every path its fixtures make, and a socket's path has about 104 bytes in all.
+const SHORT_TMPDIR = 20;
+const runDir = mkdtempSync(join(tmpdir().length > SHORT_TMPDIR ? "/tmp" : tmpdir(), "ot-"));
+const warningsFile = join(runDir, "warnings.jsonl");
 const guard = [`--test-reporter=${new URL("./test-warnings-reporter.mjs", import.meta.url).href}`, `--test-reporter-destination=${warningsFile}`];
+const ownTmpdir = `--import=${new URL("./test-file-tmpdir.mjs", import.meta.url).href}`;
+/** What a file may leave in its directory: Node makes its compile cache under the temporary
+ *  directory when a tool a test starts asks for one (npm does). It is Node's, not the file's. */
+const NODE_COMPILE_CACHE = "node-compile-cache";
 
-const args = ["--test", ...flags, ...shown, ...guard, ...KERNEL_GLOBS, ...packageGlobs, ...desktopIntegration, ...files];
-const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit" });
+const args = ["--test", ownTmpdir, ...flags, ...shown, ...guard, ...KERNEL_GLOBS, ...packageGlobs, ...desktopIntegration, ...files];
+const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit", env: { ...process.env, OATS_TEST_RUN_DIR: runDir } });
 
-// The file is node's to create: it is absent only when node never started the run.
 let found = "";
-try { found = readFileSync(warningsFile, "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; } finally { rmSync(warningsDir, { recursive: true, force: true }); }
+const left = []; // { file, entries } for each test file that left something
+try {
+  // The file is node's to create: it is absent only when node never started the run.
+  try { found = readFileSync(warningsFile, "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  for (const name of readdirSync(runDir).filter((entry) => /^\d+$/.test(entry)).sort((a, b) => a - b)) {
+    const entries = readdirSync(join(runDir, name), { withFileTypes: true }).filter((entry) => entry.name !== NODE_COMPILE_CACHE);
+    if (!entries.length) continue;
+    let file = "(a file the run did not name)";
+    try { file = readFileSync(join(runDir, `${name}.file`), "utf8") || file; } catch (e) { if (e.code !== "ENOENT") throw e; }
+    left.push({ file, entries: entries.map((entry) => `${entry.name}${entry.isDirectory() ? "/" : ""}`).sort() });
+  }
+} finally { rmSync(runDir, { recursive: true, force: true }); }
 const warnings = found.split("\n").filter(Boolean).map((line) => JSON.parse(line));
 
 if (run.error) throw run.error;
@@ -107,12 +135,14 @@ if (run.error) throw run.error;
 // desktop suites did not run, whatever the counts above claim.
 if (!desktopReady) console.log(`\n${notice}`);
 
+const relativeFile = (file) => relative(REPO_ROOT, file) || file;
+
 if (warnings.length) {
   const byFile = new Map();
   for (const { file, line } of warnings) byFile.set(file, [...(byFile.get(file) ?? []), line]);
   const named = [...byFile].map(([file, lines]) => {
     const distinct = [...new Set(lines.map((line) => line.trim()))];
-    return [`  ${relative(REPO_ROOT, file) || file}: ${lines.length} line${lines.length === 1 ? "" : "s"}`,
+    return [`  ${relativeFile(file)}: ${lines.length} line${lines.length === 1 ? "" : "s"}`,
       ...distinct.slice(0, 3).map((line) => `    ${line.length > 300 ? `${line.slice(0, 300)}…` : line}`),
       ...(distinct.length > 3 ? [`    … and ${distinct.length - 3} more different lines`] : [])].join("\n");
   });
@@ -124,7 +154,23 @@ if (warnings.length) {
     ...named,
     RULE,
   ].join("\n"));
-  process.exit(run.status || 1);
 }
 
-process.exit(run.status ?? 1);
+if (left.length) {
+  // A tmux client that runs with no TMUX_TMPDIR of a fixture makes this directory, and on a host
+  // with a live deployment it would have reached that deployment's server.
+  const tmuxDefault = `tmux-${process.getuid?.()}/`;
+  const named = left.map(({ file, entries }) => [`  ${relativeFile(file)}: ${entries.length} ${entries.length === 1 ? "entry" : "entries"}`,
+    ...entries.slice(0, 5).map((entry) => `    ${entry}${entry === tmuxDefault ? "  (tmux's default place: a tmux client ran with no TMUX_TMPDIR of a fixture)" : ""}`),
+    ...(entries.length > 5 ? [`    … and ${entries.length - 5} more`] : [])].join("\n"));
+  console.error([
+    "", RULE,
+    `LEFT BEHIND: ${left.length} test file${left.length === 1 ? "" : "s"} left something in ${left.length === 1 ? "its" : "their"} temporary directory. The run FAILS.`,
+    "A test file leaves nothing behind: where a directory is made, its removal is registered, so a test",
+    "that fails still removes it (docs/implementation.md, \"Tests and gates\"; v2Deployment({ t }) ends a fixture).",
+    ...named,
+    RULE,
+  ].join("\n"));
+}
+
+process.exit(warnings.length || left.length ? run.status || 1 : run.status ?? 1);
