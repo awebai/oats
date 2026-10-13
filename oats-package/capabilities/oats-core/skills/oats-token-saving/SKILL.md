@@ -1,6 +1,6 @@
 ---
 name: oats-token-saving
-description: Use before you message another instance or a human, before you ask anyone for status or progress, and when you set up how a helper reports to you. Covers who a message is for, whether it is worth sending, what to read instead of asking, what a message holds and how long it is, when to reply, and what must never be cut to save tokens. Part of oats.core, day-to-day operation from inside an instance; how to send (addresses, threads, verification) is your messaging capability's skill, and the setup and config of an OATS workspace is oats.setup.
+description: Use before you message another instance, before you ask anyone for status or progress, and when you set up how a helper reports to you. Covers who a message is for, whether it is worth sending, what to read instead of asking, what a message holds and how long it is, when to reply, and what must never be cut to save tokens. Part of oats.core, day-to-day operation from inside an instance; how to send (addresses, threads, verification) is your messaging capability's skill, and the setup and config of an OATS workspace is oats.setup.
 ---
 
 # Save tokens when instances talk
