@@ -76,14 +76,14 @@ async function deployment(t) {
   world.home = (await world.spawn("dev", { name: "alpha" })).home;
   await world.spawn("dev", { name: "beta", relativeTo: "alpha", relation: "child" });
   await world.spawn("reviewer", { name: "gamma" });
-  const front = join(fx.base, "front");
+  const front = world.front = join(fx.base, "front");
   mkdirSync(front);
   writeFileSync(join(front, "tmux"), `#!/bin/sh
 env > ${shq(world.seenFile)}
 if [ -e ${shq(world.holdFile)} ]; then sleep 30 < /dev/null > /dev/null 2>&1 & echo $! >> ${shq(world.heldFile)}; wait; exit 1; fi
 exec ${shq(join(base, "system-bin", "tmux"))} -L oats "$@"
 `, { mode: 0o755 });
-  const env = { ...fx.env, PATH: `${front}:${fx.env.PATH}` };
+  const env = world.env = { ...fx.env, PATH: `${front}:${fx.env.PATH}` };
   writeFileSync(world.enter, `#!/bin/sh\n${Object.entries(env).map(([name, value]) => `export ${name}=${shq(value)}`).join("\n")}\nexec "$@"\n`);
   /** The pids of the sleeps that held a read, in the order they started. */
   world.held = () => (existsSync(world.heldFile) ? lines(readFileSync(world.heldFile, "utf8")).map(Number) : []);
@@ -93,6 +93,70 @@ exec ${shq(join(base, "system-bin", "tmux"))} -L oats "$@"
 /** The deployment most tests look at; a test that changes one makes its own. */
 const WORLD = REAL_TMUX ? await deployment() : null;
 
+/** A world of its own with one machine registered, `garnet`, which is never reached: the other
+ *  worlds keep a registry with no machine, so no TUI of theirs reads another machine.
+ *  The kernel keeps registered machines in `$OATS_HOME_DIR/servers.json` and reaches one by
+ *  running `ssh` as found on PATH (lib/servers.mjs). So the registry is the fixture's own, and
+ *  the first `ssh` on the fixture's PATH is `front/ssh`, which connects nowhere: it writes its pid
+ *  to `sshCallsFile` each time it is started, prints one line on stderr and exits 255, which the
+ *  kernel's roster answers as a machine that was not reached. While the file `sshHoldFile` exists
+ *  it does not exit: it starts a `sleep` of half a minute, writes that pid to `sshHeldFile` and
+ *  waits for it, as `front/tmux` does: a roster read that stays in flight. The sleep is in the
+ *  process group of the kernel that reads the roster and outlives the twenty seconds that kernel
+ *  gives a machine, so when it is gone long before its time, the TUI ended that group.
+ *  The machine is registered with the real kernel, `oats server add`, which writes the
+ *  registration and then asks the host once through `ssh` for its workspace key: it is run only
+ *  after the two checks below, so it can neither write under the user's `~/.oats` nor start the
+ *  real `ssh`. */
+async function machineWorld(t) {
+  const world = await deployment(t);
+  const { fx } = world;
+  Object.assign(world, { sshHoldFile: join(fx.base, "ssh-hold"), sshHeldFile: join(fx.base, "ssh-held"), sshCallsFile: join(fx.base, "ssh-calls") });
+  const ssh = join(world.front, "ssh");
+  writeFileSync(ssh, `#!/bin/sh
+echo $$ >> ${shq(world.sshCallsFile)}
+if [ -e ${shq(world.sshHoldFile)} ]; then sleep 30 < /dev/null > /dev/null 2>&1 & echo $! >> ${shq(world.sshHeldFile)}; wait; exit 255; fi
+echo 'ssh: the fake ssh of a test connects nowhere' >&2
+exit 255
+`, { mode: 0o755 });
+  const numbers = (file) => (existsSync(file) ? lines(readFileSync(file, "utf8")).map(Number) : []);
+  /** The pids of the sleeps that held a roster read, in the order they started. */
+  world.sshHeld = () => numbers(world.sshHeldFile);
+  /** How often the fake `ssh` was started. */
+  world.sshCalls = () => numbers(world.sshCallsFile).length;
+  world.holdSsh = () => writeFileSync(world.sshHoldFile, "");
+  const releaseTmux = world.release;
+  world.release = () => { releaseTmux(); rmSync(world.sshHoldFile, { force: true }); };
+
+  try {
+    const registry = join(fx.base, "oats-home");
+    assert.equal(world.env.OATS_HOME_DIR, registry, "the registry `oats server add` writes is the fixture's own");
+    const found = spawnSync(join(base, "system-bin", "sh"), ["-c", "command -v ssh"], { env: world.env, encoding: "utf8", timeout: 10000 });
+    assert.equal(found.stdout, `${ssh}\n`, `the first ssh on the fixture's PATH is the fake (${world.env.PATH})`);
+    const added = fx.cli(["server", "add", "garnet", "--ssh", "garnet-host", "--workspace", "/srv/acme-platform"], { env: world.env });
+    assert.equal(added.status, 0, `oats server add in the fixture: ${added.stderr}`);
+    assert.ok(existsSync(join(registry, "servers.json")), "the registration is in the fixture's registry");
+    assert.equal(world.sshCalls(), 1, "oats server add asked the host once, through the fake ssh");
+  } catch (error) {
+    if (!t) fx.cleanup(); // with a test, the fixture's own clean-up is registered
+    throw error;
+  }
+  return world;
+}
+/** The world with the machine, for the tests that read a roster and change nothing. */
+const MACHINES = REAL_TMUX ? await machineWorld() : null;
+
+/** The process group a process is in: /proc's field where there is a /proc, else what `ps` says
+ *  (macOS has no /proc). Null unless that is a number. As `groupOf` in
+ *  packages/tui/test/read.test.mjs, which reads the same field with a helper of its own. */
+function groupOf(pid) {
+  try {
+    const stat = existsSync("/proc/self/stat") ? readFileSync(`/proc/${pid}/stat`, "utf8") : null;
+    const text = stat !== null ? stat.slice(stat.lastIndexOf(")") + 2).split(" ")[2] : execFileSync("ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8", timeout: 10000 }).trim();
+    return /^[0-9]+$/.test(text ?? "") ? Number(text) : null;
+  } catch { return null; }
+}
+
 test.after(() => {
   if (REAL_TMUX) { try { execFileSync(REAL_TMUX, ["-S", TERM, "kill-server"], { stdio: "ignore", timeout: 10000 }); } catch { /* not running */ } }
   const errors = [];
@@ -100,6 +164,7 @@ test.after(() => {
   // leaves a collector that ends by itself, within the check's own wait).
   if (REAL_TMUX) { try { assertNoFixtureProcesses(base, { settleMs: 6000 }); } catch (error) { errors.push(error); } }
   try { WORLD?.fx.cleanup(); } catch (error) { errors.push(error); }
+  try { MACHINES?.fx.cleanup(); } catch (error) { errors.push(error); }
   restoreEnvironment();
   rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   if (errors.length) throw errors[0];
@@ -109,14 +174,26 @@ test.after(() => {
 const TUI = `${shq(process.execPath)} ${shq(CLI)} tui`;
 const PROMPT = "tui-test$";
 const USAGE = "oats tui [--dir <path>] [--ascii]";
-const FOOTER = " / filter   Tab detail   r refresh   ? help   q quit";
+const FOOTER = " / filter   Tab detail   r refresh   w workspaces   ? help   q quit";
+/** The Instances footer at a width: `help` and `quit` always stand, and a hint that would reach
+ *  the last cell ends the row's hints. `w workspaces` is the last one tried, so a terminal too
+ *  narrow for the whole row draws it without that hint (views/frame.mjs `footer`). */
+const footerAt = (cols) => (FOOTER.length <= cols - 1 ? FOOTER : FOOTER.replace("   w workspaces", ""));
 const DETAIL_FOOTER = " Tab detail   Esc close   r refresh   ? help   q quit";
 const HELP_FOOTER = " Esc close   ? help   q quit";
+/** The switcher: its header, its footer with a workspace open, its two headings (the first is
+ *  the shared home's, the second the TUI's own), and the TUI's row for a roster read that failed
+ *  before any answer. */
+const SWITCHER_TITLE = " oats  workspaces";
+const SWITCHER_FOOTER = " Enter open   / filter   r refresh   Esc close   ? help   q quit";
+const UNMATCHED = "  Not matched to a workspace";
+const OFFERED = "  On this machine, not opened";
+const ROSTER_FAILED = "Other machines were not read.";
 /** The help's `Keys` list, one row per action, in the table's order. */
 const HELP_KEYS = [
   /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
   /^ *Left, h {2,}collapse, or go to the parent$/, /^ *Right, l {2,}expand, or go to the first child$/, /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/,
-  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
+  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *w {2,}workspaces$/, /^ *Enter {2,}open$/, /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
 ];
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
@@ -129,8 +206,10 @@ const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The rows around the panes, the same in every view: what is wrong with them. `split`: the two
  *  panes are drawn, so each rule has a joint where the line between them meets it. `footer` is
- *  the last row, or what it matches. */
-function chromeFaults(screen, { cols, rows, look, split, footer, count }) {
+ *  the last row, or what it matches. `title` and `views` are the two rows of the header, or what
+ *  they match: the fixture's name with its count and the time of a read, unless a view says
+ *  otherwise. */
+function chromeFaults(screen, { cols, rows, look, split, footer, count, title = new RegExp(`^ oats {2}fixture +${count} stopped$`), views = /^ 1 Instances {3}2 Souls {3}3 Capabilities +read \d\d:\d\d:\d\d$/ }) {
   const faults = [];
   const expect = (row, want, what) => {
     const got = screen[row] ?? "";
@@ -138,8 +217,8 @@ function chromeFaults(screen, { cols, rows, look, split, footer, count }) {
   };
   const rule = (joint) => (split ? look.rule.repeat(listCols(cols)) + joint + look.rule.repeat(cols - listCols(cols) - 1) : look.rule.repeat(cols));
   if (screen.length !== rows) faults.push(`the screen has ${screen.length} rows, not ${rows}`);
-  expect(0, new RegExp(`^ oats {2}fixture +${count} stopped$`), "the title row");
-  expect(1, /^ 1 Instances {3}2 Souls {3}3 Capabilities +read \d\d:\d\d:\d\d$/, "the views row");
+  expect(0, title, "the title row");
+  expect(1, views, "the views row");
   expect(2, rule(look.down), "the rule under the views");
   expect(rows - 2, rule(look.up), "the rule over the footer");
   expect(rows - 1, footer, "the footer");
@@ -155,7 +234,7 @@ function chromeFaults(screen, { cols, rows, look, split, footer, count }) {
  *  the single instance. With something hidden only what the shared grouping promises whatever it
  *  hides is asserted: which rows are drawn, each once, and which is selected; not where a row
  *  stands among the groups (awebai/oats#971). */
-function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alpha", folded = false, gone = [], extra = [], detail = false, footer = FOOTER, count = 3 } = {}) {
+function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alpha", folded = false, gone = [], extra = [], detail = false, footer = footerAt(cols), count = 3 } = {}) {
   const split = cols >= 80;
   const faults = chromeFaults(screen, { cols, rows, look, split, footer, count });
   const hidden = new Set([...gone, ...(folded ? ["beta"] : [])]);
@@ -194,6 +273,38 @@ function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, count = 3 } = {
   if (start < 0 || start < title) faults.push("no row under the title is `Up, k  up`");
   else HELP_KEYS.slice(0, area.length - 1 - start).forEach((pattern, i) => { if (!pattern.test(area[start + i] ?? "")) faults.push(`row ${start + i + 4} is ${JSON.stringify(area[start + i])}, which is not ${pattern}`); });
   if (area.some((text) => /\bstopped$/.test(text))) faults.push("a row of the list is still shown");
+  return faults;
+}
+
+/** What keeps a screen of 80x24 from being the Instances view of a deployment that was not read.
+ *  What a failed read becomes is the shared rule's answer, and so are its words: here only that
+ *  it is said, on rows of its own under the views, that no instance and no time of a read is
+ *  drawn for a deployment that was not read, and that the one pane has no line down its middle.
+ *  `title` is what the title row matches; `reason`: the most rows the reason takes (the frame
+ *  gives a long one up to four), each started at the margin, with nothing under the last. */
+function notReadFaults(screen, { title = /^ oats {2}\S+$/, reason = 1 } = {}) {
+  const why = screen.slice(4, 4 + reason), said = why.findIndex((row) => row === "");
+  return [
+    ...(title.test(screen[0] ?? "") ? [] : [`the title row counts instances, or names another deployment: ${JSON.stringify(screen[0])}`]),
+    ...(screen[1] === " 1 Instances   2 Souls   3 Capabilities" ? [] : [`the views row is ${JSON.stringify(screen[1])}`]),
+    ...(screen[2] === UTF8.rule.repeat(80) && screen[22] === UTF8.rule.repeat(80) ? [] : ["a rule has a joint, or is not there"]),
+    ...(/^ \S/.test(screen[3] ?? "") && /^ \S/.test(screen[4] ?? "") ? [] : [`rows 4 and 5 do not say what state the deployment is in and why: ${JSON.stringify(screen.slice(3, 5))}`]),
+    ...(why.slice(0, said < 0 ? reason : said).every((row) => /^ \S/.test(row)) ? [] : [`a row of the reason does not start at the margin: ${JSON.stringify(why)}`]),
+    ...(screen.slice(said < 0 ? 4 + reason : 4 + said, 22).every((row) => row === "") ? [] : ["something is drawn under the reason"]),
+    ...(screen[23] === FOOTER ? [] : [`the footer is ${JSON.stringify(screen[23])}`]),
+  ];
+}
+
+/** The same for the switcher, which takes the whole body: the header says `workspaces` where a
+ *  workspace's name stands, with no count and no time of a read; the rules have no joint; the body
+ *  is `body`, row for row from its first (each a string, or what the row matches), and nothing
+ *  under it. `open`: a workspace is open, so Esc has a view to close the switcher onto and the
+ *  footer offers it. */
+function switcherFaults(screen, { cols = 80, rows = 24, look = UTF8, body, open = true }) {
+  const faults = chromeFaults(screen, { cols, rows, look, split: false, footer: open ? SWITCHER_FOOTER : SWITCHER_FOOTER.replace("   Esc close", ""), title: SWITCHER_TITLE, views: " 1 Instances   2 Souls   3 Capabilities" });
+  const area = screen.slice(3, rows - 2);
+  body.forEach((want, i) => { if (want instanceof RegExp ? !want.test(area[i] ?? "") : area[i] !== want) faults.push(`row ${i + 4} is ${JSON.stringify(area[i])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`); });
+  if (!area.slice(body.length).every((text) => text === "")) faults.push(`something is drawn under the ${body.length} rows of the switcher`);
   return faults;
 }
 
@@ -315,9 +426,10 @@ async function terminal(t, { cols = 80, rows = 24, locale = UTF8.locale, command
  *  and then becomes the CLI (so the pid is the TUI's, and the shell's job is the TUI). `args` are
  *  the word's arguments: the deployment by `--dir`, unless a test says otherwise. The shell
  *  records the exit status unless `record` is false. Resolves once the Instances view of that
- *  deployment is on the screen, read: `at` is what `viewFaults` is told about every screen of
- *  this run (its size, its look). */
-async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir ${shq(world.dep)}` } = {}) {
+ *  deployment is on the screen, read (or once `first(run)` has seen the first screen of a run
+ *  that starts on another): `at` is what `viewFaults` is told about every screen of this run (its
+ *  size, its look). */
+async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir ${shq(world.dep)}`, first = (run) => run.view("after the start") } = {}) {
   const n = ++started;
   const pidFile = join(base, `tui-${n}.pid`), statusFile = join(base, `tui-${n}.status`);
   await term.command(`sh -c ${shq(`echo $$ > ${shq(pidFile)}; exec ${TUI} ${args}`)}${record ? `; echo $? > ${shq(statusFile)}` : ""}`, "the oats tui command");
@@ -335,6 +447,11 @@ async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir 
       await untilScreen(term, (screen) => helpFaults(screen, { ...at, ...want }), `the help ${why}`);
       assert.equal(run.status(), null, `oats tui still runs ${why}`);
     },
+    /** The switcher is on the screen, with `want.body` as its rows, and the program still runs. */
+    async switcher(why, want) {
+      await untilScreen(term, (screen) => switcherFaults(screen, { ...at, ...want }), `the switcher ${why}`);
+      assert.equal(run.status(), null, `oats tui still runs ${why}`);
+    },
     /** A read in flight: the next answer of the collector's tmux is held (see `deployment`), the
      *  refresh key starts a read now, and this resolves once a held tmux wrote down the pid of its
      *  sleep: the pids that hold reads, of processes that run. `release()` lets the next read
@@ -348,6 +465,30 @@ async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir 
       assert.ok(pids.every((pid) => Number.isInteger(pid) && pid > 1 && alive(pid)), `what holds the read runs ${why} (${pids})`);
       return pids;
     },
+    /** A roster read in flight, in a world with a machine (see `machineWorld`): the next `ssh` of
+     *  the kernel that reads the roster is held, and this resolves once a held `ssh` wrote down
+     *  the pid of its sleep: the pids that hold the read, of processes that run. One roster read
+     *  runs at a time, and the refresh key starts one only while none is in flight: so `r` is
+     *  pressed again, once a second, until a read it started is held (the read of the start may
+     *  have been past its `ssh` when the hold was set). With `press` false no key is pressed: the
+     *  hold was set earlier, when `before` sleeps had held a read, and the read waited for is one
+     *  the TUI starts unasked (the first of a run, the one of a return from a suspend).
+     *  That kernel leads a process group of its own (lib/read.mjs), which is what the TUI ends on
+     *  every way out: what holds the read is in a group, and not in the TUI's. */
+    async rosterReading(why, { press = true, before = world.sshHeld().length } = {}) {
+      world.holdSsh();
+      let pressed = 0;
+      await until(term, () => {
+        if (world.sshHeld().length > before) return true;
+        if (press && Date.now() - pressed >= 1000) { term.press("r"); pressed = Date.now(); }
+        return false;
+      }, `a roster read in flight ${why}: the kernel's ssh, held`);
+      const pids = world.sshHeld().slice(before);
+      assert.ok(pids.every((pid) => Number.isInteger(pid) && pid > 1 && alive(pid)), `what holds the roster read runs ${why} (${pids})`);
+      const own = groupOf(run.pid);
+      if (own !== null) for (const pid of pids) { const group = groupOf(pid); assert.ok(group !== null && group !== own, `what holds the roster read (${pid}, in the process group ${group}) is in a group, and not in the TUI's (${own}), ${why}`); }
+      return pids;
+    },
     /** The children of a read that was in flight are gone. Left alone, what held the read would
      *  run for half a minute, far longer than any wait of this file: the TUI ended its group. */
     async childrenGone(pids, why) {
@@ -355,7 +496,7 @@ async function tui(term, at = {}, { record = true, world = WORLD, args = `--dir 
     },
   };
   term.after(world.release); // a held read of a failed test holds no later one
-  await run.view("after the start");
+  await first(run);
   const pid = Number(readFileSync(pidFile, "utf8").trim());
   assert.ok(Number.isInteger(pid) && pid > 1, `the wrapper wrote the pid (${pid})`);
   run.pid = pid;
@@ -519,6 +660,42 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   assert.equal(alive(run.pid), false, "the process is gone");
 });
 
+/** A terminal is intact after a TUI that left it by `leave`: status `status`, what held a read
+ *  in flight is gone, and `stty -g`, the pane's modes and every tmux option are what they were
+ *  before the start; while it ran, only the alternate screen, the cursor, autowrap and bracketed
+ *  paste were changed. `arrive(term, run)` brings the TUI to where it is left, and answers the
+ *  pids of what holds its read then. `env` is set in the terminal's shell over the world's, and
+ *  `start` is what `tui` is told of the start (its arguments, its first screen). */
+async function leavesTheTerminalIntact(t, { how, status, world = WORLD, env = {}, start = {}, arrive, leave }) {
+  const term = await terminal(t, { world, env });
+  const before = await term.state("before the start");
+  assertShellModes(before.flags, "before the start");
+  const mine = everything();
+  const run = await tui(term, {}, { world, ...start });
+  assertRunningModes(term, `while it runs, before ${how}`);
+  assert.deepEqual(everything(), mine, "the TUI made no session, window or pane");
+
+  const reading = await arrive(term, run);
+  await leave(term, run);
+  await run.childrenGone(reading, `after ${how}`);
+  assert.equal(await run.ended(`after ${how}`), status, term.shows());
+  await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
+  // The cursor the alternate screen saved is the one that came back: the prompt is on the row
+  // after the command line, with the cursor on it, and nothing of the view above it.
+  await term.prompt(`after ${how}`);
+  const screen = term.screen(), promptRow = screen.findLastIndex((row) => row === PROMPT);
+  assert.equal(term.cursorRow(), promptRow, `the cursor is on the prompt's row after ${how}:\n${term.shows()}`);
+  assert.equal(screen.slice(promptRow + 1).every((row) => row === ""), true, `nothing below the prompt after ${how}:\n${term.shows()}`);
+  assert.notEqual(screen[promptRow - 1], "", `no empty row between the command and the prompt after ${how}:\n${term.shows()}`);
+  assert.ok(term.promptFollowsTyped(), `the row above the prompt is the command line after ${how}:\n${term.shows()}`);
+  const after = await term.state(`after ${how}`);
+  assert.equal(after.stty, before.stty, `stty -g after ${how}`);
+  assert.deepEqual(after.flags, before.flags, `the pane's modes after ${how}`);
+  assertShellModes(after.flags, `after ${how}`);
+  assert.deepEqual(after, before, `the terminal and the server after ${how}`);
+  for (const footer of [FOOTER, SWITCHER_FOOTER]) assert.equal(term.screen().includes(footer), false, `the shell's screen is back:\n${term.shows()}`);
+}
+
 for (const [how, status, leave, first = async () => {}] of [
   ["q", 0, (term) => term.press("q")],
   ["Ctrl+C, the byte 0x03 on a raw terminal", 0, (term) => term.press("C-c")],
@@ -540,36 +717,34 @@ for (const [how, status, leave, first = async () => {}] of [
   }]),
 ]) {
   test(`the terminal is intact after ${how}, with the view drawn and a read in flight: status ${status}, the read's children are gone, and stty -g, the pane's modes and every tmux option are what they were before the start; while it ran, only the alternate screen, the cursor, autowrap and bracketed paste were changed`, { skip: NO_TMUX }, async (t) => {
-    const term = await terminal(t);
-    const before = await term.state("before the start");
-    assertShellModes(before.flags, "before the start");
-    const mine = everything();
-    const run = await tui(term);
-    assertRunningModes(term, `while it runs, before ${how}`);
-    assert.deepEqual(everything(), mine, "the TUI made no session, window or pane");
-
-    await first(term, run);
-    const reading = await run.reading(`before ${how}`);
-    await leave(term, run);
-    await run.childrenGone(reading, `after ${how}`);
-    assert.equal(await run.ended(`after ${how}`), status, term.shows());
-    await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
-    // The cursor the alternate screen saved is the one that came back: the prompt is on the row
-    // after the command line, with the cursor on it, and nothing of the view above it.
-    await term.prompt(`after ${how}`);
-    const screen = term.screen(), promptRow = screen.findLastIndex((row) => row === PROMPT);
-    assert.equal(term.cursorRow(), promptRow, `the cursor is on the prompt's row after ${how}:\n${term.shows()}`);
-    assert.equal(screen.slice(promptRow + 1).every((row) => row === ""), true, `nothing below the prompt after ${how}:\n${term.shows()}`);
-    assert.notEqual(screen[promptRow - 1], "", `no empty row between the command and the prompt after ${how}:\n${term.shows()}`);
-    assert.ok(term.promptFollowsTyped(), `the row above the prompt is the command line after ${how}:\n${term.shows()}`);
-    const after = await term.state(`after ${how}`);
-    assert.equal(after.stty, before.stty, `stty -g after ${how}`);
-    assert.deepEqual(after.flags, before.flags, `the pane's modes after ${how}`);
-    assertShellModes(after.flags, `after ${how}`);
-    assert.deepEqual(after, before, `the terminal and the server after ${how}`);
-    assert.equal(term.screen().includes(FOOTER), false, `the shell's screen is back:\n${term.shows()}`);
+    await leavesTheTerminalIntact(t, { how, status, leave, arrive: async (term, run) => { await first(term, run); return run.reading(`before ${how}`); } });
   });
 }
+
+/** A choice of the switcher at 80 columns: the selection's mark, the mark of the workspace that
+ *  is open, the name in a column a third of the width, and two cells on what stands beside it. */
+const choice = (label, place, { selected = false, open = false } = {}) => `${selected ? ">" : " "} ${open ? "*" : " "} ${label.padEnd(26)}  ${place}`.trimEnd();
+/** The same where what stands beside the name is the shared home's to word: `beside` is the
+ *  source of what it matches. */
+const choiceLike = (label, beside, marks) => new RegExp(`^${literal(choice(label, "", marks).padEnd(32))}${beside}$`);
+/** The switcher in the world with the machine: the fixture's workspace, open and selected, and
+ *  under the shared heading the machine that did not answer, by its own name with the short
+ *  reason the shared home gives it. */
+const MACHINES_SWITCHER = [choice("fixture", "This machine", { selected: true, open: true }), UNMATCHED, choiceLike("garnet", "\\S.*")];
+
+test("the terminal is intact after q with the switcher open and a roster read in flight: status 0, the held ssh of the read is gone, and stty -g, the pane's modes and every tmux option are what they were before the start, with the prompt on the row after the command", { skip: NO_TMUX }, async (t) => {
+  await leavesTheTerminalIntact(t, {
+    how: "q in the switcher", status: 0, world: MACHINES, leave: (term) => term.press("q"),
+    arrive: async (term, run) => {
+      const reading = await run.rosterReading("before the switcher is opened");
+      term.press("w");
+      await run.switcher("after w, with a roster read in flight", { body: MACHINES_SWITCHER });
+      assertRunningModes(term, "with the switcher open");
+      assert.ok(reading.every(alive), `the roster read is still in flight with the switcher open (${reading})`);
+      return reading;
+    },
+  });
+});
 
 test("SIGHUP ends it with status 129, and the children of a read in flight with it; SIGKILL ends it at once: either way the process is gone and the private server holds exactly the sessions, windows and panes the tests made", { skip: NO_TMUX }, async (t) => {
   for (const [signal, status] of [["SIGHUP", 129], ["SIGKILL", 137]]) {
@@ -590,6 +765,52 @@ test("SIGHUP ends it with status 129, and the children of a read in flight with 
     term.kill();
     assert.deepEqual(everything(), mine.filter((row) => !row.startsWith(`${term.id} `)), `${signal}: the test's terminal is removed`);
   }
+});
+
+test("with a roster read in flight SIGTERM ends it with status 143 and SIGHUP with status 129, and the held ssh of the read with it: either way the process is gone and the private server holds exactly the sessions, windows and panes the tests made", { skip: NO_TMUX }, async (t) => {
+  for (const [signal, status] of [["SIGTERM", 143], ["SIGHUP", 129]]) {
+    const term = await terminal(t, { world: MACHINES });
+    const mine = everything();
+    const run = await tui(term, {}, { world: MACHINES });
+    const reading = await run.rosterReading(`before ${signal}`);
+    process.kill(run.pid, signal);
+    await run.childrenGone(reading, `after ${signal}`);
+    assert.equal(await run.ended(`after ${signal}`), status, term.shows());
+    await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${signal}`);
+    assert.deepEqual(everything(), mine, `${signal}: nothing was added to the server, and nothing of the test's was taken`);
+    run.world.release();
+    term.kill();
+    assert.deepEqual(everything(), mine.filter((row) => !row.startsWith(`${term.id} `)), `${signal}: the test's terminal is removed`);
+  }
+});
+
+test("Ctrl+Z with the first roster read of the run in flight: the read is given up and its held ssh is gone, and the shell's prompt returns; fg draws the view again and a new roster read runs, and the row of a roster read that failed is not on the screen, since a read given up is no failed answer; q then exits 0 and the held ssh of the new read is gone too", { skip: NO_TMUX }, async (t) => {
+  const world = MACHINES;
+  const term = await terminal(t, { world });
+  // Held before the start: no roster answered in this run, so a read taken as failed would be
+  // said on a row of its own after the list (after an answer, a machine's heading says it).
+  const before = world.sshHeld().length;
+  world.holdSsh();
+  term.after(world.release);
+  const run = await tui(term, {}, { world, record: false });
+  const reading = await run.rosterReading("before Ctrl+Z", { press: false, before });
+
+  term.press("C-z");
+  await run.childrenGone(reading, "after Ctrl+Z");
+  await until(term, () => term.flags().alternate_on === "0" && term.atPrompt(), "the shell's prompt on its own screen after Ctrl+Z");
+  assert.equal(world.sshHeld().length, before + reading.length, "no roster read was started while it was stopped");
+
+  // The hold stays: the read the return starts is held too, and so is seen to run.
+  await term.command("fg", "fg");
+  await run.view("after fg");
+  const again = await run.rosterReading("after fg", { press: false, before: before + reading.length });
+  assert.equal(term.screen().some((row) => row.includes(ROSTER_FAILED)), false, `no row says that a roster read failed:\n${term.shows()}`);
+  await run.view("with the new roster read in flight");
+
+  term.press("q");
+  await run.childrenGone(again, "after q");
+  await term.command(`echo $? > ${shq(run.statusFile)}`, "the status of fg");
+  assert.equal(await run.ended("after fg and q"), 0, term.shows());
 });
 
 test("Ctrl+Z during a read suspends with the terminal handed back: the read is given up and its children are gone, the shell's prompt returns, the alternate screen is off, autowrap and the cursor are on and stty -g is what it was; fg draws the view again from a new read; q then exits 0", { skip: NO_TMUX }, async (t) => {
@@ -663,17 +884,6 @@ test("Ctrl+Z, the deployment removed, fg: the view returns and says, in the shar
   renameSync(world.dep, `${world.dep}-gone`);
 
   await term.command("fg", "fg");
-  // What a failed read becomes is the shared rule's answer, and so are its words: here only that
-  // it is said, on rows of its own under the views, that no instance and no time of a read is
-  // drawn for a deployment that was not read, and that the one pane has no line down its middle.
-  const notReadFaults = (screen) => [
-    ...(/^ oats {2}\S+$/.test(screen[0] ?? "") ? [] : [`the title row counts instances: ${JSON.stringify(screen[0])}`]),
-    ...(screen[1] === " 1 Instances   2 Souls   3 Capabilities" ? [] : [`the views row is ${JSON.stringify(screen[1])}`]),
-    ...(screen[2] === UTF8.rule.repeat(80) && screen[22] === UTF8.rule.repeat(80) ? [] : ["a rule has a joint, or is not there"]),
-    ...(/^ \S/.test(screen[3] ?? "") && /^ \S/.test(screen[4] ?? "") ? [] : [`rows 4 and 5 do not say what state the deployment is in and why: ${JSON.stringify(screen.slice(3, 5))}`]),
-    ...(screen.slice(5, 22).every((row) => row === "") ? [] : ["something is drawn under the reason"]),
-    ...(screen[23] === FOOTER ? [] : [`the footer is ${JSON.stringify(screen[23])}`]),
-  ];
   await untilScreen(term, notReadFaults, "the view after fg, saying the deployment could not be read");
   assertRunningModes(term, "after fg");
   t.diagnostic(`after fg with the deployment gone the pane shows:\n${term.shows()}`);
@@ -761,6 +971,10 @@ for (const [what, set] of [["TERM=dumb", "env TERM=dumb"], ["an empty TERM", "en
 }
 
 test("outside a deployment it prints one line with E_NO_DEPLOYMENT that names the directory and --dir, with status 1, and the terminal received no escape byte and changed no mode: where it was started, for a --dir that is a file, and for one that is not there; at a shell's prompt the terminal and the server are what they were", { skip: NO_TMUX }, async (t) => {
+  // Outside a deployment and with no --dir the TUI looks in ~/Agents before it gives up (the
+  // test after this one). Here there is none to look in: the panes of `bare` have this worker's
+  // home and the shell's terminal has the fixture's, and neither holds an `Agents`.
+  for (const home of [process.env.HOME, WORLD.env.HOME]) assert.equal(existsSync(join(home, "Agents")), false, `${home} holds no Agents`);
   const file = join(base, "a-file"), missing = join(base, "not", "there");
   writeFileSync(file, "");
   for (const [what, args, dir] of [["where it was started", "", realpathSync(base)], ["for a --dir that is a file", `--dir ${shq(file)}`, file], ["for a --dir that is not there", `--dir ${shq(missing)}`, missing]]) {
@@ -777,6 +991,44 @@ test("outside a deployment it prints one line with E_NO_DEPLOYMENT that names th
   assert.equal(readFileSync(statusFile, "utf8"), "1\n");
   assert.ok(term.showsLine(noDeployment(realpathSync(base))), `the pane shows the line:\n${term.shows()}`);
   assert.deepEqual(await term.state("after the refusal"), before, "the terminal and the server after the refusal");
+});
+
+test("started outside a deployment and with no --dir, it opens on the switcher when ~/Agents holds a deployment: the folder is listed by its name and its path under the heading for what is not opened; Enter opens it and the Instances view of that deployment is drawn, which says that it is not observed and why; w returns to the switcher, where it is now the open one; q exits 0 and the terminal is what it was. With an ~/Agents that holds no deployment, and with a --dir that is in no deployment, it prints the E_NO_DEPLOYMENT line as before", { skip: NO_TMUX }, async (t) => {
+  // A home of the test's own, for its terminals only. test/helpers/v2-deployment.mjs makes a
+  // deployment in a base of its own and nowhere else, so the folder holds only a regular
+  // `oats-local.yaml` (the fixture deployment's own): a deployment for the switcher, which reads
+  // nothing of a folder but that file's existence, and one the kernel cannot read once it is opened.
+  const home = join(base, "home-with-agents"), folder = join(home, "Agents", "acme-ledger"), here = realpathSync(base);
+  mkdirSync(folder, { recursive: true });
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const refused = async (args, what) => {
+    const { term, status, text } = await bare(t, `env HOME=${shq(home)} ${TUI} ${args}`, what);
+    assert.equal(status, "1\n", term.shows());
+    assert.equal(text, `\n${noDeployment(here)}\ntui-ended\n`, what);
+  };
+  await refused("", "with an ~/Agents whose one folder is no deployment");
+  writeFileSync(join(folder, "oats-local.yaml"), readFileSync(join(WORLD.dep, "oats-local.yaml")));
+  // What was asked for is not there: a --dir is never answered with the switcher.
+  await refused(`--dir ${shq(here)}`, "for a --dir in no deployment, with a deployment in ~/Agents");
+
+  await leavesTheTerminalIntact(t, {
+    how: "q in the switcher of a run started outside a deployment", status: 0, env: { HOME: home }, leave: (term) => term.press("q"),
+    // Nothing is open yet: Esc has no view to close the switcher onto, and the footer does not offer it.
+    start: { args: "", first: (run) => run.switcher("at the start", { open: false, body: [OFFERED, choice("acme-ledger", "~/Agents/acme-ledger", { selected: true })] }) },
+    arrive: async (term, run) => {
+      term.press("Enter");
+      // The view of that deployment: its folder's name in the header, and the state and the
+      // reason of a deployment that was not read, which are the shared home's words.
+      await untilScreen(term, (screen) => notReadFaults(screen, { title: /^ oats {2}acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
+      assert.equal(run.status(), null, "oats tui still runs after Enter");
+      term.press("w");
+      // It is served now, so it is no folder to open: it is this run's one workspace, which the
+      // shared home lists by its machine and a short reason, under its heading for what it
+      // matched to no workspace.
+      await run.switcher("after w", { body: [UNMATCHED, choiceLike("acme-ledger", "This machine \\S+ \\S.*", { selected: true, open: true })] });
+      return []; // no read is held
+    },
+  });
 });
 
 test("what follows a typed command is found on the pane whether the typed line ends one cell short of its row, fills it exactly or runs one cell over: a line the command prints, and the prompt after a command that prints nothing. Where the typed line fills its row, the joined capture has what follows on the command's own row, and no row equal to it", { skip: NO_TMUX }, async (t) => {
@@ -861,6 +1113,9 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
+  // At 80x24 the help's first page ends one row above `quit` since the table holds `workspaces`
+  // and `open`; the movement keys scroll the help, and one row down shows it.
+  term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");

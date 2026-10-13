@@ -133,7 +133,7 @@ const shownAs = (extra, options) => stateOf(observed([one(extra)]), options);
 function inTeam(rows, team) {
   const document = rosterOf(rows, { team }), listed = rosterRows(document, CLI);
   const answers = listed.map((row) => ({ running: row.running, runtimeState: row.runtimeState, tmux: row.tmux }));
-  return observedEntry({ roster: document, workspaceStatus: { workspace: { name: "lfx-workspace" } }, observedAt: "2026-10-11T10:00:00.000Z" }, panelInstances(listed, answers), "2026-10-11T10:00:01.000Z");
+  return observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: "2026-10-11T10:00:00.000Z" }, panelInstances(listed, answers), "2026-10-11T10:00:01.000Z");
 }
 /** Every field of the view that holds text the TUI did not write, and a state that shows `value` there. */
 const FIELDS = {
@@ -153,6 +153,9 @@ const FIELDS = {
   "the home path": (value, options) => stateOf(observed([instanceRow("soul", "row-1", { home: value })]), options),
   "the workspace's name": (value, options) => stateOf(observed([one()], { workspace: value }), options),
   "the failure message of an unavailable deployment": (value, options) => stateOf(failed(observed([one()]), { code: "E_SOMETHING_NEW", message: value }), options),
+  // The same failure as the kernel's own refusal: the shared reader marks the error the CLI printed,
+  // and the shared sentence then leads with who speaks and filters the message itself.
+  "the failure message of an unavailable deployment, marked as the kernel's own refusal": (value, options) => stateOf(failed(observed([one()]), { code: "E_SOMETHING_NEW", message: value, origin: "kernel" }), options),
   "the failure message of a stale deployment": (value, options) => stateOf(failed(observed([one()]), { code: "E_REMOTE_UNREADABLE", message: value }), options),
   "a waiting claim's message, through the shared read": (value, options) => shownAs({ waitingOnYou: { ...CLAIM, message: value } }, options),
 };
@@ -166,8 +169,8 @@ const S80 = { cols: 80, rows: 24 }, S120 = { cols: 120, rows: 40 };
  *  or wrapped (the runtime error, a failure's message); 10 000 wide characters, which cost
  *  nothing, are drawn in every field like the rest. */
 const SLOW = "a 10 000-character name";
-const LONG_FIELDS = new Set(["the instance name", "the runtime error", "the failure message of an unavailable deployment", "the failure message of a stale deployment"]);
-const BOTH_LOCALES = new Set(["the instance name", "the failure message of an unavailable deployment", "the quote line"]);
+const LONG_FIELDS = new Set(["the instance name", "the runtime error", "the failure message of an unavailable deployment", "the failure message of an unavailable deployment, marked as the kernel's own refusal", "the failure message of a stale deployment"]);
+const BOTH_LOCALES = new Set(["the instance name", "the failure message of an unavailable deployment", "the failure message of an unavailable deployment, marked as the kernel's own refusal", "the quote line"]);
 const drawnAt = (name, field) => (name !== SLOW ? [[S80, UTF8], [S120, UTF8], ...(BOTH_LOCALES.has(field) ? [[S80, NOT_UTF8]] : [])] : LONG_FIELDS.has(field) ? [[S80, UTF8]] : []);
 
 /** The bytes a frame's rows become on a real screen, held to the census: `text`, what is left of
@@ -226,4 +229,206 @@ test("through the shared read a hostile waiting message does not arrive: the det
     assert.equal(d.lines.some((line) => line.includes(" needs ")), true, `${name}: the claim is still drawn`);
     assert.equal(d.lines.some((line) => line.includes("the agent:")), false, `${name}: without its message`);
   }
+});
+
+// ── Other machines and the switcher ──────────────────────────────────────────────────────────────
+// The same fixture in what another machine, a registration, a failed roster read or a folder's name
+// can put on the screen. Every outcome of the roster read reaches the store as the loop hands it on
+// (lib/read.mjs): through the shared remoteRosterState and observeIdentities. A group has the
+// kernel's form except in the one field a case makes hostile.
+import { observeIdentities, remoteRosterState } from "../lib/client.mjs";
+import { reduce } from "../lib/store.mjs";
+import { textWidth } from "../lib/term/width.mjs";
+import { cutNote } from "../lib/views/instances.mjs";
+
+const S60 = { cols: 60, rows: 15 };
+const IDENTITY = Object.freeze({ key: "github.com/acme/platform", ref: "main", keyFrom: "workspace", standalone: false, defaultTeam: Object.freeze({ label: "eng", team: "team-1" }), teams: Object.freeze({ eng: "team-1" }), teamsFrom: "observed" });
+const ELSEWHERE = Object.freeze({ ...IDENTITY, key: "github.com/acme/billing" });
+/** A kernel that reads other machines: without `roster` the shared home makes no roster read. */
+const REMOTE_CLI = Object.freeze({ ...CLI, remote: Object.freeze(["roster"]) });
+/** This machine's deployment, one instance, its roster reporting the workspace's identity. */
+function reporting(options) {
+  const document = { ...rosterOf([one()]), workspace: { reachable: true, ...IDENTITY } }, listed = rosterRows(document, REMOTE_CLI);
+  const answers = listed.map((row) => ({ running: row.running, runtimeState: row.runtimeState, tmux: row.tmux }));
+  const entry = observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: "2026-10-11T09:59:00.000Z" }, panelInstances(listed, answers), "2026-10-11T10:00:00.000Z");
+  return stateOf(entry, { cli: REMOTE_CLI, ...options });
+}
+const FAR = "/home/dev/Agents/acme";
+const farRow = (name, extra = {}, root = FAR) => ({
+  instance: name, agent: "acme-ledger-developer", home: `${root}/agents/acme-ledger-developer/instances/${name}`, agentsRoot: `${root}/agents`,
+  work: "worktree", harness: "claude", running: true, runtimeState: "running", addressable: true, ...extra,
+});
+/** The machine `garnet`, reached, reporting this workspace, with one row; and a second one, `quartz`. */
+const group = (extra = {}) => ({
+  id: "garnet:acme-1", server: "garnet", label: "garnet", registrationPresent: true, target: { workspace: FAR, sshHost: "garnet.example" }, probe: { ok: true },
+  workspace: IDENTITY, agentsRoot: `${FAR}/agents`, souls: [], instances: [farRow("acme-ledger-far-a")], ...extra,
+});
+const quartz = (extra = {}) => group({ id: "quartz:acme-7", server: "quartz", label: "quartz", target: { workspace: "/srv/acme", sshHost: "quartz.example" }, agentsRoot: "/srv/acme/agents", instances: [farRow("acme-ledger-far-q", {}, "/srv/acme")], ...extra });
+const T1 = "2026-10-11T10:00:10.000Z", T2 = "2026-10-11T10:00:25.000Z";
+/** The store after one outcome of the roster read, made as the loop makes it. */
+function heard(state, outcome, at) {
+  const next = remoteRosterState(state.remote, outcome, at);
+  const kept = next.reported === null ? { memory: state.memory, notes: state.notes } : observeIdentities({ memory: state.memory, notes: state.notes }, next.reported, at);
+  return reduce(state, { roster: { remote: { remoteGroups: next.remoteGroups, rosterAnswered: next.rosterAnswered, rosterFailure: next.rosterFailure }, memory: kept.memory, notes: kept.notes, at } }).state;
+}
+const answered = (...groups) => ({ envelope: { ok: true, result: { groups } } });
+/** A key on a state, with the geometry of an 80x24 frame: these keys read none of it. */
+const key = (state, ...ids) => ids.reduce((s, id) => reduce(s, { key: id, page: 19, extent: 0, room: 19, cols: 38 }).state, state);
+/** The second choice of the switcher, opened: the view of a machine that is in no view with this one. */
+const second = (state) => key(state, "w", "j", "enter");
+/** A workspace key whose last segment, the name a view of machines alone is shown under, is `value`. */
+const named = (value) => ({ ...IDENTITY, key: `acme/${value}` });
+
+/** Each place a machine, a registration, a roster read or a folder can put text, and a state in the
+ *  Instances view that shows `value` there. `seen`: the view that draws plain text put there. */
+const MACHINE_FIELDS = {
+  "a machine's label": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ label: value })), T1) },
+  "a machine's server name, which names it when it has no label": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ label: "", server: value })), T1) },
+  "a machine's label where the header alone names it, `on <machine>`": { seen: "the list and the detail", make: (value, options) => second(heard(reporting(options), answered(group({ label: value, workspace: ELSEWHERE })), T1)) },
+  "the workspace's name a machine reports": { seen: "the list and the detail", make: (value, options) => second(heard(reporting(options), answered(group({ workspace: named(value) })), T1)) },
+  "a probe's error message, of a machine reached earlier": { seen: "the list and the detail", make: (value, options) => heard(heard(reporting(options), answered(group()), T1), answered(group({ probe: { ok: false, error: { code: "E_SSH", message: value } } })), T2) },
+  "a probe's error message, of a machine never reached": { seen: null, make: (value, options) => heard(reporting(options), answered(group({ probe: { ok: false, error: { code: "E_REMOTE", message: value } }, workspace: null, instances: [] })), T1) },
+  "the thrown message of the roster read, before any answer": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), { thrown: value }, T1) },
+  "the thrown message of the roster read, after an answer": { seen: "the list and the detail", make: (value, options) => heard(heard(reporting(options), answered(group()), T1), { thrown: value }, T2) },
+  "the message of a roster answer that is an error": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), { envelope: { ok: false, error: { code: "E_REGISTRY", message: value } } }, T1) },
+  "a deployment's note under its heading, of a machine whose label and new workspace are the text": {
+    seen: "the list and the detail",
+    make: (value, options) => second(heard(heard(reporting(options), answered(group({ label: value }), quartz({ workspace: named(value) })), T1), answered(group({ label: value, workspace: named(value) }), quartz({ workspace: named(value) })), T2)),
+  },
+  "a deployment's note above the list, of a machine that moved to a workspace of that name": {
+    seen: "the list and the detail",
+    make: (value, options) => second(heard(heard(reporting(options), answered(group()), T1), answered(group({ workspace: named(value) })), T2)),
+  },
+  "the instance name of a machine's row": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ instances: [farRow(value)] })), T1) },
+  "the runtime error of a machine's row": { seen: "the list and the detail", make: (value, options) => heard(reporting(options), answered(group({ instances: [farRow("acme-ledger-far-a", { running: null, runtimeState: "unreachable", runtimeError: value })] })), T1) },
+  "an offered folder's name and path": { seen: "the switcher", folder: true, make: (value, options) => reduce(reporting(options), { offered: { offered: [{ path: `/home/u/Agents/${value}`, name: value }], limited: true } }).state },
+};
+/** The views a state's text can reach, each with the sizes it is drawn at: the list with its
+ *  headings beside the detail of its last row (a machine's, where there is one), that detail as
+ *  the page it is on a narrow terminal, the switcher, and the help over the list and over the
+ *  switcher. */
+function viewsOf(state) {
+  const list = key(state, "G"), switching = key(list, "w");
+  return [
+    ["the list and the detail", list, [S80, S120]],
+    ["the detail as a page", key(list, "tab"), [S60]],
+    ["the switcher", switching, [S80, S60]],
+    ["the help over the list", key(list, "?"), [S80]],
+    ["the help over the switcher", key(switching, "?"), [S80]],
+  ];
+}
+/** No row of a frame is wider than the terminal: each takes exactly its columns, in whole graphemes. */
+function within(drawn, size, at) {
+  assert.equal(drawn.cells.length, size.rows, `${at}: as many rows as the terminal has`);
+  drawn.cells.forEach((line, r) => {
+    assert.equal(line.length, size.cols, `${at}: row ${r} has the terminal's cells`);
+    assert.equal(line.reduce((sum, cell) => sum + cell.width, 0), size.cols, `${at}: row ${r}: its graphemes take exactly the terminal's columns`);
+    assert.equal(textWidth(drawn.lines[r]) <= size.cols, true, `${at}: row ${r} is no wider than the terminal`);
+    const split = line.flatMap((cell, x) => ((cell.width === 2 && line[x + 1]?.width !== 0) || (cell.width === 0 && line[x - 1]?.width !== 2) ? [x] : []));
+    assert.deepEqual(split, [], `${at}: row ${r}: no wide grapheme is split`);
+  });
+}
+/** A text of 10 000 letters is drawn where a text that long is cut or wrapped, once (see SLOW). */
+const LONG_MACHINE_FIELDS = new Set(["a machine's label", "the thrown message of the roster read, before any answer", "the runtime error of a machine's row"]);
+/** What a folder directly inside `~/Agents` cannot be named: the shared listing reads no such entry. */
+const noFolder = (value) => value.includes("/") || value.includes("\0");
+
+for (const [field, { make, seen, folder = false }] of Object.entries(MACHINE_FIELDS)) {
+  test(`the hostile fixture as ${field}, drawn in the list with its headings, the detail, the switcher and the help over each, leaves only the TUI's own sequences in the output, and no row is wider than the terminal`, () => {
+    for (const [name, value] of Object.entries(FIXTURE)) {
+      if (folder && noFolder(value)) continue;
+      if (name === SLOW) {
+        if (!LONG_MACHINE_FIELDS.has(field)) continue;
+        const drawn = draw(key(make(value, { ascii: false }), "G"), S80), at = `${name}, the list, 80x24`;
+        census(drawn.rows, S80, UTF8, at, drawn.cells);
+        within(drawn, S80, at);
+        continue;
+      }
+      for (const [view, state, sizes] of viewsOf(make(value, { ascii: false }))) for (const size of sizes) {
+        const at = `${name}, ${view}, ${size.cols}x${size.rows}`, drawn = draw(state, size), text = census(drawn.rows, size, UTF8, at, drawn.cells);
+        within(drawn, size, at);
+        // The field is on the screen: plain text put there is read there.
+        if (name === "plain text, for comparison" && view === seen && size !== S60 && (size === S120 || view === "the switcher")) assert.equal(text.includes("dev-1 café 中文"), true, `${at}: ${field} is drawn`);
+      }
+      // With a locale that is not UTF-8: the list and the switcher, where the screen has the most to replace.
+      const plain = make(value, { ascii: true });
+      for (const [view, state] of [["the list and the detail", key(plain, "G")], ["the switcher", key(plain, "G", "w")]]) {
+        const at = `${name}, ${view}, 80x24, not UTF-8`, drawn = draw(state, S80, { utf8: false });
+        census(drawn.rows, S80, NOT_UTF8, at, drawn.cells);
+        within(drawn, S80, at);
+      }
+    }
+  });
+}
+
+test("a hostile machine name in the header's `on <machine>` leaves no control byte of its own on the screen: an escape sequence, a bidi override and wide characters, each cut inside the header's row", () => {
+  const names = { "an escape sequence": `gar${ESC}[2J${ESC}]0;owned${BEL}net`, "a bidi override": "gar\u202Enet", "wide characters": "名前".repeat(80) };
+  for (const [name, value] of Object.entries(names)) for (const look of [UTF8, NOT_UTF8]) for (const size of [S80, S120, S60]) {
+    const state = second(heard(reporting({ ascii: look.ascii }), answered(group({ label: value, workspace: ELSEWHERE })), T1)), at = `${name}, ${size.cols}x${size.rows}${look.utf8 ? "" : ", not UTF-8"}`;
+    const drawn = draw(state, size, { utf8: look.utf8 }), m = model(state, { page: drawn.page, now: NOW, at: new Date(NOW).toISOString(), cols: drawn.cols });
+    assert.deepEqual([m.here, m.machines, m.machine], [false, 1, value], `${at}: the model hands the frame the machine's name as the shared entry has it`);
+    const text = census(drawn.rows, size, look, at, drawn.cells), header = drawn.lines[0];
+    within(drawn, size, at);
+    assert.equal(header.startsWith(" oats  billing  on "), true, `${at}: the workspace's name and the TUI's own word stand whole: ${header}`);
+    assert.equal(header.endsWith("  1 running") && drawn.cells[0][size.cols - 1].text === " ", true, `${at}: the count keeps its place at the right edge: ${header}`);
+    const shownName = header.slice(" oats  billing  on ".length, header.length - "  1 running".length).trim();
+    if (name === "an escape sequence") assert.equal(shownName, "[withheld]", `${at}: a name with a control character is withheld whole`);
+    if (name === "a bidi override") assert.equal(shownName, look.utf8 ? "gar\uFFFDnet" : "gar?net", `${at}: a bidi override is replaced, never written`);
+    if (name === "wide characters") {
+      assert.equal(shownName.endsWith(look.ascii ? "..." : "…"), true, `${at}: a name longer than its cells is cut with the mark: ${shownName}`);
+      if (look.utf8) assert.equal(drawn.cells[0].filter((cell) => cell.width === 2).length >= 4, true, `${at}: in two-cell graphemes, none split`);
+      else assert.match(shownName, /^\?+\.\.\.$/, `${at}: each replaced by the screen`);
+    }
+    assert.equal(text.includes("owned"), false, at);
+  }
+});
+
+test("200 machines are drawn in bounded work: the shared home reads each machine a fixed number of times when the store takes the answer, a repaint, a resize and a movement key read none again, and a paint works out no more rows than its pane holds", () => {
+  // No clock is read here: a time under load says nothing. What is counted is every read of a
+  // machine's rows and of its probe by the shared home, through a proxy over each group, and the
+  // rows the model works out for one paint.
+  function counted(count) {
+    const reads = { instances: 0, probe: 0 };
+    const groups = Array.from({ length: count }, (_, i) => {
+      const server = `garnet-${String(i).padStart(3, "0")}`;
+      const made = group({ id: `${server}:acme-1`, server, label: server, instances: [farRow(`acme-ledger-far-${String(i).padStart(3, "0")}`)] });
+      return new Proxy(made, { get(target, name, receiver) { if (Object.hasOwn(reads, name)) reads[name] += 1; return Reflect.get(target, name, receiver); } });
+    });
+    return { reads, groups };
+  }
+  const each = {};
+  for (const count of [50, 200]) {
+    const { reads, groups } = counted(count), state = heard(reporting(), answered(...groups), T1), at = `${count} machines`;
+    each[count] = { taking: { instances: reads.instances / count, probe: reads.probe / count } };
+    assert.equal(reads.instances > 0 && reads.probe > 0, true, `${at}: the proxies are the groups the shared home read`);
+    // The first paint, a repaint, two resizes, and the selection walked to the end and back.
+    const taken = { ...reads }, drawn = draw(state, S80);
+    for (const size of [S80, S120, S60]) draw(state, size);
+    let walked = state;
+    for (const id of ["j", "pagedown", "pagedown", "G", "k", "pageup", "g"]) { walked = key(walked, id); draw(walked, S80); }
+    assert.deepEqual(reads, taken, `${at}: the roster is asked of the shared home once for what the store took, not once a paint or a key`);
+    // One paint: a pane of rows, whatever the roster holds. This machine's heading and row, then a heading and a row a machine.
+    const m = model(state, { page: drawn.page, now: NOW, at: new Date(NOW).toISOString(), cols: drawn.cols }), items = 2 + 2 * count;
+    assert.equal(drawn.rows.length, S80.rows, at);
+    assert.equal(m.list.length, drawn.page - 1, `${at}: the model works out the rows of the pane and no other`);
+    assert.deepEqual([m.above, m.below], [0, items - (drawn.page - 1)], `${at}: and counts the rest`);
+    assert.equal(drawn.lines[21].slice(0, 38).trim(), cutNote(0, items - (drawn.page - 1)), `${at}: the pane's last row says so`);
+    assert.equal(draw(walked, S80).lines[0].includes(`+${count} machines`), true, `${at}: the header counts them`);
+    census(drawn.rows, S80, UTF8, at, drawn.cells);
+    within(drawn, S80, at);
+    // The switcher asks the shared home at each paint, and that too is a fixed number of reads a machine.
+    const switching = key(state, "w"), before = { ...reads }, listed = draw(switching, S80);
+    each[count].switcher = { instances: (reads.instances - before.instances) / count, probe: (reads.probe - before.probe) / count };
+    census(listed.rows, S80, UTF8, `${at}, the switcher`, listed.cells);
+    within(listed, S80, `${at}, the switcher`);
+  }
+  assert.deepEqual(each[200], each[50], "a machine is read as many times among 200 as among 50: the work grows with the machines, not with their square");
+  for (const n of [each[200].taking.instances, each[200].taking.probe, each[200].switcher.probe]) assert.equal(Number.isInteger(n) && n > 0, true, "a whole number of reads a machine");
+  assert.equal(each[200].switcher.instances, 0, "the switcher reads no machine's rows");
+  // 200 machines matched to no workspace, in the switcher: one screen of them, and the rest counted.
+  const never = Array.from({ length: 200 }, (_, i) => group({ id: `quartz-${i}:acme-1`, server: `quartz-${i}`, label: `quartz-${i}`, probe: { ok: false, error: { code: "E_SSH", message: "Permission denied (publickey)." } }, workspace: null, instances: [] }));
+  const unmatched = draw(key(heard(reporting(), answered(...never), T1), "w"), S80);
+  assert.equal(unmatched.lines.slice(3, 21).filter((line) => line.includes("quartz-")).length, 16, "the pane holds the open workspace, the heading and sixteen machines");
+  assert.equal(unmatched.lines[21].trim(), cutNote(0, 202 - 18));
+  within(unmatched, S80, "200 unmatched machines");
 });

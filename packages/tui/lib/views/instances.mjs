@@ -2,9 +2,11 @@
 // Every name, word and reason in it is text the TUI did not write and goes through shown(); the
 // marks and the few words around them are the TUI's own. Nothing is told by colour alone: each
 // state has a mark of its own shape, the selected row carries `>` as well as reverse video, and a
-// waiting row carries `!`.
-import { lit, shown } from "../term/text.mjs";
+// waiting row carries `!`. In a view of two or more deployments the list also holds a heading per
+// deployment and the sentences the model sets under one: a heading says in words what it is of.
+import { lit, shown, shownEnd, textOf } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
+import { textWidth } from "../term/width.mjs";
 
 /** The marks, in UTF-8 and in ASCII (docs/tui.md lists them; the help view draws them from here).
  *  The state marks are keyed by the word the shared home gives a row's state, with `shell` and
@@ -23,7 +25,19 @@ const WAITING = 4;
  *  state mark, a gap. */
 const LEAD = 5;
 
+/** A heading starts here: at the margin the header and the footer keep, not at a row's indent. */
+const HEAD = 1;
+/** The cells between two parts of a heading. */
+const GAP = 2;
+/** The fewest cells a heading's short reason or its path is drawn in when it is cut: under them
+ *  it is left out, since a few cells of either say nothing. */
+const PART_MIN = 8;
+/** Where a sentence inside the list starts. The model wraps a sentence for a pane less this
+ *  indent and one cell (lib/model.mjs SENTENCE_INDENT, which a view cannot import): the same value. */
+const SENTENCE_INDENT = 3;
+
 const PLAIN = style();
+const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
 const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: style({ fg: "yellow" }), held: style({ fg: "magenta" }) });
@@ -35,6 +49,13 @@ export const EMPTY_TEXT = Object.freeze({
   none: "No instances in this deployment.",
   nomatch: "No instance matches the filter.",
 });
+
+/** Text the TUI did not write, with the cells its display takes: `{ text, width }`. What stands
+ *  after it on a row is placed by that width. */
+export function measured(value) {
+  const text = shown(value);
+  return { text, width: textWidth(textOf(text)) };
+}
 
 const waitingText = (row) => (row.below > 99 ? "!99+" : row.below > 0 ? `!${row.below}` : row.waiting ? "!" : null);
 
@@ -57,21 +78,60 @@ function instanceRow(row, cols, wordWidth, marks) {
   return spans;
 }
 
+/** A deployment's heading in a pane `cols` wide: its label in bold, its path, and, when it is not
+ *  live, the shared word for its state and the short reason; at the right edge the time a machine
+ *  reported its rows at. The state and the time always stand. When the row is too narrow for the
+ *  rest, the path is given up first, then the short reason, and then the label is cut: the full
+ *  reason is in the detail of each of its rows, and under the heading when it has none. */
+function headingRow({ label, path, state, short, readAt }, cols, ascii) {
+  const spans = [], edge = cols - 1;
+  let limit = edge;
+  if (readAt) {
+    const read = `read ${readAt}`, col = Math.max(HEAD, edge - read.length);
+    spans.push({ col, text: lit(read), style: DIM, width: Math.max(0, Math.min(read.length, edge - col)) });
+    limit = col - GAP;
+  }
+  const name = measured(label), word = state ? measured(state) : null, why = state && short ? measured(short) : null, where = path ? measured(path) : null;
+  let room = limit - HEAD - (word ? GAP + word.width : 0);
+  const nameWidth = Math.max(0, Math.min(name.width, room));
+  room -= nameWidth;
+  /** The cells a part after the label gets: its own, or what is left when that is enough to read. */
+  const taken = (part) => (part && part.width > 0 && room - GAP >= Math.min(part.width, PART_MIN) ? Math.min(part.width, room - GAP) : 0);
+  const whyWidth = taken(why);
+  if (whyWidth) room -= GAP + whyWidth;
+  const whereWidth = taken(where);
+  let col = HEAD;
+  if (nameWidth) { spans.push({ col, text: name.text, style: BOLD, width: nameWidth }); col += nameWidth + GAP; }
+  // A path is read from its end: cut, it keeps its last cells.
+  if (whereWidth) { spans.push({ col, text: whereWidth < where.width ? shownEnd(path, whereWidth, { ascii }) : where.text, style: DIM, width: whereWidth }); col += whereWidth + GAP; }
+  if (word) { spans.push({ col, text: word.text, style: PLAIN, width: Math.max(0, Math.min(word.width, edge - col)) }); col += word.width + GAP; }
+  if (whyWidth) spans.push({ col, text: why.text, style: DIM, width: whyWidth });
+  return spans.filter((span) => span.width > 0);
+}
+
 /** How many rows are cut off, in the TUI's words: `12 more below`. */
 export function cutNote(above, below) {
   return [above > 0 ? `${above} more above` : null, below > 0 ? `${below} more below` : null].filter(Boolean).join(", ");
 }
 
-/** `size.rows` rows for a pane `size.cols` wide: the model's window of instances, an empty row
- *  where it has one, and on the last row what is cut off above and below. With no instance to
- *  draw, the one line that says why. */
+/** `size.rows` rows for a pane `size.cols` wide: the model's window of the list, one item per row,
+ *  and on the last row what is cut off above and below. An item is an instance, a deployment's
+ *  heading, one row of a sentence the model wrapped (safe text already, placed as it is), a line
+ *  of the TUI's own, the one line that says why no instance is listed, or nothing (an empty row). */
 export function instances(m, size) {
   const rows = Array.from({ length: size.rows }, () => []);
   if (size.rows < 1) return rows;
-  if (m.empty) { rows[0] = [{ col: LEAD - 2, text: lit(EMPTY_TEXT[m.empty]), style: DIM, width: Math.max(0, size.cols - LEAD + 2) }]; return rows; }
   const marks = marksOf(m.ascii);
-  m.list.forEach((row, i) => { if (row && i < size.rows) rows[i] = instanceRow(row, size.cols, m.wordWidth, marks); });
+  const aside = Math.max(0, size.cols - LEAD + 2), sentence = Math.max(0, size.cols - SENTENCE_INDENT - 1);
+  m.list.forEach((item, i) => {
+    if (!item || i >= size.rows) return;
+    if (item.heading) rows[i] = headingRow(item.heading, size.cols, m.ascii);
+    else if (item.line) rows[i] = [{ col: SENTENCE_INDENT, text: item.line, width: sentence }];
+    else if (item.own) rows[i] = [{ col: SENTENCE_INDENT, text: lit(item.own), style: DIM, width: sentence }];
+    else if (item.empty) rows[i] = [{ col: LEAD - 2, text: lit(EMPTY_TEXT[item.empty]), style: DIM, width: aside }];
+    else rows[i] = instanceRow(item, size.cols, m.wordWidth, marks);
+  });
   const note = cutNote(m.above, m.below);
-  if (note) rows[size.rows - 1] = [{ col: LEAD - 2, text: lit(note), style: DIM, width: Math.max(0, size.cols - LEAD + 2) }];
+  if (note) rows[size.rows - 1] = [{ col: LEAD - 2, text: lit(note), style: DIM, width: aside }];
   return rows;
 }

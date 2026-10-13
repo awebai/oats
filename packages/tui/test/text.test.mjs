@@ -64,7 +64,7 @@ import { shownEnd, shownLines } from "../lib/term/text.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 
 const FAMILY = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}", FLAG = "\u{1F1EA}\u{1F1F8}", THUMB = "\u{1F44D}\u{1F3FD}";
-const PATH = "/srv/deploy/agents/oats-kernel-developer/instances/oats-kernel-developer-note-target";
+const PATH = "/srv/deploy/agents/acme-ledger-developer/instances/acme-ledger-developer-note-target";
 const SENTENCE = "This deployment's last read failed: the mirror at build-7 did not answer in time. It shows what was last observed.";
 const NEVER_WRITTEN = /[\x00-\x1f\x7f-\x9f\u2028\u2029\u202A-\u202E\u2066-\u2069]/;
 const markOf = (ascii) => (ascii ? "..." : "…");

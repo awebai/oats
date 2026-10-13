@@ -62,6 +62,99 @@ test("only packages/tui/lib/client.mjs imports from the shared client home", () 
   for (const path of TUI_FILES.filter((p) => p !== CLIENT)) assert.doesNotMatch(code(read(path)), /packages\/client|\.\.\/client\//, `${path} names no reader path`);
 });
 
+/** What packages/tui/lib/client.mjs takes from the shared home, module by module, in the order the
+ *  file names them. A name added here is a name the TUI now rests on: test/client-boundary.test.mjs
+ *  holds each to the home's stable surface, and this list says which of that surface is in use. */
+const TAKEN = Object.freeze({
+  "client-terms.mjs": ["clientTerms"],
+  "display-text.mjs": ["displayLine", "DETAIL_WITHHELD"],
+  "cli-locator.mjs": ["parseProbeStdout", "acceptProbe", "cliRecord"],
+  "deployment-read-cli.mjs": ["cliDeploymentRead"],
+  "cli-adapter.mjs": ["cliRemoteRoster"],
+  "deployment-observer.mjs": ["createDeploymentObserver", "mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"],
+  "refresh-loop.mjs": ["createRefreshLoop"],
+  "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry"],
+  "panel-views.mjs": ["panelData", "cliReadsRemotes", "workspaceChoices", "viewModel"],
+  "remote-roster.mjs": ["remoteRosterState"],
+  "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"],
+  "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
+  "deployment-label.mjs": ["shortPath"],
+  "instance-tree.mjs": ["instanceId", "instanceVisibleInTree", "waitingRollup", "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome"],
+  "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
+  "instance-presentation.mjs": ["runtimeState", "runtimeCounts"],
+  "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingBelowText"],
+  "instance-acts.mjs": ["instanceActs"],
+  "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
+  "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
+});
+/** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
+ *  A name taken under another name is read as the name the home gives it. */
+function takenFromHome(source) {
+  const found = [];
+  for (const match of code(source).matchAll(/(?:^|[\n;])\s*(?:import|export)\s*\{([^}]*)\}\s*from\s*["']\.\.\/\.\.\/client\/([^"'\n]+)["']/g)) {
+    found.push([match[2], match[1].split(",").map((part) => part.trim().split(/\s+as\s+/)[0]).filter(Boolean)]);
+  }
+  return found;
+}
+
+test("what packages/tui/lib/client.mjs takes from the shared home is this list, name by name, and the liveness collector is the one program of the home it names without importing it", () => {
+  const sample = `// export { no } from "../../client/commented.mjs";\nimport { a } from "../../client/one.mjs";\nexport { b,\n  c as d } from "../../client/two.mjs";\nexport { e } from "./own.mjs";\n`;
+  assert.deepEqual(takenFromHome(sample), [["one.mjs", ["a"]], ["two.mjs", ["b", "c"]]], "the reading itself works");
+  const source = read(CLIENT);
+  assert.deepEqual(takenFromHome(source), Object.entries(TAKEN));
+  // Nothing of the home comes in by another form (a default, a namespace, a bare or a star clause).
+  assert.deepEqual(staticImports(source).filter((name) => /client\//.test(name)), Object.keys(TAKEN).map((module) => `../../client/${module}`));
+  // The one path of the home that is no import: the collector, started as a child.
+  assert.deepEqual([...code(source).matchAll(/new URL\("([^"]+)", import\.meta\.url\)/g)].map((match) => match[1]), ["../../client/liveness-main.mjs"]);
+  // The names PR 3 added for other machines and the switcher (awebai/oats#855; the spec's "Contracts").
+  const added = {
+    "cli-adapter.mjs": ["cliRemoteRoster"], "panel-views.mjs": ["cliReadsRemotes", "workspaceChoices", "viewModel"], "remote-roster.mjs": ["remoteRosterState"],
+    "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"], "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
+    "workspace-admission.mjs": ["deploymentsInside"], "deployment-label.mjs": ["shortPath"], "deployment-observer.mjs": ["mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"], "roster-sections.mjs": ["isMultiDeployment"],
+  };
+  for (const [module, names] of Object.entries(added)) for (const name of names) assert.ok(TAKEN[module]?.includes(name), `${name} of ${module}`);
+  // Beside what it hands on, the seam makes two values of its own: the client's terms and the collector's path.
+  const exported = [...code(source).matchAll(/export\s+const\s+([A-Za-z_$][\w$]*)/g)].map((match) => match[1]);
+  assert.deepEqual(exported, ["TERMS", "COLLECTOR"]);
+});
+
+test("the shared functions that make a machine's panel are never named in packages/tui/lib: the panels come from panelData, and remotePanelEntries is imported nowhere in the package", () => {
+  // remotePanel needs a time the TUI does not choose; remoteWorkspace, remoteAgents and
+  // unavailableGroups are steps of rules the shared home applies itself (remote-roster.mjs,
+  // panel-views.mjs): a call of one here would be a second rule. Read with the comments, so the
+  // names stand nowhere in a shipped module.
+  const never = ["remotePanel", "remoteWorkspace", "remoteAgents", "unavailableGroups", "remotePanelEntries"];
+  for (const path of TUI_SOURCES) for (const name of never) assert.doesNotMatch(read(path), new RegExp(`\\b${name}\\b`), `${path} names ${name}`);
+  for (const name of never) assert.equal(Object.values(TAKEN).flat().includes(name), false, name);
+  // The tests may say the name (to say that it is not used); none imports it.
+  for (const path of TUI_FILES) {
+    for (const clause of code(read(path)).matchAll(/\bimport\s*\{([^}]*)\}/g)) assert.doesNotMatch(clause[1], /\bremotePanelEntries\b/, `${path} imports remotePanelEntries`);
+  }
+});
+
+test("lib/read.mjs gives the shared observer no reader of its own: the one observer of the package is handed the shared cliDeploymentRead, so a failed read has the same reasons as in the Desktop", () => {
+  const READ = "packages/tui/lib/read.mjs", source = code(read(READ));
+  // The reader is the shared home's own function, through the seam, under its own name.
+  assert.ok(TAKEN["deployment-read-cli.mjs"].includes("cliDeploymentRead") && TAKEN["deployment-observer.mjs"].includes("createDeploymentObserver"));
+  const fromSeam = source.match(/import\s*\{([^}]*)\}\s*from\s*"\.\/client\.mjs"/);
+  assert.ok(fromSeam, "read.mjs names what it takes from the seam");
+  const names = fromSeam[1].split(",").map((part) => part.trim());
+  for (const name of ["cliDeploymentRead", "createDeploymentObserver"]) assert.ok(names.includes(name), `${name}, under its own name`);
+  // One observer in the whole client, and it is made in read.mjs.
+  const makers = TUI_SOURCES.filter((path) => path !== CLIENT && /\bcreateDeploymentObserver\b/.test(code(read(path))));
+  assert.deepEqual(makers, [READ]);
+  assert.equal(source.match(/\bcreateDeploymentObserver\s*\(/g)?.length, 1);
+  // Its `read` is the shared reader, called with what it was given and this client's exec and
+  // environment: nothing is decided before the call or about its answer.
+  const made = source.slice(source.search(/\bcreateDeploymentObserver\s*\(/));
+  const options = made.slice(0, made.indexOf("});") + 3);
+  assert.match(options, /\bread:\s*\(kernel,\s*options\)\s*=>\s*cliDeploymentRead\(kernel,\s*options,\s*\{\s*exec,\s*env\s*\}\),?\s*\}\);$/);
+  assert.equal(options.match(/\bread\s*:/g).length, 1);
+  // And the shared reader is called nowhere else, nor wrapped, nor given another name.
+  for (const path of TUI_SOURCES.filter((p) => p !== CLIENT && p !== READ)) assert.doesNotMatch(code(read(path)), /\bcliDeploymentRead\b/, path);
+  assert.equal(source.match(/\bcliDeploymentRead\b/g).length, 2, "named twice in read.mjs: where it is imported and where it is handed over");
+});
+
 test("no file in packages/tui uses a dynamic import", () => {
   for (const path of TUI_FILES) assert.doesNotMatch(code(read(path)), /\bimport\s*\(/, path);
 });
@@ -98,6 +191,8 @@ test("only term/screen.mjs and term/tty.mjs can produce an ESC byte: no other sh
 test("the views are pure: they import only the TUI's own text, style and action modules, and name no IO, clock or process", () => {
   const views = filesUnder("packages/tui/lib/views");
   assert.equal(views.length >= 2, true);
+  // The five views and the window they share; the switcher of workspaces is held to the rule like the rest.
+  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "scroll.mjs", "switcher.mjs"]);
   for (const path of views) {
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);
@@ -110,8 +205,10 @@ test("this version only reads: lib/read.mjs alone starts a process, lib/read.mjs
   assert.deepEqual(users("node:child_process"), ["packages/tui/lib/read.mjs"]);
   assert.deepEqual(users("node:fs"), ["packages/tui/lib/config.mjs", "packages/tui/lib/read.mjs"]);
   assert.deepEqual(users("node:fs/promises"), []);
-  // What the two take from node:fs is named, and each name only reads.
-  const READS = ["closeSync", "lstatSync", "openSync", "readSync", "realpathSync", "statSync"];
+  // What the two take from node:fs is named, and each name only reads. `opendirSync` opens a folder
+  // to list it (the look inside ~/Agents for the switcher): what it answers can be read and closed,
+  // and has no way to change the folder.
+  const READS = ["closeSync", "lstatSync", "opendirSync", "openSync", "readSync", "realpathSync", "statSync"];
   for (const path of users("node:fs")) {
     const taken = code(read(path)).match(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/);
     assert.ok(taken, `${path} names what it takes from node:fs`);
@@ -119,6 +216,22 @@ test("this version only reads: lib/read.mjs alone starts a process, lib/read.mjs
   }
   // A file is opened for reading only: no flag is ever passed that could say otherwise.
   for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/\bopenSync\(([^)]*)\)/g)) assert.match(call[1], /^[^,]+,\s*"r"$/, `${path} opens ${call[1]}`);
+  // A folder is opened by its path alone (no option: one folder, never what is under it), only
+  // in lib/read.mjs, and of what that answers only the two calls that read an entry and close it
+  // are made. Those two are methods of the folder's handle, not names taken from node:fs, so the
+  // list above does not see them: they are read here.
+  const opened = [];
+  for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/(?:\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*)?\bopendirSync\(([^)]*)\)/g)) {
+    assert.equal(path, "packages/tui/lib/read.mjs", `${path} opens a folder`);
+    assert.match(call[2], /^[A-Za-z_$][\w$]*$/, `${path} opens a folder with ${call[2]}`);
+    assert.ok(call[1], `${path} keeps the folder it opens under a name, so what is done with it can be read`);
+    opened.push(call[1]);
+    const done = [...code(read(path)).matchAll(new RegExp(`\\b${call[1]}\\s*(?:\\??\\.\\s*([A-Za-z_$][\\w$]*)|\\[)`, "g"))].map((use) => use[1] ?? "a computed member");
+    assert.deepEqual([...new Set(done)].sort(), ["closeSync", "readSync"], `${path} does ${done.join(", ")} with the folder it opened`);
+    // The name stands for the folder and nothing else: it is handed to no function and to no other name.
+    assert.equal(code(read(path)).match(new RegExp(`\\b${call[1]}\\b`, "g")).length, 1 + done.length, `${path} uses ${call[1]} only to read the folder and close it`);
+  }
+  assert.deepEqual(opened, ["handle"], "one folder is opened in the whole client: the look inside ~/Agents");
   // Every builtin the client loads, by module: a new one is a decision, and shows here.
   assert.deepEqual([...new Set(TUI_SOURCES.flatMap(builtins))].sort(), ["node:child_process", "node:fs", "node:os", "node:path", "node:url"]);
 });
