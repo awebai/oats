@@ -171,10 +171,14 @@ messages that quote repository references and Git stderr quoted in a diagnostic.
 Unrelated schema values and opaque provider payloads are not scanned for secrets.
 
 When rendering removes user information from the reference of an `E_REPO_REF`
-refusal, or from the value quoted by a package refusal, the message explains
-that it was omitted to keep credentials out of diagnostics and directs the
-operator to give credentials to Git instead of embedding them in the reference.
-The renderer adds this clause once, including when the refusal is forwarded;
+refusal, or from the value quoted by a package refusal, the renderer adds the
+neutral clause “(its user information is not shown)”. This states what was
+removed, including an ordinary SSH username, without changing the refusal's
+cause or giving credential advice for an SSH host/path error. The parser's
+HTTP(S) userinfo refusal instead names its specific cause: an HTTP(S) reference
+may not carry user information, and credentials belong in Git (a credential
+helper), not in the URL. Package refusals retain their own reason.
+The renderer adds the clause once, including when the refusal is forwarded;
 reference fields contain only the rendered value. Refusals without removed user
 information and `E_REMOTE_UNREADABLE` transport failures do not gain the clause.
 Existing workspace and membership message slots retain the explanation when

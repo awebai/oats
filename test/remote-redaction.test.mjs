@@ -24,7 +24,8 @@ const malformed = [
   `https://${USER}:123/extra@${host}/${path}`,
   `https://${USER}:${PASSWORD}/extra@${host}`,
 ];
-const clause = "(its user information is omitted to keep credentials out of diagnostics; give credentials to Git, not in the repository reference)";
+const clause = "(its user information is not shown)";
+const httpUserinfoReason = (ref) => `repository reference ${ref} carries user information, which an http(s) reference may not: give credentials to Git (a credential helper), not in the URL`;
 const roots = [];
 const scratch = () => { const dir = mkdtempSync(join(tmpdir(), "oats-redaction-")); roots.push(dir); return dir; };
 test.after(() => { for (const dir of roots) rmSync(dir, { recursive: true, force: true }); });
@@ -98,6 +99,7 @@ test("refusals explain removed userinfo once, without changing diagnostic fields
     const pkg = await refused(() => parsePackageRequest("p", value, {}));
     safeError(pkg, "E_REPO_REF");
     assert.ok(pkg.message.endsWith(clause), value);
+    assert.doesNotMatch(pkg.message, /give credentials|credential helper/, "package refusal keeps its own cause, without HTTP parser advice");
     assert.equal(pkg.message.split(clause).length - 1, 1);
     assert.deepEqual(pkg.details, { id: "p", value: redactUrl(value, null, { reference: true }),
       path: "/packages/p", problems: ["a git package carries exactly one @<ref> (a repo ref has no @ except the git@host: ssh form)"] });
@@ -120,6 +122,33 @@ test("refusals explain removed userinfo once, without changing diagnostic fields
   const row = await confirmMembership(workspaceObs, https[0]);
   noTokens(row);
   assert.equal(row.detail.split(clause).length - 1, 1, "membership forwards the refusal once");
+});
+
+test("HTTP userinfo refusals name their cause and remedy, while SSH host/path refusals only explain omission", async () => {
+  for (const scheme of ["http", "https"]) for (const info of [USER, `${USER}:${PASSWORD}`, `:${PASSWORD}`]) {
+    const ref = `${scheme}://${info}@${host}/${path}`;
+    const e = await refused(() => parseRepoRef(ref));
+    safeError(e, "E_REPO_REF");
+    const shown = `${scheme}://${host}/${path}`;
+    assert.equal(e.message, `${httpUserinfoReason(shown)} ${clause}`);
+    assert.deepEqual(e.details, { ref: shown });
+  }
+  for (const [ref, shown, field, value] of [
+    ["git@my_host:org/repo", "ssh://my_host/org/repo", "host", "my_host"],
+    ["ssh://git@host.x/bad path", "ssh://host.x/bad path", "path", "bad path"],
+    ["git@host.x:bad path", "ssh://host.x/bad path", "path", "bad path"],
+    [`ssh://${USER}:${PASSWORD}@bad_host/o/r`, "ssh://bad_host/o/r", "host", "bad_host"],
+  ]) {
+    const e = await refused(() => parseRepoRef(ref));
+    safeError(e, "E_REPO_REF");
+    assert.equal(e.message, `repository reference has an invalid ${field}: ${shown} ${clause}`);
+    assert.deepEqual(e.details, { ref: shown, [field]: value });
+    assert.doesNotMatch(e.message, /give credentials|credential helper|http\(s\)/);
+  }
+  // An @ in a path is not authority userinfo, and the accepted grammar stays intact.
+  const pathError = await refused(() => parseRepoRef("https://host.x/org/repo@bad"));
+  assert.equal(pathError.message, "repository reference has an invalid path: https://host.x/org/repo@bad");
+  assert.equal(parseRepoRef("https://host.x/org/repo").url, "https://host.x/org/repo.git");
 });
 
 test("the omission clause is absent without removed userinfo in the named refused reference", async () => {
@@ -158,7 +187,7 @@ test("configured member refusals retain the clause through schema wrapping, whil
   assert.equal(e.message.split(clause).length - 1, 2, "once per originating refusal, not once per combined error");
   assert.deepEqual(e.details.problems, https.flatMap((_, i) => [
     { path: `/members/${i}`, message: `"https://${host}/${path}" does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` },
-  ]).concat(https.map((_, i) => ({ path: `/members/${i}`, message: `not a repo ref: unrecognized repository reference: https://${host}/${path} ${clause}` }))));
+  ]).concat(https.map((_, i) => ({ path: `/members/${i}`, message: `not a repo ref: ${httpUserinfoReason(`https://${host}/${path}`)} ${clause}` }))));
   assert.equal(e.provenance.problems, e.details.problems);
   const local = scratch();
   writeFileSync(join(local, "oats-local.yaml"), JSON.stringify({ schemaVersion: 2, workspace: https[0] }));
@@ -267,12 +296,13 @@ test("refusal rendering preserves hosts, paths, fixed prose and schema patterns 
     ["git@", ""],
   ]) {
     const e = await refused(() => parseRepoRef(ref));
-    assert.equal(e.message, `unrecognized repository reference: ${clean} ${clause}`);
+    const reason = clean ? httpUserinfoReason(clean) : `unrecognized repository reference: ${clean}`;
+    assert.equal(e.message, `${reason} ${clause}`);
     assert.equal(e.details.ref, clean);
     const before = validateWorkspace({ schemaVersion: 2, name: "fixture", members: [ref] });
     assert.deepEqual(before, [
       { path: "/members/0", message: `${JSON.stringify(clean)} does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` },
-      { path: "/members/0", message: `not a repo ref: unrecognized repository reference: ${clean} ${clause}` },
+      { path: "/members/0", message: `not a repo ref: ${reason} ${clause}` },
     ]);
     if (!clean) continue; // The userinfo-only reference has no repository to retain in a package.
     const pkg = await refused(() => parsePackageRequest("p", `git:${ref}@v1`, {}));
