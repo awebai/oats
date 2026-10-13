@@ -294,7 +294,7 @@ test("any other v0 failure is retried once under v2: said once, never recorded; 
     const obs = await observeRemote(f.bare, { cacheDir: f.cacheDir, exec: t.exec, session });
     assert.deepEqual(t.lsRemote.map((c) => c.protocol), [0, 2], reason);
     assert.equal(obs.commit, f.commit);
-    assert.deepEqual(session.notices, [`${f.bare} failed under protocol v0 (${reason === "unknown" ? "network" : reason}); observed with protocol v2`]);
+    assert.deepEqual(session.notices, [`${f.bare} failed under protocol v0 (${reason}); observed with protocol v2`]);
     assert.ok(noRecords(f), "a retried failure is not recorded");
     await session.close();
   }

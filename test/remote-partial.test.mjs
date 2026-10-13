@@ -6,12 +6,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import {
-  classifyRemoteFailure, contentDigest, createReadSession, fetchRemoteTree, listRemoteFiles, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit,
-  FILE_BUDGET, OATS_ALIAS_SYMLINK, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
+  classifyRemoteFailure, contentDigest, createReadSession, fetchRemoteTree, listRemoteFiles, listRemoteTree, observeRemote, parseRepoRef, readRemoteFile, runGit, scrubGitLine,
+  FILE_BUDGET, GIT_LINE_MAX, OATS_ALIAS_SYMLINK, PARTIAL_FETCH_GIT, SMALL_BLOB_LIMIT, gitVersion, keepsPartialCache,
 } from "../lib/remote.mjs";
 import { PARTIAL_GIT, olderGitNotice, skipPartialMechanics } from "./helpers/partial-git.mjs";
 
@@ -942,7 +942,8 @@ test("a symlink target over its 64 KiB cap fails exactly as without a session, w
   try {
     const batched = await failure({ session }, "batch");
     assert.deepEqual(shape(batched), shape(plain), "the same error as without a session");
-    assert.deepEqual(shape(batched), { code: "E_REMOTE_UNREADABLE", reason: "network", path: "CLAUDE.md" });
+    // git's words for it show nothing the kernel recognises, the network least of all (awebai/oats#1059).
+    assert.deepEqual(shape(batched), { code: "E_REMOTE_UNREADABLE", reason: "unknown", path: "CLAUDE.md" });
     assert.deepEqual(readdirSync(join(f.base, "batch")), [], "nothing left");
   } finally { await session.close(); }
 });
@@ -958,4 +959,302 @@ test("a full-mode cache (a server without filters) copies the same tree through 
     assert.deepStrictEqual(batched, plain);
     assert.equal(batched.digest, contentDigest(join(f.work, "elsewhere", "tools")));
   } finally { await session.close(); }
+});
+
+// ---------------------------------------------------------------------------
+// awebai/oats#1059: the fetch of a commit into a cache that holds another; what git could not explain; leftovers
+// ---------------------------------------------------------------------------
+
+/** `n` lines of text that differ from one another and compress: two versions of one file made of them are
+ *  what a server sends as a delta of one against the other. */
+const prose = (n) => Array.from({ length: n }, (_, i) => `line ${i}: the quick brown fox jumps over the lazy dog ${(i * 7919) % 10007}\n`).join("");
+const UNDER = prose(900), OVER = prose(1400);
+/**
+ * A remote where one file crosses the cache's filter between two commits, as a file of a real repository does
+ * when it grows or is split: `first` is the older commit and `second` the default branch's head. `grows` has
+ * the file under the filter at `first` and over it at `second` (a pinned commit beside a newer head); `shrinks`
+ * the other way (a new head beside the last one). → the fixture's fields, with `first`, `second`, and what the
+ * cache of this remote holds.
+ */
+function crossing(shape) {
+  const base = scratch();
+  const bare = join(base, "remote.git"), work = join(base, "work");
+  git(base, "init", "-q", "--bare", "-b", "main", bare);
+  git(bare, "config", "uploadpack.allowFilter", "true");
+  git(bare, "config", "uploadpack.allowAnySHA1InWant", "true");
+  git(base, "init", "-q", "-b", "main", work);
+  git(work, "remote", "add", "origin", bare);
+  const [one, two] = shape === "grows" ? [UNDER, OVER] : [OVER, UNDER];
+  assert.ok(Buffer.byteLength(UNDER) < SMALL_BLOB_LIMIT && Buffer.byteLength(OVER) > SMALL_BLOB_LIMIT, "the two versions are on either side of the filter");
+  write(work, "souls/dev/soul.yaml", "name: dev\n");
+  write(work, "test/crossing.txt", one);
+  git(work, "add", "-A"); git(work, "commit", "-q", "-m", "first"); git(work, "push", "-q", "origin", "HEAD:main");
+  const first = git(work, "rev-parse", "HEAD");
+  /** One more commit on the default branch: the file's other version. → its commit. */
+  const advance = () => {
+    write(work, "test/crossing.txt", two);
+    git(work, "add", "-A"); git(work, "commit", "-q", "-m", "second"); git(work, "push", "-q", "origin", "HEAD:main");
+    return git(work, "rev-parse", "HEAD");
+  };
+  const cacheDir = join(base, "cache");
+  const repoDir = join(cacheDir, createHash("sha256").update(parseRepoRef(bare).key).digest("hex"));
+  const blobAt = (commit) => git(work, "rev-parse", `${commit}:test/crossing.txt`);
+  const holds = (oid) => !gitInput(repoDir, `${oid}\n`, "cat-file", "--batch-check").endsWith(" missing");
+  return { base, bare, work, first, advance, cacheDir, repoDir, blobAt, holds, one, two };
+}
+/** Every file under the cache repository's object store, with its size: what a fetch that failed must leave as it was. */
+function objectStore(repoDir) {
+  const out = {};
+  const walk = (dir, rel) => { for (const name of readdirSync(dir).sort()) { const p = join(dir, name), r = rel ? `${rel}/${name}` : name; const st = lstatSync(p); if (st.isDirectory()) walk(p, r); else out[r] = st.size; } };
+  walk(join(repoDir, "objects"), "");
+  return out;
+}
+const temporaries = (repoDir) => Object.keys(objectStore(repoDir)).filter((file) => /(^|\/)tmp_/.test(file));
+/** An exec that counts the fetches of `commit` and keeps what git said when one failed; `fail(n, args)` may
+ *  return (or resolve to) an error to reject the n-th of them with, instead of running git. */
+function commitFetches(commit, fail = () => null) {
+  const fetches = [];
+  const exec = async (args, o) => {
+    if (!args.includes("fetch") || !args.includes(commit)) return runGit(args, o);
+    const seen = { args, negotiates: !args.includes("fetch.negotiationAlgorithm=noop"), stderr: null };
+    fetches.push(seen);
+    const stubbed = await fail(fetches.length, args);
+    if (stubbed) { seen.stderr = String(stubbed.stderr ?? ""); throw stubbed; }
+    try { return await runGit(args, o); } catch (error) { seen.stderr = String(error.stderr ?? ""); throw error; }
+  };
+  return { fetches, exec };
+}
+const gitError = (stderr, extra = {}) => Object.assign(new Error("Command failed: git fetch"), { code: 128, signal: null, killed: false, timedOut: false, overflowed: false, stdout: Buffer.alloc(0), stderr: Buffer.from(stderr), ...extra });
+/** What git said on the host where awebai/oats#1059 was found, about the blob `oid`. */
+const ISSUE_STDERR = (oid) => `warning: lazy fetching disabled; some objects may not be available\nfatal: could not fetch ${oid} from promisor remote\nfatal: fetch-pack: invalid index-pack output\n`;
+const refusedRead = (promise) => promise.then(() => assert.fail("expected a refusal"), (x) => x);
+
+test("a pinned commit is fetched into a cache that holds a newer head: the pack that needs a blob the filter left out is asked for again, whole (#1059)", { skip: skipPartialMechanics }, async () => {
+  for (const withSession of [false, true]) {
+    const f = crossing("grows");
+    const head = f.advance();
+    const session = withSession ? createReadSession() : undefined;
+    try {
+      // The head is read first, as a workspace's is: its version of the file is over the filter and stays out.
+      const obs = await observeRemote(f.bare, { cacheDir: f.cacheDir, ...(session ? { session } : {}) });
+      assert.equal(obs.commit, head);
+      assert.deepEqual([f.holds(f.blobAt(head)), f.holds(f.blobAt(f.first))], [false, false]);
+      // Then the older commit, as a pinned package's is. The fetch tells the server the cache holds the head, and
+      // the server sends the older file as a delta against the head's, which the cache does not hold.
+      const { fetches, exec } = commitFetches(f.first);
+      const read = await readRemoteFile(f.bare, f.first, "test/crossing.txt", { cacheDir: f.cacheDir, exec, ...(session ? { session } : {}) });
+      assert.equal(read.bytes.toString(), f.one, "the file reads back with the older commit's bytes");
+      assert.deepEqual(fetches.map((x) => x.negotiates), [true, false], "two fetches of the commit, the second without negotiation");
+      assert.match(fetches[0].stderr, /could not fetch [0-9a-f]{40} from promisor remote/, "the first failed as it does in a deployment: git may not fetch the delta's base on its own");
+      assert.ok(fetches[0].stderr.includes(f.blobAt(head)), "and the base it lacked is the head's version of the file");
+      assert.equal(fetches[1].stderr, null);
+      assert.deepEqual(fetches[1].args.slice(fetches[1].args.indexOf("fetch")), fetches[0].args.slice(fetches[0].args.indexOf("fetch")), "otherwise the same fetch");
+      // The first attempt's pack stays for now: it cannot be told from one another git is writing, so it goes by its age.
+      const left = temporaries(f.repoDir);
+      assert.deepEqual(left.map((file) => file.replace(/_[^_]+$/, "_")), ["pack/tmp_pack_"], "one pack, the failed attempt's");
+      assert.equal(git(f.repoDir, "rev-parse", `refs/oats/commits/${f.first}`), f.first, "pinned");
+      assert.equal(f.holds(f.blobAt(head)), false, "git fetched nothing on its own: the head's large file is still out");
+      assert.deepEqual(session?.notices ?? [], [], "no notice: the fetch succeeded");
+      // Read again: present, no fetch.
+      const again = commitFetches(f.first);
+      await readRemoteFile(f.bare, f.first, "souls/dev/soul.yaml", { cacheDir: f.cacheDir, exec: again.exec });
+      assert.equal(again.fetches.length, 0);
+      // Once it is older than the longest fetch, the next fetch into the entry (here, of the head's large file) removes it.
+      utimesSync(join(f.repoDir, "objects", left[0]), HOUR_AGO(), HOUR_AGO());
+      assert.equal((await readRemoteFile(f.bare, head, "test/crossing.txt", { cacheDir: f.cacheDir, ...(session ? { session } : {}) })).bytes.toString(), f.two);
+      assert.deepEqual(temporaries(f.repoDir), [], "nothing is left in the object store");
+    } finally { await session?.close(); }
+  }
+});
+
+test("the default branch's new head is fetched into a cache that holds the last one, where a file came under the filter (#1059)", { skip: skipPartialMechanics }, async () => {
+  const f = crossing("shrinks");
+  assert.equal((await observeRemote(f.bare, { cacheDir: f.cacheDir })).commit, f.first);
+  assert.equal(f.holds(f.blobAt(f.first)), false, "the last head's version is over the filter");
+  const head = f.advance();
+  const { fetches, exec } = commitFetches(head);
+  const obs = await observeRemote(f.bare, { cacheDir: f.cacheDir, exec });
+  assert.equal(obs.commit, head, "the observation of the new head answers");
+  assert.deepEqual(fetches.map((x) => x.negotiates), [true, false]);
+  assert.match(fetches[0].stderr, /could not fetch [0-9a-f]{40} from promisor remote/);
+  assert.equal((await readRemoteFile(f.bare, head, "test/crossing.txt", { cacheDir: f.cacheDir })).bytes.toString(), f.two);
+  assert.equal(temporaries(f.repoDir).length, 1, "the failed attempt's pack, which goes by its age");
+  // A head beside the last one where nothing crosses the filter still arrives in one negotiated fetch.
+  write(f.work, "souls/dev/AGENTS.md", "# dev\n");
+  git(f.work, "add", "-A"); git(f.work, "commit", "-q", "-m", "third"); git(f.work, "push", "-q", "origin", "HEAD:main");
+  const third = git(f.work, "rev-parse", "HEAD");
+  const next = commitFetches(third);
+  assert.equal((await observeRemote(f.bare, { cacheDir: f.cacheDir, exec: next.exec })).commit, third);
+  assert.deepEqual(next.fetches.map((x) => x.negotiates), [true], "the common fetch is one fetch, negotiated");
+});
+
+test("a commit's fetch that fails for a reason the kernel names is made once: no second attempt (#1059)", async () => {
+  const f = fixture();
+  const cases = {
+    auth: gitError("remote: Invalid username or token.\nfatal: Authentication failed for 'https://example.com/org/repo.git/'\n"),
+    "not-found": gitError(`fatal: remote error: upload-pack: not our ref ${f.commit}\n`),
+    network: gitError("fatal: unable to access 'https://example.com/org/repo.git/': Could not resolve host: example.com\n"),
+    timeout: gitError("", { code: null, killed: true, signal: "SIGTERM", timedOut: true }),
+    cache: gitError("error: unable to write file ./objects/pack/pack-1.pack: No space left on device\nfatal: index-pack failed\n"),
+    killed: gitError("", { code: null, signal: "SIGKILL" }),
+  };
+  for (const [reason, error] of Object.entries(cases)) {
+    const { fetches, exec } = commitFetches(f.commit, () => error);
+    const e = await refusedRead(observeRemote(f.bare, { cacheDir: join(f.base, `cache-${reason}`), at: f.commit, exec }));
+    assert.deepEqual([e.code, e.details.reason, fetches.length], ["E_REMOTE_UNREADABLE", reason, 1], reason);
+    assert.equal(e.details.commit, f.commit, reason);
+  }
+  // Nor is a read the command gave up: it shows nothing the kernel classifies, and is still not asked again.
+  const aborted = commitFetches(f.commit, () => Object.assign(new Error("The operation was aborted"), { name: "AbortError", code: "ABORT_ERR", overflowed: false, timedOut: false }));
+  const e = await refusedRead(observeRemote(f.bare, { cacheDir: join(f.base, "cache-aborted"), at: f.commit, exec: aborted.exec }));
+  assert.deepEqual([e.details.reason, aborted.fetches.length, e.message], ["unknown", 1, `cannot read remote ${f.bare} (unknown): The operation was aborted`]);
+});
+
+test("a commit's fetch the kernel cannot classify gets its second attempt, whatever an object id in git's words spells; a second failure is the answer (#1059)", async () => {
+  const f = fixture();
+  // The id of a blob that holds 403: git's line about it is no refusal of the operator's credentials.
+  const oid = "8cc834859992ea403d394e514826263be431fb85";
+  assert.equal(classifyRemoteFailure(gitError(ISSUE_STDERR(oid))), "unknown");
+  // The second attempt runs and succeeds.
+  const healed = commitFetches(f.commit, (n) => (n === 1 ? gitError(ISSUE_STDERR(oid)) : null));
+  assert.equal((await observeRemote(f.bare, { cacheDir: join(f.base, "cache-healed"), at: f.commit, exec: healed.exec })).commit, f.commit);
+  assert.deepEqual(healed.fetches.map((x) => x.negotiates), [true, false]);
+  // The second attempt fails too: two fetches, never a third, and the answer is the second's, with its own reason.
+  const twice = commitFetches(f.commit, (n) => gitError(n === 1 ? ISSUE_STDERR(oid) : "fatal: unable to access 'https://example.com/org/repo.git/': Failed to connect to example.com port 443\n"));
+  const network = await refusedRead(observeRemote(f.bare, { cacheDir: join(f.base, "cache-twice"), at: f.commit, exec: twice.exec }));
+  assert.deepEqual([network.details.reason, twice.fetches.map((x) => x.negotiates)], ["network", [true, false]]);
+  assert.equal(network.message, `cannot read remote ${f.bare} (network)`, "a reason the kernel names carries no line of git's");
+  // And when the kernel cannot classify the second either, the message carries the second's last line.
+  const unknown = commitFetches(f.commit, (n) => gitError(n === 1 ? ISSUE_STDERR(oid) : "remote: Enumerating objects: 3, done.\rremote: Total 3\nerror: the frobnicator is out of alignment\nfatal: something nobody has seen before\n"));
+  const e = await refusedRead(observeRemote(f.bare, { cacheDir: join(f.base, "cache-unknown"), at: f.commit, exec: unknown.exec }));
+  assert.equal(unknown.fetches.length, 2);
+  assert.deepEqual(e.details, { url: f.bare, key: parseRepoRef(f.bare).key, reason: "unknown", commit: f.commit }, "no field added");
+  assert.equal(e.message, `cannot read remote ${f.bare} (unknown): fatal: something nobody has seen before`);
+});
+
+test("what git could not explain is unknown, with git's last line scrubbed; network is what the text shows to be the network (#1059)", async () => {
+  const oid = "e1ee9920902346c7d0b534009d66a7d435c78a12";
+  assert.equal(classifyRemoteFailure(gitError(ISSUE_STDERR(oid))), "unknown", "the stderr of the issue");
+  assert.equal(classifyRemoteFailure(gitError(ISSUE_STDERR(oid).replace("invalid index-pack output", "index-pack failed"))), "unknown", "and over the file transport");
+  assert.equal(classifyRemoteFailure(gitError("")), "unknown", "nothing said");
+  assert.equal(classifyRemoteFailure(gitError("", { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", killed: true, signal: "SIGTERM", overflowed: true })), "unknown", "an overflow with no text");
+  assert.equal(classifyRemoteFailure(gitError("fatal: Authentication failed", { overflowed: true })), "auth", "an overflow is what its text shows");
+  // An object id is evidence of nothing; an HTTP status is.
+  for (const id of ["8cc834859992ea403d394e514826263be431fb85", `${"a".repeat(30)}403${"b".repeat(31)}`]) assert.equal(classifyRemoteFailure(gitError(`fatal: could not fetch ${id} from promisor remote\n`)), "unknown", id);
+  assert.equal(classifyRemoteFailure(gitError("fatal: unable to access 'https://h/r/': The requested URL returned error: 403\n")), "auth");
+  // The network, as git, libcurl and ssh say it.
+  for (const text of [
+    "fatal: unable to access 'https://h/r/': Could not resolve host: h", "ssh: Could not resolve hostname h: Name or service not known", "fatal: unable to look up h (port 9418) (Temporary failure in name resolution)",
+    "fatal: unable to access 'https://h/r/': Could not resolve proxy: p", "error: Failed to connect to h port 443 after 2 ms: Couldn't connect to server", "ssh: connect to host h port 22: No route to host",
+    "ssh: connect to host h port 22: Operation timed out", "ssh: connect to host h port 22: Connection timed out", "ssh: connect to host h port 22: Connection refused", "Connection closed by 192.0.2.1 port 22",
+    "kex_exchange_identification: Connection closed by remote host", "fetch-pack: unexpected disconnect while reading sideband packet", "fatal: the remote end hung up unexpectedly", "fatal: early EOF",
+    "ssh: connect to host h port 22: Network is unreachable", "error: RPC failed; curl 56 Recv failure: Connection reset by peer",
+  ]) assert.equal(classifyRemoteFailure(gitError(`${text}\n`)), "network", text);
+  // The scrub: one line, bounded, no control character, no url's user information; the fetch url's wherever it appears.
+  assert.equal(scrubGitLine("fatal: unable to access 'https://x-access-token:ghp_secret@example.com/org/repo.git/': \tbad\x1b[31m thing\x07"),
+    "fatal: unable to access 'https://example.com/org/repo.git/': bad thing");
+  assert.equal(scrubGitLine("ssh://bot:s3cr%40t@example.com/org/repo refused s3cr@t (bot:s3cr%40t), also s3cr%40t", "ssh://bot:s3cr%40t@example.com/org/repo"), "ssh://example.com/org/repo refused (), also");
+  assert.equal(scrubGitLine("git@example.com:org/repo.git: a user name alone is no secret", "git@example.com:org/repo.git"), "git@example.com:org/repo.git: a user name alone is no secret");
+  assert.equal(scrubGitLine("bot is not allowed here", "ssh://bot@example.com/org/repo"), "bot is not allowed here", "nor is the user of an ssh url");
+  // On http(s) the user information is a secret whether or not it holds a colon (a bare token), each part of it, as written and decoded.
+  assert.equal(scrubGitLine("remote: tok%5Fbare was refused (tok_bare)", "https://tok%5Fbare@example.com/org/repo"), "remote: was refused ()");
+  assert.equal(scrubGitLine("remote: tok_user was refused with x-oauth-basic, and tok_user:x-oauth-basic too", "https://tok_user:x-oauth-basic@example.com/org/repo"), "remote: was refused with , and too");
+  assert.equal(scrubGitLine("remote: TOK_UPPER was refused", "HTTP://TOK_UPPER@example.com/org/repo"), "remote: was refused");
+  assert.equal(scrubGitLine(" \x00‮\t "), "");
+  const long = scrubGitLine(`fatal: ${"x".repeat(5000)}`);
+  assert.deepEqual([[...long].length, long.endsWith("…")], [GIT_LINE_MAX, true]);
+  // Through a read: the message ends with git's last line, and a credential of the url is in neither.
+  const url = "ssh://bot:s3cret@example.com/org/repo";
+  const said = (stderr) => refusedRead(observeRemote(url, { cacheDir: join(scratch(), "cache"), exec: async (args) => { if (args.includes("ls-remote")) throw gitError(stderr); return runGit(args); } }));
+  const e = await said(`warning: redirecting\nfatal: '${url}' is being difficult: s3cret\n`);
+  assert.deepEqual(e.details, { url, key: "example.com/org/repo", reason: "unknown", at: null }, "no field added; the url is as written");
+  // The message prints the url as the cache's messages do, without its user information (redactUrl).
+  assert.equal(e.message, "cannot read remote ssh://example.com/org/repo (unknown): fatal: 'ssh://example.com/org/repo' is being difficult:");
+  assert.ok(!e.message.includes("s3cret"));
+  assert.equal((await said("")).message, "cannot read remote ssh://example.com/org/repo (unknown)", "with nothing said, the message ends at the reason");
+  assert.equal((await said("\x1b[0m\n \n")).message, "cannot read remote ssh://example.com/org/repo (unknown)");
+  // A reason the kernel names: the same url, and no line of git's.
+  const named = await said(`fatal: unable to access '${url}/': Could not resolve host: example.com\n`);
+  assert.deepEqual([named.details.reason, named.details.url, named.message], ["network", url, "cannot read remote ssh://example.com/org/repo (network)"]);
+  // The user of an ssh url is no secret, and the message still prints the url without it: one function says how.
+  const plain = await refusedRead(observeRemote("ssh://bot@example.com/org/repo", { cacheDir: join(scratch(), "cache"), exec: async (args) => { if (args.includes("ls-remote")) throw gitError("fatal: bot was refused\n"); return runGit(args); } }));
+  assert.deepEqual([plain.details.url, plain.message], ["ssh://bot@example.com/org/repo", "cannot read remote ssh://example.com/org/repo (unknown): fatal: bot was refused"]);
+  // A token as the user of an http(s) url never reaches a read: such a url is no repository reference, so no
+  // read's message is built over one. The scrub above is what holds for git's line, whatever url it is handed.
+  for (const ref of ["https://tok_bare0secret@example.com/org/repo", "https://bot:s3cret@example.com/org/repo.git", "http://tok_bare0secret@example.com/org/repo"]) {
+    const refused = await refusedRead(observeRemote(ref, { cacheDir: join(scratch(), "cache"), exec: async () => { throw new Error("git is not run"); } }));
+    assert.equal(refused.code, "E_REPO_REF", ref);
+  }
+});
+
+test("a fetch first removes the temporary files older than the longest fetch, and no younger one: not its own failed attempt's, not another writer's (#1059)", { skip: skipPartialMechanics }, async () => {
+  const f = crossing("grows");
+  const head = f.advance();
+  await observeRemote(f.bare, { cacheDir: f.cacheDir, at: head });
+  // What earlier failures and another writer may have left: git's temporary files, old and young.
+  const leftover = (rel, { old }) => { const file = join(f.repoDir, "objects", rel); mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, "x".repeat(700)); if (old) utimesSync(file, HOUR_AGO(), HOUR_AGO()); return rel; };
+  const young = [leftover("pack/tmp_pack_young1", { old: false }), leftover("ab/tmp_obj_young2", { old: false }), leftover("tmp_young3", { old: false })];
+  const old = [leftover("pack/tmp_pack_old001", { old: true }), leftover("pack/tmp_idx_old002", { old: true }), leftover("ab/tmp_obj_old003", { old: true }), leftover("tmp_old004", { old: true })];
+  // Never a file that is not git's temporary file, whatever its age; never through a symbolic link.
+  const kept = [leftover("pack/not_tmp_pack", { old: true }), leftover("info/tmp_elsewhere", { old: true })];
+  symlinkSync(join(f.repoDir, "objects", kept[0]), join(f.repoDir, "objects", "pack", "tmp_pack_link"));
+  lutimesSync(join(f.repoDir, "objects", "pack", "tmp_pack_link"), HOUR_AGO(), HOUR_AGO());
+  // Never outside the cache entry: a directory of the object store that is a symbolic link is not looked into.
+  const outside = join(f.base, "outside");
+  mkdirSync(outside);
+  const sentinel = join(outside, "tmp_obj_unrelated");
+  writeFileSync(sentinel, "not the cache's"); utimesSync(sentinel, HOUR_AGO(), HOUR_AGO());
+  symlinkSync(outside, join(f.repoDir, "objects", "00"));
+  const before = objectStore(f.repoDir);
+  // The real failing fetch (it receives a pack it cannot complete), then a second attempt that fails too. While
+  // that one runs, another git starts writing a pack into the entry, as an older kernel's fetch would (it takes
+  // no write lock), and a file appears that nobody holds.
+  let writer = null, writerPack = null;
+  const { fetches, exec } = commitFetches(f.first, async (n) => {
+    if (n !== 2) return null;
+    const had = new Set(temporaries(f.repoDir));
+    writer = spawn("git", ["-C", f.repoDir, "index-pack", "--stdin"], { stdio: ["pipe", "ignore", "ignore"] });
+    for (let i = 0; i < 250 && !writerPack; i++) { await new Promise((r) => setTimeout(r, 20)); writerPack = temporaries(f.repoDir).find((file) => !had.has(file)) ?? null; if (!writerPack) writer.stdin.write(Buffer.from("PACK")); }
+    leftover("pack/tmp_pack_during", { old: false });
+    return gitError("fatal: the second attempt failed as well\n");
+  });
+  try {
+    const e = await refusedRead(readRemoteFile(f.bare, f.first, "test/crossing.txt", { cacheDir: f.cacheDir, exec }));
+    assert.deepEqual([e.details.reason, fetches.length], ["unknown", 2]);
+    assert.match(fetches[0].stderr, /promisor remote/, "the first attempt ran git, which left its pack behind");
+    assert.ok(writerPack, "the other writer made its temporary pack while the fetch was failing");
+    const after = objectStore(f.repoDir);
+    assert.deepEqual(Object.keys(before).filter((file) => !(file in after)).sort(), [...old].sort(), "the old leftovers are gone, and nothing else");
+    assert.equal(writer.exitCode, null, "the other writer is still running");
+    for (const file of [...young, ...kept, "pack/tmp_pack_link", "pack/tmp_pack_during", writerPack]) assert.ok(file in after, `${file} stays`);
+    const appeared = Object.keys(after).filter((file) => !(file in before)).sort();
+    assert.equal(appeared.length, 3, `the failed attempt's own pack is there too, with the two that appeared beside it: ${appeared}`);
+    assert.ok(appeared.every((file) => /^pack\/tmp_pack_/.test(file)));
+    assert.deepEqual(Object.fromEntries(Object.entries(after).filter(([file]) => file in before && before[file] !== after[file])), {}, "no file changed");
+    assert.equal(existsSync(sentinel), true, "a file behind a linked directory is outside the cache, whatever its name and age");
+    // The fetch that then succeeds removes nothing more: a young file may be another writer's.
+    assert.equal((await readRemoteFile(f.bare, f.first, "test/crossing.txt", { cacheDir: f.cacheDir })).bytes.toString(), f.one);
+    const later = objectStore(f.repoDir);
+    for (const file of [...young, ...kept, "pack/tmp_pack_link", ...appeared]) assert.ok(file in later, `${file} still stays`);
+    assert.equal(writer.exitCode, null);
+    assert.equal(existsSync(sentinel), true);
+    // A session whose own fetch may run longer than the longest fetch waits that long before it calls a file old.
+    const patient = createReadSession({ fetchTimeoutMs: 2 * 60 * 60 * 1000 });
+    const hourOld = leftover("pack/tmp_pack_hour01", { old: true });
+    try {
+      await readRemoteFile(f.bare, head, "test/crossing.txt", { cacheDir: f.cacheDir, session: patient });
+      assert.ok(hourOld in objectStore(f.repoDir), "an hour is not old to a session that allows a fetch two");
+    } finally { await patient.close(); }
+  } finally { writer?.stdin.destroy(); writer?.kill("SIGKILL"); }
+  // Nor when the object store itself is a link: nothing is looked for there at all.
+  const g = crossing("grows");
+  const gHead = g.advance();
+  await observeRemote(g.bare, { cacheDir: g.cacheDir, at: gHead });
+  const moved = join(g.base, "moved-objects");
+  renameSync(join(g.repoDir, "objects"), moved);
+  symlinkSync(moved, join(g.repoDir, "objects"));
+  const old2 = join(moved, "pack", "tmp_pack_old001");
+  writeFileSync(old2, "x"); utimesSync(old2, HOUR_AGO(), HOUR_AGO());
+  assert.equal((await readRemoteFile(g.bare, g.first, "test/crossing.txt", { cacheDir: g.cacheDir })).bytes.toString(), g.one, "the fetch itself still works through the link, as git does");
+  assert.equal(existsSync(old2), true, "the kernel removes nothing through a link");
 });

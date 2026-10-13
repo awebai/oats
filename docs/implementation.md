@@ -304,6 +304,37 @@ caches need git 2.45 or later (`PARTIAL_FETCH_GIT`, the first git with
 partial cache it meets is deleted and fetched again whole, and the same
 notice says why.
 
+The fetch of a commit negotiates: git tells the server the commits the cache
+holds (its pins), and the pack holds only what they lack, a few kilobytes for
+a new head beside the last one. The server may then send an object as a delta
+against one it takes the cache to hold, and the cache does not hold the blobs
+its filter left out: git cannot complete that pack, may not fetch the missing
+base on its own, and the fetch fails with words the kernel cannot classify.
+`git fetch` cannot ask for a pack that is complete by itself while
+negotiating, so `fetchCommit` makes a fetch that failed as `unknown` once
+more without negotiation (`fetch.negotiationAlgorithm=noop`), which brings
+the commit whole and is complete whatever the cache holds
+(awebai/oats#1059). One second attempt, never a third, and never on git's
+wording. git does not remove the pack file of a fetch that dies
+(`objects/pack/tmp_pack_*`), and the cache runs no gc, so every fetch, under
+the write lock, first removes the temporary files of the object store that
+are older than the longest fetch (`temporaryStaleMs` in `lib/remote.mjs`
+says what that is): `tmp_*` in `objects/pack`, in `objects` and
+in its two-character directories, where git's own `prune` looks, and nowhere
+behind a symbolic link. Age is the only rule, the one of a stale git lock
+below and of `git prune`. A failed fetch's own pack is not removed at once,
+because a file that appeared during a fetch cannot be told from one another
+git is writing: an older kernel's fetch takes no write lock, and git names
+the file itself.
+
+A failed git call is classified from what it shows (`classifyRemoteFailure`):
+our own timer's kill is `timeout`, another signal `killed`, a failed write of
+the cache `cache`, and otherwise git's text decides, read without the object
+ids it names. A text that shows nothing the kernel recognises is `unknown`,
+never `network`, and the message of an `unknown` failure carries git's own
+line through one scrub (`scrubGitLine`): one line, bounded, with no control
+character and no URL's user information.
+
 Every write to a cache repo (its `git init`, config, fetches and pins) holds
 the repo's cross-process write lock, `<cache>/.locks/<repo>.lock`
 (`withCacheWriteLock`): an exclusive file holding `{pid, token, startedAt}`,
@@ -327,6 +358,12 @@ is said once as a warning. Anything else is `reason: "cache"` naming the
 file and when it is safe to remove; so is any other local write failure
 (a `FETCH_HEAD` git cannot open, a read-only or full disk), with git's own
 words.
+
+Nothing but the kernel runs git in a cache entry. What an entry is
+(partial, with no url, pinned by its own refs, no blob fetched lazily)
+holds only through the kernel's own commands, and a git command named for a
+read still writes there: a `git fetch --dry-run` writes the objects it
+receives, and takes no write lock.
 
 Across commands, `memoAtCommit` keeps parsed reads under
 `<cache>/.parsed/<kernel fingerprint>/`, keyed by (repo key, full commit,
