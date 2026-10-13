@@ -11,7 +11,7 @@
 // verbatim record); text is extracted from that line, so a hit names the
 // turn AND the event's line in the original transcript.
 
-import { existsSync, mkdirSync, rmSync, unlinkSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -49,6 +49,12 @@ CREATE TABLE IF NOT EXISTS tombstones (
 CREATE TABLE IF NOT EXISTS index_state (
   stream TEXT PRIMARY KEY,
   indexed_count INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS index_bytes (
+  stream TEXT PRIMARY KEY,
+  bytes INTEGER NOT NULL,
+  indexed_count INTEGER NOT NULL,
+  epoch TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
@@ -110,7 +116,7 @@ export class RecordIndex {
       const db = new DatabaseSync(path);
       // Concurrent index users (watcher pass, manual reindex, recall)
       // wait for each other instead of dying on "database is locked".
-      db.exec("PRAGMA busy_timeout = 60000");
+      db.exec("PRAGMA busy_timeout = 60000; PRAGMA cache_size = -2048; PRAGMA temp_store = FILE");
       return db;
     };
     this.db = open();
@@ -147,39 +153,69 @@ export class RecordIndex {
     return row ? row.value : null;
   }
 
-  // Index everything appended since the last pass.
+  // Old releases keep writing index_state's count. A separate cursor table
+  // leaves that schema/writer compatible; differing counts invalidate our
+  // cursor rather than trusting a byte position left behind by a downgrade.
   update() {
+    let reset = false;
+    for (const row of this.db.prepare(`SELECT s.stream, s.indexed_count, b.bytes,
+      b.indexed_count AS byte_count, b.epoch FROM index_state s
+      LEFT JOIN index_bytes b ON s.stream = b.stream`).iterate()) {
+      const checkpoint = this.store.journalCheckpoint(row.stream);
+      let boundary = true;
+      if (Number.isSafeInteger(row.bytes) && row.bytes > 0 && row.bytes < checkpoint.bytes) {
+        const fd = openSync(this.store.journalPath(row.stream), "r"), byte = Buffer.alloc(1);
+        try { boundary = readSync(fd, byte, 0, 1, row.bytes - 1) === 1 && byte[0] === 10; }
+        finally { closeSync(fd); }
+      }
+      if (!Number.isSafeInteger(row.bytes) || row.bytes < 0 || !boundary || row.indexed_count !== row.byte_count ||
+          row.epoch !== checkpoint.epoch || row.bytes > checkpoint.bytes || row.byte_count > checkpoint.count) {
+        reset = true;
+        break;
+      }
+    }
+    // Deleting a stream or changing its history can change tombstone authority
+    // and cross-stream dedupe. Rebuild the derived union, not only its FTS rows.
+    if (reset) this.reset();
     const owner = this.store.owner;
-    this.db.exec("BEGIN");
-    try {
-      if (owner) {
-        this.db
-          .prepare("INSERT INTO meta (key, value) VALUES ('owner', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-          .run(owner);
-      }
-      const effectiveOwner = this.recordOwner();
-      const getState = this.db.prepare("SELECT indexed_count FROM index_state WHERE stream = ?");
-      const setState = this.db.prepare(
-        "INSERT INTO index_state (stream, indexed_count) VALUES (?, ?) ON CONFLICT(stream) DO UPDATE SET indexed_count = excluded.indexed_count",
-      );
-      for (const streamId of this.store.listStreams()) {
-        const done = Number(getState.get(streamId)?.indexed_count ?? 0);
-        let count = 0;
-        for (const turn of this.store.iterateStream(streamId)) {
-          if (count >= done) this.addTurn(turn, streamId, effectiveOwner);
-          count++;
-        }
-        setState.run(streamId, count);
-      }
-      this.db.exec("COMMIT");
-    } catch (err) {
-      this.db.exec("ROLLBACK");
-      throw err;
+    if (owner) this.db.prepare("INSERT INTO meta (key, value) VALUES ('owner', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(owner);
+    const effectiveOwner = this.recordOwner();
+    const getState = this.db.prepare("SELECT * FROM index_bytes WHERE stream = ?");
+    const setCount = this.db.prepare("INSERT INTO index_state VALUES (?, ?) ON CONFLICT(stream) DO UPDATE SET indexed_count=excluded.indexed_count");
+    const setBytes = this.db.prepare("INSERT INTO index_bytes VALUES (?, ?, ?, ?) ON CONFLICT(stream) DO UPDATE SET bytes=excluded.bytes, indexed_count=excluded.indexed_count, epoch=excluded.epoch");
+    for (const streamId of this.store.listStreams()) {
+      this.store.withStreamLock(streamId, () => this.store.withDerived(state => {
+        const checkpoint = this.store.validateJournal(streamId, state);
+        const previous = getState.get(streamId);
+        let position = previous?.bytes ?? 0, count = previous?.indexed_count ?? 0;
+        if (previous && previous.epoch !== checkpoint.epoch) throw new Error("journal changed during index update; retry to rebuild derived state");
+        if (previous && position === checkpoint.bytes) return;
+        const iterator = this.store.iterateJournal(streamId, { start: position, end: checkpoint.bytes });
+        let done = false;
+        try {
+          while (!done) {
+            this.db.exec("BEGIN IMMEDIATE");
+            try {
+              let batch = 0, bytes = 0;
+              while (batch < 2000 && bytes < 8 * 1024 * 1024) {
+                const next = iterator.next();
+                if (next.done) { done = true; break; }
+                const entry = next.value;
+                if (entry.turn !== null) { this.addTurn(entry.turn, streamId, effectiveOwner); count++; }
+                position = entry.end; bytes += entry.bytes; batch++;
+              }
+              setCount.run(streamId, count);
+              setBytes.run(streamId, position, count, checkpoint.epoch);
+              this.db.exec("COMMIT");
+            } catch (err) { this.db.exec("ROLLBACK"); throw err; }
+          }
+        } finally { iterator.return(); }
+      }));
     }
   }
 
   // Full rebuild = reset + update from zero. Same code path as update().
-  rebuild() {
+  reset() {
     this.db.exec("BEGIN");
     try {
       this.db.exec("DELETE FROM turns");
@@ -190,13 +226,15 @@ export class RecordIndex {
       this.db.exec("DELETE FROM segments");
       this.db.exec("DELETE FROM spawns");
       this.db.exec("DELETE FROM index_state");
+      this.db.exec("DELETE FROM index_bytes");
       this.db.exec("COMMIT");
     } catch (err) {
       this.db.exec("ROLLBACK");
       throw err;
     }
-    this.update();
   }
+
+  rebuild() { this.reset(); this.update(); }
 
   // Insert one turn, maintaining the hidden invariant in both arrival
   // orders (tombstone before or after target). Duplicate ids across

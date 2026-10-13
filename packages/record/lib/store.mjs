@@ -31,6 +31,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { DerivedState, fileVersion, sameVersion } from "./derived-state.mjs";
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -332,7 +333,7 @@ export class RecordStore {
     // The write path validates each journal once before its first append
     // (interior corruption must fail loud, never accept appends after the
     // damage); its own appends are trusted afterwards.
-    this.validatedStreams = new Set();
+
   }
 
   // Serialize every read-repair-write sequence on one stream across
@@ -411,25 +412,81 @@ export class RecordStore {
   // rules as readStream. Joining fragments only at a newline avoids
   // repeatedly copying long lines as each chunk arrives.
   *iterateStream(streamId) {
+    for (const entry of this.iterateJournal(streamId)) if (entry.turn !== null) yield entry.turn;
+  }
+
+  // Absolute byte boundaries, including blank lines, permit durable seeks.
+  // The final fragment never advances a cursor: it is the owner's torn tail.
+  *iterateJournal(streamId, { start = 0, end = Infinity } = {}) {
     let fd;
     try { fd = openSync(this.journalPath(streamId), "r"); }
     catch (e) { if (e.code === "ENOENT") return; throw e; }
-    let lineStart = 0;
+    let position = start;
     try {
-      for (const line of bufferLines(fileChunks(fd, { size: 65536 }))) {
-        // A final fragment without a newline is a torn tail, even if its
-        // JSON is valid. Readers leave it for the owner's append repair.
+      for (const line of bufferLines(fileChunks(fd, { start, end, size: 65536 }))) {
         if (line[line.length - 1] !== 10) return;
         let parsed;
         try { parsed = parseJournal(line); }
         catch (e) {
-          if (e instanceof StoreError) throw new StoreError(`corrupt interior journal line at byte ${lineStart}`);
+          if (e instanceof StoreError) throw new StoreError(`corrupt interior journal line at byte ${position}`);
           throw e;
         }
-        lineStart += line.length;
-        yield* parsed.turns;
+        position += line.length;
+        yield { turn: parsed.turns[0] ?? null, end: position, bytes: line.length };
       }
     } finally { closeSync(fd); }
+  }
+
+  withDerived(fn) {
+    const state = new DerivedState(this.root);
+    try { return fn(state); } finally { state.close(); }
+  }
+
+  // Caller holds the stream lock. Only a version recorded after validation or
+  // our fsynced append can skip history. Unknown writes (including old releases),
+  // replacement and shrink start a new epoch and invalidate dependent cursors.
+  // Partial validation is resumable, but cannot authorize an append.
+  validateJournal(streamId, state) {
+    const path = this.journalPath(streamId), version = fileVersion(path);
+    let checkpoint = state.get("journal", streamId);
+    if (checkpoint && sameVersion(checkpoint.version, version) && checkpoint.complete) return checkpoint;
+    if (!checkpoint || !sameVersion(checkpoint.version, version)) {
+      checkpoint = { version, epoch: randomBytes(16).toString("hex"), bytes: 0, count: 0, complete: false };
+      state.transaction(() => {
+        state.db.prepare("DELETE FROM journal_ids WHERE stream = ?").run(streamId);
+        state.set("journal", streamId, checkpoint);
+      });
+    }
+    const addId = state.db.prepare("INSERT OR IGNORE INTO journal_ids VALUES (?, ?)");
+    const iterator = this.iterateJournal(streamId, { start: checkpoint.bytes, end: version?.size ?? 0 });
+    let done = false;
+    try {
+    while (!done) {
+      state.transaction(() => {
+        let batch = 0, bytes = 0;
+        while (batch < 2000 && bytes < 8 * 1024 * 1024) {
+          const next = iterator.next();
+          if (next.done) { done = true; break; }
+          const entry = next.value;
+          if (entry.turn !== null) {
+            checkpoint.count++;
+            if (typeof entry.turn.id === "string") addId.run(streamId, entry.turn.id);
+          }
+          checkpoint.bytes = entry.end;
+          bytes += entry.bytes; batch++;
+        }
+        if (!sameVersion(version, fileVersion(path))) throw new StoreError(`journal changed during validation: ${path}`);
+        checkpoint.complete = done;
+        state.set("journal", streamId, checkpoint);
+      });
+    }
+    return checkpoint;
+    } finally { iterator.return(); }
+  }
+
+  journalCheckpoint(streamId) {
+    this.journalPath(streamId);
+    return this.withStreamLock(streamId, () => this.withDerived(state => this.validateJournal(streamId, state)));
   }
 
   // The ids among `candidates` that the stream holds, in one streamed read of
@@ -522,11 +579,17 @@ export class RecordStore {
   // Returns { turn, appended } — appended=false when the id already exists.
   appendCore(streamId, core, knownIds = null) {
     const turn = finishTurn(core);
-    const ids = knownIds ?? new Set(this.readStream(streamId).map((t) => t.id));
-    if (ids.has(turn.id)) return { turn, appended: false };
-    this.append(streamId, turn);
-    ids.add(turn.id);
-    return { turn, appended: true };
+    if (knownIds) {
+      if (knownIds.has(turn.id)) return { turn, appended: false };
+      this.append(streamId, turn);
+      knownIds.add(turn.id);
+      return { turn, appended: true };
+    }
+    return { turn, appended: this.appendUniqueBatch(streamId, [turn]) === 1 };
+  }
+
+  appendUniqueBatch(streamId, turns) {
+    return this.appendBatch(streamId, turns, 8 * 1024 * 1024, true);
   }
 
   // Append many finished turns with bounded writes and one fsync. Same
@@ -535,8 +598,8 @@ export class RecordStore {
   // chunked by bytes, never one join of the whole batch: a large session
   // captured in one pass is a single batch, and joining it can exceed
   // V8's maximum string length (this crashed the first live recapture).
-  appendBatch(streamId, turns, maxChunkBytes = 32 * 1024 * 1024) {
-    if (turns.length === 0) return;
+  appendBatch(streamId, turns, maxChunkBytes = 32 * 1024 * 1024, unique = false) {
+    if (turns.length === 0) return 0;
     if (!this.owner) throw new StoreError("store has no owner; cannot append");
     if (streamOwner(streamId) !== this.owner) {
       throw new StoreError(
@@ -547,35 +610,36 @@ export class RecordStore {
       if (!verifyTurnId(turn)) throw new StoreError("turn id missing or does not match content");
     }
     const path = this.journalPath(streamId);
-    this.withStreamLock(streamId, () => {
-      // First append to this stream in this instance: read the whole
-      // journal, so interior corruption throws here instead of silently
-      // collecting appends behind the damage. A torn tail is tolerated
-      // (iterateStream leaves it, as parseJournal treats it as
-      // final-line-torn) and repaired below. Streamed, one line at a time:
-      // a journal can be far larger than the heap (awebai/oats#456).
-      if (!this.validatedStreams.has(streamId) && existsSync(path)) {
-        for (const _turn of this.iterateStream(streamId)) { /* validated as read */ }
-      }
-      this.validatedStreams.add(streamId);
+    return this.withStreamLock(streamId, () => this.withDerived(state => {
+      const checkpoint = this.validateJournal(streamId, state);
       repairTail(path);
-      let chunk = [];
-      let chunkBytes = 0;
+      const hasId = state.db.prepare("SELECT 1 FROM journal_ids WHERE stream = ? AND id = ?");
+      const addId = state.db.prepare("INSERT OR IGNORE INTO journal_ids VALUES (?, ?)");
+      let chunk = [], chunkBytes = 0, appended = 0;
       const flush = () => {
-        if (chunk.length === 0) return;
+        if (!chunk.length) return;
         appendFileSync(path, chunk.join("\n") + "\n");
-        chunk = [];
-        chunkBytes = 0;
+        chunk = []; chunkBytes = 0;
       };
-      for (const turn of turns) {
-        const line = JSON.stringify(turn);
-        if (chunkBytes > 0 && chunkBytes + line.length > maxChunkBytes) flush();
-        chunk.push(line);
-        chunkBytes += line.length + 1;
-      }
-      flush();
-      syncPath(path);
-    });
+      // A failed transaction can leave appended journal bytes. Its old version
+      // checkpoint then fails qualification and a later pass validates/rebuilds.
+      return state.transaction(() => {
+        for (const turn of turns) {
+          if (unique && hasId.get(streamId, turn.id)) continue;
+          const line = JSON.stringify(turn), bytes = Buffer.byteLength(line) + 1;
+          if (chunkBytes && chunkBytes + bytes > maxChunkBytes) flush();
+          chunk.push(line); chunkBytes += bytes;
+          addId.run(streamId, turn.id); appended++;
+        }
+        flush();
+        if (existsSync(path)) syncPath(path);
+        checkpoint.version = fileVersion(path);
+        checkpoint.bytes = checkpoint.version?.size ?? 0;
+        checkpoint.count += appended;
+        state.set("journal", streamId, checkpoint);
+        return appended;
+      });
+    }));
   }
 
   // ------------------------------------------------------------- objects

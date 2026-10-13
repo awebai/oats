@@ -114,6 +114,16 @@ counts/boundaries stream the journals with disk-backed tombstone lookup.
 Explicit final proofs may read the full snapshot; their output inventories
 remain proportional to the issues and sessions the receipt must return.
 
+The search index checkpoints byte positions and turn counts in the same
+transaction as its indexed rows, at most 2,000 journal lines or 8 MiB plus
+the last record per transaction. Known journal history is qualified by a
+durable file-version checkpoint (device, inode, size and nanosecond modification
+and change timestamps). Owner appends preserve its epoch after fsync; an
+unknown write, replacement or shrink requires bounded journal validation and
+invalidates dependent index cursors. Interrupted validation and indexing resume
+from their last committed batch. Initial/recovery validation reads historical
+content; unchanged normal passes do not.
+
 ## Ignoring sessions and paths (privacy)
 
 `<root>/ignore` is a plain text file of glob patterns, one per line (blank
