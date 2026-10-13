@@ -540,22 +540,30 @@ function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
 /** Actions on one row also wait when its deployment is stale (#482: that deployment's last re-read failed). */
 function rowActionsCurrent(s, i) { return actionsCurrent(s) && !rowStale(i, s.panel.deployments); }
 /** The stale rule's age (" · observed 45s ago") for the kept observation, from the panel's observedAt; nothing when unreported. */
-/** The note over rows kept after a failed read. The failure's message is one display line, cut to 300, and
- * its speaker is the one the failure notice beside it names (speaker-line.mjs, from the same mark):
+/** The notice of a kept failure (the last read failed), composed from its parts. `own` is the Desktop's
+ * sentence about what is on screen. The failure's message is one display line, cut to 300, and its speaker
+ * is the one the failure notice beside it names (speaker-line.mjs, from the same mark):
  *
- *   the kernel's, a line     "Roster unavailable. Showing a reported observation<age>, …; actions disabled. OATS says: <line>"
- *   the kernel's, withheld   "Roster unavailable. Showing … actions disabled. [Detail withheld]"
- *   no speaker, a line       "Roster unavailable: <line>. Showing … actions disabled."
- *   no speaker, withheld     "Roster unavailable: [Detail withheld]. Showing … actions disabled."
- *   nothing to show          "Roster unavailable. Showing … actions disabled."
+ *   the kernel's, a line     "Roster unavailable. <own> OATS says: <line>"
+ *   the kernel's, withheld   "Roster unavailable. <own> [Detail withheld]"
+ *   no speaker, a line       "Roster unavailable: <line>. <own>"
+ *   no speaker, withheld     "Roster unavailable: [Detail withheld]. <own>"
+ *   nothing to show          "Roster unavailable. <own>"
  *
- * The kernel's words stand apart, after the Desktop's own sentence; a message with no speaker stays inside it. */
-function reportedObservationNote(kept, age) {
+ * The kernel's words stand apart, after the Desktop's own sentences; a message with no speaker stays inside
+ * them. Both of the view's notes of a kept failure are written here: the one over the rows it kept
+ * (`reportedObservationNote`) and the one of a failed read that kept none (`presentFailure`). */
+function keptFailureNote(kept, own) {
   const { lead, line } = speakerParts(kept.origin, kept.message);
-  const shown = line === null ? null : line.slice(0, 300), own = `Showing a reported observation${age}, not current state; actions disabled.`;
+  const shown = line === null ? null : line.slice(0, 300);
   if (kept.origin === 'kernel') return ['Roster unavailable.', own, lead, shown].filter(part => part !== null).join(' ');
   return shown === null ? `Roster unavailable. ${own}` : `Roster unavailable: ${shown}. ${own}`;
 }
+/** The note over rows kept after a failed read. */
+const reportedObservationNote = (kept, age) => keptFailureNote(kept, `Showing a reported observation${age}, not current state; actions disabled.`);
+/** A failed read that kept no rows, as the error `refresh` throws: the kept failure itself travels on it,
+ * for `presentFailure` to compose the notice from; its message is the line the loading status speaks. */
+function keptFailureError(kept) { return Object.assign(Error(keptFailureLine(kept) ?? ''), { kept }); }
 function staleAge(s) {
   const age = observedText(s.load?.observedAt ?? null, Date.now());
   return age ? ` · ${age}` : '';
@@ -667,9 +675,9 @@ export async function refresh(s, { user = false } = {}) {
     // observedAt (spec 02, additive) labels the observation's age; never invented.
     panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
     if (data.deployment?.status !== 'pending') s.pendingWatch.observe(null, false); // the server answered
-    // Failed absence is not an observed empty roster: the failure's message, with who made it.
+    // Failed absence is not an observed empty roster: the kept failure, its message and who made it.
     const kept = keptFailure(panel);
-    if (kept && !panel.instances.length) throw Error(keptFailureLine(kept) ?? '');
+    if (kept && !panel.instances.length) throw keptFailureError(kept);
     // A deployment the kernel has not observed yet (the server's first read is
     // still running) or could not observe is not an empty roster either. Pending
     // keeps its own copy in the summary — no skeleton, no counts, no empty state —
@@ -732,7 +740,9 @@ function presentFailure(s, error, requestedWorkspace) {
   if (readd) readd.hidden = !(s.reAddPath && typeof s.ctx.reAddWorkspace === 'function');
   const said = error?.code === NOT_SERVED_CODE ? unservedError(NOT_SERVED_CODE, requestedWorkspace).message
     : String(error?.message || 'read failed').slice(0, 300);
-  notice(s, `${unserved ? said : `Roster unavailable: ${said}.`} ${s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`}`);
+  const own = s.dataGen == null ? 'No current observation.' : `Showing the last observation${staleAge(s)}, not current state; actions disabled.`;
+  // A kept failure is said in its own forms (keptFailureNote); "read failed" is a thrown error with no message.
+  notice(s, error?.kept ? keptFailureNote(error.kept, own) : `${unserved ? said : `Roster unavailable: ${said}.`} ${own}`);
   updatePop(s);
 }
 

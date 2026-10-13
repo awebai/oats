@@ -256,21 +256,45 @@ test('a kept failure with no words is still a failure: the rows go stale and the
   }
 });
 
-test("a failed read with nothing to show: the notice and the spoken status carry the kept message with the same speaker, from the panel's one mark", async t => {
+test("a failed read with nothing to show: the notice sets the kernel's words after the Desktop's own, as the note over kept rows does, and the spoken status carries the same speaker", async t => {
   const failed = async (extra) => { const u = await setup(t, { api: () => panel([], '/team', extra) }); await tick(); const said = [u.notice(), u.status(), u.sum().textContent, u.one('.empty')]; u.dispose(); return said; };
+  const NONE = 'No current observation.';
+  // The kernel's: its words stand after the Desktop's sentences, never inside them.
   assert.deepEqual(await failed({ error: 'the cache is locked', errorOrigin: 'kernel' }),
-    ['Roster unavailable: OATS says: the cache is locked. No current observation.', "Couldn't refresh roster. OATS says: the cache is locked", 'Roster unknown', null]);
-  assert.deepEqual(await failed({ error: 'the cache is locked' }),
-    ['Roster unavailable: the cache is locked. No current observation.', "Couldn't refresh roster. the cache is locked", 'Roster unknown', null]);
-  // Another value is no speaker for either; an unsafe message is withheld in both, under no speaker's name.
-  assert.deepEqual((await failed({ error: 'the cache is locked', errorOrigin: 'roster-read' })).slice(0, 2),
-    ['Roster unavailable: the cache is locked. No current observation.', "Couldn't refresh roster. the cache is locked"]);
+    [`Roster unavailable. ${NONE} OATS says: the cache is locked`, "Couldn't refresh roster. OATS says: the cache is locked", 'Roster unknown', null]);
   assert.deepEqual((await failed({ error: 'wipe \x1b[2J the screen', errorOrigin: 'kernel' })).slice(0, 2),
-    ['Roster unavailable: [Detail withheld]. No current observation.', "Couldn't refresh roster. [Detail withheld]"]);
-  // No words: a failed read all the same, never an observed empty roster.
+    [`Roster unavailable. ${NONE} [Detail withheld]`, "Couldn't refresh roster. [Detail withheld]"]);
+  // No speaker (another machine's panel, or a value that is not the kernel's): inside the sentence, as on the base.
+  assert.deepEqual(await failed({ error: 'the cache is locked' }),
+    [`Roster unavailable: the cache is locked. ${NONE}`, "Couldn't refresh roster. the cache is locked", 'Roster unknown', null]);
+  assert.deepEqual((await failed({ error: 'the cache is locked', errorOrigin: 'roster-read' })).slice(0, 2),
+    [`Roster unavailable: the cache is locked. ${NONE}`, "Couldn't refresh roster. the cache is locked"]);
+  assert.deepEqual((await failed({ error: 'token: abc123' })).slice(0, 2), [`Roster unavailable: [Detail withheld]. ${NONE}`, "Couldn't refresh roster. [Detail withheld]"]);
+  // No words: a failed read all the same, never an observed empty roster, and the Desktop's sentences alone.
   for (const extra of [{ error: '' }, { error: '', errorOrigin: 'kernel' }, { error: ' \n ', errorOrigin: 'kernel' }]) {
-    assert.deepEqual(await failed(extra), ['Roster unavailable: read failed. No current observation.', "Couldn't refresh roster.", 'Roster unknown', null], JSON.stringify(extra));
+    assert.deepEqual(await failed(extra), [`Roster unavailable. ${NONE}`, "Couldn't refresh roster.", 'Roster unknown', null], JSON.stringify(extra));
   }
+  // One line, cut at 300 as the path cuts it, the lead not counted; markup stays text.
+  const long = 'word '.repeat(100).trim();
+  assert.equal((await failed({ error: `first\n${long}`, errorOrigin: 'kernel' }))[0], `Roster unavailable. ${NONE} OATS says: ${`first ${long}`.slice(0, 300)}`);
+  assert.equal((await failed({ error: long }))[0], `Roster unavailable: ${long.slice(0, 300)}. ${NONE}`);
+  assert.equal((await failed({ error: '<b>bold</b>', errorOrigin: 'kernel' }))[0], `Roster unavailable. ${NONE} OATS says: <b>bold</b>`);
+  // "read failed" is a thrown error with no message, not a kept failure.
+  const thrown = await setup(t, { api: () => Promise.reject(new Error('')) }); await tick();
+  assert.equal(thrown.notice(), `Roster unavailable: read failed. ${NONE}`); thrown.dispose();
+});
+
+test("a failed read that kept no rows, over an observation already on screen: the same forms around the Desktop's sentence for what stays shown", async t => {
+  const LAST = 'Showing the last observation, not current state; actions disabled.';
+  const u = await setup(t, { instances: [instance('a')] }); await tick();
+  const after = async (extra) => { u.setRead(() => panel([], currentWorkspace(), extra)); await u.poll(); await tick(); return u.notice(); };
+  assert.equal(await after({ error: 'the cache is locked', errorOrigin: 'kernel' }), `Roster unavailable. ${LAST} OATS says: the cache is locked`);
+  assert.equal(u.nodes().length, 1, 'the last observation stays painted');
+  assert.equal(await after({ error: 'bell\u0007', errorOrigin: 'kernel' }), `Roster unavailable. ${LAST} [Detail withheld]`);
+  assert.equal(await after({ error: '', errorOrigin: 'kernel' }), `Roster unavailable. ${LAST}`);
+  assert.equal(await after({ error: 'the cache is locked' }), `Roster unavailable: the cache is locked. ${LAST}`);
+  assert.equal(await after({ error: 'token: abc123' }), `Roster unavailable: [Detail withheld]. ${LAST}`);
+  assert.equal(await after({ error: '' }), `Roster unavailable. ${LAST}`);
 });
 
 test('a Herdr-recorded instance: the popover disables Terminal and Restart with the kernel reason as their title', async t => {

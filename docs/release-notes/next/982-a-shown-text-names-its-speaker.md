@@ -25,11 +25,22 @@
   reason, and the Desktop's own sentence, as before, for a row of an older
   OATS.
 
-- **Desktop: the overview says who made a row's reason and a failed read's
-  message.** The Terminal and Restart tooltips of a Herdr row read "OATS
-  says: …" when OATS gave the reason. When the roster's read fails with
-  nothing to show, the notice and the announcement carry the message with
-  its speaker: "Roster unavailable: OATS says: …".
+- **Desktop: the overview says who made a Herdr row's reason.** The Terminal
+  and Restart tooltips of a Herdr row read "OATS says: …" when OATS gave the
+  reason.
+
+- **Desktop: the overview's notice of a failed read with no rows puts
+  OATS's message after its own sentences.** It read "Roster unavailable:
+  `<message>`. No current observation." It now reads "Roster unavailable. No
+  current observation. OATS says: `<message>`", the message as one line of
+  at most 300 characters, and the announcement reads "Couldn't refresh
+  roster. OATS says: `<message>`". A message that is withheld reads "[Detail
+  withheld]" in its place with no "OATS says:"; with no message the notice
+  is "Roster unavailable. No current observation." When an earlier
+  observation is still on screen, "Showing the last observation, not current
+  state; actions disabled." stands where "No current observation." does.
+  Another machine's message has no speaker and stays inside the sentence,
+  as before.
 
 - **Desktop: the overview's note over rows kept after a failed read puts
   OATS's message after its own sentence.** It read "Roster unavailable:

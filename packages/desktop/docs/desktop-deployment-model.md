@@ -171,12 +171,15 @@ other, and the shared reason and each of the Desktop's notices agree.
 `errorOrigin` is `"kernel"` when the installed CLI printed the message and
 absent otherwise; another machine's panel never carries it.
 
-The reason of a stale deployment is under "Reasons". The overview's note
-over the kept rows has the same shape: "Roster unavailable. Showing a
-reported observation, not current state; actions disabled. OATS says:
-<message>" for the kernel's message, the Desktop's sentence alone when there
-is none to show, and "Roster unavailable: <message>. Showing…" for a message
-with no speaker (another machine's panel).
+The reason of a stale deployment is under "Reasons". The overview's notes
+of a kept failure have the same shape, composed in one place
+(`keptFailureNote`, `renderer/views/hierarchy.mjs`): "Roster unavailable.
+Showing a reported observation, not current state; actions disabled. OATS
+says: <message>" for the kernel's message, the Desktop's sentences alone
+when there is none to show, and "Roster unavailable: <message>. Showing…"
+for a message with no speaker (another machine's panel). A failed read that
+kept no rows reads the same way around the sentence for what is on screen:
+"Roster unavailable. No current observation. OATS says: <message>".
 
 ## Capability gates
 
