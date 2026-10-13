@@ -10,15 +10,21 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind, makeUnreadable } from "./fixtures/northwind/build.mjs";
+import { privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
+
+/** Where this file's CLI children look for a tmux server (status and spawn ask tmux for its sessions):
+ *  a directory of the file, never tmux's default place, where a host's live deployment has its server. */
+const TMUX_TMPDIR = privateTmuxTmpdir();
+test.after(() => removeTmuxTmpdir(TMUX_TMPDIR));
 
 function oats(args, { base, env = {} }) {
   return spawnSync(process.execPath, [CLI, ...args], {
     encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, PATH: inertHarnessPath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "", OATS_REMOTE_CACHE: join(base, "cache"), HOME: join(base, "home"),
-      OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, ...env },
+      OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR, ...env },
   });
 }
 const envelope = (r) => { const doc = JSON.parse(r.stdout.trim().split("\n").pop()); assert.equal(doc.schemaVersion, 1); return doc; };
