@@ -14,7 +14,8 @@
  * before for a row without a text. A text with no origin is shown without a lead, as the Desktop's own
  * words always were, and never under "OATS says:".
  *
- * A kernel refusal's own texts, its message and its fix, are quoted the same way (`kernelLines`): they are the
+ * A kernel refusal's own texts, its message and its fix, are quoted the same way by the shared home's
+ * `kernelLines` (packages/client/kernel-lines.mjs), which each caller gives `DESKTOP_TERMS`: they are the
  * kernel's by the place they are read from, so they need no mark.
  *
  * The marks come from the Desktop's own backend (`/api/panel`), which sets them in the shared home and
@@ -36,25 +37,6 @@ export function speakerParts(origin, text) {
 export function speakerLine(origin, text) {
   const { lead, line } = speakerParts(origin, text);
   return lead ? `${lead} ${line}` : line;
-}
-
-/** The lines of a kernel refusal's two texts, its `message` and its `fix` (a launch problem of a soul, the
- * spawn dialog's Details for an unmatched launch preference). Each text goes through the filter alone and
- * is its own line, whole: nothing is joined, taken out or compared, so a remedy the kernel says in both is
- * read in both. The kernel's name stands before the first of them that has a line to show, so no text of
- * the kernel's stands without its speaker:
- *
- *   message a line, fix a line       ["OATS says: <message>", "<fix>"]
- *   message withheld, fix a line     ["[Detail withheld]", "OATS says: <fix>"]
- *   message nothing, fix a line      ["OATS says: <fix>"]
- *   message a line, fix withheld     ["OATS says: <message>", "[Detail withheld]"]
- *   message a line, fix nothing      ["OATS says: <message>"]
- *   neither has a line               what is there ("[Detail withheld]" for a withheld text), no lead
- */
-export function kernelLines(message, fix) {
-  const lines = [displayLine(message), displayLine(fix)].filter(line => line !== null);
-  const first = lines.findIndex(line => line !== DETAIL_WITHHELD);
-  return lines.map((line, index) => (index === first ? `${originLead('kernel', DESKTOP_TERMS)} ${line}` : line));
 }
 
 /** A kept failure's message (packages/client/deployment-facts.mjs `keptFailure`) with its speaker, or null

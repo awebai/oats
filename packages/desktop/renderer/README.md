@@ -589,7 +589,7 @@ technical or kernel text — paths, hashes, the `git clone` remedy — stay
 behind a **Details** toggle and in `data-code`; no decision depends on wording.
 For an unmatched launch preference (`E_LAUNCH_PREFERENCE_UNMATCHED`) Details
 hold the code and then the kernel's message and fix, each on its own line
-under "OATS says:" (`speaker-line.mjs` `kernelLines`, one
+under "OATS says:" (`packages/client/kernel-lines.mjs` `kernelLines`, one
 `span.spawn-problem-line` each). A soul's launch problem (the soul page and
 panel, `soul-inspector.mjs` `launchProblem`) is drawn by the same function for
 every code: the Desktop's line (`p.launch-problem-own`), then one

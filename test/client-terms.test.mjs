@@ -14,6 +14,7 @@ import { WORKSPACE_FAILURE_CODES, workspaceFailure, workspaceGate, cliWorkspace 
 import { capabilityShowUnreadable } from "../packages/client/capability-show-contract.mjs";
 import { deploymentReasonParts, deploymentReason } from "../packages/client/workspace-views.mjs";
 import { originLead } from "../packages/client/instance-presentation.mjs";
+import { kernelLines } from "../packages/client/kernel-lines.mjs";
 import { deploymentLabelParts, deploymentLabel, machineLabels, machineLabelParts } from "../packages/client/deployment-label.mjs";
 import { rosterSections } from "../packages/client/roster-sections.mjs";
 import { deploymentUnavailableText, deploymentUnavailableParts } from "../packages/client/deployment-facts.mjs";
@@ -185,6 +186,7 @@ async function everyAnswer(terms) {
   assert.deepEqual(reached.sort(), [...WORKSPACE_FAILURE_CODES].sort(), "one cliWorkspace path for every failure the adapter has a sentence for");
   say("capabilityShowUnreadable", capabilityShowUnreadable(terms));
   for (const origin of ["kernel", "terminal-probe", "roster-read", "not-a-speaker"]) say(`originLead ${origin}`, originLead(origin, terms));
+  say("kernelLines", kernelLines("a message", "a fix", terms));
   REASON_INPUTS.forEach((d, n) => {
     const parts = deploymentReasonParts(d, terms);
     assert.equal(deploymentReason(d, terms), parts?.detail ?? null);
@@ -300,6 +302,7 @@ const TABLES = {
   cliWorkspace: (terms) => cliWorkspace(CLI, { action: "sync", context: "/w" }, terms, { exec: assert.fail, env: {} }),
   capabilityShowUnreadable: (terms) => capabilityShowUnreadable(terms),
   originLead: (terms) => originLead("kernel", terms),
+  kernelLines: (terms) => kernelLines("a message", "a fix", terms),
   deploymentReasonParts: (terms) => deploymentReasonParts({ local: true }, terms),
   deploymentReason: (terms) => deploymentReason({ local: true }, terms),
   deploymentLabelParts: (terms) => deploymentLabelParts({ machine: "altair" }, terms),
@@ -346,6 +349,11 @@ test("no terms: every table throws without them, and with an object clientTerms 
   assert.throws(() => rosterSections(ROWS, ROWS, [{ id: "a" }]), TypeError);
   assert.throws(() => undescribedAnswer("E_CLI_FAILED"), { name: "TypeError", message: "undescribedAnswer: terms must be the object clientTerms() returned" });
   assert.throws(() => undescribedRefusal(null), { name: "TypeError", message: "undescribedRefusal: terms must be the object clientTerms() returned" });
+  // kernelLines needs them also where it leads no line: both texts nothing, and both withheld.
+  for (const [message, fix] of [[null, null], [" ", ""], ["token: abc123", "token: abc123"]]) {
+    assert.throws(() => kernelLines(message, fix), { name: "TypeError", message: "kernelLines: terms must be the object clientTerms() returned" }, JSON.stringify([message, fix]));
+    assert.doesNotThrow(() => kernelLines(message, fix, real));
+  }
   assert.equal(requireTerms(real, "a table"), real);
 });
 
@@ -387,7 +395,7 @@ test("what needs only the code needs no terms", () => {
 test("the shared home holds no terms of its own: none of its modules calls clientTerms", () => {
   const home = new URL("../packages/client/", import.meta.url);
   for (const name of ["lifecycle-contract.mjs", "workspace-cli.mjs", "capability-show-contract.mjs", "workspace-views.mjs", "deployment-label.mjs", "roster-sections.mjs",
-    "deployment-facts.mjs", "panel-views.mjs", "instance-presentation.mjs"]) {
+    "deployment-facts.mjs", "panel-views.mjs", "instance-presentation.mjs", "kernel-lines.mjs"]) {
     const source = readFileSync(new URL(name, home), "utf8");
     assert.match(source, /import \{ requireTerms \} from '\.\/client-terms\.mjs';/, `${name} checks the terms it is given`);
     assert.doesNotMatch(source, /\bclientTerms\(/, `${name} makes terms of its own`);

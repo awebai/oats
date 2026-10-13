@@ -745,7 +745,7 @@ one rule for every code (`soul-inspector.mjs` `launchProblem`):
 - the kernel's `message` and `fix`, each on its own line and through the
   display filter alone, the kernel's name before the first of them that has
   a line to show ("OATS says: <message>", then `<fix>`), by `kernelLines`
-  (`renderer/speaker-line.mjs`);
+  (`packages/client/kernel-lines.mjs`);
 - the code behind Details.
 
 The line says what the box shows. It does not say that a soul without a box
@@ -771,7 +771,7 @@ each at most 1,024 characters.
 - **Details hold the code, then the kernel's two texts, each on its own
   line**: "OATS says: <message>", then `<fix>`. `spawnProblem` answers them as
   parts (`kernel: { message, fix }`, with the code alone as `detail`), and the
-  dialog draws them with `kernelLines` (`renderer/speaker-line.mjs`): each
+  dialog draws them with `kernelLines` (`packages/client/kernel-lines.mjs`): each
   text through the display filter alone and whole, the kernel's name before
   the first of them that has a line to show, `[Detail withheld]` with no name
   for a text the filter withholds. Nothing is taken out of the texts and
