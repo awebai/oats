@@ -73,6 +73,8 @@ function sourceOf(w, tree) {
   return { status: statusOf(w, tree), head: w.git(tree, "rev-parse", "HEAD").trim() };
 }
 
+/** What stands under the recovery root of the instance's soul: recoveries, and a staging while one is written. */
+const recoveriesOf = (w) => { const root = join(dirname(w.home), ".oats-retirement", "recovery"); return existsSync(root) ? readdirSync(root) : []; };
 const removeIndex = (w, tree = w.work) => rmSync(join(gitDirOf(w, tree), "index"));
 /** The instance's own tree, made again by Git with no checkout: no index file, and no file in the tree. */
 function ownTreeWithNoCheckout(w) {
@@ -151,14 +153,20 @@ test("a tree with no index file and a merge left open is retired, and the recove
   assert.equal(readFileSync(join(repo, ".git", "MERGE_HEAD"), "utf8").trim(), other, "the recovery's repository is in the same merge");
 });
 
-test("a nested repository with no index file is copied with none, and reads to Git as it did", (t) => {
-  const w = instance(t, "nested");
+/** A repository of its own under the instance's tree, in a directory the tree ignores, with one commit. */
+function nestedRepository(w) {
   const nested = join(w.work, "human-ignored", "nested");
   mkdirSync(nested, { recursive: true });
   w.git(null, "init", "--quiet", nested);
   writeFileSync(join(nested, "nested.txt"), "nested\n");
   w.git(nested, "add", ".");
   w.git(nested, "commit", "--quiet", "-m", "nested");
+  return nested;
+}
+
+test("a nested repository that has a commit and no index file is copied with none, and reads to Git as it did", (t) => {
+  const w = instance(t, "nested");
+  const nested = nestedRepository(w);
   removeIndex(w, nested);
   const source = sourceOf(w, nested);
   const receipt = retired(w, "--discard-worktree");
@@ -216,6 +224,21 @@ test("a directory where the index belongs is not a tree with no index: Git canno
   assert.notEqual(r.status, 0, `a tree that Git cannot read was retired: ${r.stdout}`);
   assert.equal(JSON.parse(r.stdout).error.code, "E_WORK_INSPECTION_FAILED", r.stdout);
   assert.equal(readFileSync(join(w.work, "scratch.txt"), "utf8"), "untracked\n", "the home and the work are kept");
-  const recoveries = join(dirname(w.home), ".oats-retirement", "recovery");
-  assert.deepEqual(existsSync(recoveries) ? readdirSync(recoveries) : [], [], "neither a recovery nor its staging is left behind");
+  assert.deepEqual(recoveriesOf(w), [], "neither a recovery nor its staging is left behind");
+});
+
+test("a directory where a nested repository's index belongs: Git cannot read that repository, and the retire refuses with Git's message when it reads its state for the copy", (t) => {
+  const w = instance(t, "nested-directory");
+  const nested = nestedRepository(w);
+  removeIndex(w, nested);
+  mkdirSync(join(nested, ".git", "index"));
+  const r = w.cli("retire", w.name, "--discard-worktree", "--json");
+  assert.notEqual(r.status, 0, `a nested repository that Git cannot read was retired: ${r.stdout}`);
+  const error = JSON.parse(r.stdout).error;
+  assert.equal(error.code, "E_WORK_PRESERVATION_FAILED", r.stdout);
+  assert.match(error.message, /nested\/\.git\/index/, "the message names the index");
+  assert.doesNotMatch(error.message, /as a file, and/, "it is Git's failure, met before the copier looks at the index");
+  assert.match(error.message, /No retire hook has run, no recovery was written and nothing was deleted/);
+  assert.equal(readFileSync(join(nested, "nested.txt"), "utf8"), "nested\n", "the home and the work are kept");
+  assert.deepEqual(recoveriesOf(w), [], "neither a recovery nor its staging is left behind");
 });

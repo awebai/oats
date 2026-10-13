@@ -731,6 +731,14 @@ not, a FIFO, an entry that cannot be read) refuses the copy with
 `E_WORK_PRESERVATION_FAILED`, naming the path and what is there. The retire
 looks before it copies, so the answer is the same on every file system.
 
+For the index this refusal is not reached. Git reads the index before the
+copy takes it, and Git fails where a directory, or a file that is not an
+index, stands at it. The retire then refuses with Git's message: for the
+instance's own tree at the inspection (`E_WORK_INSPECTION_FAILED`, before
+anything is stopped, run or removed), for a nested repository when its state
+is read for the copy (`E_WORK_PRESERVATION_FAILED`, the home and the work
+kept). An index that cannot be read refuses at the inspection in both.
+
 <a id="no-index-file"></a>
 **A tree with no index file is copied with none.** A work tree made by
 `git worktree add --no-checkout`, or one whose index file was removed, has no
@@ -738,7 +746,8 @@ index file, and Git reads it as a tree whose index lists nothing: every
 committed file is a staged deletion, and every file in the tree is
 untracked. A retire copies it as it copies any tree that holds work, and
 the recovery's `repo/` then has no index file either: Git reads it as it
-read the tree. The same holds for a nested repository with no index file.
+read the tree. The same holds for a nested repository that has a commit and
+no index file.
 `git reset` in the recovery makes an index from `HEAD`: the committed files
 are tracked again, and a file that was changed in the tree shows as changed.
 
