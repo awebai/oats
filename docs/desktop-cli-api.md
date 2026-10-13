@@ -931,7 +931,17 @@ oats souls [--dir <d>] [--max-age <s>] --json
 Every item of every confirmed member, the external souls, and the locked
 packages' capabilities and souls, sorted by name, then origin. Both carry
 `workspace: {name, key, commit}`, `problems` and, on a standalone view,
-`standalone: true`.
+`standalone: true`. Text mode prints every `problems` row on stdout under
+the table, in the same order as JSON: discovery problems, then unmatched
+`souls.launch` keys for `oats souls`. The line is `! <code>: <message>`,
+preserving the kernel code and message. A row with an owner (`repoKey`,
+`package` or `source`) adds ` [<where>]`: its existing `path`, preceded by
+`repoKey: ` or `package: ` when present. A source-owned row uses its path
+only; the source reference is never printed in the bracket. Context uses
+the kernel's terminal text escaping. Ownerless rows, including unmatched
+launch keys, have no bracket. Partial listings still exit 0; JSON success
+semantics and fatal refusals are unchanged. A problem does not necessarily
+mean an item is absent from the table.
 
 ```json
 {"soulsApi":1,"workspace":{"name":"northwind","key":"github.com/nw/agents","commit":"66566512…"},
@@ -978,8 +988,7 @@ problem`, (feature `souls-capabilities`) `capabilities`, and (feature
   as in the refusal's `details.keys`. `message` is at most 1024 characters
   and ends with the two commands, in their order. Each soul a spawn would
   refuse carries the refusal as `launch.problem`: the souls with no entry of
-  their own. Text mode prints each row under the table as `! <code>:
-  <message>`.
+  their own.
 - `teams` and `defaultTeam` (feature `team-model-3`) are a
   [TeamRow](#the-team-row-teamrow) list and a
   [DefaultTeam](#the-default-defaultteam); both `null` when the soul's teams
