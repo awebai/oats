@@ -104,7 +104,8 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
       const code = envelope?.error?.code || 'E_CLI_PROTOCOL';
       return denied(code, selected.target, { reason: failureReason(envelope, selected.remote, { code, features: selected.features }) });
     }
-    const data = lifecyclePlan(envelope.result, selected.target, request.operation, choices);
+    // The plan is read by the features of the kernel that made it: for a relayed plan its host's, never this computer's.
+    const data = lifecyclePlan(envelope.result, selected.target, request.operation, choices, { features: selected.features });
     if (!data) return denied('E_CLI_PROTOCOL', selected.target);
     const entry = storePlan(data, { ...selected, scope: getContext().workspace.scope, selector: clone(request.selector) }, choices);
     return entry ? displayed(entry) : denied('E_LIFECYCLE_BUSY', selected.target);
@@ -123,13 +124,13 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     }
     const code = envelope.error?.code;
     if (code === 'E_PLAN_STALE') {
-      const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, entry.plan.action, entry.choices);
+      const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, entry.plan.action, entry.choices, { features });
       if (!fresh) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL', DESKTOP_TERMS) });
       const replacement = storePlan(fresh, entry, entry.choices);
       return replacement ? displayed(replacement, 'stale', lifecycleReason(code, DESKTOP_TERMS)) : failure(code, 'stale', { plan: fresh });
     }
     if (code === 'E_CHILDREN_RUNNING' && entry.plan.action === 'retire') {
-      const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, 'retire', entry.choices);
+      const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, 'retire', entry.choices, { features });
       const childrenStopped = fresh && stoppedTargets(envelope.error?.details?.childrenStopped, fresh.facts.children, false, { features });
       if (!childrenStopped || childrenStopped.every(c => c.ok)) return failure('E_OUTCOME_UNKNOWN', 'unknown');
       // This is the attempted plan, NOT a new executable confirmation: some

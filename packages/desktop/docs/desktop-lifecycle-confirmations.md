@@ -87,6 +87,105 @@ again resubmits the same planRef. An uncertain CLI result stays
 uncertain rather than re-executing a mutation. Closing the dialog only closes
 status; it does not cancel the dispatched operation or signal its process.
 
+## Whose tree `work/` is
+
+A retire keeps or deletes one tree: the instance's own. Whether `work/` is
+that tree is answered in one place, `ownWorktreeOf(plan)` in
+`packages/client/lifecycle-contract.mjs`, and every reader asks it: the check
+of the discard choice (`lifecycleChoicesApplicable`, which the server runs
+before an apply and the dialog before it enables Retire), the option, "What
+will happen" and "Current state". It answers `{ own, from }`:
+
+- **`from: 'fact'`**: the plan holds `facts.ownWorktree`, the kernel's answer
+  of the one reading of `work/` that its retire acts on
+  ([the retire plan](../../../docs/desktop-cli-api.md#retire), OATS 0.53.0,
+  feature `retire-plan-own-worktree`). `own` is that boolean, whatever the
+  record says.
+- **`from: 'record'`**: the plan holds no fact, and `own` is whether the
+  record's work mode says `worktree`. The record is a file the instance can
+  write and can disagree with what is at `work/` (a link, or a directory of
+  the home, under a record that says `worktree`). Without the fact the
+  dialog cannot tell such a home from one with its own tree, so it words the
+  plan from the record alone.
+
+No other line of `packages/client` or `packages/desktop` compares a plan's
+work mode with a word; `packages/desktop/test/lifecycle-own-worktree.test.mjs`
+reads the sources for it. Neither `defaults.retainWorktree`, which is the
+default of an option, nor a note of the plan is read for whose tree it is.
+
+**The fact is read by the features of the kernel that made the plan.**
+`lifecyclePlan` takes them (`{ features }`, from `answeringFeatures`, as the
+receipt's decoder does):
+
+| The answering kernel | The key | The plan read |
+|---|---|---|
+| lists `retire-plan-own-worktree` | a boolean | `facts.ownWorktree` is that boolean |
+| lists it | missing, or not a boolean | no plan: malformed, as every other malformed fact |
+| does not list it | anything | the key is not read: the plan has none |
+| its features are not known | a boolean | read |
+| its features are not known | missing, or not a boolean | the plan has none |
+
+A plan authorizes a removal, so a kernel that promises the key and does not
+send it has sent a malformed plan: the reader does not fall back to the
+record. The server makes the three reads of a kernel's own plan (the plan, and
+the fresh plan in `details.plan` of `E_PLAN_STALE` and of
+`E_CHILDREN_RUNNING`) with the features of the kernel that answered. For a
+plan relayed from a server those are its host's, never this computer's: a
+relayed plan carries the key as its host answered it. The server's projection
+then holds the key exactly when it was read, and the renderer, which reads
+that projection with no features, reads the key when it is there. So the rule
+is decided once, where the features are known. A stop plan carries no such
+key and none is read.
+
+**What the dialog says of the tree** follows from the function's answer and
+from whether the plan observed `work/` (`facts.work.observed`):
+
+| The plan | What will happen | Also delete the worktree |
+|---|---|---|
+| 1. the fact is `true`, `work/` observed | "Keeps its worktree, moved aside, on branch `<branch>`." With the choice: "Deletes its worktree. Branch `<branch>` stays in the repository." The branch is the tree's. | offered; its warning counts the tree's uncommitted changes and names its branch |
+| 2. the fact is `true`, `work/` not observed | "Keeps its worktree, moved aside, if there is one. It couldn't be checked." With the choice: "Deletes its worktree, if there is one. It couldn't be checked." No branch is named. | offered; its warning: "Deletes the worktree folder, if there is one, with any uncommitted changes (a recovery copy is saved first). It couldn't be checked." |
+| 3. the fact is `false` | "It has no worktree of its own, so no worktree is kept or deleted. A tree it links to is not touched." | not offered; a confirmation that carries it is refused with `E_OPTION_UNAVAILABLE` before any command |
+| 4. no fact | from the record: the sentences of row 1 under a record that says `worktree` (naming the recorded branch when `work/` was not observed), and no worktree line under any other | offered under a record that says `worktree`; its warning names the recorded branch when `work/` was not observed |
+
+- **Row 2 promises no tree.** The fact is the reading's answer and not a
+  promise that a tree is there: it is `true` by the record where nothing, or
+  a file, is at `work/`, and for a work directory whose Git entry is missing
+  ([the retire plan](../../../docs/desktop-cli-api.md#retire)). For each of
+  those homes the kernel's plan has `facts.work.observed: false`, which is
+  what the dialog keys on. It reads no code of `facts.work.reason`: one
+  wording for every reason. No branch is named because the only one known
+  there is the record's, and branch actions use the tree's.
+- **Row 3's sentence is true of every home the kernel answers `false` for:**
+  an attached, a checkout or a workspace instance (its link goes with the
+  home and what it leads to is not touched), a directory instance, and a
+  link or a real directory under a record that says `worktree`. It names no
+  owner and does not claim there is a link. What happens to what is at
+  `work/` is the line above it, about the recovery copy and the home.
+- **A choice still checked when the fact turns `false`** (a fresh plan after
+  `E_PLAN_STALE`, or Check again): the choice stays on screen so that it can
+  be undone, the status says "Only an instance with its own worktree can
+  delete it. Review the choice again.", Retire is disabled, and no warning
+  stands under the choice: it would count another tree's changes and promise
+  a deletion that cannot be confirmed. This is for a plan that carries the
+  fact: with no fact and a record that is not `worktree`, a stale choice
+  keeps its warning.
+- **Current state shows nothing of `facts.work` for a tree the kernel says
+  is not the instance's.**
+  `facts.work` is an observation through any link, so for an attached
+  instance it is the state of its owner's tree, which this retire does not
+  touch. When the fact is `false` the dialog shows no row of it: no
+  "Uncommitted work", no "Branch", no sentence about the branch it was
+  spawned on. It shows no pull request row either, and makes no Git or forge
+  read for one: the row's `correlation` is null for such a plan, the one
+  place that decides it, and a row on screen leaves when a fresh plan says
+  the tree is not the instance's. When the fact is `true`, and for a plan
+  with no fact, the rows are: "Uncommitted work" when `work/` was observed
+  or the tree is the instance's own; "Branch", the drift sentence and the
+  pull request row when it was observed. So from a kernel that does not list
+  `retire-plan-own-worktree`, an attached instance shows the rows of the
+  tree its link leads to.
+- The plan's notes are not shown and not read.
+
 ## Effects are reported individually
 
 - Stop processes the kernel's ordered targets. Nested `ok:false` remains partial
@@ -357,9 +456,9 @@ its reason in the visible status line (`aria-describedby`).
 - **Option changes and Check again** revoke the reference on screen at once,
   keep the facts on screen and swap in the new plan when it lands; the latest
   choice wins (older answers are dropped by their ticket). The worktree option
-  is shown only for an instance with its own worktree (`workMode: worktree`),
-  or while that choice is still checked, so `E_OPTION_UNAVAILABLE` stays
-  visible and undoable.
+  is shown only for an instance with its own worktree
+  ([Whose tree `work/` is](#whose-tree-work-is)), or while that choice is
+  still checked, so `E_OPTION_UNAVAILABLE` stays visible and undoable.
 - **Results.** An uncertain outcome (`unknown`, `pending`, a deferred retire,
   transport loss, a refused receipt) offers **Check again**, which resubmits
   the same planRef. Anything else that did not succeed (a refusal, a partial
@@ -380,8 +479,9 @@ its reason in the visible status line (`aria-describedby`).
 - **Copy.** Plain words, no timestamps and no kernel vocabulary: the plan's
   `at` is shown as an age, a session as Running / Not running / Unknown.
   Work the kernel did not observe reads "Unknown (couldn't be checked)", its
-  reason (a code such as `E_NO_WORKTREE`) only in the row's title; an instance
-  without its own worktree has no Uncommitted work row. The
+  reason (a code such as `E_NO_WORKTREE`) only in the row's title; which
+  instances have an Uncommitted work row is under
+  [Whose tree `work/` is](#whose-tree-work-is). The
   fixed sentences live in `packages/client/lifecycle-contract.mjs`, with the
   functions that choose a sentence from an answer's data (a row's kind and
   line, the sentence above a stop's rows, a refused retire's sentence, a busy
