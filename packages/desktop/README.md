@@ -206,6 +206,30 @@ function over what its caller holds:
   only part that can carry words the client did not write. A client that
   shows one line calls the first; one that sets the kernel's words apart (a
   quote, another style) calls the second. The Desktop's views call the first.
+- **Who made a text a client shows.** Three texts can hold words the client
+  did not write, and each carries a key beside it that names its speaker: a
+  row's `runtimeError` (`runtimeErrorOrigin`), a reason's `sentence`
+  (`origin`: `rowReason` in `remote-address.mjs`, passed on by
+  `instanceActs`) and the message a deployment keeps when its re-read failed
+  (`errorOrigin` beside `error`, from `failedEntry`). The values are
+  `kernel`, `terminal-probe` and `roster-read`; `kernel` covers this
+  machine's OATS and a host's OATS relayed by it. `originLead(origin, terms)`
+  (`instance-presentation.mjs`) answers the words a client puts in front of
+  the text ("OATS says:", "<name>'s terminal check says:", "<name>'s read
+  of other machines says:"), and `null` for anything else. Only the shared
+  home writes the keys, from the path the text took: one that arrives in a
+  kernel's answer, a host's row, another machine's panel or the collector's
+  output never survives. A reason's `origin` is there exactly when its
+  sentence is not the shared home's own, so a client filters a sentence
+  with an `origin` and shows one with none as written; its fourth value,
+  `unattributed`, stands for a row's text nobody attributed and has no
+  words. A text with no speaker is shown as before and never under "OATS
+  says:". `keptFailure` (`deployment-facts.mjs`) is the one rule for "the
+  last read failed and the last observation is kept": `error` is a string,
+  whatever it holds. The Desktop makes every such line in
+  `renderer/speaker-line.mjs`. The speakers' words, the table of which text
+  gets which and the places are in
+  [docs/desktop-deployment-model.md](docs/desktop-deployment-model.md#who-made-a-shown-text).
 - **Whose words a sentence uses.** The home also holds the sentence shown for
   a code, one explanation for every client. Where a sentence names the client
   that shows it ("this Desktop", "Update OATS Desktop") or the machine it
