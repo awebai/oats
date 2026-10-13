@@ -185,7 +185,7 @@ problems. Discovery problem rows' `source` is also a diagnostic display.
 Quoted or JSON-escaped copies and host/path fragments derived from a withheld
 value cannot reveal its remainder. Unrelated schema values and opaque provider
 payloads are not scanned. Query and fragment contents are not searched for
-individual secret values; a selected remote token with an unrecognised suffix
+individual secret values; a selected remote reference with an unrecognised suffix
 is withheld as a whole.
 
 A refusal retains its code and reason. When the whole reference is withheld,
@@ -201,16 +201,23 @@ without inventing a parser refusal. Known declaration files and key locations
 remain available beside the safe diagnostic value; APIs that do not know a
 location do not invent one.
 
-Git stderr quoted in a diagnostic is ordinary prose: its scrubber keeps a
-bounded line and removes known credential echoes.
-Prose selects each maximal token delimited by whitespace, single or double quotes, or angle brackets that contains a scheme followed by ://, a git/http/https/ssh/file scheme followed by :, or an SCP-shaped user@host: prefix.
-Each selected token uses the same construction or whole-value withholding
-policy; there is no fallback to its raw text. Punctuation does not split a
-token into individually safe pieces. A remote reference joined to a harmless
-file path, or followed by an unrecognised query or path suffix, therefore loses
-the whole token. Ordinary text outside selected tokens remains, and standalone
-file references and paths retain their meanings. Transport failures do not
-gain a repository-refusal clause.
+Git's own diagnostic text has a whole-line disclosure rule. A line may be
+shown only when every original operation reference is known and unchanged by
+the display constructor, and the original line contains no literal `@`.
+Missing original-reference evidence fails that check. Check the original text
+before removing control characters or shortening the line; formatting must not
+hide a reason to withhold it. A permitted line keeps the existing control
+handling and length bound.
+
+**The fixed Git notice is “Git's diagnostic was withheld; run the same Git operation by hand to see Git's own words.”**
+Every other Git line is replaced by that notice. No substring or token is
+recovered from a withheld line. This replaces the quoted-line disclosure rule
+shipped with the unknown-failure diagnostic: a bounded, scrubbed fragment alone
+is no longer enough to display Git's words. Classification still reads Git's
+result, so the failure code and reason remain useful when its text is withheld.
+Kernel-owned messages and schema problem prose keep their selected-reference
+rendering; they are not Git lines. Transport failures do not gain a
+repository-refusal clause.
 
 These diagnostic fields are for people. Accepted parser results, repository
 identity keys and other values consumed by commands remain exact, including
@@ -218,6 +225,10 @@ operational `from` values and external rows' `source`; so does the original
 reference handed to Git. Diagnostic rendering changes neither the
 accepted syntax nor transport. A client may extract a host from a constructed
 display; it must also handle the fixed withheld display without a host.
+Desktop's external-soul view still displays the operational external `source`
+value directly; that separate output route is tracked in
+[#1111](https://github.com/awebai/oats/issues/1111). The diagnostic display rule
+does not make that raw consumer safe.
 
 ## Membership and trust
 

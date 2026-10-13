@@ -680,10 +680,13 @@ Feature `workspace-v2`, `workspaceApi: 2`. Model: [workspaces.md](workspaces.md)
   not resolve, a connection refused, reset or closed, a transport that could
   not reach the remote). A failure whose text shows nothing the kernel
   recognises is `unknown` (0.53.0; it read `network` before), and its message
-  then ends with Git's own last line: `cannot read remote <url> (unknown):
-  <line>`. The line is one line of at most 300 characters, with control
-  characters and the user information of any URL removed; when Git said
-  nothing, the message ends at `(unknown)`.
+  then ends with a last-line diagnostic: `cannot read remote <url> (unknown):
+  <line>`. Git's words are shown only under the
+  [whole-line disclosure rule](workspaces.md#repository-references-in-diagnostics);
+  otherwise `<line>` is the contract's fixed Git notice. Permitted text remains
+  one line of at most 300 characters with control characters removed. This
+  supersedes the earlier rule that a scrubbed Git line was always shown.
+  When Git said nothing, the message ends at `(unknown)`.
   `cache` (OATS 0.33.0) is local: the
   remote cache on this machine could not be written (a git lock still held,
   another oats process still writing it, or a lock file one left when it

@@ -6,8 +6,11 @@
   `cannot-read` fields use a display constructed from recognised host and path
   components. Malformed or mixed values are withheld whole, including harmless
   text, while known declaration files and key locations remain available.
-  Selected tokens in quoted Git prose follow the same display policy; mixed
-  tokens and unrecognised suffixes are withheld instead of leaving raw text.
+  Git's own line is shown only when all original operation references are
+  proved unchanged by display construction and the original line contains no
+  `@`; otherwise the whole line becomes a fixed notice directing the operator
+  to run the operation by hand. No substring is recovered. This replaces the
+  quoted-line disclosure behavior shipped for unknown Git failures.
   See the [diagnostic display contract](../workspaces.md#repository-references-in-diagnostics).
   Standalone file/path meanings, command-consumed values and Git's original
   transport reference are unchanged.

@@ -27,6 +27,7 @@ const malformed = [
 const clause = "(its user information is not shown)";
 const WITHHELD = "[repository reference withheld]";
 const withheldClause = "(the repository reference was withheld)";
+const GIT_WITHHELD = "Git's diagnostic was withheld; run the same Git operation by hand to see Git's own words.";
 const httpUserinfoReason = (ref) => `repository reference ${ref} carries user information, which an http(s) reference may not: give credentials to Git (a credential helper), not in the URL`;
 const roots = [];
 const scratch = () => { const dir = mkdtempSync(join(tmpdir(), "oats-redaction-")); roots.push(dir); return dir; };
@@ -87,7 +88,7 @@ test("parser refusals redact strings, malformed URLs, nested objects and auxilia
   assert.equal(parseRepoRef(`ssh://${USER}@${host}/${path}`).url, `ssh://${USER}@${host}/${path}`);
 });
 
-test("refusals explain removed userinfo once, without changing diagnostic fields", async () => {
+test("refusals explain omission or withholding once, without changing diagnostic field shapes", async () => {
   const refs = [...https, `https://:${PASSWORD}@${host}/${path}`,
     `ssh://${USER}:${PASSWORD}@bad_host/${path}`, `ssh://${USER}:${PASSWORD}@${host}/bad path`, ...malformed];
   for (const ref of refs) {
@@ -177,7 +178,7 @@ test("the omission clause is absent without removed userinfo in the named refuse
     assert.equal(parseRepoRef(ref).url, ref, "successful parsing keeps transport and adds no explanation");
   }
   // Rendering ordinary text may change it without annotating any refusal.
-  assert.equal(redactUrl(`plain: ${https[0]}`, null, { refusal: true }), `plain: https://${host}/${path}`);
+  assert.equal(redactUrl(`plain: ${https[0]}`, null, { refusal: true }), GIT_WITHHELD);
 });
 
 test("configured member refusals retain the clause through schema wrapping, while pattern-only local refusals stay unchanged", async () => {
@@ -202,22 +203,22 @@ test("configured member refusals retain the clause through schema wrapping, whil
   assert.deepEqual(localError.details.problems, [{ path: "/workspace", message: `"https://${host}/${path}" does not match ^(?:git@[^@\\s]+|[^@\\s]+)$` }]);
 });
 
-test("one renderer handles quoted URLs, SCP host display and credentials echoed outside URLs", () => {
+test("one renderer separates selected reference display from whole Git-line withholding", () => {
   for (const ref of [...https, ssh, `ssh://${USER}@${host}/${path}`, `git@${host}:${path}`]) {
-    const displayed = redactUrl(ref);
+    const displayed = redactUrl(ref, null, { reference: true });
     noTokens(displayed);
     assert.equal(remoteFailureCause({ reason: "unknown", url: displayed }).host, host);
   }
-  assert.equal(redactUrl(`git@${host}:${path}`), clean);
-  for (const prefix of ["url=", "(git:", "fatal:", "[", "{", ",", ";"]) assert.equal(redactUrl(prefix + ssh), WITHHELD, "mixed tokens are withheld as a whole");
-  assert.equal(redactUrl(`failure '${https[0]}' and '${ssh}'`), `failure 'https://${host}/${path}' and '${clean}'`);
-  assert.equal(redactUrl(`failure '${https[0]},${ssh}'`), `failure '${WITHHELD}'`);
+  assert.equal(redactUrl(`git@${host}:${path}`, null, { reference: true }), clean);
+  for (const prefix of ["url=", "(git:", "fatal:", "[", "{", ",", ";"]) assert.equal(redactUrl(prefix + ssh), GIT_WITHHELD, "a line without a known operation reference is withheld whole");
+  assert.equal(redactUrl(`failure '${https[0]}' and '${ssh}'`), GIT_WITHHELD);
+  assert.equal(redactUrl(`failure '${https[0]},${ssh}'`), GIT_WITHHELD);
   noTokens(scrubGitLine(`fatal: '${ssh}': ${PASSWORD}`, ssh));
   noTokens(scrubGitLine(`fatal: ${USER} and ${PASSWORD}`, https[1]));
-  assert.equal(scrubGitLine("secret%5Fvalue and secret_value", "ssh://bot:secret%5Fvalue@example.invalid/org/repo"), "and");
-  assert.equal(redactUrl("normal host/path and opaque text"), "normal host/path and opaque text");
+  assert.equal(scrubGitLine("secret%5Fvalue and secret_value", "ssh://bot:secret%5Fvalue@example.invalid/org/repo"), GIT_WITHHELD);
+  assert.equal(redactUrl("normal host/path and opaque text"), GIT_WITHHELD);
   // A credential equal to a classification word cannot change the contract's reason value.
-  assert.equal(redactUrl({ url: "https://unknown@example.invalid/org/repo", reason: "unknown" }).reason, "unknown");
+  assert.equal(redactUrl({ url: "https://unknown@example.invalid/org/repo", reason: "unknown" }, null, { known: false }).reason, "unknown");
 });
 
 test("SSH read, cache stderr and explicit fetch timeout redact output but preserve Git transport", async () => {
@@ -238,7 +239,8 @@ test("SSH read, cache stderr and explicit fetch timeout redact output but preser
     assert.equal(e.details.url, clean);
     assert.ok(argsSeen.some((args) => args.includes(`remote.origin.url=${ssh}`)), "Git receives the credential-bearing URL unchanged");
     if (kind === "timeout") { assert.equal(e.details.operation, "fetch"); assert.match(e.message, /git fetch.*timed out/); }
-    if (kind === "cache") assert.match(e.message, /unable to write file/);
+    if (kind === "cache") { assert.match(e.message, /cannot write the cache/); assert.ok(e.message.includes(GIT_WITHHELD)); }
+    if (kind === "unknown") assert.ok(e.message.includes(GIT_WITHHELD), "unknown classification retains safe kernel reason and withholds Git words");
   }
 });
 
@@ -325,14 +327,14 @@ test("parser fragments follow the whole-source withholding decision", async () =
   safeError(split, "E_REPO_REF");
 });
 
-test("quoted URL boundaries preserve unrelated Git words and path at-signs", () => {
-  for (const [text, shown] of [
-    ["fatal: 'ssh://host' does not appear to be a git repository; mail admin@corp.com", `fatal: '${WITHHELD}' does not appear to be a git repository; mail admin@corp.com`],
-    ["… see https://host.x:8443/a@b", `… see ${WITHHELD}`],
-  ]) assert.equal(redactUrl(text), shown);
+test("unknown operation context and rebuilt references withhold the whole Git line", () => {
+  for (const text of [
+    "fatal: 'ssh://host' does not appear to be a git repository; mail admin@corp.com",
+    "… see https://host.x:8443/a@b",
+  ]) assert.equal(redactUrl(text), GIT_WITHHELD);
   assert.equal(scrubGitLine("fatal: git rejected https://git@github.com/org/repo.git", "https://git@github.com/org/repo.git"),
-    "fatal: rejected https://github.com/org/repo.git");
-  assert.equal(scrubGitLine("u a https://h.x/a/u", "https://u:a@h.x/a/u"), "https://h.x/a/u");
+    GIT_WITHHELD);
+  assert.equal(scrubGitLine("u a https://h.x/a/u", "https://u:a@h.x/a/u"), GIT_WITHHELD);
 });
 
 
@@ -392,7 +394,7 @@ function assertGitQuoting(source) {
   assert.deepEqual(sites, {
     fail: ["safe.message"], runGit: ["child.stderr", "child.stderr"],
     stderrText: ["error?.stderr", "error?.message"], classifyText: ["stderrText("],
-    gitLastLine: ["stderrText("], lockFileOf: ["stderrText("], isLocalWriteFailure: ["stderrText("],
+    gitLastLine: ["stderrText(", "error?.message"], lockFileOf: ["stderrText("], isLocalWriteFailure: ["stderrText("],
     cacheFailure: ["stderrText(", "error?.message"], isLockRace: ["stderrText("],
     // Filesystem failures on the owned cache lock, not Git's error/transport text.
     withCacheWriteLock: ["error.message", "error.message", "error.message"],
@@ -401,9 +403,10 @@ function assertGitQuoting(source) {
   }, "new raw error-text access must be classified and its diagnostic route guarded");
   const body = (name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0] ?? "";
   assert.match(body("gitLastLine"), /map\(\(line\) => scrubGitLine\(line, url\)\)/);
+  assert.match(body("gitLastLine"), /\(stderrText\(error\) \|\| error\?\.message \|\| ""\)\.split\(/);
   assert.match(body("unreadable"), /gitLastLine\(error, ref\.url\)/);
-  assert.match(body("cacheFailure"), /const why = redactUrl\(stderrText\(error\)[^\n]+, ref\.url\);/);
-  assert.match(body("listingUnreadable"), /scrubGitLine\(text\.trim\(\)\.split\("\\n"\)\[0\], ref\?\.url\)/);
+  assert.match(body("cacheFailure"), /const why = scrubGitLine\(stderrText\(error\) \|\| error\?\.message \|\| error\?\.code \|\| "git failed", ref\.url\);/);
+  assert.match(body("listingUnreadable"), /scrubGitLine\(text\.split\("\\n"\)\[0\], ref\?\.url\)/);
   assert.match(body("listingUnreadable"), /scrubGitLine\(error\?\.message, ref\?\.url\)/);
   for (const name of ["classifyText", "gitLastLine", "lockFileOf", "cacheFailure", "lsTree", "listingUnreadable"]) {
     for (const line of body(name).split("\n").filter((line) => /\bfail\(/.test(line))) {
@@ -423,8 +426,8 @@ test("every Git error-text quoting route is guarded, including newly introduced 
       source + '\nfunction newQuote(' + name + ') { return fail("E_REMOTE_UNREADABLE", String(' + name + ')); }',
     ]),
     source.replace("scrubGitLine(line, url)", "String(line)"),
-    source.replace("const why = redactUrl(stderrText(error)", "const why = String(stderrText(error)"),
-    source.replace('scrubGitLine(text.trim().split("\\n")[0], ref?.url)', 'text.trim().split("\\n")[0]'),
+    source.replace("const why = scrubGitLine(stderrText(error)", "const why = String(stderrText(error)"),
+    source.replace('scrubGitLine(text.split("\\n")[0], ref?.url)', 'text.trim().split("\\n")[0]'),
     source.replace('scrubGitLine(error?.message, ref?.url)', 'String(error?.message)'),
     source.replace('  const missingObject =', '  fail("E_REMOTE_UNREADABLE", `raw git: ${text}`);\n  const missingObject ='),
   ]) {
@@ -433,15 +436,54 @@ test("every Git error-text quoting route is guarded, including newly introduced 
   }
 });
 
-test("all Git quoting helpers remove known secrets outside URLs in stderr and message fallbacks", () => {
+test("Git-line display requires unchanged operation references and an original line without at-signs", () => {
+  const operation = "https://example.invalid/org/repo.git";
+  // These are Git's words, not URLs selected from within a sentence. Colons inside
+  // ordinary words must not suppress a safe line for an unchanged operation.
+  for (const line of ["fatal: ssh: unsupported setting", "git: command failed", "profile: missing", "digit: invalid",
+    "fatal: no repository found at https://example.invalid/org/repo.git", "ordinary words without a reference"]) {
+    assert.equal(redactUrl(line, operation), line);
+    assert.equal(scrubGitLine(line, operation), line);
+    assert.equal(redactUrl(line), GIT_WITHHELD, "missing source is conservative even when the line looks harmless");
+    assert.equal(scrubGitLine(line), GIT_WITHHELD);
+  }
+  assert.equal(redactUrl("fatal: no repository", [operation, operation]), "fatal: no repository");
+  assert.equal(redactUrl("fatal: no repository", []), "fatal: no repository", "an explicit empty operation source list proves that no reference was used");
+  for (const source of [[operation, null], [operation, undefined], { url: operation }, [operation, { url: operation }]]) {
+    assert.equal(redactUrl("fatal: no repository", source), GIT_WITHHELD, "partial or unproven source context is not sufficient");
+  }
+  assert.equal(redactUrl("fatal: no repository", [operation, ssh]), GIT_WITHHELD, "every supplied source must be unchanged");
+  for (const source of [ssh, ...https, ...malformed, "not-a-reference", `git@${host}:${path}`]) {
+    for (const line of [`fatal: echoed ${USER} and ${PASSWORD}`, "fatal: no repository"]) {
+      assert.equal(redactUrl(line, source), GIT_WITHHELD);
+      assert.equal(scrubGitLine(line, source), GIT_WITHHELD);
+    }
+  }
+  for (const line of [`fatal: '${operation}' user@example.invalid`, `fatal: hidden@${PASSWORD}`, "mail operator@example.invalid"]) {
+    assert.equal(redactUrl(line, operation), GIT_WITHHELD, "inspect the original entire line for @ before any formatting");
+    assert.equal(scrubGitLine(line, operation), GIT_WITHHELD);
+  }
+  assert.equal(scrubGitLine(""), "");
+  assert.equal(scrubGitLine(" \r\n\t", ssh), "", "an absent line does not invent Git text");
+  for (const local of ["file:///owned/path@name/repo", "/owned/path@name/repo"]) {
+    assert.equal(redactUrl(local, null, { reference: true }), local, "selected local values keep their path meaning");
+    assert.equal(redactUrl(local), GIT_WITHHELD, "an untrusted Git line has no standalone path exemption");
+  }
+});
+
+test("all Git quoting helpers withhold known credentials outside URLs in stderr and message fallbacks", () => {
   const source = readFileSync(new URL("../lib/remote.mjs", import.meta.url), "utf8");
   const definitions = ["fail", "stderrText", "gitLastLine", "unreadable", "cacheFailure", "listingUnreadable"]
     .map((name) => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0]).join("\n");
   const helpers = new Function("oatsError", "redactUrl", "scrubGitLine", "classifyRemoteFailure", "keychainHint", "isLockRace", "isLocalWriteFailure", "markCacheDamaged", "KEYCHAIN_REMEDY",
     `${definitions}; return [unreadable, cacheFailure, (ref, error) => listingUnreadable(error, {ref,repo:{dir:"fixture"},spec:"HEAD"})];`)(
     oatsError, redactUrl, scrubGitLine, () => "unknown", () => null, () => false, () => false, () => {}, "");
-  for (const fn of helpers) for (const error of [gitError(`unexpected ${ssh}; ${PASSWORD}`), new Error(`unexpected ${ssh}; ${PASSWORD}`)]) {
-    safeError(fn({ url: ssh, key }, error), "E_REMOTE_UNREADABLE");
+  for (const fn of helpers) for (const text of [`unexpected ${ssh}; ${PASSWORD}`, `unexpected ${USER}; ${PASSWORD}`]) {
+    for (const error of [gitError(text), new Error(text)]) {
+      const e = fn({ url: ssh, key }, error);
+      safeError(e, "E_REMOTE_UNREADABLE");
+      assert.ok(e.message.includes(GIT_WITHHELD), "stderr and message fallbacks both use whole-line withholding");
+    }
   }
 });
 
@@ -518,7 +560,8 @@ test("HTTP and SSH extra-slash values are withheld whole, while standalone file 
   for (const scheme of ["http", "https", "ssh"]) for (const slashes of ["///", "////", "/////"]) {
     const ref = `${scheme}:${slashes}${USER}:${PASSWORD}@github.com/a/b`;
     const displayed = WITHHELD;
-    for (const result of [redactUrl(ref), redactUrl(ref, null, { reference: true }),
+    assert.equal(redactUrl(ref), GIT_WITHHELD);
+    for (const result of [redactUrl(ref, null, { reference: true }),
       redactUrl(`quoted ${JSON.stringify(ref)}`, ref, { known: false }),
       redactUrl(`https://github.com/c/d\n${ref}`, null, { reference: true })]) {
       noTokens(result); authorityInvariant(result); assert.ok(result.includes(displayed));
@@ -537,12 +580,12 @@ test("HTTP and SSH extra-slash values are withheld whole, while standalone file 
   }
   for (const slashes of ["///", "////", "/////"]) {
     const file = `file:${slashes}${USER}@github.com/a/b`;
-    assert.equal(redactUrl(file), file);
+    assert.equal(redactUrl(file), GIT_WITHHELD, "unknown Git text does not inherit file-path semantics");
     assert.equal(redactUrl(file, null, { reference: true }), file);
   }
   const query = "https://github.com/a/b?token=QUERY_TOKEN#FRAGMENT_TOKEN";
   assert.equal(redactUrl(query, null, { reference: true }), WITHHELD);
-  assert.equal(redactUrl(query), WITHHELD, "selected prose tokens use the same component rules");
+  assert.equal(redactUrl(query), GIT_WITHHELD, "unknown Git text is withheld whole");
 });
 
 test("derived fragments display only recognized complete components, including repeated and absent matches", () => {
@@ -603,9 +646,9 @@ test("scheme tokens own punctuation-bearing userinfo with ports, without hiding 
   for (const punctuation of ["=", ",", ";", "(", "[", "{", "|", "\\"]) {
     const ref = `https://${USER}:${PASSWORD}${punctuation}x@github.com:443/a/b`;
     const shown = "https://github.com:443/a/b";
-    assert.equal(redactUrl(ref), shown);
+    assert.equal(redactUrl(ref), GIT_WITHHELD);
     assert.equal(redactUrl(ref, null, { reference: true }), shown);
-    assert.equal(scrubGitLine(`fatal: '${ref}': unexpected`), `fatal: '${shown}': unexpected`);
+    assert.equal(scrubGitLine(`fatal: '${ref}': unexpected`), GIT_WITHHELD);
     for (const value of [ref, `${ref} https://${PASSWORD}@other.invalid/c/d`,
       `${ref};https://${PASSWORD}@other.invalid/c/d`]) {
       const e = await refused(() => parseRepoRef(value));
@@ -639,7 +682,7 @@ test("scheme tokens own punctuation-bearing userinfo with ports, without hiding 
   }
   // An SCP-shaped substring joined to a URL is mixed input, not a separate safe display.
   const pathText = "https://github.com/a/b;git@other.invalid:c/d";
-  assert.equal(redactUrl(pathText), WITHHELD);
+  assert.equal(redactUrl(pathText), GIT_WITHHELD);
 });
 
 test("later malformed references withhold the whole selected value and derived fragments", async () => {
@@ -669,7 +712,7 @@ test("later malformed references withhold the whole selected value and derived f
   assert.equal(e.details.path, WITHHELD);
   assert.equal(e.message.split(withheldClause).length - 1, 1);
   const boundedProse = `fatal: 'https://host.x:8443/a@b' remains a URL; mail admin@corp.com`;
-  assert.equal(redactUrl(boundedProse), `fatal: '${WITHHELD}' remains a URL; mail admin@corp.com`);
+  assert.equal(redactUrl(boundedProse), GIT_WITHHELD);
   // These selected values are outside the component grammar, including query
   // suffixes. They are withheld whole rather than scanned for query secrets.
   for (const tail of ["https://host.x:8443/repo@v1@x", "https://abc:4567/x@h.x",
@@ -704,7 +747,7 @@ test("recognized userinfo delimiters retain safe components and mixed values are
       }
       safeError(await refused(() => parseRepoRef({ [value]: [value] })), "E_REPO_REF");
     }
-    assert.equal(scrubGitLine(`fatal: '${ref}': unexpected`, ref), `fatal: '${shown}': unexpected`);
+    assert.equal(scrubGitLine(`fatal: '${ref}': unexpected`, ref), GIT_WITHHELD);
     const rawSSH = ref.replace("https:", "ssh:"), argsSeen = [];
     assert.equal(parseRepoRef(rawSSH).url, rawSSH);
     const exec = async (args, opts) => {
@@ -724,7 +767,7 @@ test("recognized userinfo delimiters retain safe components and mixed values are
       "an authority without a recognized repository path is withheld");
   }
   const prose = "fatal: 'ssh://host' does not appear to be a repository; mail admin@corp.com";
-  assert.equal(redactUrl(prose), `fatal: '${WITHHELD}' does not appear to be a repository; mail admin@corp.com`, "surrounding prose stays outside the selected token");
+  assert.equal(redactUrl(prose), GIT_WITHHELD, "unknown Git prose is withheld whole");
 });
 
 
@@ -735,8 +778,10 @@ test("seeded generated reference diagnostics never retain injected credential ma
   const forms = ["http", "https", "ssh", "scp", "file"];
   const delimiters = ["@", ":", "/", "?", "#", "=", ",", ";", "'", '"', " "];
   const separators = [" ", "\n", ","];
-  const coverage = { seed, cases: 0, components: 0, checks: 0, parserSuccesses: 0,
-    ordinaryProseChecked: 0, ordinaryProseExcluded: 0, filePathControls: 0, forms: {}, slashes: {}, delimiters: {}, ports: {}, widths: {}, separators: {} };
+  // The original axes and RNG calls stay unchanged. Each original gets one
+  // deterministic after-delimiter partner, without consuming another random value.
+  const coverage = { seed, cases: 0, variants: 0, executedCases: 0, components: 0, checks: 0, parserSuccesses: 0,
+    ordinaryProseChecked: 0, ordinaryProseExcluded: 0, filePathControls: 0, forms: {}, slashes: {}, delimiters: {}, ports: {}, widths: {}, separators: {}, checksByMode: {}, variantsChecked: {} };
   const count = (record, key) => { record[key] = (record[key] ?? 0) + 1; };
   const make = (form, slashes, delimiter) => {
     const id = serial++, port = random(2) ? ":443" : "";
@@ -745,45 +790,49 @@ test("seeded generated reference diagnostics never retain injected credential ma
     if (form === "file" && slashes >= 3) {
       coverage.filePathControls++;
       const control = `PATH_CONTROL_${id}`;
-      return { raw: `file:${"/".repeat(slashes)}${control}@name/o/r`, tokens: [], controls: [control], prose: true };
+      const raw = `file:${"/".repeat(slashes)}${control}@name/o/r`;
+      return { raw, after: raw, tokens: [], controls: [control] };
     }
-    const token = `CRED_MARKER_${id}_END`;
-    const info = `u:${token}${delimiter}x`, host = `h${id}.invalid`;
-    const raw = form === "scp" ? `${info}@${host}:${"/".repeat(slashes)}o/r`
+    const token = `CRED_MARKER_${id}_END`, host = `h${id}.invalid`;
+    const renderInput = (info) => form === "scp" ? `${info}@${host}:${"/".repeat(slashes)}o/r`
       : `${form}:${"/".repeat(slashes)}${info}@${host}${port}/o/r`;
-    // Ordinary prose does not interpret partial schemes or malformed slash/quote/space
-    // userinfo. Every such case still exercises ALL selected-reference/source routes.
-    const prose = form !== "scp" && slashes >= 2 && !["/", "'", '"', " "].includes(delimiter);
-    return { raw, tokens: [token], controls: [], prose };
+    return { raw: renderInput(`u:${token}${delimiter}x`), after: renderInput(`u:x${delimiter}${token}`), tokens: [token], controls: [] };
   };
   const cases = [];
-  // Exhaustive primary axes; seeded suffixes/width/separators supply mixed compositions.
   // No case is discarded based on parsing, rendering, or the invariant's outcome.
   for (const form of forms) for (let slash = 0; slash <= 5; slash++) for (const delimiter of delimiters) {
     const parts = [make(form, slash, delimiter)], width = 1 + random(3), separator = separators[random(3)];
     while (parts.length < width) parts.push(make(forms[random(forms.length)], random(6), delimiters[random(delimiters.length)]));
-    cases.push({ width, input: parts.map(p => p.raw).join(separator), tokens: parts.flatMap(p => p.tokens),
-      controls: parts.flatMap(p => p.controls), prose: parts.every(p => p.prose), separator });
-    coverage.cases++; count(coverage.widths, width); count(coverage.separators, separator);
+    const shared = { width, tokens: parts.flatMap(p => p.tokens), controls: parts.flatMap(p => p.controls) };
+    cases.push({ ...shared, variant: "original", input: parts.map(p => p.raw).join(separator) });
+    cases.push({ ...shared, variant: "after-delimiter", input: parts.map(p => p.after).join(separator) });
+    coverage.cases++; coverage.variants++; count(coverage.widths, width); count(coverage.separators, separator);
   }
   const failures = [];
   const check = (sample, mode, output, preserve = false) => {
-    coverage.checks++;
+    coverage.checks++; count(coverage.checksByMode, mode);
     const text = JSON.stringify(output);
     const leaked = sample.tokens.filter(token => text.includes(token));
-    const preservePath = preserve && (sample.width === 1 || (mode === "prose" && sample.separator !== ","));
-    const lost = preservePath ? sample.controls.filter(token => !text.includes(token)) : [];
-    if (preserve && mode !== "prose" && sample.width > 1 && !text.includes(WITHHELD))
-      failures.push({ mode, input: sample.input, expected: WITHHELD, output });
-    if (leaked.length || lost.length) failures.push({ mode, input: sample.input, leaked, lost, output });
+    // Standalone file paths remain operational path data in selected-reference
+    // displays. Whole Git-line decisions and mixed references may lose that data.
+    const lost = preserve && sample.width === 1 ? sample.controls.filter(token => !text.includes(token)) : [];
+    if (preserve && sample.width > 1 && !text.includes(WITHHELD))
+      failures.push({ mode, variant: sample.variant, input: sample.input, expected: WITHHELD, output });
+    if (leaked.length || lost.length) failures.push({ mode, variant: sample.variant, input: sample.input, leaked, lost, output });
   };
   for (const sample of cases) {
+    coverage.executedCases++; count(coverage.variantsChecked, sample.variant);
     check(sample, "reference", redactUrl(sample.input, null, { reference: true }), true);
     check(sample, "source", redactUrl(sample.input, sample.input, { known: false }), true);
     check(sample, "quoted-source", redactUrl(`quoted ${JSON.stringify(sample.input)}`, sample.input, { known: false }), true);
     check(sample, "nested-reference", redactUrl({ [sample.input]: [sample.input] }, null, { reference: true }), true);
-    if (sample.prose) { coverage.ordinaryProseChecked++; check(sample, "prose", redactUrl(sample.input), true); }
-    else coverage.ordinaryProseExcluded++;
+    coverage.ordinaryProseChecked++;
+    check(sample, "prose", redactUrl(sample.input));
+    const gitLine = `fatal: unable to access '${sample.input}': x`;
+    const slashLine = `fatal: unable to access '${sample.input}/': x`;
+    check(sample, "git-unknown", scrubGitLine(gitLine));
+    check(sample, "git-known", scrubGitLine(gitLine, sample.input));
+    check(sample, "git-known-added-slash", scrubGitLine(slashLine, sample.input));
     try { parseRepoRef(sample.input); coverage.parserSuccesses++; }
     catch (e) { check(sample, "parser", { code: e.code, message: e.message, details: e.details, provenance: e.provenance }); }
     try { parseRepoRef({ nested: { [sample.input]: [sample.input] } }); assert.fail("object must be refused"); }
@@ -792,9 +841,14 @@ test("seeded generated reference diagnostics never retain injected credential ma
     check(sample, "membership", validateMembership({ schemaVersion: 2, workspace: sample.input }));
     check(sample, "workspace", validateWorkspace({ schemaVersion: 2, name: "fixture", members: [sample.input] }));
   }
+  assert.equal(coverage.cases, 330);
+  assert.equal(coverage.variants, 330);
+  assert.equal(coverage.executedCases, 660);
+  assert.equal(coverage.ordinaryProseChecked, 660);
+  assert.equal(coverage.ordinaryProseExcluded, 0);
   const query = "https://h.invalid/o/r?value=QUERY_CONTROL#FRAGMENT_CONTROL";
   assert.equal(redactUrl(query, null, { reference: true }), WITHHELD);
-  assert.equal(redactUrl(query), WITHHELD, "a selected prose token with unsupported suffixes is withheld whole, not query-scanned");
+  assert.equal(redactUrl(query), GIT_WITHHELD, "a Git line with unknown operation context is withheld whole");
   const unrelated = validateWorkspace({ schemaVersion: 2, name: "https://UNRELATED_CONTROL@h.invalid/o/r" });
   assert.ok(unrelated.some(p => p.path === "/name" && p.message.includes("UNRELATED_CONTROL")));
   const failuresByMode = {};

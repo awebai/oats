@@ -86,7 +86,7 @@ and the rules its tests pin.
 
 | module | owns |
 |---|---|
-| `remote.mjs` | repo refs, reading Git remotes, content digests; `redactUrl` owns [reference display construction and withholding](workspaces.md#repository-references-in-diagnostics). Selected values supply only validated scheme/SCP, host, supported port and path components; an unrecognised or mixed value is withheld whole, including source replacements and derived fragments. Display recognition shares the parser's character rules without calling its error path, and never changes admission or transport. Refusal context owns the explanation once; forwarding preserves it. `scrubGitLine` owns bounded prose formatting and delegates token selection, display construction and known-credential echo handling. Maximal prose tokens follow the linked contract and use the same constructor or whole-value withholding; punctuation never enables a raw remainder. Construction tests audit raw Git error-text access and quoting routes; generated invariants cover selected diagnostic routes |
+| `remote.mjs` | repo refs, reading Git remotes, content digests; `redactUrl` owns [reference display construction and withholding](workspaces.md#repository-references-in-diagnostics). Selected values supply only validated scheme/SCP, host, supported port and path components; an unrecognised or mixed value is withheld whole, including source replacements and derived fragments. Display recognition shares the parser's character rules without calling its error path, and never changes admission or transport. Refusal context owns the explanation once; forwarding preserves it. `scrubGitLine` applies the linked whole-Git-line disclosure rule before control/length formatting: only proven unchanged original operation refs plus an original line without `@` permit disclosure; all other lines become the fixed notice, with no substring recovery. Construction tests audit raw Git error-text access and quoting routes; generated invariants cover selected diagnostic routes |
 | `local-inputs.mjs` | the local configuration a command read, for `observation.localRevision` |
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
@@ -332,10 +332,13 @@ A failed git call is classified from what it shows (`classifyRemoteFailure`):
 our own timer's kill is `timeout`, another signal `killed`, a failed write of
 the cache `cache`, and otherwise git's text decides, read without the object
 ids it names. A text that shows nothing the kernel recognises is `unknown`,
-never `network`, and the message of an `unknown` failure carries git's own
-line through one scrub (`scrubGitLine`): one line, bounded, with no control
-character. Its URL displays and known credential echoes follow the
-[diagnostic reference policy](workspaces.md#repository-references-in-diagnostics).
+never `network`. The message of an `unknown` failure passes Git's last line
+through `scrubGitLine`, which applies the
+[whole-line disclosure rule](workspaces.md#repository-references-in-diagnostics)
+to the original line and original operation references before formatting.
+When disclosure is not proved safe, it returns the contract's fixed Git notice;
+it does not try to recover a safe fragment. Classification and kernel-owned
+reason text do not depend on whether Git's words can be shown.
 
 Every write to a cache repo (its `git init`, config, fetches and pins) holds
 the repo's cross-process write lock, `<cache>/.locks/<repo>.lock`
