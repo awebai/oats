@@ -1,7 +1,16 @@
 import { harnessOf, HARNESS_NAMES } from '../../client/harness-names.mjs';
+import { LAUNCH_CONFIG_NONE } from '../../client/launch-contract.mjs';
 import { postJson, currentWorkspace, workspaceGeneration } from "./views/common.mjs";
 
-/** Shared launch configuration selector/editor. The kernel resolves every preview. */
+/** The choice of the bare harness: its entry in the list and the line under the list while it is chosen. */
+const BARE_HARNESS = "No launch configuration (the harness as installed)";
+const BARE_HARNESS_LINE = "Runs the harness itself, with no configuration's executable, arguments or environment.";
+
+/** Shared launch configuration selector/editor. The kernel resolves every preview.
+ * The list's second entry asks for the bare harness: its value is the word that selects no configuration
+ * (LAUNCH_CONFIG_NONE), from the constant and never from a row. It is drawn only when the list answer says
+ * the answering kernel is known to read the word (`noneKnown`, the server's own key), and a row named as
+ * the word is never drawn as a configuration. `changed(row)` is given no row for it, as for the first entry. */
 export function launchConfigFields(el, { ctx, selector, choices, owns = () => true, changed = () => {}, supportsDefault = () => false, deployment = null }) {
   const doc = el.ownerDocument, ws = currentWorkspace(), generation = workspaceGeneration();
   // Owned by the workspace on screen (ws); addressed to the deployment the subject lives in (#482):
@@ -39,6 +48,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
   });
   const field = name => el.querySelector(`.lc-${name}`);
   const selected = () => configurations.find(c => c.name === select.value);
+  const bare = () => select.value === LAUNCH_CONFIG_NONE;
   const invalidate = () => { previewRequest++; output.hidden = true; output.textContent = ""; };
   const removable = () => selected()?.source === context && !!context && field("name").value.trim() === selected()?.name;
   const updateControls = () => {
@@ -69,7 +79,7 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
   };
   const selectionChanged = (notify = true) => {
     invalidate(); const row = selected();
-    el.querySelector(".launch-config-source").textContent = row ? `${harnessOf(row)} · ${row.source || "Selected scope"}` : "Use this home's recorded launch.";
+    el.querySelector(".launch-config-source").textContent = row ? `${harnessOf(row)} · ${row.source || "Selected scope"}` : bare() ? BARE_HARNESS_LINE : "Use this home's recorded launch.";
     fillEditor(row); if (notify) changed(row);
   };
   select.addEventListener("change", () => selectionChanged());
@@ -84,12 +94,16 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
     try {
       const data = await api({ action: "list", selector: selector() });
       if (!current() || id !== listRequest) return;
-      const previous = selected();
-      configurations = data.configurations || []; context = data.context || data.scope?.context;
+      const previous = selected(), offered = data.noneKnown === true;
+      // A row is drawn only under a name that is a string, and the word is no configuration's name: a row that
+      // carries it, or a name that would become it as an option's value, is not one of the list's.
+      configurations = (data.configurations || []).filter(c => typeof c?.name === "string" && c.name !== LAUNCH_CONFIG_NONE); context = data.context || data.scope?.context;
       select.replaceChildren();
-      const option = doc.createElement("option"); option.value = ""; option.textContent = "Keep the recorded launch"; select.append(option);
-      for (const row of configurations) { const option = doc.createElement("option"); option.value = row.name; option.textContent = `${row.name} (${harnessOf(row)}${row.default === true ? ", default" : ""})`; select.append(option); }
-      select.value = configurations.some(c => c.name === prefer) ? prefer : "";
+      const entry = (value, text) => { const option = doc.createElement("option"); option.value = value; option.textContent = text; select.append(option); };
+      entry("", "Keep the recorded launch");
+      if (offered) entry(LAUNCH_CONFIG_NONE, BARE_HARNESS);
+      for (const row of configurations) entry(row.name, `${row.name} (${harnessOf(row)}${row.default === true ? ", default" : ""})`);
+      select.value = (prefer === LAUNCH_CONFIG_NONE ? offered : configurations.some(c => c.name === prefer)) ? prefer : "";
       editor.hidden = !context;
       el.querySelector(".launch-config-scope").textContent = context ? `Configuration scope: ${context}` : "";
       status.textContent = configurations.length ? "" : "No named configurations in this scope yet.";

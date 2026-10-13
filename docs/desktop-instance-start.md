@@ -13,6 +13,34 @@ The Start/Restart dialog names the existing instance, harness and host. Choose
 a named launch configuration or keep the recorded launch. Without a selected
 configuration, the harness can also be changed directly. A named configuration
 fixes its harness; model and permission choices can override its defaults.
+
+The Launch configuration list's second entry is **No launch configuration (the
+harness as installed)**. It asks for the bare harness: the harness itself, with
+no configuration's executable, arguments or environment, and without the
+default configuration the host declares for that harness. The Harness list
+stays usable with it. Alone, with "Keep recorded harness", it starts the
+recorded harness bare; beside a picked harness, that one. It sends the word the
+kernel reads as no configuration, `--launch-config none`, from one constant
+(`LAUNCH_CONFIG_NONE`, `packages/client/launch-contract.mjs`) and never from a
+row of the list: a row that carries the word as its name is not drawn as a
+configuration. Preview invocation sends the same choice.
+
+The entry is offered only where the kernel that would answer the start is
+known to read the word. The server says so in a key of its own on the list
+answer of `POST /api/launch-configs`, `noneKnown`: `launchConfigNoneKnown`
+(the same module) over the answering kernel's own feature list
+(`answeringFeatures`, `packages/client/lifecycle-contract.mjs`). For an
+instance on this computer that is this computer's kernel, which lists
+`launch-config`. For an instance on a server it is the host's list, as the
+roster relays it; a host that reports no list (before 0.49.0), or one this
+computer's CLI does not relay, is unknown, and unknown is not offered. The
+start route adds no refusal of its own for the word: this computer's kernel
+asks the host at the call and sends nothing to one that does not list
+`launch-config`. When the list is read again, the entry stays selected only
+while it is still offered: a save selects the saved configuration, a remove
+the recorded launch, and a read cut short by a start and repeated keeps the
+entry, or falls back to the recorded launch when it is no longer offered.
+
 Enter a model or leave the field blank to use the selected launch's default.
 An old harness's model is not carried to a different harness. Available local model
 suggestions are advisory; a model ID can also be typed. Start uses the saved
@@ -106,7 +134,8 @@ Use the server's workspace to manage configurations defined on that server.
 Desktop sends `POST /api/start/<instance>?ws=…&home=…` (and `server=…` for a
 remote instance). The backend resolves that exact roster identity and calls
 `oats session start --home <absolute-home> [--server <id>] [--model <model>] --json`.
-Launch choices add `--launch-config`, `--harness` or `--yolo`/`--no-yolo`.
+Launch choices add `--launch-config` (a configuration's name, or `none` for
+the bare harness), `--harness` or `--yolo`/`--no-yolo`.
 Restart uses `POST /api/restart/<instance>?ws=…&home=…` and the single kernel
 command `oats session restart` with the same selectors and choices.
 Configuration inspection and editing use `POST /api/launch-configs?ws=…`,

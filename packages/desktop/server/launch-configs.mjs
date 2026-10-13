@@ -3,6 +3,8 @@ import { dirname } from "node:path";
 import { cliLaunchConfig } from "../../client/cli-adapter.mjs";
 import { harnessFlag, harnessKey } from "../../client/harness-names.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
+import { launchConfigNoneKnown } from "../../client/launch-contract.mjs";
+import { answeringFeatures } from "../../client/lifecycle-contract.mjs";
 
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 
@@ -45,5 +47,10 @@ export async function launchConfigRequest(request, { workspace, cli, agents = []
     context, server, home, soul, agentsRoot, localCwd: server ? localCwd : context || workspace.scope,
   });
   if (!envelope.ok) fail(envelope.error?.message || "Launch configuration operation failed", envelope.error?.code);
+  // The list answer says, in a key of the Desktop's own, whether the kernel that answers a start of this
+  // target is known to read the word that selects no configuration (launch-contract.mjs): this computer's
+  // kernel for a home here, the host's own list for a server's, false when that list is not known. A page
+  // offers the bare harness only on this; a `noneKnown` in the kernel's answer is not the proof.
+  if (action === "list") return { ...envelope.result, noneKnown: launchConfigNoneKnown(answeringFeatures({ cli, routed: !!server, group: workspace.group })) };
   return envelope.result;
 }

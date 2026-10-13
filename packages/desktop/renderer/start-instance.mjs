@@ -86,7 +86,9 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     const launchFields = launchConfigFields(modal.querySelector(".start-configurations"), { ctx, selector: () => ({ home: instance.home }), choices, owns,
       deployment: rowDeployment(instance), // the instance's own deployment, never the view
       supportsDefault: () => hasLaunchConfigDefault,
-      changed: row => { chosenConfig = row; runtime.value = ""; runtime.disabled = !!row; runtime.querySelector("option").textContent = row ? `Configuration harness (${harnessOf(row)})` : `Recorded harness (${instance.runtime || "pi"})`; updateModelHelp(); void fillModels(); },
+      // A named configuration decides the harness, so the list is emptied and disabled. With no row (the
+      // recorded launch, or the bare harness) the list stays usable and keeps what was picked.
+      changed: row => { chosenConfig = row; if (row) runtime.value = ""; runtime.disabled = !!row; runtime.querySelector("option").textContent = row ? `Configuration harness (${harnessOf(row)})` : `Recorded harness (${instance.runtime || "pi"})`; updateModelHelp(); void fillModels(); },
     });
     for (const input of [runtime, model, yolo]) input.addEventListener("input", () => launchFields.invalidate());
     runtime.addEventListener("change", () => { updateModelHelp(); void fillModels(); });
@@ -193,7 +195,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         canStart = false;
       } finally {
         starting = false; pending.delete(key);
-        if (owns()) { model.disabled = yolo.disabled = started; runtime.disabled = started || !!launchFields.value(); retry.disabled = started; launchFields.disabled(started); }
+        if (owns()) { model.disabled = yolo.disabled = started; runtime.disabled = started || !!chosenConfig; retry.disabled = started; launchFields.disabled(started); }
       }
     });
     doc.body.append(modal); model.focus(); void refresh();
