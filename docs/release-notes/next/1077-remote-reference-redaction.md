@@ -21,7 +21,9 @@
   input. Malformed or mixed values outside that rule are withheld whole,
   including harmless text, while known declaration files and key locations
   remain available. Raw derived fragments qualify for the plain exception only
-  through their original selected source, never from a credential-bearing source.
+  through their original selected source, never from a nonplain source. Plain
+  recognition is not a secret detector: credential-like text within the
+  permitted alphabet remains visible.
   Git's own line is shown only when all original operation references are
   proved unchanged by display construction and the original line contains no
   `@`; otherwise the whole line becomes a fixed notice directing the operator

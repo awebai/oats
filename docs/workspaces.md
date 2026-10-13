@@ -166,7 +166,9 @@ original refused reference is shown verbatim when it is 1–256 characters long
 and contains only ASCII letters, digits, spaces, `.`, `_`, `/`, `+`, `-` and
 `:`. This bounded plain-value rule tests the whole original string: no trimming,
 decoding, control-character removal or truncation makes a value eligible.
-Otherwise, display is constructed from recognised components.
+Plain-reference recognition is not a secret detector: credential-like text
+that meets this alphabet remains visible. Otherwise, display is constructed
+from recognised components.
 An unambiguous scheme or scp-style reference supplies only its scheme, host,
 supported port and path, using the repository parser's character rules. User
 information is never a display component: `ssh://git@host/org/repo` and
@@ -213,7 +215,7 @@ remain exact; pinned-source, schema and Git-line contexts keep their own rules.
 Quoted or JSON-escaped copies and host/path fragments derived from a withheld
 value cannot reveal its remainder. A raw host/path fragment can use the plain
 exception only when its original selected source qualifies for that exception;
-a fragment from a credential-bearing original never becomes eligible merely
+a fragment from a nonplain original never becomes eligible merely
 because the fragment looks plain. Unrelated schema values and opaque provider
 payloads are not scanned. Query and fragment contents are not searched for
 individual secret values; a selected remote reference with an unrecognised
