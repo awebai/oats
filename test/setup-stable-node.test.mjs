@@ -54,6 +54,11 @@ const dryRun = (node, path) => {
   assert.equal(existsSync(join(standins, "calls.log")), false, "no service manager was called");
   return r;
 };
+/** A child's stderr without Node's own ExperimentalWarning lines and the hint Node adds to the first
+ *  of them (Node 22 prints one for node:sqlite, a later Node none): what is left is what the kernel
+ *  and the script said, and it is still matched exactly. */
+const ownStderr = (stderr) => stderr.split("\n").filter((line) => !/^\(node:\d+\) ExperimentalWarning: /.test(line) && line !== "(Use `node --trace-warnings ...` to show where the warning was created)").join("\n");
+assert.equal(ownStderr("(node:3849) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\noats: warning: x\n"), "oats: warning: x\n");
 const WARNING = (node) => `oats: warning: the node path ${node} is not stable (no Homebrew opt link and no node on PATH resolves to it): the capture hooks and the capture watcher stop when it goes away; install a node with a stable path and run \`oats setup\` again`;
 
 test("oats setup --dry-run reports the node of a PATH entry that is the node running the kernel, not the caller's variable", () => {
@@ -63,7 +68,7 @@ test("oats setup --dry-run reports the node of a PATH entry that is the node run
   symlinkSync(node, join(entry, "node"));
   const r = dryRun(node, [entry]);
   assert.match(r.stdout, new RegExp(`^node:  ${join(entry, "node")}$`, "m"));
-  assert.equal(r.stderr, "", "a stable answer is not warned about");
+  assert.equal(ownStderr(r.stderr), "", "a stable answer is not warned about");
   assert.doesNotMatch(r.stdout, /poison/);
 });
 
@@ -72,7 +77,7 @@ test("with no stable answer, oats setup says so once, in its own words, and a dr
   const r = dryRun(node, []);
   assert.match(r.stdout, new RegExp(`^node:  ${node}$`, "m"), "the path as it is");
   assert.doesNotMatch(r.stdout, /poison/);
-  assert.equal(r.stderr, `${WARNING(node)}\n`, "the warning, once, and nothing else");
+  assert.equal(ownStderr(r.stderr), `${WARNING(node)}\n`, "the warning, once, and nothing else");
   assert.doesNotMatch(r.stdout + r.stderr, /restart the instance/);
   assert.doesNotMatch(r.stdout, /not stable/, "the script adds no warning of its own");
 });

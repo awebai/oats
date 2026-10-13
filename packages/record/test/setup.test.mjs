@@ -82,6 +82,19 @@ function run(home, args, { platform = "linux", node, pkg = PKG, managers = stand
 }
 
 const captureOf = (pkg = PKG) => join(pkg, "bin", "capture.mjs");
+
+/** A child's stderr without what Node itself prints there, so what is left is
+ *  what the script said. Node 22 prints an ExperimentalWarning when the first
+ *  capture pass loads node:sqlite, on the stderr the pass shares with setup;
+ *  a later Node prints none. Only those lines and the hint Node adds to the
+ *  first of them are taken out: anything else still fails an exact match. */
+const ownStderr = (stderr) =>
+  stderr
+    .split("\n")
+    .filter((line) => !/^\(node:\d+\) ExperimentalWarning: /.test(line) && line !== "(Use `node --trace-warnings ...` to show where the warning was created)")
+    .join("\n");
+assert.equal(ownStderr("(node:3849) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"), "");
+assert.equal(ownStderr("setup: warning: the node path /x is not stable\n(node:1) Warning: something else\n"), "setup: warning: the node path /x is not stable\n(node:1) Warning: something else\n");
 /** The capture commands of an event, in order. */
 const commands = (home, event) => (readSettings(home).hooks[event] ?? []).flatMap((g) => g.hooks.map((h) => h.command));
 
@@ -213,7 +226,7 @@ test("with no variable, an empty one or a path that is not absolute, the node wr
     const home = newHome();
     const r = run(home, ["--no-service"], { node: handed });
     assert.match(r.stdout, new RegExp(`^node:  ${process.execPath}$`, "m"), JSON.stringify(handed));
-    assert.equal(r.stderr, "", "and it says nothing of its own about it");
+    assert.equal(ownStderr(r.stderr), "", "and it says nothing of its own about it");
     assert.equal(commands(home, "Stop")[0].endsWith(` ${captureOf()} --owner ${OWNER} --quiet`), true);
     assert.equal(shellWordsOf(commands(home, "Stop")[0], home)[0], process.execPath, JSON.stringify(handed));
   }
