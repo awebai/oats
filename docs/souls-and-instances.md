@@ -684,7 +684,7 @@ holds of each kind:
 
 | Of the nested repository | The copy holds |
 |---|---|
-| `HEAD` | on the same branch, or detached at the same commit when the source's is detached (or on a ref that is not a branch, or on a branch whose name is not UTF-8) |
+| `HEAD` | on the same branch, or detached at the same commit when the source's is detached (or on a ref that is not a branch, or on a branch whose name is not UTF-8); on the same branch with no commit when the source's has none ([below](#nested-no-commit)) |
 | every local branch | the branch under its name, at its commit |
 | the reflogs of `HEAD` and of each branch | branch and `HEAD` reflogs are carried, with every commit they name |
 | tags | the tags and what they name |
@@ -752,6 +752,21 @@ read the tree. The same holds for a nested repository that has a commit and
 no index file.
 `git reset` in the recovery makes an index from `HEAD`: the committed files
 are tracked again, and a file that was changed in the tree shows as changed.
+
+<a id="nested-no-commit"></a>
+**A nested repository with no commit at its `HEAD` is copied as one.** After
+`git init` and no commit, or after `git switch --orphan` in a repository that
+has commits, a repository's `HEAD` names a branch nobody has committed on.
+The recovery rebuilds it as it rebuilds any nested repository: its `HEAD` is
+on the same branch and has no commit, its other branches are there with
+their commits and their logs, and its index, what is staged in it and its
+files are the source's. One with no index file either (`git init` and
+nothing added) has none in the recovery. A `HEAD` with no commit that names
+no local branch (a ref outside `refs/heads/`, or a branch whose name is not
+UTF-8) is refused with `E_WORK_PRESERVATION_FAILED`, naming the repository,
+the home and the work kept: there is no commit to detach the copy at and no
+branch to put it on. A commit in that repository, or `git switch -c
+<branch>` there, makes the work tree retirable.
 
 **A worktree that cannot be proven unchanged.** Two things make a worktree
 not provable:
