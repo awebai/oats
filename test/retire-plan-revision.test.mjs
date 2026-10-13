@@ -29,8 +29,9 @@
 //     the record decides what the plan shows of the session, and each such plan has its revision;
 //     where the receipt says a launch, the record's endpoint, its launch and its prompt's status
 //     decide whether the session is established, each alone;
-//   - what a plan shows of other homes' records is bound too: the children attached to this work
-//     and the edges it could not follow, with the reason each edge gives;
+//   - what a plan shows of other homes is bound too: each child as the plan names it (its agent
+//     is the name its soul's file gives), the children attached to this work and the edges it
+//     could not follow, with the reason each edge gives;
 //   - where Git gives no answer for work/, the reason the plan shows for that is bound: in one
 //     home, over what can be put at work/ without Git and every record, two plans that differ in
 //     anything they show never share a revision;
@@ -781,6 +782,35 @@ test("the declared roots a recovery leaves out are part of the revision, as the 
   t.diagnostic(`not valid and absent: ${same(notValid.shown, absent.shown) ? "one plan" : `two plans, differing at ${differsAt(notValid.shown, absent.shown)}`}, ${notValid.plan.planRevision === absent.plan.planRevision ? "one revision" : "two revisions"}; against a receipt that declares nothing: ${same(nothing.shown, absent.shown) ? "one plan" : `another plan, differing at ${differsAt(nothing.shown, absent.shown)}`}, ${nothing.plan.planRevision === absent.plan.planRevision ? "one revision" : "another revision"}`);
   if (!same(notValid.shown, absent.shown)) assert.notEqual(notValid.plan.planRevision, absent.plan.planRevision);
   if (!same(nothing.shown, absent.shown)) assert.notEqual(nothing.plan.planRevision, absent.plan.planRevision);
+});
+
+test("a child is in the revision as the plan names it, its agent included: the agent's name is the one its soul's file gives, not a part of the child's home, so the same child home under a soul that was given another name is another plan with another revision, and the apply with the first is stale (#1065)", async (t) => {
+  const d = deployment(t);
+  const parent = await d.fx.spawn("dev", { instance: "dev-named-child" });
+  // A child under an agent directory of its own, written by hand: its home, its record and its
+  // directory stay as they are; only the name in the soul's file is rewritten.
+  const agentDir = join(d.fx.root, "child-agent"), kid = join(agentDir, "instances", "a-kid");
+  const named = (name) => writeFileSync(join(agentDir, "soul", "soul.yaml"), `name: ${name}\nwork: directory\n`);
+  mkdirSync(join(agentDir, "soul"), { recursive: true });
+  writeFileSync(join(agentDir, "soul", "AGENTS.md"), "# a child's soul\n");
+  named("child-agent");
+  mkdirSync(kid, { recursive: true });
+  writeFileSync(join(kid, "instance.json"), JSON.stringify({ agent: "child-agent", instance: "a-kid", home: kid, work: "directory", launched: false, parentInstance: parent.instance }) + "\n");
+  const read = (what) => { const plan = d.planTwice(parent.instance, undefined, what); return { what, plan, shown: whole(plan, d.line(parent.instance)) }; };
+  const identity = (r) => r.plan.facts.children.map((c) => [c.instance, c.agent, c.home]);
+  const first = read("a child under the name its soul gives");
+  assert.deepEqual(identity(first), [["a-kid", "child-agent", kid]]);
+  named("another-label");
+  const renamed = read("the same child home, its soul given another name");
+  assert.deepEqual(identity(renamed), [["a-kid", "another-label", kid]]);
+  assert.deepEqual(differsAt(first.shown, renamed.shown), ["facts.children"], "only the child's entry differs");
+  assert.notEqual(renamed.plan.planRevision, first.plan.planRevision, `the two plans name the child differently and share the revision ${first.plan.planRevision}`);
+  const stale = d.apply(parent.instance, first.plan.planRevision, "read-under-the-first-name");
+  assert.deepEqual([stale.status, stale.ok, stale.error?.code], [1, false, "E_PLAN_STALE"], JSON.stringify(stale.error ?? stale.result));
+  assert.deepEqual(timeless(stale.error.details.plan), timeless(renamed.plan), "the refusal carries the fresh plan, whole");
+  assert.deepEqual([d.hookRan(parent.instance), existsSync(join(parent.home, "work", ".git")), existsSync(kid)], [false, true, true], "no retire hook ran; the tree and the child's home are where they were");
+  named("child-agent");
+  assert.equal(d.plan(parent.instance).planRevision, first.plan.planRevision, "the first name again: the first revision");
 });
 
 test("what a plan shows of other homes' records is part of its revision: the children attached to this home's work (a note), and the edges it could not follow because the parent's name is not unique (facts.ambiguous and a note); a child's record rewritten into and out of each gives another revision, and a guarded apply with the earlier one is stale (#1065)", async (t) => {
