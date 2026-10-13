@@ -1135,8 +1135,8 @@ It runs after the retire hooks and before the `work/` step, so a refusal
 leaves `work/` untouched. For each tree:
 
 - **A clean tree is removed.** Clean means that `git status`, ignored and
-  untracked files included, is empty; no merge, rebase, cherry-pick, revert,
-  bisect or sequencer operation is in progress; and its HEAD commit is
+  untracked files included, is empty; no Git operation is in progress
+  ([what counts](#git-operation-in-progress)); and its HEAD commit is
   reached by a ref of its repository (the tree's own HEAD, reflog and
   `refs/worktree/` refs do not count: they go with its admin entry). The retire runs `git worktree remove` (without
   `--force`) and `git worktree prune`, and verifies that the tree is gone from
@@ -1187,6 +1187,32 @@ no tree was moved or removed; that is why the code is not `E_PLAN_STALE`,
 which says that nothing happened (it was, before OATS 0.52.0). The fields are in
 [the CLI API](desktop-cli-api.md#retire).
 
+<a id="git-operation-in-progress"></a>
+**What counts as a Git operation in progress.** The retire reads what `git
+status` reads, in the tree's own Git directory: a rebase or a `git am`
+(`rebase-merge`, `rebase-apply`), a merge (`MERGE_HEAD`), a cherry-pick or a
+revert (`CHERRY_PICK_HEAD`, `REVERT_HEAD`, or a `sequencer/todo` between two
+commits of several) and a bisect (`BISECT_LOG`). What an operation leaves
+behind when it has ended does not count: `REBASE_HEAD` after a rebase that
+stopped on a conflict and was continued, `AUTO_MERGE` and `MERGE_MSG` after a
+cherry-pick or a revert, `BISECT_START` and `BISECT_NAMES` without a
+`BISECT_LOG`, a `sequencer` directory without a `todo`. A tree that holds
+only such files is clean. The retire does not remove them: they are Git's.
+
+The check keeps work, so it errs towards "in progress": an entry counts when
+it is there, whatever it is, and one that cannot be looked at (no permission,
+for example) counts too. In a repository that stores its refs in the reftable
+format, `CHERRY_PICK_HEAD` and `REVERT_HEAD` are not files; there, and only
+there, the retire asks Git for the two (`git rev-parse -q --verify`, in the
+tree), and any answer but Git's plain "not there" counts: a failure, a
+timeout, no Git.
+
+The same answer decides two more things. An instance's own worktree with no
+change of its own, in a home that changed, gets a recovery of the home only
+unless an operation is in progress in it; then the recovery holds the
+worktree too, with the operation's state. And `oats doctor` says `an
+operation in progress` of a retained worktree by it.
+
 #### After a retire: inspect, restore, dispose
 
 A retire can leave two things behind outside the removed home: a recovery
@@ -1213,7 +1239,8 @@ link. A fact doctor can't read is said on its line.
 - A retained worktree line gives the path, the repository, the branch (or
   `detached at <commit>`), and `clean` or `not clean; uncommitted: <classes>`
   (staged or unstaged changes, conflicts, untracked or ignored files, an
-  operation in progress). Doctor doesn't ask Git for the status of a
+  operation in progress, [as a retire reads it](#git-operation-in-progress)).
+  Doctor doesn't ask Git for the status of a
   repository whose configuration names a content filter (`filter.<driver>.clean`
   or `.process`), because the status would run it: the line says `clean:
   unknown` and names the filter. The status never enters a submodule: it
