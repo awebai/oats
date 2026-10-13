@@ -308,7 +308,8 @@ configuration is a host choice: a soul never names one.
   it.
 - `oats launch-config list` shows the effective entries;
   `oats launch-config set <name> --file <json>` and
-  `oats launch-config remove <name>` rewrite only this block;
+  `oats launch-config remove <name>` rewrite only this block, under the
+  lock every kernel command that rewrites `oats-local.yaml` holds;
   `oats launch-config preview (--home <abs> | --soul <name>) --json` shows
   what a start would run (harness, model, executable, argv, redacted
   environment, command and preflight checks) and starts nothing.

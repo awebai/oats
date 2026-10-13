@@ -1483,7 +1483,11 @@ oats teams default <label> [--if-absent | --expect <label>] --json
   every redo.
 - **Concurrency.** Every `add`, `remove` and `default` holds
   `<deployment>/.agents/locks/local.lock` for its whole read-compare-write.
-  [`oats soul launch set|remove`](#oats-soul-launch) holds the same lock.
+  Every other kernel command that rewrites `oats-local.yaml` holds the same
+  lock and answers the same two codes: [`oats soul launch
+  set|remove`](#oats-soul-launch), [`oats launch-config
+  set|remove`](#launch-configurations) and [`oats schedule|trigger
+  enable|disable`](#schedules-and-triggers) of a workspace item.
   Among concurrent `oats teams` writers on one deployment, a conditional write
   therefore never overwrites a default another of them set: when two race, the
   later one sees the earlier result and refuses with
@@ -4919,7 +4923,20 @@ accept `--server <id>`.
   anything is sent (`default: false` is dropped). Errors: `E_LOCAL_MISSING`,
   `E_BAD_ARGS` (including `--home`/`--soul`), `E_LAUNCH_CONFIG_UNKNOWN`,
   `E_LAUNCH_CONFIG_INVALID`, `E_CONFIG_BROKEN`, `E_HOME_UNKNOWN`,
-  `E_REMOTE_INCOMPATIBLE`.
+  `E_REMOTE_INCOMPATIBLE`, `E_LOCAL_BUSY {path, lock}`, `E_LOCAL_CHANGED
+  {path}`.
+- **The write** (`set`, `remove`) replaces the `launch-configs` block and
+  leaves every other byte of the file as it was. It is made under
+  `<deployment>/.agents/locks/local.lock`, the lock of every kernel command
+  that rewrites `oats-local.yaml` ([`oats teams`](#oats-teams) says what it
+  covers), from the file as it is under that lock: whether the name is
+  declared, `before`, the environment `--keep-env` keeps and the one default
+  per harness are all read there, never from the command's start. The
+  definition (`--file`, or stdin) is read and judged before the lock is
+  taken. A lock still held after 5 s is `E_LOCAL_BUSY`, and a file that kept
+  changing while the edit ran is `E_LOCAL_CHANGED`; nothing was written, and
+  the same command can be run again. A definition equal to the declared one
+  writes nothing and answers the same receipt.
 - **preview** (read-only) answers `{context, selected, selection: {source,
   launchConfig, harness, model, yolo}, harness, model, modelSource, yolo,
   launchConfig, launchConfigSource, launchConfigDefault, executable: {path,
@@ -5314,8 +5331,13 @@ changes `installed` or `active`). `maxConcurrent` is the effective scheduled-job
 
 **Workspace items:**
 - `enable`/`disable` edit `oats-local.yaml` `triggers.disabled` or
-  `schedules.disabled`. `update` and `remove` refuse `E_AUTOMATION_WORKSPACE
-  {id, origin}`. `schedule run`/`reconcile` elsewhere refuse
+  `schedules.disabled`: that list and no other entry, under
+  `<deployment>/.agents/locks/local.lock` and from the file as it is under
+  it, as [`oats teams`](#oats-teams) writes that file. A lock still held
+  after 5 s is `E_LOCAL_BUSY {path, lock}`, and a file that kept changing
+  while the edit ran is `E_LOCAL_CHANGED {path}`; nothing was written, and
+  the same command can be run again. `update` and `remove` refuse
+  `E_AUTOMATION_WORKSPACE {id, origin}`. `schedule run`/`reconcile` elsewhere refuse
   `E_AUTOMATION_NOT_HERE {id, reason, runsOn, owner}`.
 - `oats trigger|schedule add … --workspace <member> --runs-on <host> --owner
   <host>/<login> --json` writes the file in the member clone and answers
