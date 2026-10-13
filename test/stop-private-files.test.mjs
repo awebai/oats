@@ -12,6 +12,9 @@
 //   - each writer, alone, with its write made to fail once the file exists, and with its rename
 //     made to fail: nothing is left at the private path, the file it would have written is not
 //     there, and the stop answers what it answered;
+//   - the error is that failure's own, also when the removal of the private file fails in its
+//     turn: in the row, for the record's writer; for the receipt's writer, whose one caller keeps
+//     the error to itself, in a call of the writer in a process of its own;
 //   - every write under the home failing: the home holds no file of the stop afterwards, the JSON
 //     receipt is the one #946 pinned, and the text closes with the sentence for a stop that could
 //     not complete its record;
@@ -100,11 +103,22 @@ function deployment(t) {
       return plan;
     },
     applyArgs: (name, revision, key, extra = []) => ["instance", "stop", name, "--apply", "--plan-revision", revision, "--idempotency-key", key, ...extra],
-    /** `oats <args>` run to its end with `faults`, gates that throw: → what runFaulted gives. */
-    faulted: (args, faults) => runFaulted([CLI, ...args], { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "gates", String(++children)), gates: faults }),
+    /** `oats <args>` run to its end with `faults`, gates that throw; or, with `script`, `node
+     *  <script…>` so. → what runFaulted gives. */
+    faulted: (args, faults, script = [CLI, ...args]) => runFaulted(script, { cwd: fx.dep, env: fx.env, gateDir: join(fx.base, "gates", String(++children)), gates: faults }),
   };
   return d;
 }
+
+/** One call of the receipt's writer in a process of its own: `node <this> <path>` writes
+ *  `{ written: true }` at the path and prints what the call threw, or that it threw nothing. */
+const WRITER_CALL = `import { writeFileSyncAtomic } from ${JSON.stringify(new URL("../lib/instance-lifecycle.mjs", import.meta.url).href)};
+let threw = null;
+try { writeFileSyncAtomic(process.argv[2], { written: true }); } catch (e) { threw = { code: e.code, syscall: e.syscall, path: e.path }; }
+console.log(JSON.stringify({ threw }));
+`;
+/** The removal of the private file whose path starts with `prefix`, refused. */
+const removalRefused = (prefix) => ({ name: "removal", fn: "rmSync", prefix, throws: "EACCES" });
 
 /** The private file of each writer for `i`, as a path prefix: the name ends with the pid of the
  *  kernel process that writes it. */
@@ -152,6 +166,20 @@ test("the stop's record (writeJsonAtomic): when its private file's write fails o
     await waitUntil(() => !alive(i.pid), `the harness of ${i.name} to be gone`);
     assert.deepEqual(stopFiles(i.home), [".oats-stop-receipt.k1.json"], `${way}: no private file and no record; the receipt of the key is stored as for any stop`);
   });
+  for (const [way, fault, code, syscall] of WAYS) await t.test(`${way}, and the removal of the private file is refused: the row holds the first error, not the removal's`, async () => {
+    const i = await d.add(`record-kept-${syscall}`);
+    const plan = await d.runningPlan(i.name);
+    const r = d.faulted(d.applyArgs(i.name, plan.planRevision, "k1", ["--json"]), [fault(privateOfRecord(i)), removalRefused(privateOfRecord(i))]);
+    assert.deepEqual(r.fired, ["fault", "removal"], `${way}: both faults were met`);
+    const [row] = receiptOf(r, way).results;
+    assert.deepEqual([row.ok, row.code, row.stillRunning], [false, "E_SESSION_STOP_FAILED", []], `${way}: ${r.stdout}`);
+    assert.match(row.message, new RegExp(`^${i.name}: ${code}: .*, ${syscall} '.*\\.oats-stop\\.json\\.tmp-\\d+'; its harness was signalled \\(SIGTERM\\) and has exited$`), `${way}: the error is that call's own`);
+    assert.doesNotMatch(row.message, /EACCES/, `${way}: the removal's failure is not answered`);
+    assert.equal(r.stderr, "", `${way}: and is not printed`);
+    await waitUntil(() => !alive(i.pid), `the harness of ${i.name} to be gone`);
+    const left = stopFiles(i.home);
+    assert.deepEqual([left.length, left[0], /^\.oats-stop\.json\.tmp-\d+$/.test(left[1])], [2, ".oats-stop-receipt.k1.json", true], `${way}: the private file is there, since its removal was refused, and nothing else: ${left}`);
+  });
 });
 
 test("the receipt of a key (writeFileSyncAtomic): when its private file's write fails once the file is made, or its rename fails, nothing is left at the private path and no receipt is stored; the stop answers as it did, its record written (#963)", TMUX, async (t) => {
@@ -162,13 +190,58 @@ test("the receipt of a key (writeFileSyncAtomic): when its private file's write 
     const r = d.faulted(d.applyArgs(i.name, plan.planRevision, "k1", ["--json"]), [fault(privateOfReceipt(i, "k1"))]);
     assert.deepEqual(r.fired, ["fault"], `${way}: the fault was met`);
     // The caller keeps a receipt that cannot be stored to itself (evidence, not authority): the
-    // answer is the one of a stop that stored it. The writer's rethrow is by reading alone.
+    // answer is the one of a stop that stored it. What the writer throws is in its own test, below.
     const receipt = receiptOf(r, way);
     assert.deepEqual([receipt.ok, receipt.replayed, receipt.results.map((row) => [row.ok, row.stopped, row.alreadyIdle])], [true, false, [[true, true, false]]], `${way}: ${r.stdout}`);
     assert.equal(r.stderr, "", way);
     await waitUntil(() => !alive(i.pid), `the harness of ${i.name} to be gone`);
     assert.deepEqual(stopFiles(i.home), [".oats-stop.json"], `${way}: no private file and no receipt of the key; the stop's record is there`);
   });
+});
+
+test("the receipt's writer, called alone (its caller keeps the error to itself): it writes the bytes it wrote and leaves nothing beside them; when its private file's write fails once the file is made, or its rename fails, it throws that failure's own error, the file at the path is as it was and nothing is left; and when the removal is refused too, the error is still the first (#963)", async (t) => {
+  const d = deployment(t);
+  const script = join(d.fx.base, "writer-call.mjs");
+  writeFileSync(script, WRITER_CALL);
+  let n = 0;
+  /** One call in a directory of its own, with `faults`; `before`: what the path holds first, if anything. → { r, threw, dir, path } */
+  const call = (faults, before) => {
+    const dir = join(d.fx.base, `unit-${++n}`), path = join(dir, "receipt.json");
+    mkdirSync(dir);
+    if (before !== undefined) writeFileSync(path, before);
+    const gates = faults.map((make) => make(`${path}.`));
+    const r = gates.length ? d.faulted([], gates, [script, path]) : spawnSync(process.execPath, [script, path], { cwd: d.fx.dep, env: d.fx.env, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return { r, threw: JSON.parse(r.stdout.trim()).threw, dir, path };
+  };
+  const BYTES = JSON.stringify({ written: true }, null, 2);
+
+  await t.test("nothing fails: the bytes, at the path, over what was there, and nothing beside them", () => {
+    for (const before of [undefined, "what was there\n"]) {
+      const { threw, dir, path } = call([], before);
+      assert.equal(threw, null);
+      assert.deepEqual(readdirSync(dir), ["receipt.json"]);
+      assert.equal(readFileSync(path, "utf8"), BYTES);
+    }
+  });
+  for (const [way, fault, code, syscall] of WAYS) {
+    await t.test(way, () => {
+      for (const before of [undefined, "what was there\n"]) {
+        const { r, threw, dir, path } = call([fault], before);
+        assert.deepEqual(r.fired, ["fault"], "the fault was met");
+        assert.deepEqual([threw.code, threw.syscall, threw.path.startsWith(`${path}.`), /\.\d+\.tmp$/.test(threw.path)], [code, syscall, true, true], `the error is that call's own, at the private path: ${JSON.stringify(threw)}`);
+        assert.deepEqual(readdirSync(dir), before === undefined ? [] : ["receipt.json"], "nothing is left at the private path");
+        if (before !== undefined) assert.equal(readFileSync(path, "utf8"), before, "what the path held is as it was");
+      }
+    });
+    await t.test(`${way}, and the removal of the private file is refused: the error thrown is the first, not the removal's`, () => {
+      const { r, threw, dir } = call([fault, removalRefused]);
+      assert.deepEqual(r.fired, ["fault", "removal"], "both faults were met");
+      assert.deepEqual([threw.code, threw.syscall], [code, syscall], JSON.stringify(threw));
+      const left = readdirSync(dir);
+      assert.deepEqual([left.length, /^receipt\.json\.\d+\.tmp$/.test(left[0])], [1, true], `the private file is there, since its removal was refused, and nothing else: ${left}`);
+    });
+  }
 });
 
 test("with no space for any write under the home (each file is made, then its write fails): the home holds no file of the stop afterwards, the JSON receipt is the one of a stop on a full file system, and the text prints the row and closes with the sentence for a record that was not completed, exit 1 (#963)", TMUX, async (t) => {
