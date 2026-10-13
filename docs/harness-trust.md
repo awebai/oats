@@ -38,13 +38,19 @@ reads. The targets of each selected harness are:
   deployment's `oats-local.yaml`) of that harness whose `env` sets
   `CLAUDE_CONFIG_DIR` (claude) or `CODEX_HOME` (codex), as a literal or a
   `{fromEnv: NAME}` reference resolved from the environment the command runs
-  in.
+  in;
+- one file for each launch configuration of that harness whose `env` sets
+  `HOME` and not that variable, when its launch has no such variable at
+  all (the session and the server set none either): the default file above
+  under that `HOME`, which is the file its launch reads. When the session
+  or the server sets the variable, that launch reads the ambient file, and
+  the configuration has no file of its own.
 
 Targets with the same canonical directory are one file. Each plan entry says
 whether it is the ambient file (`ambient`) and which launch configurations
 use it (`launchConfigs`). A launch configuration whose reference is not set,
 whose path is not absolute, or whose directory does not exist is a named
-`problem` on its entry. OATS never creates a harness configuration directory:
+`problem` on its entry, for a `HOME` as for the harness's own variable. OATS never creates a harness configuration directory:
 create it, or start the harness with it once, then rerun. A missing ambient
 directory (`~/.codex` for a user who has never run Codex, for example) means
 the harness has not run as this user: with `--harness all` that harness's
@@ -57,7 +63,7 @@ it.
 The plan shows what will be written before anything is. `warnings` says
 what selects the ambient file when a selector does (`CLAUDE_CONFIG_DIR
 selects <dir> (the global CLAUDE_CONFIG_DIR of the OATS tmux server
-(<socket>)); effective file <file>`). Two cases have no pane to read:
+(<socket>)); effective file <file>`). Four cases have no pane to read:
 
 - **No OATS tmux server runs.** The command does not start one, and does not
   start your login shell to find out what one would hold. The ambient file
@@ -65,6 +71,21 @@ selects <dir> (the global CLAUDE_CONFIG_DIR of the OATS tmux server
   environment is not established until a spawn starts the OATS tmux server
   (none runs); read instead: this process's CLAUDE_CONFIG_DIR (not set),
   this process's HOME`.
+- **The command has no tmux on its `PATH`.** It makes no read, and no
+  prediction: the ambient file is the operator's own, as with no server, and
+  `warnings` says so: `claude: the pane's environment is not established:
+  this process has no tmux on its PATH to read the OATS tmux server with;
+  read instead: …`. If a server does run on this host, run the command with
+  a `PATH` that holds tmux, so that it writes for the file launches read.
+- **tmux could not say whether the server runs.** `tmux -L oats
+  list-sessions` was refused or cut off. That is a read that failed, not
+  "no server runs": one may run, under another account. The ambient target is `refused`, nothing is written, to
+  any file, and the command answers `E_RUNTIME_ENDPOINT_UNKNOWN` with what
+  failed: `… could not read the OATS tmux server for session <name>:
+  <failure>. What has to answer, as this process: \`tmux -L oats
+  list-sessions\`. A server that could not be asked may run under another
+  account than this process's, so this process's file is not written in its
+  place`. Run the command where that tmux command answers.
 - **A server runs and its environment cannot be read** (the read fails, or
   the value holds a `$`, a line break or a character tmux prints encoded;
   `HOME` cleared or missing when there is no selector). The ambient target

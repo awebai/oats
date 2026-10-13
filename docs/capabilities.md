@@ -356,7 +356,8 @@ A self-contained package has an `oats.json`:
   selected harness executable and resource directory, with Claude marketplace
   registration before plugin installation. Run it in the indicated context
   with the same launch environment; spawn and restart never install packages.
-  The probe runs with the `PATH`, `HOME` and harness folder the launch's
+  The probe runs the executable the launch's lookup selected, with the
+  `PATH`, `HOME` and harness folder the launch's
   pane will have, never the calling process's in their place, and the command
   starts with that folder's variable when the launch has one. Besides
   `E_HARNESS_RESOURCE_MISSING` for a missing package, the check raises

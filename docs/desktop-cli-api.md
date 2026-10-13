@@ -5345,7 +5345,8 @@ It uses the existing success/error JSON envelope. Result:
 
 There is one entry per target file: the ambient file of each selected harness,
 then one per launch configuration whose `env` sets `CLAUDE_CONFIG_DIR` or
-`CODEX_HOME`, deduplicated by canonical directory. `ambient` says whether the
+`CODEX_HOME`, or sets `HOME` when its launch has no such variable at all
+(its default file under that `HOME`), deduplicated by canonical directory. `ambient` says whether the
 file is the one a launch with no launch configuration reads (by the
 environment its tmux pane will have, or the operator's own when no OATS tmux
 server runs, which `warnings` then says:
@@ -5369,7 +5370,10 @@ Preflight failures, including any entry `problem`, use `E_CONFIG_BROKEN` with th
 result in details; the message names each problem. One case has its own code:
 when the only refused entries are ambient ones whose file could not be
 established, because a server runs and the environment of its panes cannot be
-read, the code is `E_RUNTIME_ENDPOINT_UNKNOWN` (`Harness trust targets cannot be
+read, or because tmux could not say whether the server runs (its
+`list-sessions` refused or cut off; with no tmux on the command's `PATH`
+no read is made, and the operator's own file is the target, said in
+`warnings`), the code is `E_RUNTIME_ENDPOINT_UNKNOWN` (`Harness trust targets cannot be
 established; nothing was written: …`), with the same details: the entry is
 `refused`, `file` null, with its `problem`. With a refused launch
 configuration's entry beside it, `E_CONFIG_BROKEN` wins. Apply failures

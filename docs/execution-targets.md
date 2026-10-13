@@ -326,6 +326,12 @@ than the server's checked one account and launched with another
     reads nothing, and so refuses nothing, when no requirement applies to
     the launch. A lookup that already refused a `PATH` is the one refusal
     of that read: the package check does not refuse it again.
+    The probe runs the executable the lookup selected, by its full path,
+    never the harness's name looked up a second time: the command runs in
+    its own directory, not the pane's. For the same reason the probe is
+    given the pane's `PATH` as the pane reads it, a relative entry (and an
+    empty one) resolved against the pane's working directory, the home.
+    The command a refusal names keeps the harness's name as declared.
   - **The folder-trust check only warns**: `<harness> folder trust: the
     configuration file this launch will read could not be established
     (<why, and what would make it readable>); nothing is said about its
@@ -337,7 +343,8 @@ than the server's checked one account and launched with another
   on the pane the spawn expects, and again once the session exists (another
   creator may have won the race to create the server, with another
   account). The package check probes again only when `PATH`, `HOME` or
-  the selector differ from what it judged; a requirement that does not hold
+  the selector differ from what it judged, or the lookup found the harness
+  at another path there; a requirement that does not hold
   there refuses the spawn, which is rolled back as any failed launch is. The
   folder-trust warning and the codex trust of the home follow the session
   the spawn got. A start that creates its session makes the first check
@@ -360,9 +367,10 @@ than the server's checked one account and launched with another
 <a id="no-prediction"></a>
 **When no pane can be predicted, the check says what it read instead.** No
 server runs and the command only reads (a preview, `oats readiness`, `oats
-harness trust`: none of them starts your login shell to find out); a
-preview could not read the server; a start's session was refused; the spawn
-launches nothing (`--no-launch`). The checks then read the launch
+harness trust`: none of them starts your login shell to find out); the
+command has no tmux on its `PATH` to ask with; a preview could not read the
+server; a start's session was refused; the spawn launches nothing
+(`--no-launch`). The checks then read the launch
 configuration's value when it sets one, else the calling process's, and say
 so, for `PATH` too:
 
@@ -370,6 +378,18 @@ so, for `PATH` too:
 the pane's environment is not established until a spawn starts the OATS tmux server (none runs); read instead: this process's PATH
 ```
 
+- **A command that writes does not take a failed read for "none runs".**
+  When tmux is there and could not say whether the server runs (its
+  `list-sessions` refused or cut off), a preview and
+  `oats readiness` answer as above, with `the pane's environment is not
+  established: this process could not read the OATS tmux server; read
+  instead: …`. `oats harness trust` refuses instead
+  (`E_RUNTIME_ENDPOINT_UNKNOWN`, nothing written): a server may run under
+  another account, and the command would write the wrong file
+  ([harness-trust.md](harness-trust.md)). A command with no tmux on its
+  `PATH` makes no read at all: no prediction, for the writer as for the
+  others, with `the pane's environment is not established: this process has
+  no tmux on its PATH to read the OATS tmux server with; read instead: …`.
 - A preview carries that sentence in the `executable` item's `detail`, in
   the `harness-packages` item's when a requirement was probed, and a spawn
   preview in `warnings`, in one line that names the checks (`the harness
