@@ -16,11 +16,13 @@ import * as core from "../lib/core.mjs";
 import * as shell from "../lib/shell-word.mjs";
 import {
   LAUNCH_PROBLEM_TEXT_MAX, PANE_PATH_FIX, UNMATCHED_FIX, harnessFix, harnessNotOnPanePath, harnessUnavailable, launchConfigAmbiguous,
-  launchConfigUnknown, launchConfigUnknownFix, launchKeysUnmatched, launchLayers, launchPreferenceUnmatched, selectionFrom, soulLaunchCommand,
-  unmatchedKeyMessage,
+  launchConfigUnknown, launchConfigUnknownFix, launchKeyQuoted, launchKeysUnmatched, launchLayers, launchPreferenceUnmatched, selectionFrom,
+  soulLaunchCommand, unmatchedKeyMessage,
 } from "../lib/launch-preference.mjs";
+import { REFUSED_TEXT } from "../lib/refused-text.mjs";
 // The Desktop's released decoder is the consumer of a Launch report: a problem's texts must decode under it.
 import { launchOf, REPORT_FROM } from "../packages/client/launch-contract.mjs";
+import { previewFailure } from "../packages/client/spawn-preview-contract.mjs";
 
 const LOCAL = "oats-local.yaml";
 const SET = "oats soul launch set <soul> --launch-config <name> | --harness <h>";
@@ -277,4 +279,94 @@ test("through the CLI: a spawn's refusal and the soul's row carry the same fix, 
   setLaunch({ "*": "gone" });
   r = same("dev", "E_LAUNCH_CONFIG_UNKNOWN", "local-default", `declare launch configuration gone (oats launch-config set), name another for every soul without an entry (${SET_DEFAULT_CONFIG}), or pin the soul to one (${SET_CONFIG})`);
   assert.deepEqual(r.error.details, { name: "gone", from: "local-default", at: `${LOCAL}#/souls/launch/*` });
+});
+
+/* ───────────── a key no command line can carry (awebai/oats#1064) ───────────── */
+
+// A key of souls.launch that holds a character the kernel never prints (lib/refused-text.mjs REFUSED_TEXT).
+// The schema of oats-local.yaml admits no such key, so no file brings one to a launch answer; these tests
+// hand one to the constructors directly. The rule is made in soulLaunchCommand and in the one quoting of a
+// key (launchKeyQuoted), not in each sentence.
+const UNPRINTABLE = { "a tab": "\t", "an escape": "\x1b", "a line feed": "\n", "DEL": "\x7f", "a C1 control": "\u0085", "a bidi override": "‮", "a zero-width space": "​" };
+const BY_HAND = (named) => `no command can name ${named}: delete that key from ${LOCAL} (souls.launch) by hand`;
+/** A command of the verb that carries a word of its own, where a placeholder or '*' would stand. */
+const COMMAND_WITH_A_WORD = /oats soul launch (?:set|remove) (?!<soul>|<key>|'\*'|\))/;
+
+test("a key no command line can carry: the function gives no command, and names the key with the character replaced (#1064)", () => {
+  for (const [what, character] of Object.entries(UNPRINTABLE)) {
+    const key = `gh${character}ost`, named = `"gh�ost"`;
+    assert.ok(REFUSED_TEXT.test(key), what);
+    assert.equal(launchKeyQuoted(key), named, what);
+    // A quoted shell word is not the answer: there is no command at all, and the key is removed by hand.
+    assert.equal(soulLaunchCommand("remove", { key }), BY_HAND(named), what);
+    for (const launch of ["any", "config"]) assert.equal(soulLaunchCommand("set", { key, launch }), `no command can name ${named}, and no soul has such a key`, what);
+  }
+  // Several such characters, each replaced; a key the schema admits is quoted as it is, and has its command.
+  assert.equal(launchKeyQuoted("‮a\tb​"), `"�a�b�"`);
+  for (const key of ["dev", "acme.okf/dev", "*"]) {
+    assert.equal(launchKeyQuoted(key), JSON.stringify(key));
+    assert.match(soulLaunchCommand("remove", { key }), /^oats soul launch remove /);
+  }
+});
+
+test("every launch answer built over such a key is text the kernel prints, and the client's readers take it; the key itself stays exact in the data (#1064)", () => {
+  const offered = { keys: ["dev", "runner"], unread: {} };
+  const configs = { fast: { name: "fast", harness: "pi" } };
+  for (const [what, character] of Object.entries(UNPRINTABLE)) {
+    const key = `gh${character}ost`, named = `"gh�ost"`;
+    const local = { souls: { launch: { "*": "fast", [key]: "fast" } } };
+    const layers = launchLayers({ definition: {}, entry: ENTRY, key: "dev", local, offered });
+    const choice = selectionFrom({ flags: {}, layers });
+    const refusal = launchPreferenceUnmatched({ choice, layers });
+    const report = core.launchReportFor({ layers, launchConfigs: configs, contextDir: tmpdir() });
+    const [row] = launchKeysUnmatched({ local, offered }).unmatched;
+    // The data is the exact key, wherever it is carried.
+    assert.deepEqual([refusal.code, refusal.details.keys.map((k) => k.key), row.key], ["E_LAUNCH_PREFERENCE_UNMATCHED", [key], key], what);
+    const texts = {
+      "the refusal's message": refusal.message, "the refusal's fix": refusal.details.fix,
+      "the report's message": report.problem.message, "the report's fix": report.problem.fix,
+      "the row of oats souls": unmatchedKeyMessage(row), "the row of oats doctor": unmatchedKeyMessage(row, { lastRead: true }),
+      // oats doctor's remedy and oats soul launch's own line end with what the function gives for the key.
+      "the command to remove it": soulLaunchCommand("remove", { key: row.key }),
+    };
+    for (const [which, text] of Object.entries(texts)) {
+      assert.ok(!REFUSED_TEXT.test(text), `${what}, ${which}: ${JSON.stringify(text)}`);
+      assert.ok(text.length > 0 && text.length <= LAUNCH_PROBLEM_TEXT_MAX, `${what}, ${which}: ${text.length} characters`);
+      assert.ok(!COMMAND_WITH_A_WORD.test(text), `${what}, ${which} carries no command with the key: ${text}`);
+      if (which !== "the refusal's fix" && which !== "the report's fix") assert.ok(text.includes(named), `${what}, ${which} names the key: ${text}`);
+    }
+    // Where a command would have removed the key, the sentence says where it is removed by hand.
+    for (const which of ["the refusal's message", "the row of oats souls", "the command to remove it"]) assert.ok(texts[which].includes(BY_HAND(named)), `${what}, ${which}: ${texts[which]}`);
+    // The client's readers: a report by the Launch reader, a refusal by the preview's.
+    assert.notEqual(launchOf(report, REPORT_FROM), undefined, `${what}: the Launch reader decodes the report`);
+    assert.deepEqual(previewFailure(refusal.code, null, refusal.message, refusal.details.fix).reason, { code: refusal.code, message: refusal.message, fix: refusal.details.fix }, `${what}: the preview's reader keeps the kernel's words`);
+    // The soul's own key and a nearest soul key are named through the same replacement.
+    const odd = `de${character}v`;
+    const over = launchPreferenceUnmatched({ choice, layers: { ...layers, key: odd } });
+    assert.ok(!REFUSED_TEXT.test(over.message) && over.message.includes("A new launch of de�v that names no launch"), `${what}: ${JSON.stringify(over.message)}`);
+    assert.equal(over.details.soul, odd, what);
+    const near = unmatchedKeyMessage({ ...row, key: "ghost", suggestions: [odd] });
+    assert.ok(!REFUSED_TEXT.test(near) && near.includes(`"ghost" (nearest: de�v)`), `${what}: ${JSON.stringify(near)}`);
+  }
+});
+
+test("from the file such a key never reaches a launch answer: oats souls, a spawn's preview and oats doctor answer E_WORKSPACE_SCHEMA (#1064)", (t) => {
+  const fx = v2Deployment({ name: "acme", souls: { dev: {} }, local: { "launch-configs": { fast: { harness: "pi" } } } });
+  t.after(fx.cleanup);
+  const path = join(fx.dep, LOCAL), valid = readFileSync(path, "utf8");
+  for (const what of ["a tab", "an escape", "a line feed"]) {
+    const key = `gh${UNPRINTABLE[what]}ost`;
+    const v = YAML.parse(valid); v.souls = { launch: { "*": "fast", [key]: "fast" } };
+    writeFileSync(path, YAML.stringify(v, { lineWidth: 0 }));
+    assert.deepEqual(Object.keys(YAML.parse(readFileSync(path, "utf8")).souls.launch), ["*", key], `${what}: the file holds the key`);
+    for (const args of [["souls", "--json"], ["spawn", "dev", "--preview", "--json"], ["doctor", "--json"]]) {
+      const r = fx.cli(args), said = `${what}, oats ${args.join(" ")}: ${r.stdout}${r.stderr}`;
+      assert.notEqual(r.status, 0, said);
+      const j = JSON.parse(r.stdout);
+      assert.deepEqual([j.ok, j.error?.code], [false, "E_WORKSPACE_SCHEMA"], said);
+      // No launch answer is built: no code of one, and no command of the verb. (What the schema's own
+      // message does with the character is awebai/oats#1069, and is not held here.)
+      assert.ok(!/E_LAUNCH_|oats soul launch|no command can name/.test(r.stdout), said);
+    }
+  }
 });

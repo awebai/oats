@@ -14,7 +14,13 @@
   code, no `details` field and no API version changed. A `fix` is a sentence
   for a person: its wording may change between releases, so a client shows it
   and never parses it
-  ([Launch preferences](../desktop-cli-api.md#launch-preferences)).
+  ([Launch preferences](../desktop-cli-api.md#launch-preferences)). The
+  function that renders the command also holds one rule for every text of a
+  launch answer: none carries a character the kernel never prints, whatever
+  key it is handed
+  ([#1064](https://github.com/awebai/oats/issues/1064)). The schema of
+  `oats-local.yaml` already admits no such key, so nothing an operator could
+  reach changes.
 - **A listing says that a launch would be refused, not that one was**
   ([#1049](https://github.com/awebai/oats/issues/1049)). On `oats souls` and
   `oats inspect --soul`, the `launch.problem` of a soul that

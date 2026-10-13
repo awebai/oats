@@ -1827,6 +1827,15 @@ shows the drift as `launch-changed`.
   - The message names at most three keys, then "and K more", and it and
     `fix` are at most 1024 characters each, with no line break, whatever the
     file holds. `keys` is complete.
+  - No text of a launch answer holds a character the kernel never prints (a
+    control character, a line or paragraph separator, a bidi control, an
+    invisible hider, a tag character): a refusal's `message` and `fix`, a
+    report's `problem`, a problems row. The schema of `oats-local.yaml`
+    admits no key with one, so the file brings none. Were one handed to an
+    answer all the same, the sentence names it with each such character
+    replaced by U+FFFD and gives no command for it: it says the key is
+    deleted from `souls.launch` in the file by hand. `keys[].key` is always
+    the exact key.
   - **Unmatched, or not checked.** A key other than `"*"` matches when an
     offered soul has that soul key (a soul in `souls.disabled` included).
     A key that matches nothing is *not checked*, and refuses nothing, when
