@@ -4,11 +4,12 @@
 // the liar/timeout paths are exercised deterministically at any repo version.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { closeGroup, startGroup } from "./helpers/process-group.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
@@ -124,10 +125,25 @@ async function observed(port) {
   }
   assert.fail("the deployment was never observed");
 }
+/** The servers the test that runs has started. */
+const servers = [];
+/** A new temporary directory of the test, removed when the test has ended. Its servers are closed
+ *  first, and the removal waits until everything they started has ended (closeGroup): a server
+ *  that is killed leaves the fake CLI it had just started to finish by itself, and that one writes
+ *  its log in the directory after the server has gone. So a server is started with startGroup. */
+function tempDir(t, prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  t.after(async () => {
+    for (const proc of servers.splice(0)) await closeGroup(proc);
+    rmSync(dir, { recursive: true, force: true });
+  });
+  return dir;
+}
 async function startServer(env) {
   const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT],
+  const proc = startGroup(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT],
     { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ...env } });
+  servers.push(proc);
   let stderr = ""; proc.stderr.on("data", (d) => { stderr += d; });
   let exited = null; proc.on("exit", (code, sig) => { exited = { code, sig }; });
   const deadline = Date.now() + 15000; // come-up under a loaded concurrent run, not a fixed 4 s
@@ -140,8 +156,8 @@ async function startServer(env) {
   throw new Error(`server did not come up on ${port}: ${stderr.trim().slice(0, 300)}`);
 }
 
-test("desktop server: /api/cli reports discovery status; compatible fake CLI accepted via OATS_DESKTOP_OATS_BIN", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oats-clifake-"));
+test("desktop server: /api/cli reports discovery status; compatible fake CLI accepted via OATS_DESKTOP_OATS_BIN", async (t) => {
+  const dir = tempDir(t, "oats-clifake-");
   const { bin, real } = fakeCli(dir);
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
@@ -165,8 +181,8 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
   } finally { proc.kill(); }
 });
 
-test("desktop server: incompatible CLI → status carries per-candidate diagnostics; no roster and no spawn target", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oats-cliold-"));
+test("desktop server: incompatible CLI → status carries per-candidate diagnostics; no roster and no spawn target", async (t) => {
+  const dir = tempDir(t, "oats-cliold-");
   const { bin, real, calls } = fakeCli(dir, { version: "0.21.6" });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
@@ -197,9 +213,9 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
 // release published, so it degraded to observation-only in the field while
 // every unit test passed. Accept the band from its floor to its last minor,
 // and reject a 0.25 kernel at the floor and the next minor at the exclusive ceiling.
-test("desktop server: 0.26.0 through 0.56.x CLIs are ACCEPTED; 0.25.9 is REJECTED at the floor and 0.57.0 at the ceiling", async () => {
+test("desktop server: 0.26.0 through 0.56.x CLIs are ACCEPTED; 0.25.9 is REJECTED at the floor and 0.57.0 at the ceiling", async (t) => {
   for (const version of ["0.26.0", "0.26.4", "0.27.0", "0.28.0", "0.29.0", "0.30.0", "0.31.0", "0.32.0", "0.33.0", "0.34.0", "0.35.0", "0.36.0", "0.37.0", "0.38.0", "0.39.0", "0.40.0", "0.41.0", "0.42.0", "0.43.0", "0.44.0", "0.45.0", "0.46.0", "0.47.0", "0.48.0", "0.49.0", "0.50.0", "0.51.0", "0.52.0", "0.53.0", "0.54.0", "0.55.0", "0.56.0"]) {
-    const okDir = mkdtempSync(join(tmpdir(), "oats-cli-compatible-"));
+    const okDir = tempDir(t, "oats-cli-compatible-");
     const compatible = fakeCli(okDir, { version });
     const a = await startServer({ OATS_DESKTOP_OATS_BIN: compatible.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
     try {
@@ -212,7 +228,7 @@ test("desktop server: 0.26.0 through 0.56.x CLIs are ACCEPTED; 0.25.9 is REJECTE
   }
 
   for (const [version, why] of [["0.25.9", "0.25.9 is below the floor"], ["0.57.0", "0.57.0 is past the exclusive ceiling"]]) {
-    const badDir = mkdtempSync(join(tmpdir(), "oats-cli-outside-"));
+    const badDir = tempDir(t, "oats-cli-outside-");
     const outside = fakeCli(badDir, { version });
     const b = await startServer({ OATS_DESKTOP_OATS_BIN: outside.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
     try {
@@ -227,9 +243,9 @@ test("desktop server: 0.26.0 through 0.56.x CLIs are ACCEPTED; 0.25.9 is REJECTE
   }
 });
 
-test("desktop server: a CLI that prints a valid probe but exits nonzero (or hangs) is REJECTED (review 0b83988)", async () => {
+test("desktop server: a CLI that prints a valid probe but exits nonzero (or hangs) is REJECTED (review 0b83988)", async (t) => {
   // exercises the PRODUCTION probeBin callback: err && stdout must reject.
-  const dir1 = mkdtempSync(join(tmpdir(), "oats-cliliar-"));
+  const dir1 = tempDir(t, "oats-cliliar-");
   const liar = fakeCli(dir1, { probeExit: 1 });     // valid probe on stdout, exit 1
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: liar.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
@@ -245,7 +261,7 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
   // actually hangs and (b) the reprobe crossed the production timeout —
   // review 6b90702 caught the previous "hanger" exiting in 0.058s via
   // fallthrough, leaving the timeout path untested.
-  const dir2 = mkdtempSync(join(tmpdir(), "oats-clihang-"));
+  const dir2 = tempDir(t, "oats-clihang-");
   const hanger = fakeCli(dir2, { probeHangMs: 20000 });
   // (a) the fixture hangs: run it directly and confirm it is still alive
   // after 1s (then kill it).
@@ -270,8 +286,8 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
   } finally { r2.proc.kill(); }
 });
 
-test("desktop server: an unguarded local spawn is refused before the CLI; a provider's harvest addresses the exact instance home", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oats-climut-"));
+test("desktop server: an unguarded local spawn is refused before the CLI; a provider's harvest addresses the exact instance home", async (t) => {
+  const dir = tempDir(t, "oats-climut-");
   const { bin, calls } = fakeCli(dir, { features: ["operations"], operationsApi: 2 });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
@@ -312,21 +328,22 @@ test("desktop server: an unguarded local spawn is refused before the CLI; a prov
   } finally { proc.kill(); }
 });
 
-test("desktop server: a kernel-reported home outside the soul's instances directory cannot steer a start or a provider operation (review 53a20c7 blocker)", async () => {
+test("desktop server: a kernel-reported home outside the soul's instances directory cannot steer a start or a provider operation (review 53a20c7 blocker)", async (t) => {
   // The kernel's status copies instance.json through; a hostile file can make
   // it REPORT a steered home. The Desktop withholds that row (counted in the
   // header), so no privileged route can address it and the CLI never runs there.
-  const scope = realpathSync(mkdtempSync(join(tmpdir(), "oats-hostile-ws-")));
-  const steerTarget = realpathSync(mkdtempSync(join(tmpdir(), "oats-steer-target-")));
+  const scope = realpathSync(tempDir(t, "oats-hostile-ws-"));
+  const steerTarget = realpathSync(tempDir(t, "oats-steer-target-"));
   const fixture = JSON.parse(readFileSync(join(V2_FIXTURES, "status.json"), "utf8"));
   const captured = dirname(fixture.root);
   const hostile = JSON.parse(JSON.stringify(fixture).split(captured).join(scope));
   hostile.agents[0].instances[0].home = steerTarget;
-  const cliDir = mkdtempSync(join(tmpdir(), "oats-clihostile-"));
+  const cliDir = tempDir(t, "oats-clihostile-");
   const { bin, calls } = fakeCli(cliDir, { features: ["operations"], operationsApi: 2, status: hostile });
   const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope],
+  const proc = startGroup(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope],
     { stdio: "ignore", env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" } });
+  servers.push(proc);
   try {
     let pd;
     for (let i = 0; i < 100; i++) {
@@ -349,11 +366,11 @@ test("desktop server: a kernel-reported home outside the soul's instances direct
   } finally { proc.kill(); }
 });
 
-test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches the client UNSLICED; other codes stay capped (review 835a05f)", async () => {
+test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches the client UNSLICED; other codes stay capped (review 835a05f)", async (t) => {
   // The ordinary spawn body is execution-server only now (local spawns are the
   // confirmed prepare → apply transaction), so the error-envelope boundary is
   // exercised through an execution-server spawn.
-  const dir = mkdtempSync(join(tmpdir(), "oats-cliambig-"));
+  const dir = tempDir(t, "oats-cliambig-");
   const { bin } = fakeCli(dir, { remote: ["spawn"] });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
@@ -385,9 +402,9 @@ test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches t
 });
 
 
-test("desktop server: remote capability survives discovery and HTTP projection into terminal preparation", async () => {
+test("desktop server: remote capability survives discovery and HTTP projection into terminal preparation", async (t) => {
   const { prepareRemoteTerm } = await import("../packages/client/session-attach.mjs");
-  const dir = mkdtempSync(join(tmpdir(), "oats-cliremote-"));
+  const dir = tempDir(t, "oats-cliremote-");
   const fake = fakeCli(dir, { remote: ["spawn", "retire", "status", "session"] });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: fake.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
@@ -402,8 +419,8 @@ test("desktop server: remote capability survives discovery and HTTP projection i
   } finally { proc.kill(); }
 });
 
-test("desktop server: remote roster, souls and a provider's harvest stay on the saved host route", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oats-remote-roster-"));
+test("desktop server: remote roster, souls and a provider's harvest stay on the saved host route", async (t) => {
+  const dir = tempDir(t, "oats-remote-roster-");
   const home = "/remote/project/agents/dev/instances/dev-one";
   const groups = [{ id: "host-abc", server: "host", label: "Remote host", registrationPresent: true,
     target: { sshHost: "host", workspace: "/remote/project", oatsPath: "oats" }, probe: { ok: true },
@@ -467,8 +484,8 @@ test("desktop server: remote roster, souls and a provider's harvest stay on the 
   } finally { proc.kill(); }
 });
 
-test("remote homes cannot grant local file access, and unguarded retirement refuses even with missing home", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oats-remote-file-guard-"));
+test("remote homes cannot grant local file access, and unguarded retirement refuses even with missing home", async (t) => {
+  const dir = tempDir(t, "oats-remote-file-guard-");
   const secret = join(dir, "local-only.txt");
   writeFileSync(secret, "local fixture outside every workspace");
   const groups = [{ id: "guard", server: "host", registrationPresent: true,

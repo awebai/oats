@@ -535,6 +535,29 @@ which fails with `ENOTEMPTY` (awebai/oats#451). So:
 
 Never paper over such a race with a retry around the cleanup.
 
+A process that a test kills can leave such a writer too. Killing a process
+that starts processes of its own ends that one alone: a child it had just
+started goes on by itself and writes where it was told to after its parent has
+gone, and it has not run a line yet, so it has announced itself nowhere. The
+Desktop server's tests are the case: the server runs the CLI, and a fake CLI
+writes its log in the test's directory. Such a test starts the process with
+`startGroup` and closes it with `closeGroup`
+(`test/helpers/process-group.mjs`):
+
+- `startGroup` starts it as `spawn` does, as the leader of a process group of
+  its own, which holds whatever it starts.
+- `closeGroup` kills that one process and waits, 30 s at most, until its group
+  is empty. A group that outlives the wait fails the test and names the
+  processes that are left. Only then does the test remove what they worked in.
+- A group of its own is not in the terminal's foreground group, so an
+  interrupt of the test's process does not reach it. The helper passes it on:
+  on `SIGINT`, `SIGTERM` or `SIGHUP` it kills every group that process
+  started, whole, and then the signal ends the process as it would have. A
+  test process killed with `SIGKILL` passes nothing on: what it started stays,
+  as any child of a process killed that way does.
+
+`test/process-group.test.mjs` pins the three.
+
 A test never reaches the operator's tmux. The kernel creates sessions on the
 server named `oats` (`tmux -L oats`), which tmux resolves under `TMUX_TMPDIR`,
 and acts on every existing session through its recorded socket

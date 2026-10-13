@@ -35,7 +35,11 @@ function rollbackError(message, unconfirmed) {
     return true;
   };
 }
-function temp() { return mkdtempSync(join(tmpdir(), "oats-cap-test-")); }
+/** Every directory temp() made. Each is removed when the file has ended: also one whose test has no
+ *  removal of its own, or failed before it. */
+const temps = [];
+function temp() { const dir = mkdtempSync(join(tmpdir(), "oats-cap-test-")); temps.push(dir); return dir; }
+test.after(() => { for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 
 /** A fake `aw` at <bin>/aw that the shipped oats.aweb hook can run. The hook reads `aw version` under a

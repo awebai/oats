@@ -4,7 +4,7 @@
 // for people: a workspace header out of the rule is a warning (the entry still runs), never a stop.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
@@ -202,7 +202,7 @@ test("a package trigger template may carry definition.description: add --from co
   assert.equal(rows["ws/from-template"].runsHere, true);
 });
 
-test("the feature: oats version --json advertises automation-descriptions; a remote schedule --description needs it there", async () => {
+test("the feature: oats version --json advertises automation-descriptions; a remote schedule --description needs it there", async (t) => {
   const fx = fixture();
   try {
     const v = JSON.parse(fx.cli(["version", "--json"]).stdout);
@@ -215,6 +215,7 @@ test("the feature: oats version --json advertises automation-descriptions; a rem
     }
   } finally { fx.cleanup(); }
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-desc-remote-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
   const saved = process.env.OATS_HOME_DIR;
   process.env.OATS_HOME_DIR = join(base, "oats-home");
   try {
