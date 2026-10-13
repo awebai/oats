@@ -22,6 +22,7 @@ const malformed = [
   `https:${USER}@${host}/${path}`,
   `https://${USER}:${PASSWORD}/extra@${host}/${path}`,
   `https://${USER}:123/extra@${host}/${path}`,
+  `https://${USER}:${PASSWORD}/extra@${host}`,
 ];
 const roots = [];
 const scratch = () => { const dir = mkdtempSync(join(tmpdir(), "oats-redaction-")); roots.push(dir); return dir; };
@@ -214,7 +215,7 @@ test("quoted URL boundaries preserve unrelated Git words and path at-signs", () 
 
 
 test("refused package suffixes retain the repository host, port and path", async () => {
-  for (const value of ["git:https://host:8443/org/repo.git@v1@x", "git:ssh://host:2222/org/repo.git@v1@x"]) {
+  for (const value of ["git:https://host:8443/org/repo.git@v1@x", "git:ssh://host:2222/org/repo.git@v1@x", "git:https://host:8443/repo.git@v1@x"]) {
     const e = await refused(() => parsePackageRequest("p", value, {}));
     assert.equal(e.details.value, value);
     assert.ok(e.message.endsWith(`got ${JSON.stringify(value)}`));
@@ -261,7 +262,7 @@ test("large remote declaration diagnostics finish without pathological backtrack
 function assertGitQuoting(source) {
   const declarations = [...source.matchAll(/^(?:export )?(?:(?:async )?function|const) (\w+)/gm)];
   const sites = {};
-  for (const match of source.matchAll(/\bstderrText\s*\(|\b\w+(?:\?\.|\.)(?:message|stderr)\b/g)) {
+  for (const match of source.matchAll(/\bstderrText\s*\(|\b\w+(?:\?\.|\.)(?:message|stderr)\b|\$\{\s*(?:e|err|error)\s*\}|\bString\s*\(\s*(?:e|err|error)\s*\)/g)) {
     if (source.slice(match.index - 9, match.index) === "function ") continue;
     const owner = declarations.findLast((d) => d.index <= match.index)?.[1];
     (sites[owner] ??= []).push(match[0]);
@@ -295,6 +296,10 @@ test("every Git error-text quoting route is guarded, including newly introduced 
   for (const mutation of [
     source + '\nfunction newQuote(error) { return fail("E_REMOTE_UNREADABLE", stderrText(error)); }',
     source + '\nfunction newQuote(error) { return fail("E_REMOTE_UNREADABLE", error.message); }',
+    ...["e", "err", "error"].flatMap((name) => [
+      source + '\nfunction newQuote(' + name + ') { return fail("E_REMOTE_UNREADABLE", `raw: ${' + name + '}`); }',
+      source + '\nfunction newQuote(' + name + ') { return fail("E_REMOTE_UNREADABLE", String(' + name + ')); }',
+    ]),
     source.replace("scrubGitLine(line, url)", "String(line)"),
     source.replace("const why = redactUrl(stderrText(error)", "const why = String(stderrText(error)"),
     source.replace('scrubGitLine(text.trim().split("\\n")[0], ref?.url)', 'text.trim().split("\\n")[0]'),
@@ -316,4 +321,13 @@ test("all Git quoting helpers remove known secrets outside URLs in stderr and me
   for (const fn of helpers) for (const error of [gitError(`unexpected ${ssh}; ${PASSWORD}`), new Error(`unexpected ${ssh}; ${PASSWORD}`)]) {
     safeError(fn({ url: ssh, key }, error), "E_REMOTE_UNREADABLE");
   }
+});
+
+
+test("no-path slash-in-password refusal removes userinfo from every error field", async () => {
+  const e = await refused(() => parseRepoRef("https://TOKSECRET:P/extra@h.x"));
+  assert.equal(e.code, "E_REPO_REF");
+  assert.equal(e.message, "repository reference has an invalid host: https://h.x");
+  assert.deepEqual(e.details, { ref: "https://h.x", host: "" });
+  assert.equal(e.provenance, e.details);
 });
