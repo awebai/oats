@@ -219,6 +219,10 @@ const errors = {
   // 0.52.0: several launch configurations for the harness, no default, and the spawn names none. Listed so the
   // code survives where the kernel's own message cannot travel (the apply's reason; a message over the bound).
   E_LAUNCH_CONFIG_AMBIGUOUS: 'More than one launch configuration is declared for this harness and none is the default.',
+  // 0.53.0: `souls.launch` holds a key that names no soul, and the spawn names no launch. Listed for the same
+  // reason: the code survives where the kernel's own message cannot travel (the apply's reason, after the
+  // server's own preview before a dispatch was refused; a message the bound or the filter here does not pass).
+  E_LAUNCH_PREFERENCE_UNMATCHED: 'A launch preference on this machine names a soul the workspace does not offer, and this spawn names no launch.',
   E_CLONE_MISSING: 'This soul works in a member repository that is not cloned on this machine.',
   E_INSTANCE_NAME_INVALID: 'That name is not a valid instance name (a lowercase slug of at most 64 characters that is not a soul name).',
   E_INSTANCE_NAME_TAKEN: 'An instance with that name already exists in this deployment.',

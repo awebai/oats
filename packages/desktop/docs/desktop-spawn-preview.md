@@ -731,3 +731,47 @@ on this machine, none is `default: true`, and the spawn names none.
   sentence above.
 - **The soul's page** shows a launch `problem` in the kernel's words, this one
   included.
+
+### An unmatched launch preference
+
+OATS 0.53 refuses a spawn, and its preview, with
+`E_LAUNCH_PREFERENCE_UNMATCHED` when `oats-local.yaml` `souls.launch` holds a
+key that names no soul the workspace offers, the soul has no entry of its
+own, and the spawn names no launch. The kernel sends a `message` and a `fix`,
+each at most 1,024 characters.
+
+- **As the dialog opens, the sentence is the Desktop's** (`spawn-messages.mjs`),
+  as the status and in the preview's place: "This machine's launch preferences
+  name a soul this workspace doesn't offer, so OATS won't choose a launch for
+  this soul. To spawn now, pick a harness above, or a launch configuration in
+  Developer settings. To fix it for every spawn, correct the preference
+  (Details)." Picking either names the launch, so the kernel no longer
+  refuses the spawn; the key stays in the file and keeps refusing every other
+  soul with no entry of its own.
+- **Details hold the code, then the kernel's two texts, each on its own
+  line**: "OATS says: <message>", then `<fix>`. `spawnProblem` answers them as
+  parts (`kernel: { message, fix }`, with the code alone as `detail`), and the
+  dialog draws them with `kernelLines` (`renderer/speaker-line.mjs`): each
+  text through the display filter alone and whole, the kernel's name before
+  the first of them that has a line to show, `[Detail withheld]` with no name
+  for a text the filter withholds. Nothing is taken out of the texts and
+  nothing is compared: a remedy the kernel says in both is read in both.
+  Details stay as the person left them while neither the detail nor a line
+  changed.
+- **The shorter sentence is read wherever Details hold no kernel text**: "…
+  To spawn now, pick a harness or a launch configuration for this spawn. To
+  fix it for every spawn, correct the preference." That is a press, and a
+  preview whose reason carries no `fix` (a kernel that sends none, or a
+  message `previewFailure` does not pass). Its Details read `code · message`
+  as for any code. A `fix` decides it because `previewFailure` keeps one only
+  beside the kernel's own message, never beside a sentence of its table.
+- **The code is in the preview contract's fixed table**, so it survives a
+  press. When the key appeared after the preview on screen settled, prepare's
+  own read is refused: the dialog reads the preview again at once and shows
+  the first sentence with the kernel's texts, and the background notice says
+  the shorter one and that nothing was created.
+- **A refusal from the apply's own CLI call** is an unknown outcome, as every
+  kernel refusal at that stage is. The kernel's message says nothing was
+  created; a client does not read that from a message.
+- **A spawn routed to a server** shows the host's refusal as any host refusal
+  does, neither sentence above.

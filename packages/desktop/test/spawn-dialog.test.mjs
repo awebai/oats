@@ -453,6 +453,8 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
   const dialog = await u.open(); await u.type('.fpurpose', 'api-v2'); u.q('.spawn-advanced').open = true;
   // Show a problem so the status, Details toggle and detail box are all rendered.
   u.q('.fstatus').textContent = 'x'; u.q('.fstatus').classList.add('err'); u.q('.spawn-details-toggle').hidden = false; u.q('.spawn-problem-detail').hidden = false;
+  // A kernel text quoted in Details (a line of its own, #1015).
+  u.q('.spawn-problem-detail').append(Object.assign(u.doc.createElement('span'), { className: 'spawn-problem-line', textContent: 'OATS says: x' }));
   u.q('.spawn-run .spawn-choice-trigger').click(); await settle();
   const view = u.dom.window, root = view.getComputedStyle(u.doc.documentElement);
   for (const [selector, surfaceSelector, fg, bg] of [
@@ -477,6 +479,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
     ['.spawn-prefix-toggle', '.spawn-dialog', 'muted', 'surface'],
     ['.spawn-chooser-title', '.spawn-dialog', 'fg', 'surface'], ['.spawn-search-count', '.spawn-dialog', 'muted', 'surface'],
     ['.spawn-details-toggle', '.spawn-footer', 'muted', 'surface'], ['.spawn-problem-detail', '.spawn-problem-detail', 'muted', 'surface-2'],
+    ['.spawn-problem-line', '.spawn-problem-detail', 'muted', 'surface-2'],
     ['.fstatus.err', '.spawn-footer', 'danger', 'surface'],
     ['.ftask', '.ftask', 'fg', 'surface'], ['.fspawn', '.fspawn', 'primary-fg', 'primary-bg'],
   ]) {

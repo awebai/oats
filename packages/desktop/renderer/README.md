@@ -587,6 +587,10 @@ Problems read as one plain sentence about what happened and what to do
 (`packages/client/spawn-messages.mjs`, keyed by the contract's stable code). The code and the
 technical or kernel text — paths, hashes, the `git clone` remedy — stay
 behind a **Details** toggle and in `data-code`; no decision depends on wording.
+For an unmatched launch preference (`E_LAUNCH_PREFERENCE_UNMATCHED`) Details
+hold the code and then the kernel's message and fix, each on its own line
+under "OATS says:" (`speaker-line.mjs` `kernelLines`, one
+`span.spawn-problem-line` each).
 
 Model suggestions are advisory (`/api/models`), custom entries stay valid, and
 a remote target never borrows local model/configuration facts. No capability

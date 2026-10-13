@@ -229,7 +229,11 @@ the `warnings` beside it, on a start's, a restart's or a launched spawn's
 successful answer;
 `claudeVersion`, `signatureId` and `differed` on a `launch-prompt` event; the
 top-level `file` of a `harness-trust` readiness item and the `launch-prompt`
-readiness warning; the refusal `E_LAUNCH_CONFIG_AMBIGUOUS`. The pages that own
+readiness warning; the refusal `E_LAUNCH_CONFIG_AMBIGUOUS`. Read from a 0.53
+answer, with no gate: the refusal `E_LAUNCH_PREFERENCE_UNMATCHED` (a key of
+`souls.launch` that names no soul), at a spawn's preview, at a press, and as
+a soul's launch `problem`; a kernel that does not send it changes nothing on
+screen. The pages that own
 each are [the spawn dialog](desktop-spawn-preview.md#launch-prompt-diagnostics),
 [Activity](desktop-instance-events.md), [Readiness](desktop-readiness.md) and
 [the start workflow](../../../docs/desktop-instance-start.md).

@@ -1,3 +1,33 @@
+## Changed
+
+- **Desktop: the Spawn dialog says an unmatched launch preference in its own
+  words, and quotes OATS under Details**
+  ([#1015](https://github.com/awebai/oats/issues/1015)). From 0.53.0 OATS
+  refuses a spawn that names no launch while `oats-local.yaml` `souls.launch`
+  holds a key that names no soul. The dialog read "OATS couldn't work out this
+  soul's defaults. Try again, or see Details.", with OATS's message under
+  Details and its fix nowhere. It now reads "This machine's launch
+  preferences name a soul this workspace doesn't offer, so OATS won't choose
+  a launch for this soul. To spawn now, pick a harness above, or a launch
+  configuration in Developer settings. To fix it for every spawn, correct
+  the preference (Details)." Details hold the code, then "OATS says:
+  `<message>`", then the fix on its own line. Each text is one line and
+  whole; one that holds control characters or looks like a credential reads
+  "[Detail withheld]", and "OATS says:" then stands before the other.
+  - **At a press**, when the key appeared after the dialog had read its
+    preview, the notice read "OATS couldn't complete the spawn. Try again, or
+    see Details. Nothing was created." It now reads "This machine's launch
+    preferences name a soul this workspace doesn't offer, so OATS won't
+    choose a launch for this soul. To spawn now, pick a harness or a launch
+    configuration for this spawn. To fix it for every spawn, correct the
+    preference. Nothing was created.", with the code under its details. A
+    dialog still open reads the preview again and shows the first sentence.
+  - **Unchanged:** a spawn routed to another machine shows that host's
+    refusal as before, and a spawn already sent that OATS then refuses with
+    this code still reads as an outcome to check.
+  [The spawn dialog](../../packages/desktop/docs/desktop-spawn-preview.md#an-unmatched-launch-preference)
+  has the whole of it.
+
 ## Fixed
 
 - **Desktop: the fix OATS sends with a refused preview reaches the Spawn
