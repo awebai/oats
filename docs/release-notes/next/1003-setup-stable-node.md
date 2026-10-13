@@ -32,6 +32,10 @@
     command, systemd's quoting in `ExecStart`, XML text in the launchd plist.
     A `node` or an install under a path with a space in it no longer splits.
     A path of plain characters is written as before.
+  - **A hook is taken for setup's own only when the whole command reads as
+    one plain command of its shape.** A command that also carries a second
+    command, an operator or a redirection was overwritten, and that part
+    lost. It is now left as it is, and setup's hook is added beside it.
   - `turn-record setup`, run without the kernel, records the `node` it runs
     under, as before, with the same quoting.
   - For installs that already exist, see Upgrade above.

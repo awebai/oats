@@ -60,12 +60,12 @@ function shellWord(value) {
   return SHELL_PLAIN.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-// The words of a command as /bin/sh reads them, for the one form shellWord
-// writes: plain characters, single-quoted runs and \' for a quote, adjacent
-// pieces joined into one word, words apart by spaces or tabs. null when the
-// command holds anything else outside quotes (an expansion, an operator, a
-// double quote, a newline, which ends a command) or a quote left open: it is
-// then not read this way.
+// The words of a command as /bin/sh reads them, for what setup writes: plain
+// characters, single-quoted runs and \' for a quote, adjacent pieces joined
+// into one word, words apart by spaces or tabs. null when the command holds
+// anything else outside quotes (an expansion, an operator, a redirection, a
+// double quote, a newline, which ends a command) or a quote left open: the
+// shell would do more with it than run those words, so it is not read.
 function shellWords(command) {
   const words = [];
   let word = null;
@@ -195,20 +195,23 @@ function installHooks() {
     // mention similar words; when in doubt it errs toward appending a new
     // group, never toward overwriting someone else's command.
     //
-    // The tokens are read two ways, and either may match: split at
-    // whitespace, which is every command written before paths were quoted;
-    // and as the shell reads the quoted form (shellWords), where a quoted
-    // path with a space in it is one token.
-    const shape = (tokens) =>
-      tokens !== null &&
-      tokens.length >= 2 &&
-      tokens[1].endsWith("/capture.mjs") &&
-      tokens.includes("--owner") &&
-      tokens.includes("--quiet");
+    // The tokens are the command's words as the shell reads them
+    // (shellWords), and only a command that reads whole that way can be
+    // ours: one that also carries a second command, an operator or a
+    // redirection would lose it when rewritten. It reads the quoted form and
+    // every command written before paths were quoted, except one with a
+    // character outside the plain set left bare in a path (`=`, `~`, a
+    // letter that is not ASCII) or with a space in one, which was split.
     const ours = (h) => {
       if (h?.type !== "command") return false;
-      const command = String(h.command);
-      return shape(command.trim().split(/\s+/)) || shape(shellWords(command));
+      const tokens = shellWords(String(h.command));
+      return (
+        tokens !== null &&
+        tokens.length >= 2 &&
+        tokens[1].endsWith("/capture.mjs") &&
+        tokens.includes("--owner") &&
+        tokens.includes("--quiet")
+      );
     };
     for (const event of ["Stop", "SessionEnd"]) {
       const groups = (settings.hooks[event] = settings.hooks[event] ?? []);
@@ -293,7 +296,7 @@ function installServiceDarwin() {
   } else {
     console.error(
       `service: wrote ${path} but launchctl bootstrap failed (${(boot.stderr || "").trim()}); ` +
-        `load it manually: launchctl bootstrap gui/${uid} ${path}`,
+        `load it manually: launchctl bootstrap gui/${uid} ${shellWord(path)}`,
     );
   }
 }

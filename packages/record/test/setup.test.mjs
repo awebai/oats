@@ -67,9 +67,10 @@ const plistPath = (home) => join(home, "Library", "LaunchAgents", "ai.aweb.turn-
 
 /** Run setup as `turn-record setup`, from the package at `pkg`. `node` is what
  *  is handed in as OATS_NODE_BIN (undefined: the variable is absent). */
-function run(home, args, { platform = "linux", node, pkg = PKG } = {}) {
+function run(home, args, { platform = "linux", node, pkg = PKG, managers = standins } = {}) {
   assert.ok(home.startsWith(base + "/"), `the script's HOME (${home}) is inside the fixture`);
-  const env = { HOME: home, PATH: standins, TURN_RECORD_ROOT: join(home, "record"), FIXTURE_PLATFORM: platform };
+  assert.ok(managers.startsWith(base + "/"), `the script's PATH (${managers}) is inside the fixture`);
+  const env = { HOME: home, PATH: managers, TURN_RECORD_ROOT: join(home, "record"), FIXTURE_PLATFORM: platform };
   if (node !== undefined) env.OATS_NODE_BIN = node;
   const r = spawnSync(
     process.execPath,
@@ -311,6 +312,16 @@ test("where there is no service template, the line to run by hand is one a shell
   assert.deepEqual(shellReads(line, node, home), [captureOf(), "--watch", "--owner", OWNER]);
 });
 
+test("when launchctl refuses the agent, the line to load it by hand is one a shell reads whole", () => {
+  // A launchctl of the fixture that fails its bootstrap, and does nothing.
+  const failing = join(base, "standins-failing");
+  write(join(failing, "launchctl"), `#!/bin/sh\n[ "$1" = bootstrap ] && { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; }\nexit 0\n`, 0o755);
+  const home = newHome({}, `home ${HOSTILE} by hand`);
+  const r = run(home, ["--no-hooks"], { platform: "darwin", node: join(base, "handed", "bin", "node"), managers: failing });
+  const [, line] = /launchctl bootstrap failed \(Bootstrap failed: 5: Input\/output error\); load it manually: (.*)\n/.exec(r.stderr);
+  assert.deepEqual(shellWordsOf(line, home), ["launchctl", "bootstrap", `gui/${process.getuid()}`, plistPath(home)]);
+});
+
 // ---- a run over an earlier one's files -------------------------------------
 
 const KEG = "/opt/homebrew/Cellar/node/22.1.0/bin/node";
@@ -361,11 +372,29 @@ test("over the new form (quoted, a path with a space) a run replaces the hooks a
 
 test("a command that is not provably setup's is left alone, and setup's own is added beside it", () => {
   const foreign = [
-    // Today's lookalikes: the words are there, the shape is not.
+    // Lookalikes: the words are there, the shape is not.
     "echo unrelated",
     "node ~/tools/screenshot/capture.mjs --owner alice --outdir /tmp/shots",
     'echo "reminder: run capture.mjs --owner <name> --quiet later"',
-    // The quoted reading refuses what it cannot read as plain and single-quoted words:
+    // Setup's shape on plain paths, and more that the shell would do with it:
+    // rewriting the command would lose that.
+    "/usr/bin/node /x/capture.mjs --owner a --quiet\n/bin/echo a second command", // a newline: two commands
+    "/usr/bin/node /x/capture.mjs --owner a --quiet && say done",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet ; echo done",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet || true",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet | tee /tmp/log",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet &",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet > /dev/null",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet 2>&1",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet $EXTRA",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet `date`",
+    "( /usr/bin/node /x/capture.mjs --owner a --quiet )",
+    "/usr/bin/node /x/capture.mjs --owner a --quiet # for the record",
+    // A named limit: setup's own old command with a character outside the
+    // plain set bare in a path. Not read, so not replaced.
+    "/opt/node~22=lts/bin/node /old/install/bin/capture.mjs --owner a --quiet",
+    "/home/zo\u00eb/bin/node /old/install/bin/capture.mjs --owner a --quiet",
+    // The same with quoted paths:
     "'/usr/bin/node' '/x/capture.mjs' --owner a --quiet; echo done", // an operator
     "'/a b/tool' '/x/capture.mjs' --owner a --quiet $EXTRA", // an expansion
     `'/a b/node' "/x/capture.mjs" --owner a --quiet`, // a double quote
@@ -392,9 +421,7 @@ test("a command that is not provably setup's is left alone, and setup's own is a
 test("setup's hook twice in a file: both get the current command, neither is removed", () => {
   // An older stacking. The shape says "probably setup's", not "provably", so
   // nothing is deleted; two equal hooks cost at most a second capture pass.
-  // The second is one only the old reading finds: it was written bare with
-  // characters the quoted reading does not take for plain.
-  const settings = { hooks: { Stop: [{ hooks: [oldHook()] }, { matcher: "", hooks: [{ type: "command", command: "echo mine" }, oldHook("/opt/node~22=lts/bin/node", "/old/install/bin/capture.mjs")] }] } };
+  const settings = { hooks: { Stop: [{ hooks: [oldHook()] }, { matcher: "", hooks: [{ type: "command", command: "echo mine" }, oldHook("/usr/local/bin/node", "/old/install/bin/capture.mjs")] }] } };
   const home = newHome(settings);
   const node = join(base, "handed", "bin", "node");
   const current = `${node} ${captureOf()} --owner ${OWNER} --quiet`;
