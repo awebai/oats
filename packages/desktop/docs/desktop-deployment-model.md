@@ -95,7 +95,7 @@ kernel's Herdr row) and is shown as written.
 ### The speakers and their words
 
 A client puts the speaker's words in front of the text, on the same line.
-These are all the speaker phrases a client shows; a fourth is added here or
+These are all the speaker phrases a client shows; another is added here or
 nowhere.
 
 | The speaker | The key's value | The words |
@@ -152,11 +152,12 @@ reason's sentence when the reason carries an `origin`. A text of several
 lines is shown as one; a text the filter withholds (control characters, a
 credential's shape) reads "[Detail withheld]" alone, with no speaker in
 front; a text with nothing to show leaves the place saying what it said
-before for a row without one. The places: a roster row's title and description and its
-hover card's Status, the actions menu (its trigger, Start's reason, Open in
-split's reason), the notice of a terminal that cannot open, the start
-dialog's status, the context panel's Start, the overview's Terminal and
-Restart, the roster's failure notice and the overview's.
+before for a row without one. The places: a roster row's title and
+description and its hover card's Status, the actions menu (its trigger,
+Start's reason, Open in split's reason), the notice of a terminal that
+cannot open, the start dialog's status, the context panel's Start, the
+overview's Terminal and Restart, the roster's failure notice and the
+overview's.
 
 ### A kept failure
 
