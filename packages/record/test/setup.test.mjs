@@ -9,7 +9,7 @@
 //     a directory of the fixture (os.homedir() reads HOME), TURN_RECORD_ROOT is
 //     under it, and no session bus or runtime directory is passed;
 //   - its PATH is one directory, holding a stand-in `systemctl` and `launchctl`
-//     that record their arguments and do nothing. Everything else the script
+//     that model service state using fixture files only. Everything else the script
 //     starts, it starts by absolute path;
 //   - run() refuses a HOME that is not inside the fixture.
 // The platform is answered by a preload in the child (os.platform()), so both
@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,12 +35,72 @@ function write(path, content, mode) {
   return path;
 }
 
-// The service managers the script can reach: they append their name and
-// arguments to calls.log beside them, and do nothing else.
+// The only managers setup can reach. State and failures live in each fixture
+// HOME; unknown commands fail, and queries reflect the actions already taken.
 const standins = join(base, "standins");
 const calls = join(standins, "calls.log");
+const statePath = (home) => join(home, "manager.json");
+const managerState = (home) => JSON.parse(readFileSync(statePath(home), "utf8"));
+const setManagerState = (home, patch) => write(statePath(home), JSON.stringify({
+  enabled: false, loaded: false, pid: null, starts: 0,
+  ...(existsSync(statePath(home)) ? managerState(home) : {}), ...patch,
+}));
+const fakeManager = write(join(standins, "manager.mjs"), `
+import assert from "node:assert/strict";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const [name, ...args] = process.argv.slice(2);
+appendFileSync(${JSON.stringify(calls)}, name + " " + args.join(" ") + "\\n");
+const path = join(process.env.HOME, "manager.json");
+const state = existsSync(path) ? JSON.parse(readFileSync(path, "utf8"))
+  : { enabled: false, loaded: false, pid: null, starts: 0 };
+const save = () => writeFileSync(path, JSON.stringify(state));
+const fail = (message) => { console.error(message); process.exit(5); };
+const action = name === "systemctl" ? args[1] : args[0];
+if (state.signal === action) process.kill(process.pid, "SIGTERM");
+if (state.failures?.[action]) {
+  if (state.failures[action] > 0) state.failures[action]--;
+  save();
+  fail(state.reason || "fixture " + action + " refused");
+}
+const start = () => { if (!state.pid) { state.starts++; state.pid = 1000 + state.starts; } };
+if (name === "systemctl") {
+  assert.deepEqual(args, ["--user", "enable", "--now", "turn-record-capture.service"]);
+  assert.ok(existsSync(join(process.env.HOME, ".config/systemd/user/turn-record-capture.service")));
+  state.enabled = true;
+  state.loaded = true;
+  start();
+} else {
+  assert.equal(name, "launchctl");
+  const domain = "gui/" + process.getuid();
+  const target = domain + "/ai.aweb.turn-record-capture";
+  if (action === "bootstrap") {
+    assert.deepEqual(args, [action, domain, join(process.env.HOME, "Library/LaunchAgents/ai.aweb.turn-record-capture.plist")]);
+    assert.ok(existsSync(args[2]));
+    if (!state.enabled || state.loaded) fail("cannot bootstrap disabled or loaded service");
+    state.loaded = true;
+  } else {
+    assert.deepEqual(args, action === "kickstart" ? [action, "-p", target] : [action, target]);
+    if (action === "enable") state.enabled = true;
+    else if (action === "bootout") {
+      if (!state.loaded) fail("Could not find service");
+      state.loaded = false;
+      state.pid = null;
+    } else if (action === "print") {
+      if (!state.loaded) fail("Could not find service");
+      console.log("state = " + (state.pid ? "running" : "waiting"));
+    } else if (action === "kickstart") {
+      if (!state.enabled || !state.loaded) fail("cannot start disabled or unloaded service");
+      start();
+      console.log(state.pid);
+    } else fail("unexpected action " + action);
+  }
+}
+save();
+`);
+const shq = (value) => `'${value.replace(/'/g, `'\\''`)}'`;
 for (const name of ["systemctl", "launchctl"]) {
-  write(join(standins, name), `#!/bin/sh\nprintf '%s\\n' "\${0##*/} $*" >> "\${0%/*}/calls.log"\n`, 0o755);
+  write(join(standins, name), `#!/bin/sh\nexec ${shq(process.execPath)} ${shq(fakeManager)} ${name} "$@"\n`, 0o755);
 }
 const managerCalls = () => (existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n") : []);
 
@@ -207,8 +267,10 @@ test("the node handed in is the node written: both hooks, the systemd unit, the 
   const uid = process.getuid();
   assert.deepEqual(managerCalls().slice(before), [
     "systemctl --user enable --now turn-record-capture.service",
+    `launchctl enable gui/${uid}/ai.aweb.turn-record-capture`,
     `launchctl bootout gui/${uid}/ai.aweb.turn-record-capture`,
     `launchctl bootstrap gui/${uid} ${plistPath(join(base, `home-${n}`))}`,
+    `launchctl kickstart -p gui/${uid}/ai.aweb.turn-record-capture`,
   ]);
 });
 
@@ -326,12 +388,10 @@ test("where there is no service template, the line to run by hand is one a shell
 });
 
 test("when launchctl refuses the agent, the line to load it by hand is one a shell reads whole", () => {
-  // A launchctl of the fixture that fails its bootstrap, and does nothing.
-  const failing = join(base, "standins-failing");
-  write(join(failing, "launchctl"), `#!/bin/sh\n[ "$1" = bootstrap ] && { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; }\nexit 0\n`, 0o755);
   const home = newHome({}, `home ${HOSTILE} by hand`);
-  const r = run(home, ["--no-hooks"], { platform: "darwin", node: join(base, "handed", "bin", "node"), managers: failing });
-  const [, line] = /launchctl bootstrap failed \(Bootstrap failed: 5: Input\/output error\); load it manually: (.*)\n/.exec(r.stderr);
+  setManagerState(home, { failures: { bootstrap: -1 }, reason: "Bootstrap failed: 5: Input/output error" });
+  const r = run(home, ["--no-hooks"], { platform: "darwin", node: join(base, "handed", "bin", "node") });
+  const [, line] = /launchctl bootstrap failed \(Bootstrap failed: 5: Input\/output error; exit 5\); load it manually: (.*)\n/.exec(r.stderr);
   assert.deepEqual(shellWordsOf(line, home), ["launchctl", "bootstrap", `gui/${process.getuid()}`, plistPath(home)]);
 });
 
@@ -486,4 +546,151 @@ test("--dry-run prints the node it would write, and writes and starts nothing", 
     assert.deepEqual(readdirSync(join(home, ".claude")), ["settings.json"]);
   }
   assert.deepEqual(managerCalls(), before, "no service manager was called");
+});
+
+// ---- activation is independent of file equality ----------------------------
+
+const definitionPath = (home, platform) => platform === "linux" ? unitPath(home) : plistPath(home);
+const definitionSnapshot = (path) => ({ text: readFileSync(path, "utf8"), ino: statSync(path).ino, mtime: statSync(path).mtimeMs });
+const successfulActivation = (result) => {
+  assert.equal(ownStderr(result.stderr), "");
+  assert.match(result.stdout, /service: .* started/);
+};
+const failedActivation = (result, reason) => {
+  assert.match(result.stderr, reason);
+  assert.doesNotMatch(result.stdout, /service: .* (running|started)/);
+  assert.match(result.stdout, /running first capture pass/, "service failure does not skip capture or change its exit status");
+};
+
+for (const platform of ["linux", "darwin"]) {
+  const activation = platform === "linux" ? "enable" : "bootstrap";
+  test(`${platform}: unchanged definition retries first activation failure, and preserves a healthy watcher`, () => {
+    const home = newHome();
+    setManagerState(home, { failures: { [activation]: 1 } });
+    const first = run(home, [], { platform });
+    failedActivation(first, new RegExp(`fixture ${activation} refused`));
+    assert.equal(managerState(home).pid, null);
+    const path = definitionPath(home, platform);
+    const before = definitionSnapshot(path);
+    const callsBefore = managerCalls().length;
+    successfulActivation(run(home, [], { platform }));
+    assert.deepEqual(definitionSnapshot(path), before, "equal definition is never rewritten");
+    const state = managerState(home);
+    assert.equal(state.enabled, true);
+    assert.equal(state.loaded, true);
+    assert.ok(state.pid);
+    assert.equal(state.starts, 1);
+    successfulActivation(run(home, [], { platform }));
+    assert.deepEqual(managerState(home), state, "no healthy process was replaced");
+    assert.deepEqual(definitionSnapshot(path), before);
+    const rerunCalls = managerCalls().slice(callsBefore);
+    assert.equal(rerunCalls.some((call) => /bootout|kickstart -k/.test(call)), false);
+    if (platform === "darwin") {
+      assert.equal(rerunCalls.filter((call) => call.includes("bootstrap")).length, 1, "only the unloaded retry bootstraps");
+    } else {
+      assert.equal(rerunCalls.filter((call) => call.includes("enable --now")).length, 2);
+    }
+  });
+
+  test(`${platform}: unchanged definition reports repeated activation failure and the remedy`, () => {
+    const home = newHome();
+    setManagerState(home, { failures: { [activation]: -1 } });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = run(home, [], { platform });
+      failedActivation(result, new RegExp(`fixture ${activation} refused; exit 5`));
+      assert.match(result.stderr, platform === "linux"
+        ? /enable it manually: systemctl --user enable --now turn-record-capture.service/
+        : /load it manually: launchctl bootstrap gui\//);
+      assert.equal(managerState(home).pid, null);
+    }
+  });
+
+  test(`${platform}: missing manager and a signalled manager explain failure even on unchanged files`, () => {
+    const home = newHome();
+    const managers = join(base, "empty-path");
+    mkdirSync(managers, { recursive: true });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = run(home, [], { platform, managers });
+      failedActivation(result, /ENOENT/);
+      assert.match(result.stderr, /make the service manager available on PATH and re-run setup/);
+    }
+    setManagerState(home, { signal: "enable" });
+    failedActivation(run(home, [], { platform }), /signal SIGTERM/);
+    setManagerState(home, { signal: null });
+    successfulActivation(run(home, [], { platform }));
+  });
+
+  test(`${platform}: dry-run on unchanged files performs no writes, manager queries or capture`, () => {
+    const home = newHome();
+    run(home, [], { platform });
+    rmSync(join(home, "record"), { recursive: true, force: true });
+    const path = definitionPath(home, platform);
+    const definition = definitionSnapshot(path);
+    const settings = definitionSnapshot(settingsPath(home));
+    const state = managerState(home);
+    const callsBefore = managerCalls();
+    const result = run(home, ["--dry-run"], { platform });
+    assert.match(result.stdout, /would ensure .* enabled and started/);
+    assert.match(result.stdout, /dry run: no first capture pass/);
+    assert.deepEqual(definitionSnapshot(path), definition);
+    assert.deepEqual(definitionSnapshot(settingsPath(home)), settings);
+    assert.deepEqual(managerState(home), state);
+    assert.deepEqual(managerCalls(), callsBefore);
+    assert.equal(existsSync(join(home, "record")), false);
+  });
+
+  test(`${platform}: no-service neither writes nor activates an absent or existing service`, () => {
+    const home = newHome();
+    const callsBefore = managerCalls();
+    run(home, ["--no-service"], { platform });
+    assert.equal(existsSync(definitionPath(home, platform)), false);
+    assert.deepEqual(managerCalls(), callsBefore);
+    run(home, [], { platform });
+    const definition = definitionSnapshot(definitionPath(home, platform));
+    const callsInstalled = managerCalls();
+    setManagerState(home, { enabled: false, loaded: false, pid: null });
+    const state = managerState(home);
+    run(home, ["--no-service"], { platform });
+    assert.deepEqual(definitionSnapshot(definitionPath(home, platform)), definition);
+    assert.deepEqual(managerState(home), state);
+    assert.deepEqual(managerCalls(), callsInstalled);
+  });
+}
+
+test("darwin: an unchanged loaded but idle watcher is started without unloading it", () => {
+  const home = newHome();
+  run(home, [], { platform: "darwin" });
+  setManagerState(home, { pid: null });
+  const before = managerCalls().length;
+  successfulActivation(run(home, [], { platform: "darwin" }));
+  assert.ok(managerState(home).pid);
+  assert.equal(managerState(home).starts, 2);
+  assert.equal(managerCalls().slice(before).some((call) => /bootout|bootstrap/.test(call)), false);
+});
+
+test("darwin: a disabled watcher must be enabled before success, including enable refusal", () => {
+  const home = newHome();
+  run(home, [], { platform: "darwin" });
+  setManagerState(home, { enabled: false, loaded: false, pid: null, failures: { enable: -1 } });
+  failedActivation(run(home, [], { platform: "darwin" }), /launchctl enable failed.*fixture enable refused/);
+  assert.equal(managerState(home).enabled, false);
+  assert.equal(managerState(home).pid, null);
+  setManagerState(home, { failures: {} });
+  successfulActivation(run(home, [], { platform: "darwin" }));
+  assert.equal(managerState(home).enabled, true);
+  assert.ok(managerState(home).pid);
+});
+
+test("darwin: successful bootstrap alone is not reported as a successful start", () => {
+  const home = newHome();
+  setManagerState(home, { failures: { kickstart: -1 } });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = run(home, [], { platform: "darwin" });
+    failedActivation(result, /launchctl kickstart failed.*fixture kickstart refused/);
+    assert.match(result.stderr, /start it manually: launchctl kickstart -p gui\//);
+    assert.equal(managerState(home).loaded, true);
+    assert.equal(managerState(home).pid, null);
+  }
+  setManagerState(home, { failures: {} });
+  successfulActivation(run(home, [], { platform: "darwin" }));
 });

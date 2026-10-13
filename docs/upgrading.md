@@ -249,6 +249,18 @@ of the user who ran it, and the capture watcher's unit
 start or restart writes them: only `oats setup` run again does, and it
 replaces its own hooks and unit, it does not add a second one.
 
+An unchanged capture service file is not proof that activation succeeded.
+Every setup run, unless `--no-service` or `--dry-run` is given, ensures
+activation again: Linux repeats `systemctl --user enable --now`; macOS
+enables the job, loads it if needed, and starts it without stopping an
+already running watcher when the plist is unchanged. This also enables a
+previously disabled capture service. A manager failure is printed with its
+reason and a manual recovery command; fix the cause and run setup again.
+Setup still runs the capture pass after a service failure, and that pass
+determines its exit status, so inspect the service output as well as the
+exit code. A dry run makes no service-manager calls, even for an unchanged
+file.
+
 Once the recorded `node` no longer exists (an old version removed under a
 version manager, for example), the hooks fail without a message, so the
 instance stops reporting that it waits on you, and

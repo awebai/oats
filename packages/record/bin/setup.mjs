@@ -254,6 +254,23 @@ function installHooks() {
 
 // ----------------------------------------------------------------- service
 
+function managerFailure(result) {
+  return [
+    result.error?.message,
+    result.signal ? `signal ${result.signal}` : null,
+    result.stderr?.trim(),
+    result.status !== null ? `exit ${result.status}` : null,
+  ].filter(Boolean).join("; ") || "no exit status returned";
+}
+
+function reportServiceFailure(path, command, result, remedy) {
+  console.error(
+    `service: definition at ${path} but ${command} failed (${managerFailure(result)}); ` +
+      (result.error?.code === "ENOENT" ? "make the service manager available on PATH and re-run setup; " : "") +
+      remedy,
+  );
+}
+
 function installServiceDarwin() {
   const label = "ai.aweb.turn-record-capture";
   const path = join(homedir(), "Library", "LaunchAgents", `${label}.plist`);
@@ -286,27 +303,54 @@ function installServiceDarwin() {
 </plist>
 `;
   const current = existsSync(path) ? readFileSync(path, "utf8") : null;
-  if (current === plist) {
+  const changed = current !== plist;
+  if (!changed) {
     console.log(`service: ${path} already installed`);
-    return;
   }
   if (dry) {
-    console.log(`service: would ${current ? "update" : "install"} launchd agent at ${path}`);
+    if (changed) console.log(`service: would ${current ? "update" : "install"} launchd agent at ${path}`);
+    console.log("service: would ensure launchd agent is enabled and started");
     return;
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileAtomic(path, plist);
-  const uid = process.getuid();
-  spawnSync("launchctl", ["bootout", `gui/${uid}/${label}`], { stdio: "ignore" });
-  const boot = spawnSync("launchctl", ["bootstrap", `gui/${uid}`, path], { encoding: "utf8" });
-  if (boot.status === 0) {
-    console.log(`service: launchd agent ${label} running (log: ${logPath})`);
-  } else {
-    console.error(
-      `service: wrote ${path} but launchctl bootstrap failed (${(boot.stderr || "").trim()}); ` +
-        `load it manually: launchctl bootstrap gui/${uid} ${shellWord(path)}`,
-    );
+  if (changed) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileAtomic(path, plist);
   }
+  const uid = process.getuid();
+  const target = `gui/${uid}/${label}`;
+  const launchctl = (...argv) => spawnSync("launchctl", argv, { encoding: "utf8" });
+  const enable = launchctl("enable", target);
+  if (enable.status !== 0) {
+    reportServiceFailure(path, "launchctl enable", enable,
+      `enable it manually: launchctl enable ${target}, then re-run setup`);
+    return;
+  }
+  // Equal bytes say nothing about activation. Keep a loaded job in place on
+  // reruns; only replacing its definition calls for bootout/bootstrap.
+  if (changed) launchctl("bootout", target);
+  const loaded = changed ? null : launchctl("print", target);
+  if (loaded?.error || loaded?.signal) {
+    reportServiceFailure(path, "launchctl print", loaded, "check launchctl access and re-run setup");
+    return;
+  }
+  if (changed || loaded.status !== 0) {
+    const boot = launchctl("bootstrap", `gui/${uid}`, path);
+    if (boot.status !== 0) {
+      reportServiceFailure(path, "launchctl bootstrap", boot,
+        `load it manually: launchctl bootstrap gui/${uid} ${shellWord(path)}`);
+      return;
+    }
+  }
+  // Without -k this starts an idle job or leaves its existing process alive.
+  // Bootstrap alone proves registration, not that the watcher was started.
+  const start = launchctl("kickstart", "-p", target);
+  if (start.status !== 0) {
+    reportServiceFailure(path, "launchctl kickstart", start,
+      `start it manually: launchctl kickstart -p ${target} (log: ${logPath})`,
+    );
+    return;
+  }
+  console.log(`service: launchd agent ${label} started (log: ${logPath})`);
 }
 
 function installServiceLinux() {
@@ -323,27 +367,29 @@ RestartSec=60
 WantedBy=default.target
 `;
   const current = existsSync(path) ? readFileSync(path, "utf8") : null;
-  if (current === unit) {
+  const changed = current !== unit;
+  if (!changed) {
     console.log(`service: ${path} already installed`);
-    return;
   }
   if (dry) {
-    console.log(`service: would ${current ? "update" : "install"} systemd user unit at ${path}`);
+    if (changed) console.log(`service: would ${current ? "update" : "install"} systemd user unit at ${path}`);
+    console.log("service: would ensure systemd user unit is enabled and started");
     return;
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileAtomic(path, unit);
+  if (changed) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileAtomic(path, unit);
+  }
   const enable = spawnSync(
     "systemctl",
     ["--user", "enable", "--now", "turn-record-capture.service"],
     { encoding: "utf8" },
   );
   if (enable.status === 0) {
-    console.log("service: systemd user unit turn-record-capture running");
+    console.log("service: systemd user unit turn-record-capture enabled and started");
   } else {
-    console.error(
-      `service: wrote ${path} but systemctl enable failed (${(enable.stderr || "").trim()}); ` +
-        "enable it manually: systemctl --user enable --now turn-record-capture.service",
+    reportServiceFailure(path, "systemctl enable", enable,
+      "enable it manually: systemctl --user enable --now turn-record-capture.service",
     );
   }
 }

@@ -94,6 +94,15 @@ depends on how it is run:
 `--dry-run` prints the `node` it would record. The first capture pass always
 runs under the `node` that runs `setup`.
 
+Setup leaves equal service files untouched but ensures activation on every
+run: Linux enables and starts the user unit; macOS enables and loads the
+agent as needed, then starts it without stopping an already running watcher
+when the plist is unchanged. A failed activation prints the manager's reason
+and a recovery command, and can be retried by running setup again.
+`--no-service` skips both service files and activation; `--dry-run` makes no
+manager calls or capture pass. Service errors do not determine setup's exit
+status: the first capture pass still does.
+
 Each path is written for what reads it: a shell word in the hook's command,
 systemd's quoting in `ExecStart`, XML text in the launchd plist. A path of
 plain characters is written bare. A run finds the hooks of an earlier run by
