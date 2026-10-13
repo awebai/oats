@@ -15,7 +15,7 @@
 - **Whether a retire refuses no longer depends on the file system
   ([#1029](https://github.com/awebai/oats/issues/1029)).** A recovery copies
   the index, `info/attributes`, the stash's log and a nested repository's
-  reflogs each as one file. With an empty directory at one of those paths
+  reflogs each as one file. With an empty directory at one of the last three
   the copy failed on most file systems and the retire refused, but on btrfs
   it wrote an empty file and the retire went through. Nothing was lost
   there: an empty directory at such a path holds nothing that Git reads. A

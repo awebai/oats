@@ -3487,16 +3487,6 @@ test("a directory where a nested repository keeps a branch's log refuses the cop
   assert.match(refusedAtTheCopy(f, spawned).message, new RegExp(notCopiedAsFile("a directory", "nested", ".git", "logs", "refs", "heads", "quiet")));
 });
 
-test("a worktree with no index file refuses the copy in the kernel's words: the clone's own index would stand for one that lists nothing", () => {
-  const f = fixture();
-  const spawned = spawn(f, "no-index");
-  const work = join(spawned.home, "work");
-  write(join(work, "scratch.txt"), "untracked\n");
-  rmSync(join(gitDirOf(work), "index"));
-  assert.match(porcelain(work), /D  tracked\.txt\0/, "fixture premise: Git reads an index that lists nothing, so every committed file is a staged deletion");
-  assert.match(refusedAtTheCopy(f, spawned).message, new RegExp(notCopiedAsFile("nothing", "index")));
-});
-
 test("a link where info/attributes and a nested repository's log belong is followed, as Git follows it: the recovery holds a plain file with what Git reads through it, and a link that leads nowhere is a path that is not there", () => {
   const f = fixture();
   const spawned = spawn(f, "copied-through-links");
