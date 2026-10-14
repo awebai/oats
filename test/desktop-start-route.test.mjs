@@ -7,6 +7,7 @@ import { harnessFlag } from "../packages/client/harness-names.mjs";
 import { canAddressRemote, unaddressableSentence } from "../packages/client/remote-address.mjs";
 import { retainedSpawnDetails } from "../packages/client/launch-prompt-outcome.mjs";
 import { startInstance } from "../packages/client/session-start.mjs";
+import { DETAIL_WITHHELD } from "../packages/client/display-text.mjs";
 import { DESKTOP_TERMS } from "../packages/desktop/renderer/desktop-terms.mjs";
 
 const source = readFileSync(new URL("../packages/desktop/server/oats-web.mjs", import.meta.url), "utf8");
@@ -144,7 +145,7 @@ test("start route: E_SESSION_START_BUSY and E_SESSION_RUNNING answer the kernel'
   ]) for (const action of ["start", "restart"]) assert.deepEqual(await refused(error)(kept, action), { status: 409, body: { error: error.message, code: error.code } }, `${action} ${error.message}`);
   // A message the display filter withholds is withheld here too: the route answers the filter's line.
   const odd = await refused({ code: "E_SESSION_RUNNING", message: "agent\u001b[2J is running" })();
-  assert.deepEqual(odd.body, { error: "[Detail withheld]", code: "E_SESSION_RUNNING" });
+  assert.deepEqual(odd.body, { error: DETAIL_WITHHELD, code: "E_SESSION_RUNNING" });
 });
 
 // 5a-2: the route decides through the start rule's gate as the dialog does, so its first three rules hold here too:
