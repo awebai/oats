@@ -4158,9 +4158,12 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   is refused with `E_PLAN_STALE` and the fresh plan, before anything runs.
   Two reads of a home that nobody touched give one revision.
 
-  Before 0.56.0 the revision held none of the record's fields but its
-  launch, the session's state alone, and nothing of the reading: a record
-  rewritten between a plan and its apply did not make the plan stale.
+  Before 0.56.0 the revision held of the record its launch alone, of the
+  session its state alone, and the reading only where its answer was not
+  the one the record's work mode alone gives, or where the retire took the
+  repository from Git because the record named none (0.53.0): a record
+  rewritten between a plan and its apply could leave the plan's revision
+  as it was.
   **Every retire plan read under an older kernel is stale under this one,
   once:** its apply is refused with `E_PLAN_STALE` and the fresh plan, and
   the person confirms again. A repeated apply with the idempotency key of a
