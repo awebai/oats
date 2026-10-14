@@ -1358,8 +1358,8 @@ const server = createServer(async (req, res) => {
       // The views the open windows show, from the Electron main process (main.mjs, window-activity.mjs
       // `createViewsNotifier`), posted whole whenever they change and whenever main learns this server (#1124).
       // POST, so the Host/Origin guards above cover it; it runs no command. The roster read asks for these
-      // windows' workspaces; a window showing a workspace the last set did not ask for gets a read now. After an
-      // unfiltered set (none yet, no window, the switcher, a view not served) every read covered every machine.
+      // windows' workspaces; a window showing a workspace the last set did not ask for gets a read now, whatever
+      // that set was: a set says what the next read asks for, never what the last read covered.
       let body;
       try { body = await readStrictBody(req); } catch { return send(res, 400, { error: "body needs { views: [view id | null] }", code: "E_BAD_ARGS" }); }
       const views = body?.views;
@@ -1369,7 +1369,7 @@ const server = createServer(async (req, res) => {
       windowViews = [...views];
       const after = rosterWorkspaceKeys(held(), windowViews, terms);
       // Only for a CLI that filters: without the word every read covers every machine already, as before.
-      if (cliState.features?.includes("roster-workspace-key") && before?.length && (after === null || after.some((k) => !before.includes(k)))) void remoteLoop.request();
+      if (cliState.features?.includes("roster-workspace-key") && (after === null ? before !== null : after.some((k) => !before?.includes(k)))) void remoteLoop.request();
       return send(res, 200, { views: windowViews.length });
     }
     if (req.method === "POST" && path === "/api/remote-roster/refresh") {

@@ -189,10 +189,11 @@ remembered key, member-derived included, since a registration records the
 key its host reports). The read is unfiltered before main has posted, before
 the first answer, while a window shows the switcher or a view this server
 does not serve, when a view's machine has no usable key, and with no window.
-With the feature, a set that adds a key to a filtered set, or that needs the
-unfiltered read after a filtered one, requests a read at once (the loop's
-coalesced `request()`); after an unfiltered set every read covered every
-machine already. A filtered answer replaces only what it could list
+With the feature, a set that adds a key, or that needs the unfiltered read,
+requests a read at once (the loop's coalesced `request()`), whatever the set
+before it was: a set says what the next read asks for, never what the last
+read covered, so a workspace opened after the switcher or no window still reads
+now. A filtered answer replaces only what it could list
 (`remote-roster.mjs` `remoteRosterState` with `asked`): a held group whose
 last-known key (`lastKnownKey`) is outside the keys asked is kept as it was
 last read, stays in the identity memory, and keeps its read time as its

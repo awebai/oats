@@ -337,30 +337,38 @@ test('POST /api/windows: the loopback Host and POST Origin guards apply', async 
 test('POST /api/windows: a malformed or oversized body is refused and leaves the held set as it was', async () => {
   const r = await windowsRoute();
   assert.equal((await r.post({ views: [V_OATS] })).status, 200);
-  assert.equal(r.requests.length, 0, 'the first set: every read so far covered every machine');
+  assert.equal(r.requests.length, 1, 'a window showing a workspace the last set did not ask for: a read now');
   for (const body of [{}, { views: 'ws:a' }, { views: [1] }, { views: [''] }, { views: ['a\u0001'] }, { views: [{}] }, { views: [V_OATS], extra: 1 },
     { views: Array.from({ length: MAX_WINDOW_VIEWS + 1 }, (_, i) => `ws:${i}`) }, [], null, 'not json']) {
     const answer = await r.post(body);
     assert.deepEqual([answer.status, answer.body.code], [400, 'E_BAD_ARGS'], JSON.stringify(body));
   }
-  assert.equal(r.requests.length, 0, 'no refusal reads');
+  assert.equal(r.requests.length, 1, 'no refusal reads');
   assert.equal((await r.post({ views: [V_OATS] })).status, 200);
-  assert.equal(r.requests.length, 0, 'the held set was the same: posting it again asks for nothing new');
-  assert.equal((await r.post({ views: [V_OATS, V_LAB] })).status, 200);
-  assert.equal(r.requests.length, 1, 'and it was held: a workspace it did not ask for reads now');
+  assert.equal(r.requests.length, 1, 'the held set was the same: posting it again asks for nothing new');
 });
 
 test('POST /api/windows: a new workspace reads at once; a window closing or the same set does not; the switcher reads every machine', async () => {
   const r = await windowsRoute();
-  await r.post({ views: [V_OATS] }); assert.equal(r.requests.length, 0, 'no set before: the reads covered every machine');
-  await r.post({ views: [V_OATS, V_LAB] }); assert.equal(r.requests.length, 1, 'a window opened on another workspace');
-  await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, 1, 'a window closed: the next read asks for less, no read now');
-  await r.post({ views: [V_LAB, null] }); assert.equal(r.requests.length, 2, 'a window showing the switcher: an unfiltered read now');
-  await r.post({ views: [V_LAB, null] }); assert.equal(r.requests.length, 2);
-  await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, 2, 'the switcher closed: its read covered every machine');
-  await r.post({ views: [] }); assert.equal(r.requests.length, 2, 'no window');
-  await r.post({ views: [V_OATS] }); assert.equal(r.requests.length, 2, 'a window opened after none: the reads with no window covered every machine');
-  await r.post({ views: [V_OATS, V_LAB] }); assert.equal(r.requests.length, 3);
+  await r.post({ views: [V_OATS] }); assert.equal(r.requests.length, 1);
+  await r.post({ views: [V_OATS, V_LAB] }); assert.equal(r.requests.length, 2, 'a window opened on another workspace');
+  await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, 2, 'a window closed: the next read asks for less, no read now');
+  await r.post({ views: [V_LAB, null] }); assert.equal(r.requests.length, 3, 'a window showing the switcher: an unfiltered read now');
+  await r.post({ views: [V_LAB, null] }); assert.equal(r.requests.length, 3);
+  await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, 4, 'the switcher closed: a read now (coalesced with one in flight)');
+  await r.post({ views: [] }); assert.equal(r.requests.length, 4, 'no window');
+  await r.post({ views: [V_OATS] }); assert.equal(r.requests.length, 5, 'a window opened after none');
+});
+
+test('POST /api/windows: a set says what the next read asks for, never what the last read covered: a workspace opened after an unfiltered set reads now', async () => {
+  // A filtered read of oats has landed (lab kept); no read runs between the posts.
+  for (const between of [[L], []]) {
+    const r = await windowsRoute({ keptReadAt: new Map([['vega:v1', T1]]) });
+    await r.post({ views: [V_OATS] });
+    const before = r.requests.length;
+    await r.post({ views: between }); assert.equal(r.requests.length, before, `${JSON.stringify(between)}: no key to add`);
+    await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, before + 1, `oats -> ${JSON.stringify(between)} -> lab: lab's machines read now`);
+  }
 });
 
 test('POST /api/windows with a CLI without the word: the set is held, and no read is requested (every read covers every machine)', async () => {
