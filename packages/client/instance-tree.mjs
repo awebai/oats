@@ -239,13 +239,14 @@ export const ROSTER_SORTS = Object.freeze([
   Object.freeze({ id: "name", label: "Name" }),
 ]);
 
-/** Comparator for one sibling level. "status" ranks running instances first,
- * then by name; "name" is purely alphabetical. Unknown ids fall back to
- * "status" so a stale persisted choice can never break rendering. */
+/** Comparator for one sibling level. "status" is the roster's one order
+ * (`byRuntimeState`: running, unknown, stopped, then by name); "name" is purely
+ * alphabetical. Unknown ids fall back to "status" so a stale persisted choice
+ * can never break rendering. */
 export function rosterRank(sortBy) {
   const byName = (a, b) => String(a.instance).localeCompare(String(b.instance));
   if (sortBy === "name") return byName;
-  return (a, b) => (!!a.running === !!b.running ? byName(a, b) : a.running ? -1 : 1);
+  return byRuntimeState;
 }
 
 /** Group a roster list repo → agent family (soul), each family's items in

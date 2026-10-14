@@ -1,12 +1,12 @@
 // The roster's one order (awebai/oats#1083): running (`running === true`), then unknown (`null`, or anything
 // not a boolean), then stopped (`false`); by name within each. One comparison, `byRuntimeState`
-// (packages/client/instance-presentation.mjs), read by both sorts: `panelInstances` (deployment-panel.mjs) and
-// `clusterInstances` (instance-tree.mjs). Each sort is fed a row of each state in every input order.
+// (packages/client/instance-presentation.mjs), read by every sort by state: `panelInstances` (deployment-panel.mjs),
+// `clusterInstances` and `rosterRank("status")` (instance-tree.mjs). Each is fed a row of each state in every input order.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { byRuntimeState } from '../../client/instance-presentation.mjs';
 import { panelInstances } from '../../client/deployment-panel.mjs';
-import { clusterInstances } from '../../client/instance-tree.mjs';
+import { clusterInstances, rosterRank } from '../../client/instance-tree.mjs';
 
 /** Every order of `items`. */
 const permutations = items => items.length <= 1 ? [items] : items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map(rest => [item, ...rest]));
@@ -19,10 +19,11 @@ const row = ([instance, running]) => ({ instance, agentsRoot: '/d/agents', runni
 
 const panelOrder = rows => panelInstances(rows, rows.map(() => ({}))).map(i => i.instance);
 const clusterOrder = rows => clusterInstances(rows).map(c => c.instances[0].instance);
+const statusOrder = rows => [...rows].sort(rosterRank('status')).map(i => i.instance);
 /** A root with every row as its child: the order of children inside one cluster. */
 const childOrder = rows => clusterInstances([{ instance: 'root', running: true }, ...rows.map(r => ({ ...r, parentInstance: 'root' }))])[0].instances.slice(1).map(i => i.instance);
 
-for (const [what, order] of [['panelInstances', panelOrder], ['clusterInstances: clusters', clusterOrder], ['clusterInstances: children of one root', childOrder]]) {
+for (const [what, order] of [['panelInstances', panelOrder], ['clusterInstances: clusters', clusterOrder], ['clusterInstances: children of one root', childOrder], ['rosterRank("status")', statusOrder]]) {
   test(`${what}: running, then unknown, then stopped, whatever the input order`, () => {
     const one = permutations(ONE);
     assert.equal(one.length, 6);
@@ -34,8 +35,12 @@ for (const [what, order] of [['panelInstances', panelOrder], ['clusterInstances:
   });
 }
 
-test('both sorts give the same order for the same rows', () => {
-  for (const input of permutations(TWO)) assert.deepEqual(panelOrder(input.map(row)), clusterOrder(input.map(row)));
+test('the three sorts give the same order for the same rows', () => {
+  for (const input of permutations(TWO)) {
+    const panel = panelOrder(input.map(row));
+    assert.deepEqual(clusterOrder(input.map(row)), panel, JSON.stringify(input));
+    assert.deepEqual(statusOrder(input.map(row)), panel, JSON.stringify(input));
+  }
 });
 
 test('byRuntimeState is a total order whatever `running` holds: anything not a boolean is unknown', () => {
