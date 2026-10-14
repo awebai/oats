@@ -156,6 +156,12 @@ Every routed ssh call carries these options, before `--` and the host:
 | `ServerAliveInterval=15`, `ServerAliveCountMax=3` | a link that died without a reset ends the call, an attached viewer included, within about 60 s |
 | `ControlMaster=auto`, `ControlPath=~/.oats/ssh/%C`, `ControlPersist=60` | every call to one host (the probe, the command, a viewer, concurrent Desktop reads) shares one authenticated connection, kept 60 s after its last client |
 
+- Concurrent first calls to a host with no master yet (the roster probes
+  every registration at once, so two registrations of one host do) race to
+  create it. ssh lets the one that loses run over a connection of its own
+  ("ControlSocket … already exists, disabling multiplexing"): the call still
+  succeeds, and later calls share the master. A dead host's registrations
+  each wait out the connect timeout, side by side.
 - Options given with `-o` override `~/.ssh/config`, so these replace any
   `ControlMaster`, `ControlPath` or `ControlPersist` set there for the host.
   Everything else in your ssh config (users, keys, `ProxyJump`, host
@@ -326,9 +332,13 @@ the host's own facts from its `status --json`: `identity`,
 (an older host, or a saved route the host no longer lists). A row also
 carries `waitingOnYou` (needs input) when the host's kernel reports it, and
 only then: an older host's row has no such key. A removed or edited registration keeps
-its group from the saved routes. State is pulled on every call within
-`--per-target` (default 20 s) of a total `--budget` (default 45 s); a group
-not reached is reported with `E_ROSTER_BUDGET`. `--server <id>` narrows it.
+its group from the saved routes. State is pulled on every call, from every
+group at once: each probe has its own deadline, `--per-target` (default 20 s)
+capped by `--budget` (default 45 s, the deadline of the whole answer), and a
+group that fails or does not answer in time reports its own `E_SSH`, so a
+host that is switched off never hides the others. The groups keep their
+registration order whatever order their probes finish in. `--server <id>`
+narrows it.
 
 The group's `probe` also relays the host's kernel features (0.49.0,
 `probe.features`): the top-level `features` of the same `status --json`

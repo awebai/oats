@@ -164,10 +164,14 @@ nothing else) to `POST /api/window-state` when the reduction of its windows
 flips (`window-activity.mjs`: visible, not minimized, focused). Focus
 returning runs one prompt cycle. A headless server assumes "focused".
 
-The remote roster (`refreshRemoteSnapshot`, one bounded `server roster` read
-per configured host) runs on a second `createRefreshLoop`: 10 s after
-completion while focused, 30 s while blurred, driven by the same window
-state.
+The remote roster (`refreshRemoteSnapshot`, one `server roster` read that
+probes every configured host at once, each within its own deadline) runs on a
+second `createRefreshLoop`: 10 s after completion while focused, 30 s while
+blurred, driven by the same window state. One read runs at a time, and a
+caller that asks while one runs joins it. A Retry on a window with a
+deployment on another machine posts `POST /api/remote-roster/refresh`, which
+runs that read now (or joins the one in flight) and answers once its outcome
+is held; the renderer then reads `/api/panel`, which serves it.
 
 Each window's sidebar roster, and its Deployments page when shown, re-read
 every 4 s while that window is focused and every 30 s (the blurred cadence)

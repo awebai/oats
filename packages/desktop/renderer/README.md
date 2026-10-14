@@ -436,7 +436,10 @@ selection, no longer among the served choices, is adopted like an empty one).
 Failures retain an explicitly stale last
 observation with actions disabled, not a false healthy empty graph. A manual
 retry can supersede a read; periodic polling skips its own pending request so
-slow responses are not starved.
+slow responses are not starved. A manual retry of a window whose last reply
+named a deployment on another machine first awaits
+`POST /api/remote-roster/refresh` (the servers read again), then reads the
+panel; polls never ask for it.
 
 No-op polls ignore timestamps/unconsumed metadata and preserve actual popup
 controls, focus, camera, offsets and selection. Changed observations wait for

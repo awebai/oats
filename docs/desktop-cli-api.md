@@ -2827,9 +2827,14 @@ route target:
 ```
 
 - **`probe`**: `{ok: true, features}` when the host's `status --json` was
-  pulled, else `{ok: false, error: {code, message}}` (ssh failed, the host
-  answered `ok: false`, or `E_ROSTER_BUDGET`: the roster's budget ran out
-  before this target), with no `features` key.
+  pulled, else `{ok: false, error: {code, message}}` (ssh failed or timed
+  out, `E_SSH`; or the host answered `ok: false`), with no `features` key.
+  Every group is probed at once, each within its own deadline, so a group's
+  `probe` depends only on its own host: one that does not answer in time is
+  `E_SSH` with `ssh to <host> timed out: no answer within <n> s`, and every
+  other group is unaffected. Before 0.55.0 the probes ran one after another
+  against the total budget, and a group the budget did not reach was
+  `E_ROSTER_BUDGET`; that code is no longer answered.
 - **`probe.features`** (feature `server-probe-features`, OATS 0.49.0): the
   host's kernel features, relayed from the top-level `features` of its
   [`status --json`](#the-roster-oats-status---json), never probed: the roster
@@ -2845,7 +2850,7 @@ route target:
 - **`workspace`** (feature `workspace-identity`, OATS 0.36.0): the host's
   own `status --json` [`workspace` object](#workspace-identity-feature-workspace-identity-oats-0360),
   relayed verbatim, or `null` when the host reports none (a deployment
-  without `oats-local.yaml`, or a failed or skipped probe). A host before
+  without `oats-local.yaml`, or a failed probe). A host before
   0.36.0 answers the reachability-only object (`{reachable, code?, reason?,
   message?}`) with no identity fields, so the identity is there only when
   the object has a `key` field (which a 0.36.0 host always sends, `null` for
@@ -2884,6 +2889,12 @@ route target:
 - `running` is `null` when unknown; `backend` is `tmux` for a row with a tmux
   target, else `null`; `tmux`, `sessionTarget` (the recorded target of a home
   a Herdr-era kernel opened) and `runtimeError` are as the host reports them.
+- **`bounds`**: `{budgetMs, perTargetTimeoutMs, elapsedMs}`. Each group's
+  probe may take the smaller of `perTargetTimeoutMs` (`--per-target`,
+  default 20 s) and `budgetMs` (`--budget`, default 45 s, the deadline of the
+  whole answer); `elapsedMs` is what the answer took, about the slowest
+  group's probe. Before 0.55.0 `bounds` also carried `skipped`, the number of
+  groups the budget did not reach; it is gone with `E_ROSTER_BUDGET`.
 
 <a id="servers-per-workspace"></a>
 ### Servers per workspace (feature `servers-per-workspace`)
