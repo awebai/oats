@@ -4100,13 +4100,76 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   one Git names for it, <repository>, and does not write it into the
   record`. No key of the plan is new.
 
-  What `work/` is decides what the retire does with it, so it is part of
-  `planRevision` wherever it is not what the work mode alone says: when an
-  own tree became a directory of the home, or the other way round, between
-  the plan and the apply (a record's work mode that changed, a receipt that
-  is gone), or the repository read from Git changed, a guarded apply refuses
-  with `E_PLAN_STALE` before anything runs. Every other home has the
-  revision it had.
+  <a id="retire-revision-work"></a>**A retire plan's `planRevision` binds
+  everything the plan shows, except the facts that move by themselves**
+  (0.56.0, #1065), which are these:
+  - `at`, the instant of the read;
+  - the counts against the branch's upstream and against the default branch
+    (`facts.work.upstream.ahead` and `.behind`, `facts.work.base.ahead` and
+    `.behind`), and the default branch's name (`facts.work.base.ref`): a
+    fetch by anyone who shares the clone moves the remote's refs, and
+    creates a missing `origin/HEAD`, where that name is read;
+  - a child's session (`facts.children[].session`): a child's process ends
+    when it ends, and a child that will not stop refuses the retire by
+    itself (`E_CHILDREN_RUNNING`).
+
+  Everything else a plan shows is in its revision, in every home:
+  - what the plan reports of the record: its work mode (`facts.workMode`),
+    its repository (`facts.repo`), its branch (`facts.recordedBranch`) and
+    whether it records a launch;
+  - what `work/` is by this reading, with the repository Git names for
+    `work/` wherever it is a registered work tree;
+  - what Git says of `work/`: the commit, the branch and whether `HEAD` is
+    detached, whether that branch is not the one the record names
+    (`facts.work.drift`, as the plan shows it: it comes from a second read
+    of the record, so it is not derived from `facts.recordedBranch`),
+    the counts of changed and untracked files, the branch's upstream by its
+    name (`facts.work.upstream.ref`) and the remote's host and path
+    (`facts.work.remote`); and where Git gives no answer, the reason
+    (`facts.work.reason`);
+  - the session as the plan shows it (`facts.session`, whole: its state,
+    and the `reason` or the `note` of one that is not established), which
+    the record's launch and endpoint decide where the session's receipt
+    does not;
+  - the home's extra trees (`facts.extraWorktrees`, whole);
+  - where a recovery would be written and the declared roots it leaves
+    out, as the spawn's receipt gives them: the roots with their owners,
+    not the note made from them, which is shortened past its budget and
+    then reads alike for two lists of one length. A changed recovery
+    exclusion changes the revision (it did not before 0.56.0);
+  - of other homes: the children as the plan names them (`instance`,
+    `agent`, `home`; a child's agent is the name its soul's file gives),
+    the edges that could not be followed (`facts.ambiguous`, whole) and the
+    children attached to this home's `work/`.
+
+  A key that is derived is bound through what it is derived from:
+  `facts.ownWorktree` and `defaults.retainWorktree` (the reading), and
+  every note and every line of the plan's text.
+  `lifecycleApi`, `action`, `facts.pullRequest` and the defaults
+  `deleteBranch`, `stopChildren` and `retainChildren` have one value in
+  every plan of a kernel.
+
+  So two plans of one home that differ in anything else they show never
+  share a revision, and a guarded apply after one of those things moved (a
+  record's work mode, repository or branch that was rewritten, a receipt
+  that is gone, an own tree that became a directory of the home, a
+  directory of the home that became a work tree of another repository, a
+  file where nothing was at `work/`, a receipt that declares another root)
+  is refused with `E_PLAN_STALE` and the fresh plan, before anything runs.
+  Two reads of a home that nobody touched give one revision.
+
+  Before 0.56.0 the revision held of the record its launch alone, of the
+  session its state alone, and the reading only where its answer was not
+  the one the record's work mode alone gives, or where the retire took the
+  repository from Git because the record named none (0.53.0): a record
+  rewritten between a plan and its apply could leave the plan's revision
+  as it was.
+  **Every retire plan read under an older kernel is stale under this one,
+  once:** its apply is refused with `E_PLAN_STALE` and the fresh plan, and
+  the person confirms again. A repeated apply with the idempotency key of a
+  retire that did run is answered from its stored receipt as before,
+  whatever revision it carries: the receipt is looked for before any plan
+  is read.
 - A link at `work/` is never the instance's own tree: the retire removes
   the link with the home and does not touch what it leads to, whatever the
   record says (0.53.0, #973). The record is a file the instance can write;
@@ -4211,7 +4274,7 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   case. Read an unknown `state` as not idle.
 - `notes` says what a retire would copy to recovery (0.42), in up to two
   strings read from the home's retirement baseline and the work mode, without
-  hashing anything:
+  hashing a file of the home:
 
   ```text
   recovery: the home is copied to /w/agents/dev/instances/.oats-retirement/recovery before the home is removed, when it changed since spawn; not copied: .aw, .aweb-identity, .aweb-identity-*, .oats-aweb (oats.aweb)
@@ -4233,7 +4296,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   The second is the line above in worktree mode, `recovery: work/ is copied
   there when it is not empty` in directory mode, and absent in checkout,
   attached and workspace modes. They are strings in `notes`: no other key
-  changes, and `planRevision` is unaffected.
+  changes. From 0.56.0 the declared roots are part of `planRevision`, as
+  the baseline gives them and not as the note says them (#1065,
+  [the plan's revision](#retire-revision-work)); before it they were not.
 - `facts.extraWorktrees` (0.42.1) lists the instance's
   [extra trees](souls-and-instances.md#extra-trees-at-retire): linked
   worktrees at `<home>/.work-*` that Git confirms. It is an array, empty when
