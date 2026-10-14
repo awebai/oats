@@ -659,11 +659,9 @@ test("roster: every target is probed at once, each within its own deadline: host
   try {
     const { bin, tools } = fakeBin(base);
     const fx = remoteDeployment();
-    console.error("T", Date.now() % 1000000, 'const fx = remoteDeployment();');
     const repo = fx.dep;
     // The roster lists a workspace soul once it has been spawned (its per-commit copy under agents/).
     const seeded = fx.cli(["spawn", "dev", "--purpose", "seed", "--no-launch", "--json"]);
-    console.error("T", Date.now() % 1000000, 'const seeded = fx.cli(["spawn", "dev", "--purpose"');
     assert.equal(seeded.status, 0, seeded.stdout + seeded.stderr);
     const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
@@ -677,16 +675,13 @@ test("roster: every target is probed at once, each within its own deadline: host
     let r;
     for (const id of SLOW) {
       r = oats(env, ["server", "add", id, "--ssh", `${id}-host`, "--workspace", repo, "--oats", slow, "--json"]);
-    console.error("T", Date.now() % 1000000, 'r = oats(env, ["server", "add", id, "--ssh", `${id');
       assert.equal(r.status, 0, r.stderr);
     }
     r = oats(env, ["server", "add", "good", "--ssh", "good-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]);
-    console.error("T", Date.now() % 1000000, 'r = oats(env, ["server", "add", "good", "--ssh", "');
     assert.equal(r.status, 0, r.stderr);
     write(down, "");
     const t0 = Date.now();
     r = oats(env, ["server", "roster", "--json", "--per-target", "3000"]);
-    console.error("T", Date.now() % 1000000, 'r = oats(env, ["server", "roster", "--json", "--pe');
     const elapsed = Date.now() - t0;
     assert.equal(r.status, 0, r.stderr + r.stdout);
     const out = r.json().result;
@@ -703,11 +698,9 @@ test("roster: every target is probed at once, each within its own deadline: host
     assert.equal(out.bounds.budgetMs, 45000); assert.equal(out.bounds.perTargetTimeoutMs, 3000);
     // The answer deadline caps every probe's own allowance.
     r = oats(env, ["server", "roster", "--json", "--budget", "2000", "--per-target", "4000"]);
-    console.error("T", Date.now() % 1000000, 'r = oats(env, ["server", "roster", "--json", "--bu');
     assert.equal(r.status, 0, r.stderr + r.stdout);
     for (const g of r.json().result.groups.slice(0, 4)) assert.equal(g.probe.error.message, `ssh to ${g.target.sshHost} timed out: no answer within 2 s`);
     r = oats(env, ["server", "roster", "--json", "--budget", "5"]);
-    console.error("T", Date.now() % 1000000, 'r = oats(env, ["server", "roster", "--json", "--bu');
     assert.equal(r.json().error.code, "E_BAD_ARGS");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
