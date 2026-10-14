@@ -147,7 +147,9 @@ export function writeTaskFile(taskText, io = {}) {
  * its own, so a signal to the client's process group (a Ctrl-C, a hang-up) never reaches it (a killed stop
  * strands its home on a kernel before 0.52.0; a killed start can leave its lock, #889). An `exec` must start
  * such a child that way and never drop the option: `execFile` itself does not honour it (it passes spawn a
- * fixed list of options), so this home's own default for it is `execFileInSession`. */
+ * fixed list of options), so this home's own default for it is `execFileInSession`. Such a child is given no
+ * deadline (`timeout: 0`, the default of an apply): execFileInSession arms its kill only for a positive one,
+ * and the caller's own wait ends instead (cliStart's START_WAIT_MS; instance-lifecycle.mjs APPLY_WAIT_MS). */
 function runJson(bin, argv, { cwd, exec, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false, detached = false } = {}) {
   const run = exec ?? (detached ? execFileInSession : execFile);
   return new Promise((resolveP, rejectP) => {
@@ -507,8 +509,20 @@ export function execFileInSession(bin, argv, options = {}, callback = () => {}) 
   return child;
 }
 
+/** How long a client waits for a start's answer. The wait ends; the start does not. */
+export const START_WAIT_MS = ENVELOPE_TIMEOUT_MS;
+/** What a start whose wait ended answers (`E_START_UNCONFIRMED`): the client's own sentence, never the kernel's,
+ * so it is shown under no speaker. Nothing is known of the start: it may still be running. */
+export const START_UNCONFIRMED = "OATS didn't confirm the start. It may still be running: check the roster before you start it again.";
+
 /** Start/restart is owned by the kernel, never a GUI stop-then-spawn pair. A start runs in a session of its own
- * (`detached`, execFileInSession): a signal to the client's group never reaches it (#889). Its wait is 60 s. */
+ * (`detached`, execFileInSession) with no deadline of its own (`timeout: 0`, no kill timer), so neither a signal
+ * to the client's group nor a deadline ends it (#889: a start killed mid-way can leave its lock). The client
+ * waits for its answer `io.wait` (START_WAIT_MS, 60 s); `io.after(ms, fn)` runs fn once after ms and answers a
+ * cancel. When the wait ends first, the start answers `E_START_UNCONFIRMED` and the child goes on: what it prints
+ * is still read, so it neither blocks on a full pipe nor writes to a closed one, and its answer, when it comes
+ * after the wait, is not kept. A start has no entry to keep it on, and its answer says nothing the roster
+ * does not: after a failed start the row is read again. */
 export function cliStart(bin, { home, workspaceDir, server, restart = false, ...choices }, io = {}) {
   if (typeof home !== "string" || !home.startsWith("/") || home.includes("\0")
     || (server !== undefined && (typeof server !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server)))
@@ -518,11 +532,19 @@ export function cliStart(bin, { home, workspaceDir, server, restart = false, ...
   let options;
   try { options = launchChoiceArgv(choices); }
   catch (e) { return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: e.code, message: e.message } }); }
-  return runJson(bin, ["session", restart ? "restart" : "start", "--home", home,
+  const { wait = START_WAIT_MS, after = waitTimer } = io;
+  let cancel = () => {};
+  const answered = runJson(bin, ["session", restart ? "restart" : "start", "--home", home,
     ...(server ? ["--server", server] : []), ...options, "--json"], {
-    cwd: workspaceDir, exec: io.exec, timeout: io.timeout, detached: true,
+    cwd: workspaceDir, exec: io.exec, timeout: 0, detached: true,
+  }).finally(() => cancel());
+  const waited = new Promise((resolve) => {
+    cancel = after(wait, () => resolve({ schemaVersion: 1, ok: false, error: { code: "E_START_UNCONFIRMED", message: START_UNCONFIRMED } }));
   });
+  return Promise.race([answered, waited]);
 }
+/** A wait's timer that keeps no process alive: `after(ms, fn)` -> cancel. */
+const waitTimer = (ms, fn) => { const timer = setTimeout(fn, ms); timer.unref?.(); return () => clearTimeout(timer); };
 
 /** Named configuration data travels in private JSON files, not shell text. */
 export async function cliLaunchConfig(bin, { action, name, definition, keepEnv, context, server, home, soul, agentsRoot, choices, localCwd }, io = {}) {

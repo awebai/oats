@@ -1,5 +1,5 @@
-// A change runs in a session of its own (packages/client/lifecycle-cli.mjs `cliLifecycle` for an apply,
-// cli-adapter.mjs `cliStart`): a Ctrl-C in the terminal that started a client, or a hang-up when it
+// A change runs in a session of its own, and no deadline ends it (packages/client/lifecycle-cli.mjs
+// `cliLifecycle` for an apply, cli-adapter.mjs `cliStart`): a Ctrl-C in the terminal that started a client, or a hang-up when it
 // closes, goes to every process of the client's group, and a stop apply that receives it can strand the
 // instance (#889; a kernel before 0.52.0). Real processes: a caller, in a process group of its own,
 // starts a fixture CLI through each of the two callers; the test then sends a SIGINT and a SIGHUP to the
@@ -13,6 +13,8 @@ import { spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cliLifecycle } from '../packages/client/lifecycle-cli.mjs';
+import { cliStart, START_UNCONFIRMED, START_WAIT_MS } from '../packages/client/cli-adapter.mjs';
 
 const CLIENT = new URL('../packages/client/', import.meta.url).href;
 
@@ -125,4 +127,54 @@ test('a plan read is not changed: it runs in the caller\'s group and its deadlin
   const answer = JSON.parse(await caller.exited);
   assert.equal(answer.error.code, 'E_CLI_TIMEOUT');
   assert.deepEqual(s.signals('plan'), ['SIGTERM'], 'ended by its deadline');
+});
+
+test('no change is given a deadline: a recording exec sees no positive timeout for a stop or retire apply and for a start, and a plan read keeps its own', async () => {
+  const seen = [];
+  const exec = (_bin, argv, options, done) => { seen.push({ argv, options }); done(null, '{"schemaVersion":1,"ok":true,"result":{}}'); };
+  const stop = { operation: 'stop', instance: 'dev-1', home: '/team/agents/dev/instances/dev-1', context: '/team', choices: { recursive: true } };
+  const retire = { operation: 'retire', instance: 'dev-1', home: '/team/agents/dev/instances/dev-1', context: '/team', choices: { discardWorktree: false } };
+  for (const options of [stop, retire]) await cliLifecycle('/installed/oats', { ...options, phase: 'apply', revision: 'a'.repeat(24), key: 'k1' }, { exec, timeout: 5 });
+  for (const restart of [false, true]) await cliStart('/installed/oats', { home: '/team/agents/dev/instances/dev-1', workspaceDir: '/team', restart }, { exec });
+  assert.equal(seen.length, 4);
+  for (const { argv, options } of seen) {
+    assert.equal(options.detached, true, argv.join(' '));
+    assert.ok(!(options.timeout > 0), `${argv.join(' ')}: no deadline (${options.timeout})`);
+  }
+  await cliLifecycle('/installed/oats', { ...stop, phase: 'plan' }, { exec });
+  assert.equal(seen[4].options.timeout, 30_000, 'a plan read is a read: its deadline ends it');
+});
+
+test('a start whose wait ends answers that it is not confirmed, and the start goes on: it finishes, unsignalled', { skip: process.platform === 'win32' }, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'oats-start-wait-'));
+  let pid = null;
+  t.after(() => { if (pid && alive(pid)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } } rmSync(dir, { recursive: true, force: true }); });
+  const cli = join(dir, 'oats'), at = name => join(dir, name);
+  // A `session start` that takes longer than the client waits, then finishes: its completion is a file it writes.
+  writeFileSync(cli, `#!${process.execPath}
+const fs = require('node:fs');
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => { fs.appendFileSync(${JSON.stringify(at('signals'))}, signal + '\\n'); process.exit(1); });
+fs.writeFileSync(${JSON.stringify(at('pid'))}, String(process.pid));
+setTimeout(() => { fs.writeFileSync(${JSON.stringify(at('done'))}, 'started'); process.stdout.write('{"schemaVersion":1,"ok":true,"result":{"launched":true}}'); }, 1500);
+`);
+  chmodSync(cli, 0o755);
+  const answer = await cliStart(cli, { home: '/team/agents/dev/instances/dev-1', workspaceDir: dir }, { wait: 300 });
+  assert.deepEqual(answer, { schemaVersion: 1, ok: false, error: { code: 'E_START_UNCONFIRMED', message: START_UNCONFIRMED } });
+  assert.equal(START_UNCONFIRMED, "OATS didn't confirm the start. It may still be running: check the roster before you start it again.");
+  assert.ok(await until(() => existsSync(at('pid')), 5000), 'premise: the start ran');
+  pid = Number(readFileSync(at('pid'), 'utf8'));
+  assert.equal(alive(pid), true, 'the start is still running after the wait ended');
+  assert.equal(existsSync(at('done')), false, 'premise: it had not finished when the wait ended');
+  assert.ok(await until(() => existsSync(at('done')), 10_000), 'the start finished after the wait ended');
+  assert.ok(await until(() => !alive(pid), 5000), 'and then exited by itself');
+  assert.equal(existsSync(at('signals')), false, 'no signal reached it');
+});
+
+test('a start that answers within its wait is read, and its wait is cancelled', async () => {
+  const waits = [];
+  const after = (ms, fn) => { const w = { ms, fn, cancelled: false }; waits.push(w); return () => { w.cancelled = true; }; };
+  const answer = await cliStart('/installed/oats', { home: '/team/agents/dev/instances/dev-1', workspaceDir: '/team' },
+    { after, exec: (_b, _a, _o, done) => done(null, '{"schemaVersion":1,"ok":true,"result":{"launched":true}}') });
+  assert.deepEqual(answer, { schemaVersion: 1, ok: true, result: { launched: true } });
+  assert.deepEqual(waits.map(w => [w.ms, w.cancelled]), [[START_WAIT_MS, true]]); assert.equal(START_WAIT_MS, 60_000);
 });

@@ -234,7 +234,9 @@ reads a new one.
 A stop, retire or start runs in a process of its own, so closing the Desktop
 does not interrupt it. If a stop or retire takes longer than ten minutes, the
 dialog stops waiting and says the result is not confirmed; it keeps running,
-and Check again reads its result.
+and Check again reads its result. If a start or restart takes longer than 60
+seconds, the Start dialog stops waiting and says the start is not confirmed;
+the start keeps running, and the roster shows its result.
 
 With an OATS older than 0.52.0, after an interrupted stop the instance can be
 started and then cannot be stopped while `.oats-stop-pending.json` exists in

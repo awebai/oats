@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { shippedMainApi } from './helpers/shipped-main-api.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
-import { cliStart } from '../../client/cli-adapter.mjs';
+import { cliStart, START_UNCONFIRMED } from '../../client/cli-adapter.mjs';
 import { httpError } from '../renderer/views/common.mjs';
 import { retainedSpawnDetails } from '../../client/launch-prompt-outcome.mjs';
 import { retained, differed, DIFFERED, observationTimeout, observationTimeoutMessage } from './helpers/launch-prompt-fixture.mjs';
@@ -16,13 +16,16 @@ import { retained, differed, DIFFERED, observationTimeout, observationTimeoutMes
 const BASE = 'http://127.0.0.1:4999', WS = '?ws=%2Fd%2Ffirst';
 const KERNEL_WATCH_MS = 30_000;
 
-/** The limit the start's CLI call really runs under: what `cliStart` hands its exec, called as the server's
- * route calls it (no deadline of its own). Read from the call, never copied here. */
+/** How long the start's CLI call is waited for: the wait `cliStart` arms, called as the server's route calls it
+ * (no wait of its own). The child itself has no deadline (#889): it is given none. Read from the call, never
+ * copied here. */
 async function cliLimit(restart) {
-  let limit;
+  let limit, deadline;
   await cliStart('/installed/oats', { home: '/d/first/agents/dev/instances/dev', workspaceDir: '/d/first', restart },
-    { exec: (_bin, _argv, opts, done) => { limit = opts.timeout; done(null, '{"schemaVersion":1,"ok":true,"result":{}}'); } });
-  assert.ok(Number.isSafeInteger(limit) && limit > 0, `the CLI call's limit: ${limit}`);
+    { exec: (_bin, _argv, opts, done) => { deadline = opts.timeout; done(null, '{"schemaVersion":1,"ok":true,"result":{}}'); },
+      after: (ms) => { limit = ms; return () => {}; } });
+  assert.equal(deadline, 0, 'the start child is given no deadline: the wait ends, never the child');
+  assert.ok(Number.isSafeInteger(limit) && limit > 0, `the wait for the CLI call: ${limit}`);
   return limit;
 }
 /** The deadline main's shipped handler gives one request. */
@@ -116,9 +119,9 @@ test('an Enter whose completion was not seen, answered at the kernel\'s bound, a
   assert.equal(error.incomplete.launchPrompts.answers.length, 1);
 });
 
-test('the CLI call\'s own timeout, answered at its limit, arrives as the server\'s answer and not as the proxy\'s abort', async () => {
+test('the end of the wait for the CLI call, answered at its limit, arrives as the server\'s answer and not as the proxy\'s abort', async () => {
   const limit = await cliLimit(true);
-  const body = { error: `oats did not answer within ${limit / 1000}s`, code: 'E_CLI_TIMEOUT' };
+  const body = { error: START_UNCONFIRMED, code: 'E_START_UNCONFIRMED' };
   const reply = await slowBackend({ status: 409, body }, limit).call(`/api/restart/dev${WS}`);
   assert.deepEqual(reply, { ok: false, status: 409, body });
   assert.equal(Object.hasOwn(httpError(reply, '/api/restart/dev'), 'incomplete'), false);

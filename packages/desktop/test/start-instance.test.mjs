@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createInstanceStarter } from "../renderer/start-instance.mjs";
 import { setWorkspace } from "../renderer/views/common.mjs";
-import { cliStart } from "../../client/cli-adapter.mjs";
+import { cliStart, START_UNCONFIRMED } from "../../client/cli-adapter.mjs";
 import { MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
 
 const tick = () => new Promise((r) => setImmediate(r));
@@ -172,6 +172,20 @@ test("a workspace switch while the started terminal is getting ready opens nothi
     await tick(); s.submit(); await tick(); await tick();
     assert.equal(s.modal.isConnected, false);
     setWorkspace("/elsewhere"); ready(); await tick(); await tick();
+    assert.deepEqual(s.opened, []); assert.deepEqual(s.notified, []);
+  } finally { s.cleanup(); }
+});
+
+test("a start whose wait ended reads as not confirmed, in the Desktop's own words under no speaker, and needs a status refresh before another start", async () => {
+  // As the route answers it (cli-adapter.mjs cliStart, E_START_UNCONFIRMED) and the shell raises it for a 409.
+  const s = setup({ start: () => { throw Object.assign(new Error(START_UNCONFIRMED), { code: "E_START_UNCONFIRMED", answered: START_UNCONFIRMED }); } });
+  try {
+    await tick(); s.submit(); await tick();
+    assert.equal(s.modal.isConnected, true);
+    assert.equal(s.modal.querySelector(".start-status").textContent, "OATS didn't confirm the start. It may still be running: check the roster before you start it again.");
+    assert.doesNotMatch(s.modal.textContent, /OATS says|in time|timed out/, "not the kernel's words, and not a timeout");
+    assert.equal(s.modal.querySelector(".start-kernel-says"), null);
+    assert.equal(s.modal.querySelector(".start-submit").disabled, true, "no second start before the row is read again");
     assert.deepEqual(s.opened, []); assert.deepEqual(s.notified, []);
   } finally { s.cleanup(); }
 });
