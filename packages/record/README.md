@@ -301,7 +301,9 @@ output inventories without suppressing error counts.
 
 Verified snapshots and prefix comparisons use private record-root scratch, which
 can expand with source size; journal and derived-index disk space also grow with
-captured content. Staging is cleaned on success and failure. No new heap, record
+captured content. Public per-call staging is cleaned on success and failure;
+internal command recovery can retain explicitly owned jobs across workers, as
+described in the [resource model](docs/capture-service.md#resource-model). No new heap, record
 size, elapsed-time or service policy limit is imposed by these algorithms.
 
 ## Known costs, accepted for v1

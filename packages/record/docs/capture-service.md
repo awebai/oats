@@ -206,9 +206,9 @@ Sampled rollback-journal peaks (2.39 GB and 4.9 MB) are lower bounds. These
 results qualify the isolated atomic reset on that storage, not the subsequent
 2.3-million-turn reconstruction, full-pass deadline or Linux service performance.
 
-Scratch directories are private per synchronous caller (0700 directories, 0600
-owner/payload files), with a same-host PID and nonce marker. No supported path
-transfers their ownership or open descriptors to a subprocess. A command holding
+Ordinary scratch directories are private per synchronous caller (0700 directories,
+0600 owner/payload files), with a same-host PID and nonce marker. Those per-call
+allocations never transfer ownership or open descriptors to a subprocess. A command holding
 the capture lock removes recognized allocations only after positively proving
 the local allocator dead and rechecking directory and marker identity. Public
 synchronous callers still do not acquire an implicit capture lock; their live
@@ -218,6 +218,44 @@ are preserved. A kill before ownership publication can leave an unowned director
 For such leftovers, stop all capture/library users, establish that no caller is
 using the specific allocation, and remove only that confirmed orphan; do not
 blanket-delete the scratch area while callers may be active. No age-only cleanup.
+
+Command recovery uses separately recognized `recovery-*` allocations. Ordinary
+dead-owner scavenging preserves them: allocator death alone cannot erase a job
+that must resume. The registered root-lock worker requires a durable job
+reference, stable allocation nonce and exact directory/payload identities before
+opening one. Adoption requires positive death proof of the previous local owner
+and rechecks the job, marker and registered worker before publication. A
+self-identified owner publication names the prior committed marker stamp, so a
+crash after publication but before its DB checkpoint can be recovered without
+accepting a copied/replaced owner file. No descriptor transfers between workers.
+Lost references, unknown owners and unpublished allocations cannot become proof
+or cleanup authority by pathname. They retain the conservative orphan procedure
+above. A committed deletion mark precedes allocation-specific removal; reference
+finalization can be batched after removal, and interruption is repeatable.
+
+`capture-recovery-snapshot.mjs` copies the fixed source end in 64 KiB chunks under
+the stream group. Payload fsync precedes committed copy offsets and chunk hashes.
+An uncommitted suffix is truncated only inside the adopted allocation, followed
+by bounded verification of all committed chunk hashes before continuing. Lost
+chunk metadata or mismatched bytes revoke the staged proof. Copying checks the
+raw-record limit incrementally, before allocating a whole oversized record.
+After copying, consumers read only that staged descriptor and verify its version;
+the mutable source remains an observation/custody check, not a replacement data
+source. Append growth uses the shared append-only assumption and bounded source
+boundary witness; replacement, shrink, same-size edits or witness mismatch revoke
+the job. The scheduler's durable reset/retry generation also invalidates a staged
+snapshot; it stays fixed across partial workers so retry cannot restart forever.
+This source qualification is separate from exact journal-generation
+validation. A journal change between workers retires the old fixed-end snapshot
+before comparing a possibly longer captured prefix, including after public or
+outgoing-release writes. Later source growth alone is work for a later snapshot.
+
+Staging consumes source-sized private space plus bounded-per-chunk hash metadata.
+Revalidating staged bytes after interruption is recovery work, reported separately
+from mutable-source reads and boundary probes. Completed or invalidated jobs
+reclaim hashes in bounded units; a hash-cache entry never authorizes deletion of
+a filesystem path. These are private worker primitives; their tests do not by
+themselves qualify the complete command scheduler, run receipts or service limits.
 
 ## Internal transaction groups
 
