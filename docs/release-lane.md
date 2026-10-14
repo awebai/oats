@@ -74,7 +74,11 @@ node scripts/release-lane.mjs desktop --tag v0.22.0 --arch x64    # needs Rosett
 node scripts/release-lane.mjs status --tag v0.22.0
 ```
 
-On the Linux host, from a checkout of the same commit:
+On the Linux host, from a checkout of the same commit. Besides the build tools,
+the host needs binutils (`readelf` and `ar`) and `tar`. The `desktop` phase's
+`dist:smoke` reads every ELF file of the DEB and the AppImage and checks it
+against the installers' glibc floor (`packages/desktop/scripts/linux-floor.json`).
+No flag skips that check, and it stops naming the tool when one is missing.
 
 ```bash
 node scripts/release-lane.mjs build --tag v0.22.0
