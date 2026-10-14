@@ -74,8 +74,9 @@ const TABLES = ['lifecycleReason', 'lifecycleFailure', 'undescribedAnswer', 'und
   // (packages/client/panel-views.mjs): each passes the terms it is given on to the tables above.
   'deploymentUnavailableText', 'deploymentUnavailableParts', 'deploymentInfo', 'viewModel', 'viewFor', 'deploymentFor', 'surfaceDeployment', 'viewForgeContext', 'isServed',
   'teamMembersFor', 'machineScope', 'panelData', 'workspaceChoices',
-  // 5a: the lifecycle boundary words every reason with the terms it is made with (packages/client/instance-lifecycle.mjs).
-  'createLifecycleBoundary'];
+  // 5a: the lifecycle boundary words every reason with the terms it is made with (packages/client/instance-lifecycle.mjs),
+  // and the confirmation every plan and answer (packages/client/lifecycle-confirmation.mjs).
+  'createLifecycleBoundary', 'createLifecycleConfirmation', 'planView', 'outcomeView', 'unavailableView', 'applyRunningSentence'];
 const ROOT = new URL('../', import.meta.url);
 function shippedModules(dir = '') {
   const out = [];

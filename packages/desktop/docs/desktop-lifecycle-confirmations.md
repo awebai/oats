@@ -456,6 +456,16 @@ One phase decides which controls exist (`lifecycle-dialog.mjs`); a control
 with no use in a phase is not rendered, and one that cannot act yet carries
 its reason in the visible status line (`aria-describedby`).
 
+What the dialog says, and which acts it may offer, is the shared home's
+(`packages/client/lifecycle-confirmation.mjs`): `planView` and `outcomeView`
+give every sentence as data, and `createLifecycleConfirmation` holds the
+client's half of the transaction (the reference, the latest-intent token, the
+closed set of states and the acts each offers). The dialog draws it, and words
+only its own furniture: its button labels, "Details", the age line, the PR row,
+"You can close this window" and the two next steps a view names by a code
+(`check-roster`, `retire-with-force`). The phases below are its drawing states,
+derived from the confirmation's (`reading`, `review`, `applying`, `settled`).
+
 | Phase | Title | Body | Footer |
 |---|---|---|---|
 | loading | Retire X? / Stop X? | "Checking what retiring X will do…" (or "Reading from <server>…"); What will happen and Current state as skeletons, `aria-busy`; the option's place held by one skeleton line | Cancel · confirm (disabled, described by the status line) |
