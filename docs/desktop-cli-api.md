@@ -526,9 +526,10 @@ capabilities' skills), read from the same soul copy as `instructions`:
   is not listed, a symlinked skill directory is not a skill, and a symlinked
   `skills/` makes `skills` `null` with a problem. FIFOs, sockets and devices
   are not listed and never opened. Every directory is proved to be the one
-  inside the skill before it is listed or read from, and each file is opened
-  from its proven directory, so a directory swapped for a symbolic link
-  meanwhile cannot redirect a read; the skill's `files` is then `null`.
+  inside the skill before it is listed or read from, and a directory that
+  cannot be proved makes the skill's `files` `null`. Each file is opened from
+  its proven directory, so once a directory is entered, a later swap of one
+  of its ancestors for a symbolic link cannot redirect the read.
 - Problems are `{code, message}` in `problems[]`, each message starting
   `skills: `: `soul-skills-unreadable` when the list is `null`, and
   `soul-skill-files-unreadable`, naming the skill's `path`, for a skill whose
