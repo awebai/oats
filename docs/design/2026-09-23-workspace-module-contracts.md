@@ -60,6 +60,16 @@ symlink enters as `symlink:<target>`; empty directories and a top-level `.git/` 
   needs them; whole trees from a server without partial fetches; awebai/oats#384) into a bare cache `<cacheDir>/<sha256(key)>/` (default
   `~/.cache/oats/remotes`; the CLI honours `OATS_REMOTE_CACHE`) and pinned as `refs/oats/commits/<oid>`.
   The cache may be wiped at any time. Operations on one cache repo are serialized.
+- Only a successfully parsed Git version below 2.45 authorizes a version-driven
+  rebuild of a partial cache into full mode. A failed or unparseable version
+  probe refuses the read as `E_REMOTE_UNREADABLE` under the existing failure
+  classification, preserving the cache, fetch mode and all commit pins. A
+  probe timeout stays `timeout` even before a session's deadline; unparseable
+  output is `unknown`. This holds with or without a session. Failures are not
+  memoized: a later call can probe again. Full caches remain full after a
+  successful modern-version probe. The private strict probe and the
+  version-or-`null` compatibility helper share one memo per executor; each
+  waiter retains its own timeout and cancellation bounds.
 - Failures: `E_REMOTE_UNREADABLE { url, key, reason }`, `reason` ∈ `auth`, `not-found`, `network`,
   `timeout`, `unknown`. Nothing half-succeeds.
 - Reference-bearing diagnostics use `redactUrl`, including parser refusals, package and
