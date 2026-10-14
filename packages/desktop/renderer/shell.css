@@ -615,41 +615,82 @@ body {
 .palette-item .punder { color: var(--muted); font-size: 11.5px; flex: none; max-width: 30%;
                         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── keyboard shortcuts editor (⌘,) ── */
+/* ── keyboard shortcuts editor (⌘,) ──
+   Calm by construction: one search, rows of label + keycaps, quiet markers in the muted ink,
+   warnings in --warn, every pair from the contrast inventory (no opacity over text). */
 .kb-editor {
   width: min(640px, 92vw); max-height: 74vh; display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; box-shadow: var(--shadow-modal); overflow: hidden;
 }
 .kb-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.kb-title { margin: 0; flex: 1; font-size: 14px; font-weight: 650; color: var(--fg); }
+.kb-title { margin: 0; flex: none; font-size: 14px; font-weight: 650; color: var(--fg); }
+/* The search's own frame is its wrapper (the glyph sits inside it); the input is bare. */
+.kb-search-field { flex: 1; min-width: 120px; display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 9px;
+  border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--muted); }
+.kb-search-field:focus-within { border-color: var(--accent); }
+.kb-search-field .shell-icon { flex: none; }
+.kb-search { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: var(--fg);
+  font-family: inherit; font-size: 12.5px; line-height: 1; outline: none; }
+.kb-search:focus-visible { outline: none; }
+.kb-search::placeholder { color: var(--faint); }
+.kb-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; } /* Esc clears */
 .kb-reset-all, .kb-close, .kb-reset {
   border: 1px solid var(--border); border-radius: 6px; background: transparent;
   color: var(--fg); font-family: inherit; font-size: 12px; line-height: 1; padding: 6px 9px; cursor: pointer;
 }
 .kb-reset-all:hover, .kb-close:hover, .kb-reset:hover { background: var(--surface-2); }
 .kb-hint { margin: 0; padding: 8px 16px; color: var(--muted); font-size: 11.5px; border-bottom: 1px solid var(--border); }
-.kb-body { overflow-y: auto; padding: 6px 10px 12px; }
-.kb-context { margin: 12px 6px 4px; color: var(--muted); font-size: 10.5px; font-weight: 650;
-              text-transform: uppercase; letter-spacing: .065em; }
-.kb-row { display: flex; align-items: center; gap: 9px; padding: 5px 6px; border-radius: 8px; }
+.kb-body { overflow-y: auto; padding: 0 10px 12px; }
+.kb-group[hidden], .kb-row[hidden], .kb-nomatch[hidden] { display: none; }
+/* A group's heading sticks to the top of the scroll area while its rows scroll, on an opaque
+   surface that spans the body's width, and the next group's heading pushes it up. */
+.kb-context { position: sticky; top: 0; z-index: 1; margin: 0 -10px; padding: 12px 16px 5px; background: var(--surface);
+  color: var(--muted); font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .065em; }
+.kb-row { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 4px 6px; border-radius: 8px; }
 .kb-row:hover { background: var(--surface-2); }
-.kb-label { flex: 1; color: var(--fg); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.kb-label { color: var(--fg); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kb-conflict { color: var(--warn); font-size: 11px; }
+.kb-conflict:empty { display: none; }
+.kb-marks { flex: none; width: 112px; display: flex; justify-content: flex-end; gap: 8px; }
+.kb-mark { color: var(--muted); font-size: 11px; }
 .kb-clashes { margin: 0; padding: 8px 16px; color: var(--warn); font-size: 12px; border-bottom: 1px solid var(--border); }
 /* The footer shortcuts button, while a stored rebind clashes (keymapConflicts): a warn dot. */
 #sidebar-shortcuts { position: relative; }
 #sidebar-shortcuts.has-clash::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px;
   border-radius: 50%; background: var(--warn); }
-.kb-chord {
-  min-width: 92px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--bg); color: var(--fg); font: 12px/1 ui-monospace, monospace;
-  text-align: center; cursor: pointer;
+/* The chord: a button holding one keycap per key, right-aligned in a fixed column (four keys fit)
+   so keycaps and the markers before them line up from row to row. The button fits its keycaps,
+   and its own focus ring replaces the global --sel tint, so its text stays on the row's surface. */
+.kb-chord-cell { flex: none; width: 176px; display: flex; justify-content: flex-end; }
+.kb-row .kb-chord {
+  display: flex; align-items: center; padding: 3px 4px;
+  border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--fg);
+  font: 12px/1 ui-monospace, monospace; cursor: pointer;
 }
-.kb-chord:hover { border-color: var(--accent); }
-.kb-chord.kb-unbound { color: var(--faint); font-style: italic; }
-.kb-chord.kb-recording { border-color: var(--accent); color: var(--accent); }
+.kb-row .kb-chord:focus-visible { background: transparent; outline: 1px solid var(--accent); outline-offset: 0; }
+.kb-keys { display: flex; gap: 3px; }
+.kb-keys kbd { min-width: 22px; padding: 3px 6px 2px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px;
+  background: var(--bg); color: var(--fg); font: 11.5px/1.2 ui-monospace, monospace; text-align: center; }
+.kb-chord:hover kbd, .kb-chord:focus-visible kbd { border-color: var(--accent); }
+.kb-row .kb-chord.kb-unbound { color: var(--faint); font-style: italic; }
+.kb-row .kb-chord.kb-recording { border-color: var(--accent); color: var(--accent); }
+/* The reset keeps its slot when hidden, so chords align whether or not a row has one. */
+.kb-reset-slot { flex: none; width: 30px; display: flex; justify-content: center; }
+.kb-reset { padding: 5px 6px; }
 .kb-empty { padding: 16px; color: var(--muted); text-align: center; font-size: 13px; }
+/* A narrow window (the editor is 92vw below ~700px): the title gives way to the search (the dialog
+   keeps its name), and a row's markers, keycaps and Reset take a second line under its label, so
+   labels keep their width and every control stays inside the dialog. */
+@media (max-width: 620px) {
+  .kb-head { flex-wrap: wrap; }
+  .kb-title { display: none; }
+  .kb-row { flex-wrap: wrap; row-gap: 3px; }
+  .kb-main { flex-basis: 100%; }
+  .kb-marks { width: auto; margin-left: auto; }
+  .kb-chord-cell { width: auto; }
+}
 /* forge-roster: open the row's pull request (the chip on the name line says which). */
 .ctx-pr-open { flex: none; display: grid; place-items: center; width: 24px; height: 22px; padding: 0; color: var(--accent); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
