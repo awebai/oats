@@ -44,8 +44,9 @@ export function readIssueBacklog(db, { pending = false, validate = false } = {})
         if (!validFailure(row)) throw new Error("malformed capture failure row");
         return row;
       });
+    const deferred = db.prepare("SELECT 1 AS found FROM state WHERE kind = 'capture-retry' LIMIT 1").get()?.found === 1;
     db.exec("COMMIT");
-    return { pending: pending || count > 0 || failedCount > 0, setAsideCount: count, setAside, truncated: count > sample.length,
+    return { pending: pending || count > 0 || failedCount > 0 || deferred, setAsideCount: count, setAside, truncated: count > sample.length,
       failedCount, failed, failedTruncated: failedCount > failed.length };
   } catch (err) { db.exec("ROLLBACK"); throw err; }
 }

@@ -8,8 +8,22 @@ const validVersion = value => value === null || value &&
   ["dev", "ino", "mtime", "ctime"].every(key => typeof value[key] === "string" && value[key].length > 0) &&
   Number.isSafeInteger(value.size) && value.size >= 0;
 
+export function readCaptureRetry(state, stream) {
+  const row = state.get("capture-retry", stream);
+  if (row !== null && (!row || row.stream !== stream || !stages.has(row.stage) ||
+      !validVersion(row.generation) || !Number.isSafeInteger(row.offset) || row.offset < 0 ||
+      row.offset > (row.generation?.size ?? 0) ||
+      !["unitId", "attemptedRun"].every(key => typeof row[key] === "string" && row[key]) ||
+      typeof row.nextRetryAt !== "string" || !Number.isFinite(Date.parse(row.nextRetryAt)) ||
+      new Date(row.nextRetryAt).toISOString() !== row.nextRetryAt)) {
+    throw new Error("invalid deferred capture work");
+  }
+  return row;
+}
+
 function validSelection(selection) {
   return selection && typeof selection.runId === "string" && selection.runId.length > 0 &&
+    (selection.retry === undefined || typeof selection.retry === "boolean") &&
     stages.has(selection.stage) && selection.next && stages.has(selection.next.stage) &&
     typeof selection.next.after === "string" && Array.isArray(selection.members) &&
     selection.members.length > 0 && selection.members.length <= 128 &&
@@ -29,19 +43,31 @@ export function readCaptureAdmission(state) {
 
 // Called only after ALL member locks are held, before the processing DB
 // transaction. Committing inside the latter would leave only volatile intent.
-export function commitCaptureAdmission(state, selection, held) {
+export function commitCaptureAdmission(state, selection, held, { now = Date.now() } = {}) {
   if (state.depth) throw new Error("capture admission must precede the processing transaction");
   if (!validSelection(selection) || selection.members.length !== held.size ||
       selection.members.some(member => !held.has(member.stream))) throw new Error("invalid capture admission selection");
-  const row = { id: randomUUID(), runId: selection.runId, stage: selection.stage,
+  if (!Number.isSafeInteger(now) || now < 0) throw new Error("invalid capture admission time");
+  const row = { id: randomUUID(), runId: selection.runId, stage: selection.stage, retry: selection.retry === true,
     next: { stage: selection.next.stage, after: selection.next.after },
     members: selection.members.map(({ stream, offset, generation }) => ({ stream, offset, generation })) };
   state.transaction(() => {
     // The next worker must reconcile this evidence before admitting new work.
     // Overwriting it would lose both crash attribution and queue progress.
     if (readCaptureAdmission(state)) throw new Error("unreconciled capture admission");
+    for (const member of row.members) {
+      const retry = readCaptureRetry(state, member.stream);
+      if (retry) {
+        if (!row.retry || row.members.length !== 1 || retry.stage !== row.stage || retry.attemptedRun === row.runId ||
+            !Number.isFinite(Date.parse(retry.nextRetryAt)) || now < Date.parse(retry.nextRetryAt)) {
+          throw new Error("deferred capture work requires a due single-stream admission");
+        }
+        state.set("capture-retry", member.stream, { ...retry, attemptedRun: row.runId });
+      } else if (row.retry) throw new Error("capture retry no longer exists");
+    }
     state.set("capture-admission", "active", row);
     state.set("capture-schedule", "position", row.next);
+    if (row.retry) state.set("capture-schedule", "retry-after", row.members[0].stream);
   });
   return row;
 }

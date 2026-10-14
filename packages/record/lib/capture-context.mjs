@@ -9,7 +9,7 @@ export const captureContext = store => contexts.get(store);
 // All stream locks precede the database write transaction, matching ordinary
 // writers' stream -> database order. Acquiring another stream inside the
 // transaction would deadlock against a public caller holding that stream.
-export function withCaptureGroup(store, streams, fn, { state, check = () => {}, batchBytes = 8 * 1024 * 1024, admission } = {}) {
+export function withCaptureGroup(store, streams, fn, { state, check = () => {}, batchBytes = 8 * 1024 * 1024, admission, admissionNow } = {}) {
   if (!Number.isSafeInteger(batchBytes) || batchBytes < 1 || batchBytes > 8 * 1024 * 1024) throw new Error("invalid capture work-group batch size");
   if (contexts.has(store)) throw new Error("capture work groups cannot nest");
   if (state?.depth) throw new Error("capture work group cannot acquire streams inside a transaction");
@@ -34,7 +34,7 @@ export function withCaptureGroup(store, streams, fn, { state, check = () => {}, 
           }
         }
       }
-      const admitted = admission ? commitCaptureAdmission(derived, admission, held) : null;
+      const admitted = admission ? commitCaptureAdmission(derived, admission, held, { now: admissionNow }) : null;
       return derived.transaction(() => {
         contexts.set(store, { state: derived, held, batchBytes, admission: admitted });
         try {

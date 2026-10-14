@@ -105,6 +105,13 @@ stop that makes durable progress is ordinary partial work, not automatically a
 failure. Old snapshots without these fields contain no recorded operational
 failure evidence; their absence does not establish a successful pass.
 
+An interrupted multi-stream group defers its members without assigning each a
+failure. On the next due attempt, its members enter the normal queue singly,
+after healthy work. A member's own failed admission then supplies its failure
+row; successful members advance. There is no in-pass group retry or diagnostic
+execution mode. Unknown attribution remains a run failure, with deferred work
+keeping the backlog pending even when no member has an attributable failure row.
+
 Reading an existing database requires Node's read-only SQLite support: 22.12+
 on the 22.x line (22.13+ avoids needing `--experimental-sqlite`), 23.2+ on 23.x,
 or a newer major. Normal capture retains its declared runtime floor. Missing
@@ -236,6 +243,25 @@ the helper refuses to overwrite it or guess per-member failure rows. A normal
 changed group therefore adds one intent commit, regardless of its record count.
 No-op groups without admission add no intent transaction. These counts describe
 explicit SQLite transactions, not filesystem sync calls or storage latency.
+
+`capture-retry.mjs` reconciles an interrupted manifest after the previous worker
+has exited. One transaction stores retry membership, run failure evidence and
+any attributable single-stream failure, then removes the manifest. A failed
+commit leaves the manifest available for retry; completed reconciliation is
+idempotent. Neither reconciliation nor admission advances processing cursors.
+Deferred membership is separate from public failure rows. Admission itself
+requires a due, single-stream retry and rejects a second attempt in the same
+run. A separate durable retry position rotates incomplete members across runs;
+bounded keyset enumeration avoids retaining all deferred members in memory.
+The scheduler supplies a finite, fair healthy sweep before deferred selection.
+Enumeration still costs metadata work and is not a new-content-only operation.
+
+Resolution joins the processing checkpoint transaction. An unchanged journal
+must be processed through the failed snapshot's end, or the stage must validate
+that the unit no longer needs work. A checkpoint inside that snapshot, a changed
+generation, expiration of the retry date or a process restart cannot by itself
+clear the warning. The stage remains responsible for proving reconciliation;
+these private queue helpers do not implement the full source/index scheduler.
 
 Journal recovery exposes an internal work-unit interface: obsolete-ID deletion
 has a persisted phase, and validation commits its byte/count cursor after each
