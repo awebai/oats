@@ -4061,7 +4061,7 @@ async function experimentalCmd() {
 /** `oats server add|list|remove|check`. A registration is where and how:
  *  an OpenSSH host alias, the remote workspace, the remote oats path. Keys
  *  and passwords never enter it; ssh owns those. */
-function serverCmd() {
+async function serverCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1];
   const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--path <dir:dir>] [--label <text>] [--replace] | connect <id> --ssh <host-alias> [--workspace-ref <ref>] [--dir </abs/path or ~/path on the host>] [--oats <path>] [--path <dir:dir>] [--label <text>] [--install-oats] [--replace] | list [--workspace-ref <ref>] | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
@@ -4083,12 +4083,12 @@ function serverCmd() {
   }
   if (sub === "roster") {
     // The remote roster for the Desktop and operators: grouped by saved route
-    // target, one bounded status pull per target, saved routes as the action
+    // target, one bounded status pull per target, all at once, saved routes as the action
     // authority. --server narrows to one registry id.
     const only = flag("server") === true ? bail("E_BAD_ARGS", "--server needs a registered server id") : flag("server");
     const ms = (name) => { const v = flag(name); if (v === undefined) return undefined; const n = Number(v); if (!Number.isInteger(n) || n < 1000) bail("E_BAD_ARGS", `--${name} takes whole milliseconds, at least 1000`); return n; };
     let out;
-    try { out = rosterGroups({ server: only, io: { budgetMs: ms("budget"), perTargetTimeoutMs: ms("per-target") } }); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
+    try { out = await rosterGroups({ server: only, io: { budgetMs: ms("budget"), perTargetTimeoutMs: ms("per-target") } }); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
     if (JSON_MODE) { jsonOk(out); return; }
     if (!out.groups.length) { console.log("no remote groups: no registrations and no saved routes"); return; }
     for (const g of out.groups) {
@@ -4097,7 +4097,7 @@ function serverCmd() {
       for (const i of g.instances) console.log(`      • ${i.instance}  ${i.missingRemotely ? "GONE on the host (saved route is stale: oats server forget)" : i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown"}${i.retirePending ? " RETIRING" : ""}${i.rollbackIncomplete ? " QUARANTINED" : ""}${i.savedRoute ? "" : "  (observed only, no saved route)"}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
       for (const f of g.retireFailures || []) console.log(`      ! deferred retirement of ${f.instance} (${f.agent}) FAILED there${f.error?.message ? `: ${f.error.message}` : ""}${f.retry ? ` — retry on the host: ${f.retry}` : ""}`);
     }
-    console.log(`  bounds: ${out.bounds.perTargetTimeoutMs} ms per target within ${out.bounds.budgetMs} ms, ${out.bounds.elapsedMs} ms used${out.bounds.skipped ? `, ${out.bounds.skipped} target(s) not reached` : ""}`);
+    console.log(`  bounds: ${out.bounds.perTargetTimeoutMs} ms per target within ${out.bounds.budgetMs} ms, ${out.bounds.elapsedMs} ms used`);
     return;
   }
   let servers;
@@ -4556,7 +4556,7 @@ else {
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ROUTED_COMMANDS.has(cmd)) await serverRouteCmd();
-else if (cmd === "server") serverCmd();
+else if (cmd === "server") await serverCmd();
 else if (cmd === "inspect") await inspectCmd();
 else if (cmd === "operation") await operationCmd();
 else if (cmd === "launch-config") await launchConfigCmd();
