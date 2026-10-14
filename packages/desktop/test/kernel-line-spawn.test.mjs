@@ -1,12 +1,12 @@
-// With a released kernel of the 0.25 line, can a person reach the Spawn dialog's preview? No, and no one
-// function says so: the answer crosses the server's snapshot and a view. This file follows the value from the
-// kernel's probe to the dialog, through the shipped server process and the shipped Spawn view.
+// With an accepted kernel that does not advertise `packages-no-approval`, can a person reach the Spawn dialog's
+// preview? No, and no one function says so: the answer crosses the server's snapshot and a view. This file follows
+// the value from the kernel's probe to the dialog, through the shipped server process and the shipped Spawn view.
 //
-// The probe is the released kernel's own: `fixtures/kernel-line/v0.25.9-version.json` is the standard output,
-// byte for byte, of `oats version --json` run from an export of the tag `v0.25.9` (`git archive v0.25.9 bin lib
-// package.json packages/record`, with the `yaml` and `croner` versions that tag pins). The tag is a pins-only
-// release, so its CLI prints version 0.25.8. It lists `spawn-preview-2`, so the dialog's own preview gate is
-// open, and it does not list `packages-no-approval`, which arrived with 0.26.0.
+// The probe is the stand-in kernel's own (helpers/load-path-server.mjs) without that one feature word, at its own
+// version, inside the accepted band. No released kernel inside the band lacks the word: the band's floor is the
+// first kernel the Desktop's feature gates let through (kernel-line.test.mjs). So the version band says nothing
+// here; what withholds the dialog is the gates, which stay the real gate. The probe still lists
+// `spawn-preview-2`, so the dialog's own preview gate is open.
 //
 // The chain, each step read by the test below:
 //   1. the kernel is accepted (cli-locator.mjs `acceptProbe`): nothing below is the answer of a missing CLI;
@@ -23,7 +23,6 @@
 // request and view reach the kernel's preview once the probe is the helper's own.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { startLoadPathServer } from './helpers/load-path-server.mjs';
 import { acceptProbe } from '../../client/cli-locator.mjs';
@@ -31,9 +30,9 @@ import { previewSupported } from '../../client/spawn-preview-contract.mjs';
 import { deploymentUnavailableText } from '../../client/deployment-facts.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
-const RELEASED = JSON.parse(readFileSync(new URL('./fixtures/kernel-line/v0.25.9-version.json', import.meta.url), 'utf8'));
 const SOUL = 'release-manager'; // a soul the stand-in kernel lists as spawnable
 const GATE = 'packages-no-approval';
+const lacking = probe => ({ ...probe, features: probe.features.filter(name => name !== GATE) });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
 /** The shipped Spawn view over the server's own answers; `settled` says when its first read has landed. */
@@ -57,22 +56,24 @@ async function mountView(s, settled) {
   } };
 }
 
-test('a released 0.25 kernel (the probe of v0.25.9) is accepted and never reaches the Spawn dialog’s preview: the server lists no soul, the boundary knows none, the view offers none', async () => {
-  assert.equal(RELEASED.version, '0.25.8'); assert.equal(RELEASED.features.includes(GATE), false, 'the released probe, as the tag prints it');
-  assert.equal(acceptProbe(RELEASED).ok, true, 'inside the accepted band');
+test('an accepted kernel without packages-no-approval never reaches the Spawn dialog’s preview: the server lists no soul, the boundary knows none, the view offers none', async () => {
   let current; // the helper's own probe, of a kernel the Desktop serves whole
-  const s = await startLoadPathServer({ probe: own => { current = own; return RELEASED; } });
+  const s = await startLoadPathServer({ probe: own => { current = own; return lacking(own); } });
+  const refusedProbe = lacking(current);
+  assert.equal(current.features.includes(GATE), true, 'the helper’s own probe has the word'); assert.equal(refusedProbe.features.includes(GATE), false);
+  assert.equal(acceptProbe(refusedProbe).ok, true, 'inside the accepted band');
   let mounted = null;
   try {
     const reads = () => s.calls().filter(call => !['version', 'server'].includes(call.verb)).map(call => call.verb);
     const preview = () => s.post(`/api/workspace-spawn-preview${s.ws}`, { action: 'preview', selector: { soul: SOUL, agentsRoot: `${s.deployment}/agents` }, choices: {} });
     const panelWhen = settled => s.until(async () => { const panel = await s.panel(); return settled(panel.deployment?.status) ? panel : null; });
     const use = async version => { s.reconfigure(config => { config.version = version; }); return s.post('/api/cli/reprobe', {}); };
-    /** Steps 1 to 4, as the server answers them while the released kernel is the accepted one. `settled` says
+    /** Steps 1 to 4, as the server answers them while the kernel without the word is the accepted one. `settled` says
      * which state of the deployment's entry is this kernel's own verdict. */
     const refused = async (when, settled) => {
       const cli = await s.until(async () => { const status = await s.get('/api/cli'); return status.probedAt ? status : null; });
-      assert.equal(cli.ok, true, when); assert.equal(cli.version, '0.25.8', when);
+      assert.equal(cli.ok, true, when); assert.equal(cli.version, refusedProbe.version, when);
+      assert.equal(cli.features.includes(GATE), false, when);
       assert.equal(previewSupported(cli), true, `${when}: the preview's own gate is open, so it is not what stops the dialog`);
       const panel = await panelWhen(settled);
       assert.equal(panel.deployment.status, 'unavailable', when);
@@ -89,7 +90,7 @@ test('a released 0.25 kernel (the probe of v0.25.9) is accepted and never reache
 
     // Step 5: the view, given what the server answers.
     mounted = await mountView(s, doc => doc.querySelector('.empty'));
-    assert.equal(mounted.cli.ok, true, 'the view holds an accepted kernel: it is not the missing-CLI state'); assert.equal(mounted.cli.version, '0.25.8');
+    assert.equal(mounted.cli.ok, true, 'the view holds an accepted kernel: it is not the missing-CLI state'); assert.equal(mounted.cli.features.includes(GATE), false);
     const sentence = mounted.doc.querySelector('.empty').textContent;
     assert.equal(sentence, deploymentUnavailableText(panel.deployment, DESKTOP_TERMS));
     assert.ok(sentence.includes(GATE) && sentence.includes('Update OATS'), 'it names what is missing and asks for an update');
@@ -114,8 +115,8 @@ test('a released 0.25 kernel (the probe of v0.25.9) is accepted and never reache
     assert.ok(mounted.doc.querySelector('.spawn-modal'), 'and its dialog opens');
     await mounted.close(); mounted = null;
 
-    // Back to the released kernel with an observation held: nothing of it is kept.
-    assert.equal((await use(RELEASED)).version, '0.25.8');
+    // Back to the kernel without the word with an observation held: nothing of it is kept.
+    assert.equal((await use(refusedProbe)).features.includes(GATE), false);
     // The entry published before this kernel's cycle is the earlier kernel's, observed; this kernel's is the next one.
     await refused('after a kernel the Desktop serves', status => status !== 'observed');
   } finally { await mounted?.close(); await s.stop(); }
