@@ -195,6 +195,9 @@ async function tui(term, { shadow = false, stderr = "pane" } = {}) {
     status() { const text = existsSync(statusFile) ? readFileSync(statusFile, "utf8") : ""; return /^\d+\n$/.test(text) ? Number(text) : null; },
     async ended(why) { await until(term, () => run.status() !== null, `oats tui in ${term.id} to end ${why}`); return run.status(); },
     drawn() { const screen = term.screen(); return /^ oats {2}/.test(screen[0] ?? "") && / q quit$/.test(screen.at(-1) ?? ""); },
+    /** The list of instances is on the screen: drawn, with the list's footer (`/ filter`) and no
+     *  confirmation's buttons. A confirmation draws no list, so a row's absence means nothing then. */
+    listed() { return run.drawn() && (term.screen().at(-1) ?? "").includes("/ filter") && run.buttons() === ""; },
     /** The list's row of `name`: `{ selected, mark }`, or null when it is not listed. */
     row(name) {
       const text = term.screen().map((row) => [...row].slice(0, 48).join("")).find((row) => new RegExp(`^[> ] +[●○◌?◆] ${name}\\b`).test(row));
@@ -206,6 +209,13 @@ async function tui(term, { shadow = false, stderr = "pane" } = {}) {
     async select(name) {
       for (let i = 0; i < 10 && !run.row(name)?.selected; i++) { term.press(i === 0 ? "g" : "j"); await until(term, () => run.drawn(), `the list after a move to ${name}`); }
       await until(term, () => run.row(name)?.selected === true, `${name} selected`);
+    },
+    /** Esc closes the confirmation; resolves once the list is drawn again. The next key then
+     *  arrives on its own, never inside the key parser's wait after an ESC (where ESC and a
+     *  letter read as one Alt+letter). */
+    async close(why) {
+      term.press("Escape");
+      await until(term, () => run.listed(), `the list again after Esc, ${why}`);
     },
     /** Open the act with `key` and press its button: a move with Tab (seen drawn), then Enter. */
     async act(key, label, why) {
@@ -317,24 +327,24 @@ test("3. a real restart, stop, start and retire of a throwaway agent from the TU
 
   await run.act("R", "Restart", "of gamma");
   await until(term, () => term.has("gamma restarted."), "the restart's answer", 90000);
-  term.press("Escape");
+  await run.close("after the restart");
   await until(term, () => run.row("gamma")?.mark === "●", "gamma running after the restart");
 
   await run.act("X", "Stop", "of gamma");
   await until(term, () => run.focused() === "Close" && !run.buttons().includes("[ Stop ]"), "the stop settled", 90000);
-  term.press("Escape");
+  await run.close("after the stop");
   // Stopped: the harness ended and the launcher's shell stays in the pane (◌), or the pane is gone (○).
   await until(term, () => ["◌", "○"].includes(run.row("gamma")?.mark), "gamma stopped, read again after the stop", 30000);
 
   await run.act("S", "Start", "of gamma");
   await until(term, () => term.has("gamma started."), "the start's answer", 90000);
-  term.press("Escape");
+  await run.close("after the start");
   await until(term, () => run.row("gamma")?.mark === "●", "gamma running after the start", 30000);
 
   await run.act("D", "Retire", "of gamma");
   await until(term, () => run.focused() === "Close" && !run.buttons().includes("[ Retire ]"), "the retire settled", 90000);
-  term.press("Escape");
-  await until(term, () => run.row("gamma") === null, "gamma gone from the list after the retire", 30000);
+  await run.close("after the retire");
+  await until(term, () => run.listed() && run.row("gamma") === null, "gamma gone from the list after the retire", 30000);
   assert.equal(existsSync(world.homes.gamma), false, "its home is gone");
 
   term.press("q");
