@@ -1023,6 +1023,8 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#context-panel .context-panel-shared-tag', '#context-panel .context-panel-shared-tag', 'muted', 'tag-bg'],
     // #675: a remote row's "work and build not reported" line, muted on the panel.
     ['#context-panel .context-panel-work-note', '#context-panel', 'muted', 'surface'],
+    // #855: why a blocked row offers no lifecycle action, muted in the footer's place for its controls.
+    ['#context-panel .context-panel-footer-note', '#context-panel .context-panel-footer', 'muted', 'surface'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
   for (const [selector, painted, fg, bg] of checks) {

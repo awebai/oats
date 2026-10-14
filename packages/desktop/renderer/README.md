@@ -1303,7 +1303,16 @@ The roster row's actions menu (`instance-actions.mjs`) draws what
 order under the menu's own labels and icons, the shell's items (Open in split,
 Open pull request…) in front unless the row is `blocked` or `limited`, an act
 with a reason disabled with it, and for a `blocked` row a disabled trigger
-titled with the reason and no menu. It decides nothing itself. It reports here, never with
+titled with the reason and no menu. It decides nothing itself. The instance panel's
+lifecycle footer and the overview popover draw from the same answer (#855): a
+footer control (Restart…, Start…, Stop…, Retire…) is shown exactly when its act
+is listed and enabled exactly when the act is, so a stopped row and one whose
+state is unknown offer Stop, `inspect` has none there, and a `blocked` row shows
+no control but one muted line with the blocked reason instead (nothing more for
+a row gone from its server, whose Work note already says it); the popover's **Restart with…** is the `restart` act and its
+**Start…**/**Terminal** the `start` act on a stopped row and `openAct` on any
+other, with the view's own conditions (a current roster, a well-formed address,
+the shell's handler) on top. The menu reports here, never with
 `alert`: an action that fails says "<Action> didn't finish for <name>." with its
 error in Details. While one of its actions runs, the menu trigger is
 `aria-disabled` (focus kept, as `markStaleControl`) and says "Waiting for
