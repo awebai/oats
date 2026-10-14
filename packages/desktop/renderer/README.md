@@ -31,7 +31,9 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   stays visible across subtabs; incompatible installations are observation-only.
 - **cli-status.mjs** — shared CLI degradation state + the ONE card
   (detected path/version, required range, **Choose oats…**, **Retry**, docs
-  link, copyable install command). Views subscribe via `onCliChange`;
+  link, copyable install command; no command when the detected CLI is above
+  the band, see [Troubleshooting](../../../docs/desktop.md#troubleshooting)).
+  Views subscribe via `onCliChange`;
   re-probe triggers: launch, app focus, Retry, choose (contract).
 - **common.mjs** — shared helpers: escaping, mini-markdown, ctx.api JSON
   wrappers, roster grouping, and workspace switching (`?ws=`) — the selected
