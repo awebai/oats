@@ -104,9 +104,10 @@ ancestor. `E_LOCAL_MISSING` → if `D` is the authorized new directory,
 use card 3; if reuse was selected, resolve the incorrect/missing deployment
 with its owner before writing. `no-backlink`, `backlink-elsewhere`,
 `not-listed`, `cannot-read` → correct the shared membership declaration or
-owner's Git environment, then repeat this inventory. A failed or unparseable
-Git version probe preserves the remote cache and its pins: fix the local Git
-failure and retry without deleting the cache. Never invent another repo.
+owner's Git environment, then repeat this inventory. From OATS 0.56.0, a
+failed or unparseable Git version probe preserves the remote cache and its
+pins: fix the local Git failure and retry without deleting the cache. Never
+invent another repo.
 
 ## 3. Establish the selected workspace
 
