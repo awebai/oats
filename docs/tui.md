@@ -635,6 +635,14 @@ that is a bug worth reporting, with the terminal's name and `TERM`.
 Another machine is reached only through the kernel's own read
 (`oats server roster`): `oats tui` opens no connection of its own.
 
+Opening an agent has been run in the automated tests only, in two private
+tmux servers: one holds the agent's window, as a deployment records it, and
+the other plays your terminal, with the real `oats tui` and the real
+`oats session attach` in its pane. No real terminal emulator, no ssh and no
+other machine reached for real were used: an agent of another machine is
+opened in the tests from the kernel's answer handed to the client. So far no
+person has opened an agent from `oats tui` in a real terminal.
+
 With a registered machine it has been run only against one that did not
 answer: the switcher lists it by its own name with the reason, and its view
 says that it was not reached. A machine that answers is drawn in the

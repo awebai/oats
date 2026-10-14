@@ -60,7 +60,8 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 
 Tests: `node --test packages/tui/test/*.test.mjs`, the root tests
 `test/tui-*.test.mjs`, and the end-to-end tests in a real tmux on a private
-socket (`test/tui-terminal.test.mjs`). All of them need the root's install
+socket (`test/tui-terminal.test.mjs`, and `test/tui-open-terminal.test.mjs`
+for opening an agent, with a second private server for the agents). All of them need the root's install
 (`npm ci` at the repository root). The package has no dependency of its own,
 but one of its tests runs the real kernel, which has: "KERNEL_BIN is this
 install's own bin/oats.mjs, and its `version --json` is a record the probe
