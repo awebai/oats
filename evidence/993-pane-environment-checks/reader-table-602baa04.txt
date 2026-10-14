@@ -1,0 +1,36 @@
+# tools/mutate.cjs at 602baa049df7f5cf4d7246ece1abe7cb0f207ad1 (on c6abdfb0), host node v26.8.2, run 2026-10-13.
+# Each line: one reader put back on the spawning process (or its fix undone), the file(s) run, how many tests fail.
+M0 folder trust (launchFolderTrust) reads this process:
+   pane-environment: 15 fail
+M1 the gate's probe environment keeps this process's names (launchEffectiveEnv):
+   pane-environment: 12 fail
+M2 the gate's remedy prefix reads this process's selector:
+   pane-environment: 5 fail
+M3 the readiness item reads this process (folderTrustItems):
+   pane-environment: 2 fail
+M4 oats harness trust reads this process (harnessTrustCmd):
+   pane-environment: 3 fail
+M5 launch-config preview makes no read of the pane (launchPreview):
+   pane-environment: 3 fail
+   pane-path: NO TEST FAILS
+M6 a start's gate reads no pane (planLaunch probeLaunch):
+   pane-environment: 1 fail
+M7 a spawn does not judge again on the session it gets:
+   pane-environment: 2 fail
+M8 the spawn's checks read this process (spawnBody expectedEnv):
+   pane-environment: 12 fail
+M9 a start's folder trust reads no pane (planLaunch):
+   pane-environment: 1 fail
+   harness-trust-launch: NO TEST FAILS
+M10 the probe looks the harness up itself (verifyHarnessPackages ignores the selected executable):
+   pane-environment: NO TEST FAILS
+M11 the probe gets the pane's PATH unresolved (no panePathFrom):
+   pane-environment: 1 fail
+M12 the trust writer takes a server it could not ask for no server (trustTargets ignores unread):
+   pane-environment: 1 fail
+   harness-trust-write: 1 fail
+M13 the preview's pane drops the failed discovery (previewPaneEnvironment carries no unread):
+   pane-environment: 1 fail
+M14 a HOME-only launch configuration is no trust target:
+   pane-environment: 1 fail
+   harness-trust-write: 2 fail
