@@ -485,8 +485,11 @@ the rule:
   file's process is preloaded with `scripts/test-file-tmpdir.mjs`, which gives
   the file a directory of its own inside it: as `TMPDIR`, and as
   `TMUX_TMPDIR`, which is tmux's default place. A tmux client that runs with
-  no `TMUX_TMPDIR` of a fixture makes its socket directory there, and never
-  reaches a tmux server of the host.
+  no `TMUX_TMPDIR` of a fixture makes its socket directory there, where the
+  run sees it, instead of reaching the host's default server. `TMUX` is not
+  changed: a client that names no server (no `-L` or `-S`) and inherits
+  `TMUX`, as in a run from a session inside tmux, still uses that session's
+  server and makes nothing the run sees.
 - When the run has ended it reads each file's directory. If one is not empty
   the run fails, even if every test passed, and names each file and what it
   left.

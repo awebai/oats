@@ -42,7 +42,8 @@ function tempDir(prefix) {
 }
 /** A private TMUX_TMPDIR for a server, removed with the file's directories. The server asks tmux for
  *  the panes it shows, and asks the default server when a home records no socket: here, in a
- *  directory of this file, never at tmux's default place, where the host has its own server. */
+ *  directory of this file, never at tmux's default place, where the host has its own server. A
+ *  TMUX inherited from a session inside tmux still names that session's server for such a call. */
 function tmuxTmpdir() {
   const dir = privateTmuxTmpdir();
   made.push(dir);

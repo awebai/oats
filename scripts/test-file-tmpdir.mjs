@@ -7,8 +7,9 @@
 // is not empty. So everything a file makes in a temporary directory has to land in its own:
 //   - TMPDIR: os.tmpdir() in the file's process and in every process it starts with its environment;
 //   - TMUX_TMPDIR: tmux's default place. A tmux client that runs with no TMUX_TMPDIR of a fixture
-//     then makes its socket directory here, where the run sees it, and never reaches a tmux server
-//     of the host.
+//     then makes its socket directory here, where the run sees it, instead of reaching the host's
+//     default server. TMUX is left as it is: a client that names no server (no -L or -S) and
+//     inherits TMUX still uses that session's server, and makes nothing here.
 // Beside the directory, <n>.file names the test file. The run reads it to name the file, and the
 // fixture helpers that go to /tmp when the temporary directory's path is long know the directory by
 // it and by its shape, and use it all the same (test/helpers/host-fixture.mjs fixtureParent).
