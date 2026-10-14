@@ -192,9 +192,10 @@ function retired(receipt, snapshot, complete) {
  * the fixed sentence for the code; the detail is only ever shown behind a disclosure. */
 const localDetail = reason => reason && typeof reason === 'object' && !Object.hasOwn(reason, 'remote')
   && lifecycleDetailCode(reason.code) && cleanLine(reason.detail) ? { code: reason.code, detail: reason.detail } : null;
-/** A refusal: a remote host's headline, else the fixed sentence for the code (the shared table's; a code only the
- * client raises keeps `status.code`, so the client can word it); the code and the kernel's message behind a
- * disclosure when there is one to show. `plan`: the snapshot the refusal is about, when there is one. */
+/** A refusal: a remote host's headline, else the fixed sentence for the code (the shared table's); the code and
+ * the kernel's message behind a disclosure when there is one to show. `plan`: the snapshot the refusal is about,
+ * when there is one. Every status it answers carries the reason's `code` (and the kernel's busy `holder` when it
+ * is read by it): a client switches on the code, never on the words, and words a code only it raises itself. */
 function refusal(reason, plan, { operation, leftover }, terms) {
   // The kernel's busy answer, read by who holds the claim: the headline, the target it is about when that
   // is another one of this plan, and the kernel's own sentence as the main text when it names what ends it.
@@ -202,15 +203,15 @@ function refusal(reason, plan, { operation, leftover }, terms) {
   if (busy) {
     const more = [busy.about, busy.lead].filter(Boolean).map(text => ({ text }));
     if (busy.sentence) more.push({ quote: busy.sentence });
-    return { status: { headline: busy.headline, more, next: null }, blocks: busy.details ? [{ type: 'details', reason: busy.details, bare: false }] : [] };
+    return { status: { headline: busy.headline, more, next: null, code: reason.code, holder: reason.holder }, blocks: busy.details ? [{ type: 'details', reason: busy.details, bare: false }] : [] };
   }
   // An error the kernel answered that has no sentence here: the fallback sentence, and its code behind the disclosure.
   const remote = remoteReason(reason), undescribed = undescribedRefusal(remote || reason, terms), shown = remote || undescribed || localDetail(reason);
   // The kernel's own busy refusal (it carries the kernel's message; a client's own busy does not) for a home
   // a spawn left: its sentence, and the kernel's message, which names the process, quoted under it.
   if (!remote && shown && reason.code === 'E_LIFECYCLE_BUSY' && operation === 'retire' && leftover)
-    return { status: { headline: LEFTOVER_HELD, more: [], next: 'retire-with-force' }, blocks: [{ type: 'quote', text: shown.detail }] };
-  const status = remote ? { headline: remote.message } : undescribed ? { headline: undescribed.message }
+    return { status: { headline: LEFTOVER_HELD, more: [], next: 'retire-with-force', code: reason.code }, blocks: [{ type: 'quote', text: shown.detail }] };
+  const status = remote ? { headline: remote.message, code: remote.code } : undescribed ? { headline: undescribed.message, code: reason.code }
     : { headline: lifecycleReason(reason?.code, terms).message, code: reason?.code };
   return { status: { more: [], next: null, ...status }, blocks: shown ? [{ type: 'details', reason: shown, bare: !!undescribed }] : [] };
 }
@@ -239,7 +240,7 @@ export function unavailableView(reason, { target, operation }, terms) {
  * confirmed": never a second apply. */
 export function outcomeView(result, { target, operation, choices, plan, leftover = false }, terms) {
   requireTerms(terms, 'outcomeView');
-  const invalid = { kind: 'invalid', title: UNCONFIRMED, status: { headline: lifecycleReason('E_OUTCOME_UNKNOWN', terms).message, more: [], next: null },
+  const invalid = { kind: 'invalid', title: UNCONFIRMED, status: { headline: lifecycleReason('E_OUTCOME_UNKNOWN', terms).message, more: [], next: null, code: 'E_OUTCOME_UNKNOWN' },
     blocks: [], uncertain: true };
   try { return read(); } catch { return invalid; }
   function read() {
@@ -265,7 +266,8 @@ export function outcomeView(result, { target, operation, choices, plan, leftover
       }
       // A stop that is not ok: the sentence above the rows is chosen from the rows, so it agrees with them.
       const words = receipt.action === 'stop' ? stopResultWords(receipt.results) : { status: "Retirement didn't finish. Some steps ran:", title: "Retirement didn't finish" };
-      return { kind: 'partial', title: words.title, status: { headline: words.status, more: [], next: null }, blocks: [done, ...replay], uncertain };
+      const code = result.reason?.code ?? (receipt.action === 'stop' ? 'E_SESSION_STOP_FAILED' : 'E_RETIRE_INCOMPLETE');
+      return { kind: 'partial', title: words.title, status: { headline: words.status, more: [], next: null, code }, blocks: [done, ...replay], uncertain };
     }
     // The rows are the server's, already decoded: validated here, never decoded again.
     const children = result.childrenStopped ? decodedStoppedTargets(result.childrenStopped, plan.facts?.children || []) : null;
@@ -274,8 +276,8 @@ export function outcomeView(result, { target, operation, choices, plan, leftover
     // This client's own apply is running (its busy refusal, or the answer of an apply whose wait ended): which one
     // is said, in place of the general sentence of the busy refusal. Never for the kernel's busy answer.
     const running = runningOf(result), own = running && !Object.hasOwn(result.reason ?? {}, 'holder');
-    if (own && result.reason?.code === 'E_LIFECYCLE_BUSY') status = { headline: applyRunningSentence(running, terms), more: [], next: null };
-    if (children && result.reason?.code === 'E_CHILDREN_RUNNING') status = { headline: childrenRefusedMessage(children), more: [], next: null };
+    if (own && result.reason?.code === 'E_LIFECYCLE_BUSY') status = { headline: applyRunningSentence(running, terms), more: [], next: null, code: 'E_LIFECYCLE_BUSY' };
+    if (children && result.reason?.code === 'E_CHILDREN_RUNNING') status = { headline: childrenRefusedMessage(children), more: [], next: null, code: 'E_CHILDREN_RUNNING' };
     // Why the outcome is unknown: a remote transport or host cause keeps its headline and its line; a
     // local one says its fixed sentence, with the CLI's own message behind the disclosure when it carries one.
     // An apply whose wait ended is still running: that is said in place of the timeout, which ended only the wait.

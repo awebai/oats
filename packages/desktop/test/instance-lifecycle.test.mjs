@@ -407,14 +407,15 @@ test('CLI fixes every argv, caps a plan\'s timeout and the output, runs an apply
 test('a planless E_PLAN_STALE (#895, as a kernel before 0.52.0 printed it) reads unknown, stores no plan, and the same reference replays it without a CLI run', async () => {
   // As printed on #866: the top-level error, no result, no details.plan, a message that says the hooks have run.
   const answer = { schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_PLAN_STALE', message: 'the plan is stale: retire hooks have already run' } };
-  const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan()) : answer });
+  const phases = [];
+  const f = fixture({ invoke: async (_bin, args) => { phases.push(args.phase); return args.phase === 'plan' ? envelope(retirePlan()) : answer; } });
   const planRef = (await f.plan('retire')).planRef, first = await f.apply(planRef);
   assert.equal(first.status, 'unknown'); assert.equal(first.reason.code, 'E_OUTCOME_UNKNOWN');
   assert.equal(first.planRef, planRef, 'the reference sent, never a new one'); assert.equal(first.plan, null, 'no plan is offered');
   assert.doesNotMatch(JSON.stringify(first), /hooks have already run/, 'the kernel\'s message is not shown (the planless message stays out, 5a)');
   const again = await f.apply(planRef);
   assert.equal(again.status, 'unknown'); assert.equal(again.repeated, true);
-  assert.deepEqual(f.calls.map(c => c.args.phase), ['plan', 'apply'], 'no second CLI run, and no plan was stored to apply');
+  assert.deepEqual(phases, ['plan', 'apply'], 'no second CLI run, and no plan was stored to apply');
 });
 test('a Herdr-recorded instance still plans and applies Retire: the kernel decides, the Desktop never blocks it', async () => {
   const f = fixture(), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';

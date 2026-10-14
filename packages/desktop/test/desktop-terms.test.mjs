@@ -168,7 +168,7 @@ test('every shipped Desktop module that calls a table that takes terms passes DE
   assert.deepEqual(problems, []);
   // Not vacuous: the reader found the call sites, in main, the backend and the page.
   assert.deepEqual([...callers.keys()].sort(), ['main.mjs', 'renderer/capability-contents.mjs', 'renderer/computer-teams.mjs', 'renderer/deployment-scope-line.mjs',
-    'renderer/deployment-tabs.mjs', 'renderer/deployments-page.mjs', 'renderer/lifecycle-dialog.mjs', 'renderer/lifecycle-frame.mjs', 'renderer/palette.mjs', 'renderer/shell.mjs',
+    'renderer/deployment-tabs.mjs', 'renderer/deployments-page.mjs', 'renderer/lifecycle-dialog.mjs', 'renderer/palette.mjs', 'renderer/shell.mjs',
     'renderer/spawn-deployment-field.mjs', 'renderer/views/hierarchy.mjs', 'renderer/views/spawn.mjs', 'renderer/workspace-discovery.mjs', 'server/capability-catalog.mjs',
     'server/capability-show.mjs', 'server/oats-web.mjs', 'server/soul-catalog.mjs', 'server/workspace-sync.mjs']);
   const calls = [...callers.values()].reduce((a, b) => a + b, 0);

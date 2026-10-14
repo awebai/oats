@@ -155,3 +155,27 @@ test('this client\'s own running apply: its busy refusal names it, the unknown a
   assert.equal(view.blocks.some(b => /in time/.test(b.text ?? '')), false, 'the timeout ended only the wait: it is not said');
   assert.deepEqual(s.confirmation.state(), { phase: 'settled', outcome: 'unknown', notice: null, offers: ['check-again', 'close'], running: { ...running, operation: 'stop' } });
 });
+
+test('a code beside every sentence: each refusal, partial, uncertain, invalid and unavailable view carries its code, and the kernel\'s holder', () => {
+  const stop = { target, operation: 'stop', choices: options('stop'), plan: stopPlan() }, retire = { target, operation: 'retire', choices: options('retire'), plan: retirePlan() };
+  const busy = { lifecycleApi: 1, status: 'refused', target, reason: { code: 'E_LIFECYCLE_BUSY', message: 'x' } };
+  const running = { target: { ...target }, operation: 'stop', since: 1 };
+  for (const [name, view, code, holder] of [
+    ['no answer at all (invalid)', outcomeView(null, stop, terms), 'E_OUTCOME_UNKNOWN'],
+    ['a partial stop', outcomeView(partial(), stop, terms), 'E_SESSION_STOP_FAILED'],
+    ['a refusal by the shared table', outcomeView(refused('E_INSTANCE_RETIRING'), stop, terms), 'E_INSTANCE_RETIRING'],
+    ['an unknown outcome', outcomeView(unknown, stop, terms), 'E_OUTCOME_UNKNOWN'],
+    ['this client\'s own busy, naming the running apply', outcomeView({ ...busy, running }, stop, terms), 'E_LIFECYCLE_BUSY'],
+    ['the unknown after a wait, still running', outcomeView({ ...unknown, cause: { code: 'E_CLI_TIMEOUT' }, running }, stop, terms), 'E_OUTCOME_UNKNOWN'],
+    ['the kernel\'s busy, holder none, with its detail', outcomeView({ ...busy, reason: { ...busy.reason, holder: 'none', detail: 'stop the other one first' } }, stop, terms), 'E_LIFECYCLE_BUSY', 'none'],
+    ['the kernel\'s busy, holder running', outcomeView({ ...busy, reason: { ...busy.reason, holder: 'running' } }, stop, terms), 'E_LIFECYCLE_BUSY', 'running'],
+    ['a held home a spawn left', outcomeView({ ...busy, reason: { ...busy.reason, detail: 'pid 42 still runs' } }, { ...retire, leftover: true }, terms), 'E_LIFECYCLE_BUSY'],
+    ['a remote host\'s refusal', outcomeView({ ...busy, reason: { code: 'E_INSTANCE_RETIRING', message: 'build: retiring', detail: null, remote: true } }, stop, terms), 'E_INSTANCE_RETIRING'],
+    ['a code the table does not describe', outcomeView({ ...busy, reason: { code: 'E_NOT_IN_THE_TABLE', message: 'm' } }, stop, terms), 'E_NOT_IN_THE_TABLE'],
+    ['a plan that could not be read', unavailableView({ code: 'E_SESSION_UNKNOWN' }, { target, operation: 'stop' }, terms), 'E_SESSION_UNKNOWN'],
+    ['no reply that names this target', unavailableView(null, { target, operation: 'stop' }, terms), 'E_CLI_PROTOCOL'],
+  ]) {
+    assert.equal(view.status.code, code, name);
+    assert.equal(view.status.holder, holder, `${name}: holder`);
+  }
+});

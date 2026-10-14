@@ -39,7 +39,6 @@ export function supportsLifecycle(cli, operation, apply = false) {
  * (interpret), by the shape of the answer, never by this set. */
 export const BEFORE_EFFECT_CODES = Object.freeze(['E_BAD_ARGS', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
   'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_UNIDENTIFIED_INSTANCE_HOME', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
-const beforeEffect = new Set(BEFORE_EFFECT_CODES);
 /** The installed CLI printed this error envelope: the kernel answered. Said by the adapter where it builds
  * the envelope (`origin`), never inferred from the envelope's shape: the adapter's own failures and this
  * boundary's have the same shape, and no origin. */
@@ -87,7 +86,7 @@ export const APPLY_WAIT_MS = 600_000;
 export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), clock = () => Date.now(), mint = () => randomBytes(32).toString('hex'),
   after = (ms, fn) => { const timer = setTimeout(fn, ms); timer.unref?.(); return () => clearTimeout(timer); }, terms } = {}) {
   requireTerms(terms, 'createLifecycleBoundary');
-  const plans = new Map(), actions = new Map(), reads = new Map();
+  const plans = new Map(), actions = new Map(), reads = new Map(), beforeEffect = new Set(BEFORE_EFFECT_CODES);
   let reservedPlans = 0, activeApply = null;
   const sweep = () => { for (const map of [plans, actions]) for (const [key, value] of map) {
     if (!value.pending && value.expires <= now()) map.delete(key);
