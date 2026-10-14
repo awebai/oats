@@ -149,9 +149,12 @@ async function terminal(t) {
   const [pane, session] = tmuxOn("new-session", "-d", "-P", "-F", "#{pane_id} #{session_id}", "-s", id, "-x", "100", "-y", "30", "-c", base, shell).split(" ");
   const term = {
     id, pane, session,
-    screen() { return tmuxRaw("capture-pane", "-p", "-J", "-t", pane).split("\n").slice(0, -1); },
+    /** The screen: one string per row, as `capture-pane` prints them (no trailing spaces). */
+    screen() { return tmuxRaw("capture-pane", "-p", "-t", pane).split("\n").slice(0, -1); },
+    /** The screen with wrapped rows joined (`-J` keeps a row's trailing spaces: trimmed here). */
+    joined() { return tmuxRaw("capture-pane", "-p", "-J", "-t", pane).split("\n").map((row) => row.trimEnd()).filter(Boolean); },
     shows() { try { return term.screen().map((row) => `  |${row}`).join("\n"); } catch (error) { return `  (no pane: ${error.message})`; } },
-    has(text) { try { return term.screen().some((row) => row.includes(text)); } catch { return false; } },
+    has(text) { try { return term.joined().some((row) => row.includes(text)); } catch { return false; } },
     press(...keys) { tmuxOn("send-keys", "-t", pane, ...keys); },
     atPrompt() { return term.screen().filter(Boolean).at(-1) === PROMPT; },
     async prompt(why) { await until(term, () => term.atPrompt(), `the shell's prompt in ${id}, ${why}`); },
