@@ -11,7 +11,8 @@ const messages = Object.freeze({ deadline: "Capture worker exceeded its admitted
   interrupted: "Capture execution ended before its run receipt was finalized.",
   input: "Capture inputs remain pending, set aside or failed.", io: "Capture could not complete an operational step." });
 const summarize = run => Object.fromEntries(["id", "trigger", "pid", "startedAt", "finishedAt", "counts", "peakRssBytes"].map(key => [key, structuredClone(run[key])]));
-const failureSummary = (run, reason, at) => ({ ...summarize({ ...run, finishedAt: at }), reason, message: messages[reason] });
+const failureSummary = (run, reason, at) => ({ ...summarize({ ...run, finishedAt: at }), reason,
+  message: messages[reason] + " Counters report only durably confirmed unit accounting, not all physical journal writes; zero turnsAppended does not prove that no append reached disk." });
 const maximumPeak = (a, b) => a === null && b === null ? null : Math.max(a ?? 0, b ?? 0);
 
 export class CaptureRun {

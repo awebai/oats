@@ -148,6 +148,16 @@ summaries retain run identity, finish, per-run counts and sampled peak RSS;
 failure additionally has a safe message and optional path/offset. Future-dated,
 malformed or unsupported evidence is invalid, not a freshness conclusion.
 
+Failed/interrupted-run counters report only durably confirmed unit-accounting
+results, not an exhaustive count of physical journal writes during that run.
+A zero `turnsAppended` does not prove that no append reached disk: journal fsync
+can precede a lost derived checkpoint/accounting commit. The failure message
+states this qualification. Confirmed healthy-unit counts within the same failed
+pass remain visible, without erasing the earlier interruption. Recovery dedupes
+against journal truth; it neither attributes later journal growth retroactively
+to the failed run nor counts recovered existing turns as newly appended.
+Explicit `--file`/`--home` receipt semantics are unchanged.
+
 `capture-status.mjs` validates this shared format and atomically replaces a
 private same-directory temporary file after its fsync. Publication failure is
 reported; the prior snapshot is not replaced by an invented success. Exact
@@ -531,6 +541,17 @@ applies stream-scoped backoff and admits no concurrent writer. The queue does
 not clear failure rows or treat a finished inventory containing pending,
 set-aside or failed inputs as a successful pass. Directory metadata work and
 queue metadata work remain separate from source/journal content work.
+
+`capture-source-work.mjs` joins one selected source group to those queue
+checkpoints and `CaptureRun` accounting. Locks precede the admission commit and
+processing transaction. Each input/category contributes to its run's counters
+once even when recovery spans workers; the visit flags live in derived database
+rows, not a process-wide file map. No-op visits do not count as processing
+progress. One AW account per shared-stream admission preserves serialized
+appends while the queue position allows other accounts their turn. A due retry
+is a single-stream admission, and an incomplete proof cannot clear its failure.
+Other-stage retry work returns to the scheduler rather than being mistaken for
+capture work. Allocation cleanup remains a separate committed-lifecycle step.
 
 These private primitives do not themselves hold a root lock or implement the
 complete command runner. Their caller must own that lock, enforce the common

@@ -56,7 +56,11 @@ export async function superviseCapturePass(root, options, {
     while (!interrupted && starts < maxStarts - 1 && clock() + hardMs + finalReserveMs <= deadline) {
       result = await attempt(false);
       if (publicationFailed || interrupted) break;
-      if (result.outcome === "complete" || result.outcome === "partial" && !result.continuation) {
+      // A worker may finish an honestly failed pass after committing healthy
+      // independent work and exhausting ready work. That explicit terminal
+      // result needs no idle retries; an unexplained crash still continues.
+      if (result.outcome === "complete" || result.outcome === "partial" && !result.continuation ||
+          result.outcome === "failed" && result.continuation === false) {
         return firstFailure ? { outcome: "failed", reason: firstFailure, exitCode: 1, starts } : { ...result, starts };
       }
       // On a crash the next child reconciles durable admission, then selects

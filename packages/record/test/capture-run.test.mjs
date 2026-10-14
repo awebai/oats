@@ -67,6 +67,8 @@ test('failed child remains a failed pass despite later committed independent wor
   assert.equal(snapshot.lastRun.outcome, 'failed');
   assert.equal(snapshot.lastRun.reason, 'interrupted');
   assert.equal(snapshot.lastFailure.counts.turnsAppended, 1);
+  assert.match(snapshot.lastFailure.message, /only durably confirmed unit accounting/);
+  assert.match(snapshot.lastFailure.message, /zero turnsAppended does not prove that no append reached disk/);
   assert.equal(snapshot.lastSuccess.id, 'healthy');
   assert.ok(snapshot.lastProgressAt);
 });

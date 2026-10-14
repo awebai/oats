@@ -8,6 +8,7 @@ import { isAbsolute } from "node:path";
 const sources = new Set(["aw", "cc", "pi", "codex"]);
 const outcomes = new Set(["ready", "complete", "pending", "set-aside", "ignored", "failed"]);
 const pageSize = 128;
+const visitFlags = Object.freeze({ filesVisited: 1, inputsPending: 2, inputsSetAside: 4, inputsFailed: 8, inputsIgnored: 16 });
 const validInput = input => input && sources.has(input.source) && typeof input.path === "string" &&
   isAbsolute(input.path) && !input.path.includes("\0") && typeof input.stream === "string" && input.stream &&
   (input.details === undefined || input.details && typeof input.details === "object" && !Array.isArray(input.details));
@@ -30,6 +31,13 @@ export class CaptureSourceQueue {
       // A missing inventory table cannot inherit a completed discovery cursor.
       // Re-enumeration is safe: journal IDs/source proofs still own dedupe.
       state.db.exec("DELETE FROM state WHERE kind IN ('source-sweep','source-queue-garbage')");
+    });
+    // Private inventory metadata, never an outgoing-release source cursor.
+    // Additive columns also accept queues created by an earlier service build.
+    const columns = new Set(state.db.prepare("PRAGMA table_info(capture_sources)").all().map(column => column.name));
+    if (!columns.has("visited_run") || !columns.has("visited_flags")) state.transaction(() => {
+      if (!columns.has("visited_run")) state.db.exec("ALTER TABLE capture_sources ADD COLUMN visited_run TEXT");
+      if (!columns.has("visited_flags")) state.db.exec("ALTER TABLE capture_sources ADD COLUMN visited_flags INTEGER NOT NULL DEFAULT 0");
     });
     const prior = state.get("source-sweep", owner);
     if (prior && (!prior.id || prior.owner !== owner || typeof prior.selection !== "string" ||
@@ -125,6 +133,40 @@ export class CaptureSourceQueue {
       .run(outcome, this.sweep.id, position, outcome);
     if (!changed.changes && !this.state.db.prepare("SELECT 1 AS found FROM capture_sources WHERE scope=? AND position=?").get(this.sweep.id, position)?.found)
       throw new Error("capture source queue input is missing");
+  }
+
+  // Count each input/category at most once in a run even when its recovery or
+  // append spans many workers. These facts commit with the source checkpoint.
+  visit(position, runId, categories = {}) {
+    if (!this.state.depth || typeof runId !== "string" || !runId ||
+        !Number.isSafeInteger(position) || position < 1 ||
+        Object.keys(categories).some(key => !Object.hasOwn(visitFlags, key) || typeof categories[key] !== "boolean"))
+      throw new Error("capture input visits require valid committed accounting");
+    this.current();
+    const row = this.state.db.prepare("SELECT visited_run,visited_flags FROM capture_sources WHERE scope=? AND position=?")
+      .get(this.sweep.id, position);
+    if (!row || !Number.isSafeInteger(row.visited_flags) || row.visited_flags < 0 || row.visited_flags > 31)
+      throw new Error("capture input visit state is missing or invalid");
+    const before = row.visited_run === runId ? row.visited_flags : 0;
+    let flags = before; const delta = {};
+    for (const [name, flag] of Object.entries(visitFlags)) if (name === "filesVisited" || categories[name]) {
+      if (!(flags & flag)) { flags |= flag; delta[name] = 1; }
+    }
+    if (row.visited_run !== runId || flags !== before) this.state.db
+      .prepare("UPDATE capture_sources SET visited_run=?,visited_flags=? WHERE scope=? AND position=?")
+      .run(runId, flags, this.sweep.id, position);
+    return delta;
+  }
+
+  // Used only for a due single-stream retry. Native precedence remains the
+  // earliest unfinished source; AW resumes after the durable account position.
+  forStream(stream) {
+    const after = this.position(this.state.get("capture-schedule", "position:capture")?.after);
+    const row = this.state.db.prepare(`SELECT position,source,path,stream,details,outcome FROM capture_sources
+      WHERE scope=? AND stream=? AND outcome='ready'
+      ORDER BY CASE WHEN source='aw' AND position<=? THEN 1 ELSE 0 END,position LIMIT 1`)
+      .get(this.sweep.id, stream, after);
+    return row ? { ...row, details: JSON.parse(row.details), next: { stage: "capture", after: this.cursor(row.position) } } : null;
   }
 
   finish() {
