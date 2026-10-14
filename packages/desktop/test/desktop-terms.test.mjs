@@ -154,6 +154,9 @@ function tableUses(source) {
 test('every shipped Desktop module that calls a table that takes terms passes DESKTOP_TERMS, at the call', (t) => {
   const problems = [], callers = new Map();
   for (const path of shippedModules()) {
+    // The lifecycle boundary words with the terms its factory is given, and its one caller passes DESKTOP_TERMS
+    // (server/oats-web.mjs). It moves to the shared home in the next commit, which this line then no longer meets.
+    if (path === 'server/instance-lifecycle.mjs') continue;
     const source = readFileSync(new URL(path, ROOT), 'utf8');
     for (const use of tableUses(source)) {
       if (use.kind === 'import') continue;
@@ -167,7 +170,7 @@ test('every shipped Desktop module that calls a table that takes terms passes DE
   assert.deepEqual([...callers.keys()].sort(), ['main.mjs', 'renderer/capability-contents.mjs', 'renderer/computer-teams.mjs', 'renderer/deployment-scope-line.mjs',
     'renderer/deployment-tabs.mjs', 'renderer/deployments-page.mjs', 'renderer/lifecycle-dialog.mjs', 'renderer/lifecycle-frame.mjs', 'renderer/palette.mjs', 'renderer/shell.mjs',
     'renderer/spawn-deployment-field.mjs', 'renderer/views/hierarchy.mjs', 'renderer/views/spawn.mjs', 'renderer/workspace-discovery.mjs', 'server/capability-catalog.mjs',
-    'server/capability-show.mjs', 'server/instance-lifecycle.mjs', 'server/oats-web.mjs', 'server/soul-catalog.mjs', 'server/workspace-sync.mjs']);
+    'server/capability-show.mjs', 'server/oats-web.mjs', 'server/soul-catalog.mjs', 'server/workspace-sync.mjs']);
   const calls = [...callers.values()].reduce((a, b) => a + b, 0);
   assert.ok(calls >= 48, `the call sites were read (${calls})`);
   t.diagnostic(`${calls} calls in ${callers.size} modules: ${[...callers].map(([path, n]) => `${path} ${n}`).join(', ')}`);

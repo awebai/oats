@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createReadinessBoundary } from '../server/readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { createInstanceEventsBoundary } from '../server/instance-events.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';
 import { createInstanceGitBoundary } from '../server/instance-git.mjs';
@@ -32,7 +33,7 @@ async function harness() {
   const record = (kind) => (...args) => { effects.push({ kind, args }); return { schemaVersion: 1, ok: true, result: {} }; };
   const seen = (route, ctx) => contexts.push({ route, workspace: ctx.workspace?.id ?? null, homes: (ctx.instances || []).map(i => i.home) });
   const readiness = createReadinessBoundary({ invoke: record('readiness') });
-  const lifecycle = createLifecycleBoundary({ invoke: record('lifecycle') });
+  const lifecycle = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: record('lifecycle') });
   const events = createInstanceEventsBoundary({ invoke: record('events') });
   const git = createInstanceGitBoundary({ invoke: record('git') });
   const { state } = juanState({ cliState: CLI });

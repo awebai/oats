@@ -129,7 +129,7 @@ const routedContext = ({ local = [PROBE_FEATURES], probe } = {}) => ({ cli: { ..
 const selectorOf = ctx => ({ instance: instance.instance, agent: instance.agent, agentsRoot: instance.agentsRoot, server: ctx.workspace.server ?? null });
 /** The boundary's reply to one apply: `plan` is what the kernel plans, `answer(args)` what it answers the apply. */
 async function applied(ctx, operation, plan, answer) {
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(plan) : answer(args) });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => args.phase === 'plan' ? envelope(plan) : answer(args) });
   const planned = await service({ action: 'plan', operation, selector: selectorOf(ctx), options: operation === 'stop' ? { recursive: true } : { discardWorktree: false } }, () => ctx);
   assert.equal(planned.status, 'plan', JSON.stringify(planned.reason));
   return service({ action: 'apply', planRef: planned.planRef }, () => ctx);
@@ -172,7 +172,7 @@ test("the boundary, a retire refused with E_CHILDREN_RUNNING: the child rows fol
 /** The dialog over the real server boundary. `plan` is the kernel's plan, `answer(args)` its answer to the apply. */
 function mount(t, { ctx, operation, plan, answer }) {
   const dom = new JSDOM('<!doctype html><button id="opener">Actions</button>', { pretendToBeVisual: true }), doc = dom.window.document, replies = [];
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(plan) : answer(args) });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => args.phase === 'plan' ? envelope(plan) : answer(args) });
   const dialog = createLifecycleDialog({ doc, request: async (_ws, body) => { const reply = await service(body, () => ctx); replies.push(structuredClone(reply)); return reply; } });
   t.after(() => { dialog.dispose(); dom.window.close(); });
   const row = ctx.workspace.server ? { ...instance, server: ctx.workspace.server, repoName: ctx.workspace.name, addressable: true } : instance;

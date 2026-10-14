@@ -22,7 +22,7 @@ function fixture(respond = {}) {
     return envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan()
       : args.operation === 'stop' ? stopReceipt(args) : routedRetire(args));
   };
-  const service = createLifecycleBoundary({ invoke });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke });
   return { ctx, calls, plan: (operation = 'stop') => service(remoteRequest(operation), () => ctx),
     apply: planRef => service({ action: 'apply', planRef }, () => ctx) };
 }

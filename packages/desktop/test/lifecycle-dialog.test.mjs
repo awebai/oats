@@ -341,7 +341,7 @@ function remoteServer(respond = {}) {
   const context = { cli: { ...structuredClone(cli), remote: ['lifecycle-plans'] }, localCwd: '/Users/me/work',
     workspace: { id: 'team', name: 'Build box', scope: '/team', remote: true, server: 'build' },
     instances: [{ ...instance, server: 'build', addressable: true, missingRemotely: false, savedRoute: false, running: true }] };
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => respond[args.phase]?.(args)
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => respond[args.phase]?.(args)
     ?? envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan() : stopReceipt(args)) });
   return (_workspace, body) => service(body, () => context);
 }
@@ -368,7 +368,7 @@ test('from the server: a host message with line breaks and a character of the se
 /** The dialog's `request`, answered by the server boundary for a local workspace. */
 function localServer(respond = {}) {
   const ctx = context();
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => respond[args.phase]?.(args)
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => respond[args.phase]?.(args)
     ?? envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan() : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args)) });
   return (_workspace, body) => service(body, () => ctx);
 }

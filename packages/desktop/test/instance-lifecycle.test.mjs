@@ -11,9 +11,16 @@ function fixture(overrides = {}) {
   const ctx = context(), calls = [];
   const invoke = async (bin, args) => { calls.push({ bin, args: structuredClone(args) }); return envelope(args.phase === 'plan'
     ? args.operation === 'stop' ? stopPlan(args.choices.recursive) : retirePlan() : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args)); };
-  const service = createLifecycleBoundary({ invoke, ...overrides });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke, ...overrides });
   return { service, ctx, calls, plan: operation => service(request(operation), () => ctx), apply: planRef => service({ action: 'apply', planRef }, () => ctx) };
 }
+test('a boundary is made with the client\'s terms, and refuses to be made without them', () => {
+  const invoke = assert.fail;
+  for (const made of [() => createLifecycleBoundary(), () => createLifecycleBoundary({ invoke }), () => createLifecycleBoundary({ invoke, terms: null }),
+    () => createLifecycleBoundary({ invoke, terms: { ...DESKTOP_TERMS } })])
+    assert.throws(made, { name: 'TypeError', message: /^createLifecycleBoundary: terms must be the object clientTerms\(\) returned$/ });
+  assert.equal(typeof createLifecycleBoundary({ invoke, terms: DESKTOP_TERMS }), 'function');
+});
 test('positive feature/API gate precedes EVERY plan command, never version-only or optimistic invocation', async () => {
   for (const change of [c => delete c.lifecycleApi, c => { c.lifecycleApi = '1'; }, c => { c.lifecycleApi = true; },
     c => { c.features = 'lifecycle-plans'; }, c => { c.features = []; }, c => { c.features = ['lifecycle-plans', {}]; }, c => { c.ok = false; }]) {

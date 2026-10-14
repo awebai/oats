@@ -59,7 +59,7 @@ import { createInspectCache } from "./inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "../../client/refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
-import { lifecycleRequest } from "./instance-lifecycle.mjs";
+import { createLifecycleBoundary } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { spawnPreviewCachedRequest, spawnPreviewCache } from './spawn-preview.mjs';
@@ -518,6 +518,8 @@ const capabilityShowCache = createCapabilityShowCache();
 // when that key moves, at admission, or on refresh:true.
 const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCatalog, maxAge: BACKGROUND_MAX_AGE,
   observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
+// The Desktop's one lifecycle boundary: its plans, its kept answers and its one apply at a time are this backend's.
+const lifecycleRequest = createLifecycleBoundary({ terms: DESKTOP_TERMS });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
 const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({

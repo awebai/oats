@@ -50,7 +50,7 @@ test("retire's own branch reports stay refused whole, spawnCompensation or not",
 function mount(t, { apply, row = instance }) {
   const dom = new JSDOM('<!doctype html><button id="opener">Actions</button>', { pretendToBeVisual: true });
   const doc = dom.window.document, ctx = context();
-  const service = createLifecycleBoundary({ invoke: async (_bin, a) => a.phase === 'plan' ? envelope(retirePlan()) : apply(a) });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, a) => a.phase === 'plan' ? envelope(retirePlan()) : apply(a) });
   const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => ctx) });
   t.after(() => { dialog.dispose(); dom.window.close(); });
   return { doc, open: () => dialog.open({ operation: 'retire', instance: row, workspace: 'team' }),

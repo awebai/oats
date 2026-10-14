@@ -54,7 +54,7 @@ function deployment(t) {
   // The Desktop's side: the CLI record of this kernel, a roster of the homes, and the boundary over the real CLI.
   const commands = [];
   const exec = (bin, argv, options, callback) => { commands.push(argv); return execFile(bin, argv, { ...options, env: fx.env }, callback); };
-  const service = createLifecycleBoundary({ invoke: (bin, args) => cliLifecycle(bin, args, { exec }) });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: (bin, args) => cliLifecycle(bin, args, { exec }) });
   const roster = [];
   const context = (features = version.features) => ({ cli: { ok: true, bin: CLI, version: version.version, lifecycleApi: version.lifecycleApi, features: [...features] },
     workspace: { id: 'scratch', scope: fx.dep }, instances: roster.map(row => ({ ...row })) });

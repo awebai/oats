@@ -205,7 +205,7 @@ const assertRead = (plan, expected, where) => {
 test('the boundary, a plan: read by the features of the kernel that answered, local or relayed; a malformed fact is no plan', async () => {
   for (const [name, ctx, kind] of KERNELS) for (const [key, change, reads] of KEYS) {
     const c = ctx(), where = `${name}; the key is ${key}`;
-    const service = createLifecycleBoundary({ invoke: async () => envelope(keyed(change)) });
+    const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async () => envelope(keyed(change)) });
     const reply = await service(planRequest(c), () => c);
     if (reads[kind] === 'malformed') {
       assert.equal(reply.status, 'unavailable', where); assert.equal(reply.reason.code, 'E_CLI_PROTOCOL', where);
@@ -224,7 +224,7 @@ test('the boundary, the fresh plan of E_PLAN_STALE: read by the same rule, and a
     const c = ctx(), where = `${name}; the fresh plan's key is ${key}`;
     const fresh = keyed(change); fresh.planRevision = 'c'.repeat(24);
     // The first plan is one this kernel's rule accepts: it carries the fact.
-    const service = createLifecycleBoundary({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retire({ own: true })) : refused('E_PLAN_STALE', { plan: fresh }) });
+    const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retire({ own: true })) : refused('E_PLAN_STALE', { plan: fresh }) });
     const planned = await service(planRequest(c), () => c);
     assert.equal(planned.status, 'plan', where);
     const reply = await service({ action: 'apply', planRef: planned.planRef }, () => c);
@@ -246,7 +246,7 @@ test('the boundary, the plan of E_CHILDREN_RUNNING: read by the same rule', asyn
     const c = ctx(), where = `${name}; the refused plan's key is ${key}`;
     const withKid = plan => { plan.facts.children = [{ ...kid, session: session() }]; return plan; };
     const answer = refused('E_CHILDREN_RUNNING', { plan: withKid(keyed(change)), childrenStopped: [{ ...kid, ok: false, code: 'E_SESSION_STOP_FAILED', stillRunning: [4242] }] });
-    const service = createLifecycleBoundary({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(withKid(retire({ own: true }))) : answer });
+    const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => args.phase === 'plan' ? envelope(withKid(retire({ own: true }))) : answer });
     const planned = await service(planRequest(c), () => c);
     assert.equal(planned.status, 'plan', where);
     const reply = await service({ action: 'apply', planRef: planned.planRef }, () => c);
@@ -259,7 +259,7 @@ test('the boundary, the plan of E_CHILDREN_RUNNING: read by the same rule', asyn
 
 test('deleting the worktree is authorized by the fact where the plan has it: refused before any apply command for a tree that is not the instance\'s, whatever the record says', async () => {
   const discard = { discardWorktree: true };
-  const boundary = (raw, calls) => createLifecycleBoundary({ invoke: async (_bin, args) => { calls.push(structuredClone(args)); return envelope(args.phase === 'plan' ? raw : retireReceipt(args)); } });
+  const boundary = (raw, calls) => createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => { calls.push(structuredClone(args)); return envelope(args.phase === 'plan' ? raw : retireReceipt(args)); } });
   for (const mode of RECORDS) {
     // The fact is false: refused, under a record that says `worktree` too (a link, a directory of the home: #962, #973).
     const c = localContext([OWN_WORKTREE_FEATURE]), calls = [], service = boundary(retire({ mode, own: false }), calls);
@@ -293,7 +293,7 @@ test('deleting the worktree is authorized by the fact where the plan has it: ref
 test('a stale apply whose fresh plan says the tree is not the instance\'s: the new reference cannot delete it, and no further command runs', async () => {
   for (const [name, ctx] of KERNELS.filter(([, , kind]) => kind === 'listed')) {
     const c = ctx(), calls = [], fresh = retire({ own: false }); fresh.planRevision = 'c'.repeat(24);
-    const service = createLifecycleBoundary({ invoke: async (_bin, args) => { calls.push(args.phase); return args.phase === 'plan' ? envelope(retire({ own: true })) : refused('E_PLAN_STALE', { plan: fresh }); } });
+    const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => { calls.push(args.phase); return args.phase === 'plan' ? envelope(retire({ own: true })) : refused('E_PLAN_STALE', { plan: fresh }); } });
     const planned = await service(planRequest(c, { discardWorktree: true }), () => c);
     const stale = await service({ action: 'apply', planRef: planned.planRef }, () => c);
     assert.equal(stale.status, 'stale', name); assert.equal(stale.plan.facts.ownWorktree, false, name); assert.deepEqual(stale.options, { discardWorktree: true }, name);
