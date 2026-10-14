@@ -835,7 +835,7 @@ function doctorVersionSkew(deployment) {
   try { launchConfigs = launchConfigsAt(deployment); } catch (e) { unread = e.message; }
   const warnings = piBridgeSkewWarnings(piBridgeFolders({ launchConfigs }), OATS_VERSION);
   if (unread) warnings.push(`pi bridge — the launch configurations could not be read, so only the default pi folder and this shell's were looked at: ${unread}`);
-  for (const warning of warnings) console.log(`WARNING: ${warning}`);
+  for (const warning of warnings) console.log(`WARNING: ${terminalText(warning)}`);
   if (warnings.length) console.log("");
 }
 /** The "Workspace (v2, offline view)" + "Locked packages" sections, shared by both doctor shapes. */
@@ -1355,7 +1355,7 @@ function instanceCmd() {
         if (JSON_MODE) { jsonOk(plan); return; }
         console.log(`stop ${name}${recursive ? " (and recorded children)" : ""} — plan ${plan.planRevision}`);
         for (const t of plan.targets) console.log(`  ${"  ".repeat(t.depth)}${t.instance}: session ${t.session.state}${t.work.observed ? `, ${t.work.changed} changed / ${t.work.untracked} untracked on ${t.work.branch ?? "detached"}` : ", work not observed"}${t.midTask === true ? " — mid-task" : t.midTask === "unknown" ? " — activity unknown" : ""}`);
-        for (const n of plan.notes) console.log(`  note: ${n}`);
+        for (const n of plan.notes) console.log(`  note: ${terminalText(n)}`);
         console.log(`apply with: oats instance stop ${name} --apply --plan-revision ${plan.planRevision} --idempotency-key <key>`);
         return;
       }
@@ -1399,7 +1399,7 @@ function instanceCmd() {
       console.log(`  files: ${observed.files.length} (${Object.entries(observed.summary).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "clean"})`);
       const lines = (f) => (f.binary ? "  binary" : Number.isInteger(f.additions) ? `  +${f.additions} -${f.deletions}` : "");
       for (const f of observed.files) console.log(`    ${f.xy} ${f.origPath ? `${f.origPath} -> ` : ""}${f.path}${lines(f)}  [${f.id}]`);
-      for (const n of observed.notes) console.log(`  note: ${n}`);
+      for (const n of observed.notes) console.log(`  note: ${terminalText(n)}`);
       return;
     }
     const fileId = flag("file"), revision = flag("revision"), indexRevision = flag("index-revision");
@@ -1440,7 +1440,7 @@ async function readinessCmd() {
     }
     if (doc.policy) console.log(`  policy: child spawns ${doc.policy.childSpawns.allowed ? "allowed" : "disabled"} (${doc.policy.childSpawns.origin.kind}${doc.policy.childSpawns.enforced ? ", enforced" : ""}); worktrees ${doc.policy.worktrees.allowed === null ? "unknown" : doc.policy.worktrees.allowed ? "allowed" : "not in this work mode"}`);
     for (const w of doc.warnings) console.log(`  warning  ${w.code}  ${w.message}`);
-    for (const n of doc.notes) console.log(`  note: ${n}`);
+    for (const n of doc.notes) console.log(`  note: ${terminalText(n)}`);
     return;
   }
 }
@@ -2946,7 +2946,7 @@ async function spawnCmd() {
       if (JSON_MODE) { jsonOk(withObservation(r)); return; }
       console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
       if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
-      for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+      for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
       return;
     }
   } catch (e) {
@@ -2998,7 +2998,7 @@ async function spawnCmd() {
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
   if (!r.launched) console.log(`  launch: oats session start --home ${shellQuote(r.home)}`);
-  for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+  for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
   console.log(`  attach: ${r.attach}`);
 }
 
@@ -3032,7 +3032,7 @@ function retireCmd() {
       console.log(`retire ${name} — plan ${plan.planRevision}`);
       console.log(`  session ${plan.facts.session.state}; work ${plan.facts.work.observed ? `${plan.facts.work.changed} changed / ${plan.facts.work.untracked} untracked on ${plan.facts.work.branch ?? (plan.facts.work.detached ? "detached" : "a ref OATS carries no branch name for")}` : `not observed (${plan.facts.work.reason})`}; children ${plan.facts.children.length}; pull request ${plan.facts.pullRequest}`);
       console.log(`  ${retireDefaultsLine(plan)}`);
-      for (const n of plan.notes) console.log(`  note: ${n}`);
+      for (const n of plan.notes) console.log(`  note: ${terminalText(n)}`);
       return;
     } catch (e) { return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { ...e.details, candidates: e.candidates } : e.details); }
   }
@@ -3483,7 +3483,7 @@ async function sessionCmd() {
     else {
       console.log(JSON.stringify(result, null, 2));
       // A start's launch-hook warnings, as spawn prints its own (stderr keeps stdout one JSON document).
-      for (const w of result?.warnings || []) console.error(`  WARNING: ${w}`);
+      for (const w of result?.warnings || []) console.error(`  WARNING: ${terminalText(w)}`);
     }
   } catch (e) { lifecycleFail(e, "E_SESSION_FAILED", e.details); }
 }
@@ -4443,7 +4443,7 @@ async function serverRouteCmd() {
     console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
     console.log(`  remote home: ${r.home}`);
     console.log(`  route snapshot: ${r.snapshot ? shortPath(r.snapshot) : "none (see the warning)"}`);
-    for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+    for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
     console.log(`  attach: oats session attach --server ${shellQuote(id)} --instance ${shellQuote(r.instance)}`);
   } else if (cmd === "retire") {
     // Everything the local retireCmd tells the operator, for a remote home
@@ -4458,6 +4458,7 @@ async function serverRouteCmd() {
     console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
     for (const line of workRecoveryLines(r, { host: target.sshHost })) console.log(line);
     for (const line of extraWorktreeLines(r, { host: target.sshHost })) console.log(line);
+    for (const line of warningLines(r)) console.log(line);
     if (r.rollbackIncomplete) {
       for (const f of r.rollbackIncomplete) console.error(`  ${f}`);
       const branch = failedSpawnBranchLine(r, r.rollbackIncomplete, { host: target.sshHost });
