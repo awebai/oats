@@ -773,7 +773,7 @@ each at most 1,024 characters.
   parts (`kernel: { message, fix }`, with the code alone as `detail`), and the
   dialog draws them with `kernelLines` (`packages/client/kernel-lines.mjs`): each
   text through the display filter alone and whole, the kernel's name before
-  the first of them that has a line to show, `[Detail withheld]` with no name
+  the first of them that has a line to show, `[withheld]` with no name
   for a text the filter withholds. Nothing is taken out of the texts and
   nothing is compared: a remedy the kernel says in both is read in both.
   Details stay as the person left them while neither the detail nor a line

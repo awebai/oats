@@ -9,6 +9,7 @@ import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { busyHolder, busyHeadline, busyAbout, busyRefusal, lifecycleReason } from '../../client/lifecycle-contract.mjs';
+import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { cli, context, envelope, instance, stopPlan, retirePlan, stopReceipt, retireReceipt, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
@@ -140,7 +141,7 @@ test('busyRefusal re-validates a relayed reason: the headline is chosen from hol
     assert.deepEqual(busyRefusal(reason(holder)), { headline: HEADLINE[holder], about: null, lead: LEAD[holder], sentence: SAID, details: null }, holder);
   // Withheld by the filter: no second part, and Details shows that a detail was withheld. Nothing to show: neither.
   for (const holder of ['unknown', 'none', 'unstated']) {
-    assert.deepEqual(busyRefusal(reason(holder, { detail: '[Detail withheld]' })), { headline: HEADLINE[holder], about: null, lead: null, sentence: null, details: { code: 'E_LIFECYCLE_BUSY', detail: '[Detail withheld]' } });
+    assert.deepEqual(busyRefusal(reason(holder, { detail: DETAIL_WITHHELD })), { headline: HEADLINE[holder], about: null, lead: null, sentence: null, details: { code: 'E_LIFECYCLE_BUSY', detail: DETAIL_WITHHELD } });
     for (const detail of [undefined, null, '', 'UNSHOWN two\nlines', 'UNSHOWN two  spaces', 'UNSHOWN token=abc123', 7])
       assert.deepEqual(busyRefusal(reason(holder, { detail })), { headline: HEADLINE[holder], about: null, lead: null, sentence: null, details: null }, `${holder} ${JSON.stringify(detail)}`);
   }
@@ -217,7 +218,7 @@ test('a kernel sentence the filter withholds drops the second part of the headli
     const withheld = mount(t, { ctx: localContext([FEATURE]), operation: 'retire', answer: busy(details, 'remove the claim: token=abc123') });
     await withheld.confirm();
     assert.deepEqual(withheld.said(), [HEADLINE[read]], JSON.stringify(details));
-    assertIsolatedDetail(withheld.details().querySelector('p'), { before: 'E_LIFECYCLE_BUSY: ', detail: '[Detail withheld]' });
+    assertIsolatedDetail(withheld.details().querySelector('p'), { before: 'E_LIFECYCLE_BUSY: ', detail: '[withheld]' });
     assert.doesNotMatch(withheld.doc.body.textContent, /abc123|remove the claim|It says|OATS says/);
     for (const message of [undefined, '', ' \n\t ']) {
       const bare = mount(t, { ctx: localContext([FEATURE]), operation: 'retire', answer: busy(details, message) });

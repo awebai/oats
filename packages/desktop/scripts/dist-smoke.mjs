@@ -11,6 +11,10 @@
 //   2. (macOS, unconditional) the packaged .app bundle passes strict deep
 //      code-signature verification — a complete ad-hoc bundle signature;
 //      rejects the v0.18.2 partial/absent-signature class;
+//   2. (Linux, unconditional) every ELF file the DEB and the AppImage carry
+//      (the AppImage's runtime and libraries, and ELF entries of app.asar,
+//      included) needs no newer glibc, GLIBCXX or CXXABI than
+//      scripts/linux-floor.json, the floor docs/desktop.md states;
 //   3. node-pty (the native module) loads INSIDE the packaged app's
 //      Electron ABI (ELECTRON_RUN_AS_NODE against the packaged
 //      resources), catching ABI-mismatch and lost spawn-helper exec bits;
@@ -42,6 +46,7 @@ import { fileURLToPath } from "node:url";
 import { createReaper } from "./proc-reaper.mjs";
 import { runAbiProbe, runBackendProbe, runMainImportsProbe, sharedHomeInventory } from "./smoke-probes.mjs";
 import { verifyAppSignature } from "./codesign-verify.mjs";
+import { checkLinuxFloor } from "./linux-floor.mjs";
 import { WATCHDOG_MS, PHASE_BUDGET_MS, boundedTail, readDevToolsPort, awaitClose } from "./launch-probe.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -71,9 +76,11 @@ watchdog.unref?.();
 if (!existsSync(DIST)) fail(`no dist/ — run npm run dist first`);
 const files = readdirSync(DIST).filter((f) => f.startsWith("oats-desktop-"));
 const need = process.platform === "darwin" ? ["dmg", "zip"] : ["AppImage", "deb"];
+const artifacts = {};
 for (const ext of need) {
   const hit = files.find((f) => f.endsWith(`.${ext}`));
   if (!hit) fail(`missing .${ext} in dist/ (have: ${files.join(", ") || "none"})`);
+  artifacts[ext] = join(DIST, hit);
   const size = statSync(join(DIST, hit)).size;
   if (size < 50 * 1024 * 1024 * 0.5) fail(`${hit} is implausibly small (${size} bytes)`);
   ok(`${hit} present (${(size / 1024 / 1024).toFixed(0)} MB)`);
@@ -122,6 +129,22 @@ if (!existsSync(app.exe)) fail(`packaged executable missing: ${app.exe}`);
 // guards below apply only to the GUI launch phase.
 if (process.platform === "darwin") {
   const r = await verifyAppSignature(reaper, app.app, { existsSync });
+  if (!r.ok) fail(r.detail);
+  ok(r.detail);
+}
+
+// ---- 2. Linux: the glibc floor (MANDATORY on linux) --------------------------
+// What the installers need of a system follows the system that built them: a
+// native module built on a newer runner, or a newer node-pty or Electron, can
+// raise it with nobody deciding it (#1050). docs/desktop.md states the floor
+// and scripts/linux-floor.json holds the same value; this reads the version
+// needs of every ELF file in the two shipped artifacts themselves (the
+// AppImage carries its runtime and libraries beside the app directory) and
+// fails on any above it, naming the file and the version. Like the codesign
+// phase on darwin, no OATS_SMOKE_* flag skips it (scripts/linux-floor.mjs).
+if (process.platform === "linux") {
+  const r = await checkLinuxFloor(reaper, { deb: artifacts.deb, appImage: artifacts.AppImage }, { timeout: PHASE_BUDGET_MS.linuxFloor });
+  for (const line of r.lines || []) ok(line);
   if (!r.ok) fail(r.detail);
   ok(r.detail);
 }

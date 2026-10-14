@@ -70,6 +70,9 @@ const piConfig = (dir, more = {}) => ({ harness: "pi", env: { PI_CODING_AGENT_DI
 const VIEW_KERNEL = "npm view @awebai/oats version", VIEW_BRIDGE = `npm view @awebai/oats-pi@${NEXT} version --prefer-online`;
 const install = (folder) => `pi install ${SPEC} | folder=${folder} | prefer_online=true`;
 const lastLine = (text) => text.trimEnd().split("\n").pop();
+/** The line under the steps when the CLI's install is of another minor (#1107); the fixture's
+ *  NEXT is another major than the kernel under test. */
+const desktopFirst = (version) => `OATS Desktop refuses a CLI newer than its own minor version: if you use it, install OATS Desktop ${version} first.`;
 
 /** Every kind of folder a deployment can name, beside the default one. */
 function everyKind(t) {
@@ -169,6 +172,8 @@ test("#991 oats update --check: the plan lists every pi folder with the bridge f
     `  npm_config_prefer_online=true pi install ${SPEC}`,
     `  PI_CODING_AGENT_DIR='${fx.at("behind dir")}' npm_config_prefer_online=true pi install ${SPEC}`,
     "",
+    desktopFirst(NEXT),
+    "",
     "(--check: not executing)",
     "",
   ].join("\n"));
@@ -183,9 +188,29 @@ test("#991 oats update, not a terminal and no --yes: the plan and nothing run, a
   const r = fx.run(["update"]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /\nUpdate steps:\n/);
-  assert.equal(lastLine(r.stdout), "Non-interactive: pass --yes to execute, or run the steps yourself.");
+  assert.ok(r.stdout.endsWith(`\n\n${desktopFirst(NEXT)}\n\nNon-interactive: pass --yes to execute, or run the steps yourself.\n`), r.stdout);
   assert.deepEqual(r.calls, [VIEW_KERNEL]);
   assert.equal(bridgeIn(fx.at("behind dir")), OLD);
+});
+
+test("#1107 oats update: a patch update of the CLI says nothing of the Desktop; another minor says it under the steps", (t) => {
+  const fx = fixture(t);
+  setBridge(fx.defaultDir, OLD);
+  const [major, minor, patch] = KERNEL.split(/[.+-]/).map(Number);
+  const nextPatch = `${major}.${minor}.${patch + 1}`, nextMinor = `${major}.${minor + 1}.0`;
+  const steps = (version) => `\nUpdate steps:\n  npm install -g @awebai/oats@${version}\n  npm_config_prefer_online=true pi install npm:@awebai/oats-pi@${version}\n\n`;
+  const patchCheck = fx.run(["update", "--check"], { env: { FAKE_LATEST: nextPatch } });
+  assert.equal(patchCheck.status, 0, patchCheck.stderr);
+  assert.ok(patchCheck.stdout.endsWith(`${steps(nextPatch)}(--check: not executing)\n`), patchCheck.stdout);
+  assert.ok(!patchCheck.stdout.includes("OATS Desktop"), patchCheck.stdout);
+  const minorCheck = fx.run(["update", "--check"], { env: { FAKE_LATEST: nextMinor } });
+  assert.equal(minorCheck.status, 0, minorCheck.stderr);
+  assert.ok(minorCheck.stdout.endsWith(`${steps(nextMinor)}${desktopFirst(nextMinor)}\n\n(--check: not executing)\n`), minorCheck.stdout);
+  // No CLI step, a bridge to move: nothing of the Desktop either.
+  const bridgeOnly = fx.run(["update", "--check"], { env: { FAKE_LATEST: KERNEL } });
+  assert.equal(bridgeOnly.status, 0, bridgeOnly.stderr);
+  assert.match(bridgeOnly.stdout, /\nUpdate steps:\n/);
+  assert.ok(!bridgeOnly.stdout.includes("OATS Desktop"), bridgeOnly.stdout);
 });
 
 test("#991 #852 oats update --yes: the bridge's version is seen on the registry first, then each folder is moved with its own PI_CODING_AGENT_DIR, by one install and no uninstall", (t) => {
@@ -205,6 +230,7 @@ test("#991 #852 oats update --yes: the bridge's version is seen on the registry 
   assert.equal(bridgeIn(fx.at("boxed")), OLD);
   assert.equal(bridgeIn(fx.at("claude")), OLD);
   assert.equal(existsSync(fx.at("gone")), false);
+  assert.ok(r.stdout.includes(`install ${SPEC}\n\n${desktopFirst(NEXT)}\n\n$ ${VIEW_BRIDGE}\n`), r.stdout);
   assert.match(lastLine(r.stdout), new RegExp(`^Updated to ${NEXT.replaceAll(".", "\\.")}\\. 3 pi folders were not touched: see above for what to run there\\. Now verify each deployment: run \`oats doctor\``));
   // Run again, the kernel's version aside: nothing is left to move, and the untouched ones are still named.
   // The bridges just moved are now ahead of the kernel: they are not moved back (#1011).
@@ -320,6 +346,8 @@ test("#991 oats update with no deployment in reach: the default folder and this 
     `  npm install -g @awebai/oats@${NEXT}`,
     `  PI_CODING_AGENT_DIR=${fx.defaultDir} npm_config_prefer_online=true pi install ${SPEC}`,
     `  PI_CODING_AGENT_DIR=${shell} npm_config_prefer_online=true pi install ${SPEC}`,
+    "",
+    desktopFirst(NEXT),
     "",
     "(--check: not executing)",
     "",

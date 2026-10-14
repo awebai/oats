@@ -24,7 +24,7 @@ test('differedLines: a side with nothing to show reads "(no visible text)"; a wi
   assert.deepEqual(ended.lines[0], { leadIn: 'OATS expected:', text: EXPECTED, note: null });
   assert.equal(differedLines(differed({ expected: '' })).lines[0].note, DIFFERED_NO_TEXT);
   const withheld = differedLines(differed({ found: 'password: hunter2' }));
-  assert.deepEqual(withheld.lines.map(l => l.text), [EXPECTED, '[Detail withheld]']);
+  assert.deepEqual(withheld.lines.map(l => l.text), [EXPECTED, '[withheld]']);
 });
 test('differedLines: nothing decodable says nothing', () => {
   for (const bad of [undefined, null, 'x', {}, differed({ index: -1 }), differed({ found: 7 })]) assert.equal(differedLines(bad), null);

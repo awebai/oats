@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DETACH_KEY_FEATURE, SESSION_DETACHED_EXIT, isDetachKey, prepareSessionViewer, requireDetachKey } from "../lib/session-viewer.mjs";
+import { DETACH_KEY_FEATURE, SESSION_DETACHED_EXIT, isDetachKey, prepareSessionViewer, requireDetachKey, tmuxHasClientFeatures } from "../lib/session-viewer.mjs";
 const target = { backend: "tmux", socket: "/tmp/owned.sock", session: "oats", window: "agent" };
-function fixture(failLink = false, { marker = "" } = {}) {
+function fixture(failLink = false, { marker = "", version = "" } = {}) {
   const calls = [];
   return { calls, exec(bin, args) {
     assert.equal(bin, "tmux");
@@ -13,6 +13,7 @@ function fixture(failLink = false, { marker = "" } = {}) {
     if (cmd[0] === "new-session") return "@98\n";
     if (cmd[0] === "link-window" && failLink) throw new Error("target disappeared");
     if (cmd[0] === "show-options") { if (marker instanceof Error) throw marker; return marker; }
+    if (cmd[0] === "-V") { if (version instanceof Error) throw version; return version; }
     return "";
   } };
 }
@@ -66,6 +67,7 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
     ["bind-key", "-T", "oatsview-locked", "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
     ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
     ["set-option", "-t", name, "mouse", "on"],
+    ["-V"],
   ];
   assert.deepEqual(io.calls, prepared);
   assert.deepEqual(viewer.args, ["-u", "-S", target.socket, "attach-session", "-t", `=${name}`]);
@@ -99,6 +101,7 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
       ["bind-key", "-T", name, key, "set-option @oats-detached 1 ; detach-client"],
       ["set-option", "-t", name, "mouse", "on"],
+      ["-V"],
     ], key);
     assert.deepEqual(io.calls.filter((c) => c[0] === "bind-key" && c[2] === name).map((c) => c[3]), ["WheelUpPane", "MouseDrag1Pane", key]);
     assert.equal(io.calls.some((c) => c.some((a) => a.includes("oatsview-locked"))), false, "no call names the locked table");
@@ -189,4 +192,42 @@ test("the detach key grammar is closed: what it accepts and what it refuses, and
 test("the constants a caller reads: the feature name and the status of a leave by the key", () => {
   assert.equal(DETACH_KEY_FEATURE, "session-attach-detach-key");
   assert.equal(SESSION_DETACHED_EXIT, 20);
+});
+
+// ---- synchronized output (awebai/oats#1193) ------------------------------------------------------
+
+test("a tmux -V answer names a release with the client's -T flag from tmux 3.2 on, and nothing it cannot read does", () => {
+  for (const v of ["tmux 3.2", "tmux 3.2a", "tmux 3.3a", "tmux 3.7c", "tmux 4.0", "tmux 3.10", "tmux 10.1", "tmux 3.7c\n"]) assert.equal(tmuxHasClientFeatures(v), true, JSON.stringify(v));
+  for (const v of ["tmux 3.0", "tmux 3.0a", "tmux 3.1", "tmux 3.1c", "tmux 2.9a", "tmux 1.8",
+    "tmux next-3.6", "tmux master", "tmux openbsd-7.4", "tmux 3.2-rc2", "tmux 3", "tmux 3.", "tmux3.2", "3.2", "", "\n", undefined, null]) {
+    assert.equal(tmuxHasClientFeatures(v), false, JSON.stringify(v));
+  }
+});
+
+test("the viewer's client asks for synchronized output (-T sync, before the command) on tmux 3.2 and later, and is today's client otherwise", () => {
+  const args = (version) => {
+    const io = fixture(false, { version });
+    const viewer = prepareSessionViewer(target, io);
+    const name = io.calls.find((c) => c[0] === "new-session")[3];
+    assert.equal(io.calls.filter((c) => c[0] === "-V").length, 1, "one probe");
+    return viewer.args.map((a) => a.replace(name, "V"));
+  };
+  const synced = ["-u", "-S", target.socket, "-T", "sync", "attach-session", "-t", "=V"];
+  const today = ["-u", "-S", target.socket, "attach-session", "-t", "=V"];
+  assert.deepEqual(args("tmux 3.7c\n"), synced);
+  assert.deepEqual(args("tmux 3.2\n"), synced);
+  assert.deepEqual(args("tmux 3.1c\n"), today);
+  assert.deepEqual(args("tmux 3.0\n"), today);
+  assert.deepEqual(args("tmux next-3.6\n"), today, "unparsed");
+  assert.deepEqual(args(""), today, "no answer");
+  assert.deepEqual(args(new Error("spawnSync tmux ENOENT")), today, "a failed probe is not the attach's failure");
+});
+
+test("the probe runs once per exec: later viewers reuse its answer, a failed one included", () => {
+  for (const version of ["tmux 3.7c\n", "tmux 3.1c\n", new Error("timed out")]) {
+    const io = fixture(false, { version });
+    const first = prepareSessionViewer(target, io).args.includes("sync");
+    for (let i = 0; i < 2; i++) assert.equal(prepareSessionViewer(target, { ...io, detachKey: "F12" }).args.includes("sync"), first, String(version));
+    assert.equal(io.calls.filter((c) => c[0] === "-V").length, 1, String(version));
+  }
 });

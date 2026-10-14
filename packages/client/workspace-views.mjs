@@ -74,10 +74,10 @@ const LAST_READ_FAILED = 'This deployment\'s last read failed. It shows what was
  *
  *   origin     the line              detail
  *   "kernel"   a line                "<own sentence> OATS says: <line>"
- *   "kernel"   "[Detail withheld]"   "<own sentence> [Detail withheld]"
+ *   "kernel"   "[withheld]"          "<own sentence> [withheld]"
  *   "kernel"   nothing to show       "<own sentence>"
  *   none       a line                "This deployment's last read failed: <line>. It shows what was last observed."
- *   none       "[Detail withheld]"   "This deployment's last read failed: [Detail withheld]. It shows what was last observed."
+ *   none       "[withheld]"          "This deployment's last read failed: [withheld]. It shows what was last observed."
  *   none       nothing to show       "<own sentence>"
  *
  * The kernel's words stand apart, after the client's sentence and the speaker's lead
