@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import {
   registerAction, setBinding, resetAllBindings, getBinding, defaultBinding, keymapConflicts,
 } from "../renderer/keybindings.mjs";
-import { createKeybindingsEditor, groupActions } from "../renderer/keybindings-editor.mjs";
+import { createKeybindingsEditor, groupActions, shortcutMatches } from "../renderer/keybindings-editor.mjs";
 
 // storage stub so overrides work in node
 const map = new Map();
@@ -285,9 +285,10 @@ test("Tab wraps focus inside the modal dialog", (t) => {
   editor.open();
   const overlay = doc.querySelector(".kb-overlay");
   const dialog = overlay.querySelector(".kb-editor");
-  const focusable = [...dialog.querySelectorAll("button:not([disabled])")]
-    .filter((el) => !el.hidden && el.tabIndex >= 0);
+  const focusable = [...dialog.querySelectorAll("input, button:not([disabled])")]
+    .filter((el) => !el.closest("[hidden]") && el.tabIndex >= 0);
   const first = focusable[0], last = focusable.at(-1);
+  assert.equal(first, dialog.querySelector(".kb-search"), "the search is the trap's first stop");
 
   last.focus();
   const tab = key(doc, "Tab");
@@ -333,4 +334,249 @@ test("shell wiring: the footer shortcuts button carries the clash marker, recomp
   assert.match(src, /onKeymapChange\(\(\) => \{[^]*?markShortcutClashes\(\)/);
   const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
   assert.match(css, /#sidebar-shortcuts\.has-clash::after \{[^}]*background: var\(--warn\)/);
+});
+
+// ── Spec A, PR 2: search, keycaps and markers ──────────────────────────────────────────────
+// Linux/Windows: the shipped defaults of these ids come from DEFAULT_KEYMAP (sidebar Ctrl+Shift+B,
+// Quick Open Ctrl+P, go to tab Alt+1, F6); focus mode has none.
+function setupLinux(t, { isMac = false, extra = [] } = {}) {
+  const dom = new JSDOM("<!doctype html><body>");
+  const doc = dom.window.document;
+  resetAllBindings();
+  const offs = [
+    ["app.palette", "Command palette", "global"],
+    ["app.quickOpenSouls", "Quick open a soul", "global"],
+    ["sidebar.toggle", "Sidebar: show or hide", "global"],
+    ["panel.toggle", "Instance panel: show or hide", "global"],
+    ["app.focusMode", "Focus mode: toggle", "global"],
+    ["focus.nextRegion", "Focus the next region", "global"],
+    ["tabs.close", "Close tab", "tabs"],
+    ["tabs.next", "Next tab", "tabs"],
+    ["tabs.goto1", "Go to tab 1", "tabs"],
+    ...extra,
+  ].map(([id, label, context, defaultChord = null]) => registerAction({ id, label, context, defaultChord, run: () => {} }));
+  t.after(() => { for (const off of offs) off(); resetAllBindings(); dom.window.close(); });
+  const editor = createKeybindingsEditor({ doc, isMac });
+  t.after(() => editor.close());
+  const search = () => doc.querySelector(".kb-search");
+  return {
+    doc, editor, search,
+    type(text) { search().value = text; search().dispatchEvent(new dom.window.Event("input", { bubbles: true })); },
+    press(target, k, mods = {}) { const e = key(doc, k, mods); target.dispatchEvent(e); return e; },
+    rowFor: (label) => [...doc.querySelectorAll(".kb-row")].find((r) => r.querySelector(".kb-label").textContent === label),
+    shown: () => [...doc.querySelectorAll(".kb-row")].filter((r) => !r.closest("[hidden]")).map((r) => r.querySelector(".kb-label").textContent),
+    marks: (label, kind) => [...doc.querySelectorAll(".kb-row")].find((r) => r.querySelector(".kb-label").textContent === label)
+      .querySelector(`.kb-mark-${kind}`)?.textContent ?? null,
+  };
+}
+
+test("search: focused on open; filters by label, by group name and by the chord as shown, case- and separator-insensitive", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  assert.equal(f.doc.activeElement, f.search(), "the search has focus when the editor opens");
+  assert.equal(f.search().getAttribute("aria-label"), "Search shortcuts");
+  f.type("sidebar");
+  assert.deepEqual(f.shown(), ["Sidebar: show or hide"]);
+  assert.equal(f.doc.querySelector('.kb-group[data-label="Tabs"]').hidden, true, "a group with no match disappears");
+  f.type("TABS");
+  assert.deepEqual(f.shown(), ["Close tab", "Go to tab 1", "Next tab"], "the group's name finds its rows");
+  assert.equal(f.doc.querySelector('.kb-group[data-label="Global"]').hidden, true);
+  for (const q of ["shift+b", "ctrl shift b", "Ctrl+Shift+B", "ctrlshiftb", "shift ctrl b", " Shift + B "]) {
+    f.type(q);
+    assert.deepEqual(f.shown(), ["Sidebar: show or hide"], `“${q}” finds Ctrl+Shift+B and nothing else`);
+  }
+  // The keys typed need not be all of the chord's: Ctrl+P also finds Ctrl+Shift+P.
+  f.type("ctrl+p");
+  assert.deepEqual(f.shown(), ["Command palette", "Quick open a soul"]);
+  f.type("f6");
+  assert.deepEqual(f.shown(), ["Focus the next region"]);
+  f.type("unbound");
+  assert.deepEqual(f.shown(), ["Focus mode: toggle"], "an unbound row's chord reads unbound");
+  f.type("");
+  assert.equal(f.shown().length, 9, "clearing the search shows every row");
+});
+
+test("search: the count is announced politely; nothing matching shows one quiet line", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  const count = f.doc.querySelector(".kb-count");
+  assert.equal(count.getAttribute("role"), "status");
+  assert.ok(count.classList.contains("sr-only"));
+  assert.equal(count.textContent, "", "nothing is announced on open");
+  f.type("tab");
+  assert.equal(count.textContent, `${f.shown().length} shortcuts`);
+  f.type("sidebar");
+  assert.equal(count.textContent, "1 shortcut");
+  f.type("zzz");
+  assert.deepEqual(f.shown(), []);
+  assert.equal(count.textContent, "0 shortcuts");
+  for (const group of f.doc.querySelectorAll(".kb-group")) assert.equal(group.hidden, true);
+  const none = f.doc.querySelector(".kb-nomatch");
+  assert.equal(none.hidden, false);
+  assert.equal(none.textContent, "No shortcut matches “zzz”");
+  f.type("close");
+  assert.equal(none.hidden, true);
+});
+
+test("search: a rebind while filtering keeps the filter", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  f.type("sidebar");
+  setBinding("app.palette", "Ctrl+J"); // rerenders every row
+  assert.deepEqual(f.shown(), ["Sidebar: show or hide"]);
+  assert.equal(f.search().value, "sidebar");
+});
+
+test("keyboard: Down from the search enters the rows, Up/Down move between them, Up from the first returns to the search", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  const chordOf = (label) => f.rowFor(label).querySelector(".kb-chord");
+  const down = f.press(f.search(), "ArrowDown");
+  assert.equal(down.defaultPrevented, true);
+  assert.equal(f.doc.activeElement, chordOf("Command palette"), "the first visible row");
+  f.press(f.doc.activeElement, "ArrowDown");
+  assert.equal(f.doc.activeElement, chordOf("Focus mode: toggle"));
+  f.press(f.doc.activeElement, "ArrowUp");
+  assert.equal(f.doc.activeElement, chordOf("Command palette"));
+  f.press(f.doc.activeElement, "ArrowUp");
+  assert.equal(f.doc.activeElement, f.search(), "Up from the first row returns to the search");
+  // Filtered: Down goes to the first row the search shows, and stops at the last.
+  f.type("tabs");
+  f.press(f.search(), "ArrowDown");
+  assert.equal(f.doc.activeElement, chordOf("Close tab"));
+  f.press(f.doc.activeElement, "ArrowDown"); f.press(f.doc.activeElement, "ArrowDown");
+  assert.equal(f.doc.activeElement, chordOf("Next tab"));
+  f.press(f.doc.activeElement, "ArrowDown");
+  assert.equal(f.doc.activeElement, chordOf("Next tab"), "Down on the last row stays");
+  // A row's reset button moves along the rows too.
+  setBinding("tabs.close", "Ctrl+Shift+X");
+  f.rowFor("Close tab").querySelector(".kb-reset").focus();
+  f.press(f.doc.activeElement, "ArrowDown");
+  assert.equal(f.doc.activeElement, chordOf("Go to tab 1"));
+});
+
+test("keyboard: Esc clears a non-empty search first (from the search or a row), then closes; while recording it only cancels", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  f.type("side");
+  f.press(f.search(), "ArrowDown");
+  const esc = f.press(f.doc.activeElement, "Escape");
+  assert.equal(esc.defaultPrevented, true);
+  assert.equal(f.search().value, "");
+  assert.equal(f.doc.activeElement, f.search(), "focus goes back to the search");
+  assert.equal(f.shown().length, 9);
+  assert.equal(f.doc.querySelector(".kb-count").textContent, "9 shortcuts");
+  assert.equal(f.editor.isOpen(), true);
+  // Recording: Esc cancels the recording, the search stays as it is.
+  f.type("side");
+  f.rowFor("Sidebar: show or hide").querySelector(".kb-chord").click();
+  f.doc.dispatchEvent(key(f.doc, "Escape"));
+  assert.equal(f.editor.isOpen(), true);
+  assert.equal(f.search().value, "side");
+  assert.equal(getBinding("sidebar.toggle", false), "Ctrl+Shift+B");
+  f.press(f.search(), "Escape");
+  assert.equal(f.search().value, "");
+  f.press(f.search(), "Escape");
+  assert.equal(f.editor.isOpen(), false, "an empty search: Esc closes");
+});
+
+test("keyboard: the Tab trap skips the rows the search hides", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  f.type("sidebar");
+  const sidebarChord = f.rowFor("Sidebar: show or hide").querySelector(".kb-chord");
+  sidebarChord.focus();
+  const tab = f.press(f.doc.querySelector(".kb-overlay"), "Tab");
+  assert.equal(tab.defaultPrevented, true, "the last visible control wraps (its reset is hidden)");
+  assert.equal(f.doc.activeElement, f.search());
+  const back = f.press(f.doc.querySelector(".kb-overlay"), "Tab", { shiftKey: true });
+  assert.equal(back.defaultPrevented, true);
+  assert.equal(f.doc.activeElement, sidebarChord);
+});
+
+test("rows: one keycap per key, read as one string; changed marker and Reset only when the binding differs from the default", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  const chord = f.rowFor("Sidebar: show or hide").querySelector(".kb-chord");
+  assert.deepEqual([...chord.querySelectorAll("kbd")].map((k) => k.textContent), ["Ctrl", "Shift", "B"]);
+  assert.equal(chord.querySelector(".kb-keys").getAttribute("aria-hidden"), "true", "keycaps are not read key by key");
+  assert.equal(chord.getAttribute("aria-label"), "Change shortcut for Sidebar: show or hide, currently Ctrl+Shift+B, works in a terminal");
+  assert.equal(f.rowFor("Sidebar: show or hide").querySelector(".kb-marks").getAttribute("aria-hidden"), "true");
+  assert.equal(f.marks("Sidebar: show or hide", "changed"), null);
+  assert.equal(f.rowFor("Sidebar: show or hide").querySelector(".kb-reset").hidden, true);
+  setBinding("sidebar.toggle", "Ctrl+Alt+B");
+  const row = f.rowFor("Sidebar: show or hide");
+  assert.equal(f.marks("Sidebar: show or hide", "changed"), "changed");
+  assert.equal(row.querySelector(".kb-mark-changed").title, "Changed from the default, Ctrl+Shift+B");
+  assert.equal(row.querySelector(".kb-reset").hidden, false);
+  assert.match(row.querySelector(".kb-chord").getAttribute("aria-label"), /currently Ctrl\+Alt\+B, works in a terminal, changed from the default$/);
+  row.querySelector(".kb-reset").click();
+  assert.equal(f.marks("Sidebar: show or hide", "changed"), null);
+  // macOS keycaps: the modifier symbols, one per key.
+  const mac = setupLinux(t, { isMac: true });
+  mac.editor.open();
+  assert.deepEqual([...mac.rowFor("Sidebar: show or hide").querySelectorAll(".kb-chord kbd")].map((k) => k.textContent), ["⌘", "B"]);
+});
+
+test("terminal marker on Linux/Windows: the allowlisted actions, by id, so it follows a rebind; never a non-allowlisted action", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  const marked = () => [...f.doc.querySelectorAll(".kb-row")].filter((r) => r.querySelector(".kb-mark-terminal"))
+    .map((r) => r.querySelector(".kb-label").textContent).sort();
+  assert.deepEqual(marked(), ["Close tab", "Command palette", "Instance panel: show or hide", "Next tab", "Sidebar: show or hide"]);
+  assert.equal(f.marks("Sidebar: show or hide", "terminal"), "terminal");
+  assert.equal(f.rowFor("Sidebar: show or hide").querySelector(".kb-mark-terminal").title, "Works while a terminal has focus");
+  // A rebind of an allowlisted action keeps the marker (the policy is by id), even to a plain Ctrl letter.
+  setBinding("sidebar.toggle", "Ctrl+K");
+  assert.equal(f.marks("Sidebar: show or hide", "terminal"), "terminal");
+  // A non-allowlisted action never gets it, whatever it is bound to.
+  setBinding("app.quickOpenSouls", "Ctrl+Shift+Q");
+  setBinding("app.focusMode", "Ctrl+Shift+U");
+  assert.equal(f.marks("Quick open a soul", "terminal"), null);
+  assert.equal(f.marks("Focus mode: toggle", "terminal"), null);
+  assert.equal(f.marks("Go to tab 1", "terminal"), null);
+  assert.equal(f.marks("Focus the next region", "terminal"), null);
+  assert.doesNotMatch(f.rowFor("Quick open a soul").querySelector(".kb-chord").getAttribute("aria-label"), /terminal/);
+  // Unbound, an allowlisted action fires nothing: no marker.
+  setBinding("panel.toggle", null);
+  assert.equal(f.marks("Instance panel: show or hide", "terminal"), null);
+});
+
+test("terminal marker on macOS follows the engine: ⌘ chords and Ctrl+Tab, not ⌃ chords, F6 or a modal dialog's own keys", (t) => {
+  const f = setupLinux(t, { isMac: true, extra: [["spawn.jumpName", "Jump to Name", "spawn-dialog-local", "Mod+1"]] });
+  f.editor.open();
+  assert.equal(f.marks("Command palette", "terminal"), "terminal", "⌘K");
+  assert.equal(f.marks("Quick open a soul", "terminal"), "terminal", "⌘P fires in a terminal on macOS");
+  assert.equal(f.marks("Next tab", "terminal"), "terminal", "⌃Tab, the structural shape");
+  assert.equal(f.marks("Go to tab 1", "terminal"), "terminal", "⌥⌘1");
+  assert.equal(f.marks("Focus the next region", "terminal"), null, "F6 is the program's");
+  assert.equal(f.marks("Jump to Name", "terminal"), null, "dispatched only by the open spawn dialog");
+  setBinding("app.palette", "Ctrl+G");
+  assert.equal(f.marks("Command palette", "terminal"), null, "a ⌃ rebind stays the program's");
+  setBinding("tabs.next", "Ctrl+G");
+  assert.equal(f.marks("Next tab", "terminal"), null, "the exemption is the shape as well as the id");
+});
+
+test("shortcutMatches: label, group, chord as shown; macOS words for the modifier symbols", () => {
+  const row = { label: "Sidebar: show or hide", group: "Global", chord: "Mod+Shift+B" };
+  assert.equal(shortcutMatches(row, "", false), true);
+  assert.equal(shortcutMatches(row, "SHOW OR", false), true);
+  assert.equal(shortcutMatches(row, "glob", false), true);
+  for (const q of ["shift+b", "ctrl shift b", "ctrlshiftb", "control shift b"]) assert.equal(shortcutMatches(row, q, false), true, q);
+  for (const q of ["cmd shift b", "⇧⌘B", "command+b", "shift b"]) assert.equal(shortcutMatches(row, q, true), true, `mac ${q}`);
+  for (const q of ["ctrl+p", "alt b", "cmd b"]) assert.equal(shortcutMatches(row, q, false), false, q);
+  assert.equal(shortcutMatches({ label: "x", group: "Tabs", chord: null }, "unb", false), true);
+  assert.equal(shortcutMatches({ label: "x", group: "Tabs", chord: null }, "ctrl", false), false);
+});
+
+test("group headings keep today's order and stick to the top of the scroll area", async (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  const groups = [...f.doc.querySelectorAll(".kb-body > .kb-group")];
+  assert.deepEqual(groups.map((g) => g.querySelector(":scope > h3.kb-context").textContent), ["Global", "Tabs"]);
+  for (const g of groups) assert.equal(g.firstElementChild.className, "kb-context", "the heading leads its group");
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  assert.match(css, /\.kb-context \{ position: sticky; top: 0;[^}]*background: var\(--surface\)/, "sticky on an opaque surface");
+  assert.match(css, /\.kb-group\[hidden\], \.kb-row\[hidden\], \.kb-nomatch\[hidden\] \{ display: none; \}/);
 });

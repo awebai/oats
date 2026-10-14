@@ -1312,8 +1312,14 @@ section is the module map.
   why. Dismissing the dialog returns to where the operator was
   (`surface-return.mjs`). No second spawn form exists.
 - **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`):
-  actions grouped by context, click-to-record (Esc cancels, Backspace
-  unbinds), conflict warnings via `findConflict`, per-row reset + reset-all.
+  a search (focused on open; `shortcutMatches` filters by label, group name
+  or the chord as shown, case- and separator-insensitive), actions grouped
+  by context under sticky headings, the chord as keycaps (`chordKeys`; the
+  button's name carries it as one string), a quiet "terminal" marker from
+  the engine's `terminalAllows` (global and tabs actions only: a terminal
+  lives in the tab layer), a "changed" marker and Reset when the binding
+  differs from the default, click-to-record (Esc cancels, Backspace
+  unbinds), conflict warnings via `findConflict`, reset-all.
 
 ## Shared Components — existing-data frame 10 parity
 

@@ -1797,3 +1797,63 @@ for (const [name] of palettes) test(`${name}: a capability trigger source's quot
   // The quote's side rule is not what tells a quote apart (the lead-in and the typeface do): it carries no text.
   assert.match(/\.source-quote-text \{([^}]*)\}/.exec(capabilityQuoteCSS)[1], /font:12px\/1\.5 var\(--mono,monospace\)/);
 });
+
+// The shortcuts editor (Spec A PR 2): search, sticky group headings, labels, keycaps, quiet markers,
+// warnings, the unbound chord and the empty line, on the surfaces they are painted on. A row's
+// hover paints --surface-2 under its text, so row text is held to both. Every pair is also in the
+// inventory, which is what holds the derived "This computer" palettes to it.
+for (const [name] of palettes) test(`${name}: the shortcuts editor's search, headings, rows, keycaps and markers meet computed AA`, async t => {
+  const { registerAction, setBinding, resetAllBindings } = await import("../renderer/keybindings.mjs");
+  const { createKeybindingsEditor } = await import("../renderer/keybindings-editor.mjs");
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
+    const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
+  }
+  resetAllBindings();
+  const offs = [
+    registerAction({ id: "sidebar.toggle", label: "Sidebar", context: "global", run: () => {} }),
+    registerAction({ id: "app.focusMode", label: "Focus mode", context: "global", run: () => {} }),
+    registerAction({ id: "x.bare", label: "Bare", context: "global", defaultChord: "B", run: () => {} }),
+  ];
+  const editor = createKeybindingsEditor({ doc, isMac: false });
+  t.after(() => { editor.close(); offs.forEach(off => off()); resetAllBindings(); dom.window.close(); });
+  setBinding("sidebar.toggle", "Ctrl+Alt+B"); // the changed marker
+  editor.open();
+  const nomatch = () => { const s = doc.querySelector(".kb-search"); s.value = "zzz"; s.dispatchEvent(new dom.window.Event("input")); };
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const value = token => root.getPropertyValue(`--${token}`).trim();
+  const row = ["surface", "surface-2"];
+  const checks = [
+    [".kb-title", "fg", ".kb-editor", ["surface"]],
+    [".kb-search", "fg", ".kb-search-field", ["bg"]],
+    [".kb-hint", "muted", ".kb-editor", ["surface"]],
+    [".kb-context", "muted", ".kb-context", ["surface"]],
+    [".kb-label", "fg", ".kb-editor", row],
+    [".kb-mark-terminal", "muted", ".kb-editor", row],
+    [".kb-mark-changed", "muted", ".kb-editor", row],
+    [".kb-keys kbd", "fg", ".kb-keys kbd", ["bg"]],
+    [".kb-chord.kb-unbound", "faint", ".kb-editor", row],
+    [".kb-conflict", "warn", ".kb-editor", row],
+  ];
+  for (const [selector, fg, painted, surfaces] of checks) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${surfaces[0]})`, painted);
+    for (const bg of surfaces) {
+      assert.ok(pairs.some(([f, b]) => f === fg && b === bg), `${fg} on ${bg} is in the inventory`);
+      assert.ok(contrast(opaqueChannels(value(fg)), opaqueChannels(value(bg))) >= 4.5, `${selector}: ${fg} on ${bg}`);
+    }
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, "1", selector);
+  }
+  // The row hover and the sticky heading are painted with tokens, never by compositing.
+  const shell = readFileSync(new URL("shell.css", renderer), "utf8");
+  assert.match(shell, /\.kb-row:hover \{ background: var\(--surface-2\); \}/);
+  assert.match(shell, /\.kb-search::placeholder \{ color: var\(--faint\); \}/);
+  assert.ok(contrast(opaqueChannels(value("faint")), opaqueChannels(value("bg"))) >= 4.5, "the placeholder on the search");
+  nomatch();
+  const none = doc.querySelector(".kb-nomatch");
+  assert.equal(none.hidden, false);
+  assert.equal(dom.window.getComputedStyle(none).color, "var(--muted)");
+  assert.ok(contrast(opaqueChannels(value("muted")), opaqueChannels(value("surface"))) >= 4.5);
+});
