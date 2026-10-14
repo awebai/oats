@@ -11,14 +11,15 @@
 // dedupes by id. Reconciliation is the capture: scan, project, append what
 // is new, in bounded batches.
 //
-// Memory is bounded by one changed log's ids, never by the record or a log's
-// bytes (awebai/oats#456): a log is read in chunks, and what the stream
-// already holds is looked up for that log's ids alone, in one streamed read
-// of the journal, never as the whole stream's id set.
+// Inputs are append-only logs. Background growth uses a bounded boundary
+// witness and byte cursor; explicit per-file calls retain full reprojection.
+// Persistent journal ID lookup makes either path use bounded memory.
 
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readSync } from "node:fs";
+import { basename, join } from "node:path";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { DerivedState, statVersion, sameVersion } from "./derived-state.mjs";
 
 import {
   projectCommLogEntry,
@@ -48,9 +49,15 @@ export function listCommLogs(dir = defaultCommLogDir()) {
 // A final line without its newline is still an entry when it parses; when it
 // does not, it is a torn tail the client is still writing, never counted. An
 // interior bad line is skipped and counted (`onSkipped`), never fatal.
-function* logEntries(fd, end, onSkipped) {
-  for (const line of bufferLines(fileChunks(fd, { end }))) {
+function* logEntries(fd, start, end, onSkipped, onConsumed) {
+  let offset = start;
+  for (const line of bufferLines(fileChunks(fd, { start, end, size: 65536 }))) {
+    const lineStart = offset;
+    offset += line.length;
     const final = line[line.length - 1] !== 10;
+    // Even ignored whitespace is scanned progress when newline-terminated.
+    // The caller persists it only after its pending append batch is durable.
+    if (!final) onConsumed(offset);
     let entry;
     try {
       // Inside the try: a line beyond V8's string limit is a bad line like any other.
@@ -61,55 +68,77 @@ function* logEntries(fd, end, onSkipped) {
       if (!final) onSkipped();
       continue;
     }
-    yield entry;
+    yield { entry, start: lineStart, end: final ? lineStart : offset, bytes: line.length };
   }
 }
 
 const APPEND_BATCH = 2000;
 
-// One log file into `streamId`: project every entry, append the turns the
-// stream lacks. With `knownIds` (a caller's own set, kept up to date), that
-// set decides; without, the log is read twice over the same prefix (its size
-// when opened: the client may be appending): once for its turn ids, which one
-// streamed read of the journal narrows to those already there, and once to
-// append the rest in batches.
-function captureLogFile(store, { streamId, path, project, knownIds }) {
-  const fd = openSync(path, "r");
+// Check only a bounded checkpoint boundary under the append-only source contract.
+function boundaryWitness(fd, offset) {
+  const size = Math.min(offset, 4096), bytes = Buffer.alloc(size);
+  let done = 0;
+  while (done < size) {
+    const n = readSync(fd, bytes, done, size - done, offset - size + done);
+    if (!n) throw new Error("short read of log checkpoint boundary");
+    done += n;
+  }
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function captureLogFile(store, { streamId, path, project, knownIds, incremental = false }) {
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  let state;
   try {
-    const end = fstatSync(fd).size;
-    let entries = 0, skipped = 0, failed = 0;
-    function* turns() {
-      entries = 0; skipped = 0; failed = 0;
-      for (const entry of logEntries(fd, end, () => skipped++)) {
-        entries++;
-        let turn;
-        try { turn = project(entry); }
-        catch {
-          // One unprojectable entry must not abort the pass, but it fails
-          // visibly: counted here and reported by the caller.
-          failed++;
-          continue;
-        }
-        yield turn;
+    const stat = fstatSync(fd, { bigint: true });
+    if (!stat.isFile()) throw new Error(`log source is not a regular file: ${path}`);
+    const version = statVersion(stat), end = version.size;
+    state = new DerivedState(store.root);
+    const generation = state.get("reset", streamId.split("~")[0] + ":aw") ?? "";
+    const key = `${streamId}:${path}`;
+    let previous = incremental ? state.get("aw", key) : null;
+    if (previous && (!Number.isSafeInteger(previous.bytes) || previous.bytes < 0 || previous.bytes > end || !previous.version)) previous = null;
+    const journal = store.journalCheckpoint(streamId);
+    let start = 0;
+    if (previous && previous.generation === generation && previous.epoch === journal.epoch) {
+      if (previous.complete && sameVersion(previous.version, version)) return { entries: 0, appended: 0, skipped: 0, failed: 0, unchanged: true };
+      const old = previous.version;
+      if (old.dev === version.dev && old.ino === version.ino && (version.size > old.size || sameVersion(old, version)) &&
+          previous.bytes <= end && boundaryWitness(fd, previous.bytes) === previous.witness) start = previous.bytes;
+    }
+    let entries = 0, skipped = 0, failed = 0, appended = 0, batch = [], batchBytes = 0, consumed = start, complete = false;
+    const checkpoint = () => {
+      if (!incremental) return;
+      const bytes = consumed;
+      state.set("aw", key, { bytes, version, witness: boundaryWitness(fd, bytes), epoch: journal.epoch, generation, complete });
+    };
+    const flush = () => {
+      if (batch.length) {
+        if (knownIds) { store.appendBatch(streamId, batch); appended += batch.length; }
+        else appended += store.appendUniqueBatch(streamId, batch);
+        batch = []; batchBytes = 0;
       }
+      checkpoint();
+    };
+    for (const record of logEntries(fd, start, end, () => skipped++, (offset) => { consumed = offset; })) {
+      entries++;
+      let turn;
+      // Projection refusal consumes this complete entry just like a skipped
+      // malformed line. Resetting source cursors is the explicit retry path;
+      // an old refusal must not pin every background pass to historical bytes.
+      consumed = record.end;
+      try { turn = project(record.entry); }
+      catch { failed++; continue; }
+      if (knownIds) { if (knownIds.has(turn.id)) continue; knownIds.add(turn.id); }
+      batch.push(turn); batchBytes += record.bytes;
+      if (batch.length >= APPEND_BATCH || batchBytes >= 8 * 1024 * 1024) flush();
     }
-    let known = knownIds;
-    if (!known) {
-      const candidates = new Set();
-      for (const turn of turns()) candidates.add(turn.id);
-      known = store.idsAmong(streamId, candidates);
-    }
-    let appended = 0, batch = [];
-    const flush = () => { store.appendBatch(streamId, batch); appended += batch.length; batch = []; };
-    for (const turn of turns()) {
-      if (known.has(turn.id)) continue;
-      known.add(turn.id);
-      batch.push(turn);
-      if (batch.length >= APPEND_BATCH) flush();
-    }
-    if (batch.length) flush();
+    // Complete refused/malformed/blank lines are consumed; an unfinished final
+    // fragment keeps its starting boundary so later growth can finish it.
+    complete = true;
+    flush();
     return { entries, appended, skipped, failed };
-  } finally { closeSync(fd); }
+  } finally { try { state?.close(); } finally { closeSync(fd); } }
 }
 
 // Capture one comm-log file into `<owner>~aw`. The account name is the
@@ -136,54 +165,27 @@ export function captureInteractionLog(store, { owner, path, selfName, workspace,
   return { stream: streamId, ...r };
 }
 
-// Derived seen-files cache (same pattern as capture-cc): skip a log file
-// whose size+mtime match the last pass without reading or re-projecting it.
-function seenCachePath(store) {
-  return join(store.root, "index", "capture-aw-seen.json");
+// Retain sorted basename metadata, preserving listCommLogs' code-unit account
+// order in both background capture and public results. Content is streamed;
+// discovery metadata still grows with the number of log files.
+function* iterateCommLogs(dir) {
+  let names;
+  try { names = readdirSync(dir); }
+  catch (err) { if (err.code === "ENOENT") return; throw err; }
+  for (const name of names.sort()) if (name.endsWith(".jsonl")) yield join(dir, name);
 }
-
-function loadSeenCache(store) {
-  try {
-    return JSON.parse(readFileSync(seenCachePath(store), "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-function saveSeenCache(store, cache) {
-  const path = seenCachePath(store);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(cache));
-}
-
-// One reconciliation pass over every default comm log. Unchanged files are
-// skipped; each changed one looks up its own ids in the stream.
-//
-// Files matching the record's ignore list (`<root>/ignore`, see ignore.mjs)
-// are skipped before being opened — no turns, no seen-cache entry — and
-// reported as `{ account, path, ignored: true }` so a pass stays visible
-// about what it refused to read.
-export function captureAwLogs(store, { owner, commLogDir, ignore = null } = {}) {
+function* captureAwEntries(store, { owner, commLogDir, ignore }) {
   const ign = ignore ?? loadIgnore(store.root);
-  const seen = loadSeenCache(store);
-  const results = [];
-  for (const path of listCommLogs(commLogDir ?? defaultCommLogDir())) {
+  for (const path of iterateCommLogs(commLogDir ?? defaultCommLogDir())) {
     const account = basename(path, ".jsonl");
-    if (ign.ignores(path, [basename(path), account])) {
-      results.push({ account, path, ignored: true });
-      continue; // never opened: nothing stored, nothing remembered
-    }
-    let stat;
-    try {
-      stat = statSync(path);
-    } catch {
-      continue;
-    }
-    const prev = seen[path];
-    if (prev && prev.size === stat.size && prev.mtimeMs === stat.mtimeMs) continue;
-    results.push(captureCommLog(store, { owner, path }));
-    seen[path] = { size: stat.size, mtimeMs: stat.mtimeMs };
+    if (ign.ignores(path, [basename(path), account])) { yield { account, path, ignored: true }; continue; }
+    const stream = awStream(owner);
+    const result = captureLogFile(store, { streamId: stream, path, incremental: true,
+      project: entry => projectCommLogEntry(entry, { selfName: account }) });
+    if (!result.unchanged) yield { account, stream, ...result };
   }
-  saveSeenCache(store, seen);
-  return results;
+}
+export function captureAwLogs(store, { owner, commLogDir, ignore = null, collect = true } = {}) {
+  const results = captureAwEntries(store, { owner, commLogDir, ignore });
+  return collect ? [...results] : results;
 }

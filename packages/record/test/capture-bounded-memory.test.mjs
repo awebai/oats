@@ -64,7 +64,7 @@ test(`a pass over a record several times the heap captures a grown comm log and 
   assert.equal(journal("host~cc.big"), after.cc);
 
   // The session offsets are derived state: lost, the pass rebuilds them from the journal, also in bounded memory.
-  rmSync(join(root, "index", "capture-offsets.json"), { force: true });
+  rmSync(join(root, "index", "capture.db"), { force: true });
   appendFileSync(join(proj, "big.jsonl"), ccLine(50001) + "\n");
   const rebuilt = run(HEAP_MB);
   assert.equal(rebuilt.status, 0, `the pass died: ${rebuilt.signal ?? ""} ${rebuilt.stderr.slice(-600)}`);

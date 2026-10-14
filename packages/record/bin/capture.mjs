@@ -20,12 +20,16 @@ import process from "node:process";
 import { RecordStore } from "../lib/store.mjs";
 import { captureAllSessions, captureSessions } from "../lib/capture-cc.mjs";
 import { sessionsForHome } from "../lib/sessions-for-home.mjs";
-import { jsonlLines, SESSION_FORMATS } from "../lib/formats.mjs";
+import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { cwdOfLine } from "../lib/sessions-for-home.mjs";
-import { digest, readRange } from "../lib/session-snapshot.mjs";
+import { stageSnapshot } from "../lib/session-snapshot.mjs";
+import { cleanupCaptureScratch } from "../lib/capture-scratch.mjs";
+import { bufferLines } from "../lib/file-lines.mjs";
 import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
+import { withReceiptSummaries } from "../lib/receipt-summary.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
+import { CAPTURE_SOURCES, captureHealth, resetSourceCursors, retrySetAside, writeCaptureStatus } from "../lib/capture-state.mjs";
 import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 
 // Fail closed but actionably: an unreadable ignore file must stop capture,
@@ -45,8 +49,11 @@ function loadIgnoreOrExit(recordRoot) {
 // hostname-derived owner, which forked the whole record into a second owner
 // namespace: 571 duplicate journals from one typo. Parsing must refuse what
 // it does not understand before anything can be written.
-const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format"]);
+const VALUE_FLAGS = new Set(["root", "owner", "home", "file", "format", "source"]);
 const BOOL_FLAGS = new Set([
+  "reset-cursors",
+  "retry-set-aside",
+  "health",
   "watch",
   "status",
   "install-hint",
@@ -67,6 +74,12 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
   capture --watch              pass now, then re-pass on filesystem change
                                (debounced) and every 15 minutes regardless
   capture --status             show store/stream summary, capture nothing
+  capture --health [--json]    read capture set-aside diagnosis, capture nothing
+  capture --reset-cursors [--source aw|cc|pi|codex]
+                               reset selected source cursors and exit; the next
+                               pass reprocesses them with journal deduplication
+  capture --retry-set-aside    revalidate set-aside inputs in one reconciliation;
+                               does not authorize changing captured transcripts
   capture --home <dir>         capture the sessions that ran inside <dir> (an
                                OATS instance home) and print them as JSON:
                                thread, stream, turn count, first/last turn id;
@@ -146,6 +159,10 @@ function parseArgs(argv) {
 let args;
 try {
   args = parseArgs(process.argv.slice(2));
+  const recovery = ["reset-cursors", "retry-set-aside", "health"].filter(key => args[key]);
+  if (recovery.length > 1) throw new UsageError("choose one recovery or health operation");
+  if (args.source !== undefined && (!args["reset-cursors"] || !CAPTURE_SOURCES.includes(args.source))) throw new UsageError("--source requires --reset-cursors and aw|cc|pi|codex");
+  if (recovery.length && ["home", "file", "format", "watch", "status", "install-hint", "current-roots", "sessions-only", "aw-only"].some(key => args[key])) throw new UsageError("recovery/health cannot be combined with another capture mode");
 } catch (err) {
   if (!(err instanceof UsageError)) throw err;
   // --file --json answers JSON even for a usage error: it is for programs.
@@ -165,8 +182,42 @@ if (args.help) {
 const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
 const ownerExplicit = args.owner !== undefined || process.env.TURN_RECORD_OWNER !== undefined;
 const owner = args.owner ?? process.env.TURN_RECORD_OWNER ?? hostname().split(".")[0];
-const quiet = Boolean(args.quiet);
+const quiet = Boolean(args.quiet || args.json && (args["reset-cursors"] || args["retry-set-aside"]));
 const store = new RecordStore(root, { owner });
+
+if (args.health) {
+  try {
+    const health = captureHealth(root);
+    if (args.json) console.log(JSON.stringify(health, null, 2));
+    else {
+      console.log(`capture: ${health.status}`);
+      for (const row of health.rows) console.log(`${row.code}: ${row.message}`);
+      for (const entry of health.backlog.setAside) console.log(`${entry.source}: ${entry.path}:${entry.line ?? "?"} offset ${entry.offset}: ${entry.reason}`);
+      if (health.backlog.truncated) console.log("showing first 100 set-aside inputs");
+    }
+  } catch (err) {
+    if (args.json) console.log(JSON.stringify({ status: "failed", error: err.message }));
+    else console.error(`capture: ${err.message}`);
+    process.exitCode = 1;
+  }
+  process.exit(process.exitCode ?? 0);
+}
+if (args["reset-cursors"] || args["retry-set-aside"]) {
+  try {
+    const result = args["reset-cursors"]
+      ? withCaptureLock(() => { resetSourceCursors(root, owner, args.source); return { reset: true, sources: args.source ? [args.source] : CAPTURE_SOURCES }; })
+      : pass({ retry: true });
+    if (result.skipped) throw new Error("capture lock held; recovery was not performed");
+    if (process.exitCode) throw new Error("recovery failed to release its capture lock");
+    if (args.json) console.log(JSON.stringify(result));
+    else if (args["reset-cursors"]) log(`capture: reset source cursors (${result.sources.join(", ")})`);
+  } catch (err) {
+    if (args.json) console.log(JSON.stringify({ status: "failed", complete: false, error: err.message }));
+    else console.error(`capture: ${err.message}`);
+    process.exitCode = 1;
+  }
+  process.exit(process.exitCode ?? 0);
+}
 
 // The owner decides the stream namespace, and turn ids hash it into the
 // canonical core — so the same conversation captured under two owners yields
@@ -178,21 +229,18 @@ const store = new RecordStore(root, { owner });
 // root, no other owners, and nothing is printed.
 function warnOnStrangerOwner() {
   if (ownerExplicit) return;
-  let others;
+  let example;
   try {
-    others = new Set(
-      store
-        .listStreams()
-        .map((id) => id.slice(0, id.indexOf("~")))
-        .filter(Boolean),
-    );
-  } catch {
-    return; // unreadable or absent root: not this function's business
-  }
-  if (others.size === 0 || others.has(owner)) return;
+    for (const stream of store.iterateStreams()) {
+      const existing = stream.slice(0, stream.indexOf("~"));
+      if (existing === owner) return;
+      if (existing) example ??= existing;
+    }
+  } catch { return; }
+  if (!example) return;
   console.error(
     `capture: writing as owner "${owner}" (from hostname), but this record holds ` +
-      `streams only under ${[...others].sort().map((o) => `"${o}"`).join(", ")}. ` +
+      `streams under another owner such as "${example}". ` +
       `Pass --owner or set TURN_RECORD_OWNER if that is not what you meant — ` +
       `capturing under a second owner duplicates the record rather than extending it.`,
   );
@@ -240,7 +288,16 @@ function withCaptureLock(fn) {
     return { appended: 0, skipped: true, lock: lock.held };
   }
   try {
-    return fn();
+    let result, failure;
+    try { cleanupCaptureScratch(root, lock); result = fn(); return result; }
+    catch (err) { failure = err; throw err; }
+    finally {
+      try { writeCaptureStatus(root, { pending: Boolean(failure || result?.pending || result?.held || result?.incomplete || result?.failed) }); }
+      catch (err) {
+        if (failure) throw new Error(`${failure.message}; capture status persistence also failed: ${err.message}`, { cause: failure });
+        throw err;
+      }
+    }
   } finally {
     const r = lock.release();
     if (!r.released) {
@@ -256,15 +313,17 @@ function withCaptureLock(fn) {
   }
 }
 
-function pass() {
+function pass({ retry = false } = {}) {
   // The privacy loader fails closed by exiting; it runs before the lock is
   // taken so that exit never leaves the lock behind.
   const ignore = loadIgnoreOrExit(root);
   return withCaptureLock(() => {
-  const out = { appended: 0 };
+  if (retry) retrySetAside(root);
+  const out = { appended: 0, pending: false };
   if (!args["aw-only"]) {
-    for (const r of captureAllSessions(store, { owner, ignore })) {
+    for (const r of captureAllSessions(store, { owner, ignore, collectIssues: false })) {
       out.appended += r.appended;
+      out.pending ||= !r.complete;
       const extras = [r.ignored ? `${r.ignored} ignored` : "", r.held ? `${r.held} held` : "", r.incomplete ? `${r.incomplete} incomplete` : ""]
         .filter(Boolean)
         .join(", ");
@@ -279,7 +338,7 @@ function pass() {
     let awFailed = 0;
     let awFiles = 0;
     let awIgnored = 0;
-    for (const r of captureAwLogs(store, { owner, ignore })) {
+    for (const r of captureAwLogs(store, { owner, ignore, collect: false })) {
       if (r.ignored) {
         awIgnored++;
         continue;
@@ -288,6 +347,7 @@ function pass() {
       awEntries += r.entries;
       awAppended += r.appended;
       awFailed += r.failed;
+      out.pending ||= r.failed > 0;
       out.appended += r.appended;
       if (r.failed) console.error(`aw-log ${r.account}: ${r.failed} entries failed to project`);
     }
@@ -302,7 +362,7 @@ function pass() {
     const index = new RecordIndex(store);
     try {
       index.update();
-      log(`index: updated (${JSON.stringify(index.counts())})`);
+      log("index: updated");
     } finally {
       index.close();
     }
@@ -335,12 +395,6 @@ function captureUnderLock(recordStore, recordOwner, batches, ignore, outcome, is
   });
 }
 
-/** A stream's turns that no tombstone hides. A tombstoned turn is hidden everywhere; a boundary naming one
- *  would be refused by recall, so boundaries come from the visible turns only. */
-function visibleTurns(recordStore, stream, claims = recordStore.tombstoneClaims()) {
-  return recordStore.readStream(stream).filter((t) => !recordStore.claimHides(claims, t));
-}
-
 /** The outcome vocabulary: complete only with no failure, skip, hold or incomplete tail (and, for --home, no
  *  unattributed source). */
 function statusOf(outcome, unattributed = 0) {
@@ -366,21 +420,18 @@ function isFormat(found, stated) {
 /** Records (non-blank lines, an undecodable one included) and the formats whose session header a COMPLETE
  *  line carries. A pi or codex file is settled at its header; a cc file is judged whole. A line its writer
  *  never terminated is no header. */
-function sessionHeaders(bytes, stated) {
+function sessionHeaders(chunks, stated) {
   let records = 0;
   const found = new Set();
-  const terminated = bytes.length > 0 && bytes[bytes.length - 1] === 10;
-  const take = (text, complete) => {
+  for (const line of bufferLines(chunks)) {
+    const complete = line[line.length - 1] === 10;
+    let text = null;
+    try { text = (complete ? line.subarray(0, -1) : line).toString("utf8"); }
+    catch (err) { if (err.code !== "ERR_STRING_TOO_LONG") throw err; }
     if (text === null || text.trim() !== "") records++;
     if (complete && text !== null) for (const source of HEADER_ORDER) if (cwdOfLine(source, text) !== undefined) found.add(source);
-  };
-  let pending;
-  for (const { text } of jsonlLines(bytes)) {
-    if (pending !== undefined) take(pending, true);
-    if (stated !== "cc" && found.has(stated)) return { records, found };
-    pending = text;
+    if (stated !== "cc" && found.has(stated)) break;
   }
-  if (pending !== undefined) take(pending, terminated);
   return { records, found };
 }
 
@@ -430,17 +481,18 @@ function fileCapture() {
     if (err.code === "ELOOP" || err.code === "EMLINK") return fail("E_NOT_REGULAR_FILE", `${path} is a symbolic link; pass the file it names`, where);
     return fail("E_FILE_UNREADABLE", `cannot open ${path}: ${err.message}`, where);
   }
-  let stat, bytes;
+  let stat, pinned;
   try {
     stat = fstatSync(fd);
     if (!stat.isFile()) return fail("E_NOT_REGULAR_FILE", `${path} is ${fileKind(stat)}, not a regular file`, where);
-    bytes = readRange(fd, 0, stat.size, path);
+    pinned = stageSnapshot(fd, stat, path, undefined, root);
   } catch (err) {
     return fail("E_FILE_UNREADABLE", `cannot read ${path}: ${err.message}`, where);
   } finally { closeSync(fd); }
 
-  const { records, found } = sessionHeaders(bytes, args.format);
-  if (!records) return fail("E_NO_TURNS", `${path} has no records${bytes.length ? " (only blank lines)" : " (it is empty)"}`, where);
+  try {
+  const { records, found } = sessionHeaders(pinned.chunks(), args.format);
+  if (!records) return fail("E_NO_TURNS", `${path} has no records${stat.size ? " (only blank lines)" : " (it is empty)"}`, where);
   if (!isFormat(found, args.format)) {
     const other = HEADER_ORDER.find((f) => f !== args.format && isFormat(found, f));
     return fail("E_FORMAT", other
@@ -448,12 +500,12 @@ function fileCapture() {
       : `${path} has no ${args.format} session header (${SESSION_HEADER[args.format]})`, where);
   }
 
-  const sha256 = digest(bytes);
+  const sha256 = pinned.hash;
   const fileStore = new RecordStore(root, { owner: fileOwner });
   const outcome = { appended: 0, skipped: false, held: 0, incomplete: 0, failed: 0, ignored: 0 };
   const issues = [];
   try {
-    Object.assign(outcome, captureUnderLock(fileStore, fileOwner, [[args.format, [{ path, pinned: { bytes, stat } }]]], ignore, outcome, issues));
+    Object.assign(outcome, captureUnderLock(fileStore, fileOwner, [[args.format, [{ path, pinned }]]], ignore, outcome, issues));
   } catch (err) {
     // A failed pass may have appended part of the file: never claim a count for it.
     return fail("E_CAPTURE_FAILED", err.message || String(err), { ...where, sha256, appended: null });
@@ -461,17 +513,18 @@ function fileCapture() {
   if (process.exitCode) return fail("E_CAPTURE_FAILED", "capture lock release failed; see stderr for recovery", { ...where, sha256 });
 
   const stream = `${fileOwner}~${fmt.source}.${sessionId}`;
-  const turns = visibleTurns(fileStore, stream);
+  const turns = withReceiptSummaries(fileStore, summary => summary(stream));
   const status = statusOf(outcome);
   const { lock: _lock, ...counts } = outcome;
   const receipt = {
     ...where, instance, thread: `${fmt.source}:session:${sessionId}`, stream, sessionId,
-    turns: turns.length, firstTurnId: turns[0]?.id ?? null, lastTurnId: turns.at(-1)?.id ?? null,
+    turns: turns.count, firstTurnId: turns.first?.id ?? null, lastTurnId: turns.last?.id ?? null,
     ...counts, status, complete: status === "complete", sha256, ...(issues.length ? { issues } : {}),
   };
   if (json) console.log(JSON.stringify(receipt, null, 2));
   else console.log(`capture --file: ${status}, ${receipt.turns} turns (${outcome.appended} new) in ${stream}, sha256 ${sha256}`);
   return 0;
+  } finally { pinned.close(); }
 }
 
 if (args.file !== undefined || args.format !== undefined || args.json) process.exit(fileCapture());
@@ -535,11 +588,11 @@ if (args.home) {
       formats.get(s.source).push(s);
     }
     Object.assign(outcome, captureUnderLock(store, owner, formats, ignore, outcome, issues));
-    const claims = store.tombstoneClaims();
+    withReceiptSummaries(store, summary => {
     for (const s of found) {
       const stream = `${owner}~${s.source}.${s.sessionId}`;
-      const turns = visibleTurns(store, stream, claims);
-      if (!turns.length) continue; // ignored by rule, nothing capturable yet, or all hidden
+      const turns = summary(stream);
+      if (!turns.count) continue; // ignored by rule, nothing capturable yet, or all hidden
       sessions.push({
         thread: s.thread,
         source: s.source,
@@ -547,12 +600,13 @@ if (args.home) {
         path: s.path,
         cwd: s.cwd,
         stream,
-        turns: turns.length,
-        firstTurnId: turns[0].id,
-        lastTurnId: turns[turns.length - 1].id,
-        lastTs: turns[turns.length - 1].ts,
+        turns: turns.count,
+        firstTurnId: turns.first.id,
+        lastTurnId: turns.last.id,
+        lastTs: turns.last.ts,
       });
     }
+    });
   } catch (err) {
     error = err.message || String(err);
     console.error(`capture pass failed: ${error}`);

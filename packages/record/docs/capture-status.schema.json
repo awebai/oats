@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Capture status (algorithm phase)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policy",
+    "lastRun",
+    "lastSuccess",
+    "lastFailure",
+    "lastProgressAt",
+    "backlog"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "policy": {
+      "type": "null",
+      "description": "No policy or run evidence supplied in the algorithm-only phase."
+    },
+    "lastRun": {
+      "type": "null",
+      "description": "No policy or run evidence supplied in the algorithm-only phase."
+    },
+    "lastSuccess": {
+      "type": "null",
+      "description": "No policy or run evidence supplied in the algorithm-only phase."
+    },
+    "lastFailure": {
+      "type": "null",
+      "description": "No policy or run evidence supplied in the algorithm-only phase."
+    },
+    "lastProgressAt": {
+      "type": "null",
+      "description": "No policy or run evidence supplied in the algorithm-only phase."
+    },
+    "backlog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pending",
+        "setAsideCount",
+        "setAside",
+        "truncated"
+      ],
+      "properties": {
+        "pending": {
+          "type": "boolean"
+        },
+        "setAsideCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "setAside": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "path",
+              "offset",
+              "reason"
+            ],
+            "properties": {
+              "source": {
+                "enum": [
+                  "aw",
+                  "cc",
+                  "pi",
+                  "codex"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
