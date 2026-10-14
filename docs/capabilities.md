@@ -373,6 +373,9 @@ A self-contained package has an `oats.json`:
   separate from declaring the package.
 - `environment` lists the exact launch variables the capability may set;
   spawn hook output must be a subset and use the capability vendor prefix.
+  A listed variable is the capability's to decide: a launch it is part of
+  never inherits one its hooks leave out
+  ([a declared name is the provider's](#a-declared-name-is-the-providers)).
 - `triggerSources` (optional) declares the capability's
   [trigger sources](#trigger-sources-triggersources). It is checked only
   where a source is used, never when the capability loads.
@@ -751,6 +754,55 @@ and must not be encoded into this persisted spawn command.
 Spawn order is by capability name; retirement reverses successful
 spawn order. Hooks run from the instance's own copy
 (`<home>/.oats/modules/<cap>/`).
+
+### A declared name is the provider's
+
+A variable a capability declares in `environment` is the capability's to
+decide, for every launch the capability is part of, from 0.56.0. A launch
+starts with exactly what its capabilities' hooks return for those names:
+
+- **Returned:** the launch has the hook's value, as before.
+- **Left out** (the hook answered without it, the hook failed, or the
+  capability has no hook that ran for this launch): the launch has **no**
+  such variable. It is removed from the harness's environment, never
+  inherited from the pane's ambient environment: the tmux server's global
+  one, the session's, the login shell that started the server, or the
+  Desktop's. Before 0.56.0 such a name kept whatever value the pane held, so
+  one instance's value (`AWEB_DELIVERY=session`, say) could reach another
+  instance launched in the same session or on the same server.
+- **Set by the launch configuration's `env`:** the configuration's value,
+  as before. It is the operator's explicit setting on the launch's own
+  command, not an ambient value. (A configuration still cannot override a
+  name a capability's hook returns: `E_LAUNCH_ENV_CONFLICT`.)
+
+The capabilities a launch is checked against are the ones its hooks run
+against: for a spawn, the soul's composed capabilities, with their spawn hooks'
+answers; for a start or restart, the providers the spawn captured, with the
+recorded contributions and the answers of the launch hooks that run again
+then. A name two capabilities declare is removed unless one of them returns
+it. Each window gets this on its own command: OATS unsets the removed names
+in the window's command (as it does `COLORFGBG`), before the launch's own
+assignments, for a spawn, a start, a start in place and a restart. The
+persisted launch command (`instance.json` `command`) does not change. The
+shell a pane falls back to when the harness exits is started by that command,
+so it has none of them either.
+
+A removed name that selects a harness's configuration folder (a capability
+may declare `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `PI_CODING_AGENT_DIR` under a
+namespace it names) reads as not set in the checks of that launch: the
+package probe, folder trust and readiness then read the default folder under
+`HOME`, as the harness will. A spawn's first package check runs before its
+hooks and cannot know it yet; its check on the session it gets does
+([one limit](execution-targets.md#the-checks-read-the-pane)).
+
+A launch whose capabilities do not declare a name is unchanged: an ambient
+value of that name still reaches it. The tmux server's and the session's
+environment are not changed either (see
+[the environment of the server and its panes](execution-targets.md#the-environment-of-the-server-and-its-panes)).
+**A limit for Codex:** the removed names are not set for Codex's tool
+commands (`shell_environment_policy.set`), but a Codex app-server that runs
+outside the launch (a shared daemon another process started) has that
+process's environment, which OATS does not reach.
 
 ### The node a hook writes down
 
