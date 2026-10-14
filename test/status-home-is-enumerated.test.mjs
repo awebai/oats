@@ -10,6 +10,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { listInstances } from "../lib/core.mjs";
+import { privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
 /** A deployment's agents root in a directory of the test, which is removed when the test has ended. */
 function layout(t) {
@@ -21,7 +22,16 @@ function layout(t) {
   writeFileSync(join(root, "worker", "soul", "soul.yaml"), "name: worker\n");
   return { root, instances };
 }
-const rowsOf = (root) => listInstances(root, `none-${process.pid}`).find((a) => a.name === "worker")?.instances || [];
+/** The listing asks tmux for the session's windows, in this process: with a TMUX_TMPDIR of this file for
+ *  the call, never tmux's default place, where a host's live deployment has its server. */
+const TMUX_TMPDIR = privateTmuxTmpdir();
+test.after(() => removeTmuxTmpdir(TMUX_TMPDIR));
+function rowsOf(root) {
+  const saved = process.env.TMUX_TMPDIR;
+  process.env.TMUX_TMPDIR = TMUX_TMPDIR;
+  try { return listInstances(root, `none-${process.pid}`).find((a) => a.name === "worker")?.instances || []; }
+  finally { if (saved === undefined) delete process.env.TMUX_TMPDIR; else process.env.TMUX_TMPDIR = saved; }
+}
 
 test("a hostile instance.json cannot relocate the reported home or rename the instance", (t) => {
   const { root, instances } = layout(t);

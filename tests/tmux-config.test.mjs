@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-config.mjs";
+import { privateTmuxTmpdir, removeTmuxTmpdir } from "../test/helpers/host-fixture.mjs";
 
 /** A new home directory of the test, removed when the test has ended. */
 function tempHome(t) {
@@ -31,6 +32,11 @@ test("appends mouse support once without replacing existing config", (t) => {
   const home = tempHome(t);
   const config = join(home, ".tmux.conf");
   writeFileSync(config, "set -g history-limit 100000\n");
+  // enableTmuxMouse reloads a running tmux server with the config it wrote: the one of a TMUX_TMPDIR of
+  // this test, never the one at tmux's default place, where a host has its own.
+  const saved = process.env.TMUX_TMPDIR, tmuxTmpdir = privateTmuxTmpdir();
+  t.after(() => { if (saved === undefined) delete process.env.TMUX_TMPDIR; else process.env.TMUX_TMPDIR = saved; removeTmuxTmpdir(tmuxTmpdir); });
+  process.env.TMUX_TMPDIR = tmuxTmpdir;
 
   const first = enableTmuxMouse(config);
   const second = enableTmuxMouse(config);
