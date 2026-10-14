@@ -1353,9 +1353,34 @@ const contextPanel = createContextPanel({
   onFocusModeChange: () => updateSidebarControls(),
   // Focus mode hides the sidebar: focus that was there lands on the active tab, else a stable visible control.
   fallbackFocus: () => stableFocusTarget(),
+  // Spec B: instance details open or closed is one per-machine preference, closed until the user opens
+  // it ("1" open; absent closed), persisted like oats-desktop-sidebar-hidden and never in a deployment.
+  instanceOpen: {
+    read: () => localStorage.getItem("oats-desktop-instance-panel-open") === "1",
+    write: open => { if (open) localStorage.setItem("oats-desktop-instance-panel-open", "1"); else localStorage.removeItem("oats-desktop-instance-panel-open"); },
+  },
+  // Closing it with focus inside hands focus to Show instance panel, which appears in its place.
+  closedFocus: () => { const show = document.getElementById("show-panel"); return show && !show.hidden ? show : null; },
+  onChange: state => updatePanelControl(state),
 });
 window.addEventListener("pagehide", () => contextPanel.dispose(), { once: true });
 
+/** Show instance panel (Spec B), at the end of the main area's top bar: shown while the panel is
+ * closed (or hidden by focus mode) and has something to show. It carries the Developer page's change
+ * dot, and says so. Hidden under focus, its focus goes to the panel it opened. */
+function updatePanelControl({ present, open, changes }) {
+  const show = document.getElementById("show-panel");
+  if (!show) return;
+  const hide = !present || open, focused = document.activeElement === show;
+  show.hidden = hide;
+  show.querySelector(".main-edge-dot").hidden = !changes;
+  const label = changes ? "Show instance panel, Developer has changes" : "Show instance panel";
+  if (show.getAttribute("aria-label") !== label) {
+    show.setAttribute("aria-label", label); baseTitles.set(show, label); applyChordTitles();
+  }
+  // Opened by its chord while it had focus: focus follows into the panel (never <body>).
+  if (hide && focused && !contextPanel.focus()) stableFocusTarget()?.focus();
+}
 /** Projection only: foreground comes from the committed active tab/stage. */
 function syncContextPanel() {
   const tab = tabLayerVisible ? tabs.get(activeTab) : null;
@@ -1365,8 +1390,8 @@ function syncContextPanel() {
 }
 function activeTabTrigger() { return activeTab != null ? tabs.get(activeTab)?.triggerEl ?? null : null; }
 /** Where focus goes when the control holding it disappears: the active tab's trigger when it is shown, else a
- * stable visible control (the sidebar toggle, or the restore edge that focus mode and a
- * hidden sidebar show), never <body>. */
+ * stable visible control (the sidebar toggle, or Show sidebar, which focus mode and a hidden sidebar
+ * show, or Show instance panel), never <body>. */
 function stableFocusTarget() {
   const shown = el => {
     if (!el?.isConnected || el.disabled) return false;
@@ -1375,7 +1400,7 @@ function stableFocusTarget() {
     }
     return true;
   };
-  return [activeTabTrigger(), ...["sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
+  return [activeTabTrigger(), ...["sidebar-toggle", "show-sidebar", "show-panel"].map(id => document.getElementById(id))].find(shown) ?? null;
 }
 function refreshPanelInstance(instances, workspace) {
   syncTabNeedsInput(instances, workspace); // also on a poll whose roster signature is unchanged (no repaint)
@@ -2373,18 +2398,20 @@ function sidebarHidden() {
 }
 function updateSidebarControls() {
   const visible = !sidebarHidden() && !contextPanel.isFocusMode();
-  for (const id of ["sidebar-toggle", "sidebar-restore"]) {
-    document.getElementById(id).setAttribute("aria-expanded", String(visible));
-  }
+  document.getElementById("sidebar-toggle").setAttribute("aria-expanded", String(visible));
+  // Show sidebar (Spec B) is shown only while the sidebar is away: it is always the collapsed side.
+  const show = document.getElementById("show-sidebar");
+  const focused = document.activeElement === show;
+  show.hidden = visible;
+  if (visible && focused) document.getElementById("sidebar-toggle").focus();
 }
 function setSidebarHidden(on) {
   document.getElementById("app").classList.toggle("sidebar-hidden", on);
   updateSidebarControls();
-  // Hiding by mouse or keyboard must not strand focus in display:none.
+  // Hiding by mouse or keyboard must not strand focus in display:none: it goes to Show sidebar, which
+  // appears in the sidebar's place (and back to the sidebar's own toggle when it returns).
   if (on && document.getElementById("sidebar").contains(document.activeElement)) {
-    document.getElementById("sidebar-restore").focus();
-  } else if (!on && document.activeElement === document.getElementById("sidebar-restore")) {
-    document.getElementById("sidebar-toggle").focus();
+    document.getElementById("show-sidebar").focus();
   }
   try {
     if (on) localStorage.setItem(SIDEBAR_HIDDEN_KEY, "1");
@@ -2395,10 +2422,12 @@ function toggleSidebar() {
   if (contextPanel.isFocusMode()) { contextPanel.setFocusMode(false); setSidebarHidden(false); }
   else setSidebarHidden(!sidebarHidden());
 }
-// Restore-by-mouse must exist while the sidebar is hidden: a thin edge
-// button (CSS shows it only under #app.sidebar-hidden) runs the SAME
-// sidebar.toggle action as the chord/palette/rail-footer button.
-document.getElementById("sidebar-restore").addEventListener("click", () => runAction("sidebar.toggle"));
+// Spec B: a closed sidebar leaves nothing behind. Show sidebar, at the start of the main area's top bar
+// (shown only while the sidebar is hidden or focus mode is on), runs the SAME sidebar.toggle as the
+// chord, the palette and the footer button (it leaves focus mode too). Show instance panel, at its end,
+// runs panel.toggle and then moves focus into the panel it opened.
+document.getElementById("show-sidebar").addEventListener("click", () => runAction("sidebar.toggle"));
+document.getElementById("show-panel").addEventListener("click", () => { runAction("panel.toggle"); contextPanel.focus(); });
 try { if (localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1") setSidebarHidden(true); } catch { /* storage-less */ }
 
 // Terminal copies (#672). Each open terminal tab's xterm, by its wrap, for terminal.copySelection.

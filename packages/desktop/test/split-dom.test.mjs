@@ -255,14 +255,15 @@ test("runAction dispatches a registered action only in an active context (button
 
 test("index.html ships the split buttons and shell wires the group projection through runAction", (t) => {
   const html = read("renderer/index.html");
-  for (const id of ["tab-actions", "split-right", "split-down", "sidebar-restore", "tabstrip", "tabbar-row"]) {
+  for (const id of ["tab-actions", "split-right", "split-down", "show-sidebar", "show-panel", "tabstrip", "tabbar-row"]) {
     assert.match(html, new RegExp(`id="${id}"`), `index.html has #${id}`);
   }
   // Spec F: only the two split buttons follow the tabs; closing the split and the panel live on their chords.
   for (const id of ["split-close", "panel-toggle"]) assert.doesNotMatch(html, new RegExp(`id="${id}"`), `#${id} is gone`);
   assert.doesNotMatch(html, /tab-actions-sep/);
   assert.ok(!/id="pane-tabs"/.test(html), "the PR #44 pane-tabs row is gone (phantom chrome fix)");
-  for (const a of ["split.vertical", "split.horizontal", "sidebar.toggle"]) {
+  assert.doesNotMatch(html, /id="sidebar-restore"/, "a hidden sidebar leaves no edge (Spec B)");
+  for (const a of ["split.vertical", "split.horizontal", "sidebar.toggle", "panel.toggle"]) {
     assert.match(html, new RegExp(`data-action="${a.replace(".", "\\.")}"`), `${a} button is chord-titled`);
   }
   const src = read("renderer/shell.mjs");
@@ -288,8 +289,8 @@ test("index.html ships the split buttons and shell wires the group projection th
   toggle.click();
   assert.equal(toggles, 1, "footer click runs sidebar.toggle through the actual action registry");
   const css = read("renderer/shell.css");
-  assert.match(css, /#sidebar-restore \{ display: none; \}/);
-  assert.match(css, /#app\.sidebar-hidden #sidebar-restore \{/);
+  assert.doesNotMatch(css, /#sidebar-restore/);
+  assert.match(css, /\.main-edge-control\[hidden\] \{ display: none; \}/);
   assert.match(css, /#tabstrip\.split-hidden \{ display: none; \}/,
     "the top strip disappears while the split renders per-group strips");
   assert.match(css, /\.group-cell \{[^}]*flex: 1 1 0/, "group cells share the host track");

@@ -118,6 +118,8 @@ function shell(t) {
   const c = { document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, workspace: '/A', gen: 0, currentWorkspace: () => c.workspace,
     connectionGeneration: 0, subscribeConnections: () => () => {}, ctx: { openExternal: assert.fail }, openConnections: assert.fail,
     getBinding, formatChord, stableFocusTarget: () => null,
+    // The user has opened the instance panel (Spec B: a per-machine preference, closed until then).
+    localStorage: { getItem: key => key === 'oats-desktop-instance-panel-open' ? '1' : null, setItem() {}, removeItem() {} },
     workspaceGeneration: () => c.gen, updateSidebarControls() {}, api(path, opts) {
       const d = deferred(); calls.push({ path, ...opts, body: JSON.parse(opts.body) }); pending.push(d); return d.promise;
     } };

@@ -330,9 +330,9 @@ test('real context-panel lease composes with Workspace without copying, reloadin
   assert.equal(root.hidden, false); assert.ok(aside.closest('.context-panel-stage.oats-view'));
   assert.equal(u.get('.souls-body').classList.contains('inspecting'), false);
   u.get('[aria-label="Close inspector"]').click();
-  assert.equal(root.classList.contains('is-collapsed'), true); assert.equal(aside.hidden, false);
+  assert.equal(root.hidden, true, 'closed: nothing left in its place'); assert.equal(aside.hidden, false);
   await u.poll();
-  assert.equal(root.classList.contains('is-collapsed'), true);
+  assert.equal(root.hidden, true);
   assert.equal(instructionsOf(u), field);
   const refresh = button(aside, 'Refresh');
   panel.setCollapsed(false);
@@ -392,12 +392,14 @@ for (const outcome of ['success', 'rejection']) test(`real facade: hidden inspec
   u.host.panel.setContext({ workspace: '/team', key: 'newer-terminal', instance: { instance: 'newer' } });
   u.get('#outside').focus(); u.focuses.length = 0;
   settle(gate, outcome, inspection()); await tick();
-  assert.equal(u.get('#panel').classList.contains('is-collapsed'), true);
+  assert.equal(u.get('#panel').hidden, false, "the newer terminal's details follow their own preference");
   assert.equal(aside.parentElement.hidden, true);
   assert.equal(u.get('[data-context-field="instance"]').textContent, 'newer');
   assert.equal(u.doc.activeElement, u.get('#outside')); assert.deepEqual(u.focuses, []);
   u.host.panel.setCollapsed(false);
   assert.equal(aside.parentElement.hidden, true, 'expansion still belongs to the newer terminal');
   u.host.panel.setContext({ workspace: '/team', owner: u.host.owner });
-  assert.equal(aside.parentElement.hidden, false, 'only shell selection can expose retained completion');
+  assert.equal(aside.parentElement.hidden, true, 'the completion did not reopen the closed inspector');
+  u.host.panel.setCollapsed(false);
+  assert.equal(aside.parentElement.hidden, false, 'only shell selection and the user reopening it expose retained completion');
 });

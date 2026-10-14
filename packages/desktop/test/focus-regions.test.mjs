@@ -22,7 +22,7 @@ function shell(t, { tabs = false } = {}) {
   doc.querySelector("#instance-roster .ctx-list").innerHTML = `<div class="ctx-tree-row"><button class="ctx-inst" tabindex="-1" data-tree-instance="a">a</button></div><div class="ctx-tree-row active"><button class="ctx-inst active" tabindex="0" data-tree-instance="b">b</button><span class="ctx-row-tools"><button class="ctx-start">Start…</button></span></div>`;
   doc.getElementById("stagehost").innerHTML = `<div><div class="workspace-tabs"><button role="tab" aria-selected="true" tabindex="0">Souls</button></div><input class="filter"></div>`;
   const panel = doc.getElementById("context-panel"); panel.hidden = false;
-  panel.innerHTML = `<div role="tablist"><button role="tab" aria-selected="false" tabindex="-1">Instance</button><button role="tab" aria-selected="true" tabindex="0">Soul</button></div><div class="context-panel-rail" hidden><button class="context-panel-rail-tab" aria-pressed="true">Soul</button></div>`;
+  panel.innerHTML = `<div role="tablist"><button role="tab" aria-selected="false" tabindex="-1">Instance</button><button role="tab" aria-selected="true" tabindex="0">Soul</button></div>`;
   let layer = tabs, terminal = null;
   if (tabs) {
     doc.getElementById("stagehost").style.display = "none";
@@ -77,15 +77,21 @@ test("never <body>: a region with nothing to focus is passed over", t => {
   assert.notEqual(s.doc.activeElement, s.doc.body);
 });
 
-test("a collapsed panel keeps its rail in the cycle (a terminal eats Tab); main is the active terminal", t => {
+test("a closed panel is out of the cycle (Spec B), the hidden-region rule; main is the active terminal", t => {
   const s = shell(t, { tabs: true });
-  const panel = s.doc.getElementById("context-panel");
-  panel.querySelector('[role="tablist"]').hidden = true; panel.querySelector(".context-panel-rail").hidden = false;
+  s.doc.getElementById("context-panel").hidden = true; // closed: no rail stands in for it
+  s.doc.getElementById("show-panel").hidden = false;
+  assert.deepEqual(REGIONS.filter(s.regions.visible), ["nav", "roster", "main"]);
   s.terminal.focus();
-  s.regions.cycle(1); assert.equal(s.where(), "Soul"); assert.ok(s.doc.activeElement.classList.contains("context-panel-rail-tab"));
-  s.regions.cycle(1); s.regions.cycle(1); s.regions.cycle(1);
+  s.regions.cycle(1); assert.equal(s.where(), "Workspace", "from the terminal past the closed panel, back to the nav");
+  s.regions.cycle(1); s.regions.cycle(1);
   assert.equal(s.doc.activeElement, s.terminal, "main in the tab layer is the terminal's input");
   assert.equal(s.regions.regionOfFocus(), "main");
+  s.doc.getElementById("show-panel").focus();
+  assert.equal(s.regions.regionOfFocus(), "main", "Show instance panel belongs to the Main region");
+  s.doc.getElementById("app").classList.add("sidebar-hidden"); s.doc.getElementById("show-sidebar").hidden = false;
+  s.doc.getElementById("show-sidebar").focus();
+  assert.equal(s.regions.regionOfFocus(), "main", "and so does Show sidebar");
 });
 
 test("the roster without a selected row lands on its first row's stop, else its filter", t => {

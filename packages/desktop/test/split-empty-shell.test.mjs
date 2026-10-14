@@ -51,6 +51,8 @@ function shell(t, shellSource = source) {
   const c = {
     document, window: dom.window, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, canAddressRemote, rowReason, console, navigator: { platform: "MacIntel" },
     getBinding, formatChord, stableFocusTarget: () => null,
+    // The user has opened the instance panel (Spec B: one per-machine preference, closed until opened).
+    localStorage: (store => ({ getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: key => store.delete(key) }))(new Map([["oats-desktop-instance-panel-open", "1"]])),
     connectionGeneration: 0, subscribeConnections: () => () => {}, ctx: { openExternal: assert.fail }, openConnections: assert.fail,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
@@ -453,19 +455,23 @@ test('two existing groups project only the focused instance; empty, file and bra
   assert.equal(s.attachments.length, 2); assert.deepEqual(s.detached, [2]);
 });
 
-test('panel context and per-workspace tab/collapse preferences survive A→B→A without reacquiring retained terminals', async t => {
+test('panel context and per-workspace tab preferences survive A→B→A, open or closed is one preference, without reacquiring retained terminals', async t => {
   const s = shell(t); await s.open('a-panel');
   s.document.querySelector('[data-context-tab="soul"]').click(); s.contextPanel.setCollapsed(true);
+  assert.equal(s.panelRoot.hidden, true, 'closed: hidden, no rail');
+  assert.equal(s.c.localStorage.getItem('oats-desktop-instance-panel-open'), null, 'the closed state is stored');
   s.document.getElementById('workspace').focus(); s.switchTo('B'); assertPanel(s, null);
-  await s.open('b-panel'); assertPanel(s, instance('b-panel'));
-  assert.equal(s.panelRoot.classList.contains('is-collapsed'), false);
+  await s.open('b-panel');
+  assert.equal(s.panelRoot.hidden, true, 'opening a terminal in B never opens it');
+  assert.equal(s.field('instance'), 'b-panel', 'its details are current, ready for when it opens');
+  s.contextPanel.setCollapsed(false); assertPanel(s, instance('b-panel'));
+  assert.equal(s.c.localStorage.getItem('oats-desktop-instance-panel-open'), '1');
   s.document.querySelector('[data-context-tab="git"]').click();
   s.document.getElementById('workspace').focus(); s.switchTo('A');
   assertPanel(s, instance('a-panel'));
-  assert.equal(s.panelRoot.classList.contains('is-collapsed'), true);
-  assert.equal(s.document.querySelector('[aria-selected="true"][data-context-tab]').dataset.contextTab, 'soul');
+  assert.equal(s.document.querySelector('[aria-selected="true"][data-context-tab]').dataset.contextTab, 'soul', 'the selected page is per workspace');
   assert.equal(s.document.activeElement.id, 'workspace');
-  s.contextPanel.setCollapsed(false); s.switchTo('B');
+  s.switchTo('B');
   assertPanel(s, instance('b-panel'));
   assert.equal(s.document.querySelector('[aria-selected="true"][data-context-tab]').dataset.contextTab, 'git');
   assert.equal(s.attachments.length, 2); assert.deepEqual(s.detached, []);

@@ -21,36 +21,14 @@ body {
   #workbench { flex-direction: column; }
   #workbench > #context-panel.context-panel { flex: 0 1 45%; width: 100%; min-height: 120px;
     border-left: 0; border-top: 1px solid var(--border); }
-  #workbench > #context-panel.context-panel.is-collapsed { flex: 0 0 34px; min-height: 34px; }
-  #workbench > #context-panel .context-panel-rail { flex-direction: row; }
-  /* In the row rail, margin-top:auto would pull the expand control off the centre line. */
-  #workbench > #context-panel .context-panel-expand { min-height: 32px; margin-top: 0; }
 }
 #context-panel .soul-inspector { width: 100%; max-width: none; flex: 1; border: 0; overflow: auto; }
-#app.focus-mode #sidebar { display: none; }
-/* Focus mode hides the sidebar, so the restore edge (below) is also its visible exit: sidebar.toggle leaves focus mode. */
-#app.focus-mode #sidebar-restore {
-  display: flex; align-items: center; justify-content: center;
-  width: 14px; min-width: 14px; padding: 0; border: 0; border-right: 1px solid var(--border);
-  background: var(--surface); color: var(--muted); font-size: 13px; cursor: pointer;
-}
-#app.focus-mode #sidebar-restore:hover { color: var(--fg); background: var(--surface-2); }
-#app.focus-mode #sidebar-restore:focus-visible { color: var(--fg); background: var(--sel); }
 /* Hideable sidebar: terminals get the full window width. Class-driven so the
    toggle is one line of JS; every terminal tab's ResizeObserver refits xterm
-   when the panes change size. */
+   when the panes change size. Hidden (or in focus mode) it leaves nothing
+   behind: no strip, rail or edge; Show sidebar (below) reopens it. */
+#app.focus-mode #sidebar { display: none; }
 #app.sidebar-hidden #sidebar { display: none; }
-/* Restore-by-mouse while hidden: a thin edge button on the window's left,
-   shown only when the sidebar is away (it runs the same sidebar.toggle
-   action as the chord/palette/rail-footer button). */
-#sidebar-restore { display: none; }
-#app.sidebar-hidden #sidebar-restore {
-  display: flex; align-items: center; justify-content: center;
-  width: 14px; min-width: 14px; padding: 0; border: 0; border-right: 1px solid var(--border);
-  background: var(--surface); color: var(--muted); font-size: 13px; cursor: pointer;
-}
-#app.sidebar-hidden #sidebar-restore:hover { color: var(--fg); background: var(--surface-2); }
-#app.sidebar-hidden #sidebar-restore:focus-visible { color: var(--fg); background: var(--sel); }
 
 /* ── nav rail ── */
 #sidebar {
@@ -412,7 +390,28 @@ body {
 .ws-dialog-foot button:disabled { cursor: default; border-color: var(--border); background: var(--surface-2); color: var(--faint); }
 
 /* ── main / tabs ── */
-#main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#main { position: relative; flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;
+        --main-lead-inset: 0px; --main-trail-inset: 0px; }
+/* Spec B: Show sidebar and Show instance panel sit at the two ends of the main area's top bar (the
+   tab strip with tabs open, else the stage's own header), shell-owned and in the Main region's tab
+   order (first and last child of #main). Each top bar reserves their room as a leading/trailing inset
+   while they are shown, so they never cover a view's content nor sit on a terminal, and the bar keeps
+   its 48px and its rule. */
+#main:has(> #show-sidebar:not([hidden])) { --main-lead-inset: 40px; }
+#main:has(> #show-panel:not([hidden])) { --main-trail-inset: 40px; }
+.main-edge-control { position: absolute; top: calc((var(--bar-h) - 1px - 28px) / 2); z-index: 3;
+                     appearance: none; border: 0; border-radius: 6px; background: none; color: var(--muted);
+                     display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+                     font: inherit; cursor: pointer; }
+.main-edge-control[hidden] { display: none; }
+#show-sidebar { left: 6px; }
+#show-panel { right: 6px; }
+.main-edge-control:hover { color: var(--fg); background: var(--surface-2); }
+.main-edge-control:focus-visible { color: var(--fg); background: var(--sel); }
+/* The Developer page's change dot, as the panel shows it, on the control that reopens the panel. */
+.main-edge-dot { position: absolute; right: 2px; top: 2px; width: 7px; height: 7px; box-sizing: border-box;
+                 border-radius: 50%; background: var(--accent); border: 1px solid var(--surface); }
+.main-edge-dot[hidden] { display: none; }
 /* One bar height everywhere, border included (like .side-head): the strip's
    bottom border lines up with the sidebar header's and runs unbroken under
    every tab, the active one included (human preference). */
@@ -420,7 +419,7 @@ body {
             background: var(--bg); border-bottom: 1px solid var(--border); }
 #tabstrip:has(> #tabbar-row > #tabbar:empty) { display: none; }
 #tabstrip.split-hidden { display: none; }
-#tabbar-row { display: flex; min-width: 0; }
+#tabbar-row { display: flex; min-width: 0; padding-left: var(--main-lead-inset); padding-right: var(--main-trail-inset); }
 #tabbar {
   display: flex; flex: 1; min-width: 0;
   overflow-x: auto; height: calc(var(--bar-h) - 1px); /* the strip's rule is the 48th pixel */
@@ -517,12 +516,19 @@ body {
    above it, so the rule aligns with the sidebar header's and stays visible
    under the active tab. */
 .group-tabbar { display: flex; flex: none; box-sizing: border-box; min-width: 0; overflow-x: auto; overflow-y: hidden;
-                height: var(--bar-h); background: var(--bg); border-bottom: 1px solid var(--border); }
+                height: var(--bar-h); background: var(--bg); border-bottom: 1px solid var(--border);
+                padding-left: var(--main-lead-inset); padding-right: var(--main-trail-inset);
+                scroll-padding-left: var(--main-lead-inset); scroll-padding-right: var(--main-trail-inset); }
+/* Only the strips at the main area's top corners reserve the Show controls' room: the first group's
+   lead; the trail on the last group side by side, on the first stacked. (A sticky control inside the
+   strip, the split buttons, stops at its padding, clear of Show instance panel.) */
+#tabhost > .group-cell ~ .group-cell { --main-lead-inset: 0px; }
+#tabhost.split-row > .group-cell:has(~ .group-cell), #tabhost.split-col > .group-cell ~ .group-cell { --main-trail-inset: 0px; }
 /* In a group strip the split buttons scroll with its tabs: they stay pinned to its
    end, and the strip's scroll padding keeps a revealed tab clear of them
    (revealInStrip honours it). */
 .group-tabbar > #tab-actions { margin-left: auto; position: sticky; right: 0; z-index: 1; background: var(--bg); }
-.group-tabbar:has(> #tab-actions) { scroll-padding-right: 74px; }
+.group-tabbar:has(> #tab-actions) { scroll-padding-right: calc(74px + var(--main-trail-inset)); }
 .tab-pane.split-cell { position: relative; inset: auto; flex: 1 1 0; min-width: 0; min-height: 0; }
 .group-cell > .split-empty { flex: 1 1 0; min-width: 0; min-height: 0; }
 .split-empty { display: flex; align-items: center; justify-content: center;
