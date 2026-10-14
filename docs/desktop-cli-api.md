@@ -508,10 +508,9 @@ message}`.
 
 A soul whose resolution is refused is an inspect error with the resolver's
 code and details (`E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY`,
-`E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA`, `E_REQUIREMENT_INACTIVE`,
-`E_TEAM_UNKNOWN`, and `E_WORKSPACE_SCHEMA` reason `local-teams-closed`);
-readiness reports the same condition
-as an item. Soul lookup errors are those of [spawn](#spawn-errors).
+`E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA`, `E_TEAM_UNKNOWN`, and
+`E_WORKSPACE_SCHEMA` reason `local-teams-closed`); readiness reports the same
+condition as an item. Soul lookup errors are those of [spawn](#spawn-errors).
 
 <a id="oats-readiness---home-----soul----dir----policy---json--readinessapi-2"></a>
 ### `oats readiness`
@@ -2379,7 +2378,6 @@ kernel stage raised as well.
 | `E_SLOT_CONFLICT`, `E_SKILL_DUPLICATE` | | the composition conflicts |
 | `E_WORKSPACE_SCHEMA` | `{path, key, reason}` | a removed key or invalid payload |
 | `E_CLONE_MISSING`, `E_CLONE_MISMATCH` | | the member's clone is missing or wrong |
-| `E_REQUIREMENT_INACTIVE` | `{soul, capabilities, context, remedy}` | a declared requirement is not active |
 | `E_CHILD_SPAWNS_DISABLED` | `{parent, policy}` | the parent's policy is off |
 | `E_PARENT_NOT_FOUND`, `E_RELATIVE_NOT_FOUND` | | the anchor name matches no instance |
 | `E_RELATIVE_AMBIGUOUS` | | the anchor matches several instances (`--relative-root` picks one) or a same-named instance would shadow the edge |

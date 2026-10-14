@@ -36,3 +36,10 @@
   `E_HARNESS_RESOURCE_MISSING` now. A preview in which the gate itself
   faults (an error that is no verdict on a package) now fails as a fault,
   where it showed a row that called the fault a missing package.
+
+## Removed
+
+- **`E_REQUIREMENT_INACTIVE` (#1047),** documented as an answer of
+  `oats spawn` and of `oats inspect --soul`, and never raised since 0.26.0:
+  no OATS from 0.26.0 raises this code. It leaves the contract page and the
+  kernel. Nothing a released kernel answers changes.

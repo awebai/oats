@@ -46,11 +46,12 @@ function formerAnswer(e) {
   return { code: ["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", details: general };
 }
 
-/** Every code the catch named, a launch code it passed by its pattern, codes it re-badged (the
+/** Every code the catch named but E_REQUIREMENT_INACTIVE, which no kernel from 0.26.0 raises and
+ *  which left the kernel with #1047; a launch code it passed by its pattern, codes it re-badged (the
  *  issue's two, one raised after effects, one that carries `home` in its details at a retire), and
  *  an error with no kernel code. */
 const CODES = ["E_LAUNCH_EXECUTABLE", "E_LAUNCH_ENV_MISSING", "E_MODEL_UNKNOWN", "E_UNSUPPORTED_HARNESS", "E_HARNESS_UNAVAILABLE", "E_CLAUDE_CONFIG_REMOVED",
-  "E_REQUIREMENT_INACTIVE", "E_CHILD_SPAWNS_DISABLED", "E_BRANCH_EXISTS", "E_BASE_UNKNOWN", "E_INTERRUPTED", "E_REQUIRED_HOOK_FAILED", "E_HOOK_ENVIRONMENT_CONTRACT",
+  "E_CHILD_SPAWNS_DISABLED", "E_BRANCH_EXISTS", "E_BASE_UNKNOWN", "E_INTERRUPTED", "E_REQUIRED_HOOK_FAILED", "E_HOOK_ENVIRONMENT_CONTRACT",
   "E_REMOTE_UNREADABLE", "E_DECISION_STALE", "E_IDEMPOTENCY_CONFLICT", "E_PLACEMENT_TAKEN", "E_INSTANCE_NAME_TAKEN", "E_INSTANCE_NAME_INVALID", "E_SPAWN_INCOMPLETE",
   "E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS", "E_SPAWN_FAILED",
   "E_HARNESS_RESOURCE_MISSING", "E_RUNTIME_ENDPOINT_UNKNOWN", "E_WORK_PRESERVATION_FAILED", "E_UNIDENTIFIED_INSTANCE_HOME",
