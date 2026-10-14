@@ -134,6 +134,21 @@ test("with a query: matching recent instances first, most recent first, then the
   assert.equal(p.doc.querySelector('[role="group"]'), null, "'>' still restricts to commands");
 });
 
+test("a recent row's parent is the tree's: a retired or cross-deployment parent name is not shown", () => {
+  // The sidebar and the palette's tree resolve a parent by identity (#482); a raw
+  // parentInstance that resolves to nothing, or to another deployment, is no parent.
+  const orphan = at("child", { parentInstance: "retired-parent" });
+  const recent = new Map([[instanceId(orphan), 1]]);
+  const [row] = instanceRows(paletteRows({ instances: [orphan], recent }, [], "", {}));
+  assert.deepEqual([row.label, row.under ?? null, !!row.showUnder], ["child", null, false]);
+  const D1 = { id: "/a", machine: "This Mac", path: "/a", label: "~/a", local: true, reachable: true, primary: true };
+  const D2 = { id: "remote:altair:b", machine: "altair", path: "/b", label: "~/b", local: false, reachable: true, primary: false };
+  const lead = { ...at("lead"), deployment: { id: D1.id } };
+  const kid = { ...at("kid", { home: "/b/kid", agentsRoot: "/b", parentInstance: "lead" }), deployment: { id: D2.id } };
+  const rows = instanceRows(paletteRows({ instances: [lead, kid], deployments: [D1, D2], recent: new Map([[instanceId(kid), 1]]) }, [], "", {}));
+  assert.deepEqual(rows.filter(r => r.recent).map(r => [r.label, r.under ?? null]), [["kid", null]]);
+});
+
 test("an entry for an instance no longer in the roster is not listed", () => {
   const { store } = focused(["solo-x", "lead"]);
   const gone = ROSTER.filter(i => i.instance !== "lead");
