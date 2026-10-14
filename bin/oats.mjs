@@ -39,7 +39,7 @@ import {
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { harnessTrust } from "../lib/harness-trust-write.mjs";
 import { previewLaunchEnvironment, previewPaneEnvironment } from "../lib/core.mjs";
-import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
+import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, desktopFirstLine, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
@@ -3957,6 +3957,9 @@ function updateCmd() {
   if (!steps.length) return end(untouched || ahead ? `\nNothing for \`oats update\` to run.${untouchedNote}` : "\nUp to date.");
   console.log("\nUpdate steps:");
   for (const s of steps) console.log(`  ${s.display}`);
+  // A Desktop refuses a CLI of a newer minor (docs/upgrading.md, "Why the Desktop goes first").
+  const desktopFirst = desktopFirstLine(cli);
+  if (desktopFirst) console.log(`\n${desktopFirst}`);
   if (checkOnly) return end("\n(--check: not executing)");
   const interactive = process.stdin.isTTY && process.stdout.isTTY;
   if (interactive) {
