@@ -21,12 +21,14 @@
  *   another refusal      "Couldn't forget <instance>." and the kernel's lines; focus back to the opener
  *   nothing ran          "Couldn't forget <instance>." and the Desktop's own reason; focus back to the opener
  *   unknown              "It is not known whether <instance> was forgotten."; focus back to the opener
- * Before the press, another modal dialog taking focus (Connections, the palette, a lifecycle confirmation:
- * anything `aria-modal`) closes this one, sending nothing: the opener of that one need not know this one.
+ * Before the press, another modal dialog opening over this one closes it, sending nothing. One that opens
+ * through takePickerFocusReturn (Connections, the palette, a lifecycle confirmation, the shortcuts editor)
+ * inherits this one's opener (joinPickerFocusReturn), so closing it returns focus where Forget would have;
+ * any other `aria-modal` taking focus closes it too. The opener of that one need not know this one.
  * An answer that lands after the dialog stopped owning its request (a workspace change, dispose) says and
  * moves nothing. Names enter a sentence through the display filter: the server's
  * label as remote-address.mjs `shownLabel`, the instance by the same rule ("this instance" when withheld). */
-import { takePickerFocusReturn } from './overlay-picker.mjs';
+import { takePickerFocusReturn, joinPickerFocusReturn } from './overlay-picker.mjs';
 import { rowReason, serverLabel, shownLabel } from '../../client/remote-address.mjs';
 import { displayLine, DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';
@@ -79,7 +81,7 @@ let dialogs = 0;
 
 export function createForgetDialog({ doc, request, notify = () => {}, nextFocus = () => null,
   generation = () => 0, subscribeWorkspace = () => () => {}, onIntent = () => {}, applyFocus = fn => fn() } = {}) {
-  let alive = true, overlay = null, ui = null, row = null, restore = null, phase = null, life = 0, release = null, yieldTo = null;
+  let alive = true, overlay = null, ui = null, row = null, restore = null, phase = null, life = 0, release = null, yieldTo = null, handoff = null;
   const inFlight = new Set(); // `server\0instance` of every Forget sent and not answered, whichever dialog sent it
   const keyOf = r => `${r.server}\0${r.instance}`;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
@@ -100,6 +102,7 @@ export function createForgetDialog({ doc, request, notify = () => {}, nextFocus 
   function close({ focus = 'opener', next = null } = {}) {
     unhold();
     if (yieldTo) { doc.removeEventListener('focusin', yieldTo, true); yieldTo = null; }
+    handoff?.(); handoff = null;
     if (!overlay) return;
     life++; overlay.remove(); overlay = null; ui = null; row = null; phase = null;
     const back = restore; restore = null;
@@ -128,6 +131,8 @@ export function createForgetDialog({ doc, request, notify = () => {}, nextFocus 
     const sent = row, key = keyOf(sent), mounted = life, mountedGeneration = generation();
     const owns = () => alive && overlay && life === mounted && generation() === mountedGeneration;
     inFlight.add(key); phase = 'running'; paint(); release = holdWindow();
+    // Busy, nothing replaces it: a dialog opened now captures its own opener.
+    handoff?.(); handoff = null;
     // Focus waits on the status line while the command runs: every control is disabled.
     applyFocus(() => ui.status.focus());
     let answer = null;
@@ -184,7 +189,9 @@ export function createForgetDialog({ doc, request, notify = () => {}, nextFocus 
       else if (!event.shiftKey && doc.activeElement === all.at(-1)) { event.preventDefault(); all[0].focus(); }
       else if (!dialog.contains(doc.activeElement)) { event.preventDefault(); all[0].focus(); }
     });
-    // Before the press, another modal taking focus closes this one (busy, holdWindow keeps focus here instead).
+    // Before the press, another modal closes this one: through the handoff before it captures its opener,
+    // else when it takes focus (busy, holdWindow keeps focus here instead).
+    handoff = joinPickerFocusReturn(doc, { opener: restore, dismiss: () => { if (phase === 'review' && current()) close({ focus: 'none' }); } });
     yieldTo = event => {
       if (phase !== 'review' || !current() || dialog.contains(event.target)) return;
       if (event.target?.closest?.('[aria-modal="true"]')) close({ focus: 'none' });

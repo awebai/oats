@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createForgetDialog, forgettable, forgetWords, shownInstance, forgetSuccessor } from '../renderer/forget-dialog.mjs';
+import { createConnections } from '../renderer/connections.mjs';
 import { registerAction, handleKeydown } from '../renderer/keybindings.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -222,6 +223,20 @@ test('another modal taking focus before the press closes this one, sending nothi
     f.pending[0].resolve({ status: 'forgotten', server: 'build', instance: 'dev-a' }); await tick();
     assert.deepEqual([f.sent.length, f.said.length], [1, 1]);
   } finally { f.close(); }
+});
+
+test('Connections opened over the confirmation replaces it and, closed, returns focus to the row control that opened Forget', async () => {
+  const f = fixture();
+  const connections = createConnections({ doc: f.doc, desk: {}, request: async () => null });
+  try {
+    f.open(); assert.equal(f.shown(), true);
+    connections.open(); await tick();
+    assert.equal(f.shown(), false, 'Forget is dismissed before Connections takes its opener');
+    assert.ok(f.q('.forge-settings').contains(f.doc.activeElement));
+    connections.close(); await tick();
+    assert.equal(f.doc.activeElement.id, 'opener', 'focus returns to the original opener, not the removed Cancel');
+    assert.deepEqual([f.sent.length, f.said.length], [0, 0]);
+  } finally { connections.dispose?.(); f.close(); }
 });
 
 test('the roster is not edited: the row stays until the server\'s read lands, and a second Forget of it says nothing was changed', async () => {

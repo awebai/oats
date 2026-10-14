@@ -42,6 +42,16 @@ export function takePickerFocusReturn(doc) {
   return opener;
 }
 
+/** A dialog outside the picker family joins the same handoff while it may be replaced: a picker or dialog
+ * that opens over it (through takePickerFocusReturn) takes its opener and dismisses it without returning
+ * focus. The returned release leaves the handoff, unless a later holder has taken it. */
+export function joinPickerFocusReturn(doc, { opener, dismiss }) {
+  if (!pickerDocuments.has(doc)) pickerDocuments.set(doc, { current: null, handoff: null });
+  const coordinator = pickerDocuments.get(doc), lifetime = { opener, dismiss };
+  coordinator.current = lifetime;
+  return () => { if (coordinator.current === lifetime) coordinator.current = null; };
+}
+
 /**
  * @param {object} spec
  * @param {string} spec.placeholder     input placeholder text
