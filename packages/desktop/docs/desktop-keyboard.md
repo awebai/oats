@@ -26,10 +26,25 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
    select-window binding. Ctrl+PgUp/PgDn in vim and weechat. On macOS the
    ⌃digits, which are control bytes (⌃3 ESC, ⌃4–⌃7 FS/GS/RS/US, ⌃8 DEL; ⌃6 is
    vim's alternate file). Such a key may stay bound for focus outside a
-   terminal, but it is never terminal-allowlisted. On Linux/Windows an
-   application chord that must work while a terminal has focus uses
+   terminal, but it is never terminal-allowlisted. On Linux/Windows a chord
+   fires in a terminal only when xterm sends nothing for it, or when what it
+   sends is a byte the program still gets from a plainer key. Mostly that is
    **Ctrl+Shift+key**, the convention of GNOME Terminal, Alacritty, Ghostty and
    kitty (and of Terminator/Tilix for splits); Omarchy's terminals follow it.
+   xterm also sends nothing for Ctrl+1, Ctrl+2, Ctrl+, and Ctrl+= Ctrl+-
+   Ctrl+0. The allowlisted defaults that do send something:
+
+   | Chord | xterm sends | The program still gets it from |
+   |---|---|---|
+   | Ctrl+3 (Automations) | ESC | Esc (Ctrl+[ stays the program's too) |
+   | Ctrl+Tab (next tab) | Tab | Tab |
+   | Ctrl+Shift+Tab (previous tab) | ESC [ Z | Shift+Tab |
+   | Ctrl+Shift+Alt+W (close the split) | ESC Ctrl+W | Ctrl+Alt+W |
+   | Ctrl+Shift+F6 (leave the terminal) | ESC [ 17 ; 6 ~ | no plainer key: the one deliberate exception, because without it F6 cannot get out of a terminal |
+
+   `test/terminal-xterm-bytes.test.mjs` presses every allowlisted default in
+   the installed xterm.js and pins exactly what it sends, so an xterm upgrade
+   that changes one fails CI.
 3. **macOS keeps ⌘.** ⌘ never reaches the pty, so the macOS column changes only
    where a chord is wrong for macOS users too.
 4. **Every default goes through the collision review** in the keyboard lesson
@@ -58,7 +73,8 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 - **Terminal policy.** On Linux/Windows only the action ids in
   `TERMINAL_ALLOWLIST` fire while a terminal has focus; everything else reaches
   the program. The rule is by action id, so a user who rebinds an allowlisted
-  action keeps their choice in the terminal. On macOS only ⌘ chords fire in a
+  action keeps their choice in the terminal; the allowlist is chosen by the
+  defaults (principle 2). On macOS only ⌘ chords fire in a
   terminal (⌘ never reaches the pty), plus one structural shape checked by
   action id *and* shape: Ctrl+Tab / Ctrl+Shift+Tab.
 - Unmodified chords never fire from an editable field; a view's own keys (the
@@ -78,20 +94,26 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Split right (`split.vertical`) | ⌘\ | Ctrl+Shift+E | yes |
 | Split down (`split.horizontal`) | ⌘⇧\ | Ctrl+Shift+O | yes |
 | Close the split (`split.close`; no button since spec F) | ⌥⌘W | Ctrl+Shift+Alt+W | yes |
-| Deployments / Workspace / Automations (`stage.hierarchy`, `stage.spawn`, `stage.automations`) | ⌘1 / ⌘2 / ⌘3 | Ctrl+1 / Ctrl+2 / Ctrl+3 | no |
+| Deployments / Workspace / Automations (`stage.hierarchy`, `stage.spawn`, `stage.automations`) | ⌘1 / ⌘2 / ⌘3 | Ctrl+1 / Ctrl+2 / Ctrl+3 | yes (Ctrl+3 is ESC, which Esc still sends) |
 | Focus next / previous region (`focus.nextRegion`, `focus.prevRegion`) | F6 / ⇧F6 | F6 / Shift+F6 | no (mc, htop, nano) |
 | Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | yes |
-| Sidebar (`sidebar.toggle`) | ⌘B | Ctrl+B | no (tmux prefix) |
-| Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+F | no |
-| Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌘I | Ctrl+I | no (Ctrl+I is Tab) |
+| Sidebar (`sidebar.toggle`) | ⌘B | Ctrl+Shift+B | yes (plain Ctrl+B, the tmux prefix, stays the program's) |
+| Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+Shift+F | yes |
+| Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌘I | Ctrl+Shift+I | yes (plain Ctrl+I, the Tab byte, stays the program's) |
 | Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | yes |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | – (the palette keeps it) |
-| Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | no |
+| Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | yes |
 | Copy the terminal selection (`terminal.copySelection`) | ⌘C (Edit › Copy, the menu role; the action has no macOS default) | Ctrl+Shift+C | yes |
-| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | no |
-| Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no |
+| Terminal zoom (`terminal.fontBigger`, `…Smaller`, `…Reset`; also Settings → Terminal; reset lands on 15px) | ⌘= ⌘- ⌘0 | Ctrl+= Ctrl+- Ctrl+0 | yes |
+| Open a file read-only (`app.openFile`) | ⌘O | Ctrl+O | no (Ctrl+O is a byte programs read) |
 | New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | – |
 | Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | – |
+
+Changed in this release on Linux/Windows: the sidebar (was Ctrl+B) is
+Ctrl+Shift+B, the instance panel (was Ctrl+I) Ctrl+Shift+I, and filter
+instances (was Ctrl+F) Ctrl+Shift+F; these, the stages (Ctrl+1/2/3), the
+shortcuts editor (Ctrl+,) and terminal zoom now work from a terminal. A
+binding you set yourself is kept as it is.
 
 Changed from 0.30.1 on Linux/Windows: the palette (was Ctrl+K), close tab (was
 Ctrl+W), the splits (were Ctrl+\ and Ctrl+Shift+\, Ctrl+Alt+W), and Spawn
@@ -142,7 +164,7 @@ Inside the theme picker: ↑/↓ move between the themes (wrapping), Home/End go
 the first and last, Enter, Space or a click chooses (nothing applies before
 that), Escape, the close button or the backdrop closes with nothing changed,
 and Tab / Shift+Tab stay inside it; a background shortcut that moves focus
-(Ctrl+F to the roster filter) cannot take it out. Focus returns to what had
+(⌘F / Ctrl+Shift+F to the roster filter) cannot take it out. Focus returns to what had
 it, also to a control in a dialog that stays open under the picker (Stop or
 Retire, Connections). The picker is on the palette layer, so it never opens where it
 cannot be seen: while a dialog above that layer is shown (the spawn dialog,
@@ -181,7 +203,9 @@ F6 moves focus to the next region, Shift+F6 to the previous one, in this order:
    its first control. The tab strip and split controls belong here.
 4. **Instance panel**: its selected tab; when collapsed, its rail's pressed
    button. A collapsed panel stays in the cycle on purpose: inside a terminal
-   Tab belongs to the program, so the region cycle is the way out to it.
+   Tab belongs to the program, so the region cycle is the way out to it
+   (⌘I / Ctrl+Shift+I shows or hides the panel from a terminal, but leaves
+   focus where it is).
 
 Inside a terminal F6 belongs to the program (mc, htop, nano). **⇧⌘F6 /
 Ctrl+Shift+F6** (`focus.leaveTerminal`) leaves the terminal for the next region
@@ -296,7 +320,7 @@ the rig). "Fixed" marks a gap this change closed.
 | A workspace's **Open in new window** button (beside each option, not inside it) | Right Arrow from its option (not a Tab stop); Left Arrow or Esc returns to the option, menu still open; Up/Down move between options as from the option | Enter/Space open the workspace in its own window (or bring that window to the front). On the option itself, ⌘Enter (macOS) / Ctrl+Enter (Linux/Windows) does the same; the option's description says so |
 | Add / onboard workspace dialog | From the menu's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the trigger |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
-| Roster filter | Tab; ⌘F / Ctrl+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
+| Roster filter | Tab; ⌘F / Ctrl+Shift+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
 | Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; Up/Down/Home/End; Right expands, Left collapses or goes to the parent. A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is | Enter/Space open the terminal (running) or Start (stopped) |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |

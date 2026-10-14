@@ -46,7 +46,7 @@ export function createThemePicker({ doc, themes, current, choose, subscribe = ()
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const isOpen = () => !!overlay;
 
-  // Focus stays in the picker: a background action that moves focus (Ctrl+F to the roster filter)
+  // Focus stays in the picker: a background action that moves focus (Ctrl+Shift+F to the roster filter)
   // is pulled back to where it was inside. Another modal taking over (the palette, the shortcuts
   // editor, a dialog over this one) keeps its focus.
   function contain(event) {
