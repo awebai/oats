@@ -188,3 +188,22 @@ test('a plan reply that is no reply (null, {}, a reason with no code) settles un
     assert.match(c.view().status.code, /^E_[A-Z_]+$/);
   }
 });
+
+test('when the ten-minute wait ends: the result is not confirmed, the stop is still running, Check again reads it, and "didn\'t answer in time" is never said', async () => {
+  const timers = [], applies = [];
+  const boundary = createLifecycleBoundary({ terms, clock: () => 1_700_000_000_000,
+    after: (ms, fn) => { timers.push({ ms, fn }); return () => {}; },
+    invoke: async (_bin, args) => { if (args.phase === 'plan') return envelope(stopPlan()); applies.push(args); return new Promise(() => {}); } });
+  const ctx = context(), c = createLifecycleConfirmation({ target, operation: 'stop', terms, request: body => boundary(body, () => ctx) });
+  await tick(); assert.equal(c.apply(), true); await tick();
+  assert.equal(c.state().phase, 'applying'); assert.deepEqual(timers.map(t => t.ms), [600_000]);
+  timers[0].fn(); await tick();
+  const view = c.view(), said = JSON.stringify(view);
+  assert.equal(view.kind, 'unknown'); assert.equal(view.title, 'Result not confirmed');
+  assert.equal(view.status.headline, "OATS didn't confirm the result. Check again before assuming nothing happened."); assert.equal(view.status.code, 'E_OUTCOME_UNKNOWN');
+  assert.deepEqual(view.blocks, [{ type: 'note', text: 'The stop of dev-1 is still running. Check again to read its result.' }]);
+  assert.doesNotMatch(said, /in time/, 'the deadline ended the wait, not the command: it is not said as a timeout');
+  assert.deepEqual(c.state(), { phase: 'settled', outcome: 'unknown', notice: null, offers: ['check-again', 'close'], running: { target, operation: 'stop', since: 1_700_000_000_000 } });
+  assert.equal(c.checkAgain(), true); await tick();
+  assert.equal(c.view().kind, 'unknown', 'still running: answered at once'); assert.equal(applies.length, 1, 'Check again ran no second command'); assert.equal(timers.length, 1, 'and started no second wait');
+});

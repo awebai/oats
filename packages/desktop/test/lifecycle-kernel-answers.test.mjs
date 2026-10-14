@@ -140,7 +140,8 @@ const raisedIn = (path, names, ...more) => {
 const frameRaisedIn = path => /\blifecycleFrameRefusal\(\)/.test(readFileSync(new URL(path, import.meta.url), 'utf8')) ? [LIFECYCLE_FORBIDDEN_FRAME.code] : [];
 const RAISED = {
   adapter: ['E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT'],
-  boundary: ['E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_LIFECYCLE_BUSY', 'E_LIFECYCLE_UNAVAILABLE', 'E_OPTION_UNAVAILABLE', 'E_OUTCOME_UNKNOWN', 'E_PLAN_CHANGED', 'E_PLAN_EXPIRED', 'E_WORKSPACE_UNKNOWN'],
+  // E_CLI_TIMEOUT: the cause of the `unknown` an apply answers when the boundary's wait for it ends (APPLY_WAIT_MS).
+  boundary: ['E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT', 'E_LIFECYCLE_BUSY', 'E_LIFECYCLE_UNAVAILABLE', 'E_OPTION_UNAVAILABLE', 'E_OUTCOME_UNKNOWN', 'E_PLAN_CHANGED', 'E_PLAN_EXPIRED', 'E_WORKSPACE_UNKNOWN'],
   main: ['E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_FORBIDDEN_FRAME', 'E_OUTCOME_UNKNOWN', 'E_PLAN_CHANGED'],
   admission: ['E_AMBIGUOUS_INSTANCE', 'E_BAD_ARGS', 'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_SNAPSHOT_UNKNOWN', 'E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'unsupported-remote-operation'],
   // The reason the boundary gives a partial receipt, and the code of the old retire route: not found by the reading above.
