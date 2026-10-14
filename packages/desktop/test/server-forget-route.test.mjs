@@ -178,9 +178,9 @@ function remoteReader() {
   const block = src.match(/\/\* OATSWEB_REMOTEREAD_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_REMOTEREAD_END \*\//)[1];
   const reads = [];
   const adapter = { cliRemoteRoster: () => new Promise(resolve => { reads.push(() => resolve({ schemaVersion: 1, ok: true, result: { groups: [] } })); }) };
-  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome',
+  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome', 'rosterAsk',
     `let remoteRead = null, cliState = { ok: true, bin: 'oats' };\n${block}\nreturn { refresh: refreshRemoteSnapshot, after: refreshRemoteSnapshotAfter };`);
-  return { ...make(adapter, () => true, () => {}), reads };
+  return { ...make(adapter, () => true, () => {}, () => null), reads }; // rosterAsk: the unfiltered read (#1124)
 }
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); };
 
