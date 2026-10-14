@@ -70,6 +70,11 @@ export const APPLY_WAIT_MS = 600_000;
  *   clock   the wall clock (ms since the epoch), for when a running apply started (`running.since`)
  *   after   `after(ms, fn)` runs fn once after ms and answers a cancel; mint  the reference and key maker
  *   terms   the client's own (client-terms.mjs): every reason is worded with them; required
+ *   exec    optional: the client's own execFile, passed to `invoke` as `invoke(bin, args, { exec })` for the plan
+ *           read and for the apply alike; without it `invoke` is given no third argument and cliLifecycle's own
+ *           defaults run. A given exec runs every call cliLifecycle hands it; one with `detached: true` is an apply,
+ *           which it runs in a session of its own (as execFileInSession does) and never ends, neither at a deadline
+ *           nor by a signal to its group.
  * An apply's answer is awaited APPLY_WAIT_MS. When that passes the boundary answers `unknown` and the apply stays
  * in flight here: its reference, its key, its place as the one apply. Its answer, whenever it comes, is read and
  * kept 30 minutes like any other; the same reference meanwhile is answered at once (`unknown` while it runs, the
@@ -84,8 +89,10 @@ export const APPLY_WAIT_MS = 600_000;
  * the workspace's roster group (its `probe` says which features a routed command's host answers with,
  * lifecycle-contract.mjs `answeringFeatures`); `instances` are that deployment's own rows. */
 export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), clock = () => Date.now(), mint = () => randomBytes(32).toString('hex'),
-  after = (ms, fn) => { const timer = setTimeout(fn, ms); timer.unref?.(); return () => clearTimeout(timer); }, terms } = {}) {
+  after = (ms, fn) => { const timer = setTimeout(fn, ms); timer.unref?.(); return () => clearTimeout(timer); }, terms, exec } = {}) {
   requireTerms(terms, 'createLifecycleBoundary');
+  // The CLI call, with the client's exec when it gave one: the same exec for a plan read and an apply.
+  const call = (bin, args) => (exec ? invoke(bin, args, { exec }) : invoke(bin, args));
   const plans = new Map(), actions = new Map(), reads = new Map(), beforeEffect = new Set(BEFORE_EFFECT_CODES);
   let reservedPlans = 0, activeApply = null;
   const sweep = () => { for (const map of [plans, actions]) for (const [key, value] of map) {
@@ -122,7 +129,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     if (!reads.has(key)) {
       const args = { operation: request.operation, phase: 'plan', instance: selected.target.instance, home: selected.target.home, context: selected.context,
         ...(selected.remote ? { server: selected.remote.server } : {}), choices };
-      const pending = Promise.resolve().then(() => invoke(selected.bin, args)).catch(() => ({ ok: false, error: { code: 'E_CLI_FAILED' } })).finally(() => reads.delete(key));
+      const pending = Promise.resolve().then(() => call(selected.bin, args)).catch(() => ({ ok: false, error: { code: 'E_CLI_FAILED' } })).finally(() => reads.delete(key));
       reads.set(key, pending);
     }
     reservedPlans++;
@@ -202,7 +209,7 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     const args = { operation: entry.plan.action, phase: 'apply', instance: entry.target.instance, home: entry.target.home,
       context: entry.context, ...(entry.remote ? { server: entry.remote.server } : {}), choices: clone(entry.choices), revision: entry.plan.planRevision, key: entry.key };
     let cancel = () => {};
-    const answered = Promise.resolve().then(() => invoke(entry.bin, args)).then(result => interpret(result, entry, current.features))
+    const answered = Promise.resolve().then(() => call(entry.bin, args)).then(result => interpret(result, entry, current.features))
       .catch(() => denied('E_OUTCOME_UNKNOWN', entry.target, { status: 'unknown', planRef: entry.id }))
       .then(result => { entry.reply = clone(result); return result; })
       .finally(() => { cancel(); entry.pending = null; entry.waited = null; entry.expires = now() + 30 * 60_000; if (activeApply === entry) activeApply = null; });
