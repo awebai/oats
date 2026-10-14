@@ -1,7 +1,7 @@
 /** Fixed-argv installed-CLI K3 adapter. No kernel import, fallback or raw errors. */
 import { execFile } from 'node:child_process';
 import { isAbsolute } from 'node:path';
-import { parseEnvelope, parseRetireEnvelope } from './cli-adapter.mjs';
+import { parseEnvelope, parseRetireEnvelope, execFileInSession } from './cli-adapter.mjs';
 import { object, lifecycleOptions, planRevision } from './lifecycle-contract.mjs';
 const absolute = v => typeof v === 'string' && isAbsolute(v) && !v.includes('\0');
 const key = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(v);
@@ -28,15 +28,21 @@ export function lifecycleArgv(options) {
   if (o.operation === 'stop' && !choices.recursive) args.push('--no-recursive');
   args.push('--json'); return args;
 }
-/** `exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`). */
-export function cliLifecycle(bin, options, { exec = execFile, timeout } = {}) {
+/** `exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`).
+ * A plan is a read: it runs in the caller's process group, and its deadline (30 s, 45 s routed; `timeout` may
+ * shorten it) ends it, as every read ends. An apply is a change: it gets no deadline and runs in a session of
+ * its own (`detached: true`; this home's default for it is `execFileInSession`), so neither a deadline nor a
+ * signal to the client's group ends it while it works. Its client's boundary decides how long it waits for
+ * the answer (instance-lifecycle.mjs), and the child goes on, whatever the client does, until it answers. */
+export function cliLifecycle(bin, options, { exec, timeout } = {}) {
   const argv = lifecycleArgv(options);
   if (!absolute(bin) || !argv) return Promise.resolve(failure('E_BAD_ARGS'));
-  const apply = options.phase === 'apply', limit = apply ? 600_000 : options.server ? REMOTE_READ_TIMEOUT : 30_000;
+  const apply = options.phase === 'apply', limit = options.server ? REMOTE_READ_TIMEOUT : 30_000;
+  const run = exec ?? (apply ? execFileInSession : execFile);
   return new Promise(resolve => {
     try {
-      exec(bin, argv, { cwd: options.context, encoding: 'utf8', shell: false,
-        timeout: Number.isFinite(timeout) && timeout > 0 ? Math.min(timeout, limit) : limit,
+      run(bin, argv, { cwd: options.context, encoding: 'utf8', shell: false,
+        ...(apply ? { detached: true } : { timeout: Number.isFinite(timeout) && timeout > 0 ? Math.min(timeout, limit) : limit }),
         maxBuffer: (apply ? 4 : 1) * 1024 * 1024 }, (error, stdout) => {
         if (error?.killed) return resolve(failure('E_CLI_TIMEOUT'));
         if (error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return resolve(failure('E_CLI_OUTPUT_LIMIT'));

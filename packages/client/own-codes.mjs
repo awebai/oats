@@ -20,6 +20,7 @@ export const CLIENT_OWN_CODES = Object.freeze([
   'E_UNSUPPORTED_OPTION', 'E_WAKE_OUTCOME_UNKNOWN', 'E_WAKE_SAVE_FAILED',
   // Stop, start, restart and remove, and the plan a person confirms (a spawn's plan too).
   'E_LIFECYCLE_UNAVAILABLE', 'E_OPTION_UNAVAILABLE', 'E_PLAN_CHANGED', 'E_PLAN_EXPIRED', 'E_PLAN_LIMIT', 'E_PLAN_REQUIRED',
+  'E_START_UNCONFIRMED',
   // An instance's Activity.
   'E_EVENTS_UNAVAILABLE', 'E_NOT_IN_SCOPE',
   // A terminal.

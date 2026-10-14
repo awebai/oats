@@ -214,10 +214,11 @@ test('without the feature no composed group; a null answer is a note pointing at
   assert.equal(u.item(COMPOSED), null); assert.doesNotMatch(u.host.textContent, /Instance|after spawn/);
   u.section.update(row({ composedInstructions: null }));
   assert.equal(u.item(COMPOSED), null);
-  assert.equal(u.$('.cap-contents-note').textContent, SOUL_INSTRUCTIONS_COPY.cannotCompose);
+  // The Instance group's note is the last (the Skills group's, soul-skills.test.mjs, sits before it).
+  assert.equal(u.$$('.cap-contents-note').at(-1).textContent, SOUL_INSTRUCTIONS_COPY.cannotCompose);
   assert.equal(u.$$('.cap-contents-group-label').at(-1).textContent, 'Instance');
   u.section.update(row({ composedInstructions: { text: 'x' } }));
-  assert.equal(u.$('.cap-contents-note').textContent, SOUL_INSTRUCTIONS_COPY.cannotRead);
+  assert.equal(u.$$('.cap-contents-note').at(-1).textContent, SOUL_INSTRUCTIONS_COPY.cannotRead);
 });
 
 test('a part past the size limit says so in its section; a cut part is flagged in its header', t => {

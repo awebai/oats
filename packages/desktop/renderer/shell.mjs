@@ -1194,11 +1194,14 @@ function onRosterRowKey(e) {
   setRovingRow(listEl, rows[to]);
 }
 
-/* Move focus AND the single tab-order slot to `row` (roving tabindex). */
+/* Move focus AND the single tab-order slot to `row` (roving tabindex). The list has no visible
+   scrollbar: the row (its whole box, so its tools shown on focus too) is revealed inside the list
+   only, never by the focus scroll, which can move scrollable ancestors. */
 function setRovingRow(listEl, row) {
   for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
   row.tabIndex = 0;
-  row.focus();
+  row.focus({ preventScroll: true });
+  revealInScrollport(listEl, row.closest(".ctx-tree-row") || row);
 }
 
 /** Select a roster row of this workspace (by server and home) and move keyboard focus to it: through a

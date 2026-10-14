@@ -74,24 +74,29 @@ function keyLabel(key) {
   return KEY_LABELS.get(key) || (key.length === 1 ? key.toUpperCase() : key[0].toUpperCase() + key.slice(1));
 }
 
+/** The keys of a chord (object or string) as shown, one label per key, in the order
+ * they are written: ["⇧", "⌘", "B"] on mac, ["Ctrl", "Shift", "B"] elsewhere. */
+export function chordKeys(chord, isMac = defaultIsMac()) {
+  const c = typeof chord === "string" ? parseChord(chord) : chord;
+  if (!c) return [];
+  const keys = [];
+  if (isMac) {
+    if (c.ctrl) keys.push("⌃");
+    if (c.alt) keys.push("⌥");
+    if (c.shift) keys.push("⇧");
+    if (c.mod) keys.push("⌘");
+  } else {
+    if (c.mod || c.ctrl) keys.push("Ctrl");
+    if (c.alt) keys.push("Alt");
+    if (c.shift) keys.push("Shift");
+  }
+  keys.push(keyLabel(c.key));
+  return keys;
+}
+
 /** Human label for a chord (object or string). Mod = ⌘ on mac, Ctrl elsewhere. */
 export function formatChord(chord, isMac = defaultIsMac()) {
-  const c = typeof chord === "string" ? parseChord(chord) : chord;
-  if (!c) return "";
-  if (isMac) {
-    let s = "";
-    if (c.ctrl) s += "⌃";
-    if (c.alt) s += "⌥";
-    if (c.shift) s += "⇧";
-    if (c.mod) s += "⌘";
-    return s + keyLabel(c.key);
-  }
-  const parts = [];
-  if (c.mod || c.ctrl) parts.push("Ctrl");
-  if (c.alt) parts.push("Alt");
-  if (c.shift) parts.push("Shift");
-  parts.push(keyLabel(c.key));
-  return parts.join("+");
+  return chordKeys(chord, isMac).join(isMac ? "" : "+");
 }
 
 /** Canonical storage/comparison string for a chord object. */
@@ -450,6 +455,17 @@ function macStructuralChord(id, c) {
   return false;
 }
 
+/** Whether an action bound to `chord` may fire while a terminal has focus: on
+ * Linux/Windows when its id is in TERMINAL_ALLOWLIST, whatever the chord; on macOS
+ * when the chord holds ⌘ and not ⌃ (⌘ never reaches the pty), or is the Ctrl+Tab
+ * shape of tabs.next/prev. matchEvent applies it; the shortcuts editor shows it. */
+export function terminalAllows(actionId, chord, isMac = defaultIsMac()) {
+  const c = typeof chord === "string" ? parseChord(chord) : chord;
+  if (!c) return false;
+  if (!isMac) return TERMINAL_ALLOWLIST.includes(actionId);
+  return macStructuralChord(actionId, c) || (c.mod && !c.ctrl);
+}
+
 /** Match a keydown to an eligible action id, or null. Honors context scoping
  * and the terminal policy. `opts` is for tests: { isMac, insideTerminal,
  * editableTarget } — each defaults from the environment/event. */
@@ -474,15 +490,9 @@ export function matchEvent(e, opts = {}) {
     if (!contextEligible(action.context)) continue;
     const bound = parseChord(getBinding(action.id, isMac) || "");
     if (!bound || !chordMatches(bound, evChord, isMac)) continue;
-    if (insideTerminal) {
-      if (isMac) {
-        // ⌘ chords fire; other chords stay with the attached program, even
-        // after a custom rebind — except Ctrl+Tab / Ctrl+Shift+Tab (macStructuralChord).
-        if (!macStructuralChord(action.id, evChord) && (!(bound.mod && evChord.mod) || evChord.ctrl)) continue;
-      } else if (!TERMINAL_ALLOWLIST.includes(action.id)) {
-        continue; // Ctrl chords belong to the attached program
-      }
-    }
+    // Inside a terminal, every other chord stays with the attached program, even after
+    // a custom rebind (on macOS the event's chord equals the bound one here).
+    if (insideTerminal && !terminalAllows(action.id, evChord, isMac)) continue;
     if (action.context === "global") globalHit = globalHit || action;
     else contextHit = contextHit || action;
   }

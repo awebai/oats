@@ -308,15 +308,18 @@ test('a HOME-only launch configuration is no target when its launch has a select
  assert.deepEqual(harnessTrust(root,{plan:true,harness:'claude',env,launchConfigs,launch:launchEnvironment({env,pane})}).entries.map(e=>e.file),[join(fs.realpathSync.native(selected),'.claude.json')]);
  assert.deepEqual(fs.readdirSync(own),[]);
 });
-test('a HOME-only launch configuration whose HOME is unset, relative or without the harness directory is a named problem; nothing is written or created', t => {
+test('a HOME-only launch configuration whose HOME is unset, relative, unusable or without the harness directory is a named problem; nothing is written or created', t => {
  for (const [name,c,host,problem] of [
   ['unset',{harness:'claude',env:{HOME:{fromEnv:'NOT_SET'}}},{},'launch configuration unset: HOME references NOT_SET, not set on this host'],
   ['rel',{harness:'codex',env:{HOME:{fromEnv:'REL'}}},{REL:'some/dir'},'launch configuration rel: HOME "some/dir" is not an absolute path'],
   ['empty',{harness:'claude',env:{HOME:''}},{},'launch configuration empty: the HOME of launch configuration empty is empty'],
+  // An absolute HOME that is a file, or is under one, selects no directory: said so, not "not an absolute path" (#1171).
+  ['file',{harness:'claude',env:{HOME:'<base>/afile'}},{},'launch configuration file: HOME "<base>/afile" does not select a usable claude configuration directory'],
+  ['under',{harness:'codex',env:{HOME:'<base>/afile/home'}},{},'launch configuration under: HOME "<base>/afile/home" does not select a usable codex configuration directory'],
   ['gone',{harness:'claude',env:{HOME:'<base>/missing'}},{},"launch configuration gone: <base>/missing (claude's directory under its HOME) does not exist; OATS never creates a harness configuration directory: create it, or start claude with it once, then rerun"],
   ['bare',{harness:'codex',env:{HOME:'<base>/bare'}},{},"launch configuration bare: <base>/bare/.codex (codex's directory under its HOME) does not exist; OATS never creates a harness configuration directory: create it, or start codex with it once, then rerun"],
  ]) {
-  const {base,root,env}=fixture(t);fs.mkdirSync(join(base,'bare'));
+  const {base,root,env}=fixture(t);fs.mkdirSync(join(base,'bare'));fs.writeFileSync(join(base,'afile'),'');
   const fix=v=>typeof v==='string'?v.replaceAll('<base>',fs.realpathSync.native(base)):v;
   const launchConfigs=configs({[name]:{...c,env:Object.fromEntries(Object.entries(c.env).map(([k,v])=>[k,fix(v)]))}});
   for(const plan of [true,false]) assert.throws(()=>harnessTrust(root,{plan,env:{...env,...host},launchConfigs}),e=>{

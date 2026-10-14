@@ -812,8 +812,8 @@ or plain text. The card's CSS, the tree's keyboard model
 (`createContentsTree`: roving tab stop, arrows, Home/End, Right/Left
 expand/collapse or enter/climb, Enter/Space call the host's `activate`) and the
 reader (`createContentsReader`: sticky head, file rendering, link settling,
-copy buttons) live in `contents-reader.mjs`, shared with the soul page's
-Instructions; the host decides what is listed, read and opened. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
+copy buttons) and a skill's tree item (`skillTreeItem`) live in
+`contents-reader.mjs`, shared with the soul page's Instructions; the host decides what is listed, read and opened. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
 muted lines, not failures. The reader sits on `--bg`, the viewer's own ground,
 so the viewer's checked colours hold, with a type scale kept under the page's
 own (headings below the 20px title, code at 12px). The page's *Provides* is one
@@ -969,6 +969,37 @@ the ids the whole AGENTS.md would give; a part's own `#fragment` links follow it
 `text` exactly (markers included); **Open capability** appears only on a
 capability part the page lists, and goes through the page's own
 `openCapability` path. Keys: `composed`, `part:<i>`.
+
+**The soul's own skills (#1144, kernel feature `soul-skills`).** The Skills
+group sits between "This soul" and "Instance" in the same tree. The request
+follows the composed AGENTS.md exactly: `skillsWanted` in `soul-inspector.mjs`
+adds `skills: true` (soul page only) when `skillsSupported` (local) or
+`routedSkillsSupported` (routed) holds; the server validates it like
+`instructions`, keys the cache on it and, routed, keeps it only when the held
+roster row's host reports it (`hostReportsSkills`; the shared host half is
+`hostAdvertises` in `composed-gate.mjs`); the adapter appends `--skills` after
+`--instructions` only when the probe's features list it. `skillsOf(soul)`
+decodes `souls[0].skills`: `undefined` (key absent), `null` (can't be listed),
+`false` (any contract break, one bad skill or file included: never a partial
+list), else the list. Each path is a plain path relative to the soul's
+directory, a file's under its skill's and unique; a file's `text` is `null`
+exactly when it is `binary` or `omitted`. A group that lists nothing is its
+label and one note as a `role=none` row in its place inside the tree (absent,
+`[]`, `null`, broken each have their own sentence), never a tree item. Each
+skill is `skillTreeItem` from `contents-reader.mjs`, the same item capability
+Contents lists (name, first sentence of its description, the full text in the
+row's title, "More files not listed.", the unlisted item for `files: null`);
+selecting it toggles it. A file opens in the reader under its repository path
+(`soulFilePath`: `<souls[0].path>/<file path>`, else the soul-relative path),
+with its size, "Truncated at 256 KiB" when cut, the binary line, or "Not
+shown: past the size limit of this answer." when omitted; the kernel's answer
+carries every text, so nothing more is read. The reader's link resolver is
+keyed by repository path across the card: a link to a listed skill file opens
+it in place (its skill expanded), from a skill file, the soul's AGENTS.md or
+the composed "From this soul" part; a change of the listed files repaints what
+the reader shows, so no link outlives its target. Keys: `file:<path>` (soul
+relative); a skill item's `skill:<path>` names it in the expanded set and its
+focus key, never the selection.
 
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the
@@ -1312,8 +1343,14 @@ section is the module map.
   why. Dismissing the dialog returns to where the operator was
   (`surface-return.mjs`). No second spawn form exists.
 - **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`):
-  actions grouped by context, click-to-record (Esc cancels, Backspace
-  unbinds), conflict warnings via `findConflict`, per-row reset + reset-all.
+  a search (focused on open; `shortcutMatches` filters by label, group name
+  or the chord as shown, case- and separator-insensitive), actions grouped
+  by context under sticky headings, the chord as keycaps (`chordKeys`; the
+  button's name carries it as one string), a quiet "terminal" marker from
+  the engine's `terminalAllows` (global and tabs actions only: a terminal
+  lives in the tab layer), a "changed" marker and Reset when the binding
+  differs from the default, click-to-record (Esc cancels, Backspace
+  unbinds), conflict warnings via `findConflict`, reset-all.
 
 ## Shared Components — existing-data frame 10 parity
 
@@ -1338,7 +1375,16 @@ The roster row's actions menu (`instance-actions.mjs`) draws what
 order under the menu's own labels and icons, the shell's items (Open in split,
 Open pull request…) in front unless the row is `blocked` or `limited`, an act
 with a reason disabled with it, and for a `blocked` row a disabled trigger
-titled with the reason and no menu. It decides nothing itself. It reports here, never with
+titled with the reason and no menu. It decides nothing itself. The instance panel's
+lifecycle footer and the overview popover draw from the same answer (#855): a
+footer control (Restart…, Start…, Stop…, Retire…) is shown exactly when its act
+is listed and enabled exactly when the act is, so a stopped row and one whose
+state is unknown offer Stop, `inspect` has none there, and a `blocked` row shows
+no control but one muted line with the blocked reason instead (nothing more for
+a row gone from its server, whose Work note already says it); the popover's **Restart with…** is the `restart` act and its
+**Start…**/**Terminal** the `start` act on a stopped row and `openAct` on any
+other, with the view's own conditions (a current roster, a well-formed address,
+the shell's handler) on top. The menu reports here, never with
 `alert`: an action that fails says "<Action> didn't finish for <name>." with its
 error in Details. While one of its actions runs, the menu trigger is
 `aria-disabled` (focus kept, as `markStaleControl`) and says "Waiting for

@@ -111,3 +111,20 @@ test("start route: every other failure, and an outcome that does not decode, ans
   const odd = await refused({ code: "E_SPAWN_INCOMPLETE", message, details: details({ launchPrompts: { status: "completed" } }) })();
   assert.deepEqual(odd.body.incomplete.launchPrompts, { status: "unknown", answers: [], reason: "Launch requires inspection", receipt: [] });
 });
+
+// A start whose wait ended (packages/client/cli-adapter.mjs cliStart answers E_START_UNCONFIRMED, the code alone):
+// the route answers it in the Desktop's own words, never as a message of the kernel's.
+const invokeUnconfirmed = new Function("inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "START_UNCONFIRMED",
+  `return (async () => { const hm = [null, "restart"], req = {}, res = {}, ctxs = ["/local"];
+   const send = (_, status, body) => ({ status, body });
+   const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
+   ${block} })();`);
+
+test("start route: a start whose wait ended answers the Desktop's sentence for E_START_UNCONFIRMED", async () => {
+  const { START_UNCONFIRMED } = await import("../packages/desktop/renderer/start-unconfirmed.mjs");
+  const inst = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents" };
+  const cli = { ok: true, features: ["session-start", "session-restart"], bin: "/installed/oats" };
+  const reply = await invokeUnconfirmed(inst, cli, async () => ({}), () => inst.home, { cliStart: async () => ({ schemaVersion: 1, ok: false, error: { code: "E_START_UNCONFIRMED" } }) },
+    { requireRemoteSupport }, dirname, harnessFlag, canAddressRemote, unaddressableSentence, retainedSpawnDetails, START_UNCONFIRMED);
+  assert.deepEqual(reply, { status: 409, body: { error: "OATS didn't confirm the start. It may still be running: check the roster before you start it again.", code: "E_START_UNCONFIRMED" } });
+});

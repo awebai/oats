@@ -78,7 +78,7 @@ test("shortcuts editor takes over an open picker and returns its logical opener"
   const buttons = [...dialog.querySelectorAll("button:not([disabled])")];
   buttons.at(-1).focus();
   f.key("Tab");
-  assert.equal(f.doc.activeElement, buttons[0], "Tab wraps in the editor, not the removed picker");
+  assert.equal(f.doc.activeElement, dialog.querySelector(".kb-search"), "Tab wraps in the editor (to its search, the first stop), not the removed picker");
   f.key("Escape");
   assert.equal(f.doc.querySelector(".kb-editor"), null);
   assert.equal(f.doc.activeElement, f.opener);
