@@ -177,8 +177,11 @@ before launch. Desktop does not scaffold a home or execute a launcher itself.
 
 The start rule is decided once, in the shared home
 (`packages/client/session-start.mjs`), and the dialog and the route decide
-through it, so the route never refuses a start the dialog sent, and the dialog
-never sends one the route would refuse. `startGate` gives the first rule that
+through the same gate, so the dialog never sends a start it has refused. The
+route reads the row again and checks the home, which the dialog cannot, so it
+may still refuse one the dialog sent. The gate is a module of its own
+(`start-gate.mjs`, re-exported by `session-start.mjs`) because the dialog's
+page loads no Node builtin. `startGate` gives the first rule that
 refuses a row, in this order, each with its code and sentence: the row is no
 longer in the roster (`not-in-roster`); it is running and this is not a restart
 (`already-running`: the dialog offers Open terminal instead); its state is not
@@ -196,7 +199,8 @@ home check (`E_HOME_UNVERIFIED`), then the CLI call (`cliStart`, with its wait),
 and says whether the CLI ran. A failed start is `refused`, nothing was
 started: every refusal of the gate and the home check, and the kernel's
 `E_SESSION_START_BUSY` and `E_SESSION_RUNNING` (`STARTED_NOTHING_CODES`); or
-`uncertain`: anything else, `E_START_UNCONFIRMED` included. Either way the
+`uncertain`: anything else, `E_START_UNCONFIRMED` included, and `E_CLI_FAILED`
+when the call to the CLI fails on its way. Either way the
 dialog reads the row again before it offers another start. A second client
 takes the rule from the stable surface (`test/client-boundary.test.mjs`); the
 CLI call is not on it.

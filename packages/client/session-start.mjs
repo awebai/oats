@@ -15,10 +15,13 @@
 import { basename, dirname, sep } from 'node:path';
 import { cliStart } from './cli-adapter.mjs';
 import { harnessFlag } from './harness-names.mjs';
-import { canAddressRemote, unaddressableSentence } from './remote-address.mjs';
+import { startGate } from './start-gate.mjs';
 import { retainedSpawnDetails } from './launch-prompt-outcome.mjs';
 import { displayLine } from './display-text.mjs';
 import { requireTerms } from './client-terms.mjs';
+
+/** The gate is page-safe and lives apart (start-gate.mjs); a client takes it from here, with the rest of the rule. */
+export { startGate };
 
 /** The kernel's codes for a start that started nothing: the home's start lock is held, or an earlier start's
  * pane is still a shell without its completion marker (E_SESSION_START_BUSY); the instance was seen running
@@ -27,49 +30,13 @@ import { requireTerms } from './client-terms.mjs';
 export const STARTED_NOTHING_CODES = Object.freeze(['E_SESSION_START_BUSY', 'E_SESSION_RUNNING']);
 
 /** The two kernel codes' own sentences, for a client that words by code. The kernel's message is the
- * answer's `detail`, through the display filter. */
+ * answer's `detail`, through the display filter. E_SESSION_START_BUSY says no more than busy: the kernel answers
+ * it for a start lock that is there, which a start that ended without removing it leaves behind too. */
 const STARTED_NOTHING = Object.freeze({
-  E_SESSION_START_BUSY: 'Another start of this instance is still running. Nothing was started.',
+  E_SESSION_START_BUSY: 'OATS refused this start as busy. Nothing was started.',
   E_SESSION_RUNNING: 'This instance is already running. Nothing was started.',
 });
-const STATE_UNKNOWN = 'Could not verify whether this instance is running. Refresh its status before starting.';
-const has = (list, name) => Array.isArray(list) && list.includes(name);
-
-/** Why this row cannot be started (or restarted) now, or null. The first rule that applies, in this order:
- *   1 `not-in-roster`   the caller holds no such row (it passes the current row, or null);
- *   2 `already-running` running, and not a restart (a client offers its terminal instead);
- *   3 `state-unknown`   its state is not known stopped, and this is not a restart of a running row: unknown is
- *                       not stopped. `detail` is the row's own runtime error through the display filter, when
- *                       it has one, for the client to show with its speaker;
- *   4 E_SNAPSHOT_UNKNOWN a server's row the kernel does not report addressable;
- *   5 `cli-unavailable` / `unsupported-start-option` / `unsupported-remote-operation`  no accepted CLI, no
- *                       session-start, or (a server's row) no remote session-start;
- *   6 `unsupported-start-option`  a restart without session-restart (a server's row: also remote);
- *   7 `unsupported-start-option`  a launch choice (launchConfig, harness, yolo) without launch-config (a
- *                       server's row: also remote). The word that selects no configuration is a choice like
- *                       any other: no refusal of its own.
- * -> null | { code, sentence, detail? } */
-export function startGate(cli, row, { restart = false, choices = {} } = {}, terms) {
-  requireTerms(terms, 'startGate');
-  const refused = (code, sentence, more = {}) => ({ code, sentence, ...more });
-  if (!row) return refused('not-in-roster', 'This instance is no longer in this workspace. Refresh the workspace roster.');
-  const running = row.running === true, remote = !!row.server;
-  if (running && !restart) return refused('already-running', 'This instance is already running.');
-  if (row.running !== false && !(restart && running)) {
-    const detail = displayLine(row.runtimeError);
-    return refused('state-unknown', STATE_UNKNOWN, detail ? { detail } : {});
-  }
-  if (!canAddressRemote(row)) return refused('E_SNAPSHOT_UNKNOWN', unaddressableSentence(row));
-  if (cli?.ok !== true || !has(cli.features, 'session-start'))
-    return refused(cli?.ok === true ? 'unsupported-start-option' : 'cli-unavailable', `Starting an existing instance needs an updated OATS CLI. ${displayLine(cli?.install) || 'Update OATS and retry.'}`);
-  if (remote && !has(cli.remote, 'session-start')) return refused('unsupported-remote-operation', 'Update the OATS CLI to enable starting instances on a server.');
-  if (restart && (!has(cli.features, 'session-restart') || (remote && !has(cli.remote, 'session-restart'))))
-    return refused('unsupported-start-option', 'Update OATS to restart with another harness or configuration.');
-  if ([choices?.launchConfig, choices?.harness, choices?.yolo].some(v => v !== undefined)
-    && (!has(cli.features, 'launch-config') || (remote && !has(cli.remote, 'launch-config'))))
-    return refused('unsupported-start-option', 'Update OATS to change the launch configuration.');
-  return null;
-}
+const CLI_FAILED = 'The start could not be confirmed: the call to the OATS CLI failed. Refresh its status before starting it again.';
 
 /** The home a local start launches in, or null. It is DERIVED and VERIFIED, never trusted from roster data
  * alone: the exact home the kernel's status reported for this row in one of `deployments` (`[{ id, remote,
@@ -100,7 +67,8 @@ export function verifiedLocalHome(row, deployments, realpath) {
  *   start     the CLI call (cli-adapter.mjs cliStart, with its own session and its wait); `exec`, `after` and
  *             `wait` pass to it
  * -> { ok: true, result } | { ok: false, outcome, code, sentence, detail, ran, incomplete? }
- * `ran`: whether the CLI was called. `sentence` is null for a code the client words (E_START_UNCONFIRMED) and
+ * `ran`: whether the CLI was called (E_CLI_FAILED: the call was made and failed; whether the CLI began is not
+ * known). `sentence` is null for a code the client words (E_START_UNCONFIRMED) and
  * for one it does not know: it then shows `detail`, the kernel's message through the display filter.
  * `incomplete`: a start that stopped at a launch prompt (E_SPAWN_INCOMPLETE) and names this row, decoded. */
 export async function startInstance(cli, row, choices = {}, { restart = false, deployments = [], realpath, localCwd, verifyHome, start = cliStart, exec, after, wait, terms } = {}) {
@@ -111,9 +79,14 @@ export async function startInstance(cli, row, choices = {}, { restart = false, d
   const local = !row.server;
   if (local && !(verifyHome ? verifyHome(row) : verifiedLocalHome(row, deployments, realpath)))
     return refused('E_HOME_UNVERIFIED', 'Instance home is outside the workspace instances layout');
-  const envelope = await start(cli.bin, { home: row.home, model: choices.model, launchConfig: choices.launchConfig, harness: choices.harness,
+  let envelope;
+  // A call that could not be made, or failed on its way (an exec that throws, a rejected call), is uncertain like
+  // any answer this cannot read: the CLI may have begun the start. Its words are the rule's; the exception's text
+  // is no kernel's message, and is not passed on as `detail`.
+  try { envelope = await start(cli.bin, { home: row.home, model: choices.model, launchConfig: choices.launchConfig, harness: choices.harness,
     harnessFlag: harnessFlag(cli), yolo: choices.yolo, restart, workspaceDir: local ? dirname(row.agentsRoot) : localCwd, server: row.server },
-  { ...(exec ? { exec } : {}), ...(after ? { after } : {}), ...(wait !== undefined ? { wait } : {}) });
+  { ...(exec ? { exec } : {}), ...(after ? { after } : {}), ...(wait !== undefined ? { wait } : {}) }); }
+  catch { return { ok: false, outcome: 'uncertain', code: 'E_CLI_FAILED', sentence: CLI_FAILED, detail: null, ran: true }; }
   if (envelope?.ok === true) return { ok: true, result: envelope.result };
   const code = typeof envelope?.error?.code === 'string' ? envelope.error.code : 'E_CLI_PROTOCOL';
   const detail = displayLine(envelope?.error?.message);

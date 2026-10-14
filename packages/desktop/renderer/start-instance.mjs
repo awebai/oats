@@ -4,7 +4,8 @@ import { instanceId } from "../../client/instance-tree.mjs";
 import { waitForInstanceInPanel } from "./views/spawn.mjs";
 import { launchConfigFields } from "./launch-config-fields.mjs";
 import { captureFocusReturn } from "./focus-return.mjs";
-import { startGate } from "../../client/session-start.mjs";
+// The gate alone: session-start.mjs runs the CLI and loads Node builtins, which this page cannot (inventory.test.mjs).
+import { startGate } from "../../client/start-gate.mjs";
 import { retainedStartMessage, launchFlagIgnored, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 import { displayLine } from "../../client/display-text.mjs";
 import { startRefusalSentence } from "../../client/start-messages.mjs";
@@ -143,8 +144,8 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         if (hasLaunchConfig && !configsLoaded) { configsLoaded = true; void launchFields.load(); }
         submit.textContent = restart ? "Restart" : live ? "Open terminal" : "Start";
         model.disabled = live && !restart;
-        // The start rule is the shared home's (session-start.mjs startGate), the one the route decides by too: the
-        // route never answers a start this dialog offers with a refusal it would not have shown here.
+        // The start rule's gate is the shared home's (start-gate.mjs), the one the route decides by too: this dialog
+        // never sends a start it has refused. The route reads the row again and checks the home, so it may still refuse.
         const gate = startGate(cli, found ?? null, { restart }, DESKTOP_TERMS);
         if (gate?.code === "already-running") { submit.disabled = false; status.textContent = gate.sentence; return; }
         // A row whose state is not known says so with its own text and its speaker, when it has one.

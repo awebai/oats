@@ -95,7 +95,7 @@ test('a failed start: refused only for the kernel\'s two codes; anything else, t
   assert.deepEqual(STARTED_NOTHING_CODES, ['E_SESSION_START_BUSY', 'E_SESSION_RUNNING']); assert.equal(Object.isFrozen(STARTED_NOTHING_CODES), true);
   const answering = error => startInstance(CLI, row(), {}, { verifyHome: x => x.home, start: async () => ({ schemaVersion: 1, ok: false, ...(error ? { error } : {}) }), terms });
   for (const [error, outcome, sentence] of [
-    [{ code: 'E_SESSION_START_BUSY', message: 'session start busy: the home\'s start lock is held' }, 'refused', 'Another start of this instance is still running. Nothing was started.'],
+    [{ code: 'E_SESSION_START_BUSY', message: 'session start busy: the home\'s start lock is held' }, 'refused', 'OATS refused this start as busy. Nothing was started.'],
     [{ code: 'E_SESSION_RUNNING', message: 'session already running in tmux window =agents:=dev-1' }, 'refused', 'This instance is already running. Nothing was started.'],
     [{ code: 'E_START_UNCONFIRMED' }, 'uncertain', null],
     [{ code: 'E_LAUNCH_CONFIG_AMBIGUOUS', message: 'two configurations for codex' }, 'uncertain', null],
@@ -110,6 +110,14 @@ test('a failed start: refused only for the kernel\'s two codes; anything else, t
   }
   // Through the display filter: a control character never reaches a client.
   assert.equal((await answering({ code: 'E_SESSION_RUNNING', message: 'running\u001b[2J here' })).detail.includes('\u001b'), false);
+});
+
+test('a call that fails on its way is uncertain, in the rule\'s words, with no exception text: an exec that throws, a rejected call', async () => {
+  const failed = { ok: false, outcome: 'uncertain', code: 'E_CLI_FAILED', sentence: 'The start could not be confirmed: the call to the OATS CLI failed. Refresh its status before starting it again.', detail: null, ran: true };
+  // The CLI call itself (cli-adapter.mjs cliStart), whose exec throws before any child exists.
+  assert.deepEqual(await startInstance(CLI, row(), {}, { verifyHome: x => x.home, terms, exec: () => { throw new Error('spawn /installed/oats EAGAIN'); }, after: () => () => {} }), failed);
+  assert.deepEqual(await startInstance(CLI, row(), {}, { verifyHome: x => x.home, terms, start: async () => { throw new Error('socket hang up'); } }), failed);
+  assert.deepEqual(await startInstance(CLI, row(), {}, { verifyHome: x => x.home, terms, start: () => { throw new Error('thrown at the call'); } }), failed);
 });
 
 test('a start that stopped at a launch prompt keeps its retained outcome when it names this row, as the route did', async () => {

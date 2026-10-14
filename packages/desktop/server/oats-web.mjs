@@ -1401,7 +1401,7 @@ const server = createServer(async (req, res) => {
       if (hm[1] === "start" || hm[1] === "restart") {
         // The start rule is the shared home's (packages/client/session-start.mjs): the gate's seven rules, the
         // home check, then the CLI call in its own session with its wait. The renderer decides through the same
-        // gate, so it never sends a start this refuses.
+        // gate and never sends a start it has refused; this reads the row again and checks the home, so it may.
         const body = await readBody(req);
         const started = await startInstance(cliState, inst, { model: body.model, launchConfig: body.launchConfig, harness: body.harness, yolo: body.yolo },
           { restart: hm[1] === "restart", localCwd: ctxs[0] ?? homedir(), verifyHome: verifiedLocalHome, start: adapter.cliStart, terms: DESKTOP_TERMS });

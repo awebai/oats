@@ -77,7 +77,7 @@ const TABLES = ['lifecycleReason', 'lifecycleFailure', 'undescribedAnswer', 'und
   // 5a: the lifecycle boundary words every reason with the terms it is made with (packages/client/instance-lifecycle.mjs),
   // and the confirmation every plan and answer (packages/client/lifecycle-confirmation.mjs).
   'createLifecycleBoundary', 'createLifecycleConfirmation', 'planView', 'outcomeView', 'unavailableView', 'applyRunningSentence',
-  // 5a-2: the start rule (packages/client/session-start.mjs). Its `startInstance` is not read here: the renderer's
+  // 5a-2: the start rule (packages/client/session-start.mjs; its gate, start-gate.mjs). Its `startInstance` is not read here: the renderer's
   // context has a handler of that name (shell.mjs `startInstance: instance => …`), which is no call of the rule;
   // the rule's own refuses a call without terms, and the start route's tests run it with DESKTOP_TERMS.
   'startGate'];
