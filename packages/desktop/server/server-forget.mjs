@@ -75,7 +75,8 @@ export function createServerForget({ adapter, cli, held }) {
       const state = cli();
       if (!readsRemotes(state)) return notRun('E_FEATURE');
       const { server, instance } = body, key = `${server}\0${instance}`;
-      if (!heldGone(held(), server, instance)) return notRun('E_FORGET_NOT_GONE');
+      let groups; try { groups = held(); } catch { groups = null; } // a roster that cannot be read shows nothing gone
+      if (!heldGone(groups, server, instance)) return notRun('E_FORGET_NOT_GONE');
       if (running.has(key)) return notRun('E_BUSY');
       running.add(key);
       try {

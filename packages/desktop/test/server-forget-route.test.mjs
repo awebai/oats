@@ -10,6 +10,7 @@ import { createServerForget, forgetOutcome, forgetNotRun, heldGone } from '../se
 import { readFileSync } from 'node:fs';
 import { cliServerForget } from '../../client/cli-adapter.mjs';
 import { createRefreshLoop } from '../../client/refresh-loop.mjs';
+import { remoteRosterState } from '../../client/remote-roster.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
 import { loadServer, juanState, CLI } from './helpers/workspace-views-fixture.mjs';
 import { shippedMainApi } from './helpers/shipped-main-api.mjs';
@@ -264,8 +265,8 @@ test('#1170: a row the held roster does not show gone is refused with 409 E_FORG
     [gone(['build', 'dev-b']), 'an unknown instance on a known server'],
     [gone(['other', 'dev-a']), 'a known instance on another server'],
     [[], 'an empty held roster'],
-    [[{ ...gone(['build', 'dev-a'])[0], probe: { ok: false, error: { code: 'E_REMOTE_ROSTER', message: 'Remote roster unavailable' } } }],
-      'gone at an earlier read, held through a failed one'],
+    [remoteRosterState({ remoteGroups: gone(['build', 'dev-a']), rosterAnswered: true, rosterFailure: null },
+      { thrown: 'read failed' }, '2026-01-01T00:00:00.000Z').remoteGroups, 'gone at an earlier read, held through a failed one'],
     [[{ ...gone(['build', 'dev-a'])[0], probe: undefined }], 'a group with no probe'],
     [[{ ...gone(['build', 'dev-a'])[0], server: undefined }], 'a group with no server'],
   ];
@@ -277,8 +278,11 @@ test('#1170: a row the held roster does not show gone is refused with 409 E_FORG
   for (const groups of [undefined, null, {}, [null], [{ server: 'build', probe: { ok: true }, instances: null }]]) {
     const s = await serve({ held: () => groups });
     notGone(await s.post({ server: 'build', instance: 'dev-a' }), JSON.stringify(groups));
-    assert.equal(s.run.calls.length, 0);
+    assert.deepEqual([s.run.calls.length, s.rereads.length], [0, 0], JSON.stringify(groups));
   }
+  const throwing = await serve({ held: () => { throw new Error('roster'); } });
+  notGone(await throwing.post({ server: 'build', instance: 'dev-a' }), 'a held roster that cannot be read');
+  assert.deepEqual([throwing.run.calls.length, throwing.rereads.length], [0, 0]);
 });
 
 test('#1170: the check reads what is held at each request: gone, then listed again, the second is refused; a held gone row runs once', async () => {

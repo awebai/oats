@@ -716,19 +716,20 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   unchanged, so the terminal client is unaffected), and in the context panel
   beside the remedy note. Both open `renderer/forget-dialog.mjs`, the
   lifecycle confirmation's dialog without a plan. Forget sends the row's
-  `{server, instance}` to `POST /api/server-forget` (`server/server-forget.mjs`).
-  The backend runs it only for a row its held roster shows gone (#1170): a held
-  group of that server, answered at its last read (`probe.ok`), lists that
-  instance with `missingRemotely === true`. Any other row, a group held through
-  a failed read among them, is refused with `E_FORGET_NOT_GONE` (409): nothing
-  runs and no read starts, and the roster is never read again to decide. The
-  checks run in order: the body, the CLI (`E_FEATURE`), the held row, one
-  Forget per row at a time (`E_BUSY`). It composes the argv of `oats server
-  forget <server> --instance <instance> --json` from those two values alone;
-  the kernel's `home` and `target` never leave the backend. The route answers as soon as the
-  command's outcome is known, and after every command, whatever it answered,
-  it starts the remote roster read that follows it (`refreshRemoteSnapshotAfter`
-  in `server/oats-web.mjs`: a read already in flight, whoever started it, began
+  `{server, instance}` to `POST /api/server-forget`
+  (`server/server-forget.mjs`). The backend runs it only for a row its held
+  roster shows gone (#1170): a held group of that server, answered at its last
+  read (`probe.ok`), lists that instance with `missingRemotely === true`. Any
+  other row, a group held through a failed read among them, is refused with
+  `E_FORGET_NOT_GONE` (409): nothing runs and no read starts, and the roster
+  is never read again to decide. The checks run in order: the body, the CLI
+  (`E_FEATURE`), the held row, one Forget per row at a time (`E_BUSY`). It
+  composes the argv of `oats server forget <server> --instance <instance>
+  --json` from those two values alone; the kernel's `home` and `target` never
+  leave the backend. The route answers as soon as the command's outcome is
+  known, and after every command, whatever it answered, it starts the remote
+  roster read that follows it (`refreshRemoteSnapshotAfter` in
+  `server/oats-web.mjs`: a read already in flight, whoever started it, began
   before the command, so one more runs after it). The backend is that read's
   one owner; the renderer issues none and never edits the view: the row leaves
   the roster when the read lands, and a second Forget before then answers
