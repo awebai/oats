@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createReadinessBoundary } from '../server/readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { createInstanceEventsBoundary } from '../server/instance-events.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';

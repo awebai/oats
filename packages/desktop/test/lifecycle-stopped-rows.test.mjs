@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { answeringFeatures, stoppedTargets, decodedStoppedTargets, lifecycleReceipt, publicLifecycleReceipt, stoppedRowKind, stoppedRowText,
   stopResultWords, childrenRefusedMessage, lifecycleReason } from '../../client/lifecycle-contract.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';

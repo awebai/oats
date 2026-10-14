@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
-import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../../client/instance-lifecycle.mjs';
 import { lifecycleReason, lifecycleDetailCode, undescribedAnswer, undescribedRefusal, stoppedTargets } from '../../client/lifecycle-contract.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { cliLifecycle } from '../../client/lifecycle-cli.mjs';
@@ -149,9 +149,9 @@ const RAISED = {
 
 test('every code Desktop raises itself (the adapter, the boundary, admission, main) has its own sentence; reading the sources finds no other', () => {
   assert.deepEqual(raisedIn('../../client/lifecycle-cli.mjs', 'failure'), RAISED.adapter);
-  assert.deepEqual(raisedIn('../server/instance-lifecycle.mjs', 'denied|failure|lifecycleReason', /error: \{ code: '([^']+)' \}/g, /\|\| '([^']+)'/g), RAISED.boundary);
+  assert.deepEqual(raisedIn('../../client/instance-lifecycle.mjs', 'denied|failure|lifecycleReason', /error: \{ code: '([^']+)' \}/g, /\|\| '([^']+)'/g), RAISED.boundary);
   assert.deepEqual([...raisedIn('../main.mjs', 'failure'), ...frameRaisedIn('../main.mjs')].sort(), RAISED.main);
-  for (const path of ['../../client/lifecycle-cli.mjs', '../server/instance-lifecycle.mjs', '../../client/instance-admission.mjs']) assert.deepEqual(frameRaisedIn(path), [], path);
+  for (const path of ['../../client/lifecycle-cli.mjs', '../../client/instance-lifecycle.mjs', '../../client/instance-admission.mjs']) assert.deepEqual(frameRaisedIn(path), [], path);
   assert.deepEqual(raisedIn('../../client/instance-admission.mjs', 'denied'), RAISED.admission);
   for (const code of new Set(Object.values(RAISED).flat())) {
     // A remote row that is not addressable is refused by admission with its own sentence, which names the server.

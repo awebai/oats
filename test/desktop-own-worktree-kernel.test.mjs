@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cliLifecycle } from '../packages/client/lifecycle-cli.mjs';
 import { lifecyclePlan, lifecycleChoicesApplicable, lifecycleReason, ownWorktreeOf, OWN_WORKTREE_FEATURE } from '../packages/client/lifecycle-contract.mjs';
-import { createLifecycleBoundary } from '../packages/desktop/server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../packages/client/instance-lifecycle.mjs';
 import { DESKTOP_TERMS } from '../packages/desktop/renderer/desktop-terms.mjs';
 import { v2Deployment, CLI } from './helpers/v2-deployment.mjs';
 

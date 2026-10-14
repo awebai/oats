@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { busyHolder, busyHeadline, busyAbout, busyRefusal, lifecycleReason } from '../../client/lifecycle-contract.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { cli, context, envelope, instance, stopPlan, retirePlan, stopReceipt, retireReceipt, tick } from './helpers/lifecycle-fixture.mjs';

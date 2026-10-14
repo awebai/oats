@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { lifecyclePlan, lifecycleChoicesApplicable, lifecycleReason, ownWorktreeOf, OWN_WORKTREE_FEATURE } from '../../client/lifecycle-contract.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { cli, context, envelope, instance, target, stopPlan, retirePlan, retireReceipt, session, tick } from './helpers/lifecycle-fixture.mjs';
@@ -561,7 +561,7 @@ test('no line of packages/client or packages/desktop compares a work mode with a
   assert.equal(found.length, 1, 'and the function compares it once');
   // Not vacuous: the sources were read, and the readers of the name are among them.
   assert.ok(files.length > 100, `${files.length} files read`);
-  for (const path of [CONTRACT, 'packages/desktop/renderer/lifecycle-dialog.mjs', 'packages/desktop/server/instance-lifecycle.mjs', 'packages/desktop/renderer/instance-git.mjs', 'packages/client/instance-git-contract.mjs'])
+  for (const path of [CONTRACT, 'packages/desktop/renderer/lifecycle-dialog.mjs', 'packages/client/instance-lifecycle.mjs', 'packages/desktop/renderer/instance-git.mjs', 'packages/client/instance-git-contract.mjs'])
     assert.ok(files.includes(path), `${path} was read`);
   assert.ok(files.every(path => !path.includes('/test/') && !path.includes('node_modules')), 'only the packages\' own source');
   assert.ok(files.filter(path => /\bworkMode\b/.test(readFileSync(join(REPOSITORY, path), 'utf8'))).length >= 3, 'the name is still read where it is validated and shown');

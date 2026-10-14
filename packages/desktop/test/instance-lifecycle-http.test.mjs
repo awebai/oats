@@ -11,7 +11,7 @@ import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../../client/lifecycle-contract.mjs';
 import { lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope } from './helpers/lifecycle-fixture.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 function http({ remote = false, missing = false, routed = false, entries = ['lifecycle-plans'], apply = null } = {}) {
