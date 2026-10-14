@@ -603,46 +603,43 @@ else exec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"; fi
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("roster (feature server-probe-features): a group's probe relays the host's status `features` only when every entry passes, else null; a failed pull has no features key", () => {
+test("roster (feature server-probe-features): a group's probe relays the host's status `features` only when every entry passes, else null; a failed pull has no features key", async () => {
   const prevHomeDir = process.env.OATS_HOME_DIR;
   process.env.OATS_HOME_DIR = mkdtempSync(join(tmpdir(), "oats-servers-pf-"));
   try {
     const status = { root: "/srv/ws/agents", agents: [] };
     // One group from a fake host answering `status --json` with `answer` (a JS value, or a throw).
-    const probeOf = (answer) => {
+    const probeOf = async (answer) => {
       writeServers({ build: { sshHost: "build-host", workspace: "/srv/ws" } });
-      const exec = () => { if (answer instanceof Error) throw answer; return JSON.stringify(answer); };
-      const out = rosterGroups({ server: "build", io: { execFileSync: exec, serverId: `build-${Math.random()}` } });
+      const exec = async () => { if (answer instanceof Error) throw answer; return JSON.stringify(answer); };
+      const out = await rosterGroups({ server: "build", io: { execFileAsync: exec, serverId: `build-${Math.random()}` } });
       assert.equal(out.groups.length, 1);
       return out.groups[0].probe;
     };
     const withFeatures = (features) => probeOf({ ...status, features });
     const valid = ["retire-home", "a", "0", "x2-y3", "a".repeat(64), "retire-home"];
-    assert.deepEqual(withFeatures(valid), { ok: true, features: valid }, "relayed as answered: order and a duplicate kept");
-    assert.deepEqual(probeOf(status), { ok: true, features: null }, "an older host (no key): unknown");
-    assert.deepEqual(withFeatures([]), { ok: true, features: [] }, "[] is a valid answer, not unknown");
+    assert.deepEqual(await withFeatures(valid), { ok: true, features: valid }, "relayed as answered: order and a duplicate kept");
+    assert.deepEqual(await probeOf(status), { ok: true, features: null }, "an older host (no key): unknown");
+    assert.deepEqual(await withFeatures([]), { ok: true, features: [] }, "[] is a valid answer, not unknown");
     const exactly256 = Array.from({ length: 256 }, (_, i) => `f${i}`);
-    assert.deepEqual(withFeatures(exactly256).features, exactly256, "256 entries is the limit");
+    assert.deepEqual((await withFeatures(exactly256)).features, exactly256, "256 entries is the limit");
     for (const [why, features] of [
       ["null", null], ["a string", "retire-home"], ["an object", { 0: "retire-home" }], ["a number", 1],
       ["a non-string entry", ["retire-home", 1]], ["an uppercase entry", ["Retire-home"]], ["an entry with a space", ["retire home"]],
       ["an empty entry", [""]], ["a leading hyphen", ["-retire"]], ["a trailing hyphen", ["retire-"]], ["a double hyphen", ["retire--home"]],
       ["a 65-character entry", ["a".repeat(65)]], ["257 entries", Array.from({ length: 257 }, (_, i) => `f${i}`)],
       ["one bad entry among good ones (never filtered)", ["retire-home", "session-start", "Bad", "operations"]],
-    ]) assert.deepEqual(withFeatures(features), { ok: true, features: null }, why);
+    ]) assert.deepEqual(await withFeatures(features), { ok: true, features: null }, why);
     // A failed pull: exactly the error, never a features key.
-    const failed = (answer) => { const p = probeOf(answer); assert.equal(p.ok, false); assert.equal("features" in p, false); return p; };
-    assert.equal(failed(Object.assign(new Error("ssh: connect to host build-host: Connection refused"), { status: 255, stderr: "ssh: connect to host build-host: Connection refused" })).error.code, "E_SSH");
-    assert.deepEqual(failed({ schemaVersion: 1, ok: false, error: { code: "E_NO_DEPLOYMENT", message: "no deployment" } }).error, { code: "E_NO_DEPLOYMENT", message: "no deployment" }, "a remote ok:false is relayed as today");
-    writeServers({ build: { sshHost: "build-host", workspace: "/srv/ws" } });
-    const unreached = rosterGroups({ server: "build", io: { budgetMs: 500, execFileSync: () => { throw new Error("never pulled"); } } }).groups[0].probe;
-    assert.deepEqual(Object.keys(unreached).sort(), ["error", "ok"]); assert.equal(unreached.error.code, "E_ROSTER_BUDGET");
+    const failed = async (answer) => { const p = await probeOf(answer); assert.equal(p.ok, false); assert.equal("features" in p, false); return p; };
+    assert.equal((await failed(Object.assign(new Error("ssh: connect to host build-host: Connection refused"), { status: 255, stderr: "ssh: connect to host build-host: Connection refused" }))).error.code, "E_SSH");
+    assert.deepEqual((await failed({ schemaVersion: 1, ok: false, error: { code: "E_NO_DEPLOYMENT", message: "no deployment" } })).error, { code: "E_NO_DEPLOYMENT", message: "no deployment" }, "a remote ok:false is relayed as today");
     // A success envelope whose result is not an object is unknown too, and never sinks a healthy group.
     for (const [why, answer] of [["result null", { schemaVersion: 1, ok: true, result: null }], ["result omitted", { schemaVersion: 1, ok: true }],
       ["result a string", { schemaVersion: 1, ok: true, result: "x" }], ["result a number", { schemaVersion: 1, ok: true, result: 7 }], ["result an array", { schemaVersion: 1, ok: true, result: ["retire-home"] }]]) {
       writeServers({ odd: { sshHost: "odd-host", workspace: "/srv/odd" }, healthy: { sshHost: "healthy-host", workspace: "/srv/healthy" } });
-      const exec = (_bin, argv) => JSON.stringify(argv.join(" ").includes("odd-host") ? answer : { root: "/srv/healthy/agents", agents: [], features: ["session-start"] });
-      const groups = Object.fromEntries(rosterGroups({ io: { execFileSync: exec, serverId: `pair-${Math.random()}` } }).groups.map((g) => [g.server, g]));
+      const exec = async (_bin, argv) => JSON.stringify(argv.join(" ").includes("odd-host") ? answer : { root: "/srv/healthy/agents", agents: [], features: ["session-start"] });
+      const groups = Object.fromEntries((await rosterGroups({ io: { execFileAsync: exec, serverId: `pair-${Math.random()}` } })).groups.map((g) => [g.server, g]));
       assert.deepEqual(groups.odd.probe, { ok: true, features: null }, why);
       assert.deepEqual(groups.odd.instances, [], why);
       assert.deepEqual(groups.healthy.probe, { ok: true, features: ["session-start"] }, `${why}: the healthy group survives`);
@@ -657,7 +654,7 @@ test("roster (feature server-probe-features): a group's probe relays the host's 
   }
 });
 
-test("roster budget: slow targets are bounded, healthy results survive, unreached targets are reported", () => {
+test("roster: every target is probed at once, each within its own deadline: hosts that never answer cost their own entries and nothing else", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-servers-budget-"));
   try {
     const { bin, tools } = fakeBin(base);
@@ -669,38 +666,129 @@ test("roster budget: slow targets are bounded, healthy results survive, unreache
     const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
-    // A "host" whose oats never answers: the remote command word runs this.
-    const slow = join(base, "slow-oats"); write(slow, "#!/bin/sh\nsleep 20\nexit 255\n"); chmodSync(slow, 0o755);
-    let r = oats(env, ["server", "add", "good", "--ssh", "good-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]);
-    assert.equal(r.status, 0, r.stderr);
-    for (const id of ["slow1", "slow2"]) {
+    // A "host" whose oats stops answering `status` once it is registered (registering asks it too):
+    // the remote command word runs this.
+    const slow = join(base, "slow-oats"), down = join(base, "slow-hosts-down");
+    write(slow, `#!/bin/sh\nif [ "$1" = status ] && [ -e ${JSON.stringify(down)} ]; then sleep 20; exit 255; fi\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"\n`); chmodSync(slow, 0o755);
+    // Registered first, as the offline host's four registrations were (#1117): the healthy one is last.
+    const SLOW = ["slow1", "slow2", "slow3", "slow4"];
+    let r;
+    for (const id of SLOW) {
       r = oats(env, ["server", "add", id, "--ssh", `${id}-host`, "--workspace", repo, "--oats", slow, "--json"]);
       assert.equal(r.status, 0, r.stderr);
     }
+    r = oats(env, ["server", "add", "good", "--ssh", "good-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    write(down, "");
     const t0 = Date.now();
-    r = oats(env, ["server", "roster", "--json", "--budget", "9000", "--per-target", "4000"]);
+    r = oats(env, ["server", "roster", "--json", "--per-target", "3000"]);
     const elapsed = Date.now() - t0;
     assert.equal(r.status, 0, r.stderr + r.stdout);
     const out = r.json().result;
-    assert.ok(elapsed < 14000, `roster took ${elapsed} ms against a 9 s budget`);
-    assert.deepEqual(out.groups.map((g) => g.server), ["good", "slow1", "slow2"]);
-    assert.deepEqual(out.groups[0].probe, { ok: true, features: KERNEL_FEATURES });
-    assert.deepEqual(out.groups[0].souls.map((s) => s.name), ["dev"]);
-    assert.equal(out.groups[1].probe.ok, false); assert.notEqual(out.groups[1].probe.error.code, "E_ROSTER_BUDGET");
-    assert.equal("features" in out.groups[1].probe, false, "a failed ssh carries no features key");
-    assert.equal(out.groups[2].probe.ok, false);
-    assert.equal(out.bounds.budgetMs, 9000); assert.equal(out.bounds.perTargetTimeoutMs, 4000);
-    // With a budget only one slow target can consume, the last one is
-    // reported as not reached rather than dropped or waited for.
-    r = oats(env, ["server", "roster", "--json", "--budget", "5000", "--per-target", "4000"]);
-    const out2 = r.json().result;
-    assert.deepEqual(out2.groups[0].probe, { ok: true, features: KERNEL_FEATURES });
-    assert.equal(out2.groups[2].probe.error.code, "E_ROSTER_BUDGET");
-    assert.deepEqual(Object.keys(out2.groups[2].probe).sort(), ["error", "ok"], "budget exhaustion carries no features key");
-    assert.equal(out2.bounds.skipped, 1);
+    // In sequence the four would cost 12 s before the healthy host was asked.
+    assert.ok(elapsed < 8000, `roster took ${elapsed} ms: the targets were not probed at once`);
+    assert.deepEqual(out.groups.map((g) => g.server), [...SLOW, "good"], "registration order, whatever order the probes finished in");
+    assert.deepEqual(out.groups[4].probe, { ok: true, features: KERNEL_FEATURES });
+    assert.deepEqual(out.groups[4].souls.map((s) => s.name), ["dev"]);
+    for (const g of out.groups.slice(0, 4)) {
+      assert.deepEqual(Object.keys(g.probe).sort(), ["error", "ok"], "a failed ssh carries no features key");
+      assert.deepEqual(g.probe.error, { code: "E_SSH", message: `ssh to ${g.target.sshHost} timed out: no answer within 3 s` });
+    }
+    assert.deepEqual(Object.keys(out.bounds).sort(), ["budgetMs", "elapsedMs", "perTargetTimeoutMs"]);
+    assert.equal(out.bounds.budgetMs, 45000); assert.equal(out.bounds.perTargetTimeoutMs, 3000);
+    // The answer deadline caps every probe's own allowance.
+    r = oats(env, ["server", "roster", "--json", "--budget", "2000", "--per-target", "4000"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    for (const g of r.json().result.groups.slice(0, 4)) assert.equal(g.probe.error.message, `ssh to ${g.target.sshHost} timed out: no answer within 2 s`);
     r = oats(env, ["server", "roster", "--json", "--budget", "5"]);
     assert.equal(r.json().error.code, "E_BAD_ARGS");
   } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+// In-process roster probes over an injected asynchronous transport (`io.execFileAsync`), each call
+// answered by the ssh host it names. Small deadlines keep these fast.
+const sshHostOf = (argv) => argv[argv.indexOf("--") + 1];
+const statusOf = (host) => JSON.stringify({ root: `/srv/${host}/agents`, agents: [{ name: "dev", harness: "claude", instances: [{ instance: `dev-${host}`, home: `/srv/${host}/agents/dev/instances/dev-${host}`, running: true }] }] });
+const after = (ms, value) => new Promise((done) => setTimeout(() => done(value), ms));
+/** A host that never answers on its own: its call settles only when aborted, as execFile's does. */
+const hangs = (aborted) => (opts) => new Promise((_, reject) => opts.signal.addEventListener("abort", () => { aborted.push(true); reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError", code: "ABORT_ERR" })); }));
+/** A host that ignores the abort too: the deadline must hold without the transport's help. */
+const neverAnswers = () => new Promise(() => {});
+/** The roster of `registrations` (server ids; registration `<id>` names ssh host `<id>-host`, unless
+ *  `hostOf` says otherwise), `answers[host](opts, argv)` answering each call; in a fresh OATS home. */
+async function parallelRoster(registrations, answers, { perTargetTimeoutMs = 400, hostOf = (id) => `${id}-host` } = {}) {
+  const prevHomeDir = process.env.OATS_HOME_DIR;
+  process.env.OATS_HOME_DIR = mkdtempSync("/tmp/oats-servers-par-"); // short: the control socket path must fit
+  try {
+    writeServers(Object.fromEntries(registrations.map((id) => [id, { sshHost: hostOf(id), workspace: `/srv/${id}` }])));
+    const execFileAsync = async (_bin, argv, opts) => answers[sshHostOf(argv)](opts, argv);
+    const t0 = Date.now();
+    const out = await rosterGroups({ io: { execFileAsync, perTargetTimeoutMs } });
+    return { out, elapsed: Date.now() - t0, groups: Object.fromEntries(out.groups.map((g) => [g.server, g])) };
+  } finally {
+    rmSync(process.env.OATS_HOME_DIR, { recursive: true, force: true });
+    process.env.OATS_HOME_DIR = prevHomeDir;
+  }
+}
+
+test("roster (#1117): a target that never answers fails with its own timeout; the healthy one beside it comes back with its instances, in about one per-target timeout", async () => {
+  const aborted = [];
+  const { out, elapsed, groups } = await parallelRoster(["hung", "good"], { "hung-host": hangs(aborted), "good-host": () => statusOf("good") });
+  assert.deepEqual(out.groups.map((g) => g.server), ["hung", "good"]);
+  assert.deepEqual(groups.good.probe, { ok: true, features: null });
+  assert.deepEqual(groups.good.instances.map((i) => [i.instance, i.running]), [["dev-good", true]]);
+  assert.equal(groups.hung.probe.ok, false);
+  assert.equal(groups.hung.probe.error.code, "E_SSH");
+  assert.match(groups.hung.probe.error.message, /^ssh to hung-host timed out: no answer within /);
+  assert.deepEqual(aborted, [true], "the hung call was aborted: the transport kills its ssh");
+  assert.ok(elapsed >= 400 && elapsed < 800, `${elapsed} ms: one per-target timeout, not the sum`);
+});
+
+test("roster (#1117): five targets of which the first four never answer: the fifth is probed and ok, and nothing reports a budget", async () => {
+  const hung = ["altair", "altair-aweb", "altair-jro", "altair-oats"];
+  const answers = { "nactiva-host": () => after(50, statusOf("nactiva")) };
+  for (const id of hung) answers[`${id}-host`] = neverAnswers;
+  const { out, elapsed, groups } = await parallelRoster([...hung, "nactiva"], answers);
+  assert.deepEqual(out.groups.map((g) => g.server), [...hung, "nactiva"]);
+  assert.deepEqual(groups.nactiva.probe, { ok: true, features: null });
+  assert.deepEqual(groups.nactiva.instances.map((i) => i.instance), ["dev-nactiva"]);
+  for (const id of hung) assert.match(groups[id].probe.error.message, new RegExp(`^ssh to ${id}-host timed out: no answer within `), id);
+  assert.deepEqual([...new Set(out.groups.filter((g) => !g.probe.ok).map((g) => g.probe.error.code))], ["E_SSH"]);
+  assert.deepEqual(Object.keys(out.bounds).sort(), ["budgetMs", "elapsedMs", "perTargetTimeoutMs"]);
+  assert.ok(elapsed < 800, `${elapsed} ms: four hung targets cost one per-target timeout together`);
+});
+
+test("roster (#1117): a target whose ssh fails at once reports its own E_SSH; the others are unaffected", async () => {
+  const refused = () => { throw Object.assign(new Error("Command failed: ssh"), { status: 255, stderr: "ssh: connect to host down-host port 22: Connection refused\n" }); };
+  const { groups } = await parallelRoster(["up1", "down", "up2"], { "up1-host": () => statusOf("up1"), "down-host": refused, "up2-host": () => after(20, statusOf("up2")) });
+  assert.deepEqual(groups.down.probe, { ok: false, error: { code: "E_SSH", message: "ssh to down-host failed: ssh: connect to host down-host port 22: Connection refused" } });
+  assert.deepEqual(groups.down.instances, []);
+  for (const id of ["up1", "up2"]) {
+    assert.deepEqual(groups[id].probe, { ok: true, features: null }, id);
+    assert.deepEqual(groups[id].instances.map((i) => i.instance), [`dev-${id}`], id);
+  }
+});
+
+test("roster (#1117): the answer's group order is the registration order, whatever order the probes finish in", async () => {
+  const { out } = await parallelRoster(["first", "second", "third"], {
+    "first-host": () => after(120, statusOf("first")), "second-host": () => after(60, statusOf("second")), "third-host": () => statusOf("third"),
+  });
+  assert.deepEqual(out.groups.map((g) => [g.server, g.probe.ok]), [["first", true], ["second", true], ["third", true]]);
+});
+
+test("roster (#1117): two registrations of one host are probed at once over the shared control master, and both succeed", async () => {
+  const calls = [];
+  let inFlight = 0, most = 0;
+  const shared = async (_opts, argv) => {
+    calls.push(argv); most = Math.max(most, ++inFlight);
+    try { return await after(50, statusOf("shared")); } finally { inFlight--; }
+  };
+  const { groups } = await parallelRoster(["one", "two"], { "shared-host": shared }, { hostOf: () => "shared-host" });
+  assert.equal(most, 2, "both calls to the host were in flight together");
+  for (const id of ["one", "two"]) assert.deepEqual(groups[id].probe, { ok: true, features: null }, id);
+  const control = (argv) => argv.filter((a) => a.startsWith("Control"));
+  assert.ok(control(calls[0]).includes("ControlMaster=auto"), "the calls share the per-user control master");
+  assert.deepEqual(control(calls[0]), control(calls[1]), "one ControlPath for the host");
 });
 
 test("routed retire: the branch a failed spawn's quarantine still owes is named on its own line, from the host's receipt", () => {

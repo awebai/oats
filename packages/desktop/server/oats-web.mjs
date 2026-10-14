@@ -21,6 +21,7 @@
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
+ *   POST /api/remote-roster/refresh → the remote roster read now (or the one in flight), answered once it has landed
  *   GET  /api/brain/<agent>?ws=<id> agent "brain" JSON: soul (AGENTS.md, skills,
  *                                   knowledge tree) + per-instance artifacts (abs paths)
  *   GET  /api/file?path=<abs>       text file content, guarded to workspace roots + agent homes
@@ -108,7 +109,7 @@ const locator = await import(pathToFileURL(join(HERE, "..", "..", "client", "cli
 const adapter = await import(pathToFileURL(join(HERE, "..", "..", "client", "cli-adapter.mjs")).href);
 const remote = await import(pathToFileURL(join(HERE, "..", "..", "client", "remote-roster.mjs")).href);
 let remoteGroups = [];
-let remoteCollecting = false;
+let remoteRead = null; // the remote roster read in flight (refreshRemoteSnapshot)
 
 /** Deployments in view. Each --dir registers one (repeatable); no --dir serves
  * no local deployment, never the cwd (#518). A deployment is identified by its
@@ -132,7 +133,7 @@ let rosterFailure = null;    // the roster read's failure while no answer has ar
    remembered remote identities, the kernel record), and reads it without changing it. */
 const held = () => ({
   ctxs, snapshot, remoteGroups, remembered: remoteIdentities, rosterAnswered, rosterFailure, cli: cliState,
-  observing, remoteCollecting, home: homedir(), at: new Date().toISOString(),
+  observing, remoteCollecting: remoteRead !== null, home: homedir(), at: new Date().toISOString(),
 });
 
 /** Spawnable souls of a local v2 deployment: the kernel's spawn catalog
@@ -634,13 +635,19 @@ function takeRosterOutcome(outcome) {
   if (next.reported) remoteIdentities.observe(next.reported);
   mergeRemotePanels(snapshot.byWs);
 }
-/** The roster read: one at a time, and an answer read with a kernel record that is no longer the accepted
- * one is dropped and the read runs again. */
-async function refreshRemoteSnapshot() {
-  if (remoteCollecting) return;
-  if (!cliReadsRemotes(cliState)) { takeRosterOutcome({ gated: true }); return; }
-  remoteCollecting = true;
-  const probe = cliState;
+/* OATSWEB_REMOTEREAD_BEGIN — the remote roster read, one at a time and joined, extracted by tests */
+/** The roster read: one at a time, and a caller that asks while one runs joins it: the promise resolves once
+ * an outcome read under the accepted kernel record is held. An answer read with a kernel record that is no
+ * longer the accepted one is dropped and the read runs again, inside the same promise. */
+function refreshRemoteSnapshot() {
+  remoteRead ||= (async () => {
+    let probe;
+    do { probe = cliState; await readRemoteRoster(probe); } while (cliState !== probe);
+  })().finally(() => { remoteRead = null; });
+  return remoteRead;
+}
+async function readRemoteRoster(probe) {
+  if (!cliReadsRemotes(probe)) { takeRosterOutcome({ gated: true }); return; }
   try {
     const envelope = await adapter.cliRemoteRoster(probe.bin);
     if (cliState !== probe) return;
@@ -648,11 +655,9 @@ async function refreshRemoteSnapshot() {
   } catch (e) {
     if (cliState !== probe) return;
     takeRosterOutcome({ thrown: e.message });
-  } finally {
-    remoteCollecting = false;
-    if (cliState !== probe) void refreshRemoteSnapshot();
   }
 }
+/* OATSWEB_REMOTEREAD_END */
 /** One observation cycle over every registered deployment; the refresh loop owns when it runs. */
 async function observeAll({ live = false } = {}) {
   try {
@@ -1326,6 +1331,12 @@ const server = createServer(async (req, res) => {
       if (typeof body.focused !== "boolean" || Object.keys(body).length !== 1) return send(res, 400, { error: "body needs { focused: boolean }", code: "E_BAD_ARGS" });
       refreshLoop.setFocused(body.focused); remoteLoop.setFocused(body.focused);
       return send(res, 200, { focused: refreshLoop.focused() });
+    }
+    if (req.method === "POST" && path === "/api/remote-roster/refresh") {
+      // A remote window's Retry (#1117): the read the background loop runs, now, or the one already in flight.
+      // Its outcome is held (the panels republished) before this answers; /api/panel then serves it.
+      await refreshRemoteSnapshot();
+      return send(res, 200, { refreshed: true });
     }
     if (req.method === "POST" && path === "/api/cli/reprobe") {
       // Re-probe triggers (contract): launch, app focus, explicit Retry, and

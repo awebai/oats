@@ -169,7 +169,7 @@ test("checkRemote: one version probe per process per server and target; a replac
   assert.equal(calls.probes, 7);
 });
 
-test("server roster: instance rows carry the remote status facts, null where the remote does not supply them", () => {
+test("server roster: instance rows carry the remote status facts, null where the remote does not supply them", async () => {
   writeServers({ build: { sshHost: "build-host", workspace: "/srv/ws" } });
   const snapDir = join(process.env.OATS_HOME_DIR, "remote", "build");
   mkdirSync(snapDir, { recursive: true });
@@ -190,7 +190,7 @@ test("server roster: instance rows carry the remote status facts, null where the
   const bare = { instance: "dev-b", home: "/srv/ws/agents/dev/instances/dev-b", running: false };
   const status = { root: "/srv/ws/agents", agents: [{ name: "dev", harness: "claude", instances: [full, bare] }] };
   const { exec } = countingExec(() => JSON.stringify(status));
-  const out = rosterGroups({ io: { execFileSync: exec } });
+  const out = await rosterGroups({ io: { execFileAsync: async (...call) => exec(...call) } });
   const rows = out.groups[0].instances;
   const FIELDS = ["identity", "identityAddress", "teams", "startedAt", "createdAt", "model", "runtimeState", "parentInstance", "siblingInstance", "relation", "relativeTo", "spawnOrigin",
     "work", "repo", "branch", "modelFrom", "soul", "modules"];

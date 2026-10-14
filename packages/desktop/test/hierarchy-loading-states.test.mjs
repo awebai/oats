@@ -125,6 +125,32 @@ test('a failed poll with data goes stale: content kept, the view notice with Ret
   assert.equal(u.status(), 'Roster updated', 'a user-invoked Retry announces its completion');
 });
 
+test('Retry on a remote window reads its servers again first (#1117): the refresh route, and only once it answered the panel; a local window\'s Retry asks no server', async t => {
+  const REFRESH = '/api/remote-roster/refresh';
+  const remote = (instances, extra = {}) => panel(instances, currentWorkspace(), { workspace: { id: currentWorkspace(), remote: true }, ...extra });
+  const paths = []; let answer = () => remote([], { error: 'ssh to nactiva-host timed out: no answer within 20 s' });
+  const refreshed = deferred();
+  const u = await setup(t, { api: path => { paths.push(path); return path === REFRESH ? refreshed.promise : answer(); } }); await tick();
+  assert.match(u.notice(), /^Roster unavailable: ssh to nactiva-host timed out/, 'the window\'s one server was not reached');
+  answer = () => remote([instance('a')]);
+  paths.length = 0; u.retry(); await tick();
+  assert.deepEqual(paths, [REFRESH], 'the servers are read again before the roster is');
+  refreshed.resolve({ refreshed: true }); await tick();
+  const PANEL = `/api/panel?ws=${encodeURIComponent(currentWorkspace())}`;
+  assert.deepEqual(paths, [REFRESH, PANEL], 'then the panel, which serves that read');
+  assert.equal(u.notice(), ''); assert.equal(u.nodes().length, 1);
+  // A background poll of the same window asks no server: only a Retry does.
+  paths.length = 0; u.poll(); await tick();
+  assert.deepEqual(paths, [PANEL]);
+});
+
+test('Retry on a local window reads the panel only: there is no server to read again', async t => {
+  const paths = [];
+  const u = await setup(t, { api: path => { paths.push(path); return Promise.reject(new Error('probe down')); } }); await tick();
+  paths.length = 0; u.retry(); await tick();
+  assert.deepEqual(paths, [`/api/panel?ws=${encodeURIComponent(currentWorkspace())}`]);
+});
+
 test('a failure without data: "Roster unknown", the view notice, no empty copy, no controller failed block in the summary', async t => {
   const u = await setup(t, { api: () => Promise.reject(new Error('probe down')) }); await tick();
   assert.equal(u.sum().textContent, 'Roster unknown'); assert.equal(u.one('.hier-sum .loading-failed'), null); assert.equal(u.one('.loading-failed'), null);

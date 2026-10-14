@@ -37,32 +37,32 @@ const hostRow = (name, extra = {}) => ({ instance: name, home: HOME(name), harne
 
 /** The one group `rosterGroups` builds from a fake host answering `status --json` with `rows`,
  *  plus a saved route (`dev-gone`) the host does not list. */
-function roster(rows, { server = "build" } = {}) {
+async function roster(rows, { server = "build" } = {}) {
   writeServers({ [server]: { sshHost: `${server}-host`, workspace: "/srv/ws" } });
   const snapDir = join(process.env.OATS_HOME_DIR, "remote", server);
   mkdirSync(snapDir, { recursive: true });
   writeFileSync(join(snapDir, "dev-gone.json"), JSON.stringify({ serverId: server, instance: "dev-gone", agent: "dev", home: HOME("dev-gone"), agentsRoot: "/srv/ws/agents", target: { sshHost: `${server}-host`, workspace: "/srv/ws", oatsPath: "oats" } }));
   const status = { root: "/srv/ws/agents", agents: [{ name: "dev", harness: "claude", instances: rows }] };
-  const exec = (_bin, argv) => (String(argv.at(-1)).endsWith("version --json") ? JSON.stringify(PROBE) : JSON.stringify(status));
+  const exec = async (_bin, argv) => (String(argv.at(-1)).endsWith("version --json") ? JSON.stringify(PROBE) : JSON.stringify(status));
   try {
-    const out = rosterGroups({ server, io: { execFileSync: exec, serverId: `${server}-${Math.random()}` } });
+    const out = await rosterGroups({ server, io: { execFileAsync: exec, serverId: `${server}-${Math.random()}` } });
     assert.equal(out.groups.length, 1); assert.deepEqual(out.groups[0].probe, { ok: true, features: null }, "a status without features: unknown");
     return out.groups[0];
   } finally { rmSync(snapDir, { recursive: true, force: true }); }
 }
 const rowOf = (group, name) => group.instances.find((r) => r.instance === name);
 
-test("rosterGroups relays a host row's waitingOnYou: the claim as the host read it, null when it has none", () => {
-  const g = roster([hostRow("dev-a", { waitingOnYou: CLAIM }), hostRow("dev-b", { waitingOnYou: null })]);
+test("rosterGroups relays a host row's waitingOnYou: the claim as the host read it, null when it has none", async () => {
+  const g = await roster([hostRow("dev-a", { waitingOnYou: CLAIM }), hostRow("dev-b", { waitingOnYou: null })]);
   assert.deepEqual(rowOf(g, "dev-a").waitingOnYou, CLAIM);
   assert.ok(Object.hasOwn(rowOf(g, "dev-b"), "waitingOnYou")); assert.equal(rowOf(g, "dev-b").waitingOnYou, null);
   // The rest of the row is what it was.
   const { waitingOnYou: _relayed, ...rest } = rowOf(g, "dev-a");
-  assert.deepEqual(Object.keys(rest).sort(), Object.keys(rowOf(roster([hostRow("dev-a")]), "dev-a")).sort());
+  assert.deepEqual(Object.keys(rest).sort(), Object.keys(rowOf(await roster([hostRow("dev-a")]), "dev-a")).sort());
 });
 
-test("rosterGroups: a host whose kernel does not report waitingOnYou gives a row with NO key, and a saved route the host does not list never has one", () => {
-  const g = roster([hostRow("dev-old"), hostRow("dev-a", { waitingOnYou: CLAIM })]);
+test("rosterGroups: a host whose kernel does not report waitingOnYou gives a row with NO key, and a saved route the host does not list never has one", async () => {
+  const g = await roster([hostRow("dev-old"), hostRow("dev-a", { waitingOnYou: CLAIM })]);
   assert.equal(Object.hasOwn(rowOf(g, "dev-old"), "waitingOnYou"), false, "absent stays absent: not reported is not null");
   const gone = rowOf(g, "dev-gone");
   assert.equal(gone.missingRemotely, true);
@@ -70,7 +70,7 @@ test("rosterGroups: a host whose kernel does not report waitingOnYou gives a row
   assert.equal(REMOTE_ROW_FACTS.includes("waitingOnYou"), false, "it is not a fact that reads null when missing");
 });
 
-test("rosterGroups relays a validated shape, by the kernel's own read rule: a value that is not a claim is null; a bad reason or message is null inside a claim that still counts", () => {
+test("rosterGroups relays a validated shape, by the kernel's own read rule: a value that is not a claim is null; a bad reason or message is null inside a claim that still counts", async () => {
   const notClaims = {
     "a string": "yes", "true": true, "a number": 1, "an array": [CLAIM], "an empty object": {},
     "no since": { producer: "oats.core", reason: "permission" },
@@ -82,13 +82,13 @@ test("rosterGroups relays a validated shape, by the kernel's own read rule: a va
     "a producer that is not a string": { ...CLAIM, producer: ["agent"] },
   };
   const names = Object.keys(notClaims);
-  const g = roster(names.map((why, i) => hostRow(`bad-${i}`, { waitingOnYou: notClaims[why] })));
+  const g = await roster(names.map((why, i) => hostRow(`bad-${i}`, { waitingOnYou: notClaims[why] })));
   names.forEach((why, i) => {
     const row = rowOf(g, `bad-${i}`);
     assert.ok(Object.hasOwn(row, "waitingOnYou"), why); assert.equal(row.waitingOnYou, null, why);
   });
 
-  const kept = roster([
+  const kept = await roster([
     hostRow("odd-reason", { waitingOnYou: { ...CLAIM, reason: "because" } }),
     hostRow("odd-message", { waitingOnYou: { ...CLAIM, message: "two\nlines" } }),
     hostRow("long-message", { waitingOnYou: { ...CLAIM, message: "x".repeat(201) } }),
@@ -105,10 +105,10 @@ test("rosterGroups relays a validated shape, by the kernel's own read rule: a va
 });
 
 // ---- end to end: the kernel's roster, the Desktop's panel, the Desktop's gate ----
-const panelRows = (rows) => Object.fromEntries(remotePanel(roster(rows), AT).instances.map((r) => [r.instance, r]));
+const panelRows = async (rows) => Object.fromEntries(remotePanel(await roster(rows), AT).instances.map((r) => [r.instance, r]));
 
-test("end to end: the Desktop's remote panel carries the claim rosterGroups relayed, and leaves it out when the host did not report one", () => {
-  const rows = panelRows([hostRow("dev-a", { waitingOnYou: CLAIM }), hostRow("dev-b", { waitingOnYou: null }), hostRow("dev-old"), hostRow("dev-bad", { waitingOnYou: "yes" })]);
+test("end to end: the Desktop's remote panel carries the claim rosterGroups relayed, and leaves it out when the host did not report one", async () => {
+  const rows = await panelRows([hostRow("dev-a", { waitingOnYou: CLAIM }), hostRow("dev-b", { waitingOnYou: null }), hostRow("dev-old"), hostRow("dev-bad", { waitingOnYou: "yes" })]);
   assert.deepEqual(rows["dev-a"].waitingOnYou, CLAIM);
   assert.equal(rows["dev-a"].running, true); assert.equal(rows["dev-a"].serverUnreached, false); assert.equal(rows["dev-a"].runtimeState, null);
   assert.equal(rows["dev-b"].waitingOnYou, null);
@@ -121,13 +121,13 @@ test("end to end: the Desktop's remote panel carries the claim rosterGroups rela
 
 // The gate's half is the Desktop's (awebai/oats#582, #587): a remote row's `runtimeState` is null
 // unless the host said "unreachable" or "unsupported", and the gate reads null as "not reported".
-test("end to end: the Desktop shows the relayed claim on a running remote row (waitingClaim)", () => {
-  const rows = panelRows([hostRow("dev-a", { waitingOnYou: CLAIM }), hostRow("dev-stopped", { running: false, waitingOnYou: CLAIM })]);
+test("end to end: the Desktop shows the relayed claim on a running remote row (waitingClaim)", async () => {
+  const rows = await panelRows([hostRow("dev-a", { waitingOnYou: CLAIM }), hostRow("dev-stopped", { running: false, waitingOnYou: CLAIM })]);
   assert.equal(rows["dev-a"].runtimeState, null, "the kernel's remote row reports no runtime state");
   assert.deepEqual(waitingClaim(rows["dev-a"]), CLAIM);
   assert.equal(waitingClaim(rows["dev-stopped"]), null, "a row that is not running shows none");
   // A host that says the session is unreachable: the claim is relayed, and the gate hides it.
-  const unreachable = panelRows([hostRow("dev-u", { running: null, runtimeState: "unreachable", runtimeError: "tmux", waitingOnYou: CLAIM })])["dev-u"];
+  const unreachable = (await panelRows([hostRow("dev-u", { running: null, runtimeState: "unreachable", runtimeError: "tmux", waitingOnYou: CLAIM })]))["dev-u"];
   assert.deepEqual(unreachable.waitingOnYou, CLAIM); assert.equal(waitingClaim(unreachable), null);
 });
 

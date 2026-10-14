@@ -1,7 +1,7 @@
 // What an answer of `oats server roster --json` becomes for a client (packages/client/remote-roster.mjs
 // `remoteRosterState` and `remotePanelEntries`, #855 3a), called as a second client calls them: with what
 // it holds, the outcome of its read and the time of its call. The Desktop's own loop over them is
-// server/oats-web.mjs `refreshRemoteSnapshot`; this file reads its source to show it holds no second copy.
+// server/oats-web.mjs `refreshRemoteSnapshot` and `readRemoteRoster`; this file reads its source to show it holds no second copy.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -49,11 +49,11 @@ test('gated: no groups and not answered, the failure sentence as it was, nothing
 });
 
 test('an envelope that is not ok: the groups held, marked with its error; the sentence only while no answer has ever arrived', () => {
-  const error = { code: 'E_ROSTER_BUDGET', message: 'the roster read ran out of time' };
+  const error = { code: 'E_SERVERS_UNREADABLE', message: 'the server registry is not valid JSON' };
   const held = [altair(), vega()];
   // Before any answer: the sentence is the error's message.
   const first = remoteRosterState({ ...NONE, remoteGroups: held }, { envelope: refused(error) }, AT);
-  assert.deepEqual(first, { remoteGroups: unavailableGroups(held, error), rosterAnswered: false, rosterFailure: 'the roster read ran out of time', reported: null });
+  assert.deepEqual(first, { remoteGroups: unavailableGroups(held, error), rosterAnswered: false, rosterFailure: 'the server registry is not valid JSON', reported: null });
   for (const g of first.remoteGroups) { assert.deepEqual(g.probe, { ok: false, error }); assert.ok(g.instances.every(i => i.running === null)); }
   // After an answer: the groups are kept, marked, and there is no sentence.
   const answered = kept(remoteRosterState(NONE, { envelope: ok(held) }, AT));
@@ -240,27 +240,29 @@ test('the speaker of a not-reached row through a client\'s whole path: read, hel
 
 test('the Desktop\'s server hands the roster\'s answer on as it was read: the same objects reach remoteRosterState, so the kernel\'s mark is kept', () => {
   const server = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
-  const loop = server.match(/async function refreshRemoteSnapshot\([^]*?\n\}/)[0], take = server.match(/function takeRosterOutcome\([^]*?\n\}/)[0];
-  assert.match(loop, /const envelope = await adapter\.cliRemoteRoster\(probe\.bin\);\s*if \(cliState !== probe\) return;\s*takeRosterOutcome\(\{ envelope \}\);/);
+  const read = server.match(/async function readRemoteRoster\([^]*?\n\}/)[0], take = server.match(/function takeRosterOutcome\([^]*?\n\}/)[0];
+  assert.match(read, /const envelope = await adapter\.cliRemoteRoster\(probe\.bin\);\s*if \(cliState !== probe\) return;\s*takeRosterOutcome\(\{ envelope \}\);/);
   assert.match(take, /\(\{ remoteGroups, rosterAnswered, rosterFailure \} = next\);/);
   // Between the read and the panel nothing copies a group: no clone and no JSON round trip of what is held.
-  for (const body of [loop, take, server.match(/function mergeRemotePanels\([^]*?\n\}/)[0]]) assert.doesNotMatch(body, /structuredClone|JSON\.(parse|stringify)|\.\.\.\s*(g|group|envelope)\b/);
+  for (const body of [read, take, server.match(/function mergeRemotePanels\([^]*?\n\}/)[0]]) assert.doesNotMatch(body, /structuredClone|JSON\.(parse|stringify)|\.\.\.\s*(g|group|envelope)\b/);
 });
 
 test('the Desktop\'s server holds none of the rule: it calls the shared functions and builds no roster sentence of its own', () => {
   const server = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const cut = (name) => server.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0];
-  const loop = cut('refreshRemoteSnapshot'), merge = cut('mergeRemotePanels'), take = cut('takeRosterOutcome');
+  const loop = cut('refreshRemoteSnapshot'), read = cut('readRemoteRoster'), merge = cut('mergeRemotePanels'), take = cut('takeRosterOutcome');
   assert.match(take, /remote\.remoteRosterState\(\{ remoteGroups, rosterAnswered, rosterFailure \}, outcome, new Date\(\)\.toISOString\(\)\)/);
   assert.match(take, /if \(next\.reported\) remoteIdentities\.observe\(next\.reported\)/);
   assert.match(merge, /remote\.remotePanelEntries\(remoteGroups, new Date\(\)\.toISOString\(\)\)/);
-  assert.match(loop, /if \(!cliReadsRemotes\(cliState\)\) \{ takeRosterOutcome\(\{ gated: true \}\); return; \}/);
+  assert.match(read, /if \(!cliReadsRemotes\(probe\)\) \{ takeRosterOutcome\(\{ gated: true \}\); return; \}/);
   // No second copy: the sentence, the roster's error code, the marking of groups and the projection of one are named nowhere in the server.
   assert.doesNotMatch(server, /Remote roster unavailable|E_REMOTE_ROSTER|unavailableGroups|remote\.remotePanel\(|remote\?\.includes\("roster"\)/);
-  // What stays the Desktop's: one read at a time, and an answer read under another kernel record is dropped and read again.
-  assert.match(loop, /if \(remoteCollecting\) return;/);
-  assert.equal(loop.match(/if \(cliState !== probe\) return;/g).length, 2);
-  assert.match(loop, /finally \{\s*remoteCollecting = false;\s*if \(cliState !== probe\) void refreshRemoteSnapshot\(\);\s*\}/);
+  // What stays the Desktop's: one read at a time (a caller that asks while one runs joins it), and an answer read
+  // under another kernel record is dropped and read again.
+  assert.match(loop, /remoteRead \|\|= /);
+  assert.equal(read.match(/if \(cliState !== probe\) return;/g).length, 2);
+  assert.match(loop, /do \{ probe = cliState; await readRemoteRoster\(probe\); \} while \(cliState !== probe\);/);
+  assert.match(loop, /\.finally\(\(\) => \{ remoteRead = null; \}\)/);
   // The names read are the shared module's own.
   for (const name of ['remoteRosterState', 'remotePanelEntries']) assert.equal(typeof roster[name], 'function', name);
 });
