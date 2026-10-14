@@ -13,6 +13,7 @@ import {
   isPlainChord, defaultBinding, chordKeys, terminalAllows,
 } from "./keybindings.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
+import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 import { icon } from "./shell-icons.mjs";
 
 const CONTEXT_LABELS = {
@@ -162,9 +163,16 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
     overlay.querySelector(".kb-close").addEventListener("click", close);
     overlay.querySelector(".kb-reset-all").addEventListener("click", () => { endRecording(); resetAllBindings(); });
     search.addEventListener("input", () => applySearch({ announce: true }));
+    // A focused row is revealed below its group's pinned heading, which would otherwise cover it
+    // when Up/Down or Shift+Tab walks upwards (the browser's own focus scroll ignores the heading).
+    body.addEventListener("focusin", (e) => {
+      const row = e.target.closest?.(".kb-row");
+      if (row) revealInScrollport(body, row, row.closest(".kb-group")?.querySelector(".kb-context"));
+    });
 
     // Show the rows that match the search, hide groups left empty, say when nothing
-    // matches, and (when the query changed) announce the count politely.
+    // matches, and announce the count politely: when the query changes, and when a rebind,
+    // unbind or reset changes what a search shows (never on open).
     const applySearch = ({ announce = false } = {}) => {
       const query = search.value;
       let shown = 0;
@@ -231,7 +239,7 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
         none.hidden = true;
         body.append(none);
       }
-      applySearch();
+      applySearch({ announce: !!search.value || !!overlay.querySelector(".kb-count").textContent });
       if (focusKey) {
         const controls = [...body.querySelectorAll(".kb-chord, .kb-reset")];
         const target = controls.find((el) => el.dataset.actionId === focusKey.id && el.classList.contains(focusKey.kind) && !el.hidden)

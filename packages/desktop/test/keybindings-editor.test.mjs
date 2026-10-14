@@ -580,3 +580,49 @@ test("group headings keep today's order and stick to the top of the scroll area"
   assert.match(css, /\.kb-context \{ position: sticky; top: 0;[^}]*background: var\(--surface\)/, "sticky on an opaque surface");
   assert.match(css, /\.kb-group\[hidden\], \.kb-row\[hidden\], \.kb-nomatch\[hidden\] \{ display: none; \}/);
 });
+
+test("search: the announced count follows a rebind, unbind or reset that changes what the search shows", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  const count = f.doc.querySelector(".kb-count");
+  setBinding("app.palette", "Ctrl+J");
+  assert.equal(count.textContent, "", "no search yet: a rebind announces nothing");
+  f.type("shift+b");
+  assert.equal(count.textContent, "1 shortcut");
+  setBinding("sidebar.toggle", null); // Backspace in the recorder
+  assert.deepEqual(f.shown(), []);
+  assert.equal(count.textContent, "0 shortcuts");
+  assert.equal(f.doc.querySelector(".kb-nomatch").textContent, "No shortcut matches “shift+b”");
+  f.rowFor("Sidebar: show or hide").querySelector(".kb-reset").click();
+  assert.equal(count.textContent, "1 shortcut");
+});
+
+test("a focused row is revealed below its group's pinned heading, not left under it", (t) => {
+  const f = setupLinux(t);
+  f.editor.open();
+  // jsdom has no layout: give the scroll area, the heading and the row the geometry of a row
+  // scrolled up under the pinned heading (Chromium's own focus scroll ignores the heading).
+  const body = f.doc.querySelector(".kb-body");
+  const row = f.rowFor("Next tab");
+  const heading = row.closest(".kb-group").querySelector(".kb-context");
+  Object.defineProperty(body, "clientHeight", { value: 300 });
+  Object.defineProperty(body, "scrollTop", { value: 200, writable: true });
+  body.getBoundingClientRect = () => ({ top: 100, bottom: 400 });
+  heading.getBoundingClientRect = () => ({ top: 100, bottom: 130 });
+  row.getBoundingClientRect = () => ({ top: 112, bottom: 146 });
+  row.querySelector(".kb-chord").focus();
+  assert.equal(body.scrollTop, 182, "scrolled up by the 18px the heading covered");
+  // A row already clear of the heading is left where it is.
+  row.getBoundingClientRect = () => ({ top: 160, bottom: 194 });
+  f.search().focus();
+  row.querySelector(".kb-chord").focus();
+  assert.equal(body.scrollTop, 182);
+});
+
+test("a narrow window keeps every control inside the editor: the title gives way, row controls wrap under the label", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8");
+  const narrow = css.match(/@media \(max-width: 620px\) \{\n([^]*?)\n\}/)?.[1] ?? "";
+  for (const rule of [/\.kb-head \{ flex-wrap: wrap; \}/, /\.kb-title \{ display: none; \}/, /\.kb-row \{ flex-wrap: wrap;/,
+    /\.kb-main \{ flex-basis: 100%; \}/, /\.kb-marks \{ width: auto;/, /\.kb-chord-cell \{ width: auto; \}/]) assert.match(narrow, rule);
+});

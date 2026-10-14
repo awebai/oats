@@ -676,6 +676,17 @@ body {
 .kb-reset-slot { flex: none; width: 30px; display: flex; justify-content: center; }
 .kb-reset { padding: 5px 6px; }
 .kb-empty { padding: 16px; color: var(--muted); text-align: center; font-size: 13px; }
+/* A narrow window (the editor is 92vw below ~700px): the title gives way to the search (the dialog
+   keeps its name), and a row's markers, keycaps and Reset take a second line under its label, so
+   labels keep their width and every control stays inside the dialog. */
+@media (max-width: 620px) {
+  .kb-head { flex-wrap: wrap; }
+  .kb-title { display: none; }
+  .kb-row { flex-wrap: wrap; row-gap: 3px; }
+  .kb-main { flex-basis: 100%; }
+  .kb-marks { width: auto; margin-left: auto; }
+  .kb-chord-cell { width: auto; }
+}
 /* forge-roster: open the row's pull request (the chip on the name line says which). */
 .ctx-pr-open { flex: none; display: grid; place-items: center; width: 24px; height: 22px; padding: 0; color: var(--accent); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
