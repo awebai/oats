@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
+import { comparableStty } from "./helpers/stty-line.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -196,13 +197,15 @@ async function terminal(t, { cols = 80, rows = 24 } = {}) {
       term.type(text);
       term.press("Enter");
     },
-    /** The terminal's line settings, as the real `stty -a` prints them in the pane's own shell. */
+    /** The terminal's line settings, as the real `stty -g` prints them in the pane's own shell,
+     *  compared as test/tui-terminal.test.mjs compares them (helpers/stty-line.mjs: without
+     *  macOS's PENDIN bit, which is the driver's state, not a setting). */
     async stty(when) {
       const file = join(base, `${id}-stty-${++files}`);
-      await term.command(`{ ${shq(STTY)} -a; echo end-of-stty; } > ${shq(file)}`, `stty -a ${when}`);
-      await until(term, () => existsSync(file) && readFileSync(file, "utf8").endsWith("end-of-stty\n"), `the output of stty -a ${when} in ${id}`);
-      await term.prompt(`after stty -a ${when}`);
-      return readFileSync(file, "utf8");
+      await term.command(`${shq(STTY)} -g > ${shq(file)}`, `stty -g ${when}`);
+      await until(term, () => existsSync(file) && /\n$/.test(readFileSync(file, "utf8")), `the output of stty -g ${when} in ${id}`);
+      await term.prompt(`after stty -g ${when}`);
+      return comparableStty(readFileSync(file, "utf8").trim());
     },
     kill() { try { tmuxOn(TERM, "kill-session", "-t", session); } catch { /* gone */ } },
   };
@@ -422,7 +425,7 @@ test("SIGQUIT to the TUI while the viewer has the terminal changes nothing: the 
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
 
-test("SIGTERM to the TUI while the viewer has the terminal ends both: status 143, the viewer session is gone and the agent keeps running, the terminal is released, the shell's prompt is back and stty -a is what it was before the start", { skip: NO_TMUX }, async (t) => {
+test("SIGTERM to the TUI while the viewer has the terminal ends both: status 143, the viewer session is gone and the agent keeps running, the terminal is released, the shell's prompt is back and stty -g is what it was before the start", { skip: NO_TMUX }, async (t) => {
   await agentWindow();
   const term = await terminal(t);
   const before = await term.stty("before the start");
@@ -437,7 +440,7 @@ test("SIGTERM to the TUI while the viewer has the terminal ends both: status 143
   assert.equal(agentWindowThere(), true, "the agent keeps running");
   assertReleasedModes(term, "after SIGTERM, before the shell's prompt");
   await run.release("after SIGTERM");
-  assert.equal(await term.stty("after SIGTERM"), before, "stty -a after SIGTERM");
+  assert.equal(await term.stty("after SIGTERM"), before, "stty -g after SIGTERM");
   assert.deepEqual(term.flags(), flagsBefore, "the pane's modes at the prompt after SIGTERM");
 });
 
@@ -469,7 +472,7 @@ test("a resize of the terminal while the viewer has it: after C-\\ the TUI draws
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
 
-test("after an open, C-\\ and q: status 0, stty -a byte for byte what it was before the TUI, the main screen with the cursor shown, and the paste and mouse modes off", { skip: NO_TMUX }, async (t) => {
+test("after an open, C-\\ and q: status 0, stty -g what it was before the TUI, the main screen with the cursor shown, and the paste and mouse modes off", { skip: NO_TMUX }, async (t) => {
   await agentWindow();
   const term = await terminal(t);
   const before = await term.stty("before the start");
@@ -483,7 +486,7 @@ test("after an open, C-\\ and q: status 0, stty -a byte for byte what it was bef
   assertReleasedModes(term, "after q, before the shell's prompt");
   assert.equal(term.screen().some((row) => row.includes(OPEN_HINT) || row.includes(LEFT)), false, `the TUI's screen is gone:\n${term.shows()}`);
   await run.release("after q");
-  assert.equal(await term.stty("after q"), before, "stty -a after q, byte for byte");
+  assert.equal(await term.stty("after q"), before, "stty -g after q");
   assert.deepEqual(term.flags(), flagsBefore, "the pane's modes at the prompt after q");
 });
 
