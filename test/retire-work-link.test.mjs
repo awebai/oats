@@ -207,7 +207,7 @@ test("a link at work/ under a record that says worktree is a link: the plan says
       assert.equal(seen.facts.work.observed, true, label);
       assert.equal(seen.facts.work.drift, false, `${label}: the record's branch fits`);
       assert.ok(seen.facts.work.changed + seen.facts.work.untracked > 0, label);
-      // The revision binds what work/ is, where that is not what the record's mode alone gives.
+      // The revision binds the record's work mode and what work/ is, in every home (#1065).
       assert.notEqual(seen.planRevision, given.planRevision, label);
       // `oats instance git` is as it was: it reads through a link, and its mode is the record's.
       const read = d.instanceGit(inst.instance);
