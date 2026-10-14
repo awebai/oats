@@ -432,13 +432,13 @@ export class RecordStore {
 
   // Absolute byte boundaries, including blank lines, permit durable seeks.
   // The final fragment never advances a cursor: it is the owner's torn tail.
-  *iterateJournal(streamId, { start = 0, end = Infinity } = {}) {
+  *iterateJournal(streamId, { start = 0, end = Infinity, check = () => {} } = {}) {
     let fd;
     try { fd = openSync(this.journalPath(streamId), "r"); }
     catch (e) { if (e.code === "ENOENT") return; throw e; }
     let position = start;
     try {
-      for (const line of bufferLines(fileChunks(fd, { start, end, size: 65536 }))) {
+      for (const line of bufferLines(fileChunks(fd, { start, end, size: 65536, check }))) {
         if (line[line.length - 1] !== 10) return;
         let parsed;
         try { parsed = parseJournal(line); }
@@ -463,28 +463,41 @@ export class RecordStore {
   // our fsynced append can skip history. Unknown writes (including old releases),
   // replacement and shrink start a new epoch and invalidate dependent cursors.
   // Partial validation is resumable, but cannot authorize an append.
-  validateJournal(streamId, state) {
+  validateJournal(streamId, state, { maxRecords = Infinity, maxBytes = Infinity, stopped = () => false } = {}) {
     const path = this.journalPath(streamId), version = fileVersion(path);
     let checkpoint = state.get("journal", streamId);
     if (checkpoint && (!Number.isSafeInteger(checkpoint.bytes) || checkpoint.bytes < 0 || checkpoint.bytes > (version?.size ?? 0) ||
         !Number.isSafeInteger(checkpoint.count) || checkpoint.count < 0 || checkpoint.count > checkpoint.bytes ||
-        typeof checkpoint.epoch !== "string" || typeof checkpoint.complete !== "boolean")) checkpoint = null;
+        typeof checkpoint.epoch !== "string" || typeof checkpoint.complete !== "boolean" ||
+        (checkpoint.resetting !== undefined && typeof checkpoint.resetting !== "boolean") || checkpoint.resetting && checkpoint.complete)) checkpoint = null;
     if (checkpoint && sameVersion(checkpoint.version, version) && checkpoint.complete) return checkpoint;
     if (!checkpoint || !sameVersion(checkpoint.version, version)) {
-      checkpoint = { version, epoch: randomBytes(16).toString("hex"), bytes: 0, count: 0, complete: false };
+      checkpoint = { version, epoch: randomBytes(16).toString("hex"), bytes: 0, count: 0, complete: false, resetting: true };
+      state.transaction(() => state.set("journal", streamId, checkpoint));
+    }
+    let recordsUsed = 0, bytesUsed = 0;
+    // Clearing a large obsolete lookup is recovery work too. Its durable
+    // phase marker prevents a deadline stop from restarting that deletion.
+    while (checkpoint.resetting) {
+      if (recordsUsed >= maxRecords || stopped()) return checkpoint;
       state.transaction(() => {
-        state.db.prepare("DELETE FROM journal_ids WHERE stream = ?").run(streamId);
-        state.set("journal", streamId, checkpoint);
+        const limit = Math.min(2000, maxRecords - recordsUsed);
+        const removed = Number(state.db.prepare(`DELETE FROM journal_ids WHERE rowid IN
+          (SELECT rowid FROM journal_ids WHERE stream = ? LIMIT ?)`).run(streamId, limit).changes);
+        recordsUsed += removed;
+        if (removed < limit) { delete checkpoint.resetting; state.set("journal", streamId, checkpoint); }
       });
     }
     const addId = state.db.prepare("INSERT OR IGNORE INTO journal_ids VALUES (?, ?)");
-    const iterator = this.iterateJournal(streamId, { start: checkpoint.bytes, end: version?.size ?? 0 });
+    const iterator = this.iterateJournal(streamId, { start: checkpoint.bytes, end: version?.size ?? 0,
+      check: () => { stopped(); } });
     let done = false;
     try {
     while (!done) {
+      if (recordsUsed >= maxRecords || bytesUsed >= maxBytes || stopped()) return checkpoint;
       state.transaction(() => {
         let batch = 0, bytes = 0;
-        while (batch < 2000 && bytes < 8 * 1024 * 1024) {
+        while (batch < 2000 && bytes < 8 * 1024 * 1024 && recordsUsed < maxRecords && bytesUsed < maxBytes && !stopped()) {
           const next = iterator.next();
           if (next.done) { done = true; break; }
           const entry = next.value;
@@ -493,7 +506,7 @@ export class RecordStore {
             if (typeof entry.turn.id === "string") addId.run(streamId, entry.turn.id);
           }
           checkpoint.bytes = entry.end;
-          bytes += entry.bytes; batch++;
+          bytes += entry.bytes; bytesUsed += entry.bytes; batch++; recordsUsed++;
         }
         if (!sameVersion(version, fileVersion(path))) throw new StoreError(`journal changed during validation: ${path}`);
         checkpoint.complete = done;

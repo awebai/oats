@@ -178,6 +178,14 @@ inside the transaction. This preserves public writers' stream-before-database
 lock order. Group acquisition accepts an internal stop check and unwinds partial
 acquisitions on failure. Callers must select bounded work before entering a group;
 the helper alone does not turn a full reconciliation into a bounded pass.
+Journal recovery exposes an internal work-unit interface: obsolete-ID deletion
+has a persisted phase, and validation commits its byte/count cursor after each
+bounded batch. A changed exact journal version invalidates that progress. A
+partial checkpoint never authorizes append. Source framing accepts an internal
+record limit and checks it before joining an oversized line; public callers keep
+their unlimited framing default. These primitives require a scheduling caller to
+provide budgets and continuation; they do not bound public library operations.
+
 Public synchronous library calls do not implicitly enter this context or acquire
 a root capture lock. Healthy derived-state opens do not run a schema write
 transaction, and identical state values do not produce redundant row updates.
