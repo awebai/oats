@@ -2301,7 +2301,7 @@ async function itemsCmd(kind) {
 /** Owner fields decide context, never message text. A problem source is display data;
  * render that projection without changing the operational external source. */
 function catalogProblemLine(p) {
-  const owner = p.repoKey || p.package || (p.source ? remoteModule.redactUrl(p.source, null, { pinned: true }) : null);
+  const owner = p.repoKey || p.package || (p.source ? remoteModule.displayRepoRef(p.source, { pinned: true }) : null);
   const where = owner ? ` [${terminalText(`${owner}: ${p.path}`)}]` : "";
   return `! ${p.code}: ${p.message}${where}`;
 }
