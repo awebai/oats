@@ -1203,7 +1203,7 @@ The keymap, its per-platform defaults, the terminal policy, the F6 regions and
 the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
 section is the module map.
 
-- **Mod+F** reveals the sidebar and focuses the instance filter; **⌘N /
+- **⌘F / Ctrl+Shift+F** reveals the sidebar and focuses the instance filter; **⌘N /
   Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
   an instance. Visible hints and tooltips follow the effective bindings
   (including explicit unbinds). Existing user overrides are retained.
@@ -1224,9 +1224,10 @@ section is the module map.
   policy (a default chord never takes a key a terminal program reads):
   inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
   tabs.next/prev; on Linux/Windows only `TERMINAL_ALLOWLIST` action ids may
-  fire (their defaults are Ctrl+Shift+key or Ctrl+Tab) — plain Ctrl+letter,
-  F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached program, and
-  `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
+  fire (a default xterm sends nothing for, or a byte the program still gets
+  from a plainer key; `test/terminal-xterm-bytes.test.mjs` pins each) —
+  plain Ctrl+letter, F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached
+  program, and `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the footer
   shortcuts button and the editor names them. `app.quickOpenSouls` (Mod+P) is
   deliberately NOT allowlisted: ⌘P fires inside xterm on macOS via the
@@ -1389,8 +1390,8 @@ inspector fallback.
 
 There is no status bar under the editor groups. After the tabs the editor tab bar
 holds only the two split buttons (spec F). The instance panel has no tab-bar
-button: `panel.toggle` (default **Mod+I**, not terminal-allowlisted, so
-Ctrl+I, the Tab byte, stays with the program in a Linux/Windows terminal), the palette's
+button: `panel.toggle` (default **⌘I / Ctrl+Shift+I**, terminal-allowlisted;
+plain Ctrl+I, the Tab byte, stays with the program in a Linux/Windows terminal), the palette's
 "Instance panel: show / hide" and the panel's own collapse/expand controls run
 it. **Focus mode**
 (`app.focusMode`: palette and a rebindable action, no default chord) hides the
@@ -1403,7 +1404,7 @@ Focus that was in the hidden sidebar moves to the active tab's trigger, else to 
 stable visible control (`stableFocusTarget` in `shell.mjs`: the sidebar toggle or
 the restore edge), never `<body>`; a focus-mode change made
 after focus was already lost (the palette removes its input before running the
-command) lands there too. Mod+F and Mod+B leave focus
+command) lands there too. `sidebar.focusFilter` and `sidebar.toggle` leave focus
 mode. Panel collapse and selected tab are session-local per workspace; focus mode
 is a temporary presentation override. Collapsed, the panel is a rail (a 44px column, or a
 34px row when the workbench stacks): the rail centres its controls on its cross
