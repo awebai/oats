@@ -27,7 +27,7 @@ is **no local or classic fallback**; remote rows follow
 [desktop-deployment-model.md](desktop-deployment-model.md#remote-rows).
 
 **Gate:** the installed CLI's probe integer `readinessApi` is exactly `2`; there
-is no feature string. A 0.25 kernel (`readinessApi: 1`), or an absent, string
+is no feature string. An older value (`readinessApi: 1`), or an absent, string
 or future value, gets the "update OATS" explanation and no request.
 
 Only fixed argv is constructed (`--policy` is kept by the kernel):
