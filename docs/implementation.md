@@ -86,7 +86,7 @@ and the rules its tests pin.
 
 | module | owns |
 |---|---|
-| `remote.mjs` | repo refs, reading Git remotes, content digests; `redactUrl` owns [reference display construction and withholding](workspaces.md#repository-references-in-diagnostics). Selected original refused references first use the contract's bounded plain-value rule; other values supply only validated scheme/SCP, host, supported port and path components, or are withheld whole. Raw host/path fragments inherit plain eligibility only from the original selected source, never from the fragment alone; nonplain originals cannot use that exception. Plain-reference recognition is not a secret detector: credential-like text within the permitted alphabet stays visible. Display recognition shares the parser's character rules without calling its error path, and never changes admission or transport. Explicit pinned-source context retains only a constructed reference plus a validated 40-hex commit, remains idempotent, and has no plain fallback; the default context does not infer pins. Each rejection boundary explicitly names its rejected-input fields; the seven selected argument fields use the same bounded plain-value predicate through the renderer, including spaces and colons and without trimming or decoding, never a global field-name rule. Rejected-input messages quote the rendered fields through a formatter at that boundary, so rejected words cannot replace identical words in the fixed reason. Valid operational values are untouched. Refusal context owns the explanation once; forwarding preserves it. `scrubGitLine` delegates the linked whole-Git-line disclosure rule to the renderer before control/length formatting: only proven unchanged original operation refs plus an original line without `@` permit disclosure; all other lines become the fixed notice, with no substring recovery. Construction tests audit raw Git error-text access and quoting routes; generated invariants cover selected diagnostic routes |
+| `remote.mjs` | repo refs, reading Git remotes, content digests; `displayRepoRef` and `displayDiagnosticText` select reference-value and kernel-prose contexts for one private renderer, which owns [reference display construction and withholding](workspaces.md#repository-references-in-diagnostics). Selected original refused references first use the contract's bounded plain-value rule; other values supply only validated scheme/SCP, host, supported port and path components, or are withheld whole. Raw host/path fragments inherit plain eligibility only from the original selected source, never from the fragment alone; nonplain originals cannot use that exception. Plain-reference recognition is not a secret detector: credential-like text within the permitted alphabet stays visible. Display recognition shares the parser's character rules without calling its error path, and never changes admission or transport. Explicit pinned-source context retains only a constructed reference plus a validated 40-hex commit, remains idempotent, and has no plain fallback; the default context does not infer pins. Each rejection boundary explicitly names its rejected-input fields; the seven selected argument fields use the same bounded plain-value predicate through the renderer, including spaces and colons and without trimming or decoding, never a global field-name rule. Rejected-input messages quote the rendered fields through a formatter at that boundary, so rejected words cannot replace identical words in the fixed reason. Valid operational values are untouched. Refusal context owns the explanation once; forwarding preserves it. `scrubGitLine` delegates the linked whole-Git-line disclosure rule to the renderer before control/length formatting: only proven unchanged original operation refs plus an original line without `@` permit disclosure; all other lines become the fixed notice, with no substring recovery. Construction tests audit raw Git error-text access and quoting routes; generated invariants cover selected diagnostic routes |
 | `local-inputs.mjs` | the local configuration a command read, for `observation.localRevision` |
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
@@ -191,6 +191,30 @@ reconciliation outside current placement or mutate attempts and locks.
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
 their contracts ([layers](layers.md)).
+
+### Remote diagnostic display
+
+`lib/remote.mjs` exposes explicit display entry points for direct module callers:
+
+- `displayRepoRef(value, { pinned = false, rejectedValue = false } = {})`
+  renders selected reference values, including nested keys and values. For a
+  pinned source, `pinned: true` splits the complete `<ref>@<commit>` value;
+  `pinned: { ref, commit }` supplies its original components. Both forms
+  require a recognised reference and a 40-hex commit, with no plain fallback.
+- `displayDiagnosticText(value, source = null, { fragment = false, refusal = false, substitute = true, rejectedValue = false } = {})`
+  renders kernel-authored diagnostic prose using its selected original source
+  values, including fragments and refusal explanations.
+- `scrubGitLine(line, url = null)` handles Git-authored lines through the
+  [whole-line disclosure rule](workspaces.md#repository-references-in-diagnostics)
+  before control and length formatting.
+
+All three delegate to the existing private `renderRemoteDisplay`; construction
+and withholding policy live there. Each public entry fixes its context and
+extracts only its named options, so an extra option cannot select Git-line
+handling through either of the other entry points. These exports are for
+internal/direct-module callers: `lib/remote.mjs` is not in the package export
+map. Call sites choose the entry matching the origin of the value or prose;
+there is no implicit-context `redactUrl` export or compatibility shim.
 
 ### The remote read path
 

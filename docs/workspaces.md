@@ -161,6 +161,13 @@ Written by `oats sync`; the only persisted state at the deployment besides
 
 ## Repository references in diagnostics
 
+Kernel call sites select the display context explicitly: `displayRepoRef`
+for selected reference values, `displayDiagnosticText` for kernel-authored
+diagnostic prose and `scrubGitLine` for Git's own lines. The entry points
+share one private renderer; options on the first two cannot select Git-line
+handling. The [development reference](implementation.md#remote-diagnostic-display)
+documents their signatures and direct-module use.
+
 Selected repository references in diagnostics are display values. A selected
 original refused reference is shown verbatim when it is 1–256 characters long
 and contains only ASCII letters, digits, spaces, `.`, `_`, `/`, `+`, `-` and
@@ -188,10 +195,13 @@ A diagnostic field that explicitly carries a pinned source uses the same
 constructor with pinned-source context: a recognised reference followed by `@`
 and a validated 40-hex-character commit can retain that commit in its display.
 If either part cannot be recognised, the whole source is withheld: pinned
-sources have no bounded plain-value fallback. Rendering an already constructed
-pinned source does not change it. This context does not change default
-reference rendering or admit a new source form. Local/file reference semantics
-and operational external-source values remain unchanged.
+sources have no bounded plain-value fallback. `displayRepoRef` selects this
+context with `pinned: true` for a complete `<ref>@<commit>` value, or with
+`pinned: { ref, commit }` for its original components; both forms validate
+both parts strictly. Rendering an already constructed pinned source does not
+change it. Ordinary reference rendering does not infer a pin or admit a new
+source form. Local/file reference semantics and operational external-source
+values remain unchanged.
 
 The same decision applies to the selected reference in error messages,
 `details.ref`, `details.url`, `details.value`, `provenance.value`, nested

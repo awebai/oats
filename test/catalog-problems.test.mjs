@@ -24,7 +24,7 @@ function compare(fx, kind) {
   assert.equal(text.stderr, "");
   assert.deepEqual(text.stdout.split("\n").filter((line) => line.startsWith("! ")),
     json.problems.map((p) => {
-      const context = p.repoKey ? `${p.repoKey}: ${p.path}` : p.package ? `${p.package}: ${p.path}` : p.source ? `${remoteModule.redactUrl(p.source, null, { pinned: true })}: ${p.path}` : null;
+      const context = p.repoKey ? `${p.repoKey}: ${p.path}` : p.package ? `${p.package}: ${p.path}` : p.source ? `${remoteModule.displayRepoRef(p.source, { pinned: true })}: ${p.path}` : null;
       return `! ${p.code}: ${p.message}${context === null ? "" : ` [${terminalText(context)}]`}`;
     }));
   for (const item of json[kind]) {

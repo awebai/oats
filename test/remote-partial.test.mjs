@@ -1171,7 +1171,7 @@ test("what git could not explain is unknown, with git's last line scrubbed; netw
   const said = (stderr) => refusedRead(observeRemote(url, { cacheDir: join(scratch(), "cache"), exec: async (args) => { if (args.includes("ls-remote")) throw gitError(stderr); return runGit(args); } }));
   const e = await said(`warning: redirecting\nfatal: '${url}' is being difficult: s3cret\n`);
   assert.deepEqual(e.details, { url: "ssh://example.com/org/repo", key: "example.com/org/repo", reason: "unknown", at: null }, "no field added; the url has no user information");
-  // The message prints the url as the cache's messages do, without its user information (redactUrl).
+  // The message prints the url as the cache's messages do, without its user information (displayRepoRef).
   assert.equal(e.message, `cannot read remote ssh://example.com/org/repo (unknown): ${notice}`);
   assert.ok(!e.message.includes("s3cret"));
   assert.equal((await said("")).message, "cannot read remote ssh://example.com/org/repo (unknown)", "no stderr means no Git line, even when Node supplies error.message");
