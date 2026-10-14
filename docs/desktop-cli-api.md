@@ -5463,7 +5463,11 @@ server runs, which `warnings` then says:
 configurations that select it (sorted). A launch configuration whose directory cannot
 be resolved (an unset reference, a relative path) or does not exist is a
 `refused` entry with a `problem` string naming it; `file` is null when the path
-is unresolved. The directory is never created.
+is unresolved. The directory is never created. A file the writer refuses (its
+type, links, owner, mode bits, `ls` metadata markers, size, encoding or format)
+is a `refused` entry whose `problem` is the file and the check that refused it,
+in fixed wording that never includes the file's content; such an entry's
+`current` and digests do not describe the file's trust.
 
 Entry statuses are `change|unchanged|refused|applied|failed|incomplete|not-attempted|skipped`. `skipped` (with `reason`) is a harness whose ambient configuration directory does not exist under `--harness all`; it is never created.
 `current` contains only the known trust scalar, or null when missing. Codex's key

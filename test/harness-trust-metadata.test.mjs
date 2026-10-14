@@ -56,3 +56,30 @@ test('security context drift is detected both before and after replacement', t =
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).projects !== undefined, phase === 'after-replace');
   }
 });
+
+test('each metadata refusal names its check; the marker case gives the way forward (awebai/oats#1109)', t => {
+  const marker = (root) => `has an extended-attribute (@) or ACL (+) marker in ls, which this writer neither copies nor removes; leave the file and its attributes as they are: accept claude's own folder-trust dialog for ${root} in a claude session that uses this file, then check the harness-trust item of oats readiness`;
+  const failing = () => { throw new Error('ls: secret-ls-message'); };
+  for (const [name, platform, run, wording] of [
+    ['macOS extended attribute', 'darwin', () => '-rw-r--r--@ 1 user staff 2 today /x\n', marker],
+    ['macOS ACL', 'darwin', () => '-rw-r--r--+ 1 user staff 2 today /x\n', marker],
+    ['Linux ACL', 'linux', () => '-rw-r--r--+ 1 user group 2 today /x\n', marker],
+    ['ls failed', 'linux', failing, () => 'its metadata could not be read (the ls probe failed or its answer is not recognized)'],
+    ['an unrecognized ls answer', 'darwin', () => '-rw-r--r--. 1 user staff 2 today /x\n', () => 'its metadata could not be read (the ls probe failed or its answer is not recognized)'],
+    ['a context ls -Z cannot read', 'linux', (command, args) => args.includes('-Zd') ? failing() : '-rw-------. 1 user group 2 today /x\n', () => 'has a Linux security context that cannot be read'],
+    ['an unreadable context', 'linux', (command, args) => args.includes('-Zd') ? '? /x\n' : '-rw-------. 1 user group 2 today /x\n', () => 'has a Linux security context that cannot be read'],
+  ]) {
+    const { root, file, env } = fixture(t); fs.writeFileSync(file, '{"privateSentinel":"never-print-this"}');
+    const metadataProbe = path => nativeSecurityContext(path, { platform, run });
+    for (const plan of [true, false]) assert.throws(() => harnessTrust(root, { env, harness: 'claude', plan, metadataProbe }), e => {
+      const [entry] = e.details.entries, problem = `${file}: ${wording(fs.realpathSync.native(root))}`;
+      assert.equal(e.code, 'E_CONFIG_BROKEN', name); assert.equal(entry.status, 'refused', name); assert.equal(entry.problem, problem, name);
+      assert.equal(e.message, `Harness trust refused; nothing was written: ${problem}`, name);
+      const all = JSON.stringify(e.details) + e.message;
+      assert.ok(!all.includes('never-print-this') && !all.includes('secret-ls-message'), name);
+      return true;
+    });
+    assert.equal(fs.readFileSync(file, 'utf8'), '{"privateSentinel":"never-print-this"}', name);
+    assert.equal(fs.existsSync(join(root, '.agents')), false, name);
+  }
+});

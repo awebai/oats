@@ -106,8 +106,8 @@ they are not a live SELinux-host qualification.
 
 On macOS, any extended-attribute (`@`) or ACL (`+`) marker deliberately refuses,
 including `com.apple.provenance`. This v1 writer does not copy or remove those
-attributes. Inspect the selected file; a refusal never authorizes stripping its
-metadata automatically. Existing file permissions are preserved.
+attributes. See [When the writer refuses](#when-the-writer-refuses); a refusal
+never authorizes stripping its metadata automatically. Existing file permissions are preserved.
 No configuration directory is ever created; a new file uses 0600. The plan shows the effective file,
 semantic key, current/desired trust scalar, byte digests and override provenance;
 it never returns other config values or credentials.
@@ -117,6 +117,54 @@ scaffolding, starting and retiring do not write native trust or create consent
 records. Existing Codex root-trust/yolo per-invocation overrides are unchanged.
 This command does not enable development-channel prompt consent, change permission
 mode, authenticate, install a plugin, or establish model/channel readiness.
+
+## When the writer refuses
+
+The writer refuses a configuration file it cannot replace exactly as it found
+it, and then writes nothing at all. The refused entry's `problem` names the
+file and the check that refused it, in fixed wording; it never repeats the
+file's content or a parser message:
+
+| `problem` says the file | Meaning |
+| --- | --- |
+| is not a regular file (a symbolic link, directory or other type) | The path is a link, a directory or another type; only a plain file is replaced. |
+| has more than one hard link | Replacing it would split it from its other names. |
+| is owned by another user | Only a file the current user owns is replaced. |
+| has setuid, setgid or sticky bits set | Special mode bits are not carried across a replacement. |
+| has an extended-attribute (@) or ACL (+) marker in ls ... | macOS extended attributes (such as `com.apple.provenance`) or an ACL, or an ACL on Linux: this writer neither copies nor removes them. The `problem` also gives the way forward, below. |
+| has a Linux security context that cannot be read | `ls -Z` gave no usable context for a file whose `ls` mode shows one. |
+| its metadata could not be read (the ls probe failed or its answer is not recognized) | `ls` failed, or printed a mode this writer does not recognize. |
+| changed while it was being read | Another writer replaced it during the read; rerun. |
+| is larger than 8 MiB | The file is over the size the writer reads. |
+| is not valid UTF-8 | The bytes do not decode losslessly. |
+| is not in the supported format (see "Qualified scope and formats" in docs/harness-trust.md) | The editor or the trust reader does not support its shape; see [Qualified scope and formats](#qualified-scope-and-formats). |
+| could not be read (`<errno code>`) | Any other read error, by its code alone (for example `EACCES`). |
+
+When the `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `HOME` that selects the ambient
+file (read as described above) is not an absolute path, or selects no usable
+directory, the ambient entry's `problem` names that variable and where it was
+read, never its value: `the file a claude launch with no launch configuration
+reads could not be established: <where> is not an absolute path`.
+Launch-configuration, missing-directory and unreadable-environment problems
+are described above.
+
+**The macOS marker.** On macOS, a configuration file that Claude rewrites can
+carry `com.apple.provenance`, and the writer refuses it. Do not edit the file or
+its attributes. Instead, start a Claude session with the configuration
+directory the launch uses (the same `CLAUDE_CONFIG_DIR`, or none for
+`~/.claude.json`), in the deployment folder, and accept Claude's own
+folder-trust dialog there. The `harness-trust` item of `oats readiness` is the
+check that this is met: it reads the file without the writer's metadata
+checks. Until it passes, spawns in that deployment warn with the line shown in
+[Launch-time checks and readiness](#launch-time-checks-and-readiness). The
+same applies to an ACL marker on Linux, and to Codex with its own trust prompt
+and `CODEX_HOME`.
+
+**A refusal does not block the rest of an upgrade.** Only
+`oats harness trust` runs the writer. `oats sync`, `oats readiness` and
+`oats doctor` never call it and start no session; the `harness-trust` item of
+readiness is never required, so a missing trust does not make the deployment
+not ready.
 
 ## Qualified scope and formats
 
