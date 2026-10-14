@@ -39,8 +39,8 @@ test('kernel refusals keep their own text only behind Details; unknown codes sti
     'a timed-out spawn may have created the instance; a timed-out read did not');
 });
 
-// A kernel of the 0.25 line, which the Desktop still accepts, refuses a spawn with E_REQUIREMENT_INACTIVE; no later kernel
-// writes that code, and the Desktop holds no sentence for it. The refusal's texts here are this file's own.
+// E_REQUIREMENT_INACTIVE was written only by kernels of the 0.25 line, which the Desktop's locator refuses; it stands here
+// for a kernel code the Desktop holds no sentence for. The refusal's texts here are this file's own.
 test('a kernel code the Desktop has no sentence for reads as the general one, its message under Details; at a press it is the general failure (E_REQUIREMENT_INACTIVE)', async () => {
   const CODE = 'E_REQUIREMENT_INACTIVE', SAID = 'soul "planner" asks for a capability this deployment has not turned on: turn it on in the workspace, then spawn again';
   assert.equal(PREVIEW.includes(CODE) || APPLY.includes(CODE), false, 'the code is in no table of the contracts');
