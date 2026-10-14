@@ -715,8 +715,8 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   addressed by a bare `--instance`. A remote terminal is keyed
   `["remote", server, home]`.
 - **Deadlines.** A remote read or plan has 45 s at the CLI (ssh's 15 s connect
-  timeout plus the command) and 50 s at the renderer→main proxy; an apply keeps
-  its 600 s / 610 s.
+  timeout plus the command) and 50 s at the renderer→main proxy; an apply has no
+  deadline at the CLI, and the boundary waits 600 s for it (610 s at the proxy).
 - **Refusals.** A host refusal is relayed as `{code, message, detail, remote:
   true}` (`hostReason`): the kernel's code, a headline naming the server
   (`remoteHeadline`, the view's own sentence for codes outside its table), and

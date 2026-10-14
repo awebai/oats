@@ -137,7 +137,7 @@ test('remote apply is revalidated like a local one: the row going unaddressable 
   assert.equal(f.calls.length, 1);
 });
 
-test('cliLifecycle: a remote plan gets 45 s and keeps the host\'s message; an apply keeps 600 s; cwd is this machine\'s', async () => {
+test('cliLifecycle: a remote plan gets 45 s and keeps the host\'s message; an apply has no timeout and runs in its own session; cwd is this machine\'s', async () => {
   const seen = [];
   const exec = (bin, argv, opts, done) => { seen.push({ argv, opts }); done(Object.assign(new Error('x'), { code: 1 }), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_REMOTE_INCOMPATIBLE', message: 'needs 0.31' } })); };
   const plan = await cliLifecycle('/installed/oats', { operation: 'stop', phase: 'plan', instance: 'dev-1', home: instance.home, context: '/Users/me/work', server: 'build', choices: { recursive: true } }, { exec });
@@ -147,6 +147,6 @@ test('cliLifecycle: a remote plan gets 45 s and keeps the host\'s message; an ap
   assert.equal(seen[1].opts.timeout, 30_000, 'local plans keep 30 s');
   await cliLifecycle('/installed/oats', { operation: 'stop', phase: 'apply', instance: 'dev-1', home: instance.home, context: '/Users/me/work', server: 'build',
     choices: { recursive: true }, revision: 'a'.repeat(24), key: 'k1' }, { exec });
-  assert.equal(seen[2].opts.timeout, 600_000);
+  assert.equal(seen[2].opts.timeout, undefined); assert.equal(seen[2].opts.detached, true);
   assert.equal(lifecycleArgv({ operation: 'stop', phase: 'plan', instance: 'dev-1', home: instance.home, context: '/x', server: 'Bad Id', choices: { recursive: true } }), null);
 });

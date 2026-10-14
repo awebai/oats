@@ -64,14 +64,28 @@ function failureReason(envelope, remote, terms, { code = envelope?.error?.code, 
   const detail = kernel && (undescribed || lifecycleDetailCode(code)) ? displayLine(envelope.error?.message) : null;
   return { ...reason, message, ...(detail ? { detail } : {}), ...busy };
 }
+/** How long a boundary waits for an apply's answer. The wait ends; the apply does not (lifecycle-cli.mjs). */
+export const APPLY_WAIT_MS = 600_000;
 /** One client's lifecycle boundary: `lifecycleRequest(request, getContext)`, a plan or an apply.
- *   invoke  the CLI call (lifecycle-cli.mjs `cliLifecycle`); now  the clock (ms); mint  the reference and key maker
+ *   invoke  the CLI call (lifecycle-cli.mjs `cliLifecycle`); now  the clock of its limits (ms, monotonic)
+ *   clock   the wall clock (ms since the epoch), for when a running apply started (`running.since`)
+ *   after   `after(ms, fn)` runs fn once after ms and answers a cancel; mint  the reference and key maker
  *   terms   the client's own (client-terms.mjs): every reason is worded with them; required
+ * An apply's answer is awaited APPLY_WAIT_MS. When that passes the boundary answers `unknown` and the apply stays
+ * in flight here: its reference, its key, its place as the one apply. Its answer, whenever it comes, is read and
+ * kept 30 minutes like any other; the same reference meanwhile is answered at once (`unknown` while it runs, the
+ * kept answer with `repeated` after). The cost: a CLI that never answers holds this client's applies until the
+ * client is restarted; killing it instead could strand the instance (#889; a stop on a kernel before 0.52.0).
+ * Every reply given because this client's own apply is running carries `running: { target, operation, since }`:
+ * the busy refusal of another apply, and the `unknown` of that apply after its wait. The kernel's own
+ * E_LIFECYCLE_BUSY never carries it, and this client's busy refusal carries no `details`, so the kernel's busy
+ * holder (lifecycle-contract.mjs busyHolder) is never read of it.
  * `getContext()` is read at every admission and answers the deployment the request names and what this
  * client holds of it: `{ workspace: { id, scope, remote?, group? }, cli, localCwd, instances }`. `group` is
  * the workspace's roster group (its `probe` says which features a routed command's host answers with,
  * lifecycle-contract.mjs `answeringFeatures`); `instances` are that deployment's own rows. */
-export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), mint = () => randomBytes(32).toString('hex'), terms } = {}) {
+export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), clock = () => Date.now(), mint = () => randomBytes(32).toString('hex'),
+  after = (ms, fn) => { const timer = setTimeout(fn, ms); timer.unref?.(); return () => clearTimeout(timer); }, terms } = {}) {
   requireTerms(terms, 'createLifecycleBoundary');
   const plans = new Map(), actions = new Map(), reads = new Map();
   let reservedPlans = 0, activeApply = null;
@@ -163,6 +177,8 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
     if (beforeEffect.has(code)) return failure(code, 'refused', { reason: failureReason(envelope, entry.remote, terms, { features, plan: entry.plan }) });
     return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: failureReason(envelope, entry.remote, terms, { features }) });
   }
+  /** The apply of this client that is running, as a reply names it. */
+  const runningOf = entry => ({ target: clone(entry.target), operation: entry.plan.action, since: entry.started });
   function apply(request, getContext, ws) {
     if (Object.keys(request).some(k => !['action', 'planRef'].includes(k)) || !planReference(request.planRef)) return Promise.resolve(denied('E_BAD_ARGS'));
     const entry = actions.get(request.planRef) || plans.get(request.planRef);
@@ -173,20 +189,32 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
       || !supportsLifecycle(context.cli, entry.plan.action, true)) return Promise.resolve(denied('E_PLAN_CHANGED', entry.target));
     if (entry.pending) return entry.pending;
     if (entry.reply) return Promise.resolve({ ...entry.reply, repeated: true }); // no CLI, even if home was removed/recreated
-    if (activeApply || actions.size >= 32) return Promise.resolve(denied('E_LIFECYCLE_BUSY', entry.target));
+    // Its wait has ended and its CLI still works: answered at once, never a second wait.
+    if (entry.waited) return Promise.resolve(clone(entry.waited));
+    // The 32-action cap is no running apply: that refusal names none.
+    if (activeApply || actions.size >= 32) return Promise.resolve(denied('E_LIFECYCLE_BUSY', entry.target, activeApply ? { running: runningOf(activeApply) } : {}));
     if (!lifecycleChoicesApplicable(entry.plan, entry.choices)) return Promise.resolve(denied('E_OPTION_UNAVAILABLE', entry.target));
     const current = admitted(entry.selector, entry.plan.action, getContext, true);
     if (!same(entry, current)) return Promise.resolve(denied('E_PLAN_CHANGED', entry.target));
     // Reserve synchronously, before any awaited work. One ref = one submitted
     // intent; loss of an HTTP response cannot mint a second idempotency key.
-    entry.key = mint(); entry.expires = Infinity; activeApply = entry;
+    entry.key = mint(); entry.expires = Infinity; entry.started = clock(); activeApply = entry;
     plans.delete(entry.id); actions.set(entry.id, entry);
     const args = { operation: entry.plan.action, phase: 'apply', instance: entry.target.instance, home: entry.target.home,
       context: entry.context, ...(entry.remote ? { server: entry.remote.server } : {}), choices: clone(entry.choices), revision: entry.plan.planRevision, key: entry.key };
-    entry.pending = Promise.resolve().then(() => invoke(entry.bin, args)).then(result => interpret(result, entry, current.features))
+    let cancel = () => {};
+    const answered = Promise.resolve().then(() => invoke(entry.bin, args)).then(result => interpret(result, entry, current.features))
       .catch(() => denied('E_OUTCOME_UNKNOWN', entry.target, { status: 'unknown', planRef: entry.id }))
       .then(result => { entry.reply = clone(result); return result; })
-      .finally(() => { entry.pending = null; entry.expires = now() + 30 * 60_000; if (activeApply === entry) activeApply = null; });
+      .finally(() => { cancel(); entry.pending = null; entry.waited = null; entry.expires = now() + 30 * 60_000; if (activeApply === entry) activeApply = null; });
+    // The wait ends; the apply does not. What is answered then is what a CLI that did not answer in time reads as.
+    const waited = new Promise(resolve => { cancel = after(APPLY_WAIT_MS, () => resolve(null)); });
+    entry.pending = Promise.race([answered, waited]).then(result => {
+      if (result) return result;
+      entry.pending = null;
+      entry.waited = { ...interpret({ schemaVersion: 1, ok: false, error: { code: 'E_CLI_TIMEOUT' } }, entry, current.features), running: runningOf(entry) };
+      return clone(entry.waited);
+    });
     return entry.pending;
   }
   return async function lifecycleRequest(request, getContext) {

@@ -231,6 +231,15 @@ If the Desktop's backend restarts while a confirmation is open, its plan is
 gone: Stop or Retire then answers that the plan expired, and Review again
 reads a new one.
 
+A stop, retire or start runs in a process of its own, so closing the Desktop
+does not interrupt it. If it takes longer than ten minutes, the dialog stops
+waiting and says the result is not confirmed; it keeps running, and Check
+again reads its result.
+
+With an OATS older than 0.52.0, after an interrupted stop the instance can be
+started and then cannot be stopped while `.oats-stop-pending.json` exists in
+its home.
+
 ## One workspace, several machines
 
 The switcher lists each workspace once, however many deployments it has: the
@@ -479,8 +488,9 @@ unknown or unreported harness shows "?". Sources and licences are in
   Do not expose it: it can type into your agent terminals.
 - The app never imports framework code from a checkout and accepts no
   framework-root environment override; deployments are read with an
-  app-owned read-only reader. All lifecycle mutations go through the
-  installed CLI via `execFile` with an absolute binary — never a shell.
+  app-owned read-only reader. Lifecycle actions run the installed `oats` CLI
+  by its absolute path, never through a shell: reads with `execFile`, and a
+  stop, retire or start as a process in its own session.
 - Task text for spawns travels via an owner-only (0600) tempfile, never
   argv. A local start or restart launches only in the server-verified
   instance home. A provider operation on an instance (its harvest included)

@@ -384,13 +384,15 @@ test('Stop nested ok:false is partial even inside a successful envelope; all tar
   assert.equal(lifecycleReceipt(hostile, p.plan, 'k'), null);
 });
 
-test('CLI fixes every argv, caps timeout/output, supports raw/replayed retire and suppresses errors', async () => {
+test('CLI fixes every argv, caps a plan\'s timeout and the output, runs an apply in its own session with no timeout, supports raw/replayed retire and suppresses errors', async () => {
   for (const operation of ['stop', 'retire']) for (const phase of ['plan', 'apply']) {
     const args = { operation, phase, instance: instance.instance, home: instance.home, context: '/team;literal', choices: options(operation),
       ...(phase === 'apply' ? { revision: (operation === 'stop' ? 'a' : 'b').repeat(24), key: 'server-key' } : {}) };
     const r = await cliLifecycle(cli.bin, args, { timeout: 999_999, exec(bin, argv, opts, done) {
       assert.equal(bin, cli.bin); assert.deepEqual(argv, lifecycleArgv(args)); assert.equal(opts.cwd, args.context); assert.equal(opts.shell, false);
-      assert.equal(opts.timeout, phase === 'plan' ? 30000 : 600000); assert.equal(opts.maxBuffer, (phase === 'plan' ? 1 : 4) * 1024 * 1024);
+      // A plan is a read with a deadline; an apply has none and runs in a session of its own (#889).
+      assert.equal(opts.timeout, phase === 'plan' ? 30000 : undefined); assert.equal(opts.detached, phase === 'plan' ? undefined : true);
+      assert.equal(opts.maxBuffer, (phase === 'plan' ? 1 : 4) * 1024 * 1024);
       assert.ok(argv.includes('--home') && argv.includes('--dir') && argv.includes('--json')); assert.ok(!argv.includes('--force'));
       const value = phase === 'plan' ? envelope(operation === 'stop' ? stopPlan() : retirePlan()) : operation === 'stop' ? envelope(stopReceipt(args)) : retireReceipt(args);
       done(null, JSON.stringify(value), 'PRIVATE stderr');

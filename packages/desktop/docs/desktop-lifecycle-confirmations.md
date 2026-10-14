@@ -85,8 +85,25 @@ oats retire NAME --plan-revision REV --idempotency-key KEY \
   --home HOME --dir SCOPE [--discard-worktree] --json
 ```
 
-Applies have a600-second/4 MiB bound; proxy610 seconds. At most32 settled or
-uncertain results are kept for30 minutes, without expiring an in-flight action.
+A plan read is a read: it runs in the backend's process group and its deadline
+(30 s, 45 s routed) ends it. An apply is a change, and its deadline ends only
+the wait (#889): the CLI runs in a session of its own (`detached`; the shared
+home's `execFileInSession`, since `execFile` drops the option), with no
+timeout and a 4 MiB output bound, so neither a deadline nor a signal to the
+client's group (a Ctrl-C, a hang-up) ends it. The boundary waits
+`APPLY_WAIT_MS` (600 s; the proxy, 610 s) and then answers `unknown` with
+`running: { target, operation, since }` (`since` from the wall clock), keeping
+the apply in flight: its reference, its key and its place as the one apply.
+Check again on that reference is answered at once, never a second wait; the
+late answer, whenever it comes, is kept like any other and repeated. Another
+apply meanwhile is refused `E_LIFECYCLE_BUSY` with the same `running`, and no
+`details`, so the kernel's busy holder is never read of it; the dialog words
+it with `applyRunningSentence`. A CLI that never answers holds the Desktop's
+applies until the backend restarts. A start runs in a session of its own too
+(`cliStart`), keeping its 60 s deadline. The quit path sends these children no
+signal (`backend-quit-children.test.mjs`); `test/client-own-session.test.mjs`
+holds the own session with real processes. At most 32 settled or
+uncertain results are kept for 30 minutes, without expiring an in-flight action.
 This is a bounded process-local transaction record, not a persistent journal.
 A repeated cached result is marked `repeated`; it does not rewrite the kernel's
 `replayed` fact. Replay of a recorded Retire result never resolves a newly

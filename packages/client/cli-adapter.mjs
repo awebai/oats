@@ -23,7 +23,7 @@
 //   * A provider operation names its instance by --home: the home of
 //     exactly one row the server reports (packages/desktop/server/capabilities.mjs), never
 //     a caller path.
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -142,11 +142,17 @@ export function writeTaskFile(taskText, io = {}) {
  * owns through it). It passes the options through as given (cwd, env, timeout, maxBuffer, no shell)
  * and calls back with `execFile`'s own error: every caller tells a timeout by `error.killed` and an
  * overflow by `error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'`, so an `exec` that wraps or
- * replaces that error turns both into a plain failure. */
-function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false } = {}) {
+ * replaces that error turns both into a plain failure.
+ * `detached: true` is given for a stop or retire apply and for a start: the child must run in a session of
+ * its own, so a signal to the client's process group (a Ctrl-C, a hang-up) never reaches it (a killed stop
+ * strands its home on a kernel before 0.52.0; a killed start can leave its lock, #889). An `exec` must start
+ * such a child that way and never drop the option: `execFile` itself does not honour it (it passes spawn a
+ * fixed list of options), so this home's own default for it is `execFileInSession`. */
+function runJson(bin, argv, { cwd, exec, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false, detached = false } = {}) {
+  const run = exec ?? (detached ? execFileInSession : execFile);
   return new Promise((resolveP, rejectP) => {
     try {
-      exec(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer: 4 * 1024 * 1024, shell: false },
+      run(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer: 4 * 1024 * 1024, shell: false, ...(detached ? { detached: true } : {}) },
         (err, stdout) => {
           // New reads require a clean exit for success. Keep the historical
           // envelope-wins policy for existing mutations unless opted in.
@@ -464,7 +470,45 @@ export function launchChoiceArgv({ launchConfig, harness, model, yolo, harnessFl
   return argv;
 }
 
-/** Start/restart is owned by the kernel, never a GUI stop-then-spawn pair. */
+/** `execFile`'s shape, return and errors, for a child in a session of its own (`detached`: a new session and
+ * process group). `execFile` drops `detached`, so this is the `exec` a kernel caller of this home uses for a
+ * stop or retire apply and a start. Like `execFile` it collects stdout and stderr (`encoding`, default utf8),
+ * ends the child with `killSignal` (SIGTERM) when `timeout` (0: none) passes or an output passes `maxBuffer`,
+ * and calls back once the child's streams close: `(null, stdout, stderr)` on a clean exit; else an Error with
+ * `code` (the exit status, or a system code), `killed` and `signal`, or the overflow's own error, whose `code`
+ * is ERR_CHILD_PROCESS_STDIO_MAXBUFFER. stdin is a pipe, as `execFile`'s, that nobody writes. */
+export function execFileInSession(bin, argv, options = {}, callback = () => {}) {
+  const { cwd, env, encoding = "utf8", timeout = 0, maxBuffer = 1024 * 1024, killSignal = "SIGTERM" } = options;
+  const child = spawn(bin, argv, { cwd, env, shell: false, detached: true, windowsHide: true });
+  const chunks = { stdout: [], stderr: [] }, sizes = { stdout: 0, stderr: 0 };
+  let ex = null, killed = false, timer = null, exited = false;
+  const text = name => { const all = Buffer.concat(chunks[name]); return encoding && encoding !== "buffer" ? all.toString(encoding) : all; };
+  function kill() { killed = true; try { child.kill(killSignal); } catch (error) { ex ??= error; exit(); } }
+  function exit(code = null, signal = null) {
+    if (exited) return; exited = true; clearTimeout(timer);
+    const stdout = text("stdout"), stderr = text("stderr");
+    if (!ex && code === 0 && signal === null) { callback(null, stdout, stderr); return; }
+    const cmd = [bin, ...argv].join(" ");
+    if (!ex) ex = Object.assign(new Error(`Command failed: ${cmd}\n${stderr}`), { code, killed: child.killed || killed, signal });
+    ex.cmd = cmd; callback(ex, stdout, stderr);
+  }
+  for (const name of ["stdout", "stderr"]) child[name].on("data", chunk => {
+    if (ex) return;
+    const room = maxBuffer - sizes[name];
+    if (chunk.length > room) {
+      chunks[name].push(chunk.subarray(0, Math.max(room, 0))); sizes[name] = maxBuffer;
+      ex = Object.assign(new RangeError(`${name} maxBuffer length exceeded`), { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }); kill(); return;
+    }
+    chunks[name].push(chunk); sizes[name] += chunk.length;
+  });
+  child.on("close", exit);
+  child.on("error", error => { ex = error; child.stdout?.destroy(); child.stderr?.destroy(); exit(); });
+  if (timeout > 0) { timer = setTimeout(kill, timeout); }
+  return child;
+}
+
+/** Start/restart is owned by the kernel, never a GUI stop-then-spawn pair. A start runs in a session of its own
+ * (`detached`, execFileInSession): a signal to the client's group never reaches it (#889). Its wait is 60 s. */
 export function cliStart(bin, { home, workspaceDir, server, restart = false, ...choices }, io = {}) {
   if (typeof home !== "string" || !home.startsWith("/") || home.includes("\0")
     || (server !== undefined && (typeof server !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server)))
@@ -476,7 +520,7 @@ export function cliStart(bin, { home, workspaceDir, server, restart = false, ...
   catch (e) { return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: e.code, message: e.message } }); }
   return runJson(bin, ["session", restart ? "restart" : "start", "--home", home,
     ...(server ? ["--server", server] : []), ...options, "--json"], {
-    cwd: workspaceDir, exec: io.exec, timeout: io.timeout,
+    cwd: workspaceDir, exec: io.exec, timeout: io.timeout, detached: true,
   });
 }
 

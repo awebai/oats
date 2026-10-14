@@ -39,19 +39,19 @@ test('every wording function and the factory refuse a call without the client\'s
 test('the offers table: each state offers exactly its row, and an act not offered sends nothing', async () => {
   const row = c => c.state().offers;
   const gate = deferred(), s = scripted('stop', () => gate.promise);
-  assert.deepEqual(s.confirmation.state(), { phase: 'reading', outcome: null, notice: null, offers: ['close'] });
+  assert.deepEqual(s.confirmation.state(), { phase: 'reading', outcome: null, notice: null, offers: ['close'], running: null });
   assert.equal(s.confirmation.apply(), false); assert.equal(s.confirmation.checkAgain(), false); assert.equal(s.confirmation.refresh(), false);
   await tick();
-  assert.deepEqual(s.confirmation.state(), { phase: 'review', outcome: null, notice: null, offers: ['apply', 'refresh', 'close'] });
+  assert.deepEqual(s.confirmation.state(), { phase: 'review', outcome: null, notice: null, offers: ['apply', 'refresh', 'close'], running: null });
   assert.equal(s.confirmation.checkAgain(), false);
   assert.equal(s.confirmation.apply(), true);
-  assert.deepEqual(s.confirmation.state(), { phase: 'applying', outcome: null, notice: null, offers: ['close'] }, 'applying: close, which cancels nothing');
+  assert.deepEqual(s.confirmation.state(), { phase: 'applying', outcome: null, notice: null, offers: ['close'], running: null }, 'applying: close, which cancels nothing');
   const before = s.sent.length;
   assert.equal(s.confirmation.apply(), false); assert.equal(s.confirmation.refresh(), false); assert.equal(s.confirmation.checkAgain(), false);
   assert.equal(s.confirmation.setChoice('recursive', false), false, 'nothing is read while an apply is in flight');
   assert.equal(s.sent.length, before);
   gate.resolve(complete()); await tick();
-  assert.deepEqual(s.confirmation.state(), { phase: 'settled', outcome: 'complete', notice: null, offers: ['close'] });
+  assert.deepEqual(s.confirmation.state(), { phase: 'settled', outcome: 'complete', notice: null, offers: ['close'], running: null });
   assert.equal(s.confirmation.apply(), false); assert.equal(s.confirmation.checkAgain(), false); assert.equal(s.confirmation.refresh(), false);
   for (const [answer, outcome, offered] of [[partial(), 'partial', ['refresh', 'close']], [refused('E_INSTANCE_RETIRING'), 'refused', ['refresh', 'close']],
     [unknown, 'unknown', ['check-again', 'close']], [{ lifecycleApi: 1, status: 'complete', target: { ...target, instance: 'other' } }, 'invalid', ['check-again', 'close']]]) {
@@ -63,7 +63,7 @@ test('the offers table: each state offers exactly its row, and an act not offere
     assert.equal(t.confirmation.apply(), false, outcome); assert.equal(t.sent.length, sent, `${outcome}: an act not offered sends nothing`);
   }
   const failed = createLifecycleConfirmation({ target, operation: 'stop', terms, request: async () => refused('E_SESSION_UNKNOWN') }); await tick();
-  assert.deepEqual(failed.state(), { phase: 'settled', outcome: 'unavailable', notice: null, offers: ['refresh', 'close'] });
+  assert.deepEqual(failed.state(), { phase: 'settled', outcome: 'unavailable', notice: null, offers: ['refresh', 'close'], running: null });
 });
 
 test('check again sends the same reference and reads no plan; after partial or refused, refresh then apply sends a new one', async () => {
@@ -133,4 +133,25 @@ test('a next step that names a client\'s own furniture is a code, never a senten
   const leftover = outcomeView(busy, { target, operation: 'retire', choices: options('retire'), plan, leftover: true }, terms);
   assert.equal(leftover.status.next, 'retire-with-force'); assert.doesNotMatch(leftover.status.headline, /--force|CLI/);
   assert.deepEqual(leftover.blocks, [{ type: 'quote', text: 'pid 42 still runs' }]);
+});
+
+test('this client\'s own running apply: its busy refusal names it, the unknown after its wait says it still runs, and state() carries it', async () => {
+  const running = { target: { ...target }, operation: 'retire', since: 1_700_000_000_000 };
+  const busy = { lifecycleApi: 1, status: 'unavailable', target, planRef: null, plan: null, receipt: null, reason: { code: 'E_LIFECYCLE_BUSY', message: 'x' }, running };
+  const at = { target, operation: 'stop', choices: options('stop'), plan: stopPlan() };
+  const refusedView = outcomeView(busy, at, terms);
+  assert.equal(refusedView.kind, 'refused'); assert.equal(refusedView.status.headline, 'The removal of dev-1 is still running. Wait for it to finish, then review again.');
+  assert.deepEqual(refusedView.running, running);
+  // The kernel's busy answer is never read as this client's, even beside a `running` it should not carry.
+  const kernel = outcomeView({ ...busy, reason: { ...busy.reason, holder: 'running' } }, at, terms);
+  assert.equal(Object.hasOwn(kernel, 'running'), false); assert.doesNotMatch(kernel.status.headline, /still running\. Wait/);
+  // A malformed `running` is not read: the code's own sentence.
+  for (const bad of [{ ...running, operation: 'start' }, { ...running, since: 'now' }, { ...running, target: { instance: 7 } }, 'stop'])
+    assert.equal(Object.hasOwn(outcomeView({ ...busy, running: bad }, at, terms), 'running'), false, JSON.stringify(bad));
+  const waited = { ...unknown, planRef: reference(1), cause: { code: 'E_CLI_TIMEOUT', message: "OATS didn't answer in time." }, running: { ...running, operation: 'stop' } };
+  const s = scripted('stop', () => waited); await tick(); s.confirmation.apply(); await tick();
+  const view = s.confirmation.view();
+  assert.equal(view.kind, 'unknown'); assert.deepEqual(view.blocks.at(-1), { type: 'note', text: 'The stop of dev-1 is still running. Check again to read its result.' });
+  assert.equal(view.blocks.some(b => /in time/.test(b.text ?? '')), false, 'the timeout ended only the wait: it is not said');
+  assert.deepEqual(s.confirmation.state(), { phase: 'settled', outcome: 'unknown', notice: null, offers: ['check-again', 'close'], running: { ...running, operation: 'stop' } });
 });

@@ -18,7 +18,7 @@
  *        choices:   [{ id, sentence, value, applies, offered }]   one per option the plan can carry
  *        notice:    null | { code: 'E_OPTION_UNAVAILABLE', sentence }   when the choices do not apply
  *   outcomeView(result, { target, operation, choices, plan, leftover }, terms)
- *     -> { kind, title, status, blocks, uncertain, plan?, planRef? }
+ *     -> { kind, title, status, blocks, uncertain, plan?, planRef?, running? }
  *        kind:   'stale' | 'pending' | 'complete' | 'partial' | 'refused' | 'unknown' | 'invalid'
  *        status: { headline, more: [{ text } | { quote }], next: null | 'retire-with-force' | 'check-roster', code? }
  *        blocks: what is shown under the status, in order:
@@ -214,6 +214,14 @@ function refusal(reason, plan, { operation, leftover }, terms) {
     : { headline: lifecycleReason(reason?.code, terms).message, code: reason?.code };
   return { status: { more: [], next: null, ...status }, blocks: shown ? [{ type: 'details', reason: shown, bare: !!undescribed }] : [] };
 }
+/** A reply's `running` (this client's own apply that is still running), re-validated, or null: a target that names
+ * an instance, the act, and when it started (ms since the epoch). Read only beside this client's own busy refusal
+ * or an unknown outcome; the kernel's busy answer never carries it, and one that names a holder is never read so. */
+function runningOf(result) {
+  const r = result?.running;
+  return r && typeof r === 'object' && typeof r.target?.instance === 'string' && ['stop', 'retire'].includes(r.operation) && Number.isFinite(r.since)
+    ? { target: { ...r.target }, operation: r.operation, since: r.since } : null;
+}
 const validTarget = (result, target) => result?.lifecycleApi === 1 && !!result.target && gitTargetKey(result.target) === gitTargetKey(target);
 
 /** What a plan read that did not give a plan says: `reason` is the reply's (`null`: no reply that names this
@@ -263,9 +271,16 @@ export function outcomeView(result, { target, operation, choices, plan, leftover
     const children = result.childrenStopped ? decodedStoppedTargets(result.childrenStopped, plan.facts?.children || []) : null;
     if (result.childrenStopped && !children) return invalid;
     let { status, blocks } = refusal(result.reason?.code ? result.reason : { code: 'E_OUTCOME_UNKNOWN' }, plan, { operation, leftover }, terms);
+    // This client's own apply is running (its busy refusal, or the answer of an apply whose wait ended): which one
+    // is said, in place of the general sentence of the busy refusal. Never for the kernel's busy answer.
+    const running = runningOf(result), own = running && !Object.hasOwn(result.reason ?? {}, 'holder');
+    if (own && result.reason?.code === 'E_LIFECYCLE_BUSY') status = { headline: applyRunningSentence(running, terms), more: [], next: null };
     if (children && result.reason?.code === 'E_CHILDREN_RUNNING') status = { headline: childrenRefusedMessage(children), more: [], next: null };
     // Why the outcome is unknown: a remote transport or host cause keeps its headline and its line; a
     // local one says its fixed sentence, with the CLI's own message behind the disclosure when it carries one.
+    // An apply whose wait ended is still running: that is said in place of the timeout, which ended only the wait.
+    if (own && uncertain) return { kind: 'unknown', title: UNCONFIRMED, status, uncertain, running,
+      blocks: [...blocks, { type: 'note', text: `The ${running.operation === 'retire' ? 'removal' : 'stop'} of ${displayLine(running.target.instance) ?? 'this instance'} is still running. Check again to read its result.` }] };
     const cause = result.cause && remoteReason(result.cause);
     const undescribed = result.cause && undescribedRefusal(cause || result.cause, terms);
     blocks = [...blocks];
@@ -275,7 +290,8 @@ export function outcomeView(result, { target, operation, choices, plan, leftover
       const local = undescribed || localDetail(result.cause); if (local) blocks.push({ type: 'details', reason: local, bare: !!undescribed });
     }
     if (children) blocks.push({ type: 'note', text: 'Child instances:' }, { type: 'rows', rows: rowsOf(children) });
-    return { kind: uncertain ? 'unknown' : 'refused', title: uncertain ? UNCONFIRMED : `${name} wasn't ${retire ? 'retired' : 'stopped'}`, status, blocks, uncertain };
+    return { kind: uncertain ? 'unknown' : 'refused', title: uncertain ? UNCONFIRMED : `${name} wasn't ${retire ? 'retired' : 'stopped'}`, status, blocks, uncertain,
+      ...(own ? { running } : {}) };
   }
 }
 
@@ -367,7 +383,9 @@ export function createLifecycleConfirmation({ request, target, operation, terms,
   }
   void read('open');
   return {
-    state: () => ({ phase, outcome: phase === 'settled' ? outcome : null, notice, offers: offers() }),
+    /** `running`: this client's own apply that is still running, when the settled answer says so (when it
+     * started is `running.since`, ms since the epoch, for the client to word). */
+    state: () => ({ phase, outcome: phase === 'settled' ? outcome : null, notice, offers: offers(), running: phase === 'settled' && settledView?.running ? { ...settledView.running } : null }),
     view: () => current,
     /** Set one choice of the plan (an id of `planView(…).choices`) and read the plan for it: while a plan is read
      * or reviewed, the latest choice wins. */
