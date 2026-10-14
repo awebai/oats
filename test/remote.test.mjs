@@ -510,6 +510,7 @@ test("M2: the fetch url is the form written — an ssh ref is fetched over ssh, 
   // (no real network). What matters is WHICH url git was asked for.
   const exec = async (args) => {
     calls.push(args);
+    if (args[0] === "--version") return { stdout: Buffer.from("git version 2.54.0\n"), stderr: Buffer.alloc(0) };
     if (args[0] === "init") { execFileSync("git", args, { env: GIT_ENV, stdio: "ignore" }); return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }; }
     if (args.includes("rev-parse")) { const e = new Error("missing"); e.code = 128; e.stderr = Buffer.from("fatal: Needed a single revision"); throw e; }
     if (args.includes("config")) {
