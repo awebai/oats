@@ -9,6 +9,7 @@ import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
 import { answeringFeatures, stoppedTargets, decodedStoppedTargets, lifecycleReceipt, publicLifecycleReceipt, stoppedRowKind, stoppedRowText,
   stopResultWords, childrenRefusedMessage, lifecycleReason } from '../../client/lifecycle-contract.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
+import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { cli, context, envelope, instance, stopPlan, retirePlan, stopReceipt, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 
@@ -310,7 +311,7 @@ test("the decoder keeps a row's kernel sentence for a locked row only, as one di
   // Every other failed row drops its message, as before.
   for (const code of ['E_SESSION_STOP_FAILED', 'E_INSTANCE_RETIRING', 'E_SESSION_UNAVAILABLE']) assert.equal(Object.hasOwn(decode([held(kid, code, 'UNSHOWN'), fine(kid2)])[0], 'detail'), false, code);
   // Withheld whole when it looks like a credential; absent when the kernel sent nothing to show.
-  assert.equal(decode([held(kid, 'E_LIFECYCLE_BUSY', 'see https://user:pw@host/x'), fine(kid2)])[0].detail, '[Detail withheld]');
+  assert.equal(decode([held(kid, 'E_LIFECYCLE_BUSY', 'see https://user:pw@host/x'), fine(kid2)])[0].detail, DETAIL_WITHHELD);
   for (const none of [undefined, null, '', ' \n\t ', 7]) assert.equal(Object.hasOwn(decode([held(kid, 'E_LIFECYCLE_BUSY', none), fine(kid2)])[0], 'detail'), false, String(none));
   // A stop's results are decoded by the same rule.
   const stop = stopOf(kid), receipt = lifecycleReceipt(stopAnswer({ revision: stop.planRevision, key: 'k' }, stop, [held(kid, 'E_LIFECYCLE_BUSY', MESSY), fine(instance)]), stop, 'k');
@@ -344,7 +345,7 @@ test("a refused retire's child list: a child being retired and a child whose hom
 });
 
 test('a locked row whose sentence is withheld says so; one with no sentence has no quote', async t => {
-  for (const [message, quote] of [['the claim: token=abc123', '[Detail withheld]'], [undefined, null]]) {
+  for (const [message, quote] of [['the claim: token=abc123', '[withheld]'], [undefined, null]]) {
     const plan = retireOf(kid), u = mount(t, { ctx: localContext(), operation: 'retire', plan, answer: () => childrenRefused(plan, [held(kid, 'E_LIFECYCLE_BUSY', message)]) });
     await u.confirm();
     const [row] = u.rows();

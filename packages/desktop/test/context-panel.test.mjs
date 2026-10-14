@@ -376,7 +376,7 @@ test("a Herdr-recorded instance: Start's title says who made the reason (#982), 
   assert.equal(title({ runtimeState: undefined, running: true, backend: 'herdr', runtimeError: 'another text', runtimeErrorOrigin: 'kernel' }).title, reason);
   assert.equal(title({ runtimeError: 'E_HERDR_REMOVED: <b>bold</b>', runtimeErrorOrigin: 'kernel' }).title, 'OATS says: E_HERDR_REMOVED: <b>bold</b>');
   const withheld = title({ runtimeError: 'E_HERDR_REMOVED: gone\u001b[2J', runtimeErrorOrigin: 'kernel' });
-  assert.equal(withheld.title, '[Detail withheld]'); assert.equal(withheld.disabled, true);
+  assert.equal(withheld.title, '[withheld]'); assert.equal(withheld.disabled, true);
 });
 
 test('the Session card names a tmux session only when one was recorded: an unknown row with none shows no session line', t => {
