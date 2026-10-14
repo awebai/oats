@@ -49,11 +49,11 @@ test('gated: no groups and not answered, the failure sentence as it was, nothing
 });
 
 test('an envelope that is not ok: the groups held, marked with its error; the sentence only while no answer has ever arrived', () => {
-  const error = { code: 'E_ROSTER_BUDGET', message: 'the roster read ran out of time' };
+  const error = { code: 'E_SERVERS_UNREADABLE', message: 'the server registry is not valid JSON' };
   const held = [altair(), vega()];
   // Before any answer: the sentence is the error's message.
   const first = remoteRosterState({ ...NONE, remoteGroups: held }, { envelope: refused(error) }, AT);
-  assert.deepEqual(first, { remoteGroups: unavailableGroups(held, error), rosterAnswered: false, rosterFailure: 'the roster read ran out of time', reported: null });
+  assert.deepEqual(first, { remoteGroups: unavailableGroups(held, error), rosterAnswered: false, rosterFailure: 'the server registry is not valid JSON', reported: null });
   for (const g of first.remoteGroups) { assert.deepEqual(g.probe, { ok: false, error }); assert.ok(g.instances.every(i => i.running === null)); }
   // After an answer: the groups are kept, marked, and there is no sentence.
   const answered = kept(remoteRosterState(NONE, { envelope: ok(held) }, AT));

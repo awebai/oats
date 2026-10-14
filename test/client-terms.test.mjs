@@ -122,7 +122,7 @@ function reasonInputs() {
     readError: [undefined, "the cache is locked", ""], readErrorOrigin: [undefined, "kernel"], identityStatus: [undefined, "identity", "feature", "old", "none", "invalid"],
     cliReadsRemotes: [undefined, false], rosterError: [undefined, "no route to host"],
     probe: [undefined, { ok: true }, { ok: false }, { ok: false, error: { code: "E_SSH", message: "Host key verification failed." } },
-      { ok: false, error: { code: "E_SSH", message: "Connection timed out" } }, { ok: false, error: { code: "E_ROSTER_BUDGET" } }, { ok: false, error: { code: "E_OTHER", message: "x" } }],
+      { ok: false, error: { code: "E_SSH", message: "Connection timed out" } }, { ok: false, error: { code: "E_SSH", message: "ssh to altair.lan timed out: no answer within 20 s" } }, { ok: false, error: { code: "E_OTHER", message: "x" } }],
     attach: [undefined, { key: "k", team: "t" }, { unattached: "no-report" }, { unattached: "member" }, { unattached: "invalid-ref" }, { unattached: "unknown-team" }, { unattached: "standalone" }],
     ref: [undefined, "git:x"],
   };

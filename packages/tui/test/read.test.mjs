@@ -1028,7 +1028,7 @@ test("the roster: an answer, a refusal and a read that threw each reach onRoster
   assert.deepEqual(Object.keys(rosters[1].roster.remote).sort(), ["remoteGroups", "rosterAnswered", "rosterFailure"], "the three values a store keeps, and not what was reported");
 
   // A refusal (the kernel's envelope, exit 1): nothing was reported, so the memory is the one held, untouched.
-  const refusal = { schemaVersion: 1, ok: false, error: { code: "E_ROSTER_BUDGET", message: "the roster read ran out of time" } };
+  const refusal = { schemaVersion: 1, ok: false, error: { code: "E_SERVERS_UNREADABLE", message: "the server registry is not valid JSON" } };
   world.plan({ ...local, server: { stdout: JSON.stringify(refusal), exit: 1 } });
   held = store.roster;
   await read(2);

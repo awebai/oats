@@ -238,7 +238,7 @@ test('answered, then unreachable, then back: the machine stays in its workspace,
   const rows = views.panelData(tui.held(), V_OATS, TUI).instances.filter(i => i.deployment.id === R);
   assert.deepEqual(rows.map(i => [i.instance, i.running, i.serverUnreached]), [['far-a', null, true]], 'its last rows, their state unknown');
   // And the same through an envelope the kernel refused.
-  tui.take({ envelope: { schemaVersion: 1, ok: false, error: { code: 'E_ROSTER_BUDGET', message: 'the roster read ran out of time' } } });
+  tui.take({ envelope: { schemaVersion: 1, ok: false, error: { code: 'E_SERVERS_UNREADABLE', message: 'the server registry is not valid JSON' } } });
   assert.deepEqual(tui.shown(R), [V_OATS, 'remembered', 'remembered', null]);
   // Back: live again, by its own report.
   tui.take(answer([altair(), vega()]), LATER);

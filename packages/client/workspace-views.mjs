@@ -60,8 +60,9 @@ const REASONS = {
   standalone: () => ({ short: 'Local teams only', detail: 'Teams are local only on this host (standalone).', fix: [] }),
 };
 
-/** True when a failed probe's message is ssh's own timeout: the kernel reports an ssh that timed out
- * as E_SSH with ssh's stderr and no code of its own, so ssh's text is the only signal (a documented limit). */
+/** True when a failed probe's message is a timeout: the kernel reports an ssh that timed out as E_SSH,
+ * with ssh's own stderr or, when its own deadline ended the call, "timed out: no answer within N s", and
+ * no code of its own, so the text is the only signal (a documented limit). */
 const TIMED_OUT = /timed out|timeout/i;
 
 /** The client's own sentence for a deployment whose last read failed and whose last observation is kept. */
@@ -121,7 +122,7 @@ export function deploymentReasonParts(d, terms) {
     if (d.rosterError) return { short: 'Not reached', detail: `${machine} was not reached: ${d.rosterError}`, fix: [] };
     if (d.probe && d.probe.ok !== true) {
       const code = d.probe.error?.code, message = typeof d.probe.error?.message === 'string' ? d.probe.error.message : '';
-      if (code === 'E_ROSTER_BUDGET' || code === 'E_CLI_TIMEOUT' || TIMED_OUT.test(message)) return { short: 'Timed out', detail: `${machine} timed out; it is tried again on the next read.`, fix: [] };
+      if (code === 'E_CLI_TIMEOUT' || TIMED_OUT.test(message)) return { short: 'Timed out', detail: `${machine} timed out; it is tried again on the next read.`, fix: [] };
       if (code === 'E_SSH') {
         const host = d.sshHost || machine;
         return { short: 'ssh needs a prompt', detail: `${machine} needs ssh to connect without a prompt; run \`ssh ${host}\` once in a terminal.`,

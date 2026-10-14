@@ -533,9 +533,10 @@ sentence already says what happens next, as for a timeout). The sentences:
 
 - ssh needs a prompt or a host key (`E_SSH`): "altair needs ssh to connect
   without a prompt; run `ssh altair` once in a terminal."
-- Timed out (`E_ROSTER_BUDGET`, `E_CLI_TIMEOUT`). The kernel reports an ssh
-  that timed out as `E_SSH` with ssh's own text, so a timeout is recognised
-  from that text (a known limit).
+- Timed out (`E_CLI_TIMEOUT`). The kernel reports an ssh that timed out as
+  `E_SSH`, with ssh's own text or, when its own deadline ended the call,
+  "timed out: no answer within N s", so a timeout is recognised from that
+  text (a known limit).
 - Any other failed read: "<machine> was not reached (<code>)."
 - The host's OATS is too old to report its workspace (the group was reached
   but its object has no `key`), or the host reports no workspace (`null`).

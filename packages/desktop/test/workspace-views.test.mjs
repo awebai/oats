@@ -166,7 +166,7 @@ test('reasons: one plain sentence per case, null for a live matched deployment',
     'altair needs ssh to connect without a prompt; run `ssh altair.lan` once in a terminal.');
   assert.equal(remoteReason({ sshHost: undefined, probe: { ok: false, error: { code: 'E_SSH', message: 'refused' } } }),
     'altair needs ssh to connect without a prompt; run `ssh altair` once in a terminal.', 'without an ssh host, the machine');
-  for (const error of [{ code: 'E_SSH', message: 'ssh to altair.lan failed: Connection timed out' }, { code: 'E_ROSTER_BUDGET', message: 'budget' },
+  for (const error of [{ code: 'E_SSH', message: 'ssh to altair.lan failed: Connection timed out' }, { code: 'E_SSH', message: 'ssh to altair.lan timed out: no answer within 20 s' },
     { code: 'E_CLI_TIMEOUT', message: 'x' }, { code: 'E_SSH', message: 'Operation timeout' }]) {
     assert.equal(remoteReason({ probe: { ok: false, error } }), 'altair timed out; it is tried again on the next read.', error.code);
   }
