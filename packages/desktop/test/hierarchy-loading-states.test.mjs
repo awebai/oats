@@ -221,7 +221,9 @@ test('a deployment the server has not observed yet (status pending, no instances
 });
 
 test('the stale notice carries the kept observation\'s age when the reply reported observedAt (the model\'s rule for every stale line)', async t => {
-  const at = new Date(Date.now() - 45_000).toISOString();
+  // The view's age reads Date.now: one fixed instant for the observation and the view, so the age is 45 s by construction.
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
+  const at = new Date(now - 45_000).toISOString();
   const u = await setup(t, { api: () => panel([instance('a')], '/team', { observedAt: at }) }); await tick();
   u.setRead(() => Promise.reject(new Error('offline'))); u.poll(); await tick();
   assert.match(u.notice(), /^Roster unavailable: offline\. Showing the last observation · observed 45s ago, not current state; actions disabled\.$/);
