@@ -33,7 +33,14 @@ adapter and the Desktop (`packages/`), the `oats.framework` package
 
 ## Gates
 
-Locally, run the suites your change affects plus `npm run validate` and
-`npm run check`; run `npm run smoke:tarball` when you change the smoke script
-or packaging. Pull-request CI runs the full suite (sharded), `pack:check` and
-the smoke test, and is the gate.
+**Pull-request CI is the test run. Never run the kernel's or the Desktop's
+test suites locally,** on any host: not `npm test`, not the Desktop's suite,
+not a shard, and not a batch of "every affected file". CI runs the full suite
+(sharded), the Desktop's tests, `pack:check` and the clean-room smoke on every
+pull request; the macOS workflow, started by hand at a branch's exact head,
+covers the macOS paths. Push the branch and read its run.
+
+Locally, run `npm run validate` and `npm run check` (they run no tests). Run
+at most one or two test files, or a name-filtered run of one, to reproduce or
+confirm a single finding, with `uptime` first. Name what you ran in your
+hand-over, and link the CI run for everything else.
