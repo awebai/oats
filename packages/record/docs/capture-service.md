@@ -223,6 +223,20 @@ inside the transaction. This preserves public writers' stream-before-database
 lock order. Group acquisition accepts an internal stop check and unwinds partial
 acquisitions on failure. Callers must select bounded work before entering a group;
 the helper alone does not turn a full reconciliation into a bounded pass.
+
+Command groups can supply a bounded admission manifest. After acquiring all
+member locks, the helper rechecks each exact journal generation and commits the
+manifest plus the next fairness position in a separate transaction, before any
+processing. That position is queue progress, not a processing cursor. Completed
+checkpoints and removal of the active manifest then share the processing commit.
+A crash or thrown error leaves the manifest and fairness position intact, while
+only journal bytes already fsynced survive a rolled-back processing transaction.
+The scheduler must reconcile an unfinished manifest before admitting another;
+the helper refuses to overwrite it or guess per-member failure rows. A normal
+changed group therefore adds one intent commit, regardless of its record count.
+No-op groups without admission add no intent transaction. These counts describe
+explicit SQLite transactions, not filesystem sync calls or storage latency.
+
 Journal recovery exposes an internal work-unit interface: obsolete-ID deletion
 has a persisted phase, and validation commits its byte/count cursor after each
 bounded batch. A changed exact journal version invalidates that progress. A
