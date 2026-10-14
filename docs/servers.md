@@ -243,7 +243,7 @@ assumed to run only pi and claude, on tmux, with no launch options.
 spawn's checks here (`E_ROUTE_CHANGED`, `E_ROUTE_EXISTS`, the harness and
 options), then asks the server's kernel for its preview. It prints the local
 preview's line with the server named (`preview <soul> → <instance> on <id> …;
-nothing was created`), and writes nothing on this machine: no saved route. Its
+nothing was created`), and saves no route or other state on this machine. Its
 `--json` result is the server's preview plus `server` and `target`. When a
 saved route already holds the previewed name for another home, a warning says
 a spawn would save no route. A server that does not advertise

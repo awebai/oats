@@ -19,8 +19,8 @@
   `oats spawn --server` fail with `E_ROUTE_CHANGED`. A routed preview now runs
   the spawn's own checks here, asks the server for its preview, and prints the
   local preview's line with the server named
-  (`preview <soul> → <instance> on <id> …; nothing was created`). It writes
-  nothing on this machine. A server that does not advertise
+  (`preview <soul> → <instance> on <id> …; nothing was created`). It saves
+  no route or other state on this machine. A server that does not advertise
   `spawn-preview-2` is refused with `E_REMOTE_INCOMPATIBLE` before the spawn
   is sent. Drop a route an earlier preview saved with
   `oats server forget <id> --instance <instance>`.

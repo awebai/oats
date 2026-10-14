@@ -741,7 +741,7 @@ test("routeCommand spawn --preview (#610): the host's result with server and tar
   }
 });
 
-test("routed spawn --preview (#610), text: the host's answer picks the printer: a pre-0.27 host's preview reads its runtime; an answer that spawned prints as the spawn it was, its route saved", () => {
+test("routed spawn --preview (#610), text: the host's answer picks the printer: a pre-0.27 host's preview reads its runtime, its default launch configuration is the server's; an answer that spawned prints as the spawn it was, its route saved", () => {
   const base = mkdtempSync("/tmp/oats-pvt-");
   const prevHomeDir = process.env.OATS_HOME_DIR;
   try {
@@ -768,6 +768,10 @@ else process.exit(9);
     let r = run({ spawnPreviewApi: 2, preview: true, agent: "dev", kind: "persistent", instance: "dev-x", home, work: "worktree", branch: "agents/dev-x", base: { ref: "origin/main", oid: "0123456789abcdef" }, runtime: "pi", model: null, modelSource: "native default", launchConfig: null, yolo: false });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.stdout, "preview dev → dev-x on legacy (worktree, branch agents/dev-x from origin/main@0123456789ab) harness pi (native default); nothing was created\n");
+    // The launch configuration a routed preview names is the server's default, not this machine's.
+    r = run({ spawnPreviewApi: 2, preview: true, agent: "dev", kind: "persistent", instance: "dev-x", home, work: "checkout", runtime: "pi", model: "m1", launchConfig: "fast", launchConfigDefault: true, yolo: false });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.stdout, "preview dev → dev-x on legacy (checkout) harness pi model m1 via launch configuration fast (the server's pi default); nothing was created\n");
     assert.equal(existsSync(REMOTE_SNAPSHOT_DIR()), false, "nothing written here");
 
     // A host that spawned although asked for a preview: the apply's lines, and its route, as the apply records it.
