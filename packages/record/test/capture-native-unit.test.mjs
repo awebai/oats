@@ -138,12 +138,31 @@ test("late rewritten-prefix conflict after many workers forbids suffix; retry ne
   const old=Array.from({length:9},(_,n)=>native(n)).join(''),f=fixture(t,old);captureSessions(f.store,{owner:'fixture',files:[f.path]});
   fs.writeFileSync(f.path,old.replace('"8"','"changed"')+native('new'));
   let rows=await f.finish({maxBytes:128});assert.equal(rows.at(-1).result.setAside.line,9);f.assertContent(old);
+  assert.ok(rows.at(-1).result.setAside.reason.includes(JSON.stringify(f.path)));
+  assert.match(rows.at(-1).result.setAside.reason,/fixture~cc\.session.*native line 9.*establishing source path unavailable/);
   retrySetAside(f.root);
   rows=await f.finish({maxBytes:128});assert.equal(rows.at(-1).result.setAside.line,9);f.assertContent(old);
   fs.writeFileSync(join(f.root,'ignore'),f.path+'\n');fs.unlinkSync(f.path);
   const ignored=await f.step();assert.equal(ignored.result.ignored,true);assert.equal(f.state(s=>s.get('set-aside',f.key)),null);
   fs.writeFileSync(join(f.root,'ignore'),'');fs.writeFileSync(f.path,old.replace('"8"','"changed"'));
   assert.equal((await f.finish({maxBytes:128})).at(-1).result.setAside.line,9);
+});
+
+test("same native ID conflict names refused input and stream without guessing an establishing path from cursors",async t=>{
+  const old=native('established'),f=fixture(t,native('different'));
+  const firstDir=join(f.root,'original-source');fs.mkdirSync(firstDir,{recursive:true});
+  const first=join(firstDir,'session.jsonl');fs.writeFileSync(first,old);
+  captureSessions(f.store,{owner:'fixture',files:[first]});
+  assert.ok(f.state(s=>s.get('cc',`${stream}:${first}`)),'original source cursor exists but is not path authority');
+  const rows=await f.finish(),issue=rows.at(-1).result.setAside;
+  assert.equal(issue.path,f.path);assert.equal(issue.line,1);assert.equal(issue.offset,0);
+  assert.ok(issue.reason.includes(JSON.stringify(f.path)));
+  assert.ok(issue.reason.includes(JSON.stringify(stream)));
+  assert.match(issue.reason,/establishing source path unavailable/);
+  assert.ok(!issue.reason.includes(first));f.assertContent(old);
+  assert.equal(rows.reduce((n,row)=>n+row.result.appended,0),0);
+  const healthy=join(firstDir,'healthy.jsonl');fs.writeFileSync(healthy,native('healthy'));
+  assert.equal(captureSessions(f.store,{owner:'fixture',files:[healthy]}).appended,1,'refusal does not block an independent input');
 });
 
 test("durable append followed by killed source checkpoint revalidates and never duplicates physical turns",async t=>{

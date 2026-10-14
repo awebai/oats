@@ -39,6 +39,13 @@ Detected changes have two outcomes:
   from the physical last transcript turn, so appending a revised earlier line
   would make those writers duplicate the remaining history.
 
+Command prefix-conflict diagnostics name the refused input, conflicting stream
+and native line/source byte position. They say "establishing source path
+unavailable": the journal records native session and line, not that path.
+Current discovery and derived cursors cannot supply missing provenance, and a
+prefix mismatch does not itself prove that a second source exists. Native stream
+identity and traversal precedence remain unchanged.
+
 ## Operator recovery
 
 `turn-record capture --reset-cursors [--source aw|cc|pi|codex]` uses the selected

@@ -172,7 +172,11 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
           work: work?.prefix, lines: from => completeNativeLines(stagedChunks(from), {}, { maxBytes: maxRecordBytes }) });
         staged.verify();
         if (proof.conflict) {
-          const row = { owner, source: fmt.source, path, ...proof.conflict, retry: false };
+          // Journals preserve session/line, not the path that first supplied
+          // those bytes. A mismatch can also be a rewrite of this same file;
+          // neither a cursor nor today's discovery proves a second source.
+          const reason = `${proof.conflict.reason}: refused input ${JSON.stringify(path)} conflicts with stream ${JSON.stringify(stream)} at native line ${proof.conflict.line}, source byte ${proof.conflict.offset}; establishing source path unavailable`;
+          const row = { owner, source: fmt.source, path, ...proof.conflict, reason, retry: false };
           state.set("set-aside", key, row);
           const cleanup = !staged.small;
           staged.close(); staged = null;
