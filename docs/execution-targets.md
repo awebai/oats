@@ -371,11 +371,10 @@ than the server's checked one account and launched with another
   CLAUDE_CONFIG_DIR of tmux session <name>): oats harness trust --dir
   <deployment>`, or `(under the global HOME of the OATS tmux server
   (<socket>))`, or the launch configuration's.
-- **Through `oats spawn` the refusal's code is `E_SPAWN_FAILED`**, with
-  the same message, as for a missing package: the kernel raises
-  `E_RUNTIME_ENDPOINT_UNKNOWN`, and `oats session start` and `restart`
-  answer it as it is
-  ([#1047](https://github.com/awebai/oats/issues/1047)).
+- **Through `oats spawn` the refusal's code is `E_RUNTIME_ENDPOINT_UNKNOWN`**,
+  with the same message, as at `oats session start` and `restart` (feature
+  `spawn-kernel-codes`, [#1047](https://github.com/awebai/oats/issues/1047));
+  a kernel without the feature answers `E_SPAWN_FAILED`.
 - **One limit.** A spawn's package check runs before the spawn hooks, so it
   does not know a selector a capability's hook sets for the launch
   ([#1041](https://github.com/awebai/oats/issues/1041)); a start's does.
@@ -627,9 +626,10 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   included. A restart that reuses the pane the home already has runs its tmux
   client with the same environment; where and whether the pane is reused does
   not change.
-- **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`; `oats spawn` reports it
-  as `E_SPAWN_FAILED` with the same message) when the session does not exist
-  on the `oats` server, its login environment is not what the server gets
+- **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`, by `oats spawn` too, with
+  the same message; before 0.56.0 a spawn reported it as `E_SPAWN_FAILED`)
+  when the session does not exist on the `oats` server, its login
+  environment is not what the server gets
   (the server runs, or the login environment could not be read), and there is
   no source to read: the home records no
   tmux server (it was never launched), its receipt cannot be used, or its
@@ -1077,6 +1077,14 @@ oats session attach --home /abs/home --detach-key 'C-\'
 - **attach** is interactive and takes no `--json`. It opens a temporary tmux
   session linked to the agent's window alone.
   Closing the viewer leaves the agent running.
+
+  On tmux 3.2 and later the viewer's tmux client asks for synchronized
+  output (`tmux -T sync`, for that client alone): tmux wraps each redraw in
+  DEC mode 2026, so a terminal that receives a redraw in two pieces does not
+  paint the half-drawn state, such as a cursor flickering while you type. A
+  terminal without the mode ignores it. Before 3.2, or when `tmux -V` gives
+  no version it can read, the client starts as before. A routed attach
+  (`--server`) runs the same viewer on the host, so the host's tmux decides.
 
   **Leaving the viewer.** Without `--detach-key` there is no keyboard exit:
   every key goes to the agent, the tmux prefix included. Close the terminal.

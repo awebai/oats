@@ -60,3 +60,21 @@ test('trust CLI targets every launch configuration config directory of the deplo
  const r=spawnSync(process.execPath,[CLI,'harness','trust','--harness','claude'],{cwd:f.deployment,env:f.env,encoding:'utf8'});
  assert.notEqual(r.status,0);assert.match(r.stderr,/problem: launch configuration gone: CLAUDE_CONFIG_DIR .*missing does not exist/);assert.equal(fs.existsSync(join(f.base,'missing')),false);
 });
+
+test('a refused file prints its harness, refused, the file, the key and the problem; never its content (awebai/oats#1109)', t => {
+ const f=fixture(t);const file=join(fs.realpathSync.native(f.env.HOME),'.claude.json');fs.writeFileSync(file,'{"privateSentinel":"never-print-this"');
+ const root=fs.realpathSync.native(f.deployment),key=JSON.stringify(['projects',root,'hasTrustDialogAccepted']);
+ const problem=`${file}: is not in the supported format (see "Qualified scope and formats" in docs/harness-trust.md)`;
+ const r=spawnSync(process.execPath,[CLI,'harness','trust','--plan'],{cwd:f.deployment,env:f.env,encoding:'utf8'});
+ assert.notEqual(r.status,0);
+ const lines=r.stderr.split('\n');
+ assert.ok(lines.includes(`claude: refused ${file} ${key} (ambient)`),r.stderr);
+ assert.ok(lines.includes(`problem: ${problem}`),r.stderr);
+ // The fine file still shows its plan.
+ assert.ok(lines.some(l=>/^codex: change .*config\.toml .* null -> "trusted" \(missing -> [a-f0-9]{64}\) \(ambient\)$/.test(l)),r.stderr);
+ assert.ok(!lines.some(l=>l.startsWith('claude: refused')&&l.includes('->')),'a refused row shows no current value or digests');
+ assert.ok(r.stderr.includes(`Harness trust refused; nothing was written: ${problem}`),r.stderr);
+ const json=f.run(['harness','trust','--plan']);
+ assert.equal(json.value.error.code,'E_CONFIG_BROKEN');assert.equal(json.value.error.details.entries[0].problem,problem);
+ for(const text of [r.stdout,r.stderr,JSON.stringify(json.value)])assert.ok(!text.includes('never-print-this'));
+});

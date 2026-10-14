@@ -37,7 +37,7 @@ test('stable facade renews only on presentation writes; A→B→A raw leases nev
     facade.setPresent(true);
     assert.equal(facade.isVisible(), true); assert.equal(u.element.parentElement, wrapper);
     assert.equal(u.field.value, 'unsaved'); assert.equal(u.field.isConnected, true);
-    assert.equal(u.root.classList.contains('is-collapsed'), false);
+    assert.equal(u.root.hidden, false, 'shown: the stage was never closed');
   }
   u.raw[0].dispose(); assert.equal(facade.isVisible(), true);
   assert.equal(u.raw.length, 3); assert.equal(u.root.querySelectorAll('.context-panel-stage').length, 1);
@@ -56,7 +56,7 @@ test('stale facade disposal cannot dispose a replacement attachment or reacquire
 test('hidden presence completion never selects the foreground or discards retained form/control nodes', t => {
   const u = fixture(t), save = u.document.createElement('button'); save.textContent = 'Save'; u.element.append(save);
   u.facade.collapse(); u.facade.setPresent(true);
-  assert.equal(u.facade.isVisible(), false); assert.equal(u.root.classList.contains('is-collapsed'), true);
+  assert.equal(u.facade.isVisible(), false); assert.equal(u.root.hidden, true, 'closed: hidden, no rail');
   u.panel.setCollapsed(false);
   u.panel.setContext({ workspace: 'A', key: 'terminal', instance: { instance: 'foreground' } });
   u.facade.setPresent(true); assert.equal(u.facade.isVisible(), false);

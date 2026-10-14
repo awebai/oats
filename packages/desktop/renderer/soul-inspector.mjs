@@ -36,7 +36,7 @@ import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launch
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { createSoulInstructions } from './soul-instructions.mjs';
-import { composedSupported, routedComposedSupported } from './composed-gate.mjs';
+import { composedSupported, routedComposedSupported, skillsSupported, routedSkillsSupported } from './composed-gate.mjs';
 import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, WARNINGS_COPY } from './capability-warnings.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';
@@ -407,7 +407,8 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (same && selection.agent) renderSoulRoster();
     if (same && teamsHere) void teamsHere.refresh({ user });
     try {
-      const result = await request({ action: 'inspect', selector: next.selector, ...(user ? { refresh: true } : {}), ...(composedWanted(next) ? { instructions: true } : {}) });
+      const result = await request({ action: 'inspect', selector: next.selector, ...(user ? { refresh: true } : {}), ...(composedWanted(next) ? { instructions: true } : {}),
+        ...(skillsWanted(next) ? { skills: true } : {}) });
       if (!valid(id, gen)) return;
       data = result;
       const inspected = inspectData(data, selection);
@@ -449,6 +450,14 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   function composedWanted(next) {
     if (layout !== 'page' || !next?.agent) return false;
     return next.agent.remote || next.agent.server ? routedComposedSupported(cliStatus()) : composedSupported(cliStatus());
+  }
+  /** The soul page asks for the soul's own skills (feature soul-skills, composed-gate.mjs): a soul on this computer
+   * when its CLI reports them; a routed soul only when that CLI also relays the hosts' own features
+   * (server-probe-features). Whether that host reports them is the server's call, from the roster row it holds:
+   * it drops the flag for a host whose list does not name the feature, and the answer has no skills. */
+  function skillsWanted(next) {
+    if (layout !== 'page' || !next?.agent) return false;
+    return next.agent.remote || next.agent.server ? routedSkillsSupported(cliStatus()) : skillsSupported(cliStatus());
   }
   function facts(entries, parent = content) {
     const dl = node('dl', undefined, 'inspector-facts');

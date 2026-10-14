@@ -29,7 +29,7 @@
   configuration" to run the harness as installed.", and under it "OATS says:
   `<message>`" as one line, in place of OATS's message, written in
   command-line flags, as the status. A message that looks like a credential
-  reads "[Detail withheld]", with no name before it.
+  reads "[withheld]", with no name before it.
   - **"Preview invocation"** refused with that code reads the same sentence,
     then "Preview only. No agent was started or stopped.", with OATS's line
     under it. That refusal's message is no longer cut at 300 characters.

@@ -6,7 +6,7 @@ import { lifecycleReceipt, lifecycleReason } from '../../client/lifecycle-contra
 import { LIFECYCLE_FORBIDDEN_FRAME, lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { pr as rawPr } from './helpers/forge-fixture.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { cli, context, envelope, instance, target, options, stopPlan, retirePlan, stopReceipt, retireReceipt, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 import { successorRow } from '../renderer/focus-return.mjs';
@@ -341,7 +341,7 @@ function remoteServer(respond = {}) {
   const context = { cli: { ...structuredClone(cli), remote: ['lifecycle-plans'] }, localCwd: '/Users/me/work',
     workspace: { id: 'team', name: 'Build box', scope: '/team', remote: true, server: 'build' },
     instances: [{ ...instance, server: 'build', addressable: true, missingRemotely: false, savedRoute: false, running: true }] };
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => respond[args.phase]?.(args)
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => respond[args.phase]?.(args)
     ?? envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan() : stopReceipt(args)) });
   return (_workspace, body) => service(body, () => context);
 }
@@ -368,7 +368,7 @@ test('from the server: a host message with line breaks and a character of the se
 /** The dialog's `request`, answered by the server boundary for a local workspace. */
 function localServer(respond = {}) {
   const ctx = context();
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => respond[args.phase]?.(args)
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => respond[args.phase]?.(args)
     ?? envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan() : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args)) });
   return (_workspace, body) => service(body, () => ctx);
 }
@@ -387,11 +387,11 @@ test("from the server: a local Retire refused by inspection shows Desktop's sent
     assert.equal(f.button('lifecycle-retry').hidden, false);
   } finally { f.close(); }
 });
-test('a local message that looks like a credential shows "[Detail withheld]"; a local E_CLI_TIMEOUT shows no Details, whatever came with it', async () => {
+test('a local message that looks like a credential shows "[withheld]"; a local E_CLI_TIMEOUT shows no Details, whatever came with it', async () => {
   let f = fixture({ request: localServer({ apply: localError('E_WORK_INSPECTION_FAILED', 'could not read the work root: token=abc123') }) });
   try {
     f.open('retire'); await tick(); f.button('lifecycle-confirm').click(); await tick();
-    assertIsolatedDetail(f.doc.querySelector('.lifecycle-result .lifecycle-details p'), { before: 'E_WORK_INSPECTION_FAILED: ', detail: '[Detail withheld]' });
+    assertIsolatedDetail(f.doc.querySelector('.lifecycle-result .lifecycle-details p'), { before: 'E_WORK_INSPECTION_FAILED: ', detail: '[withheld]' });
     assert.doesNotMatch(f.doc.body.textContent, /abc123|work root/);
   } finally { f.close(); }
   f = fixture({ request: localServer({ apply: localError('E_CLI_TIMEOUT', 'TEXT FROM THE ENVELOPE') }) });

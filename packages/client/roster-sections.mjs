@@ -19,10 +19,10 @@ export const primaryDeployment = deployments => (Array.isArray(deployments) && (
 
 /** A deployment's state, in words (never colour alone): `{ key, text, detail }`.
  * live: reached (or, on this computer, observed) now. stale: this computer's deployment whose last
- * re-read failed (its rows are the last observation). remembered: not reached, its workspace is the
- * last report. not reached / not observed: with why. */
+ * re-read failed, or a machine the last roster read did not ask for (#1124): its rows are the last
+ * observation. remembered: not reached, its workspace is the last report. not reached / not observed: with why. */
 export function deploymentState(d) {
-  // This computer's deployment whose last re-read failed: its rows are the last observation.
+  // Its rows are the last observation: a failed re-read here, or a machine outside a filtered roster read.
   if (d?.stale) return { key: 'stale', text: 'stale', detail: d.reason || '' };
   if (d?.reachable) return { key: 'live', text: 'live', detail: '' };
   if (d?.identityFrom === 'remembered') {

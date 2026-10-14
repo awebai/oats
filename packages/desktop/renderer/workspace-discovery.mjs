@@ -45,7 +45,7 @@ ${machinesCSS}
 ${computerTeamsCSS}
 ${syncCSS}
 ${capabilityWarningsCSS}
-.workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
+.workspace-header { height:var(--bar-h); min-height:48px; flex:none; display:flex; align-items:stretch; flex-wrap:nowrap; gap:22px; padding:0 calc(16px + var(--main-trail-inset, 0px)) 0 calc(16px + var(--main-lead-inset, 0px)); border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .workspace-header[hidden] { display:none; }
 .workspace-header[hidden] + .deployment-scope { display:none; } /* a soul or capability page shows its own line */
 .workspace-header + .deployment-scope { flex:none; padding:6px 16px 6px; border-bottom:1px solid var(--border); background:var(--surface); }

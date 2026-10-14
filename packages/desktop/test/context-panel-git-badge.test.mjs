@@ -23,10 +23,10 @@ function fixture(t) {
     subscribeConnections: fn => { onConn = fn; return () => {}; },
     createGitPanel: (_parent, focus) => { hooks = focus; return { update() {}, dispose() {} }; } });
   t.after(() => { panel.dispose(); dom.window.close(); });
-  const tab = () => document.querySelector('[data-context-tab="git"]'), rail = () => document.querySelector('[data-context-rail="git"]');
+  const tab = () => document.querySelector('[data-context-tab="git"]');
   // The identity the panel tags its own summaries with (the Git panel echoes it back).
   const identity = inst => JSON.stringify(['A', inst.home, inst.home, inst.agent, inst.agentsRoot, null, inst.createdAt ?? null]);
-  return { panel, tab, rail, hooks: () => hooks, identity, bump: () => { gen++; onConn(); }, gen: () => gen,
+  return { panel, tab, hooks: () => hooks, identity, bump: () => { gen++; onConn(); }, gen: () => gen,
     select: inst => panel.setContext({ workspace: 'A', instance: inst, key: inst.home }) };
 }
 
@@ -36,7 +36,6 @@ test('the tab shows the count beside its name, and says it in words; unknown or 
   report(2);
   assert.equal(u.tab().querySelector('.context-panel-tab-count').textContent, '2');
   assert.equal(u.tab().getAttribute('aria-label'), 'Developer, 2 unresolved review threads');
-  assert.equal(u.rail().getAttribute('aria-label'), 'Developer, 2 unresolved review threads', 'the collapsed rail says it too'); assert.equal(u.rail().title, 'Developer, 2 unresolved review threads');
   for (const n of [null, 0]) {
     report(n);
     assert.equal(u.tab().querySelector('.context-panel-tab-count').textContent, ''); assert.equal(u.tab().hasAttribute('aria-label'), false);

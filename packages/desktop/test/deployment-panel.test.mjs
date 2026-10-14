@@ -85,7 +85,7 @@ test('livenessAnswers: the collector\'s array when it is one answer per row; any
   for (const stdout of [null, '', '[]', 'not JSON', JSON.stringify(answers)]) assert.deepEqual(livenessAnswers(frozen([]), stdout), [], String(stdout));
 });
 
-test('panelInstances: each row merged with its answer, projected, running first and then by name', () => {
+test('panelInstances: each row merged with its answer, projected, running, then unknown, then stopped, by name within each', () => {
   const rows = frozen(rosterRows(roster(), WAITING));
   const answers = frozen([
     { tmux: { session: 'oats', window: 'dev-b', id: '@4' }, running: true, runtimeState: 'running' },
@@ -93,11 +93,11 @@ test('panelInstances: each row merged with its answer, projected, running first 
     { running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: gone', tmux: null },
   ]);
   const instances = panelInstances(rows, answers);
-  assert.deepEqual(instances.map(i => [i.instance, i.running, i.runtimeState]), [['dev-b', true, 'running'], ['dev-a', false, 'stopped'], ['ops-a', null, 'unsupported']]);
+  assert.deepEqual(instances.map(i => [i.instance, i.running, i.runtimeState]), [['dev-b', true, 'running'], ['ops-a', null, 'unsupported'], ['dev-a', false, 'stopped']]);
   // The answer wins over the kernel's own liveness fields; an answer without a field leaves the row's.
   assert.deepEqual(instances[0].tmux, { session: 'oats', window: 'dev-b', id: '@4' });
-  assert.equal(instances[1].runtimeError, 'no server', 'the answer named no runtimeError: the kernel\'s stays');
-  assert.deepEqual(instances[2], panelInstance({ ...rows[2], ...answers[2] }));
+  assert.equal(instances[2].runtimeError, 'no server', 'the answer named no runtimeError: the kernel\'s stays');
+  assert.deepEqual(instances[1], panelInstance({ ...rows[2], ...answers[2] }));
   // With the unknown answer for every row (the collector failed), each row keeps the kernel's tmux.
   const unknown = panelInstances(rows, livenessAnswers(rows, null));
   assert.deepEqual(unknown.map(i => [i.instance, i.running, i.runtimeState, i.runtimeError, i.tmux]), [
@@ -108,13 +108,14 @@ test('panelInstances: each row merged with its answer, projected, running first 
   assert.deepEqual(panelInstances(frozen([]), frozen([])), []);
 });
 
-test('panelInstances: the sort is today\'s, by `running` as it is and then by localeCompare of the name', () => {
+test('panelInstances: the sort is by state (running, unknown, stopped) and then by localeCompare of the name', () => {
   const named = (instance, running) => ({ instance, agentsRoot: '/d/agents', running });
   const order = (rows) => panelInstances(frozen(rows), frozen(rows.map(() => ({})))).map(i => i.instance);
   assert.deepEqual(order([named('b', false), named('a', false), named('d', true), named('c', true)]), ['c', 'd', 'a', 'b']);
   assert.deepEqual(order([named('B', true), named('a', true), named('C', true)]), ['a', 'B', 'C'].sort((x, y) => x.localeCompare(y)));
-  // Two rows of the same `running` are ordered by name; unknown (null) is not running, and sorts after it.
+  // Two rows of the same state are ordered by name; unknown (null) sorts after running and before stopped.
   assert.deepEqual(order([named('z', null), named('y', null), named('x', true)]), ['x', 'y', 'z']);
+  assert.deepEqual(order([named('a', false), named('z', null), named('y', null), named('x', true)]), ['x', 'y', 'z', 'a']);
 });
 
 // ── The deployment's entry ────────────────────────────────────────────────────
@@ -253,8 +254,9 @@ test('composed: a fixture roster becomes the entry the Desktop\'s observeDeploym
     instances: [
       // dev-a: this answer named no runtimeError, so the kernel's own text stays, and its speaker is the kernel.
       row('dev-a', 'dev-renamed', { soul: 'dev', description: 'Writes code', running: true, runtimeState: 'running', runtimeError: 'no server', runtimeErrorOrigin: 'kernel', tmux: { session: 'oats', window: 'dev-a' }, waitingOnYou: null, team: 'aweb:oats' }),
-      row('dev-b', 'dev', { soul: 'dev', description: 'Writes code', running: false, runtimeState: 'stopped', runtimeError: undefined, tmux: { session: 'oats', window: 'dev-b' }, waitingOnYou: claim, team: 'aweb:oats' }),
+      // ops-a: unknown, so after the running row and before the stopped one.
       row('ops-a', 'ops', { soul: 'ops', description: '', running: null, runtimeState: 'unsupported', runtimeError: 'E_HERDR_REMOVED: gone', tmux: null, sessionTarget: { backend: 'herdr' }, team: null }),
+      row('dev-b', 'dev', { soul: 'dev', description: 'Writes code', running: false, runtimeState: 'stopped', runtimeError: undefined, tmux: { session: 'oats', window: 'dev-b' }, waitingOnYou: claim, team: 'aweb:oats' }),
     ],
     generatedAt: AT, observedAt: '2026-10-11T11:59:00.000Z',
   });

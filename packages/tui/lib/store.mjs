@@ -10,8 +10,9 @@
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
 import { ACTIONS, bindings } from "./actions.mjs";
-import { collapseKey, displayLine, instanceId, pendingEntry } from "./client.mjs";
-import { disclosure, roster, switcher } from "./model.mjs";
+import { collapseKey, displayLine, instanceActs, instanceId, pendingEntry } from "./client.mjs";
+import { DETACH_KEY } from "./config.mjs";
+import { disclosure, openDecision, preflightLine, returnedLine, roster, switcher } from "./model.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
 /** The longest filter, in UTF-16 units. */
@@ -33,8 +34,15 @@ const NO_FILTER = Object.freeze({ editing: false, query: "" });
  *  on purpose (see `scrolledList`); the switcher has its own.
  *  `selected`, `top`, `detailTop` are the open view's; `places` keeps them for
  *  the views left behind, and `collapsed` holds every view's keys (each carries its `open`).
- *  `back`: the view under the help. `offered`: the deployments of `~/Agents` not served. */
-export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false }) {
+ *  `back`: the view under the help. `offered`: the deployments of `~/Agents` not served.
+ *  `opening`: the agent whose terminal is being opened, or null: `{ id, phase, name, machine,
+ *  routed }`, `phase` "preflight" while another machine is asked whether its session is there and
+ *  "lent" while the kernel's viewer has the terminal; `name`, `machine` and `routed` are the row's
+ *  as it was when Enter was pressed, for the line after. `outcome`: that line (the model's
+ *  `{ said, under }`), shown above the panes until the next key bound to an action, or null.
+ *  `detachKey`: tui.json's `open.detachKey`, the key that leaves an agent's terminal.
+ *  The roster is made from none of the three (lib/model.mjs MADE_FROM). */
+export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, detachKey = DETACH_KEY }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
     ctxs: Object.freeze(deployment === null ? [] : [deployment]), open: deployment,
@@ -44,7 +52,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
     switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
-    helpTop: 0, actions, ascii,
+    helpTop: 0, actions, ascii, detachKey, opening: null, outcome: null,
   });
 }
 
@@ -262,7 +270,7 @@ function switched(state, action, page) {
       const top = windowOf({ top: key === s.keys[0] ? 0 : key === s.keys.at(-1) ? count : drawn, count, height, keep: at }).top;
       return { state: put({ selected: key, top, loose: false }), effect: null };
     }
-    case "open-workspace": {
+    case "open": {
       const item = s.items.find((each) => each.key !== undefined && each.key === s.selected);
       if (!item) return stay;
       if (item.path !== undefined) return { state: put({ refused: null }), effect: { admit: item.path } };
@@ -281,11 +289,56 @@ function switched(state, action, page) {
  *  (one outcome of the roster read), `{ collecting }`, `{ offered: { offered, limited } }` (the
  *  deployments of `~/Agents` not served), `{ admitted: <deployment>, at }` and `{ refused: <path> }`
  *  (what a picked folder turned out to be).
+ *  Opening an agent gives three more: `{ prepared: { id, error? } }` (the preflight of another
+ *  machine's agent ended: `error` is what the shared prepareRemoteTerm threw), `{ given: true }`
+ *  (the loop gave the preflight up itself: a suspend) and `{ returned: { id, status, stderr } }`
+ *  (the viewer closed: its exit status as Node reports it, and the stderr it kept).
  *  An effect is something only the loop can do: "quit", "suspend", "redraw", or an object with
- *  any of `refresh: { live }` (read now), `offer: true` (list `~/Agents` again) and
- *  `admit: <path>` (ask whether a picked folder is a deployment); or null. */
+ *  any of `refresh: { live }` (read now), `offer: true` (list `~/Agents` again),
+ *  `admit: <path>` (ask whether a picked folder is a deployment), `open: <decision>` (open the
+ *  agent's terminal: the model's openDecision, with its target), `lend: <id>` (the preflight is
+ *  over: start the viewer it prepared) and `abandon: true` (give the preflight up); or null.
+ *  The line after an open stands until the next key that is bound to an action: a key bound to
+ *  nothing (a stray detach key is no key at all) leaves it. */
 export function reduce(state, event, keymap = bindings(state.actions)) {
+  if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
+  return reduced(state, event, keymap);
+}
+
+/** The preflight of another machine's agent ended. Given up meanwhile (Esc, a suspend, a second
+ *  open): dropped. Failed: the line that says so, unless it is the person's own giving up. Else
+ *  the viewer is started, unless the row it is for has gone from the roster since. */
+function prepared(state, { id, error }) {
+  const opening = state.opening;
+  if (opening === null || opening.id !== id || opening.phase !== "preflight") return { state, effect: null };
+  if (error !== undefined) return { state: next(state, { opening: null, outcome: preflightLine(opening, error) }), effect: null };
+  if (!roster(state).instances.some((row) => instanceId(row) === id)) return { state: next(state, { opening: null }), effect: null };
+  return { state: next(state, { opening: Object.freeze({ ...opening, phase: "lent" }) }), effect: { lend: id } };
+}
+
+/** The viewer closed: the line that says what happened, and the instances read again at once
+ *  (an exit status says nothing of the agent but that it was left by the key). */
+function returned(state, { id, status, stderr }) {
+  const opening = state.opening;
+  if (opening === null || opening.id !== id) return { state, effect: null };
+  return { state: next(state, { opening: null, outcome: returnedLine(opening, status, stderr) }), effect: { refresh: { live: true } } };
+}
+
+/** Enter in the list of instances: the selected agent's terminal, or the line that says why not.
+ *  Nothing while an open is under way. */
+function openAgent(state, r, at) {
+  if (state.opening !== null || at < 0) return { state, effect: null };
+  const row = r.items[at].row, decision = openDecision(state, row, instanceActs(row));
+  if (!decision.open) return { state: next(state, { outcome: decision.said }), effect: null };
+  const opening = Object.freeze({ id: decision.id, phase: decision.routed ? "preflight" : "lent", name: decision.name, machine: decision.machine, routed: decision.routed });
+  return { state: next(state, { opening, outcome: null }), effect: { open: decision } };
+}
+
+function reduced(state, event, keymap) {
   const stay = { state, effect: null };
+  if (event.prepared !== undefined) return prepared(state, event.prepared);
+  if (event.given !== undefined) return state.opening?.phase === "preflight" ? { state: next(state, { opening: null }), effect: null } : stay;
+  if (event.returned !== undefined) return returned(state, event.returned);
   if (event.entry !== undefined) return took(state, event);
   if (event.roster !== undefined) return heard(state, event.roster);
   if (event.collecting !== undefined) return { state: event.collecting === state.collecting ? state : next(state, { collecting: event.collecting === true }), effect: null };
@@ -323,7 +376,8 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
   if (state.view === "switcher") return switched(state, action, page);
 
   if (action === "close") {
-    // In this order: a kept filter, the detail.
+    // In this order: an open under way (another machine is asked first), a kept filter, the detail.
+    if (state.opening?.phase === "preflight") return { state: next(state, { opening: null }), effect: { abandon: true } };
     if (state.filter.query !== "") return { state: queried(state, ""), effect: null };
     return state.focus === "detail" ? { state: next(state, { focus: "list" }), effect: null } : stay;
   }
@@ -331,6 +385,7 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
   const at = indexOf(r, state.selected);
   switch (action) {
     case "filter": return { state: next(state, { focus: "list", filter: Object.freeze({ ...state.filter, editing: true }) }), effect: null };
+    case "open": return openAgent(state, r, at);
     case "detail": return at < 0 ? stay : { state: next(state, { focus: state.focus === "detail" ? "list" : "detail" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
       if (state.focus === "detail") return { state: next(state, { detailTop: scrolled(state.detailTop) }), effect: null };
