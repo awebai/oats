@@ -285,6 +285,26 @@ reclaim hashes in bounded units; a hash-cache entry never authorizes deletion of
 a filesystem path. These are private worker primitives; their tests do not by
 themselves qualify the complete command scheduler, run receipts or service limits.
 
+The private `NativeCaptureDiscovery` walker checkpoints only its active
+per-directory stack, directory identities and exact last basenames. A resumed
+walker loads that stack directly rather than revisiting completed sibling
+subtrees. Within a worker it retains only the sorted arrays for active
+ancestors; completion, close and errors release those arrays. Selection and
+stable `localeCompare` ordering match the public cc/pi/codex inventories,
+including Claude's restricted subagent layout and existing link distinctions.
+A replaced active directory invalidates its position. An absent fresh default
+can be empty; disappearance of an already selected directory is an error.
+
+Each discovery unit accounts for visited metadata entries, including irrelevant
+ones, and returns a bounded file page plus the next checkpoint. The scheduling
+caller must commit that page and checkpoint together. Directory reads/sorts
+can recur on restart and their arrays still grow with directory size; this is
+not a constant-memory metadata claim or new-byte-only work. Newly inserted
+names before the saved position belong to a later sweep. A missing anchor
+conservatively replays its collation equivalence class, requiring idempotent
+inventory insertion. This walker does not itself select roots, schedule
+capture/index work or certify that a complete command sweep occurred.
+
 ## Internal transaction groups
 
 The package-private `capture-context.mjs` helper can group synchronous work over
