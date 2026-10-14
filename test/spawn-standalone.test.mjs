@@ -29,8 +29,9 @@ function oats(args, { base, env = {} }) {
 }
 const envelope = (r) => { const doc = JSON.parse(r.stdout.trim().split("\n").pop()); assert.equal(doc.schemaVersion, 1); return doc; };
 
-test("standalone: unreadable workspace host → sync locks only the oats.core package; souls lists the member's own; spawn materializes from:here + oats.core", { timeout: 240_000 }, async () => {
+test("standalone: unreadable workspace host → sync locks only the oats.core package; souls lists the member's own; spawn materializes from:here + oats.core", { timeout: 240_000 }, async (t) => {
   const base = mkdtempSync(join(tmpdir(), "oats-standalone-"));
+  t.after(() => rmSync(base, { recursive: true, force: true })); // and in the finally below, after restoring what it made unreadable
   if (/[\s@]/.test(base)) { rmSync(base, { recursive: true, force: true }); throw new Error(`tmpdir ${base} contains whitespace or @`); }
   const fx = await buildNorthwind(join(base, "fx"));
   const catalogFile = join(base, "catalog.json");
@@ -156,8 +157,9 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
   }
 });
 
-test("onboard states the hosting rule (decision 26): hostIsMember + the rule in --json; the text next-steps carry it", { timeout: 240_000 }, async () => {
+test("onboard states the hosting rule (decision 26): hostIsMember + the rule in --json; the text next-steps carry it", { timeout: 240_000 }, async (t) => {
   const base = mkdtempSync(join(tmpdir(), "oats-onboard-host-"));
+  t.after(() => rmSync(base, { recursive: true, force: true })); // and in the finally below
   const fx = await buildNorthwind(join(base, "fx"));
   const catalogFile = join(base, "catalog.json");
   writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }));
@@ -177,8 +179,9 @@ test("onboard states the hosting rule (decision 26): hostIsMember + the rule in 
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("standalone packages (H3/M10): a catalog ref with a tag PATH (oats-framework/v1.1.3) is requested by version, so the lock resolves it; a catalog without the oats.core package is a reported sync problem and a precise spawn refusal", { timeout: 240_000 }, async () => {
+test("standalone packages (H3/M10): a catalog ref with a tag PATH (oats-framework/v1.1.3) is requested by version, so the lock resolves it; a catalog without the oats.core package is a reported sync problem and a precise spawn refusal", { timeout: 240_000 }, async (t) => {
   const base = mkdtempSync(join(tmpdir(), "oats-standalone-cat-"));
+  t.after(() => rmSync(base, { recursive: true, force: true })); // and in the finally below, after restoring what it made unreadable
   if (/[\s@]/.test(base)) { rmSync(base, { recursive: true, force: true }); throw new Error(`tmpdir ${base} contains whitespace or @`); }
   const fx = await buildNorthwind(join(base, "fx"));
   // The bundled catalog's shape for the framework package: the tag lives under a path prefix. Give the
@@ -231,8 +234,9 @@ test("standalone packages (H3/M10): a catalog ref with a tag PATH (oats-framewor
   }
 });
 
-test("H4: an oats-config.yaml beside a v3 lock is refused as a 0.25 configuration (E_CONFIG_BROKEN legacy-config) — never read, so the v3 lock is never strict-parsed as a classic one", { timeout: 240_000 }, async () => {
+test("H4: an oats-config.yaml beside a v3 lock is refused as a 0.25 configuration (E_CONFIG_BROKEN legacy-config) — never read, so the v3 lock is never strict-parsed as a classic one", { timeout: 240_000 }, async (t) => {
   const base = mkdtempSync(join(tmpdir(), "oats-h4-"));
+  t.after(() => rmSync(base, { recursive: true, force: true })); // and in the finally below
   const fx = await buildNorthwind(join(base, "fx"));
   const catalogFile = join(base, "catalog.json"); writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }));
   const env = { OATS_PACKAGE_CATALOG: catalogFile };

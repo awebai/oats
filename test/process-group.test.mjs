@@ -19,9 +19,16 @@ const firstOutput = (proc) => new Promise((resolve, reject) => {
   proc.stdout.once("data", (data) => resolve(String(data)));
   proc.once("exit", (code, signal) => reject(new Error(`the process ended before it said anything: ${code ?? signal}`)));
 });
-/** A process started with `startGroup` that has started one child, which runs `script`. */
-async function parentOf(script) {
+/** Kill the group of `proc`, a process started with `startGroup`, whole, and close it. */
+async function endGroup(proc) {
+  try { process.kill(-proc.pid, "SIGKILL"); } catch { /* the group is gone */ }
+  await closeGroup(proc);
+}
+/** A process started with `startGroup` that has started one child, which runs `script`. Its group is
+ *  ended when the test has ended, whatever its outcome. */
+async function parentOf(t, script) {
   const proc = startGroup(process.execPath, ["-e", leaderOf(script)], { stdio: ["ignore", "pipe", "inherit"] });
+  t.after(() => endGroup(proc));
   await firstOutput(proc);
   return proc;
 }
@@ -33,7 +40,7 @@ test("closeGroup waits for a child that outlives the process, and does not kill 
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const out = join(dir, "late");
   const before = listening();
-  const proc = await parentOf(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(out)}, "written"), 500);`);
+  const proc = await parentOf(t, `setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(out)}, "written"), 500);`);
   assert.deepEqual(listening(), before.map((n) => n + 1), "while a group runs, this process listens for an interrupt");
   await closeGroup(proc);
   assert.equal(proc.signalCode, "SIGTERM", "the process itself was killed");
@@ -43,8 +50,7 @@ test("closeGroup waits for a child that outlives the process, and does not kill 
 });
 
 test("closeGroup fails by name when what the process started does not end in time", async (t) => {
-  const proc = await parentOf(`/* oats-pg-stays */ setTimeout(() => {}, 60000);`);
-  t.after(async () => { try { process.kill(-proc.pid, "SIGKILL"); } catch { /* the group is gone */ } await closeGroup(proc); });
+  const proc = await parentOf(t, `/* oats-pg-stays */ setTimeout(() => {}, 60000);`);
   await assert.rejects(closeGroup(proc, { wait: 300 }), (e) => {
     assert.match(e.message, new RegExp(`^the process ${proc.pid} was closed 300 ms ago and its group still runs:`));
     assert.match(e.message, /oats-pg-stays/, "the process that is left is named by its command line");
@@ -57,8 +63,8 @@ test("closeGroup fails by name when what the process started does not end in tim
 // its group, and is named with what is left of it.
 test("closeGroup fails within its bound, naming the process itself, when the process does not end on its kill", { timeout: 10000 }, async (t) => {
   const proc = startGroup(process.execPath, ["-e", `/* oats-pg-leader-stays */ process.on("SIGTERM", () => {}); process.stdout.write("started\\n"); setInterval(() => {}, 1000);`], { stdio: ["ignore", "pipe", "inherit"] });
+  t.after(() => endGroup(proc));
   await firstOutput(proc);
-  t.after(async () => { try { process.kill(-proc.pid, "SIGKILL"); } catch { /* the group is gone */ } await closeGroup(proc); });
   const started = Date.now();
   await assert.rejects(closeGroup(proc, { wait: 300 }), (e) => {
     assert.match(e.message, new RegExp(`^the process ${proc.pid} was closed 300 ms ago and its group still runs:`));

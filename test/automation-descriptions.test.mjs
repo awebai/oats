@@ -187,7 +187,7 @@ test("a package trigger template may carry definition.description: add --from co
     "oats-triggers/from-header.yaml": fromFile({ description: "The header wins" }),
     "oats-triggers/from-bad-header.yaml": fromFile({ description: "a\tb" }),
   } });
-  t.after(() => { fx.cleanup(); pkg.cleanup(); });
+  t.after(() => { try { fx.cleanup(); } finally { pkg.cleanup(); } });
   ok(fx.cli(["sync", "--json"]), "sync");
   const add = (extra) => ok(fx.cli(["trigger", "add", "--from", "acme.pkg:harvest-review", "--set", "repo=github.com/acme/knowledge", ...extra, "--json"]), `add --from ${extra}`).trigger;
   assert.equal(add([]).description, "Review each harvest PR (template)", "copied");

@@ -606,10 +606,12 @@ function golden(caseId, name, actual) {
 if (UPDATE && !UPDATE_ARTIFACT) rmSync(GOLDEN_ROOT, { recursive: true, force: true });
 
 test.after(() => {
-  try { for (const fx of FIXTURES.splice(0)) fx.cleanup(); } finally {
-    for (const b of BASES.splice(0)) rmSync(b, { recursive: true, force: true });
-    rmSync(HERMETIC_HOME, { recursive: true, force: true });
-  }
+  // Every fixture is ended, though one's cleanup throws (it names what it found left); then the first error.
+  const errors = [];
+  for (const fx of FIXTURES.splice(0)) { try { fx.cleanup(); } catch (e) { errors.push(e); } }
+  for (const b of BASES.splice(0)) rmSync(b, { recursive: true, force: true });
+  rmSync(HERMETIC_HOME, { recursive: true, force: true });
+  if (errors.length) throw errors[0];
 });
 
 // ---------- normalization regressions (no CLI or harness) ----------

@@ -216,8 +216,11 @@ test("unsupported harness fails before provisioning external state", () => {
 });
 
 test.after(() => {
-  try { for (const fx of fixtures.splice(0)) fx.cleanup(); }
-  finally { for (const dir of directories) rmSync(dir, { recursive: true, force: true }); }
+  // Every fixture is ended, though one's cleanup throws (it names what it found left); then the first error.
+  const errors = [];
+  for (const fx of fixtures.splice(0)) { try { fx.cleanup(); } catch (e) { errors.push(e); } }
+  for (const dir of directories) rmSync(dir, { recursive: true, force: true });
+  if (errors.length) throw errors[0];
 });
 
 for (const harnessName of ["codex", "claude", "pi"]) {

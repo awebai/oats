@@ -72,8 +72,11 @@ function refused(f, { home, instance }, message) {
 }
 
 test.afterEach(() => {
-  endServers();
-  for (const fx of fixtures.splice(0)) fx.cleanup();
+  // The servers are ended, and then every fixture, though one of these throws; then the first error.
+  const errors = [];
+  try { endServers(); } catch (e) { errors.push(e); }
+  for (const fx of fixtures.splice(0)) { try { fx.cleanup(); } catch (e) { errors.push(e); } }
+  if (errors.length) throw errors[0];
 });
 
 test("retire of a launched instance succeeds when its recorded server was killed and the socket file is gone", async (t) => {
