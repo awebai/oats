@@ -5,7 +5,7 @@
  * (client-terms.mjs) and refuses a call without them. No state.
  *
  * A failed start is one of two outcomes, and the words are "nothing was started", never "nothing happened"
- * (a restart that lost the race has already run its own stop):
+ * (a restart that lost the race has already run its own stop, and a start may have written its pending receipt):
  *   refused    this request started nothing: every refusal of the gate and of the home check, and the
  *              kernel's STARTED_NOTHING_CODES;
  *   uncertain  anything else: no envelope, any other code, and E_START_UNCONFIRMED, the end of the wait
@@ -24,9 +24,10 @@ import { requireTerms } from './client-terms.mjs';
 export { startGate };
 
 /** The kernel's codes for a start that started nothing: the home's start lock is held, or an earlier start's
- * pane is still a shell without its completion marker (E_SESSION_START_BUSY); the instance was seen running
- * before the start did anything, or its window appeared during the start (E_SESSION_RUNNING). A code joins
- * only when the kernel confirms it refuses before any effect. */
+ * pane is still a shell without its completion marker (E_SESSION_START_BUSY); the instance was seen running,
+ * or its window appeared during the start (E_SESSION_RUNNING). Some places that raise E_SESSION_RUNNING come
+ * after the kernel has written the start's pending receipt, or after a restart's stop: nothing was started,
+ * not nothing happened. A code joins only when every place the kernel raises it in a start launches nothing. */
 export const STARTED_NOTHING_CODES = Object.freeze(['E_SESSION_START_BUSY', 'E_SESSION_RUNNING']);
 
 /** The two kernel codes' own sentences, for a client that words by code. The kernel's message is the
