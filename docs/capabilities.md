@@ -319,8 +319,9 @@ A self-contained package has an `oats.json`:
     Spawn alone can see two more cases, and refuses the spawn with
     `E_CAPABILITY_BROKEN` and rolls it back: a declared root that is a
     symlink in the work (also one whose target is missing), and roots of
-    different capabilities that overlap. `oats spawn --json` reports these,
-    as other spawn failures, as `E_SPAWN_FAILED` with the same message.
+    different capabilities that overlap. `oats spawn --json` answers these
+    with `E_CAPABILITY_BROKEN` and the same message (`E_SPAWN_FAILED`
+    before 0.56.0).
 
   A malformed `retirement` is refused wherever the manifest is read: member
   discovery (`E_WORKSPACE_SCHEMA`), package manifests (`E_PACKAGE_MANIFEST`)
@@ -352,7 +353,10 @@ A self-contained package has an `oats.json`:
   A harness package is **verified at spawn, never installed there**: installing
   would mutate the operator's harness configuration without asking, in the
   middle of a spawn. A missing, uninstalled or disabled package fails the spawn
-  with direct package-manager guidance for the operator. The command uses the
+  with direct package-manager guidance for the operator
+  (`E_HARNESS_RESOURCE_MISSING`; a start, a restart and a launch plan's
+  `harness-packages` check answer the same code, `E_HARNESS_PACKAGE` before
+  0.56.0). The command uses the
   selected harness executable and resource directory, with Claude marketplace
   registration before plugin installation. Run it in the indicated context
   with the same launch environment; spawn and restart never install packages.
