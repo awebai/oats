@@ -112,11 +112,12 @@ const rosterError = (message) => ({ code: "E_REMOTE_ROSTER", message });
  *
  * An answer read with workspace keys (`asked`) holds only the groups the kernel probed: those registered
  * for one of `keys`, those of unknown workspace and those known only from saved routes. It replaces
- * those. A held group it does not list, and whose last-known key (`keyOf(group)`: `lastKnownKey`) is
- * one the read did not ask for, was not probed: it is kept as it was last read, after the answer's
+ * those. A held registered group it does not list, and whose last-known key (`keyOf(group)`:
+ * `lastKnownKey`) is one the read did not ask for, was not probed: it is kept as it was last read, after the answer's
  * groups, and named in `kept` (its id, in order), so the caller keeps its read time (`keptReadTimes`).
- * A held group whose key is unknown, or is one of `keys`, and that the answer does not list is gone, as
- * after any answer. `reported` then holds the kept groups too, so the memory keeps their identities.
+ * A held group whose key is unknown, or is one of `keys`, or that is known only from saved routes
+ * (`registrationPresent` false: the kernel always probes those), and that the answer does not list is
+ * gone, as after any answer. `reported` then holds the kept groups too, so the memory keeps their identities.
  *
  * The sentence of a thrown read carries the message of an error from outside the client: a client
  * shows it through `displayLine` (display-text.mjs) only.
@@ -142,7 +143,12 @@ export function remoteRosterState(previous, outcome, at) {
     for (const group of incoming) remotePanel(group, at); // validate before replacing the last readable roster
     if (env.ok && outcome.asked) {
       const listed = new Set(incoming.map((g) => g?.id)), keys = new Set(outcome.asked.keys);
-      const kept = previous.remoteGroups.filter((g) => { const key = listed.has(g.id) ? null : outcome.asked.keyOf(g); return key !== null && !keys.has(key); });
+      // Only a registered group can be outside the read: one known only from saved routes is always probed.
+      const kept = previous.remoteGroups.filter((g) => {
+        if (listed.has(g.id) || g.registrationPresent !== true) return false;
+        const key = outcome.asked.keyOf(g);
+        return key !== null && !keys.has(key);
+      });
       const groups = [...incoming, ...kept];
       return { remoteGroups: groups, rosterAnswered: true, rosterFailure: null, reported: groups, kept: kept.map((g) => g.id) };
     }

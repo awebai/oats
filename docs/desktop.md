@@ -356,8 +356,8 @@ them, those whose workspace is not known yet, and those known only from a
 saved route. A machine registered for a workspace no window shows is not
 contacted, so a machine that is switched off no longer slows every window's
 roster. Opening a window on another workspace reads its machines at once. Until
-it does, that workspace's machines are shown as they were last read, and the
-switcher still lists them. The read covers every machine again while a window
+it does, that workspace's machines are shown as they were last read, marked
+stale, and the switcher still lists them, not counted live. The read covers every machine again while a window
 shows the switcher, and on the first read after the Desktop starts. With an
 older CLI, every registered machine is read, as before.
 

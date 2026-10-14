@@ -98,6 +98,9 @@ export function deploymentInfo(held, d, terms) {
   }
   const g = d.group, machine = g.label || g.server;
   const reached = g.probe?.ok === true;
+  // A group a filtered roster read kept as last read (#1124, `held.keptReadAt`: remote-roster.mjs `keptReadTimes`):
+  // a machine reached then is stale now, as this computer's deployment is after a failed re-read, never live.
+  const kept = reached && !!held.keptReadAt?.get?.(g.id);
   let read = reached ? (identityFeature(held) ? readIdentity(g.workspace) : { status: "feature" }) : { status: "none" };
   let identityFrom = read.status === "identity" ? "reported" : null;
   if (!reached && (g.remembered || held.remembered.get(g.id))) {
@@ -111,7 +114,7 @@ export function deploymentInfo(held, d, terms) {
   const moved = held.remembered.note(g.id);
   const standalone = attach.note === "standalone" ? deploymentReason({ local: false, attach: { unattached: "standalone" } }, terms) : null;
   return { id: d.id, local: false, machine, path: g.target?.workspace || "", label: shortPath(g.target?.workspace || ""), name: d.name,
-    live: reached, reachable: reached, identityFrom, identity, attach, teamLabel: identity?.defaultTeam?.label ?? null,
+    live: reached && !kept, reachable: reached, ...(kept ? { stale: true } : {}), identityFrom, identity, attach, teamLabel: identity?.defaultTeam?.label ?? null,
     ...reason, note: [moved, standalone].filter(Boolean).join(" ") || null };
 }
 /** A reason's parts as a deployment's fields: `reason` (the full sentence), `short` and `fix` (UI spec, #482). */
@@ -255,7 +258,8 @@ export function deploymentEntry(info, primary) {
 /** One deployment's own panel, as served before views. */
 export function deploymentPanel(held, ws) {
   // Another machine's panel never says who made its `error`: the key is removed here whatever the panel carried.
-  if (ws?.remote) { const { errorOrigin: _sent, ...panel } = remotePanel(ws.group, held.at); return { ...panel, observedAt: null, refreshing: held.remoteCollecting }; }
+  // A kept group's panel is made at the time it was read (#1124): a filtered read never makes it look newer.
+  if (ws?.remote) { const { errorOrigin: _sent, ...panel } = remotePanel(ws.group, held.keptReadAt?.get?.(ws.group.id) ?? held.at); return { ...panel, observedAt: null, refreshing: held.remoteCollecting }; }
   const observed = ws ? held.snapshot.byWs.get(ws.id) : null;
   const instances = observed?.instances || [], kept = keptFailure(observed);
   return {

@@ -189,13 +189,20 @@ remembered key, member-derived included, since a registration records the
 key its host reports). The read is unfiltered before main has posted, before
 the first answer, while a window shows the switcher or a view this server
 does not serve, when a view's machine has no usable key, and with no window.
-With the feature, a set that adds a key, or that needs the unfiltered read,
-requests a read at once (the loop's coalesced `request()`). A filtered answer replaces only what it could list
+With the feature, a set that adds a key to a filtered set, or that needs the
+unfiltered read after a filtered one, requests a read at once (the loop's
+coalesced `request()`); after an unfiltered set every read covered every
+machine already. A filtered answer replaces only what it could list
 (`remote-roster.mjs` `remoteRosterState` with `asked`): a held group whose
 last-known key (`lastKnownKey`) is outside the keys asked is kept as it was
 last read, stays in the identity memory, and keeps its read time as its
-panel's `generatedAt` (`keptReadTimes`); a group inside the keys, of unknown
-key or from a saved route that the answer does not list is gone.
+panel's `generatedAt` (`keptReadTimes`). The server holds those times
+(`held.keptReadAt`), and the shared views present a kept group as last read:
+`deploymentInfo` makes its deployment stale, never live, so its rows wait for
+a current read (`rowStale`) and the switcher does not count it live, and
+`deploymentPanel` makes its panel at its read time. A group inside the keys,
+of unknown key or from a saved route (`registrationPresent` false) that the
+answer does not list is gone.
 
 Each window's sidebar roster, and its Deployments page when shown, re-read
 every 4 s while that window is focused and every 30 s (the blurred cadence)

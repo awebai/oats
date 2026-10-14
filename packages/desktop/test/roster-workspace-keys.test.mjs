@@ -24,6 +24,7 @@ import { createWindowSet } from '../window-set.mjs';
 import { createViewsNotifier, postedViews, MAX_WINDOW_VIEWS } from '../window-activity.mjs';
 import { validWorkspaceId } from '../renderer/workspace-id.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
+import { deploymentState, rowStale } from '../../client/roster-sections.mjs';
 import { createRemoteIdentityStore } from '../server/remote-identity.mjs';
 import { SOURCE, HELD, viewDeps, loadServer, juanState, group, identity, remoteRow, observed, row,
   OATS, LAB, A, L, R, V, V_OATS, V_LAB } from './helpers/workspace-views-fixture.mjs';
@@ -53,7 +54,7 @@ test('argv: no key is the unfiltered read, exactly as before; each key is one --
 });
 
 test('argv: a key with odd characters is one argv element, never through a shell; the timeout is unchanged', async () => {
-  const odd = 'git.example.com/a;b/$(touch x)/`id`/"q"\'/*?|&>';
+  const odd = 'git.example.com/a;b/$(id)/`id`/"q"\'/*?|&>';
   const p = printing();
   await cliRemoteRoster('/abs/oats', { workspaceKeys: [odd], exec: p.exec });
   assert.deepEqual(p.calls[0].argv, ['server', 'roster', `--workspace-key=${odd}`, '--json']);
@@ -218,6 +219,43 @@ test('the memory keeps a kept group\'s identity: a filtered answer forgets only 
   assert.equal(after.changed, false);
 });
 
+test('only a registered group is kept: one known only from saved routes is always probed, and the memory drops it', () => {
+  const routeOnly = group('mira:m1', 'mira', '/srv/m', identity(LAB, 'aweb:lab'), [remoteRow('m-a', '/srv/m', { savedRoute: true })], { registrationPresent: false });
+  const before = answered([altairG(), vegaG(), routeOnly]);
+  const next = remoteRosterState(before, { envelope: ok([altairG()]), asked: askedFor([OATS]) }, T2);
+  assert.deepEqual(next.remoteGroups.map((g) => g.id), ['altair:a1', 'vega:v1'], 'mira (last known LAB, not asked for) is gone: the read probed it');
+  assert.deepEqual(next.kept, ['vega:v1']);
+  const first = observeIdentities({ memory: new Map(), notes: new Map() }, before.remoteGroups, T1);
+  assert.ok(first.memory.has('mira:m1'));
+  assert.deepEqual([...observeIdentities(first, next.reported, T2).memory.keys()], ['altair:a1', 'vega:v1'], 'its identity is forgotten');
+});
+
+test('a kept group reaches the panel and the switcher as last read: stale with its read time, its rows held, never live', async () => {
+  const { state } = juanState();
+  const at = (kept) => loadServer({ ...state, keptReadAt: new Map(kept) });
+  const { request, views } = await at([['vega:v1', T1]]);
+  for (const ws of [V_LAB, V]) {
+    const panel = (await request({ url: `/api/panel?ws=${encodeURIComponent(ws)}` })).body;
+    assert.equal(panel.generatedAt, T1, `${ws}: made at its read time, not now`);
+    assert.equal(panel.error, null);
+    const [deployment] = panel.deployments;
+    assert.deepEqual([deployment.id, deployment.stale, deploymentState(deployment).key], [V, true, 'stale']);
+    assert.ok(panel.instances.length && panel.instances.every((r) => rowStale(r, panel.deployments)), 'its rows wait for a current read');
+  }
+  const choice = (id) => views.workspaceChoices().find((w) => w.id === id);
+  assert.deepEqual([choice(V_LAB).notLive, choice(V_OATS).notLive], [1, 0], 'the switcher does not count it live');
+  // Read again (no kept time): live, made now, as before.
+  const fresh = await at([]);
+  const panel = (await fresh.request({ url: `/api/panel?ws=${encodeURIComponent(V_LAB)}` })).body;
+  assert.notEqual(panel.generatedAt, T1);
+  assert.deepEqual([panel.deployments[0].stale, deploymentState(panel.deployments[0]).key], [undefined, 'live']);
+  assert.equal(fresh.views.workspaceChoices().find((w) => w.id === V_LAB).notLive, 0);
+  // A held group the kept times do not name, and a not-reached one, read as they always did.
+  const down = juanState({ remoteGroups: [altairG(), { ...vegaG(), probe: { ok: false, error: { code: 'E_SSH', message: 'x' } } }] });
+  const unreached = (await (await loadServer({ ...down.state, keptReadAt: new Map([['vega:v1', T1]]) })).request({ url: `/api/panel?ws=${encodeURIComponent(V)}` })).body;
+  assert.equal(deploymentState(unreached.deployments[0]).key, 'unreached', 'a machine not reached is not reached, kept or not');
+});
+
 /* ── main's side ──────────────────────────────────────────────────────────── */
 
 const win = () => { let destroyed = false; return { isDestroyed: () => destroyed, destroy: () => { destroyed = true; }, isMinimized: () => false, restore() {}, show() {}, focus() {} }; };
@@ -244,9 +282,9 @@ test('the views notifier posts the set in order, one post at a time, and again f
   assert.deepEqual(posts.map((p) => p.body), [{ views: [null, 'ws:a', 'ws:b'] }], 'sorted, the switcher first');
   n.update(['ws:a'], 1); n.update(['ws:c'], 1);
   assert.equal(posts.length, 1, 'one in flight');
-  posts[0].resolve(true); await first; await new Promise((r) => setImmediate(r));
+  posts[0].resolve(true); await new Promise((r) => setImmediate(r));
   assert.deepEqual(posts.map((p) => p.body.views), [[null, 'ws:a', 'ws:b'], ['ws:c']], 'then only the newest set, never an older one after it');
-  posts[1].resolve(true); await new Promise((r) => setImmediate(r));
+  posts[1].resolve(true); await first;
   await n.update(['ws:c'], 1);
   assert.equal(posts.length, 2, 'the set the backend holds is not posted again');
   const again = n.update(['ws:c'], 2);
@@ -299,26 +337,30 @@ test('POST /api/windows: the loopback Host and POST Origin guards apply', async 
 test('POST /api/windows: a malformed or oversized body is refused and leaves the held set as it was', async () => {
   const r = await windowsRoute();
   assert.equal((await r.post({ views: [V_OATS] })).status, 200);
-  assert.equal(r.requests.length, 1, 'a window showing a workspace the last set did not ask for: a read now');
+  assert.equal(r.requests.length, 0, 'the first set: every read so far covered every machine');
   for (const body of [{}, { views: 'ws:a' }, { views: [1] }, { views: [''] }, { views: ['a\u0001'] }, { views: [{}] }, { views: [V_OATS], extra: 1 },
     { views: Array.from({ length: MAX_WINDOW_VIEWS + 1 }, (_, i) => `ws:${i}`) }, [], null, 'not json']) {
     const answer = await r.post(body);
     assert.deepEqual([answer.status, answer.body.code], [400, 'E_BAD_ARGS'], JSON.stringify(body));
   }
-  assert.equal(r.requests.length, 1, 'no refusal reads');
+  assert.equal(r.requests.length, 0, 'no refusal reads');
   assert.equal((await r.post({ views: [V_OATS] })).status, 200);
-  assert.equal(r.requests.length, 1, 'the held set was the same: posting it again asks for nothing new');
+  assert.equal(r.requests.length, 0, 'the held set was the same: posting it again asks for nothing new');
+  assert.equal((await r.post({ views: [V_OATS, V_LAB] })).status, 200);
+  assert.equal(r.requests.length, 1, 'and it was held: a workspace it did not ask for reads now');
 });
 
 test('POST /api/windows: a new workspace reads at once; a window closing or the same set does not; the switcher reads every machine', async () => {
   const r = await windowsRoute();
-  await r.post({ views: [V_OATS] }); assert.equal(r.requests.length, 1);
-  await r.post({ views: [V_OATS, V_LAB] }); assert.equal(r.requests.length, 2, 'a window opened on another workspace');
-  await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, 2, 'a window closed: the next read asks for less, no read now');
-  await r.post({ views: [V_LAB, null] }); assert.equal(r.requests.length, 3, 'a window showing the switcher: an unfiltered read now');
-  await r.post({ views: [V_LAB, null] }); assert.equal(r.requests.length, 3);
-  await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, 3);
-  await r.post({ views: [] }); assert.equal(r.requests.length, 3, 'no window');
+  await r.post({ views: [V_OATS] }); assert.equal(r.requests.length, 0, 'no set before: the reads covered every machine');
+  await r.post({ views: [V_OATS, V_LAB] }); assert.equal(r.requests.length, 1, 'a window opened on another workspace');
+  await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, 1, 'a window closed: the next read asks for less, no read now');
+  await r.post({ views: [V_LAB, null] }); assert.equal(r.requests.length, 2, 'a window showing the switcher: an unfiltered read now');
+  await r.post({ views: [V_LAB, null] }); assert.equal(r.requests.length, 2);
+  await r.post({ views: [V_LAB] }); assert.equal(r.requests.length, 2, 'the switcher closed: its read covered every machine');
+  await r.post({ views: [] }); assert.equal(r.requests.length, 2, 'no window');
+  await r.post({ views: [V_OATS] }); assert.equal(r.requests.length, 2, 'a window opened after none: the reads with no window covered every machine');
+  await r.post({ views: [V_OATS, V_LAB] }); assert.equal(r.requests.length, 3);
 });
 
 test('POST /api/windows with a CLI without the word: the set is held, and no read is requested (every read covers every machine)', async () => {
