@@ -4040,12 +4040,12 @@ test("the retire plan says where a recovery would be written and what is declare
     `recovery: the home is copied to ${recoveryRootOf(a.home)} before the home is removed, when it changed since spawn; not copied: .ident, .ident-id-*, .ident-state (acme.ident)`,
     "recovery: uncommitted worktree state is copied there too",
   ]);
-  // Read from the baseline, never from the home: a changed baseline changes the note and nothing else.
+  // Read from the baseline, never from the home: a changed baseline changes the note and the plan's revision (#1065).
   const baseline = readJson(baselineOf(a.home));
   write(baselineOf(a.home), JSON.stringify({ ...baseline, disposableHome: [{ owner: "acme.ident", root: ".ident" }] }, null, 2) + "\n");
   const narrowed = notes(worktree, "dev-plan");
   assert.equal(recoveryNotes(narrowed)[0], `recovery: the home is copied to ${recoveryRootOf(a.home)} before the home is removed, when it changed since spawn; not copied: .ident (acme.ident)`);
-  assert.equal(narrowed.planRevision, planned.planRevision, "the plan revision does not depend on the recovery notes");
+  assert.notEqual(narrowed.planRevision, planned.planRevision, "a changed baseline changes the note and the revision");
   // One note lists at most 16 declared roots, in the baseline's order, then counts the rest.
   const many = Array.from({ length: 17 }, (_, i) => `.r${String(i).padStart(2, "0")}`);
   write(baselineOf(a.home), JSON.stringify({ ...baseline, disposableHome: many.map((root) => ({ owner: "acme.ident", root })) }, null, 2) + "\n");

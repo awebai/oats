@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
-import { PI_BRIDGE, bridgeLookup, bridgeLookupProblem, kernelLookup, kernelLookupResult, launchConfigPiFolder, piBridgeFailure, piBridgeFolders, piBridgeSkewWarnings, piBridgeState, piBridgeStepProblem, piFolders, planCliUpdate, planPiBridges, piBridgePlanLines, registryVersion, whyLookedAt } from "../lib/pi-bridge.mjs";
+import { PI_BRIDGE, bridgeLookup, bridgeLookupProblem, kernelLookup, kernelLookupResult, piBridgeFailure, piBridgeFolders, piBridgeSkewWarnings, piBridgeState, piBridgeStepProblem, piFolders, planCliUpdate, planPiBridges, piBridgePlanLines, registryVersion, whyLookedAt } from "../lib/pi-bridge.mjs";
 import { compareVersions, parseVersion } from "../lib/resolve.mjs";
 
 const bases = [];
@@ -24,19 +24,8 @@ function host() {
 const pi = (name, env, more = {}) => ({ name, harness: "pi", args: [], env, ...more });
 const configs = (...list) => Object.fromEntries(list.map((c) => [c.name, c]));
 
-test("launchConfigPiFolder: a literal, a reference, a leading ~, and the two problems", () => {
-  const base = { HOME: "/home/u", PI_ELSEWHERE: "/srv/pi", PI_TILDE: "~/pi-b" };
-  assert.equal(launchConfigPiFolder({}, base), null, "the configuration leaves it to the host");
-  assert.equal(launchConfigPiFolder({ OTHER: "/x" }, base), null);
-  assert.deepEqual(launchConfigPiFolder({ PI_CODING_AGENT_DIR: "/srv/a b" }, base), { dir: "/srv/a b" });
-  assert.deepEqual(launchConfigPiFolder({ PI_CODING_AGENT_DIR: { fromEnv: "PI_ELSEWHERE" } }, base), { dir: "/srv/pi" });
-  assert.deepEqual(launchConfigPiFolder({ PI_CODING_AGENT_DIR: "~/pi-a" }, base), { dir: "/home/u/pi-a" });
-  assert.deepEqual(launchConfigPiFolder({ PI_CODING_AGENT_DIR: "~" }, base), { dir: "/home/u" });
-  assert.deepEqual(launchConfigPiFolder({ PI_CODING_AGENT_DIR: { fromEnv: "PI_TILDE" } }, base), { dir: "/home/u/pi-b" });
-  assert.deepEqual(launchConfigPiFolder({ PI_CODING_AGENT_DIR: { fromEnv: "PI_UNSET" } }, base), { problem: "PI_CODING_AGENT_DIR references PI_UNSET, not set on this host", fromEnv: "PI_UNSET" });
-  assert.deepEqual(launchConfigPiFolder({ PI_CODING_AGENT_DIR: "rel/pi" }, base), { problem: 'PI_CODING_AGENT_DIR "rel/pi" is not an absolute path' });
-  assert.deepEqual(launchConfigPiFolder({ PI_CODING_AGENT_DIR: "~other/pi" }, base), { problem: 'PI_CODING_AGENT_DIR "~other/pi" is not an absolute path' }, "only a bare ~ is the user's home");
-});
+// A launch configuration's pi folder is read by launchConfigFolder (lib/harness-trust.mjs), the one
+// reader for every harness: test/harness-trust.test.mjs pins it, pi's leading ~ included.
 
 test("piFolders: the default alone, when nothing else names a folder", () => {
   const h = host();
