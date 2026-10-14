@@ -154,6 +154,30 @@ test("the bound runs from the block's begin, not from a kept-back prefix of it",
   assert.deepEqual(r.writes, [`${SYNC_BEGIN}held`]);
 });
 
+test("a new kept-back prefix gets its own bound; one that only grows keeps its first", () => {
+  // Replacement: an old ESC is written with unrelated text, and a new prefix is kept back
+  // 1 ms before the old bound. The block it starts must not be cut at that old bound.
+  const r = rig();
+  r.push("\x1b");
+  r.clock.advance(SYNC_TIMEOUT_MS - 1);
+  r.push(`[31mtext${SYNC_BEGIN.slice(0, 4)}`);
+  r.clock.advance(1);
+  assert.deepEqual(r.writes, ["\x1b[31mtext"], "the new prefix is still held at the old bound");
+  r.clock.advance(1);
+  r.push(BLOCK.slice(4, 30)); r.clock.advance(1); r.push(BLOCK.slice(30));
+  assert.deepEqual(r.writes, ["\x1b[31mtext", BLOCK]);
+  assert.equal(r.clock.pending(), 0);
+  // Extension: the same prefix growing keeps the deadline it got when it was first kept back.
+  const e = rig();
+  e.push("x\x1b");
+  e.clock.advance(600);
+  e.push("[?2");
+  e.clock.advance(SYNC_TIMEOUT_MS - 600 - 1);
+  assert.deepEqual(e.writes, ["x"]);
+  e.clock.advance(1);
+  assert.deepEqual(e.writes, ["x", "\x1b[?2"], "written at the first prefix's bound");
+});
+
 test("the timeout is the caller's to set", () => {
   const r = rig({ timeoutMs: 50 });
   r.push(SYNC_BEGIN);

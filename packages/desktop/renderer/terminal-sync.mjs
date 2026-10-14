@@ -38,13 +38,16 @@ export function createSyncGate({ write, timeoutMs = SYNC_TIMEOUT_MS,
   function push(data) {
     if (disposed) return;
     if (typeof data !== 'string') { flush(); write(data); return; }
-    let rest = held + data, from = scanned, out = '';
+    // carried: rest still starts with the prefix kept back last time, so a prefix kept
+    // back now that is all of rest only extends it and keeps its deadline.
+    let rest = held + data, from = scanned, out = '', carried = !syncing && held !== '';
     held = ''; scanned = 0;
     while (rest) {
       if (!syncing) {
         const at = rest.indexOf(SYNC_BEGIN);
         if (at < 0) {
           const keep = trailingPrefix(rest, SYNC_BEGIN);
+          if (!(carried && keep === rest.length)) disarm(); // a new prefix gets its own bound
           out += rest.slice(0, rest.length - keep); held = rest.slice(rest.length - keep);
           break;
         }
