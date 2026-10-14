@@ -104,7 +104,7 @@ other than the one the window is on.
 |---|---|---|
 | each agent window it creates | `window-style default`, `window-active-style default`, `cursor-colour default` | that window (`set-option -w`), by window id |
 | each agent window, and the `hq` window of a session it creates | `window-size latest`, `aggressive-resize on` | that window |
-| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` in the pane's environment | that pane's command |
+| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` in the pane's environment, and none of the variables the launch removes ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)) | that pane's command |
 
 So an agent pane takes the colours of the terminal that views it, whatever
 the server's own defaults say, and on tmux 3.1 or later the window follows
@@ -200,7 +200,11 @@ global environment. A pane gets its session's environment over that (the
 variables tmux's `update-environment` names, taken from whoever created the
 session, and anything set on the session with `set-environment -t`), plus
 what the launch command sets (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, the
-capabilities' and the launch configuration's variables). **A pane's
+capabilities' and the launch configuration's variables), less what the
+launch removes: a variable one of its capabilities declares and its hooks
+leave out is not inherited from the session or the server
+([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)).
+**A pane's
 environment is its session's, `PATH` included, whoever creates its window**:
 an instance, the Desktop or an operator's shell. The tmux client that creates
 the window (or respawns the pane, in a restart in place) runs with only
@@ -220,6 +224,13 @@ first. So:
 - The rest of the ambient environment follows the server's first creator,
   and a server that already runs keeps what it started with. Creating a
   session or a window on it changes nothing global.
+- No window inherits another instance's launch environment through the
+  session or the server: OATS creates a session with no `-e` and sets no
+  instance's variables on it, and each window carries its instance's
+  variables on its own command. A value that reached the server's or a
+  session's environment some other way (a server started from inside an
+  instance's pane, a `set-environment`) stays there, and reaches a launch
+  only when none of that launch's capabilities declares the name.
 
 **The harness is looked up where its pane looks it up.** A launch whose
 executable is a bare name (the harness's own, or a launch configuration's
@@ -290,11 +301,17 @@ and the variable that moves a harness's folder (`CLAUDE_CONFIG_DIR`,
    which is resolved on this host from the process that runs the command, by
    design. The pane's command line applies it, so nothing of tmux is read
    for that name.
-2. When a server runs: the session's entry, and the server's global one only
+2. A selector the launch removes: one of its capabilities declares it and
+   their hooks leave it out
+   ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)).
+   It reads as not set, whatever the session or the server holds. This is
+   known once the hooks have answered: the checks of a start, a spawn's
+   checks on the session it gets, its folder-trust check, and readiness.
+3. When a server runs: the session's entry, and the server's global one only
    when the session has no entry for that name. Both are read with the
    strict reader below, in one `show-environment` each for all five names,
-   and only when a check needs a name that row 1 does not decide.
-3. When this spawn or start starts the server: the environment the server is
+   and only when a check needs a name that rows 1 and 2 do not decide.
+4. When this spawn or start starts the server: the environment the server is
    created with (your login environment, or its fallback, below).
 
 None of them reads the calling process's value in place of the pane's. The
@@ -362,7 +379,10 @@ than the server's checked one account and launched with another
 - **One limit.** A spawn's package check runs before the spawn hooks, so it
   does not know a selector a capability's hook sets for the launch
   ([#1041](https://github.com/awebai/oats/issues/1041)); a start's does.
-  The folder-trust check does not read the capabilities' variables.
+  For the same reason it does not know which declared selector the launch
+  will remove (row 2), and reads the pane's in its place; the spawn's check
+  on the session it gets does. The folder-trust check does not read the
+  capabilities' variables.
 
 <a id="no-prediction"></a>
 **When no pane can be predicted, the check says what it read instead.** No
