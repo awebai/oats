@@ -251,6 +251,16 @@ module's number follows the runner that builds it: the symbols it needs at
 2.34 are the ones a module gets when it is built on a system whose glibc is
 2.34 or later.
 
+**The build now holds that number.** `docs/desktop.md` states it (glibc 2.34)
+and `packages/desktop/scripts/linux-floor.json` holds it with libstdc++'s
+`GLIBCXX` and `CXXABI` (`packages/desktop/test/linux-floor.test.mjs` keeps the
+two equal). On the Linux leg of both workflows, `dist:smoke` unpacks the DEB
+and the AppImage (its runtime and the libraries it adds included), reads the
+version-needs table of every ELF file with `readelf -V -W`, and fails naming
+each file that needs a newer version than the floor. A move of the runner, a
+new `node-pty` or a new Electron that raises it is then a pull request that
+changes that file and the page together.
+
 ## Release-notes entries
 
 A release ships one notes file, `docs/release-notes/v<version>.md`. Between
