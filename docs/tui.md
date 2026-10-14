@@ -554,7 +554,9 @@ what it needs, the mouse for scrolling among it, and puts that back when it
 ends. Then `oats tui` sets its modes again. A SIGQUIT does not end
 `oats tui` while an agent has the terminal (a second `Ctrl+\`, pressed as the
 viewer leaves, is that signal). SIGINT, SIGTERM and SIGHUP end the viewer
-first and then `oats tui`, with the status of the table above.
+first and then `oats tui`, with the status of the table above. A viewer
+that has not ended 3 seconds after it was asked, or at a second signal, is
+left as it is, and `oats tui` ends without it.
 
 `Ctrl+C` is the quit key: in raw mode the terminal sends it as a byte, not as
 a signal, so it answers 0. A SIGINT sent from outside (`kill -INT`) answers
@@ -603,8 +605,10 @@ in your shell.
   no tmux command for it.
 - It starts no daemon, opens no socket and writes no file. The processes it
   starts are the reads above and, when you open an agent, the viewer; none
-  outlives it on every way out a process can handle; after SIGKILL a read in
-  flight runs to its own end, and a viewer stays until you leave it.
+  outlives it on every way out a process can handle, except a viewer that
+  does not end when asked (see
+  [above](#what-it-changes-in-your-terminal-and-restores)); after SIGKILL a
+  read in flight runs to its own end, and a viewer stays until you leave it.
 
 ## Errors
 
