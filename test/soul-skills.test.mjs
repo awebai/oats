@@ -14,8 +14,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import fs, { chmodSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { dirname, join, sep } from "node:path";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { FILES_PER_SKILL, TEXT_LIMIT } from "../lib/capability-show.mjs";
@@ -58,7 +59,9 @@ function assertInvariants(skills) {
   }
 }
 async function listed(dir) {
+  const cwd = process.cwd();
   const r = await soulSkills(dir);
+  assert.equal(process.cwd(), cwd, "the working directory is restored");
   assertInvariants(r.skills);
   return r;
 }
@@ -121,14 +124,14 @@ test("soulSkills: a 300-file skill lists the first 200 in codepoint order, files
   assert.deepEqual(many.files.map((f) => f.path), ["skills/many/SKILL.md", ...Array.from({ length: 199 }, (_, i) => `skills/many/f${String(i).padStart(3, "0")}.md`)]);
 });
 
-test("soulSkills: a file over 4 MiB is listed with its real size and its first TEXT_LIMIT bytes; a SKILL.md that large has no description", async (t) => {
+test("soulSkills: a file over 4 MiB is listed with its real size and its first TEXT_LIMIT bytes; a SKILL.md that large still has its description (parsed from the whole file)", async (t) => {
   const huge = 4 * 1024 * 1024 + 7;
   const { dir } = soulDir(t, {
     "skills/big/SKILL.md": doc("big") + "é".repeat(huge / 2),
     "skills/big/huge.md": "a".repeat(TEXT_LIMIT - 1) + "é" + "b".repeat(huge),
   });
   const [big] = (await listed(dir)).skills;
-  assert.equal(big.description, null, "parsed from at most 4 MiB, as capabilities show reads a SKILL.md");
+  assert.equal(big.description, "big", "the whole readable SKILL.md is parsed, whatever its size");
   const [skillMd, file] = big.files;
   assert.equal(skillMd.truncated, true);
   assert.equal(file.bytes, TEXT_LIMIT - 1 + 2 + huge);
@@ -232,6 +235,72 @@ test("soulSkills: a listed file that cannot be read makes its skill's files null
   assert.match(problems[0].message, /^skills: skills\/a: could not list its files: could not read skills\/a\/locked\.md \(EACCES\)$/);
   // The skill whose files are not listed spends nothing of the budget.
   assert.deepEqual(skills[1].files.map((f) => f.path), ["skills/b/SKILL.md"]);
+});
+
+test("soulSkills: a child skill directory it cannot search is not 'no skill': skills null with a problem", { skip: isRoot && "root searches a mode-000 directory" }, async (t) => {
+  const { dir } = soulDir(t, { "skills/s/SKILL.md": doc("s"), "skills/t/SKILL.md": doc("t") });
+  const locked = join(dir, "skills", "s");
+  chmodSync(locked, 0o000);
+  let answer;
+  try { answer = await listed(dir); } finally { chmodSync(locked, 0o755); }
+  assert.equal(answer.skills, null);
+  assert.equal(answer.problems.length, 1);
+  assert.equal(answer.problems[0].code, "soul-skills-unreadable");
+  assert.match(answer.problems[0].message, /^skills: could not read skills\/ \(EACCES\)$/);
+});
+
+/** Run `fn` with node:fs's openSync replaced by `wrap(real)` (as the kernel's named import sees it), restored after. */
+async function withOpenSync(wrap, fn) {
+  const real = fs.openSync;
+  fs.openSync = wrap(real);
+  syncBuiltinESMExports();
+  try { return await fn(); } finally { fs.openSync = real; syncBuiltinESMExports(); }
+}
+/** Run `fn` with process.chdir replaced by `wrap(real)`, restored after. */
+async function withChdir(wrap, fn) {
+  const real = process.chdir;
+  process.chdir = wrap(real);
+  try { return await fn(); } finally { process.chdir = real; }
+}
+const raceFixture = (t) => {
+  const fx = soulDir(t, { "skills/s/SKILL.md": doc("s"), "skills/s/refs/note.md": "SAFE" });
+  mkdirSync(join(fx.base, "outside"));
+  writeFileSync(join(fx.base, "outside", "note.md"), "OUTSIDE_SECRET");
+  writeFileSync(join(fx.base, "outside", "SKILL.md"), doc("OUTSIDE_SECRET"));
+  return fx;
+};
+/** Swap the directory `dir` for a symlink to `target` (the original moved aside): a real filesystem change. */
+const swap = (dir, target) => { renameSync(dir, `${dir}-original`); symlinkSync(target, dir); };
+
+test("soulSkills: an ancestor directory swapped for a symlink just before a file is opened cannot redirect the read (the open is relative to the proven directory)", async (t) => {
+  const { base, dir } = raceFixture(t);
+  let swapped = false;
+  const answer = await withOpenSync((real) => (path, ...rest) => {
+    if (path === "note.md" && !swapped) { swapped = true; swap(join(dir, "skills", "s", "refs"), join(base, "outside")); }
+    return real(path, ...rest);
+  }, () => listed(dir));
+  assert.equal(swapped, true, "the swap happened at the open");
+  assert.ok(!JSON.stringify(answer).includes("OUTSIDE_SECRET"), JSON.stringify(answer));
+  const note = answer.skills[0].files.find((f) => f.path === "skills/s/refs/note.md");
+  assert.equal(note.text, "SAFE", "the file read is the one in the directory that was proven, wherever it moved");
+});
+
+test("soulSkills: a directory swapped for a symlink just before it is entered is refused — that skill's files null with a problem, nothing outside read", async (t) => {
+  for (const [what, swapAt, target] of [["a nested directory", `${sep}refs`, "refs"], ["the skill directory", `${sep}skills${sep}s`, "s"]]) {
+    const { base, dir } = raceFixture(t);
+    let swapped = false;
+    const answer = await withChdir((real) => (path) => {
+      if (!swapped && String(path).endsWith(swapAt)) { swapped = true; swap(path, join(base, "outside")); }
+      return real(path);
+    }, () => listed(dir));
+    assert.equal(swapped, true, what);
+    assert.ok(!JSON.stringify(answer).includes("OUTSIDE_SECRET"), `${what}: ${JSON.stringify(answer)}`);
+    assert.deepEqual(answer.skills.map((s) => [s.name, s.files]), [["s", null]], what);
+    assert.equal(answer.problems.length, 1, what);
+    assert.equal(answer.problems[0].code, "soul-skill-files-unreadable");
+    assert.match(answer.problems[0].message, /^skills: skills\/s: could not list its files: skills\/s(\/refs)? is not where it was listed/, what);
+    if (target === "s") assert.equal(answer.skills[0].description, null, "the SKILL.md behind the swapped directory is not read");
+  }
 });
 
 test("withSkills: a soul target gets skills (and skillsProblems); a copy error or an unresolved soul is null with no added problem; a home is untouched; the document carries both", async (t) => {

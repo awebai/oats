@@ -491,16 +491,18 @@ capabilities' skills), read from the same soul copy as `instructions`:
 
 - `skills` is the list sorted by `name` in codepoint order; `[]` when the
   soul has no skills of its own (no `skills/` directory, or none with a
-  `SKILL.md`); `null` when they could not be listed, with a problem below.
+  `SKILL.md`); `null` when they could not be listed, with a problem below,
+  including a skill directory whose `SKILL.md` could not be examined.
   It is also `null` when the soul's copy failed, and that copy's problem
   explains it.
 - A skill is a child directory of `skills/` holding a regular-file
   `SKILL.md`, or `skills/` itself when it holds one (`name` is then
   `skills`). `path` is POSIX and relative to the soul directory. Its
-  `description` is the `SKILL.md` front matter's `description`, by the rules
-  of [`oats capabilities show`](#oats-capabilities-show): `null` when the
-  file is unreadable, binary, has no such string, or is over 4 MiB, and cut
-  to 1024 bytes.
+  `description` is the `SKILL.md` front matter's `description`, parsed from
+  the whole file by the rules of
+  [`oats capabilities show`](#oats-capabilities-show): `null` when the file
+  is unreadable, a symbolic link or binary, or has no such string, and cut to
+  1024 bytes.
 - `files` is every regular file under the skill directory, recursively,
   sorted by `path` in codepoint order, each `path` relative to the soul
   directory. At most 200 are listed; beyond that `filesTruncated` is `true`.
@@ -523,8 +525,10 @@ capabilities' skills), read from the same soul copy as `instructions`:
 - No symbolic link is followed. A symlinked file or directory inside a skill
   is not listed, a symlinked skill directory is not a skill, and a symlinked
   `skills/` makes `skills` `null` with a problem. FIFOs, sockets and devices
-  are not listed and never opened. Every file is proved to lie inside its
-  skill before it is read.
+  are not listed and never opened. Every directory is proved to be the one
+  inside the skill before it is listed or read from, and each file is opened
+  from its proven directory, so a directory swapped for a symbolic link
+  meanwhile cannot redirect a read; the skill's `files` is then `null`.
 - Problems are `{code, message}` in `problems[]`, each message starting
   `skills: `: `soul-skills-unreadable` when the list is `null`, and
   `soul-skill-files-unreadable`, naming the skill's `path`, for a skill whose

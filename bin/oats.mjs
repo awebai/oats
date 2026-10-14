@@ -4799,12 +4799,14 @@ Usage:
                                             a detached external retirement runs
   oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
       [--agents-root <abs>]] [--home <abs>]   (harness defaults, editability, instructions),
-      [--instructions] [--max-age <s>]      installed capabilities with health, effective
-      [--json]                              layer bindings and activation, declared
+      [--instructions] [--skills]           installed capabilities with health, effective
+      [--max-age <s>] [--json]              layer bindings and activation, declared
                                             operations with availability; --home answers the
                                             running home's recorded modules and their drift
                                             from the deployment; --instructions (--soul only)
-                                            adds the AGENTS.md a spawn of the soul here would write
+                                            adds the AGENTS.md a spawn of the soul here would write;
+                                            --skills (--soul only) adds the soul's own skills, the
+                                            ones a spawn copies, with each file's text
   oats operation run <layer>:<name>          run an operation the soul's core capability for that
       (--home <abs> | --soul <name> [--dir <d>])  layer declares (knowledge:harvest, knowledge:
       [--arg k=v ...] [--json]              inspect ...): resolved from the home's recorded
