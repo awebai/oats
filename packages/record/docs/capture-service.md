@@ -434,7 +434,11 @@ selected stream receives a share of the record/byte budget, so a large journal
 does not consume every selected stream's allowance. The scheduler must visit
 both live streams and indexed streams whose journals disappeared, and restart
 its index sweep after an atomic union reset. The group helper never declares
-the entire root complete. A no-op group performs no index write transaction;
+the entire root complete. It defaults to returning `resetRequired` without
+mutating index rows when reset is needed. The scheduler must reserve a fresh
+full worker allowance for that atomic operation; the detection unit and the
+finalization reserve cannot implicitly start it. Explicit reset permission is
+an internal seam, not a public policy override. A no-op group performs no index write transaction;
 its capture-state transaction remains separate from the index commit. A failure
 between the two commits is recovered through journal version/epoch validation,
 not by assuming a cross-database atomic transaction.

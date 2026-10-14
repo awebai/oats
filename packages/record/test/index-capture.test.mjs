@@ -14,7 +14,7 @@ const turn=n=>finishTurn({v:1,ts:'2026-01-01T00:00:00Z',from:'fixture',kind:'mai
 function fixture(t){const root=fs.mkdtempSync(join(tmpdir(),'index-capture-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return root;}
 function unit(root,names,options={}) {
  const store=new RecordStore(root,{owner:'fixture'}),index=new RecordIndex(store);
- try{return withCaptureGroup(store,names,()=>indexCaptureGroup(index,names,options));}finally{index.close();}
+ try{return withCaptureGroup(store,names,()=>indexCaptureGroup(index,names,{allowReset:true,...options}));}finally{index.close();}
 }
 function countSql(fn){
  const sqlite=require('node:sqlite'),Original=sqlite.DatabaseSync,counts={};
@@ -96,4 +96,31 @@ test('stop commits completed rows and lock-order misuse is refused before work',
   assert.throws(()=>withCaptureGroup(store,names,()=>indexCaptureGroup(index,['fixture~other'])),/must belong/);
  }finally{index.close();}
  assert.equal(unit(root,names).turnsIndexed,2);
+});
+
+
+test('reset detection defaults to deferral without any index mutation, even after validation progress',t=>{
+ const root=fixture(t),store=new RecordStore(root,{owner:'fixture'}),names=['fixture~a','fixture~b'];
+ store.appendBatch(names[0],[turn(1),turn(2)]);store.append(names[1],turn(3));unit(root,names);
+ const index=new RecordIndex(store);
+ try{
+  index.db.exec('DELETE FROM index_bytes');
+  fs.unlinkSync(join(root,'index','capture.db'));
+  const before=index.db.prepare('SELECT * FROM turns ORDER BY id').all();
+  let resets=0;const reset=index.reset.bind(index);index.reset=()=>{resets++;return reset();};
+  const count=countSql(()=>{
+   const result=withCaptureGroup(store,names,()=>indexCaptureGroup(index,names,{maxRecords:2}));
+   assert.equal(result.validation.records,2);
+   assert.equal(result.resetRequired,true);assert.equal(result.reset,false);assert.equal(result.turnsIndexed,0);
+   assert.ok(result.streams.every(s=>s.phase==='reset'));
+  });
+  assert.equal(resets,0);assert.equal(count.index,undefined,'detection reuses the open index, without a second connection');
+  assert.deepEqual(index.db.prepare('SELECT * FROM turns ORDER BY id').all(),before);
+  assert.equal(index.db.prepare('SELECT count(*) AS n FROM index_bytes').get().n,0);
+  // The owning atomic reset runs separately, after the scheduler has admitted
+  // its full allowance. Its commit preserves the ordinary old/empty view.
+  reset();assert.equal(index.db.prepare('SELECT count(*) AS n FROM turns').get().n,0);
+  const resumed=withCaptureGroup(store,names,()=>indexCaptureGroup(index,names));
+  assert.equal(resumed.turnsIndexed,3);assert.ok(resumed.streams.every(s=>s.phase==='complete'));
+ }finally{index.close();}
 });

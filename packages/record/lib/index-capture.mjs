@@ -20,8 +20,9 @@ function cursorValid(store, stream, row, checkpoint) {
 }
 
 export function indexCaptureGroup(index, streams, {
-  maxRecords = 2000, maxBytes = 8 * 1024 * 1024, stopped = () => false,
+  maxRecords = 2000, maxBytes = 8 * 1024 * 1024, stopped = () => false, allowReset = false,
 } = {}) {
+  if (typeof allowReset !== "boolean") throw new Error("invalid index reset admission");
   const store = index.store, context = captureContext(store);
   if (!context?.state.depth) throw new Error("bounded indexing requires an active capture work group");
   const names = [...new Set(streams)].sort();
@@ -49,6 +50,13 @@ export function indexCaptureGroup(index, streams, {
   // Cross-stream tombstones and first-stream attribution make a per-stream
   // row deletion unsound. Keep the reviewed atomic union reset. Publication
   // of its cleared cursor tables is part of that same SQLite transaction.
+  if (reset && !allowReset) {
+    // The scheduler must end this work unit and reserve a fresh full worker
+    // allowance for atomic reset. Detection is not permission to start it in
+    // a nearly exhausted capture/index unit or the finalization reserve.
+    return { reset: false, resetRequired: true, turnsIndexed: 0, bytesIndexed: 0, validation: work,
+      streams: names.map(stream => ({ stream, phase: "reset" })) };
+  }
   if (reset) index.reset();
   const setCount = index.db.prepare("INSERT INTO index_state VALUES (?, ?) ON CONFLICT(stream) DO UPDATE SET indexed_count=excluded.indexed_count");
   const setBytes = index.db.prepare("INSERT INTO index_bytes VALUES (?, ?, ?, ?) ON CONFLICT(stream) DO UPDATE SET bytes=excluded.bytes,indexed_count=excluded.indexed_count,epoch=excluded.epoch");
