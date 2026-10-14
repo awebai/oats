@@ -33,6 +33,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { DerivedState, fileVersion, sameVersion, invalidateLegacyMaps } from "./derived-state.mjs";
+import { captureContext } from "./capture-context.mjs";
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -338,7 +339,13 @@ export class RecordStore {
   // concurrent writer's already-fsynced turn. Exclusive-create lockfile
   // carrying an owner token; see the stream-lock helpers above for how
   // staleness is proven and why release is ownership-checked.
-  withStreamLock(streamId, fn) {
+  withStreamLock(streamId, fn, { check = () => {} } = {}) {
+    check();
+    const context = captureContext(this);
+    if (context) {
+      if (!context.held.has(streamId)) throw new StoreError(`stream outside capture work group: ${streamId}`);
+      return fn();
+    }
     const dir = join(this.streamsDir(), streamId);
     mkdirSync(dir, { recursive: true });
     const lockPath = join(dir, ".lock");
@@ -354,6 +361,7 @@ export class RecordStore {
     // buy ~25ms on the crash-recovery path and reopen that hole; it is not
     // worth it.
     for (;;) {
+      check();
       if (createLock(lockPath, dir, token)) break;
       const held = readLock(lockPath); // throws on anything but ENOENT
       const reclaimError =
@@ -445,6 +453,8 @@ export class RecordStore {
   }
 
   withDerived(fn) {
+    const context = captureContext(this);
+    if (context) return fn(context.state);
     const state = new DerivedState(this.root);
     try { return fn(state); } finally { state.close(); }
   }

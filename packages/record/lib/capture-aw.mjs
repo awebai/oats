@@ -20,6 +20,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { DerivedState, statVersion, sameVersion } from "./derived-state.mjs";
+import { captureContext } from "./capture-context.mjs";
 
 import {
   projectCommLogEntry,
@@ -93,7 +94,7 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
     const stat = fstatSync(fd, { bigint: true });
     if (!stat.isFile()) throw new Error(`log source is not a regular file: ${path}`);
     const version = statVersion(stat), end = version.size;
-    state = new DerivedState(store.root);
+    state = captureContext(store)?.state ?? new DerivedState(store.root);
     const generation = state.get("reset", streamId.split("~")[0] + ":aw") ?? "";
     const key = `${streamId}:${path}`;
     let previous = incremental ? state.get("aw", key) : null;
@@ -138,7 +139,7 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
     complete = true;
     flush();
     return { entries, appended, skipped, failed };
-  } finally { try { state?.close(); } finally { closeSync(fd); } }
+  } finally { try { if (!captureContext(store)) state?.close(); } finally { closeSync(fd); } }
 }
 
 // Capture one comm-log file into `<owner>~aw`. The account name is the

@@ -33,6 +33,7 @@ import { bufferLines } from "./file-lines.mjs";
 import { DerivedState, fileVersion, sameVersion, statVersion } from "./derived-state.mjs";
 import { compareTranscriptPrefix } from "./transcript-prefix.mjs";
 import { isDeepStrictEqual } from "node:util";
+import { captureContext } from "./capture-context.mjs";
 
 export const SESSION_STREAM_SOURCE = "cc";
 
@@ -140,9 +141,9 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
   const fmt = SESSION_FORMATS[format];
   if (!fmt) throw new Error(`unknown session format ${format}`);
   const ign = ignore ?? loadIgnore(store.root);
-  const offsets = new DerivedState(store.root);
+  const context = captureContext(store), offsets = context?.state ?? new DerivedState(store.root);
   try {
-  offsets.db.exec("CREATE TEMP TABLE captured_streams (stream TEXT PRIMARY KEY)");
+  offsets.db.exec("CREATE TEMP TABLE IF NOT EXISTS captured_streams (stream TEXT PRIMARY KEY); DELETE FROM captured_streams");
   const markStream = offsets.db.prepare("INSERT OR IGNORE INTO captured_streams VALUES (?)");
   let sessions = 0;
   let appended = 0;
@@ -331,7 +332,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     streams,
     stream: `${owner}~${fmt.source}.*`,
   };
-  } finally { offsets.close(); }
+  } finally { if (!context) offsets.close(); }
 }
 
 // One pass over every known format at its default roots. The ignore list

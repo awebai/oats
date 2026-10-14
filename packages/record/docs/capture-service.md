@@ -167,6 +167,21 @@ For such leftovers, stop all capture/library users, establish that no caller is
 using the specific allocation, and remove only that confirmed orphan; do not
 blanket-delete the scratch area while callers may be active. No age-only cleanup.
 
+## Internal transaction groups
+
+The package-private `capture-context.mjs` helper can group synchronous work over
+at most 128 streams. It acquires every stream lock in canonical order before
+starting a shared `capture.db` transaction. Helpers reuse that connection and
+use savepoints for nested failure isolation; journal appends still fsync before
+the group commits derived offsets/IDs. No additional stream may be acquired
+inside the transaction. This preserves public writers' stream-before-database
+lock order. Group acquisition accepts an internal stop check and unwinds partial
+acquisitions on failure. Callers must select bounded work before entering a group;
+the helper alone does not turn a full reconciliation into a bounded pass.
+Public synchronous library calls do not implicitly enter this context or acquire
+a root capture lock. Healthy derived-state opens do not run a schema write
+transaction, and identical state values do not produce redundant row updates.
+
 ## First-upgrade cost
 
 The first capture after upgrade must reconcile existing journals and rebuild the
