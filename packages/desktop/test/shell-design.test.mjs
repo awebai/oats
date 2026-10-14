@@ -216,11 +216,11 @@ test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on m
   for (const [key, action] of [["f", "sidebar.focusFilter"], ["n", "app.chooseSoul"]]) {
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), action);
   }
-  // Linux/Windows: Ctrl+F outside the terminal; "Spawn instance" is Ctrl+Shift+N, which also
-  // works inside it (spec F) while plain Ctrl+N stays the program's.
-  assert.equal(matchEvent({ key: "f", ctrlKey: true }, { isMac: false, insideTerminal: false }), "sidebar.focusFilter");
-  assert.equal(matchEvent({ key: "n", ctrlKey: true }, { isMac: false, insideTerminal: false }), null);
+  // Linux/Windows: the filter is Ctrl+Shift+F and "Spawn instance" Ctrl+Shift+N, both inside the
+  // terminal and out, while plain Ctrl+F and Ctrl+N stay the program's.
+  for (const key of ["f", "n"]) assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), null);
   for (const insideTerminal of [false, true]) {
+    assert.equal(matchEvent({ key: "F", ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), "sidebar.focusFilter");
     assert.equal(matchEvent({ key: "N", ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), "app.chooseSoul");
   }
 });
@@ -485,7 +485,7 @@ test('the palette keeps focus mode reachable without the bar and names the insta
   });
   assert.equal(commands.some(item => /context panel/i.test(item.label)), false, 'the panel is the instance panel now');
   const panelCommand = commands.find(item => item.label === 'Instance panel: show / hide'); assert.ok(panelCommand);
-  assert.equal(panelCommand.detail(), 'Ctrl+I');
+  assert.equal(panelCommand.detail(), 'Ctrl+Shift+I');
   s.contextPanel.setContext({ workspace: 'A', instance: { instance: 'selected', home: '/A/selected' }, key: 'exact:A:selected' });
   panelCommand.run(); assert.equal(s.document.getElementById('context-panel').classList.contains('is-collapsed'), true);
   const focusCommand = commands.find(item => item.label === 'Focus mode: toggle'); assert.ok(focusCommand);
@@ -525,19 +525,28 @@ test('focusRoster exits focus mode, reveals the sidebar and focuses its filter t
   assert.equal(s.document.activeElement, s.document.querySelector('.ctx-filter'));
 });
 
-test('panel.toggle defaults to Mod+I (no conflict), focus mode has no default, and neither captures Linux terminal bytes', t => {
+test('panel.toggle defaults to ⌘I / Ctrl+Shift+I (no conflict) and fires in a terminal; focus mode has no default and does not', t => {
   shell(t);
-  assert.equal(DEFAULT_KEYMAP['panel.toggle'], 'Mod+I'); assert.equal(getBinding('panel.toggle'), 'Mod+I');
-  assert.deepEqual(Object.entries(DEFAULT_KEYMAP).filter(([, chord]) => chord === 'Mod+I').map(([id]) => id), ['panel.toggle']);
-  assert.equal(matchEvent({ key: 'i', ctrlKey: true }, { isMac: false, insideTerminal: false }), 'panel.toggle');
-  assert.equal(matchEvent({ key: 'i', ctrlKey: true }, { isMac: false, insideTerminal: true }), null, 'Ctrl+I (Tab) stays with the program in a Linux terminal');
+  assert.deepEqual(DEFAULT_KEYMAP['panel.toggle'], { mac: 'Mod+I', other: 'Ctrl+Shift+I' });
+  assert.equal(getBinding('panel.toggle', true), 'Mod+I'); assert.equal(getBinding('panel.toggle', false), 'Ctrl+Shift+I');
+  for (const isMac of [true, false]) {
+    const chord = getBinding('panel.toggle', isMac);
+    assert.deepEqual(listActions().filter(a => a.id !== 'panel.toggle' && getBinding(a.id, isMac) === chord).map(a => a.id), [], `mac=${isMac}: ${chord} is the panel's alone`);
+  }
+  assert.equal(TERMINAL_ALLOWLIST.includes('panel.toggle'), true);
+  // Linux/Windows: Ctrl+Shift+I (e.key "I") inside the terminal and out; plain Ctrl+I (Tab) is the program's everywhere.
+  for (const insideTerminal of [false, true]) {
+    assert.equal(matchEvent({ key: 'I', ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), 'panel.toggle');
+    assert.equal(matchEvent({ key: 'i', ctrlKey: true }, { isMac: false, insideTerminal }), null, 'Ctrl+I (Tab) stays with the program');
+  }
   assert.equal(matchEvent({ key: 'i', metaKey: true }, { isMac: true, insideTerminal: true }), 'panel.toggle');
   assert.equal(matchEvent({ key: 'i', metaKey: true, altKey: true }, { isMac: true, insideTerminal: false }), null, '⌥⌘I (the dev tools) is not this action');
   assert.equal(DEFAULT_KEYMAP['app.focusMode'], undefined); assert.equal(getBinding('app.focusMode'), null);
-  for (const [id, key] of [['panel.toggle', 'j'], ['app.focusMode', 'u']]) {
-    assert.equal(TERMINAL_ALLOWLIST.includes(id), false);
+  // A rebind keeps each action's terminal policy (by id): the panel's fires in a Linux terminal, focus mode's does not.
+  for (const [id, key, inLinuxTerminal] of [['panel.toggle', 'j', 'panel.toggle'], ['app.focusMode', 'u', null]]) {
+    assert.equal(TERMINAL_ALLOWLIST.includes(id), inLinuxTerminal !== null);
     t.after(() => resetBinding(id)); setBinding(id, `Mod+${key.toUpperCase()}`);
-    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: true }), null);
+    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: true }), inLinuxTerminal);
     assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), id);
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), id);
   }

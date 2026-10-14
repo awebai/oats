@@ -57,6 +57,35 @@ test("instance actions keep full identity and open plan dialogs, never dispatch 
   dom.window.close();
 });
 
+test('#1131: a row its host no longer lists offers Forget… alone when the host gives openForget; it opens the confirmation and sends nothing', async () => {
+  const dom = menuDom(), doc = dom.window.document;
+  const gone = { instance: 'dev-one', home: '/remote/home', server: 'host', repoName: 'Build box', savedRoute: true, addressable: false, missingRemotely: true, running: null };
+  const calls = [], forgets = [];
+  const control = instanceActions(doc, gone, { invoke: async (...args) => { calls.push(args); return {}; }, openLifecycle: (...args) => calls.push(['lifecycle', ...args]),
+    openForget: (...args) => forgets.push(args), report: m => assert.fail(m),
+    extra: [{ action: 'open-split', actionId: 'instance.openSplit', label: 'Open in split', reason: '' }] });
+  doc.body.append(control);
+  const trigger = triggerOf(control);
+  assert.equal(trigger.disabled, false);
+  assert.equal(trigger.title, 'dev-one is no longer on Build box. Remove it from this computer with: oats server forget host --instance dev-one', 'the remedy stays its title');
+  assert.deepEqual([...control.querySelectorAll('[role=menuitem]')].map(item => [item.dataset.action, item.textContent]), [['forget', 'Forget…']],
+    'Forget alone: none of the caller\'s items, no lifecycle act');
+  await choose(control, 'forget');
+  assert.deepEqual(forgets, [[gone]]); assert.deepEqual(calls, [], 'the menu sends nothing itself');
+  // Reopened and chosen again: the menu hands the row to the confirmation again; the confirmation refuses a second send while busy.
+  await choose(control, 'forget'); assert.equal(forgets.length, 2); assert.deepEqual(calls, []);
+  // Not offered (strictly missingRemotely === true on a reached server): no Forget, the trigger as before.
+  for (const [why, row] of [['false', { ...gone, missingRemotely: false }], ['absent', (({ missingRemotely, ...r }) => r)(gone)], ['null', { ...gone, missingRemotely: null }],
+    ['unreached', { ...gone, serverUnreached: true, runtimeError: 'ssh: connect to host timed out' }]]) {
+    const other = instanceActions(doc, row, { openForget: () => assert.fail(why), invoke: async () => assert.fail(why) });
+    assert.equal(triggerOf(other).disabled, true, why);
+    assert.equal(other.querySelector('[data-action="forget"]'), null, why);
+  }
+  const reachable = instanceActions(doc, { ...gone, addressable: true, missingRemotely: false, running: true }, { openForget: () => assert.fail('addressable'), invoke: async () => ({}) });
+  assert.equal(reachable.querySelector('[data-action="forget"]'), null, 'an addressable row offers its usual acts, not Forget');
+  dom.window.close();
+});
+
 test('a Herdr-recorded row shows Start disabled with the kernel reason, offers no Restart, and still retires through the plan', async () => {
   const reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
   for (const instance of [{ instance: 'h1', home: '/home/h1', running: null, runtimeState: 'unsupported', runtimeError: `${reason} (h1)` },

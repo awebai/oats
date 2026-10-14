@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS } from "../lib/actions.mjs";
 import {
-  DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, cliRemoteRoster, deploymentState, displayLine, heldHome, instanceActs, livenessAnswers, livenessInput, observeIdentities, observedEntry,
+  DETACH_KEY_FEATURE, DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, cliRemoteRoster, deploymentState, displayLine, heldHome, instanceActs, livenessAnswers, livenessInput, observeIdentities, observedEntry,
   originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
@@ -1309,7 +1309,7 @@ test("a query of 200 characters is cut inside its cells, open and kept: the rest
 
 test("at 60 columns, the smallest width the frame is drawn at, the help still names every command whole: what this version does not do is said with the oats command that does it", () => {
   for (const ascii of [false, true]) {
-    const lines = helpLines(golden({ ascii }), size(60, 80)), cut = glyphsOf(ascii).cut;
+    const lines = helpLines(golden({ ascii }), size(60, 90)), cut = glyphsOf(ascii).cut;
     for (const command of [...NOT_YET.map((entry_) => entry_.command), ...VIEWS.flatMap((view) => view.commands)]) {
       assert.equal(lines.some((line) => line.includes(command)), true, `${command} is whole at 60 columns${ascii ? ", in ASCII" : ""}`);
     }
@@ -1330,8 +1330,9 @@ const pair = (lines, left, right) => lines.some((line) => { const text = line.tr
 
 test("the help lists every action of the table it is given with its keys, and an unbound action as `(no key)`", () => {
   const lines = helpLines(golden());
-  for (const action of ACTIONS) assert.equal(pair(lines, keysLabel(action), action.label), true, `${action.id}: ${keysLabel(action)}`);
-  for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["w", "workspaces"], ["Enter", "open"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
+  // An action that does one thing in each view has a line per view, its keys on each.
+  for (const action of ACTIONS) for (const said of action.views ? action.views.map(([, words]) => words) : [action.label]) assert.equal(pair(lines, keysLabel(action), said), true, `${action.id}: ${keysLabel(action)} ${said}`);
+  for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["w", "workspaces"], ["Enter", "open the selected agent's terminal, in the list of instances"], ["Enter", "open the selected workspace, in the switcher"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
     assert.equal(pair(lines, keys, label), true, `${keys} ${label}`);
   }
   const config = effectiveConfig({ keys: { quit: ["x"], filter: [], refresh: ["r", "f5"], suspend: [] } });
@@ -1349,7 +1350,8 @@ test("the help is generated from the table: another key and another action appea
   assert.equal(pair(lines, "F9, Ctrl+X", "zap the thing"), true);
   assert.equal(lines.some((line) => line.includes("redraw") || line.includes("Ctrl+L")), false, "an action that is not in the table is not in the help");
   const keys = lines.slice(lines.findIndex((line) => line.trim() === "Keys") + 1, lines.findIndex((line) => line.trim() === "Marks")).filter((line) => line.trim());
-  assert.equal(keys.length, table.length, "one row per action");
+  // One row per action and view; under the line of opening an agent, three rows of its own (the key that returns, the copy-mode rule, the pointer).
+  assert.equal(keys.length, table.reduce((n, action) => n + (action.views?.length ?? 1), 0) + 3, "one row per action, and one more per view of an action that has two");
 });
 
 test("the help lists the marks with their words, in UTF-8 and in ASCII: each mark the list draws is there", () => {
@@ -1383,7 +1385,7 @@ test("the help says, for the two views that cannot be opened yet, what to run in
 });
 
 test("the help's last section, `Not in this version`, names every act this version does not have with the oats command that does it", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 80), size(79, 70), size(200, 70)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 90), size(79, 80), size(200, 70)]) {
     const lines = helpLines(golden({ ascii }), sz), text = lines.map((line) => line.trim());
     const at = text.indexOf("Not in this version");
     assert.equal(at > 0, true);
@@ -1419,7 +1421,7 @@ test("the help scrolls: at 60x15 it does not fit, its last row says what is cut 
   assert.deepEqual(draw(press(ended, ["g"], sz).state, sz).lines, d.lines, "and goes back to its start");
   assert.deepEqual(draw(press(ended, ["k"], sz).state, sz).lines[sz.rows - 3].trim(), cutNote(d.extent - visible - 1, 1));
   // Every row of the help is reached by scrolling: nothing is lost behind the note.
-  const whole = helpLines(golden(), size(60, 80)).map((line) => line.trim()).filter(Boolean), seen = new Set();
+  const whole = helpLines(golden(), size(60, 90)).map((line) => line.trim()).filter(Boolean), seen = new Set();
   let state = open;
   for (let i = 0; i < d.extent; i++) { for (const line of draw(state, sz).lines.slice(3, sz.rows - 3)) seen.add(line.trim()); state = press(state, ["j"], sz).state; }
   for (const line of whole) assert.equal(seen.has(line), true, line);
@@ -2323,7 +2325,7 @@ test("the switcher's footer offers Esc only when a workspace is open to go back 
   assert.deepEqual(draw(press(choosing(), ["escape"]).state, S80).lines, draw(heard(heard(local(), answered(group(), quartz({ probe: UNPROMPTED, workspace: null, instances: [] })), T1), answered(group({ probe: UNPROMPTED }), quartz({ probe: UNPROMPTED, workspace: null, instances: [] })), T2), S80).lines);
   assert.deepEqual(draw(press(none, ["escape"]).state, S80).lines, draw(none, S80).lines);
   // The keys are the effective table's.
-  const rebound = effectiveConfig({ keys: { "open-workspace": ["o"], close: ["backspace"], workspaces: ["f2"] } });
+  const rebound = effectiveConfig({ keys: { open: ["o"], close: ["backspace"], workspaces: ["f2"] } });
   assert.equal(rebound.ok, true);
   assert.equal(draw(press(reached({ actions: rebound.actions }), ["f2"]).state, S80).lines[23], " o open   / filter   r refresh   Backspace close   ? help   q quit");
   assert.equal(draw(reached({ actions: rebound.actions }), S80).lines[23], " / filter   Tab detail   r refresh   F2 workspaces   ? help   q quit");
@@ -2393,7 +2395,7 @@ test("a folder that turned out not to be a deployment says so in its row, where 
 // ── The help, with machines and the switcher ─────────────────────────────────────────────────────
 
 test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment elsewhere with the oats command that does it, and what no command lifts in sentences of its own", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 80), size(79, 70), size(200, 70)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 90), size(79, 80), size(200, 70)]) {
     const text = helpLines(reached({ ascii }), sz).map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const machines = text.indexOf("Machines"), last = text.indexOf("Not in this version");
     assert.equal(machines > text.indexOf("Views") && last > machines, true, `${at}: Machines stands between Views and what is not in this version`);
@@ -2576,4 +2578,77 @@ test("a view whose only deployment is a machine that is not live and has no row 
   // And with rows kept, the notice stands over the last rows it reported.
   const kept = draw(heard(onGarnet(), TIMEOUT, T2), S80);
   assert.equal(kept.lines.some((line) => line.includes(FAR_A)), true);
+});
+
+// ── The footer while Enter would open an agent's terminal ───────────────────────────────────────────
+
+/** A kernel record that opens agents with a detach key. */
+const KEYED = Object.freeze({ ...CLI, features: Object.freeze([...CLI.features, DETACH_KEY_FEATURE]) });
+const openable = (options) => stateOf(observed([instanceRow("dev", "dev-alpha"), instanceRow("dev", "dev-beta", { running: false, runtimeState: "stopped" })], { cli: KEYED }), { cli: KEYED, ...options });
+const OPEN_HINT = "Enter open (C-\\ returns)";
+
+test("the footer names the key that returns whenever Enter would open, down to 60 columns: hints are given up workspaces, refresh, detail, open, filter; help and quit never (the width table)", () => {
+  const state = openable(), stopped = press(state, ["j"]).state, detailed = press(state, ["tab"]).state, kept = press(state, ["/", "d", "enter"]).state;
+  const TABLE = [
+    // cols   an openable row selected                                                       the detail focused
+    [60, `${OPEN_HINT}   / filter`, `${OPEN_HINT}   Tab detail`],
+    [67, `${OPEN_HINT}   / filter`, `${OPEN_HINT}   Tab detail`],
+    [68, `${OPEN_HINT}   / filter   Tab detail`, `${OPEN_HINT}   Tab detail`],
+    [72, `${OPEN_HINT}   / filter   Tab detail`, `${OPEN_HINT}   Tab detail   Esc close`],
+    [79, `${OPEN_HINT}   / filter   Tab detail`, `${OPEN_HINT}   Tab detail   Esc close`],
+    [80, `${OPEN_HINT}   / filter   Tab detail   r refresh`, `${OPEN_HINT}   Tab detail   Esc close`],
+    [94, `${OPEN_HINT}   / filter   Tab detail   r refresh`, `${OPEN_HINT}   Tab detail   Esc close   r refresh`],
+    [95, `${OPEN_HINT}   / filter   Tab detail   r refresh   w workspaces`, `${OPEN_HINT}   Tab detail   Esc close   r refresh`],
+    [120, `${OPEN_HINT}   / filter   Tab detail   r refresh   w workspaces`, `${OPEN_HINT}   Tab detail   Esc close   r refresh`],
+  ];
+  for (const [cols, list, detail] of TABLE) {
+    const sz = size(cols, 24), foot = (s) => draw(s, sz).lines[23];
+    assert.equal(foot(state), ` ${list}   ? help   q quit`, `${cols}: the list`);
+    assert.equal(foot(detailed), ` ${detail}   ? help   q quit`, `${cols}: the detail`);
+    assert.equal(foot(stopped), cols >= 68 ? FOOTER : FOOTER_60, `${cols}: a row Enter does not open has the footer it always had`);
+    // A kept filter shows its own `/`: there the open hint outlives `/ filter`, and the filter's place gives way to it.
+    assert.match(foot(kept), new RegExp(`^ /d +${OPEN_HINT.replace(/[()\\]/g, "\\$&")}   `), `${cols}: a kept filter`);
+  }
+  // The hint's key is the effective table's, and the key that returns is tui.json's, both text from outside.
+  const config = effectiveConfig({ keys: { open: ["o"] }, open: { detachKey: "F12" } });
+  assert.equal(draw(openable({ actions: config.actions, detachKey: config.detachKey }), S80).lines[23], " o open (F12 returns)   / filter   Tab detail   r refresh   ? help   q quit");
+  assert.equal(draw(openable({ actions: effectiveConfig({ keys: { open: [] } }).actions }), S80).lines[23], FOOTER, "an open with no key has no hint");
+});
+
+test("while another machine is asked first the footer says Esc gives the open up, where the open hint stood, and Esc is not listed twice", () => {
+  const asking = reduce(openable(), { key: "enter", page: 19, extent: 0, room: 19, cols: 38 }).state;
+  assert.equal(asking.opening.phase, "lent", "this machine's agent is lent at once: no preflight");
+  const preflight = Object.freeze({ ...asking, opening: Object.freeze({ ...asking.opening, phase: "preflight" }) });
+  assert.equal(draw(preflight, S80).lines[23], " Esc stop opening   / filter   Tab detail   r refresh   ? help   q quit");
+  assert.equal(draw(preflight, S120).lines[39], " Esc stop opening   / filter   Tab detail   r refresh   w workspaces   ? help   q quit");
+  assert.equal(draw(preflight, S60).lines[14], " Esc stop opening   / filter   Tab detail   ? help   q quit");
+  assert.equal(draw(Object.freeze({ ...preflight, filter: Object.freeze({ editing: false, query: "d" }) }), S120).lines[39].includes("Esc close"), false);
+});
+
+test("the help lists Enter once per view with what it does there, and under the agent's line the key that returns, tmux's copy-mode rule and where the keys are listed", () => {
+  const lines = helpLines(openable()).map((line) => line.trim());
+  const at = lines.findIndex((line) => line.startsWith("Enter") && line.endsWith("open the selected agent's terminal, in the list of instances"));
+  assert.equal(at > 0, true);
+  assert.deepEqual(lines.slice(at + 1, at + 4), ["C-\\ brings oats tui back; the agent keeps running.", "A key that tmux's copy mode binds leaves the viewer once the mode is left.", "docs/execution-targets.md has the keys that can be chosen."]);
+  assert.equal(pair(lines, "Enter", "open the selected workspace, in the switcher"), true);
+  assert.equal(lines.filter((line) => line.startsWith("Enter ")).length, 2, "Enter twice, once per view");
+  assert.equal(lines.some((line) => line.includes("open an agent in its own tmux window") && line.includes("oats session attach --home <home>")), true);
+});
+
+test("a tui.json that unbinds open, or close, is drawn with a kept filter: the hint that has no key is not there, and nothing else moves (round 1 of the review)", () => {
+  const noOpen = effectiveConfig({ keys: { open: [] } }).actions, noClose = effectiveConfig({ keys: { close: [] } }).actions;
+  for (const sz of [S60, S80, S120]) {
+    const kept = press(openable({ actions: noOpen }), ["/", "d", "enter"], sz).state;
+    assert.equal(kept.filter.query, "d");
+    const foot = draw(kept, sz).lines[sz.rows - 1];
+    assert.match(foot, /^ \/d +\S/, `${sz.cols}: the kept filter`);
+    assert.equal(foot.includes("open ("), false, `${sz.cols}: no open hint without a key`);
+    assert.match(foot, /\? help   q quit$/, `${sz.cols}`);
+    // While another machine is asked first, Esc's hint stands first; with no key for close there is none.
+    const asking = reduce(openable({ actions: noClose }), { key: "enter", page: 19, extent: 0, room: 19, cols: 38 }).state;
+    const preflight = Object.freeze({ ...asking, filter: Object.freeze({ editing: false, query: "d" }), opening: Object.freeze({ ...asking.opening, phase: "preflight" }) });
+    const asked = draw(preflight, sz).lines[sz.rows - 1];
+    assert.equal(asked.includes("stop opening"), false, `${sz.cols}: no Esc hint without a key`);
+    assert.match(asked, /\? help   q quit$/, `${sz.cols}`);
+  }
 });

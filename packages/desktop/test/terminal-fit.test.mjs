@@ -152,15 +152,31 @@ test("createGlyphRenderer loads the WebGL renderer once the terminal is open, an
 
 test("a lost WebGL context falls back to the DOM renderer, and showing the tab tries again", () => {
   const { Addon, made } = webgl(), term = xterm();
-  let changes = 0;
-  const glyphs = createGlyphRenderer({ term, Addon, onChange: () => changes++, supported: () => true });
+  let changes = 0, recovered = 0;
+  const glyphs = createGlyphRenderer({ term, Addon, onChange: () => changes++, onRecovered: () => recovered++, supported: () => true });
   glyphs.ensure();
-  made[0].lose(); // Chromium dropped the context (too many, sleep, GPU reset)
+  assert.equal(recovered, 0, "a first activation joins a sound atlas: no window-wide clear");
+  made[0].lose(); // Chromium dropped the context and did not restore it within addon-webgl's 3 s
   assert.deepEqual([glyphs.active, made[0].disposed, changes], [false, 1, 2], "disposed: xterm goes back to its DOM renderer, and refits");
   made[0].lose();
   assert.equal(made[0].disposed, 1, "a second loss of the dropped addon is ignored");
+  assert.equal(recovered, 0, "nothing to recover until WebGL is back");
   assert.equal(glyphs.ensure(), true, "the next show loads a fresh one");
   assert.equal(made.length, 2);
+  assert.equal(recovered, 1, "the fresh addon re-joins the shared atlas the loss left stale: the window-wide clear is asked for (#1190)");
+  glyphs.ensure();
+  assert.equal(recovered, 1, "once per loss, not on every show");
+  glyphs.dispose(); // the tab closed: not a loss
+  glyphs.ensure();
+  assert.deepEqual([made.length, recovered], [3, 1], "a reload after a plain dispose asks for nothing");
+});
+
+test("a recovery request that throws does not undo the fresh addon (#1190)", () => {
+  const { Addon, made } = webgl(), term = xterm();
+  const glyphs = createGlyphRenderer({ term, Addon, onRecovered: () => { throw new Error("recovery failed"); }, supported: () => true });
+  glyphs.ensure(); made[0].lose();
+  assert.equal(glyphs.ensure(), true);
+  assert.deepEqual([glyphs.active, made[1].disposed], [true, 0], "WebGL stays on: the request is a side effect, not part of the activation");
 });
 
 test("without WebGL2 the addon is never activated, however often the tab is shown (review round 8)", () => {

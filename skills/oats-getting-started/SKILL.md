@@ -192,7 +192,10 @@ native configuration writers quiescent. Use `codex` or `all` for those selected
 harnesses; inspect the exact canonical root and effective native file first.
 The command changes only deployment-root trust and records an audit under
 `D/.agents/harness-trust.jsonl`. A failure can retain an applied native change;
-inspect its per-file outcome and audit before retrying. Nested Git boundaries
+inspect its per-file outcome and audit before retrying. A refused entry's
+`problem` names the check that refused its file; for a macOS `@` marker, accept
+the harness's own folder-trust dialog instead and check the `harness-trust`
+item of `oats readiness` (see "When the writer refuses"). Nested Git boundaries
 can prevent Claude inheritance. See [harness trust](../../docs/harness-trust.md). Folder-trust
 and API-key questions remain unexpected and blocked. The confirmation is
 answered with one Enter only when the screen equals an entry of the tolerance

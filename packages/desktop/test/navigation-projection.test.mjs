@@ -2,6 +2,7 @@
 // projection, split DOM reparenting and native focusin. Only view loading and
 // roster I/O are synthetic; no browser/server, Electron, IPC or terminal writes.
 import test from "node:test";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -49,6 +50,8 @@ function shell(t, shellSource = source) {
     contextRosterGen: 0, contextInstances: [], contextRosterEl: null, rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null,
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
+    // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
+    instanceRecency: createInstanceRecency({ storage: null }), recencyIdFromTerminalKey,
     wsActiveTerminal: new Map(), workspaceTabMemory: createWorkspaceTabMemory(), brainIntents: createIntentGate(),
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     setActiveContexts: value => contexts.splice(0, contexts.length, ...value),

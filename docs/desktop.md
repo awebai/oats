@@ -376,7 +376,9 @@ what a part of the panel needs, that part names the server and says which OATS t
 than showing nothing. A row that can't be opened says why on the row:
 Herdr no longer supported, gone from <server>, not reachable on <server>, or <server> not reached.
 For an instance a server no longer lists, the reason names the command that removes it from this
-computer (`oats server forget <server> --instance <name>`).
+computer (`oats server forget <server> --instance <name>`), and the row offers **Forget…**, in its
+actions menu and in the context panel, which runs that command for that row after a confirmation.
+Only this computer's saved route goes; nothing changes on the server, and the roster is read again.
 
 ## Remote terminals
 
@@ -489,6 +491,7 @@ unknown or unreported harness shows "?". Sources and licences are in
 | Symptom | Cause / fix |
 | --- | --- |
 | "Compatible oats CLI required" card | No CLI, or a version outside the range the card itself states. Copy the card's install command, or **Choose oats…** to point at the right binary; **Retry** re-probes. Spawn is disabled until a compatible CLI is verified. |
+| "This Desktop is older than the installed oats CLI" card | The CLI found is a released version above the range this Desktop works with, usually because the CLI was updated first. Install OATS Desktop of the version the card names; the card offers no npm command, since installing the CLI this Desktop pins would downgrade it. Reads and terminals keep working meanwhile; **Choose oats…** points at another, compatible CLI and **Retry** re-probes. |
 | Spawn disabled, no card | The probe hasn't settled yet (transient, resolves in ms). If it persists, the backend is unreachable — restart the app. |
 | Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux -L oats ls` (the OATS tmux server, where instances run) and `tmux ls` (your default server, where an instance started by an earlier kernel may still be). |
 | Can't select/copy text in a terminal tab | A plain drag selects, and copying is a separate step: ⌘C / Edit › Copy (macOS), Ctrl+Shift+C (Linux/Windows) or right-click › Copy ([Copy from a terminal](#copy-from-a-terminal)). A drag selects only what is on screen: wheel up first for older output. In `oats session attach` in your own terminal, hold **Option** (iTerm2, Ghostty, Terminal.app) or **Shift** while dragging. |

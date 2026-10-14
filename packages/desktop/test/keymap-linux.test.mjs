@@ -1,8 +1,10 @@
 // Spec F, Part 3: a keymap that is sane on Linux (and Omarchy) as well as macOS.
 // The rule: a default chord never takes a key a program inside the terminal reads. Every
 // changed default resolves per platform; inside a terminal on Linux/Windows only the allowlisted
-// actions fire, and the program keeps Ctrl+W/K/\/P/B, F6, Alt+digit and Ctrl+PgUp/PgDn; on
-// macOS only ⌘ chords (and Ctrl+Tab) fire there, so ⌃digits and F6 stay the program's.
+// actions fire (chords xterm sends nothing for, or a byte a plainer key still sends:
+// test/terminal-xterm-bytes.test.mjs), and the program keeps Ctrl+W/K/\/P/B/I/F/O, F6, Alt+digit
+// and Ctrl+PgUp/PgDn; on macOS only ⌘ chords (and Ctrl+Tab) fire there, so ⌃digits and F6 stay
+// the program's.
 // Chords are dispatched as the REAL events a keyboard sends (the shifted character in `key`).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -48,7 +50,7 @@ test("the shipped table: each changed default resolves per platform", () => {
     "stage.hierarchy": ["Mod+1", "Mod+1"], "stage.spawn": ["Mod+2", "Mod+2"], "stage.automations": ["Mod+3", "Mod+3"],
     "focus.nextRegion": ["F6", "F6"], "focus.prevRegion": ["Shift+F6", "Shift+F6"],
     "focus.leaveTerminal": ["Mod+Shift+F6", "Mod+Shift+F6"],
-    "sidebar.toggle": ["Mod+B", "Mod+B"], "sidebar.focusFilter": ["Mod+F", "Mod+F"], "panel.toggle": ["Mod+I", "Mod+I"],
+    "sidebar.toggle": ["Mod+B", "Ctrl+Shift+B"], "sidebar.focusFilter": ["Mod+F", "Ctrl+Shift+F"], "panel.toggle": ["Mod+I", "Ctrl+Shift+I"],
     "app.themeToggle": [null, null], "app.themePicker": ["Mod+Shift+Space", "Ctrl+Shift+Space"], "app.shortcuts": ["Mod+,", "Mod+,"],
     "terminal.fontBigger": ["Mod+=", "Mod+="], "terminal.fontSmaller": ["Mod+-", "Mod+-"], "terminal.fontReset": ["Mod+0", "Mod+0"],
     "terminal.copySelection": [null, "Ctrl+Shift+C"],
@@ -62,6 +64,8 @@ test("the shipped table: each changed default resolves per platform", () => {
   assert.equal(formatChord(getBinding("tabs.nextPage", false), false), "Ctrl+PgDn");
   assert.equal(formatChord(getBinding("tabs.goto3", true), true), "⌥⌘3");
   assert.equal(formatChord(getBinding("focus.leaveTerminal", false), false), "Ctrl+Shift+F6");
+  assert.equal(formatChord(getBinding("sidebar.toggle", false), false), "Ctrl+Shift+B");
+  assert.equal(formatChord(getBinding("sidebar.toggle", true), true), "⌘B");
 });
 
 test("nothing binds Super/Meta on Linux/Windows: Mod is Ctrl there", () => {
@@ -73,9 +77,12 @@ test("nothing binds Super/Meta on Linux/Windows: Mod is Ctrl there", () => {
 
 test("the terminal allowlist is exactly the actions that must work in a terminal", () => {
   assert.deepEqual([...TERMINAL_ALLOWLIST].sort(), [
-    "app.chooseSoul", "app.palette", "app.themePicker", "focus.leaveTerminal",
+    "app.chooseSoul", "app.palette", "app.shortcuts", "app.themePicker", "focus.leaveTerminal",
+    "panel.toggle", "sidebar.focusFilter", "sidebar.toggle",
     "split.close", "split.horizontal", "split.vertical",
+    "stage.automations", "stage.hierarchy", "stage.spawn",
     "tabs.close", "tabs.next", "tabs.prev", "terminal.copySelection",
+    "terminal.fontBigger", "terminal.fontReset", "terminal.fontSmaller",
   ].sort());
   // No allowlisted default on Linux/Windows is a key a program reads: not a plain Ctrl+letter,
   // not a bare function key, not Alt+digit, not Ctrl+PgUp/PgDn.
@@ -94,6 +101,13 @@ test("Linux/Windows inside a terminal: the allowlisted chords fire from real (sh
     [linux("E", { shiftKey: true }), "split.vertical"], [linux("O", { shiftKey: true }), "split.horizontal"],
     [linux("W", { shiftKey: true, altKey: true }), "split.close"],
     [linux("F6", { shiftKey: true }), "focus.leaveTerminal"], [linux("C", { shiftKey: true }), "terminal.copySelection"],
+    // Allowlisted with this keymap: the moved defaults (e.key is the upper-case letter with Shift),
+    // the stages (Ctrl+3 is ESC, which Esc still sends), the shortcuts editor and the zoom chords.
+    [linux("B", { shiftKey: true }), "sidebar.toggle"], [linux("I", { shiftKey: true }), "panel.toggle"],
+    [linux("F", { shiftKey: true }), "sidebar.focusFilter"],
+    [linux("1"), "stage.hierarchy"], [linux("2"), "stage.spawn"], [linux("3"), "stage.automations"],
+    [linux(","), "app.shortcuts"],
+    [linux("="), "terminal.fontBigger"], [linux("-"), "terminal.fontSmaller"], [linux("0"), "terminal.fontReset"],
   ]) {
     assert.equal(matchEvent(event, inTerm), id, `${JSON.stringify({ key: event.key, ctrl: event.ctrlKey, shift: event.shiftKey, alt: event.altKey })}`);
     const claimed = ev(event.key, event); handleKeydown(claimed, inTerm);
@@ -105,7 +119,7 @@ test("Linux/Windows inside a terminal: Ctrl+W/K/\\/P/B, F6, Alt+digit and Ctrl+P
   registerAll(t);
   const inTerm = { isMac: false, insideTerminal: true };
   const programKeys = [
-    ...["w", "k", "\\", "p", "b", "n", "e", "o", "f"].map(key => [`Ctrl+${key}`, linux(key)]),
+    ...["w", "k", "\\", "p", "b", "n", "e", "o", "f", "i"].map(key => [`Ctrl+${key}`, linux(key)]),
     ["F6 (mc, htop, nano)", ev("F6")], ["Shift+F6", ev("F6", { shiftKey: true })],
     ["Alt+1 (readline numeric argument)", ev("1", { altKey: true })], ["Alt+9", ev("9", { altKey: true })],
     ["Ctrl+PgDn (vim, weechat)", linux("PageDown")], ["Ctrl+PgUp", linux("PageUp")],
@@ -121,11 +135,25 @@ test("Linux/Windows inside a terminal: Ctrl+W/K/\\/P/B, F6, Alt+digit and Ctrl+P
   assert.equal(matchEvent(linux("PageDown"), out), "tabs.nextPage");
   // Ctrl+Shift+\ (the shifted "|") is not claimed on Linux either.
   assert.equal(matchEvent(linux("|", { shiftKey: true }), inTerm), null);
-  // Actions that are not allowlisted never fire inside, even on their own chord.
-  for (const [event, id] of [[linux("p"), "app.quickOpenSouls"], [linux("b"), "sidebar.toggle"], [linux("1"), "stage.hierarchy"], [linux("i"), "panel.toggle"]]) {
+  // Actions that are not allowlisted never fire inside, even on their own chord: Quick Open
+  // (Ctrl+P, shell history), Open file (Ctrl+O, a view's registration default), go to tab, F6, Ctrl+PgDn.
+  t.after(registerAction({ id: "app.openFile", label: "Open file", context: "global", defaultChord: "Mod+O", run: () => {} }));
+  for (const [event, id] of [
+    [linux("p"), "app.quickOpenSouls"], [linux("o"), "app.openFile"], [ev("1", { altKey: true }), "tabs.goto1"],
+    [ev("F6"), "focus.nextRegion"], [linux("PageDown"), "tabs.nextPage"],
+  ]) {
     assert.equal(matchEvent(event, inTerm), null, id);
     assert.equal(matchEvent(event, { isMac: false, insideTerminal: false }), id, `${id} still works outside the terminal`);
   }
+  // The moved defaults left their plain chords to the program everywhere: Ctrl+B, Ctrl+I and
+  // Ctrl+F run nothing on Linux/Windows, inside a terminal or out.
+  for (const key of ["b", "i", "f"]) {
+    assert.equal(matchEvent(linux(key), { isMac: false, insideTerminal: false }), null, `Ctrl+${key} outside`);
+  }
+  // Ctrl+Shift+= arrives as "+" with Shift held; KEY_ALIASES folds "+" into "=", and the Shift keeps it
+  // from matching Ctrl+= (today's behaviour). Numpad plus (no Shift) is Ctrl+= and zooms, in a terminal too.
+  assert.equal(matchEvent(linux("+", { shiftKey: true }), inTerm), null, "Ctrl+Shift+= is not the zoom chord");
+  assert.equal(matchEvent(linux("+", { code: "NumpadAdd" }), inTerm), "terminal.fontBigger", "numpad Ctrl++ zooms");
 });
 
 test("Linux/Windows outside a terminal: the old plain chords no longer run the changed actions", t => {
@@ -143,6 +171,7 @@ test("macOS inside a terminal: ⌘ chords fire (they never reach the pty), plus 
   registerAll(t);
   const inTerm = { isMac: true, insideTerminal: true };
   for (const [event, id] of [
+    [ev("b", { metaKey: true }), "sidebar.toggle"], [ev("i", { metaKey: true }), "panel.toggle"], [ev("f", { metaKey: true }), "sidebar.focusFilter"],
     [ev("k", { metaKey: true }), "app.palette"], [ev("w", { metaKey: true }), "tabs.close"],
     [ev("|", { metaKey: true, shiftKey: true }), "split.horizontal"], [ev("\\", { metaKey: true }), "split.vertical"],
     [ev("3", { metaKey: true, altKey: true }), "tabs.goto3"], [ev("Tab", { ctrlKey: true }), "tabs.next"],

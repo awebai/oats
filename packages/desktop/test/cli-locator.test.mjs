@@ -225,6 +225,41 @@ test("discover: full failure returns per-candidate stable diagnostics", async ()
   assert.match(r.tried[1].reason, /probe failed/);
   assert.match(r.tried[2].reason, /outside/);
   assert.equal(r.tried[2].version, "0.21.5", "rejected version surfaces for the degradation card");
+  assert.equal(Object.hasOwn(r.tried[2], "above"), false, "below the band is not above it");
+});
+
+test("acceptProbe: `above` only for a released, parseable version at or past the ceiling whose every other check passed", () => {
+  const TABLE = [
+    ["below the band", PROBE("0.25.9"), false, false],
+    ["at the floor", PROBE("0.26.0"), true, false],
+    ["inside", PROBE("0.40.3"), true, false],
+    ["the last version inside", PROBE("0.55.99"), true, false],
+    ["at maxExclusive", PROBE("0.56.0"), false, true],
+    ["above", PROBE("0.56.2"), false, true],
+    ["a major above", PROBE("1.0.0"), false, true],
+    ["above, with build metadata (a released version)", PROBE("0.57.0+build.3"), false, true],
+    ["a prerelease above", PROBE("0.56.0-rc.1"), false, false],
+    ["a prerelease far above", PROBE("0.60.0-beta"), false, false],
+    ["unparsable", PROBE("0.56"), false, false],
+    ["no version", { ...PROBE(), version: undefined }, false, false],
+    ["above, another desktop API", { ...PROBE("0.56.0"), desktopApi: 2 }, false, false],
+    ["above, not the oats CLI", { ...PROBE("0.56.0"), name: "@other/pkg" }, false, false],
+    ["above, another schema", { ...PROBE("0.56.0"), schemaVersion: 2 }, false, false],
+  ];
+  for (const [name, payload, ok, above] of TABLE) {
+    const r = acceptProbe(payload);
+    assert.equal(r.ok, ok, name);
+    if (above) assert.equal(r.above, true, name); else assert.equal(Object.hasOwn(r, "above"), false, name);
+  }
+});
+
+test("discover: a candidate refused only for being above the band carries `above: true` on its diagnostics entry, and no other does", async () => {
+  const versions = { "/below/oats": "0.21.5", "/pre/oats": "0.56.0-rc.1", "/above/oats": "0.56.1" };
+  const io = { persisted: () => null, env: { PATH: ["/below", "/pre", "/above"].join(delimiter) }, isExecutableFile: () => true, canonicalize: (p) => p };
+  const r = await discover(io, async (path) => ({ stdout: JSON.stringify(PROBE(versions[path])) }));
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.tried.map(t => [t.path, t.version, t.above]), [["/below/oats", "0.21.5", undefined], ["/pre/oats", "0.56.0-rc.1", undefined], ["/above/oats", "0.56.1", true]]);
+  assert.deepEqual(r.tried.map(t => Object.hasOwn(t, "above")), [false, false, true]);
 });
 
 test("discover: symlinked duplicates canonicalize and probe once", async () => {

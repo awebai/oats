@@ -107,7 +107,10 @@ export function parseSemver(v) {
 }
 const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
-/** Accept/reject one probe payload. Returns { ok } or { ok:false, reason }. */
+/** Accept/reject one probe payload. Returns { ok } or { ok:false, reason }, and { ok:false, reason, above:true }
+ * when the payload's sole failure is a released version at or above the band's ceiling: every other check
+ * passed first, so a prerelease, an unparsable version or another API is never `above`. A Desktop older than
+ * its CLI says so from this flag (views/cli-status.mjs), never from the reason's words. */
 export function acceptProbe(payload) {
   if (!payload || typeof payload !== "object") return { ok: false, reason: "no probe payload" };
   if (payload.schemaVersion !== 1) return { ok: false, reason: `unexpected schemaVersion ${payload.schemaVersion}` };
@@ -120,9 +123,8 @@ export function acceptProbe(payload) {
   // in-range version is not a released CLI — Desktop pairs with released
   // kernels only.
   if (v.prerelease) return { ok: false, reason: `prerelease version ${payload.version} not accepted (need a released ${ACCEPT_RANGE_TEXT})` };
-  if (cmp(v.nums, ACCEPT_RANGE.min) < 0 || cmp(v.nums, ACCEPT_RANGE.maxExclusive) >= 0) {
-    return { ok: false, reason: `version ${payload.version} outside ${ACCEPT_RANGE_TEXT}` };
-  }
+  if (cmp(v.nums, ACCEPT_RANGE.maxExclusive) >= 0) return { ok: false, reason: `version ${payload.version} outside ${ACCEPT_RANGE_TEXT}`, above: true };
+  if (cmp(v.nums, ACCEPT_RANGE.min) < 0) return { ok: false, reason: `version ${payload.version} outside ${ACCEPT_RANGE_TEXT}` };
   return { ok: true };
 }
 
@@ -209,7 +211,9 @@ export function cliRecord(payload, { bin, source }) {
  * evaluated lazily: expensive helpers never run once a candidate wins.
  * Returns:
  *   { ok:true,  bin, source, version }
- *   { ok:false, tried: [{path, source, reason}] }   — stable diagnostics
+ *   { ok:false, tried: [{path, source, reason}] }   — stable diagnostics; an entry whose probe was
+ *                                                    refused only for being above the band also has
+ *                                                    `version` and `above: true` (acceptProbe)
  */
 export async function discover(io, probe) {
   const tried = [];
@@ -236,7 +240,7 @@ export async function discover(io, probe) {
       }
       const a = acceptProbe(payload);
       if (a.ok) return cliRecord(payload, { bin: path, source: src.source });
-      tried.push({ path, source: src.source, reason: a.reason, version: payload?.version });
+      tried.push({ path, source: src.source, reason: a.reason, version: payload?.version, ...(a.above === true ? { above: true } : {}) });
     }
   }
   return { ok: false, tried };

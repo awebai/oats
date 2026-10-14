@@ -6,9 +6,9 @@ import { instanceActs } from "../../client/instance-acts.mjs";
 import { iconElement } from "./shell-icons.mjs";
 import { reasonLine } from "./speaker-line.mjs";
 /** The menu's words for each act instanceActs can list. */
-const LABELS = Object.freeze({ inspect: 'Knowledge & capabilities…', start: 'Start…', restart: 'Restart with…', stop: 'Stop…', retire: 'Retire instance…' });
+const LABELS = Object.freeze({ inspect: 'Knowledge & capabilities…', start: 'Start…', restart: 'Restart with…', stop: 'Stop…', retire: 'Retire instance…', forget: 'Forget…' });
 /** Decorative menu icons (the Redesign's context menu), keyed by action. */
-const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove' });
+const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove', forget: 'close' });
 
 const pending = new Map(); // instance key -> { reason, controls } replaced during an action
 /** A menu label without its trailing ellipsis, for prose ("Knowledge & capabilities…" → "Knowledge & capabilities"). */
@@ -36,8 +36,10 @@ export function captureInstanceActionMenu(root) {
   };
 }
 
-/** `report(headline, { detail?, action, instance })` says an action didn't finish: a plain headline, the error text as `detail`. */
-export function instanceActions(doc, instance, { invoke, openLifecycle, done = () => {}, report = () => {},
+/** `report(headline, { detail?, action, instance })` says an action didn't finish: a plain headline, the error text as `detail`.
+ * `openForget(instance)` (#1131): given, a row its host no longer lists (instanceActs answers it `blocked`, key `missing`) offers "Forget…"
+ * alone, which opens that confirmation; without it such a row offers nothing, as every unaddressable row. */
+export function instanceActions(doc, instance, { invoke, openLifecycle, openForget, done = () => {}, report = () => {},
   scope = '', owner = () => true, extra = [], dispatch, onMenuState = () => {}, onFocusChange = () => {}, shortcut = () => '' }) {
   const key = JSON.stringify([scope, instanceId(instance), instance.createdAt ?? null]);
   const owns = () => { try { return owner(); } catch { return false; } };
@@ -76,8 +78,10 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     const first = items.find(item => !item.disabled); if (first) first.autofocus = true;
   };
   const offer = instanceActs(instance);
-  // A remote row the kernel does not report addressable has no actions here; the trigger says why.
-  const unrouted = offer.blocked?.code === 'unaddressable';
+  // A remote row the kernel does not report addressable has no actions here; the trigger says why. The one
+  // exception is the Desktop's own: a row its host no longer lists offers Forget… (forget-dialog.mjs).
+  const forgets = offer.blocked?.code === 'unaddressable' && offer.blocked.key === 'missing' && typeof openForget === 'function';
+  const unrouted = offer.blocked?.code === 'unaddressable' && !forgets;
   trigger.disabled = unrouted;
   // A reason's sentence that is the row's own text is said with who made it (speaker-line.mjs).
   if (unrouted) trigger.title = reasonLine(offer.blocked) ?? '';
@@ -141,6 +145,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     const item = items.find(row => row.dataset.action === action);
     if (!item || !owns() || !visible(trigger) || !item.isConnected || blocked() || item.disabled || reasonFor(action) || pending.has(key)) return;
     close(true);
+    if (action === 'forget') { openForget(instance); return; } // the confirmation sends, never this menu
     if (action === 'stop' || action === 'retire') {
       if (typeof openLifecycle === 'function') openLifecycle(action, instance);
       else report('A plan-backed confirmation is required for Stop or Retire.', { action, instance });
@@ -161,7 +166,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   // The caller's own items go in front only on a row that offers everything a home normally does: a blocked
   // row has no menu, and a limited one (#802: a home a spawn or a retire left half cleaned) offers Retire alone.
   // An act listed with a reason (Start on a row whose session backend is gone) stays visible, disabled, with it.
-  const descriptors = [...(offer.blocked || offer.limited ? [] : extra),
+  const descriptors = forgets ? [{ action: 'forget', label: LABELS.forget }] : [...(offer.blocked || offer.limited ? [] : extra),
     ...offer.acts.map(({ verb, reason }) => ({ action: verb, label: LABELS[verb], ...(reason ? { reason: reasonLine(reason) ?? '', unavailable: true } : {}) }))];
   for (const descriptor of descriptors) {
     const { action, label, reason, actionId } = descriptor;
@@ -180,8 +185,9 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     items.push(item); menu.append(item);
   }
   syncOptions();
-  // A blocked row has no actions at all: the trigger says why instead of opening an empty menu.
-  if (offer.blocked) { trigger.disabled = true; trigger.title = reasonLine(offer.blocked) ?? ''; }
+  // A blocked row has no actions at all: the trigger says why instead of opening an empty menu. A row that offers
+  // Forget… keeps its trigger, and the same title says why that is all it offers.
+  if (offer.blocked) { trigger.disabled = !forgets; trigger.title = reasonLine(offer.blocked) ?? ''; }
   wrapper.append(trigger, menu);
   return wrapper;
 }

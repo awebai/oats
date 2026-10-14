@@ -5,6 +5,7 @@
 // never touches the server: each lease ends only its local ssh child.
 import { createTermLifecycle } from './term-lifecycle.mjs';
 import { wireTerminalAttachments } from './terminal-attachments.mjs';
+import { createSyncGate } from './terminal-sync.mjs';
 import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../../client/terminal-contract.mjs';
 
 // Shift+Enter writes pi's raw Ctrl+J alias exactly once. Suppress all three key
@@ -83,12 +84,19 @@ export function webgl2Supported(doc) {
  * - an activation that throws although WebGL2 was there: no further attempt
  *   for this terminal, which stays on the DOM renderer until it is reopened;
  *   another attempt would leave another canvas and listener set behind.
- * - a lost context (Chromium keeps about 16 and drops the oldest; sleep or a
- *   GPU reset): the addon is disposed (`onChange` refits), and `ensure()`, run
- *   when the tab is shown, loads a fresh one. */
-export function createGlyphRenderer({ term, Addon, onChange = () => {},
+ * - a lost context that is not restored within addon-webgl's 3 s wait
+ *   (Chromium keeps about 16 and drops the oldest): the addon is disposed
+ *   (`onChange` refits), and `ensure()`, run when the tab is shown, loads a
+ *   fresh one. A fresh addon re-joins the window's shared glyph atlas, which
+ *   the loss may have left stale, so a load that follows a loss calls
+ *   `onRecovered`: the shell's window-wide atlas clear
+ *   (terminal-atlas-recovery.mjs), never this terminal's own clear, which
+ *   garbles the others. A context restored within the 3 s (a GPU process
+ *   restart after sleep or a Space switch) never reaches this path: that
+ *   module hears the restore itself. */
+export function createGlyphRenderer({ term, Addon, onChange = () => {}, onRecovered = () => {},
   supported = () => webgl2Supported(term.element?.ownerDocument) }) {
-  let addon = null, failed = false;
+  let addon = null, failed = false, lost = false;
   function drop() {
     const was = addon; addon = null;
     try { was?.dispose(); } catch {}
@@ -99,7 +107,7 @@ export function createGlyphRenderer({ term, Addon, onChange = () => {},
     let next = null;
     try {
       next = new Addon();
-      next.onContextLoss(() => { if (addon === next) drop(); });
+      next.onContextLoss(() => { if (addon === next) { lost = true; drop(); } });
       term.loadAddon(next);
       addon = next;
       onChange();
@@ -107,6 +115,7 @@ export function createGlyphRenderer({ term, Addon, onChange = () => {},
       // No retry (the Desktop lead's decision): a failed activation would leak another canvas and listener set.
       failed = true; try { next?.dispose(); } catch {}
     }
+    if (addon && lost) { lost = false; try { onRecovered(); } catch {} }
     return Boolean(addon);
   }
   return { ensure, dispose: drop, get active() { return Boolean(addon); } };
@@ -155,6 +164,8 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
   focusInput = () => term.focus(), fit, observe, interceptKey, onError = () => {},
   clock = { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: t => clearTimeout(t) } }) {
   let offData, offExit, unobserve, detachAttachments, bannerEl, stripEl, liveEl;
+  // The current lease's output gate (terminal-sync.mjs): a synchronized redraw reaches xterm whole.
+  let gate = null;
   let ready = false, closed = false, ended = false, arming = false, wired = false;
   // Reconnect state: connected, waiting (for the next attempt's time and the old lease's
   // cleanup), attempting (a lease open in flight) or stopped. One timer drives the waiting.
@@ -263,8 +274,10 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
     link = 'stopped'; clearTimer(); ended = true;
     banner(text); announce(text);
   }
-  function exited(h, result) {
+  function exited(h, result, leaseGate) {
     if (!terminalSameHandle(result?.handle, h) || !terminalSameHandle(life.ptyId(), h)) return;
+    // The lease's last output, a held block included, lands before the ended or reconnect state.
+    leaseGate.flush(); leaseGate.dispose();
     ready = false; ended = true; arming = false;
     if (!result.cleanupPending) life.forget(h);
     if (remote && !closed && result.exitCode === LOST_LINK_EXIT && !result.reason) {
@@ -280,9 +293,12 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
   // One lease's setup: its data/exit listeners, then (once per tab) the xterm wiring.
   async function connect(h) {
     offData?.(); offExit?.();
+    gate?.dispose(); // a new lease, a fresh gate: the last one was flushed where its lease ended
     ended = false;
-    offData = desk.onTermData(h, data => { if (!closed && terminalSameHandle(life.ptyId(), h)) term.write(data); });
-    offExit = desk.onTermExit(h, result => exited(h, result));
+    const leaseGate = gate = createSyncGate({ clock,
+      write: data => { if (!closed && terminalSameHandle(life.ptyId(), h)) term.write(data); } });
+    offData = desk.onTermData(h, data => leaseGate.push(data));
+    offExit = desk.onTermExit(h, result => exited(h, result, leaseGate));
     if (!wired) {
       wired = true;
       subscriptions.push(term.onData(data => write(data)));
@@ -310,6 +326,7 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
     try { result = await desk.termReady(h); } catch { result = terminalFailure('E_TERM_TRANSPORT'); }
     if (closed || !terminalSameHandle(life.ptyId(), h) || ended) return;
     if (result?.terminalApi !== 2 || !result.ok || result.status !== 'ready' || !terminalSameHandle(result.handle, h)) {
+      leaseGate.flush();
       ready = false; arming = false; ended = true;
       if (link === 'connected') banner(terminalFailure('E_TERM_READY_TIMEOUT').message);
       else stop(terminalFailure('E_TERM_READY_TIMEOUT').message);
@@ -335,7 +352,8 @@ export function createTerminalTab({ desk, term, tmux, remote, serverLabel, wrap,
     start: () => life.start(connect, error => banner(`could not attach: ${terminalMessage(error?.code, server)}`)),
     focus,
     async close() {
-      closed = true; ready = false; arming = false; clearTimer();
+      gate?.flush(); // written while the tab is still ours: a close that stays pending keeps showing it
+      closed = true; ready = false; arming = false; clearTimer(); gate?.dispose();
       banner(terminalFailure('E_TERM_CLOSE_PENDING').message);
       const result = await life.close(disposeUi);
       if (!result.ok) banner(terminalFailure('E_TERM_CLOSE_PENDING').message);

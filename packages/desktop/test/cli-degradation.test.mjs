@@ -153,6 +153,75 @@ test("cliCard states the requirement from the payload and never invents one when
   dispose();
 });
 
+/* ── A Desktop older than the CLI it found (#1107) ── */
+
+const RANGE = ">=0.26.0 <0.56.0", INSTALL = "npm install -g @awebai/oats@0.55.1";
+const refused = (entries, extra = {}) => ({ ok: false, bin: null, version: null, source: null, required: { desktopApi: 1, range: RANGE }, install: INSTALL, probedAt: 1, tried: entries, ...extra });
+const ABOVE = { path: "/new/oats", source: "path", reason: "version 0.56.2 outside >=0.26.0 <0.56.0", version: "0.56.2", above: true };
+const words = (node) => node.textContent.replace(/\s+/g, " ").trim();
+async function card(payloadToShow) {
+  const doc = dom();
+  const state = { get: payloadToShow, post: payloadToShow, reprobes: [] };
+  await cs.refreshCli(jsonCtx(state));
+  const mounted = cs.cliCard(doc, { ...jsonCtx(state), chooseCliBinary: async () => null, openExternal: () => {} });
+  doc.body.append(mounted.el);
+  // The shared status goes back to probe-pending with the card: later tests read it as they found it.
+  return { doc, el: mounted.el, dispose() { mounted.dispose(); cs.resetCliStateForTests(); } };
+}
+/** The card's controls in Tab order (no tabindex is set: document order). */
+const tabOrder = (el) => [...el.querySelectorAll("button:not([disabled]), a[href], [tabindex]")].map((n) => n.className);
+
+test("cliCard, the CLI above the band: the Desktop is the older, with no install command and no Copy, and Tab goes from Detected to Choose", async () => {
+  const { el, dispose } = await card(refused([ABOVE]));
+  try {
+    assert.equal(words(el.querySelector(".cli-head")), "This Desktop is older than the installed oats CLI");
+    assert.equal(el.querySelector(".cli-head code").textContent, "oats");
+    assert.equal(words(el.querySelector(".cli-explanation")), `The installed oats CLI is 0.56.2. This Desktop works with ${RANGE}. Install OATS Desktop 0.56.2 to use it; reads and terminals keep working meanwhile.`);
+    assert.equal(el.querySelector(".cli-explanation code:last-of-type").textContent, RANGE);
+    // Detected and Required as today.
+    assert.ok(words(el.querySelector(".cli-kv")).includes("Detected /new/oats (0.56.2)"));
+    assert.ok(words(el.querySelector(".cli-kv")).includes(`Required ${RANGE} with desktop API 1`));
+    // No command to downgrade the CLI, and nothing to copy.
+    assert.equal(el.querySelector(".cli-install"), null); assert.equal(el.querySelector(".cli-cmd"), null); assert.equal(el.querySelector(".cli-copy"), null);
+    assert.ok(!el.textContent.includes("npm install"), "no npm command anywhere on the card");
+    // Choose, Retry and the docs link stay, and are the card's controls in Tab order.
+    assert.deepEqual(tabOrder(el), ["act cli-choose", "act cli-retry", "cli-docs"]);
+  } finally { dispose(); }
+});
+
+test("cliCard: every other state keeps today's heading, explanation, install command and Copy, in today's Tab order", async () => {
+  const entry = (version, reason) => ({ path: "/x/oats", source: "path", reason, ...(version === undefined ? {} : { version }) });
+  const STATES = [
+    ["below the band", refused([entry("0.25.9", "version 0.25.9 outside >=0.26.0 <0.56.0")])],
+    ["unparsable", refused([entry("0.56", 'unparsable version "0.56"')])],
+    ["a prerelease above", refused([entry("0.56.0-rc.1", "prerelease version 0.56.0-rc.1 not accepted (need a released >=0.26.0 <0.56.0)")])],
+    ["not the oats CLI", refused([entry("0.56.0", "not the oats CLI (name: @other/pkg)")])],
+    ["no CLI found", refused([])],
+    ["a probe that failed", refused([entry(undefined, "probe failed: timeout")])],
+    // A flag the card cannot use alone: no band to state, or a candidate that is not the one shown.
+    ["above, but the payload states no band", refused([ABOVE], { required: {} })],
+    ["above, but an earlier candidate is the one shown", refused([entry("0.21.5", "version 0.21.5 outside >=0.26.0 <0.56.0"), ABOVE])],
+  ];
+  for (const [name, shown] of STATES) {
+    const { el, dispose } = await card(shown);
+    try {
+      assert.equal(words(el.querySelector(".cli-head")), "Compatible oats CLI required", name);
+      assert.equal(words(el.querySelector(".cli-explanation")), "Spawn, Start and other changes run through the installed oats CLI. Reads and terminals keep working without it.", name);
+      assert.equal(el.querySelector(".cli-cmd")?.textContent, INSTALL, name);
+      assert.ok(el.querySelector(".cli-copy"), name);
+      assert.deepEqual(tabOrder(el), ["act cli-copy", "act cli-choose", "act cli-retry", "cli-docs"], name);
+    } finally { dispose(); }
+  }
+});
+
+test("cliCard, the CLI above the band: the version enters the sentence through the display filter, as text", async () => {
+  const { el, dispose } = await card(refused([{ ...ABOVE, version: "<b>0.56.2</b>\nmore" }]));
+  try {
+    assert.equal(el.querySelector(".cli-explanation b"), null, "markup stays text");
+    assert.ok(words(el.querySelector(".cli-explanation")).startsWith("The installed oats CLI is <b>0.56.2</b> more."), "one display line");
+  } finally { dispose(); }
+});
+
 test("cli-status: install/requirement helpers prefer the backend payload, fall back version-lessly", () => {
   const withPayload = { required: { desktopApi: 1, range: ">=0.22.0 <0.23.0" }, install: "npm install -g @awebai/oats@0.22.0" };
   assert.equal(cs.cliInstallCommand(withPayload), "npm install -g @awebai/oats@0.22.0");

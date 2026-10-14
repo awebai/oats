@@ -1,7 +1,9 @@
 // The effects of the TUI: finding the deployment, the kernel's record, one exec for every kernel
 // call, the observer of every served deployment, the roster of other machines, the refresh loop,
 // the liveness collector, and the two looks at the file system the switcher needs.
-// This version of the TUI ONLY READS: nothing here changes a deployment, and nothing writes a file.
+// Nothing here changes a deployment, and nothing writes a file: every child of this module is a
+// read. (Opening an agent's terminal starts the kernel's viewer, which is not a read and is not
+// started here: lib/open.mjs.)
 // No function of this module decodes a kernel answer. Each one passes values between the shared
 // functions (client.mjs), which decide what a roster, a row and a failed read are, once, for both
 // clients: the TUI never writes "stopped" for a row and never builds the collector's input by hand.
@@ -154,7 +156,7 @@ const said = (error) => String(error?.message ?? error);
 
 /** The reader of a run: its cycles over every served deployment, the roster of other machines,
  *  their children, and the way out.
- *  -> { start(), request({ live }), touch(), voidInFlight(), stop(), children() }
+ *  -> { start(), request({ live }), touch(), voidInFlight(), hold(), release(), exec, stop(), children() }
  *
  *  `cli` is probeKernel's record (`cli.bin` the absolute path of bin/oats.mjs). The reader keeps no
  *  answer of its own: what a run holds is the caller's store, asked for when it is needed.
@@ -186,20 +188,24 @@ const said = (error) => String(error?.message ?? error);
  *  list of options, `detached` is not one of them, and a child it starts stays in the TUI's group
  *  whatever it is asked. `run` below is the part of execFile's contract the shared readers use.
  *
- *  ENDING A CHILD holds because this version only reads. A KERNEL CALL THAT CHANGES SOMETHING MUST
+ *  ENDING A CHILD holds because every child the reader starts is a read: the viewer of an opened
+ *  agent is lib/open.mjs's, and no child of the reader. A KERNEL CALL THAT CHANGES SOMETHING MUST
  *  NEVER BE KILLED BY THE TUI: a killed stop or start leaves a marker that refuses every later one.
  *  So every child is remembered with its kind, only kind "read" is ever signalled, and a later
  *  version's writing calls get a kind of their own.
  *
  *  `timers` are the loop's, the idle timer's and the children's time limits (for tests). */
 export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onRoster, env = process.env, clock = () => new Date().toISOString(), now = Date.now, spawn = nodeSpawn, timers = { setTimeout, clearTimeout }, collector = COLLECTOR, idleMs = 600_000, focusedMs = 5000, blurredMs = 30_000, rosterMs = 15_000 }) {
-  /** child -> { kind, exited, giveUp }: every child that has not ended and was not ended. */
+  /** child -> { kind, exited, giveUp, asked }: every child that has not ended and was not ended.
+   *  `asked`: a read the loop asked for itself (the preflight of an open), which no cycle owns. */
   const remembered = new Map();
   let started = false, stopped = false, idleTimer = null;
   /** `counter` numbers the cycles. `epoch` moves when the cycles in flight are made void; `flight`
    *  is the epoch the cycle now running began in (the loop runs one at a time). `served` is what
    *  getServed() answered at the start of that cycle. */
   let counter = 0, epoch = 0, flight = 0, served = [];
+  /** The terminal is lent (hold()): no cycle and no roster read starts until release(). */
+  let held = false;
   /** The roster of other machines. `rosterFlight` is the read in flight (a token of its own, so an
    *  answer knows whether it is still awaited), or null. `rosterEnded` is now() when the last read
    *  that was not given up ended, or null while none has. `gatedSaid`: a kernel that reads no
@@ -214,9 +220,9 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
    *  other options go to spawn as they are, with `detached: true` added. Returns the child.
    *  The child is forgotten when it ends: `close`, `error` for one that did not start, or the
    *  moment the reader ends it. */
-  function run(kind, args, { timeout = 0, maxBuffer = Infinity, encoding = "utf8", ...rest }, callback) {
+  function run(kind, args, { timeout = 0, maxBuffer = Infinity, encoding = "utf8", ...rest }, callback, { asked = false } = {}) {
     const child = spawn(process.execPath, args, { ...rest, detached: true });
-    const printed = { stdout: "", stderr: "" }, record = { kind, exited: false, giveUp };
+    const printed = { stdout: "", stderr: "" }, record = { kind, exited: false, giveUp, asked };
     let over = false, severed = false, verdict = null, timer = null;
     function finish(error) {
       if (over) return;
@@ -281,8 +287,9 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     remembered.set(child, record);
     return child;
   }
-  function endReads() {
-    for (const record of [...remembered.values()]) if (record.kind === "read") record.giveUp(ended());
+  /** End the reads remembered: every one, or (`cycles`) only those a cycle or the roster started. */
+  function endReads({ cycles = false } = {}) {
+    for (const record of [...remembered.values()]) if (record.kind === "read" && !(cycles && record.asked)) record.giveUp(ended());
   }
 
   /** The exec handed to the shared readers: execFile's signature, for `node <bin> <argv…>` (see
@@ -293,6 +300,24 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
   function exec(bin, argv, options, callback) {
     if (stopped || flight !== epoch) throw new Error("this read was given up before it started");
     return run("read", [bin, ...argv], options.env === undefined ? { ...options, env } : options, callback);
+  }
+  /** The exec of a read the loop asks for itself, outside every cycle: the preflight of an agent
+   *  on another machine (`oats session inspect`, through the shared prepareRemoteTerm). The same
+   *  child as a cycle's (kind "read", a session of its own, the reader's environment where the
+   *  options name none, ended on every way out), not made void by voidInFlight(): the loop ends it
+   *  through `signal`, which ends the child's whole group as the reader's own giving up does. A
+   *  `signal` already aborted starts nothing. It throws after stop(). */
+  function askedExec(bin, argv, { signal, ...options }, callback) {
+    if (stopped) throw new Error("the reader has stopped");
+    if (signal?.aborted) throw new Error("this read was given up before it started");
+    const child = run("read", [bin, ...argv], options.env === undefined ? { ...options, env } : options, callback, { asked: true });
+    if (signal) {
+      const record = remembered.get(child);
+      const abandon = () => record?.giveUp(ended());
+      signal.addEventListener("abort", abandon, { once: true });
+      child.once("close", () => signal.removeEventListener("abort", abandon));
+    }
+    return child;
   }
   /** The shared observer, with the shared reader over this exec and no reader of the TUI's own: a
    *  failed read has the same reasons here as in the Desktop. It admits a deployment of the cycle
@@ -392,7 +417,7 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
    *  started beside two would be refused as busy and never read). The cycle is over when its
    *  deployments are; with none served it reads nothing local. */
   async function cycle({ live }) {
-    if (stopped) return;
+    if (stopped || held) return;
     flight = epoch;
     const mine = epoch, number = ++counter, at = clock();
     const over = () => stopped || mine !== epoch;
@@ -444,6 +469,8 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
      *  children remembered are ended as stop() ends them. The reader stays usable: the loop goes
      *  on, and the next cycle (the caller requests a live one on the return) emits with the next
      *  number. A cycle requested but not begun is not in flight: it runs after the return.
+     *  A read the loop asked for itself (the preflight, `exec`) is not a cycle's: it is left as it
+     *  is, and the loop gives it up through its signal.
      *  THE SAME HOLDS FOR A ROSTER READ IN FLIGHT, which is not part of a cycle and may outlive
      *  the one that began it: its child is ended, whatever it answers is dropped (no onRoster; the
      *  caller tells its store that nothing is being collected), and it is no longer in flight, so
@@ -453,8 +480,17 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     voidInFlight() {
       epoch++;
       rosterFlight = null;
-      endReads();
+      endReads({ cycles: true });
     },
+    /** The terminal is lent to the kernel's viewer: from now until release() no cycle begins and
+     *  no roster read starts (a cycle the loop's timer or a request would begin does nothing and
+     *  emits nothing). What is in flight is not touched here: the caller made it void first, as at
+     *  a stop. Idempotent. */
+    hold() { held = true; },
+    /** The terminal is back: cycles begin again. The caller asks for a live one. */
+    release() { held = false; },
+    /** See askedExec. */
+    exec: askedExec,
     /** Leave: synchronous and idempotent, safe before start(). The loop and the idle timer are
      *  stopped, the observer disposed and every reading child ended (see `sever`), the roster's
      *  included. A cycle in flight ends without emitting and without starting anything, and so

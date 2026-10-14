@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
-import { PI_BRIDGE, bridgeLookup, bridgeLookupProblem, kernelLookup, kernelLookupResult, piBridgeFailure, piBridgeFolders, piBridgeSkewWarnings, piBridgeState, piBridgeStepProblem, piFolders, planCliUpdate, planPiBridges, piBridgePlanLines, registryVersion, whyLookedAt } from "../lib/pi-bridge.mjs";
+import { PI_BRIDGE, bridgeLookup, bridgeLookupProblem, kernelLookup, kernelLookupResult, piBridgeFailure, piBridgeFolders, piBridgeSkewWarnings, piBridgeState, piBridgeStepProblem, piFolders, planCliUpdate, desktopFirstLine, planPiBridges, piBridgePlanLines, registryVersion, whyLookedAt } from "../lib/pi-bridge.mjs";
 import { compareVersions, parseVersion } from "../lib/resolve.mjs";
 
 const bases = [];
@@ -306,6 +306,30 @@ test("#1011 planCliUpdate: the CLI moves forward only, and the bridges' target i
   assert.equal(planCliUpdate("0.53.0+build.1", "0.52.0").ahead, true);
   // An installed version that cannot be compared is another version: the step, as before.
   assert.deepEqual(planCliUpdate("banana", "0.53.0").step, step("0.53.0"));
+});
+
+test("#1107 desktopFirstLine: the line when the CLI's install moves it to another minor or major version, null otherwise", () => {
+  const line = (version) => `OATS Desktop refuses a CLI newer than its own minor version: if you use it, install OATS Desktop ${version} first.`;
+  const said = (installed, registry) => desktopFirstLine(planCliUpdate(installed, registry));
+  // Another minor, or another major: the line, with the version the plan installs.
+  assert.equal(said("0.55.1", "0.56.0"), line("0.56.0"));
+  assert.equal(said("0.56.0-rc.1", "0.57.0"), line("0.57.0"));
+  assert.equal(said("0.56.0", "1.0.0"), line("1.0.0"));
+  assert.equal(said("0.9.0", "0.10.0"), line("0.10.0"), "compared as numbers");
+  assert.equal(said("0.56.0", "0.57.0-rc.1"), line("0.57.0-rc.1"), "the registry's version as npm listed it");
+  // Within the minor: a patch, a prerelease to its release or to a later prerelease, a local build.
+  assert.equal(said("0.55.0", "0.55.1"), null);
+  assert.equal(said("0.56.0-rc.1", "0.56.0"), null);
+  assert.equal(said("0.56.0-rc.1", "0.56.0-rc.2"), null);
+  assert.equal(said("0.56.0+build.1", "0.56.1"), null, "build metadata compares as its release");
+  assert.equal(said("0.55.0+build.1", "0.56.0"), line("0.56.0"));
+  // No CLI step: up to date, a local build of the same version, or the CLI ahead of the registry.
+  assert.equal(said("0.56.0", "0.56.0"), null);
+  assert.equal(said("0.56.0+build.1", "0.56.0"), null);
+  assert.equal(said("0.57.0", "0.56.0"), null);
+  assert.equal(said("1.0.0", "0.56.0"), null);
+  // An installed version that cannot be read is another version: the step, and the line with it.
+  assert.equal(said("banana", "0.56.0"), line("0.56.0"));
 });
 
 test("#1011 kernelLookupResult: the version, or the message that stops the update; nothing npm printed is in it as it came, from either stream", () => {

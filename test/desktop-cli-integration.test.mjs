@@ -222,6 +222,7 @@ test("desktop server: 0.26.0 through 0.55.x CLIs are ACCEPTED; 0.25.9 is REJECTE
       assert.ok(tried, "the rejected candidate is in diagnostics");
       assert.match(tried.reason, /outside >=0\.26\.0 <0\.56\.0/);
       assert.equal(tried.version, version);
+      assert.equal(tried.above, version === "0.56.0" ? true : undefined, "refused only for being above the band: the card says the Desktop is the older");
     } finally { b.proc.kill(); }
   }
 });
