@@ -1078,6 +1078,14 @@ oats session attach --home /abs/home --detach-key 'C-\'
   session linked to the agent's window alone.
   Closing the viewer leaves the agent running.
 
+  On tmux 3.2 and later the viewer's tmux client asks for synchronized
+  output (`tmux -T sync`, for that client alone): tmux wraps each redraw in
+  DEC mode 2026, so a terminal that receives a redraw in two pieces does not
+  paint the half-drawn state, such as a cursor flickering while you type. A
+  terminal without the mode ignores it. Before 3.2, or when `tmux -V` gives
+  no version it can read, the client starts as before. A routed attach
+  (`--server`) runs the same viewer on the host, so the host's tmux decides.
+
   **Leaving the viewer.** Without `--detach-key` there is no keyboard exit:
   every key goes to the agent, the tmux prefix included. Close the terminal.
   With `--detach-key <key>` (`--detach-key=<key>` is the same; feature
