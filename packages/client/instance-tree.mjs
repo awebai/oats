@@ -3,6 +3,7 @@
  * under a filter or a collapse, who waits below a collapsed row, and what holds a home. No document,
  * no element: a client draws from these answers with its own means. */
 import { waitingClaim } from './waiting-on-you.mjs';
+import { byRuntimeState } from './instance-presentation.mjs';
 
 export function collapseKey(workspace, instance) {
   return `${workspace || ""}\u0000${instance}`;
@@ -60,8 +61,8 @@ export function resolveLinkId(fromInstance, name, byName) {
  * cluster members related only by sibling links sit at depth 0.
  * Nodes are keyed by instanceId (composite identity), never bare name —
  * duplicate names across repos render as distinct nodes.
- * Returns [{ key, instances: [{...instance, depth}] }] with clusters ranked
- * running-first then by first member name, matching the roster sort. */
+ * Returns [{ key, instances: [{...instance, depth}] }] with clusters ranked by
+ * their first member in the roster's order (`byRuntimeState`), as the panel is. */
 export function clusterInstances(instances, { links = instanceLinks } = {}) {
   const byId = new Map(instances.map((i) => [instanceId(i), i]));
   const byName = new Map();
@@ -85,7 +86,7 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
       adj.get(oid).add(id);
     }
   }
-  const rank = (a, b) => (a.running === b.running ? a.instance.localeCompare(b.instance) : a.running ? -1 : 1);
+  const rank = byRuntimeState;
   const seen = new Set();
   const clusters = [];
   for (const start of [...instances].sort(rank)) {
@@ -121,7 +122,7 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
     // Deterministic cluster label: the lexically-smallest ROOT name —
     // independent of liveness, so the visible cluster name does not flip
     // when a different member starts/stops running (review f921f7d nit).
-    // Running-first `rank` still governs display ORDER within the cluster.
+    // `rank` (running, unknown, stopped) still governs display ORDER within the cluster.
     const rootNames = (roots.length ? roots : members).map((i) => i.instance).sort();
     clusters.push({ key: rootNames[0], instances: ordered });
   }

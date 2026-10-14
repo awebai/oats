@@ -434,7 +434,10 @@ answers the view that holds it; no `?ws=` answers the first view.
   the machine is uppercased, a path tail never is, since a path is
   case-sensitive) only when the view has two or more, and none for a deployment with no rows;
   with one it has no headings. Rows never repeat the workspace name, and a
-  row's identity line keeps its host.
+  row's identity line keeps its host. Rows, and the tree's clusters, stand
+  running, then unknown (`running` not a boolean), then stopped, by name
+  within each: one comparison, `byRuntimeState`
+  (`packages/client/instance-presentation.mjs`).
 
 ### A workspace's own machines
 
