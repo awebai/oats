@@ -1,0 +1,6 @@
+node v26.8.2 fixture-expected-warning ℹ tests 9 ℹ pass 9 ℹ fail 0  lines=0 @@LEFT 
+node v26.8.2 native-launch-custody ℹ tests 49 ℹ pass 49 ℹ fail 0  lines=0 @@LEFT 
+node v26.8.2 directory-work-mode ℹ tests 43 ℹ pass 43 ℹ fail 0  lines=0 @@LEFT tmux-1000 
+node v22.23.3 fixture-expected-warning # tests 9 # pass 9 # fail 0  lines=0 @@LEFT 
+node v22.23.3 native-launch-custody # tests 49 # pass 49 # fail 0  lines=0 @@LEFT 
+node v22.23.3 directory-work-mode # tests 43 # pass 43 # fail 0  lines=0 @@LEFT tmux-1000 

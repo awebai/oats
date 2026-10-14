@@ -1,0 +1,8 @@
+node v26.8.2 retire-refused-completion ℹ tests 22 ℹ pass 22 ℹ fail 0  lines=0 @@LEFT 
+node v26.8.2 session-restart ℹ tests 21 ℹ pass 21 ℹ fail 0  lines=0 @@LEFT 
+node v26.8.2 schedule-run-warnings ℹ tests 1 ℹ pass 1 ℹ fail 0  lines=0 @@LEFT 
+node v26.8.2 fixture-expected-warning ℹ tests 9 ℹ pass 9 ℹ fail 0  lines=0 @@LEFT 
+node v22.23.3 retire-refused-completion # tests 22 # pass 22 # fail 0  lines=0 @@LEFT 
+node v22.23.3 session-restart # tests 21 # pass 21 # fail 0  lines=0 @@LEFT 
+node v22.23.3 schedule-run-warnings # tests 1 # pass 1 # fail 0  lines=0 @@LEFT 
+node v22.23.3 fixture-expected-warning # tests 9 # pass 9 # fail 0  lines=0 @@LEFT 

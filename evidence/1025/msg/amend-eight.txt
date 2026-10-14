@@ -1,0 +1,41 @@
+amend! tests: eight more files remove the directories they make (#1025)
+
+tests: eight more files remove the directories they make (#1025)
+
+Each of these left directories in the temporary directory on a run that
+passed. Each removal is now registered where the directory is made, so a
+test that fails removes it too. No assertion changes.
+
+- test/desktop-cli-integration.test.mjs removed nothing: 43 directories
+  a run, one per fake CLI and 30 of them one per version in the band
+  loop. A file-local tempDir(t, prefix) registers the removal with the
+  test. The removal waits for what works in the directory: the servers
+  the test started, and what those started. A server that is killed
+  leaves a fake CLI it had just started to finish by itself, and that
+  one writes its log there 20 to 40 ms after the server has gone: four
+  of them in every run. So the new test/helpers/process-group.mjs
+  starts a server as the leader of a process group of its own
+  (startGroup), and closeGroup kills the server and waits until its
+  group is empty. A group that is not empty after 30 s fails the test
+  and names the processes left. A group of its own is not reached by an
+  interrupt of the test's process, so the helper passes it on: on
+  SIGINT, SIGTERM or SIGHUP it kills the groups that process started
+  and lets the signal end the process as before.
+  test/process-group.test.mjs pins the helper, and
+  docs/implementation.md has the rule.
+- test/capabilities.test.mjs, test/cli-json-contract.test.mjs and
+  test/cli-lifecycle.test.mjs: temp() records each directory, and the
+  file removes them when it has ended (cli-lifecycle's hermetic home
+  among them).
+- test/spawn-prepared-kernel.test.mjs: deployment() records its base
+  the same way (about 970 inodes each, seven a run).
+- test/automation-descriptions.test.mjs: the one base is removed with
+  its test.
+- packages/record/test/capture-lock.test.mjs removed the root inside the
+  directory it made, and now removes the directory.
+- packages/experimental/test/spawn.test.mjs: a dry run of the tool
+  compiles into a directory it makes under the temporary directory and
+  leaves it, by design. The test gives that child its own base as the
+  temporary directory, so what the run leaves goes with the base.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

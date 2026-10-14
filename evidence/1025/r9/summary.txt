@@ -1,0 +1,4 @@
+v26.8.2 retire-no-index exit=0 ℹ tests 15 ℹ pass 15 ℹ fail 0 ℹ skipped 0  warning-lines=0 per-call=0 @@LEFT 
+v26.8.2 retire-work-safety exit=0 ℹ tests 156 ℹ pass 156 ℹ fail 0 ℹ skipped 0  warning-lines=0 per-call=0 @@LEFT 
+v22.23.3 retire-no-index exit=0 # tests 15 # pass 15 # fail 0 # skipped 0  warning-lines=0 per-call=0 @@LEFT 
+v22.23.3 retire-work-safety exit=0 # tests 156 # pass 156 # fail 0 # skipped 0  warning-lines=0 per-call=0 @@LEFT 

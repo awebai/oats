@@ -1,0 +1,30 @@
+head 09766756 node v26.8.2
+test/launch-prompt-failure.test.mjs exit=0 ℹ tests 19 ℹ pass 19 ℹ fail 0  lines=18 probe=18 @@LEFT 
+test/launch-prompt-integration.test.mjs exit=0 ℹ tests 15 ℹ pass 15 ℹ fail 0  lines=12 probe=14 @@LEFT 
+test/lifecycle-pair-table.test.mjs exit=0 ℹ tests 52 ℹ pass 52 ℹ fail 0  lines=3 probe=5 @@LEFT 
+test/native-launch-custody.test.mjs exit=0 ℹ tests 49 ℹ pass 49 ℹ fail 0  lines=12 probe=12 @@LEFT 
+test/retire-exclusive.test.mjs exit=0 ℹ tests 23 ℹ pass 23 ℹ fail 0  lines=2 probe=2 @@LEFT 
+test/retire-leaves-branches.test.mjs exit=0 ℹ tests 16 ℹ pass 16 ℹ fail 0  lines=1 probe=1 @@LEFT 
+test/session-start.test.mjs exit=0 ℹ tests 22 ℹ pass 22 ℹ fail 0  lines=1 probe=1 @@LEFT 
+test/stop-claim.test.mjs exit=0 ℹ tests 19 ℹ pass 19 ℹ fail 0  lines=9 probe=10 @@LEFT 
+test/stop-claim-killed.test.mjs exit=0 ℹ tests 12 ℹ pass 12 ℹ fail 0  lines=3 probe=3 @@LEFT 
+test/tmux-missing-socket.test.mjs exit=0 ℹ tests 5 ℹ pass 5 ℹ fail 0  lines=4 probe=4 @@LEFT 
+test/tmux-own-server.test.mjs exit=0 ℹ tests 30 ℹ pass 30 ℹ fail 0  lines=4 probe=22 @@LEFT 
+test/tmux-server-scope-start.test.mjs exit=0 ℹ tests 9 ℹ pass 9 ℹ fail 0  lines=16 probe=16 @@LEFT 
+test/directory-work-mode.test.mjs exit=0 ℹ tests 43 ℹ pass 43 ℹ fail 0  lines=4 probe=4 @@LEFT tmux-1000 
+test/schedule-caps.test.mjs exit=0 ℹ tests 13 ℹ pass 13 ℹ fail 0  lines=2 probe=4 @@LEFT 
+test/desktop-tmux-anchoring.test.mjs exit=0 ℹ tests 1 ℹ pass 1 ℹ fail 0  lines=0 probe=0 @@LEFT 
+test/desktop-tmux-target.test.mjs exit=0 ℹ tests 16 ℹ pass 14 ℹ fail 0  lines=0 probe=0 @@LEFT oatsg-7W4qnM 
+test/hook-events-forward-tolerant.test.mjs exit=0 ℹ tests 11 ℹ pass 11 ℹ fail 0  lines=0 probe=2 @@LEFT 
+test/pane-path.test.mjs exit=0 ℹ tests 14 ℹ pass 14 ℹ fail 0  lines=0 probe=5 @@LEFT 
+test/spawn-prepared-kernel.test.mjs exit=0 ℹ tests 7 ℹ pass 7 ℹ fail 0  lines=0 probe=56 @@LEFT oats-prepared-kernel-11br0o oats-prepared-kernel-9eDP
+test/stable-node-hooks.test.mjs exit=0 ℹ tests 8 ℹ pass 8 ℹ fail 0  lines=1 probe=1 @@LEFT 
+test/login-environment.test.mjs exit=0 ℹ tests 16 ℹ pass 16 ℹ fail 0  lines=0 probe=29 @@LEFT 
+test/schedule-gone-server.test.mjs exit=0 ℹ tests 8 ℹ pass 8 ℹ fail 0  lines=0 probe=0 @@LEFT 
+test/golden-fixtures.test.mjs exit=0 ℹ tests 40 ℹ pass 40 ℹ fail 0  lines=0 probe=0 @@LEFT oats-tmux-0AY4ll oats-tmux-0IdiV1 oats-tmux-1Goq55 oa
+test/spawn-compensation.test.mjs exit=0 ℹ tests 13 ℹ pass 13 ℹ fail 0  lines=0 probe=3 @@LEFT oats-tmux-6K8Fa9 oats-tmux-DkplKf oats-tmux-PRJb6O oa
+test/schedule-session.test.mjs exit=0 ℹ tests 1 ℹ pass 1 ℹ fail 0  lines=0 probe=0 @@LEFT 
+test/schedule-run-warnings.test.mjs exit=0 ℹ tests 1 ℹ pass 1 ℹ fail 0  lines=0 probe=2 @@LEFT 
+test/stop-unwritable-claim.test.mjs exit=0 ℹ tests 9 ℹ pass 9 ℹ fail 0  lines=9 probe=20 @@LEFT 
+test/capabilities.test.mjs exit=0 ℹ tests 111 ℹ pass 111 ℹ fail 0  lines=4 probe=5 @@LEFT oats-cap-test-2WCmJx oats-cap-test-3YjEIW oats-cap-te
+done

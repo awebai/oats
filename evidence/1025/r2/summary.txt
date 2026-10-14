@@ -1,0 +1,5 @@
+launch-prompt-failure ℹ tests 19 ℹ pass 19 ℹ fail 0  lines=0
+login-environment ℹ tests 16 ℹ pass 16 ℹ fail 0  lines=0
+schedule-gone-server ℹ tests 8 ℹ pass 8 ℹ fail 0  lines=0
+tmux-missing-socket ℹ tests 5 ℹ pass 5 ℹ fail 0  lines=0
+native-launch-custody ℹ tests 49 ℹ pass 49 ℹ fail 0  lines=0

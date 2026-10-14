@@ -1,0 +1,6 @@
+v26.8.2 remote-partial exit=0 ℹ tests 51 ℹ pass 51 ℹ fail 0 ℹ skipped 0  warning-lines=0 per-call=0 @@LEFT 
+v26.8.2 desktop-launch-preference-unmatched-kernel exit=0 ℹ tests 19 ℹ pass 19 ℹ fail 0 ℹ skipped 0  warning-lines=0 per-call=0 @@LEFT 
+v26.8.2 desktop-launch-prompt-kernel exit=0 ℹ tests 6 ℹ pass 6 ℹ fail 0 ℹ skipped 0  warning-lines=0 per-call=0 @@LEFT 
+v22.23.3 remote-partial exit=0 # tests 51 # pass 51 # fail 0 # skipped 0  warning-lines=0 per-call=0 @@LEFT 
+v22.23.3 desktop-launch-preference-unmatched-kernel exit=0 # tests 19 # pass 19 # fail 0 # skipped 0  warning-lines=0 per-call=0 @@LEFT 
+v22.23.3 desktop-launch-prompt-kernel exit=0 # tests 6 # pass 6 # fail 0 # skipped 0  warning-lines=0 per-call=0 @@LEFT 

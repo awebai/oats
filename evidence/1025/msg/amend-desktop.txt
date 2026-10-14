@@ -1,0 +1,30 @@
+amend! tests: two root suites of the Desktop remove the directories they make (#1025)
+
+tests: two root suites of the Desktop remove the directories they make (#1025)
+
+test/desktop-server.test.mjs left 24 directories a run: one per fake
+CLI it installs for a server, the deployments of the tests that did not
+remove theirs, and four single ones. test/desktop-tmux-target.test.mjs
+left the directory of one test's tmux socket.
+
+desktop-server now makes every directory through a file-local
+tempDir(), which records it where it is made, and records each server
+it starts. One hook, when the file has ended, closes the servers first
+and only then removes the directories. It is a hook of the file and not
+of each test because a test here shares its server with its subtests.
+
+Closing a server is more than its exit. A server that is killed leaves
+a fake CLI it had just started to finish by itself, and that one writes
+its log in a directory after the server has gone: in three of five runs
+one was still alive after its server's kill, once after the hook had
+seen every server exit. So each server is started with startGroup
+(test/helpers/process-group.mjs), as the leader of a process group of
+its own, and the hook closes it with closeGroup, which kills the server
+and waits until its group is empty; a group that is not empty after
+30 s fails the file and names the processes left. The tests' own
+earlier removals stay as they were.
+
+desktop-tmux-target registers the removal of the socket's directory
+with the test. No assertion changes in either file.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

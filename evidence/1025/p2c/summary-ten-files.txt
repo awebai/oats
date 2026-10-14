@@ -1,0 +1,21 @@
+v26.8.2 packages/record/test/capture-lock.test.mjs exit=0 ℹ tests 14 ℹ pass 14 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 packages/experimental/test/spawn.test.mjs exit=0 ℹ tests 8 ℹ pass 8 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 packages/desktop/test/window-main.test.mjs exit=0 ℹ tests 22 ℹ pass 22 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 packages/desktop/test/window-records.test.mjs exit=0 ℹ tests 14 ℹ pass 14 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 test/automation-descriptions.test.mjs exit=0 ℹ tests 7 ℹ pass 7 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 test/cli-json-contract.test.mjs exit=0 ℹ tests 14 ℹ pass 14 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 test/cli-lifecycle.test.mjs exit=0 ℹ tests 5 ℹ pass 5 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 test/capabilities.test.mjs exit=0 ℹ tests 111 ℹ pass 111 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 test/spawn-prepared-kernel.test.mjs exit=0 ℹ tests 7 ℹ pass 7 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v26.8.2 test/desktop-cli-integration.test.mjs exit=0 ℹ tests 10 ℹ pass 10 ℹ fail 0 ℹ skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 packages/record/test/capture-lock.test.mjs exit=0 # tests 14 # pass 14 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 packages/experimental/test/spawn.test.mjs exit=0 # tests 8 # pass 8 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 packages/desktop/test/window-main.test.mjs exit=0 # tests 22 # pass 22 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 packages/desktop/test/window-records.test.mjs exit=0 # tests 14 # pass 14 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 test/automation-descriptions.test.mjs exit=0 # tests 7 # pass 7 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 test/cli-json-contract.test.mjs exit=0 # tests 14 # pass 14 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 test/cli-lifecycle.test.mjs exit=0 # tests 5 # pass 5 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 test/capabilities.test.mjs exit=0 # tests 111 # pass 111 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 test/spawn-prepared-kernel.test.mjs exit=0 # tests 7 # pass 7 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+v22.23.3 test/desktop-cli-integration.test.mjs exit=0 # tests 10 # pass 10 # fail 0 # skipped 0  left=0       1        1 @@LEFT 
+done

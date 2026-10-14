@@ -1,0 +1,17 @@
+test/golden-fixtures.test.mjs
+test/spawn-compensation.test.mjs
+test/retire-lost-tmux-server.test.mjs
+test/desktop-team-model-3-kernel.test.mjs
+packages/desktop/test/window-main.test.mjs
+packages/desktop/test/window-records.test.mjs
+test/spawn-prepared-kernel.test.mjs
+test/capabilities.test.mjs
+test/cli-json-contract.test.mjs
+test/automation-descriptions.test.mjs
+test/cli-lifecycle.test.mjs
+packages/record/test/capture-lock.test.mjs
+packages/experimental/test/spawn.test.mjs
+test/directory-work-mode.test.mjs
+test/left-behind.test.mjs
+test/test-runner.test.mjs
+test/unasserted-warnings.test.mjs

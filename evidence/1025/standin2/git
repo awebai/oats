@@ -1,0 +1,3 @@
+#!/bin/sh
+printf '%s\t%s\t%s\n' "${HOME-<unset>}" "${GIT_CONFIG_GLOBAL-<unset>}" "$1 $2 $3" >> "${GIT_LOG:-/var/tmp/okd-fi/standin2/git.tsv}"
+exec /usr/bin/git "$@"

@@ -1,0 +1,3 @@
+test/process-group.test.mjs 3
+test/desktop-server.test.mjs 3
+test/desktop-cli-integration.test.mjs 2

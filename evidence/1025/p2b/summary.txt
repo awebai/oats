@@ -1,0 +1,4 @@
+desktop-team-model-3-kernel ℹ tests 4 ℹ pass 4 ℹ fail 0 ℹ skipped 0  made=4 removed=4 @@LEFT 
+retire-lost-tmux-server ℹ tests 10 ℹ pass 8 ℹ fail 0 ℹ skipped 2  made=8 removed=8 @@LEFT 
+spawn-compensation ℹ tests 13 ℹ pass 13 ℹ fail 0 ℹ skipped 0  made=13 removed=13 @@LEFT 
+golden-fixtures ℹ tests 40 ℹ pass 40 ℹ fail 0 ℹ skipped 0  made=36 removed=36 @@LEFT 

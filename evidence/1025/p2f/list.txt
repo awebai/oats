@@ -1,0 +1,9 @@
+test/desktop-server.test.mjs 5
+test/desktop-cli-integration.test.mjs 3
+test/desktop-tmux-target.test.mjs
+test/config-key-safety.test.mjs
+test/status-home-is-enumerated.test.mjs
+tests/tmux-config.test.mjs
+test/cli-max-age.test.mjs
+test/operator-dispatch.test.mjs
+test/spawn-standalone.test.mjs

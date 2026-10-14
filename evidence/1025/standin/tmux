@@ -1,0 +1,5 @@
+#!/bin/sh
+printf '%s\t%s\n' "${TMUX_TMPDIR-<unset>}" "$*" >> /var/tmp/okd-fi/standin/calls.tsv
+[ "$1" = "-V" ] && { echo "tmux 3.5a"; exit 0; }
+echo "no server running on /var/tmp/okd-fi/standin/no-server" >&2
+exit 1
