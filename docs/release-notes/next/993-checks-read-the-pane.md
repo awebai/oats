@@ -6,7 +6,11 @@
   required harness package now runs with the `PATH`, `HOME` and harness
   folder the launch's tmux pane will have. When a server runs and one of
   those cannot be read from it, a spawn or a start whose capabilities require
-  a package is refused before anything is probed or created. The case that
+  a package is refused before anything is probed. That first check comes
+  before anything is created. A spawn whose pane differs from the one it
+  checked (another creator started the server first) checks again on the
+  pane it got, once its home, work and hooks exist, and a refusal there rolls
+  the spawn back. The case that
   passed until now: a launch configuration that declares an absolute
   `executable`, in a session whose `PATH` is cleared or cannot be read as
   data. A launch with no package requirement is not affected.
@@ -15,10 +19,9 @@
     `env`, or give the session or the server a value OATS can read (`tmux -L
     oats set-environment -g PATH <value>`), or start the OATS tmux server
     from your own shell.
-  - **The code** is `E_RUNTIME_ENDPOINT_UNKNOWN` at `oats session start` and
-    `restart`, and in a preview's `harness-packages` item. `oats spawn`
-    answers it as `E_SPAWN_FAILED` with the same message, as it answers a
-    missing package today
+  - **The code** is `E_RUNTIME_ENDPOINT_UNKNOWN` at `oats spawn`,
+    `oats session start` and `restart`, and in a preview's
+    `harness-packages` item, with the same message
     ([#1047](https://github.com/awebai/oats/issues/1047)).
 - **`oats harness trust` writes for the file launches read, and refuses when
   it cannot tell which.** Its ambient file is the one a launch with no launch
