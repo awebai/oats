@@ -83,12 +83,19 @@ export function webgl2Supported(doc) {
  * - an activation that throws although WebGL2 was there: no further attempt
  *   for this terminal, which stays on the DOM renderer until it is reopened;
  *   another attempt would leave another canvas and listener set behind.
- * - a lost context (Chromium keeps about 16 and drops the oldest; sleep or a
- *   GPU reset): the addon is disposed (`onChange` refits), and `ensure()`, run
- *   when the tab is shown, loads a fresh one. */
-export function createGlyphRenderer({ term, Addon, onChange = () => {},
+ * - a lost context that is not restored within addon-webgl's 3 s wait
+ *   (Chromium keeps about 16 and drops the oldest): the addon is disposed
+ *   (`onChange` refits), and `ensure()`, run when the tab is shown, loads a
+ *   fresh one. A fresh addon re-joins the window's shared glyph atlas, which
+ *   the loss may have left stale, so a load that follows a loss calls
+ *   `onRecovered`: the shell's window-wide atlas clear
+ *   (terminal-atlas-recovery.mjs), never this terminal's own clear, which
+ *   garbles the others. A context restored within the 3 s (a GPU process
+ *   restart after sleep or a Space switch) never reaches this path: that
+ *   module hears the restore itself. */
+export function createGlyphRenderer({ term, Addon, onChange = () => {}, onRecovered = () => {},
   supported = () => webgl2Supported(term.element?.ownerDocument) }) {
-  let addon = null, failed = false;
+  let addon = null, failed = false, lost = false;
   function drop() {
     const was = addon; addon = null;
     try { was?.dispose(); } catch {}
@@ -99,7 +106,7 @@ export function createGlyphRenderer({ term, Addon, onChange = () => {},
     let next = null;
     try {
       next = new Addon();
-      next.onContextLoss(() => { if (addon === next) drop(); });
+      next.onContextLoss(() => { if (addon === next) { lost = true; drop(); } });
       term.loadAddon(next);
       addon = next;
       onChange();
@@ -107,6 +114,7 @@ export function createGlyphRenderer({ term, Addon, onChange = () => {},
       // No retry (the Desktop lead's decision): a failed activation would leak another canvas and listener set.
       failed = true; try { next?.dispose(); } catch {}
     }
+    if (addon && lost) { lost = false; try { onRecovered(); } catch {} }
     return Boolean(addon);
   }
   return { ensure, dispose: drop, get active() { return Boolean(addon); } };

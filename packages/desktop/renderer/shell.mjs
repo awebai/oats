@@ -42,6 +42,7 @@ import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
+import { createTerminalAtlasRecovery } from "./terminal-atlas-recovery.mjs";
 import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
@@ -1276,7 +1277,9 @@ function showTerminalContext() {
 // ── tabs ──────────────────────────────────────────────────────────────────
 const tabbar = document.getElementById("tabbar");
 const tabhost = document.getElementById("tabhost");
-const tabs = new Map(); // id -> { tabEl, triggerEl, closeEl, paneEl, title, key, onClose, onShow }
+const tabs = new Map(); // id -> { tabEl, triggerEl, closeEl, paneEl, title, key, onClose, onShow, term }
+// After a GPU process restart every terminal's glyph atlas is cleared in one pass, hidden tabs included (#1190).
+const atlasRecovery = createTerminalAtlasRecovery({ doc: document, terminals: () => [...tabs.values()].flatMap(t => t.term ? [t.term] : []) });
 let nextTabId = 1;
 let activeTab = null;
 const wsActiveTerminal = new Map(); // workspace id -> last-active terminal tab key
@@ -1576,7 +1579,7 @@ function onTabKeydown(e, id) {
   if (selectTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
+function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null, term = null }) {
   if (key) {
     for (const [tid, t] of tabs) if (t.key === key) {
       if (instanceRef && (!intent || intent())) t.instanceRef = instanceRef;
@@ -1601,7 +1604,7 @@ function addTab({ decor = null, title, key, kind = "artifact", workspace = curre
     isApplyingFocus: () => tabOpenIntents.isApplyingFocus(),
     select: () => selectTab(id),
   });
-  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, confirmClose, onShow, focusContent });
+  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, confirmClose, onShow, focusContent, term });
   if (intent) selectTab(id, { intent, focusContent: focusOnActivate });
   else activateTab(id);
   return { id, paneEl };
@@ -1963,7 +1966,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   term.loadAddon(fit);
   // Box drawing and blocks as a native terminal draws them (WebGL, DOM fallback).
   const glyphs = createGlyphRenderer({ term, Addon: globalThis.WebglAddon?.WebglAddon,
-    onChange: () => requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} }) });
+    onChange: () => requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} }),
+    onRecovered: () => atlasRecovery.schedule() });
 
   // Composition (setup-inside-onReady, teardown symmetry) lives in
   // terminal-tab.mjs so its ordering is unit-testable (review termlc2).
@@ -2015,6 +2019,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
+    term, // the GPU-restart recovery clears its glyph atlas
   });
   if (!made) { unwire(); term.dispose(); return; } // lost a race to an identical tab
   // A tab opened on a waiting instance shows it at once, from the last painted roster (#558).
