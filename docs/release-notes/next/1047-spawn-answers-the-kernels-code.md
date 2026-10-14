@@ -27,3 +27,12 @@
   kernel stage prints `oats: <message>` where it printed Node's trace (a
   defect still prints its stack on stderr). See
   [spawn errors](../desktop-cli-api.md#spawn-errors).
+- **The harness-package gate has one name, `E_HARNESS_RESOURCE_MISSING`
+  (#1047).** A start or a restart refused for a missing harness package
+  answers `E_HARNESS_RESOURCE_MISSING` where it answered
+  `E_HARNESS_PACKAGE`, and so does the `harness-packages` check of a launch
+  plan (`oats launch-config preview`); the message is unchanged, and a spawn
+  answers the same code. A script that matched `E_HARNESS_PACKAGE` matches
+  `E_HARNESS_RESOURCE_MISSING` now. A preview in which the gate itself
+  faults (an error that is no verdict on a package) now fails as a fault,
+  where it showed a row that called the fault a missing package.

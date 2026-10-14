@@ -5062,7 +5062,11 @@ accept `--server <id>`.
   launchConfig, launchConfigSource, launchConfigDefault, executable: {path,
   declared, resolvedFrom}, argv, environment: [{name, fromEnv} | {name, redacted:
   true} | {name, reference: true}], command (redacted), prompt, hooks,
-  preflight: [{check, ok, detail}], ok}`.
+  preflight: [{check, ok, detail, code?}], ok}`. A failed check carries the
+  code a start would refuse with; the `harness-packages` check's is the
+  gate's own, `E_HARNESS_RESOURCE_MISSING` (`E_HARNESS_PACKAGE` before
+  0.56.0). A fault of the gate, which is no verdict on a package, is not a
+  row: the preview fails as a whole.
 
 `launchConfigDefault` (0.32) is `true` when `launchConfig` is this host's
 default for the harness rather than a chosen configuration; the spawn preview

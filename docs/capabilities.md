@@ -353,7 +353,10 @@ A self-contained package has an `oats.json`:
   A harness package is **verified at spawn, never installed there**: installing
   would mutate the operator's harness configuration without asking, in the
   middle of a spawn. A missing, uninstalled or disabled package fails the spawn
-  with direct package-manager guidance for the operator. The command uses the
+  with direct package-manager guidance for the operator
+  (`E_HARNESS_RESOURCE_MISSING`; a start, a restart and a launch plan's
+  `harness-packages` check answer the same code, `E_HARNESS_PACKAGE` before
+  0.56.0). The command uses the
   selected harness executable and resource directory, with Claude marketplace
   registration before plugin installation. Run it in the indicated context
   with the same launch environment; spawn and restart never install packages.
