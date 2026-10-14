@@ -301,9 +301,31 @@ fetch passes it with `-c remote.origin.url=`). A server without partial
 fetches gets whole trees; the cache records that (`oats.fetch = full` in its
 config) and the CLI prints the session's notice once, on stderr. Partial
 caches need git 2.45 or later (`PARTIAL_FETCH_GIT`, the first git with
-`GIT_NO_LAZY_FETCH`): with an older git every cache fetches whole trees, a
-partial cache it meets is deleted and fetched again whole, and the same
-notice says why.
+`GIT_NO_LAZY_FETCH`): only a successfully parsed version below that floor
+authorizes a version-driven rebuild. With that older git every cache fetches
+whole trees, a partial cache it meets is deleted and fetched again whole,
+and the same notice says why. An existing full cache stays full even when a
+later probe reports a modern git.
+
+One private strict version probe owns the memo per `exec`: concurrent callers
+share the in-flight probe, and a parsed success is retained. A rejection,
+unparseable result, or waiter leaving on timeout/cancellation removes only
+that probe's own memo entry, so a later call
+can retry without an old failure evicting a newer probe. `gitVersion(exec,
+opts)` wraps this same probe for compatibility, returning a version or `null`;
+it never memoizes a failure as `null`. The cache read path's `readVersion`
+uses the strict probe and maps failure through the existing
+`E_REMOTE_UNREADABLE` classification. Unparseable output is `unknown`; a
+probe's own `timedOut` remains `timeout` even before a session deadline.
+Each waiter can leave on its own timeout or cancellation. The launching
+caller supplies the shared Git process's timeout and signal: when those end
+the probe, every remaining waiter receives that original failure, even with
+time left on its own deadline. A later call retries; leaving a wait never
+changes the outcome delivered to peers still awaiting that probe.
+These refusals apply with or without a read session and preserve the
+existing partial cache, its fetch mode and its commit pins; failure never
+reaches the version comparison as an older git. Raw version stdout and
+command arguments are not diagnostic text.
 
 The fetch of a commit negotiates: git tells the server the commits the cache
 holds (its pins), and the pack holds only what they lack, a few kilobytes for
