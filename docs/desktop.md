@@ -17,6 +17,11 @@ Download the installer for your platform from the
 | macOS x64 (Intel) | DMG + ZIP | ad-hoc signed — see below |
 | Linux x64 | AppImage + DEB | requires `tmux` |
 
+On Linux the installers need glibc 2.34 or later (for example Ubuntu 22.04,
+Debian 12, RHEL 9 or later). That is what their files ask of the system, read
+from each build, which fails if a file needs more; it is not a list of systems
+the app was tested on.
+
 Windows and Linux arm64 are not supported.
 
 Verify downloads against the release's `SHA256SUMS.txt`. GitHub
@@ -502,12 +507,15 @@ Developer docs live in [`packages/desktop/README.md`](../packages/desktop/README
 certificate auto-discovery disabled) and
 `npm run dist:smoke` verifies the packed artifact. Build/release CI uses the
 marked build-verify mode on every leg (inventory + strict codesign
-verification + node-pty ABI + a headless run of the bundled backend, of its
-liveness collector and of every module main imports, from `app.asar` and the
-`client/` directory beside it, no GUI launch). The Linux leg then runs the
+verification on macOS + on Linux the glibc floor, every ELF file of the DEB
+and the AppImage read against the version the Install section states, held in
+`packages/desktop/scripts/linux-floor.json` + node-pty ABI + a headless run of
+the bundled backend, of its liveness collector and of every module main
+imports, from `app.asar` and the `client/` directory beside it, no GUI
+launch). The Linux leg then runs the
 smoke once more with its launch phase, under a virtual display; no macOS leg
 launches the window. A local interactive run may also exercise the launch
 phase. The headless run starts the backend as the app does, checks that it
 answers and that it exits when its stdin closes, and runs the collector once;
 it does not exercise the GUI or, on Linux, the AppImage's launcher and
-runtime.
+runtime (the glibc floor runs the runtime only to unpack the AppImage).
