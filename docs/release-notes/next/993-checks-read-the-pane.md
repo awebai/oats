@@ -6,7 +6,11 @@
   required harness package now runs with the `PATH`, `HOME` and harness
   folder the launch's tmux pane will have. When a server runs and one of
   those cannot be read from it, a spawn or a start whose capabilities require
-  a package is refused before anything is probed or created. The case that
+  a package is refused before anything is probed. That first check comes
+  before anything is created. A spawn whose pane differs from the one it
+  checked (another creator started the server first) checks again on the
+  pane it got, once its home, work and hooks exist, and a refusal there rolls
+  the spawn back. The case that
   passed until now: a launch configuration that declares an absolute
   `executable`, in a session whose `PATH` is cleared or cannot be read as
   data. A launch with no package requirement is not affected.
