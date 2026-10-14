@@ -6,13 +6,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile as nodeExecFile, execFileSync, spawn as nodeSpawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
 import { startViewer } from "../lib/open.mjs";
-import { KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
+import { CHANGE_FILES, KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/fake.mjs", import.meta.url));
 const LEAVE = fileURLToPath(new URL("./fixtures/leave.mjs", import.meta.url));
@@ -1548,4 +1548,97 @@ test("only reads are ever ended: a viewer the loop started (lib/open.mjs) is no 
   assert.deepEqual(await viewer.closed, { status: null, stderr: "" }, "ended by a signal: no status");
   await gone([pid], 5000);
   viewer.end(); // after it closed: nothing
+});
+
+// ── A change: a stop or retire apply, a start or a restart (awebai/oats#855, PR 5) ───────────────
+
+/** A kernel call that changes something, faked: it prints `{ out }` on stdout and `{ err }` on stderr,
+ *  says it is under way (`ready`), and with a `gate` waits for that file before it writes once more
+ *  on both and then `done`. A signal it receives is written down (`<done>.signal`) and does not end it. */
+const CHANGE = `
+import { existsSync, writeFileSync } from "node:fs";
+const [ready, gate, done, size] = process.argv.slice(2);
+for (const name of ["SIGTERM", "SIGHUP", "SIGINT", "SIGPIPE"]) process.on(name, () => writeFileSync(done + ".signal", name));
+process.stdout.write(size ? "x".repeat(Number(size)) : '{"schemaVersion":1,"ok":true,"result":{"stopped":true}}');
+process.stderr.write("the kernel's stderr\\n");
+writeFileSync(ready, String(process.pid));
+const wait = () => {
+  if (gate && !existsSync(gate)) return setTimeout(wait, 20);
+  if (gate) { process.stdout.write("written after the TUI let it go"); process.stderr.write("and on stderr"); }
+  writeFileSync(done, "done");
+  if (process.argv.includes("--fail")) process.exitCode = 3;
+};
+wait();
+`;
+/** A world for a change: its script, its files, and a reader whose private directory the test can find. */
+function changing(t) {
+  const dir = mkdtempSync(path.join(ROOT, "change-")), script = path.join(dir, "change.mjs");
+  writeFileSync(script, CHANGE);
+  const made = [];
+  const files = { ...CHANGE_FILES, dir: () => { const at = CHANGE_FILES.dir(); made.push(at); return at; } };
+  const world = makeWorld();
+  const r = reading(t, world, { files });
+  const pids = [];
+  t.after(() => { for (const pid of pids) if (alive(pid)) quietly(() => process.kill(pid, "SIGKILL")); });
+  const paths = { ready: path.join(dir, "ready"), gate: path.join(dir, "gate"), done: path.join(dir, "done") };
+  return { ...r, script, paths, made, pids, files };
+}
+/** Run one change through the reader: its child and the callback's answer, when it comes. */
+function change(c, argv, options = {}) {
+  let answer = null;
+  const child = c.reader.changeExec(c.script, argv, { label: { verb: "stop", name: "dev-1" }, ...options }, (...given) => { answer = given; });
+  c.pids.push(child.pid);
+  return { child, answer: () => answer };
+}
+
+test("a change's output goes to two files of the run's private directory, never a pipe: stdin is ignore, the TUI's copies are closed, and at the close both are read back, deleted, and handed to the callback as execFile hands them", async (t) => {
+  const c = changing(t);
+  const run = change(c, [c.paths.ready, "", c.paths.done], { timeout: 1, maxBuffer: 1024 * 1024, cwd: ROOT, encoding: "utf8" });
+  const [spawned] = c.spawned;
+  assert.deepEqual([spawned.file, spawned.args[0], spawned.options.detached, spawned.options.stdio[0]], [process.execPath, c.script, true, "ignore"]);
+  assert.equal(typeof spawned.options.stdio[1], "number", "a file, not a pipe");
+  assert.equal(typeof spawned.options.stdio[2], "number");
+  assert.equal(spawned.options.label, undefined, "the label is the TUI's, and not passed on");
+  assert.equal(spawned.options.timeout, undefined, "no time limit is armed");
+  assert.equal(spawned.options.env, CLEAN_ENV, "the reader's environment");
+  // Our copies are closed after the spawn (where /proc lists this process's descriptors).
+  if (existsSync("/proc/self/fd")) for (const fd of spawned.options.stdio.slice(1)) assert.equal(existsSync(`/proc/self/fd/${fd}`), false, `descriptor ${fd} is closed`);
+  assert.equal(c.made.length, 1);
+  assert.equal(statSync(c.made[0]).mode & 0o777, 0o700, "a private directory");
+  assert.deepEqual(readdirSync(c.made[0]).sort(), ["1.err", "1.out"]);
+  assert.deepEqual(c.reader.changes(), [{ pid: run.child.pid, label: { verb: "stop", name: "dev-1" } }]);
+  const answer = await waitFor("the callback", run.answer);
+  assert.deepEqual(answer, [null, '{"schemaVersion":1,"ok":true,"result":{"stopped":true}}', "the kernel's stderr\n"]);
+  assert.deepEqual(readdirSync(c.made[0]), [], "both files deleted");
+  assert.deepEqual(c.reader.changes(), [], "it left the list when it exited");
+  c.reader.stop();
+  assert.equal(existsSync(c.made[0]), false, "the empty directory is removed on the way out");
+});
+
+test("a change that exits nonzero answers as execFile does, its output still read; one that prints more than maxBuffer answers ERR_CHILD_PROCESS_STDIO_MAXBUFFER with maxBuffer bytes", async (t) => {
+  const c = changing(t);
+  const failed = await waitFor("the callback", change(c, [c.paths.ready, "", c.paths.done, "", "--fail"]).answer);
+  assert.deepEqual([failed[0].code, failed[0].signal, failed[0].killed, failed[1].length > 0, failed[2]], [3, null, false, true, "the kernel's stderr\n"]);
+  const over = await waitFor("the callback", change(c, [path.join(path.dirname(c.paths.ready), "ready-2"), "", `${c.paths.done}-2`, "5000"], { maxBuffer: 100 }).answer);
+  assert.deepEqual([over[0].code, over[1], over[2]], ["ERR_CHILD_PROCESS_STDIO_MAXBUFFER", "x".repeat(100), "the kernel's stderr\n"]);
+  assert.deepEqual(readdirSync(c.made[0]), []);
+});
+
+test("stop() lets a running change go and never signals it: its files are unlinked, it goes on writing after the TUI has gone and finishes; voidInFlight() does not touch it, changes() still names it, and no change starts after stop()", async (t) => {
+  const c = changing(t);
+  const run = change(c, [c.paths.ready, c.paths.gate, c.paths.done]);
+  await waitFor("the change to be under way", () => existsSync(c.paths.ready));
+  c.reader.voidInFlight();
+  await sleep(100);
+  assert.equal(alive(run.child.pid), true, "a void cycle does not end a change");
+  c.reader.stop();
+  assert.equal(existsSync(c.made[0]), false, "its files unlinked and the directory removed: nothing is left behind");
+  assert.deepEqual(c.reader.changes(), [{ pid: run.child.pid, label: { verb: "stop", name: "dev-1" } }], "still running: named for the line after leaving");
+  assert.deepEqual(c.reader.children(), [], "no child of the reader any more");
+  assert.throws(() => c.reader.changeExec(c.script, [], {}, () => {}), /stopped/);
+  writeFileSync(c.paths.gate, "");
+  await waitFor("the change to finish after the TUI let it go", () => existsSync(c.paths.done));
+  await gone([run.child.pid]);
+  assert.equal(existsSync(`${c.paths.done}.signal`), false, "no signal reached it");
+  assert.equal(run.answer(), null, "nobody waits for its answer any more");
 });

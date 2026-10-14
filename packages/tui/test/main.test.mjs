@@ -7,7 +7,7 @@ import { effectiveConfig } from "../lib/config.mjs";
 import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
 import { ENTER, LEAVE, LEND_END_GRACE_MS } from "../lib/term/tty.mjs";
-import { CLI, DEPLOYMENT, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, lifecycleSession, lifecycleWork, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
 
 /** One outcome of the roster read as an event for the store, made as lib/read.mjs `takeRoster`
  *  makes it: the shared rule over the roster held, then what it reported into the memory of
@@ -31,6 +31,12 @@ function fakeReader(log, options) {
     release() { did("release"); },
     /** The exec the loop hands the shared preflight: the test's fake prepareRemoteTerm only checks it is this one. */
     exec() { throw new Error("the fake reader starts nothing"); },
+    /** A change (an apply, a start): recorded with its label, answered by the test through `changed`. */
+    changeExec(bin, argv, options, callback) { did("change", [...argv], options.label); this.changed.push({ argv, options, callback }); return { pid: 4000 + this.changed.length }; },
+    changed: [],
+    /** The changes still running when the run ends, as lib/read.mjs answers after its stop. */
+    running: [],
+    changes() { return this.running; },
     stop() { did("stop"); },
     children: () => [],
     /** A served deployment's answer of a cycle, as lib/read.mjs gives it: every answer under a
@@ -44,7 +50,7 @@ function fakeReader(log, options) {
 }
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
  *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
-function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", offered = { offered: [], limited: false }, admit = (path) => ({ ok: true, deployment: path }), prepare = null } = {}) {
+function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", offered = { offered: [], limited: false }, admit = (path) => ({ ok: true, deployment: path }), prepare = null, confirm = null, start = null, tellable = () => false } = {}) {
   const log = [];
   const stdin = fakeStdin({ log, isTTY: stdinTTY }), stdout = fakeStdout({ log, columns, rows, isTTY: stdoutTTY }), proc = fakeProcess(), timers = fakeTimers();
   const kill = proc.kill;
@@ -55,7 +61,7 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // `offered`: what ~/Agents holds that the run does not serve; a test may put another answer there.
   // `viewers`: every viewer the run started, each with a way to close it; `preflights`: every
   // preflight it began, each with what it was handed and a way to answer it.
-  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, viewers: [], preflights: [], tick(ms) { clock += ms; } };
+  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, viewers: [], preflights: [], confirmations: [], starts: [], tick(ms) { clock += ms; } };
   let up;
   r.up = new Promise((resolve) => { up = resolve; });
   const effects = {
@@ -80,6 +86,11 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
       if (prepare) return prepare(cli, target, options);
       return new Promise((resolve, reject) => { r.preflights.push({ cli, target, options, resolve, reject }); });
     },
+    // The acts: the shared confirmation is the real one unless the test gives its own (`confirm`);
+    // a start is the test's (`start`), and so is whether stderr is a terminal or a file.
+    ...(confirm ? { createLifecycleConfirmation(options) { const made = confirm(options); r.confirmations.push(made); return made; } } : {}),
+    ...(start ? { startInstance(...args) { r.starts.push(args); return start(...args); } } : {}),
+    tellable,
   };
   r.status = main({ argv, stdin, stdout, stderr, env, proc, now: () => clock, setTimer: timers.setTimer, clearTimer: timers.clearTimer, cwd: () => cwd, home: "/home/u", effects });
   r.status.then(up);
@@ -148,16 +159,18 @@ test("the action table binds each key to one action, and a key bound twice is re
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances",
-    w: "workspaces", enter: "open",
+    w: "workspaces", enter: "open", X: "stop", D: "retire", S: "start", R: "restart",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
   assert.equal(Object.isFrozen(ACTIONS) && ACTIONS.every((a) => Object.isFrozen(a) && Object.isFrozen(a.keys)), true);
   assert.deepEqual(["?", "q", "escape", "ctrl+c", "shift+tab", "f5", "ctrl+alt+up", "space", "alt+x"].map(keyLabel), ["?", "q", "Esc", "Ctrl+C", "Shift+Tab", "F5", "Ctrl+Alt+Up", "Space", "Alt+X"]);
   // Enter opens the selected agent's terminal in the list and the selected workspace in the
-  // switcher: one action. The capitals are a later version's acts: none is bound, but for G.
+  // switcher: one action. The capitals are the acts on an instance, and G: no act is a lower-case
+  // key (Enter is cheap, a capital takes Shift).
   assert.equal(bindings(ACTIONS).get("enter"), "open");
-  assert.deepEqual([...bindings(ACTIONS).keys()].filter((key) => /^[A-Z]$/.test(key)), ["G"]);
+  assert.deepEqual([...bindings(ACTIONS).keys()].filter((key) => /^[A-Z]$/.test(key)), ["G", "X", "D", "S", "R"]);
+  for (const id of ["stop", "retire", "start", "restart"]) assert.equal(ACTIONS.find((action) => action.id === id).keys.every((key) => /^[A-Z]$/.test(key)), true, id);
 });
 
 test("the arguments are --ascii, --help and --dir with a path, in both spellings; anything else is refused with E_BAD_ARGS and the usage, --server included", () => {
@@ -1022,5 +1035,144 @@ test("keys that came in one chunk with the Enter that lent the terminal do nothi
     assert.doesNotMatch(after, /oats\s+workspaces|Keys/, `${JSON.stringify(behind)}: no other view was opened`);
     r.stdin.type("q");
     assert.equal(await r.status, 0, JSON.stringify(behind));
+  }
+});
+
+// ── The acts (awebai/oats#855, PR 5): what the loop does with the store's effects ─────────────────
+
+/** A kernel record that plans stops and retires and starts sessions. */
+const ACTS_CLI = Object.freeze({ ...CLI, lifecycleApi: 1, features: Object.freeze([...CLI.features, "lifecycle-plans", "retire-retention", "retire-home", "session-start", "session-restart"]) });
+/** A confirmation of the shared home's shape, already in review with `offers`: what it was asked, in order. */
+function reviewing(offers = ["apply", "refresh", "close"]) {
+  return (options) => {
+    const made = {
+      options, calls: [], closed: 0,
+      state: () => ({ phase: "review", outcome: null, notice: null, offers, running: null }),
+      view: () => ({ question: `Stop ${options.target.instance}?`, happening: [], state: { rows: [], notes: [] }, warning: null, choices: [], notice: null }),
+      apply() { made.calls.push("apply"); }, refresh() { made.calls.push("refresh"); }, checkAgain() { made.calls.push("check-again"); },
+      setChoice(...args) { made.calls.push(["setChoice", ...args]); }, close() { made.closed++; },
+    };
+    options.onChange(); // told inside the constructor, as the shared one tells it
+    return made;
+  };
+}
+/** A run of the fixture's deployment with its first agent (running) selected and the acts readable. */
+async function acting(options = {}) {
+  const r = await started({ kernel: { ok: true, cli: ACTS_CLI }, confirm: reviewing(), ...options });
+  r.reader.answer(ENTRY);
+  await settle();
+  return r;
+}
+
+test("keys that came in one read with the key that opened a confirmation never press its act: X⏎ and Xl⏎ and Dl⏎ cancel, X⇥⏎ and D⇥⏎ review again, X⇥⇥⏎ is ignored; Enter in a read of its own presses it (Done 2)", async () => {
+  for (const [typed, calls, closed, verb] of [["X\r", [], 1, "stop"], ["Xl\r", [], 1, "stop"], ["Dl\r", [], 1, "retire"], ["X\t\r", ["refresh"], 0, "stop"], ["D\t\r", ["refresh"], 0, "retire"], ["X\t\t\r", [], 0, "stop"]]) {
+    const r = await acting();
+    r.stdin.type(typed);
+    await settle();
+    const [made] = r.confirmations;
+    assert.equal(r.confirmations.length, 1, JSON.stringify(typed));
+    assert.deepEqual([made.options.operation, made.options.target.instance, made.calls, made.closed], [verb, "acme-expert-tui", calls, closed], JSON.stringify(typed));
+    if (typed === "X\t\t\r") {
+      r.stdin.type("\r");
+      assert.deepEqual(made.calls, ["apply"], "Enter in a read of its own presses the act");
+    }
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, JSON.stringify(typed));
+    assert.equal(made.closed, 1, "closed once: by Cancel, or on the way out");
+  }
+});
+
+test("Esc closes the open confirmation, and what it tells afterwards changes nothing on the screen; a settled answer asks for one live read", async () => {
+  const r = await acting();
+  r.stdin.type("X");
+  const [made] = r.confirmations;
+  assert.match(screenOf(r), /Stop acme-expert-tui\?/);
+  r.stdin.type("\x1b");
+  r.tick(50);
+  r.timers.fire();
+  await settle();
+  assert.equal(made.closed, 1);
+  const after = screenOf(r);
+  assert.doesNotMatch(after, /Stop acme-expert-tui\?/);
+  r.stdout.take();
+  made.options.onChange();
+  assert.equal(r.stdout.take(), "", "told after close: nothing drawn");
+  const before = readerDid(r).filter(([what]) => what === "request").length;
+  made.options.onSettled();
+  assert.deepEqual(readerDid(r).filter(([what]) => what === "request").slice(before), [["request", { live: true }]]);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("the shared boundary runs a plan read through the reader's exec as a read, and the apply through its changeExec as a change of this run labelled with the act and the agent", async () => {
+  const r = await started({ kernel: { ok: true, cli: ACTS_CLI } });
+  r.reader.answer(ENTRY);
+  await settle();
+  const home = `${DEPLOYMENT}/agents/acme-expert/instances/acme-expert-tui`, plan = { lifecycleApi: 1, action: "stop", instance: "acme-expert-tui", home, recursive: true, at: "2026-10-11T10:00:00Z", planRevision: "a".repeat(24), notes: [], skipped: [], ambiguous: [],
+    targets: [{ instance: "acme-expert-tui", agent: "acme-expert", agentsRoot: `${DEPLOYMENT}/agents`, home, depth: 0, session: lifecycleSession(), work: lifecycleWork(), workMode: "worktree", launched: true, retiring: false, stopPending: false, midTask: false }] };
+  const reads = [];
+  r.reader.exec = (bin, argv, options, callback) => { reads.push({ argv: [...argv], options }); setImmediate(() => callback(null, JSON.stringify({ schemaVersion: 1, ok: true, result: plan }), "")); return { pid: 3000 }; };
+  r.stdin.type("X");
+  await settle(); await settle();
+  assert.equal(reads.length, 1, "the plan read");
+  assert.deepEqual(reads[0].argv.slice(0, 4), ["instance", "stop", "acme-expert-tui", "--plan"]);
+  assert.equal(reads[0].options.detached, undefined, "a read: no session of its own");
+  assert.match(screenOf(r), /Stop acme-expert-tui\?/);
+  r.stdin.type("\t");
+  r.stdin.type("\t");
+  r.stdin.type("\r");
+  await settle();
+  const [change] = r.reader.changed;
+  assert.ok(change, "the apply ran as a change");
+  assert.deepEqual([change.argv.slice(0, 4), change.options.label], [["instance", "stop", "acme-expert-tui", "--apply"], { verb: "stop", name: "acme-expert-tui" }]);
+  assert.equal(change.options.detached, undefined, "changeExec is always a session of its own: the mark is not passed on");
+  const at = (flag) => change.argv[change.argv.indexOf(flag) + 1];
+  const receipt = { lifecycleApi: 1, action: "stop", instance: "acme-expert-tui", home, planRevision: at("--plan-revision"), idempotencyKey: at("--idempotency-key"), at: "2026-10-11T10:01:00Z", replayed: false, ok: true,
+    retained: ["home", "work", "transcript", "launch"], results: [{ instance: "acme-expert-tui", home, ok: true, stopped: true, alreadyIdle: false, state: "stopped" }] };
+  const before = readerDid(r).filter(([what]) => what === "request").length;
+  change.callback(null, JSON.stringify({ schemaVersion: 1, ok: true, result: receipt }), "");
+  await settle(); await settle();
+  assert.deepEqual(readerDid(r).filter(([what]) => what === "request").slice(before), [["request", { live: true }]], "settled: one live read");
+  assert.match(screenOf(r), /\[ Close \]|> Close </);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a start runs the shared start rule once, over a change of this run: while its child runs the row opens no act, and its answer is said and asks for a live read", async () => {
+  let answer;
+  const r = await acting({ start: (cli, row, choices, options) => new Promise((resolve) => { answer = resolve; options.exec("/opt/oats/bin/oats.mjs", ["session", "start"], { timeout: 0, detached: true }, () => {}); }) });
+  r.stdin.type("j");
+  r.stdin.type("S");
+  assert.match(screenOf(r), /Start acme-maintainer-ops\?/);
+  r.stdin.type("\t");
+  r.stdin.type("\r");
+  await settle();
+  assert.equal(r.starts.length, 1);
+  const [cli, row, choices, options] = r.starts[0];
+  assert.deepEqual([cli, row.instance, choices, options.restart, options.localCwd], [ACTS_CLI, "acme-maintainer-ops", {}, false, DEPLOYMENT]);
+  assert.deepEqual(r.reader.changed[0].options.label, { verb: "start", name: "acme-maintainer-ops" });
+  assert.match(screenOf(r), /Starting acme-maintainer-ops/);
+  r.stdin.type("\x1b"); r.tick(50); r.timers.fire(); await settle();
+  r.stdout.take();
+  r.stdin.type("X");
+  assert.match(textOf(r.stdout.take()), /The start of acme-maintainer-ops is still running\./, "the line, until the next key");
+  const before = readerDid(r).filter(([what]) => what === "request").length;
+  r.reader.changed[0].callback(null, "", "");
+  answer({ ok: true, result: { started: true } });
+  await settle(); await settle();
+  assert.deepEqual(readerDid(r).filter(([what]) => what === "request").slice(before), [["request", { live: true }], ["request", { live: true }]], "the child's close and the answer: each asks");
+  r.stdin.type("X");
+  assert.equal(r.confirmations.length, 1, "the row opens its acts again");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a change still running when the run ends is named after the screen is left, only to a terminal or a file; the status never depends on it", async () => {
+  for (const [tell, lines] of [[true, ["oats: the stop of acme-expert-tui is still running; `oats status` shows its result.\n"]], [false, []]]) {
+    const r = await acting({ tellable: () => tell });
+    r.reader.running = [{ pid: 4242, label: { verb: "stop", name: "acme-expert-tui" } }];
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, String(tell));
+    assert.deepEqual(r.errors, lines, String(tell));
   }
 });

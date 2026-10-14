@@ -26,6 +26,10 @@ export { instanceActs, openAct } from "../../client/instance-acts.mjs";
 export { sessionAttachArgv, prepareRemoteTerm, detachKeySupported, hostDetachKeySupported, preflightFailure, DETACH_KEY_FEATURE } from "../../client/session-attach.mjs";
 export { attachExit } from "../../client/attach-exit.mjs";
 export { kernelLines } from "../../client/kernel-lines.mjs";
+export { createLifecycleBoundary } from "../../client/instance-lifecycle.mjs";
+export { createLifecycleConfirmation } from "../../client/lifecycle-confirmation.mjs";
+export { startGate, startInstance } from "../../client/session-start.mjs";
+export { retainedStartMessage, launchFlagIgnored, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
 export { validateWorkspace, deploymentsInside } from "../../client/workspace-admission.mjs";
 

@@ -3,7 +3,8 @@
 // (term/keys.mjs keyId); they are the part a user's tui.json replaces (config.mjs), so everything
 // that acts on a key or names one reads the EFFECTIVE table it is handed, never this constant.
 // An action that does one thing in the list of instances and another in the switcher (`open`)
-// says so in `views`: what it does in each, in the order the help lists them.
+// says so in `views`: what it does in each, in the order the help lists them. An action of one
+// view only (the four acts) names that view, so the help says where it acts.
 export const ACTIONS = Object.freeze([
   { id: "up", keys: ["up", "k"], label: "up" },
   { id: "down", keys: ["down", "j"], label: "down" },
@@ -19,6 +20,12 @@ export const ACTIONS = Object.freeze([
   { id: "instances", keys: ["1"], label: "instances" },
   { id: "workspaces", keys: ["w"], label: "workspaces" },
   { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"]] },
+  // The four acts on an instance: each opens a confirmation, and nothing is done before a move and
+  // a press in it. Capitals: a lower-case key is one slip away, a capital takes Shift.
+  { id: "stop", keys: ["X"], label: "stop", views: [["instances", "stop the selected agent, after a confirmation"]] },
+  { id: "retire", keys: ["D"], label: "retire", views: [["instances", "retire the selected agent, after a confirmation"]] },
+  { id: "start", keys: ["S"], label: "start", views: [["instances", "start the selected agent as it was last launched, after a confirmation"]] },
+  { id: "restart", keys: ["R"], label: "restart", views: [["instances", "restart the selected agent as it was last launched, after a confirmation"]] },
   { id: "help", keys: ["?"], label: "help" },
   { id: "close", keys: ["escape"], label: "close" },
   { id: "quit", keys: ["q", "ctrl+c"], label: "quit" },

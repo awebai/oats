@@ -176,12 +176,18 @@ test.after(() => {
 const TUI = `${shq(process.execPath)} ${shq(CLI)} tui`;
 const PROMPT = "tui-test$";
 const USAGE = "oats tui [--dir <path>] [--ascii]";
-const FOOTER = " / filter   Tab detail   r refresh   w workspaces   ? help   q quit";
+/** The Instances footer with no instance selected, and with one of the fixture's selected: every
+ *  instance here is stopped or unknown, and offers to be stopped and retired (and a stopped one to
+ *  be started); at 80 columns only the first of those hints, `X stop`, has room. */
+const PLAIN_FOOTER = " / filter   Tab detail   r refresh   w workspaces   ? help   q quit";
+const FOOTER = ` X stop  ${PLAIN_FOOTER}`;
 /** The Instances footer at a width: `help` and `quit` always stand, and a hint that would reach
- *  the last cell ends the row's hints. `w workspaces` is the last one tried, so a terminal too
- *  narrow for the whole row draws it without that hint (views/frame.mjs `footer`). */
-const footerAt = (cols) => (FOOTER.length <= cols - 1 ? FOOTER : FOOTER.replace("   w workspaces", ""));
-const DETAIL_FOOTER = " Tab detail   Esc close   r refresh   ? help   q quit";
+ *  the last cell ends the row's hints. The acts are given up first, then `w workspaces`, so a
+ *  terminal too narrow for the whole row draws it without them (views/frame.mjs `footer`). */
+const footerAt = (cols) => (FOOTER.length <= cols - 1 ? FOOTER : PLAIN_FOOTER.length <= cols - 1 ? PLAIN_FOOTER : PLAIN_FOOTER.replace("   w workspaces", ""));
+/** With the detail focused: the selected instance's acts first, as room allows (stop and retire
+ *  at 79 and 80 columns), then the detail's own keys. */
+const DETAIL_FOOTER = " X stop   D retire   Tab detail   Esc close   r refresh   ? help   q quit";
 const HELP_FOOTER = " Esc close   ? help   q quit";
 /** The switcher: its header, its footer with a workspace open, its two headings (the first is
  *  the shared home's, the second the TUI's own), and the TUI's row for a roster read that failed
@@ -200,7 +206,14 @@ const HELP_KEYS = [
   /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *w {2,}workspaces$/,
   /^ *Enter {2,}open the selected agent's terminal, in the list of instances$/, /^ {2,}C-\\ brings oats tui back; the agent keeps running\.$/,
   /^ {2,}A key that tmux's copy mode binds leaves the viewer once the mode$/, /^ {2,}is left\.$/, /^ {2,}docs\/execution-targets\.md has the keys that can be chosen\.$/,
-  /^ *Enter {2,}open the selected workspace, in the switcher$/, /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
+  /^ *Enter {2,}open the selected workspace, in the switcher$/,
+  // The acts, and under the last of them the rules of a confirmation (views/help.mjs ACT_RULES).
+  /^ *X {2,}stop the selected agent, after a confirmation$/, /^ *D {2,}retire the selected agent, after a confirmation$/,
+  /^ *S {2,}start the selected agent as it was last launched, after a$/, /^ {2,}confirmation$/,
+  /^ *R {2,}restart the selected agent as it was last launched, after a$/, /^ {2,}confirmation$/,
+  /^ {2,}Each act opens a confirmation with Cancel chosen: move to the act$/, /^ {2,}with Left\/Right or Tab, then press Enter\.$/,
+  /^ {2,}Esc closes a confirmation; an act it sent goes on, also after oats$/, /^ {2,}tui quits\.$/,
+  /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
 ];
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
@@ -298,7 +311,7 @@ function notReadFaults(screen, { title = /^ oats {2}\S+$/, reason = 1 } = {}) {
     ...(/^ \S/.test(screen[3] ?? "") && /^ \S/.test(screen[4] ?? "") ? [] : [`rows 4 and 5 do not say what state the deployment is in and why: ${JSON.stringify(screen.slice(3, 5))}`]),
     ...(why.slice(0, said < 0 ? reason : said).every((row) => /^ \S/.test(row)) ? [] : [`a row of the reason does not start at the margin: ${JSON.stringify(why)}`]),
     ...(screen.slice(said < 0 ? 4 + reason : 4 + said, 22).every((row) => row === "") ? [] : ["something is drawn under the reason"]),
-    ...(screen[23] === FOOTER ? [] : [`the footer is ${JSON.stringify(screen[23])}`]),
+    ...(screen[23] === PLAIN_FOOTER ? [] : [`the footer is ${JSON.stringify(screen[23])}`]),
   ];
 }
 
@@ -1180,10 +1193,11 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends six rows above `quit`: the table holds `workspaces`, and
-  // `open` twice with the agent's four rows under it (HELP_KEYS); the movement keys scroll the
-  // help, and six rows down show it.
-  for (let i = 0; i < 6; i++) term.press("j");
+  // At 80x24 the help's first page ends sixteen rows above `quit`: the table holds `workspaces`,
+  // `open` twice with the agent's four rows under it, and the four acts in six rows with the two
+  // rules of a confirmation in four under them (HELP_KEYS); the movement keys scroll the help, and
+  // sixteen rows down show it.
+  for (let i = 0; i < 16; i++) term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
