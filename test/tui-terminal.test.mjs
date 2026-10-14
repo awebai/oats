@@ -190,11 +190,16 @@ const SWITCHER_FOOTER = " Enter open   / filter   r refresh   Esc close   ? help
 const UNMATCHED = "  Not matched to a workspace";
 const OFFERED = "  On this machine, not opened";
 const ROSTER_FAILED = "Other machines were not read.";
-/** The help's `Keys` list, one row per action, in the table's order. */
+/** The help's `Keys` list at 80 columns, one row per action in the table's order, and one per view
+ *  for `open` (Enter): under the agent's line the key that returns, tmux's copy-mode rule (two rows
+ *  at this width) and where the keys are listed (views/help.mjs `openRows`). */
 const HELP_KEYS = [
   /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
   /^ *Left, h {2,}collapse, or go to the parent$/, /^ *Right, l {2,}expand, or go to the first child$/, /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/,
-  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *w {2,}workspaces$/, /^ *Enter {2,}open$/, /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
+  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *w {2,}workspaces$/,
+  /^ *Enter {2,}open the selected agent's terminal, in the list of instances$/, /^ {2,}C-\\ brings oats tui back; the agent keeps running\.$/,
+  /^ {2,}A key that tmux's copy mode binds leaves the viewer once the mode$/, /^ {2,}is left\.$/, /^ {2,}docs\/execution-targets\.md has the keys that can be chosen\.$/,
+  /^ *Enter {2,}open the selected workspace, in the switcher$/, /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
 ];
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
@@ -1195,9 +1200,10 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends one row above `quit` since the table holds `workspaces`
-  // and `open`; the movement keys scroll the help, and one row down shows it.
-  term.press("j");
+  // At 80x24 the help's first page ends six rows above `quit`: the table holds `workspaces`, and
+  // `open` twice with the agent's four rows under it (HELP_KEYS); the movement keys scroll the
+  // help, and six rows down show it.
+  for (let i = 0; i < 6; i++) term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
