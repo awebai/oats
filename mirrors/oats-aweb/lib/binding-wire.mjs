@@ -282,7 +282,7 @@ const AW_INSTALL_COMMAND=`\`npm i -g @awebai/aw@latest\` (or \`npm i -g @awebai/
 export async function awFloorMessage({env=process.env}={}){if(!onPath('aw',env))return `aw CLI not on PATH; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;const installed=await readAwVersion({env});if(!installed)return `aw version could not be read; install aw >= ${AW_MIN} with ${AW_INSTALL_COMMAND}`;return semverLt(installed,AW_MIN)?`aw ${installed} is older than required ${AW_MIN}; upgrade with ${AW_INSTALL_COMMAND}`:undefined;}
 async function awFloorProblem(){const message=await awFloorMessage();return message?{code:'needs-configuration',message}:null;}
 async function workspaceReadinessPhase(req) {
-  // One clock for every time-based judgement in this answer.
+  // Phase-start clock bounds the calls and judges the already-recorded grant.
   const now=Date.now(),deadline=now+28000;
   const localAw=(argv,cwd)=>runAw(argv,cwd,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
   const ctx=workspaceReadinessContext(req.input.context);
@@ -338,7 +338,9 @@ async function workspaceReadinessPhase(req) {
       if(expected.brokerRequired) {
         let status;
         try {status=JSON.parse(localAw(['aw','wake','status','--json'],ctx.home));} catch { /* unavailable below */ }
-        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN,now});
+        // aw stamps updated_at during the status call, so judge its evidence
+        // against a post-read clock, not the phase start. No skew allowance.
+        const target=targetReceiveAssessment(status,{home:ctx.home,...expected},{minimumVersion:AW_MIN,now:Date.now()});
         const targetProblems=target.problems;
         warnings.push(...target.warnings);
         receiveProblems.push(...targetProblems);
