@@ -10,11 +10,10 @@ import {
   ACCEPT_RANGE, ACCEPT_RANGE_TEXT,
 } from "../../client/cli-locator.mjs";
 
-const PROBE = (v = "0.25.8") => ({ schemaVersion: 1, name: "@awebai/oats", version: v, desktopApi: 1 });
+const PROBE = (v = "0.26.0") => ({ schemaVersion: 1, name: "@awebai/oats", version: v, desktopApi: 1 });
 
 test("acceptProbe: exact v1 payload accepted; every deviation rejected with a reason", () => {
   assert.equal(acceptProbe(PROBE()).ok, true);
-  assert.equal(acceptProbe(PROBE("0.25.9")).ok, true);
   assert.equal(acceptProbe(PROBE("0.26.0")).ok, true, "the 0.26 kernel line is inside the band");
   assert.equal(acceptProbe(PROBE("0.26.12")).ok, true);
   const cases = [
@@ -23,7 +22,7 @@ test("acceptProbe: exact v1 payload accepted; every deviation rejected with a re
     [{ ...PROBE(), name: "@other/pkg" }, /not the oats CLI/],
     [{ ...PROBE(), desktopApi: 2 }, /desktopApi 2/],
     [{ ...PROBE(), desktopApi: undefined }, /desktopApi missing/],
-    [PROBE("0.25.7"), /outside/],
+    [PROBE("0.25.9"), /outside/],
     [PROBE("0.56.0"), /outside/],
     [PROBE("1.0.0"), /outside/],
     [PROBE("not-a-version"), /unparsable/],
@@ -37,7 +36,7 @@ test("acceptProbe: exact v1 payload accepted; every deviation rejected with a re
 
 test("acceptProbe: API version is authoritative — a 0.22.x CLI without desktopApi is rejected", () => {
   // Source adjacency / same version number is NOT enough: the probe field decides.
-  const r = acceptProbe({ schemaVersion: 1, name: "@awebai/oats", version: "0.25.8" });
+  const r = acceptProbe({ schemaVersion: 1, name: "@awebai/oats", version: "0.26.0" });
   assert.equal(r.ok, false);
   assert.match(r.reason, /desktopApi/);
 });
@@ -56,7 +55,7 @@ test("acceptProbe: prereleases are rejected — 0.26.0-rc.1 precedes 0.26.0 (rev
     assert.equal(r.ok, false, v);
     assert.match(r.reason, /prerelease/, v);
   }
-  assert.equal(acceptProbe(PROBE("0.25.8+build.7")).ok, true, "build metadata does not affect precedence");
+  assert.equal(acceptProbe(PROBE("0.26.0+build.7")).ok, true, "build metadata does not affect precedence");
 });
 
 // Release-gate invariant. Desktop and the kernel ship from ONE tag, and the
@@ -79,26 +78,26 @@ test("the human-readable band is derived from the enforced numbers", () => {
 // derive from ACCEPT_RANGE (so they follow any widening); these pin the exact
 // edges this release promises, so a stray re-narrowing — or a widening past
 // the v1 surface without a deliberate DESKTOP_API decision — fails here.
-test("band edges: 0.25.8 through 0.55.x are accepted; 0.25.7 and 0.56.0 are not (the feature fences are the real gate)", () => {
-  // Floor 0.25.8, not 0.26.0: main's kernel reports 0.25.8 until 0.26.0 is
-  // tagged. packages-no-approval (workspace + deployment fences) decides.
+test("band edges: 0.26.0 through 0.55.x are accepted; 0.25.x and 0.56.0 are not (the feature fences are the real gate)", () => {
+  // Floor 0.26.0: the first kernel the feature gates let through (it is the
+  // first to advertise packages-no-approval); those fences stay the real gate.
   // 0.27 is the harness rename (feature `harness`); 0.28 adds package souls + triggers; 0.29 adds
   // workspace automations and desktop facts (all additive, feature-gated); 0.30 is team model v2 (feature
   // team-model-2, BREAKING in the kernel; the Desktop reads 0.29 and 0.30 shapes, gated on the feature).
   // Ceiling 0.56.0: 0.31 removes Herdr and routes per-instance reads and plans by --server/--home (probe `remote`
   // entries readiness, instance-events, instance-git, lifecycle-plans); 0.32 through 0.43 are admitted on the same gates (0.33's spawn-preview-max-age, 0.34's capability-show, 0.35's capture-file and 0.36's workspace-identity are feature-gated; 0.37's launch preview needs no new gate; 0.38 is team model 3, feature team-model-3, BREAKING for the team views, which are gated on their feature; 0.39 adds server connect, the capability route and servers per workspace, features server-connect, capability-route and servers-per-workspace; 0.40 adds needs input, feature waiting-on-you; 0.41 refuses retire --delete-branch, which the Desktop no longer offers, and starts new sessions on the OATS tmux server, named by each row's recorded socket; 0.42 adds recovery notes to retire plans and `home`, `notCopied` and `afterHooks` to a retire receipt's workRecovery, which the lifecycle readers accept; 0.43 adds `description` to every schedule and trigger row and description-only updates, feature automation-descriptions, which gates the Desktop's summary writes; 0.44 adds the launch-prompt shapes (preview `launchPromptAnswers`, `E_SPAWN_INCOMPLETE` `launchPrompts`, the `launch-prompt` event), which the Desktop reads as optional, and needs no new gate; 0.45 adds `capabilities` to `oats souls --json` rows, feature souls-capabilities, which gates Capabilities' Used by; 0.46 adds opt-in `inspect --soul --instructions`, feature soul-composed-instructions, which the Desktop does not read yet, so no new gate).
-  assert.deepEqual(ACCEPT_RANGE, { min: [0, 25, 8], maxExclusive: [0, 56, 0] });
-  assert.equal(ACCEPT_RANGE_TEXT, ">=0.25.8 <0.56.0");
+  assert.deepEqual(ACCEPT_RANGE, { min: [0, 26, 0], maxExclusive: [0, 56, 0] });
+  assert.equal(ACCEPT_RANGE_TEXT, ">=0.26.0 <0.56.0");
   assert.equal(DESKTOP_API, 1, "Desktop API stays v1 across the v0.25.0 kernel bump (workspace model)");
   // inside — including both edges of the newly admitted minor
-  for (const v of ["0.25.8", "0.25.9", "0.25.99", "0.25.8+build.7", "0.26.0", "0.26.1", "0.26.99", "0.27.0", "0.27.99", "0.28.0", "0.28.99", "0.29.0", "0.29.99", "0.30.0", "0.30.99", "0.31.0", "0.31.99", "0.32.0", "0.32.99", "0.33.0", "0.33.99", "0.34.0", "0.34.99", "0.35.0", "0.35.99", "0.36.0", "0.36.99", "0.37.0", "0.37.99", "0.38.0", "0.38.99", "0.39.0", "0.39.99", "0.40.0", "0.40.99", "0.41.0", "0.41.99", "0.42.0", "0.42.99", "0.43.0", "0.43.99", "0.44.0", "0.44.99", "0.45.0", "0.45.99", "0.46.0", "0.46.99", "0.47.0", "0.47.99", "0.48.0", "0.48.99", "0.49.0", "0.49.99", "0.50.0", "0.50.99", "0.51.0", "0.51.99", "0.52.0", "0.52.99", "0.53.0", "0.53.99", "0.54.0", "0.54.99", "0.55.0", "0.55.99"]) {
+  for (const v of ["0.26.0", "0.26.0+build.7", "0.26.1", "0.26.99", "0.27.0", "0.27.99", "0.28.0", "0.28.99", "0.29.0", "0.29.99", "0.30.0", "0.30.99", "0.31.0", "0.31.99", "0.32.0", "0.32.99", "0.33.0", "0.33.99", "0.34.0", "0.34.99", "0.35.0", "0.35.99", "0.36.0", "0.36.99", "0.37.0", "0.37.99", "0.38.0", "0.38.99", "0.39.0", "0.39.99", "0.40.0", "0.40.99", "0.41.0", "0.41.99", "0.42.0", "0.42.99", "0.43.0", "0.43.99", "0.44.0", "0.44.99", "0.45.0", "0.45.99", "0.46.0", "0.46.99", "0.47.0", "0.47.99", "0.48.0", "0.48.99", "0.49.0", "0.49.99", "0.50.0", "0.50.99", "0.51.0", "0.51.99", "0.52.0", "0.52.99", "0.53.0", "0.53.99", "0.54.0", "0.54.99", "0.55.0", "0.55.99"]) {
     assert.equal(acceptProbe(PROBE(v)).ok, true, `${v} must be accepted`);
   }
-  // outside — the exclusive ceiling and everything above it
-  for (const v of ["0.22.0", "0.25.0", "0.25.7", "0.56.0", "0.56.1", "1.0.0"]) {
+  // outside — every 0.25 kernel, the exclusive ceiling and everything above it
+  for (const v of ["0.22.0", "0.25.0", "0.25.7", "0.25.8", "0.25.9", "0.25.99", "0.56.0", "0.56.1", "1.0.0"]) {
     const r = acceptProbe(PROBE(v));
     assert.equal(r.ok, false, `${v} must be rejected`);
-    assert.match(r.reason, /outside >=0\.25\.8 <0\.56\.0/, v);
+    assert.match(r.reason, /outside >=0\.26\.0 <0\.56\.0/, v);
   }
   // a PRERELEASE of the new minor is still not a released kernel
   const pre = acceptProbe(PROBE("0.26.0-rc.1"));
@@ -107,11 +106,11 @@ test("band edges: 0.25.8 through 0.55.x are accepted; 0.25.7 and 0.56.0 are not 
 });
 
 test("0.24 version acceptance does not grant API2 or unadvertised execution capabilities", async () => {
-  assert.equal(acceptProbe({ ...PROBE("0.25.8"), desktopApi: 2 }).ok, false);
-  assert.equal(acceptProbe({ ...PROBE("0.25.8"), schemaVersion: 2 }).ok, false);
+  assert.equal(acceptProbe({ ...PROBE("0.26.0"), desktopApi: 2 }).ok, false);
+  assert.equal(acceptProbe({ ...PROBE("0.26.0"), schemaVersion: 2 }).ok, false);
   const cli = await discover({ persisted: () => "/fixture/oats", env: { PATH: "" }, isExecutableFile: () => true },
-    async () => ({ stdout: JSON.stringify(PROBE("0.25.8")) }));
-  assert.equal(cli.ok, true); assert.equal(cli.version, "0.25.8");
+    async () => ({ stdout: JSON.stringify(PROBE("0.26.0")) }));
+  assert.equal(cli.ok, true); assert.equal(cli.version, "0.26.0");
   assert.throws(() => requireRemoteSupport(cli, "spawn"), { code: "unsupported-remote-operation" });
 });
 
@@ -199,13 +198,13 @@ test("discover: first ACCEPTABLE candidate wins — earlier rejects are recorded
     canonicalize: (p) => p,
   };
   const probe = async (path) => ({
-    stdout: JSON.stringify(path === "/old/oats" ? PROBE("0.21.0") : PROBE("0.25.9")),
+    stdout: JSON.stringify(path === "/old/oats" ? PROBE("0.21.0") : PROBE("0.26.0")),
   });
   const r = await discover(io, probe);
   assert.equal(r.ok, true);
   assert.equal(r.bin, "/good/oats");
   assert.equal(r.source, "path");
-  assert.equal(r.version, "0.25.9");
+  assert.equal(r.version, "0.26.0");
 });
 
 test("discover: full failure returns per-candidate stable diagnostics", async () => {
@@ -346,7 +345,7 @@ test("cliRecord: the record made from an accepted payload and its path is what d
     assert.equal(JSON.stringify(record), JSON.stringify(found), `${what}: the same keys in the same order`);
   }
   // A form no gate reads leaves nothing but the four fields every record has.
-  assert.deepEqual(cliRecord(payloads["every field in a form no gate reads"], { bin: "/bin/oats", source: "persisted" }), { ok: true, bin: "/bin/oats", source: "persisted", version: "0.25.8" });
+  assert.deepEqual(cliRecord(payloads["every field in a form no gate reads"], { bin: "/bin/oats", source: "persisted" }), { ok: true, bin: "/bin/oats", source: "persisted", version: "0.26.0" });
   // The lists are the payload's own, as discover always answered them: the record copies none.
   const full = payloads["every field its gate reads"];
   assert.equal(cliRecord(full, { bin: "/bin/oats", source: "persisted" }).features, full.features);
