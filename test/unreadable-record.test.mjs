@@ -452,7 +452,8 @@ test("a spawn whose parent's record cannot be read is refused and spawns nothing
   const { record, reason } = breakRecord(d.homes.bad, SHAPES[2]);
   const before = listing(d.homes.bad);
   const error = refusal(d.fx.cli(["spawn", "dev", "--name", "kid", "--parent", "bad", "--no-launch", "--json"]), "spawn of a child");
-  assert.equal(error.code, "E_SPAWN_FAILED", JSON.stringify(error));
+  // The kernel's own code, as a stop or a retire of that home answers it (E_SPAWN_FAILED before #1047).
+  assert.equal(error.code, "E_UNIDENTIFIED_INSTANCE_HOME", JSON.stringify(error));
   assert.equal(error.message, refused(record, reason, "nothing was spawned"));
   assert.equal(existsSync(join(d.instances, "kid")), false);
   assert.deepEqual(listing(d.homes.bad), before);
