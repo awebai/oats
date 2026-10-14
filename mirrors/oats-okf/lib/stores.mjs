@@ -326,10 +326,38 @@ function prRows(base,branch,cwd,{identity,allBases=false}={}) {
   const raw=exec('gh',['pr','list','--repo',base.pr.repository,'--head',branch,...(allBases?[]:['--base',base.acceptedBranch]),'--state','all','--json',fields],{cwd,env:gitEnv()});
   const rows=JSON.parse(raw); if(!Array.isArray(rows)) fail('E_PR','invalid gh PR list'); return rows;
 }
+// Git terminates each record it prints; a URL's own whitespace is kept, since
+// a leading space turns a path into another (relative) repository.
+const records=(out,terminator)=>out?out.split(terminator).slice(0,-1):[];
+const remoteUrls=(cwd,remote,side)=>records(git(cwd,['remote','get-url',...(side==='push'?['--push']:[]),'--all',remote],{trim:false}),'\n');
+/** The fetch and push URLs this host's Git gives the binding's repository:
+ *  its global and system insteadOf/pushInsteadOf rules apply, and no clone's
+ *  local config does. Asked of a throwaway repository holding only that remote. */
+function hostDestinations(repository) {
+  const scratch=fs.mkdtempSync(join(fs.realpathSync(tmpdir()),'oats-okf-remote-'));
+  try {
+    const probe=join(scratch,'probe.git');
+    git(scratch,['init','--bare','--quiet','--template=',probe]);
+    git(probe,['remote','add','probe','--',repository]);
+    return {fetch:remoteUrls(probe,'probe','fetch'),push:remoteUrls(probe,'probe','push')};
+  } finally { fs.rmSync(scratch,{recursive:true,force:true}); }
+}
+// The clone's origin must be the binding's repository as written, with no
+// pushurl, and its effective fetch and push destinations must be the ones this
+// host resolves that repository to. A host-wide URL rewrite therefore applies
+// to both sides alike, while a clone-local rewrite is a redirect.
 export function verifyRemote(base,cwd) {
-  for(const mode of [[],['--push']]) {
-    const urls=git(cwd,['remote','get-url',...mode,'--all','origin']).split('\n');
-    if(!urls.length || urls.some(url=>url!==base.repository)) fail('E_OWNER','worker changed frozen Git publication remote or effective push destination');
+  const refuse=detail=>fail('E_OWNER',redactUrls(`worker changed frozen Git publication remote or effective push destination: ${detail}`));
+  const configured=key=>records(git(cwd,['config','-z','--get-all',key],{acceptedStatus:[0,1],trim:false}),'\0');
+  // Quoted, so whitespace in a URL shows.
+  const list=urls=>urls.length?urls.map(u=>JSON.stringify(u)).join(', '):'none';
+  const url=configured('remote.origin.url'),pushurl=configured('remote.origin.pushurl');
+  if(url.length!==1 || url[0]!==base.repository) refuse(`fetch origin is configured as ${list(url)}, not the binding's ${list([base.repository])}`);
+  if(pushurl.length) refuse(`push origin has pushurl ${list(pushurl)}; the binding allows none`);
+  const expected=hostDestinations(base.repository);
+  for(const side of ['fetch','push']) {
+    const actual=remoteUrls(cwd,'origin',side);
+    if(actual.length!==expected[side].length || actual.some((u,i)=>u!==expected[side][i])) refuse(`${side} destination is ${list(actual)}, while this host resolves the binding's ${list([base.repository])} to ${list(expected[side])}`);
   }
 }
 function changedPaths(before,after) {

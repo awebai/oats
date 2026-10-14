@@ -6,7 +6,7 @@ kernel owns slot selection, composition and command dispatch; the capability
 owns its knowledge format, instructions and promotion procedure. The model is
 in [Knowledge, instances and evolving expertise](knowledge-theory.md).
 
-This is the operator guide for **oats.okf 5.0.3**. Provider implementation and
+This is the operator guide for **oats.okf 5.0.5**. Provider implementation and
 recovery details belong to the [oats-okf README](https://github.com/awebai/oats-okf).
 
 | Surface | What it holds |
@@ -23,7 +23,7 @@ recovery details belong to the [oats-okf README](https://github.com/awebai/oats-
 ```yaml
 # oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v5.0.3
+  oats.okf: v5.0.5
 defaults:
   knowledge: { oats.okf: { from: package } }
 stores:
@@ -161,6 +161,18 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    automatic transcript capture, source registry, worker cursor or retire
    harvest. An unrelated harvester can outlive its source; this is a
    lifecycle property, not proof that missing source authority can be ignored.
+
+   One proposal per checkpoint, each concept a claim of its own in it, and
+   claims only for the nodes the source soul owns; a lesson for a node it only
+   reads goes in one line in the instance's hand-back, for that node's owner.
+   One harvester at a time, per instance (oats.okf 5.0.5): the source notes the
+   harvester's instance name and spawns no other while `oats status` still
+   lists it, since a harvester retires once it has handed over. What it learns
+   meanwhile goes into its next proposal; an instance that hands back with one
+   still listed names it and the claims still waiting. A harvester retained
+   after a publication failure stays listed, so it holds back its source's
+   later proposals: once that failure is dealt with, the operator retires it
+   (`oats retire <harvester>`).
 3. **Judge and submit.** The harvester checks recorded source configuration,
    accepted knowledge and open/recent harvest PRs. It reads named backing
    notes, edits only owned nodes in its own Git checkout, validates the
