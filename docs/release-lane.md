@@ -332,6 +332,17 @@ node scripts/assemble-release-notes.mjs --tag v0.54.0
   file, which `test/release-packaging.test.mjs` requires for the version the
   manifests carry. The release-prep pull request runs it again for the
   entries merged since, which go after the earlier ones.
+- **The Upgrade section opens with the order of the Desktop and the CLI.**
+  The tag owner writes it in the release-prep pull request, for every
+  release, from `ACCEPT_RANGE` in `packages/client/cli-locator.mjs`:
+  - when the release moves the range's upper bound (a new minor), the first
+    Upgrade line says to install the Desktop first and the CLI second,
+    because the previous Desktop refuses this CLI ([Upgrading](upgrading.md));
+  - when the range already admits the new version (a patch), it says that
+    either order works.
+
+  No entry file writes this line: only the tag owner knows the release's
+  version when the notes are assembled.
 - **A tag is refused while anything is under `docs/release-notes/next/`:** by
   the `build-and-test` job of `release.yml` and by `release-lane.mjs build`,
   each right after its notes-file gate and before anything is built. Each
