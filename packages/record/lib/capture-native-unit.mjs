@@ -4,6 +4,7 @@
 // unit; a partial result is never a completed sweep.
 import { closeSync, constants, fstatSync, openSync } from "node:fs";
 import { basename } from "node:path";
+import { randomUUID } from "node:crypto";
 import { captureContext } from "./capture-context.mjs";
 import { CAPTURE_POLICY } from "./capture-budget.mjs";
 import { completeNativeLines, eventTurnCore } from "./capture-cc.mjs";
@@ -17,6 +18,7 @@ import { RecordSizeError } from "./file-lines.mjs";
 import { advanceRecoverySnapshot } from "./capture-recovery-snapshot.mjs";
 import { advanceTranscriptPrefix } from "./transcript-prefix.mjs";
 import { prepareRetainedCaptureCleanup } from "./capture-retained-scratch.mjs";
+import { smallCommandSnapshot, SMALL_SNAPSHOT_BYTES } from "./capture-small-snapshot.mjs";
 
 const nonnegative = n => Number.isSafeInteger(n) && n >= 0;
 const validCursor = (value, size) => value && nonnegative(value.bytes) && value.bytes <= size &&
@@ -108,6 +110,9 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       prepareRetainedCaptureCleanup(store, stream, key, start);
       return { ...result, cleanup: true, phase: "cleanup" };
     }
+    if (job?.waiting && job.end === version.size && sameVersion(job.version, version)) {
+      return { ...result, pending: true, phase: job.scan ? "timestamp" : "capture", reason: job.waiting };
+    }
     if (!job && !allocation && cursorValid && cursor.bytes === version.size) {
       return { ...result, complete: true, unchanged: true, phase: "captured" };
     }
@@ -121,49 +126,86 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       if (!sameVersion(version, after) && !(version.dev === after.dev && version.ino === after.ino &&
           after.size > version.size && probe(version.size) === unitWitness)) throw new Error("native source changed during unit");
     };
-    if (recover || allocation && !job) {
-      staged = advanceRecoverySnapshot(store, stream, key, path, start, { generation, maxBytes, maxRecordBytes, stopped, work });
+    if (recover || allocation || job?.snapshot) {
+      let small = state.get("small-stage", key);
+      if (!small || small.generation !== generation || !sameVersion(small.journalVersion, journalVersion) ||
+          !nonnegative(small.size) || small.size > SMALL_SNAPSHOT_BYTES || small.size > version.size ||
+          typeof small.id !== "string" || !matchesSource({ ...small, bytes: small.size })) small = null;
+      const end = job?.end ?? small?.size ?? version.size;
+      // A killed unit has durable admission/retry evidence but cannot have
+      // published an in-memory small-copy outcome. Its next due single-stream
+      // retry uses retained copying rather than repeating that overhead forever.
+      const retain = allocation || state.get("native-retain", key) || context.admission?.retry || end > SMALL_SNAPSHOT_BYTES;
+      if (retain) {
+        staged = advanceRecoverySnapshot(store, stream, key, path, start, { capturedPi, generation, fixedEnd: end, maxBytes, maxRecordBytes, stopped, work });
+      } else {
+        // This observation fixes the sweep end even if copying cannot finish.
+        // It is NOT a digest/proof checkpoint: reuse below always requires a
+        // complete fresh copy/hash before advanceTranscriptPrefix sees its id.
+        small ??= { id: randomUUID(), size: end };
+        small = { ...small, generation, journalVersion, version, witness: probe(end) };
+        state.set("small-stage", key, small);
+        staged = smallCommandSnapshot(store.root, fd, path, end, { capturedPi, maxRecordBytes, stopped, work });
+        if (staged.complete) {
+          // The nonce binds source observation/reset history; digest+size bind
+          // bytes. Equal content under a changed identity still restarts proof.
+          staged.snapshot.id = `${small.id}:${staged.snapshot.id}`;
+        }
+        if (!staged.issue && (!staged.complete || stopped())) {
+          state.set("native-retain", key, true);
+          state.delete("native-unit", key);
+          return { ...result, phase: "snapshot", retainedFallback: true };
+        }
+      }
       if (staged.issue) {
         const row = { owner, source: fmt.source, path, ...staged.issue, retry: false };
         state.set("set-aside", key, row);
-        return { ...result, cleanup: true, setAside: row };
+        return { ...result, cleanup: Boolean(staged.cleanup), setAside: row };
       }
-      if (!staged.complete) return { ...result, ...staged, phase: staged.phase ?? "snapshot" };
-      const proof = advanceTranscriptPrefix(store, stream, { key, snapshot: staged.snapshot, maxRecords, maxBytes, stopped,
-        work: work?.prefix, lines: from => completeNativeLines(stagedChunks(from), {}, { maxBytes: maxRecordBytes }) });
-      staged.verify();
-      if (proof.conflict) {
-        const row = { owner, source: fmt.source, path, ...proof.conflict, retry: false };
-        state.set("set-aside", key, row);
-        staged.close(); staged = null;
-        prepareRetainedCaptureCleanup(store, stream, key, start);
-        return { ...result, setAside: row, cleanup: true };
-      }
-      if (!proof.complete) return { ...result, phase: "prefix" };
-      job = { bytes: proof.bytes, line: proof.line, lastTs: proof.lastTs, end: staged.snapshot.size,
-        snapshot: staged.snapshot.id, generation, journalVersion, version, witness: stagedWitness(proof.bytes) };
-      state.delete("set-aside", key);
-    } else if (!job) {
-      cursor = cursorValid ? cursor : { bytes: 0, line: 0, lastTs: "" };
-      job = { bytes: cursor.bytes, line: cursor.line, lastTs: cursor.lastTs, end: version.size,
-        generation, journalVersion, version, witness: probe(cursor.bytes) };
-    }
-    if (job.snapshot && !staged) {
-      staged = advanceRecoverySnapshot(store, stream, key, path, start, { generation, maxBytes, maxRecordBytes, stopped, work });
       if (!staged.complete) {
         if (staged.cleanup) state.delete("native-unit", key);
         return { ...result, ...staged, phase: staged.phase ?? "snapshot" };
       }
-      if (job.snapshot !== staged.snapshot.id) throw new Error("native unit snapshot differs from its proof");
+      if (!job || job.snapshot !== staged.snapshot.id) {
+        const priorProof = state.get("prefix-proof", key);
+        const proof = advanceTranscriptPrefix(store, stream, { key, snapshot: staged.snapshot, maxRecords, maxBytes, stopped,
+          work: work?.prefix, lines: from => completeNativeLines(stagedChunks(from), {}, { maxBytes: maxRecordBytes }) });
+        staged.verify();
+        if (proof.conflict) {
+          const row = { owner, source: fmt.source, path, ...proof.conflict, retry: false };
+          state.set("set-aside", key, row);
+          const cleanup = !staged.small;
+          staged.close(); staged = null;
+          state.delete("native-unit", key); state.delete("small-stage", key);
+          if (cleanup) prepareRetainedCaptureCleanup(store, stream, key, start);
+          return { ...result, setAside: row, cleanup };
+        }
+        if (!proof.complete) {
+          // A full restage that leaves no allowance for proof progress must not
+          // recur indefinitely. One committed switch selects resumable copying.
+          if (staged.small && stopped() && priorProof &&
+              ["phase", "journalBytes", "bytes", "line"].every(k => proof[k] === priorProof[k])) {
+            state.set("native-retain", key, true);
+          }
+          return { ...result, phase: "prefix" };
+        }
+        job = { bytes: proof.bytes, line: proof.line, lastTs: proof.lastTs, end: staged.snapshot.size,
+          snapshot: staged.snapshot.id, small: Boolean(staged.small), generation, journalVersion, version, witness: stagedWitness(proof.bytes) };
+        state.delete("set-aside", key);
+      }
+    } else if (!job) {
+      cursor = cursorValid ? cursor : { bytes: 0, line: 0, lastTs: "" };
+      job = { bytes: cursor.bytes, line: cursor.line, lastTs: cursor.lastTs, end: version.size,
+        generation, journalVersion, version, witness: probe(cursor.bytes) };
     }
     if (staged) { read = stagedChunks; verify = staged.verify; }
     if (job.waiting) {
       if (job.end === version.size) return { ...result, pending: true, phase: job.scan ? "timestamp" : "capture", reason: job.waiting };
       if (job.snapshot) {
         staged.close(); staged = null;
-        prepareRetainedCaptureCleanup(store, stream, key, start);
-        state.delete("native-unit", key);
-        return { ...result, cleanup: true, phase: "cleanup" };
+        if (!job.small) prepareRetainedCaptureCleanup(store, stream, key, start);
+        state.delete("native-unit", key); state.delete("small-stage", key);
+        return { ...result, cleanup: !job.small, phase: "cleanup" };
       }
       // An exhausted fixed end was pending, so the next source growth is a
       // new bounded sweep. Keep its timestamp frontier, not its old EOF.
@@ -171,13 +213,15 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
     }
     const checkpoint = () => {
       verify();
-      job.version = staged ? state.get("recovery-stage", key).observedVersion : version;
+      job.version = staged && !staged.small ? state.get("recovery-stage", key).observedVersion : version;
       job.witness = staged ? stagedWitness(job.bytes) : probe(job.bytes);
       job.journalVersion = fileVersion(store.journalPath(stream));
       state.set("native-unit", key, job);
       state.set(fmt.source, key, { bytes: job.bytes, line: job.line, lastTs: job.lastTs,
         version: job.version, witness: job.witness, generation: reset, journalVersion: job.journalVersion });
-      if (job.snapshot) {
+      if (job.small) {
+        state.set("small-stage", key, { ...state.get("small-stage", key), journalVersion: job.journalVersion });
+      } else if (job.snapshot) {
         // Only our successful fsynced append under this stream lock can carry
         // the proven fixed snapshot into the next exact journal generation.
         const stage = state.get("recovery-stage", key);
@@ -231,9 +275,10 @@ export function captureNativeUnit(store, { owner, path, format = "cc", capturedP
       result.bytesCommitted = job.bytes - from;
       if (walk.reason) job.waiting = walk.reason;
       checkpoint();
+      if (job.small && job.bytes < job.end && !records && stopped()) state.set("native-retain", key, true);
       if (job.bytes === job.end) {
-        state.delete("native-unit", key);
-        if (job.snapshot) {
+        state.delete("native-unit", key); state.delete("native-retain", key); state.delete("small-stage", key);
+        if (job.snapshot && !job.small) {
           staged.close(); staged = null;
           prepareRetainedCaptureCleanup(store, stream, key, start);
           result.cleanup = true;

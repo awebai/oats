@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { acquireCaptureLock } from "../lib/capture-lock.mjs";
+import { cleanupCaptureScratch } from "../lib/capture-scratch.mjs";
 import { superviseCapture } from "../lib/capture-supervisor.mjs";
 import { RecordStore } from "../lib/store.mjs";
 import { DerivedState } from "../lib/derived-state.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
+import { reconcileCaptureInterruption } from "../lib/capture-retry.mjs";
 import { retrySetAside } from "../lib/capture-state.mjs";
 const url = name => new URL(`../lib/${name}.mjs`, import.meta.url).href;
 const stamp = "2026-01-01T00:00:00Z", stream = "fixture~cc.session";
@@ -18,10 +21,11 @@ function fixture(t, text) {
   fs.writeFileSync(path, text);
   const store = new RecordStore(root, { owner: "fixture" }), key = `${stream}:${path}`;
   fs.writeFileSync(workerPath, `
-    import fs from 'node:fs';import {join} from 'node:path';
+    import fs from 'node:fs';import {join} from 'node:path';import {syncBuiltinESMExports} from 'node:module';
     import {runCaptureWorker} from ${JSON.stringify(url("capture-worker"))};
     import {RecordStore} from ${JSON.stringify(url("store"))};
-    import {DerivedState} from ${JSON.stringify(url("derived-state"))};
+    import {DerivedState,fileVersion} from ${JSON.stringify(url("derived-state"))};
+    import {selectCaptureWork} from ${JSON.stringify(url("capture-retry"))};
     import {withCaptureGroup} from ${JSON.stringify(url("capture-context"))};
     import {captureNativeUnit} from ${JSON.stringify(url("capture-native-unit"))};
     import {removeRetainedCaptureScratch} from ${JSON.stringify(url("capture-retained-scratch"))};
@@ -33,10 +37,21 @@ function fixture(t, text) {
       try{
         const append=store.appendUniqueBatch.bind(store);
         store.appendUniqueBatch=(id,turns)=>{const n=append(id,turns);if(options.crashAppend)process.kill(process.pid,'SIGKILL');return n;};
+        const originalSet=state.set.bind(state);
+        state.set=(kind,key,value)=>{originalSet(kind,key,value);if(options.crashProof&&kind==='prefix-proof')process.kill(process.pid,'SIGKILL');};
+        const originalOpen=fs.openSync,originalWrite=fs.writeSync,originalSync=fs.fsyncSync;
+        let snapshotFd,fsyncs=0;
+        fs.openSync=(name,...args)=>{const fd=originalOpen(name,...args);if(String(name).endsWith('/snapshot'))snapshotFd=fd;return fd;};
+        fs.writeSync=(fd,...args)=>{const n=originalWrite(fd,...args);if(options.crashSmall&&fd===snapshotFd)process.kill(process.pid,'SIGKILL');return n;};
+        fs.fsyncSync=(...args)=>{fsyncs++;return originalSync(...args);};syncBuiltinESMExports();
+        const admission=options.admit?selectCaptureWork(store,state,[{stream,stage:'prefix',offset:0,
+          generation:fileVersion(store.journalPath(stream)),next:{stage:'prefix',after:stream}}],{runId:'fixture-'+process.pid,now:options.now}):undefined;
+        if(options.admit&&!admission)throw Error('fixture unit is not due');
         let ticks=0;
         const result=withCaptureGroup(store,[stream],()=>captureNativeUnit(store,{owner:'fixture',path:options.path,start,
           maxRecords:options.maxRecords??2,maxBytes:options.maxBytes??8388608,maxRecordBytes:options.maxRecordBytes??8388608,
-          stopped:()=>options.stopAfter!==undefined&&++ticks>options.stopAfter,work}),{state});
+          stopped:()=>options.stopSourceBytes!==undefined&&(work.sourceBytes??0)>=options.stopSourceBytes ||
+            options.stopAfter!==undefined&&++ticks>options.stopAfter,work}),{state,admission,admissionNow:options.now});
         if(result.cleanup){
           const claim=state.get('recovery-allocation',key);
           removeRetainedCaptureScratch(root,state,key,start);
@@ -47,7 +62,7 @@ function fixture(t, text) {
             state.delete('recovery-allocation',key);state.delete('recovery-stage',key);
           },{state});
         }
-        fs.writeFileSync(join(root,'result'),JSON.stringify({result,work,job:state.get('native-unit',key),cursor:state.get('cc',key)}));
+        fs.writeFileSync(join(root,'result'),JSON.stringify({result,work,fsyncs,job:state.get('native-unit',key),cursor:state.get('cc',key)}));
         return {outcome:result.complete?'complete':'partial',reason:result.complete?null:'deadline'};
       }catch(e){fs.writeFileSync(join(root,'error'),e.stack);throw e;}finally{state.close();}
     });
@@ -57,7 +72,7 @@ function fixture(t, text) {
     turns() { return store.readStream(stream); },
     async step(options = {}) {
       const outcome = await superviseCapture(root, { path, ...options }, { workerPath });
-      if ((options.crashAppend || options.crashCleanup) && outcome.outcome === "failed") return { crashed: true };
+      if ((options.crashAppend || options.crashCleanup || options.crashSmall || options.crashProof) && outcome.outcome === "failed") return { crashed: true };
       assert.notEqual(outcome.outcome, "failed", fs.existsSync(join(root,"error")) ? fs.readFileSync(join(root,"error"),"utf8") : JSON.stringify(outcome));
       return JSON.parse(fs.readFileSync(join(root,"result")));
     },
@@ -152,7 +167,7 @@ test("torn and invalid UTF-8 suffixes stay pending; oversize is set aside before
 
 test("worker restart after allocation removal completes only its committed cleanup and preserves captured cursor",async t=>{
   const text=native(0)+native(1),f=fixture(t,text);captureSessions(f.store,{owner:'fixture',files:[f.path]});
-  f.state(s=>s.delete('cc',f.key));
+  f.state(s=>{s.delete('cc',f.key);s.set('native-retain',f.key,true);});
   let crashed=false;
   for(let n=0;n<30;n++){if((await f.step({maxBytes:64,crashCleanup:true})).crashed){crashed=true;break;}}
   assert.equal(crashed,true);
@@ -190,7 +205,7 @@ test("killed staged append invalidates its journal generation, then revalidates 
 
 test("retiring a changed payload revokes its private capture job before rebuilding or resuming a qualified cursor",async t=>{
   const old=native(0)+native(1),f=fixture(t,old);captureSessions(f.store,{owner:'fixture',files:[f.path]});
-  f.state(s=>s.delete('cc',f.key));const added=Array.from({length:6},(_,n)=>native('extra'+n)).join('');fs.appendFileSync(f.path,added);
+  f.state(s=>{s.delete('cc',f.key);s.set('native-retain',f.key,true);});const added=Array.from({length:6},(_,n)=>native('extra'+n)).join('');fs.appendFileSync(f.path,added);
   let row;
   for(let n=0;n<30;n++){row=await f.step({maxBytes:128});if(row.result.appended)break;}
   assert.ok(row.job.snapshot);assert.ok(row.result.appended);
@@ -199,4 +214,108 @@ test("retiring a changed payload revokes its private capture job before rebuildi
   const retired=await f.step({maxBytes:128});assert.equal(retired.result.cleanup,true);
   assert.equal(f.state(s=>s.get('native-unit',f.key)),null);
   await f.finish({maxBytes:128});f.assertContent(old+added);
+});
+
+
+test("matching small snapshots resume prefix progress across workers without durable staging syncs",async t=>{
+  const old=Array.from({length:9},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  const rows=await f.finish({maxRecords:2});f.assertContent(old);
+  const copies=rows.filter(r=>r.work.stagedWriteBytes);
+  assert.ok(copies.length>4);
+  assert.ok(copies.every(r=>r.work.sourceBytes===Buffer.byteLength(old)&&r.work.stagedWriteBytes===Buffer.byteLength(old)));
+  assert.equal(rows.reduce((n,r)=>n+(r.work.prefix.journalRecords??0),0),9);
+  assert.equal(rows.reduce((n,r)=>n+(r.work.prefix.sourceRecords??0),0),9);
+  assert.equal(rows.reduce((n,r)=>n+r.fsyncs,0),0,'all JS fsync calls are counted; SQLite internal syncs are separate');
+  assert.deepEqual(fs.readdirSync(join(f.root,'.capture-tmp')),[]);
+});
+
+test("small recovery digest change outside witness resets prior proof before append",async t=>{
+  const old=Array.from({length:9},(_,n)=>native(String(n)+'x'.repeat(1000))).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  let row;
+  for(let n=0;n<30;n++){row=await f.step();if(f.state(s=>s.get('prefix-proof',f.key))?.line>=2)break;}
+  assert.ok(f.state(s=>s.get('prefix-proof',f.key)).line>=2);
+  const id=f.state(s=>s.get('prefix-proof',f.key)).snapshotId;
+  fs.writeFileSync(f.path,old.replace('0x','Qx')+native('growth'));
+  const rows=await f.finish();assert.equal(rows.at(-1).result.setAside.line,1);
+  assert.notEqual(f.state(s=>s.get('prefix-proof',f.key)).snapshotId,id);f.assertContent(old);
+});
+
+test("journal generation changes between small snapshots restart proof before any append",async t=>{
+  const old=Array.from({length:7},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  await f.step();const first=f.state(s=>s.get('prefix-proof',f.key));assert.ok(first);
+  fs.appendFileSync(f.path,native('public'));
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  fs.appendFileSync(f.path,native('command'));
+  const row=await f.step();assert.equal(row.result.appended,0);
+  const rows=await f.finish();f.assertContent(old+native('public')+native('command'));
+  assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),1);
+});
+
+test("interrupted small restaging falls back once, keeps fixed end and completes over short restarted units",async t=>{
+  const old=Array.from({length:8},(_,n)=>native(String(n)+'x'.repeat(40000))).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  let row;
+  for(let n=0;n<30;n++){row=await f.step({stopSourceBytes:65536,maxBytes:65536});if(row.result.retainedFallback)break;}
+  assert.equal(row.result.retainedFallback,true);assert.equal(row.work.sourceBytes,65536);
+  assert.equal(f.state(s=>s.get('small-stage',f.key)).size,Buffer.byteLength(old));
+  fs.appendFileSync(f.path,native('later sweep'));
+  const rows=await f.finish({stopSourceBytes:65536,maxBytes:65536});f.assertContent(old);
+  assert.ok(rows.some(r=>r.fsyncs>0),'retained fallback accounts for payload/owner sync calls');
+  assert.ok(rows.every(r=>!r.result.retainedFallback));
+  await f.finish();f.assertContent(old+native('later sweep'));
+});
+
+test("killed small copy or proof commit cannot publish proof; due admitted retry uses retained recovery",async t=>{
+  for(const crash of ['crashSmall','crashProof']){
+    const old=Array.from({length:6},(_,n)=>native(n)).join(''),f=fixture(t,old);
+    captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+    const now=Date.parse('2026-01-01T00:00:00Z');
+    assert.equal((await f.step({[crash]:true,admit:true,now})).crashed,true);
+    assert.equal(f.state(s=>s.get('prefix-proof',f.key)),null);assert.equal(f.state(s=>s.get('small-stage',f.key)),null);
+    const lock=acquireCaptureLock(f.root);
+    try { assert.equal(cleanupCaptureScratch(f.root,lock),1); } finally { assert.equal(lock.release().released,true); }
+    f.state(s=>reconcileCaptureInterruption(s,{now,reason:'interrupted'}));
+    const resumed=await f.step({admit:true,now:now+30*60000,maxBytes:128});
+    assert.equal(resumed.result.appended,0);assert.ok(f.state(s=>s.get('recovery-allocation',f.key)));
+    await f.finish({maxBytes:128});f.assertContent(old);
+  }
+});
+
+
+test("same captured content under a new source identity restarts validation and appends nothing",async t=>{
+  const old=Array.from({length:7},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  await f.step();const first=f.state(s=>s.get('prefix-proof',f.key)).snapshotId;
+  fs.renameSync(f.path,f.path+'.old');fs.copyFileSync(f.path+'.old',f.path);
+  const next=await f.step();assert.equal(next.result.appended,0);
+  assert.notEqual(f.state(s=>s.get('prefix-proof',f.key)).snapshotId,first);
+  const rows=await f.finish();assert.equal(rows.reduce((n,r)=>n+r.result.appended,0),0);f.assertContent(old);
+});
+
+test("command eligibility is total fixed end, inclusive at 8MiB, not a small unit allowance",async t=>{
+  for(const size of [8388608,8388609]){
+    const old=native(0),f=fixture(t,old);captureSessions(f.store,{owner:'fixture',files:[f.path]});
+    const chunk=Buffer.alloc(65536,97);chunk[65535]=10;
+    const fd=fs.openSync(f.path,'a');
+    try { for(let n=Buffer.byteLength(old);n<size;n+=65536)fs.writeSync(fd,chunk,0,Math.min(65536,size-n)); }
+    finally {fs.closeSync(fd);}
+    f.state(s=>s.delete('cc',f.key));
+    const row=await f.step({maxRecords:1,maxBytes:128});assert.equal(row.result.appended,0);
+    if(size===8388608){assert.equal(row.work.stagedWriteBytes,size);assert.equal(f.state(s=>s.get('recovery-allocation',f.key)),null);}
+    else{assert.equal(row.work.stagedWriteBytes,128);assert.ok(f.state(s=>s.get('recovery-allocation',f.key)));}
+  }
+});
+
+
+test("a pending recovered small snapshot does not restage unchanged bytes on subsequent workers",async t=>{
+  const old=Array.from({length:5},(_,n)=>native(n)).join(''),f=fixture(t,old);
+  captureSessions(f.store,{owner:'fixture',files:[f.path]});f.state(s=>s.delete('cc',f.key));
+  fs.appendFileSync(f.path,'{"torn":');
+  assert.equal((await f.finish()).at(-1).result.pending,true);f.assertContent(old);
+  const noop=await f.step();assert.equal(noop.result.pending,true);
+  assert.equal(noop.work.sourceBytes??0,0);assert.equal(noop.work.stagedWriteBytes??0,0);
+  fs.appendFileSync(f.path,'true}\n');await f.finish();f.assertContent(old+'{"torn":true}\n');
 });

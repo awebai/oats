@@ -23,7 +23,7 @@ function readExact(fd, position, size) {
 }
 
 export function advanceRecoverySnapshot(store, stream, key, path, start, {
-  capturedPi, generation = "", maxBytes = 8 * 1024 * 1024, maxRecordBytes = CAPTURE_POLICY.maxRecordBytes,
+  capturedPi, generation = "", fixedEnd, maxBytes = 8 * 1024 * 1024, maxRecordBytes = CAPTURE_POLICY.maxRecordBytes,
   stopped = () => false, work,
 } = {}) {
   const context = captureContext(store), state = context?.state;
@@ -45,6 +45,7 @@ export function advanceRecoverySnapshot(store, stream, key, path, start, {
       return version;
     };
     const version = observe(), journalVersion = fileVersion(store.journalPath(stream)), db = state.db;
+    if (fixedEnd !== undefined && (!Number.isSafeInteger(fixedEnd) || fixedEnd < 0 || fixedEnd > version.size)) throw new Error("invalid fixed recovery end");
     if (db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type='table' AND name='recovery_chunks'").get()?.found !== 1) {
       db.exec("CREATE TABLE recovery_chunks (allocation TEXT, offset INTEGER, length INTEGER NOT NULL, hash TEXT NOT NULL, PRIMARY KEY(allocation,offset))");
       state.set("recovery-meta", "epoch", randomUUID());
@@ -65,7 +66,7 @@ export function advanceRecoverySnapshot(store, stream, key, path, start, {
     if (!existing) {
       if (typeof stage?.allocation === "string") state.set("recovery-garbage", stage.allocation, true);
       stage = { epoch, generation, journalVersion, allocation: allocation.claim.id, path, sourceVersion: version, observedVersion: version,
-        size: version.size, copied: 0, checked: 0, rawLineBytes: 0, lineStart: 0, lines: 0,
+        size: fixedEnd ?? version.size, copied: 0, checked: 0, rawLineBytes: 0, lineStart: 0, lines: 0,
         witness: digest(Buffer.alloc(0)), payloadVersion: statVersion(fstatSync(allocation.fd, { bigint: true })), phase: "copy" };
     } else if (!stage || stage.epoch !== epoch || stage.allocation !== allocation.claim.id || stage.path !== path) {
       return invalidate("recovery-state-lost");

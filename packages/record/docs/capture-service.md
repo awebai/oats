@@ -254,6 +254,30 @@ generation only after its fsynced append under the same stream lock, committing
 the source cursor and staged job's new journal version together. An interrupted
 commit instead leaves the old generation and forces revalidation.
 
+Small command recovery snapshots have a private optimization when their **total
+fixed end** is at most 8 MiB. Each worker streams a new private copy and full
+SHA-256 in 64 KiB chunks before trusting saved comparison progress. Complete
+digest plus size identifies the proven bytes; source identity/observation,
+reset/retry generation and exact journal generation must also qualify. The
+comparison consumes that worker's verified snapshot, never a later source-path
+reopen. Same-content replacement takes the normal validation path. Matching
+snapshots preserve comparison progress; a changed digest or other qualification
+restarts proof before append. Ordinary unchanged/growth capture does not use
+this recovery optimization.
+
+These small copies are disposable per-call allocations, with no payload or
+ownership-handoff fsync. Their loss never loses a proven source checkpoint:
+the next worker must copy/hash again. Repeated source/stage bytes are recovery
+work and are counted separately from probes and ordinary incremental work.
+If restaging exhausts the unit before required work can advance, the processing
+commit selects retained resumable copying for subsequent admissions. A killed
+unit cannot publish an in-memory fallback decision; its durable failed-admission
+retry selects the retained path. The fixed source end is preserved by committed
+observation metadata, which alone never authorizes prefix proof. SQLite commits,
+journal syncs, root-lock publication and retained fallback syncs remain separate
+costs; avoiding disposable-copy fsync is not a claim that first-upgrade storage
+cost or the complete service has been qualified.
+
 Staging consumes source-sized private space plus bounded-per-chunk hash metadata.
 Revalidating staged bytes after interruption is recovery work, reported separately
 from mutable-source reads and boundary probes. Completed or invalidated jobs
@@ -313,7 +337,7 @@ record limit and checks it before joining an oversized line; public callers keep
 their unlimited framing default. These primitives require a scheduling caller to
 provide budgets and continuation; they do not bound public library operations.
 
-`advanceTranscriptPrefix` is the internal resumable comparison for a retained
+`advanceTranscriptPrefix` is the internal resumable comparison for a verified
 immutable source snapshot. Its durable phases clear obsolete hashes, consume
 the journal from a byte checkpoint, then compare source lines from a byte/line
 checkpoint. Hashes and phase progress share the surrounding stream group's
@@ -327,7 +351,7 @@ record policy is not a serialized-journal size limit. This comparison helper
 does not own snapshot staging, transfer its ownership or read the mutable source.
 
 `capture-native-unit.mjs` combines these private primitives for one native input.
-It performs bounded journal validation before any append, resumes retained
+It performs bounded journal validation before any append, resumes verified
 snapshot/prefix work when a source cursor is unqualified, and admits one bounded
 batch from the verified bytes. Ordinary known growth uses the source cursor and
 bounded witness without staging historical content. The fixed end survives

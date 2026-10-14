@@ -43,8 +43,8 @@ export function compareTranscriptPrefix(store, stream, state, lines) {
 }
 
 // Command-only recovery proof. The caller supplies complete native lines from
-// an immutable, retained staged snapshot, starting at the requested byte. Its
-// id changes whenever that snapshot is replaced. This helper neither opens the
+// an immutable verified staged snapshot, starting at the requested byte. A
+// retained allocation or a completely revalidated digest/size binds its id. This helper neither opens the
 // mutable source nor transfers scratch ownership; those belong to the worker.
 // No partial phase authorizes append. Checkpoints and hashes join the caller's
 // existing stream-locked processing transaction, with no per-record commits.
