@@ -1545,7 +1545,9 @@ function harnessTrustCmd() {
     log(`${result.mode}: native harness trust for ${result.root}`);
     const used = (entry) => [...(entry.ambient ? ["ambient"] : []), ...entry.launchConfigs.map((n) => `launch configuration ${n}`)].join(", ");
     for (const entry of result.entries) {
-      log(`${entry.harness}: ${entry.status} ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest ?? "unknown/absent"}) (${used(entry)})`);
+      // A refused file was not read through to its trust value: no current value or digests to show.
+      if (entry.status === "refused") log(`${entry.harness}: refused ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} (${used(entry)})`);
+      else log(`${entry.harness}: ${entry.status} ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest ?? "unknown/absent"}) (${used(entry)})`);
       if (entry.problem) log(`problem: ${entry.problem}`);
       if (entry.reason) log(`skipped: ${entry.reason}`);
     }
