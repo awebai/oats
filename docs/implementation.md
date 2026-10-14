@@ -125,7 +125,7 @@ and the rules its tests pin.
 | `launch-prompt-completion.mjs` | the 21 question markers that block after the development-channel Enter; reporting only, never an input matcher |
 | `launch-prompt-fixtures.mjs` | the development-channel tolerance list (`launch-prompt-fixtures/dev-channel-confirmation.json`): engagement from the argv, the enumerated normalization, equality matching, the `flag-ignored` notice block, the running-session banner hint, what differed, and the Claude version read from the executable's path |
 | `launch-prompts.mjs`, `launch-prompt-transport.mjs` | bounded launch-only controller and visible-screen transport; private process authority, injectable clock/transport, durable checked receipts, one Enter only on equality with a tolerance entry |
-| `harness-trust.mjs` | read-only native trust coverage and operator remedy for launches |
+| `harness-trust.mjs` | read-only native trust coverage and operator remedy for launches; the table of the variable that moves each harness's folder (`HARNESS_FOLDER_VAR`) and the one reader of a launch configuration's (`launchConfigFolder`), used by the trust code, `pi-bridge.mjs` and `core.mjs`: it reads only files and imports none of them. What a launch's pane will have for those variables, `PATH` and `HOME` is `launchEnvironment` in `core.mjs`, the one answer every check of a launch reads ([execution-targets.md](execution-targets.md#the-checks-read-the-pane)) |
 | `harness-trust-write.mjs` | explicit operator plan/apply, cooperating locks, durable deployment audit and no-rollback outcomes |
 | `harness-trust-json.mjs`, `harness-trust-toml.mjs` | bounded native parsers and byte-preserving edits of one trust leaf |
 | `pi-bridge.mjs` | the pi bridge (`@awebai/oats-pi`) in every pi folder a launch of a deployment uses: the folder list (the default, the process's own `PI_CODING_AGENT_DIR`, each pi launch configuration's, by real path), the bridge read in each, `oats doctor`'s skew warnings and the plan `oats update` runs ([upgrading](upgrading.md)). Reads only: `bin/oats.mjs` runs the steps |
@@ -301,9 +301,31 @@ fetch passes it with `-c remote.origin.url=`). A server without partial
 fetches gets whole trees; the cache records that (`oats.fetch = full` in its
 config) and the CLI prints the session's notice once, on stderr. Partial
 caches need git 2.45 or later (`PARTIAL_FETCH_GIT`, the first git with
-`GIT_NO_LAZY_FETCH`): with an older git every cache fetches whole trees, a
-partial cache it meets is deleted and fetched again whole, and the same
-notice says why.
+`GIT_NO_LAZY_FETCH`): only a successfully parsed version below that floor
+authorizes a version-driven rebuild. With that older git every cache fetches
+whole trees, a partial cache it meets is deleted and fetched again whole,
+and the same notice says why. An existing full cache stays full even when a
+later probe reports a modern git.
+
+One private strict version probe owns the memo per `exec`: concurrent callers
+share the in-flight probe, and a parsed success is retained. A rejection,
+unparseable result, or waiter leaving on timeout/cancellation removes only
+that probe's own memo entry, so a later call
+can retry without an old failure evicting a newer probe. `gitVersion(exec,
+opts)` wraps this same probe for compatibility, returning a version or `null`;
+it never memoizes a failure as `null`. The cache read path's `readVersion`
+uses the strict probe and maps failure through the existing
+`E_REMOTE_UNREADABLE` classification. Unparseable output is `unknown`; a
+probe's own `timedOut` remains `timeout` even before a session deadline.
+Each waiter can leave on its own timeout or cancellation. The launching
+caller supplies the shared Git process's timeout and signal: when those end
+the probe, every remaining waiter receives that original failure, even with
+time left on its own deadline. A later call retries; leaving a wait never
+changes the outcome delivered to peers still awaiting that probe.
+These refusals apply with or without a read session and preserve the
+existing partial cache, its fetch mode and its commit pins; failure never
+reaches the version comparison as an older git. Raw version stdout and
+command arguments are not diagnostic text.
 
 The fetch of a commit negotiates: git tells the server the commits the cache
 holds (its pins), and the pack holds only what they lack, a few kilobytes for

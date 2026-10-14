@@ -2384,7 +2384,7 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_INTERRUPTED` | `{signal, hooks}` | SIGINT, SIGTERM or SIGHUP while the spawn's `worktree` hooks ran (feature `worktree-event`): the running hook's process group is ended, the spawn is rolled back as for a required hook failure, and the process exits 128 + the signal number |
 | `E_REQUIRED_HOOK_FAILED` | `{hooks}`, plus `unconfirmed: true` when compensation cannot finish | a required `spawn` or `worktree` hook failed or timed out; the spawn is rolled back. `hooks` holds the receipt of the event that failed: one entry per hook that ran, `{capability, ok, required, log, exitCode?, signal?, timedOut?, contract?}`, paths only. `log` is `null` for a spawn hook (it keeps no log) and once the rollback removed the home; a retained home keeps a `worktree` hook's log path. Never `home`. Before 0.49.0 a required spawn hook's failure answered `E_SPAWN_FAILED` |
 | `E_HOOK_ENVIRONMENT_CONTRACT` | the same as `E_REQUIRED_HOOK_FAILED`, the failed entry with `contract: "environment"` | a `spawn` hook answered an `env` its manifest does not allow, or a `worktree` hook answered `env` at all |
-| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else |
+| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else. Among them the two refusals of the harness package check, with the kernel's message: a required package that is not installed (`E_HARNESS_RESOURCE_MISSING` in the kernel), and a pane whose `PATH`, `HOME` or harness folder cannot be read for the probe (`E_RUNTIME_ENDPOINT_UNKNOWN` in the kernel: [the checks read the pane](execution-targets.md#the-checks-read-the-pane)). `oats session start` and `restart` answer the second under its own code. Passing the codes through a spawn is [#1047](https://github.com/awebai/oats/issues/1047) |
 
 Spawn failure envelopes carry `error.details.unconfirmed: true` when an existing
 keyed spawn is incomplete (`E_SPAWN_INCOMPLETE`) or compensation cannot confirm
@@ -4139,13 +4139,76 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   one Git names for it, <repository>, and does not write it into the
   record`. No key of the plan is new.
 
-  What `work/` is decides what the retire does with it, so it is part of
-  `planRevision` wherever it is not what the work mode alone says: when an
-  own tree became a directory of the home, or the other way round, between
-  the plan and the apply (a record's work mode that changed, a receipt that
-  is gone), or the repository read from Git changed, a guarded apply refuses
-  with `E_PLAN_STALE` before anything runs. Every other home has the
-  revision it had.
+  <a id="retire-revision-work"></a>**A retire plan's `planRevision` binds
+  everything the plan shows, except the facts that move by themselves**
+  (0.56.0, #1065), which are these:
+  - `at`, the instant of the read;
+  - the counts against the branch's upstream and against the default branch
+    (`facts.work.upstream.ahead` and `.behind`, `facts.work.base.ahead` and
+    `.behind`), and the default branch's name (`facts.work.base.ref`): a
+    fetch by anyone who shares the clone moves the remote's refs, and
+    creates a missing `origin/HEAD`, where that name is read;
+  - a child's session (`facts.children[].session`): a child's process ends
+    when it ends, and a child that will not stop refuses the retire by
+    itself (`E_CHILDREN_RUNNING`).
+
+  Everything else a plan shows is in its revision, in every home:
+  - what the plan reports of the record: its work mode (`facts.workMode`),
+    its repository (`facts.repo`), its branch (`facts.recordedBranch`) and
+    whether it records a launch;
+  - what `work/` is by this reading, with the repository Git names for
+    `work/` wherever it is a registered work tree;
+  - what Git says of `work/`: the commit, the branch and whether `HEAD` is
+    detached, whether that branch is not the one the record names
+    (`facts.work.drift`, as the plan shows it: it comes from a second read
+    of the record, so it is not derived from `facts.recordedBranch`),
+    the counts of changed and untracked files, the branch's upstream by its
+    name (`facts.work.upstream.ref`) and the remote's host and path
+    (`facts.work.remote`); and where Git gives no answer, the reason
+    (`facts.work.reason`);
+  - the session as the plan shows it (`facts.session`, whole: its state,
+    and the `reason` or the `note` of one that is not established), which
+    the record's launch and endpoint decide where the session's receipt
+    does not;
+  - the home's extra trees (`facts.extraWorktrees`, whole);
+  - where a recovery would be written and the declared roots it leaves
+    out, as the spawn's receipt gives them: the roots with their owners,
+    not the note made from them, which is shortened past its budget and
+    then reads alike for two lists of one length. A changed recovery
+    exclusion changes the revision (it did not before 0.56.0);
+  - of other homes: the children as the plan names them (`instance`,
+    `agent`, `home`; a child's agent is the name its soul's file gives),
+    the edges that could not be followed (`facts.ambiguous`, whole) and the
+    children attached to this home's `work/`.
+
+  A key that is derived is bound through what it is derived from:
+  `facts.ownWorktree` and `defaults.retainWorktree` (the reading), and
+  every note and every line of the plan's text.
+  `lifecycleApi`, `action`, `facts.pullRequest` and the defaults
+  `deleteBranch`, `stopChildren` and `retainChildren` have one value in
+  every plan of a kernel.
+
+  So two plans of one home that differ in anything else they show never
+  share a revision, and a guarded apply after one of those things moved (a
+  record's work mode, repository or branch that was rewritten, a receipt
+  that is gone, an own tree that became a directory of the home, a
+  directory of the home that became a work tree of another repository, a
+  file where nothing was at `work/`, a receipt that declares another root)
+  is refused with `E_PLAN_STALE` and the fresh plan, before anything runs.
+  Two reads of a home that nobody touched give one revision.
+
+  Before 0.56.0 the revision held of the record its launch alone, of the
+  session its state alone, and the reading only where its answer was not
+  the one the record's work mode alone gives, or where the retire took the
+  repository from Git because the record named none (0.53.0): a record
+  rewritten between a plan and its apply could leave the plan's revision
+  as it was.
+  **Every retire plan read under an older kernel is stale under this one,
+  once:** its apply is refused with `E_PLAN_STALE` and the fresh plan, and
+  the person confirms again. A repeated apply with the idempotency key of a
+  retire that did run is answered from its stored receipt as before,
+  whatever revision it carries: the receipt is looked for before any plan
+  is read.
 - A link at `work/` is never the instance's own tree: the retire removes
   the link with the home and does not touch what it leads to, whatever the
   record says (0.53.0, #973). The record is a file the instance can write;
@@ -4250,7 +4313,7 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   case. Read an unknown `state` as not idle.
 - `notes` says what a retire would copy to recovery (0.42), in up to two
   strings read from the home's retirement baseline and the work mode, without
-  hashing anything:
+  hashing a file of the home:
 
   ```text
   recovery: the home is copied to /w/agents/dev/instances/.oats-retirement/recovery before the home is removed, when it changed since spawn; not copied: .aw, .aweb-identity, .aweb-identity-*, .oats-aweb (oats.aweb)
@@ -4272,7 +4335,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   The second is the line above in worktree mode, `recovery: work/ is copied
   there when it is not empty` in directory mode, and absent in checkout,
   attached and workspace modes. They are strings in `notes`: no other key
-  changes, and `planRevision` is unaffected.
+  changes. From 0.56.0 the declared roots are part of `planRevision`, as
+  the baseline gives them and not as the note says them (#1065,
+  [the plan's revision](#retire-revision-work)); before it they were not.
 - `facts.extraWorktrees` (0.42.1) lists the instance's
   [extra trees](souls-and-instances.md#extra-trees-at-retire): linked
   worktrees at `<home>/.work-*` that Git confirms. It is an array, empty when
@@ -5493,9 +5558,13 @@ It uses the existing success/error JSON envelope. Result:
 
 There is one entry per target file: the ambient file of each selected harness,
 then one per launch configuration whose `env` sets `CLAUDE_CONFIG_DIR` or
-`CODEX_HOME`, deduplicated by canonical directory. `ambient` says whether the
-operator's own environment selects the file; `launchConfigs` names the launch
-configurations that do (sorted). A launch configuration whose directory cannot
+`CODEX_HOME`, or sets `HOME` when its launch has no such variable at all
+(its default file under that `HOME`), deduplicated by canonical directory. `ambient` says whether the
+file is the one a launch with no launch configuration reads (by the
+environment its tmux pane will have, or the operator's own when no OATS tmux
+server runs, which `warnings` then says:
+[harness-trust.md](harness-trust.md)); `launchConfigs` names the launch
+configurations that select it (sorted). A launch configuration whose directory cannot
 be resolved (an unset reference, a relative path) or does not exist is a
 `refused` entry with a `problem` string naming it; `file` is null when the path
 is unresolved. The directory is never created.
@@ -5511,7 +5580,16 @@ unverifiable observations). The intent retains the candidate digest. Apply's aud
 in warnings, without native configuration contents.
 
 Preflight failures, including any entry `problem`, use `E_CONFIG_BROKEN` with the
-result in details; the message names each problem. Apply failures
+result in details; the message names each problem. One case has its own code:
+when the only refused entries are ambient ones whose file could not be
+established, because a server runs and the environment of its panes cannot be
+read, or because tmux could not say whether the server runs (its
+`list-sessions` refused or cut off; with no tmux on the command's `PATH`
+no read is made, and the operator's own file is the target, said in
+`warnings`), the code is `E_RUNTIME_ENDPOINT_UNKNOWN` (`Harness trust targets cannot be
+established; nothing was written: …`), with the same details: the entry is
+`refused`, `file` null, with its `problem`. With a refused launch
+configuration's entry beside it, `E_CONFIG_BROKEN` wins. Apply failures
 use `E_HARNESS_TRUST_INCOMPLETE`, details `{...result,reason,mayHaveChanged}`;
 reason is the closed set `locked|changed|audit|write|verify`; the message names the
 failed files. Partial writes are
