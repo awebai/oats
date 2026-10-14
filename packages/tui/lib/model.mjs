@@ -294,8 +294,10 @@ export const OPEN_WORDS = Object.freeze({
   stateUnknown: (name) => [{ own: "Whether " }, { shown: name }, { own: " runs is not known, so it is not opened." }],
   noKey: (machine) => [machine === null ? { own: "This machine" } : { shown: machine }, { own: "'s OATS has no key to leave a viewer (it needs OATS 0.51.0 or later), so it is not opened from here. `oats session attach --server <id> --home <home>` opens it, and only closing the terminal leaves it." }],
 });
-/** A sentence from outside, whole, as one part. */
-const outside = (value) => (value === null ? [] : [{ shown: value }]);
+/** A sentence from outside (a reason of the shared home's, the preflight table's), as a text
+ *  under the line: drawn as the detail draws a reason, wrapped on the reason's rows, never as one
+ *  unbroken part (a part is a name). */
+const outside = (value) => (value === null ? [] : [value]);
 
 /** Whether a row is of another machine: the shared home names its server on it. */
 const elsewhere = (row) => typeof row.server === "string" && row.server !== "";
@@ -315,12 +317,12 @@ export function openDecision(state, row, acts) {
   const act = openAct(row);
   if (act === null) {
     const held = acts.blocked ?? acts.limited;
-    return no(outside(reasonSpoken(held)));
+    return no([], outside(reasonSpoken(held)));
   }
   if (!act.enabled) {
     if (act.reason.code === "not-running") return no(OPEN_WORDS.notRunning(name));
     if (act.reason.code === "state-unknown") return no(OPEN_WORDS.stateUnknown(name));
-    return no(outside(reasonSpoken(act.reason)));
+    return no([], outside(reasonSpoken(act.reason)));
   }
   if (!elsewhere(row)) {
     return detachKeySupported(state.cli) ? { open: true, id, name, machine, target: { home: row.home }, routed: false } : no(OPEN_WORDS.noKey(null));
@@ -351,7 +353,7 @@ export function returnedLine({ name, machine, routed }, status, stderr) {
 export function preflightLine({ machine }, error) {
   const failure = preflightFailure(error, machine);
   if (failure.code === "E_TERM_CONTEXT_CHANGED") return null;
-  return { said: outside(failure.sentence), under: failure.said === null ? [] : kernelLines(failure.said.message, failure.said.fix, TERMS) };
+  return { said: [], under: [...outside(failure.sentence), ...(failure.said === null ? [] : kernelLines(failure.said.message, failure.said.fix, TERMS))] };
 }
 
 /** The facts of one instance, a label and a value per line; a fact that is absent is left out.

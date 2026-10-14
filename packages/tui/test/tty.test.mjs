@@ -426,9 +426,10 @@ test("the three callbacks are optional: a guard without them suspends, returns a
  *  the guard's requests that it end. */
 function borrower() {
   let close, fail;
-  const b = { started: 0, ended: 0 };
+  const b = { started: 0, ended: 0, released: 0 };
   b.run = () => { b.started++; return new Promise((resolve, reject) => { close = resolve; fail = reject; }); };
   b.end = () => { b.ended++; };
+  b.release = () => { b.released++; };
   b.close = (value) => close(value);
   b.fail = (error) => fail(error);
   return b;
@@ -517,21 +518,24 @@ for (const [name, cause, status] of [
   });
 }
 
-test("a borrower that does not close after it was asked to end: the run ends LEND_END_GRACE_MS later, and a second signal does not wait", async () => {
+test("a borrower that does not close after it was asked to end: the run ends LEND_END_GRACE_MS later, and a second signal does not wait; either way the borrower is let go first (release), so it holds the process no longer", async () => {
   const g = owned();
   const b = borrower();
-  g.guard.lend(b.run, { end: b.end });
+  g.guard.lend(b.run, { end: b.end, release: b.release });
   g.proc.emit("SIGTERM", "SIGTERM");
   assert.deepEqual(g.timers.delays(), [LEND_END_GRACE_MS]);
+  assert.deepEqual([b.ended, b.released], [1, 0], "asked to end, not yet let go");
   g.timers.fire();
   assert.equal((await g.guard.done).status, SIGNAL_STATUS.SIGTERM);
+  assert.equal(b.released, 1);
 
   const h = owned();
   const c = borrower();
-  h.guard.lend(c.run, { end: c.end });
+  h.guard.lend(c.run, { end: c.end, release: c.release });
   h.proc.emit("SIGHUP", "SIGHUP");
   h.proc.emit("SIGINT", "SIGINT");
   assert.equal((await h.guard.done).status, SIGNAL_STATUS.SIGINT);
+  assert.equal(c.released, 1, "let go at the second signal");
   assert.equal(h.timers.count, 0, "the grace timer was cleared");
   c.close({ status: 0 }); // closing late changes nothing
   await settle();

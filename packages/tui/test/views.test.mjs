@@ -2634,3 +2634,21 @@ test("the help lists Enter once per view with what it does there, and under the 
   assert.equal(lines.filter((line) => line.startsWith("Enter ")).length, 2, "Enter twice, once per view");
   assert.equal(lines.some((line) => line.includes("open an agent in its own tmux window") && line.includes("oats session attach --home <home>")), true);
 });
+
+test("a tui.json that unbinds open, or close, is drawn with a kept filter: the hint that has no key is not there, and nothing else moves (round 1 of the review)", () => {
+  const noOpen = effectiveConfig({ keys: { open: [] } }).actions, noClose = effectiveConfig({ keys: { close: [] } }).actions;
+  for (const sz of [S60, S80, S120]) {
+    const kept = press(openable({ actions: noOpen }), ["/", "d", "enter"], sz).state;
+    assert.equal(kept.filter.query, "d");
+    const foot = draw(kept, sz).lines[sz.rows - 1];
+    assert.match(foot, /^ \/d +\S/, `${sz.cols}: the kept filter`);
+    assert.equal(foot.includes("open ("), false, `${sz.cols}: no open hint without a key`);
+    assert.match(foot, /\? help   q quit$/, `${sz.cols}`);
+    // While another machine is asked first, Esc's hint stands first; with no key for close there is none.
+    const asking = reduce(openable({ actions: noClose }), { key: "enter", page: 19, extent: 0, room: 19, cols: 38 }).state;
+    const preflight = Object.freeze({ ...asking, filter: Object.freeze({ editing: false, query: "d" }), opening: Object.freeze({ ...asking.opening, phase: "preflight" }) });
+    const asked = draw(preflight, sz).lines[sz.rows - 1];
+    assert.equal(asked.includes("stop opening"), false, `${sz.cols}: no Esc hint without a key`);
+    assert.match(asked, /\? help   q quit$/, `${sz.cols}`);
+  }
+});

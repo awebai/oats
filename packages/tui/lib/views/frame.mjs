@@ -226,7 +226,8 @@ function footer(m, cols) {
   // While another machine is asked first, Esc gives the open up, and that is all it does: the
   // hint stands where `open` stood, is kept as long, and `close` is not listed beside it.
   const asking = listing && m.opening?.phase === "preflight";
-  const first = asking ? [["open", hint("close", "stop opening")]] : listing && m.openable ? [["open", opener()]] : [];
+  // An action with no key (tui.json may unbind one) has no hint: nothing stands first then.
+  const first = (asking ? [["open", hint("close", "stop opening")]] : listing && m.openable ? [["open", opener()]] : []).filter(([, h]) => h);
   const [ids, keep] = m.view === "help" ? [["close"], ["close"]]
     // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
     // A kept filter puts `close` before `refresh`, as in the list: the key that clears it is the hint to keep.

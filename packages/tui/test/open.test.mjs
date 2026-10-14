@@ -7,14 +7,18 @@ process.env.TZ = "UTC";
 // out: only the TUI's own words are literals.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import {
   DETACH_KEY_FEATURE, DETAIL_WITHHELD, TERMS, deployments, displayLine, instanceActs, instanceId, kernelLines, observeIdentities, observedEntry, openAct, originLead,
   panelInstances, preflightFailure, prepareRemoteTerm, remoteRosterState, rosterRows, sessionAttachArgv,
 } from "../lib/client.mjs";
 import { DETACH_KEY, effectiveConfig } from "../lib/config.mjs";
-import { OPEN_WORDS, heldOf, model, openDecision, roster } from "../lib/model.mjs";
+import { OPEN_WORDS, heldOf, model, openDecision, preflightLine, roster } from "../lib/model.mjs";
 import { STDERR_KEPT, startViewer } from "../lib/open.mjs";
 import { layout } from "../lib/views/frame.mjs";
 import { reduce } from "../lib/store.mjs";
@@ -246,7 +250,8 @@ test("a preflight that failed: the shared table's sentence and, when the kernel 
     assert.deepEqual([next.effect, next.state.opening], [null, null], failure.code);
     assert.deepEqual(above(next.state, S120), [failure.sentence, ...said], failure.code);
   }
-  assert.equal(after(cases[3]).state.outcome.under[0], DETAIL_WITHHELD, "the shared word for a withheld text reaches the view as it came");
+  // The table's sentence stands first (wrapped as a reason is), the kernel's lines under it.
+  assert.equal(after(cases[3]).state.outcome.under[1], DETAIL_WITHHELD, "the shared word for a withheld text reaches the view as it came");
   assert.equal(above(after(cases[3]).state, S120)[1], "[withheld]");
   const aborted = new AbortController();
   aborted.abort();
@@ -367,4 +372,50 @@ test("a name from outside in the line and the footer goes through the display fi
   assert.equal(lines.length, 1);
   assert.equal(lines[0].endsWith(" is not running, so it has no terminal to open."), true, lines[0]);
   assert.doesNotMatch(lines[0], /[\u0000-\u001f\u007f‮]/);
+});
+
+test("a sentence from outside is wrapped as a reason is, on the reason's rows, never cut to one row as a name is: the preflight table's sentence with its remedy, and a held row's reason, at 60 columns (round 1 of the review)", () => {
+  const S60 = size(60, 24);
+  // The preflight's: ssh missing here, its remedy at the end of the shared sentence.
+  const failure = preflightFailure(Object.assign(new Error("ssh is not available on this computer"), { code: "E_TERM_REMOTE_NO_SSH" }), "garnet");
+  const asked = Object.freeze({ ...here(), outcome: preflightLine({ machine: "garnet" }, Object.assign(new Error("ssh is not available on this computer"), { code: "E_TERM_REMOTE_NO_SSH" })) });
+  const rows = above(asked, S60);
+  assert.equal(rows.length > 1, true, rows.join("\n"));
+  assert.equal(rows.join(" "), failure.sentence, "the whole sentence, the remedy included, on as many rows as it needs");
+  // A held row's: the shared home's reason, as Enter says it, with no row cut.
+  const half = on(here(), "dev-half", S60), held = instanceActs(rowOf(half));
+  const reason = (held.blocked ?? held.limited).sentence;
+  const said = above(press(half, ["enter"], S60).state, S60);
+  assert.equal(said.join(" ").includes(displayLine(reason)), true, said.join("\n"));
+  assert.equal(said.some((line) => line.endsWith("\u2026")), false, "nothing cut");
+});
+
+test("a viewer that does not end when asked does not hold the process: past the grace the run ends with the signal's status AND the process exits, the viewer let go (a real child, round 1 of the review)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oats-tui-lend-"));
+  const borrower = join(dir, "borrower.mjs"), wrapper = join(dir, "wrapper.mjs");
+  const at = (name) => JSON.stringify(new URL(name, import.meta.url).href);
+  writeFileSync(borrower, "process.on('SIGTERM', () => console.log('IGNORED')); console.log('READY ' + process.pid); setInterval(() => {}, 1000);");
+  writeFileSync(wrapper, `import { createGuard } from ${at("../lib/term/tty.mjs")}; import { startViewer } from ${at("../lib/open.mjs")}; import { fakeStdin, fakeStdout } from ${at("./helpers.mjs")};
+const guard = createGuard({ stdin: fakeStdin(), stdout: fakeStdout(), proc: process, frame: () => "", onInput() {}, onResize() {}, onRedraw() {} });
+guard.start(); let viewer;
+guard.lend(() => { viewer = startViewer(${JSON.stringify(borrower)}, []); return viewer.closed; }, { end: () => viewer.end(), release: () => viewer.release() });
+const end = await guard.done; console.log("RETURNED " + end.status); process.exitCode = end.status;`);
+  const child = spawn(process.execPath, [wrapper], { stdio: ["ignore", "pipe", "pipe"] });
+  let output = "", borrowerPid = null, exit = null;
+  child.stdout.on("data", (bytes) => { output += bytes; const m = /READY (\d+)/.exec(output); if (m) borrowerPid = Number(m[1]); });
+  child.stderr.on("data", (bytes) => { output += bytes; });
+  const exited = new Promise((resolve) => child.once("exit", (code, signal) => { exit = { code, signal }; resolve(); }));
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  try {
+    for (let n = 0; n < 500 && borrowerPid === null; n++) await pause(20);
+    assert.ok(borrowerPid, output);
+    child.kill("SIGTERM");
+    await Promise.race([exited, pause(15000)]);
+    assert.match(output, /IGNORED[\s\S]*RETURNED 143/, "asked to end first, then the run ended with SIGTERM's status");
+    assert.deepEqual(exit, { code: 143, signal: null }, `the process exited: ${output}`);
+  } finally {
+    if (borrowerPid) { try { process.kill(borrowerPid, "SIGKILL"); } catch { /* gone */ } }
+    if (exit === null) { child.kill("SIGKILL"); await exited; }
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

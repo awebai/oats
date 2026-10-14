@@ -14,11 +14,13 @@ export const STDERR_KEPT = 4096;
 
 /** Start the viewer: `node <bin> <args…>` with stdin and stdout on the terminal (inherited) and
  *  stderr on a pipe; no shell, the TUI's own environment (the instance variables were removed at
- *  the start; the kernel's viewer drops TMUX for its own child). Answers `{ closed, end }`:
+ *  the start; the kernel's viewer drops TMUX for its own child). Answers `{ closed, end, release }`:
  *  `closed` resolves once the child has closed, never rejects, with `{ status, stderr }`: `status`
  *  the exit status as Node reports it (null when a signal ended it, or when it did not start),
  *  `stderr` the last STDERR_KEPT bytes it printed, as text. `end()` asks it to end (SIGTERM to the
- *  child alone: the kernel closes its viewer on it); after it has closed, end() does nothing. */
+ *  child alone: the kernel closes its viewer on it); after it has closed, end() does nothing.
+ *  `release()` lets go of a viewer that did not end when asked: its stderr pipe is destroyed and
+ *  its handle no longer holds the process, which can then exit while the viewer lives on. */
 export function startViewer(bin, args, { env = process.env, spawn = nodeSpawn } = {}) {
   let child, over = false;
   const closed = new Promise((resolve) => {
@@ -38,5 +40,6 @@ export function startViewer(bin, args, { env = process.env, spawn = nodeSpawn } 
   return {
     closed,
     end() { if (!over && child) { try { child.kill("SIGTERM"); } catch { /* gone */ } } },
+    release() { if (!over && child) { child.stderr?.destroy(); child.unref(); } },
   };
 }

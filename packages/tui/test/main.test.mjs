@@ -68,11 +68,12 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     startViewer(bin, args, options) {
       log.push(["viewer", "start", bin, [...args]]);
       let close;
-      const viewer = { bin, args, options, ended: 0, closed: new Promise((resolve) => { close = resolve; }) };
+      const viewer = { bin, args, options, ended: 0, released: 0, closed: new Promise((resolve) => { close = resolve; }) };
       viewer.close = (status, stderr = "") => { log.push(["viewer", "closed", status]); close({ status, stderr }); };
       viewer.end = () => { viewer.ended++; log.push(["viewer", "end"]); };
+      viewer.release = () => { viewer.released++; log.push(["viewer", "release"]); };
       r.viewers.push(viewer);
-      return { closed: viewer.closed, end: viewer.end };
+      return { closed: viewer.closed, end: viewer.end, release: viewer.release };
     },
     prepareRemoteTerm(cli, target, options) {
       log.push(["preflight", target]);
@@ -925,8 +926,11 @@ test("SIGTERM while the viewer has the terminal ends the viewer first, then the 
   s.stdin.type("\r");
   s.proc.emit("SIGHUP", "SIGHUP");
   assert.equal(s.timers.delays().includes(LEND_END_GRACE_MS), true);
+  assert.equal(s.viewers[0].released, 0, "not let go before the grace is over");
   s.timers.fire();
   assert.equal(await s.status, 129);
+  assert.deepEqual([s.viewers[0].ended, s.viewers[0].released], [1, 1], "asked to end, then let go: its handle and its pipe hold the process no longer");
+  assert.equal(viewer.released, 0, "a viewer that closed within the grace is never let go");
 });
 
 /** The fixture's deployment and garnet, whose OATS lists the detach key, with garnet's row selected. */
@@ -997,4 +1001,26 @@ test("Esc during a preflight gives it up through its signal, and what it answers
   assert.doesNotMatch(screen, /Esc stop opening|could not|timed out/, "nothing is said");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
+});
+
+test("keys that came in one chunk with the Enter that lent the terminal do nothing: a q or a Ctrl+C behind it does not end the run under a live viewer, a ? opens no help, and the key that returns brings the TUI back to its own keys (round 1 of the review)", async () => {
+  for (const behind of ["q", "\x03", "?", "w", "\x1b"]) {
+    const r = await opening();
+    let over = false;
+    r.status.then(() => { over = true; });
+    r.stdin.type(`\r${behind}`);
+    r.tick(50); // an ESC behind it would be the Esc key once nothing followed it
+    r.timers.fire();
+    await settle();
+    const [viewer] = r.viewers;
+    assert.equal(r.viewers.length, 1, JSON.stringify(behind));
+    assert.deepEqual([over, viewer.ended], [false, 0], `${JSON.stringify(behind)}: the run goes on and the viewer is not ended`);
+    viewer.close(20);
+    await settle();
+    const after = textOf(r.stdout.take());
+    assert.match(after, /You left acme-expert-tui\. It keeps running\./, JSON.stringify(behind));
+    assert.doesNotMatch(after, /oats\s+workspaces|Keys/, `${JSON.stringify(behind)}: no other view was opened`);
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, JSON.stringify(behind));
+  }
 });

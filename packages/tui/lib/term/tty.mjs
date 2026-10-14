@@ -170,12 +170,12 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
    *  called and the run ends when the borrower has closed, or LEND_END_GRACE_MS later. The
    *  terminal is already restored, so nothing more is written to it.
    *  Lending a terminal that is not the TUI's now (not entered, lent, over) runs nothing. */
-  function lend(run, { end = null } = {}) {
+  function lend(run, { end = null, release = null } = {}) {
     if (!entered || over || lent) return Promise.resolve({ error: new Error("the terminal is not the TUI's to lend now") });
     leave();
     quietly(() => stdin.pause());
     proc.removeListener("SIGTSTP", suspend);
-    const mine = lent = { end, ending: null };
+    const mine = lent = { end, release, ending: null };
     let running;
     try { running = Promise.resolve(run()); } catch (error) { running = Promise.reject(error); }
     return running.then((value) => ({ value }), (error) => ({ error })).then((outcome) => {
@@ -192,11 +192,14 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   /** A way out that arrives while the terminal is lent: end the borrower and wait for it. A second
    *  one does not wait. */
   function endLent(status, error) {
-    if (lent.ending) return finish(status, error);
-    lent.ending = [status, error];
-    if (lent.end) attempt(lent.end);
+    // The run does not wait for a borrower past this: what holds it (its handle, its pipe) is let
+    // go, so the process can end with the status of the signal although the borrower lives on.
+    const mine = lent, givenUp = () => { if (mine.release) attempt(mine.release); finish(status, error); };
+    if (mine.ending) return givenUp();
+    mine.ending = [status, error];
+    if (mine.end) attempt(mine.end);
     if (over) return;
-    endTimer = setTimer(() => { endTimer = null; finish(status, error); }, LEND_END_GRACE_MS);
+    endTimer = setTimer(() => { endTimer = null; givenUp(); }, LEND_END_GRACE_MS);
   }
   /** Every way out the run can be told of: a signal, an error nobody caught, a terminal gone. */
   function out(status, error) {

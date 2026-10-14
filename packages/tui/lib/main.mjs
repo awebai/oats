@@ -89,7 +89,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const clock = () => new Date(now()).toISOString();
   const look = glyphs(env, { ascii: options.ascii || config.ascii });
   const screen = createScreen({ ...look, color: colorEnabled(env) });
-  const parser = createKeyParser({ now });
+  let parser = createKeyParser({ now });
   let state = initialState({ deployment: found.ok ? found.deployment : null, cli: probe.cli, home, entry: found.ok ? pendingEntry(null, clock()) : null, actions: config.actions, ascii: look.ascii, detachKey: config.detachKey });
   const keymap = bindings(state.actions);
   if (offered) state = reduce(state, { offered }, keymap).state;
@@ -171,7 +171,11 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     dropReads();
     reader.hold();
     let viewer = null;
-    guard.lend(() => { viewer = effects.startViewer(bin, args, { env }); return viewer.closed; }, { end: () => viewer?.end() }).then((outcome) => {
+    guard.lend(() => { viewer = effects.startViewer(bin, args, { env }); return viewer.closed; }, { end: () => viewer?.end(), release: () => viewer?.release() }).then((outcome) => {
+      // The keys are read anew: what was typed before the viewer started (behind the Enter, in the
+      // same chunk) and a sequence begun then are gone, so none of it acts or joins a later key.
+      if (escTimer !== null) { clearTimer(escTimer); escTimer = null; }
+      parser = createKeyParser({ now });
       reader.release();
       const { status = null, stderr = "" } = outcome.value ?? {};
       heard({ returned: { id, status, stderr } });
@@ -192,7 +196,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       full = false;
       return bytes;
     },
-    onInput(bytes) { reader.touch(); act(parser.feed(bytes)); watchEscape(); },
+    onInput(bytes) { if (guard.lent) return; reader.touch(); act(parser.feed(bytes)); watchEscape(); },
     onResize() { full = true; guard.draw(); },
     onRedraw() { full = true; guard.draw(); },
     // A cycle in flight when the process stops is no evidence about the deployment (lib/read.mjs):
@@ -214,8 +218,12 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   /** Every read in flight is void (lib/read.mjs), the roster's with them: the reader says nothing
    *  for a void read, so the state is told here that none is in flight. */
   function dropReads() { reader.voidInFlight(); state = reduce(state, { collecting: false }, keymap).state; }
+  /** The events of one batch of input, in order. Once one of them lent the terminal, the rest are
+   *  dropped: they were typed before the viewer started, and none may act while it has the
+   *  terminal (a `q` behind the Enter would end the run under a live viewer). */
   function act(events) {
     for (const event of events) {
+      if (guard.lent) return;
       if (took(reduce(state, "paste" in event ? { paste: event.paste } : { key: keyId(event), ...(typeof event.text === "string" && !event.alt ? { text: event.text } : {}), ...drawn }, keymap))) return;
     }
     guard.draw();
@@ -224,7 +232,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   function watchEscape() {
     if (escTimer !== null) { clearTimer(escTimer); escTimer = null; }
     const due = parser.timeoutAt();
-    if (due !== null) escTimer = setTimer(() => { escTimer = null; guard.attempt(() => { act(parser.expire()); watchEscape(); }); }, Math.max(0, due - now()));
+    if (due !== null) escTimer = setTimer(() => { escTimer = null; if (!guard.lent) guard.attempt(() => { act(parser.expire()); watchEscape(); }); }, Math.max(0, due - now()));
   }
 
   guard.start();
