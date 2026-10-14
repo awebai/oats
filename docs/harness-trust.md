@@ -135,6 +135,7 @@ file's content or a parser message:
 | has a Linux security context that cannot be read | `ls -Z` gave no usable context for a file whose `ls` mode shows one. |
 | its metadata could not be read (the ls probe failed or its answer is not recognized) | `ls` failed, or printed a mode this writer does not recognize. |
 | changed while it was being read | Another writer replaced it during the read; rerun. |
+| is not in a usable configuration directory (a path that is not a directory, or one with no existing ancestor) | The directory that should hold the file is not a directory. Target resolution normally reports this first, as the named problem below. |
 | is larger than 8 MiB | The file is over the size the writer reads. |
 | is not valid UTF-8 | The bytes do not decode losslessly. |
 | is not in the supported format (see "Qualified scope and formats" in docs/harness-trust.md) | The editor or the trust reader does not support its shape; see [Qualified scope and formats](#qualified-scope-and-formats). |

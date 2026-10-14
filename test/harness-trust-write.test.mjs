@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { claudeTrusts, codexTrustsRoot } from '../lib/harness-trust.mjs';
-import { harnessTrust } from '../lib/harness-trust-write.mjs';
+import { harnessTrust, refusalProblem } from '../lib/harness-trust-write.mjs';
 import { launchEnvironment } from '../lib/core.mjs';
 // The operator has run both harnesses: their ambient configuration directories exist (OATS never creates one).
 const fixture = t => { const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-write-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const root=join(base,'deployment');fs.mkdirSync(root);fs.mkdirSync(join(base,'native','.codex'),{recursive:true});return {base,root,env:{HOME:join(base,'native')}}; };
@@ -430,4 +430,10 @@ test('under all, one refused file names its reason and the fine file keeps its p
   assert.equal(e.message,`Harness trust refused; nothing was written: ${claude.problem}`);return true;
  });
  assert.deepEqual(fs.readdirSync(join(env.HOME,'.codex')),[]);assert.equal(fs.existsSync(join(root,'.agents')),false);
+});
+test('an unusable configuration directory has its own wording, though target resolution names it first', () => {
+ // canonicalMissingDirectory's refusal reaches the plan only through nativePath, whose callers name it
+ // as the target's problem (pinned above); the wording keeps the closed set complete.
+ const e=Object.assign(new Error(SENTINEL),{code:'E_CONFIG_BROKEN',refusal:'directory'});
+ assert.equal(refusalProblem(e,'/native/.claude.json',{harness:'claude',root:'/deployment'}),'/native/.claude.json: is not in a usable configuration directory (a path that is not a directory, or one with no existing ancestor)');
 });
