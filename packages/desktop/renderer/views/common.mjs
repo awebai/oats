@@ -46,6 +46,7 @@ export async function apiJson(ctx, pathname, opts) {
   if (!r.ok) {
     const err = new Error(d.error || `HTTP ${r.status}`);
     if (d.code) err.code = d.code; // stable CLI/domain code (e.g. cli-unavailable, E_RELATIVE_AMBIGUOUS)
+    if (typeof d.error === "string") err.answered = d.error; // the answer's own message, never the stand-in above
     if (Array.isArray(d.labels)) err.labels = d.labels; // E_TEAM_CONFLICT: the disagreeing team labels
     const reason = remoteReason(d.reason); // a remote refusal's reason, only once re-validated
     if (reason) err.reason = reason;
@@ -67,6 +68,8 @@ export function httpError(r, pathname) {
   const err = new Error(r.body?.error || `HTTP ${r.status} for ${pathname}`);
   err.status = r.status;
   if (r.body?.code) err.code = r.body.code;
+  // The answer's own message, never the stand-in above: what a dialog may quote under a speaker's name.
+  if (typeof r.body?.error === "string") err.answered = r.body.error;
   if (r.body?.result) err.result = r.body.result;
   if (Array.isArray(r.body?.labels)) err.labels = r.body.labels;
   // A remote refusal's reason (server → main → renderer): kept only once re-validated, else dropped.
