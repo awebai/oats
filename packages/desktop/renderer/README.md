@@ -1312,6 +1312,13 @@ error in Details. While one of its actions runs, the menu trigger is
 and Retire never run from the menu: they open the plan-backed confirmation
 (`lifecycle-dialog.mjs`, phases in
 [desktop-lifecycle-confirmations.md](../docs/desktop-lifecycle-confirmations.md#ui-states)).
+The one exception to "a `blocked` row has no menu" is the Desktop's own (#1131): a
+row whose reason is `missing` (its host no longer lists it) keeps its trigger and offers
+**Forget…** alone when the shell passes `openForget`. Forget… never runs from the menu
+either: it opens `forget-dialog.mjs`, the lifecycle dialog's classes and focus handling
+with no plan, which sends `{server, instance}` once to `/api/server-forget`
+(`../server/server-forget.mjs`), which answers the outcome and starts the roster read after the command; the row leaves the roster when that read lands
+([desktop-deployment-model.md](../docs/desktop-deployment-model.md#remote-rows)).
 
 `choice-popup.mjs` owns the existing provider/model popup behavior. Model search
 is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**

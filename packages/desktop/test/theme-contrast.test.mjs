@@ -26,6 +26,7 @@ import { instanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { target as forgeTarget, pr as forgePr } from './helpers/forge-fixture.mjs';
 import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
+import { createForgetDialog } from '../renderer/forget-dialog.mjs';
 import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
 import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
 import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture, stopReceipt, retireReceipt } from './helpers/lifecycle-fixture.mjs';
@@ -774,6 +775,43 @@ for (const [name] of palettes) test(`${name}: actual Stop/Retire confirmations m
   t.after(() => failing.dispose());
   failing.open({ operation: 'retire', instance: lifeInstance, workspace: lifeTarget.workspace }); await settle();
   check('result', [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-review', '.lifecycle-review', 'fg', 'surface'], ['.lifecycle-close', '.lifecycle-close', 'fg', ['surface', 'sel']]]);
+});
+
+// #1131: the Forget confirmation is the lifecycle dialog's classes in new places (a muted basis line, a confirm
+// with no danger fill), and its context-panel button is the panel's primary action beside the remedy note.
+for (const [name] of palettes) test(`${name}: the Forget confirmation and the context panel's Forget… meet computed AA without text opacity`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><aside id="context-panel"></aside></body></html>`), doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), lifecycleCSS, contextPanelCSS]) {
+    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
+  }
+  const gate = Promise.withResolvers();
+  const dialog = createForgetDialog({ doc, request: () => gate.promise });
+  const panel = createContextPanel({ document: doc, root: doc.getElementById('context-panel'), lifecycle: { forget: () => {} } });
+  t.after(() => { gate.resolve(null); dialog.dispose(); panel.dispose(); dom.window.close(); });
+  const root = dom.window.getComputedStyle(doc.documentElement), settle = () => new Promise(resolve => setImmediate(resolve));
+  const tokenOf = (value, what) => { const m = /^var\(--([\w-]+)\)$/.exec(value); assert.ok(m, `${what} is a token: ${value}`); return m[1]; };
+  const ratio = (fg, bg) => contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+  const check = (phase, rows) => {
+    for (let [selector, surfaceSelector, fg, bg, min = TEXT_CONTRAST] of rows) {
+      const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector); assert.ok(el && surface, `${phase}: ${selector}`);
+      assert.equal(tokenOf(min === TEXT_CONTRAST ? dom.window.getComputedStyle(el).color : dom.window.getComputedStyle(el).borderTopColor, selector), fg, `${phase}: ${selector}`);
+      const painted = tokenOf(dom.window.getComputedStyle(surface).background || dom.window.getComputedStyle(surface).backgroundColor, surfaceSelector);
+      assert.ok([].concat(bg).includes(painted), `${phase}: ${surfaceSelector} on --${painted}`); bg = painted;
+      assert.ok(min === TEXT_CONTRAST ? pairs.some(([f, b]) => f === fg && b === bg) : GRAPHIC_PAIRS.some(([f, b]) => f === fg && b === bg), `${phase}: --${fg} on --${bg} is in the inventory`);
+      assert.ok(ratio(fg, bg) >= min, `${name} ${phase} ${selector}: ${ratio(fg, bg).toFixed(2)}`);
+      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', `${phase}: ${selector} has no opacity`);
+    }
+  };
+  const gone = { instance: 'dev-a', agent: 'dev', home: '/srv/team/agents/dev/instances/dev-a', server: 'build', repoName: 'Build box',
+    running: null, addressable: false, savedRoute: true, missingRemotely: true, work: null };
+  dialog.open(gone);
+  check('forget review', [['.lifecycle-dialog h2', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog > p:not(.lifecycle-note)', '.lifecycle-dialog', 'fg', 'surface'],
+    ['.lifecycle-dialog > .lifecycle-note', '.lifecycle-dialog', 'muted', 'surface'], ['.lifecycle-close', '.lifecycle-close', 'fg', ['surface', 'sel']],
+    ['.lifecycle-confirm', '.lifecycle-confirm', 'primary-fg', 'primary-bg']]);
+  doc.querySelector('.lifecycle-confirm').click(); await settle();
+  check('forget running', [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog .spinner', '.lifecycle-dialog', 'accent', 'surface', GRAPHIC_CONTRAST]]);
+  panel.setContext({ workspace: 'A', instance: gone, key: gone.home });
+  check('context panel', [['[data-context-work-note]', '#context-panel', 'muted', 'surface'], ['[data-context-forget] button', '[data-context-forget] button', 'primary-fg', 'primary-bg']]);
 });
 
 for (const [name] of palettes) test(`${name}: actual readiness checks, provider problems, warnings and policy use computed AA surfaces`, async t => {

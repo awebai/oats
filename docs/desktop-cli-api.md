@@ -2923,7 +2923,9 @@ route target:
   name is unique on the host ([addressing](servers.md#run-there); a shared
   name is `E_AMBIGUOUS` with `error.details.candidates: [{agent, home}]`). A
   saved-route row the host did not list is addressable only while the host's
-  answer is unknown (`missingRemotely: false`).
+  answer is unknown (`missingRemotely: false`). A row the host was reached
+  for and did not list (`missingRemotely: true`) is the one
+  [`server forget`](#forget-a-saved-route-oats-server-forget---json) is for.
 - **`savedRoute`**: the instance was spawned from this machine and has a
   saved route here. Information only; no action depends on it.
 - `running` is `null` when unknown; `backend` is `tmux` for a row with a tmux
@@ -2935,6 +2937,51 @@ route target:
   whole answer); `elapsedMs` is what the answer took, about the slowest
   group's probe. Before 0.55.0 `bounds` also carried `skipped`, the number of
   groups the budget did not reach; it is gone with `E_ROSTER_BUDGET`.
+
+<a id="forget-a-saved-route-oats-server-forget---json"></a>
+### Forget a saved route (`oats server forget --json`)
+
+```text
+oats server forget <server> --instance <instance> --json
+```
+
+It removes this computer's saved route to `<instance>` through `<server>`,
+the file under `$OATS_HOME_DIR/remote/<server>/`, and nothing else. It runs
+nothing on the host and does not contact it: the home there, if it still
+exists, is untouched ([servers.md](servers.md#what-this-machine-keeps)). It
+shipped in 0.22.3 with the roster's `missingRemotely`, so every kernel that
+reports a gone row answers it; there is no feature name.
+
+An envelope; `result` is:
+
+```json
+{"server":"build","instance":"dev-a","home":"/srv/team/agents/dev/instances/dev-a",
+ "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},"forgotten":true}
+```
+
+- **`server`** and **`instance`**: the arguments, echoed.
+- **`home`**: the instance's home on the host, as the route recorded it.
+- **`target`**: the route's target (`{sshHost, workspace, oatsPath, …}`) as
+  the route file recorded it, less the `herdrPath` a route written before
+  0.31.0 may hold.
+- **`forgotten`**: always `true` on success.
+
+A refusal is `ok: false` with `error: {code, message}` only (no `details`,
+no `fix`), exit 1, and removes nothing:
+
+- `E_USAGE`: no server id, or no `--instance` value.
+- `E_SERVER_INVALID`: the server id is not `^[a-z0-9][a-z0-9-]{0,63}$`.
+- `E_BAD_ARGS`: the instance name is not `^[a-z0-9][a-z0-9-]*$`.
+- `E_SNAPSHOT_UNKNOWN`: this computer has no saved route for that instance
+  through that server id (a second forget of the same row answers this).
+- `E_SNAPSHOT_UNREADABLE`: the route file is not valid JSON; the file is
+  kept.
+
+The Desktop runs it only for a remote roster row with `missingRemotely:
+true`, after a confirmation, with exactly the row's `server` and `instance`
+as the arguments. It never shows `home` or `target`, and it reads the remote
+roster again after every outcome, a refusal and an unknown one included,
+instead of editing the row.
 
 <a id="servers-per-workspace"></a>
 ### Servers per workspace (feature `servers-per-workspace`)

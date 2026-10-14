@@ -694,7 +694,8 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   terminal, Start…, the actions menu, the context panel's buttons, the start
   and restart dialog and route, launch configurations, inspection, lifecycle
   plans and applies, readiness, activity, Git and diff, and the wait for a
-  started or spawned instance's terminal. `savedRoute` (spawned from this
+  started or spawned instance's terminal. Forget… (below) is the one act it
+  does not gate. `savedRoute` (spawned from this
   machine) decides only when this computer's OATS predates 0.31 and reports no
   `addressable`: a row it spawned stays reachable through its saved route.
 - **Why a row can't open.** `rowReason(row)` in the same module is the one
@@ -706,6 +707,38 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   ([Who made a shown text](#who-made-a-shown-text)); a sentence written
   there carries none. The server label is the registration's label, else
   the server id.
+- **Forget a row its host no longer lists (#1131).** The one act on an
+  unaddressable row, offered only where `rowReason(row).key === 'missing'`:
+  the host was reached and did not list the saved route. A server that was
+  not reached, or a state that is unknown, offers nothing. It is on the
+  roster row's actions menu, as "Forget…" alone (`renderer/instance-actions.mjs`
+  with the shell's `openForget`; `packages/client/instance-acts.mjs` is
+  unchanged, so the terminal client is unaffected), and in the context panel
+  beside the remedy note. Both open `renderer/forget-dialog.mjs`, the
+  lifecycle confirmation's dialog without a plan. Forget sends the row's
+  `{server, instance}` to `POST /api/server-forget` (`server/server-forget.mjs`),
+  which composes the argv of `oats server forget <server> --instance
+  <instance> --json` from those two values alone; the kernel's `home` and
+  `target` never leave the backend. The route answers as soon as the
+  command's outcome is known, and after every command, whatever it answered,
+  it starts the remote roster read that follows it (`refreshRemoteSnapshotAfter`
+  in `server/oats-web.mjs`: a read already in flight, whoever started it, began
+  before the command, so one more runs after it). The backend is that read's
+  one owner; the renderer issues none and never edits the view: the row leaves
+  the roster when the read lands, and a second Forget before then answers
+  `E_SNAPSHOT_UNKNOWN`. While busy the confirmation holds the window: every
+  keydown is its own (no shortcut runs behind it) and focus stays on its
+  status line. `<server>` below is the server label:
+  - forgotten: the status line says "Forgot `<instance>` on `<server>`." and
+    focus moves to the first row that followed it when the confirmation
+    opened and is still shown, else the roster;
+  - `E_SNAPSHOT_UNKNOWN`: "This computer had no saved route for `<instance>`
+    on `<server>`; nothing was changed.", focus as for forgotten;
+  - another refusal, or a request the backend refused without running
+    anything: "Couldn't forget `<instance>`." with the kernel's lines (or the
+    Desktop's own reason), focus back to the opener;
+  - no answer (a timeout, no envelope): "It is not known whether
+    `<instance>` was forgotten.", focus back to the opener.
 - **Admission.** `admitInstance` admits a remote selector only in its own
   remote deployment (the same server id in another group is another
   deployment), for a row that passes `canAddressRemote`, when this machine's

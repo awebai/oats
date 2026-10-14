@@ -36,6 +36,7 @@ import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
+import { createForgetDialog, forgetSuccessor } from './forget-dialog.mjs';
 import { successorRow } from "./focus-return.mjs";
 import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
@@ -1021,6 +1022,10 @@ function renderContextRoster(instances) {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
             openLifecycleDialog(operation, instance, ws);
           },
+          openForget: instance => {
+            if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
+            openForgetDialog(instance, ws);
+          },
           done: () => {},
           report: (headline, { detail } = {}) => {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
@@ -1321,6 +1326,7 @@ const contextPanel = createContextPanel({
     restart: (instance, workspace) => { if (workspace === currentWorkspace()) openInstanceStart(instance, { restart: true }); },
     stop: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('stop', instance, workspace); },
     retire: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('retire', instance, workspace); },
+    forget: (instance, workspace) => openForgetDialog(instance, workspace),
   },
   // Soul tab → the soul in the Workspace view (same hand-off as Quick Open).
   openSoul: async ({ workspace, name, agentsRoot, server }) => {
@@ -2248,6 +2254,42 @@ function openLifecycleDialog(operation, instance, workspace) {
   lifecycleDialog.open({ operation, instance, workspace: rowDeployment(instance) });
 }
 window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
+/* Forget… (#1131): a row its host no longer lists (forget-dialog.mjs). The server composes the command from the
+ * row's { server, instance }, answers its outcome, and reads the remote roster again (the one owner of that read);
+ * the row leaves this window's roster when that read lands, at the roster's own refresh. Nothing here edits a row. */
+const forgetDialog = createForgetDialog({ doc: document,
+  request: async body => (await desk.api('/api/server-forget', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })).body,
+  notify: text => notifications.notify(text),
+  nextFocus: () => forgetNextFocus(),
+  generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,
+  onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
+});
+/** The roster's rows (by identity) when the Forget confirmation opened, and where its row stood among them. */
+let forgetRowOrder = null;
+/** Where focus goes once a row is forgotten: the first row that followed it when the confirmation opened and is
+ * still shown (the forgotten row may already be gone, by this re-read or an earlier poll), else the roster itself,
+ * else a stable shell control when the sidebar is hidden. */
+function forgetNextFocus() {
+  const listEl = contextRosterEl?.querySelector(".ctx-list");
+  if (!listEl || sidebarHidden()) return stableFocusTarget();
+  const shown = el => el?.isConnected && !el.disabled && !el.closest("[hidden]") && document.defaultView.getComputedStyle(el).display !== "none";
+  const rows = [...listEl.querySelectorAll(".ctx-inst")].filter(shown);
+  const { order = [], at = -1 } = forgetRowOrder || {};
+  const next = forgetSuccessor(rows, order, at);
+  if (!next) { contextRosterEl.tabIndex = -1; return contextRosterEl; }
+  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+  next.tabIndex = 0; return next;
+}
+function openForgetDialog(instance, workspace) {
+  if (workspace !== currentWorkspace() || forgetDialog.busy()) return;
+  connections.close(); shortcutsEditor.close(); lifecycleDialog.close();
+  const order = [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].map(r => r.dataset.treeInstance);
+  forgetRowOrder = { order, at: order.indexOf(instanceId(instance)) };
+  forgetDialog.open(instance);
+}
+window.addEventListener('pagehide', () => forgetDialog.dispose(), { once: true });
 // The theme button, the palette and the chord (app.themePicker) open it; a choice goes through setTheme,
 // so it is stored as a palette choice is.
 const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,
