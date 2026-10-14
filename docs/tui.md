@@ -706,11 +706,14 @@ in your shell.
   shared home's (`packages/client/`), and the TUI writes none of its own
   for a speaker. They never stand before a withheld text: a reason that is
   withheld is `[withheld]` alone.
-- It changes nothing in tmux: no option, key binding, server, session,
-  window or pane. Its probe only lists panes. An agent's terminal is opened
-  by `oats session attach`, which makes its own viewer session on the
-  agents' tmux server and removes it; `oats tui` builds no viewer and runs
-  no tmux command for it.
+- It changes nothing in tmux itself: no option, key binding, server,
+  session, window or pane. Its probe only lists panes. An agent's own
+  session is started, ended or restarted only by the kernel's commands of
+  an act you confirmed
+  ([above](#stopping-starting-restarting-and-retiring)), and an agent's
+  terminal is opened by `oats session attach`, which makes its own viewer
+  session on the agents' tmux server and removes it; `oats tui` builds no
+  viewer and runs no tmux command for either.
 - It starts no daemon, opens no socket and writes no file but the output of
   a change, in its own directory ([above](#what-it-reads-and-what-it-runs)).
   The processes it starts are the reads above, when you open an agent the

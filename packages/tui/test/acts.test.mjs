@@ -346,6 +346,26 @@ test("Esc while applying closes the view: the apply goes on, and its answer, whe
   assert.equal(reduce(closed, { acted: { n: 1, confirmation: { phase: "settled", outcome: "complete", offers: ["close"], view: {} } } }).state, closed);
 });
 
+test("a plan whose state rows name a target with a control character or wide characters is drawn, each label through the display filter and placed by the cells it takes (round 1 of the review)", async () => {
+  for (const name of ["child\nname", "\u5b50\u5b9f\u4f8b-\u5b50\u5b9f\u4f8b"]) {
+    const plan = stopPlan();
+    plan.targets.unshift({ ...plan.targets[0], instance: name, home: `${fixtureInstance.agentsRoot}/dev/instances/${name}`, depth: 1 });
+    const t = driven((args) => envelope(stopReceipt(args, plan)), { plan: () => envelope(plan) });
+    await tick(); await tick();
+    assert.equal(t.made.state().phase, "review", `${JSON.stringify(name)}: premise, the shared confirmation admits the plan`);
+    const rows = t.made.view().state.rows;
+    assert.equal(rows.some((row) => row.label === name), true, `${JSON.stringify(name)}: premise, a state row is labelled with the target's name`);
+    const lines = draw(t.state, S120).lines;
+    for (const row of rows) {
+      const label = displayLine(row.label), value = displayLine(row.value);
+      const at = lines.findIndex((line) => line.trimStart().startsWith(label) && line.includes(value));
+      assert.notEqual(at, -1, `${JSON.stringify(row.label)}: drawn as the display filter shows it\n${lines.join("\n")}`);
+      const drawnAt = lines[at];
+      assert.equal(drawnAt.slice(drawnAt.indexOf(label) + label.length).startsWith(`  ${value}`), true, `${JSON.stringify(row.label)}: the value two cells after the label as drawn`);
+    }
+  }
+});
+
 test("a settled answer's blocks are drawn: the details with the kernel's line through kernelLines, a running apply's start time, the TUI's own next step", () => {
   const state = press(on(here(), RUN), ["D"]).state, n = state.act.n;
   const view = { kind: "refused", title: "t", status: { headline: "the headline", more: [{ quote: "the kernel's quote" }], next: "retire-with-force", code: "E_LIFECYCLE_BUSY" },

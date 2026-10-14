@@ -631,7 +631,7 @@ const hourMinute = (ms) => { const at = new Date(ms); return Number.isFinite(ms)
 /** The act view's content for the open confirmation (`state.act`), top to bottom, each part only
  *  when it has something: { title, lines, buttons }. A line is `{ text, look?, path? }` (a shared
  *  sentence or the kernel's text, drawn through the display filter; `path` after it, shortened),
- *  `{ said, look? }` (the TUI's own sentence, in parts), `{ pair: [label, value] }` (a state row),
+ *  `{ said, look? }` (the TUI's own sentence, in parts), `{ pair: [label, value] }` (a state row: both from outside, the plan's label a target's name among them),
  *  `{ choice: { id, sentence, value } }` or `{ gap: true }`. `look`: "bold", "dim". */
 export function actView(state) {
   const a = state.act;

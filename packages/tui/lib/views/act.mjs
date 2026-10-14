@@ -4,7 +4,8 @@
 // the area's last row. The TUI's own words are lit(); every shared sentence, the kernel's lines,
 // a name and a path go through shown(). Meaning never rests on colour alone: the button with the
 // focus is drawn between `>` and `<` as well as in reverse.
-import { lit, shown, shownLines } from "../term/text.mjs";
+import { EMPTY, lit, shown, shownLines, textOf } from "../term/text.mjs";
+import { textWidth } from "../term/width.mjs";
 import { style } from "../term/style.mjs";
 import { partRows } from "./frame.mjs";
 import { cutNote } from "./instances.mjs";
@@ -27,8 +28,12 @@ function lineRows(line, width, ascii) {
   if (line.said) return partRows(line.said, width, LINE_ROWS, { ascii }).map(styled);
   if (line.own !== undefined) return partRows([{ own: line.own }], width, LINE_ROWS, { ascii }).map(styled);
   if (line.pair) {
-    const [label, value] = line.pair, at = label.length + 2;
-    return [[{ col: 0, text: lit(label), style: DIM, width: label.length }, { col: at, text: shown(value), width: Math.max(0, width - at) }]];
+    // A state row's label is the shared plan's (a target's name among them), so it is text from
+    // outside like its value: filtered, cut to half the width, and measured as it is drawn.
+    const [label, value] = line.pair;
+    const name = shownLines(label, Math.max(1, Math.floor(width / 2)), 1, { ascii })[0] ?? EMPTY;
+    const used = textWidth(textOf(name)), at = used + 2;
+    return [[{ col: 0, text: name, style: DIM, width: used }, { col: at, text: shown(value), width: Math.max(0, width - at) }]];
   }
   if (line.choice) {
     const box = line.choice.value ? "[x]" : "[ ]";
