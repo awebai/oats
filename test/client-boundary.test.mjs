@@ -103,7 +103,7 @@ const SURFACE = Object.freeze({
   "spawn-decision.mjs": ["spawnEffective", "spawnDecision", "sameSpawnDecision"],
   "spawn-apply-cli.mjs": ["cliSpawnApply"],
   "spawn-apply-contract.mjs": ["spawnApplySupported", "spawnApplyDeadlineMs", "spawnReference", "spawnCreationReceipt", "ROLLED_BACK_CODES", "spawnApplyReason", "spawnApplyFailure"],
-  "launch-prompt-outcome.mjs": ["LAUNCH_INSPECTION", "LAUNCH_DIAGNOSTIC_BYTES", "launchPromptOutcome", "retainedSpawnDetails", "retainedSpawnMessage"],
+  "launch-prompt-outcome.mjs": ["LAUNCH_INSPECTION", "LAUNCH_DIAGNOSTIC_BYTES", "launchPromptOutcome", "retainedSpawnDetails", "retainedSpawnMessage", "retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "capability-warnings-contract.mjs": ["warningsOf", "previewWarningsOf", "warningsShown"],
   // Provisional: capabilities.
   "workspace-cli.mjs": ["cliWorkspace", "workspaceGate", "workspaceFailure", "WORKSPACE_ACTIONS"],

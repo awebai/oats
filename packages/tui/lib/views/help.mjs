@@ -30,9 +30,7 @@ export function keyText(label) {
  *  removes a line when it adds the act. */
 export const NOT_YET = Object.freeze([
   Object.freeze({ what: "open an agent in its own tmux window", command: "oats session attach --home <home>" }),
-  Object.freeze({ what: "stop an agent", command: "oats instance stop <instance>" }),
-  Object.freeze({ what: "start or restart an agent", command: "oats session start --home <home>" }),
-  Object.freeze({ what: "retire an agent", command: "oats retire <instance>" }),
+  Object.freeze({ what: "start with another harness or model", command: "oats session start --home <home>" }),
   Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias>" }),
   Object.freeze({ what: "check a machine", command: "oats server check <id>" }),
   Object.freeze({ what: "remove a machine", command: "oats server remove <id>" }),
@@ -101,6 +99,13 @@ function openRows(detachKey, room) {
     ...OPEN_RULES.flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }])),
   ];
 }
+/** The TUI's own sentences under the line of the last act: how a confirmation is worked, and that
+ *  what it sent is never ended by the TUI. */
+export const ACT_RULES = Object.freeze([
+  "Each act opens a confirmation with Cancel chosen: move to the act with Left/Right or Tab, then press Enter.",
+  "Esc closes a confirmation; an act it sent goes on, also after oats tui quits.",
+]);
+const actRows = (room) => ACT_RULES.flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }]));
 const heading = (text) => [{ col: INDENT, text: lit(text), style: TITLE }];
 /** Sentences, each from the left margin on as many rows as it needs, with that margin kept at
  *  the right too: its later rows are set in, so the next sentence is seen to start. */
@@ -113,7 +118,7 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
  *  listed as such: the table can be changed by the user's tui.json, and the help says what is so
  *  now. An action that does one thing in each view has a line per view, its key on each; under
  *  the line of opening an agent stand the key that leaves its terminal (`detachKey`, tui.json's
- *  `open.detachKey`) and the rules of OPEN_RULES. */
+ *  `open.detachKey`) and the rules of OPEN_RULES; under the line of the last act, ACT_RULES. */
 export function helpRows(actions, ascii, cols = 100, detachKey = null) {
   const marks = marksOf(ascii);
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
@@ -123,7 +128,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
     ...table(actions.flatMap((action) => {
       const left = action.keys.length ? keyText(keysLabel(action)) : "(no key)";
       if (!action.views) return [[left, words(action.label)]];
-      return action.views.map(([view, said]) => [left, words(said), action.id === "open" && view === "instances" && detachKey !== null ? (room) => openRows(detachKey, room) : undefined]);
+      return action.views.map(([view, said]) => [left, words(said), action.id === "open" && view === "instances" && detachKey !== null ? (room) => openRows(detachKey, room)
+        : action.id === "restart" ? actRows : undefined]);
     }), cols, KEYS),
     [],
     heading("Marks"),

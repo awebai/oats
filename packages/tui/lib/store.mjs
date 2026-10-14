@@ -12,7 +12,7 @@
 import { ACTIONS, bindings } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, pendingEntry } from "./client.mjs";
 import { DETACH_KEY } from "./config.mjs";
-import { disclosure, openDecision, preflightLine, returnedLine, roster, switcher } from "./model.mjs";
+import { BUTTON_ORDER, actDecision, disclosure, openDecision, preflightLine, returnedLine, roster, switcher } from "./model.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
 /** The longest filter, in UTF-16 units. */
@@ -41,7 +41,13 @@ const NO_FILTER = Object.freeze({ editing: false, query: "" });
  *  as it was when Enter was pressed, for the line after. `outcome`: that line (the model's
  *  `{ said, under }`), shown above the panes until the next key bound to an action, or null.
  *  `detachKey`: tui.json's `open.detachKey`, the key that leaves an agent's terminal.
- *  The roster is made from none of the three (lib/model.mjs MADE_FROM). */
+ *  `act`: the confirmation open in the act view (see `actOpened`), or null; `acted` counts the
+ *  confirmations opened in this run, so an answer for one that was closed is told apart.
+ *  `starting`: id -> `{ verb, since }` of this run's starts and restarts whose child is still
+ *  alive, whether or not the TUI still waits for its answer (the loop says when one is spawned and
+ *  when it closes): no act opens on such a row.
+ *  The roster is made from none of `opening`, `outcome`, `act`, `acted` and `starting`
+ *  (lib/model.mjs MADE_FROM). */
 export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, detachKey = DETACH_KEY }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
@@ -52,7 +58,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
     switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
-    helpTop: 0, actions, ascii, detachKey, opening: null, outcome: null,
+    helpTop: 0, actions, ascii, detachKey, opening: null, outcome: null, act: null, acted: 0, starting: new Map(),
   });
 }
 
@@ -124,7 +130,9 @@ function settled(state, taken) {
   const now = roster(taken);
   if (taken.open !== null && now.gone) {
     const places = new Map(taken.places); places.delete(taken.open);
-    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher" }), "gone"), effect: { offer: true } };
+    // A confirmation open over that view is closed with it: what it sent goes on.
+    const dismiss = taken.act !== null ? { dismiss: taken.act.n } : {};
+    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher", act: null }), "gone"), effect: { offer: true, ...dismiss } };
   }
   const before = roster(state);
   const unknown = new Set([...taken.unread.values()].flatMap((ids) => [...ids]));
@@ -334,8 +342,104 @@ function openAgent(state, r, at) {
   return { state: next(state, { opening, outcome: null }), effect: { open: decision } };
 }
 
+/** The keys of the act view that are not the action table's: the focus moves with these and with
+ *  no printable key, so nothing typed or pasted as text reaches a button. */
+const FOCUS_KEYS = Object.freeze({ left: -1, "shift+tab": -1, right: 1, tab: 1 });
+
+/** An act key in the list of instances: the confirmation it opens, or the line that says why not
+ *  (lib/model.mjs actDecision, over the row's instanceActs answer read now). A stop or a retire
+ *  asks the loop for the shared confirmation (`act`), which reads the plan; a start or a restart
+ *  opens the TUI's own confirmation, and nothing is asked of the loop until it is pressed. The
+ *  focus starts on the first button, Cancel. Nothing while an open is under way. */
+function actOn(state, r, at, verb) {
+  if (state.opening !== null || at < 0) return { state, effect: null };
+  const row = r.items[at].row, decision = actDecision(state, row, instanceActs(row), verb);
+  if (!decision.open) return { state: next(state, { outcome: decision.said }), effect: null };
+  const n = state.acted + 1;
+  const base = { n, kind: decision.kind, verb, id: decision.id, name: decision.name, machine: decision.machine, home: decision.home, focus: "close", movedIn: null, top: 0 };
+  const act = decision.kind === "start"
+    ? Object.freeze({ ...base, phase: "review", offers: Object.freeze(["close", "apply"]), answer: null })
+    : Object.freeze({ ...base, phase: "reading", offers: Object.freeze(["close"]), outcome: null, notice: null, running: null, view: null, plan: null });
+  return { state: next(state, { view: "act", back: "instances", act, acted: n, outcome: null }), effect: decision.kind === "start" ? null : { act: { n, verb, id: decision.id, row, label: decision.label } } };
+}
+
+/** The confirmation closed by the person (Esc, or its Cancel or Close pressed): the view goes, and
+ *  the loop is told; a plan read, an apply or a start it sent goes on. */
+const actClosed = (state) => ({ state: next(state, { view: "instances", back: "instances", act: null }), effect: { dismiss: state.act.n } });
+
+/** A key in the act view. Left/Right and Tab/Shift+Tab move the focus among the buttons, Enter
+ *  presses the one that has it, Esc closes, Space sets the plan's choice, the movement keys scroll
+ *  the content; quit, suspend and redraw keep their actions; every other key does nothing.
+ *  A press of the act's own button in the same read of input as the move that put the focus on
+ *  it is ignored (`read`): a paste, with bracketed paste unsupported, cannot both move and press. */
+function inAct(state, event, action) {
+  const a = state.act, stay = { state, effect: null };
+  if (action === "quit" || action === "suspend" || action === "redraw") return { state, effect: action };
+  if (event.key === "escape" || action === "close") return actClosed(state);
+  const put = (changes) => next(state, { act: Object.freeze({ ...a, ...changes }) });
+  if (Object.hasOwn(FOCUS_KEYS, event.key)) {
+    const at = Math.max(0, a.offers.indexOf(a.focus)), to = Math.min(Math.max(0, at + FOCUS_KEYS[event.key]), a.offers.length - 1);
+    const focus = a.offers[to];
+    return focus === a.focus ? stay : { state: put({ focus, movedIn: focus === "apply" ? event.read ?? null : null }), effect: null };
+  }
+  if (event.key === "enter") {
+    if (a.focus === "apply" && event.read !== undefined && a.movedIn === event.read) return stay;
+    if (a.focus === "close") return actClosed(state);
+    if (a.kind === "start") {
+      if (a.focus !== "apply" || a.phase !== "review") return stay;
+      const row = roster(state).instances.find((each) => instanceId(each) === a.id) ?? null;
+      return { state: put({ phase: "starting", offers: Object.freeze(["close"]), focus: "close", movedIn: null }), effect: { start: { n: a.n, verb: a.verb, id: a.id, row } } };
+    }
+    const call = { apply: "apply", refresh: "refresh", "check-again": "checkAgain" }[a.focus];
+    return call ? { state, effect: { call: { n: a.n, method: call } } } : stay;
+  }
+  if (event.key === "space" || event.text === " ") {
+    const choice = a.kind === "lifecycle" && (a.phase === "review" || a.phase === "reading") ? a.plan?.choices.find((each) => each.offered) : null;
+    return choice ? { state, effect: { call: { n: a.n, method: "setChoice", args: [choice.id, !choice.value] } } } : stay;
+  }
+  if (MOVES.includes(action)) {
+    const count = event.extent ?? 0, height = event.room ?? 1;
+    const from = windowOf({ top: a.top, count, height }).top;
+    return { state: put({ top: windowOf({ top: moved(action, from, count, height), count, height }).top }), effect: null };
+  }
+  return stay;
+}
+
+/** What the loop says of the confirmation and of a start (`{ acted }`):
+ *    { n, confirmation: { phase, outcome, offers, notice, running, view } }  the shared
+ *        confirmation's state() and view() after each step it told (stop, retire);
+ *    { n, answer }        a start's or restart's answer (the shared startInstance's): shown when its
+ *        confirmation is still open, and the rows are read again (live) whatever it was;
+ *    { spawned: { id, verb }, at }  a start's child began (`at`: ms since the epoch);
+ *    { closed: id }       that child closed: the row takes acts again, and is read again (live).
+ *  An answer for a confirmation that was closed (another `n`) changes nothing on screen. When the
+ *  buttons change, the focus goes back to the first. */
+function acted(state, event) {
+  const a = state.act, mine = a !== null && event.n === a.n;
+  if (event.spawned !== undefined) return { state: next(state, { starting: new Map(state.starting).set(event.spawned.id, Object.freeze({ verb: event.spawned.verb, since: event.at ?? null })) }), effect: null };
+  if (event.closed !== undefined) {
+    if (!state.starting.has(event.closed)) return { state, effect: { refresh: { live: true } } };
+    const starting = new Map(state.starting); starting.delete(event.closed);
+    return { state: next(state, { starting }), effect: { refresh: { live: true } } };
+  }
+  if (event.answer !== undefined) {
+    const shown = mine && a.kind === "start" ? next(state, { act: Object.freeze({ ...a, phase: "settled", offers: Object.freeze(["close"]), focus: "close", movedIn: null, answer: event.answer }) }) : state;
+    return { state: shown, effect: { refresh: { live: true } } };
+  }
+  if (event.confirmation !== undefined && mine && a.kind === "lifecycle") {
+    const c = event.confirmation, view = c.view ?? null;
+    const plan = view && typeof view.question === "string" ? view : view?.kind === "reading" && view.kept ? a.plan : null;
+    const offers = Object.freeze(BUTTON_ORDER.filter((offer) => (c.offers ?? []).includes(offer)));
+    const same = offers.length === a.offers.length && offers.every((offer, i) => offer === a.offers[i]);
+    return { state: next(state, { act: Object.freeze({ ...a, phase: c.phase, outcome: c.outcome ?? null, notice: c.notice ?? null, running: c.running ?? null, view, plan, offers,
+      ...(same ? {} : { focus: offers[0] ?? "close", movedIn: null }) }) }), effect: null };
+  }
+  return { state, effect: null };
+}
+
 function reduced(state, event, keymap) {
   const stay = { state, effect: null };
+  if (event.acted !== undefined) return acted(state, event.acted);
   if (event.prepared !== undefined) return prepared(state, event.prepared);
   if (event.given !== undefined) return state.opening?.phase === "preflight" ? { state: next(state, { opening: null }), effect: null } : stay;
   if (event.returned !== undefined) return returned(state, event.returned);
@@ -351,6 +455,7 @@ function reduced(state, event, keymap) {
   if (typeof event.key !== "string") return stay;
   const action = keymap.get(event.key);
   if (field) return edited(state, field, event, action);
+  if (state.view === "act" && state.act !== null) return inAct(state, event, action);
   const page = Math.max(1, Number.isInteger(event.page) ? event.page : 1);
   // A pane that scrolls on its own (the help, the detail) moves from where it is DRAWN: the top
   // the state holds may lie past the end since the terminal grew, and the view shows it corrected.
@@ -386,6 +491,7 @@ function reduced(state, event, keymap) {
   switch (action) {
     case "filter": return { state: next(state, { focus: "list", filter: Object.freeze({ ...state.filter, editing: true }) }), effect: null };
     case "open": return openAgent(state, r, at);
+    case "stop": case "retire": case "start": case "restart": return actOn(state, r, at, action);
     case "detail": return at < 0 ? stay : { state: next(state, { focus: state.focus === "detail" ? "list" : "detail" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
       if (state.focus === "detail") return { state: next(state, { detailTop: scrolled(state.detailTop) }), effect: null };

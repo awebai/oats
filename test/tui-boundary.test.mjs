@@ -87,6 +87,10 @@ const TAKEN = Object.freeze({
   "session-attach.mjs": ["sessionAttachArgv", "prepareRemoteTerm", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
   "attach-exit.mjs": ["attachExit"],
   "kernel-lines.mjs": ["kernelLines"],
+  "instance-lifecycle.mjs": ["createLifecycleBoundary"],
+  "lifecycle-confirmation.mjs": ["createLifecycleConfirmation"],
+  "session-start.mjs": ["startGate", "startInstance"],
+  "launch-prompt-outcome.mjs": ["retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
   "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
 });
@@ -226,15 +230,15 @@ test("only term/screen.mjs and term/tty.mjs can produce an ESC byte: no other sh
 test("the views are pure: they import only the TUI's own text, style and action modules, and name no IO, clock or process", () => {
   const views = filesUnder("packages/tui/lib/views");
   assert.equal(views.length >= 2, true);
-  // The five views and the window they share; the switcher of workspaces is held to the rule like the rest.
-  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "scroll.mjs", "switcher.mjs"]);
+  // The six views and the window they share; the switcher of workspaces and the confirmation of an act are held to the rule like the rest.
+  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "scroll.mjs", "switcher.mjs"]);
   for (const path of views) {
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);
   }
 });
 
-test("lib/read.mjs starts the reads and lib/open.mjs the kernel's viewer, and no other module starts a process; lib/read.mjs and lib/config.mjs alone read the file system, and no shipped module can write, remove or rename a file", () => {
+test("lib/read.mjs starts the reads and the changes and lib/open.mjs the kernel's viewer, and no other module starts a process; lib/read.mjs and lib/config.mjs alone read the file system, and only lib/read.mjs writes a file: a change's output, in the run's private directory, which it removes", () => {
   const builtins = (path) => staticImports(read(path)).filter((name) => name.startsWith("node:"));
   const users = (name) => TUI_SOURCES.filter((path) => builtins(path).includes(name));
   assert.deepEqual(users("node:child_process"), ["packages/tui/lib/open.mjs", "packages/tui/lib/read.mjs"]);
@@ -243,14 +247,28 @@ test("lib/read.mjs starts the reads and lib/open.mjs the kernel's viewer, and no
   // What the two take from node:fs is named, and each name only reads. `opendirSync` opens a folder
   // to list it (the look inside ~/Agents for the switcher): what it answers can be read and closed,
   // and has no way to change the folder.
-  const READS = ["closeSync", "lstatSync", "opendirSync", "openSync", "readSync", "realpathSync", "statSync"];
+  const READS = ["closeSync", "fstatSync", "lstatSync", "opendirSync", "openSync", "readSync", "realpathSync", "statSync"];
+  // A change (a stop or retire apply, a start) writes its output to two files of the run's own
+  // private directory, never to a pipe (Spec 5): lib/read.mjs makes that directory, and removes
+  // each file and the directory. Nothing else of node:fs can change a file.
+  const CHANGE_FILES = ["mkdtempSync", "rmdirSync", "unlinkSync"];
   for (const path of users("node:fs")) {
     const taken = code(read(path)).match(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/);
     assert.ok(taken, `${path} names what it takes from node:fs`);
-    for (const name of taken[1].split(",").map((part) => part.trim().split(/\s+as\s+/)[0]).filter(Boolean)) assert.ok(READS.includes(name), `${path} takes ${name} from node:fs`);
+    for (const name of taken[1].split(",").map((part) => part.trim().split(/\s+as\s+/)[0]).filter(Boolean)) {
+      assert.ok(READS.includes(name) || (path === "packages/tui/lib/read.mjs" && CHANGE_FILES.includes(name)), `${path} takes ${name} from node:fs`);
+    }
   }
-  // A file is opened for reading only: no flag is ever passed that could say otherwise.
-  for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/\bopenSync\(([^)]*)\)/g)) assert.match(call[1], /^[^,]+,\s*"r"$/, `${path} opens ${call[1]}`);
+  // A file is opened for reading only, but for the one a change writes to: made new for the child
+  // alone ("wx", 0600), in lib/read.mjs, once.
+  const writing = [];
+  for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/\bopenSync\(([^)]*)\)/g)) {
+    if (/^[^,]+,\s*"r"$/.test(call[1])) continue;
+    assert.match(call[1], /^path, "wx", 0o600$/, `${path} opens ${call[1]}`);
+    writing.push(path);
+  }
+  assert.deepEqual(writing, ["packages/tui/lib/read.mjs"], "one file is opened to be written: a change's output");
+  assert.match(code(read("packages/tui/lib/read.mjs")), /mkdtempSync\(join\(tmpdir\(\), "oats-tui-"\)\)/, "in a private directory of its own under the OS temp dir");
   // A folder is opened by its path alone (no option: one folder, never what is under it), only
   // in lib/read.mjs, and of what that answers only the two calls that read an entry and close it
   // are made. Those two are methods of the folder's handle, not names taken from node:fs, so the
@@ -299,8 +317,9 @@ test("opening an agent: no module of the TUI holds an attach argument, the featu
     assert.doesNotMatch(source, /session-attach-detach-key/, `${path} names the feature`);
     assert.doesNotMatch(source, /(?:[=!]==?|[<>]=?)\s*(?:20|255)\b|\b(?:20|255)\s*(?:[=!]==?|[<>]=?)/, `${path} compares a number with a status`);
     assert.deepEqual(literals(read(path)).filter((text) => /^--/.test(text) && !["--dir", "--dir=", "--ascii", "--help", "--json"].includes(text)), [], `${path} holds a flag of the kernel`);
-    // The one code a module of the TUI names: the shared terminal table's own for an open the person gave up (preflightFailure).
-    assert.deepEqual(literals(read(path)).filter((text) => /^E_[A-Z_]+$/.test(text)), path === "packages/tui/lib/model.mjs" ? ["E_TERM_CONTEXT_CHANGED"] : [], path);
+    // The codes a module of the TUI names: the shared terminal table's own for an open the person gave up (preflightFailure).
+    // And the start rule's one code a client words itself, the end of the wait for a start that goes on (session-start.mjs).
+    assert.deepEqual(literals(read(path)).filter((text) => /^E_[A-Z_]+$/.test(text)), path === "packages/tui/lib/model.mjs" ? ["E_TERM_CONTEXT_CHANGED", "E_START_UNCONFIRMED"] : [], path);
   }
   // The viewer is started where it is built from the shared answer: lib/main.mjs hands lib/open.mjs
   // what sessionAttachArgv or prepareRemoteTerm answered, and nothing else.

@@ -126,7 +126,7 @@ export function retainedSpawnMessage(d) {
   const p = launchPromptOutcome(d.launchPrompts);
   return `${d.instance} was retained: ${p.reason}.${inputNote(p)} Inspect its existing pane, then use oats session start --home for this home. Do not spawn again.`;
 }
-/** A Start or Restart of an existing home that stopped at a launch prompt, in the Desktop's words: the
+/** A Start or Restart of an existing home that stopped at a launch prompt, in the clients' words: the
  * kernel answers E_SPAWN_INCOMPLETE with the same retained details as a spawn. `instance` is the name the
  * dialog started; `d` the decoded details. It claims the weaker thing for both statuses: a blocked start and
  * one whose completion was not seen are both "not confirmed", never "failed" and never "started". */

@@ -4665,9 +4665,11 @@ Usage:
   oats tui [--dir <path>] [--ascii]          PREVIEW: the full-screen terminal client (docs/tui.md):
                                             the instances of the workspace of the deployment at or
                                             above <path> (default: where you are), on this machine
-                                            and on the machines registered here; it changes nothing.
-                                            ? help, w workspaces, q quit. Needs a terminal on stdin and
-                                            stdout and has no --json form; --ascii = ASCII rules and marks
+                                            and on the machines registered here. Enter opens an agent's
+                                            terminal; it stops, starts, restarts and retires them after a
+                                            confirmation. ? help, w workspaces, q quit. Needs a terminal on
+                                            stdin and stdout and has no --json form; --ascii = ASCII rules
+                                            and marks
   oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,
       --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored;
       [--path <dir:dir>]                    --path = dirs prepended to the remote PATH, e.g. ~/.local/bin)

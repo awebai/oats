@@ -11,6 +11,7 @@ import {
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs,
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
   openAct, deployments as heldDeployments, detachKeySupported, hostDetachKeySupported, attachExit, preflightFailure, kernelLines,
+  startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage,
 } from "./client.mjs";
 import { shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
@@ -356,6 +357,14 @@ export function preflightLine({ machine }, error) {
   return { said: [], under: [...outside(failure.sentence), ...(failure.said === null ? [] : kernelLines(failure.said.message, failure.said.fix, TERMS))] };
 }
 
+/** The row's own text (its `runtimeError`), in the form that says who made it (see detailOf), or
+ *  null. `acts` is the row's instanceActs answer: a reason of it that carries no `origin` and is
+ *  this very text vouches for it. */
+function rowText(row, acts) {
+  const vouched = [acts.blocked, acts.limited, ...acts.acts.map((act) => act.reason)].some((reason) => reason && reason.origin === undefined && reason.sentence === row.runtimeError);
+  return spoken(row.runtimeError, row.runtimeErrorOrigin, vouched);
+}
+
 /** The facts of one instance, a label and a value per line; a fact that is absent is left out.
  *  `form`: `line` (one row), `wrap` (a sentence, on as many rows as it needs), `end` (read from
  *  its end: a path). A fact with no label continues the one above it. Every value is text the
@@ -387,8 +396,7 @@ function detailOf(state, r, item, now, acts) {
   // draws the withheld word and nothing else. (The view asks again about the whole value: words
   // in front never change the answer; a closing quotation mark can, for a text that ends in a
   // secret's name and its sign, and that text is then withheld.)
-  const vouched = [acts.blocked, acts.limited, ...acts.acts.map((act) => act.reason)].some((reason) => reason && reason.origin === undefined && reason.sentence === row.runtimeError);
-  add("", spoken(row.runtimeError, row.runtimeErrorOrigin, vouched), "wrap");
+  add("", rowText(row, acts), "wrap");
   // What holds the row, when that is a sentence of the shared home's and not the row's text: a
   // reason with an `origin` is the row's text, and so is one whose sentence is that text. Either
   // stands once, under the state.
@@ -458,10 +466,11 @@ export function model(state, { page, now, at, cols }) {
     view: state.view, focus: state.focus, ascii: state.ascii, actions: state.actions, filter: state.filter,
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
-    detachKey: state.detachKey, opening: state.opening, outcome: state.outcome, openable: false,
+    detachKey: state.detachKey, opening: state.opening, outcome: state.outcome, openable: false, actable: [],
+    act: state.view === "act" && state.act ? actView(state) : null,
   };
-  // The view under the help decides what the header says.
-  const under = state.view === "help" ? state.back : state.view;
+  // The view under the help, or under a confirmation, decides what the header says.
+  const under = state.view === "help" || state.view === "act" ? state.back : state.view;
   if (under === "switcher") {
     const s = switcher(state, at);
     const at_ = s.selected === null ? -1 : s.items.findIndex((item) => item.key === s.selected);
@@ -492,6 +501,194 @@ export function model(state, { page, now, at, cols }) {
     detail: selected >= 0 ? detailOf(state, r, r.items[selected], now, acts) : null,
     // Enter opens the selected agent's terminal now: the footer names the key that returns.
     openable: decision?.open === true && state.opening === null,
+    // The acts whose key opens a confirmation now, read from the same instanceActs answer: the
+    // footer names them. A key not named still answers, with the line that says why.
+    actable: row && state.opening === null ? ACT_VERBS.filter((verb) => actDecision(state, row, acts, verb).open) : [],
     switcher: null,
   };
+}
+
+/** The shared home's rows of deployment `id` as the state holds them, unfiltered: the rows the list
+ *  draws for it, found by the deployment and never by the view that is open. */
+const rowsOf = (held, id) => panelData(held, id, TERMS).instances.filter((row) => row.deployment?.id === id);
+/** Where a routed command runs from (its `localCwd`): the open deployment when it is this
+ *  machine's, else the first served, else the home. */
+export const actCwd = (state) => (state.ctxs.includes(state.open) ? state.open : state.ctxs[0] ?? state.home);
+/** What the lifecycle boundary admits a request of deployment `id` against (its `getContext()`),
+ *  asked at every admission: the deployment as the shared `deployments` lists it (a machine's with
+ *  its roster group), the kernel record, `actCwd`, and that deployment's rows now. */
+export function actContext(state, id, at) {
+  const held = heldOf(state, at);
+  const workspace = heldDeployments(held).find((w) => w.id === id) ?? null;
+  return { workspace, cli: state.cli, localCwd: actCwd(state), instances: workspace ? rowsOf(held, id) : [] };
+}
+/** This machine's deployments and their rows, for the shared start rule's home check
+ *  (session-start.mjs verifiedLocalHome). */
+export function localDeployments(state, at) {
+  const held = heldOf(state, at);
+  return heldDeployments(held).filter((w) => !w.remote).map((w) => ({ id: w.id, remote: false, instances: rowsOf(held, w.id) }));
+}
+
+/** The four acts on an instance, in the order the help, the footer and the keys know them. */
+export const ACT_VERBS = Object.freeze(["stop", "retire", "start", "restart"]);
+const DONE = Object.freeze({ stop: "stopped", retire: "retired", start: "started", restart: "restarted" });
+/** The TUI's own words around the acts (docs/tui.md, "Stopping, starting, restarting and
+ *  retiring"), as parts the way OPEN_WORDS are: `{ own }` the TUI's, `{ shown }` a name. A
+ *  lifecycle sentence the shared home has is never written here: the confirmation's view says it. */
+export const ACT_WORDS = Object.freeze({
+  notHere: (name, verb) => [{ shown: name }, { own: ` can't be ${DONE[verb]} here.` }],
+  stillStarting: (name, verb) => [{ own: `The ${verb} of ` }, { shown: name }, { own: " is still running." }],
+  /** The line on stderr after the TUI has left, one per change still running. */
+  leaving: (verb, name) => `oats: the ${verb} of ${name} is still running; \`oats status\` shows its result.`,
+  question: (name, verb) => [{ own: verb === "restart" ? "Restart " : "Start " }, { shown: name }, { own: "?" }],
+  what: (verb) => (verb === "restart"
+    ? "Its session is ended and started again: what it is doing is interrupted. Save any work in progress first."
+    : "It starts with the launch settings recorded for it."),
+  starting: (name, verb) => [{ own: verb === "restart" ? "Restarting " : "Starting " }, { shown: name }, { own: "…" }],
+  started: (name, verb) => [{ shown: name }, { own: ` ${DONE[verb]}.` }],
+  unconfirmed: (name) => [{ own: "OATS didn't confirm the start of " }, { shown: name }, { own: ". It may still be running: the list shows it when it is." }],
+  waiting: "Esc stops waiting.",
+  details: "Details:",
+  since: "Started at",
+  next: Object.freeze({
+    "retire-with-force": (name) => [{ own: "Check the process it names, then retire it with `oats retire " }, { shown: name }, { own: " --force`." }],
+    "check-roster": () => [{ own: "The list shows its result when it is done." }],
+  }),
+});
+/** The labels of the buttons, the TUI's own, by the confirmation's offer (and the phase it is in). */
+export function buttonLabel(offer, verb, phase) {
+  if (offer === "close") {
+    if (phase === "reading" || phase === "review") return "Cancel";
+    if (phase === "applying" || phase === "starting") return `Close (the ${verb} goes on)`;
+    return "Close";
+  }
+  if (offer === "refresh") return "Review again";
+  if (offer === "check-again") return "Check again";
+  return { stop: "Stop", retire: "Retire", start: "Start", restart: "Restart" }[verb];
+}
+/** The order the buttons stand in, whatever order the offers come in: the first has the focus. */
+export const BUTTON_ORDER = Object.freeze(["close", "refresh", "check-again", "apply"]);
+
+/** Whether an act key on `row` opens a confirmation, and what the line says when it does not.
+ *  `acts` is the row's instanceActs answer, read once per paint (the footer) or per key, as
+ *  openDecision reads it; nothing here decides which acts a row has.
+ *    { open: true, verb, id, name, kind, machine, label, home }  a confirmation opens: `kind`
+ *        "lifecycle" for stop and retire (the shared confirmation), "start" for the TUI's own
+ *    { open: false, said: { said, under } }                    nothing opens, and this says why
+ *  In order: a start or restart of this row from this TUI still running (Done 7); the verb listed
+ *  and enabled (start and restart also asked of the shared startGate); listed and not enabled
+ *  (its own reason); not listed (the row's blocked or limited reason, else the TUI's words). */
+export function actDecision(state, row, acts, verb) {
+  const name = row.instance, id = instanceId(row);
+  const no = (said, under = []) => ({ open: false, said: { said, under } });
+  const running = state.starting?.get(id);
+  if (running) return no(ACT_WORDS.stillStarting(name, running.verb));
+  const act = acts.acts.find((each) => each.verb === verb);
+  if (!act) {
+    const held = acts.blocked ?? acts.limited;
+    return held ? no([], outside(reasonSpoken(held))) : no(ACT_WORDS.notHere(name, verb));
+  }
+  if (!act.enabled) return no([], outside(reasonSpoken(act.reason)));
+  const lifecycle = verb === "stop" || verb === "retire";
+  if (!lifecycle) {
+    const refused = startGate(state.cli, row, { restart: verb === "restart" }, TERMS);
+    // The gate's `detail` is the row's own text: said as the detail says it, with its speaker.
+    if (refused) return no([], [refused.sentence, ...outside(refused.detail ? rowText(row, acts) : null)]);
+  }
+  const machine = elsewhere(row) ? row.deployment?.machine ?? row.server : null;
+  return { open: true, verb, id, name, kind: lifecycle ? "lifecycle" : "start", machine, label: machine, home: row.home ?? null };
+}
+
+/** What a start's or a restart's answer (the shared startInstance's) shows, as the act view's
+ *  lines: `{ said }` the TUI's own sentence in parts, `{ text }` a shared sentence or the kernel's
+ *  line (each already as the shared home words it). Chosen by the answer's fields and codes, never
+ *  by its words. */
+export function startOutcome(name, verb, answer) {
+  const lines = [];
+  const kernel = (detail) => (detail ? kernelLines(detail, undefined, TERMS).map((text) => ({ text })) : []);
+  if (answer?.ok === true) {
+    const fact = launchFlagIgnored(answer.result), notice = fact ? flagIgnoredNotice(name, fact) : null;
+    if (notice) return [{ text: notice.headline, look: "bold" }, ...(notice.detail ? notice.detail.split("\n").map((text) => ({ text })) : [])];
+    return [{ said: ACT_WORDS.started(name, verb), look: "bold" }];
+  }
+  if (answer?.outcome === "refused") {
+    lines.push({ text: answer.sentence, look: "bold" });
+    // A refusal before the CLI ran (the gate, the home check) carries the row's own text, if any.
+    if (answer.ran) lines.push(...kernel(answer.detail));
+    else if (answer.detail) lines.push({ text: answer.detail });
+    return lines;
+  }
+  // The end of the wait for a start that goes on: the code the shared rule leaves to each client to
+  // word. No answer at all (the call itself was refused by the loop) is no more than that either.
+  if (!answer || answer.code === "E_START_UNCONFIRMED") return [{ said: ACT_WORDS.unconfirmed(name), look: "bold" }];
+  if (answer.incomplete) return [{ text: retainedStartMessage(name, answer.incomplete), look: "bold" }, ...kernel(answer.detail)];
+  return [{ text: answer.sentence ?? answer.code, look: "bold" }, ...kernel(answer.detail)];
+}
+
+/** An ISO-less clock time, `14:03`, of milliseconds since the epoch, or null. */
+const hourMinute = (ms) => { const at = new Date(ms); return Number.isFinite(ms) && Number.isFinite(at.getTime()) ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : null; };
+
+/** The act view's content for the open confirmation (`state.act`), top to bottom, each part only
+ *  when it has something: { title, lines, buttons }. A line is `{ text, look?, path? }` (a shared
+ *  sentence or the kernel's text, drawn through the display filter; `path` after it, shortened),
+ *  `{ said, look? }` (the TUI's own sentence, in parts), `{ pair: [label, value] }` (a state row: both from outside, the plan's label a target's name among them),
+ *  `{ choice: { id, sentence, value } }` or `{ gap: true }`. `look`: "bold", "dim". */
+export function actView(state) {
+  const a = state.act;
+  const lines = [];
+  const gap = () => { if (lines.length && !lines.at(-1).gap) lines.push({ gap: true }); };
+  const short = (path) => shortPath(path, { home: a.machine === null ? state.home : null });
+  let title;
+  if (a.kind === "start") {
+    title = { said: ACT_WORDS.question(a.name, a.verb) };
+    if (a.phase === "review") {
+      lines.push({ own: ACT_WORDS.what(a.verb) });
+      gap();
+      if (a.machine !== null) lines.push({ pair: ["machine", a.machine] });
+      if (a.home) lines.push({ pair: ["home", short(a.home)] });
+    } else if (a.phase === "starting") lines.push({ said: ACT_WORDS.starting(a.name, a.verb) });
+    else lines.push(...startOutcome(a.name, a.verb, a.answer));
+  } else {
+    const view = a.view ?? {}, plan = a.plan;
+    title = { text: plan && (a.phase === "review" || view.kind === "reading") ? plan.question : view.title ?? "" };
+    if (a.notice?.sentence) lines.push({ text: a.notice.sentence, look: "bold" });
+    if (view.kind === "reading" || view.kind === "applying") {
+      lines.push({ text: view.message });
+      if (view.kind === "reading") lines.push({ own: ACT_WORDS.waiting, look: "dim" });
+    }
+    if (plan && (a.phase === "review" || view.kind === "reading")) {
+      gap();
+      for (const h of plan.happening) lines.push({ text: h.text, ...(h.path ? { path: short(h.path) } : {}), ...(h.tone === "attention" ? { look: "bold" } : h.tone === "note" ? { look: "dim" } : {}) });
+      if (plan.state.rows.length || plan.state.notes.length) gap();
+      for (const row of plan.state.rows) lines.push({ pair: [row.label, row.value] });
+      for (const note of plan.state.notes) lines.push({ text: note.text, ...(note.tone === "attention" ? { look: "bold" } : note.tone === "note" ? { look: "dim" } : {}) });
+      if (plan.warning) lines.push({ text: plan.warning, look: "bold" });
+      const offered = plan.choices.filter((choice) => choice.offered);
+      if (offered.length) gap();
+      for (const choice of offered) lines.push({ choice: { id: choice.id, sentence: choice.sentence, value: choice.value } });
+      if (plan.notice?.sentence) lines.push({ text: plan.notice.sentence, look: "bold" });
+    }
+    if (a.phase === "settled" && view.status) {
+      gap();
+      lines.push({ text: view.status.headline, look: "bold" });
+      for (const more of view.status.more ?? []) {
+        if (more.quote !== undefined) lines.push(...kernelLines(more.quote, undefined, TERMS).map((text) => ({ text })));
+        else lines.push({ text: more.text });
+      }
+      if (view.status.next && ACT_WORDS.next[view.status.next]) lines.push({ said: ACT_WORDS.next[view.status.next](a.name) });
+      for (const block of view.blocks ?? []) {
+        if (block.type === "details") {
+          lines.push({ said: [{ own: `${ACT_WORDS.details} ` }, { shown: block.reason?.code ?? "" }], look: "dim" });
+          lines.push(...kernelLines(block.reason?.detail, undefined, TERMS).map((text) => ({ text })));
+        } else if (block.type === "quote") lines.push(...kernelLines(block.text, undefined, TERMS).map((text) => ({ text })));
+        else if (block.type === "note") lines.push({ text: block.text });
+        else if (block.type === "rows") for (const row of block.rows) { lines.push({ text: row.text }); if (row.quote) lines.push(...kernelLines(row.quote, undefined, TERMS).map((text) => ({ text }))); }
+        else if (block.type === "lines") for (const line of block.lines) lines.push({ text: line.text, ...(line.path ? { path: short(line.path) } : {}) });
+      }
+    }
+    const since = a.running ? hourMinute(a.running.since) : null;
+    if (since) lines.push({ own: `${ACT_WORDS.since} ${since}.`, look: "dim" });
+  }
+  const buttons = a.offers.map((offer) => ({ id: offer, label: buttonLabel(offer, a.verb, a.phase), focused: offer === a.focus }));
+  return { title, lines, buttons, top: a.top };
 }

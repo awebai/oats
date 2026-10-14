@@ -111,3 +111,36 @@ test('the kernel\'s own busy answer carries no running, and its holder is read a
   assert.equal(busy.status, 'refused'); assert.equal(busy.reason.holder, 'running'); assert.equal(Object.hasOwn(busy, 'running'), false);
   assert.equal(b.timers.filter(t => t.live).length, 0, 'an answered apply leaves no wait behind');
 });
+
+// A client's own exec (the TUI's): the boundary hands it to cliLifecycle for the plan read and for the apply, and
+// cliLifecycle's options say which is which. Without one, `invoke` is given no third argument (the Desktop's way).
+test('a boundary given an exec runs the plan read through it as a read and the apply as a change; one without passes invoke no third argument', async () => {
+  const seen = [];
+  const exec = (bin, argv, options, callback) => {
+    seen.push({ bin, argv, options });
+    const key = argv[argv.indexOf('--idempotency-key') + 1], revision = argv[argv.indexOf('--plan-revision') + 1];
+    const result = argv.includes('--plan') ? stopPlan() : stopReceipt({ key, revision });
+    setImmediate(() => callback(null, JSON.stringify(envelope(result)), ''));
+  };
+  const ctx = context();
+  const service = createLifecycleBoundary({ terms, exec });
+  const read = await service(request('stop'), () => ctx);
+  assert.equal(read.status, 'plan');
+  assert.equal((await service({ action: 'apply', planRef: read.planRef }, () => ctx)).status, 'complete');
+  assert.equal(seen.length, 2, 'both calls went through the given exec');
+  const [plan, apply] = seen.map(s => s.options);
+  assert.ok(seen[0].argv.includes('--plan') && seen[1].argv.includes('--apply'), 'premise: a plan read, then an apply');
+  assert.ok(Number.isFinite(plan.timeout) && plan.timeout > 0, 'the plan read arrives with its deadline');
+  assert.equal(Object.hasOwn(plan, 'detached'), false, 'and no detached');
+  assert.equal(apply.detached, true, 'the apply arrives detached');
+  assert.equal(Object.hasOwn(apply, 'timeout'), false, 'and with no deadline');
+
+  const handed = [];
+  const plain = createLifecycleBoundary({ terms, invoke: async (...args) => {
+    handed.push(args.length);
+    return envelope(args[1].phase === 'plan' ? stopPlan() : stopReceipt(args[1]));
+  } });
+  const again = await plain(request('stop'), () => ctx);
+  assert.equal((await plain({ action: 'apply', planRef: again.planRef }, () => ctx)).status, 'complete');
+  assert.deepEqual(handed, [2, 2], 'no third argument, for the plan read or the apply');
+});

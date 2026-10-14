@@ -9,7 +9,7 @@ import { CONFIG_LIMIT, DETACH_KEY, MAX_PROBLEMS, configPath, effectiveConfig, lo
 import { isKeyId } from "../lib/term/keys.mjs";
 
 const FILE = "/cfg/oats/tui.json";
-const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, workspaces, open, help, close, quit, suspend, redraw";
+const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, workspaces, open, stop, retire, start, restart, help, close, quit, suspend, redraw";
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
 /** The whole line of a refusal, as it is printed. */
 const line = (clause, file = FILE) => `oats: \`oats tui\` cannot use ${file}: ${clause} (E_TUI_CONFIG)`;

@@ -1,16 +1,17 @@
 // `oats tui` (preview): the loop. Events from the keyboard and from the reader go through one
 // pure reduce(state, event); what only the loop can do comes back as an effect; the frame is
 // drawn from the state. This version shows a workspace's instances, on this machine and on the
-// machines registered here, follows them, and opens an agent's terminal with the kernel's own
-// viewer; it changes nothing in a deployment (docs/tui.md).
+// machines registered here, follows them, opens an agent's terminal with the kernel's own
+// viewer, and stops, starts, restarts and retires an instance after a confirmation, through the
+// shared lifecycle boundary and start rule (docs/tui.md).
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { displayLine, pendingEntry, prepareRemoteTerm, sessionAttachArgv } from "./client.mjs";
+import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
-import { model, roster } from "./model.mjs";
+import { ACT_WORDS, actContext, actCwd, localDeployments, model, roster } from "./model.mjs";
 import { startViewer } from "./open.mjs";
-import { admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "./read.mjs";
+import { admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel, realpath, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
 import { createKeyParser, keyId } from "./term/keys.mjs";
 import { createScreen, glyphs } from "./term/screen.mjs";
@@ -24,7 +25,8 @@ const HELP = `Usage:
 
 The OATS terminal client (preview): a full-screen view of a workspace's instances,
 on this machine and on the machines registered here. It follows them, opens an
-agent's terminal with Enter, and changes nothing in a deployment.
+agent's terminal with Enter, and stops, retires, starts or restarts an instance
+(X, D, S, R) after a confirmation.
 Keys: ? help, Enter open, w workspaces, q quit.
 docs/tui.md has the rest.
 
@@ -61,15 +63,19 @@ function errorLines(error) {
   return String(text).split("\n", 12).map((line) => displayLine(line)).filter(Boolean);
 }
 
-/** What the loop does outside the terminal, each replaceable by a test. */
-const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, offeredDeployments, admitDeployment, prepareRemoteTerm, startViewer });
+/** What the loop does outside the terminal, each replaceable by a test. `realpath` is the one the
+ *  shared start rule checks a local home with; `startInstance` and `createLifecycleConfirmation`
+ *  are the shared home's, replaceable so a test can drive the loop's wiring. */
+const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, offeredDeployments, admitDeployment, prepareRemoteTerm, startViewer,
+  realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary });
 
 /** Run. Resolves with the exit status; never calls process.exit, so what was written drains.
  *  Before the alternate screen, in this order, each failure one line on stderr and status 1:
  *  the arguments; the instance variables removed from the environment (a TUI started in an
  *  agent's pane must read the deployment it was asked about, and so must every child it starts);
  *  the terminal; the user's tui.json; the deployment; the kernel it shipped with. */
-export async function main({ argv, stdin, stdout, stderr, env, proc = process, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, cwd = () => process.cwd(), home = homedir(), effects = EFFECTS }) {
+export async function main({ argv, stdin, stdout, stderr, env, proc = process, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, cwd = () => process.cwd(), home = homedir(), effects: given = EFFECTS }) {
+  const effects = given === EFFECTS ? EFFECTS : { ...EFFECTS, ...given };
   const { options, error } = parseArgs(argv);
   if (error) { stderr.write(`${error}\n`); return 1; }
   if (options.help) { stdout.write(HELP); return 0; }
@@ -96,7 +102,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // What the last frame drew, for the store: how tall the list pane is and how far the other
   // pane scrolls. The store holds no size of its own.
   let drawn = { page: 1, extent: 0, room: 1, cols: 1 };
-  let full = true, escTimer = null, ended = false;
+  let full = true, escTimer = null, ended = false, reads = 0;
   /** The preflight of another machine's agent under way: `{ id, controller, prepared }`, where
    *  `prepared` is what it answered (`{ binary, args }`) once it has; or null. */
   let preflight = null;
@@ -110,6 +116,19 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     getRoster: () => ({ remote: state.remote, memory: state.memory, notes: state.notes }),
     onEntry: heard, onRoster: heard,
   });
+  // THE ACTS (docs/tui.md, "Stopping, starting, restarting and retiring"). One lifecycle boundary
+  // per run: its plans, its kept answers and its one apply at a time are this run's. Its exec runs
+  // a plan read as a read the loop asked for (kind "read", ended on every way out) and an apply
+  // (`detached: true`, cliLifecycle's own mark of a change) as a change, which the TUI never ends.
+  // `applying` is the label of the apply this run's confirmation just sent: only one confirmation
+  // is open at a time, and the boundary calls its exec in the same turn as the request.
+  let applying = null;
+  const boundary = effects.createLifecycleBoundary({ terms: TERMS, exec: (bin, argv, { detached, ...options }, callback) => (detached
+    ? reader.changeExec(bin, argv, { ...options, label: applying }, callback)
+    : reader.exec(bin, argv, options, callback)) });
+  /** The confirmation open now: `{ n, made }`, `made` the shared confirmation; or null. */
+  let confirmation = null;
+
   /** What the reader gave, into the state, and the screen after it. */
   function heard(event) { if (!ended) guard.attempt(() => { if (!took(reduce(state, event, keymap))) guard.draw(); }); }
   /** One step of the reducer taken: the state, then what only the loop can do. True once the
@@ -134,8 +153,57 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       preflight = null;
       if (ready?.id === effect.lend && ready.prepared) lendTo(effect.lend, ready.prepared.binary, ready.prepared.args);
     }
+    if (effect.dismiss !== undefined) dismiss(effect.dismiss);
+    if (effect.act) openConfirmation(effect.act);
+    if (effect.call) callConfirmation(effect.call);
+    if (effect.start) startAct(effect.start);
     if (effect.refresh) refresh(effect.refresh);
     return false;
+  }
+
+  /** What the boundary admits a request of deployment `id` against, read at every admission. */
+  const contextOf = (id) => actContext(state, id, clock());
+  /** Open the shared confirmation of a stop or a retire the store decided on (`{ n, verb, row,
+   *  label }`). Every step it tells goes to the store as `{ acted }`; an answer that settles asks
+   *  for a live read of the rows (onSettled), and nothing else after an apply does. */
+  function openConfirmation({ n, verb, row, label }) {
+    dismiss(confirmation?.n);
+    const id = row.deployment?.id, name = row.instance;
+    const target = { workspace: id, instance: name, agent: row.agent, agentsRoot: row.agentsRoot, home: row.home, server: row.server ?? null };
+    const mine = { n, made: null };
+    const tell = () => { if (mine.made && confirmation === mine) heard({ acted: { n, confirmation: { ...mine.made.state(), view: mine.made.view() } } }); };
+    confirmation = mine;
+    mine.made = effects.createLifecycleConfirmation({
+      request: (body) => { if (body?.action === "apply") applying = { verb, name }; return boundary(body, () => contextOf(id)); },
+      target, operation: verb, terms: TERMS, label, leftover: heldHome(row)?.kind === "spawn-incomplete",
+      onChange: tell, onSettled: () => refresh({ live: true }),
+    });
+    tell();
+  }
+  /** A button pressed in the confirmation: its call, when it is still the open one. */
+  function callConfirmation({ n, method, args = [] }) {
+    if (confirmation?.n === n) confirmation.made[method](...args);
+  }
+  /** The confirmation closed: what it sent goes on, and what it answers is no longer told. */
+  function dismiss(n) {
+    if (confirmation === null || confirmation.n !== n) return;
+    const { made } = confirmation;
+    confirmation = null;
+    made?.close();
+  }
+  /** Start or restart the row (`{ n, verb, id, row }`) through the shared start rule, once, with no
+   *  launch choice. Its child is a change of this run: the store hears when it is spawned and when
+   *  it closes (`starting`), and the answer, whatever it is, asks for a live read. */
+  function startAct({ n, verb, id, row }) {
+    const label = { verb, name: row?.instance ?? "" };
+    const exec = (bin, argv, options, callback) => {
+      const child = reader.changeExec(bin, argv, { ...options, label }, (...answer) => { heard({ acted: { closed: id } }); callback(...answer); });
+      heard({ acted: { spawned: { id, verb }, at: now() } });
+      return child;
+    };
+    Promise.resolve()
+      .then(() => effects.startInstance(probe.cli, row, {}, { restart: verb === "restart", deployments: localDeployments(state, clock()), realpath: effects.realpath, localCwd: actCwd(state), exec, terms: TERMS }))
+      .then((answer) => heard({ acted: { n, answer } }), () => heard({ acted: { n, answer: null } }));
   }
 
   /** Open the agent the store decided on (lib/model.mjs openDecision). On this machine the
@@ -206,7 +274,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     // timeout. The person opens the agent again.
     onStop() { stopPreflight(); dropReads(); },
     onResume(asked) { if (!asked) { stopPreflight(); dropReads(); } refresh({ live: true }); },
-    onEnd() { ended = true; reader.stop(); },
+    // On the way out the confirmation is closed and the reads end; a change in flight is let go,
+    // never signalled (lib/read.mjs changeExec), and named after the screen is left.
+    onEnd() { ended = true; dismiss(confirmation?.n); reader.stop(); },
   });
   function refresh(how) { Promise.resolve(reader.request(how)).catch(() => {}); }
   /** A preflight under way when the process stops: given up, and the store told. */
@@ -220,11 +290,14 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   function dropReads() { reader.voidInFlight(); state = reduce(state, { collecting: false }, keymap).state; }
   /** The events of one batch of input, in order. Once one of them lent the terminal, the rest are
    *  dropped: they were typed before the viewer started, and none may act while it has the
-   *  terminal (a `q` behind the Enter would end the run under a live viewer). */
+   *  terminal (a `q` behind the Enter would end the run under a live viewer). Each batch is one
+   *  read of input, numbered (`read`): a confirmation ignores the press of its act in the read
+   *  that moved the focus onto it, so a paste cannot both move and press. */
   function act(events) {
+    const read = ++reads;
     for (const event of events) {
       if (guard.lent) return;
-      if (took(reduce(state, "paste" in event ? { paste: event.paste } : { key: keyId(event), ...(typeof event.text === "string" && !event.alt ? { text: event.text } : {}), ...drawn }, keymap))) return;
+      if (took(reduce(state, "paste" in event ? { paste: event.paste } : { key: keyId(event), ...(typeof event.text === "string" && !event.alt ? { text: event.text } : {}), read, ...drawn }, keymap))) return;
     }
     guard.draw();
   }
@@ -241,6 +314,11 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const end = await guard.done;
   if (escTimer !== null) clearTimer(escTimer);
   // After the alternate screen is left, so the message stays on the screen the user returns to.
+  // One line per change still running, to a terminal or a file only; the status never depends on it.
+  const running = reader.changes?.() ?? [];
+  if (running.length && effects.tellable(stderr)) {
+    try { stderr.write(running.map(({ label }) => `${ACT_WORDS.leaving(label?.verb ?? "change", displayLine(label?.name) ?? "an instance")}\n`).join("")); } catch { /* nothing to tell it to */ }
+  }
   if (end.error !== undefined) stderr.write(`oats: \`oats tui\` stopped on an internal error; the terminal was restored\n${errorLines(end.error).map((line) => `  ${line}\n`).join("")}`);
   return end.status;
 }

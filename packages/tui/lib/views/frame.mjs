@@ -6,6 +6,7 @@
 import { keyLabel } from "../actions.mjs";
 import { lit, shown, shownLines } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
+import { act } from "./act.mjs";
 import { detail } from "./detail.mjs";
 import { help, keyText } from "./help.mjs";
 import { instances, measured } from "./instances.mjs";
@@ -181,13 +182,17 @@ function countSpans(counts, cols) {
  *  first, and a kept filter and the other hints take what is left. The hints stand in the order
  *  given, and when they do not all fit they are given up in an order of their own (`keep`, the
  *  first kept longest), so a hint can stand first and still be given up before another: in the
- *  list of instances `workspaces` goes first, then `refresh`, the key that clears a kept filter,
- *  `detail`, `open` and last `filter` (`filter` before `open` while a filter is kept: its own `/`
- *  stands in the footer then). A row too narrow for the whole of a hint drops it.
+ *  list of instances the acts go first (`restart`, `start`, `retire`, then `stop`), then
+ *  `workspaces`, `refresh`, the key that clears a kept filter, `detail`, `open` and last `filter`
+ *  (`filter` before `open` while a filter is kept: its own `/` stands in the footer then). A row
+ *  too narrow for the whole of a hint drops it.
  *  `open` stands first while Enter would open the selected agent's terminal, and names the key
  *  that brings the TUI back (tui.json's `open.detachKey`, text from outside); while another
- *  machine is asked first, the key that gives the open up stands in its place. The switcher has
- *  a filter of its own, drawn as the list's. A key's label is the user's (views/help.mjs keyText);
+ *  machine is asked first, the key that gives the open up stands in its place. After it stand
+ *  the acts whose key opens a confirmation for the selected row now (the model's `actable`). In a
+ *  confirmation the buttons are on the screen, and the footer says how to work them: the close
+ *  key with the close button's label, the keys that move, Enter, and `quit`. The switcher has a
+ *  filter of its own, drawn as the list's. A key's label is the user's (views/help.mjs keyText);
  *  everything is placed by cells. */
 function footer(m, cols) {
   const action = (id) => m.actions.find((a) => a.id === id && a.keys.length);
@@ -222,20 +227,38 @@ function footer(m, cols) {
     const spans = [{ col: 0, text: lit(lead), width: lead.length }, { col: lead.length, text: key.text, width: key.width }, { col: lead.length + key.width + 1, text: lit(tail), width: tail.length }];
     return made(keyText(keyLabel(a.keys[0])), { spans, width: lead.length + key.width + 1 + tail.length });
   };
+  if (m.view === "act" && m.act) {
+    // The confirmation: its buttons are the offers, on the screen; the footer says how to work them.
+    const close = action("close"), shut = m.act.buttons.find((button) => button.id === "close");
+    const hints = [
+      ...(close && shut ? [made(keyText(keyLabel(close.keys[0])), shut.label)] : []),
+      ...(m.act.buttons.length > 1 ? [made({ text: lit("Left/Right"), width: "Left/Right".length }, "move")] : []),
+      made({ text: lit("Enter"), width: "Enter".length }, "press"),
+    ].map(spansOf);
+    const quit = hint("quit");
+    const all = [...hints, ...(quit ? [spansOf(quit)] : [])];
+    const spans = [];
+    let col = MARGIN;
+    for (const h of all) { if (col + h.width > edge) break; spans.push(...put(h, col)); col += h.width + GAP; }
+    return spans;
+  }
   const listing = m.view !== "help" && m.view !== "switcher";
   // While another machine is asked first, Esc gives the open up, and that is all it does: the
   // hint stands where `open` stood, is kept as long, and `close` is not listed beside it.
   const asking = listing && m.opening?.phase === "preflight";
   // An action with no key (tui.json may unbind one) has no hint: nothing stands first then.
   const first = (asking ? [["open", hint("close", "stop opening")]] : listing && m.openable ? [["open", opener()]] : []).filter(([, h]) => h);
+  // The acts the selected row offers now stand after `open`, and are the first given up.
+  const acts = listing && !asking ? (m.actable ?? []).map((verb) => [verb, hint(verb)]).filter(([, h]) => h) : [];
+  const ACTS = ["stop", "retire", "start", "restart"];
   const [ids, keep] = m.view === "help" ? [["close"], ["close"]]
     // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
     // A kept filter puts `close` before `refresh`, as in the list: the key that clears it is the hint to keep.
     : m.view === "switcher" ? [["open", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])], null]
-    : m.focus === "detail" ? [["detail", "close", "refresh"], ["open", "detail", "close", "refresh"]]
+    : m.focus === "detail" ? [["detail", "close", "refresh"], ["open", "detail", "close", "refresh", ...ACTS]]
     // A kept filter shows its own `/` beside the hints: then `open` outlives the `/ filter` hint.
-    : [["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces"], [...(m.filter.query ? ["open", "filter"] : ["filter", "open"]), "detail", "close", "refresh", "workspaces"]];
-  const hints = [...first, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
+    : [["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces"], [...(m.filter.query ? ["open", "filter"] : ["filter", "open"]), "detail", "close", "refresh", "workspaces", ...ACTS]];
+  const hints = [...first, ...acts, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
   const last = ["help", "quit"].map((id) => hint(id)).filter(Boolean).map(spansOf);
   const spans = [];
   let col = MARGIN;
@@ -286,6 +309,13 @@ export function frame(m, size) {
   if (m.readAt) { const read = `read ${m.readAt}`; rows[1].push({ col: cols - MARGIN - read.length, text: lit(read), style: DIM, width: read.length }); }
   rows[size.rows - 1] = footer(m, cols);
 
+  if (m.view === "act" && m.act) {
+    rows[2] = rule(cols, m.ascii);
+    rows[size.rows - 2] = rule(cols, m.ascii);
+    const drawn = act(m, { cols, rows: g.body.rows });
+    drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
+    return { rows, page: Math.max(1, g.page), extent: drawn.extent, room: drawn.room };
+  }
   if (m.view === "help") {
     rows[2] = rule(cols, m.ascii);
     rows[size.rows - 2] = rule(cols, m.ascii);
