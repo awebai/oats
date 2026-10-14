@@ -317,7 +317,8 @@ the rig). "Fixed" marks a gap this change closed.
 | Workspace tabs (Souls, Capabilities, Setup, Teams) | One roving stop; F6 (main) | Left/Right/Home/End |
 | Souls search, Group by | Tab; `/` from the grid | Typing; Enter |
 | Soul cards and their Spawn | One roving stop; the card's Spawn follows it | Arrows; Enter/Space open the soul page; `B` files; Spawn: Enter |
-| Soul page, capability page | Opening focuses Back | Esc goes back and restores focus |
+| Teams board cards | One Tab stop per card: its team's name | Enter/Space on the name open the team's page; a click anywhere on the card that is not another control opens it too |
+| Soul page, capability page, team page | Opening focuses Back | Esc goes back and restores focus; from a team page, Esc and Back return to the board with focus on that team's name |
 | Capability page: Contents navigation (one tree: Instructions, Skills) | One roving stop: the open file, else the focused item | Up/Down move through visible items, Home/End; Right opens a skill, then enters it; Left closes it, or climbs from a file to its skill; Enter/Space open a file or toggle a skill; Esc still goes back |
 | Capability page: Contents reader | Tab (a labelled scrollable region) | Arrows/PgUp/PgDn scroll; Enter on a link: a listed file opens in place (and is selected on the left), `https:` opens in the browser, `#heading` scrolls; any other link is plain text |
 | Capabilities: Workspace owned's repository pills ("Show capabilities from") | One roving stop: the pressed pill | Left/Right (and Up/Down) move along the pills, wrapping; Home/End go to the ends; Enter/Space choose. Moving never chooses. Focus stays on the same repository's pill when the list repaints |

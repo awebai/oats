@@ -38,27 +38,37 @@ async function mount(t, answer = () => teams('teams-after'), options = {}) {
   return { dom, doc, card, calls, q, row, click, act };
 }
 
-test('real capture: the page head; the shared and local sections with their chips; each team\'s card with its id, who may join and the kernel\'s problems; one read', async t => {
+test('real capture: the page head; the shared and local sections with their leads; each team\'s card with its id, who may join and the kernel\'s problems; one read', async t => {
   const u = await mount(t);
   assert.deepEqual(u.calls, [{ action: 'list' }]);
   assert.equal(u.card.element.dataset.box, 'Teams'); assert.equal(u.q('.ct-page-head .ct-title').textContent, 'Teams');
   assert.equal(u.q('.ct-lead').textContent, 'Who your agents can message. A team never adds capabilities or restricts what a soul can do.');
   assert.equal(u.q('.ct-page-head button.ct-add').textContent, 'Add a local team'); assert.ok(u.q('.ct-page-head button.ct-add svg.shell-icon'), 'the plus glyph');
   assert.equal(u.q('.setup-box-head'), null, 'no dashed "Teams on this computer" box: a page');
-  assert.deepEqual([...u.card.element.querySelectorAll('.ct-section')].map(s => [s.dataset.section, s.querySelector('.ct-section-title').textContent, s.querySelector('.ct-scope').textContent, s.querySelector('.ct-scope').classList.contains('dashed')]),
-    [['shared', 'Shared with the workspace', 'Shared · Git', false], ['local', 'Only on this computer', 'Not shared', true]]);
-  const cards = s => [...u.q(`[data-section=${s}]`).querySelectorAll('.ct-card')].map(c => [c.dataset.team, c.querySelector('.ct-id').textContent, c.querySelector('.ct-join').textContent, !!c.querySelector('.ct-pill')]);
+  assert.deepEqual([...u.card.element.querySelectorAll('.ct-section')].map(s => [s.dataset.section, s.querySelector('.ct-section-title').textContent, s.querySelector('.ct-section-lead').textContent]),
+    [['shared', 'Shared teams', 'Declared in oats-workspace.yaml and shared through Git, so every computer that runs the workspace has them.'],
+      ['local', 'Local teams', 'Only on this computer, in its oats-local.yaml. Not shared.']]);
+  assert.equal(u.q('.ct-scope'), null, 'no scope chips: each section says it in its line');
+  assert.deepEqual([...u.card.element.querySelectorAll('.ct-card')].map(c => [c.dataset.team, c.classList.contains('local')]),
+    [['engineering', false], ['global', false], ['marketing', false], ['mine', true]], 'a local team\'s card is the dashed one');
+  const cards = s => [...u.q(`[data-section=${s}]`).querySelectorAll('.ct-card')].map(c => [c.dataset.team, c.querySelector('[data-fact=address] dd').textContent, c.querySelector('[data-fact=who] .ct-join').textContent, !!c.querySelector('.ct-tag')]);
   assert.deepEqual(cards('shared'), [['engineering', 'no provider id yet', '1 soul', false], ['global', 'no provider id yet', 'every soul', false], ['marketing', 'no provider id yet', 'No soul yet', false]], "the kernel's order; who may join per card");
   assert.deepEqual(cards('local'), [['mine', 'mine:juan.aweb.ai', '1 soul', true]]);
   assert.ok(u.row('marketing').querySelector('.ct-join.none'), 'no soul yet: muted'); assert.equal(u.row('mine').querySelector('.ct-join.none'), null);
-  assert.deepEqual([...u.row('mine').querySelectorAll('.ct-fact')].map(f => f.textContent), ['Address mine:juan.aweb.ai', 'Who may join 1 soul']);
-  assert.equal(u.row('mine').querySelector('.ct-pill').textContent, 'Default on this computer'); assert.ok(u.row('mine').querySelector('.ct-tile.default'), 'the default team\'s accent tile');
-  assert.equal(u.row('engineering').querySelector('.ct-tile.default'), null); assert.ok(u.row('engineering').querySelector('.ct-tile svg.shell-icon'));
-  assert.equal(u.row('mine').querySelector('.ct-desc').textContent, 'My own team');
+  assert.deepEqual([...u.row('mine').querySelectorAll('.ct-facts .ct-fact')].map(f => [f.querySelector('dt').textContent, f.querySelector('dd').textContent]), [['Address', 'mine:juan.aweb.ai'], ['Who may join', '1 soul']]);
+  assert.equal(u.row('mine').querySelector('[data-fact=address] dd').title, 'Address: the team on the messaging provider');
+  assert.ok(u.row('engineering').querySelector('[data-fact=address] dd.ct-address.none'), 'no provider id yet: the warn value');
+  assert.deepEqual([...u.row('mine').querySelectorAll('.ct-id .ct-tag, .ct-id .ct-from')].map(e => e.textContent), ['Default team', 'on this computer'], 'the default: a tag and where it comes from');
+  assert.equal(u.row('engineering').querySelector('.ct-tag'), null); assert.equal(u.q('.ct-tile, .ct-side, .ct-pill'), null, 'no tile, no right column, no pill');
+  assert.equal(u.row('mine').querySelector('.ct-head .ct-desc').textContent, 'My own team');
   assert.equal(u.row('engineering').querySelector('.ct-warn').textContent, 'shared team engineering has no provider id yetits owner runs `oats aweb setup`, then commits the id', "the kernel's problem and fix, verbatim");
+  assert.deepEqual([...u.row('engineering').querySelector('.ct-warn').children].map(c => [c.className, c.textContent]),
+    [['ct-warn-msg', 'shared team engineering has no provider id yet'], ['ct-fix', 'its owner runs `oats aweb setup`, then commits the id']], 'the message, then its fix on its own line');
+  assert.ok(u.row('engineering').querySelector('.ct-facts').compareDocumentPosition(u.row('engineering').querySelector('.ct-warn')) & 4, 'the warning follows the facts');
   assert.equal(u.row('engineering').querySelector('.ct-blocking'), null, 'not the default: a warning, not blocking');
   assert.equal(u.q('.ct-all'), null, 'the "Every soul may join" footer is gone: it is per card');
-  assert.equal(u.q('.ct-side .ct-inst'), null, 'no roster given: nothing about instances');
+  assert.equal(u.q('.ct-foot, .ct-sum'), null, 'no roster given (and the cards do not open): no foot, nothing about instances');
+  assert.equal(u.q('.ct-open, .ct-go'), null, 'no onOpenTeam: the cards do not open');
   assert.doesNotMatch(u.card.element.textContent, /primary|personal/i);
   assert.equal(whoMayJoin(teams('teams-after'), 'engineering'), '1 soul', 'a soul default and a soul team: the same soul, counted once');
   assert.equal(whoMayJoin(teams('teams-after'), 'global'), 'every soul'); assert.equal(whoMayJoin(teams('teams-after'), 'marketing'), null);
@@ -71,7 +81,7 @@ const member = (row, extra = {}) => ({ workspace: '/w', server: null, serverLabe
 const route = (rows, { remote = [], servers = [], notReached = [] } = {}) =>
   ({ members: [...rows.filter(r => r.identity?.team).map(r => member(r)), ...remote], servers, notReached });
 
-test('the members: overlapping soul tiles (at most three) and "N members" only for the members whose identity.team is the team\'s id; the default team adds why', async t => {
+test('the board card sums up your instances on the team, for the members whose identity.team is its id; no member rows on the board', async t => {
   const rows = [
     { instance: 'rm-1', agent: 'release-manager', agentsRoot: '/a', identity: { team: 'mine:juan.aweb.ai' }, running: true },
     { instance: 'rm-2', agent: 'release-manager', agentsRoot: '/a', identity: { team: 'mine:juan.aweb.ai' }, running: false },
@@ -81,33 +91,30 @@ test('the members: overlapping soul tiles (at most three) and "N members" only f
     { instance: 'x-1', agent: 'stray', agentsRoot: '/a', identity: { team: null }, running: true },
     { instance: 'x-2', agent: 'legacy', agentsRoot: '/a', running: true },
   ];
-  const u = await mount(t, () => mapped(), { readMembers: async () => route(rows) });
-  const mine = u.row('mine').querySelector('.ct-side');
-  assert.equal(mine.querySelector('.ct-count').textContent, '4 members');
-  assert.deepEqual([...mine.querySelectorAll('.ct-marks .identity-mark')].map(m => m.textContent), ['RM', 'RM', 'WR'], 'three tiles at most, the soul marks');
-  assert.equal(mine.querySelector('.ct-note').textContent, 'every instance joins its default team');
-  const eng = u.row('engineering').querySelector('.ct-side');
-  assert.equal(eng.querySelector('.ct-count').textContent, '1 member'); assert.equal(eng.querySelector('.ct-note'), null, 'only the default team says why');
-  for (const label of ['global', 'marketing']) {
-    assert.equal(u.row(label).querySelector('.ct-inst'), null, 'unmapped: nobody can be in it — nothing, never a zero');
-    assert.equal(u.row(label).querySelector('.ct-members'), null, 'and no member list');
-    assert.ok(u.row(label).querySelector('.ct-side .ct-actions'), 'the actions keep the right column');
-  }
+  const u = await mount(t, () => mapped(), { readMembers: async () => route(rows), onOpenTeam: () => {} });
+  const sum = label => u.row(label).querySelector('.ct-foot .ct-sum');
+  assert.equal(sum('mine').textContent, '4 of your instances');
+  assert.deepEqual([...sum('mine').children].map(c => c.className), ['ct-sum-count'], 'all here: no "on other machines"');
+  assert.equal(sum('engineering').textContent, '1 of your instances');
+  for (const label of ['global', 'marketing']) assert.equal(sum(label).textContent, '', 'unmapped: nobody can be in it — nothing, never a zero');
+  assert.equal(u.q('.ct-irow, .ct-member-name, .ct-member-term, .ct-members, .ct-default-note'), null, 'no member row, list or note on the board: they are on the team\'s page');
+  assert.equal(u.q('.ct-inst, .ct-marks, .ct-count'), null);
   const none = await mount(t, () => mapped(), { readMembers: async () => route([{ instance: 'x', agent: 'x', agentsRoot: '/a', identity: { team: 'other:x.aweb.ai' }, running: true }]) });
-  assert.equal(none.row('mine').querySelector('.ct-inst'), null, 'no match: nothing, not "0 members"');
-  assert.doesNotMatch(none.card.element.textContent, /0 member|No members/);
+  assert.equal(none.row('mine').querySelector('.ct-sum').textContent, 'None of your instances', 'known and none: said so');
+  assert.deepEqual([...none.row('mine').querySelector('.ct-sum').children].map(c => c.className), ['ct-sum-more'], 'in the quiet step');
+  assert.doesNotMatch(none.card.element.textContent, /0 of your|0 member|No members/);
 });
 
 test('syncRoster: a roster poll that changes who is in a team redraws the cards; an unchanged one, an open form or keyboard focus does not', async t => {
   let rows = [{ instance: 'rm-1', agent: 'release-manager', agentsRoot: '/a', identity: { team: 'mine:juan.aweb.ai' }, running: true }];
   const u = await mount(t, () => mapped(), { readMembers: async () => route(rows) });
   const before = u.row('mine');
-  assert.equal(before.querySelector('.ct-count').textContent, '1 member');
+  assert.equal(before.querySelector('.ct-sum').textContent, '1 of your instances');
   u.card.syncRoster(); await tick(); assert.equal(u.row('mine'), before, 'the same roster: nothing redrawn');
   rows = [...rows, { instance: 'w-2', agent: 'writer', agentsRoot: '/a', identity: { team: 'mine:juan.aweb.ai' }, running: true }];
   u.card.syncRoster(); await tick();
-  assert.notEqual(u.row('mine'), before); assert.equal(u.row('mine').querySelector('.ct-count').textContent, '2 members');
-  // A state change redraws too (the state word and the Open button follow it).
+  assert.notEqual(u.row('mine'), before); assert.equal(u.row('mine').querySelector('.ct-sum').textContent, '2 of your instances');
+  // A state change redraws too (the team's page follows it; the board's barrier is the same).
   const running = u.row('mine');
   rows = rows.map(r => r.instance === 'w-2' ? { ...r, running: false } : r); u.card.syncRoster(); await tick();
   assert.notEqual(u.row('mine'), running);
@@ -116,7 +123,7 @@ test('syncRoster: a roster poll that changes who is in a team redraws the cards;
   const label = u.card.element.querySelector('.ct-form input[name=label]'); label.value = 'half'; label.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
   rows = rows.slice(0, 1); u.card.syncRoster(); await tick();
   assert.equal(u.card.element.querySelector('.ct-form input[name=label]'), label, 'the form is not rebuilt');
-  assert.equal(u.row('mine').querySelector('.ct-count').textContent, '2 members');
+  assert.equal(u.row('mine').querySelector('.ct-sum').textContent, '2 of your instances');
 });
 
 test('no local teams: the dashed card with its link opens the add form (Only on this computer); Cancel returns the focus to the link; the head button opens it too', async t => {
@@ -161,10 +168,11 @@ test('Make default: a team with no provider id cannot be the default; a mapped o
   assert.equal(u.doc.activeElement, u.row('engineering').querySelector('.ct-confirm .primary'));
   await u.click(u.row('engineering').querySelector('.ct-confirm .primary'));
   assert.deepEqual(u.calls.at(-1), { action: 'default', label: 'engineering' });
-  assert.ok(u.row('engineering').querySelector('.ct-pill'), 'repainted from the answer'); assert.equal(u.row('engineering').querySelector('.ct-confirm'), null);
-  assert.ok(u.row('engineering').querySelector('.ct-tile.default')); assert.equal(u.row('mine').querySelector('.ct-tile.default'), null);
+  assert.equal(u.row('engineering').querySelector('.ct-tag').textContent, 'Default team', 'repainted from the answer'); assert.equal(u.row('engineering').querySelector('.ct-confirm'), null);
+  assert.equal(u.row('engineering').dataset.default, 'true'); assert.equal(u.row('mine').querySelector('.ct-tag'), null); assert.equal(u.row('mine').dataset.default, undefined);
   await u.click(u.act('mine', 'Make default')); await u.click([...u.row('mine').querySelectorAll('.ct-confirm .ct-act')].find(b => b.textContent === 'Cancel'));
   assert.equal(u.row('mine').querySelector('.ct-confirm'), null); assert.equal(u.calls.length, 2, 'Cancel sends nothing');
+  assert.equal(u.doc.activeElement, u.act('mine', 'Make default'), 'Cancel returns the focus to Make default');
 });
 
 test("Add a local team: label + an existing id; the kernel's refusals (captured) verbatim; a label is lowercase; the form keeps what was typed", async t => {
@@ -227,6 +235,7 @@ test("the default team's problem (default: true) is blocking: said as such, with
   const u = await mount(t, () => structuredClone(d));
   const block = u.row('engineering').querySelector('.ct-blocking');
   assert.equal(block.getAttribute('role'), 'alert');
+  assert.deepEqual([...u.row('engineering').children].slice(0, 3).map(c => c.className), ['ct-head', 'ct-blocking', 'ct-facts'], 'between the header and the facts');
   assert.deepEqual([...block.children].map(c => c.textContent), ['The default team engineering has no provider id yet: nothing can be spawned until it has one.',
     'shared team engineering has no provider id yet', 'its owner runs `oats aweb setup`, then commits the id', 'Or make another team the default.']);
   assert.equal(u.row('global').querySelector('.ct-blocking'), null, 'a non-default unmapped team only warns');

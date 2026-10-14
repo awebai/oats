@@ -15,6 +15,10 @@ import { workspaceStatusData, deploymentStatusData, syncData } from '../../clien
 import { repoChoices, capabilityUse, memberNames, capabilitySections, hostKeyOf } from '../renderer/workspace-catalog.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { syncStateText } from '../renderer/workspace-sync-view.mjs';
+import { runInNewContext } from 'node:vm';
+import { workspaceGeneration } from '../renderer/views/common.mjs';
+import { createSelectionOwnership } from '../renderer/selection-ownership.mjs';
+import { notePanel, resetViewDeployments } from '../renderer/view-deployments.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const settle = async () => { for (let i = 0; i < 4; i++) await tick(); };
@@ -30,7 +34,7 @@ const instances = roster.agents.flatMap(agent => agent.instances.map(i => ({ ...
 const catalog = name => ({ workspaceSyncApi: 1, status: 'ok', report: null, capabilities: { capabilitiesApi: 1, ...fx(name).result }, reason: null });
 const report = (name, status) => ({ workspaceSyncApi: 1, status, report: syncData(f2(name), dir), capabilities: null, reason: null });
 
-async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, workspace = {}, deployment } = {}) {
+async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, members, workspace = {}, deployment } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   const polls = [];
@@ -46,6 +50,7 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, w
     if (path.startsWith('/api/panel')) return panel();
     if (path.startsWith('/api/workspace-sync')) return sync ? sync(body, calls) : catalog('capabilities');
     if (teams && path.startsWith('/api/workspace-teams')) return teams(body, calls);
+    if (members && path.startsWith('/api/team-members')) return members();
     if (path.startsWith('/api/servers')) return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
   } };
@@ -54,7 +59,7 @@ async function setup(t, { status = 'workspace-status', cli = CLI, sync, teams, w
   await refreshCli({ api: async () => cli });
   spawn.mount(dom.window.document.querySelector('#host'), ctx); await settle();
   const doc = dom.window.document;
-  return { doc, dom, calls,
+  return { doc, dom, calls, ctx,
     tab: async name => { doc.getElementById(`workspace-tab-${name}`).click(); await settle(); },
     rows: () => [...doc.querySelectorAll('.catalog-table .catalog-row:not(.head)')],
     owned: () => [...doc.querySelectorAll('[data-section=workspace] .catalog-row:not(.head)')].map(el => el.dataset.capability),
@@ -499,6 +504,108 @@ test('Teams tab: a poll that only re-stamps the workspace status keeps the page 
   await u.poll('2026-09-30T07:28:04.414Z');
   assert.ok(u.calls.filter(c => c.path.startsWith('/api/panel')).length >= 2, 'the poll read the panel again');
   assert.equal(u.doc.activeElement, add, 'focus stays where it was');
+});
+
+// A team's page (packages/desktop/docs/desktop-teams.md "A team's page"): a Workspace page like a soul's or a
+// capability's, opened from its card; Back and Esc return to the board on that card; its team leaving closes it.
+test('Teams: a card opens its team\'s page in place of the tabs; Esc and Back return to the board, focus on that team\'s name; a tab change closes it', async t => {
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }),
+    members: () => ({ members: [{ workspace: '/team', server: null, serverLabel: null, instance: 'rm-1', agent: 'release-manager', agentsRoot: dir, home: `${dir}/agents/release-manager/instances/rm-1`,
+      team: 'mine:juan.aweb.ai', running: true, addressable: true, missingRemotely: false, reason: null, reasonLabel: null, createdAt: null }], servers: [], notReached: [] }) });
+  await u.tab('teams');
+  const page = u.doc.querySelector('.workspace-team-page'), header = u.doc.querySelector('.workspace-header'), board = u.doc.querySelector('.workspace-discovery');
+  assert.equal(page.hidden, true); assert.equal(page.getAttribute('aria-label'), 'Team details');
+  const open = () => u.doc.querySelector('.ct-card[data-team="mine"] .ct-open');
+  assert.equal(u.doc.querySelector('.ct-card[data-team="mine"] .ct-sum').textContent, '1 of your instances');
+  open().click(); await settle();
+  assert.equal(page.hidden, false); assert.equal(header.hidden, true, 'the page bar replaces the Workspace tabs'); assert.equal(board.hidden, true);
+  assert.equal(u.doc.activeElement, page.querySelector('.page-back'), 'opening focuses Back');
+  assert.equal(page.querySelector('.page-crumbs .page-crumb-current').textContent, 'mine');
+  assert.equal(page.querySelector('h2.ct-page-label').textContent, 'mine');
+  assert.equal(page.querySelector('.ct-member-name').getAttribute('aria-label'), 'Show rm-1 in the roster');
+  page.querySelector('.ct-member-name').dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
+  assert.equal(page.hidden, true); assert.equal(header.hidden, false); assert.equal(board.hidden, false);
+  assert.equal(page.childElementCount, 0, 'the page is emptied');
+  assert.equal(u.doc.activeElement, open(), 'Esc: back on the team\'s name');
+  open().click(); await settle();
+  page.querySelector('.page-back').click(); await settle();
+  assert.equal(page.hidden, true); assert.equal(u.doc.activeElement, open(), 'Back: the same');
+  open().click(); await settle();
+  // A tab change (here a programmatic one, as the shell's footer navigation makes) closes it.
+  spawn.preselectWorkspaceTab('sources'); await settle();
+  assert.equal(page.hidden, true); assert.equal(header.hidden, false); assert.equal(u.doc.querySelector('.workspace-discovery').dataset.tab, 'sources');
+});
+
+test('Teams: removing the team from its page closes the page once the document answers, and focus goes to the Teams tab', async t => {
+  const doc = () => { const d = K1_TEAMS(); d.teams.push({ label: 'spare', team: 'spare:juan.aweb.ai', from: 'local', default: false, description: null }); return d; };
+  let removed = false;
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] },
+    teams: body => { if (body?.action === 'remove') removed = true; const d = doc(); if (removed) d.teams = d.teams.filter(x => x.label !== 'spare'); return { status: 'ok', teams: d }; } });
+  await u.tab('teams');
+  u.doc.querySelector('.ct-card[data-team="spare"] .ct-open').click(); await settle();
+  const page = u.doc.querySelector('.workspace-team-page');
+  const remove = [...page.querySelectorAll('.ct-page-card .ct-act')].find(b => b.textContent === 'Remove');
+  assert.equal(remove.getAttribute('aria-label'), 'Remove spare');
+  remove.focus(); remove.click(); await settle();
+  assert.deepEqual(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).at(-1).body, { action: 'remove', label: 'spare' });
+  assert.equal(page.hidden, true); assert.equal(u.doc.querySelector('.workspace-header').hidden, false);
+  assert.equal(u.doc.querySelector('.ct-card[data-team="spare"]'), null, 'gone from the board too');
+  assert.equal(u.doc.activeElement, u.doc.getElementById('workspace-tab-teams'), 'no card to return to: the Teams tab');
+});
+
+// Opening a team is an explicit choice: it claims the selection intent, so a shell footer handoff still waiting on its
+// import (the production openWorkspaceSouls, held) neither navigates nor notifies when it lands or fails.
+for (const outcome of ['success', 'rejection']) test(`Teams: opening a team supersedes a shell footer import's ${outcome}`, async t => {
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: K1_TEAMS() }) });
+  await u.tab('teams');
+  const source = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
+  const gate = createSelectionOwnership({ currentWorkspace, workspaceGeneration });
+  const hook = source.match(/onSelectionIntent:\s*(\(\) => tabOpenIntents\.invalidate\(\))/)?.[1];
+  assert.ok(hook, 'production ctx shares Workspace selection with shell foreground ownership');
+  let land, fail; const held = new Promise((yes, no) => { land = yes; fail = no; });
+  const stages = [], notices = [];
+  const chooser = source.match(/async function openWorkspaceSouls\([^]*?\n\}/)[0].replace('import("./views/spawn.mjs")', 'loadSpawn()');
+  const choose = runInNewContext(`(${chooser})`, { document: u.doc, tabOpenIntents: gate, loadSpawn: () => held,
+    ctx: { notify: message => notices.push(message) }, showStage: name => stages.push(name) });
+  u.ctx.onSelectionIntent = runInNewContext(hook, { tabOpenIntents: gate });
+  const pending = choose();
+  u.doc.querySelector('.ct-card[data-team="mine"] .ct-open').click(); await settle();
+  const page = u.doc.querySelector('.workspace-team-page');
+  assert.equal(page.hidden, false);
+  if (outcome === 'success') land(spawn); else fail(new Error('superseded chooser'));
+  await pending; await settle();
+  assert.deepEqual(stages, [], 'the older import does not navigate');
+  assert.deepEqual(notices, [], 'nor say it failed');
+  assert.equal(page.hidden, false, 'the team page stays');
+  assert.equal(u.doc.querySelector('[role=tab][aria-selected=true]').id, 'workspace-tab-teams');
+  assert.equal(u.doc.activeElement, page.querySelector('.page-back'));
+});
+
+// The Workspace header and its scope line are hidden while a team's page is open: in a view of two deployments the
+// page's card says which one its Make default and Remove edit (the primary), and stops following once it closes.
+test('Teams: in a view of two deployments a team\'s page says which deployment it edits, under its label', async t => {
+  const doc = () => { const d = K1_TEAMS(); d.teams.push({ label: 'spare', team: 'spare:juan.aweb.ai', from: 'local', default: false, description: null }); return d; };
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: doc() }) });
+  t.after(resetViewDeployments);
+  const deployments = second => [
+    { id: '/d1', machine: 'This Mac', path: '/Users/ana/Agents/first', label: '~/Agents/first', local: true, primary: true, reachable: true },
+    ...(second ? [{ id: '/d2', machine: 'This Mac', path: '/Users/ana/Agents/second', label: '~/Agents/second', local: true, primary: false, reachable: true }] : []),
+  ];
+  notePanel({ workspace: { id: '/team' }, deployments: deployments(true) });
+  await u.tab('teams');
+  u.doc.querySelector('.ct-card[data-team="spare"] .ct-open').click(); await settle();
+  const page = u.doc.querySelector('.workspace-team-page');
+  const scope = () => page.querySelector('.ct-page-card .ct-head > .deployment-scope');
+  assert.equal(scope().textContent, 'On This Mac · ~/Agents/first'); assert.equal(scope().hidden, false);
+  assert.deepEqual([...page.querySelectorAll('.ct-page-card .ct-act')].map(b => b.textContent), ['Make default', 'Remove'], 'the actions it scopes');
+  assert.ok(scope().previousElementSibling.classList.contains('ct-id'), 'under the label');
+  // One deployment: no line, as on every deployment-level surface.
+  notePanel({ workspace: { id: '/team' }, deployments: deployments(false) }); await settle();
+  assert.equal(scope().hidden, true);
+  const line = scope();
+  page.querySelector('.page-back').click(); await settle();
+  notePanel({ workspace: { id: '/team' }, deployments: deployments(true) }); await settle();
+  assert.equal(line.textContent, '', 'closed: the page\'s line no longer follows the view');
 });
 
 // 0.30 automation trust: the REAL kernel's workspace-status warnings (fixtures/automations-trust, kernel
