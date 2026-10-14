@@ -13,6 +13,8 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
 `test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's rows and cycling),
 `test/palette-recency.test.mjs` (its Recent group and focus record), `test/tab-strip-reveal.test.mjs`,
+`test/roster-scrollport.test.mjs` (a focused roster row is revealed inside the list),
+`test/roster-reveal-row.test.mjs` (an active terminal tab reveals its roster row),
 `test/theme-picker.test.mjs` (the theme picker's keys).
 
 ## Principles
@@ -221,7 +223,13 @@ go to tab) do nothing; the dialog keeps focus.
 
 Tab switches from the keyboard (Ctrl+Tab, Ctrl+PgDn, go to tab) keep focus in
 the new tab's content when it was in content, and on the strip when it was on
-the strip. A stage switch from a chord, the palette or a nav button leaves
+the strip. Whenever another terminal tab becomes active (any of these, a click
+or an arrow on the strip, a close's successor, a pane of another split group),
+and on a click on the tab that is already active, its roster row reads as
+selected and the roster scrolls just enough to show it, without taking focus.
+It does not scroll while the sidebar is hidden or in focus mode, nor for a row
+the filter hides; under a collapsed parent it shows the nearest visible
+ancestor's row and leaves the parent collapsed. A stage switch from a chord, the palette or a nav button leaves
 focus where it was when that is still shown, else on the stage's first
 control.
 
@@ -342,7 +350,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Add / onboard workspace dialog | From the menu's Add | Radio-style suggestions with arrows; Esc; trapped; returns to the trigger |
 | Sidebar nav (Deployments, Workspace, Automations) | F6 (current item); Tab; ⌘1/⌘2/⌘3 | Enter/Space |
 | Roster filter | Tab; ⌘F / Ctrl+Shift+F; **Down from it enters the rows (fixed): while filtering, at the first match, never a parent kept only to show its tree path** | Typing filters |
-| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; Up/Down/Home/End; Right expands, Left collapses or goes to the parent. A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is | Enter/Space open the terminal (running) or Start (stopped) |
+| Roster rows | One roving stop, **the selected row, else the first filter match (fixed: was the first enabled)**; F6; Up/Down/Home/End; Right expands, Left collapses or goes to the parent. A collapse or a filter never moves a row to another group: a root collapsed over its whole group stays under that group's name, and the selected row stays where it is. The list shows no scrollbar (the wheel and the touchpad scroll it): a row that takes keyboard focus (these keys, the filter's Down, F6) is revealed whole, its tools included, by scrolling the list alone, never an ancestor | Enter/Space open the terminal (running) or Start (stopped) |
 | Rows whose state is unknown or that the kernel does not report addressable | **Focusable, `aria-disabled` with the reason as a description (fixed: were `disabled`, which hid their tools from the keyboard)** | Activation does nothing; their tools work |
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
@@ -377,7 +385,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Panel sections: soul link, copy, details, Open soul page, Teams, Git, lifecycle Restart…/Start…/Stop…/Retire… | Tab | Native buttons and summaries |
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
 | Command palette, Quick Open | ⌘K / Ctrl+Shift+P, ⌘P / Ctrl+P | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows (see "The command palette") |
-| Shortcuts editor | ⌘, / Ctrl+, | Trapped; Enter records, Esc cancels, Backspace unbinds |
+| Shortcuts editor | ⌘, / Ctrl+, (from a terminal too); focus starts in its search | Typing in the search filters by name, group or keys (`shift+b` and `ctrl shift b` find Ctrl+Shift+B), and the count is announced; Down enters the rows, Up/Down move between them, Up from the first returns to the search; Tab reaches each row's shortcut and Reset; Enter records, Esc cancels a recording, Backspace unbinds; Esc clears the search, then closes; trapped, the search its first stop. A row shows "terminal" when its shortcut works while a terminal has focus and "changed" when it differs from the default |
 | Settings (Connections, Terminal) | Footer settings | Trapped, through the Terminal size field too; the sign-in terminal has an explicit Shift+Tab exit; the font size stepper's − and + stay focusable at 9 and 28 (aria-disabled) and a typed size applies on Enter or on leaving the field |
 | Notifications | Tab (they come last in the document) | Open and Dismiss are buttons; focus moves on after dismissing |
 

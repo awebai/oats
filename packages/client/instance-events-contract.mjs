@@ -1,6 +1,7 @@
 /** K7 API2 consumer input contract. Pure data validation; no log/kernel IO. */
 import { absolute, record } from './readiness-contract.mjs';
 import { remoteReason } from './remote-address.mjs';
+import { DETAIL_WITHHELD } from './display-text.mjs';
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
 const text = (v, max = 4096) => typeof v === 'string' && !!v && v.length <= max && !/[\x00-\x1f\x7f]/.test(v);
@@ -15,9 +16,9 @@ export const eventsTimestamp = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}
 export const eventsUnsafe = /[\x00-\x08\x0b-\x1f\x7f]|:\/\/(?<=[a-z][a-z0-9+.-]*:\/\/)\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+/i;
 /** A producer or kind id: non-empty, ≤ 256, no control characters, nothing unsafe. */
 export const eventsId = v => typeof v === 'string' && !!v && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v) && !eventsUnsafe.test(v);
-/** What stands in for text eventsUnsafe refuses. The one literal: eventsDetail and waitingMessage return it,
- * and the sidebar's claim (waitingOnYouData) reads it as "no note". */
-export const EVENTS_WITHHELD = '[withheld]';
+/** What stands in for text eventsUnsafe refuses: the clients' one withheld word (display-text.mjs `DETAIL_WITHHELD`).
+ * eventsDetail and waitingMessage return it, and the sidebar's claim (waitingOnYouData) reads it as "no note". */
+export const EVENTS_WITHHELD = DETAIL_WITHHELD;
 /** A free-text detail: a string ≤ max (throws otherwise); unsafe text is withheld, never shown. */
 export function eventsDetail(v, max = 2048) {
   if (typeof v !== 'string' || v.length > max) throw Error('invalid event detail');

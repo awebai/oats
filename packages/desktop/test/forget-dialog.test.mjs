@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createForgetDialog, forgettable, forgetWords, shownInstance, forgetSuccessor } from '../renderer/forget-dialog.mjs';
 import { createConnections } from '../renderer/connections.mjs';
+import { forgetNotRun } from '../server/server-forget.mjs';
 import { registerAction, handleKeydown } from '../renderer/keybindings.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -131,7 +132,7 @@ test('another refusal: "Couldn\'t forget", the kernel\'s lines under it (a plain
       const lines = kernelLines(message, undefined, DESKTOP_TERMS);
       assert.deepEqual(f.said, [["Couldn't forget dev-a.", ...lines].join('\n')]);
       assert.ok(lines.every(line => !line.includes('\n') && line.length <= 2048 + 16), 'each kernel text is one bounded display line');
-      if (message.startsWith('password')) assert.deepEqual(lines, ['[Detail withheld]']);
+      if (message.startsWith('password')) assert.deepEqual(lines, ['[withheld]']);
       assert.equal(f.doc.activeElement.id, 'opener');
     } finally { f.close(); }
   }
@@ -149,13 +150,16 @@ test('an unknown outcome: no answer, a rejected request, an answer for another r
   }
 });
 
-test('nothing ran (busy elsewhere, refused input): "Couldn\'t forget" with the Desktop\'s own reason', async () => {
-  const f = fixture({ answer: { status: 'not-run', reason: { code: 'E_BUSY', message: 'A Forget for this instance is already running.' } } });
-  try {
-    f.open(); f.confirm().click(); await tick();
-    assert.deepEqual(f.said, ["Couldn't forget dev-a.\nA Forget for this instance is already running."]);
-    assert.equal(f.doc.activeElement.id, 'opener');
-  } finally { f.close(); }
+test('nothing ran (busy elsewhere, a row not held gone #1170): "Couldn\'t forget" with the Desktop\'s own reason', async () => {
+  for (const [code, line] of [['E_BUSY', 'A Forget for this instance is already running.'],
+    ['E_FORGET_NOT_GONE', 'Forget is only for an instance its server did not list at the last read; nothing was run.']]) {
+    const f = fixture({ answer: forgetNotRun(code) });
+    try {
+      f.open(); f.confirm().click(); await tick();
+      assert.deepEqual(f.said, [`Couldn't forget dev-a.\n${line}`], code);
+      assert.equal(f.doc.activeElement.id, 'opener');
+    } finally { f.close(); }
+  }
 });
 
 test('a late success after a workspace change: nothing said or focused; the row cannot be sent again meanwhile', async () => {

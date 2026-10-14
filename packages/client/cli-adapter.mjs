@@ -23,7 +23,7 @@
 //   * A provider operation names its instance by --home: the home of
 //     exactly one row the server reports (packages/desktop/server/capabilities.mjs), never
 //     a caller path.
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -143,11 +143,19 @@ export function writeTaskFile(taskText, io = {}) {
  * owns through it). It passes the options through as given (cwd, env, timeout, maxBuffer, no shell)
  * and calls back with `execFile`'s own error: every caller tells a timeout by `error.killed` and an
  * overflow by `error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'`, so an `exec` that wraps or
- * replaces that error turns both into a plain failure. */
-function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false } = {}) {
+ * replaces that error turns both into a plain failure.
+ * `detached: true` is given for a stop or retire apply and for a start: the child must run in a session of
+ * its own, so a signal to the client's process group (a Ctrl-C, a hang-up) never reaches it (a killed stop
+ * strands its home on a kernel before 0.52.0; a killed start can leave its lock, #889). An `exec` must start
+ * such a child that way and never drop the option: `execFile` itself does not honour it (it passes spawn a
+ * fixed list of options), so this home's own default for it is `execFileInSession`. Such a child is given no
+ * deadline (`timeout: 0`, the default of an apply): execFileInSession arms its kill only for a positive one,
+ * and the caller's own wait ends instead (cliStart's START_WAIT_MS; instance-lifecycle.mjs APPLY_WAIT_MS). */
+function runJson(bin, argv, { cwd, exec, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false, detached = false } = {}) {
+  const run = exec ?? (detached ? execFileInSession : execFile);
   return new Promise((resolveP, rejectP) => {
     try {
-      exec(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer: 4 * 1024 * 1024, shell: false },
+      run(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer: 4 * 1024 * 1024, shell: false, ...(detached ? { detached: true } : {}) },
         (err, stdout) => {
           // New reads require a clean exit for success. Keep the historical
           // envelope-wins policy for existing mutations unless opted in.
@@ -426,9 +434,24 @@ function parseRosterEnvelope(stdout) {
   return doc;
 }
 
-/** One bounded aggregate read; the CLI owns registry and saved-route resolution. */
+/** A value the kernel takes for `server roster --workspace-key` (feature roster-workspace-key): a
+ * registration's key grammar (not empty, no whitespace or control character), and not an option
+ * (the kernel refuses a value that starts with `--`). */
+export const ROSTER_WORKSPACE_KEY = /^(?!--)[^\s\x00-\x1f\x7f]{1,2048}$/;
+/** At most this many keys in one read: one per open window. */
+export const ROSTER_WORKSPACE_KEYS_MAX = 64;
+
+/** One bounded aggregate read; the CLI owns registry and saved-route resolution. `io.workspaceKeys`, only
+ * for a CLI that lists `roster-workspace-key`: the read probes those workspaces' registrations (and those
+ * of unknown workspace, and saved routes) and no other; each is one `--workspace-key=<key>` argv element.
+ * None, or an empty list, is the unfiltered read. A key the kernel would refuse is refused here. */
 export function cliRemoteRoster(bin, io = {}) {
-  return runJson(bin, ["server", "roster", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000, parse: parseRosterEnvelope });
+  const keys = io.workspaceKeys ?? [];
+  if (!Array.isArray(keys) || keys.length > ROSTER_WORKSPACE_KEYS_MAX || !keys.every((k) => typeof k === "string" && ROSTER_WORKSPACE_KEY.test(k))) {
+    throw Object.assign(new Error("Invalid workspace keys for the roster read"), { code: "E_BAD_ARGS" });
+  }
+  const argv = ["server", "roster", ...[...new Set(keys)].map((k) => `--workspace-key=${k}`), "--json"];
+  return runJson(bin, argv, { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000, parse: parseRosterEnvelope });
 }
 
 /** Local retire predates the envelope; preserve its incomplete-cleanup result. */
@@ -475,7 +498,56 @@ export function launchChoiceArgv({ launchConfig, harness, model, yolo, harnessFl
   return argv;
 }
 
-/** Start/restart is owned by the kernel, never a GUI stop-then-spawn pair. */
+/** `execFile`'s shape, return and errors, for a child in a session of its own (`detached`: a new session and
+ * process group). `execFile` drops `detached`, so this is the `exec` a kernel caller of this home uses for a
+ * stop or retire apply and a start. Like `execFile` it collects stdout and stderr (`encoding`, default utf8),
+ * ends the child with `killSignal` (SIGTERM) when `timeout` (0: none) passes or an output passes `maxBuffer`,
+ * and calls back once the child's streams close: `(null, stdout, stderr)` on a clean exit; else an Error with
+ * `code` (the exit status, or a system code), `killed` and `signal`, or the overflow's own error, whose `code`
+ * is ERR_CHILD_PROCESS_STDIO_MAXBUFFER. stdin is a pipe, as `execFile`'s, that nobody writes. */
+export function execFileInSession(bin, argv, options = {}, callback = () => {}) {
+  const { cwd, env, encoding = "utf8", timeout = 0, maxBuffer = 1024 * 1024, killSignal = "SIGTERM" } = options;
+  const child = spawn(bin, argv, { cwd, env, shell: false, detached: true, windowsHide: true });
+  const chunks = { stdout: [], stderr: [] }, sizes = { stdout: 0, stderr: 0 };
+  let ex = null, killed = false, timer = null, exited = false;
+  const text = name => { const all = Buffer.concat(chunks[name]); return encoding && encoding !== "buffer" ? all.toString(encoding) : all; };
+  function kill() { killed = true; try { child.kill(killSignal); } catch (error) { ex ??= error; exit(); } }
+  function exit(code = null, signal = null) {
+    if (exited) return; exited = true; clearTimeout(timer);
+    const stdout = text("stdout"), stderr = text("stderr");
+    if (!ex && code === 0 && signal === null) { callback(null, stdout, stderr); return; }
+    const cmd = [bin, ...argv].join(" ");
+    if (!ex) ex = Object.assign(new Error(`Command failed: ${cmd}\n${stderr}`), { code, killed: child.killed || killed, signal });
+    ex.cmd = cmd; callback(ex, stdout, stderr);
+  }
+  for (const name of ["stdout", "stderr"]) child[name].on("data", chunk => {
+    if (ex) return;
+    const room = maxBuffer - sizes[name];
+    if (chunk.length > room) {
+      chunks[name].push(chunk.subarray(0, Math.max(room, 0))); sizes[name] = maxBuffer;
+      ex = Object.assign(new RangeError(`${name} maxBuffer length exceeded`), { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }); kill(); return;
+    }
+    chunks[name].push(chunk); sizes[name] += chunk.length;
+  });
+  child.on("close", exit);
+  child.on("error", error => { ex = error; child.stdout?.destroy(); child.stderr?.destroy(); exit(); });
+  if (timeout > 0) { timer = setTimeout(kill, timeout); }
+  return child;
+}
+
+/** How long a client waits for a start's answer. The wait ends; the start does not. */
+export const START_WAIT_MS = ENVELOPE_TIMEOUT_MS;
+
+/** Start/restart is owned by the kernel, never a GUI stop-then-spawn pair. A start runs in a session of its own
+ * (`detached`, execFileInSession) with no deadline of its own (`timeout: 0`, no kill timer), so neither a signal
+ * to the client's group nor a deadline ends it (#889: a start killed mid-way can leave its lock). The client
+ * waits for its answer `io.wait` (START_WAIT_MS, 60 s); `io.after(ms, fn)` runs fn once after ms and answers a
+ * cancel. When the wait ends first, the start answers the code `E_START_UNCONFIRMED`, with no message: nothing is
+ * known of the start, and each client words that in its own words, under no speaker (it is not the kernel's).
+ * The child goes on: what it prints
+ * is still read, so it neither blocks on a full pipe nor writes to a closed one, and its answer, when it comes
+ * after the wait, is not kept. A start has no entry to keep it on, and its answer says nothing the roster
+ * does not: after a failed start the row is read again. */
 export function cliStart(bin, { home, workspaceDir, server, restart = false, ...choices }, io = {}) {
   if (typeof home !== "string" || !home.startsWith("/") || home.includes("\0")
     || (server !== undefined && (typeof server !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server)))
@@ -485,11 +557,19 @@ export function cliStart(bin, { home, workspaceDir, server, restart = false, ...
   let options;
   try { options = launchChoiceArgv(choices); }
   catch (e) { return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: e.code, message: e.message } }); }
-  return runJson(bin, ["session", restart ? "restart" : "start", "--home", home,
+  const { wait = START_WAIT_MS, after = waitTimer } = io;
+  let cancel = () => {};
+  const answered = runJson(bin, ["session", restart ? "restart" : "start", "--home", home,
     ...(server ? ["--server", server] : []), ...options, "--json"], {
-    cwd: workspaceDir, exec: io.exec, timeout: io.timeout,
+    cwd: workspaceDir, exec: io.exec, timeout: 0, detached: true,
+  }).finally(() => cancel());
+  const waited = new Promise((resolve) => {
+    cancel = after(wait, () => resolve({ schemaVersion: 1, ok: false, error: { code: "E_START_UNCONFIRMED" } }));
   });
+  return Promise.race([answered, waited]);
 }
+/** A wait's timer that keeps no process alive: `after(ms, fn)` -> cancel. */
+const waitTimer = (ms, fn) => { const timer = setTimeout(fn, ms); timer.unref?.(); return () => clearTimeout(timer); };
 
 /** Named configuration data travels in private JSON files, not shell text. */
 export async function cliLaunchConfig(bin, { action, name, definition, keepEnv, context, server, home, soul, agentsRoot, choices, localCwd }, io = {}) {
@@ -535,8 +615,8 @@ export function operationArgs(args) {
   return entries.flatMap(([k, v]) => ['--arg', `${k}=${v}`]);
 }
 /** `maxAge` (feature observe-max-age) is inspect's alone; `features` is the probe's list and
- * gates the flag, so an undeclared kernel gets the flagless argv even when a value is given. */
-export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd, maxAge, instructions = false, features }, io = {}) {
+ * gates the flags (also `instructions` and `skills`), so an undeclared kernel gets the flagless argv even when a value is given. */
+export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, args, localCwd, maxAge, instructions = false, skills = false, features }, io = {}) {
   const bad = message => { throw Object.assign(new Error(message), { code: 'E_BAD_ARGS' }); };
   const value = (v, label) => {
     if (typeof v !== 'string' || !v || v.startsWith('-') || v.includes('\0')) bad(`Invalid ${label}`);
@@ -566,7 +646,11 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   // row names the feature (packages/desktop: server/capabilities.mjs, renderer/composed-gate.mjs): a host without it refuses the flag.
   if (instructions && (action !== 'inspect' || !soul || home)) bad('Composed instructions belong to a soul inspection');
   const composed = instructions && Array.isArray(features) && features.includes('soul-composed-instructions') ? ['--instructions'] : [];
-  return await runJson(bin, [...argv, ...target, ...composed, ...maxAgeArgv(features, maxAge), '--json'], {
+  // --skills (feature soul-skills) adds the soul's own skills (souls[0].skills): inspect --soul only, gated the same
+  // way; routed, the caller asks only for a host whose roster row names soul-skills (composed-gate.mjs hostReportsSkills).
+  if (skills && (action !== 'inspect' || !soul || home)) bad('Skills belong to a soul inspection');
+  const skillsArgv = skills && Array.isArray(features) && features.includes('soul-skills') ? ['--skills'] : [];
+  return await runJson(bin, [...argv, ...target, ...composed, ...skillsArgv, ...maxAgeArgv(features, maxAge), '--json'], {
     cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
   });
 }

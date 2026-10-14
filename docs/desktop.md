@@ -224,6 +224,29 @@ more than about a minute is not yet supported from the Desktop; use the CLI on
 the server. Every dropdown in the app has the
 same themed look, and its open list follows the light or dark theme.
 
+## Stopping and retiring
+
+The Desktop runs one stop or retire at a time for its own requests. Another
+program using OATS at the same time, such as the `oats` command or the
+terminal client, is held off by OATS itself: from OATS 0.52.0, a stop and a
+retire of one instance refuse each other before doing anything. A start does
+not yet see a retire in progress.
+
+If the Desktop's backend restarts while a confirmation is open, its plan is
+gone: Stop or Retire then answers that the plan expired, and Review again
+reads a new one.
+
+A stop, retire or start runs in a process of its own, so closing the Desktop
+does not interrupt it. If a stop or retire takes longer than ten minutes, the
+dialog stops waiting and says the result is not confirmed; it keeps running,
+and Check again reads its result. If a start or restart takes longer than 60
+seconds, the Start dialog stops waiting and says the start is not confirmed;
+the start keeps running, and the roster shows its result.
+
+With an OATS older than 0.52.0, after an interrupted stop the instance can be
+started and then cannot be stopped while `.oats-stop-pending.json` exists in
+its home.
+
 ## One workspace, several machines
 
 The switcher lists each workspace once, however many deployments it has: the
@@ -354,6 +377,18 @@ a row with what OATS reported, and a step that needs you says what to run
 where, with a copy button. **Check again** re-runs both. The Desktop never asks
 for a password or key, and never runs anything over ssh itself.
 
+**Which machines the Desktop reads.** One roster read serves every window. With
+an OATS CLI that lists the `roster-workspace-key` feature, it reads only the
+machines of the workspaces your windows show: those registered for one of
+them, those whose workspace is not known yet, and those known only from a
+saved route. A machine registered for a workspace no window shows is not
+contacted, so a machine that is switched off no longer slows every window's
+roster. Opening a window on another workspace reads its machines at once. Until
+it does, that workspace's machines are shown as they were last read, marked
+stale, and the switcher still lists them, not counted live. The read covers every machine again while a window
+shows the switcher, and on the first read after the Desktop starts. With an
+older CLI, every registered machine is read, as before.
+
 ## Instances on servers
 
 Every instance a registered server reports shows in its workspace's roster, whoever spawned it. You
@@ -474,8 +509,9 @@ unknown or unreported harness shows "?". Sources and licences are in
   Do not expose it: it can type into your agent terminals.
 - The app never imports framework code from a checkout and accepts no
   framework-root environment override; deployments are read with an
-  app-owned read-only reader. All lifecycle mutations go through the
-  installed CLI via `execFile` with an absolute binary — never a shell.
+  app-owned read-only reader. Lifecycle actions run the installed `oats` CLI
+  by its absolute path, never through a shell: reads with `execFile`, and a
+  stop, retire or start as a process in its own session.
 - Task text for spawns travels via an owner-only (0600) tempfile, never
   argv. A local start or restart launches only in the server-verified
   instance home. A provider operation on an instance (its harvest included)

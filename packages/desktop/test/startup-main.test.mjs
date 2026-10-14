@@ -76,9 +76,13 @@ async function launch(m, { launch: WORKSPACE = '/', openSet, windowsFile } = {})
     workspaceSuggestions, deploymentsInside, opendirSync, readRecents: () => [],
     noteWindowActivity: () => {}, terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(),
     serverHost: { owned: () => true },
+    // main's post of the window set to the backend (#1124), recorded: the views the windows show at each call.
+    noteWindowViews: () => noted.push(main.windows.entries().map(([, key]) => key)),
   };
+  const noted = [];
+  let main;
   context.advertisedNow = () => context.allowedWs;
-  const main = runInNewContext(`${wsValidateBlock}
+  main = runInNewContext(`${wsValidateBlock}
 ${knownDirsBlock}
 ${listEntriesBlock}
 const suggestions = ${suggestionListBlock};
@@ -93,14 +97,26 @@ async function panelWorkspaces() {
   const list = serving.map((dir) => ({ id: dir, name: dir.split('/').pop(), deployments: [dir] }));
   allowedWs = new Set(list.map((w) => w.id)); noteServed(list); return list;
 }
-({ windows, choosers, suggestions, start: async () => {${startupBody}} })`, context);
+({ windows, choosers, suggestions, noteServed, start: async () => {${startupBody}} })`, context);
   await main.start();
   appEvents.get('will-quit')?.(); // windows.json is written as it is at quit
   const read = (name) => { try { return JSON.parse(readFileSync(join(m.userData, name), 'utf8')); } catch { return undefined; } };
   const claim = async (win, id) => JSON.parse(JSON.stringify(await handlers.get('window:claim-workspace')(
     { sender: Object.assign(win.webContents, { isDestroyed: () => false }), senderFrame: win.webContents.mainFrame }, id, { focus: false, initial: true })));
-  return { spawned, windows: FakeWindow.all, main, claim, logs, openFile: read('workspace-open.json'), windowsFile: read('windows.json') };
+  return { spawned, windows: FakeWindow.all, main, claim, logs, noted, openFile: read('workspace-open.json'), windowsFile: read('windows.json') };
 }
+
+test('every served-list update tells main to post the window set (#1124): a new server, or a post that failed, gets it again', async () => {
+  const m = machine();
+  try {
+    const r = await launch(m, { launch: m.deployment });
+    assert.deepEqual(r.noted.at(-1), [m.deployment], 'at startup, the window the launch opened');
+    const calls = r.noted.length;
+    r.main.noteServed([{ id: m.deployment, name: 'oats', deployments: [m.deployment] }]);
+    assert.equal(r.noted.length, calls + 1, 'noteServed itself calls it, the window set unchanged');
+    assert.deepEqual(r.noted.at(-1), [m.deployment]);
+  } finally { rmSync(m.root, { recursive: true, force: true }); }
+});
 
 test('main spawns the backend with its stdin as the owner lifeline: a pipe, and the flag (#698)', async () => {
   const m = machine();

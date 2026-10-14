@@ -129,11 +129,13 @@ else in `workspace status` changes it.
   miss: the TTL bounds what no key can see (local configuration, teams
   changed on the messaging side, the launch choice this machine would make
   now). Keys: `inspect --soul` → (deployment, server, soul, agents root,
-  capabilities key, `instructions`): the soul page's read with the composed
-  AGENTS.md (`instructions: true`, a soul inspect only, sent to the CLI as
-  `--instructions` when its probe lists `soul-composed-instructions`; routed,
-  only when the held roster row's `probe.features` lists it too, else dropped
-  before the key is made: `renderer/composed-gate.mjs`) is
+  capabilities key, `instructions`, `skills`): the soul page's read with the
+  composed AGENTS.md (`instructions: true`, a soul inspect only, sent to the
+  CLI as `--instructions` when its probe lists `soul-composed-instructions`;
+  routed, only when the held roster row's `probe.features` lists it too, else
+  dropped before the key is made: `renderer/composed-gate.mjs`) and its own
+  skills (`skills: true` → `--skills`, feature `soul-skills`, gated the same
+  way) is
   another entry than the sidebar's plain read of the same soul;
   `inspect --home` → (deployment, server, home, instance, and the status row's
   identity and drift facts: createdAt, startedAt, soul, modules), so a retire,
@@ -174,6 +176,36 @@ runs that read now (or joins the one in flight) and answers once an outcome
 read under the accepted CLI is held (a read the CLI changed under is read
 again first); the renderer then reads `/api/panel`, which serves it. Main's
 proxy gives that request 70 s, longer than the CLI adapter's 60 s for the read.
+
+Which machines it reads (#1124). Main alone knows the windows: it posts the
+view each one shows (`{ views: [view id | null] }`, null for a window showing
+the switcher) to `POST /api/windows` whenever its window set changes
+(`window-set.mjs` `onChange`) and again for each server it learns
+(`window-activity.mjs` `createViewsNotifier`: one post at a time, the newest
+set last, a failed post retried at the next served-list update). With a CLI
+that lists `roster-workspace-key`, each read passes
+`--workspace-key=<key>` for every usable key of those views, computed at the
+read from the set and what is held (`packages/client/panel-views.mjs`
+`rosterWorkspaceKeys`: a matched view's key; an unattached view's reported or
+remembered key, member-derived included, since a registration records the
+key its host reports). The read is unfiltered before main has posted, before
+the first answer, while a window shows the switcher or a view this server
+does not serve, when a view's machine has no usable key, and with no window.
+With the feature, a set that adds a key, or that needs the unfiltered read,
+requests a read at once (the loop's coalesced `request()`), whatever the set
+before it was: a set says what the next read asks for, never what the last
+read covered, so a workspace opened after the switcher or no window still reads
+now. A filtered answer replaces only what it could list
+(`remote-roster.mjs` `remoteRosterState` with `asked`): a held group whose
+last-known key (`lastKnownKey`) is outside the keys asked is kept as it was
+last read, stays in the identity memory, and keeps its read time as its
+panel's `generatedAt` (`keptReadTimes`). The server holds those times
+(`held.keptReadAt`), and the shared views present a kept group as last read:
+`deploymentInfo` makes its deployment stale, never live, so its rows wait for
+a current read (`rowStale`) and the switcher does not count it live, and
+`deploymentPanel` makes its panel at its read time. A group inside the keys,
+of unknown key or from a saved route (`registrationPresent` false) that the
+answer does not list is gone.
 
 Each window's sidebar roster, and its Deployments page when shown, re-read
 every 4 s while that window is focused and every 30 s (the blurred cadence)

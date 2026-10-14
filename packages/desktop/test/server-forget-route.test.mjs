@@ -2,13 +2,15 @@
 // real CLI adapter (cli-adapter.mjs cliServerForget) over a fake process runner: the transport boundary is the
 // argv the runner receives. Exactly one command per valid request, composed from the row's two values; a
 // refused request runs nothing; the kernel's home and target never reach the answer; every command that ran is
-// followed by one remote roster read, whatever it answered.
+// followed by one remote roster read, whatever it answered. #1170: it runs only for a row the held roster shows gone
+// from its server at that server's last answered read; any other is refused and starts no read.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServerForget, forgetOutcome, forgetNotRun } from '../server/server-forget.mjs';
+import { createServerForget, forgetOutcome, forgetNotRun, heldGone } from '../server/server-forget.mjs';
 import { readFileSync } from 'node:fs';
 import { cliServerForget } from '../../client/cli-adapter.mjs';
 import { createRefreshLoop } from '../../client/refresh-loop.mjs';
+import { remoteRosterState } from '../../client/remote-roster.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
 import { loadServer, juanState, CLI } from './helpers/workspace-views-fixture.mjs';
 import { shippedMainApi } from './helpers/shipped-main-api.mjs';
@@ -18,6 +20,10 @@ const OK = { schemaVersion: 1, ok: true, result: { server: 'build', instance: 'd
   target: { sshHost: 'build-host', workspace: '/srv/team', oatsPath: 'oats' }, forgotten: true } };
 const FAIL = (code, message) => ({ schemaVersion: 1, ok: false, error: { code, message } });
 const exited = code => Object.assign(new Error(`Command failed: exit ${code}`), { code });
+/** A held remote roster as remoteRosterState keeps it: one answered group per server, every listed instance gone. */
+const gone = (...pairs) => [...new Set(pairs.map(([server]) => server))].map(server => ({ server, label: server, probe: { ok: true },
+  instances: pairs.filter(([s]) => s === server).map(([, instance]) => ({ server, instance, savedRoute: true, missingRemotely: true })) }));
+const HELD = gone(['build', 'dev-a'], ['build', 'dev-b'], ['b', 'x'], ['build-2', 'dev-a-b'], ['build', 'name with spaces'], ['build', '名前'], ['build', 'a'.repeat(256)]);
 
 /** A runner that answers each command with `answer(argv, n)` ({ stdout, err }; n counts from 0), or holds it ('hold') until the test settles it. */
 function runner(answer = () => ({ stdout: JSON.stringify(OK) })) {
@@ -33,10 +39,10 @@ function runner(answer = () => ({ stdout: JSON.stringify(OK) })) {
 /** The shipped handler over the real forget module and adapter. `reader` supplies the server's roster reads
  * (`refreshRemoteSnapshotAfter`, and `refreshRemoteSnapshot` for a Retry): by default a stub counting the reads
  * the route asks for, one entry in `rereads` each. */
-async function serve({ answer, cli = CLI, adapter, reader } = {}) {
+async function serve({ answer, cli = CLI, adapter, reader, held = () => HELD } = {}) {
   const run = runner(answer);
   const rereads = [];
-  const serverForget = createServerForget({ cli: () => cli,
+  const serverForget = createServerForget({ cli: () => cli, held,
     adapter: adapter ?? { cliServerForget: (bin, args) => cliServerForget(bin, args, { exec: run.exec }) } });
   const reads = reader ?? { after: () => { rereads.push(1); return Promise.resolve(); }, refresh: () => Promise.resolve() };
   const { request } = await loadServer(juanState().state, { serverForget, forgetNotRun,
@@ -178,9 +184,9 @@ function remoteReader() {
   const block = src.match(/\/\* OATSWEB_REMOTEREAD_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_REMOTEREAD_END \*\//)[1];
   const reads = [];
   const adapter = { cliRemoteRoster: () => new Promise(resolve => { reads.push(() => resolve({ schemaVersion: 1, ok: true, result: { groups: [] } })); }) };
-  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome',
+  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome', 'rosterAsk',
     `let remoteRead = null, cliState = { ok: true, bin: 'oats' };\n${block}\nreturn { refresh: refreshRemoteSnapshot, after: refreshRemoteSnapshotAfter };`);
-  return { ...make(adapter, () => true, () => {}), reads };
+  return { ...make(adapter, () => true, () => {}, () => null), reads }; // rosterAsk: the unfiltered read (#1124)
 }
 const flush = async () => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); };
 
@@ -242,4 +248,79 @@ test('a second Forget of the row before the read lands runs the command again an
   const again = await s.post({ server: 'build', instance: 'dev-a' });
   assert.deepEqual([again.status, again.body.status, again.body.reason.code], [200, 'refused', 'E_SNAPSHOT_UNKNOWN']);
   assert.equal(s.run.calls.length, 2);
+});
+
+const notGone = (answer, what) => {
+  assert.deepEqual([answer.status, answer.body.status, answer.body.reason.code], [409, 'not-run', 'E_FORGET_NOT_GONE'], what);
+  assert.equal(answer.body.reason.message, 'Forget is only for an instance its server did not list at the last read; nothing was run.');
+};
+
+test('#1170: a row the held roster does not show gone is refused with 409 E_FORGET_NOT_GONE, runs nothing and starts no read', async () => {
+  const row = over => [{ server: 'build', label: 'build', probe: { ok: true }, instances: [{ server: 'build', instance: 'dev-a', savedRoute: true, ...over }] }];
+  const cases = [
+    [row({}), 'held without missingRemotely'],
+    [row({ missingRemotely: false }), 'missingRemotely: false'],
+    [row({ missingRemotely: 'true' }), 'missingRemotely: "true"'],
+    [row({ missingRemotely: 1 }), 'missingRemotely: 1'],
+    [gone(['build', 'dev-b']), 'an unknown instance on a known server'],
+    [gone(['other', 'dev-a']), 'a known instance on another server'],
+    [[], 'an empty held roster'],
+    [remoteRosterState({ remoteGroups: gone(['build', 'dev-a']), rosterAnswered: true, rosterFailure: null },
+      { thrown: 'read failed' }, '2026-01-01T00:00:00.000Z').remoteGroups, 'gone at an earlier read, held through a failed one'],
+    [[{ ...gone(['build', 'dev-a'])[0], probe: undefined }], 'a group with no probe'],
+    [[{ ...gone(['build', 'dev-a'])[0], server: undefined }], 'a group with no server'],
+  ];
+  for (const [groups, what] of cases) {
+    const s = await serve({ held: () => groups });
+    notGone(await s.post({ server: 'build', instance: 'dev-a' }), what);
+    assert.deepEqual([s.run.calls.length, s.rereads.length], [0, 0], what);
+  }
+  for (const groups of [undefined, null, {}, [null], [{ server: 'build', probe: { ok: true }, instances: null }]]) {
+    const s = await serve({ held: () => groups });
+    notGone(await s.post({ server: 'build', instance: 'dev-a' }), JSON.stringify(groups));
+    assert.deepEqual([s.run.calls.length, s.rereads.length], [0, 0], JSON.stringify(groups));
+  }
+  const throwing = await serve({ held: () => { throw new Error('roster'); } });
+  notGone(await throwing.post({ server: 'build', instance: 'dev-a' }), 'a held roster that cannot be read');
+  assert.deepEqual([throwing.run.calls.length, throwing.rereads.length], [0, 0]);
+});
+
+test('#1170: the check reads what is held at each request: gone, then listed again, the second is refused; a held gone row runs once', async () => {
+  let groups = gone(['build', 'dev-a']);
+  const s = await serve({ held: () => groups });
+  assert.equal((await s.post({ server: 'build', instance: 'dev-a' })).body.status, 'forgotten');
+  assert.deepEqual(s.run.calls.map(c => c.argv), [['server', 'forget', 'build', '--instance', 'dev-a', '--json']]);
+  groups = [{ ...groups[0], instances: [{ server: 'build', instance: 'dev-a', savedRoute: true, missingRemotely: false, running: true }] }];
+  notGone(await s.post({ server: 'build', instance: 'dev-a' }), 'listed again by its server');
+  assert.deepEqual([s.run.calls.length, s.rereads.length], [1, 1], 'the refusal ran nothing and read nothing');
+});
+
+test('#1170: the order of the checks: body, CLI, held row, in flight', async () => {
+  const s = await serve({ cli: { ok: false }, held: () => [] });
+  assert.equal((await s.post({ server: '--x', instance: 'dev-a' })).body.reason.code, 'E_BAD_ARGS', 'the body before the CLI');
+  assert.equal((await s.post({ server: 'build', instance: 'dev-a' })).body.reason.code, 'E_FEATURE', 'the CLI before the held row');
+  let groups = gone(['build', 'dev-a']);
+  const held = await serve({ answer: (argv, n) => (n === 0 ? 'hold' : { stdout: JSON.stringify(OK) }), held: () => groups });
+  const first = held.post({ server: 'build', instance: 'dev-a' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await held.post({ server: 'build', instance: 'dev-a' })).body.reason.code, 'E_BUSY', 'held gone and in flight: busy');
+  groups = [];
+  assert.equal((await held.post({ server: 'build', instance: 'dev-a' })).body.reason.code, 'E_FORGET_NOT_GONE', 'the held row before in flight');
+  held.run.held[0]({ stdout: JSON.stringify(OK) });
+  assert.equal((await first).body.status, 'forgotten');
+  assert.equal(held.run.calls.length, 1);
+});
+
+test('#1170: the shipped server hands the module its live held roster, never a copy taken at start', async () => {
+  const src = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const line = src.split('\n').find(l => l.startsWith('const serverForget = createServerForget('));
+  const run = runner();
+  const made = new Function('createServerForget', 'adapter', 'cliState',
+    `let remoteGroups = [];\n${line}\nreturn { serverForget, hold: g => { remoteGroups = g; } };`)(
+    createServerForget, { cliServerForget: (bin, args) => cliServerForget(bin, args, { exec: run.exec }) }, CLI);
+  assert.equal((await made.serverForget.forget({ server: 'build', instance: 'dev-a' })).answer.reason.code, 'E_FORGET_NOT_GONE');
+  made.hold(gone(['build', 'dev-a']));
+  assert.equal((await made.serverForget.forget({ server: 'build', instance: 'dev-a' })).answer.status, 'forgotten');
+  assert.equal(run.calls.length, 1);
+  assert.equal(heldGone(gone(['build', 'dev-a']), 'build', 'dev-a'), true);
 });

@@ -241,7 +241,8 @@ test('the speaker of a not-reached row through a client\'s whole path: read, hel
 test('the Desktop\'s server hands the roster\'s answer on as it was read: the same objects reach remoteRosterState, so the kernel\'s mark is kept', () => {
   const server = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const read = server.match(/async function readRemoteRoster\([^]*?\n\}/)[0], take = server.match(/function takeRosterOutcome\([^]*?\n\}/)[0];
-  assert.match(read, /const envelope = await adapter\.cliRemoteRoster\(probe\.bin\);\s*if \(cliState !== probe\) return;\s*takeRosterOutcome\(\{ envelope \}\);/);
+  // Filtered or not (#1124), the envelope is handed on as the adapter answered it.
+  assert.match(read, /const envelope = await \(asked \? adapter\.cliRemoteRoster\(probe\.bin, \{ workspaceKeys: asked\.keys \}\) : adapter\.cliRemoteRoster\(probe\.bin\)\);\s*if \(cliState !== probe\) return;\s*takeRosterOutcome\(asked \? \{ envelope, asked \} : \{ envelope \}\);/);
   assert.match(take, /\(\{ remoteGroups, rosterAnswered, rosterFailure \} = next\);/);
   // Between the read and the panel nothing copies a group: no clone and no JSON round trip of what is held.
   for (const body of [read, take, server.match(/function mergeRemotePanels\([^]*?\n\}/)[0]]) assert.doesNotMatch(body, /structuredClone|JSON\.(parse|stringify)|\.\.\.\s*(g|group|envelope)\b/);
@@ -251,9 +252,9 @@ test('the Desktop\'s server holds none of the rule: it calls the shared function
   const server = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const cut = (name) => server.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))[0];
   const loop = cut('refreshRemoteSnapshot'), read = cut('readRemoteRoster'), merge = cut('mergeRemotePanels'), take = cut('takeRosterOutcome');
-  assert.match(take, /remote\.remoteRosterState\(\{ remoteGroups, rosterAnswered, rosterFailure \}, outcome, new Date\(\)\.toISOString\(\)\)/);
+  assert.match(take, /const at = new Date\(\)\.toISOString\(\);\s*const next = remote\.remoteRosterState\(\{ remoteGroups, rosterAnswered, rosterFailure \}, outcome, at\)/);
   assert.match(take, /if \(next\.reported\) remoteIdentities\.observe\(next\.reported\)/);
-  assert.match(merge, /remote\.remotePanelEntries\(remoteGroups, new Date\(\)\.toISOString\(\)\)/);
+  assert.match(merge, /remote\.remotePanelEntries\(remoteGroups, new Date\(\)\.toISOString\(\), keptReadAt\)/);
   assert.match(read, /if \(!cliReadsRemotes\(probe\)\) \{ takeRosterOutcome\(\{ gated: true \}\); return; \}/);
   // No second copy: the sentence, the roster's error code, the marking of groups and the projection of one are named nowhere in the server.
   assert.doesNotMatch(server, /Remote roster unavailable|E_REMOTE_ROSTER|unavailableGroups|remote\.remotePanel\(|remote\?\.includes\("roster"\)/);

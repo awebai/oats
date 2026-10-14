@@ -47,7 +47,7 @@ import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
 import { startSingleInstance, launchDirectory, createLaunchOpener } from "./single-instance.mjs";
-import { createActivityNotifier } from "./window-activity.mjs";
+import { createActivityNotifier, createViewsNotifier } from "./window-activity.mjs";
 import { createHostThemeSource, installHostThemeHandlers } from "./host-theme.mjs";
 import { frameWorkspace, trustedRendererUrl, workspaceHash } from "./renderer/window-binding.mjs";
 import { validWorkspaceId } from "./renderer/workspace-id.mjs";
@@ -74,6 +74,17 @@ const activity = createActivityNotifier({
   }),
 });
 const noteWindowActivity = () => { activity.update(BrowserWindow.getAllWindows()); };
+// The views the windows show → the backend's remote roster read (#1124): it reads the machines of these
+// windows' workspaces only. Posted whole on every change of the window set (createWindowSet's onChange)
+// and again for each server main learns (serverEpoch), and retried at the next served-list update
+// (noteServed, which every panel read reaches) when a post failed. One post at a time, in order.
+const windowViewsNotifier = createViewsNotifier({
+  post: async (body) => (await fetch(`${base()}/api/windows`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify(body), signal: AbortSignal.timeout(1500),
+  })).ok,
+});
+const noteWindowViews = () => { void windowViewsNotifier.update(windows.entries().map(([, key]) => key), serverEpoch); };
 // The launch folder: --dir <path> or OATS_DESKTOP_DIR or the cwd the app was
 // launched from (`/` from Finder). It is served only when it is a deployment;
 // the packaged app never infers a framework repo root. With no deployment to
@@ -166,6 +177,7 @@ function noteServed(list) {
     win.setTitle(windowTitle(bound, servedList));
     if (bound !== null) windowRecords?.bind(win, bound, undefined, servedList);
   }
+  noteWindowViews();
 }
 /** What the server advertises, or while a restart is in flight what the outgoing one did. */
 const advertisedNow = () => (allowedWs.size ? allowedWs : advertisedBefore);
@@ -680,7 +692,7 @@ function installAppMenu() {
 // workspace is its renderer URL's #ws= (renderer/window-binding.mjs).
 // windows.json (window-records.mjs) brings them back at the next launch.
 const WINDOWS_FILE = () => join(app.getPath("userData"), "windows.json");
-const windows = createWindowSet({ create: (key, record) => createWindow(key, record) });
+const windows = createWindowSet({ create: (key, record) => createWindow(key, record), onChange: () => noteWindowViews() });
 let windowRecords = null; // created at startup, once userData is known
 // Windows with no workspace to read: a New Window, or a window left choosing. Their first claim never
 // takes the shared default (they show the switcher), and they get no workspace's data until they bind.
