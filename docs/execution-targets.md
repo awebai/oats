@@ -104,7 +104,7 @@ other than the one the window is on.
 |---|---|---|
 | each agent window it creates | `window-style default`, `window-active-style default`, `cursor-colour default` | that window (`set-option -w`), by window id |
 | each agent window, and the `hq` window of a session it creates | `window-size latest`, `aggressive-resize on` | that window |
-| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` in the pane's environment | that pane's command |
+| the pane of each window it launches a harness in, and a pane it respawns in place | no `COLORFGBG` in the pane's environment, and none of the variables the launch removes ([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)) | that pane's command |
 
 So an agent pane takes the colours of the terminal that views it, whatever
 the server's own defaults say, and on tmux 3.1 or later the window follows
@@ -200,7 +200,11 @@ global environment. A pane gets its session's environment over that (the
 variables tmux's `update-environment` names, taken from whoever created the
 session, and anything set on the session with `set-environment -t`), plus
 what the launch command sets (`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, the
-capabilities' and the launch configuration's variables). **A pane's
+capabilities' and the launch configuration's variables), less what the
+launch removes: a variable one of its capabilities declares and its hooks
+leave out is not inherited from the session or the server
+([a declared name is the provider's](capabilities.md#a-declared-name-is-the-providers)).
+**A pane's
 environment is its session's, `PATH` included, whoever creates its window**:
 an instance, the Desktop or an operator's shell. The tmux client that creates
 the window (or respawns the pane, in a restart in place) runs with only
@@ -220,6 +224,13 @@ first. So:
 - The rest of the ambient environment follows the server's first creator,
   and a server that already runs keeps what it started with. Creating a
   session or a window on it changes nothing global.
+- No window inherits another instance's launch environment through the
+  session or the server: OATS creates a session with no `-e` and sets no
+  instance's variables on it, and each window carries its instance's
+  variables on its own command. A value that reached the server's or a
+  session's environment some other way (a server started from inside an
+  instance's pane, a `set-environment`) stays there, and reaches a launch
+  only when none of that launch's capabilities declares the name.
 
 **The harness is looked up where its pane looks it up.** A launch whose
 executable is a bare name (the harness's own, or a launch configuration's
