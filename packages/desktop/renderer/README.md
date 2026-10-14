@@ -305,6 +305,22 @@ when a terminal is created and only re-measures on a font change, so
 until the face has loaded, then notifies the typography listeners with the full
 family, and live terminals re-measure and refit.
 
+**Synchronized output (#1193).** Each keystroke in a program like Claude Code reaches
+a tab as one tmux redraw that hides the cursor, repaints and shows it again; when the
+IPC delivers it in two messages and xterm paints between them, the cursor flashes
+hidden. The local viewer therefore attaches with tmux's `sync` client feature
+(`-T sync`, `local-tmux-io.mjs`, where `tmux -V` says 3.2 or later; 3.0 and 3.1 have no
+`-T`, and an unreadable version means none), so tmux wraps each redraw in DEC mode 2026
+(`ESC[?2026h` … `ESC[?2026l`); a remote tab gets the same from the remote oats's
+viewer. xterm 5.5 ignores the mode, so each lease's output goes through a gate
+(`terminal-sync.mjs`) that holds a block and writes it to xterm in one call, however
+the messages split it, the 8-byte sequences included. Everything outside a block is
+written at once and unchanged (only a trailing prefix of `ESC[?2026h` waits for the
+next message), and a block whose end never comes is written after 1000 ms, the bound
+xterm 6 and tmux use. A lease that ends writes what its gate holds before the tab shows
+it ended or reconnecting, and a close writes it before the terminal is disposed. xterm
+6 honours mode 2026 itself: upgrading to it retires the gate.
+
 ### Control rules (selection, focus, search fields)
 
 Three rules hold everywhere in the renderer (design v4.1 board 7; spec A implemented the
