@@ -104,7 +104,9 @@ ancestor. `E_LOCAL_MISSING` → if `D` is the authorized new directory,
 use card 3; if reuse was selected, resolve the incorrect/missing deployment
 with its owner before writing. `no-backlink`, `backlink-elsewhere`,
 `not-listed`, `cannot-read` → correct the shared membership declaration or
-owner's Git access, then repeat this inventory. Never invent another repo.
+owner's Git environment, then repeat this inventory. A failed or unparseable
+Git version probe preserves the remote cache and its pins: fix the local Git
+failure and retry without deleting the cache. Never invent another repo.
 
 ## 3. Establish the selected workspace
 
@@ -131,7 +133,8 @@ oats onboard D --workspace W
 is spawned. **Success:** reported members are confirmed and packages locked.
 **Next:** card 4.
 **Error → remedy:** `E_REPO_REF` → correct `W` to the owner-selected repository
-reference; `cannot-read` → owner fixes Git access, then inventory `D` before
+reference; `cannot-read` → owner fixes the reported Git access or local Git
+version-probe failure, then inventory `D` before
 retrying. Do not overwrite partial or existing state to force onboarding.
 
 ## 4. Prepare host settings and sync
