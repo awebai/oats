@@ -175,8 +175,40 @@ The installed CLI must advertise `session-start`; remote starting also needs
 the remote operation. The execution host checks the actual saved session
 before launch. Desktop does not scaffold a home or execute a launcher itself.
 
-A start that worked answers the kernel's result, whole. A failed start answers
-`{error, code}`: the kernel's message and its code. When
+The start rule is decided once, in the shared home
+(`packages/client/session-start.mjs`), and the dialog and the route decide
+through the same gate, so the dialog never sends a start it has refused. The
+route reads the row again and checks the home, which the dialog cannot, so it
+may still refuse one the dialog sent. The gate is a module of its own
+(`start-gate.mjs`, re-exported by `session-start.mjs`) because the dialog's
+page loads no Node builtin. `startGate` gives the first rule that
+refuses a row, in this order, each with its code and sentence: the row is no
+longer in the roster (`not-in-roster`); it is running and this is not a restart
+(`already-running`: the dialog offers Open terminal instead); its state is not
+known stopped and this is not a restart of a running row (`state-unknown`:
+unknown is not stopped); a server's row the kernel does not report addressable
+(`E_SNAPSHOT_UNKNOWN`); no accepted CLI or no `session-start`
+(`cli-unavailable`, `unsupported-start-option`; a server's row:
+`unsupported-remote-operation`); a restart without `session-restart`; a
+launch choice (a configuration, the bare harness's `none` among them, a
+harness or yolo) without `launch-config` (a server's row: also on the host).
+`verifiedLocalHome` is the home check of a row on this computer: the exact
+home its deployment's kernel reported for it, canonicalizing to
+`…/instances/<name>` inside that deployment's canonical directory. `startInstance` runs the gate, the
+home check (`E_HOME_UNVERIFIED`), then the CLI call (`cliStart`, with its wait),
+and says whether the CLI ran. A failed start is `refused`, nothing was
+started: every refusal of the gate and the home check, and the kernel's
+`E_SESSION_START_BUSY` and `E_SESSION_RUNNING` (`STARTED_NOTHING_CODES`); or
+`uncertain`: anything else, `E_START_UNCONFIRMED` included, and `E_CLI_FAILED`
+when the call to the CLI fails on its way. Either way the
+dialog reads the row again before it offers another start. A second client
+takes the rule from the stable surface (`test/client-boundary.test.mjs`); the
+CLI call is not on it.
+
+A start that worked answers the kernel's result, whole. A refusal before the
+CLI ran answers `{error, code}`: the rule's sentence and its code. A failed
+start answers `{error, code}`: the kernel's message through the display filter
+(`displayLine`), and its code. When
 the code is `E_SPAWN_INCOMPLETE` and its details hold a launch-prompt outcome
 for the instance the route resolved, the answer also carries `incomplete`: the
 details decoded by `retainedSpawnDetails`

@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifiedLocalHome as localHomeIn } from "../packages/client/session-start.mjs";
 
 // Inert server tests: the backend runs against a FAKE installed CLI that
 // replays JSON captured from a real `oats` run on the hand-built Northwind
@@ -335,8 +336,9 @@ test("desktop server: verifiedLocalHome admits only the exact kernel-reported ho
   const snapshot = { byWs: new Map([[scope, { instances: [
     { instance: INSTANCE, home }, { instance: "link-1", home: escaping }, { instance: "evil-1", home: evil },
   ] }]]) };
-  const verifiedLocalHome = new Function("realpathSync", "basename", "dirname", "sep", "deployments", "snapshot", `const held = () => null; ${src}; return verifiedLocalHome;`)(
-    realpathSync, basename, dirname, sep, () => [{ id: scope }], snapshot);
+  // The server's wrapper over the shared rule (session-start.mjs verifiedLocalHome), given the deployments it holds.
+  const verifiedLocalHome = new Function("realpathSync", "basename", "dirname", "sep", "deployments", "snapshot", "localHomeIn", `const held = () => null; ${src}; return verifiedLocalHome;`)(
+    realpathSync, basename, dirname, sep, () => [{ id: scope }], snapshot, localHomeIn);
   try {
     assert.equal(verifiedLocalHome({ instance: INSTANCE, home }), home, "the reported home is accepted");
     assert.equal(verifiedLocalHome({ instance: "other-1", home: unreported }), null, "an in-layout home the kernel did not report is rejected");

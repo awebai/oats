@@ -76,14 +76,13 @@ import { launchConfigRequest } from "./launch-configs.mjs";
 import { displayLine } from "../../client/display-text.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
-import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
-import { retainedSpawnDetails } from "../../client/launch-prompt-outcome.mjs";
 import { harnessFlag, HARNESSES } from "../../client/harness-names.mjs";
 import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed } from "../renderer/deployment-header.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 import { START_UNCONFIRMED } from "../renderer/start-unconfirmed.mjs";
+import { startInstance, verifiedLocalHome as localHomeIn } from "../../client/session-start.mjs";
 import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
 import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes } from "../../client/panel-views.mjs";
 
@@ -745,19 +744,9 @@ function resolveInstanceOr(name, wsId, home, server) {
    stay inside that deployment's canonical directory. No layout is named.
    Returns the canonical home, or null (a remote row has no local home). */
 function verifiedLocalHome(inst) {
-  if (!inst?.home || typeof inst.home !== "string" || inst.server) return null;
-  let real;
-  try { real = realpathSync(inst.home); } catch { return null; }
-  if (basename(real) !== String(inst.instance) || basename(dirname(real)) !== "instances") return null;
-  for (const w of deployments(held())) {
-    if (w.remote) continue;
-    const reported = snapshot.byWs.get(w.id)?.instances || [];
-    if (!reported.some((i) => !i.server && i.instance === inst.instance && i.home === inst.home)) continue;
-    let scope;
-    try { scope = realpathSync(w.id); } catch { continue; }
-    if (real.startsWith(scope.endsWith(sep) ? scope : scope + sep)) return real;
-  }
-  return null;
+  // The rule is the shared home's (session-start.mjs verifiedLocalHome); this server gives it the deployments
+  // it holds, with the rows each one's kernel reported, and the file system's realpath.
+  return localHomeIn(inst, deployments(held()).map((w) => ({ id: w.id, remote: !!w.remote, instances: snapshot.byWs.get(w.id)?.instances || [] })), realpathSync);
 }
 /* OATSWEB_VERIFIEDLOCALHOME_END */
 
@@ -1437,32 +1426,22 @@ const server = createServer(async (req, res) => {
       if (!cliState.ok) return send(res, 503, { error: `${hm[1]} requires a compatible installed oats CLI`, code: "cli-unavailable" });
       /* OATSWEB_START_BEGIN — resolved instance start, exercised without launching a harness. */
       if (hm[1] === "start" || hm[1] === "restart") {
-        if (!cliState.features?.includes("session-start")) return send(res, 409, { error: "Starting an existing instance requires an updated OATS CLI", code: "unsupported-start-option" });
-        if (inst.server) {
-          if (!canAddressRemote(inst)) return send(res, 409, { error: unaddressableSentence(inst), code: "E_SNAPSHOT_UNKNOWN" });
-          locator.requireRemoteSupport(cliState, "session-start");
-        } else if (!verifiedLocalHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
+        // The start rule is the shared home's (packages/client/session-start.mjs): the gate's seven rules, the
+        // home check, then the CLI call in its own session with its wait. The renderer decides through the same
+        // gate and never sends a start it has refused; this reads the row again and checks the home, so it may.
         const body = await readBody(req);
-        const restart = hm[1] === "restart";
-        if (restart && !cliState.features?.includes("session-restart")) return send(res, 409, { error: "Update OATS to restart an existing instance", code: "unsupported-start-option" });
-        if ([body.launchConfig, body.harness, body.yolo].some(v => v !== undefined)) {
-          if (!cliState.features?.includes("launch-config")) return send(res, 409, { error: "Update OATS to change the launch configuration", code: "unsupported-start-option" });
-          if (inst.server) locator.requireRemoteSupport(cliState, "launch-config");
-        }
-        if (restart && inst.server) locator.requireRemoteSupport(cliState, "session-restart");
-        const env = await adapter.cliStart(cliState.bin, { home: inst.home, model: body.model,
-          launchConfig: body.launchConfig, harness: body.harness, harnessFlag: harnessFlag(cliState), yolo: body.yolo, restart,
-          workspaceDir: inst.server ? ctxs[0] ?? homedir() : dirname(inst.agentsRoot), server: inst.server });
-        observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot();
-        if (env.ok) return send(res, 200, env.result);
+        const started = await startInstance(cliState, inst, { model: body.model, launchConfig: body.launchConfig, harness: body.harness, yolo: body.yolo },
+          { restart: hm[1] === "restart", localCwd: ctxs[0] ?? homedir(), verifyHome: verifiedLocalHome, start: adapter.cliStart, terms: DESKTOP_TERMS });
+        if (started.ok || started.ran) { observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot(); }
+        if (started.ok) return send(res, 200, started.result);
         // The wait for the start ended and the start goes on (cli-adapter.mjs cliStart): the Desktop's own sentence.
-        if (env.error.code === "E_START_UNCONFIRMED") return send(res, 409, { error: START_UNCONFIRMED.message, code: START_UNCONFIRMED.code });
-        // A start that stopped at a launch prompt answers E_SPAWN_INCOMPLETE with the retained outcome in its
-        // details, as a spawn does: it travels as `incomplete`, decoded, when it names the instance this route
-        // resolved (not the home: the kernel reports its real path). Anything else answers as before.
-        const kept = env.error.code === "E_SPAWN_INCOMPLETE" ? retainedSpawnDetails(env.error.details) : null;
-        return send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code,
-          ...(kept?.launchPrompts && kept.instance === inst.instance ? { incomplete: kept } : {}) });
+        if (started.code === "E_START_UNCONFIRMED") return send(res, 409, { error: START_UNCONFIRMED.message, code: START_UNCONFIRMED.code });
+        // A refusal before the CLI ran answers the rule's sentence. After it ran: the kernel's message, through the
+        // display filter (`detail`), else the rule's sentence for the code. A start that stopped at a launch prompt
+        // carries its retained outcome as `incomplete`, decoded, when it names the instance this route resolved
+        // (not the home: the kernel reports its real path).
+        return send(res, started.code === "E_BAD_ARGS" ? 400 : 409, { error: (started.ran ? started.detail ?? started.sentence : started.sentence) ?? "", code: started.code,
+          ...(started.incomplete ? { incomplete: started.incomplete } : {}) });
       }
       /* OATSWEB_START_END */
     }

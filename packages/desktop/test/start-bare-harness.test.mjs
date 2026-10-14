@@ -18,6 +18,8 @@ import { requireRemoteSupport } from '../../client/cli-locator.mjs';
 import { harnessFlag } from '../../client/harness-names.mjs';
 import { canAddressRemote, unaddressableSentence } from '../../client/remote-address.mjs';
 import { retainedSpawnDetails } from '../../client/launch-prompt-outcome.mjs';
+import { startInstance } from '../../client/session-start.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { JSDOM } from 'jsdom';
 import { launchConfigRequest } from '../server/launch-configs.mjs';
 import { launchConfigFields } from '../renderer/launch-config-fields.mjs';
@@ -84,12 +86,12 @@ const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 
 test('the start route passes the word to the adapter as given, for a home here and for a server\'s, and adds no refusal of its own', async () => {
   const block = source.match(/\/\* OATSWEB_START_BEGIN[^]*?\*\/([^]*?)\/\* OATSWEB_START_END \*\//)?.[1];
   assert.ok(block);
-  const invoke = new Function('inst', 'cliState', 'readBody', 'verifiedLocalHome', 'adapter', 'locator', 'dirname', 'harnessFlag', 'canAddressRemote', 'unaddressableSentence', 'retainedSpawnDetails', 'action',
-    `return (async () => { const hm = [null, action], req = {}, res = {}, ctxs = ["/local"];
+  const routeFunction = (params, body) => new Function('startInstance', 'DESKTOP_TERMS', `return function (${params.join(', ')}) { ${body} };`)(startInstance, DESKTOP_TERMS);
+  const invoke = routeFunction(['inst', 'cliState', 'readBody', 'verifiedLocalHome', 'adapter', 'locator', 'dirname', 'harnessFlag', 'canAddressRemote', 'unaddressableSentence', 'retainedSpawnDetails', 'action'], `return (async () => { const hm = [null, action], req = {}, res = {}, ctxs = ["/local"];
      const send = (_, status, body) => ({ status, body });
      const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/team") };
      ${block} })();`);
-  const here = { instance: 'dev-one', home, agentsRoot: '/team/agents' }, there = { ...here, server: 'host', addressable: true };
+  const here = { instance: 'dev-one', home, agentsRoot: '/team/agents', running: false }, there = { ...here, server: 'host', addressable: true };
   for (const inst of [here, there]) for (const action of ['start', 'restart']) for (const body of [{ launchConfig: LAUNCH_CONFIG_NONE }, { launchConfig: LAUNCH_CONFIG_NONE, harness: 'codex' }]) {
     let call = null;
     const adapter = { cliStart: async (bin, args) => { call = args; return { ok: true, result: { launched: true } }; } };

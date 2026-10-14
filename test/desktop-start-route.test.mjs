@@ -6,19 +6,24 @@ import { requireRemoteSupport } from "../packages/client/cli-locator.mjs";
 import { harnessFlag } from "../packages/client/harness-names.mjs";
 import { canAddressRemote, unaddressableSentence } from "../packages/client/remote-address.mjs";
 import { retainedSpawnDetails } from "../packages/client/launch-prompt-outcome.mjs";
+import { startInstance } from "../packages/client/session-start.mjs";
+import { DETAIL_WITHHELD } from "../packages/client/display-text.mjs";
+import { DESKTOP_TERMS } from "../packages/desktop/renderer/desktop-terms.mjs";
 
 const source = readFileSync(new URL("../packages/desktop/server/oats-web.mjs", import.meta.url), "utf8");
 const block = source.match(/\/\* OATSWEB_START_BEGIN[^]*?\*\/([^]*?)\/\* OATSWEB_START_END \*\//)?.[1];
 assert.ok(block);
-const invoke = new Function("inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence",
-  `return (async () => { const hm = [null, "start"], req = {}, res = {}, ctxs = ["/local"];
+/** The route's slice as a function of `params`, with the start rule it decides through (session-start.mjs) and the
+ * Desktop's terms, as the server imports them. */
+const routeFunction = (params, body) => new Function("startInstance", "DESKTOP_TERMS", `return function (${params.join(", ")}) { ${body} };`)(startInstance, DESKTOP_TERMS);
+const invoke = routeFunction(["inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence"], `return (async () => { const hm = [null, "start"], req = {}, res = {}, ctxs = ["/local"];
    const send = (_, status, body) => ({ status, body });
    const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
    ${block} })();`);
 
 test("start route passes only resolved home/model to CLI, with containment and feature gates", async () => {
   let call;
-  const instance = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents" };
+  const instance = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents", running: false };
   const cli = { ok: true, features: ["session-start", "session-restart", "launch-config"], bin: "/installed/oats" };
   const body = async () => ({ home: "/other/home", model: "opus", command: "ignored", server: "ignored" });
   const adapter = { cliStart: async (bin, args) => { call = { bin, args }; return { ok: true, result: { launched: true } }; } };
@@ -62,12 +67,11 @@ test("start route passes only resolved home/model to CLI, with containment and f
 // OATS 0.52.0 (awebai/oats#917): a start that stops at a launch prompt answers E_SPAWN_INCOMPLETE with the
 // retained outcome in its details, as a spawn does. The details are hand-written from the documented shape at
 // kernel head 881ecc1f (lib/core.mjs `retainedPromptError`, docs/desktop-cli-api.md "Launch prompt results").
-const invokeRetained = new Function("inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "action",
-  `return (async () => { const hm = [null, action], req = {}, res = {}, ctxs = ["/local"];
+const invokeRetained = routeFunction(["inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "action"], `return (async () => { const hm = [null, action], req = {}, res = {}, ctxs = ["/local"];
    const send = (_, status, body) => ({ status, body });
    const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
    ${block} })();`);
-const kept = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents" };
+const kept = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents", running: false };
 const differed = { nearest: "aweb-dev-channel-confirmation-1", firstDifference: { index: 0, expected: "WARNING: Loading development channels --", found: "Do you trust the files in this folder?" } };
 const details = (extra = {}) => ({ retained: true, unconfirmed: true, instance: kept.instance, home: kept.home, launched: "unknown",
   target: { backend: "tmux", socket: "/tmp/fixture.sock", session: "agents", window: "agent", windowId: "@2", paneId: "%2", pid: 1234 }, parentLineageCommitted: false,
@@ -114,17 +118,55 @@ test("start route: every other failure, and an outcome that does not decode, ans
 
 // A start whose wait ended (packages/client/cli-adapter.mjs cliStart answers E_START_UNCONFIRMED, the code alone):
 // the route answers it in the Desktop's own words, never as a message of the kernel's.
-const invokeUnconfirmed = new Function("inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "START_UNCONFIRMED",
-  `return (async () => { const hm = [null, "restart"], req = {}, res = {}, ctxs = ["/local"];
+const invokeUnconfirmed = routeFunction(["inst", "cliState", "readBody", "verifiedLocalHome", "adapter", "locator", "dirname", "harnessFlag", "canAddressRemote", "unaddressableSentence", "retainedSpawnDetails", "START_UNCONFIRMED"], `return (async () => { const hm = [null, "restart"], req = {}, res = {}, ctxs = ["/local"];
    const send = (_, status, body) => ({ status, body });
    const observeMutation = () => {}, refreshRemoteSnapshot = () => {}, url = { searchParams: new URLSearchParams("ws=/local") };
    ${block} })();`);
 
 test("start route: a start whose wait ended answers the Desktop's sentence for E_START_UNCONFIRMED", async () => {
   const { START_UNCONFIRMED } = await import("../packages/desktop/renderer/start-unconfirmed.mjs");
-  const inst = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents" };
+  const inst = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents", running: false };
   const cli = { ok: true, features: ["session-start", "session-restart"], bin: "/installed/oats" };
   const reply = await invokeUnconfirmed(inst, cli, async () => ({}), () => inst.home, { cliStart: async () => ({ schemaVersion: 1, ok: false, error: { code: "E_START_UNCONFIRMED" } }) },
     { requireRemoteSupport }, dirname, harnessFlag, canAddressRemote, unaddressableSentence, retainedSpawnDetails, START_UNCONFIRMED);
   assert.deepEqual(reply, { status: 409, body: { error: "OATS didn't confirm the start. It may still be running: check the roster before you start it again.", code: "E_START_UNCONFIRMED" } });
+});
+
+// 5a-2: the kernel's two codes for a start that started nothing are answered as the kernel words them, through the
+// display filter. The messages are the kernel's own (lib/core.mjs startInstanceSession); the rule's sentences for
+// them (session-start.mjs) are for a client that words by code, not for this route.
+test("start route: E_SESSION_START_BUSY and E_SESSION_RUNNING answer the kernel's message, unchanged", async () => {
+  const home = "/trusted/agents/soul/instances/agent";
+  for (const error of [
+    { code: "E_SESSION_START_BUSY", message: `another start of agent is in progress (${home}/.oats-start.lock); if no start is running, remove that directory and retry` },
+    { code: "E_SESSION_START_BUSY", message: "agent is still starting; refresh its status before retrying" },
+    { code: "E_SESSION_RUNNING", message: "agent is already running; nothing was started; the requested model, launch configuration, harness or yolo was not applied: use session restart" },
+    { code: "E_SESSION_RUNNING", message: "tmux window agents:agent appeared on /tmp/fixture.sock during the start; nothing was started" },
+  ]) for (const action of ["start", "restart"]) assert.deepEqual(await refused(error)(kept, action), { status: 409, body: { error: error.message, code: error.code } }, `${action} ${error.message}`);
+  // A message the display filter withholds is withheld here too: the route answers the filter's line.
+  const odd = await refused({ code: "E_SESSION_RUNNING", message: "agent\u001b[2J is running" })();
+  assert.deepEqual(odd.body, { error: DETAIL_WITHHELD, code: "E_SESSION_RUNNING" });
+});
+
+// 5a-2: the route decides through the start rule's gate as the dialog does, so its first three rules hold here too:
+// a row the roster holds as running is not started again, and a row whose state is not known stopped is not
+// started at all. Nothing is called, and the answer is the rule's sentence (never the row's runtime error).
+test("start route: a running row, or one whose state is not known, is refused before the CLI is called; a restart of a running row goes on", async () => {
+  let called = 0;
+  const cli = { ok: true, features: ["session-start", "session-restart", "launch-config"], remote: ["session-start", "session-restart", "launch-config"], bin: "/installed/oats" };
+  const start = (inst, action = "start", body = {}) => invokeRetained(inst, cli, async () => body, () => inst.home,
+    { cliStart: async () => { called += 1; return { ok: true, result: { launched: true } }; } }, { requireRemoteSupport }, dirname, harnessFlag, canAddressRemote, unaddressableSentence, retainedSpawnDetails, action);
+  assert.deepEqual(await start({ ...kept, running: true }), { status: 409, body: { error: "This instance is already running.", code: "already-running" } });
+  const unknown = { status: 409, body: { error: "Could not verify whether this instance is running. Refresh its status before starting.", code: "state-unknown" } };
+  for (const row of [{ ...kept, running: null }, { ...kept, running: undefined }, { ...kept, running: null, runtimeError: "tmux: no server on the socket" }])
+    for (const action of ["start", "restart"]) assert.deepEqual(await start(row, action), unknown, `${action} ${JSON.stringify(row.running)}`);
+  assert.equal(called, 0);
+  assert.equal((await start({ ...kept, running: true }, "restart")).status, 200);
+  assert.equal(called, 1);
+  // The rule's words for an old CLI (rules 5-7), on a server's row as on this computer's.
+  const old = (features, remote) => invokeRetained({ ...kept, server: "host", addressable: true }, { ...cli, features, remote }, async () => ({ launchConfig: "none" }), () => kept.home,
+    { cliStart: async () => { called += 1; return { ok: true, result: {} }; } }, { requireRemoteSupport }, dirname, harnessFlag, canAddressRemote, unaddressableSentence, retainedSpawnDetails, "start");
+  assert.deepEqual((await old(cli.features, [])).body, { error: "Update the OATS CLI to enable starting instances on a server.", code: "unsupported-remote-operation" });
+  assert.deepEqual((await old(cli.features, ["session-start"])).body, { error: "Update OATS to change the launch configuration.", code: "unsupported-start-option" });
+  assert.equal(called, 1);
 });
