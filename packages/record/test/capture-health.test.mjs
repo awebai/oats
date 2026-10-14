@@ -122,7 +122,7 @@ test("count and sample share a read transaction when another writer changes acti
   let inserted = false;
   DatabaseSync.prototype.prepare = function(sql, ...args) {
     const statement = prepare.call(this, sql, ...args);
-    if (this !== writer.db && sql.includes("count(*) AS n FROM state")) {
+    if (this !== writer.db && sql.includes("count(*) AS n FROM state WHERE kind = 'set-aside'")) {
       const get = statement.get.bind(statement);
       statement.get = (...params) => {
         const result = get(...params);

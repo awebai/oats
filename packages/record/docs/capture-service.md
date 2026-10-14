@@ -75,13 +75,35 @@ the snapshot and never advances them from current issues. A database with no
 snapshot still exposes its active issues.
 
 Both command snapshots and health use the same transactional count/sample
-projection: at most 100 deterministic entries, total count and `truncated`.
-Text output has the same bound and explains both remedies. Absent state on a
+projection. Source set-asides have `setAsideCount`, at most 100 deterministic
+`setAside` entries and `truncated`. Operational failures independently have
+`failedCount`, at most 100 `failed` entries and `failedTruncated`; neither category
+borrows the other's sample allowance. Text output has the same bounds (at most
+200 combined entries) and explains both source remedies. Absent state on a
 never-installed root is not a warning or a reason to create files. A missing
 current database cannot erase a known nonempty command snapshot. Malformed or
 unreadable status is reported as `capture-status-invalid`; an unavailable current
 issue reader fails the command rather than returning successful stale/empty
 health JSON.
+
+An operational failure entry contains `stream`, `offset`, `reason`, `attempts`
+and `nextRetryAt`. The offset is the journal byte offset where the durably
+admitted failed **single-stream unit starts**, never an exact inner-frame claim.
+Text says "unit starting at byte X" and "failing frame unknown". An interrupted
+multi-stream group supplies run failure evidence, not guessed rows for every
+member. Private journal generation and admission evidence stay out of this
+projection. Active entries produce `capture-pass-failed`, including during
+backoff; they do not become source set-asides or advance a processing cursor.
+
+The fixed retry schedule is 2, 4, 8, then 16 capture intervals (30, 60, 120, then
+240 minutes, capped there). Only an actual failed attempt increments `attempts`
+and sets a new date. Skipping a deferred unit does neither. Time passing, source
+growth, cursor reset and `--retry-set-aside` do not resolve these failures or
+override their schedule. Resolution requires committed progress past the failed
+unit or validated reconciliation that it no longer needs work. A cooperative
+stop that makes durable progress is ordinary partial work, not automatically a
+failure. Old snapshots without these fields contain no recorded operational
+failure evidence; their absence does not establish a successful pass.
 
 Reading an existing database requires Node's read-only SQLite support: 22.12+
 on the 22.x line (22.13+ avoids needing `--experimental-sqlite`), 23.2+ on 23.x,
@@ -104,7 +126,7 @@ The shared schema is [capture-status.schema.json](capture-status.schema.json).
 In this algorithm-only phase `policy`, `lastRun`, `lastSuccess`, `lastFailure`
 and `lastProgressAt` are null: evidence has not been supplied. They never mean
 that a bounded pass, service installation or successful sweep occurred. Health
-`status: "ok"` with empty rows means no reported set-aside fault, not service
+`status: "ok"` with empty rows means no reported capture fault, not service
 liveness. Service supervision will extend this same mechanism with actual policy
 and run evidence. Status replacement is atomic with private file permissions;
 persistence failure is an operation failure, not a fabricated success.

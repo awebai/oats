@@ -194,6 +194,8 @@ if (args.health) {
       for (const row of health.rows) console.log(`${row.code}: ${row.message}`);
       for (const entry of health.backlog.setAside) console.log(`${entry.source}: ${entry.path}:${entry.line ?? "?"} offset ${entry.offset}: ${entry.reason}`);
       if (health.backlog.truncated) console.log("showing first 100 set-aside inputs");
+      for (const entry of health.backlog.failed) console.log(`${entry.stream}: unit starting at byte ${entry.offset} (failing frame unknown): ${entry.reason}; attempts ${entry.attempts}; next retry ${entry.nextRetryAt}`);
+      if (health.backlog.failedTruncated) console.log("showing first 100 failed stream units");
     }
   } catch (err) {
     if (args.json) console.log(JSON.stringify({ status: "failed", error: err.message }));

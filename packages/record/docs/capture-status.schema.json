@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Capture status (algorithm phase)",
+  "title": "Capture status",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -93,7 +93,72 @@
         },
         "truncated": {
           "type": "boolean"
+        },
+        "failedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failedTruncated": {
+          "type": "boolean"
+        },
+        "failed": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stream",
+              "offset",
+              "reason",
+              "attempts",
+              "nextRetryAt"
+            ],
+            "properties": {
+              "stream": {
+                "type": "string",
+                "minLength": 1
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Journal byte offset at the start of the durably admitted failed single-stream unit; not an exact failing-frame location."
+              },
+              "reason": {
+                "enum": [
+                  "heap",
+                  "rss",
+                  "deadline",
+                  "interrupted",
+                  "io"
+                ]
+              },
+              "attempts": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "nextRetryAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
         }
+      },
+      "description": "Operational failure fields are absent in algorithm-phase snapshots; absence is no recorded evidence, never proof of success. Each category has its own 100-entry sample.",
+      "dependentRequired": {
+        "failedCount": [
+          "failed",
+          "failedTruncated"
+        ],
+        "failed": [
+          "failedCount",
+          "failedTruncated"
+        ],
+        "failedTruncated": [
+          "failedCount",
+          "failed"
+        ]
       }
     }
   }

@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { validFailure, validFailureBacklog } from "./capture-failures.mjs";
 // Feature landed separately on the two release lines; 23.0/23.1 lack it.
 export function supportsReadOnlySqlite(version) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
@@ -33,8 +34,19 @@ export function readIssueBacklog(db, { pending = false, validate = false } = {})
       }
       return { source, path, offset, reason, ...(line === undefined ? {} : { line }) };
     });
+    // Both inventories share this read snapshot, but have independent samples.
+    // Private generation/admission fields never enter the public projection.
+    const failedCount = Number(db.prepare("SELECT count(*) AS n FROM state WHERE kind = 'capture-failed'").get().n);
+    const failed = db.prepare("SELECT value FROM state WHERE kind = 'capture-failed' ORDER BY key LIMIT 100").all()
+      .map(({ value }) => {
+        const { stream, offset, reason, attempts, nextRetryAt } = JSON.parse(value);
+        const row = { stream, offset, reason, attempts, nextRetryAt };
+        if (!validFailure(row)) throw new Error("malformed capture failure row");
+        return row;
+      });
     db.exec("COMMIT");
-    return { pending: pending || count > 0, setAsideCount: count, setAside, truncated: count > sample.length };
+    return { pending: pending || count > 0 || failedCount > 0, setAsideCount: count, setAside, truncated: count > sample.length,
+      failedCount, failed, failedTruncated: failedCount > failed.length };
   } catch (err) { db.exec("ROLLBACK"); throw err; }
 }
 
@@ -59,6 +71,6 @@ export function readCurrentIssueBacklog(root) {
   const b = response.backlog;
   if (!b || typeof b.pending !== "boolean" || !Number.isSafeInteger(b.setAsideCount) || b.setAsideCount < 0 ||
       !Array.isArray(b.setAside) || b.setAside.length !== Math.min(b.setAsideCount, 100) ||
-      b.truncated !== (b.setAsideCount > 100)) throw new Error("malformed capture database reader output");
+      b.truncated !== (b.setAsideCount > 100) || !validFailureBacklog(b)) throw new Error("malformed capture database reader output");
   return b;
 }
