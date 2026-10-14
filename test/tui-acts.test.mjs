@@ -19,7 +19,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -31,6 +31,7 @@ const hostTool = (name) => { try { return systemExecutable(name); } catch { retu
 
 // The host's own tools and the default server's sessions, read before the environment is isolated.
 const REAL_TMUX = hostTool("tmux");
+const SLEEP = hostTool("sleep");
 const NO_TMUX = REAL_TMUX ? false : "tmux is not on PATH: these tests drive `oats tui` in a real tmux (test/tmux-in-ci.test.mjs fails for this in CI)";
 const ORIGINAL_ENV = { ...process.env };
 /** The sessions of the default tmux server (the one a plain `tmux` reaches from the environment this
@@ -55,7 +56,16 @@ const tmuxOn = (...args) => tmuxRaw(...args).trim();
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === "EPERM"; } };
 
 // ---- the fixture: one deployment, three throwaway agents, and the copied TUI over the fake ---------
-const fx = REAL_TMUX ? v2Deployment() : null;
+/** The harness of the agent test 3 restarts, stops and starts: the fixture's inert harnesses exit
+ *  at once, which leaves a shell in the pane (the state `shell`), so that agent runs this stand-in
+ *  instead, through a launch configuration that names it by its path (a declared path is never
+ *  looked up again at a start). It runs until the kernel's stop sends it SIGTERM. */
+const STANDIN = join(base, "standin-harness");
+if (REAL_TMUX) {
+  writeFileSync(STANDIN, `#!/bin/sh\nexec ${shq(SLEEP)} 86400\n`);
+  chmodSync(STANDIN, 0o755);
+}
+const fx = REAL_TMUX ? v2Deployment({ local: { "launch-configs": { standin: { harness: "pi", executable: STANDIN } } } }) : null;
 const world = { homes: {} };
 const SHADOW = join(base, "shadow");
 const CONTROL = join(base, "control");
@@ -96,10 +106,13 @@ if (REAL_TMUX) {
   writeFileSync(join(SHADOW, "bin", "oats.mjs"), FAKE_KERNEL);
   mkdirSync(CONTROL, { recursive: true });
   // Three agents, spawned in the fixture (its inert harnesses first on PATH) and started for real
-  // on the fixture's tmux server.
+  // on the fixture's tmux server. alpha and beta run an inert harness, which exits and leaves a
+  // shell in the pane (stop and retire are offered there too); gamma runs the stand-in.
   const saved = process.env.PATH;
   process.env.PATH = fx.env.PATH;
-  try { for (const name of ["alpha", "beta", "gamma"]) world.homes[name] = (await fx.spawn("dev", { name })).home; } finally { process.env.PATH = saved; }
+  try {
+    for (const name of ["alpha", "beta", "gamma"]) world.homes[name] = (await fx.spawn("dev", { name, ...(name === "gamma" ? { launchConfig: "standin" } : {}) })).home;
+  } finally { process.env.PATH = saved; }
   for (const name of ["alpha", "beta", "gamma"]) {
     const r = fx.cli(["session", "start", "--home", world.homes[name], "--json"]);
     assert.equal(r.status, 0, `fixture premise: ${name} starts\n${r.stdout}\n${r.stderr}`);
@@ -310,7 +323,8 @@ test("3. a real restart, stop, start and retire of a throwaway agent from the TU
   await run.act("X", "Stop", "of gamma");
   await until(term, () => run.focused() === "Close" && !run.buttons().includes("[ Stop ]"), "the stop settled", 90000);
   term.press("Escape");
-  await until(term, () => run.row("gamma")?.mark === "○", "gamma stopped, read again after the stop", 30000);
+  // Stopped: the harness ended and the launcher's shell stays in the pane (◌), or the pane is gone (○).
+  await until(term, () => ["◌", "○"].includes(run.row("gamma")?.mark), "gamma stopped, read again after the stop", 30000);
 
   await run.act("S", "Start", "of gamma");
   await until(term, () => term.has("gamma started."), "the start's answer", 90000);
