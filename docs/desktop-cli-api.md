@@ -45,7 +45,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "soul-launch","retire-plan-own-worktree","spawn-kernel-codes"],
+             "soul-launch","retire-plan-own-worktree","spawn-kernel-codes","soul-skills"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -117,6 +117,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `automation-descriptions` | a `description` on every trigger and schedule row, local or workspace, by one rule; `oats schedule update <id> --description=<text>` (the description only) and `oats trigger update <id> --description=<text>`; `--description=<text>` on `schedule add` and `trigger add`, OATS 0.43.0 ([Shared row fields](#automations-shared-rows)) | |
 | `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
+| `soul-skills` | `oats inspect --soul <soul> --skills` and its `souls[].skills`: the soul's own skills, the ones a spawn of it copies, with each file's text ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
 | `worktree-event` | the `worktree` hook event; `oats worktree add\|remove` ([`oats worktree`](#oats-worktree)); `worktreeHooks` on `spawn --preview` and on the spawn result and `spawned` event; `spawnInProgress` on `oats status --json` instance rows; the `worktree-added` event kind; `E_INTERRUPTED` and `E_WORKTREE_DIRTY`, OATS 0.49.0 | |
 | `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
@@ -418,7 +419,7 @@ A module's origin (`from`) is `{kind: "member", repoKey, commit}` or `{kind:
 ### `oats inspect`
 
 ```text
-oats inspect (--home <abs> | --soul <name> [--dir <d>] [--instructions]) [--max-age <s>] --json
+oats inspect (--home <abs> | --soul <name> [--dir <d>] [--instructions] [--skills]) [--max-age <s>] --json
 ```
 
 An instance subject, abridged:
@@ -502,6 +503,72 @@ cannot be composed here, with the kernel's code and sentence, naming
 travels to the host; a host whose probe does not advertise
 `soul-composed-instructions` is refused with `E_REMOTE_INCOMPATIBLE`, and
 nothing is sent.
+
+`skills` (feature `soul-skills`) is present only with `--skills`, which takes
+a soul subject (`--home` is `E_BAD_ARGS`) and combines with `--instructions`;
+without the flag the key is absent and no skill file is read. It lists the
+soul's own skills, exactly the ones a spawn of it copies (not its
+capabilities' skills), read from the same soul copy as `instructions`:
+
+```json
+"skills":[{"name":"release-checklist","path":"skills/release-checklist","description":"Cutting a release.",
+           "files":[{"path":"skills/release-checklist/SKILL.md","bytes":812,"text":"---\nname: release-checklist\n…","binary":false,"truncated":false},
+                    {"path":"skills/release-checklist/references/notes.md","bytes":2048,"text":null,"binary":false,"truncated":false,"omitted":true}],
+           "filesTruncated":false}]
+```
+
+- `skills` is the list sorted by `name` in codepoint order; `[]` when the
+  soul has no skills of its own (no `skills/` directory, or none with a
+  `SKILL.md`); `null` when they could not be listed, with a problem below,
+  including a skill directory whose `SKILL.md` could not be examined.
+  It is also `null` when the soul's copy failed, and that copy's problem
+  explains it.
+- A skill is a child directory of `skills/` holding a regular-file
+  `SKILL.md`, or `skills/` itself when it holds one (`name` is then
+  `skills`). `path` is POSIX and relative to the soul directory. Its
+  `description` is the `SKILL.md` front matter's `description`, by the same
+  function as [`oats capabilities show`](#oats-capabilities-show), which reads
+  the file up to 4 MiB: `null` when the file is unreadable, a symbolic link,
+  binary or over 4 MiB, or has no such string, and cut to 1024 bytes.
+- `files` is every regular file under the skill directory, recursively,
+  sorted by `path` in codepoint order, each `path` relative to the soul
+  directory. At most 200 are listed; beyond that `filesTruncated` is `true`.
+  `files` is `null` (and `filesTruncated` `false`) when the files could not
+  be listed: an entry whose name is not a safe path component (`.git` in any
+  case, a backslash, a control character), or a listed file that cannot be
+  read safely (unreadable, gone, changed type, or refused as below). Could
+  not list never reads as listed nothing.
+- A file is `{path, bytes, text, binary, truncated}`, by `oats capabilities
+  show`'s rules: `bytes` is its real size; `binary` (a NUL or invalid UTF-8
+  in its first 262,147 bytes) has `text: null` and `truncated: false`;
+  otherwise `text` is at most 262,144 bytes, cut on a code point boundary,
+  and `truncated` says it was cut.
+- The whole field carries at most 1 MiB (1,048,576 bytes) of `text`, as
+  UTF-8, summed over its files in answer order. The file whose text would
+  pass that, and every file after it, has `text: null, binary: false,
+  truncated: false, omitted: true`; no other file has `omitted`, and a binary
+  file costs nothing. So `text` is `null` only with `binary: true` or
+  `omitted: true`.
+- No symbolic link is followed. A symlinked file or directory inside a skill
+  is not listed, a symlinked skill directory is not a skill, and a symlinked
+  `skills/` makes `skills` `null` with a problem. FIFOs, sockets and devices
+  are not listed and never opened. A directory is listed, and a file read,
+  only once its real path lies inside its skill's, and the skill's inside the
+  soul's; one that does not makes the skill's `files` `null`. A file is
+  opened without following a symbolic link and must be the regular file the
+  listing found. One race remains: a parent directory swapped for a symbolic
+  link in the instant between that check and the open can redirect a read.
+  Only someone who can write the deployment's `agents/` tree can do that, and
+  they already control the soul copy and every instance's `AGENTS.md`.
+- Problems are `{code, message}` in `problems[]`, each message starting
+  `skills: `: `soul-skills-unreadable` when the list is `null`, and
+  `soul-skill-files-unreadable`, naming the skill's `path`, for a skill whose
+  `files` is `null`.
+
+Routed with `--server <id>`, `--skills` travels to the host; a host whose
+probe does not advertise `soul-skills` is refused with `E_REMOTE_INCOMPATIBLE`,
+and nothing is sent. Every text is untrusted repository content: render it as
+plain text or through a sanitising renderer.
 
 **Layers.** `id` is the capability filling the slot or `null`. `from`
 (feature `layers-from`) is `"soul"` or `"workspace"`, `null` for an empty slot
