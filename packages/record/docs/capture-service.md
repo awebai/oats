@@ -154,6 +154,15 @@ bounded transactions. Ordinary passes seek new journal bytes without parsing
 consumed prefixes. Inconsistent identities or cursors invalidate derived state;
 recovery can cost a historical scan. No journal format or turn ID changes.
 
+Search-index reset remains one atomic transaction. Ordinary tables use SQLite's
+truncate clear; the content-storing FTS table is dropped and recreated using the
+owning schema instead of deleting text rows individually. Readers retain the
+existing old-union/empty-union semantics, including already-open connections.
+An interrupted transaction rolls back the entire reset. Successful timing alone
+does not establish remaining deadline budget; the operator-only
+[reset benchmark](../../../scripts/benchmark-record-reset.md) measures the full
+commit separately from sampled reader blocking on a disposable SQLite backup.
+
 Scratch directories are private per synchronous caller (0700 directories, 0600
 owner/payload files), with a same-host PID and nonce marker. No supported path
 transfers their ownership or open descriptors to a subprocess. A command holding
