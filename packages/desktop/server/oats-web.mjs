@@ -688,8 +688,9 @@ const refreshLoop = createRefreshLoop({ run: observeAll, focusedMs: REFRESH_FOCU
 const remoteLoop = createRefreshLoop({ run: () => refreshRemoteSnapshot(), focusedMs: 10_000, blurredMs: REFRESH_BLURRED_MS });
 /* A workspace's own machines (#517): Where to run, the Setup tab's Machines, Add a machine. */
 const machines = createMachines({ adapter, cli: () => cliState });
-/* Forget a remote instance its host no longer lists (#1131): one `server forget` per pressed row at a time. */
-const serverForget = createServerForget({ adapter, cli: () => cliState });
+/* Forget a remote instance its host no longer lists (#1131): one `server forget` per pressed row at a time, and only
+ * for a row the held roster shows gone (#1170). */
+const serverForget = createServerForget({ adapter, cli: () => cliState, held: () => remoteGroups });
 /** Observe now (or right after the cycle in flight); `live` makes the kernel observe the remotes afresh. */
 function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
 /** A mutation this backend performed for a workspace: what inspect reported may have changed, and the
