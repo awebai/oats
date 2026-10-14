@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { claudeTrusts, codexTrustsRoot, harnessConfigFile, harnessTrustWarning, launchConfigDir } from "../lib/harness-trust.mjs";
+import { CONFIG_DIR_VAR, HARNESS_FOLDER_VAR, claudeTrusts, codexTrustsRoot, harnessConfigFile, harnessTrustWarning, launchConfigFolder } from "../lib/harness-trust.mjs";
 
 function room() {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "htrust-")));
@@ -81,6 +81,13 @@ test("harnessTrustWarning: the exact sentence for an uncovered claude or codex h
     "codex folder trust is not established in /c/config.toml: oats harness trust --dir /dep");
   assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", file: "/u/.claude.json", covered: true }), null);
   assert.equal(harnessTrustWarning({ harness: "pi", root: "/dep", file: null, covered: false }), null);
+  // Where the launch gets the variable that selects the file, when the caller knows it.
+  assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", file: "/s/.claude.json", from: "the CLAUDE_CONFIG_DIR of tmux session s", covered: false }),
+    "claude folder trust is not established in /s/.claude.json (the CLAUDE_CONFIG_DIR of tmux session s): oats harness trust --dir /dep");
+  // The pane's environment could not be read: which file is not known, and nothing is said about trust.
+  assert.equal(harnessTrustWarning({ harness: "codex", root: "/dep", file: null, unreadable: "the CODEX_HOME of tmux session s could not be read: make it answer", covered: false }),
+    "codex folder trust: the configuration file this launch will read could not be established (the CODEX_HOME of tmux session s could not be read: make it answer); nothing is said about its trust");
+  assert.equal(harnessTrustWarning({ harness: "codex", root: "/dep", file: null, unreadable: "x", covered: true }), null, "a codex launch under yolo trusts its home whatever a file says");
   // A launch whose config directory cannot be resolved names the problem instead of a file.
   assert.equal(harnessTrustWarning({ harness: "claude", root: "/dep", problem: "launch configuration work: CLAUDE_CONFIG_DIR references WORK_DIR, not set on this host", covered: false }),
     "claude folder trust is not established: launch configuration work: CLAUDE_CONFIG_DIR references WORK_DIR, not set on this host");
@@ -98,14 +105,28 @@ test("harnessConfigFile: the file each harness reads under an env", () => {
   assert.equal(harnessConfigFile("codex", { HOME: "/u", CODEX_HOME: "/cx" }), "/cx/config.toml");
 });
 
-test("launchConfigDir: a launch configuration's config directory, a literal or a host reference; a problem when unresolvable or relative", () => {
-  const host = { WORK: "/w/claude", REL: "rel/dir" };
-  assert.equal(launchConfigDir("claude", {}, host), null, "unset: the launch reads the ambient file");
-  assert.equal(launchConfigDir("claude", { CODEX_HOME: "/x" }, host), null, "another harness's variable is not this harness's");
-  assert.deepEqual(launchConfigDir("claude", { CLAUDE_CONFIG_DIR: "/lit" }, host), { dir: "/lit" });
-  assert.deepEqual(launchConfigDir("claude", { CLAUDE_CONFIG_DIR: { fromEnv: "WORK" } }, host), { dir: "/w/claude" });
-  assert.deepEqual(launchConfigDir("codex", { CODEX_HOME: { fromEnv: "MISSING" } }, host), { problem: "CODEX_HOME references MISSING, not set on this host" });
-  assert.deepEqual(launchConfigDir("claude", { CLAUDE_CONFIG_DIR: { fromEnv: "REL" } }, host), { problem: 'CLAUDE_CONFIG_DIR "rel/dir" is not an absolute path' });
-  assert.deepEqual(launchConfigDir("claude", { CLAUDE_CONFIG_DIR: "" }, host), { problem: 'CLAUDE_CONFIG_DIR "" is not an absolute path' });
-  assert.equal(launchConfigDir("pi", { CLAUDE_CONFIG_DIR: "/lit" }, host), null);
+test("launchConfigFolder: the one reader of a launch configuration's harness folder, for claude, codex and pi: a literal or a host reference; a problem when unresolvable or relative; pi's leading ~", () => {
+  assert.deepEqual(HARNESS_FOLDER_VAR, { claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME", pi: "PI_CODING_AGENT_DIR" });
+  assert.deepEqual(CONFIG_DIR_VAR, { claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME" }, "the harnesses that have folder trust");
+  const host = { HOME: "/home/u", WORK: "/w/claude", REL: "rel/dir", PI_ELSEWHERE: "/srv/pi", PI_TILDE: "~/pi-b" };
+  const claude = (env) => launchConfigFolder("CLAUDE_CONFIG_DIR", env, host), codex = (env) => launchConfigFolder("CODEX_HOME", env, host), pi = (env) => launchConfigFolder("PI_CODING_AGENT_DIR", env, host);
+  assert.equal(claude({}), null, "unset: the launch reads the file its pane selects");
+  assert.equal(claude({ CODEX_HOME: "/x" }), null, "another harness's variable is not this harness's");
+  assert.equal(launchConfigFolder(undefined, { CLAUDE_CONFIG_DIR: "/lit" }, host), null, "no variable, no folder");
+  assert.deepEqual(claude({ CLAUDE_CONFIG_DIR: "/lit" }), { dir: "/lit" });
+  assert.deepEqual(claude({ CLAUDE_CONFIG_DIR: { fromEnv: "WORK" } }), { dir: "/w/claude" });
+  assert.deepEqual(codex({ CODEX_HOME: { fromEnv: "MISSING" } }), { problem: "CODEX_HOME references MISSING, not set on this host", fromEnv: "MISSING" });
+  assert.deepEqual(claude({ CLAUDE_CONFIG_DIR: { fromEnv: "REL" } }), { problem: 'CLAUDE_CONFIG_DIR "rel/dir" is not an absolute path' });
+  assert.deepEqual(claude({ CLAUDE_CONFIG_DIR: "" }), { problem: 'CLAUDE_CONFIG_DIR "" is not an absolute path' });
+  assert.deepEqual(claude({ CLAUDE_CONFIG_DIR: "~/claude" }), { problem: 'CLAUDE_CONFIG_DIR "~/claude" is not an absolute path' }, "Claude Code takes the value as it is");
+  // pi expands a leading ~ itself, so its folder is read that way.
+  assert.equal(pi({ OTHER: "/x" }), null);
+  assert.deepEqual(pi({ PI_CODING_AGENT_DIR: "/srv/a b" }), { dir: "/srv/a b" });
+  assert.deepEqual(pi({ PI_CODING_AGENT_DIR: { fromEnv: "PI_ELSEWHERE" } }), { dir: "/srv/pi" });
+  assert.deepEqual(pi({ PI_CODING_AGENT_DIR: "~/pi-a" }), { dir: "/home/u/pi-a" });
+  assert.deepEqual(pi({ PI_CODING_AGENT_DIR: "~" }), { dir: "/home/u" });
+  assert.deepEqual(pi({ PI_CODING_AGENT_DIR: { fromEnv: "PI_TILDE" } }), { dir: "/home/u/pi-b" });
+  assert.deepEqual(pi({ PI_CODING_AGENT_DIR: { fromEnv: "PI_UNSET" } }), { problem: "PI_CODING_AGENT_DIR references PI_UNSET, not set on this host", fromEnv: "PI_UNSET" });
+  assert.deepEqual(pi({ PI_CODING_AGENT_DIR: "rel/pi" }), { problem: 'PI_CODING_AGENT_DIR "rel/pi" is not an absolute path' });
+  assert.deepEqual(pi({ PI_CODING_AGENT_DIR: "~other/pi" }), { problem: 'PI_CODING_AGENT_DIR "~other/pi" is not an absolute path' }, "only a bare ~ is the user's home");
 });
