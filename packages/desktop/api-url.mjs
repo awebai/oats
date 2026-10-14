@@ -29,6 +29,8 @@ export function classifyApiRoute(pathname, base) {
       case '/api/capabilities': return 'capabilities';
       case '/api/workspace-sync': return 'workspace-sync';
       case '/api/panel': return 'panel';
+      // A remote window's Retry (#1117): answered once the server's `server roster` read has landed.
+      case '/api/remote-roster/refresh': return 'remote-roster';
       // #517: a machine connect may install OATS and clone on the host; check, remove and the list wait on ssh.
       case '/api/server-connect': return 'machine-connect';
       case '/api/servers':

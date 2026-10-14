@@ -57,9 +57,11 @@ function remoteRead() {
   const src = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const block = src.match(/\/\* OATSWEB_REMOTEREAD_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_REMOTEREAD_END \*\//)[1];
   const reads = [], taken = [];
-  const adapter = { cliRemoteRoster: () => { let settle; const promise = new Promise(resolve => { settle = resolve; }); reads.push(settle); return promise; } };
-  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome', `let remoteRead = null, cliState = { ok: true, bin: 'oats' };\n${block}\nreturn refreshRemoteSnapshot;`);
-  return { refresh: make(adapter, () => true, outcome => taken.push(outcome)), reads, taken };
+  const adapter = { cliRemoteRoster: (bin) => { let settle; const promise = new Promise(resolve => { settle = resolve; }); reads.push(Object.assign(settle, { bin })); return promise; } };
+  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome',
+    `let remoteRead = null, cliState = { ok: true, bin: 'oats' };\n${block}\nreturn { refresh: refreshRemoteSnapshot, accept: (cli) => { cliState = cli; } };`);
+  const { refresh, accept } = make(adapter, () => true, outcome => taken.push(outcome));
+  return { refresh, accept, reads, taken };
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
@@ -82,4 +84,22 @@ test('Retry during an in-flight roster read joins it: no second read, and both a
   assert.equal(r.reads.length, 2);
   r.reads[1](roster(false)); await next;
   assert.deepEqual(r.taken.at(-1), { envelope: roster(false) });
+});
+
+test('a Retry joined to a read under a kernel record that is no longer accepted answers only once the read under the accepted one has landed', async () => {
+  const r = remoteRead();
+  const loop = r.refresh(); // read under the record accepted when it started
+  await flush();
+  r.accept({ ok: true, bin: 'oats-new' }); // another CLI is accepted while it runs
+  let retryDone = false;
+  const retry = r.refresh().then(() => { retryDone = true; });
+  r.reads[0](roster(false)); // the old read lands: its answer is dropped
+  await flush();
+  assert.deepEqual(r.reads.map(read => read.bin), ['oats', 'oats-new'], 'the read runs again, under the accepted CLI');
+  assert.deepEqual(r.taken, [], 'nothing was held from the dropped read');
+  assert.equal(retryDone, false, 'the Retry waits for the read under the accepted CLI');
+  r.reads[1](roster(true));
+  await Promise.all([loop, retry]);
+  assert.deepEqual(r.taken, [{ envelope: roster(true) }]);
+  assert.equal(r.reads.length, 2, 'one read at a time: no third');
 });

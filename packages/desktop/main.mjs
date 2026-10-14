@@ -554,9 +554,11 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // dialog can say that outcome only if this proxy is still waiting for it. It must outlast the CLI call
   // (cli-adapter.mjs `cliStart`; start-proxy-deadline.test.mjs holds the two together). Giving up here ends
   // nothing: the server awaits the call whatever becomes of its request (start-abort-server.test.mjs).
+  // A remote window's Retry: the server answers once its roster read landed, which the CLI adapter allows 60 s
+  // (`cliRemoteRoster`; remote-roster-proxy-deadline.test.mjs holds the two together).
   const timeout = lifecycle ? mutation ? 610_000 : 50_000 : forge?.timeout ?? (route === 'capabilities' || route === 'workspace-sync' ? 310_000
     : route === 'automations' ? 90_000 : route === 'instance-git' ? 50_000 : route === 'machine-connect' ? 980_000 : route === 'machines' ? 130_000
-    : route === 'instance-start' ? 70_000 : 20_000);
+    : route === 'instance-start' || route === 'remote-roster' ? 70_000 : 20_000);
   const init = { ...(forge?.init ?? apiInit(opts)), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();

@@ -259,9 +259,10 @@ test('the Desktop\'s server holds none of the rule: it calls the shared function
   assert.doesNotMatch(server, /Remote roster unavailable|E_REMOTE_ROSTER|unavailableGroups|remote\.remotePanel\(|remote\?\.includes\("roster"\)/);
   // What stays the Desktop's: one read at a time (a caller that asks while one runs joins it), and an answer read
   // under another kernel record is dropped and read again.
-  assert.match(loop, /if \(remoteRead\) return remoteRead;/);
+  assert.match(loop, /remoteRead \|\|= /);
   assert.equal(read.match(/if \(cliState !== probe\) return;/g).length, 2);
-  assert.match(loop, /\.finally\(\(\) => \{\s*remoteRead = null;\s*if \(cliState !== probe\) void refreshRemoteSnapshot\(\);\s*\}\)/);
+  assert.match(loop, /do \{ probe = cliState; await readRemoteRoster\(probe\); \} while \(cliState !== probe\);/);
+  assert.match(loop, /\.finally\(\(\) => \{ remoteRead = null; \}\)/);
   // The names read are the shared module's own.
   for (const name of ['remoteRosterState', 'remotePanelEntries']) assert.equal(typeof roster[name], 'function', name);
 });

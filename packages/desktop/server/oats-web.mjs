@@ -637,15 +637,13 @@ function takeRosterOutcome(outcome) {
 }
 /* OATSWEB_REMOTEREAD_BEGIN — the remote roster read, one at a time and joined, extracted by tests */
 /** The roster read: one at a time, and a caller that asks while one runs joins it: the promise resolves once
- * that read's outcome is held. An answer read with a kernel record that is no longer the accepted one is
- * dropped and the read runs again. */
+ * an outcome read under the accepted kernel record is held. An answer read with a kernel record that is no
+ * longer the accepted one is dropped and the read runs again, inside the same promise. */
 function refreshRemoteSnapshot() {
-  if (remoteRead) return remoteRead;
-  const probe = cliState;
-  remoteRead = readRemoteRoster(probe).finally(() => {
-    remoteRead = null;
-    if (cliState !== probe) void refreshRemoteSnapshot();
-  });
+  remoteRead ||= (async () => {
+    let probe;
+    do { probe = cliState; await readRemoteRoster(probe); } while (cliState !== probe);
+  })().finally(() => { remoteRead = null; });
   return remoteRead;
 }
 async function readRemoteRoster(probe) {
