@@ -154,8 +154,9 @@ export const took = (state, entry, number, id = DEPLOYMENT) => reduce(state, { i
  *  cell (the second cell of a wide character is empty), trailing blanks cut. */
 export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = true } = {}) {
   const at = new Date(now).toISOString();
-  const r = (state.view === "help" ? state.back : state.view) === "switcher" ? { notice: null, note: null, observed: true } : roster(state, at);
-  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii });
+  const listing = (state.view === "help" ? state.back : state.view) === "switcher";
+  const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
+  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : state.outcome });
   const made = { ...frame(model(state, { page: g.page, now, at, cols: g.listCols }), size), cols: g.listCols };
   const cells = createScreen({ utf8, ascii: state.ascii }).cells(made.rows, size);
   return { ...made, cells, lines: cells.map((line) => line.map((cell) => cell.text).join("").trimEnd()) };

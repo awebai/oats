@@ -119,12 +119,15 @@ test("no text from outside can write a control sequence: a hostile fixture drawn
 // or an agent could put it, the state is drawn as the main loop draws it, and the frame is turned
 // into bytes by the real screen. The rows are made by the shared functions, which validate nothing
 // here: the model takes a row as given, so the view is what stands between the text and the terminal.
-import { observedEntry, panelInstances, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, observedEntry, panelInstances, rosterRows } from "../lib/client.mjs";
 import { model } from "../lib/model.mjs";
+import { reduce } from "../lib/store.mjs";
 import { frame } from "../lib/views/frame.mjs";
-import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, observed, rosterOf, stateOf } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, observed, press, rosterOf, stateOf } from "./helpers.mjs";
 
 const HOME = `${DEPLOYMENT}/agents/soul/instances/row-1`;
+/** A kernel record that opens agents with a detach key. */
+const KEYED = Object.freeze({ ...CLI, features: Object.freeze([...CLI.features, DETACH_KEY_FEATURE]) });
 const CLAIM = Object.freeze({ since: "2026-10-11T09:56:00.000Z", producer: "claude", reason: "question", message: "Which base should it use?" });
 /** One instance, selected as the only row: the list draws it and the detail shows its facts. */
 const one = (extra = {}, soul = "soul", name = "row-1") => instanceRow(soul, name, { home: HOME, branch: "agents/row-1", ...extra });
@@ -158,6 +161,13 @@ const FIELDS = {
   "the failure message of an unavailable deployment, marked as the kernel's own refusal": (value, options) => stateOf(failed(observed([one()]), { code: "E_SOMETHING_NEW", message: value, origin: "kernel" }), options),
   "the failure message of a stale deployment": (value, options) => stateOf(failed(observed([one()]), { code: "E_REMOTE_UNREADABLE", message: value }), options),
   "a waiting claim's message, through the shared read": (value, options) => shownAs({ waitingOnYou: { ...CLAIM, message: value } }, options),
+  // Opening an agent: the name in the line Enter says, what the viewer printed, and the key that returns.
+  "the name in the line after Enter on an instance that does not run": (value, options) => press(stateOf(observed([one({ running: false, runtimeState: "stopped" }, "soul", value)]), options), ["enter"]).state,
+  "what the viewer printed on stderr, in the line after the return": (value, options) => {
+    const opened = press(stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, ...options }), ["enter"]).state;
+    return reduce(opened, { returned: { id: opened.opening.id, status: 1, stderr: value } }).state;
+  },
+  "the key that leaves an agent's terminal, in the footer": (value, options) => stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, detachKey: value, ...options }),
 };
 const UTF8 = glyphs({ LANG: "en_US.UTF-8" }), NOT_UTF8 = glyphs({ LANG: "C" });
 const S80 = { cols: 80, rows: 24 }, S120 = { cols: 120, rows: 40 };
@@ -237,7 +247,6 @@ test("through the shared read a hostile waiting message does not arrive: the det
 // (lib/read.mjs): through the shared remoteRosterState and observeIdentities. A group has the
 // kernel's form except in the one field a case makes hostile.
 import { DETAIL_WITHHELD, cliRemoteRoster, displayLine, observeIdentities, remoteRosterState } from "../lib/client.mjs";
-import { reduce } from "../lib/store.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { cutNote } from "../lib/views/instances.mjs";
 
