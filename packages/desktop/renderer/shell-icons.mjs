@@ -17,6 +17,8 @@ export const ICONS = Object.freeze({
   triggers: "zap", test: "flask-conical", automations: "workflow", users: "users",
   // v4.1 instance panel: work-mode tiles (folder, link, layers; git-branch is `branch`), the Folder row's Copy, the eligible-team circle.
   folder: "folder", link: "link", layers: "layers", copy: "copy", circle: "circle",
+  // Setup's "For developers" drawing: the host lists a member, the member names the workspace back.
+  arrowRight: "arrow-right", arrowLeft: "arrow-left",
 });
 const ATTR = /^[-0-9a-zA-Z .,]*$/;
 function iconNodes(name) {

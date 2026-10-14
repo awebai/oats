@@ -119,18 +119,21 @@ and is not selected.
 
 ## The Machines box (`renderer/workspace-machines.mjs`)
 
-On the Setup tab, in either view: each machine's name, host, folder, OATS
+On the Setup tab, inside This computer in the List view and below the graph in
+the Graph view: each machine's name, host, folder, OATS
 version and reachable or not, from its last check this run (reachable: the
 check reached its deployment, and `workspaceReadable` is not `false`; the
 kernel's `workspaceReadError` or error message is the state's title), with **Check** and
-**Remove**. A machine not checked yet this run is checked once in the
+**Remove**. In a box narrower than 860px a row keeps the name, the state and
+the actions, and the name's title gives the host, the folder and the version.
+A machine not checked yet this run is checked once in the
 background (two at a time). Remove asks first, in the row ("Remove <id>?
 Instances spawned there keep running and can still be retired from here."),
 and a refusal is said in the row in the CLI's words. A late Check or Remove
 moves focus back to its row only when no newer press or key in the box came
 since and focus is not elsewhere. The box is mounted once per workspace and
-kept across the tab's re-renders; a workspace change disposes it (and its
-dialog).
+kept across the tab's re-renders: the same element moves between the views. A
+workspace change disposes it (and its dialog).
 
 ## Fixtures
 

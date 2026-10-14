@@ -1,99 +1,150 @@
-/** Workspace v4 Setup (W1 list, W2 graph): what the workspace declares in git
- * (members, packages) beside what lives only on this computer.
+/** Workspace v4 Setup (W1 list, W2 graph): what the workspace shares through Git
+ * (members, packages, defaults) above what lives only on this computer, under an
+ * overview of what the host repository defines (design-brief.md §3.1, §8).
  * Presentation only, from `oats workspace status` (and the roster, the CLI
  * probe, the souls list): nothing is inferred and unreported facts are not
  * shown. Kernel #217 (desktop-facts) adds the files, this computer's clones,
  * available package versions, disabled souls, the lock file and the workspace
  * and team defaults as declared; each is shown only when reported. */
 import { iconElement } from './shell-icons.mjs';
-import { memberState } from './workspace-catalog.mjs';
+import { memberState, MEMBER_PROBLEMS } from './workspace-catalog.mjs';
 import { packageOrigin } from './capability-page.mjs';
 
 export const setupCSS = `
+/* Type scale (spec "Type hierarchy", shared with the Teams tab): screen title 24/700, section 18/650,
+   box title 15/650, primary facts 14/600 (counts 650), body 13, secondary 12 --muted, tags 11.5/600.
+   Names are sans 600; mono only for secondary strings, 1px above the sans step it stands in for. */
 .setup { display:flex; flex-direction:column; gap:16px; min-width:0; }
-/* The list view's header: the lede and the legend read as one block (the root's gap falls below it). */
-.setup-header { display:flex; flex-direction:column; gap:6px; min-width:0; }
-.setup-lede { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; min-width:0; }
-.setup-lede h2 { margin:0; color:var(--fg); font-size:18px; font-weight:700; letter-spacing:-.01em; }
-.setup-lede-where { color:var(--muted); font-size:12.5px; min-width:0; overflow-wrap:anywhere; }
-.setup-lede-where .mono { font-family:var(--mono,monospace); }
-.setup-lede-where .strong { color:var(--fg); }
-/* What Host and Member mean, each a badge and a few words (docs/workspaces.md terms). */
-.setup-legend { display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin:0; color:var(--muted); font-size:12px; line-height:1.45; min-width:0; }
-.setup-legend-item { display:inline-flex; align-items:center; gap:6px; min-width:0; overflow-wrap:anywhere; }
-.setup-legend .mono { font-family:var(--mono,monospace); }
-/* A member's roles: Host (accent tint, names its file) and Member (neutral), never cropped. */
-.setup-badge { display:inline-flex; align-items:center; gap:4px; flex:none; height:18px; padding:0 6px; box-sizing:border-box; border-radius:4px; font:600 10.5px var(--sans,system-ui); white-space:nowrap; }
-.setup-badge.host { background:var(--sel); color:var(--accent); }
-.setup-badge.member { background:var(--tag-bg); color:var(--muted); }
-.setup-badge .mono { font-family:var(--mono,monospace); font-weight:500; }
-.setup-badges { display:inline-flex; flex-wrap:wrap; align-items:center; flex:0 1 auto; min-width:0; gap:4px; }
-.setup-cols { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:16px; align-items:start; min-width:0; }
-.setup-col { display:flex; flex-direction:column; gap:16px; min-width:0; }
-@container (max-width: 980px) { .setup-cols { grid-template-columns:minmax(0,1fr); } }
-.setup-box { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:0; }
-.setup-box-head { display:flex; align-items:center; gap:10px; min-height:44px; padding:0 16px; box-sizing:border-box; border-bottom:1px solid var(--border); min-width:0; }
-.setup-box-head h3 { margin:0; flex:none; color:var(--fg); font-size:13px; font-weight:650; }
-.setup-box-head .shell-icon { flex:none; color:var(--muted); }
-.setup-box-lead { min-width:0; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.setup-scope { display:inline-flex; align-items:center; gap:5px; flex:none; margin-left:auto; height:20px; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--muted); font-size:11px; font-weight:550; white-space:nowrap; }
-.setup-row { display:grid; grid-template-columns:minmax(0,1.3fr) 150px minmax(0,1fr) 150px; gap:12px; align-items:center; min-height:42px; padding:6px 16px; box-sizing:border-box; border-top:1px solid var(--tag-bg); }
-.setup-box-head + .setup-row { border-top:0; }
-/* The rows' layout follows their own box (Members, Packages), not the tab: the sidebar takes 380px of it. */
-.setup-box[data-box=Members], .setup-box[data-box=Packages] { container:setup-rows / inline-size; }
+/* The list view (W1): one column, what the workspace shares through Git above what lives only here. */
+.setup[data-view=list] { gap:40px; }
+.setup-lede { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.setup-lede h2 { margin:0; color:var(--fg); font-size:24px; font-weight:700; line-height:1.2; letter-spacing:-.02em; overflow-wrap:anywhere; }
+.setup-summary { margin:0; color:var(--muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
+.setup-summary b { color:var(--fg); font-weight:650; font-variant-numeric:tabular-nums; }
+.setup-summary b.warn { color:var(--warn); }
+.setup-lede-where { margin:0; color:var(--muted); font-size:13px; line-height:1.45; min-width:0; overflow-wrap:anywhere; }
+.setup-lede-where .mono { font-family:var(--mono,monospace); font-size:14px; }
+.setup-lede-where .strong, .setup-lede-where span.mono { color:var(--fg); }
+.oats-view .setup .setup-lede-where button.setup-file { font-size:14px; }
+/* Overview for everyone; the membership mechanics folded under "For developers". */
+.setup-explain { display:flex; flex-direction:column; gap:6px; min-width:0; padding:16px 20px; box-sizing:border-box; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.setup-explain h3 { margin:0; color:var(--fg); font-size:15px; font-weight:650; }
+.setup-explain-ov { margin:0; max-width:92ch; color:var(--fg); font-size:14px; line-height:1.55; overflow-wrap:anywhere; }
+.setup-explain-ov b { font-weight:650; }
+.setup-explain-dev { margin-top:8px; padding-top:10px; border-top:1px solid var(--border); min-width:0; }
+.setup-explain-dev > summary { display:inline-flex; align-items:center; gap:6px; list-style:none; cursor:pointer; border-radius:4px; color:var(--muted); font-size:12.5px; font-weight:600; }
+.setup-explain-dev > summary::-webkit-details-marker { display:none; }
+.setup-explain-dev > summary:hover { color:var(--fg); }
+.setup-explain-dev > summary .shell-icon { flex:none; transition:transform .15s; }
+.setup-explain-dev[open] > summary .shell-icon { transform:rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .setup-explain-dev > summary .shell-icon { transition:none; } }
+.setup-explain-body { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px 32px; align-items:center; padding-top:12px; min-width:0; }
+.setup-explain-body > p { margin:0; max-width:62ch; color:var(--fg); font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
+.setup-explain-body > p .mono { font-family:var(--mono,monospace); font-size:14px; }
+.setup-hs { display:grid; grid-template-columns:auto auto auto; gap:10px; align-items:center; margin:0; min-width:0; }
+.setup-hs-repo { display:flex; flex-direction:column; gap:2px; min-width:0; max-width:220px; padding:9px 12px; box-sizing:border-box; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); }
+.setup-hs-role { color:var(--muted); font-size:12px; }
+.setup-hs-name { color:var(--fg); font-size:14px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.setup-hs-line { color:var(--muted); font:13px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.setup-hs-line span { color:var(--fg); }
+.setup-hs-links { display:flex; flex-direction:column; gap:8px; color:var(--muted); font-size:12px; font-weight:600; }
+.setup-hs-arrow { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.setup-hs-arrow.back { justify-content:flex-end; }
+.setup-hs-arrow .shell-icon { flex:none; color:var(--accent); }
+.setup-explain-states { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:6px 18px; margin:0; min-width:0; }
+.setup-explain-states > div { display:flex; align-items:center; gap:7px; min-width:0; }
+.setup-explain-states dt { display:flex; }
+.setup-explain-states dd { margin:0; color:var(--muted); font-size:12.5px; }
+@container (max-width: 859.98px) { .setup-explain-body { grid-template-columns:minmax(0,1fr); } }
+/* A section: its heading at the section step and one muted line, then its boxes. */
+.setup-sec { display:flex; flex-direction:column; gap:14px; min-width:0; }
+.setup-sec-head { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.setup-sec-title { margin:0; color:var(--fg); font-size:18px; font-weight:650; line-height:1.25; letter-spacing:-.01em; }
+.setup-sec-lead { margin:0; color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
+/* This computer: a zone, not a box (what is not shared); its boxes are solid cards on it. */
+.setup-zone { display:flex; flex-direction:column; gap:18px; min-width:0; padding:18px 20px 20px; box-sizing:border-box; border:1px dashed var(--tree-line); border-radius:12px; background:var(--surface-2); }
+.setup-zone h4 { margin:0 0 8px; color:var(--fg); font-size:15px; font-weight:650; }
+.setup-facts { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:14px 24px; margin:0; min-width:0; }
+.setup-fact { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.setup-fact dt { color:var(--muted); font-size:12px; }
+.setup-fact dd { margin:0; color:var(--fg); font-size:13px; overflow-wrap:anywhere; }
+.setup-fact dd.mono { font:14px var(--mono,monospace); }
+.setup-fact dd.prim { font-size:15px; font-weight:650; font-variant-numeric:tabular-nums; }
+.setup-fact dd.warn { color:var(--warn); }
+.setup-clones { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:4px 24px; margin:0; min-width:0; }
+.setup-clone { display:flex; align-items:baseline; gap:10px; min-width:0; }
+.setup-clone dt { flex:0 1 auto; min-width:90px; max-width:45%; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.setup-clone dd { flex:1 1 0; margin:0; min-width:0; color:var(--fg); font:14px var(--mono,monospace); overflow-wrap:anywhere; }
+.setup-clone dd.warn { color:var(--warn); font:13px var(--sans,system-ui); line-height:1.45; }
+.setup-clone dd.muted { color:var(--muted); font:13px var(--sans,system-ui); }
+/* A box: its title and a muted lead, then rows. Its own width lays out its rows (setup-rows). */
+.setup-box { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; min-width:0; container:setup-rows / inline-size; }
+.setup-box-head { display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 10px; padding:16px 20px 10px; box-sizing:border-box; min-width:0; }
+.setup-box-head :is(h3, h4) { margin:0; flex:none; color:var(--fg); font-size:15px; font-weight:650; }
+.setup-box-head .shell-icon { flex:none; align-self:center; color:var(--muted); }
+.setup-box-lead { flex:1 1 320px; min-width:0; color:var(--muted); font-size:12.5px; overflow-wrap:anywhere; }
+/* One grid per box, each row a subgrid of it, so the columns line up down the box. */
+.setup-rows { display:grid; column-gap:16px; min-width:0; }
+.setup-rows[data-rows=members] { grid-template-columns:minmax(0,1.2fr) 128px minmax(0,1fr) 44px; }
+.setup-rows[data-rows=packages] { grid-template-columns:minmax(0,1.1fr) 120px minmax(0,1.2fr) 112px; }
+.setup-row { grid-column:1 / -1; display:grid; grid-template-columns:subgrid; align-items:center; min-height:40px; padding:0 20px; box-sizing:border-box; border-top:1px solid var(--border); }
 .setup-row > * { min-width:0; }
-/* Narrow: the name and its badges take the row's first line, the facts the second (every row alike, so
-   Members and Packages keep one height and one set of columns). */
-@container setup-rows (max-width: 960px) {
- .setup-row { grid-template-columns:130px minmax(0,1fr) auto; row-gap:6px; padding:9px 16px; }
- .setup-row > .setup-name { grid-column:1 / -1; }
-}
-/* A name too long for its badges wraps them to a second line rather than cropping one. */
-.setup-name { display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px; min-width:0; color:var(--fg); font:12.5px var(--mono,monospace); }
+.setup-sub { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; padding:14px 20px 6px; border-top:1px solid var(--border); color:var(--muted); font-size:12px; }
+.setup-sub h5 { margin:0; color:var(--fg); font-size:13px; font-weight:650; }
+.setup-name { display:flex; align-items:center; gap:8px; min-width:0; }
 .setup-name .shell-icon { flex:none; color:var(--muted); }
-.setup-name-text { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-.setup-version { flex:none; color:var(--muted); }
-.setup-state { display:inline-flex; align-items:center; gap:6px; justify-self:start; height:22px; padding:0 8px; border-radius:5px; background:var(--tag-bg); color:var(--muted); font-size:11.5px; font-weight:600; white-space:nowrap; }
-.setup-state.warn { background:var(--attn-bg); color:var(--warn); }
-.setup-cell { color:var(--fg); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.setup-cell.muted { color:var(--muted); }
-.setup-cell.warn { color:var(--warn); }
+.setup-name-text { min-width:0; color:var(--fg); font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.setup-version { flex:none; color:var(--muted); font:13px var(--mono,monospace); }
+/* The host's tag (Host · its file, accent tint): the name gives way, never the tag. */
+.setup-badge { display:inline-flex; align-items:center; gap:4px; flex:none; height:20px; padding:0 7px; box-sizing:border-box; border-radius:5px; font:600 11.5px var(--sans,system-ui); white-space:nowrap; }
+.setup-badge.host { background:var(--sel); color:var(--accent); }
+.setup-badge .mono { font-family:var(--mono,monospace); font-size:12.5px; font-weight:500; }
+/* A member's state: confirmed is a check and a muted word; anything else a warn chip. */
+.setup-state { display:inline-flex; align-items:center; gap:5px; justify-self:start; color:var(--muted); font-size:12px; white-space:nowrap; }
+.setup-state .shell-icon { flex:none; color:var(--ok); }
+.setup-state.warn { height:20px; padding:0 7px; box-sizing:border-box; border-radius:5px; background:var(--attn-bg); color:var(--warn); font-size:11.5px; font-weight:650; }
+.setup-cell { color:var(--fg); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.setup-cell.muted { color:var(--muted); font-size:12px; }
 .setup-end { justify-self:end; color:var(--muted); font-size:12px; white-space:nowrap; }
-.setup-end.warn { color:var(--warn); font-weight:600; }
+.setup-end.newer { color:var(--fg); font-size:13px; font-weight:650; }
+.setup-end.warn { color:var(--warn); font-size:13px; font-weight:650; }
 .oats-view .setup button.setup-link-act { justify-self:end; height:auto; min-height:0; padding:2px 0; border:0; background:transparent; color:var(--accent); font:600 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .setup button.setup-link-act:hover { text-decoration:underline; }
 .oats-view .setup button.setup-link-act:focus-visible { background:var(--sel); border-radius:4px; padding:2px 4px; margin:0 -4px; } /* layout-neutral inset */
-.setup-empty { margin:0; padding:14px 16px; color:var(--muted); font-size:12px; }
-.setup-team { display:flex; flex-direction:column; gap:4px; padding:10px 16px; border-top:1px solid var(--tag-bg); }
-.setup-box-head + .setup-team { border-top:0; }
+/* Narrow (the box under 860px): two lines per row. Line one the name, with the state (Members) or the
+   end cell (Packages) on the right; line two the contribution or what it provides, with Why? on the right. */
+@container setup-rows (max-width: 859.98px) {
+ .setup-rows[data-rows] { grid-template-columns:minmax(0,1fr) auto; }
+ .setup-rows[data-rows] .setup-row { row-gap:2px; padding:8px 20px; }
+ .setup-rows[data-rows] .setup-row > :nth-child(1) { grid-row:1; grid-column:1; }
+ .setup-rows[data-rows] .setup-row > :nth-child(3) { grid-row:2; grid-column:1; }
+ .setup-rows[data-rows=members] .setup-row > :nth-child(2) { grid-row:1; grid-column:2; justify-self:end; }
+ .setup-rows[data-rows=members] .setup-row > :nth-child(4) { grid-row:2; grid-column:2; }
+ .setup-rows[data-rows=packages] .setup-row > :nth-child(2) { display:none; }
+ .setup-rows[data-rows=packages] .setup-row > :nth-child(3) { grid-column:1 / -1; }
+ .setup-rows[data-rows=packages] .setup-row > :nth-child(4) { grid-row:1; grid-column:2; }
+}
+.setup-empty { margin:0; padding:14px 20px; border-top:1px solid var(--border); color:var(--muted); font-size:12px; }
+.setup-team { display:flex; flex-direction:column; gap:4px; padding:10px 20px; border-top:1px solid var(--border); }
 .setup-team-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .setup-team-label { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font-size:12px; font-weight:650; }
 .setup-team-meta { color:var(--muted); font-size:11.5px; }
 .setup-team-warn { color:var(--warn); font-size:11.5px; line-height:1.45; }
 /* Defaults (desktop-facts): what the workspace file gives every soul, and each team adds. */
-.setup-def-rows { display:flex; flex-direction:column; margin:0; padding:6px 16px 10px; }
-.setup-def { display:grid; grid-template-columns:96px minmax(0,1fr); gap:10px; align-items:baseline; padding:5px 0; }
+.setup-def-rows { display:flex; flex-direction:column; gap:6px; margin:0; padding:4px 20px 16px; }
+.setup-def { display:grid; grid-template-columns:110px minmax(0,1fr); gap:12px; align-items:baseline; }
 .setup-def dt { color:var(--muted); font-size:12px; }
-.setup-def dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:4px 12px; color:var(--fg); font-size:12px; }
+.setup-def dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:4px 16px; color:var(--fg); font-size:13px; }
 .setup-def dd.muted { color:var(--muted); }
 .setup-def-cap { display:inline-flex; align-items:baseline; gap:5px; min-width:0; overflow-wrap:anywhere; }
-.setup-def-name { font:600 12px var(--mono,monospace); color:var(--fg); }
-.setup-def-from { color:var(--muted); font-size:11.5px; }
+.setup-def-name { font:600 13.5px var(--sans,system-ui); color:var(--fg); }
+.setup-def-from { color:var(--muted); font-size:12px; }
 .setup-def-cap.off .setup-def-name { color:var(--muted); text-decoration:line-through; }
 .setup-team-adds { display:flex; flex-wrap:wrap; gap:2px 12px; color:var(--muted); font-size:11.5px; line-height:1.45; }
 .setup-team-adds > span { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; min-width:0; }
-.setup-team-note { margin:0; padding:10px 16px; border-top:1px solid var(--tag-bg); color:var(--muted); font-size:11.5px; line-height:1.5; }
-.setup-local { background:var(--surface-2); border:1px dashed var(--border); border-radius:10px; overflow:hidden; min-width:0; }
-.setup-local .setup-box-head { border-bottom:1px dashed var(--border); }
-.setup-local .setup-scope { background:var(--surface); border:1px solid var(--border); }
-.setup-local-rows { display:flex; flex-direction:column; padding:6px 16px 10px; margin:0; }
-.setup-kv { display:grid; grid-template-columns:96px minmax(0,1fr); gap:10px; align-items:center; min-height:30px; }
-.setup-kv dt { color:var(--muted); font-size:12px; }
-.setup-kv dd { margin:0; color:var(--fg); font:12px var(--mono,monospace); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.setup-kv dd.warn { color:var(--warn); }
-.setup-kv dd.muted { color:var(--muted); }
-.setup-kv dd.wrap { white-space:normal; overflow:visible; overflow-wrap:anywhere; padding:6px 0; line-height:1.45; }
-.setup-local-sub { margin:0; padding:10px 16px 0; border-top:1px dashed var(--border); color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.setup-team-note { margin:0; padding:10px 20px; border-top:1px solid var(--border); color:var(--muted); font-size:11.5px; line-height:1.5; }
+/* box(..., { local: true }): a dashed box for what is not shared, where a caller still wants one. */
+.setup-local { background:var(--surface-2); border:1px dashed var(--tree-line); border-radius:10px; overflow:hidden; min-width:0; container:setup-rows / inline-size; }
 .oats-view .setup button.setup-file { height:auto; min-height:0; padding:0; border:0; background:transparent; color:var(--accent); font:inherit; font-family:var(--mono,monospace); text-decoration:underline; text-underline-offset:2px; cursor:pointer; overflow-wrap:anywhere; text-align:left; }
 .oats-view .setup button.setup-file:focus-visible { background:var(--sel); border-radius:4px; padding:0 3px; margin:0 -3px; }
 /* W2: this computer → the workspace → its members and packages. */
@@ -103,7 +154,7 @@ export const setupCSS = `
 .setup-graph-box { container-type:inline-size; min-width:0; }
 .setup-graph { display:flex; align-items:center; min-width:0; margin:0; }
 .setup-here { flex:none; width:230px; display:flex; flex-direction:column; gap:10px; padding:14px; box-sizing:border-box; border:1px dashed var(--border); border-radius:12px; background:var(--surface-2); }
-.setup-caption { color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.setup-caption { color:var(--muted); font-size:12px; font-weight:600; }
 .setup-card { display:flex; flex-direction:column; gap:3px; min-width:0; padding:10px 12px; box-sizing:border-box; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
 .setup-card-title { color:var(--fg); font-size:12.5px; font-weight:650; overflow-wrap:anywhere; }
 .setup-card-meta { color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -123,7 +174,7 @@ export const setupCSS = `
 .setup-tree > li::before { content:''; position:absolute; left:0; top:0; bottom:0; border-left:1.5px solid var(--graph-edge); }
 .setup-tree > li:first-child::before { top:50%; }
 .setup-tree > li:last-child::before { bottom:50%; }
-.setup-tree > li.setup-tree-label { padding:10px 0 4px 22px; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.setup-tree > li.setup-tree-label { padding:10px 0 4px 22px; color:var(--muted); font-size:12px; font-weight:600; }
 .setup-tree > li.setup-tree-label:first-child { padding-top:4px; }
 .setup-tree > li:not(.setup-tree-label)::after { content:''; position:absolute; left:0; top:50%; width:22px; border-top:1.5px solid var(--graph-edge); }
 .setup-tree > li.bad::after { border-top:1.5px dashed var(--attn-dot); }
@@ -157,7 +208,7 @@ export const setupCSS = `
 .setup-panel-id { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
 .setup-panel-name { color:var(--fg); font:700 15px var(--mono,monospace); overflow-wrap:anywhere; }
 .setup-panel section { display:flex; flex-direction:column; gap:8px; }
-.setup-panel h4 { margin:0; color:var(--muted); font-size:11px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
+.setup-panel h4 { margin:0; color:var(--muted); font-size:12px; font-weight:600; }
 .setup-hand { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
 .setup-hand-row { display:flex; gap:10px; padding:10px 12px; }
 .setup-hand-row + .setup-hand-row { border-top:1px solid var(--tag-bg); }
@@ -188,11 +239,12 @@ function el(doc, tag, value, cls) {
   return node;
 }
 
-/** A member's handshake chip: a check and "confirmed", or "○ <state>" (warn). */
+/** A member's handshake state: a check and a muted "confirmed", or the state's label as a warn chip. */
 function stateChip(doc, member) {
   const state = memberState(member);
   const chip = el(doc, 'span', null, `setup-state${state.ok ? '' : ' warn'}`);
-  chip.append(state.ok ? iconElement(doc, 'check', { size: 12 }) : el(doc, 'span', '○'), el(doc, 'span', state.label));
+  if (state.ok) chip.append(iconElement(doc, 'check', { size: 13 }));
+  chip.append(el(doc, 'span', state.label));
   chip.dataset.state = state.status;
   return chip;
 }
@@ -224,168 +276,250 @@ export function lockText(status) {
   if (!unsynced && !stale) return { text: 'current', warn: false };
   return { text: ['out of date', unsynced ? `${unsynced} not locked` : null, stale ? `${stale} no longer declared` : null].filter(Boolean).join(' · '), warn: true };
 }
-const scope = (doc, label, icon) => { const tag = el(doc, 'span', null, 'setup-scope'); tag.append(iconElement(doc, icon, { size: 12 }), el(doc, 'span', label)); return tag; };
-export function box(doc, title, lead, scopeLabel, { local = false, icon = null } = {}) {
+/** A box: its title (an h3, or the level `heading` names) and a muted lead. `scopeLabel` is kept for its
+ * callers: the section or zone a box sits in says what is shared, so the box no longer repeats it. */
+export function box(doc, title, lead, scopeLabel, { local = false, icon = null, heading = 'h3' } = {}) {
   const card = el(doc, 'section', null, local ? 'setup-local' : 'setup-box'); card.dataset.box = title;
   const head = el(doc, 'div', null, 'setup-box-head');
   if (icon) head.append(iconElement(doc, icon, { size: 15 }));
-  head.append(el(doc, 'h3', title));
+  head.append(el(doc, heading === 'h4' ? 'h4' : 'h3', title));
   if (lead) head.append(el(doc, 'span', lead, 'setup-box-lead'));
-  head.append(scope(doc, scopeLabel, local ? 'computer' : 'repo'));
   card.append(head);
   return card;
 }
 
+/** Whether "For developers" is open, per tab host: it lasts across the tab's re-renders (and other tabs
+ * drawn in the same host), for this run only. */
+const developersOpen = new WeakMap();
+
 /** The whole Setup tab. view: 'list' | 'graph'; selected: a member key (graph panel). */
-/** `machines`: the Machines box (workspace-machines.mjs), owned by the tab and kept across renders; it follows either view. */
+/** `machines`: the Machines box (workspace-machines.mjs), owned by the tab and kept across renders: the same
+ * element moves into This computer (list) or below the graph. */
 export function renderSetup(host, { status, instances = [], souls = [], cli = null, view = 'list', selected = null, onSelect = () => {}, onOpenRepo = null, onOpenPackages = null, openExternal = null, machines = null }) {
   const doc = host.ownerDocument;
+  const drawn = host.querySelector('.setup-explain-dev');
+  if (drawn) developersOpen.set(host, drawn.open);
   host.replaceChildren();
   const root = el(doc, 'div', null, 'setup'); root.dataset.view = view;
-  if (view === 'graph') root.append(lede(doc, status, openExternal), graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }));
-  else {
-    // The list's header: the lede and what Host and Member mean, read as one block.
-    const header = el(doc, 'div', null, 'setup-header'); header.append(lede(doc, status, openExternal), legend(doc, status));
-    root.append(header, columns(doc, { status, instances, souls, cli, onSelect, onOpenRepo, onOpenPackages, openExternal }));
-  }
-  if (machines) root.append(machines);
+  root.append(lede(doc, status, openExternal), explainer(doc, status, host));
+  if (view === 'graph') {
+    root.append(graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenPackages, openExternal }));
+    if (machines) root.append(machines);
+  } else root.append(sharedSection(doc, { status, onSelect, openExternal }), hereZone(doc, { status, instances, cli, machines }));
   host.append(root);
   return root;
 }
 
-/** "<name> declared in <host>'s workspace file @ <commit>", naming the file when the
- * kernel reports it (workspace.file); the Desktop never guesses a file name. */
-function lede(doc, status, openExternal) {
+/** The workspace's host repository by name (the lede's), or null without a workspace key. */
+function hostName(status) {
   const ws = status?.workspace || {};
-  const line = el(doc, 'div', null, 'setup-lede');
-  line.append(el(doc, 'h2', text(ws.name) || 'Workspace'));
-  if (text(ws.key)) {
-    const host = list(status?.members).find(m => m.key === ws.key);
-    const where = el(doc, 'span', null, 'setup-lede-where'); where.title = ws.url || ws.key;
-    where.append('declared in ', el(doc, 'span', host ? memberName(host) : tail(ws.url || ws.key), 'mono strong'));
-    const file = fileRef(ws.file);
-    if (file) where.append("'s ", fileName(doc, file, openExternal)); else where.append("'s workspace file");
-    if (text(ws.commit)) { where.append(' @ '); const c = el(doc, 'span', short(ws.commit), 'mono'); c.title = ws.commit; where.append(c); }
-    line.append(where);
-  }
-  return line;
+  if (!text(ws.key)) return null;
+  const host = list(status?.members).find(m => m.key === ws.key);
+  return host ? memberName(host) : tail(ws.url || ws.key);
 }
 
-/** What Host and Member mean, by the file names the kernel reports (workspace.file, a member's
- * membershipFile); generic words otherwise. */
-function legend(doc, status) {
-  const wsFile = fileRef(status?.workspace?.file), memberFile = list(status?.members).map(m => fileRef(m?.membershipFile)).find(Boolean);
-  const line = el(doc, 'p', null, 'setup-legend');
-  const named = (file, words) => file ? el(doc, 'span', file.path, 'mono') : words;
-  const item = (badge, ...words) => { const span = el(doc, 'span', null, 'setup-legend-item'), said = el(doc, 'span'); said.append(...words); span.append(badge, said); line.append(span); };
-  item(el(doc, 'span', 'Host', 'setup-badge host'), 'holds ', named(wsFile, 'the workspace file'), ", the workspace's declarations");
-  item(el(doc, 'span', 'Member', 'setup-badge member'), 'backlinks with ', named(memberFile, 'a membership file'), '; its souls and capabilities are trusted');
-  line.append(el(doc, 'span', 'The host is a member too.', 'setup-legend-item'));
-  return line;
+/** The workspace's name, then the summary (members, those that need attention, packages, the lock) and
+ * "Declared in <host>'s <workspace file> at <commit>.", naming the file when the kernel reports it
+ * (workspace.file); the Desktop never guesses a file name. */
+function lede(doc, status, openExternal) {
+  const ws = status?.workspace || {};
+  const head = el(doc, 'div', null, 'setup-lede');
+  head.append(el(doc, 'h2', text(ws.name) || 'Workspace'));
+  const members = list(status?.members), attention = members.filter(m => !memberState(m).ok).length;
+  // The Packages box's rows: the locked packages and the declared ids not locked yet.
+  const packages = new Set([...list(status?.packages).map(p => p?.id), ...list(status?.unsynced)]).size;
+  const lock = lockText(status);
+  const summary = el(doc, 'p', null, 'setup-summary');
+  summary.append(el(doc, 'b', plural(members.length, 'member')));
+  if (attention) summary.append(', ', el(doc, 'b', `${attention} ${attention === 1 ? 'needs' : 'need'} attention`, 'warn'));
+  summary.append('; ', el(doc, 'b', plural(packages, 'package')), '; lock ', el(doc, 'b', lock.text, lock.warn ? 'warn' : null), '.');
+  head.append(summary);
+  const name = hostName(status);
+  if (name) {
+    const where = el(doc, 'p', null, 'setup-lede-where'); where.title = ws.url || ws.key;
+    where.append('Declared in ', el(doc, 'span', name, 'mono strong'));
+    const file = fileRef(ws.file);
+    if (file) where.append("'s ", fileName(doc, file, openExternal)); else where.append("'s workspace file");
+    if (text(ws.commit)) { where.append(' at '); const c = el(doc, 'span', short(ws.commit), 'mono'); c.title = ws.commit; where.append(c); }
+    where.append('.');
+    head.append(where);
+  }
+  return head;
 }
+
+/** The overview (the host defines the workspace) and, folded, how a repository becomes a member: the two
+ * links by the file names the kernel reports (workspace.file, a member's membershipFile), generic words
+ * otherwise, a drawing of them, and what each state chip means. */
+function explainer(doc, status, host) {
+  const ws = status?.workspace || {}, name = hostName(status), members = list(status?.members);
+  const card = el(doc, 'section', null, 'setup-explain');
+  card.append(el(doc, 'h3', 'Overview'));
+  const overview = el(doc, 'p', null, 'setup-explain-ov');
+  if (name) overview.append('The host repository, ', el(doc, 'b', name), ', defines');
+  else overview.append('The host repository defines');
+  overview.append(' this OATS workspace: which repositories are its members and which packages it uses.');
+  card.append(overview);
+  const dev = el(doc, 'details', null, 'setup-explain-dev'); dev.open = developersOpen.get(host) === true;
+  dev.addEventListener('toggle', () => developersOpen.set(host, dev.open));
+  const summary = el(doc, 'summary'); summary.append(iconElement(doc, 'chevronRight', { size: 13 }), el(doc, 'span', 'For developers: how a repository becomes a member'));
+  const body = el(doc, 'div', null, 'setup-explain-body');
+  const wsFile = fileRef(ws.file), memberFile = members.map(m => fileRef(m?.membershipFile)).find(Boolean);
+  const named = (file, words) => file ? el(doc, 'span', file.path, 'mono') : words;
+  const how = el(doc, 'p');
+  how.append("The host's ", named(wsFile, 'workspace file'), " lists each member, and each member's ", named(memberFile, 'membership file'),
+    ' names the workspace back. A member counts only when both links are in place.');
+  // The drawing repeats the paragraph with an example member: the first confirmed one that isn't the host.
+  const others = members.filter(m => !text(ws.key) || m?.key !== ws.key);
+  const example = others.find(m => memberState(m).ok) || others[0];
+  const sample = example ? memberName(example) : 'a member repo', hostWord = name || 'the host repo';
+  const repo = (role, title, key, value) => {
+    const box = el(doc, 'div', null, 'setup-hs-repo'), line = el(doc, 'span', `${key}: `, 'setup-hs-line');
+    line.append(el(doc, 'span', value)); box.append(el(doc, 'span', role, 'setup-hs-role'), el(doc, 'span', title, 'setup-hs-name'), line);
+    return box;
+  };
+  const drawing = el(doc, 'figure', null, 'setup-hs'); drawing.setAttribute('aria-hidden', 'true');
+  const links = el(doc, 'div', null, 'setup-hs-links');
+  const lists = el(doc, 'span', 'lists', 'setup-hs-arrow'); lists.append(iconElement(doc, 'arrowRight', { size: 14 }));
+  const back = el(doc, 'span', null, 'setup-hs-arrow back'); back.append(iconElement(doc, 'arrowLeft', { size: 14 }), 'names back');
+  links.append(lists, back);
+  drawing.append(repo('Host', hostWord, 'members', sample), links, repo('Member', sample, 'workspace', hostWord));
+  // Each state, by the same chip its row shows, and what it means (workspace-catalog.mjs keeps both).
+  const states = el(doc, 'dl', null, 'setup-explain-states');
+  for (const problem of MEMBER_PROBLEMS) {
+    const item = el(doc, 'div'), dt = el(doc, 'dt'); dt.append(stateChip(doc, { status: problem }));
+    item.append(dt, el(doc, 'dd', memberState({ status: problem }).meaning)); states.append(item);
+  }
+  body.append(how, drawing, states);
+  dev.append(summary, body); card.append(dev);
+  return card;
+}
+
 /** The host's badge: Host, and the workspace file it holds (a link when it has a web address). */
 function hostBadge(doc, status, openExternal) {
   const badge = el(doc, 'span', 'Host', 'setup-badge host'), file = fileRef(status?.workspace?.file);
   if (file) { const name = fileName(doc, file, openExternal); name.classList.add('mono'); badge.append(el(doc, 'span', '·'), name); }
   return badge;
 }
+/** A section: its heading and one muted line. */
+function section(doc, cls, title, lead) {
+  const sec = el(doc, 'section', null, cls), head = el(doc, 'div', null, 'setup-sec-head');
+  head.append(el(doc, 'h3', title, 'setup-sec-title'), el(doc, 'p', lead, 'setup-sec-lead'));
+  sec.append(head);
+  return sec;
+}
+/** An external soul's source in the Members box: its repository's tail and the team it joins. One place, so
+ * the switch to the kernel's sourceDisplay (#1111) is one edit. */
+const externalSource = item => [tail(String(item?.source || '').replace(/@[^@/]*$/, '')), text(item?.team)].filter(Boolean).join(', ');
 
-function columns(doc, { status, instances, souls, cli, onSelect, openExternal }) {
+/** Shared through Git: what the workspace declares (members, packages, defaults). */
+function sharedSection(doc, { status, onSelect, openExternal }) {
   const ws = status?.workspace || {};
-  const cols = el(doc, 'div', null, 'setup-cols'), main = el(doc, 'div', null, 'setup-col'), side = el(doc, 'div', null, 'setup-col');
+  const shared = section(doc, 'setup-sec', 'Shared through Git', 'What the workspace declares: the same on every computer that runs it.');
+  shared.dataset.zone = 'shared';
   // Members: the repositories the workspace trusts for souls and capabilities, always at their latest.
-  const members = box(doc, 'Members', 'repos the workspace trusts for souls and capabilities · always latest', 'Shared · Git');
+  const members = box(doc, 'Members', 'Each repository and whether both of its links are in place.', null, { heading: 'h4' });
+  const memberRows = el(doc, 'div', null, 'setup-rows'); memberRows.dataset.rows = 'members';
   // The host first (it is a member too); the others in the kernel's order.
   const isHost = m => !!text(ws.key) && m?.key === ws.key;
   for (const member of [...list(status?.members)].sort((a, b) => isHost(b) - isHost(a))) {
     const row = el(doc, 'div', null, 'setup-row'); row.dataset.member = member.key;
     const name = el(doc, 'span', null, 'setup-name'); name.append(iconElement(doc, 'repo', { size: 15 }));
     const label = el(doc, 'span', memberName(member), 'setup-name-text'); label.title = member.key; name.append(label);
-    const badges = el(doc, 'span', null, 'setup-badges');
-    if (isHost(member)) badges.append(hostBadge(doc, status, openExternal));
-    badges.append(el(doc, 'span', 'Member', 'setup-badge member')); name.append(badges);
+    if (isHost(member)) name.append(hostBadge(doc, status, openExternal));
     const gives = contribution(member), state = memberState(member);
     const cell = el(doc, 'span', gives.text, `setup-cell${gives.muted ? ' muted' : ''}`); cell.title = gives.text;
-    row.append(name, stateChip(doc, member), cell);
+    const chip = el(doc, 'span'); chip.append(stateChip(doc, member));
+    row.append(name, chip, cell);
     if (!state.ok) {
       const act = el(doc, 'button', 'Why?', 'setup-link-act'); act.type = 'button';
       act.setAttribute('aria-label', `${memberName(member)}: why it ${state.why}`);
       act.addEventListener('click', () => onSelect(member.key)); row.append(act);
     } else row.append(el(doc, 'span', '', 'setup-end'));
-    members.append(row);
+    memberRows.append(row);
   }
-  if (!list(status?.members).length) members.append(el(doc, 'p', 'No member repositories reported.', 'setup-empty'));
   // External souls: listed by the workspace from a repository it does not take as a member.
-  for (const item of list(status?.external)) {
+  const external = list(status?.external);
+  if (external.length) {
+    const sub = el(doc, 'div', null, 'setup-sub');
+    sub.append(el(doc, 'h5', 'External souls'), el(doc, 'span', 'listed by the workspace from repositories that are not members'));
+    memberRows.append(sub);
+  }
+  for (const item of external) {
     const row = el(doc, 'div', null, 'setup-row'); row.dataset.external = text(item.soul) || '';
     const name = el(doc, 'span', null, 'setup-name'); name.append(iconElement(doc, 'repo', { size: 15 }));
     const label = el(doc, 'span', text(item.soul) || 'soul', 'setup-name-text'); label.title = text(item.source) || ''; name.append(label);
-    row.append(name, el(doc, 'span', 'external soul', 'setup-state'), el(doc, 'span', [tail(String(item.source || '').replace(/@[^@/]*$/, '')), text(item.team)].filter(Boolean).join(' · '), 'setup-cell muted'), el(doc, 'span', '', 'setup-end'));
-    members.append(row);
+    const source = externalSource(item), from = el(doc, 'span', source, 'setup-cell muted'); from.title = source;
+    row.append(name, el(doc, 'span', 'external soul', 'setup-cell muted'), from, el(doc, 'span', '', 'setup-end'));
+    memberRows.append(row);
   }
+  if (memberRows.children.length) members.append(memberRows);
+  if (!list(status?.members).length) members.append(el(doc, 'p', 'No member repositories reported.', 'setup-empty'));
   // Packages: versioned bundles, pinned here and fingerprinted in the lock.
-  const packages = box(doc, 'Packages', 'versioned bundles · pinned here, fingerprinted in the lock', 'Shared · Git');
-  for (const pkg of list(status?.packages)) {
-    const row = el(doc, 'div', null, 'setup-row'); row.dataset.package = pkg.id;
-    const name = el(doc, 'span', null, 'setup-name'); name.append(iconElement(doc, 'package', { size: 15 }), el(doc, 'span', pkg.id, 'setup-name-text'));
-    if (text(pkg.version)) name.append(el(doc, 'span', pkg.version, 'setup-version'));
-    const origin = el(doc, 'span', packageOrigin(pkg.source) || '', 'setup-cell muted'); origin.title = text(pkg.source) || '';
-    const caps = list(pkg.capabilities).join(' · ');
-    const provides = el(doc, 'span', caps, 'setup-cell'); provides.title = caps;
-    row.append(name, origin, provides);
-    const newer = available(pkg), end = el(doc, 'span', newer ? `${newer.version} available` : 'locked', 'setup-end');
-    if (newer) end.title = `The official catalog has ${pkg.id} ${newer.version}${text(newer.ref) ? ` (${newer.ref})` : ''}; the lock holds ${pkg.version}.`;
-    row.append(end);
-    packages.append(row);
-  }
-  for (const id of list(status?.unsynced)) {
+  const packages = box(doc, 'Packages', 'Versioned bundles, pinned here and fingerprinted in the lock.', null, { heading: 'h4' });
+  const packageRows = el(doc, 'div', null, 'setup-rows'); packageRows.dataset.rows = 'packages';
+  const packageRow = (id, version, originText, originTitle, caps, end) => {
     const row = el(doc, 'div', null, 'setup-row'); row.dataset.package = id;
     const name = el(doc, 'span', null, 'setup-name'); name.append(iconElement(doc, 'package', { size: 15 }), el(doc, 'span', id, 'setup-name-text'));
-    row.append(name, el(doc, 'span', 'declared', 'setup-cell muted'), el(doc, 'span', '', 'setup-cell'), el(doc, 'span', 'not locked · Sync', 'setup-end warn'));
-    packages.append(row);
+    if (version) name.append(el(doc, 'span', version, 'setup-version'));
+    const origin = el(doc, 'span', originText, 'setup-cell muted'); origin.title = originTitle;
+    // Narrow rows hide the origin column: the provides cell's title still says it.
+    const provides = el(doc, 'span', caps, 'setup-cell'); provides.title = [caps, originText ? `(${originText})` : null].filter(Boolean).join(' ');
+    row.append(name, origin, provides, end); packageRows.append(row);
+  };
+  for (const pkg of list(status?.packages)) {
+    const newer = available(pkg), end = el(doc, 'span', newer ? `${newer.version} available` : 'locked', `setup-end${newer ? ' newer' : ''}`);
+    if (newer) end.title = `The official catalog has ${pkg.id} ${newer.version}${text(newer.ref) ? ` (${newer.ref})` : ''}; the lock holds ${pkg.version}.`;
+    packageRow(pkg.id, text(pkg.version), packageOrigin(pkg.source) || '', text(pkg.source) || '', list(pkg.capabilities).join(', '), end);
   }
-  if (!list(status?.packages).length && !list(status?.unsynced).length) packages.append(el(doc, 'p', 'No packages declared.', 'setup-empty'));
-  main.append(members, packages);
+  for (const id of list(status?.unsynced)) packageRow(id, null, 'declared', '', '', el(doc, 'span', 'not locked · Sync', 'setup-end warn'));
+  if (packageRows.children.length) packages.append(packageRows);
+  else packages.append(el(doc, 'p', 'No packages declared.', 'setup-empty'));
   // Defaults: as the workspace file declares them (defaults), not resolved for a soul.
-  const defaults = defaultsBox(doc, status);
-  // This computer: what is not shared.
-  const local = box(doc, 'This computer', null, 'Not shared', { local: true, icon: 'computer' });
-  const rows = el(doc, 'dl', null, 'setup-local-rows');
-  const kv = (key, value, cls = '', title = value) => { if (!text(value)) return; const r = el(doc, 'div', null, 'setup-kv'); const dd = el(doc, 'dd', value, cls); dd.title = title; r.append(el(doc, 'dt', key), dd); rows.append(r); };
-  const settings = text(ws.local);
-  kv('Folder', settings ? settings.replace(/\/[^/]+$/, '') : null);
-  kv('Settings', settings ? settings.split('/').pop() : null, '', settings);
-  const folder = settings ? settings.replace(/\/[^/]+$/, '') : null;
-  const lock = lockText(status); kv('Lock', lock.text, lock.warn ? 'warn' : '');
-  if (text(status?.lock?.path)) kv('Lock file', within(status.lock.path, folder), '', `${status.lock.path} · lockfile version ${status.lock.lockfileVersion}`);
-  kv('CLI', text(cli?.version) ? `oats ${cli.version}` : null);
+  shared.append(...[members, packages, defaultsBox(doc, status)].filter(Boolean));
+  return shared;
+}
+
+/** This computer: what is not shared (this deployment's settings, lock, CLI and instances, the member
+ * clones, the Machines box). */
+function hereZone(doc, { status, instances, cli, machines }) {
+  const ws = status?.workspace || {};
+  const zone = section(doc, 'setup-zone', 'This computer', "Not shared: this deployment's own settings, clones and machines.");
+  zone.dataset.zone = 'here';
+  const facts = el(doc, 'dl', null, 'setup-facts');
+  const fact = (key, value, cls = '', title = value) => { if (!text(value)) return; const r = el(doc, 'div', null, 'setup-fact'); r.dataset.fact = key; const dd = el(doc, 'dd', value, cls); dd.title = title; r.append(el(doc, 'dt', key), dd); facts.append(r); };
+  const settings = text(ws.local), folder = settings ? settings.replace(/\/[^/]+$/, '') : null;
+  fact('Folder', folder, 'mono');
+  fact('Settings', settings ? settings.split('/').pop() : null, 'mono', settings);
+  const lock = lockText(status); fact('Lock', lock.text, `prim${lock.warn ? ' warn' : ''}`);
+  if (text(status?.lock?.path)) fact('Lock file', within(status.lock.path, folder), 'mono', `${status.lock.path} · lockfile version ${status.lock.lockfileVersion}`);
+  fact('CLI', text(cli?.version) ? `oats ${cli.version}` : null, 'prim');
   const all = list(instances), running = all.filter(i => i?.running === true).length;
-  kv('Instances', all.length ? `${all.length} · ${running} running` : 'none yet');
+  fact('Instances', all.length ? `${all.length}, ${running} running` : 'none yet', 'prim');
   const disabled = list(status?.disabledSouls).filter(text);
-  if (disabled.length) kv('Disabled souls', disabled.join(', '), 'wrap');
-  local.append(rows);
+  if (disabled.length) fact('Disabled souls', disabled.join(', '), 'mono');
+  zone.append(facts);
   // Clones: where each member is checked out here (clones[]), or why it is not.
   const clones = list(status?.clones).filter(row => text(row?.key));
   if (clones.length) {
     const names = new Map(list(status?.members).map(m => [m.key, memberName(m)]));
-    const list$ = el(doc, 'dl', null, 'setup-local-rows'); list$.setAttribute('aria-label', 'Member clones');
+    const part = el(doc, 'div', null, 'setup-here-clones'), rows = el(doc, 'dl', null, 'setup-clones'); rows.setAttribute('aria-label', 'Member clones');
     for (const clone of clones) {
-      const r = el(doc, 'div', null, 'setup-kv'); r.dataset.clone = clone.key;
+      const r = el(doc, 'div', null, 'setup-clone'); r.dataset.clone = clone.key;
       const where = cloneText(clone, folder), dd = el(doc, 'dd', where.text, where.cls); dd.title = where.title;
-      r.append(el(doc, 'dt', names.get(clone.key) || text(clone.name) || tail(clone.key)), dd); list$.append(r);
+      r.append(el(doc, 'dt', names.get(clone.key) || text(clone.name) || tail(clone.key)), dd); rows.append(r);
     }
-    local.append(el(doc, 'h4', 'Member clones', 'setup-local-sub'), list$);
+    part.append(el(doc, 'h4', 'Member clones'), rows); zone.append(part);
   }
-  side.append(...[defaults, local].filter(Boolean));
-  cols.append(main, side);
-  return cols;
+  // The Machines box (workspace-machines.mjs): the same element across renders, a solid card in the zone.
+  if (machines) zone.append(machines);
+  return zone;
 }
 
 /** The Workspace's Teams tab before team model v2 (0.29): the labels the workspace declares,
  * how many souls take each, what each adds to the defaults, and the kernel's warnings about them. */
 export function teamsBox(doc, { status, souls = [] }) {
   const ws = status?.workspace || {};
-  const teams = box(doc, 'Teams', null, 'Shared · Git');
+  const teams = box(doc, 'Teams', null, null);
   const unmapped = new Map(list(status?.warnings).filter(w => w?.code === 'unmapped-team-label' && text(w.label)).map(w => [w.label, w]));
   for (const label of list(ws.teams).filter(text)) {
     const row = el(doc, 'div', null, 'setup-team'); row.dataset.team = label;
@@ -439,7 +573,7 @@ function defaultsBox(doc, status) {
   const caps = capRows(defaults.capabilities);
   // Standalone (slots null, no capabilities): the workspace declares no defaults.
   if (!slots.some(([, value]) => value !== null) && !caps.length) return null;
-  const card = box(doc, 'Defaults', 'every soul starts from these', 'Shared · Git');
+  const card = box(doc, 'Defaults', 'Every soul starts from these.', null, { heading: 'h4' });
   const rows = el(doc, 'dl', null, 'setup-def-rows');
   const row = (key, cls = '') => { const r = el(doc, 'div', null, 'setup-def'); const dd = el(doc, 'dd', null, cls); r.append(el(doc, 'dt', key), dd); rows.append(r); return { r, dd }; };
   for (const [slot, value] of slots) {
@@ -484,7 +618,7 @@ function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenP
   link.append(said, el(doc, 'span', null, 'setup-edge'));
   if (text(ws.commit)) link.append(el(doc, 'span', short(ws.commit)));
   // Shared in git: the workspace, its members and packages.
-  const shared = el(doc, 'div', null, 'setup-shared'); shared.append(el(doc, 'span', 'Shared · Git', 'setup-caption'));
+  const shared = el(doc, 'div', null, 'setup-shared'); shared.append(el(doc, 'span', 'Shared through Git', 'setup-caption'));
   const body = el(doc, 'div', null, 'setup-shared-body');
   const card = el(doc, 'div', null, 'setup-card setup-ws');
   card.append(el(doc, 'span', `Workspace ${text(ws.name) || ''}`.trim(), 'setup-card-title'));
@@ -502,7 +636,7 @@ function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenP
     node.append(iconElement(doc, icon, { size: 14 }), label, el(doc, 'span', meta, 'setup-node-meta'));
     return node;
   };
-  if (members.length) label('Members · latest');
+  if (members.length) label('Members, latest');
   for (const member of members) {
     const state = memberState(member), souls = list(member.souls).length;
     const meta = state.ok ? [member.key === ws.key ? 'host · member' : null, plural(souls, 'soul')].filter(Boolean).join(' · ') : state.label;
@@ -511,7 +645,7 @@ function graph(doc, { status, instances, selected, onSelect, onOpenRepo, onOpenP
     node.dataset.member = member.key; leaf(node, !state.ok);
   }
   const packages = list(status?.packages);
-  if (packages.length || list(status?.unsynced).length) label('Packages · pinned');
+  if (packages.length || list(status?.unsynced).length) label('Packages, pinned');
   for (const pkg of packages) {
     const origin = String(pkg.source || '').startsWith('catalog:') ? 'official' : 'git tag';
     const newer = available(pkg);
