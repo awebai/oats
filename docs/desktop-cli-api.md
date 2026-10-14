@@ -146,8 +146,8 @@ lines below, each character a terminal would act on, or that hides or
 reorders text (a control character such as an escape or a newline, a bidi
 override: the set the kernel never prints in text it did not write), is
 spelled `\u{<hex>}` (OATS 0.53.0 for the local retire's warnings, #973; the
-rest since #1006), so that such a name cannot clear the screen, write a line
-of its own or reverse what follows it:
+rest 0.56.0, #1006), so that such a name cannot clear the screen, write a
+line of its own or reverse what follows it:
 
 - the `note:` lines of `oats retire --plan`, `oats instance stop --plan`,
   `oats instance git` and `oats readiness`;
