@@ -503,9 +503,9 @@ the rule:
   characters.
 - The run sees what is made under the file's temporary directory: by the
   file's process, by a process it starts with that environment, and by the
-  fixture helpers (`fixtureBase` and `privateTmuxTmpdir`, below). It does not
-  see what a process makes when a test built its environment without
-  `TMPDIR`.
+  fixture helpers (`fixtureBase` and `privateTmuxTmpdir`, below), in a
+  process the test started with `inheritedEnv()` too. It does not see what a
+  process makes when a test built its environment without `TMPDIR`.
 
 `test/left-behind.test.mjs` pins the rule with nested runs.
 
@@ -686,7 +686,10 @@ inherits it (awebai/oats#816):
   20 characters (macOS's `/private/var/folders/…/T/` is about 49), as its
   realpath, taken once. Under the root run the temporary directory is the
   test file's own (above), and is used whatever its length, so that nothing a
-  fixture makes is outside what the run reads; the run keeps it short.
+  fixture makes is outside what the run reads; the run keeps it short. The
+  helper knows it by what the runner makes (`ot-XXXXXX/<n>`, with the file
+  `<n>.file` beside it) and by no variable, so a process a test starts with
+  `inheritedEnv()` uses it too.
 - **Names and paths sized from the base.** `nameOfLength(base, n)` (a file
   name or branch segment) and `pathOfLength(base, n)` (an absolute path under
   the base, `n` characters in all) are capped below NAME_MAX and PATH_MAX of

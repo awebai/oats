@@ -8,9 +8,10 @@
 //   - TMPDIR: os.tmpdir() in the file's process and in every process it starts with its environment;
 //   - TMUX_TMPDIR: tmux's default place. A tmux client that runs with no TMUX_TMPDIR of a fixture
 //     then makes its socket directory here, where the run sees it, and never reaches a tmux server
-//     of the host;
-//   - OATS_TEST_TMPDIR: the same directory, for the fixture helpers that go to /tmp when the
-//     temporary directory's path is long (test/helpers/host-fixture.mjs fixtureBase).
+//     of the host.
+// Beside the directory, <n>.file names the test file. The run reads it to name the file, and the
+// fixture helpers that go to /tmp when the temporary directory's path is long know the directory by
+// it and by its shape, and use it all the same (test/helpers/host-fixture.mjs fixtureParent).
 //
 // Only a test file's process takes a directory: node --test names it by NODE_TEST_CONTEXT. A process
 // a file starts is not preloaded and inherits the file's directory; one that is preloaded all the
@@ -24,7 +25,7 @@ if (run && process.env.NODE_TEST_CONTEXT && !`${process.env.TMPDIR}${sep}`.start
     const dir = join(run, String(n)); // short: a socket path under it has about 104 bytes in all
     try { mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code === "EEXIST") continue; throw e; }
     writeFileSync(join(run, `${n}.file`), process.argv[1] ?? "");
-    Object.assign(process.env, { TMPDIR: dir, TMUX_TMPDIR: dir, OATS_TEST_TMPDIR: dir });
+    Object.assign(process.env, { TMPDIR: dir, TMUX_TMPDIR: dir });
     break;
   }
 }

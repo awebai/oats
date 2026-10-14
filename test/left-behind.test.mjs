@@ -5,9 +5,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureBase, inheritedEnv } from "./helpers/host-fixture.mjs";
 import { describeNestedTestFailure } from "./helpers/nested-test-failure.mjs";
 
@@ -23,15 +23,15 @@ import { join } from "node:path";
 const LEAVES = `test("passes, and leaves a directory", () => { writeFileSync(join(mkdtempSync(join(tmpdir(), "left-")), "file"), "x"); });\n`;
 
 /** A repository of the test files `sources` (name → source), with the root runner as it is → the
- *  nested run's result. */
-function rootRun(t, sources) {
+ *  nested run's result. `env` is added to the runner's environment. */
+function rootRun(t, sources, { env: extra = {} } = {}) {
   const root = fixtureBase("oats-lb-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
   for (const script of ["run-tests.mjs", "desktop-test-deps.mjs", "test-warnings-reporter.mjs", "test-file-tmpdir.mjs"]) cpSync(new URL(`../scripts/${script}`, import.meta.url), join(root, "scripts", script));
   for (const dir of ["packages/pi", "test"]) mkdirSync(join(root, dir), { recursive: true });
   for (const [name, source] of Object.entries(sources)) writeFileSync(join(root, "test", name), source);
-  const env = inheritedEnv();
+  const env = { ...inheritedEnv(), ...extra };
   delete env.NODE_TEST_CONTEXT; // the nested run is a run of its own, not a subtest of this one
   const r = spawnSync(process.execPath, [join(root, "scripts", "run-tests.mjs")], { cwd: root, env, encoding: "utf8", timeout: 120000 });
   return { ...r, root };
@@ -122,24 +122,56 @@ test("tmux's default place is the file's directory: a tmux client that runs with
   assert.deepEqual(leftBy(r, "test/tmux.test.mjs").entries, [`tmux-${process.getuid()}/  (tmux's default place: a tmux client ran with no TMUX_TMPDIR of a fixture)`]);
 });
 
+// A child given inheritedEnv() has the file's TMPDIR and nothing else of the run (OATS_ names are the
+// session's): the helpers know the file's directory by its own shape and by the file the runner
+// writes beside it, n.file beside n.
+test("a child given the fixture's environment makes its fixture base and private tmux directory in the file's own directory: what it does not remove is named", (t) => {
+  const parent = mkdtempSync("/tmp/oats-lb-"); // long enough that the file's directory in it is over 20 characters
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  const record = join(fixtureBase("oats-lb-made-"), "made.json");
+  t.after(() => {
+    // Where the child made them: in the nested run, or under /tmp when the helpers lost the file's directory.
+    const made = existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : [];
+    for (const dir of made) if (/^(escaped|oats-tmux)-[A-Za-z0-9]{6}$/.test(basename(dir))) rmSync(dir, { recursive: true, force: true });
+    rmSync(dirname(record), { recursive: true, force: true });
+  });
+  const r = rootRun(t, { "escape.test.mjs": `${HEAD}import { inheritedEnv } from ${JSON.stringify(HOST_FIXTURE)};
+test("a child given the fixture's environment makes a fixture base and a private tmux directory, and removes neither", () => {
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", 'import { fixtureBase, privateTmuxTmpdir } from ${JSON.stringify(pathToFileURL(HOST_FIXTURE).href)}; console.log(JSON.stringify([fixtureBase("escaped-"), privateTmuxTmpdir()]));'], { env: inheritedEnv(), encoding: "utf8" });
+  assert.equal(child.status, 0, child.stderr);
+  writeFileSync(process.env.LB_MADE, child.stdout);
+});\n` }, { env: { TMPDIR: parent, LB_MADE: record } });
+  assert.notEqual(r.status, 0, says(r));
+  counts(r, 1, 0);
+  assert.deepEqual(leftBy(r, "test/escape.test.mjs").entries.map((entry) => entry.replace(/-[A-Za-z0-9]{6}\/$/, "-*/")), ["escaped-*/", "oats-tmux-*/"]);
+});
+
 test("the fixture helpers make their directories in the file's own directory whatever its length, and under /tmp when the temporary directory is long and not the run's", (t) => {
   const base = fixtureBase("oats-lb-");
   t.after(() => rmSync(base, { recursive: true, force: true }));
-  const long = join(base, "a-temporary-directory-with-a-long-path");
-  mkdirSync(long);
-  // The helpers read what the root run gave this file when the module loads: each case is a process of its own.
-  const made = (extra) => {
+  // The helpers read the temporary directory when they are called: each case is a process of its own.
+  const made = (dir) => {
     const r = spawnSync(process.execPath, ["--input-type=module", "-e", `
 import { rmSync } from "node:fs";
 import { dirname } from "node:path";
-import { fixtureBase, privateTmuxTmpdir } from ${JSON.stringify(HOST_FIXTURE)};
+import { fixtureBase, privateTmuxTmpdir } from ${JSON.stringify(pathToFileURL(HOST_FIXTURE).href)};
 const dirs = [fixtureBase("oats-lb-made-"), privateTmuxTmpdir()];
 for (const dir of dirs) rmSync(dir, { recursive: true });
-console.log(JSON.stringify(dirs.map((dir) => dirname(dir))));`], { env: { ...inheritedEnv(), TMPDIR: long, ...extra }, encoding: "utf8" });
+console.log(JSON.stringify(dirs.map((dir) => dirname(dir))));`], { env: { ...inheritedEnv(), TMPDIR: dir }, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     return JSON.parse(r.stdout);
   };
-  assert.deepEqual(made({ OATS_TEST_TMPDIR: long }), [long, long], "the file's own directory, though its path is long");
-  const elsewhere = made({ OATS_TEST_TMPDIR: join(base, "another-directory") });
-  assert.deepEqual(elsewhere, [realpathSync("/tmp"), realpathSync("/tmp")], "a long temporary directory that is not the run's: under /tmp, as before");
+  const tmp = realpathSync("/tmp");
+  // A file's directory as the runner makes it: <run>/ot-XXXXXX/<n>, and <n>.file beside it.
+  const own = join(base, "a-long-temporary-directory", "ot-AbC123", "0");
+  mkdirSync(own, { recursive: true });
+  writeFileSync(`${own}.file`, "/a/test/file.test.mjs");
+  assert.deepEqual(made(own), [own, own], "the file's own directory, though its path is long");
+  const unmarked = join(base, "a-long-temporary-directory", "ot-AbC123", "1");
+  mkdirSync(unmarked);
+  assert.deepEqual(made(unmarked), [tmp, tmp], "shaped like one, but the runner wrote no file beside it: under /tmp");
+  const long = join(base, "a-temporary-directory-with-a-long-path");
+  mkdirSync(long);
+  writeFileSync(`${long}.file`, "/a/test/file.test.mjs");
+  assert.deepEqual(made(long), [tmp, tmp], "a long temporary directory that is not the run's: under /tmp, as before");
 });

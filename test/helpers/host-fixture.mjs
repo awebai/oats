@@ -38,10 +38,12 @@ const SHORT_TMPDIR = 20;
 /** Where a fixture makes a directory of its own: tmpdir(), or /tmp when tmpdir() is long. Under the
  *  root run every test file has a temporary directory of its own, which the run reads when the
  *  file has ended (scripts/test-file-tmpdir.mjs, awebai/oats#1025): that one is used whatever its
- *  length, so nothing a fixture makes is outside it. The run keeps it short. */
+ *  length, so nothing a fixture makes is outside it. The run keeps it short. It is known by what the
+ *  runner makes, `<run>/ot-XXXXXX/<n>` with the file `<n>.file` beside it, and by no variable: a
+ *  process a test starts with inheritedEnv() has the file's TMPDIR and none of the run's OATS_ names. */
 function fixtureParent() {
   const dir = tmpdir();
-  return dir === INHERITED.OATS_TEST_TMPDIR || dir.length <= SHORT_TMPDIR ? dir : "/tmp";
+  return dir.length <= SHORT_TMPDIR || (/[/\\]ot-[^/\\]+[/\\]\d+$/.test(dir) && existsSync(`${dir}.file`)) ? dir : "/tmp";
 }
 /** A new fixture base: a fresh directory under tmpdir(), or under /tmp when tmpdir() is long, as its
  *  realpath (taken once: /private/tmp and /private/var on macOS). */
