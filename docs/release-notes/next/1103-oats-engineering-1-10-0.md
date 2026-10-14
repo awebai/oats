@@ -35,3 +35,7 @@
     (`/cross-review-peer`), create the lane labels and the hold label, and
     drop each other's PRs from their state files. A maintainer alone has
     nothing to do. Pin `oats.engineering: v1.10.0` and run `oats sync`.
+    Running instances keep what they were spawned with; new spawns pick
+    1.10.0 up after `oats sync`. A standing maintainer gets the new rules
+    only by being re-spawned, not by a sync or a session restart: hand its
+    lane over first (`/cross-review-peer`, "A lane changes hands").
