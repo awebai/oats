@@ -90,8 +90,8 @@ A repo is a member only when the workspace lists it **and** this file names
 the workspace back. `oats workspace status` shows `confirmed`, or
 `not-listed`, `no-backlink`, `backlink-elsewhere` or `cannot-read`; each is
 fixed in the repo or in the operator's Git environment, never worked around.
-A `cannot-read` caused by a failed or unparseable Git version probe preserves
-the partial remote cache and its pins. Fix the local Git failure and retry;
+From OATS 0.56.0, a `cannot-read` caused by a failed or unparseable Git
+version probe preserves the partial remote cache and its pins. Fix the local Git failure and retry;
 do not delete the cache to work around it. See `docs/workspaces.md` in the installed kernel (“Membership and trust”).
 
 ## `soul.yaml` (v2)
