@@ -245,3 +245,42 @@ test("an extra tree's record, rewritten by writeRecord: when its last rewrite (t
     });
   }
 });
+
+// ---- packages.mjs writeFileAtomic: its own code, and the first error answered ----
+
+/** One call of packages.mjs writeFileAtomic in a process of its own: `node <this> <file> [mode]`
+ *  prints what the call threw, or that it threw nothing. */
+const ATOMIC_CALL = `import { writeFileAtomic } from ${JSON.stringify(`${LIB}packages.mjs`)};
+const [, , file, mode] = process.argv;
+let threw = null;
+try { writeFileAtomic(file, "written\\n", mode ? { mode: Number.parseInt(mode, 8) } : {}); } catch (e) { threw = { code: e.code, syscall: e.syscall, path: e.path }; }
+console.log(JSON.stringify({ threw }));
+`;
+
+test("packages.mjs writeFileAtomic keeps its own code (an exact mode, a stale private file removed first); when its write or its rename fails and the removal of its private file fails too, it throws the first error, not the removal's (#1076)", async (t) => {
+  const at = base(t);
+  writeFileSync(join(at, "call.mjs"), ATOMIC_CALL);
+  let runs = 0;
+  // With a mode the bytes are written through a descriptor, which no path gate matches: that write
+  // is not faulted here. Its private file is removed twice, before it is made and in the finally:
+  // the second removal is the one refused.
+  const cases = [
+    ["the write, once the file is made", undefined, (prefix) => ({ name: "fault", fn: "writeFileSync", prefix, when: "after", throws: "ENOSPC" }), "ENOSPC", "write", 1],
+    ["the rename", undefined, (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EIO" }), "EIO", "rename", 1],
+    ["the rename, with a mode", "600", (prefix) => ({ name: "fault", fn: "renameSync", prefix, throws: "EIO" }), "EIO", "rename", 2],
+  ];
+  for (const [way, mode, fault, code, syscall, nth] of cases) {
+    await t.test(`${way}, and the removal of the private file is refused`, () => {
+      const dir = join(at, `run-${++runs}`), file = join(dir, "f.txt"), prefix = join(dir, ".f.txt.oats-tmp-");
+      mkdirSync(dir);
+      writeFileSync(file, "before\n");
+      const r = runFaulted([join(at, "call.mjs"), file, ...(mode ? [mode] : [])], { cwd: dir, env: { ...inheritedEnv(), HOME: join(at, "home") }, gateDir: join(at, "gates", String(runs)),
+        gates: [fault(prefix), { ...removalRefused(prefix), nth }] });
+      assert.equal(r.status, 0, `the call ran to its end: ${r.stdout}${r.stderr}`);
+      const { threw } = JSON.parse(r.stdout.trim().split("\n").at(-1));
+      assert.deepEqual(r.fired, ["fault", "removal"], "both faults were met");
+      assert.deepEqual([threw?.code, threw?.syscall, String(threw?.path).startsWith(prefix)], [code, syscall, true], `the error is the first, not the removal's: ${JSON.stringify(threw)}`);
+      assert.equal(readFileSync(file, "utf8"), "before\n", `${file} is as it was`);
+    });
+  }
+});
