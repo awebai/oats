@@ -12,6 +12,17 @@ const model = v => v === null || text(v, 256);
 const LAUNCH_CONFIG = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const CODE = /^E_[A-Z0-9_]{1,62}$/;
 
+/** The word that selects no launch configuration: `--launch-config none` runs the harness itself, with
+ * no configuration's executable, arguments or environment, the host's default for the harness included.
+ * A client that offers the bare harness sends this constant and never a name out of a list: the kernel
+ * reads the word as no configuration whatever a list holds, and refuses a configuration of that name. */
+export const LAUNCH_CONFIG_NONE = 'none';
+/** Whether the kernel that answers a start is known to read the word. `features` is that kernel's own
+ * list (lifecycle-contract.mjs `answeringFeatures`: this computer's for a home here, the host's for a
+ * server's home, null when it is not known). The first release that lists `launch-config` reads the word,
+ * so the list naming it is the proof; unknown is not known. */
+export const launchConfigNoneKnown = features => Array.isArray(features) && features.includes('launch-config');
+
 /** Where the effective launch came from, per document: a report never says `flag`; only a home's
  * record says `recorded` (a home from before 0.30). */
 export const REPORT_FROM = Object.freeze(['local', 'local-default', 'soul', 'host']);
