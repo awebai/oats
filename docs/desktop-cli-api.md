@@ -137,6 +137,33 @@ Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 **Gate on the probe, never by trying.** An older kernel can ignore an unknown
 flag and act: without `lifecycle-plans`, `retire --plan` retires.
 
+## Text output
+
+A command's text (without `--json`) is for a person and is not part of this
+contract. Some of its lines hold text the kernel did not write: a path as the
+system or Git names it, a branch name, a hook's or a host's own words. In the
+lines below, each character a terminal would act on, or that hides or
+reorders text (a control character such as an escape or a newline, a bidi
+override: the set the kernel never prints in text it did not write), is
+spelled `\u{<hex>}` (OATS 0.53.0 for the local retire's warnings, #973; the
+rest since #1006), so that such a name cannot clear the screen, write a line
+of its own or reverse what follows it:
+
+- the `note:` lines of `oats retire --plan`, `oats instance stop --plan`,
+  `oats instance git` and `oats readiness`;
+- the `WARNING:` lines of `oats spawn` (its preview, and with `--server`
+  too), of the `oats session` commands (a start's or a restart's launch-hook
+  warnings, on stderr) and of `oats doctor` (a pi bridge's version skew);
+- the lines of `oats retire`, local and with `--server`, for the recovery it
+  wrote, for the extra trees it handled and for the receipt's warnings. A
+  retire with `--server` prints the receipt's warnings as a local one does.
+
+A newline in such a value is spelled too, so the value stays on its line.
+Text that already holds the characters of a spelling (`\u{1b}` written out)
+prints as it is: a spelling is not meant to be read back. Every other line of
+text output prints what it holds as it is. The JSON is never changed by
+this: its strings are what they are.
+
 ## The envelope and dispatch errors
 
 Every `--json` command except those below prints exactly one JSON object on
@@ -4205,13 +4232,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   stored in the link; nothing acts on it. When the link does not resolve,
   the string ends `and it led nowhere that could be read`. The receipt holds
   the path as the system gave it. The retire's text (without `--json`)
-  prints every warning of the receipt on one line and spells each character
-  a terminal would act on, or that hides or reorders text (a control
-  character such as an escape or a newline, a bidi override: the set the
-  kernel never prints in text it did not write), as `\u{<hex>}`, so that a
-  name cannot clear the screen or write a line of its own. The JSON is not
-  changed by that: its strings are what they were. No key of the plan or of
-  the receipt is new.
+  prints every warning of the receipt on one line, spelled as
+  [Text output](#text-output) says. The JSON is not changed by that: its
+  strings are what they were. No key of the plan or of the receipt is new.
 - A link at `work/` that is no longer a link when the retire inspects the
   home again (a retire hook, or anything else, put a directory or a file in
   its place) refuses with `E_WORK_INSPECTION_FAILED` and keeps the home, in
