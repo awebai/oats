@@ -216,6 +216,13 @@ internal/direct-module callers: `lib/remote.mjs` is not in the package export
 map. Call sites choose the entry matching the origin of the value or prose;
 there is no implicit-context `redactUrl` export or compatibility shim.
 
+An external soul's `sourceDisplay` (feature `source-display`) is
+`displayRepoRef(source, { pinned: true })`, built where the output is
+answered: `workspace status` `external[]` in `bin/oats.mjs`, and the
+automations soul origin in `soulOriginOf` (`automations.mjs`), so the
+snapshot stores only the exact `source`. Consumers render that field and
+never sanitize a reference themselves.
+
 ### The remote read path
 
 Every CLI command owns one read session (`createReadSession` in

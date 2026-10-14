@@ -45,7 +45,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "soul-launch","retire-plan-own-worktree"],
+             "soul-launch","retire-plan-own-worktree","source-display"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -128,6 +128,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"` and `"flag-ignored"`; `launchPrompts` in a launched spawn's answer; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
 | `soul-launch` | `oats soul launch set\|remove`, the writer of `oats-local.yaml` `souls.launch`, and `E_LAUNCH_PREFERENCE_UNKNOWN`, OATS 0.53.0 ([`oats soul launch`](#oats-soul-launch)). Gate on the probe: a kernel without it answers `E_USAGE` | `soulLaunchApi: 1` (payload only) |
 | `retire-plan-own-worktree` | a retire plan carries `facts.ownWorktree`, a boolean: whether `work/` is the instance's own work tree, the one the retire retains or removes; in `oats retire --plan` and in the fresh plan (`details.plan`) of `E_PLAN_STALE` and `E_CHILDREN_RUNNING`; a stop plan does not carry it; OATS 0.53.0 ([the retire plan](#retire)) | |
+| `source-display` | an external soul's `source` is shown beside its display, `sourceDisplay`: in `oats workspace status --json` `external[]`, and in the soul `origin` of kind `external` of trigger and schedule rows. It is the source rebuilt by the [repository-reference display policy](workspaces.md#repository-references-in-diagnostics) in pinned-source context, without user information, or that policy's fixed withheld text; `source` stays exact. Render `sourceDisplay`, never `source`; OATS 0.56.0 | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -894,7 +895,7 @@ Read-only (it writes no lock):
  "packages":[{"id":"oats.okf","version":"3.0.0","source":"catalog:oats.okf","commit":"ab897841…","integrity":"sha256-bada35…",
               "capabilities":["oats.okf"],"souls":[],"latest":{"version":"4.1.1","ref":"v4.1.1"}}],
  "declaredPackages":["oats.framework","oats.okf"],"unsynced":["oats.framework"],"stale":[],
- "external":[{"source":"git:github.com/oss/experts@3c606e09…","soul":"security-reviewer"}],
+ "external":[{"source":"git:github.com/oss/experts@3c606e09…","sourceDisplay":"git:github.com/oss/experts@3c606e09…","soul":"security-reviewer"}],
  "problems":[],"warnings":[],
  "automations":{"host":"ana-laptop","snapshot":{"takenAt":"2026-09-28T10:00:00.000Z","problems":0},
                 "rows":[{"kind":"schedule","id":"agents/nightly","runsOn":"ana-laptop","owner":"github.com/ana","runsHere":true,"reason":null,"enabledHere":true,
@@ -916,7 +917,13 @@ Read-only (it writes no lock):
   verb have no such budget.
 - `declaredPackages`: the ids in `packages:` (standalone: the kernel's
   default). `unsynced`: declared, not locked. `stale`: locked, no longer
-  declared. `external[]`: `{source, soul}`.
+  declared. `external[]`: `{source, sourceDisplay, soul}`. `source` is the
+  exact operational value; `sourceDisplay` (feature `source-display`) is the
+  one to show: the source rebuilt by the
+  [repository-reference display policy](workspaces.md#repository-references-in-diagnostics)
+  in pinned-source context, without user information, or that policy's fixed
+  withheld text `[repository reference withheld]`. A kernel without the
+  feature does not send it.
 - `workspace.teams` (feature `team-model-3`): the shared teams `{label, team,
   description}` by label; `[]` standalone.
 - `problems`, `warnings`: as in sync.
@@ -5360,8 +5367,11 @@ changes `installed` or `active`). `maxConcurrent` is the effective scheduled-job
   reason as "does not run here".
 - `soul: {name, origin} | null` (`null` for command, wake and operation
   schedules). `origin` is `{kind: "member", repoKey, member}`, `{kind:
-  "package", package, version}`, `{kind: "external", repoKey, source}`,
-  `{kind: "ambiguous", candidates (a count)}`, or `null`.
+  "package", package, version}`, `{kind: "external", repoKey, source,
+  sourceDisplay}`, `{kind: "ambiguous", candidates (a count)}`, or `null`.
+  An external origin's `sourceDisplay` (feature `source-display`) is built
+  when the row is answered, as in
+  [`oats workspace status`](#oats-workspace-status): show it, never `source`.
 - `task`, `teams`, `launchConfig`, `harness`, `model`, `concurrency`,
   `lastRun`, `nextDue`, `invalid?`. A schedule row's `kind` is its run
   (`spawn | command | wake | operation`), its `teams` is `[]` and

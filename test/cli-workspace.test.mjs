@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
+import { displayRepoRef } from "../lib/remote.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -115,6 +116,11 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.ok(!Object.hasOwn(st, "approval"), "workspace status has no approval section");
     assert.deepEqual(st.unsynced, []); assert.deepEqual(st.stale, []);
     assert.deepEqual(st.external.map((e) => e.soul), ["security-reviewer"]);
+    // Feature source-display: the exact pinned source, and beside it its display by the one policy.
+    for (const e of st.external) {
+      assert.match(e.source, /@[0-9a-f]{40}$/, "source stays the exact pinned value");
+      assert.equal(e.sourceDisplay, displayRepoRef(e.source, { pinned: true }));
+    }
     r = oats(["workspace", "status"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /member\s+status\s+commit\s+souls/);

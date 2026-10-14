@@ -274,10 +274,11 @@ operational `from` values and external rows' `source`; so does the original
 reference handed to Git. Diagnostic rendering changes neither the
 accepted syntax nor transport. A client may extract a host from a constructed
 display; it must also handle the fixed withheld display without a host.
-Desktop's external-soul view still displays the operational external `source`
-value directly; that separate output route is tracked in
-[#1111](https://github.com/awebai/oats/issues/1111). The diagnostic display rule
-does not make that raw consumer safe.
+An external soul's `source` is also answered for display, beside the exact
+value: `sourceDisplay` in `oats workspace status --json` `external[]` and in
+an automation's external soul `origin`, built by the same policy in
+pinned-source context. A client shows `sourceDisplay` and never renders or
+sanitizes `source` itself.
 
 ## Membership and trust
 
