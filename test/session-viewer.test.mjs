@@ -212,7 +212,7 @@ test("the viewer's client asks for synchronized output (-T sync, before the comm
     assert.equal(io.calls.filter((c) => c[0] === "-V").length, 1, "one probe");
     return viewer.args.map((a) => a.replace(name, "V"));
   };
-  const synced = ["-u", "-T", "sync", "-S", target.socket, "attach-session", "-t", "=V"];
+  const synced = ["-u", "-S", target.socket, "-T", "sync", "attach-session", "-t", "=V"];
   const today = ["-u", "-S", target.socket, "attach-session", "-t", "=V"];
   assert.deepEqual(args("tmux 3.7c\n"), synced);
   assert.deepEqual(args("tmux 3.2\n"), synced);
