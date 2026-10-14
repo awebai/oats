@@ -12,10 +12,15 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
 
 export const TEXT_SCHEMA = `CREATE VIRTUAL TABLE IF NOT EXISTS turn_text USING fts5(
   turn_id UNINDEXED, loc UNINDEXED, role UNINDEXED, text
+);`;
+export const INDEX_BYTES_SCHEMA = `CREATE TABLE IF NOT EXISTS index_bytes (
+  stream TEXT PRIMARY KEY,
+  bytes INTEGER NOT NULL,
+  indexed_count INTEGER NOT NULL,
+  epoch TEXT NOT NULL
 );`;
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS turns (
@@ -43,12 +48,7 @@ CREATE TABLE IF NOT EXISTS index_state (
   stream TEXT PRIMARY KEY,
   indexed_count INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS index_bytes (
-  stream TEXT PRIMARY KEY,
-  bytes INTEGER NOT NULL,
-  indexed_count INTEGER NOT NULL,
-  epoch TEXT NOT NULL
-);
+${INDEX_BYTES_SCHEMA}
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -163,7 +163,7 @@ function metadataDigest(db) {
   }
   return { hash: hash.digest('hex'), count };
 }
-const counts = db => Object.fromEntries(TABLES.map(table => [table, db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n]));
+const counts = (db, tables = TABLES) => Object.fromEntries(tables.map(table => [table, db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n]));
 const settings = db => Object.fromEntries(['journal_mode','synchronous','page_size','page_count','freelist_count','cache_size','cache_spill','temp_store','busy_timeout','user_version','auto_vacuum','secure_delete','locking_mode'].map(name => [name, Object.values(db.prepare(`PRAGMA ${name}`).get())[0]]));
 
 async function probeChild(path) {
@@ -227,7 +227,7 @@ export async function startProbe(path) {
     },terminate,
   };
 }
-export async function run(path, mode) {
+export async function run(path, mode, { prepareOutgoingIndex = false } = {}) {
   if(!['original','optimized'].includes(mode))fail('E_MODE');
   if(!runtimeSupported())fail('E_RUNTIME');
   const identity=preflight(path);
@@ -242,11 +242,29 @@ export async function run(path, mode) {
     db.exec(CONNECTION_SETTINGS);
     const effective=settings(db);
     if(effective.user_version!==1||effective.journal_mode!=='delete')fail('E_SCHEMA');
-    const expected=new DatabaseSync(':memory:');let expectedSchema;
-    try{expected.exec(SCHEMA);expectedSchema=digest(canonicalSchema(schemaRows(expected)));}finally{expected.close();}
+    const expected=new DatabaseSync(':memory:');let expectedSchema,outgoingSchema;
+    try{
+      expected.exec(SCHEMA);expectedSchema=digest(canonicalSchema(schemaRows(expected)));
+      // Published v0.53.0 and v0.54.0 have this exact schema, including
+      // all indexes/FTS shadow tables, without the new byte cursor table.
+      expected.exec('DROP TABLE index_bytes');outgoingSchema=digest(canonicalSchema(schemaRows(expected)));
+    }finally{expected.close();}
+    const inputSchema=digest(canonicalSchema(schemaRows(db)));
+    const outgoing=inputSchema===outgoingSchema;
+    if(inputSchema!==expectedSchema && !(outgoing && prepareOutgoingIndex))fail('E_SCHEMA');
+    const inputCounts=counts(db,outgoing?TABLES.filter(table=>table!=='index_bytes'):TABLES);
+    const inputMetadata=metadataDigest(db),inputSizes=sizes(path);
+    let preparationMs=0;
+    if(outgoing){
+      // Identical to the additive constructor initialization, on THIS
+      // acknowledged scratch copy only. Never execute stored schema SQL.
+      const started=now();db.exec(INDEX_BYTES_SCHEMA);preparationMs=ms(now()-started);
+    }
     const beforeSchema=digest(canonicalSchema(schemaRows(db)));
-    if(beforeSchema!==expectedSchema)fail('E_SCHEMA');
+    if(beforeSchema!==expectedSchema || metadataDigest(db).hash!==inputMetadata.hash ||
+       db.prepare('PRAGMA user_version').get().user_version!==effective.user_version)fail('E_PREPARATION');
     const beforeCounts=counts(db),beforeMetadata=metadataDigest(db),beforeSizes=sizes(path);
+    if(Object.entries(inputCounts).some(([name,count])=>beforeCounts[name]!==count) || (outgoing && beforeCounts.index_bytes!==0))fail('E_PREPARATION');
     const storage=fs.statfsSync(path,{bigint:true});
     probe=await startProbe(path);
     const exec=db.exec.bind(db);let beginStart,beginEnd,firstWriteStart,firstWriteEnd,commitStart,commitEnd;
@@ -274,8 +292,10 @@ export async function run(path, mode) {
     delete readProbe.firstBusyNs;delete readProbe.lastBusyNs;
     return {
       success:true,mode,runtime:{node:process.version,sqlite:db.prepare('SELECT sqlite_version() AS version').get().version,platform:process.platform,arch:process.arch},
+      input:{schemaVariant:outgoing?'published-v0.53.0-v0.54.0':'current-with-index-bytes',indexBytesPresent:!outgoing,counts:inputCounts,sizes:inputSizes},
+      preparation:{requested:prepareOutgoingIndex,createdEmptyIndexBytes:outgoing,wallMs:preparationMs,outsideResetTiming:true},
       settings:effective,afterSettings:after,filesystem:{type:String(storage.type),availableBytes:String(storage.bavail*storage.bsize)},
-      beforeCounts,afterCounts,metadataRows:beforeMetadata.count,schemaPreserved:true,metadataPreserved:true,integrity:'quick_check(1): ok',
+      beforeCounts,afterCounts,metadataRows:beforeMetadata.count,schemaPreserved:!outgoing,preparedSchemaPreserved:true,metadataPreserved:true,integrity:'quick_check(1): ok',
       beforeSizes,afterSizes:sizes(path),resetWallMs:ms(wallEnd-wallStart),transactionIntervalMs:ms(commitEnd-beginEnd),
       beginCallThroughCommitMs:ms(commitEnd-beginStart),commitCallMs:ms(commitEnd-commitStart),
       writeTransactionBoundsMs:{lower:Math.max(0,ms(commitStart-firstWriteEnd)),upper:ms(commitEnd-firstWriteStart)},
@@ -284,21 +304,28 @@ export async function run(path, mode) {
         transaction:'BEGIN is deferred in BOTH modes. Transaction interval ends after COMMIT returns; it is not reader-exclusion time. First-write/commit call boundaries bound the write transaction, including acquisition uncertainty.',
         readerBlocking:'Separate read-only process samples SELECT id FROM turns LIMIT 1 with busy_timeout=0 every nominal 10ms. BUSY/LOCKED observations are not continuous EXCLUSIVE-lock measurements. PENDING can also exclude readers. Unobserved gaps/spikes and scheduler delays remain; probes can delay commit and add I/O/cache contention.',
         inspection:'Schema, metadata and table counts before reset warm caches and are excluded from timing. Post-counts/schema/metadata/quick_check are excluded too. Sampled sidecar peaks are lower bounds, not reserved-space estimates.',
+        preparation:'Explicit outgoing preparation creates only the empty index_bytes table, identically for both modes, before reset timing. beforeCounts describes the prepared schema; input.counts describes the supplied schema. Original is aaf23012 reset after normal constructor-equivalent setup, not an outgoing-release full rebuild/runtime comparison.',
         settings:'Connection settings match RecordIndex: busy_timeout=60000, cache_size=-2048, temp_store=FILE. No synchronous/journal-mode/transaction-mode changes; no VACUUM. Operator must budget rollback-journal and temp space.',
         scope:'Destructive disposable-copy measurement only. Sequential backups can differ; compare reported counts. Isolated reset time does not establish remaining budget in a 300-second service pass or Linux storage acceptance.',
       },
     };
   }finally{if(probe)await probe.terminate();if(db)db.close();}
 }
-const USAGE='DESTRUCTIVE SCRATCH-ONLY benchmark. Operator must supply a disposable SQLite .backup, never a live index. Usage: node scripts/benchmark-record-reset.mjs --ack-disposable-scratch <database-path> original|optimized. No backup is created; operator disposes of the supplied database. Requires Node 22.13+ (22.x), 23.2+ (23.x), or newer with node:sqlite.';
+const USAGE='DESTRUCTIVE SCRATCH-ONLY benchmark. Operator must supply a disposable SQLite .backup, never a live index. Usage: node scripts/benchmark-record-reset.mjs --ack-disposable-scratch [--prepare-outgoing-index] <database-path> original|optimized. Preparation explicitly adds an empty index_bytes table ONLY for the exact published v0.53.0/v0.54.0 schema, outside reset timing. No backup is created; operator disposes of the supplied database. Requires Node 22.13+ (22.x), 23.2+ (23.x), or newer with node:sqlite.';
 async function main(){
   const args=process.argv.slice(2);
   if(args[0]==='--private-read-probe'&&args.length===2){await probeChild(args[1]);return;}
-  if(args.length!==3||args[0]!=='--ack-disposable-scratch'||!['original','optimized'].includes(args[2])){
+  const prepareOutgoingIndex=args[1]==='--prepare-outgoing-index';
+  const positional=args.slice(prepareOutgoingIndex?2:1);
+  if(positional.length!==2||args[0]!=='--ack-disposable-scratch'||!['original','optimized'].includes(positional[1])){
     process.stderr.write(USAGE+'\n');fail('E_USAGE');
   }
-  process.stdout.write(JSON.stringify(await run(args[1],args[2]))+'\n');
+  process.stdout.write(JSON.stringify(await run(positional[0],positional[1],{prepareOutgoingIndex}))+'\n');
 }
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  main().catch(err=>{process.stderr.write(JSON.stringify({success:false,code:err.safeCode??'E_BENCHMARK',message:'Benchmark refused or failed. No raw diagnostic is emitted; inspect only the disposable scratch database locally.'})+'\n');process.exitCode=1;});
-}
+const reportFailure=err=>{process.stderr.write(JSON.stringify({success:false,code:err.safeCode??'E_BENCHMARK',message:'Benchmark refused or failed. No raw diagnostic is emitted; inspect only the disposable scratch database locally.'})+'\n');process.exitCode=1;};
+try{
+  // Node canonicalizes import.meta.url by default; argv may retain a parent
+  // alias such as /tmp -> /private/tmp. Compare canonical paths on BOTH sides.
+  // Imports remain inert. A failed identity check must never imply success.
+  if(process.argv[1]&&fs.realpathSync(process.argv[1])===fs.realpathSync(fileURLToPath(import.meta.url)))main().catch(reportFailure);
+}catch{reportFailure({safeCode:'E_EXECUTION_IDENTITY'});}

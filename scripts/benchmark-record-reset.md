@@ -11,13 +11,13 @@ Run the standalone file from the reviewed full commit with a Node executable
 providing `node:sqlite` (22.13+ on 22.x, 23.2+ on 23.x, or newer):
 
 ```sh
-node --no-warnings scripts/benchmark-record-reset.mjs --ack-disposable-scratch /absolute/path/to/disposable-backup.db original
+node --no-warnings scripts/benchmark-record-reset.mjs --ack-disposable-scratch --prepare-outgoing-index /absolute/path/to/disposable-backup.db original
 ```
 
 After disposing of that copy and obtaining a new consistent backup:
 
 ```sh
-node --no-warnings scripts/benchmark-record-reset.mjs --ack-disposable-scratch /absolute/path/to/disposable-backup.db optimized
+node --no-warnings scripts/benchmark-record-reset.mjs --ack-disposable-scratch --prepare-outgoing-index /absolute/path/to/disposable-backup.db optimized
 ```
 
 The modes reproduce `RecordIndex.reset()` from `aaf23012` and the atomic FTS
@@ -28,11 +28,39 @@ version 1 in that same transaction. Neither mode clears `meta`. A test compares
 the complete schema and optimized statement sequence with production. No other
 unfinished service code is imported or executed by the benchmark.
 
-Only the supported complete version-1 schema is accepted, including `index_bytes`.
-Missing/extra tables, indexes or triggers, nonregular/symlink input, invalid
-headers and preexisting sidecars refuse. A failure emits fixed diagnostics and
+By default only the complete version-1 schema including `index_bytes` is accepted.
+`--prepare-outgoing-index` additionally accepts the **exact** published 0.53.0 and
+0.54.0 shape without that table. Those releases have identical owning source:
+0.54.0 tag `9d1554883d678c60603e8899af76e1e828061ebc` peels to
+`201fc63e6eb80f7fd332d0253565b2cf44c5227e`; 0.53.0 tag
+`f96a656c2c6f9687fb0e36e7ec017f83952622fd` peels to
+`e3de1f0c01f25d6fde1f11231c5ef67a9c590ca6`. Both owning `index-db.mjs` blobs are
+`f2e076a408b4660bb27cf45f2a0f07d51248adf3`. The fixture preserves the published
+schema. No other layout is admitted merely because `user_version` equals 1.
+
+For that outgoing shape, the explicit option creates only the empty
+`index_bytes` table on the disposable copy, just as the current constructor does.
+This is identical in both modes and outside reset timing. `input` reports the
+original schema variant, table absence, counts and sizes; `preparation` reports
+the addition and separate wall time. `beforeCounts` describes the prepared
+schema (`index_bytes: 0`); `preparedSchemaPreserved` describes the reset's
+postcondition. `schemaPreserved` is false when preparation added the table, so it
+does not claim the original input schema was unchanged. Metadata and version stay
+unchanged. With an already-current schema the option performs no preparation.
+Original mode remains the `aaf23012` production reset after this disclosed normal
+constructor setup, **not** an actual outgoing-release full-rebuild/runtime
+comparison. Omit the option to require the current complete schema without any
+preparation. Never upgrade the live index merely to run the benchmark.
+Preparation is its own normal constructor-style autocommit. A later benchmark
+failure can therefore leave the empty added table on the scratch copy; obtain
+a fresh backup before comparing the other mode.
+
+Unknown/missing/extra tables, indexes or triggers, nonregular/symlink input, invalid
+headers and preexisting sidecars refuse before preparation/reset. A failure emits fixed diagnostics and
 safe codes, never a path, captured content, stored SQL, raw SQLite exception or
-stack. The database remains the operator's responsibility after success or
+stack. Direct invocation through a symlinked script directory is supported;
+canonicalization failure reports a safe nonzero result instead of silent success.
+Importing the module does not run the benchmark. The database remains the operator's responsibility after success or
 failure. There is no automatic repair, cleanup, retry, journal-mode conversion,
 VACUUM or synchronous-durability reduction.
 
