@@ -37,7 +37,7 @@ export function captureInstanceActionMenu(root) {
 }
 
 /** `report(headline, { detail?, action, instance })` says an action didn't finish: a plain headline, the error text as `detail`.
- * `openForget(instance)` (#1131): given, a row its host no longer lists (`rowReason` key `missing`) offers "Forget…"
+ * `openForget(instance)` (#1131): given, a row its host no longer lists (instanceActs answers it `blocked`, key `missing`) offers "Forget…"
  * alone, which opens that confirmation; without it such a row offers nothing, as every unaddressable row. */
 export function instanceActions(doc, instance, { invoke, openLifecycle, openForget, done = () => {}, report = () => {},
   scope = '', owner = () => true, extra = [], dispatch, onMenuState = () => {}, onFocusChange = () => {}, shortcut = () => '' }) {

@@ -204,6 +204,26 @@ test('busy holds the window: a shell shortcut (the real keymap, on the window) n
   } finally { off(); f.dom.window.removeEventListener('keydown', onKey); f.close(); }
 });
 
+test('another modal taking focus before the press closes this one, sending nothing; plain focus elsewhere does not; busy, it holds', async () => {
+  const f = fixture({ answer: 'hold' });
+  const modal = () => { const el = f.doc.createElement('section'); el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
+    const b = f.doc.createElement('button'); b.textContent = 'Close'; el.append(b); f.doc.body.append(el); return b; };
+  try {
+    f.open(); f.doc.getElementById('filter').focus(); await tick();
+    assert.equal(f.shown(), true, 'focus outside any modal leaves the confirmation open');
+    const other = modal(); other.focus(); await tick();
+    assert.equal(f.shown(), false, 'Connections, the palette, a lifecycle confirmation: any aria-modal closes it');
+    assert.equal(f.doc.activeElement, other, 'focus stays where the other modal put it');
+    assert.deepEqual([f.sent.length, f.said.length], [0, 0]);
+    other.closest('section').remove();
+    assert.equal(f.dialog.open(GONE), true, 'it opens again afterwards');
+    f.confirm().click(); const busyOther = modal(); busyOther.focus(); await tick();
+    assert.equal(f.shown(), true, 'busy, nothing closes it'); assert.equal(f.doc.activeElement, f.status());
+    f.pending[0].resolve({ status: 'forgotten', server: 'build', instance: 'dev-a' }); await tick();
+    assert.deepEqual([f.sent.length, f.said.length], [1, 1]);
+  } finally { f.close(); }
+});
+
 test('the roster is not edited: the row stays until the server\'s read lands, and a second Forget of it says nothing was changed', async () => {
   let n = 0;
   const f = fixture({ answer: body => (n++ === 0 ? { status: 'forgotten', server: body.server, instance: body.instance }

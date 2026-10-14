@@ -2210,7 +2210,7 @@ const connections = createConnections({ doc: document, desk,
     };
   },
 });
-function openConnections(choice = {}) { tabOpenIntents.invalidate(); lifecycleDialog.close(); forgetDialog.close(); shortcutsEditor.close(); connections.open(choice); }
+function openConnections(choice = {}) { tabOpenIntents.invalidate(); lifecycleDialog.close(); shortcutsEditor.close(); connections.open(choice); }
 window.addEventListener('pagehide', () => connections.dispose(), { once: true });
 const lifecycleDialog = createLifecycleDialog({ doc: document,
   request: async (workspace, body) => {
@@ -2245,7 +2245,7 @@ function lifecycleFallbackFocus() {
   row.tabIndex = 0; return row;
 }
 function openLifecycleDialog(operation, instance, workspace) {
-  connections.close(); shortcutsEditor.close(); forgetDialog.close();
+  connections.close(); shortcutsEditor.close();
   const order = [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].map(r => r.dataset.treeInstance);
   lifecycleRowOrder = { order, at: order.indexOf(instanceId(instance)) };
   // The callers check the workspace on screen (`workspace`); the plan and apply are addressed to the

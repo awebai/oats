@@ -21,6 +21,8 @@
  *   another refusal      "Couldn't forget <instance>." and the kernel's lines; focus back to the opener
  *   nothing ran          "Couldn't forget <instance>." and the Desktop's own reason; focus back to the opener
  *   unknown              "It is not known whether <instance> was forgotten."; focus back to the opener
+ * Before the press, another modal dialog taking focus (Connections, the palette, a lifecycle confirmation:
+ * anything `aria-modal`) closes this one, sending nothing: the opener of that one need not know this one.
  * An answer that lands after the dialog stopped owning its request (a workspace change, dispose) says and
  * moves nothing. Names enter a sentence through the display filter: the server's
  * label as remote-address.mjs `shownLabel`, the instance by the same rule ("this instance" when withheld). */
@@ -77,7 +79,7 @@ let dialogs = 0;
 
 export function createForgetDialog({ doc, request, notify = () => {}, nextFocus = () => null,
   generation = () => 0, subscribeWorkspace = () => () => {}, onIntent = () => {}, applyFocus = fn => fn() } = {}) {
-  let alive = true, overlay = null, ui = null, row = null, restore = null, phase = null, life = 0, release = null;
+  let alive = true, overlay = null, ui = null, row = null, restore = null, phase = null, life = 0, release = null, yieldTo = null;
   const inFlight = new Set(); // `server\0instance` of every Forget sent and not answered, whichever dialog sent it
   const keyOf = r => `${r.server}\0${r.instance}`;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
@@ -97,6 +99,7 @@ export function createForgetDialog({ doc, request, notify = () => {}, nextFocus 
   function unhold() { const done = release; release = null; done?.(); }
   function close({ focus = 'opener', next = null } = {}) {
     unhold();
+    if (yieldTo) { doc.removeEventListener('focusin', yieldTo, true); yieldTo = null; }
     if (!overlay) return;
     life++; overlay.remove(); overlay = null; ui = null; row = null; phase = null;
     const back = restore; restore = null;
@@ -181,6 +184,12 @@ export function createForgetDialog({ doc, request, notify = () => {}, nextFocus 
       else if (!event.shiftKey && doc.activeElement === all.at(-1)) { event.preventDefault(); all[0].focus(); }
       else if (!dialog.contains(doc.activeElement)) { event.preventDefault(); all[0].focus(); }
     });
+    // Before the press, another modal taking focus closes this one (busy, holdWindow keeps focus here instead).
+    yieldTo = event => {
+      if (phase !== 'review' || !current() || dialog.contains(event.target)) return;
+      if (event.target?.closest?.('[aria-modal="true"]')) close({ focus: 'none' });
+    };
+    doc.addEventListener('focusin', yieldTo, true);
     paint();
     applyFocus(() => cancel.focus());
     return true;
