@@ -8,14 +8,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fakeBin } from "./helpers/fake-ssh.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 import { dirname, join, resolve } from "node:path";
 
 import { FAILED_SPAWN_BRANCH_LEFT, spawnInstanceAsync } from "../lib/core.mjs";
-import { attachArgv, checkRemoteSupport, hostFeatures, resolveRoute, rosterGroups, routeCommand, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer, writeServers } from "../lib/servers.mjs";
+import { attachArgv, checkRemoteSupport, hostFeatures, listSnapshots, REMOTE_SNAPSHOT_DIR, resolveRoute, rosterGroups, routeCommand, runRemote, compareSemver, remoteQuote, SERVERS_FILE, snapshotPath, sshArgv, validateServer, writeServers } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** This kernel's own features: what a roster relays from a host that runs it (feature server-probe-features). */
@@ -460,8 +460,12 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     };
     const twinHome = await makeTwin();
     assert.notEqual(devHome, twinHome);
+    const routesBefore = listSnapshots("new");
     r = oats(env, ["spawn", "dev-foo", "--server", "new", "--purpose", "1", "--no-launch", "--preview", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
     assert.equal(r.json().result.instance, "dev-foo-1-2", "a 0.26 spawn skips the name the twins share");
+    // A routed preview saves no route (#610): none for the previewed name, the saved ones as they were.
+    assert.equal(existsSync(snapshotPath("new", "dev-foo-1-2")), false, "no route for the previewed instance");
+    assert.deepEqual(listSnapshots("new"), routesBefore);
     assert.equal(JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8")).home, devHome, "the saved route is untouched");
     // The roster gives the saved route to the row with the saved HOME only;
     // the twin under dev-foo is observed, never actionable from here.
@@ -545,6 +549,190 @@ test("routed spawn: a success reply without a home never replaces an existing sa
     const same = (bin, argv) => (String(argv.at(-1)).includes(" spawn ") ? JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-x", agent: "dev", home: prior.home, launched: false, warnings: [] } }) : exec(bin, argv));
     const again = routeCommand("build", "spawn", ["dev", "--purpose", "x", "--no-launch"], { server, execFileSync: same });
     assert.equal(again.envelope.result.routeConflict, undefined); assert.equal(typeof again.envelope.result.snapshot, "string");
+  } finally {
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+/** Every file and directory under `dir`, by relative path, with its bytes: two
+ *  captures are equal only when nothing was added, removed or rewritten. */
+function treeBytes(dir, { skip = [] } = {}) {
+  const out = {};
+  const walk = (d, rel) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (skip.includes(r)) continue;
+      if (e.isDirectory()) { out[`${r}/`] = "dir"; walk(join(d, e.name), r); }
+      else out[r] = readFileSync(join(d, e.name)).toString("base64");
+    }
+  };
+  if (existsSync(dir)) walk(dir, "");
+  return out;
+}
+
+test("routed spawn --preview (#610): the host's preview, printed as the local one naming the server; nothing written here, nothing created there; an old host is refused before the spawn is sent", () => {
+  const base = mkdtempSync("/tmp/oats-pv-"); // short: the control socket path must fit in 104 bytes
+  const prevHomeDir = process.env.OATS_HOME_DIR;
+  try {
+    const { bin, log, tools } = fakeBin(base);
+    const repo = remoteWorkspace();
+    const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
+    // An "old" host: the real kernel, but its version probe carries no features.
+    const oldOats = join(base, "old-oats");
+    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"features":[^}]*//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
+    chmodSync(oldOats, 0o755);
+    let r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "add", "old", "--ssh", "old-host", "--workspace", repo, "--oats", oldOats, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
+    // Saved routes the previews must leave as they are: a live instance, and a
+    // stale route for the name a preview of --purpose stale derives (its home is gone).
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "keep", "--no-launch", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    const keep = JSON.parse(readFileSync(snapshotPath("build", "dev-keep"), "utf8"));
+    const goneHome = join(repo, "agents", "dev", "instances", "dev-stale-gone");
+    writeFileSync(snapshotPath("build", "dev-stale"), JSON.stringify({ ...keep, instance: "dev-stale", home: goneHome }, null, 2) + "\n");
+    const capture = () => ({ home: treeBytes(env.OATS_HOME_DIR, { skip: ["ssh"] }), routes: treeBytes(REMOTE_SNAPSHOT_DIR()), servers: readFileSync(SERVERS_FILE()).toString("base64") });
+    const before = capture();
+    assert.deepEqual(Object.keys(before.routes).sort(), ["build/", "build/dev-keep.json", "build/dev-stale.json"]);
+    const unchanged = (label) => assert.deepEqual(capture(), before, `${label}: saved routes, registry and every file here byte-identical`);
+    const instances = () => readdirSync(join(repo, "agents", "dev", "instances")).sort();
+    const made = instances();
+
+    // Text: the local preview's line naming the server, and none of the apply's lines.
+    // A --task-file travels as --task text, --harness in the host's names.
+    const taskFile = join(base, "task.md"); writeFileSync(taskFile, "preview me\n");
+    let mark = readFileSync(log, "utf8").length;
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "pv", "--harness", "pi", "--task-file", taskFile, "--no-launch", "--preview"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const lines = r.stdout.trimEnd().split("\n");
+    assert.match(lines[0], /^preview dev → dev-pv on build \(checkout\) harness pi .*; nothing was created/, r.stdout);
+    for (const apply of [/Spawned/, /remote home:/, /route snapshot:/, /attach:/]) assert.doesNotMatch(r.stdout, apply);
+    const sent = readFileSync(log, "utf8").slice(mark);
+    assert.ok(sent.includes(` spawn dev --purpose pv --harness pi --task ${remoteQuote("preview me\n")} --no-launch --preview --dir `), sent);
+    unchanged("text preview");
+    assert.deepEqual(instances(), made, "nothing was created on the host");
+    // The same line as a local preview of that deployment prints, with " on build" added.
+    const local = oats({ ...env, PATH: `${tools}:${bin}` }, ["spawn", "dev", "--purpose", "pv", "--harness", "pi", "--task-file", taskFile, "--no-launch", "--preview", "--dir", repo]);
+    assert.equal(local.status, 0, local.stderr + local.stdout);
+    // (The local run's deployment note, "(workspace soul: …)", is not the preview's.)
+    const localPreview = local.stdout.split("\n").filter((l) => !l.startsWith("(workspace soul: ")).join("\n");
+    assert.equal(r.stdout, localPreview.replace("preview dev → dev-pv (", "preview dev → dev-pv on build ("), "the routed text is the local preview's, naming the server");
+
+    // JSON: the host's preview with server and target, and no snapshot key.
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "pv", "--no-launch", "--preview", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const pv = r.json().result;
+    assert.equal(pv.preview, true); assert.equal(pv.spawnPreviewApi, 2);
+    assert.equal(pv.instance, "dev-pv"); assert.equal(pv.home, join(repo, "agents", "dev", "instances", "dev-pv"));
+    assert.equal(pv.server, "build");
+    assert.deepEqual(pv.target, keep.target);
+    assert.equal("snapshot" in pv, false, "a preview never says what was saved");
+    assert.equal("routeConflict" in pv, false);
+    unchanged("JSON preview");
+
+    // A saved route already holding the name: the preview says a spawn would save none.
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "stale", "--no-launch", "--preview", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const stale = r.json().result;
+    assert.equal(stale.instance, "dev-stale");
+    assert.equal(stale.warnings.filter((w) => w.startsWith("a spawn would save no route: ")).length, 1, JSON.stringify(stale.warnings));
+    assert.ok(stale.warnings.includes(`a spawn would save no route: dev-stale already names ${goneHome} through build; that instance (${stale.home}) would not be managed from here, and would be retired on the host with oats retire dev-stale --home ${stale.home}`), JSON.stringify(stale.warnings));
+    assert.equal("snapshot" in stale, false);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "stale", "--no-launch", "--preview"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.match(r.stdout, /^ {2}WARNING: a spawn would save no route: dev-stale already names /m);
+    unchanged("collision preview");
+
+    // The apply's own refusals, on the preview path: nothing sent, nothing written.
+    for (const [args, code] of [[["--server", "build", "--instance", "dev-keep"], "E_ROUTE_EXISTS"], [["--server", "old", "--purpose", "pv"], "E_REMOTE_INCOMPATIBLE"]]) {
+      mark = readFileSync(log, "utf8").length;
+      r = oats(env, ["spawn", "dev", ...args, "--no-launch", "--preview", "--json"]);
+      assert.equal(r.status, 1, r.stdout);
+      assert.equal(r.json().error.code, code, r.stdout);
+      assert.doesNotMatch(readFileSync(log, "utf8").slice(mark), / spawn /, `${code}: no spawn was sent`);
+      unchanged(code);
+    }
+    // The old host (no features): its version, the missing feature, nothing sent.
+    const version = JSON.parse(execFileSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" })).version;
+    assert.equal(r.json().error.message, `remote oats ${version} at old-host does not advertise spawn-preview-2; upgrade it there; nothing was sent`);
+    assert.deepEqual(instances(), made, "nothing was created on the host");
+  } finally {
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("routeCommand spawn --preview (#610): the host's result with server and target only; the apply's checks first, spawn-preview-2 required; a refusal relayed; an answer that spawned is recorded as the apply records it", () => {
+  const base = mkdtempSync("/tmp/oats-pvu-");
+  const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home"); mkdirSync(process.env.OATS_HOME_DIR);
+  try {
+    const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    const target = { sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    const probe = (features) => ({ schemaVersion: 1, name: "@awebai/oats", version: "0.55.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "status"], features });
+    const status = { schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", harness: "pi", instances: [] }] } };
+    const hostPreview = { spawnPreviewApi: 2, preview: true, warnings: ["the host's own warning"], agent: "dev", kind: "persistent", instance: "dev-x", home: "/w/agents/dev/instances/dev-x", work: "checkout", harness: "pi", modelSource: "harness default", decision: { revision: "r1" } };
+    const remote = (features, spawnAnswer) => {
+      const sent = [];
+      const exec = (bin, argv) => {
+        const word = String(argv.at(-1));
+        sent.push(word);
+        if (word.includes("version --json")) return JSON.stringify(probe(features));
+        if (word.includes(" status ")) return JSON.stringify(status);
+        if (word.includes(" spawn ")) return JSON.stringify(spawnAnswer);
+        throw new Error(`unexpected remote call: ${word}`);
+      };
+      return { sent, exec, spawned: () => sent.filter((w) => w.includes(" spawn ")) };
+    };
+    const args = ["dev", "--purpose", "x", "--no-launch", "--preview"];
+    const ok = { schemaVersion: 1, ok: true, result: hostPreview };
+
+    // The host's fields unchanged, plus server and target; no snapshot key, no file.
+    let host = remote(["spawn-preview-2"], ok);
+    let routed = routeCommand("build", "spawn", args, { server, execFileSync: host.exec });
+    assert.deepEqual(routed.envelope, { ...ok, result: { ...hostPreview, server: "build", target } });
+    assert.equal(host.spawned().length, 1); assert.match(host.spawned()[0], / --preview --dir \/w --json$/);
+    assert.equal(existsSync(REMOTE_SNAPSHOT_DIR()), false, "nothing written here");
+
+    // A saved route for that name at another home: one more warning, the route byte-identical.
+    mkdirSync(dirname(snapshotPath("build", "dev-x")), { recursive: true });
+    const prior = JSON.stringify({ serverId: "build", target, remote: { version: "0.55.0", schemaVersion: 1 }, instance: "dev-x", agent: "dev", home: "/w/agents/other/instances/dev-x", agentsRoot: "/w/agents", spawnedAt: "2026-10-01T00:00:00.000Z" });
+    writeFileSync(snapshotPath("build", "dev-x"), prior);
+    host = remote(["spawn-preview-2"], ok);
+    routed = routeCommand("build", "spawn", args, { server, execFileSync: host.exec });
+    assert.deepEqual(routed.envelope.result.warnings, ["the host's own warning", "a spawn would save no route: dev-x already names /w/agents/other/instances/dev-x through build; that instance (/w/agents/dev/instances/dev-x) would not be managed from here, and would be retired on the host with oats retire dev-x --home /w/agents/dev/instances/dev-x"]);
+    assert.equal("snapshot" in routed.envelope.result, false); assert.equal("routeConflict" in routed.envelope.result, false);
+    assert.equal(readFileSync(snapshotPath("build", "dev-x"), "utf8"), prior);
+    // A saved route naming the previewed home is the same route: no warning added.
+    writeFileSync(snapshotPath("build", "dev-x"), JSON.stringify({ ...JSON.parse(prior), home: hostPreview.home }));
+    routed = routeCommand("build", "spawn", args, { server, execFileSync: remote(["spawn-preview-2"], ok).exec });
+    assert.deepEqual(routed.envelope.result.warnings, ["the host's own warning"]);
+    rmSync(REMOTE_SNAPSHOT_DIR(), { recursive: true, force: true });
+
+    // A host without spawn-preview-2 might spawn for real: refused, the spawn never sent.
+    host = remote(["harness"], ok);
+    assert.throws(() => routeCommand("build", "spawn", args, { server, execFileSync: host.exec }),
+      (e) => e.code === "E_REMOTE_INCOMPATIBLE" && e.message === "remote oats 0.55.0 at h does not advertise spawn-preview-2; upgrade it there; nothing was sent");
+    assert.deepEqual(host.spawned(), []);
+    // The apply's refusals come first, as the apply orders them: a retargeted registration before anything is asked.
+    mkdirSync(dirname(snapshotPath("build", "dev-old")), { recursive: true });
+    writeFileSync(snapshotPath("build", "dev-old"), JSON.stringify({ serverId: "build", target: { ...target, workspace: "/elsewhere" }, instance: "dev-old", home: "/elsewhere/agents/dev/instances/dev-old" }));
+    host = remote(["spawn-preview-2"], ok);
+    assert.throws(() => routeCommand("build", "spawn", args, { server, execFileSync: host.exec }), (e) => e.code === "E_ROUTE_CHANGED");
+    assert.deepEqual(host.sent, [], "nothing was asked of the host");
+    rmSync(REMOTE_SNAPSHOT_DIR(), { recursive: true, force: true });
+
+    // The host refuses the preview: its envelope relayed as is, nothing written.
+    const refused = { schemaVersion: 1, ok: false, error: { code: "E_SOUL_UNKNOWN", message: "no soul dev" } };
+    routed = routeCommand("build", "spawn", args, { server, execFileSync: remote(["spawn-preview-2"], refused).exec });
+    assert.deepEqual(routed.envelope, refused);
+    assert.equal(existsSync(REMOTE_SNAPSHOT_DIR()), false);
+    // An ok answer that is not a preview created an instance: its route is recorded, as the apply records it.
+    const spawned = { schemaVersion: 1, ok: true, result: { instance: "dev-x", agent: "dev", home: hostPreview.home, launched: false, warnings: [] } };
+    routed = routeCommand("build", "spawn", args, { server, execFileSync: remote(["spawn-preview-2"], spawned).exec });
+    assert.equal(routed.envelope.result.snapshot, snapshotPath("build", "dev-x"));
+    assert.equal(JSON.parse(readFileSync(snapshotPath("build", "dev-x"), "utf8")).home, hostPreview.home);
   } finally {
     if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
     rmSync(base, { recursive: true, force: true });

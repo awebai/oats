@@ -2700,6 +2700,13 @@ function herdrSpawnFlag() {
   if (flag("herdr-socket") !== undefined) return "--herdr-socket";
   return undefined;
 }
+/** A spawn preview's text: the local one, or a host's answer to a routed
+ *  preview (`server`, its id), which this side printed the same way (#610). */
+function printSpawnPreview(r, { server, soulFetched = false } = {}) {
+  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+  if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
+  for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+}
 async function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg, details, exit) => (JSON_MODE ? jsonFail(code, msg, details, exit) : die(msg, exit));
@@ -2934,9 +2941,7 @@ async function spawnCmd() {
       // (the deployment's cache had no entry for its commit): the result says so.
       if (prepared) r.soulFetched = soulFetched;
       if (JSON_MODE) { jsonOk(withObservation(r)); return; }
-      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
-      if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
-      for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+      printSpawnPreview(r, { soulFetched });
       return;
     }
   } catch (e) {
@@ -4455,7 +4460,9 @@ async function serverRouteCmd() {
   if (!envelope.ok && !(cmd === "retire" && envelope.result)) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
   const r = envelope.result;
   const target = r.target || {};
-  if (cmd === "spawn") {
+  // A routed preview created nothing, there or here: the local preview's lines, naming the server.
+  if (cmd === "spawn" && rest.includes("--preview")) printSpawnPreview(r, { server: id, soulFetched: r.soulFetched === true });
+  else if (cmd === "spawn") {
     console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
     console.log(`  remote home: ${r.home}`);
     console.log(`  route snapshot: ${r.snapshot ? shortPath(r.snapshot) : "none (see the warning)"}`);
