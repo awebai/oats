@@ -35,12 +35,12 @@ import { runtimeState, unsupportedSession } from "../../client/instance-presenta
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
-import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { revealInStrip, revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
-  "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
+  "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
   "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "restoreWorkspaceTabs", "showTerminalContext",
   "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster", "syncTabNeedsInput",
@@ -83,7 +83,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Panel behavior is covered with the real presenter in split-empty-shell.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
-    updateSplitControls() {}, revealInStrip, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
+    updateSplitControls() {}, revealInStrip, revealInScrollport, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
     ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
     api: () => { const gate = deferred(); requests.push(gate); return gate.promise; },
     prepareOwnedOpen: opts => prepareOwnedOpen({ ...opts, load() {

@@ -13,6 +13,7 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
 `test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's rows and cycling),
 `test/palette-recency.test.mjs` (its Recent group and focus record), `test/tab-strip-reveal.test.mjs`,
+`test/roster-reveal-row.test.mjs` (an active terminal tab reveals its roster row),
 `test/theme-picker.test.mjs` (the theme picker's keys).
 
 ## Principles
@@ -221,7 +222,13 @@ go to tab) do nothing; the dialog keeps focus.
 
 Tab switches from the keyboard (Ctrl+Tab, Ctrl+PgDn, go to tab) keep focus in
 the new tab's content when it was in content, and on the strip when it was on
-the strip. A stage switch from a chord, the palette or a nav button leaves
+the strip. Whenever another terminal tab becomes active (any of these, a click
+or an arrow on the strip, a close's successor, a pane of another split group),
+and on a click on the tab that is already active, its roster row reads as
+selected and the roster scrolls just enough to show it, without taking focus.
+It does not scroll while the sidebar is hidden or in focus mode, nor for a row
+the filter hides; under a collapsed parent it shows the nearest visible
+ancestor's row and leaves the parent collapsed. A stage switch from a chord, the palette or a nav button leaves
 focus where it was when that is still shown, else on the stage's first
 control.
 
