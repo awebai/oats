@@ -63,6 +63,13 @@ function failureReason(envelope, remote, terms, { code = envelope?.error?.code, 
   const detail = kernel && (undescribed || lifecycleDetailCode(code)) ? displayLine(envelope.error?.message) : null;
   return { ...reason, message, ...(detail ? { detail } : {}), ...busy };
 }
+/** One client's lifecycle boundary: `lifecycleRequest(request, getContext)`, a plan or an apply.
+ *   invoke  the CLI call (lifecycle-cli.mjs `cliLifecycle`); now  the clock (ms); mint  the reference and key maker
+ *   terms   the client's own (client-terms.mjs): every reason is worded with them; required
+ * `getContext()` is read at every admission and answers the deployment the request names and what this
+ * client holds of it: `{ workspace: { id, scope, remote?, group? }, cli, localCwd, instances }`. `group` is
+ * the workspace's roster group (its `probe` says which features a routed command's host answers with,
+ * lifecycle-contract.mjs `answeringFeatures`); `instances` are that deployment's own rows. */
 export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => performance.now(), mint = () => randomBytes(32).toString('hex'), terms } = {}) {
   requireTerms(terms, 'createLifecycleBoundary');
   const plans = new Map(), actions = new Map(), reads = new Map();
