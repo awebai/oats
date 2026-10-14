@@ -38,9 +38,10 @@ export function startGroup(command, args, options = {}) {
   return proc;
 }
 
-/** Whether a process of the group `pgid` is left. Signal 0 asks and sends nothing. */
+/** Whether a process of the group `pgid` is left. Signal 0 asks and sends nothing. A process that has
+ *  ended and is not collected yet is still one: Linux answers for it, macOS refuses (EPERM). */
 function groupLeft(pgid) {
-  try { process.kill(-pgid, 0); return true; } catch (e) { if (e.code === "ESRCH") return false; throw e; }
+  try { process.kill(-pgid, 0); return true; } catch (e) { if (e.code === "ESRCH") return false; if (e.code === "EPERM") return true; throw e; }
 }
 
 /** The processes of the group `pgid`, one `pid pgid command` line each. */
@@ -49,15 +50,19 @@ function groupMembers(pgid) {
     .filter((line) => line.trim().split(/\s+/)[1] === String(pgid));
 }
 
-/** Kill `proc`, a process started with `startGroup`, and wait until it and everything it started
- *  have ended. Only `proc` is killed: the others are waited for, at most `wait` ms. A group that
- *  outlives the wait rejects with the processes that are left, by name. */
+/** Kill `proc`, a process started with `startGroup`, and wait until its group has ended: `proc` itself
+ *  and everything it started. Only `proc` is killed: the others are waited for. The close takes `wait`
+ *  ms at most, from its start; a group that outlives it rejects with every process that is left, `proc`
+ *  among them if it still runs, by name. */
 export async function closeGroup(proc, { wait = 30000 } = {}) {
+  if (proc.pid === undefined) return; // it never started
+  const deadline = Date.now() + wait;
   proc.kill();
-  if (proc.exitCode === null && proc.signalCode === null) await new Promise((r) => proc.once("exit", r));
-  for (const deadline = Date.now() + wait; groupLeft(proc.pid);) {
+  // `proc` is of its group until it is collected, and collecting it sets its exit code or signal: the
+  // group alone is waited for.
+  while (groupLeft(proc.pid)) {
     if (Date.now() > deadline) {
-      throw new Error(`the process ${proc.pid} was closed ${wait} ms ago and what it started still runs:\n${groupMembers(proc.pid).join("\n")}`);
+      throw new Error(`the process ${proc.pid} was closed ${wait} ms ago and its group still runs:\n${groupMembers(proc.pid).join("\n")}`);
     }
     await new Promise((r) => setTimeout(r, 10));
   }

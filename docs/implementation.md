@@ -585,9 +585,11 @@ writes its log in the test's directory. Such a test starts the process with
 
 - `startGroup` starts it as `spawn` does, as the leader of a process group of
   its own, which holds whatever it starts.
-- `closeGroup` kills that one process and waits, 30 s at most, until its group
-  is empty. A group that outlives the wait fails the test and names the
-  processes that are left. Only then does the test remove what they worked in.
+- `closeGroup` kills that one process and waits until its group, that process
+  among it, is empty. The bound, 30 s, covers the whole close from its start:
+  a group that outlives it fails the test and names every process that is
+  left, the killed one too if it still runs. Only then does the test remove
+  what they worked in.
 - A group of its own is not in the terminal's foreground group, so an
   interrupt of the test's process does not reach it. The helper passes it on:
   on `SIGINT`, `SIGTERM` or `SIGHUP` it kills every group that process

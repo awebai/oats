@@ -46,11 +46,27 @@ test("closeGroup fails by name when what the process started does not end in tim
   const proc = await parentOf(`/* oats-pg-stays */ setTimeout(() => {}, 60000);`);
   t.after(async () => { try { process.kill(-proc.pid, "SIGKILL"); } catch { /* the group is gone */ } await closeGroup(proc); });
   await assert.rejects(closeGroup(proc, { wait: 300 }), (e) => {
-    assert.match(e.message, new RegExp(`^the process ${proc.pid} was closed 300 ms ago and what it started still runs:`));
+    assert.match(e.message, new RegExp(`^the process ${proc.pid} was closed 300 ms ago and its group still runs:`));
     assert.match(e.message, /oats-pg-stays/, "the process that is left is named by its command line");
     assert.equal(e.message.split("\n").length, 2, "and only that one: the process that was killed is gone");
     return true;
   });
+});
+
+// The bound is of the whole close, from its start: a process that does not end on its kill is one of
+// its group, and is named with what is left of it.
+test("closeGroup fails within its bound, naming the process itself, when the process does not end on its kill", { timeout: 10000 }, async (t) => {
+  const proc = startGroup(process.execPath, ["-e", `/* oats-pg-leader-stays */ process.on("SIGTERM", () => {}); process.stdout.write("started\\n"); setInterval(() => {}, 1000);`], { stdio: ["ignore", "pipe", "inherit"] });
+  await firstOutput(proc);
+  t.after(async () => { try { process.kill(-proc.pid, "SIGKILL"); } catch { /* the group is gone */ } await closeGroup(proc); });
+  const started = Date.now();
+  await assert.rejects(closeGroup(proc, { wait: 300 }), (e) => {
+    assert.match(e.message, new RegExp(`^the process ${proc.pid} was closed 300 ms ago and its group still runs:`));
+    assert.match(e.message, new RegExp(`^\\s*${proc.pid}\\s+${proc.pid}\\s.*oats-pg-leader-stays`, "m"), "the process itself is named, by its id and command line");
+    return true;
+  });
+  assert.ok(Date.now() - started < 300 + 2000, `closeGroup returned ${Date.now() - started} ms after it started, with a bound of 300 ms`);
+  assert.equal(proc.exitCode, null, "the process ignored its kill and still runs");
 });
 
 test("closeGroup returns for a process that has already ended and started nothing", async () => {
