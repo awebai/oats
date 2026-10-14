@@ -7,10 +7,12 @@ window's regions, and how each interactive element is reached and operated.
 
 Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `TERMINAL_ALLOWLIST`), `renderer/focus-regions.mjs` (F6),
-`renderer/surface-return.mjs` (back to where you were), `renderer/shell.mjs`
-(action registration). Tests: `test/keymap-linux.test.mjs`,
+`renderer/surface-return.mjs` (back to where you were),
+`renderer/instance-recency.mjs` (the palette's last-focus record),
+`renderer/shell.mjs` (action registration). Tests: `test/keymap-linux.test.mjs`,
 `test/keybindings.test.mjs`, `test/focus-regions.test.mjs`,
-`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's rows and cycling), `test/tab-strip-reveal.test.mjs`,
+`test/spawn-dialog-keyboard.test.mjs`, `test/palette-tree.test.mjs` (the palette's rows and cycling),
+`test/palette-recency.test.mjs` (its Recent group and focus record), `test/tab-strip-reveal.test.mjs`,
 `test/theme-picker.test.mjs` (the theme picker's keys).
 
 ## Principles
@@ -225,12 +227,30 @@ control.
 
 ## The command palette (⌘K)
 
-- **⌘K / Ctrl+Shift+P** opens the palette. With an empty query it lists every
-  instance as the sidebar roster does (the same relation groups, then
-  independent; the same order; indented by depth; the sidebar's collapsed
-  state is ignored), then up to twelve commands. `>` restricts to commands.
-- With a query the instances keep tree order: each match at its depth, with
-  its non-matching ancestors shown dimmed for context. A match stays in its
+- **⌘K / Ctrl+Shift+P** opens the palette. With an empty query it starts with
+  a **Recent** group: every instance of the window's workspace whose terminal
+  has been focused (its tab became the active tab, by any path, or its
+  terminal took keyboard focus), most recent first, flat, each with its
+  parent as quiet text ("under lead"). Then every other instance as the
+  sidebar roster lists it (the same relation groups, then independent; the
+  same order; indented by depth; the sidebar's collapsed state is ignored),
+  minus those already in Recent: each instance appears once. Then up to
+  twelve commands. `>` restricts to commands. The sidebar roster keeps its
+  stable order; only the palette is ordered by focus.
+- **The palette opens on the previous instance.** When the most recent
+  instance is the terminal in front, the second recent row is active, so ⌘K
+  then Enter returns to the agent you were on before. Otherwise the first row
+  is active.
+- The focus record is per machine: one `localStorage` key
+  (`oats-desktop-instance-recency`), keyed by workspace and by the instance's
+  exact identity (the terminal tab's key), the 200 most recent per workspace.
+  It survives a restart and is never written to a deployment or sent to the
+  server. A missing or corrupt value reads as empty; an entry for an instance
+  no longer in the roster is not listed.
+- With a query the matching recent instances come first, most recent first,
+  flat as above. The remaining matches keep tree order: each match at its
+  depth, with its non-matching ancestors shown dimmed for context (a recent
+  ancestor of a match is shown there too, as context). A match stays in its
   relation group, as in the filtered sidebar: one match out of a group of five
   is listed under that group's name, not under independent. A context row is
   `aria-disabled`: the arrows, the chord and the pointer skip it, and it opens
@@ -242,9 +262,10 @@ control.
   already holds Shift (Ctrl+Shift+P, the Linux/Windows default) has no Shift
   form, so ArrowUp moves up there. A plain-key binding never cycles: typing
   belongs to the input. Quick Open's ⌘P is unchanged: a second ⌘P closes it.
-- For assistive technology each relation group is a named `role=group`
-  (announced once, on entry), and a nested row's option reads "…, under
-  <parent>" (visually hidden). Options carry no `aria-level`, which is not an
+- For assistive technology each relation group, and Recent, is a named
+  `role=group` (announced once, on entry), and a nested or recent row's option
+  reads "…, under <parent>" (visually hidden; a recent row's visible "under
+  <parent>" is `aria-hidden`, so it is read once). Options carry no `aria-level`, which is not an
   option's attribute.
 
 ## Quick Open and the spawn dialog

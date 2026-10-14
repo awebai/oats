@@ -24,6 +24,7 @@ import {
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "./instance-recency.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { createSurfaceReturn } from "./surface-return.mjs";
@@ -1285,6 +1286,7 @@ const tabs = new Map(); // id -> { tabEl, triggerEl, closeEl, paneEl, title, key
 let nextTabId = 1;
 let activeTab = null;
 const wsActiveTerminal = new Map(); // workspace id -> last-active terminal tab key
+const instanceRecency = createInstanceRecency(); // per-machine: when each instance's terminal was last focused (palette order)
 const brainIntents = createIntentGate();
 // Terminal and artifact opens compete for the same foreground selection.
 const tabOpenIntents = createSelectionOwnership({ currentWorkspace, workspaceGeneration });
@@ -1651,6 +1653,9 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   if (current?.kind === "terminal" && current.workspace) {
     wsActiveTerminal.set(current.workspace, current.key);
   }
+  // The palette's last-focus order (Spec C): any activation of a terminal tab, and
+  // a terminal taking keyboard focus (wirePaneSelection selects its tab), lands here.
+  if (current?.kind === "terminal") instanceRecency.record(current.workspace, recencyIdFromTerminalKey(current.workspace, current.key));
   if (current?.kind === "terminal" || emptyFocused) {
     setSidebarMode("instances");
     setNavActive(null);
@@ -2086,9 +2091,13 @@ const palette = createPalette({
   loadInstances: async () => {
     if (windowState() === "choosing") return { instances: [], deployments: [] }; // no workspace: nothing to read (#481)
     const ws = currentWorkspace();
+    // The terminal in front and the last-focus record as the palette opens (Spec C).
+    const front = tabLayerVisible ? tabs.get(activeTab) : null;
+    const activeId = front?.kind === "terminal" && front.workspace === ws ? recencyIdFromTerminalKey(ws, front.key) : null;
+    const recent = instanceRecency.snapshot(ws);
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
     // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
-    return { instances: p.instances || [], deployments: panelDeployments(p) };
+    return { instances: p.instances || [], deployments: panelDeployments(p), recent, activeId };
   },
   openTerminal: (name) => openTerminalTab(name),
   // While open, ⌘K / Ctrl+Shift+P moves down and Shift + it up (live keymap); Esc closes, Enter opens.
@@ -2601,6 +2610,7 @@ function rehomeWorkspaceState(workspaces) {
   const moves = rehomeTabs(tabs, map, workspaces);
   if (!map.size && !moves.length) return;
   rehomeActiveTerminals(wsActiveTerminal, map, moves);
+  instanceRecency.rehome(map);
   workspaceTabMemory.rehome(map);
   rehomeCollapsed(collapsedInstances, map);
   spawnJobs.rehome(map);
