@@ -5,7 +5,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createForgetDialog, forgettable, forgetWords, shownInstance } from '../renderer/forget-dialog.mjs';
+import { createForgetDialog, forgettable, forgetWords, shownInstance, forgetSuccessor } from '../renderer/forget-dialog.mjs';
+import { registerAction, handleKeydown } from '../renderer/keybindings.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { deferred, tick } from './helpers/lifecycle-fixture.mjs';
@@ -13,15 +14,15 @@ import { deferred, tick } from './helpers/lifecycle-fixture.mjs';
 const GONE = Object.freeze({ instance: 'dev-a', agent: 'dev', home: '/srv/team/agents/dev/instances/dev-a', server: 'build', repoName: 'Build box',
   running: null, addressable: false, savedRoute: true, missingRemotely: true });
 
-function fixture({ answer, row = GONE } = {}) {
-  const dom = new JSDOM('<!doctype html><button id="opener">Actions</button><div id="roster" tabindex="-1"><button id="next">dev-b</button></div>', { pretendToBeVisual: true });
+function fixture({ answer, row = GONE, reread } = {}) {
+  const dom = new JSDOM('<!doctype html><button id="opener">Actions</button><input id="filter"><div id="roster" tabindex="-1"><button id="next">dev-b</button></div>', { pretendToBeVisual: true });
   const doc = dom.window.document, sent = [], rereads = [], said = [], pending = [];
   let generation = 0, workspaceChange;
   const dialog = createForgetDialog({ doc, generation: () => generation,
     subscribeWorkspace: fn => { workspaceChange = fn; return () => {}; },
     request: body => { sent.push(body); if (answer === 'hold') { const d = deferred(); pending.push(d); return d.promise; }
       return typeof answer === 'function' ? answer(body) : answer ?? { status: 'forgotten', server: body.server, instance: body.instance }; },
-    reread: () => { rereads.push(1); }, notify: text => { said.push(text); },
+    reread: () => { rereads.push(1); return reread?.(); }, notify: text => { said.push(text); },
     nextFocus: () => doc.getElementById('next') });
   const q = sel => doc.querySelector(sel);
   return { dom, doc, dialog, sent, rereads, said, pending, q,
@@ -178,4 +179,51 @@ test('a late failure after dispose: one re-read, nothing said', async () => {
   await tick();
   assert.deepEqual([f.sent.length, f.rereads.length, f.said.length], [1, 1, 0]);
   f.dom.window.close();
+});
+
+test('busy holds the window: a shell shortcut (the real keymap, on the window) neither runs nor moves focus, focus that leaves comes back', async () => {
+  const f = fixture({ answer: 'hold' });
+  const ran = [];
+  const off = registerAction({ id: 'test.forget.focusFilter', label: 'Focus the filter', context: 'global', defaultChord: 'Mod+Shift+F9',
+    run: () => { ran.push(1); f.doc.getElementById('filter').focus(); } });
+  const onKey = event => handleKeydown(event, { isMac: false });
+  f.dom.window.addEventListener('keydown', onKey);
+  const chord = target => target.dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key: 'F9', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+  try {
+    chord(f.doc.body); assert.equal(ran.length, 1, 'the shortcut runs when nothing is busy');
+    f.open(); f.confirm().click();
+    chord(f.status()); chord(f.doc.getElementById('filter')); chord(f.doc.body);
+    assert.equal(ran.length, 1, 'no shortcut runs while busy, wherever the key lands');
+    assert.equal(f.doc.activeElement, f.status());
+    f.doc.getElementById('filter').focus();
+    assert.equal(f.doc.activeElement, f.status(), 'focus put outside comes back to the status line');
+    f.key('Tab'); assert.equal(f.doc.activeElement, f.status());
+    f.pending[0].resolve({ status: 'forgotten', server: 'build', instance: 'dev-a' }); await tick();
+    chord(f.doc.body); assert.equal(ran.length, 2, 'released once answered');
+    f.doc.getElementById('filter').focus(); assert.equal(f.doc.activeElement.id, 'filter');
+  } finally { off(); f.dom.window.removeEventListener('keydown', onKey); f.close(); }
+});
+
+test('the window\'s roster is read again before the dialog closes, still busy meanwhile', async () => {
+  const gate = deferred();
+  const f = fixture({ reread: () => gate.promise });
+  try {
+    f.open(); f.confirm().click(); await tick();
+    assert.deepEqual([f.rereads.length, f.shown(), f.said.length], [1, true, 0]);
+    assert.equal(f.q('.lifecycle-dialog').getAttribute('aria-busy'), 'true');
+    gate.resolve(); await tick();
+    assert.deepEqual([f.rereads.length, f.shown(), f.said], [1, false, ['Forgot dev-a on Build box.']]);
+  } finally { f.close(); }
+  const failing = fixture({ reread: () => Promise.reject(new Error('panel')) });
+  try { failing.open(); failing.confirm().click(); await tick(); assert.deepEqual(failing.said, ['Forgot dev-a on Build box.'], 'a failed re-read still says the outcome'); }
+  finally { failing.close(); }
+});
+
+test('the next row is the first that followed the forgotten one when the dialog opened and is still shown; none after it: null', () => {
+  const row = id => ({ dataset: { treeInstance: id } });
+  const [a, b, c] = ['a', 'b', 'c'].map(row);
+  assert.equal(forgetSuccessor([b, c], ['a', 'b', 'c'], 0), b, 'the forgotten row already gone: its successor by identity');
+  assert.equal(forgetSuccessor([a, c], ['a', 'b', 'c'], 0), c, 'a successor that left is skipped');
+  assert.equal(forgetSuccessor([a, b], ['a', 'b'], 1), null, 'the last row: none after it, never one before');
+  assert.equal(forgetSuccessor([a, b], ['a', 'b'], -1), null);
 });

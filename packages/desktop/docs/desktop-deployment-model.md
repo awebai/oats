@@ -715,11 +715,16 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   `{server, instance}` to `POST /api/server-forget` (`server/server-forget.mjs`),
   which composes the argv of `oats server forget <server> --instance
   <instance> --json` from those two values alone; the kernel's `home` and
-  `target` never leave the backend. After every outcome the remote roster is
-  read again; the view is never edited locally. `<server>` below is the
-  server label:
+  `target` never leave the backend. After every command, whatever it
+  answered, the route reads the remote roster again and answers only once
+  that read has landed (a read already in flight began before the command, so
+  the one after it is awaited); the window then reads its roster once, and
+  the view is never edited locally. While busy the confirmation holds the
+  window: every keydown is its own (no shortcut runs behind it) and focus
+  stays on its status line. `<server>` below is the server label:
   - forgotten: the status line says "Forgot `<instance>` on `<server>`." and
-    focus moves to the next roster row, else the roster;
+    focus moves to the first row that followed it when the confirmation
+    opened and is still shown, else the roster;
   - `E_SNAPSHOT_UNKNOWN`: "This computer had no saved route for `<instance>`
     on `<server>`; nothing was changed.", focus as for forgotten;
   - another refusal, or a request the backend refused without running

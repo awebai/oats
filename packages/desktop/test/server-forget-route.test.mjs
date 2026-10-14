@@ -5,9 +5,12 @@
 // followed by one remote roster read, whatever it answered.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServerForget, forgetOutcome } from '../server/server-forget.mjs';
-import { cliServerForget } from '../../client/cli-adapter.mjs';
+import { createServerForget, forgetOutcome, forgetNotRun } from '../server/server-forget.mjs';
+import { cliServerForget, cliRemoteRoster } from '../../client/cli-adapter.mjs';
+import { createRefreshLoop } from '../../client/refresh-loop.mjs';
+import { classifyApiRoute } from '../api-url.mjs';
 import { loadServer, juanState, CLI } from './helpers/workspace-views-fixture.mjs';
+import { shippedMainApi } from './helpers/shipped-main-api.mjs';
 
 const ROUTE = '/api/server-forget';
 const OK = { schemaVersion: 1, ok: true, result: { server: 'build', instance: 'dev-a', home: '/srv/team/agents/dev/instances/dev-a',
@@ -15,23 +18,26 @@ const OK = { schemaVersion: 1, ok: true, result: { server: 'build', instance: 'd
 const FAIL = (code, message) => ({ schemaVersion: 1, ok: false, error: { code, message } });
 const exited = code => Object.assign(new Error(`Command failed: exit ${code}`), { code });
 
-/** A runner that answers each command with `answer(argv)` ({ stdout, err }), or holds it until the test settles it. */
+/** A runner that answers each command with `answer(argv, n)` ({ stdout, err }; n counts from 0), or holds it ('hold') until the test settles it. */
 function runner(answer = () => ({ stdout: JSON.stringify(OK) })) {
   const calls = [], held = [];
   const exec = (bin, argv, opts, done) => {
     calls.push({ bin, argv, opts });
-    const reply = answer(argv);
+    const reply = answer(argv, calls.length - 1);
     if (reply === 'hold') { held.push(({ stdout = '', err = null }) => done(err, stdout)); return; }
     queueMicrotask(() => done(reply.err ?? null, reply.stdout ?? ''));
   };
   return { exec, calls, held };
 }
-async function serve({ answer, cli = CLI, adapter } = {}) {
+/** The shipped handler over the real forget module and adapter. `remoteLoop` is the server's refresh loop (a stub
+ * counting `request()`s by default; `rereads` holds one entry per request). */
+async function serve({ answer, cli = CLI, adapter, remoteLoop } = {}) {
   const run = runner(answer);
   const rereads = [];
   const serverForget = createServerForget({ cli: () => cli,
     adapter: adapter ?? { cliServerForget: (bin, args) => cliServerForget(bin, args, { exec: run.exec }) } });
-  const { request } = await loadServer(juanState().state, { serverForget, remoteLoop: { request: () => { rereads.push(1); return Promise.resolve(); } } });
+  const loop = remoteLoop ?? { request: () => { rereads.push(1); return Promise.resolve(); } };
+  const { request } = await loadServer(juanState().state, { serverForget, forgetNotRun, remoteLoop: loop });
   const post = (body, extra = {}) => request({ url: ROUTE, method: 'POST', body, ...extra });
   return { post, request, run, rereads };
 }
@@ -103,8 +109,11 @@ test('E_SNAPSHOT_UNKNOWN and another refusal are the kernel\'s, with its message
 test('no kernel answer is an unknown outcome, never a refusal: a timeout, no envelope, a crash, a success for another row; each re-reads once', async () => {
   const cases = [
     [() => ({ stdout: '', err: Object.assign(exited(null), { killed: true, signal: 'SIGTERM' }) }), 'E_CLI_TIMEOUT'],
-    [() => ({ stdout: 'TypeError: Cannot read properties of null', err: exited(1) }), 'E_CLI_PROTOCOL'],
+    // A nonzero exit with no envelope (a crash after the route file went) and one with a success envelope: E_CLI_FAILED
+    // (cli-adapter.mjs runJson strictExit); a clean exit that printed no envelope: E_CLI_PROTOCOL.
+    [() => ({ stdout: 'TypeError: Cannot read properties of null', err: exited(1) }), 'E_CLI_FAILED'],
     [() => ({ stdout: JSON.stringify(OK), err: exited(1) }), 'E_CLI_FAILED'],
+    [() => ({ stdout: 'not an envelope' }), 'E_CLI_PROTOCOL'],
     [() => ({ stdout: JSON.stringify({ ...OK, result: { ...OK.result, instance: 'dev-b' } }) }), 'E_OUTCOME_UNKNOWN'],
     [() => ({ stdout: JSON.stringify({ ...OK, result: { ...OK.result, forgotten: false } }) }), 'E_OUTCOME_UNKNOWN'],
   ];
@@ -126,7 +135,8 @@ test('an error the adapter wrote is not the kernel\'s, even with a kernel-lookin
 });
 
 test('one Forget per row at a time: a second request while the first runs is 409 E_BUSY and runs nothing; another row runs', async () => {
-  const s = await serve({ answer: argv => (argv[4] === 'dev-a' ? 'hold' : { stdout: JSON.stringify({ ...OK, result: { ...OK.result, instance: argv[4] } }) }) });
+  // Only the first command is held; every later one answers at once.
+  const s = await serve({ answer: (argv, n) => (n === 0 ? 'hold' : { stdout: JSON.stringify({ ...OK, result: { ...OK.result, instance: argv[4] } }) }) });
   const first = s.post({ server: 'build', instance: 'dev-a' });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(s.run.calls.length, 1);
@@ -150,12 +160,65 @@ test('without a CLI that reads the remote roster nothing runs: 409 E_FEATURE', a
   }
 });
 
-test('the adapter refuses option-shaped values itself, and its deadline stays inside the proxy\'s default 20 s', async () => {
+test('the adapter refuses option-shaped values itself', async () => {
   const run = runner();
   for (const args of [{ server: '--x', instance: 'a' }, { server: 'b', instance: '-a' }, { server: 'b' }, undefined]) {
     assert.equal((await cliServerForget('/oats', args, { exec: run.exec })).error.code, 'E_BAD_ARGS');
   }
   assert.equal(run.calls.length, 0);
-  await cliServerForget('/oats', { server: 'b', instance: 'a' }, { exec: run.exec });
-  assert.ok(run.calls[0].opts.timeout < 20_000, 'main.mjs proxies an unclassified route for 20 s: the CLI answers first');
+});
+
+test('the answer waits for the roster read after the command: the panel then serves the roster as it stands after it', async () => {
+  let settle; const read = new Promise(resolve => { settle = resolve; });
+  const order = [];
+  const s = await serve({ answer: () => { order.push('command'); return { stdout: JSON.stringify(OK) }; },
+    remoteLoop: { request: () => { order.push('read requested'); return read; } } });
+  let answered = false;
+  const pending = s.post({ server: 'build', instance: 'dev-a' }).then(answer => { answered = true; return answer; });
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(order, ['command', 'read requested'], 'the read is requested after the command');
+  assert.equal(answered, false, 'not answered before the read lands');
+  settle();
+  assert.equal((await pending).body.status, 'forgotten');
+  // A read that fails still answers the outcome.
+  const failing = await serve({ remoteLoop: { request: () => Promise.reject(new Error('roster')) } });
+  assert.equal((await failing.post({ server: 'build', instance: 'dev-a' })).body.status, 'forgotten');
+});
+
+test('with the server\'s refresh loop: a read already in flight is followed by one read after the command, and the answer waits for that one', async () => {
+  const reads = [];
+  const loop = createRefreshLoop({ run: () => new Promise(resolve => { reads.push(resolve); }), focusedMs: 3_600_000, blurredMs: 3_600_000,
+    timers: { setTimeout: () => null, clearTimeout: () => {} } });
+  const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const commands = [];
+  const s = await serve({ remoteLoop: loop, answer: () => { commands.push(reads.length); return { stdout: JSON.stringify(OK) }; } });
+  void loop.request(); await flush(); // R0: a background read that began before the Forget
+  assert.equal(reads.length, 1);
+  let answered = false;
+  const pending = s.post({ server: 'build', instance: 'dev-a' }).then(answer => { answered = true; return answer; });
+  await flush();
+  assert.deepEqual(commands, [1], 'the command ran while R0 was in flight');
+  reads[0](); await flush();
+  assert.equal(reads.length, 2, 'R1, the read after the command, runs once R0 is done');
+  assert.equal(answered, false, 'R0 is not the read after the command: still waiting');
+  reads[1](); assert.equal((await pending).body.status, 'forgotten');
+  assert.equal(reads.length, 2, 'exactly one read after the command');
+  // With no read in flight: one read, after the command.
+  void s.post({ server: 'build', instance: 'dev-a' }); await flush();
+  assert.equal(reads.length, 3); reads[2](); await flush();
+});
+
+test('main\'s proxy waits longer than one forget call and two roster reads, each read from its own call', async () => {
+  const limitOf = async call => { let limit; await call((_bin, _argv, opts, done) => { limit = opts.timeout; done(null, '{"schemaVersion":1,"ok":true,"result":{"groups":[]}}'); }); return limit; };
+  const forget = await limitOf(exec => cliServerForget('/oats', { server: 'build', instance: 'dev-a' }, { exec }));
+  const roster = await limitOf(exec => cliRemoteRoster('/oats', { exec }));
+  assert.ok(forget > 0 && roster > 0);
+  for (const p of [ROUTE, '/api/./server-forget', '/api/x/../server-forget']) assert.equal(classifyApiRoute(p, 'http://127.0.0.1:4999'), 'server-forget', p);
+  assert.notEqual(classifyApiRoute('/api/server-forget/x', 'http://127.0.0.1:4999'), 'server-forget');
+  const api = shippedMainApi({ window: '/d/first', advertised: new Set(['/d/first']), served: [{ id: '/d/first' }] });
+  const seen = [];
+  api.context.AbortSignal = { timeout: ms => { seen.push(ms); return { ms }; } };
+  api.context.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ status: 'forgotten', server: 'build', instance: 'dev-a' }) });
+  await api.call(ROUTE, { method: 'POST', body: JSON.stringify({ server: 'build', instance: 'dev-a' }) });
+  assert.ok(seen[0] > forget + 2 * roster, `the proxy's ${seen[0]} ms must outlast ${forget} + 2 × ${roster} ms`);
 });

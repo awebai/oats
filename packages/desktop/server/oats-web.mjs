@@ -1325,13 +1325,16 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/server-forget") {
       // #1131: forget the saved route of a remote row its host no longer lists (server/server-forget.mjs). The
       // body is that row's { server, instance }; the argv is composed there, never taken from the request.
-      // After any command that ran, whatever it answered, the remote roster is read again: the panel then
-      // shows what the CLI says, and nothing here edits it.
+      // After any command that ran, whatever it answered, the remote roster is read again, and the answer waits
+      // for that read: this route is its one owner. remoteLoop.request() runs a read now, or the one right after
+      // a read already in flight (which began before the command). So /api/panel serves the roster as it stands
+      // after the command once this answers, and nothing here edits it. The proxy's deadline covers both reads
+      // (main.mjs, route `server-forget`; server-forget-route.test.mjs holds them together).
       if (url.search) return send(res, 400, forgetNotRun("E_BAD_ARGS"));
       let body;
       try { body = await readStrictBody(req, 4096); } catch { return send(res, 400, forgetNotRun("E_BAD_ARGS")); }
       const { http, ran, answer } = await serverForget.forget(body);
-      if (ran) { try { void remoteLoop.request(); } catch { /* a re-read must not erase the outcome */ } }
+      if (ran) { try { await remoteLoop.request(); } catch { /* a re-read must not erase the outcome */ } }
       return send(res, http, answer);
     }
     if (req.method === "GET" && path === "/api/cli") {

@@ -1316,7 +1316,7 @@ row whose reason is `missing` (its host no longer lists it) keeps its trigger an
 **Forget…** alone when the shell passes `openForget`. Forget… never runs from the menu
 either: it opens `forget-dialog.mjs`, the lifecycle dialog's classes and focus handling
 with no plan, which sends `{server, instance}` once to `/api/server-forget`
-(`../server/server-forget.mjs`) and re-reads the roster after every answer
+(`../server/server-forget.mjs`), which answers once its roster read after the command has landed, then re-reads the window's roster
 ([desktop-deployment-model.md](../docs/desktop-deployment-model.md#remote-rows)).
 
 `choice-popup.mjs` owns the existing provider/model popup behavior. Model search

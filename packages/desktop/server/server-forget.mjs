@@ -15,7 +15,6 @@
  * refusal's message is the kernel's text, shown only through the renderer's display filter; an unknown
  * outcome carries the client's code alone, never a stderr or a thrown text. */
 import { madeByKernel } from '../../client/kernel-made.mjs';
-import { cliReadsRemotes } from '../../client/panel-views.mjs';
 
 /** A row identity as the roster gave it: a string of 1 to 256 characters, no control character, never
  * option-shaped (cli-adapter.mjs `argText`, the rule of every other value this backend passes). */
@@ -46,6 +45,10 @@ export function forgetOutcome(envelope, server, instance) {
   return { status: 'unknown', reason: { code: typeof error?.code === 'string' && /^E_CLI_[A-Z_]+$/.test(error.code) ? error.code : 'E_OUTCOME_UNKNOWN' } };
 }
 
+/** The CLI the rows came from: an accepted one that reads the remote roster (every such kernel answers forget,
+ * 0.22.3). An array, never a string's `includes` (cli-locator.mjs requireRemoteSupport): it fails closed. */
+const readsRemotes = cli => cli?.ok === true && Array.isArray(cli.remote) && cli.remote.includes('roster');
+
 export function createServerForget({ adapter, cli }) {
   const running = new Set(); // `server\0instance` with a command in flight
   return {
@@ -53,8 +56,7 @@ export function createServerForget({ adapter, cli }) {
       if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 2
         || !forgetValue(body.server) || !forgetValue(body.instance)) return notRun('E_BAD_ARGS');
       const state = cli();
-      // The CLI the rows came from: one that reads the remote roster (every such kernel answers forget, 0.22.3).
-      if (!cliReadsRemotes(state)) return notRun('E_FEATURE');
+      if (!readsRemotes(state)) return notRun('E_FEATURE');
       const { server, instance } = body, key = `${server}\0${instance}`;
       if (running.has(key)) return notRun('E_BUSY');
       running.add(key);

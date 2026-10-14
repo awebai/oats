@@ -36,7 +36,7 @@ import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
-import { createForgetDialog } from './forget-dialog.mjs';
+import { createForgetDialog, forgetSuccessor } from './forget-dialog.mjs';
 import { successorRow } from "./focus-return.mjs";
 import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
@@ -2255,31 +2255,30 @@ function openLifecycleDialog(operation, instance, workspace) {
 }
 window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
 /* Forget… (#1131): a row its host no longer lists (forget-dialog.mjs). The server composes the command from the
- * row's { server, instance }; every answer re-reads the roster: the remote read the server started (joined by
- * the refresh, which answers once it landed), then this window's roster. Nothing here edits a row. */
+ * row's { server, instance } and answers once its own roster read after the command has landed (the one owner of
+ * that read); every answer then re-reads this window's roster from the server. Nothing here edits a row. */
 const forgetDialog = createForgetDialog({ doc: document,
   request: async body => (await desk.api('/api/server-forget', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   })).body,
-  reread: async () => {
-    try { await desk.api('/api/remote-roster/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }); }
-    catch { /* the window's roster is read below either way */ }
-    await refreshContextRoster();
-  },
+  reread: () => refreshContextRoster(),
   notify: text => notifications.notify(text),
-  nextFocus: row => forgetNextFocus(row),
+  nextFocus: () => forgetNextFocus(),
   generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,
   onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
 });
-/** Where focus goes once a row is forgotten: the roster row after it, else the roster itself (else a stable
- * shell control when the sidebar is hidden). The forgotten row stays until the re-read removes it. */
-function forgetNextFocus(row) {
+/** The roster's rows (by identity) when the Forget confirmation opened, and where its row stood among them. */
+let forgetRowOrder = null;
+/** Where focus goes once a row is forgotten: the first row that followed it when the confirmation opened and is
+ * still shown (the forgotten row may already be gone, by this re-read or an earlier poll), else the roster itself,
+ * else a stable shell control when the sidebar is hidden. */
+function forgetNextFocus() {
   const listEl = contextRosterEl?.querySelector(".ctx-list");
   if (!listEl || sidebarHidden()) return stableFocusTarget();
   const shown = el => el?.isConnected && !el.disabled && !el.closest("[hidden]") && document.defaultView.getComputedStyle(el).display !== "none";
-  const rows = [...listEl.querySelectorAll(".ctx-inst")];
-  const at = row ? rows.findIndex(r => r.dataset.treeInstance === instanceId(row)) : -1;
-  const next = at >= 0 ? rows.slice(at + 1).find(shown) : null;
+  const rows = [...listEl.querySelectorAll(".ctx-inst")].filter(shown);
+  const { order = [], at = -1 } = forgetRowOrder || {};
+  const next = forgetSuccessor(rows, order, at);
   if (!next) { contextRosterEl.tabIndex = -1; return contextRosterEl; }
   for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
   next.tabIndex = 0; return next;
@@ -2287,6 +2286,8 @@ function forgetNextFocus(row) {
 function openForgetDialog(instance, workspace) {
   if (workspace !== currentWorkspace() || forgetDialog.busy()) return;
   connections.close(); shortcutsEditor.close(); lifecycleDialog.close();
+  const order = [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].map(r => r.dataset.treeInstance);
+  forgetRowOrder = { order, at: order.indexOf(instanceId(instance)) };
   forgetDialog.open(instance);
 }
 window.addEventListener('pagehide', () => forgetDialog.dispose(), { once: true });

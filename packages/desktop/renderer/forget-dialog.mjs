@@ -5,12 +5,16 @@
  * It is the Stop and Retire confirmation's dialog (lifecycle-dialog.mjs): its classes, its status line, its
  * Escape and Tab handling and its focus return, with no plan to read. Opening, Cancel and Escape send
  * nothing. Forget sends exactly one request, `{ server, instance }` of the row it was opened for, through
- * `request`; the backend composes the command (server/server-forget.mjs). While it runs the dialog is busy:
- * Escape and Cancel do nothing, focus waits on the status line and Tab stays there, and no entry point can
- * send again (`open` refuses a row whose Forget is in flight, wherever it was opened).
+ * `request`; the backend composes the command (server/server-forget.mjs) and answers once the remote roster
+ * it reads after the command has landed. While it runs the dialog is busy: Escape and Cancel do nothing, focus
+ * waits on the status line, and no entry point can send again (`open` refuses a row whose Forget is in
+ * flight, wherever it was opened). Busy also holds the whole window: every keydown is taken at the window's
+ * capture phase, before the shell's shortcuts (keybindings.mjs `handleKeydown`) or a terminal see it, and
+ * focus that lands outside the dialog is put back on the status line, so no shortcut opens anything behind it.
  *
- * Every answer, and a request that failed, ends with `reread()` once: the roster is read again, never edited
- * here. Then the dialog closes and the outcome is said through `notify`:
+ * Every answer, and a request that failed, ends with `reread()` once, awaited while still busy: the window's
+ * roster is read again (the server's read is already done), never edited here. Then the dialog closes and the
+ * outcome is said through `notify`:
  *   forgotten            "Forgot <instance> on <server>."; focus to the roster's next row (`nextFocus`)
  *   E_SNAPSHOT_UNKNOWN   no saved route was there; focus as for forgotten: the row is not this computer's
  *   another refusal      "Couldn't forget <instance>." and the kernel's lines; focus back to the opener
@@ -72,11 +76,26 @@ let dialogs = 0;
 
 export function createForgetDialog({ doc, request, reread = () => {}, notify = () => {}, nextFocus = () => null,
   generation = () => 0, subscribeWorkspace = () => () => {}, onIntent = () => {}, applyFocus = fn => fn() } = {}) {
-  let alive = true, overlay = null, ui = null, row = null, restore = null, phase = null, life = 0;
+  let alive = true, overlay = null, ui = null, row = null, restore = null, phase = null, life = 0, release = null;
   const inFlight = new Set(); // `server\0instance` of every Forget sent and not answered, whichever dialog sent it
   const keyOf = r => `${r.server}\0${r.instance}`;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
+  /** While busy: every keydown is this dialog's, and focus stays in it (the status line). */
+  function holdWindow() {
+    const win = doc.defaultView;
+    const held = () => !!ui && phase === 'running';
+    const onKey = event => {
+      if (!held()) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (doc.activeElement !== ui.status) ui.status.focus();
+    };
+    const onFocus = event => { if (held() && !ui.dialog.contains(event.target)) ui.status.focus(); };
+    win.addEventListener('keydown', onKey, true); doc.addEventListener('focusin', onFocus, true);
+    return () => { win.removeEventListener('keydown', onKey, true); doc.removeEventListener('focusin', onFocus, true); };
+  }
+  function unhold() { const done = release; release = null; done?.(); }
   function close({ focus = 'opener', next = null } = {}) {
+    unhold();
     if (!overlay) return;
     life++; overlay.remove(); overlay = null; ui = null; row = null; phase = null;
     const back = restore; restore = null;
@@ -104,17 +123,17 @@ export function createForgetDialog({ doc, request, reread = () => {}, notify = (
     onIntent();
     const sent = row, key = keyOf(sent), mounted = life, mountedGeneration = generation();
     const owns = () => alive && overlay && life === mounted && generation() === mountedGeneration;
-    inFlight.add(key); phase = 'running'; paint();
+    inFlight.add(key); phase = 'running'; paint(); release = holdWindow();
     // Focus waits on the status line while the command runs: every control is disabled.
     applyFocus(() => ui.status.focus());
     let answer = null;
     try { answer = await request({ server: sent.server, instance: sent.instance }); } catch { answer = null; }
     finally { inFlight.delete(key); }
-    // The roster is read again after every answer, also one this dialog no longer owns.
-    try { Promise.resolve(reread()).catch(() => {}); } catch { /* a re-read cannot erase the outcome */ }
+    // The roster is read again after every answer, also one this dialog no longer owns; still busy meanwhile.
+    try { await reread(); } catch { /* a re-read cannot erase the outcome */ }
     if (!owns()) return;
     const outcome = forgetOutcome(answer, sent);
-    // The next row is the one after the forgotten row as the roster stands now, before the re-read removes it.
+    // The next row: the first row that followed the forgotten one when the dialog opened and is still shown.
     const next = outcome.focus === 'next' ? nextFocus(sent) : null;
     close({ focus: outcome.focus, next });
     notify(outcome.text);
@@ -170,4 +189,11 @@ export function createForgetDialog({ doc, request, reread = () => {}, notify = (
   const off = subscribeWorkspace(() => close({ focus: 'none' }));
   return { open, close: () => { if (phase !== 'running') close(); }, busy: () => phase === 'running',
     dispose() { close({ focus: 'none' }); alive = false; off(); } };
+}
+
+/** The row to take focus once `order[at]` is forgotten: the first one after it that is still in `rows` (matched
+ * by `data-tree-instance`), else null (the caller's roster). Never one before it: the spec's "next row". */
+export function forgetSuccessor(rows, order, at) {
+  if (!(at >= 0)) return null;
+  return order.slice(at + 1).map(id => rows.find(r => r.dataset.treeInstance === id)).find(Boolean) ?? null;
 }

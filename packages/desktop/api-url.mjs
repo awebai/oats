@@ -31,6 +31,8 @@ export function classifyApiRoute(pathname, base) {
       case '/api/panel': return 'panel';
       // A remote window's Retry (#1117): answered once the server's `server roster` read has landed.
       case '/api/remote-roster/refresh': return 'remote-roster';
+      // #1131: a Forget answers once the command and the roster read after it have landed.
+      case '/api/server-forget': return 'server-forget';
       // #517: a machine connect may install OATS and clone on the host; check, remove and the list wait on ssh.
       case '/api/server-connect': return 'machine-connect';
       case '/api/servers':
