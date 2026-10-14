@@ -289,8 +289,10 @@ export function box(doc, title, lead, scopeLabel, { local = false, icon = null, 
 }
 
 /** Whether "For developers" is open, per tab host: it lasts across the tab's re-renders (and other tabs
- * drawn in the same host), for this run only. */
-const developersOpen = new WeakMap();
+ * drawn in the same host), for this run only. The tab may clear its host before a render, and a native
+ * toggle's event is queued: a press records the choice at once, and only the host's current details
+ * element may record one, so a superseded element's late event never overwrites it. */
+const developersOpen = new WeakMap(), developersDrawn = new WeakMap();
 
 /** The whole Setup tab. view: 'list' | 'graph'; selected: a member key (graph panel). */
 /** `machines`: the Machines box (workspace-machines.mjs), owned by the tab and kept across renders: the same
@@ -360,8 +362,13 @@ function explainer(doc, status, host) {
   overview.append(' this OATS workspace: which repositories are its members and which packages it uses.');
   card.append(overview);
   const dev = el(doc, 'details', null, 'setup-explain-dev'); dev.open = developersOpen.get(host) === true;
-  dev.addEventListener('toggle', () => developersOpen.set(host, dev.open));
-  const summary = el(doc, 'summary'); summary.append(iconElement(doc, 'chevronRight', { size: 13 }), el(doc, 'span', 'For developers: how a repository becomes a member'));
+  developersDrawn.set(host, dev);
+  const current = () => developersDrawn.get(host) === dev;
+  dev.addEventListener('toggle', () => { if (current()) developersOpen.set(host, dev.open); });
+  const summary = el(doc, 'summary');
+  // A press (Enter and Space press it too) toggles after this handler unless cancelled: record the outcome now.
+  summary.addEventListener('click', event => { if (current() && !event.defaultPrevented) developersOpen.set(host, !dev.open); });
+  summary.append(iconElement(doc, 'chevronRight', { size: 13 }), el(doc, 'span', 'For developers: how a repository becomes a member'));
   const body = el(doc, 'div', null, 'setup-explain-body');
   const wsFile = fileRef(ws.file), memberFile = members.map(m => fileRef(m?.membershipFile)).find(Boolean);
   const named = (file, words) => file ? el(doc, 'span', file.path, 'mono') : words;

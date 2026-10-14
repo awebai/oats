@@ -214,6 +214,22 @@ test('Setup "For developers": closed by default, open across re-renders, the ker
     "The host's workspace file lists each member, and each member's membership file names the workspace back. A member counts only when both links are in place.");
 });
 
+test('Setup "For developers": a press survives the tab clearing its host and repainting before the queued toggle event', async () => {
+  const root = host(), status = statusOf();
+  // As workspace-discovery.mjs paints: it clears its body, then renders into it.
+  const paint = () => { root.replaceChildren(); renderSetup(root, { status }); return root.querySelector('details.setup-explain-dev'); };
+  const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+  paint().querySelector('summary').click();
+  assert.equal(paint().open, true, 'a poll lands before the toggle event: still open');
+  await flush();
+  assert.equal(paint().open, true, "the superseded element's late event changes nothing");
+  paint().querySelector('summary span').click(); // a press on the summary's words closes it the same way
+  await flush();
+  assert.equal(paint().open, false);
+  await flush();
+  assert.equal(paint().open, false);
+});
+
 test('Setup "For developers": each state chip matches the chip its member row shows, with what it means', () => {
   const root = host();
   renderSetup(root, { status: statusOf(everyState) });
