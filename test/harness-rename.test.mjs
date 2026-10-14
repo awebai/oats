@@ -160,7 +160,7 @@ test("a requires[] row naming both `harness` and `runtime` fails the spawn befor
   });
   t.after(fx.cleanup);
   const e = fail(fx.cli(["spawn", "dev", "--harness", "pi", "--no-launch", "--json"]));
-  assert.equal(e.code, "E_SPAWN_FAILED", JSON.stringify(e)); // the CLI's wrapping of E_HARNESS_RESOURCE_MISSING
+  assert.equal(e.code, "E_HARNESS_RESOURCE_MISSING", JSON.stringify(e)); // the gate's own code (E_SPAWN_FAILED before #1047)
   assert.match(e.message, /acme\.both: a requirement declares both `harness` and `runtime` \(its pre-0\.27 name\); keep one/);
 });
 

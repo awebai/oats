@@ -131,8 +131,8 @@
 //     `{launched:false}` shape. A full pass says nothing about launched-instance
 //     metadata, about tmuxSocket(), or about the quiesce-before-recovery
 //     sequence in retire — all of which step 5 (extract the platform) moves.
-//     test/retire-work-safety.test.mjs drives the launched path with a fake tmux
-//     and is the suite that covers it.
+//     test/retire-work-recovery.test.mjs drives the launched path with a fake
+//     tmux and is the suite that covers it.
 //   - the recovery directory. Nothing here dirties an instance home or a
 //     worktree after the baseline is stamped, so `workRecovery` is absent in all
 //     of them and the preserve-work path is never exercised.
