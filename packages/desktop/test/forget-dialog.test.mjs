@@ -1,6 +1,6 @@
 // #1131: the Forget confirmation (renderer/forget-dialog.mjs). Offered only on a `missing` row; opening, Cancel
 // and Escape send nothing; Forget sends exactly one request with the row's own identity, from any entry point;
-// busy keeps focus on the status line; every answer re-reads the roster once and says its sentence; an answer
+// busy keeps focus on the status line; every answer says its sentence and the roster is never edited here (the server re-reads it); an answer
 // that lands after the dialog stopped owning it moves and says nothing.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,18 +14,18 @@ import { deferred, tick } from './helpers/lifecycle-fixture.mjs';
 const GONE = Object.freeze({ instance: 'dev-a', agent: 'dev', home: '/srv/team/agents/dev/instances/dev-a', server: 'build', repoName: 'Build box',
   running: null, addressable: false, savedRoute: true, missingRemotely: true });
 
-function fixture({ answer, row = GONE, reread } = {}) {
+function fixture({ answer, row = GONE } = {}) {
   const dom = new JSDOM('<!doctype html><button id="opener">Actions</button><input id="filter"><div id="roster" tabindex="-1"><button id="next">dev-b</button></div>', { pretendToBeVisual: true });
-  const doc = dom.window.document, sent = [], rereads = [], said = [], pending = [];
+  const doc = dom.window.document, sent = [], said = [], pending = [];
   let generation = 0, workspaceChange;
   const dialog = createForgetDialog({ doc, generation: () => generation,
     subscribeWorkspace: fn => { workspaceChange = fn; return () => {}; },
     request: body => { sent.push(body); if (answer === 'hold') { const d = deferred(); pending.push(d); return d.promise; }
       return typeof answer === 'function' ? answer(body) : answer ?? { status: 'forgotten', server: body.server, instance: body.instance }; },
-    reread: () => { rereads.push(1); return reread?.(); }, notify: text => { said.push(text); },
+    notify: text => { said.push(text); },
     nextFocus: () => doc.getElementById('next') });
   const q = sel => doc.querySelector(sel);
-  return { dom, doc, dialog, sent, rereads, said, pending, q,
+  return { dom, doc, dialog, sent, said, pending, q,
     open(r = row) { doc.getElementById('opener').focus(); return dialog.open(r); },
     shown: () => !!q('.lifecycle-dialog'),
     key(value, opts = {}) { doc.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true, ...opts })); },
@@ -74,7 +74,7 @@ test('opening, Cancel and Escape send nothing, and focus returns to the opener',
     f.open(); f.key('Escape'); await tick();
     assert.equal(f.shown(), false); assert.equal(f.doc.activeElement.id, 'opener');
     f.open(); f.dialog.close(); await tick(); assert.equal(f.shown(), false);
-    assert.deepEqual([f.sent.length, f.rereads.length, f.said.length], [0, 0, 0]);
+    assert.deepEqual([f.sent.length, f.said.length], [0, 0]);
   } finally { f.close(); }
 });
 
@@ -103,26 +103,26 @@ test('Forget sends exactly one request with the row\'s own identity; busy: focus
   } finally { f.close(); }
 });
 
-test('success: one re-read, the dialog closes, focus to the next row, and the status line; the answer\'s other fields are not shown', async () => {
+test('success: the dialog closes, focus to the next row, and the status line; the answer\'s other fields are not shown', async () => {
   const f = fixture({ answer: { status: 'forgotten', server: 'build', instance: 'dev-a', home: '/srv/team/x', target: { sshHost: 'build-host' } } });
   try {
     f.open(); f.confirm().click(); await tick();
-    assert.equal(f.rereads.length, 1); assert.equal(f.shown(), false);
+    assert.equal(f.shown(), false);
     assert.equal(f.doc.activeElement.id, 'next');
     assert.deepEqual(f.said, ['Forgot dev-a on Build box.']);
   } finally { f.close(); }
 });
 
-test('E_SNAPSHOT_UNKNOWN: nothing was changed, one re-read, focus to the next row', async () => {
+test('E_SNAPSHOT_UNKNOWN: nothing was changed, focus to the next row', async () => {
   const f = fixture({ answer: { status: 'refused', reason: { code: 'E_SNAPSHOT_UNKNOWN', message: 'no saved route for dev-a through server build' } } });
   try {
     f.open(); f.confirm().click(); await tick();
     assert.deepEqual(f.said, ['This computer had no saved route for dev-a on Build box; nothing was changed.']);
-    assert.equal(f.rereads.length, 1); assert.equal(f.doc.activeElement.id, 'next');
+    assert.equal(f.doc.activeElement.id, 'next');
   } finally { f.close(); }
 });
 
-test('another refusal: "Couldn\'t forget", the kernel\'s lines under it (a plain, a withheld and a long message), one re-read, focus to the opener', async () => {
+test('another refusal: "Couldn\'t forget", the kernel\'s lines under it (a plain, a withheld and a long message), focus to the opener', async () => {
   for (const message of ['/x/remote/build/dev-a.json: Unexpected token', 'password=hunter2 in the route', `${'a very long refusal '.repeat(200)}end`]) {
     const f = fixture({ answer: { status: 'refused', reason: { code: 'E_SNAPSHOT_UNREADABLE', message } } });
     try {
@@ -131,7 +131,7 @@ test('another refusal: "Couldn\'t forget", the kernel\'s lines under it (a plain
       assert.deepEqual(f.said, [["Couldn't forget dev-a.", ...lines].join('\n')]);
       assert.ok(lines.every(line => !line.includes('\n') && line.length <= 2048 + 16), 'each kernel text is one bounded display line');
       if (message.startsWith('password')) assert.deepEqual(lines, ['[Detail withheld]']);
-      assert.equal(f.rereads.length, 1); assert.equal(f.doc.activeElement.id, 'opener');
+      assert.equal(f.doc.activeElement.id, 'opener');
     } finally { f.close(); }
   }
 });
@@ -143,21 +143,21 @@ test('an unknown outcome: no answer, a rejected request, an answer for another r
     try {
       f.open(); f.confirm().click(); await tick();
       assert.deepEqual(f.said, ['It is not known whether dev-a was forgotten.']);
-      assert.equal(f.rereads.length, 1); assert.equal(f.doc.activeElement.id, 'opener'); assert.equal(f.shown(), false);
+      assert.equal(f.doc.activeElement.id, 'opener'); assert.equal(f.shown(), false);
     } finally { f.close(); }
   }
 });
 
-test('nothing ran (busy elsewhere, refused input): "Couldn\'t forget" with the Desktop\'s own reason, one re-read', async () => {
+test('nothing ran (busy elsewhere, refused input): "Couldn\'t forget" with the Desktop\'s own reason', async () => {
   const f = fixture({ answer: { status: 'not-run', reason: { code: 'E_BUSY', message: 'A Forget for this instance is already running.' } } });
   try {
     f.open(); f.confirm().click(); await tick();
     assert.deepEqual(f.said, ["Couldn't forget dev-a.\nA Forget for this instance is already running."]);
-    assert.equal(f.rereads.length, 1); assert.equal(f.doc.activeElement.id, 'opener');
+    assert.equal(f.doc.activeElement.id, 'opener');
   } finally { f.close(); }
 });
 
-test('a late success after a workspace change: one re-read, and nothing said or focused; the row cannot be sent again meanwhile', async () => {
+test('a late success after a workspace change: nothing said or focused; the row cannot be sent again meanwhile', async () => {
   const f = fixture({ answer: 'hold' });
   try {
     f.open(); f.confirm().click();
@@ -165,19 +165,19 @@ test('a late success after a workspace change: one re-read, and nothing said or 
     assert.equal(f.open(), false, 'the same row cannot be forgotten again while its command runs');
     f.doc.getElementById('roster').focus();
     f.pending[0].resolve({ status: 'forgotten', server: 'build', instance: 'dev-a' }); await tick();
-    assert.deepEqual([f.sent.length, f.rereads.length, f.said.length], [1, 1, 0]);
+    assert.deepEqual([f.sent.length, f.said.length], [1, 0]);
     assert.equal(f.doc.activeElement.id, 'roster', 'focus not moved');
     assert.equal(f.open(), true, 'answered: it can open again');
   } finally { f.close(); }
 });
 
-test('a late failure after dispose: one re-read, nothing said', async () => {
+test('a late failure after dispose: nothing said', async () => {
   const f = fixture({ answer: 'hold' });
   f.open(); f.confirm().click();
   f.dialog.dispose();
   f.pending[0].reject(new Error('late'));
   await tick();
-  assert.deepEqual([f.sent.length, f.rereads.length, f.said.length], [1, 1, 0]);
+  assert.deepEqual([f.sent.length, f.said.length], [1, 0]);
   f.dom.window.close();
 });
 
@@ -204,19 +204,18 @@ test('busy holds the window: a shell shortcut (the real keymap, on the window) n
   } finally { off(); f.dom.window.removeEventListener('keydown', onKey); f.close(); }
 });
 
-test('the window\'s roster is read again before the dialog closes, still busy meanwhile', async () => {
-  const gate = deferred();
-  const f = fixture({ reread: () => gate.promise });
+test('the roster is not edited: the row stays until the server\'s read lands, and a second Forget of it says nothing was changed', async () => {
+  let n = 0;
+  const f = fixture({ answer: body => (n++ === 0 ? { status: 'forgotten', server: body.server, instance: body.instance }
+    : { status: 'refused', reason: { code: 'E_SNAPSHOT_UNKNOWN', message: 'no saved route for dev-a through server build' } }) });
   try {
     f.open(); f.confirm().click(); await tick();
-    assert.deepEqual([f.rereads.length, f.shown(), f.said.length], [1, true, 0]);
-    assert.equal(f.q('.lifecycle-dialog').getAttribute('aria-busy'), 'true');
-    gate.resolve(); await tick();
-    assert.deepEqual([f.rereads.length, f.shown(), f.said], [1, false, ['Forgot dev-a on Build box.']]);
+    assert.equal(f.shown(), false);
+    assert.equal(f.open(), true, 'the row, still listed, can be opened again');
+    f.confirm().click(); await tick();
+    assert.deepEqual(f.sent, [{ server: 'build', instance: 'dev-a' }, { server: 'build', instance: 'dev-a' }]);
+    assert.deepEqual(f.said, ['Forgot dev-a on Build box.', 'This computer had no saved route for dev-a on Build box; nothing was changed.']);
   } finally { f.close(); }
-  const failing = fixture({ reread: () => Promise.reject(new Error('panel')) });
-  try { failing.open(); failing.confirm().click(); await tick(); assert.deepEqual(failing.said, ['Forgot dev-a on Build box.'], 'a failed re-read still says the outcome'); }
-  finally { failing.close(); }
 });
 
 test('the next row is the first that followed the forgotten one when the dialog opened and is still shown; none after it: null', () => {

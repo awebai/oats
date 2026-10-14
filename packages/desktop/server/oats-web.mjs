@@ -647,6 +647,15 @@ function refreshRemoteSnapshot() {
   })().finally(() => { remoteRead = null; });
   return remoteRead;
 }
+/** A roster read that begins after this call (#1131: the read after a forget). A read in flight, whoever started
+ * it (the loop, a Retry), began before the call: it is let finish, then one more runs, which a caller arriving
+ * meanwhile shares. The refresh loop cannot promise this: its run joins a Retry's read in flight. */
+let remoteReadAfter = null;
+function refreshRemoteSnapshotAfter() {
+  if (!remoteRead) return refreshRemoteSnapshot();
+  remoteReadAfter ||= remoteRead.catch(() => {}).then(() => { remoteReadAfter = null; return refreshRemoteSnapshot(); });
+  return remoteReadAfter;
+}
 async function readRemoteRoster(probe) {
   if (!cliReadsRemotes(probe)) { takeRosterOutcome({ gated: true }); return; }
   try {
@@ -1325,16 +1334,16 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && path === "/api/server-forget") {
       // #1131: forget the saved route of a remote row its host no longer lists (server/server-forget.mjs). The
       // body is that row's { server, instance }; the argv is composed there, never taken from the request.
-      // After any command that ran, whatever it answered, the remote roster is read again, and the answer waits
-      // for that read: this route is its one owner. remoteLoop.request() runs a read now, or the one right after
-      // a read already in flight (which began before the command). So /api/panel serves the roster as it stands
-      // after the command once this answers, and nothing here edits it. The proxy's deadline covers both reads
-      // (main.mjs, route `server-forget`; server-forget-route.test.mjs holds them together).
+      // After any command that ran, whatever it answered, the remote roster is read again: this route is the one
+      // owner of that read, and the renderer issues none. refreshRemoteSnapshotAfter() runs a read now, or one
+      // right after the read already in flight, whoever started it (that one began before the command). The
+      // answer does not wait for it: the forget is a local file removal, and a read waits on the slowest server.
+      // The row leaves /api/panel when the read lands; nothing here edits it.
       if (url.search) return send(res, 400, forgetNotRun("E_BAD_ARGS"));
       let body;
       try { body = await readStrictBody(req, 4096); } catch { return send(res, 400, forgetNotRun("E_BAD_ARGS")); }
       const { http, ran, answer } = await serverForget.forget(body);
-      if (ran) { try { await remoteLoop.request(); } catch { /* a re-read must not erase the outcome */ } }
+      if (ran) { try { void refreshRemoteSnapshotAfter().catch(() => {}); } catch { /* a re-read must not erase the outcome */ } }
       return send(res, http, answer);
     }
     if (req.method === "GET" && path === "/api/cli") {

@@ -2255,13 +2255,12 @@ function openLifecycleDialog(operation, instance, workspace) {
 }
 window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
 /* Forget… (#1131): a row its host no longer lists (forget-dialog.mjs). The server composes the command from the
- * row's { server, instance } and answers once its own roster read after the command has landed (the one owner of
- * that read); every answer then re-reads this window's roster from the server. Nothing here edits a row. */
+ * row's { server, instance }, answers its outcome, and reads the remote roster again (the one owner of that read);
+ * the row leaves this window's roster when that read lands, at the roster's own refresh. Nothing here edits a row. */
 const forgetDialog = createForgetDialog({ doc: document,
   request: async body => (await desk.api('/api/server-forget', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   })).body,
-  reread: () => refreshContextRoster(),
   notify: text => notifications.notify(text),
   nextFocus: () => forgetNextFocus(),
   generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,

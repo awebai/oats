@@ -6,7 +6,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServerForget, forgetOutcome, forgetNotRun } from '../server/server-forget.mjs';
-import { cliServerForget, cliRemoteRoster } from '../../client/cli-adapter.mjs';
+import { readFileSync } from 'node:fs';
+import { cliServerForget } from '../../client/cli-adapter.mjs';
 import { createRefreshLoop } from '../../client/refresh-loop.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
 import { loadServer, juanState, CLI } from './helpers/workspace-views-fixture.mjs';
@@ -29,15 +30,17 @@ function runner(answer = () => ({ stdout: JSON.stringify(OK) })) {
   };
   return { exec, calls, held };
 }
-/** The shipped handler over the real forget module and adapter. `remoteLoop` is the server's refresh loop (a stub
- * counting `request()`s by default; `rereads` holds one entry per request). */
-async function serve({ answer, cli = CLI, adapter, remoteLoop } = {}) {
+/** The shipped handler over the real forget module and adapter. `reader` supplies the server's roster reads
+ * (`refreshRemoteSnapshotAfter`, and `refreshRemoteSnapshot` for a Retry): by default a stub counting the reads
+ * the route asks for, one entry in `rereads` each. */
+async function serve({ answer, cli = CLI, adapter, reader } = {}) {
   const run = runner(answer);
   const rereads = [];
   const serverForget = createServerForget({ cli: () => cli,
     adapter: adapter ?? { cliServerForget: (bin, args) => cliServerForget(bin, args, { exec: run.exec }) } });
-  const loop = remoteLoop ?? { request: () => { rereads.push(1); return Promise.resolve(); } };
-  const { request } = await loadServer(juanState().state, { serverForget, forgetNotRun, remoteLoop: loop });
+  const reads = reader ?? { after: () => { rereads.push(1); return Promise.resolve(); }, refresh: () => Promise.resolve() };
+  const { request } = await loadServer(juanState().state, { serverForget, forgetNotRun,
+    refreshRemoteSnapshotAfter: reads.after, refreshRemoteSnapshot: reads.refresh });
   const post = (body, extra = {}) => request({ url: ROUTE, method: 'POST', body, ...extra });
   return { post, request, run, rereads };
 }
@@ -168,57 +171,75 @@ test('the adapter refuses option-shaped values itself', async () => {
   assert.equal(run.calls.length, 0);
 });
 
-test('the answer waits for the roster read after the command: the panel then serves the roster as it stands after it', async () => {
-  let settle; const read = new Promise(resolve => { settle = resolve; });
+/** The server's own roster reader (oats-web.mjs, the OATSWEB_REMOTEREAD block), over a fake adapter whose reads
+ * the test settles one by one: `reads` holds each read's settle function, in the order they began. */
+function remoteReader() {
+  const src = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const block = src.match(/\/\* OATSWEB_REMOTEREAD_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_REMOTEREAD_END \*\//)[1];
+  const reads = [];
+  const adapter = { cliRemoteRoster: () => new Promise(resolve => { reads.push(() => resolve({ schemaVersion: 1, ok: true, result: { groups: [] } })); }) };
+  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome',
+    `let remoteRead = null, cliState = { ok: true, bin: 'oats' };\n${block}\nreturn { refresh: refreshRemoteSnapshot, after: refreshRemoteSnapshotAfter };`);
+  return { ...make(adapter, () => true, () => {}), reads };
+}
+const flush = async () => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); };
+
+test('the answer does not wait for the roster read; the read is asked for after the command, and a failing read changes no answer', async () => {
   const order = [];
   const s = await serve({ answer: () => { order.push('command'); return { stdout: JSON.stringify(OK) }; },
-    remoteLoop: { request: () => { order.push('read requested'); return read; } } });
-  let answered = false;
-  const pending = s.post({ server: 'build', instance: 'dev-a' }).then(answer => { answered = true; return answer; });
-  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(order, ['command', 'read requested'], 'the read is requested after the command');
-  assert.equal(answered, false, 'not answered before the read lands');
-  settle();
-  assert.equal((await pending).body.status, 'forgotten');
-  // A read that fails still answers the outcome.
-  const failing = await serve({ remoteLoop: { request: () => Promise.reject(new Error('roster')) } });
+    reader: { after: () => { order.push('read'); return new Promise(() => {}); }, refresh: () => Promise.resolve() } });
+  assert.equal((await s.post({ server: 'build', instance: 'dev-a' })).body.status, 'forgotten', 'answered with the read still running');
+  assert.deepEqual(order, ['command', 'read']);
+  const failing = await serve({ reader: { after: () => Promise.reject(new Error('roster')), refresh: () => Promise.resolve() } });
   assert.equal((await failing.post({ server: 'build', instance: 'dev-a' })).body.status, 'forgotten');
 });
 
-test('with the server\'s refresh loop: a read already in flight is followed by one read after the command, and the answer waits for that one', async () => {
-  const reads = [];
-  const loop = createRefreshLoop({ run: () => new Promise(resolve => { reads.push(resolve); }), focusedMs: 3_600_000, blurredMs: 3_600_000,
-    timers: { setTimeout: () => null, clearTimeout: () => {} } });
-  const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
-  const commands = [];
-  const s = await serve({ remoteLoop: loop, answer: () => { commands.push(reads.length); return { stdout: JSON.stringify(OK) }; } });
-  void loop.request(); await flush(); // R0: a background read that began before the Forget
-  assert.equal(reads.length, 1);
-  let answered = false;
-  const pending = s.post({ server: 'build', instance: 'dev-a' }).then(answer => { answered = true; return answer; });
-  await flush();
-  assert.deepEqual(commands, [1], 'the command ran while R0 was in flight');
-  reads[0](); await flush();
-  assert.equal(reads.length, 2, 'R1, the read after the command, runs once R0 is done');
-  assert.equal(answered, false, 'R0 is not the read after the command: still waiting');
-  reads[1](); assert.equal((await pending).body.status, 'forgotten');
-  assert.equal(reads.length, 2, 'exactly one read after the command');
-  // With no read in flight: one read, after the command.
+test('a Retry\'s read in flight when the command runs is not the read after it: one more read runs once it lands', async () => {
+  const r = remoteReader();
+  const s = await serve({ reader: r, answer: argv => ({ stdout: JSON.stringify({ ...OK, result: { ...OK.result, instance: argv[4] } }) }) });
+  void s.request({ url: '/api/remote-roster/refresh', method: 'POST', body: {} }); await flush(); // R0: a Retry, outside the loop
+  assert.equal(r.reads.length, 1);
+  assert.equal((await s.post({ server: 'build', instance: 'dev-a' })).body.status, 'forgotten', 'answered at once');
+  assert.equal((await s.post({ server: 'build', instance: 'dev-b' })).body.status, 'forgotten');
+  await flush(); assert.equal(r.reads.length, 1, 'R0 is still the only read');
+  r.reads[0](); await flush();
+  assert.equal(r.reads.length, 2, 'R1 begins after R0: the read after both commands, shared');
+  r.reads[1](); await flush();
+  assert.equal(r.reads.length, 2, 'exactly one read after the commands');
   void s.post({ server: 'build', instance: 'dev-a' }); await flush();
-  assert.equal(reads.length, 3); reads[2](); await flush();
+  assert.equal(r.reads.length, 3, 'with no read in flight, the read starts at once'); r.reads[2](); await flush();
 });
 
-test('main\'s proxy waits longer than one forget call and two roster reads, each read from its own call', async () => {
-  const limitOf = async call => { let limit; await call((_bin, _argv, opts, done) => { limit = opts.timeout; done(null, '{"schemaVersion":1,"ok":true,"result":{"groups":[]}}'); }); return limit; };
-  const forget = await limitOf(exec => cliServerForget('/oats', { server: 'build', instance: 'dev-a' }, { exec }));
-  const roster = await limitOf(exec => cliRemoteRoster('/oats', { exec }));
-  assert.ok(forget > 0 && roster > 0);
-  for (const p of [ROUTE, '/api/./server-forget', '/api/x/../server-forget']) assert.equal(classifyApiRoute(p, 'http://127.0.0.1:4999'), 'server-forget', p);
-  assert.notEqual(classifyApiRoute('/api/server-forget/x', 'http://127.0.0.1:4999'), 'server-forget');
+test('with the server\'s refresh loop owning a read in flight, the same: one more read after it', async () => {
+  const r = remoteReader();
+  const loop = createRefreshLoop({ run: () => r.refresh(), focusedMs: 3_600_000, blurredMs: 3_600_000, timers: { setTimeout: () => null, clearTimeout: () => {} } });
+  const s = await serve({ reader: r });
+  void loop.request(); await flush();
+  assert.equal(r.reads.length, 1);
+  await s.post({ server: 'build', instance: 'dev-a' });
+  r.reads[0](); await flush();
+  assert.equal(r.reads.length, 2); r.reads[1](); await flush();
+  assert.equal(r.reads.length, 2);
+});
+
+test('the route keeps the proxy\'s ordinary deadline, which outlasts the forget call', async () => {
+  let limit;
+  await cliServerForget('/oats', { server: 'build', instance: 'dev-a' }, { exec: (_bin, _argv, opts, done) => { limit = opts.timeout; done(null, JSON.stringify(OK)); } });
+  assert.equal(classifyApiRoute(ROUTE, 'http://127.0.0.1:4999'), null, 'no class of its own');
   const api = shippedMainApi({ window: '/d/first', advertised: new Set(['/d/first']), served: [{ id: '/d/first' }] });
   const seen = [];
   api.context.AbortSignal = { timeout: ms => { seen.push(ms); return { ms }; } };
   api.context.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ status: 'forgotten', server: 'build', instance: 'dev-a' }) });
   await api.call(ROUTE, { method: 'POST', body: JSON.stringify({ server: 'build', instance: 'dev-a' }) });
-  assert.ok(seen[0] > forget + 2 * roster, `the proxy's ${seen[0]} ms must outlast ${forget} + 2 × ${roster} ms`);
+  assert.ok(seen[0] > limit, `the proxy's ${seen[0]} ms must outlast the forget call's ${limit} ms`);
+});
+
+test('a second Forget of the row before the read lands runs the command again and answers the kernel\'s E_SNAPSHOT_UNKNOWN', async () => {
+  const s = await serve({ answer: (argv, n) => (n === 0 ? { stdout: JSON.stringify(OK) }
+    : { stdout: JSON.stringify(FAIL('E_SNAPSHOT_UNKNOWN', 'no saved route for dev-a through server build (oats server roster --json)')), err: exited(1) }),
+  reader: { after: () => new Promise(() => {}), refresh: () => Promise.resolve() } });
+  assert.equal((await s.post({ server: 'build', instance: 'dev-a' })).body.status, 'forgotten');
+  const again = await s.post({ server: 'build', instance: 'dev-a' });
+  assert.deepEqual([again.status, again.body.status, again.body.reason.code], [200, 'refused', 'E_SNAPSHOT_UNKNOWN']);
+  assert.equal(s.run.calls.length, 2);
 });

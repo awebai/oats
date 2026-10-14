@@ -5,23 +5,24 @@
  * It is the Stop and Retire confirmation's dialog (lifecycle-dialog.mjs): its classes, its status line, its
  * Escape and Tab handling and its focus return, with no plan to read. Opening, Cancel and Escape send
  * nothing. Forget sends exactly one request, `{ server, instance }` of the row it was opened for, through
- * `request`; the backend composes the command (server/server-forget.mjs) and answers once the remote roster
- * it reads after the command has landed. While it runs the dialog is busy: Escape and Cancel do nothing, focus
+ * `request`; the backend composes the command (server/server-forget.mjs) and answers once its outcome is known.
+ * While it runs the dialog is busy: Escape and Cancel do nothing, focus
  * waits on the status line, and no entry point can send again (`open` refuses a row whose Forget is in
  * flight, wherever it was opened). Busy also holds the whole window: every keydown is taken at the window's
  * capture phase, before the shell's shortcuts (keybindings.mjs `handleKeydown`) or a terminal see it, and
  * focus that lands outside the dialog is put back on the status line, so no shortcut opens anything behind it.
  *
- * Every answer, and a request that failed, ends with `reread()` once, awaited while still busy: the window's
- * roster is read again (the server's read is already done), never edited here. Then the dialog closes and the
- * outcome is said through `notify`:
+ * The roster is never edited here: after every command the server reads it again (its one owner; nothing here
+ * asks for a read), and the row leaves the roster when that read lands. A second Forget of the row before then
+ * answers E_SNAPSHOT_UNKNOWN, whose sentence is true. The dialog closes with the answer and says the outcome
+ * through `notify`:
  *   forgotten            "Forgot <instance> on <server>."; focus to the roster's next row (`nextFocus`)
  *   E_SNAPSHOT_UNKNOWN   no saved route was there; focus as for forgotten: the row is not this computer's
  *   another refusal      "Couldn't forget <instance>." and the kernel's lines; focus back to the opener
  *   nothing ran          "Couldn't forget <instance>." and the Desktop's own reason; focus back to the opener
  *   unknown              "It is not known whether <instance> was forgotten."; focus back to the opener
- * An answer that lands after the dialog stopped owning its request (a workspace change, dispose) still
- * re-reads, and says and moves nothing. Names enter a sentence through the display filter: the server's
+ * An answer that lands after the dialog stopped owning its request (a workspace change, dispose) says and
+ * moves nothing. Names enter a sentence through the display filter: the server's
  * label as remote-address.mjs `shownLabel`, the instance by the same rule ("this instance" when withheld). */
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { rowReason, serverLabel, shownLabel } from '../../client/remote-address.mjs';
@@ -74,7 +75,7 @@ export function forgetOutcome(answer, row) {
 
 let dialogs = 0;
 
-export function createForgetDialog({ doc, request, reread = () => {}, notify = () => {}, nextFocus = () => null,
+export function createForgetDialog({ doc, request, notify = () => {}, nextFocus = () => null,
   generation = () => 0, subscribeWorkspace = () => () => {}, onIntent = () => {}, applyFocus = fn => fn() } = {}) {
   let alive = true, overlay = null, ui = null, row = null, restore = null, phase = null, life = 0, release = null;
   const inFlight = new Set(); // `server\0instance` of every Forget sent and not answered, whichever dialog sent it
@@ -129,8 +130,6 @@ export function createForgetDialog({ doc, request, reread = () => {}, notify = (
     let answer = null;
     try { answer = await request({ server: sent.server, instance: sent.instance }); } catch { answer = null; }
     finally { inFlight.delete(key); }
-    // The roster is read again after every answer, also one this dialog no longer owns; still busy meanwhile.
-    try { await reread(); } catch { /* a re-read cannot erase the outcome */ }
     if (!owns()) return;
     const outcome = forgetOutcome(answer, sent);
     // The next row: the first row that followed the forgotten one when the dialog opened and is still shown.
