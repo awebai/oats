@@ -15,10 +15,9 @@
     `env`, or give the session or the server a value OATS can read (`tmux -L
     oats set-environment -g PATH <value>`), or start the OATS tmux server
     from your own shell.
-  - **The code** is `E_RUNTIME_ENDPOINT_UNKNOWN` at `oats session start` and
-    `restart`, and in a preview's `harness-packages` item. `oats spawn`
-    answers it as `E_SPAWN_FAILED` with the same message, as it answers a
-    missing package today
+  - **The code** is `E_RUNTIME_ENDPOINT_UNKNOWN` at `oats spawn`,
+    `oats session start` and `restart`, and in a preview's
+    `harness-packages` item, with the same message
     ([#1047](https://github.com/awebai/oats/issues/1047)).
 - **`oats harness trust` writes for the file launches read, and refuses when
   it cannot tell which.** Its ambient file is the one a launch with no launch

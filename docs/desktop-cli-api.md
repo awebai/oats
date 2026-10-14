@@ -45,7 +45,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "soul-launch","retire-plan-own-worktree"],
+             "soul-launch","retire-plan-own-worktree","spawn-kernel-codes"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -128,6 +128,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"` and `"flag-ignored"`; `launchPrompts` in a launched spawn's answer; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
 | `soul-launch` | `oats soul launch set\|remove`, the writer of `oats-local.yaml` `souls.launch`, and `E_LAUNCH_PREFERENCE_UNKNOWN`, OATS 0.53.0 ([`oats soul launch`](#oats-soul-launch)). Gate on the probe: a kernel without it answers `E_USAGE` | `soulLaunchApi: 1` (payload only) |
 | `retire-plan-own-worktree` | a retire plan carries `facts.ownWorktree`, a boolean: whether `work/` is the instance's own work tree, the one the retire retains or removes; in `oats retire --plan` and in the fresh plan (`details.plan`) of `E_PLAN_STALE` and `E_CHILDREN_RUNNING`; a stop plan does not carry it; OATS 0.53.0 ([the retire plan](#retire)) | |
+| `spawn-kernel-codes` | `oats spawn`, apply and `--preview`, answers the kernel's own code, as raised, whatever stage of the spawn raised it; `E_SPAWN_FAILED` is for an error with no kernel code (with `details.cause`, as the lifecycle commands' general codes have it). A code says nothing about how far the spawn got: `details.unconfirmed` does. Details are those each code had before; OATS 0.56.0 ([spawn errors](#spawn-errors)). A kernel without it answers `E_SPAWN_FAILED` for most kernel codes its kernel stage raised: there, that code may hide one | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -2353,6 +2354,16 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 <a id="spawn-errors"></a>
 ### Spawn errors
 
+A spawn answers the kernel's own code, as raised, whatever stage raised it
+(feature `spawn-kernel-codes`, OATS 0.56.0). Beyond the codes below that is
+any code of the kernel a spawn reaches: the deployment's files, where the home
+may be, the composition written into the home, reading a package or member at
+its commit, the harness's packages, the session, and the work and what a
+failed spawn leaves. **A code says nothing about how far the spawn got:**
+`details.unconfirmed` does. `E_SPAWN_FAILED` is for an error with no kernel
+code; a kernel without `spawn-kernel-codes` answers it for most codes its
+kernel stage raised as well.
+
 | Code | Details | When |
 |---|---|---|
 | `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory, removed or unknown flags; an argument after the soul |
@@ -2378,12 +2389,16 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_PLACEMENT_TAKEN`, `E_IDEMPOTENCY_CONFLICT` | `{instance, home}` | |
 | `E_SPAWN_INCOMPLETE` | `{instance, home, launched, unconfirmed: true}`; retained launch-prompt outcomes additionally carry `{retained: true, target, parentLineageCommitted, launchPrompts}` | See [launch prompt results](#launch-prompt-results). |
 | `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
+| `E_HARNESS_UNAVAILABLE` | `{harness, from, at, fix}` | the chosen harness has no executable on this machine ([launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) |
+| `E_CLAUDE_CONFIG_REMOVED` | `{file, executable, fix}` | a new claude launch with an `oats-claude-config` in reach ([configuration.md](configuration.md)) |
+| `E_HARNESS_RESOURCE_MISSING` | | a harness package a capability requires for the selected harness is not installed, disabled, or cannot be verified ([capabilities.md](capabilities.md)); raised before any home exists, at a preview too, and again by an apply after the home, the work and the hooks when the pane it got differs from the one it checked in a name the probe reads, or selects another program (another creator started the OATS tmux server): then the spawn is rolled back, with `details.unconfirmed` when that cannot finish. A start, a restart and a launch plan's `harness-packages` check answer the same code |
 | `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
 | `E_INTERRUPTED` | `{signal, hooks}` | SIGINT, SIGTERM or SIGHUP while the spawn's `worktree` hooks ran (feature `worktree-event`): the running hook's process group is ended, the spawn is rolled back as for a required hook failure, and the process exits 128 + the signal number |
 | `E_REQUIRED_HOOK_FAILED` | `{hooks}`, plus `unconfirmed: true` when compensation cannot finish | a required `spawn` or `worktree` hook failed or timed out; the spawn is rolled back. `hooks` holds the receipt of the event that failed: one entry per hook that ran, `{capability, ok, required, log, exitCode?, signal?, timedOut?, contract?}`, paths only. `log` is `null` for a spawn hook (it keeps no log) and once the rollback removed the home; a retained home keeps a `worktree` hook's log path. Never `home`. Before 0.49.0 a required spawn hook's failure answered `E_SPAWN_FAILED` |
 | `E_HOOK_ENVIRONMENT_CONTRACT` | the same as `E_REQUIRED_HOOK_FAILED`, the failed entry with `contract: "environment"` | a `spawn` hook answered an `env` its manifest does not allow, or a `worktree` hook answered `env` at all |
-| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else. Among them the two refusals of the harness package check, with the kernel's message: a required package that is not installed (`E_HARNESS_RESOURCE_MISSING` in the kernel), and a pane whose `PATH`, `HOME` or harness folder cannot be read for the probe (`E_RUNTIME_ENDPOINT_UNKNOWN` in the kernel: [the checks read the pane](execution-targets.md#the-checks-read-the-pane)). `oats session start` and `restart` answer the second under its own code. Passing the codes through a spawn is [#1047](https://github.com/awebai/oats/issues/1047) |
+| `E_RUNTIME_ENDPOINT_UNKNOWN` | | the session cannot be established: the OATS tmux server cannot be read at an apply (before any effect, or after the home, the work and the hooks), or the pane's `PATH`, `HOME` or harness folder cannot be read for the harness package check ([the checks read the pane](execution-targets.md#the-checks-read-the-pane)), before anything is probed or created, or at the apply's second check after the hooks, as for `E_HARNESS_RESOURCE_MISSING`. Once the home exists the spawn is rolled back, with `details.unconfirmed` when that cannot finish. A start and a restart answer the same code |
+| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish; `cause` for an error with a system code, or a defect | an error with no kernel code |
 
 Spawn failure envelopes carry `error.details.unconfirmed: true` when an existing
 keyed spawn is incomplete (`E_SPAWN_INCOMPLETE`) or compensation cannot confirm
@@ -3424,8 +3439,9 @@ that is not an object; OATS 0.52.0) decides only for itself.
   repair its lineage. Its session may go on running under a parent that was
   retired; `oats status` is where it shows.
 - A spawn that names such a home as its parent or anchor is refused
-  (`E_SPAWN_FAILED`, the same sentence with `nothing was spawned`): the
-  parent's child-spawn policy and the lineage are in that record.
+  (`E_UNIDENTIFIED_INSTANCE_HOME`, the same sentence with `nothing was
+  spawned`; `E_SPAWN_FAILED` before 0.56.0): the parent's child-spawn policy
+  and the lineage are in that record.
 - `oats session inspect`, `input` and `attach` on that home answer
   `E_RUNTIME_ENDPOINT_UNKNOWN`, and `oats instance events` still reads its
   logs.

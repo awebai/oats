@@ -354,11 +354,10 @@ than the server's checked one account and launched with another
   CLAUDE_CONFIG_DIR of tmux session <name>): oats harness trust --dir
   <deployment>`, or `(under the global HOME of the OATS tmux server
   (<socket>))`, or the launch configuration's.
-- **Through `oats spawn` the refusal's code is `E_SPAWN_FAILED`**, with
-  the same message, as for a missing package: the kernel raises
-  `E_RUNTIME_ENDPOINT_UNKNOWN`, and `oats session start` and `restart`
-  answer it as it is
-  ([#1047](https://github.com/awebai/oats/issues/1047)).
+- **Through `oats spawn` the refusal's code is `E_RUNTIME_ENDPOINT_UNKNOWN`**,
+  with the same message, as at `oats session start` and `restart` (feature
+  `spawn-kernel-codes`, [#1047](https://github.com/awebai/oats/issues/1047));
+  a kernel without the feature answers `E_SPAWN_FAILED`.
 - **One limit.** A spawn's package check runs before the spawn hooks, so it
   does not know a selector a capability's hook sets for the launch
   ([#1041](https://github.com/awebai/oats/issues/1041)); a start's does.
@@ -607,9 +606,10 @@ that triggered it), and `oats schedule run-now` typed inside an instance.
   included. A restart that reuses the pane the home already has runs its tmux
   client with the same environment; where and whether the pane is reused does
   not change.
-- **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`; `oats spawn` reports it
-  as `E_SPAWN_FAILED` with the same message) when the session does not exist
-  on the `oats` server, its login environment is not what the server gets
+- **It is refused** (`E_RUNTIME_ENDPOINT_UNKNOWN`, by `oats spawn` too, with
+  the same message; before 0.56.0 a spawn reported it as `E_SPAWN_FAILED`)
+  when the session does not exist on the `oats` server, its login
+  environment is not what the server gets
   (the server runs, or the login environment could not be read), and there is
   no source to read: the home records no
   tmux server (it was never launched), its receipt cannot be used, or its
