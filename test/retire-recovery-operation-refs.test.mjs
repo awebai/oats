@@ -68,9 +68,23 @@ function gitSays(g, repo) {
   };
 }
 
-/** A deployment whose soul works in a worktree of a member clone whose refs are in `format`. */
+/** A retire hook that runs, in the retiring instance's work, the one Git step that
+ *  `<agents root>/retire-step.json` names (a list of arguments), if there is one. */
+const RETIRE_STEP = `import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+const step = join(process.env.OATS_ROOT, "retire-step.json");
+if (existsSync(step)) execFileSync("git", ["-C", join(process.env.OATS_INSTANCE_HOME, "work"), ...JSON.parse(readFileSync(step, "utf8"))], { stdio: "ignore" });
+console.log(JSON.stringify({ meta: { retired: true } }));
+`;
+
+/** A deployment whose soul works in a worktree of a member clone whose refs are in `format`, and
+ *  runs RETIRE_STEP as its retire hook. */
 function deployment(t, format) {
-  const fx = v2Deployment({ souls: { dev: { soul: { work: "worktree" } } } });
+  const fx = v2Deployment({
+    souls: { dev: { soul: { work: "worktree", capabilities: { "test.step": { from: "here" } } } } },
+    capabilities: { "test.step": { manifest: { hooks: { retire: "hook.mjs" } }, files: { "hook.mjs": RETIRE_STEP } } },
+  });
   t.after(fx.cleanup);
   const g = gitWith(fx.env);
   if (format === "reftable") g(fx.member, "refs", "migrate", "--ref-format=reftable");
@@ -80,12 +94,14 @@ function deployment(t, format) {
     fx, g,
     /** Spawn `name`, stage its tree with `stage(g, work)`, read what Git says there, retire it.
      *  → { source, work, home, retire: the retire's answer, repo: the recovery's tree } */
-    async retired(name, stage) {
+    async retired(name, stage, { hookStep = null, env = {} } = {}) {
       const { home } = await fx.spawn("dev", { instance: name, work: "worktree" });
       const work = join(home, "work");
       stage(g, work);
       const source = gitSays(g, work);
-      const retire = await fx.inEnv(() => retireInstance(fx.root, name, { tmuxSession: "oats-test-nosuch" }));
+      const step = join(fx.root, "retire-step.json");
+      if (hookStep) writeFileSync(step, JSON.stringify(hookStep(g, work))); else rmSync(step, { force: true });
+      const retire = await fx.inEnv(() => { Object.assign(process.env, env); return retireInstance(fx.root, name, { tmuxSession: "oats-test-nosuch" }); });
       assert.ok(retire.workRecovery?.path, `a recovery was made: ${JSON.stringify(retire.workRecovery)}`);
       const repo = join(retire.workRecovery.path, "repo");
       assert.ok(existsSync(join(repo, ".git")), "the recovery holds the tree");
@@ -200,3 +216,56 @@ test("[reftable] an operation's ref the source holds without its object cannot b
     (e) => e.code === "E_WORK_PRESERVATION_FAILED" && /CHERRY_PICK_HEAD/.test(e.message), "refused as a recovery that could not be made");
   assert.equal(existsSync(join(home, "instance.json")), true, "the home is kept");
 });
+
+/** The recovery of the work as the retire hooks left it: `after-hooks/repo` when the work changed
+ *  while they ran, else `repo`. */
+const latestCopy = (retire) => (existsSync(join(retire.workRecovery.path, "after-hooks", "repo")) ? join(retire.workRecovery.path, "after-hooks", "repo") : join(retire.workRecovery.path, "repo"));
+
+for (const format of ["files", "reftable"]) {
+  test(`[${format}] a retire hook that moves only an operation's ref: the change is seen, and the copy of the work after the hooks holds the ref where the hook left it (#1038)`, skipFor(format), async (t) => {
+    const d = deployment(t, format);
+    let moved;
+    const { retire } = await d.retired("dev-hook-ref", (g, w) => {
+      commitFile(g, w, "f.txt", "zero\n"); commitFile(g, w, "f.txt", "one\n");
+      g(w, "update-ref", "CHERRY_PICK_HEAD", "HEAD");
+      writeFileSync(join(w, "wip.txt"), "uncommitted\n");
+    }, { hookStep: (g, w) => { moved = g(w, "rev-parse", "HEAD~1"); return ["update-ref", "CHERRY_PICK_HEAD", moved]; } });
+    assert.equal(existsSync(join(retire.workRecovery.path, "after-hooks", "repo")), true, "the work after the hooks differed from the work before them, and was copied again");
+    assert.equal(spawnSync("git", ["-C", latestCopy(retire), "rev-parse", "--verify", "--quiet", "CHERRY_PICK_HEAD"], { encoding: "utf8" }).stdout.trim(), moved, "the copy holds CHERRY_PICK_HEAD where the hook left it");
+  });
+
+  test(`[${format}] a retire hook that drops one stash entry, leaving the stash's tip: the change is seen, and the copy after the hooks lists the stash as the hook left it (#1038)`, skipFor(format), async (t) => {
+    const d = deployment(t, format);
+    let left;
+    const { retire } = await d.retired("dev-hook-stash", (g, w) => {
+      commitFile(g, w, "f.txt", "zero\n");
+      writeFileSync(join(w, "f.txt"), "first change\n"); g(w, "stash", "push", "-q", "-m", "first message");
+      writeFileSync(join(w, "f.txt"), "second change\n"); g(w, "stash", "push", "-q", "-m", "second message");
+      writeFileSync(join(w, "wip.txt"), "uncommitted\n");
+    }, { hookStep: (g, w) => { left = g(w, "stash", "list").split("\n")[0]; return ["stash", "drop", "-q", "stash@{1}"]; } });
+    assert.equal(existsSync(join(retire.workRecovery.path, "after-hooks", "repo")), true, "the work after the hooks differed from the work before them, and was copied again");
+    assert.equal(spawnSync("git", ["-C", latestCopy(retire), "stash", "list"], { encoding: "utf8" }).stdout.trim(), left, "the copy lists the one entry the hook left");
+  });
+
+  test(`[${format}] an operator whose Git makes new repositories in the reftable format (init.defaultRefFormat, GIT_DEFAULT_REF_FORMAT): the recovery's refs are still files, and it holds the operation's ref (#1038)`, skipFor("reftable"), async (t) => {
+    const d = deployment(t, format);
+    for (const [how, env] of [
+      ["init.defaultRefFormat in the operator's global configuration", (dir) => { const file = join(dir, "global-gitconfig"); writeFileSync(file, "[init]\n\tdefaultRefFormat = reftable\n"); return { GIT_CONFIG_GLOBAL: file }; }],
+      ["GIT_DEFAULT_REF_FORMAT in the environment", () => ({ GIT_DEFAULT_REF_FORMAT: "reftable" })],
+    ]) {
+      await t.test(how, async () => {
+        let held;
+        const name = `dev-format-${how.startsWith("init") ? "config" : "env"}`;
+        const { repo, source } = await d.retired(name, (g, w) => {
+          commitFile(g, w, "f.txt", "zero\n");
+          g(w, "update-ref", "CHERRY_PICK_HEAD", "HEAD");
+          held = g(w, "rev-parse", "HEAD");
+          writeFileSync(join(w, "wip.txt"), "uncommitted\n");
+        }, { env: env(d.fx.base) });
+        assert.equal(source.refs.CHERRY_PICK_HEAD, held, "premise: the source holds CHERRY_PICK_HEAD");
+        assert.equal(d.g(repo, "rev-parse", "--show-ref-format"), "files", "the recovery stores its refs as files");
+        assert.equal(gitSays(d.g, repo).refs.CHERRY_PICK_HEAD, held, "and holds CHERRY_PICK_HEAD");
+      });
+    }
+  });
+}

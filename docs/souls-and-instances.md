@@ -561,7 +561,8 @@ parses it, so it copies the files Git reads:
 - the refs an operation leaves that are not files where the refs are stored
   in the reftable format: `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `REBASE_HEAD`
   and `AUTO_MERGE`, each written into the copy through Git at the same object
-  id;
+  id. The copy itself always stores its refs as files, whatever format the
+  operator's Git configuration or environment gives a new repository;
 - its tags and its stash. Where the stash's log is not a file (the reftable
   format), its entries are read through Git and stored again in the copy,
   oldest first, each with its message, so `git stash list` reads the same;
