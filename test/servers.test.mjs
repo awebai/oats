@@ -791,6 +791,130 @@ test("roster (#1117): two registrations of one host are probed at once over the 
   assert.deepEqual(control(calls[0]), control(calls[1]), "one ControlPath for the host");
 });
 
+// --workspace-key (feature roster-workspace-key, #1124): the roster probes only the groups that can
+// belong to the given workspaces. Registration `<id>` names ssh host `<id>-host` and workspace
+// `/srv/<id>`; a saved route is written as a snapshot under the fresh OATS home.
+const TEAM = "github.com/acme/team", OTHER = "github.com/acme/other", THIRD = "github.com/acme/third";
+async function keyedRoster({ registrations = {}, routes = [], workspaceKeys, server, answers = {} }) {
+  const prevHomeDir = process.env.OATS_HOME_DIR;
+  process.env.OATS_HOME_DIR = mkdtempSync("/tmp/oats-servers-key-"); // short: the control socket path must fit
+  try {
+    writeServers(Object.fromEntries(Object.entries(registrations).map(([id, extra]) => [id, { sshHost: `${id}-host`, workspace: `/srv/${id}`, ...extra }])));
+    for (const { server: id, host, instance } of routes) {
+      write(snapshotPath(id, instance), JSON.stringify({ serverId: id, target: { sshHost: host, workspace: `/srv/${id}`, oatsPath: "oats" }, instance, agent: "dev", home: `/srv/${id}/agents/dev/instances/${instance}` }));
+    }
+    const asked = [];
+    const execFileAsync = async (_bin, argv, opts) => { const host = sshHostOf(argv); asked.push(host); return (answers[host] || (() => statusOf(host)))(opts, argv); };
+    const t0 = Date.now();
+    const out = await rosterGroups({ server, workspaceKeys, io: { execFileAsync, perTargetTimeoutMs: 400 } });
+    return { out, elapsed: Date.now() - t0, asked: asked.sort(), returned: out.groups.map((g) => `${g.server}@${g.target.sshHost}`) };
+  } finally {
+    rmSync(process.env.OATS_HOME_DIR, { recursive: true, force: true });
+    process.env.OATS_HOME_DIR = prevHomeDir;
+  }
+}
+
+test("roster --workspace-key (#1124): a dead host registered only for another workspace is neither probed nor returned, its saved routes with it; a route-only server is still probed", async () => {
+  const { out, elapsed, asked, returned } = await keyedRoster({
+    registrations: { mine: { workspaceKey: TEAM }, dead: { workspaceKey: OTHER }, unknown: {} },
+    // dead's saved route under its registered target goes with it; one under a target its
+    // registration no longer names is a group of its own, route-only, always probed.
+    routes: [{ server: "dead", host: "dead-host", instance: "dev-d1" }, { server: "dead", host: "dead-old-host", instance: "dev-d0" }, { server: "gone", host: "gone-host", instance: "dev-g1" }],
+    workspaceKeys: [TEAM],
+    answers: { "dead-host": neverAnswers },
+  });
+  assert.deepEqual(asked, ["dead-old-host", "gone-host", "mine-host", "unknown-host"], "the dead host was never asked");
+  assert.deepEqual(returned.slice(0, 2), ["mine@mine-host", "unknown@unknown-host"], "registrations first, in their order");
+  assert.deepEqual(returned.slice(2).sort(), ["dead@dead-old-host", "gone@gone-host"]);
+  const byHost = Object.fromEntries(out.groups.map((g) => [g.target.sshHost, g]));
+  assert.equal(byHost["dead-old-host"].registrationPresent, false);
+  assert.equal(byHost["gone-host"].registrationPresent, false);
+  assert.deepEqual(byHost["gone-host"].instances.map((i) => [i.instance, i.savedRoute]), [["dev-gone-host", false], ["dev-g1", true]]);
+  for (const g of out.groups) { assert.equal(g.probe.ok, true, g.id); assert.equal("_workspaceKey" in g, false, g.id); }
+  assert.ok(elapsed < 400, `${elapsed} ms: nothing waited for the dead host`);
+});
+
+test("roster --workspace-key (#1124): matching and unknown registrations are probed; two keys each select their own; duplicates are harmless; a key that matches nothing leaves the unknown and route-only groups", async () => {
+  const registrations = { team: { workspaceKey: TEAM }, other: { workspaceKey: OTHER }, third: { workspaceKey: THIRD }, unknown: {} };
+  const routes = [{ server: "gone", host: "gone-host", instance: "dev-g1" }];
+  let r = await keyedRoster({ registrations, routes, workspaceKeys: [TEAM] });
+  assert.deepEqual(r.asked, ["gone-host", "team-host", "unknown-host"]);
+  assert.deepEqual(r.returned, ["team@team-host", "unknown@unknown-host", "gone@gone-host"]);
+  r = await keyedRoster({ registrations, routes, workspaceKeys: [OTHER, TEAM, OTHER] });
+  assert.deepEqual(r.asked, ["gone-host", "other-host", "team-host", "unknown-host"]);
+  assert.deepEqual(r.returned, ["team@team-host", "other@other-host", "unknown@unknown-host", "gone@gone-host"]);
+  r = await keyedRoster({ registrations, routes, workspaceKeys: ["github.com/acme/none"] });
+  assert.deepEqual(r.returned, ["unknown@unknown-host", "gone@gone-host"]);
+  // A key is compared as given: never canonicalized, so a repo-ref spelling of the same workspace matches nothing.
+  r = await keyedRoster({ registrations, workspaceKeys: [`git:${TEAM}`] });
+  assert.deepEqual(r.returned, ["unknown@unknown-host"]);
+});
+
+test("roster --workspace-key (#1124): without keys every group is probed and returned, as before; --server and the keys both narrow", async () => {
+  const registrations = { team: { workspaceKey: TEAM }, other: { workspaceKey: OTHER }, unknown: {} };
+  const routes = [{ server: "other", host: "other-host", instance: "dev-o1" }, { server: "gone", host: "gone-host", instance: "dev-g1" }];
+  let r = await keyedRoster({ registrations, routes });
+  assert.deepEqual(r.asked, ["gone-host", "other-host", "team-host", "unknown-host"]);
+  assert.deepEqual(r.returned, ["team@team-host", "other@other-host", "unknown@unknown-host", "gone@gone-host"]);
+  assert.deepEqual(r.out.groups.find((g) => g.server === "other").instances.map((i) => i.instance), ["dev-other-host", "dev-o1"]);
+  r = await keyedRoster({ registrations, routes, workspaceKeys: [] });
+  assert.deepEqual(r.returned, ["unknown@unknown-host", "gone@gone-host"], "an empty list is a filter that admits no registered key");
+  r = await keyedRoster({ registrations, routes, server: "other", workspaceKeys: [TEAM] });
+  assert.deepEqual([r.asked, r.returned], [[], []]);
+  r = await keyedRoster({ registrations, routes, server: "team", workspaceKeys: [TEAM, OTHER] });
+  assert.deepEqual([r.asked, r.returned], [["team-host"], ["team@team-host"]]);
+  r = await keyedRoster({ registrations, routes, server: "gone", workspaceKeys: [TEAM] });
+  assert.deepEqual(r.returned, ["gone@gone-host"]);
+  // No servers file and no saved routes: no groups, as without keys.
+  r = await keyedRoster({ workspaceKeys: [TEAM] });
+  assert.deepEqual([r.asked, r.returned], [[], []]);
+});
+
+test("roster --workspace-key (#1124): a key that is not a canonical workspace key is E_BAD_ARGS before anything is asked", async () => {
+  for (const bad of ["", "a b", "a\tb", "a\u0000b", "a\u007fb", 7, null]) {
+    await assert.rejects(keyedRoster({ registrations: { team: { workspaceKey: TEAM } }, workspaceKeys: [TEAM, bad] }), (e) => e.code === "E_BAD_ARGS", JSON.stringify(bad));
+  }
+  await assert.rejects(keyedRoster({ workspaceKeys: TEAM }), (e) => e.code === "E_BAD_ARGS", "a string, not a list");
+});
+
+test("oats server roster --workspace-key (#1124): every occurrence counts; a missing, empty or bad value is E_BAD_ARGS; text mode names an empty filtered answer", () => {
+  const base = mkdtempSync("/tmp/oats-servers-keycli-");
+  try {
+    const empty = join(base, "bin"); mkdirSync(empty); // no ssh: every probe fails at once, the grouping is what is checked
+    const env = { ...process.env, PATH: empty, OATS_HOME_DIR: join(base, "oh"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    write(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: {
+      team: { sshHost: "team-host", workspace: "/srv/team", workspaceKey: TEAM },
+      other: { sshHost: "other-host", workspace: "/srv/other", workspaceKey: OTHER },
+      third: { sshHost: "third-host", workspace: "/srv/third", workspaceKey: THIRD },
+    } }));
+    let r = oats(env, ["server", "roster", "--workspace-key", TEAM, "--json", "--workspace-key", THIRD]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.deepEqual(r.json().result.groups.map((g) => g.server), ["team", "third"]);
+    r = oats(env, ["server", "roster", `--workspace-key=${OTHER}`, "--json"]);
+    assert.deepEqual(r.json().result.groups.map((g) => g.server), ["other"]);
+    r = oats(env, ["server", "roster", "--json"]);
+    assert.deepEqual(r.json().result.groups.map((g) => g.server), ["team", "other", "third"], "no key: today's answer");
+    r = oats(env, ["server", "roster", "--workspace-key", "github.com/acme/none"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout.trim(), "no remote groups for the given workspace keys");
+    r = oats(env, ["server", "roster"]);
+    assert.match(r.stdout, /team-host/, "without keys the text roster is unchanged");
+    for (const argv of [["--workspace-key"], ["--workspace-key", "--json"], ["--workspace-key", ""], ["--workspace-key="], ["--workspace-key", TEAM, "--workspace-key"], ["--workspace-key", "a b"], ["--workspace-key", "a\u0001b"]]) {
+      r = oats(env, ["server", "roster", ...argv, "--json"]);
+      assert.notEqual(r.status, 0, JSON.stringify(argv));
+      const doc = r.json();
+      assert.equal(doc.ok, false, JSON.stringify(argv));
+      assert.equal(doc.error.code, "E_BAD_ARGS", JSON.stringify(argv));
+    }
+    r = oats(env, ["server", "roster", "--workspace-key"]);
+    assert.notEqual(r.status, 0); assert.match(r.stderr, /--workspace-key needs a workspace key/);
+    r = oats(env, ["help"]);
+    assert.match(r.stdout, /--workspace-key <key>/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
 test("routed retire: the branch a failed spawn's quarantine still owes is named on its own line, from the host's receipt", () => {
   const base = mkdtempSync("/tmp/oats-servers-"); // short: the control socket path must fit in 104 bytes
   try {

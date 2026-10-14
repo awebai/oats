@@ -338,7 +338,12 @@ capped by `--budget` (default 45 s, the deadline of the whole answer), and a
 group that fails or does not answer in time reports its own `E_SSH`, so a
 host that is switched off never hides the others. The groups keep their
 registration order whatever order their probes finish in. `--server <id>`
-narrows it.
+narrows it. `--workspace-key <key>` (0.56.0, repeatable) narrows it to the
+groups that can belong to those workspaces: a registration recorded for one
+of them, a registration whose workspace is not known yet, and a group of
+saved routes only, whose workspace is unknown; a registration recorded for
+another workspace is not probed at all
+([the flag](desktop-cli-api.md#roster-workspace-key)).
 
 The group's `probe` also relays the host's kernel features (0.49.0,
 `probe.features`): the top-level `features` of the same `status --json`

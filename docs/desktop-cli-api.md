@@ -45,7 +45,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "soul-launch","retire-plan-own-worktree"],
+             "soul-launch","retire-plan-own-worktree","roster-workspace-key"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -128,6 +128,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"` and `"flag-ignored"`; `launchPrompts` in a launched spawn's answer; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
 | `soul-launch` | `oats soul launch set\|remove`, the writer of `oats-local.yaml` `souls.launch`, and `E_LAUNCH_PREFERENCE_UNKNOWN`, OATS 0.53.0 ([`oats soul launch`](#oats-soul-launch)). Gate on the probe: a kernel without it answers `E_USAGE` | `soulLaunchApi: 1` (payload only) |
 | `retire-plan-own-worktree` | a retire plan carries `facts.ownWorktree`, a boolean: whether `work/` is the instance's own work tree, the one the retire retains or removes; in `oats retire --plan` and in the fresh plan (`details.plan`) of `E_PLAN_STALE` and `E_CHILDREN_RUNNING`; a stop plan does not carry it; OATS 0.53.0 ([the retire plan](#retire)) | |
+| `roster-workspace-key` | `oats server roster --workspace-key <key>`, repeatable: only the groups that can belong to one of the given workspaces are probed and returned (registered for one of them, registered with no known `workspaceKey`, or saved routes only); the answer's shape is unchanged, OATS 0.56.0 ([The remote roster](#roster-workspace-key)). Gate on the probe: a kernel without it ignores the flag and probes and answers every group | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -2798,7 +2799,7 @@ messaging identity's `address` (else `alias`), or `null`.
 ### The remote roster (`oats server roster --json`)
 
 ```text
-oats server roster [--server <id>] [--per-target <ms>] [--budget <ms>] --json
+oats server roster [--server <id>] [--workspace-key <key>]... [--per-target <ms>] [--budget <ms>] --json
 ```
 
 An envelope; `result` is `{groups, bounds}` (remote `roster`,
@@ -2895,6 +2896,42 @@ route target:
   whole answer); `elapsedMs` is what the answer took, about the slowest
   group's probe. Before 0.55.0 `bounds` also carried `skipped`, the number of
   groups the budget did not reach; it is gone with `E_ROSTER_BUDGET`.
+
+<a id="roster-workspace-key"></a>
+**`--workspace-key <key>`** (feature `roster-workspace-key`, OATS 0.56.0,
+#1124) narrows the roster to the groups that can belong to the given
+workspaces, so a host registered for another workspace, switched off or not,
+costs a window nothing. The flag is repeatable and every occurrence counts.
+With one or more keys, a group is probed and returned when:
+
+1. its registration's `workspaceKey` is one of the keys;
+2. its registration's `workspaceKey` is not known (absent; `oats server
+   check <id>` learns it);
+3. it has no registration for its target (`registrationPresent: false`:
+   saved routes only, the registration removed or changed to another
+   target). Its workspace is unknown, so it is always probed: it holds the
+   rows the Desktop offers Forget on (#1131), which no window's filter may
+   hide.
+
+A group whose registration names another workspace is neither probed nor
+returned, its saved routes under that registration and target with it. A
+group is judged by its registration when it has one, so a saved route whose
+target differs from the registration's is a group of its own, kind 3. A key
+is compared with the registration's `workspaceKey` by exact string equality:
+it is the canonical key a host's `status --json` reports as `workspace.key`,
+never parsed as a repository reference. An empty or missing value, or one
+with whitespace or a control character, is `E_BAD_ARGS`. `--server` and
+`--workspace-key` both narrow. Without the flag the answer is exactly as
+above. With it the answer's shape is unchanged (no filter is echoed in it);
+only which groups appear changes, and a key that matches nothing leaves the
+kinds 2 and 3. In text mode, keys that leave no group print `no remote groups
+for the given workspace keys`.
+
+The Desktop reads one roster for all its windows: it passes every open
+window's usable `workspace.key` in one read, skipping a window whose key is
+`null` or whose `keyFrom` is `"member"` (unresolved, [never
+matched](#workspace-identity-feature-workspace-identity-oats-0360)), and reads
+unfiltered when no window has a usable key.
 
 <a id="servers-per-workspace"></a>
 ### Servers per workspace (feature `servers-per-workspace`)
