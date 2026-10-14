@@ -49,7 +49,7 @@ reads. The targets of each selected harness are:
 Targets with the same canonical directory are one file. Each plan entry says
 whether it is the ambient file (`ambient`) and which launch configurations
 use it (`launchConfigs`). A launch configuration whose reference is not set,
-whose path is not absolute, or whose directory does not exist is a named
+whose path is not absolute or selects no usable directory, or whose directory does not exist is a named
 `problem` on its entry, for a `HOME` as for the harness's own variable. OATS never creates a harness configuration directory:
 create it, or start the harness with it once, then rerun. A missing ambient
 directory (`~/.codex` for a user who has never run Codex, for example) means
