@@ -498,11 +498,10 @@ capabilities' skills), read from the same soul copy as `instructions`:
 - A skill is a child directory of `skills/` holding a regular-file
   `SKILL.md`, or `skills/` itself when it holds one (`name` is then
   `skills`). `path` is POSIX and relative to the soul directory. Its
-  `description` is the `SKILL.md` front matter's `description`, parsed from
-  the whole file by the rules of
-  [`oats capabilities show`](#oats-capabilities-show): `null` when the file
-  is unreadable, a symbolic link or binary, or has no such string, and cut to
-  1024 bytes.
+  `description` is the `SKILL.md` front matter's `description`, by the same
+  function as [`oats capabilities show`](#oats-capabilities-show), which reads
+  the file up to 4 MiB: `null` when the file is unreadable, a symbolic link,
+  binary or over 4 MiB, or has no such string, and cut to 1024 bytes.
 - `files` is every regular file under the skill directory, recursively,
   sorted by `path` in codepoint order, each `path` relative to the soul
   directory. At most 200 are listed; beyond that `filesTruncated` is `true`.
@@ -525,11 +524,14 @@ capabilities' skills), read from the same soul copy as `instructions`:
 - No symbolic link is followed. A symlinked file or directory inside a skill
   is not listed, a symlinked skill directory is not a skill, and a symlinked
   `skills/` makes `skills` `null` with a problem. FIFOs, sockets and devices
-  are not listed and never opened. Every directory is proved to be the one
-  inside the skill before it is listed or read from, and a directory that
-  cannot be proved makes the skill's `files` `null`. Each file is opened from
-  its proven directory, so once a directory is entered, a later swap of one
-  of its ancestors for a symbolic link cannot redirect the read.
+  are not listed and never opened. A directory is listed, and a file read,
+  only once its real path lies inside its skill's, and the skill's inside the
+  soul's; one that does not makes the skill's `files` `null`. A file is
+  opened without following a symbolic link and must be the regular file the
+  listing found. One race remains: a parent directory swapped for a symbolic
+  link in the instant between that check and the open can redirect a read.
+  Only someone who can write the deployment's `agents/` tree can do that, and
+  they already control the soul copy and every instance's `AGENTS.md`.
 - Problems are `{code, message}` in `problems[]`, each message starting
   `skills: `: `soul-skills-unreadable` when the list is `null`, and
   `soul-skill-files-unreadable`, naming the skill's `path`, for a skill whose
