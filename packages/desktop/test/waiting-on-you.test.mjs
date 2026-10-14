@@ -101,10 +101,10 @@ test('the sidebar\'s claim never carries the withheld marker: a withheld note re
   assert.equal(waitingOnYouData(claim({ message: EVENTS_WITHHELD })).message, null);
   assert.equal(waitingOnYouData(claim({ message: 'Allow Bash(rm -rf build)?' })).message, 'Allow Bash(rm -rf build)?', 'a safe note is kept');
 });
-test('the withheld marker is one literal: the contract exports it, the claim module only imports it', () => {
+test('the withheld marker is one literal: display-text.mjs exports it, the contracts and the claim module only import it', () => {
   const source = name => readFileSync(new URL(`../../client/${name}`, import.meta.url), 'utf8');
-  assert.equal(source('instance-events-contract.mjs').split(EVENTS_WITHHELD).length - 1, 1);
-  assert.equal(source('waiting-on-you.mjs').includes(EVENTS_WITHHELD), false);
+  assert.equal(source('display-text.mjs').split(`'${EVENTS_WITHHELD}'`).length - 1, 1);
+  for (const name of ['instance-events-contract.mjs', 'readiness-contract.mjs', 'waiting-on-you.mjs']) assert.equal(source(name).includes(EVENTS_WITHHELD), false, name);
 });
 
 test('reasons map to fixed words; an unknown or null reason reads "Needs input" and the raw value is never returned', () => {
