@@ -785,9 +785,11 @@ so it has none of them either.
 
 A removed name that selects a harness's configuration folder (a capability
 may declare `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `PI_CODING_AGENT_DIR` under a
-namespace it names) reads as not set in every check of that launch: the
+namespace it names) reads as not set in the checks of that launch: the
 package probe, folder trust and readiness then read the default folder under
-`HOME`, as the harness will.
+`HOME`, as the harness will. A spawn's first package check runs before its
+hooks and cannot know it yet; its check on the session it gets does
+([one limit](execution-targets.md#the-checks-read-the-pane)).
 
 A launch whose capabilities do not declare a name is unchanged: an ambient
 value of that name still reaches it. The tmux server's and the session's
