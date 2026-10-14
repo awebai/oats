@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, fixtureEnv, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
+import { comparableStty } from "./helpers/stty-line.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -190,11 +191,16 @@ const SWITCHER_FOOTER = " Enter open   / filter   r refresh   Esc close   ? help
 const UNMATCHED = "  Not matched to a workspace";
 const OFFERED = "  On this machine, not opened";
 const ROSTER_FAILED = "Other machines were not read.";
-/** The help's `Keys` list, one row per action, in the table's order. */
+/** The help's `Keys` list at 80 columns, one row per action in the table's order, and one per view
+ *  for `open` (Enter): under the agent's line the key that returns, tmux's copy-mode rule (two rows
+ *  at this width) and where the keys are listed (views/help.mjs `openRows`). */
 const HELP_KEYS = [
   /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
   /^ *Left, h {2,}collapse, or go to the parent$/, /^ *Right, l {2,}expand, or go to the first child$/, /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/,
-  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *w {2,}workspaces$/, /^ *Enter {2,}open$/, /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
+  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *w {2,}workspaces$/,
+  /^ *Enter {2,}open the selected agent's terminal, in the list of instances$/, /^ {2,}C-\\ brings oats tui back; the agent keeps running\.$/,
+  /^ {2,}A key that tmux's copy mode binds leaves the viewer once the mode$/, /^ {2,}is left\.$/, /^ {2,}docs\/execution-targets\.md has the keys that can be chosen\.$/,
+  /^ *Enter {2,}open the selected workspace, in the switcher$/, /^ *\? {2,}help$/, /^ *Esc {2,}close$/, /^ *q, Ctrl\+C {2,}quit$/, /^ *Ctrl\+Z {2,}suspend$/, /^ *Ctrl\+L {2,}redraw$/,
 ];
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
@@ -310,27 +316,6 @@ function switcherFaults(screen, { cols = 80, rows = 24, look = UTF8, body, open 
 }
 
 // ---- a terminal ---------------------------------------------------------------------------------
-/** A `stty -g` line as this file compares it: the line itself, but for one bit of macOS's `lflag`.
- *  That bit, 0x20000000, is PENDIN, and it is state of the terminal driver, not a setting: the
- *  driver sets it when the terminal goes canonical and clears it when something reads or watches
- *  the terminal. It changes with no TUI running, in both directions, and no program can put it
- *  back (the control's output: awebai/oats#935, comment 6108614331). So it is cleared here, in the
- *  one place a line is read, and every comparison of the file is of everything else.
- *  Only macOS's format is touched (`gfmt1:cflag=...:lflag=<hex>:...`), and its `lflag` is found by
- *  name. A Linux line (hex fields with no names) is returned as it is; so is a macOS line whose
- *  `lflag` is missing, written twice or not hex, which then fails its comparison as it stands. */
-const PENDIN = 0x20000000n;
-function comparableStty(line) {
-  const fields = line.split(":");
-  if (fields[0] !== "gfmt1") return line;
-  const at = fields.flatMap((field, i) => (field.startsWith("lflag=") ? [i] : []));
-  const hex = at.length === 1 ? fields[at[0]].slice("lflag=".length) : "";
-  if (!/^[0-9a-f]+$/i.test(hex)) return line;
-  const lflag = BigInt(`0x${hex}`);
-  if ((lflag & PENDIN) === 0n) return line;
-  fields[at[0]] = `lflag=${(lflag & ~PENDIN).toString(16)}`;
-  return fields.join(":");
-}
 
 /** The pane's modes, as tmux tracks them. `bracket_paste_flag` is empty on a tmux that has no such
  *  format (it prints nothing for a name it does not know). */
@@ -1195,9 +1180,10 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends one row above `quit` since the table holds `workspaces`
-  // and `open`; the movement keys scroll the help, and one row down shows it.
-  term.press("j");
+  // At 80x24 the help's first page ends six rows above `quit`: the table holds `workspaces`, and
+  // `open` twice with the agent's four rows under it (HELP_KEYS); the movement keys scroll the
+  // help, and six rows down show it.
+  for (let i = 0; i < 6; i++) term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
