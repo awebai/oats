@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
-import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../../client/instance-lifecycle.mjs';
 import { lifecycleReason, lifecycleDetailCode, undescribedAnswer, undescribedRefusal, stoppedTargets } from '../../client/lifecycle-contract.mjs';
 import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -37,14 +37,14 @@ const optionsOf = operation => operation === 'stop' ? { recursive: true } : { di
 const planOf = operation => operation === 'stop' ? stopPlan() : retirePlan();
 /** The boundary's replies when the kernel answers the plan read with `planAnswer`, or the apply with `answer`. */
 async function replies(ctx, operation, { planAnswer, answer } = {}) {
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => args.phase === 'plan' ? planAnswer ?? envelope(planOf(operation)) : answer });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => args.phase === 'plan' ? planAnswer ?? envelope(planOf(operation)) : answer });
   const planned = await service({ action: 'plan', operation, selector: selectorOf(ctx), options: optionsOf(operation) }, () => ctx);
   return { planned, applied: planned.status === 'plan' ? await service({ action: 'apply', planRef: planned.planRef }, () => ctx) : null };
 }
 /** The dialog over the real server boundary. */
 function mount(t, { ctx = context(), operation = 'retire', planAnswer, answer }) {
   const dom = new JSDOM('<!doctype html><button id="opener">Actions</button>', { pretendToBeVisual: true }), doc = dom.window.document;
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => args.phase === 'plan' ? planAnswer ?? envelope(planOf(operation)) : answer });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => args.phase === 'plan' ? planAnswer ?? envelope(planOf(operation)) : answer });
   const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => ctx) });
   t.after(() => { dialog.dispose(); dom.window.close(); });
   const row = ctx.workspace.server ? { ...instance, server: ctx.workspace.server, repoName: ctx.workspace.name, addressable: true } : instance;
@@ -141,7 +141,8 @@ const raisedIn = (path, names, ...more) => {
 const frameRaisedIn = path => /\blifecycleFrameRefusal\(\)/.test(readFileSync(new URL(path, import.meta.url), 'utf8')) ? [LIFECYCLE_FORBIDDEN_FRAME.code] : [];
 const RAISED = {
   adapter: ['E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_OUTPUT_LIMIT', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT'],
-  boundary: ['E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_LIFECYCLE_BUSY', 'E_LIFECYCLE_UNAVAILABLE', 'E_OPTION_UNAVAILABLE', 'E_OUTCOME_UNKNOWN', 'E_PLAN_CHANGED', 'E_PLAN_EXPIRED', 'E_WORKSPACE_UNKNOWN'],
+  // E_CLI_TIMEOUT: the cause of the `unknown` an apply answers when the boundary's wait for it ends (APPLY_WAIT_MS).
+  boundary: ['E_BAD_ARGS', 'E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_CLI_TIMEOUT', 'E_LIFECYCLE_BUSY', 'E_LIFECYCLE_UNAVAILABLE', 'E_OPTION_UNAVAILABLE', 'E_OUTCOME_UNKNOWN', 'E_PLAN_CHANGED', 'E_PLAN_EXPIRED', 'E_WORKSPACE_UNKNOWN'],
   main: ['E_CLI_FAILED', 'E_CLI_PROTOCOL', 'E_FORBIDDEN_FRAME', 'E_OUTCOME_UNKNOWN', 'E_PLAN_CHANGED'],
   admission: ['E_AMBIGUOUS_INSTANCE', 'E_BAD_ARGS', 'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_SNAPSHOT_UNKNOWN', 'E_WORKSPACE_UNKNOWN', 'cli-unavailable', 'unsupported-remote-operation'],
   // The reason the boundary gives a partial receipt, and the code of the old retire route: not found by the reading above.
@@ -150,9 +151,9 @@ const RAISED = {
 
 test('every code Desktop raises itself (the adapter, the boundary, admission, main) has its own sentence; reading the sources finds no other', () => {
   assert.deepEqual(raisedIn('../../client/lifecycle-cli.mjs', 'failure'), RAISED.adapter);
-  assert.deepEqual(raisedIn('../server/instance-lifecycle.mjs', 'denied|failure|lifecycleReason', /error: \{ code: '([^']+)' \}/g, /\|\| '([^']+)'/g), RAISED.boundary);
+  assert.deepEqual(raisedIn('../../client/instance-lifecycle.mjs', 'denied|failure|lifecycleReason', /error: \{ code: '([^']+)' \}/g, /\|\| '([^']+)'/g), RAISED.boundary);
   assert.deepEqual([...raisedIn('../main.mjs', 'failure'), ...frameRaisedIn('../main.mjs')].sort(), RAISED.main);
-  for (const path of ['../../client/lifecycle-cli.mjs', '../server/instance-lifecycle.mjs', '../../client/instance-admission.mjs']) assert.deepEqual(frameRaisedIn(path), [], path);
+  for (const path of ['../../client/lifecycle-cli.mjs', '../../client/instance-lifecycle.mjs', '../../client/instance-admission.mjs']) assert.deepEqual(frameRaisedIn(path), [], path);
   assert.deepEqual(raisedIn('../../client/instance-admission.mjs', 'denied'), RAISED.admission);
   for (const code of new Set(Object.values(RAISED).flat())) {
     // A remote row that is not addressable is refused by admission with its own sentence, which names the server.
@@ -187,7 +188,7 @@ test('none of those codes reaches the fallback, whatever came with it: not even 
   const { planned } = await replies(ctx, 'stop');
   assert.equal(planned.reason.code, 'E_SNAPSHOT_UNKNOWN'); assert.match(planned.reason.message, /^dev-1 is no longer on Build box\./);
   // The boundary's own failures: a command that could not be run, and an answer that is no envelope.
-  const thrown = createLifecycleBoundary({ invoke: async () => { throw new Error('PRIVATE'); } }), c = context();
+  const thrown = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async () => { throw new Error('PRIVATE'); } }), c = context();
   assert.deepEqual((await thrown({ action: 'plan', operation: 'stop', selector: selectorOf(c), options: optionsOf('stop') }, () => c)).reason, { code: 'E_CLI_FAILED', message: NOT_RUN });
   assert.deepEqual((await replies(context(), 'stop', { planAnswer: 'not an envelope' })).planned.reason, lifecycleReason('E_CLI_PROTOCOL', DESKTOP_TERMS));
   // The frame code reaches the boundary only if a kernel answers it, and none does. To the shared table it is
@@ -299,7 +300,7 @@ test("E_UNIDENTIFIED_INSTANCE_HOME at each place the kernel raises it for a Stop
   /** The dialog over the real adapter and the boundary. */
   const dialogOver = (ctx, operation, invoke) => {
     const dom = new JSDOM('<!doctype html><button id="opener">Actions</button>', { pretendToBeVisual: true }), doc = dom.window.document;
-    const service = createLifecycleBoundary({ invoke }), c = ctx();
+    const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke }), c = ctx();
     const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => c) });
     t.after(() => { dialog.dispose(); dom.window.close(); });
     const row = c.workspace.server ? { ...instance, server: c.workspace.server, repoName: c.workspace.name, addressable: true } : instance;
@@ -311,7 +312,7 @@ test("E_UNIDENTIFIED_INSTANCE_HOME at each place the kernel raises it for a Stop
     // The kernel's sentence passes the display filter whole, as one line.
     const reason = { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME, detail: said, ...(ctx === routedContext ? { remote: true } : {}) };
     const ask = async (refuse, details) => {
-      const service = createLifecycleBoundary({ invoke: kernel(operation, refuse, said, details) }), c = ctx();
+      const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: kernel(operation, refuse, said, details) }), c = ctx();
       const planned = await service({ action: 'plan', operation, selector: selectorOf(c), options: optionsOf(operation) }, () => c);
       return { planned, applied: planned.status === 'plan' ? await service({ action: 'apply', planRef: planned.planRef }, () => c) : null };
     };
@@ -339,9 +340,9 @@ test("E_UNIDENTIFIED_INSTANCE_HOME at each place the kernel raises it for a Stop
     for (const other of [UNDESCRIBED, NOT_RUN, UNKNOWN, 'Result not confirmed']) assert.equal(confirmed.body.textContent.includes(other), false, where);
   }
   // A message the display filter withholds, and no message: Details as for any other code with its own sentence.
-  const withheld = await createLifecycleBoundary({ invoke: kernel('retire', 'plan', `${home}/instance.json cannot be read (token=abc123)`) })({ action: 'plan', operation: 'retire', selector: selectorOf(context()), options: optionsOf('retire') }, context);
+  const withheld = await createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: kernel('retire', 'plan', `${home}/instance.json cannot be read (token=abc123)`) })({ action: 'plan', operation: 'retire', selector: selectorOf(context()), options: optionsOf('retire') }, context);
   assert.deepEqual(withheld.reason, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME, detail: DETAIL_WITHHELD });
-  const silent = await createLifecycleBoundary({ invoke: kernel('retire', 'plan', undefined) })({ action: 'plan', operation: 'retire', selector: selectorOf(context()), options: optionsOf('retire') }, context);
+  const silent = await createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: kernel('retire', 'plan', undefined) })({ action: 'plan', operation: 'retire', selector: selectorOf(context()), options: optionsOf('retire') }, context);
   assert.deepEqual(silent.reason, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME });
   // An envelope that does not say the kernel answered carries no detail, as for every code: the sentence alone.
   const { planned } = await replies(context(), 'retire', { planAnswer: unmarked('E_UNIDENTIFIED_INSTANCE_HOME') });

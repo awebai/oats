@@ -60,7 +60,7 @@ import { createInspectCache } from "./inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "../../client/refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
-import { lifecycleRequest } from "./instance-lifecycle.mjs";
+import { createLifecycleBoundary } from "../../client/instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { spawnPreviewCachedRequest, spawnPreviewCache } from './spawn-preview.mjs';
@@ -83,6 +83,7 @@ import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed } from "../renderer/deployment-header.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
+import { START_UNCONFIRMED } from "../renderer/start-unconfirmed.mjs";
 import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
 import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes } from "../../client/panel-views.mjs";
 
@@ -520,6 +521,8 @@ const capabilityShowCache = createCapabilityShowCache();
 // when that key moves, at admission, or on refresh:true.
 const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCatalog, maxAge: BACKGROUND_MAX_AGE,
   observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
+// The Desktop's one lifecycle boundary: its plans, its kept answers and its one apply at a time are this backend's.
+const lifecycleRequest = createLifecycleBoundary({ terms: DESKTOP_TERMS });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
 const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({
@@ -1452,6 +1455,8 @@ const server = createServer(async (req, res) => {
           workspaceDir: inst.server ? ctxs[0] ?? homedir() : dirname(inst.agentsRoot), server: inst.server });
         observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot();
         if (env.ok) return send(res, 200, env.result);
+        // The wait for the start ended and the start goes on (cli-adapter.mjs cliStart): the Desktop's own sentence.
+        if (env.error.code === "E_START_UNCONFIRMED") return send(res, 409, { error: START_UNCONFIRMED.message, code: START_UNCONFIRMED.code });
         // A start that stopped at a launch prompt answers E_SPAWN_INCOMPLETE with the retained outcome in its
         // details, as a spawn does: it travels as `incomplete`, decoded, when it names the instance this route
         // resolved (not the home: the kernel reports its real path). Anything else answers as before.

@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { busyHolder, busyHeadline, busyAbout, busyRefusal, lifecycleReason } from '../../client/lifecycle-contract.mjs';
 import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -48,7 +48,7 @@ const planOf = operation => operation === 'stop' ? stopPlan() : retirePlan();
 
 /** The boundary's replies: to a plan read the kernel answers with `planAnswer`, and to an apply with `answer`. */
 async function replies(ctx, operation, { plan = planOf(operation), planAnswer, answer } = {}) {
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => args.phase === 'plan' ? planAnswer ?? envelope(plan) : answer });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => args.phase === 'plan' ? planAnswer ?? envelope(plan) : answer });
   const planned = await service({ action: 'plan', operation, selector: selectorOf(ctx), options: optionsOf(operation) }, () => ctx);
   return { planned, applied: planned.status === 'plan' ? await service({ action: 'apply', planRef: planned.planRef }, () => ctx) : null };
 }
@@ -114,7 +114,7 @@ test("the field changes nothing outside the kernel's own E_LIFECYCLE_BUSY: anoth
   }
   // Desktop's own busy: the one apply slot. It carries no envelope, and keeps today's sentence with no detail.
   const ctx = strong(); let release;
-  const service = createLifecycleBoundary({ invoke: (_bin, args) => args.phase === 'plan' ? envelope(stopPlan()) : new Promise(resolve => { release = () => resolve(envelope(stopReceipt(args))); }) });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: (_bin, args) => args.phase === 'plan' ? envelope(stopPlan()) : new Promise(resolve => { release = () => resolve(envelope(stopReceipt(args))); }) });
   const plan = () => service({ action: 'plan', operation: 'stop', selector: selectorOf(ctx), options: optionsOf('stop') }, () => ctx);
   const a = await plan(), b = await plan(), first = service({ action: 'apply', planRef: a.planRef }, () => ctx); await tick();
   assert.deepEqual((await service({ action: 'apply', planRef: b.planRef }, () => ctx)).reason, { code: 'E_LIFECYCLE_BUSY', message: TODAY });
@@ -162,7 +162,7 @@ test('busyRefusal re-validates a relayed reason: the headline is chosen from hol
 /** The dialog over the real server boundary. `row` is the roster row it opens for. */
 function mount(t, { ctx, operation, plan = planOf(operation), planAnswer, answer, row = instance }) {
   const dom = new JSDOM('<!doctype html><button id="opener">Actions</button>', { pretendToBeVisual: true }), doc = dom.window.document;
-  const service = createLifecycleBoundary({ invoke: async (_bin, args) => args.phase === 'plan' ? planAnswer ?? envelope(plan) : answer });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, args) => args.phase === 'plan' ? planAnswer ?? envelope(plan) : answer });
   const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => ctx) });
   t.after(() => { dialog.dispose(); dom.window.close(); });
   const opened = ctx.workspace.server ? { ...row, server: ctx.workspace.server, repoName: ctx.workspace.name, addressable: true } : row;

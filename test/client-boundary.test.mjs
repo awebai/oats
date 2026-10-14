@@ -88,10 +88,10 @@ const SURFACE = Object.freeze({
   "remote-address.mjs": ["canAddressRemote", "serverLabel", "shownLabel", "unaddressableSentence", "rowReason", "remoteHeadline", "hostReason", "unroutableReason", "kernelCode"],
   "machine-contract.mjs": ["machinesGated"],
   "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
-  // Provisional: lifecycle.
-  "lifecycle-cli.mjs": ["cliLifecycle", "lifecycleArgv"],
-  "lifecycle-contract.mjs": ["LIFECYCLE_API", "MAX_LIFECYCLE_TARGETS", "planRevision", "planReference", "lifecyclePlan", "lifecycleOptions", "lifecycleChoicesApplicable",
-    "lifecycleReceipt", "stoppedTargets", "spawnCompensationOf", "lifecycleReason", "lifecycleFailure", "lifecycleDetailCode"],
+  // Provisional: lifecycle (5a). A client stops and retires through its own boundary and confirmation; the CLI call
+  // and the contract's readers are the boundary's, never a client's.
+  "instance-lifecycle.mjs": ["createLifecycleBoundary", "supportsLifecycle"],
+  "lifecycle-confirmation.mjs": ["planView", "outcomeView", "createLifecycleConfirmation", "applyRunningSentence"],
   "instance-acts.mjs": ["instanceActs", "openAct"],
   // Provisional: souls, inspect, spawn.
   "inspect-contract.mjs": ["inspectSupported", "inspectData", "originText", "inspectFacts"],
@@ -651,6 +651,12 @@ test("fixture, packages/tui: an import of a module that is not on the surface fa
   // The two files nobody imports, whatever is taken from them.
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import "../client/own-environment.mjs";\nexport const frame = (t) => t;\n' }, /imports own-environment\.mjs, which is never imported from outside the shared home$/);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = () => import("../client/liveness-main.mjs");\n' }, /imports liveness-main\.mjs, which is never imported/);
+});
+
+test("fixture, packages/tui: the lifecycle CLI call is not on the surface: a client stops and retires through its boundary (5a)", () => {
+  breaks(tuiProblems, { "packages/client/lifecycle-cli.mjs": 'export function cliLifecycle() { return null; }\n',
+    "packages/tui/frame.mjs": 'import { cliLifecycle } from "../client/lifecycle-cli.mjs";\nexport const frame = cliLifecycle;\n' },
+  /^packages\/tui\/frame\.mjs: imports lifecycle-cli\.mjs, which is not on the stable surface$/);
 });
 
 test("fixture, packages/tui: an import of an export that is not on the surface, from a module that is, fails", () => {
