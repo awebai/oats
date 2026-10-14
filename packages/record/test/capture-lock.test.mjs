@@ -2,7 +2,7 @@ import { fixtureEnv } from "./fixture-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { acquireCaptureLock, captureLockPath, shellQuote } from "../lib/capture-lock.mjs";
@@ -338,10 +338,15 @@ test("capture lock: a removal error is still a failure when the lock was removed
 test("capture lock: failure to verify removal cannot be reported as released", (t) => {
   const root = mkdtempSync(join(tmpdir(), "capture-lock-verify-remove-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const lock = acquireCaptureLock(root, { io: { lstatSync: () => {
-    throw Object.assign(new Error("simulated removal verification failure"), { code: "EACCES" });
+  let removed = false;
+  const lock = acquireCaptureLock(root, { io: { rmSync: (path, options) => {
+    rmSync(path, options); removed = true;
+  }, lstatSync: (...args) => {
+    if (removed) throw Object.assign(new Error("simulated removal verification failure"), { code: "EACCES" });
+    return lstatSync(...args);
   } } });
   const outcome = lock.release();
+  assert.equal(removed, true, "failure is injected after actual removal");
   assert.equal(outcome.released, false); assert.equal(outcome.reason, "remove-failed");
   assert.match(outcome.error, /verification failure/); assert.match(outcome.recovery, /could not verify/);
 });

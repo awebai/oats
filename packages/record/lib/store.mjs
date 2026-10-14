@@ -463,7 +463,7 @@ export class RecordStore {
   // our fsynced append can skip history. Unknown writes (including old releases),
   // replacement and shrink start a new epoch and invalidate dependent cursors.
   // Partial validation is resumable, but cannot authorize an append.
-  validateJournal(streamId, state, { maxRecords = Infinity, maxBytes = Infinity, stopped = () => false } = {}) {
+  validateJournal(streamId, state, { maxRecords = Infinity, maxBytes = Infinity, stopped = () => false, work } = {}) {
     const path = this.journalPath(streamId), version = fileVersion(path);
     let checkpoint = state.get("journal", streamId);
     if (checkpoint && (!Number.isSafeInteger(checkpoint.bytes) || checkpoint.bytes < 0 || checkpoint.bytes > (version?.size ?? 0) ||
@@ -485,6 +485,7 @@ export class RecordStore {
         const removed = Number(state.db.prepare(`DELETE FROM journal_ids WHERE rowid IN
           (SELECT rowid FROM journal_ids WHERE stream = ? LIMIT ?)`).run(streamId, limit).changes);
         recordsUsed += removed;
+        if (work) work.deletedIds = (work.deletedIds ?? 0) + removed;
         if (removed < limit) { delete checkpoint.resetting; state.set("journal", streamId, checkpoint); }
       });
     }
@@ -507,6 +508,7 @@ export class RecordStore {
           }
           checkpoint.bytes = entry.end;
           bytes += entry.bytes; bytesUsed += entry.bytes; batch++; recordsUsed++;
+          if (work) { work.records = (work.records ?? 0) + 1; work.bytes = (work.bytes ?? 0) + entry.bytes; }
         }
         if (!sameVersion(version, fileVersion(path))) throw new StoreError(`journal changed during validation: ${path}`);
         checkpoint.complete = done;

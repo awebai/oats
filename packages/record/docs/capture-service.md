@@ -163,6 +163,17 @@ does not establish remaining deadline budget; the operator-only
 [reset benchmark](../../../scripts/benchmark-record-reset.md) measures the full
 commit separately from sampled reader blocking on a disposable SQLite backup.
 
+The [operator's real-index qualification](https://github.com/awebai/oats/issues/1108#issuecomment-6165193608)
+used benchmark commit `16c62e39aaa43c2bb510cc446c7528359a9a4bd2` on two fresh
+online backups with identical counts: 4.82 GB, 2,286,985 turns and 1,313 streams.
+On macOS ARM/APFS internal SSD, Node 26.11.1/SQLite 3.54.0 with DELETE/FULL,
+the original reset took 45,291 ms and atomic drop/recreate took 824 ms, including
+COMMIT. Longest sampled reader-busy spans were 44,453 ms and 463 ms; 10 ms
+sampling with gaps up to 56 ms does not measure exact reader-exclusion time.
+Sampled rollback-journal peaks (2.39 GB and 4.9 MB) are lower bounds. These
+results qualify the isolated atomic reset on that storage, not the subsequent
+2.3-million-turn reconstruction, full-pass deadline or Linux service performance.
+
 Scratch directories are private per synchronous caller (0700 directories, 0600
 owner/payload files), with a same-host PID and nonce marker. No supported path
 transfers their ownership or open descriptors to a subprocess. A command holding
@@ -198,6 +209,32 @@ provide budgets and continuation; they do not bound public library operations.
 Public synchronous library calls do not implicitly enter this context or acquire
 a root capture lock. Healthy derived-state opens do not run a schema write
 transaction, and identical state values do not produce redundant row updates.
+
+The private supervisor transport admits one child under the root lock. The child
+announces its nonce and stays idle until the supervisor durably publishes its
+identity in that lock and sends permission to start. A live, reused or unknown
+worker PID prevents reclamation after supervisor death. Release occurs only
+after the owned child exits; signals target the spawned child handle, never a
+PID inferred from an abandoned lock or a process group. Workers check their
+parent and lock identity between work units. The supervisor never writes status
+on behalf of a crashed worker. A shared monotonic deadline includes process
+startup and lock publication, with a separate cooperative drain boundary.
+Launch arguments fix the heap policy and exclude inherited Node flags and
+preloads. This transport requires a reconciliation entry that supplies bounded
+units and persists run facts; it does not itself implement a complete pass.
+
+Bounded index groups reuse the already acquired stream group and capture-state
+connection. Validation precedes the index write transaction; completed index
+rows and byte/count cursors commit together once per group. A cooperative stop
+commits completed work, while an exception rolls back that index group. Each
+selected stream receives a share of the record/byte budget, so a large journal
+does not consume every selected stream's allowance. The scheduler must visit
+both live streams and indexed streams whose journals disappeared, and restart
+its index sweep after an atomic union reset. The group helper never declares
+the entire root complete. A no-op group performs no index write transaction;
+its capture-state transaction remains separate from the index commit. A failure
+between the two commits is recovered through journal version/epoch validation,
+not by assuming a cross-database atomic transaction.
 
 ## First-upgrade cost
 

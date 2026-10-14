@@ -9,7 +9,7 @@
 // initializing (owner-less) lock refuses the pass and names the holder and
 // the operator recovery; it is never stolen.
 //
-// A lock whose recorded owner is DEAD on this host is reclaimed (a capture
+// A lock whose recorded owner AND registered worker are DEAD on this host is reclaimed (a capture
 // killed mid-pass by a hook or caller timeout runs no finally). Records
 // without host predate host recording and live under this user's home, so
 // they count as this host's (RECLAIM_HOSTLESS_RECORDS). Reclaimers
@@ -19,10 +19,12 @@
 // meanwhile. A guard whose holder died is never removed (that would race
 // exactly as removing the lock does); it is named with its recovery.
 // Acquire never waits: it reclaims once or skips, and the next pass catches up.
-// There is no signal handler: a pass is synchronous, so a JS handler would
-// only run after the whole pass (turning a caller's timeout kill into a full
-// pass), and SIGKILL cannot be handled; the reclaim is the recovery.
-import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+// A supervisor publishes its idle child's identity before permitting work.
+// The worker is part of the same lock, not a second independently reclaimed
+// lock. A live/reused/unknown child PID prevents release and reclamation even
+// when the supervisor died. Callers own child termination/reaping; this module
+// never sends a terminating signal or infers a process group.
+import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -35,18 +37,46 @@ export function captureLockPath(root) { return join(root, ".capture.lock"); }
 
 /** "alive" | "dead" | "unknown" for an owner pid ("unknown" = exists but not signalable). */
 export function holderLiveness(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return "unknown";
-  try { process.kill(pid, 0); return "alive"; } catch (e) { return e.code === "EPERM" ? "unknown" : "dead"; }
+  if (!Number.isInteger(pid) || pid <= 0 || pid > 2147483647) return "unknown";
+  try { process.kill(pid, 0); return "alive"; } catch (e) { return e.code === "ESRCH" ? "dead" : "unknown"; }
 }
 
-const readJson = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return undefined; } };
-const readOwner = (dir) => readJson(join(dir, "owner.json"));
+const sameFile = (a, b) => a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+const readJson = (path) => {
+  let fd;
+  try {
+    const before = lstatSync(path, { bigint: true });
+    if (!before.isFile() || before.isSymbolicLink() || before.size > 4096n) return undefined;
+    fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
+    const opened = fstatSync(fd, { bigint: true });
+    if (!sameFile(before, opened)) return undefined;
+    const bytes = Buffer.alloc(Number(opened.size)); let offset = 0;
+    while (offset < bytes.length) { const n = readSync(fd, bytes, offset, bytes.length - offset, offset); if (!n) return undefined; offset += n; }
+    if (!sameFile(opened, fstatSync(fd, { bigint: true })) || !sameFile(opened, lstatSync(path, { bigint: true }))) return undefined;
+    return JSON.parse(bytes.toString("utf8"));
+  } catch { return undefined; }
+  finally { if (fd !== undefined) closeSync(fd); }
+};
+const readOwner = (dir) => {
+  try { const st = lstatSync(dir); return st.isDirectory() && !st.isSymbolicLink() ? readJson(join(dir, "owner.json")) : undefined; }
+  catch { return undefined; }
+};
+export const readCaptureLockOwner = root => readOwner(captureLockPath(root));
+
+function validPid(pid) { return Number.isInteger(pid) && pid > 0 && pid <= 2147483647; }
+function workerDead(owner, { host, liveness }) {
+  if (!Object.hasOwn(owner, "worker")) return true;
+  const worker = owner.worker;
+  return validPid(worker?.pid) && worker.pid !== owner.pid && worker.host === host && typeof worker.nonce === "string" &&
+    worker.nonce.length > 0 && worker.nonce.length <= 128 && typeof worker.startedAt === "string" &&
+    Number.isFinite(Date.parse(worker.startedAt)) && liveness(worker.pid) === "dead";
+}
 
 /** Whether `owner` is a record of this host whose process is dead: the only lock this module reclaims. */
 function deadHere(owner, { host, liveness, reclaimHostless }) {
-  if (!owner || !Number.isInteger(owner.pid)) return false;
+  if (!owner || !validPid(owner.pid)) return false;
   const here = owner.host === undefined ? reclaimHostless : owner.host === host;
-  return here && liveness(owner.pid) === "dead";
+  return here && liveness(owner.pid) === "dead" && workerDead(owner, { host, liveness });
 }
 
 /** Remove the lock `dir` held by the dead `owner`, serialized by the guard `<dir>.reclaim`. → { removed }
@@ -60,7 +90,7 @@ function reclaimDeadLock(dir, owner, me, opts) {
     const g = readJson(guard);
     return g && deadHere(g, opts) ? { abandoned: { guard, pid: g.pid } } : { removed: false };
   }
-  const same = (o) => o && o.pid === owner.pid && o.nonce === owner.nonce && o.startedAt === owner.startedAt;
+  const same = (o) => o && o.pid === owner.pid && o.nonce === owner.nonce && o.startedAt === owner.startedAt && JSON.stringify(o.worker) === JSON.stringify(owner.worker);
   let removed = false;
   try {
     const now = readOwner(dir);
@@ -79,6 +109,7 @@ export function shellQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + 
 /** The operator's recovery line for a lock that is not ours. */
 export function recoveryInstruction(dir, owner, liveness) {
   const remove = `rm -r -- ${shellQuote(dir)}`;
+  if (owner && Object.hasOwn(owner, "worker")) return `${dir} records supervisor pid ${owner.pid} (${liveness}) and worker pid ${owner.worker?.pid ?? "unknown"}; wait for both to finish. If interrupted, stop capture triggers and verify BOTH processes are gone before removing the lock with: ${remove}  and rerun`;
   if (!owner?.pid) return `${dir} is held by a pass that has not written its owner record yet (initializing, or killed before it could); stop capture triggers (hooks, launchd), verify no capture process is running (pgrep -f capture.mjs), then remove the lock with: ${remove}  and rerun`;
   const who = `pid ${owner.pid} (started ${owner.startedAt || "?"}, now ${liveness})`;
   if (liveness === "alive") return `${dir} is held by ${who}; let it finish, the next pass catches up`;
@@ -103,7 +134,7 @@ export function recoveryInstruction(dir, owner, liveness) {
  *  saying what happened. And `release()` never throws: it answers
  *  `{ released: true }` only when the lock is verifiably gone, otherwise
  *  `{ released: false, reason: "gone" | "unknown-owner" | "not-owner" |
- *  "remove-failed", ... }` with the actual observation, never a guess.
+ *  "remove-failed" | "worker-active", ... }` with the actual observation, never a guess.
  *
  *  The owner record carries a per-acquisition nonce, so a release kept from
  *  an earlier acquisition cannot erase a later one by the same pid (an
@@ -111,13 +142,14 @@ export function recoveryInstruction(dir, owner, liveness) {
  *
  *  `io` exists for fault injection in tests only. */
 export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, host = hostname(), reclaimHostless = RECLAIM_HOSTLESS_RECORDS, io = {} } = {}) {
-  const fs = { writeFileSync, rmSync, openSync, closeSync, lstatSync, ...io };
+  if (!validPid(pid)) throw new Error("capture lock owner must have a positive process ID");
+  const fs = { writeFileSync, rmSync, openSync, closeSync, lstatSync, fsyncSync, renameSync, ...io };
   const dir = captureLockPath(root);
   const nonce = randomBytes(8).toString("hex");
   mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
   let reclaimed;
   for (let attempt = 0; ; attempt++) {
-    try { mkdirSync(dir); break; }
+    try { mkdirSync(dir, { mode: 0o700 }); break; }
     catch (e) {
       if (e.code !== "EEXIST") throw e;
       const owner = readOwner(dir);
@@ -148,7 +180,7 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     // a record-less replacement look like the directory we created.
     directoryFd = fs.openSync(dir, "r");
     identity = fstatSync(directoryFd);
-    fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString(), host }));
+    fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString(), host }), { mode: 0o600 });
   } catch (err) {
     // Ownership was proven by the mkdir, not by the moment of cleanup: the
     // directory is removed only if it is still ours (same inode) and holds
@@ -175,12 +207,57 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
   }
   return {
     path: dir,
+    nonce,
     ...(reclaimed ? { reclaimed } : {}),
+    // The child must remain idle until this durable publication succeeds.
+    // A dead supervisor's lock cannot then be reclaimed while its worker lives.
+    registerWorker(worker) {
+      if (!validPid(worker?.pid) || worker.pid === pid || typeof worker.nonce !== "string" || !worker.nonce || worker.nonce.length > 128 || typeof worker.startedAt !== "string" || !Number.isFinite(Date.parse(worker.startedAt))) throw new Error("invalid capture worker identity");
+      const current = readOwner(dir), st = fs.lstatSync(dir);
+      if (st.dev !== identity.dev || st.ino !== identity.ino || current?.pid !== pid || current?.nonce !== nonce || Object.hasOwn(current, "worker")) throw new Error("capture lock changed before worker registration");
+      const temp = join(dir, `worker-${nonce}.tmp`); let fd, dirFd, rootFd, temporary, published = false;
+      try {
+        dirFd = fs.openSync(dir, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const pinned = fstatSync(dirFd);
+        if (pinned.dev !== identity.dev || pinned.ino !== identity.ino) throw new Error("capture lock changed before worker registration");
+        fd = fs.openSync(temp, "wx", 0o600);
+        fs.writeFileSync(fd, JSON.stringify({ ...current, worker: { pid: worker.pid, nonce: worker.nonce, startedAt: worker.startedAt, host } }));
+        fs.fsyncSync(fd); temporary = fstatSync(fd, { bigint: true });
+        const again = readOwner(dir), named = fs.lstatSync(dir);
+        if (named.dev !== identity.dev || named.ino !== identity.ino || JSON.stringify(again) !== JSON.stringify(current) || !sameFile(temporary, fs.lstatSync(temp, { bigint: true }))) throw new Error("capture lock changed during worker registration");
+        fs.renameSync(temp, join(dir, "owner.json"));
+        published = true;
+        // Publish file bytes, their rename, and the lock directory's parent
+        // entry before GO. A failure is not permission to start the worker.
+        fs.fsyncSync(dirFd);
+        rootFd = fs.openSync(root, "r"); fs.fsyncSync(rootFd);
+      } finally {
+        // Never remove a path another caller replaced, even after a failed
+        // registration. An unpublished/unverifiable file is conservatively kept.
+        if (!published && temporary) {
+          try {
+            const named = fs.lstatSync(dir);
+            if (named.dev === identity.dev && named.ino === identity.ino && sameFile(temporary, fs.lstatSync(temp, { bigint: true }))) unlinkSync(temp);
+          } catch { /* absent or unknown: preserve */ }
+        }
+        if (fd !== undefined) fs.closeSync(fd);
+        if (rootFd !== undefined) fs.closeSync(rootFd);
+        if (dirFd !== undefined) fs.closeSync(dirFd);
+      }
+    },
     release: () => {
       if (!existsSync(dir)) return { released: false, reason: "gone" };
       const cur = readOwner(dir);
       if (!cur) return { released: false, reason: "unknown-owner", recovery: recoveryInstruction(dir, undefined, "unknown") };
       if (cur.pid !== pid || cur.nonce !== nonce) return { released: false, reason: "not-owner", owner: cur };
+      try {
+        const named = fs.lstatSync(dir);
+        if (!named.isDirectory() || named.dev !== identity.dev || named.ino !== identity.ino) return { released: false, reason: "not-owner", owner: cur };
+      } catch (err) {
+        return { released: false, reason: "remove-failed", error: err.message,
+          recovery: "could not verify capture lock identity before removal; inspect the filesystem error and rerun capture" };
+      }
+      if (!workerDead(cur, { host, liveness })) return { released: false, reason: "worker-active", recovery: recoveryInstruction(dir, cur, "alive") };
       let error;
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { error = e; }
       let remains;
