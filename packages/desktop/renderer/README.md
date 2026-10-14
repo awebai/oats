@@ -609,7 +609,7 @@ inspector.
 selected **soul** (`--soul`, what a spawn of it resolves now) or the selected
 **instance** (`--home`, as spawned — an instance never changes under itself).
 There is no scope subject. The gate is the probe integer `operationsApi === 2`
-(`packages/client/inspect-contract.mjs`); a 0.25 kernel gets the "update OATS" line and no
+(`packages/client/inspect-contract.mjs`); any other value gets the "update OATS" line and no
 request. The response must name exactly the selected subject, or it is not
 rendered The payload's own integer is checked too: a classic scope
 still answers `operationsApi: 1`, which the inspector names ("still uses the
