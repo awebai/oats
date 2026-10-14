@@ -42,6 +42,17 @@ instance has the same parent name): Stop uses `plan.ambiguous`, Retire uses
 
 ## Confirmation references, resource bounds and retry
 
+The boundary is the shared home's (`packages/client/instance-lifecycle.mjs`,
+`createLifecycleBoundary`): a client makes its own with its own terms, and the
+Desktop's backend makes one, in `server/oats-web.mjs`, with `DESKTOP_TERMS`.
+Two boundaries share nothing. Every bound below, and the one apply slot, holds
+for one client's own requests; between clients, or a client and `oats` run by
+hand, the kernel's answers hold (from 0.52.0 a stop and a retire of one home
+refuse each other before any effect; a start, `worktree add` and status do not
+see a retire in flight, #866). A backend that is replaced (workspace added:
+`server-host.mjs` `replace`) starts with an empty boundary, so an open
+confirmation's apply answers `E_PLAN_EXPIRED`.
+
 Four distinct plan flights may run concurrently; equal reads coalesce. Each
 confirmation gets a **different opaque planRef after that shared read**. A plan
 reference binds exact workspace/scope/target, CLI contract, operation, options
@@ -372,7 +383,7 @@ from whether the plan observed `work/` (`facts.work.observed`):
   boundary, admission and main for the codes they raise and holds each to the
   table (main's frame code to its sentence in `renderer/lifecycle-frame.mjs`).
   It changes no status: `refused` and `unknown` are decided by
-  `BEFORE_EFFECT_CODES` (exported by `server/instance-lifecycle.mjs`, so that
+  `BEFORE_EFFECT_CODES` (exported by `packages/client/instance-lifecycle.mjs`, so that
   the kernel's tests can hold it inside the kernel's own list of codes
   answered only before any effect). "Before any effect" and the headlines'
   "Nothing was done." are about the instance: its sessions and its home. A

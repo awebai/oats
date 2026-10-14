@@ -1,5 +1,14 @@
 /** K3 transactions: immutable admitted plan -> one explicit confirmation intent.
- * No direct Git, kernel import, PID/tmux control or legacy mutation fallback. */
+ * No direct Git, kernel import, PID/tmux control or legacy mutation fallback.
+ *
+ * A client makes its own boundary (createLifecycleBoundary, with its own terms) and owns it; this home makes
+ * none, and two boundaries share nothing. What a boundary holds, it holds for its own client's requests only:
+ * its limits (32 plans, 4 plan reads, a plan for 5 minutes, a kept answer for 30) and "one apply at a time".
+ * Between two clients, or between a client and `oats` run by hand, the kernel's answers are what holds: from
+ * OATS 0.52.0 (feature lifecycle-claim-stop) a stop and a retire of one home refuse each other before any
+ * effect; a start, `oats worktree add` and a status read still do not see a retire in flight (#866). A boundary
+ * made again (the Desktop's backend restarted) knows no plan of the one before it: applying one answers
+ * E_PLAN_EXPIRED. */
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { admitInstance, instanceSelector } from './instance-admission.mjs';

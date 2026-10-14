@@ -219,6 +219,18 @@ more than about a minute is not yet supported from the Desktop; use the CLI on
 the server. Every dropdown in the app has the
 same themed look, and its open list follows the light or dark theme.
 
+## Stopping and retiring
+
+The Desktop runs one stop or retire at a time for its own requests. Another
+program using OATS at the same time, such as the `oats` command or the
+terminal client, is held off by OATS itself: from OATS 0.52.0, a stop and a
+retire of one instance refuse each other before doing anything. A start does
+not yet see a retire in progress.
+
+If the Desktop's backend restarts while a confirmation is open, its plan is
+gone: Stop or Retire then answers that the plan expired, and Review again
+reads a new one.
+
 ## One workspace, several machines
 
 The switcher lists each workspace once, however many deployments it has: the

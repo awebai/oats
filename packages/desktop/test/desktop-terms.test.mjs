@@ -73,7 +73,9 @@ const TABLES = ['lifecycleReason', 'lifecycleFailure', 'undescribedAnswer', 'und
   // 1d: the sentence for a deployment that is not observed, and the views that reach a sentence or a label
   // (packages/client/panel-views.mjs): each passes the terms it is given on to the tables above.
   'deploymentUnavailableText', 'deploymentUnavailableParts', 'deploymentInfo', 'viewModel', 'viewFor', 'deploymentFor', 'surfaceDeployment', 'viewForgeContext', 'isServed',
-  'teamMembersFor', 'machineScope', 'panelData', 'workspaceChoices'];
+  'teamMembersFor', 'machineScope', 'panelData', 'workspaceChoices',
+  // 5a: the lifecycle boundary words every reason with the terms it is made with (packages/client/instance-lifecycle.mjs).
+  'createLifecycleBoundary'];
 const ROOT = new URL('../', import.meta.url);
 function shippedModules(dir = '') {
   const out = [];
@@ -154,9 +156,6 @@ function tableUses(source) {
 test('every shipped Desktop module that calls a table that takes terms passes DESKTOP_TERMS, at the call', (t) => {
   const problems = [], callers = new Map();
   for (const path of shippedModules()) {
-    // The lifecycle boundary words with the terms its factory is given, and its one caller passes DESKTOP_TERMS
-    // (server/oats-web.mjs). It moves to the shared home in the next commit, which this line then no longer meets.
-    if (path === 'server/instance-lifecycle.mjs') continue;
     const source = readFileSync(new URL(path, ROOT), 'utf8');
     for (const use of tableUses(source)) {
       if (use.kind === 'import') continue;
