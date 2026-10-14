@@ -31,7 +31,9 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   stays visible across subtabs; incompatible installations are observation-only.
 - **cli-status.mjs** — shared CLI degradation state + the ONE card
   (detected path/version, required range, **Choose oats…**, **Retry**, docs
-  link, copyable install command). Views subscribe via `onCliChange`;
+  link, copyable install command; no command when the detected CLI is above
+  the band, see [Troubleshooting](../../../docs/desktop.md#troubleshooting)).
+  Views subscribe via `onCliChange`;
   re-probe triggers: launch, app focus, Retry, choose (contract).
 - **common.mjs** — shared helpers: escaping, mini-markdown, ctx.api JSON
   wrappers, roster grouping, and workspace switching (`?ws=`) — the selected
@@ -290,8 +292,24 @@ probe, asked again on every show until it says yes) the addon is not activated:
 addon-webgl 0.18 adds a canvas and listeners before it asks for the context, and
 its dispose cannot undo a constructor that threw. An activation that throws
 although WebGL2 was there is not retried for that terminal, which stays on the DOM
-renderer until it is reopened. A lost context (Chromium keeps about 16) disposes the addon, and showing
-the tab tries WebGL again. `fitTerminal` sizes the grid to the pane's padded box
+renderer until it is reopened.
+
+When Chromium replaces its GPU process (after sleep, or a Space or window switch), every
+WebGL context is lost and then restored within about 3 s. xterm keeps one glyph atlas per
+configuration, shared by every terminal in the window, and the reset wipes its canvases
+while its cache still believes the glyphs are drawn there, so every terminal would show
+only backgrounds and the cursor (#1190). Re-showing a tab, `term.refresh()` or a fresh
+addon do not cure it: they draw from the same stale atlas. `terminal-atlas-recovery.mjs`
+does, created once by the shell over the tabs map: it hears each `webglcontextrestored`
+on the document in the capture phase (the event does not bubble), waits until none has
+come for `ATLAS_RECOVERY_SETTLE_MS` (250 ms), then calls `clearTextureAtlas()` on every
+live terminal, hidden tabs included, in one synchronous pass. Never one terminal's own
+clear from its own restore: each clear re-lays out the shared atlas under terminals that
+already uploaded it again, and their glyphs garble. A context that is not restored within
+addon-webgl's 3 s wait (Chromium also keeps only about 16, dropping the oldest) disposes
+the addon instead, back to the DOM renderer, and showing the tab tries WebGL again; that
+reload re-joins the shared atlas, so it asks the same recovery for a pass
+(`createGlyphRenderer`'s `onRecovered`). `fitTerminal` sizes the grid to the pane's padded box
 with no width kept for xterm's scrollbar (tmux draws in the alternate screen, so it
 never scrolls, and `shell.css` hides it) and centres the remainder across and down,
 in whole device pixels, like a native terminal's balanced padding. It counts cells
@@ -304,6 +322,22 @@ when a terminal is created and only re-measures on a font change, so
 `terminalTypography()` (`theme.mjs`) hands out the stack without Inconsolata
 until the face has loaded, then notifies the typography listeners with the full
 family, and live terminals re-measure and refit.
+
+**Synchronized output (#1193).** Each keystroke in a program like Claude Code reaches
+a tab as one tmux redraw that hides the cursor, repaints and shows it again; when the
+IPC delivers it in two messages and xterm paints between them, the cursor flashes
+hidden. The local viewer therefore attaches with tmux's `sync` client feature
+(`-T sync`, `local-tmux-io.mjs`, where `tmux -V` says 3.2 or later; 3.0 and 3.1 have no
+`-T`, and an unreadable version means none), so tmux wraps each redraw in DEC mode 2026
+(`ESC[?2026h` … `ESC[?2026l`); a remote tab gets the same from the remote oats's
+viewer. xterm 5.5 ignores the mode, so each lease's output goes through a gate
+(`terminal-sync.mjs`) that holds a block and writes it to xterm in one call, however
+the messages split it, the 8-byte sequences included. Everything outside a block is
+written at once and unchanged (only a trailing prefix of `ESC[?2026h` waits for the
+next message), and a block whose end never comes is written after 1000 ms, the bound
+xterm 6 and tmux use. A lease that ends writes what its gate holds before the tab shows
+it ended or reconnecting, and a close writes it before the terminal is disposed. xterm
+6 honours mode 2026 itself: upgrading to it retires the gate.
 
 ### Control rules (selection, focus, search fields)
 

@@ -15,6 +15,7 @@ import { createTermLifecycle } from "../renderer/term-lifecycle.mjs";
 import { opened, confirmed, ready } from './helpers/terminal-wire.mjs';
 import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../../client/terminal-contract.mjs';
 import { wireTerminalAttachments } from '../renderer/terminal-attachments.mjs';
+import { createSyncGate } from '../renderer/terminal-sync.mjs';
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
@@ -322,7 +323,7 @@ test("mutation: readiness must consult current focus ownership, not pane visibil
   }
   await run();
   const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision, terminalHandle, terminalSameHandle, terminalFailure,
-    terminalMessage, wireTerminalAttachments, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT });
+    terminalMessage, wireTerminalAttachments, createSyncGate, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT });
   await assert.rejects(run(terminal), /readiness must not steal focus/);
 });
 

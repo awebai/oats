@@ -1116,6 +1116,42 @@ test("routed inspect --instructions needs a remote that advertises soul-composed
   assert.match(current.sent[0], /(^| )oats inspect --soul dev --instructions --dir \/w --json$/);
 });
 
+test("routed inspect --skills needs a remote that advertises soul-skills: refused before anything is sent, else the flag travels (with --instructions too)", () => {
+  const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+  const probe = (features) => ({ schemaVersion: 1, name: "@awebai/oats", version: "0.56.0", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "status"], features, operationsApi: 2 });
+  const remote = (features) => {
+    const sent = [];
+    const exec = (bin, argv) => {
+      const word = String(argv.at(-1));
+      if (word.includes("version --json")) return JSON.stringify(probe(features));
+      sent.push(word);
+      if (word.includes(" inspect ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { souls: [{ name: "dev" }] } });
+      throw new Error(`unexpected remote call: ${word}`);
+    };
+    return { sent, exec };
+  };
+  // A host without the feature would ignore the flag and answer without the field: refused, nothing sent —
+  // including a host that has soul-composed-instructions, asked for both.
+  for (const features of [["operations"], ["operations", "soul-composed-instructions"]]) {
+    const old = remote(features);
+    for (const argv of [["--soul", "dev", "--skills"], ["--soul", "dev", "--instructions", "--skills"]]) {
+      if (argv.includes("--instructions") && !features.includes("soul-composed-instructions")) continue;
+      assert.throws(() => routeCommand("build", "inspect", argv, { server, execFileSync: old.exec }),
+        (e) => e.code === "E_REMOTE_INCOMPATIBLE" && /does not advertise soul-skills/.test(e.message) && /nothing was sent/.test(e.message), JSON.stringify({ features, argv }));
+    }
+    assert.deepEqual(old.sent, [], "no inspect was sent to a host without the feature");
+  }
+  // A host that advertises it gets the flag, scoped to the registered workspace; with --instructions, both.
+  const current = remote(["operations", "soul-composed-instructions", "soul-skills"]);
+  const routed = routeCommand("build", "inspect", ["--soul", "dev", "--skills"], { server, execFileSync: current.exec });
+  assert.equal(routed.envelope.ok, true);
+  assert.equal(routed.envelope.result.server, "build");
+  routeCommand("build", "inspect", ["--soul", "dev", "--instructions", "--skills"], { server, execFileSync: current.exec });
+  assert.equal(current.sent.length, 2);
+  assert.match(current.sent[0], /(^| )oats inspect --soul dev --skills --dir \/w --json$/);
+  assert.match(current.sent[1], /(^| )oats inspect --soul dev --instructions --skills --dir \/w --json$/);
+});
+
 // ---- session attach --detach-key (feature session-attach-detach-key, awebai/oats#856) -----------
 const DETACH_KEY = "C-\\"; // C-\ : one backslash on argv
 const DETACH_FEATURE = "session-attach-detach-key";

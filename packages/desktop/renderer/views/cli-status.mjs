@@ -7,6 +7,12 @@
    copyable install command. Never silently install. Missing tmux is a
    SEPARATE diagnosis — never conflated with CLI compatibility.
 
+   One exception to the install command: when the detected CLI was refused
+   only for being ABOVE the band (the locator's `above: true` on its `tried`
+   entry, never read from the reason's words), this Desktop is the older of
+   the two. The card says so and names the Desktop to install; it offers no
+   command, because installing the pinned CLI would downgrade it.
+
    The requirement and the install command are the BACKEND's to state, not
    this module's: /api/cli carries `required.range`, `required.desktopApi`
    and `install`, all derived from the locator's enforced band and this
@@ -31,6 +37,7 @@
 import { escapeHtml } from "./common.mjs";
 import { icon } from "../shell-icons.mjs";
 import { probeChanged } from "../../../client/cli-probe-contract.mjs";
+import { displayLine } from "../../../client/display-text.mjs";
 
 /** Recovery command when the backend could not tell us which version to
  * pin — version-LESS on purpose: it names the package without restating any
@@ -188,11 +195,20 @@ export function cliCard(doc, ctx) {
       ? { path: s.bin, version: s.version }
       : candidates.find((t) => typeof t.version === "string" && t.version) || candidates[0];
     const version = typeof detected?.version === "string" && detected.version ? detected.version : "unknown";
+    // The Desktop older than the CLI it found: that CLI's only failure is being above the band, and the payload
+    // states the band. Without the band, or without a version to name, the card is the usual one.
+    const range = typeof s?.required?.range === "string" && s.required.range ? s.required.range : null;
+    const newer = detected?.above === true && range ? displayLine(detected.version) : null;
     el.innerHTML = `
-      <div class="cli-head"><span class="glyph" aria-hidden="true">${icon("warning", { size: 14 })}</span> Compatible <code>oats</code> CLI required</div>
+      <div class="cli-head"><span class="glyph" aria-hidden="true">${icon("warning", { size: 14 })}</span> ${newer
+        ? "This Desktop is older than the installed <code>oats</code> CLI"
+        : "Compatible <code>oats</code> CLI required"}</div>
       <div class="cli-body">
-        <p class="cli-explanation">Spawn, Start and other changes run through the installed <code>oats</code> CLI. Reads and
-        terminals keep working without it.</p>
+        ${newer
+          ? `<p class="cli-explanation">The installed <code>oats</code> CLI is ${escapeHtml(newer)}. This Desktop works with
+        <code>${escapeHtml(range)}</code>. Install OATS Desktop ${escapeHtml(newer)} to use it; reads and terminals keep working meanwhile.</p>`
+          : `<p class="cli-explanation">Spawn, Start and other changes run through the installed <code>oats</code> CLI. Reads and
+        terminals keep working without it.</p>`}
         <div class="cli-kv">
           <span class="k">Detected</span>
           <span class="v">${detected
@@ -201,10 +217,10 @@ export function cliCard(doc, ctx) {
           <span class="k">Required</span>
           <span class="v">${escapeHtml(cliRequirementText(s))}</span>
         </div>
-        <div class="cli-install">
+        ${newer ? "" : `<div class="cli-install">
           <code class="cli-cmd">${escapeHtml(cliInstallCommand(s))}</code>
           <button class="act cli-copy" title="Copy install command">Copy</button>
-        </div>
+        </div>`}
       </div>
       <div class="cli-actions">
         <button class="act cli-choose">Choose oats…</button>
@@ -212,7 +228,7 @@ export function cliCard(doc, ctx) {
         <a class="cli-docs" href="#" title="${escapeHtml(DOCS_URL)}">CLI setup docs</a>
         <span class="cli-status" role="status"></span>
       </div>`;
-    el.querySelector(".cli-copy").addEventListener("click", async () => {
+    el.querySelector(".cli-copy")?.addEventListener("click", async () => {
       try { await doc.defaultView.navigator.clipboard.writeText(cliInstallCommand()); } catch { /* clipboard denied */ }
       const st = el.querySelector(".cli-status");
       if (st) st.textContent = "Install command copied.";
