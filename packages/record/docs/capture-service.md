@@ -249,6 +249,10 @@ This source qualification is separate from exact journal-generation
 validation. A journal change between workers retires the old fixed-end snapshot
 before comparing a possibly longer captured prefix, including after public or
 outgoing-release writes. Later source growth alone is work for a later snapshot.
+The native command unit may carry a completed proof into its own next journal
+generation only after its fsynced append under the same stream lock, committing
+the source cursor and staged job's new journal version together. An interrupted
+commit instead leaves the old generation and forces revalidation.
 
 Staging consumes source-sized private space plus bounded-per-chunk hash metadata.
 Revalidating staged bytes after interruption is recovery work, reported separately
@@ -321,6 +325,21 @@ Cleanup revokes the proof before deleting bounded batches of hashes. Journal
 processing retains the historical-single-record qualification; the raw source
 record policy is not a serialized-journal size limit. This comparison helper
 does not own snapshot staging, transfer its ownership or read the mutable source.
+
+`capture-native-unit.mjs` combines these private primitives for one native input.
+It performs bounded journal validation before any append, resumes retained
+snapshot/prefix work when a source cursor is unqualified, and admits one bounded
+batch from the verified bytes. Ordinary known growth uses the source cursor and
+bounded witness without staging historical content. The fixed end survives
+partial units; later growth is a later sweep. A separately checkpointed search
+frontier finds the first timestamp across units, then carries it backward while
+capturing the unstamped prefix. An unchanged unstamped or torn tail stays pending
+without repeatedly scanning it. Explicit retry generations persist separately
+from active issue rows, so clearing a resolved issue cannot restart its proof.
+Ignore is applied before source/custody access; retry still compares the complete
+captured prefix. The scheduler must account for pending/failed work and perform
+allocation cleanup after its deletion mark commits. These are unit interfaces,
+not a resource promise for public synchronous capture or exact receipts.
 
 Public synchronous library calls do not implicitly enter this context or acquire
 a root capture lock. Healthy derived-state opens do not run a schema write

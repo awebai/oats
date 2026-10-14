@@ -169,6 +169,22 @@ export function openRetainedCaptureScratch(store, stream, key, start, { cleanup 
   } catch (error) { if (fd !== null) closeSync(fd); throw error; }
 }
 
+// Resume deletion after either side of its filesystem/DB boundary. Once the
+// exact allocation is gone, there is no owner marker to adopt. Only an already
+// committed deleting claim in the unchanged scratch base qualifies absence;
+// a missing owner/payload inside an extant directory is still uncertain.
+export function prepareRetainedCaptureCleanup(store, stream, key, start) {
+  const state = context(store, stream, start), claim = claimFor(state, key);
+  if (!claim || claim.stream !== stream) throw new Error("retained cleanup reference is missing or differs");
+  try { location(store.root, claim); }
+  catch (error) {
+    if (error.code !== "ENOENT" || claim.phase !== "deleting" ||
+        !equal(identity(captureScratchRoot(store.root, false).stat), claim.base)) throw error;
+    return;
+  }
+  openRetainedCaptureScratch(store, stream, key, start, { cleanup: true }).close();
+}
+
 // Mark deletion through open(..., {cleanup:true}), COMMIT that group, then
 // remove outside a DB transaction. The caller can finalize many removed job
 // references in one later transaction. A crash at either boundary is repeatable.

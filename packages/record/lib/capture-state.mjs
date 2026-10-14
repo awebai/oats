@@ -27,7 +27,13 @@ export function retrySetAside(root) {
   const state = new DerivedState(root);
   try {
     state.transaction(() => {
-      for (const { key, value } of state.entries("set-aside")) state.set("set-aside", key, { ...value, retry: true });
+      for (const { key, value } of state.entries("set-aside")) {
+        // A command's explicit retry invalidates an older staged proof once.
+        // Keep this private generation after the issue resolves, so subsequent
+        // workers do not restart merely because the active row was removed.
+        state.set("source-retry", key, randomUUID());
+        state.set("set-aside", key, { ...value, retry: true });
+      }
     });
   } finally { state.close(); }
 }

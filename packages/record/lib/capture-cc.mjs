@@ -92,10 +92,10 @@ const FLUSH_BYTES = 8 * 1024 * 1024;
 // replacement characters would change both the verbatim line and its byte
 // offset, possibly treating a later fragment as a record) or a line beyond
 // V8's string limit.
-function* completeLines(chunks, walk) {
+export function* completeNativeLines(chunks, walk, { maxBytes = Infinity } = {}) {
   let scanned = 0;
   walk.scanned = 0;
-  for (const line of bufferLines(chunks)) {
+  for (const line of bufferLines(chunks, { maxBytes })) {
     if (line[line.length - 1] !== 10) { walk.reason = "torn-tail"; return; }
     const bytes = line.subarray(0, -1);
     if (!isUtf8(bytes)) { walk.reason = "invalid-utf8"; return; }
@@ -121,6 +121,8 @@ function* completeLines(chunks, walk) {
     yield { text, ts, bytes: lineBytes };
   }
 }
+
+const completeLines = completeNativeLines;
 
 // One reconciliation pass for one format: one turn per NEW complete line
 // of every session file under `roots`. Unstamped leading lines are held
