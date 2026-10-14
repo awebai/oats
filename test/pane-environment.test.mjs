@@ -474,7 +474,7 @@ test("a start that reuses its recorded pane reads that pane's session: the gate 
   const restart = () => cli(["session", "restart", "--home", running.home, "--harness", "claude", "--json"], { env: { CLAUDE_CONFIG_DIR: spawnerAccount.dir } });
   let r = restart();
   assert.notEqual(r.status, 0, r.stdout);
-  assert.equal(r.json().error.code, "E_HARNESS_PACKAGE", r.json().error.message);
+  assert.equal(r.json().error.code, "E_HARNESS_RESOURCE_MISSING", r.json().error.message);
   assert.ok(r.json().error.message.includes(`CLAUDE_CONFIG_DIR=${shq(sessionAccount.dir)} `), r.json().error.message);
   assert.equal(probed().CLAUDE_CONFIG_DIR, sessionAccount.dir);
   assert.doesNotThrow(() => process.kill(pid, 0), "the running harness was not stopped");
@@ -784,7 +784,7 @@ test("the package probe runs the program the launch's lookup selected, with the 
   const restart = () => cli(["session", "restart", "--home", child.home, "--harness", "claude", "--json"], from);
   let r = restart();
   assert.notEqual(r.status, 0, r.stdout);
-  assert.equal(r.json().error.code, "E_HARNESS_PACKAGE", r.json().error.message);
+  assert.equal(r.json().error.code, "E_HARNESS_RESOURCE_MISSING", r.json().error.message);
   assert.deepEqual(who(), ["pane"], "the probe ran the claude the pane's PATH selects");
   assert.doesNotThrow(() => process.kill(pid, 0), "the running harness was not stopped");
   // The other way round: the selected one has it and the caller's does not.
@@ -810,7 +810,7 @@ test("the package probe runs the program the lookup selected, not the one an exe
   const before = probes();
   const r = cli(["session", "restart", "--home", child.home, "--harness", "claude", "--json"]);
   assert.notEqual(r.status, 0, r.stdout);
-  assert.equal(r.json().error.code, "E_HARNESS_PACKAGE", r.json().error.message);
+  assert.equal(r.json().error.code, "E_HARNESS_RESOURCE_MISSING", r.json().error.message);
   assert.match(r.json().error.message, /not installed/);
   assert.equal(probes(), before, "the claude further down the pane's PATH was never probed: the probe ran the selected one, which answers nothing");
   assert.doesNotThrow(() => process.kill(pid, 0), "the running harness was not stopped");
