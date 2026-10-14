@@ -290,8 +290,24 @@ probe, asked again on every show until it says yes) the addon is not activated:
 addon-webgl 0.18 adds a canvas and listeners before it asks for the context, and
 its dispose cannot undo a constructor that threw. An activation that throws
 although WebGL2 was there is not retried for that terminal, which stays on the DOM
-renderer until it is reopened. A lost context (Chromium keeps about 16) disposes the addon, and showing
-the tab tries WebGL again. `fitTerminal` sizes the grid to the pane's padded box
+renderer until it is reopened.
+
+When Chromium replaces its GPU process (after sleep, or a Space or window switch), every
+WebGL context is lost and then restored within about 3 s. xterm keeps one glyph atlas per
+configuration, shared by every terminal in the window, and the reset wipes its canvases
+while its cache still believes the glyphs are drawn there, so every terminal would show
+only backgrounds and the cursor (#1190). Re-showing a tab, `term.refresh()` or a fresh
+addon do not cure it: they draw from the same stale atlas. `terminal-atlas-recovery.mjs`
+does, created once by the shell over the tabs map: it hears each `webglcontextrestored`
+on the document in the capture phase (the event does not bubble), waits until none has
+come for `ATLAS_RECOVERY_SETTLE_MS` (250 ms), then calls `clearTextureAtlas()` on every
+live terminal, hidden tabs included, in one synchronous pass. Never one terminal's own
+clear from its own restore: each clear re-lays out the shared atlas under terminals that
+already uploaded it again, and their glyphs garble. A context that is not restored within
+addon-webgl's 3 s wait (Chromium also keeps only about 16, dropping the oldest) disposes
+the addon instead, back to the DOM renderer, and showing the tab tries WebGL again; that
+reload re-joins the shared atlas, so it asks the same recovery for a pass
+(`createGlyphRenderer`'s `onRecovered`). `fitTerminal` sizes the grid to the pane's padded box
 with no width kept for xterm's scrollbar (tmux draws in the alternate screen, so it
 never scrolls, and `shell.css` hides it) and centres the remainder across and down,
 in whole device pixels, like a native terminal's balanced padding. It counts cells
