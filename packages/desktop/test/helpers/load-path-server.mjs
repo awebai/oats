@@ -66,6 +66,8 @@ else if (verb === 'inspect') {
 }
 else if (verb === 'capability-show') out = cfg.capabilityShow ?? { schemaVersion: 1, ok: false, error: { code: 'E_UNKNOWN_COMMAND', message: 'fake: no capabilityShow answer' } }; // the config's envelope, as given
 else if (verb === 'server') out = config().roster ?? { schemaVersion: 1, ok: true, result: { groups: [], servers: [] } }; // the config's roster answer, read when the call answers
+// A start or a restart that worked (the route answers it 200 only for an instance its rule finds stopped: tmux: true).
+else if (verb === 'session' && (a[1] === 'start' || a[1] === 'restart')) out = { schemaVersion: 1, ok: true, result: { launched: true } };
 else if (verb === 'operation-run') out = { schemaVersion: 1, ok: true, result: { operationsApi: 2, operation: a[2], ok: true } };
 else out = { schemaVersion: 1, ok: false, error: { code: 'E_UNKNOWN_COMMAND', message: 'fake: ' + a.join(' ') } };
 appendFileSync(log, JSON.stringify({ id, phase: 'end', end: Date.now() }) + '\\n');
