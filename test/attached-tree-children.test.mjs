@@ -328,6 +328,23 @@ test("oats worktree remove refuses under an attached instance whose session cann
 
 });
 
+test("a tree named in another letter case on a case-insensitive filesystem is the same tree: oats worktree remove refuses under the instance attached to it, and the plan names it (#964)", async (t) => {
+  const d = deployment(t);
+  const probe = join(d.fx.base, "Case-Probe");
+  mkdirSync(probe);
+  if (!existsSync(join(d.fx.base, "case-probe"))) { t.skip("a case-sensitive filesystem: two spellings are two directories"); return; }
+  const owner = await d.owner("dev-owner");
+  const tree = d.added(owner.home, "review");
+  // The same tree, named in capitals: the spawn derives its owner and its repository (#958), and the
+  // child's link is the path as it was given.
+  const kid = d.attach("upper", join(owner.home, ".WORK-REVIEW"));
+  assert.equal(d.link(kid), join(owner.home, ".WORK-REVIEW"), "fixture premise: the link is written as given");
+  assert.ok(d.plan(owner.instance).notes.some((n) => n.startsWith(`extra worktree ${tree} `) && n.endsWith(GONE(kid.instance))), "the plan names the child on its tree");
+  d.unreadable(kid.home);
+  assertRefused(d, owner, "review", tree, [{ instance: kid.instance, home: kid.home, session: "unknown" }],
+    `${tree} is the work of an attached instance: ${kid.instance} (whether its session is running could not be read); nothing was removed (the record is kept). To remove the tree, stop it (\`oats instance stop ${kid.instance}\`) or retire it, then remove again`);
+});
+
 for (const guarded of [false, true]) {
   test(`the retire does not act on an attached instance of ambiguous lineage, and says what it leaves it with: in each tree's note of the plan and in the receipt, ${guarded ? "a guarded apply" : "a plain retire"} (#964)`, async (t) => {
     const d = deployment(t);
