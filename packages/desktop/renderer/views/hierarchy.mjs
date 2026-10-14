@@ -611,7 +611,7 @@ function resetObservation(s) {
   closePop(s); s.sel = null; s.fitted = false; s.nodeOffsets.clear(); s.nodeIds?.clear();
   s.drag?.node.classList.remove('dragging'); s.drag = null; s.dragConsumedClick = null; s.pan = null;
   s.canvas.classList.remove('panning'); s.pending = null; s.signature = null; s.bounds = null;
-  s.panel = { instances: [] }; s.loading = false; s.dataGen = null; s.dataWorkspace = null; s.stale = true;
+  s.panel = { instances: [] }; s.loading = false; s.dataGen = null; s.dataWorkspace = null; s.stale = true; s.readsServers = false;
   // A new subject: the controller forgets its data; the summary stays blank
   // until the pending pill (150ms) or the first reply. Never counts of nothing.
   s.load?.reset();
@@ -668,10 +668,16 @@ export async function refresh(s, { user = false } = {}) {
   // A background re-read of a failed roster is not announced again; a Retry, or a changed outcome, is.
   if (user || s.load?.state !== 'failed') s.load?.begin({ user });
   try {
+    // A Retry of a window with a deployment on another machine reads the servers again first (#1117): the panel
+    // is served from the server's last roster read, and the refresh answers once a fresh one has landed.
+    if (user && s.readsServers) await apiJson(s.ctx, '/api/remote-roster/refresh', { method: 'POST' });
+    if (!owns()) return;
     const data = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
     if (!owns()) return;
     const panel = projectActivePanel(data);
     attachDeployments(panel, data, instanceId); // #482: the view's deployments and each row's, for the deployment sections
+    // Whether this window has a deployment on another machine, as its last reply said: what a Retry reads again.
+    s.readsServers = panel.workspace?.remote === true || (panel.deployments || []).some(d => !d.local);
     // observedAt (spec 02, additive) labels the observation's age; never invented.
     panel.observedAt = typeof data.observedAt === 'string' && data.observedAt ? data.observedAt : null;
     if (data.deployment?.status !== 'pending') s.pendingWatch.observe(null, false); // the server answered
