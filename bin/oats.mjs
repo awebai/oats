@@ -26,7 +26,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { runtimeNameWarning, noteRuntimeName } from "../lib/deprecation.mjs";
-import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect } from "../lib/errors.mjs";
+import { errorCause, herdrSettingRemoved, isAnswerCode, kernelCode, OWN_NAME_FAILURES, reportDefect, spawnRefusalDetails } from "../lib/errors.mjs";
 import {
   LAYERS, OATS_VERSION, manifestOperations, upgradeHomeMeta,
   capabilityManifests, capabilityTrust, capabilityExecutablePath,
@@ -104,7 +104,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -183,7 +183,7 @@ const withLocalWarnings = (envelope) => {
   return { ...envelope, warnings: theirs.map((w) => (w === same ? { ...mine, sources, message: mine.message.replace(/\(.*\)/, `(${sources.join("; ")})`) } : w)) };
 };
 const jsonFail = (code, message, details, exit = 1) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) }, ...envelopeWarnings() })); process.exit(exit); };
-/** The door of the lifecycle verbs (retire, instance stop, session, worktree; awebai/oats#892): the
+/** The door of the lifecycle verbs (retire, instance stop, session, worktree; awebai/oats#892), and of a spawn (spawnFail): the
  *  answer to an error `e` of one of them. Its code is the error's own only when that is a kernel
  *  code (lib/errors.mjs isKernelCode); any other error is answered as `fallback`. One that has a
  *  code (the system's, Node's) and a defect (isDefect: a TypeError and its kind) get
@@ -200,6 +200,11 @@ const lifecycleFail = (e, fallback, details, exit) => {
   const all = cause ? { ...details, cause } : details;
   return JSON_MODE ? jsonFail(kernelCode(e, fallback), message, all, exit) : die(message, exit);
 };
+/** The answer to an error of `oats spawn` (feature spawn-kernel-codes, awebai/oats#1047): the
+ *  lifecycle verbs' door (lifecycleFail), whose general code for a spawn is E_SPAWN_FAILED. A
+ *  kernel code is answered as raised, whatever stage of the spawn raised it; it says nothing about
+ *  how far the spawn got (`details.unconfirmed` does). E_INTERRUPTED exits 128 + the signal. */
+const spawnFail = (e) => lifecycleFail(e, "E_SPAWN_FAILED", spawnRefusalDetails(e), e?.code === "E_INTERRUPTED" ? e.exitStatus : undefined);
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result, ...envelopeWarnings() })); };
 // Text mode (or a JSON answer printed before the read): the warning goes to stderr, never stdout.
 process.on("exit", () => { const w = runtimeNameWarning(); if (w && !warningDelivered) process.stderr.write(`oats: warning: ${w.message}\n`); });
@@ -830,7 +835,7 @@ function doctorVersionSkew(deployment) {
   try { launchConfigs = launchConfigsAt(deployment); } catch (e) { unread = e.message; }
   const warnings = piBridgeSkewWarnings(piBridgeFolders({ launchConfigs }), OATS_VERSION);
   if (unread) warnings.push(`pi bridge — the launch configurations could not be read, so only the default pi folder and this shell's were looked at: ${unread}`);
-  for (const warning of warnings) console.log(`WARNING: ${warning}`);
+  for (const warning of warnings) console.log(`WARNING: ${terminalText(warning)}`);
   if (warnings.length) console.log("");
 }
 /** The "Workspace (v2, offline view)" + "Locked packages" sections, shared by both doctor shapes. */
@@ -1350,7 +1355,7 @@ function instanceCmd() {
         if (JSON_MODE) { jsonOk(plan); return; }
         console.log(`stop ${name}${recursive ? " (and recorded children)" : ""} — plan ${plan.planRevision}`);
         for (const t of plan.targets) console.log(`  ${"  ".repeat(t.depth)}${t.instance}: session ${t.session.state}${t.work.observed ? `, ${t.work.changed} changed / ${t.work.untracked} untracked on ${t.work.branch ?? "detached"}` : ", work not observed"}${t.midTask === true ? " — mid-task" : t.midTask === "unknown" ? " — activity unknown" : ""}`);
-        for (const n of plan.notes) console.log(`  note: ${n}`);
+        for (const n of plan.notes) console.log(`  note: ${terminalText(n)}`);
         console.log(`apply with: oats instance stop ${name} --apply --plan-revision ${plan.planRevision} --idempotency-key <key>`);
         return;
       }
@@ -1394,7 +1399,7 @@ function instanceCmd() {
       console.log(`  files: ${observed.files.length} (${Object.entries(observed.summary).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "clean"})`);
       const lines = (f) => (f.binary ? "  binary" : Number.isInteger(f.additions) ? `  +${f.additions} -${f.deletions}` : "");
       for (const f of observed.files) console.log(`    ${f.xy} ${f.origPath ? `${f.origPath} -> ` : ""}${f.path}${lines(f)}  [${f.id}]`);
-      for (const n of observed.notes) console.log(`  note: ${n}`);
+      for (const n of observed.notes) console.log(`  note: ${terminalText(n)}`);
       return;
     }
     const fileId = flag("file"), revision = flag("revision"), indexRevision = flag("index-revision");
@@ -1435,7 +1440,7 @@ async function readinessCmd() {
     }
     if (doc.policy) console.log(`  policy: child spawns ${doc.policy.childSpawns.allowed ? "allowed" : "disabled"} (${doc.policy.childSpawns.origin.kind}${doc.policy.childSpawns.enforced ? ", enforced" : ""}); worktrees ${doc.policy.worktrees.allowed === null ? "unknown" : doc.policy.worktrees.allowed ? "allowed" : "not in this work mode"}`);
     for (const w of doc.warnings) console.log(`  warning  ${w.code}  ${w.message}`);
-    for (const n of doc.notes) console.log(`  note: ${n}`);
+    for (const n of doc.notes) console.log(`  note: ${terminalText(n)}`);
     return;
   }
 }
@@ -2941,40 +2946,14 @@ async function spawnCmd() {
       if (JSON_MODE) { jsonOk(withObservation(r)); return; }
       console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
       if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
-      for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+      for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
       return;
     }
   } catch (e) {
-    // A typed CLI failure keeps ITS OWN code: re-badging an unsafe-config-key
-    // (raised by the readers spawn walks) as E_SPAWN_FAILED tells an agent
-    // consumer the spawn mechanism broke, when the fixable fact is a poisoned
-    // document the message already names. The shared boundary renders it.
-    if (TYPED_CLI_FAILURES.has(e?.code)) throw e;
-    // A launch refusal (configuration, executable, environment reference,
-    // model, harness) is a fact about the selection, not a spawn-mechanism
-    // failure: it keeps its own code so a GUI can act on it.
-    if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_HARNESS$|^E_HARNESS_UNAVAILABLE$|^E_CLAUDE_CONFIG_REMOVED$/.test(e.code)) { bail(e.code, e.message, e.details); throw e; }
-    // An unmet declared requirement is a fact about the soul's configuration
-    // (with a remedy), not a spawn-mechanism failure: keep its code and details.
-    if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
-    if (e?.code === "E_CHILD_SPAWNS_DISABLED") { bail(e.code, e.message, { parent: e.parent, policy: e.policy }); throw e; }
-    if (["E_BRANCH_EXISTS", "E_BASE_UNKNOWN"].includes(e?.code)) { bail(e.code, e.message); throw e; }
-    // #796: interrupted while its worktree hooks ran: rolled back (the message says how far), 128+signal.
-    if (e?.code === "E_INTERRUPTED") { bail(e.code, e.message, e.details, e.exitStatus); throw e; }
-    // A required spawn or worktree hook that failed, or answered outside its environment contract, keeps
-    // its typed code: the hooks' receipt (`details.hooks`, paths only) and `unconfirmed` when the rollback
-    // could not confirm its effects. Never `home`: a consumer reads that as retained effects.
-    if (e?.code === "E_REQUIRED_HOOK_FAILED" || e?.code === "E_HOOK_ENVIRONMENT_CONTRACT") { bail(e.code, e.message, { hooks: e.details?.hooks ?? [], ...(e.details?.unconfirmed === true ? { unconfirmed: true } : {}) }); throw e; }
-    // The observed base could not be fetched into the clone: the clone, the repository and the commit travel along.
-    if (e?.code === "E_REMOTE_UNREADABLE" && e.details?.commit) { bail(e.code, e.message, e.details); throw e; }
-    // K6b: the confirmed decision drifted — the fresh decision travels with the refusal so a GUI re-previews.
-    if (e?.code === "E_DECISION_STALE") { bail(e.code, e.message, { decision: e.decision }); throw e; }
-    if (e?.code === "E_IDEMPOTENCY_CONFLICT") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
-    if (e?.code === "E_PLACEMENT_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
-    if (e?.code === "E_INSTANCE_NAME_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home ?? null, ...(e.session ? { session: e.session } : {}) }); throw e; }
-    if (e?.code === "E_INSTANCE_NAME_INVALID") { bail(e.code, e.message, e.details); throw e; }
-    if (e?.code === "E_SPAWN_INCOMPLETE") { bail(e.code, e.message, { ...e.details, instance: e.instance, home: e.home, launched: e.launched }); throw e; }
-    bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e, e.details?.unconfirmed === true ? e.details : undefined); throw e;
+    // The kernel's code, as raised, through the door every lifecycle verb has (spawnFail): a refusal
+    // with a remedy is never answered as "the spawn mechanism failed". E_SPAWN_FAILED is for an
+    // error with no kernel code; a typed CLI failure keeps its own name.
+    spawnFail(e); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
   // the full receipt, never hidden, and never causes a second spawn.
@@ -3019,7 +2998,7 @@ async function spawnCmd() {
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
   if (!r.launched) console.log(`  launch: oats session start --home ${shellQuote(r.home)}`);
-  for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+  for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
   console.log(`  attach: ${r.attach}`);
 }
 
@@ -3053,7 +3032,7 @@ function retireCmd() {
       console.log(`retire ${name} — plan ${plan.planRevision}`);
       console.log(`  session ${plan.facts.session.state}; work ${plan.facts.work.observed ? `${plan.facts.work.changed} changed / ${plan.facts.work.untracked} untracked on ${plan.facts.work.branch ?? (plan.facts.work.detached ? "detached" : "a ref OATS carries no branch name for")}` : `not observed (${plan.facts.work.reason})`}; children ${plan.facts.children.length}; pull request ${plan.facts.pullRequest}`);
       console.log(`  ${retireDefaultsLine(plan)}`);
-      for (const n of plan.notes) console.log(`  note: ${n}`);
+      for (const n of plan.notes) console.log(`  note: ${terminalText(n)}`);
       return;
     } catch (e) { return lifecycleFail(e, "E_LIFECYCLE_FAILED", e.candidates ? { ...e.details, candidates: e.candidates } : e.details); }
   }
@@ -3504,7 +3483,7 @@ async function sessionCmd() {
     else {
       console.log(JSON.stringify(result, null, 2));
       // A start's launch-hook warnings, as spawn prints its own (stderr keeps stdout one JSON document).
-      for (const w of result?.warnings || []) console.error(`  WARNING: ${w}`);
+      for (const w of result?.warnings || []) console.error(`  WARNING: ${terminalText(w)}`);
     }
   } catch (e) { lifecycleFail(e, "E_SESSION_FAILED", e.details); }
 }
@@ -4464,7 +4443,7 @@ async function serverRouteCmd() {
     console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
     console.log(`  remote home: ${r.home}`);
     console.log(`  route snapshot: ${r.snapshot ? shortPath(r.snapshot) : "none (see the warning)"}`);
-    for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+    for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
     console.log(`  attach: oats session attach --server ${shellQuote(id)} --instance ${shellQuote(r.instance)}`);
   } else if (cmd === "retire") {
     // Everything the local retireCmd tells the operator, for a remote home
@@ -4479,6 +4458,7 @@ async function serverRouteCmd() {
     console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
     for (const line of workRecoveryLines(r, { host: target.sshHost })) console.log(line);
     for (const line of extraWorktreeLines(r, { host: target.sshHost })) console.log(line);
+    for (const line of warningLines(r)) console.log(line);
     if (r.rollbackIncomplete) {
       for (const f of r.rollbackIncomplete) console.error(`  ${f}`);
       const branch = failedSpawnBranchLine(r, r.rollbackIncomplete, { host: target.sshHost });
@@ -4591,13 +4571,12 @@ else if (cmd === "status") await status();
 else if (cmd === "pane") await paneCmd();
 else if (cmd === "tui") await tuiCmd();
 else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
-// Same rule as the inner catch: a typed CLI failure surfaces with its own code
-// through the shared boundary, never re-badged as a spawn-mechanism failure.
 else if (cmd === "session") await sessionCmd();
 else if (cmd === "schedule") await scheduleCmd();
 else if (cmd === "trigger") await triggerCmd();
 else if (cmd === "automations") await automationsCmd();
-else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e, e.details?.unconfirmed === true ? e.details : undefined); throw e; } }
+// What a spawn throws outside its kernel stage goes through the same door as the inner catch.
+else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { spawnFail(e); throw e; } }
 // What a retire throws outside its own answers (the root, a replay's read) goes through the same door.
 // An exception after the retire has returned (retireReturned) is rethrown, here and by the handler
 // of typed failures below: a crash is read as "not confirmed", which is the truth, where an error
