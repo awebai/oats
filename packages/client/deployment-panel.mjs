@@ -12,7 +12,7 @@
  * test/inventory.test.mjs holds that its page reaches no module that imports a Node builtin. */
 import { dirname } from 'node:path';
 import { livenessOrigin } from './liveness.mjs';
-import { knownOrigin, hasRuntimeError } from './instance-presentation.mjs';
+import { knownOrigin, hasRuntimeError, byRuntimeState } from './instance-presentation.mjs';
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -109,7 +109,8 @@ export function panelInstance(i) {
   };
 }
 
-/** The panel's rows: each row merged with its liveness answer and projected, running first, then by name.
+/** The panel's rows: each row merged with its liveness answer and projected, in the roster's order
+ * (`byRuntimeState`: running, unknown, stopped; by name within each).
  * `answers` are `livenessAnswers`'.
  *
  * The merged row's `runtimeErrorOrigin` is set here or removed, whatever the row carried: when the
@@ -120,7 +121,7 @@ export function panelInstances(rows, answers) {
     const answer = answers[index], { runtimeErrorOrigin: _carried, ...merged } = { ...row, ...answer };
     const origin = record(answer) && Object.hasOwn(answer, "runtimeError") ? answer.runtimeErrorOrigin : "kernel";
     return panelInstance(hasRuntimeError(merged) ? { ...merged, runtimeErrorOrigin: origin } : merged);
-  }).sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
+  }).sort(byRuntimeState);
 }
 
 /** A deployment's entry before the first CLI probe has settled, when there is no verdict to report:

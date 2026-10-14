@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cliLifecycle } from '../packages/client/lifecycle-cli.mjs';
 import { lifecyclePlan, lifecycleChoicesApplicable, lifecycleReason, ownWorktreeOf, OWN_WORKTREE_FEATURE } from '../packages/client/lifecycle-contract.mjs';
-import { createLifecycleBoundary } from '../packages/desktop/server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../packages/client/instance-lifecycle.mjs';
 import { DESKTOP_TERMS } from '../packages/desktop/renderer/desktop-terms.mjs';
 import { v2Deployment, CLI } from './helpers/v2-deployment.mjs';
 
@@ -54,7 +54,7 @@ function deployment(t) {
   // The Desktop's side: the CLI record of this kernel, a roster of the homes, and the boundary over the real CLI.
   const commands = [];
   const exec = (bin, argv, options, callback) => { commands.push(argv); return execFile(bin, argv, { ...options, env: fx.env }, callback); };
-  const service = createLifecycleBoundary({ invoke: (bin, args) => cliLifecycle(bin, args, { exec }) });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: (bin, args) => cliLifecycle(bin, args, { exec }) });
   const roster = [];
   const context = (features = version.features) => ({ cli: { ok: true, bin: CLI, version: version.version, lifecycleApi: version.lifecycleApi, features: [...features] },
     workspace: { id: 'scratch', scope: fx.dep }, instances: roster.map(row => ({ ...row })) });

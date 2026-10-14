@@ -53,6 +53,7 @@ import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
 import { createMachines } from "./machines.mjs";
+import { createServerForget, forgetNotRun } from "./server-forget.mjs";
 import { machinesGated } from "../../client/machine-contract.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
@@ -61,7 +62,7 @@ import { createInspectCache } from "./inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "../../client/refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
-import { lifecycleRequest } from "./instance-lifecycle.mjs";
+import { createLifecycleBoundary } from "../../client/instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { spawnPreviewCachedRequest, spawnPreviewCache } from './spawn-preview.mjs';
@@ -74,6 +75,7 @@ import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
+import { displayLine } from "../../client/display-text.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
@@ -85,6 +87,7 @@ import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
 import { validWorkspaceId } from "../renderer/workspace-id.mjs";
 import { MAX_WINDOW_VIEWS } from "../window-activity.mjs";
+import { START_UNCONFIRMED } from "../renderer/start-unconfirmed.mjs";
 import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
 import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes, rosterWorkspaceKeys } from "../../client/panel-views.mjs";
 
@@ -527,6 +530,8 @@ const capabilityShowCache = createCapabilityShowCache();
 // when that key moves, at admission, or on refresh:true.
 const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCatalog, maxAge: BACKGROUND_MAX_AGE,
   observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
+// The Desktop's one lifecycle boundary: its plans, its kept answers and its one apply at a time are this backend's.
+const lifecycleRequest = createLifecycleBoundary({ terms: DESKTOP_TERMS });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
 const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({
@@ -667,6 +672,15 @@ function refreshRemoteSnapshot() {
   })().finally(() => { remoteRead = null; });
   return remoteRead;
 }
+/** A roster read that begins after this call (#1131: the read after a forget). A read in flight, whoever started
+ * it (the loop, a Retry), began before the call: it is let finish, then one more runs, which a caller arriving
+ * meanwhile shares. The refresh loop cannot promise this: its run joins a Retry's read in flight. */
+let remoteReadAfter = null;
+function refreshRemoteSnapshotAfter() {
+  if (!remoteRead) return refreshRemoteSnapshot();
+  remoteReadAfter ||= remoteRead.catch(() => {}).then(() => { remoteReadAfter = null; return refreshRemoteSnapshot(); });
+  return remoteReadAfter;
+}
 async function readRemoteRoster(probe) {
   if (!cliReadsRemotes(probe)) { takeRosterOutcome({ gated: true }); return; }
   try {
@@ -699,6 +713,8 @@ const refreshLoop = createRefreshLoop({ run: observeAll, focusedMs: REFRESH_FOCU
 const remoteLoop = createRefreshLoop({ run: () => refreshRemoteSnapshot(), focusedMs: 10_000, blurredMs: REFRESH_BLURRED_MS });
 /* A workspace's own machines (#517): Where to run, the Setup tab's Machines, Add a machine. */
 const machines = createMachines({ adapter, cli: () => cliState });
+/* Forget a remote instance its host no longer lists (#1131): one `server forget` per pressed row at a time. */
+const serverForget = createServerForget({ adapter, cli: () => cliState });
 /** Observe now (or right after the cycle in flight); `live` makes the kernel observe the remotes afresh. */
 function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
 /** A mutation this backend performed for a workspace: what inspect reported may have changed, and the
@@ -1080,7 +1096,16 @@ const server = createServer(async (req, res) => {
           instances: workspace ? deploymentRows(held(), workspace) : [],
         }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreviewCache.invalidate(workspace.id); }); // the default launch a preview reports
         return send(res, 200, result);
-      } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
+      } catch (e) {
+        const { status, body } = spawnErrorPayload(e);
+        // One code's message is not cut at 300: the Start dialog quotes it as a line under its own sentence.
+        // It is answered as that line, the shared filter over OATS's own message as it came (display-text.mjs
+        // displayLine: withheld whole, or folded and bounded), and empty when OATS gave none, never the
+        // stand-in a refusal without a message is given. #1026 lifts the cut for every refusal and removes
+        // this exception.
+        if (e.code !== "E_LAUNCH_CONFIG_AMBIGUOUS") return send(res, status, body);
+        return send(res, status, { ...body, error: displayLine(e.kernelMessage) ?? "" });
+      }
     }
     if (["/api/forge-connections", "/api/instance-forge", "/api/forge-roster", "/api/instance-review-threads"].includes(path) && req.method === "POST") {
       try {
@@ -1341,6 +1366,21 @@ const server = createServer(async (req, res) => {
         return send(res, e.code === "E_BUSY" || e.code === "E_FEATURE" ? 409 : 400, { error: e.message, code: e.code || "E_BAD_ARGS" });
       }
     }
+    if (req.method === "POST" && path === "/api/server-forget") {
+      // #1131: forget the saved route of a remote row its host no longer lists (server/server-forget.mjs). The
+      // body is that row's { server, instance }; the argv is composed there, never taken from the request.
+      // After any command that ran, whatever it answered, the remote roster is read again: this route is the one
+      // owner of that read, and the renderer issues none. refreshRemoteSnapshotAfter() runs a read now, or one
+      // right after the read already in flight, whoever started it (that one began before the command). The
+      // answer does not wait for it: the forget is a local file removal, and a read waits on the slowest server.
+      // The row leaves /api/panel when the read lands; nothing here edits it.
+      if (url.search) return send(res, 400, forgetNotRun("E_BAD_ARGS"));
+      let body;
+      try { body = await readStrictBody(req, 4096); } catch { return send(res, 400, forgetNotRun("E_BAD_ARGS")); }
+      const { http, ran, answer } = await serverForget.forget(body);
+      if (ran) { try { void refreshRemoteSnapshotAfter().catch(() => {}); } catch { /* a re-read must not erase the outcome */ } }
+      return send(res, http, answer);
+    }
     if (req.method === "GET" && path === "/api/cli") {
       return send(res, 200, servedCliStatus());
     }
@@ -1455,6 +1495,8 @@ const server = createServer(async (req, res) => {
           workspaceDir: inst.server ? ctxs[0] ?? homedir() : dirname(inst.agentsRoot), server: inst.server });
         observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot();
         if (env.ok) return send(res, 200, env.result);
+        // The wait for the start ended and the start goes on (cli-adapter.mjs cliStart): the Desktop's own sentence.
+        if (env.error.code === "E_START_UNCONFIRMED") return send(res, 409, { error: START_UNCONFIRMED.message, code: START_UNCONFIRMED.code });
         // A start that stopped at a launch prompt answers E_SPAWN_INCOMPLETE with the retained outcome in its
         // details, as a spawn does: it travels as `incomplete`, decoded, when it names the instance this route
         // resolved (not the home: the kernel reports its real path). Anything else answers as before.

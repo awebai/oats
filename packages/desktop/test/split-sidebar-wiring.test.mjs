@@ -22,7 +22,7 @@ import {
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (f) => readFileSync(join(PKG, f), "utf8");
 
-test("split + sidebar actions have parseable default chords; splits are terminal-allowlisted", () => {
+test("split + sidebar actions have parseable default chords and are terminal-allowlisted", () => {
   for (const id of ["sidebar.toggle", "split.vertical", "split.horizontal", "split.close"]) {
     for (const isMac of [true, false]) {
       assert.ok(defaultBinding(id, isMac), `${id} has a default chord (${isMac ? "mac" : "other"})`);
@@ -33,17 +33,16 @@ test("split + sidebar actions have parseable default chords; splits are terminal
   assert.equal(defaultBinding("split.vertical", false), "Ctrl+Shift+E");
   assert.equal(defaultBinding("split.horizontal", false), "Ctrl+Shift+O");
   assert.equal(defaultBinding("split.close", false), "Ctrl+Shift+Alt+W");
-  for (const id of ["split.vertical", "split.horizontal", "split.close"]) {
+  // The sidebar is Ctrl+Shift+B there: plain Ctrl+B is the tmux prefix, Ctrl+Shift+B is no byte.
+  assert.equal(defaultBinding("sidebar.toggle", false), "Ctrl+Shift+B");
+  assert.equal(defaultBinding("sidebar.toggle", true), "Mod+B");
+  for (const id of ["split.vertical", "split.horizontal", "split.close", "sidebar.toggle"]) {
     assert.ok(TERMINAL_ALLOWLIST.includes(id),
       `${id} must fire inside xterm on Linux/Windows (the active pane IS a terminal)`);
   }
-  // sidebar.toggle (Mod+B) must NOT be allowlisted: on non-mac its chord is
-  // Ctrl+B — the tmux prefix — which belongs to the attached program.
-  assert.ok(!TERMINAL_ALLOWLIST.includes("sidebar.toggle"),
-    "sidebar.toggle would shadow the tmux prefix (Ctrl+B) inside xterm");
 });
 
-test("non-mac Ctrl+B inside xterm resolves to NO desktop action (tmux prefix passes through)", (t) => {
+test("non-mac Ctrl+B inside xterm resolves to NO desktop action (tmux prefix passes through); Ctrl+Shift+B toggles the sidebar", (t) => {
   t.after(() => setActiveContexts(new Set()));
   const offs = [
     registerAction({ id: "sidebar.toggle", label: "sb", context: "global", run: () => {} }),
@@ -51,15 +50,18 @@ test("non-mac Ctrl+B inside xterm resolves to NO desktop action (tmux prefix pas
   ];
   t.after(() => offs.forEach((off) => off()));
   setActiveContexts(new Set(["tabs"]));
-  assert.equal(matchEvent(
-    { key: "b", ctrlKey: true, shiftKey: false, metaKey: false, altKey: false, defaultPrevented: false },
-    { isMac: false, insideTerminal: true, editableTarget: false },
-  ), null, "Ctrl+B reaches tmux, not sidebar.toggle");
-  // outside the terminal the binding works normally
-  assert.equal(matchEvent(
-    { key: "b", ctrlKey: true, shiftKey: false, metaKey: false, altKey: false, defaultPrevented: false },
-    { isMac: false, insideTerminal: false, editableTarget: false },
-  ), "sidebar.toggle");
+  const ctrlB = { key: "b", ctrlKey: true, shiftKey: false, metaKey: false, altKey: false, defaultPrevented: false };
+  assert.equal(matchEvent(ctrlB, { isMac: false, insideTerminal: true, editableTarget: false }), null,
+    "Ctrl+B reaches tmux, not sidebar.toggle");
+  assert.equal(matchEvent(ctrlB, { isMac: false, insideTerminal: false, editableTarget: false }), null,
+    "plain Ctrl+B is no longer the sidebar on Linux/Windows");
+  // Ctrl+Shift+B (e.key is the upper-case letter) toggles it, inside the terminal and out.
+  for (const insideTerminal of [true, false]) {
+    assert.equal(matchEvent(
+      { key: "B", ctrlKey: true, shiftKey: true, metaKey: false, altKey: false, defaultPrevented: false },
+      { isMac: false, insideTerminal, editableTarget: false },
+    ), "sidebar.toggle", `Ctrl+Shift+B, insideTerminal=${insideTerminal}`);
+  }
   // and on mac, ⌘B inside xterm still fires (⌘-chord rule)
   assert.equal(matchEvent(
     { key: "b", metaKey: true, ctrlKey: false, shiftKey: false, altKey: false, defaultPrevented: false },

@@ -180,7 +180,9 @@ test('ahead/behind leave the Instance tab; the rail dot and the Developer tab th
 });
 
 test('created reads as a relative age with the exact value in its title', t => {
-  const u = fixture(t), at = new Date(Date.now() - 3 * 3600e3).toISOString();
+  // The panel's ages read Date.now: one fixed instant for the timestamp and the panel, so the age is exact by construction.
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
+  const u = fixture(t), at = new Date(now - 3 * 3600e3).toISOString();
   u.select(instance({ createdAt: at }));
   assert.equal(u.field('createdAt').textContent, '3 h ago'); assert.equal(u.field('createdAt').title, at);
   assert.equal(ageText('2026-09-25T10:00:00.000Z', Date.parse('2026-09-25T10:00:30.000Z')), 'just now');
@@ -190,7 +192,8 @@ test('created reads as a relative age with the exact value in its title', t => {
 });
 
 test('header: "instance of <soul>" links to the Soul tab; the state reads "Running · 42m" or "Stopped"', t => {
-  const u = fixture(t), started = new Date(Date.now() - 42 * 60e3).toISOString();
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
+  const u = fixture(t), started = new Date(now - 42 * 60e3).toISOString();
   u.select(instance({ startedAt: started }));
   const link = u.q('[data-context-soul-link]');
   assert.equal(link.tagName, 'BUTTON'); assert.equal(link.textContent, 'web-developer');
@@ -340,7 +343,8 @@ test('a stale inspection (the selection or workspace changed while it was in fli
 test('desktop facts: a reported start replaces the spawn age, the model says where it came from, the messaging address is the Messaging ID', t => {
   const u = fixture(t);
   const captured = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/desktop-facts/status.json', import.meta.url), 'utf8')).agents.flatMap(a => a.instances)[0];
-  const created = new Date(Date.now() - 26 * 3600e3).toISOString(), started = new Date(Date.now() - 12 * 60e3).toISOString();
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
+  const created = new Date(now - 26 * 3600e3).toISOString(), started = new Date(now - 12 * 60e3).toISOString();
   const age = which => u.q(`.context-panel-session-age${which === 'started' ? '[data-age=started]' : ':not([data-age])'}`);
   // The real capture: spawned with --model, never launched (startedAt null), no messaging identity.
   u.select(instance({ createdAt: created, model: captured.model, modelFrom: captured.modelFrom, startedAt: captured.startedAt, identityAddress: captured.identityAddress }));

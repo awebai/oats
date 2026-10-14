@@ -1,13 +1,12 @@
 import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from '../../client/instance-git-contract.mjs';
-import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets, stoppedRowKind, stoppedRowText,
-  stopResultWords, childrenRefusedMessage, busyRefusal, undescribedRefusal, lifecycleChoicesApplicable, ownWorktreeOf } from '../../client/lifecycle-contract.mjs';
+import { planReference, ownWorktreeOf } from '../../client/lifecycle-contract.mjs';
+import { createLifecycleConfirmation } from '../../client/lifecycle-confirmation.mjs';
 import { LIFECYCLE_FORBIDDEN_FRAME } from './lifecycle-frame.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
-import { codeLineNodes, readingFrom, remoteReason, serverLabel } from '../../client/remote-address.mjs';
-import { cleanLine, displayLine } from '../../client/display-text.mjs';
+import { codeLineNodes, serverLabel } from '../../client/remote-address.mjs';
 import { skeleton, observedAgeText, AGE_TICK_MS } from './loading.mjs';
 export const lifecycleCSS = `
 .lifecycle-dialog { width:min(420px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
@@ -53,54 +52,31 @@ export const lifecycleCSS = `
 .lifecycle-footer { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
 .lifecycle-dialog [hidden] { display:none; }
 `;
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const names = values => values.map(v => v.instance).join(', ');
-/** What a person reads for a session: whether it runs, never the backend's raw state word. */
-const sessionText = s => !s.established ? "Unknown (couldn't be checked)" : s.present ? 'Running' : 'Not running';
-/** The kernel's reason for unobserved work is a code or a sentence for operators (E_NO_WORKTREE, a path):
- * never inline, only in the row's title. */
-const workText = w => !w.observed ? "Unknown (couldn't be checked)" : !w.changed && !w.untracked ? 'None'
-  : [w.changed && `${w.changed} changed`, w.untracked && `${w.untracked} untracked`].filter(Boolean).join(', ');
-/** The worktree's branch as observed, else the one recorded at spawn; null when detached or unknown. Not asked
- * for a tree the kernel's fact answers and that was not observed (treeOf `unchecked`): no branch is named there. */
-const branchOf = f => f.work.observed ? f.work.branch : f.recordedBranch;
-/** A retire the kernel refuses as busy for a home a spawn left (`rollbackIncomplete`): the spawn may still run.
- * For a kernel that does not say who holds the claim. One that does (feature lifecycle-claim-stop) has its
- * answer read by `details.holder`, and its own sentence names the check and the command: never this one. */
-const LEFTOVER_BUSY = "OATS can't confirm that the spawn which left this home has stopped, so it won't retire it yet. Check the process it names, then retire it from the CLI with --force.";
-/** How a retire plan's tree reads, for the words about it. `own`: the tree at `work/` is the instance's
- * (ownWorktreeOf), by the kernel's fact or, for a plan without one, by the record. The other two are for a
- * plan with the fact alone; a plan without one is `own` or neither, by the record.
- *   unchecked  the kernel says the tree is the instance's and `work/` was not observed. The fact is the
- *              reading's answer by the record where nothing, or a file, is at `work/`, so the words promise
- *              no tree and name no branch: the only branch known there is the record's. One wording for
- *              every reason of unobserved work; no code of `facts.work.reason` is read.
- *   notOwn     the kernel says the tree is not the instance's: no worktree is kept or deleted, and
- *              `facts.work`, an observation through any link, is another's tree. */
-const treeOf = value => { const whose = ownWorktreeOf(value), fact = whose.from === 'fact';
-  return { own: whose.own, unchecked: fact && whose.own && !value.facts.work.observed, notOwn: fact && !whose.own }; };
-/** The worktree line of "What will happen" and the warning under the checked choice, for an own tree that
- * could not be checked. They follow the line for a session that could not be checked. */
-const KEEPS_UNCHECKED = "Keeps its worktree, moved aside, if there is one. It couldn't be checked.";
-const DELETES_UNCHECKED = "Deletes its worktree, if there is one. It couldn't be checked.";
-const WARNS_UNCHECKED = "Deletes the worktree folder, if there is one, with any uncommitted changes (a recovery copy is saved first). It couldn't be checked.";
-/** In the place of the worktree line when the kernel says the tree is not the instance's. True of every such
- * home: it names no owner and does not claim there is a link. What happens to what is at `work/` is the
- * line above it (the recovery copy and the home). */
-const NOT_ITS_OWN = 'It has no worktree of its own, so no worktree is kept or deleted. A tree it links to is not touched.';
-const ambiguousText = v => `Not included: ${v.instance} (another instance has the same parent name, so OATS can't tell whose child it is).`;
+/** What to do next, in the Desktop's words: the shared views name it by a code (lifecycle-confirmation.mjs). */
+const NEXT = Object.freeze({
+  'retire-with-force': 'Check the process it names, then retire it from the CLI with --force.',
+  'check-roster': 'Check the roster for its result.',
+});
+/** A view's headline as the Desktop says it: main's frame refusal is the Desktop's own sentence
+ * (lifecycle-frame.mjs), which the shared table does not know; a next step is the Desktop's to word. */
+const headlineOf = status => {
+  const headline = status.code === LIFECYCLE_FORBIDDEN_FRAME.code ? LIFECYCLE_FORBIDDEN_FRAME.message : status.headline;
+  return status.next ? `${headline} ${NEXT[status.next]}` : headline;
+};
 let dialogs = 0;
-/** A fresh explicit confirmation every time; no Don't-ask-again bypass.
+/** A fresh explicit confirmation every time; no Don't-ask-again bypass. What is said, and which controls a
+ * phase offers, is the shared confirmation's (packages/client/lifecycle-confirmation.mjs); this module draws it.
  * One phase decides which controls exist (loading, review, updating, running, done, result); the ownership
- * guards (life, ticket, owns, submission, generation) decide whether an answer may paint at all. Every node
- * is built once per modal and updated in place, so a repaint never rebuilds the focused control. */
+ * guards (life, ticket, owns, generation) decide whether an answer may paint at all. Every node is built once
+ * per modal and updated in place, so a repaint never rebuilds the focused control. */
 export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, generation = () => 0,
   subscribeWorkspace = () => () => {}, subscribeConnections = () => () => {}, connectionGeneration = () => 0,
   onIntent = () => {}, applyFocus = fn => fn(), onSettled = () => {}, openExternal = () => {}, fallbackFocus = () => null } = {}) {
   let alive = true, overlay = null, ui = null, target = null, operation = null, choices = null, plan = null, planRef = null, server = null;
   // The row the dialog was opened for is a home a failed spawn left (quarantined, `rollbackIncomplete`).
   let leftover = false;
-  let life = 0, ticket = 0, applying = false, restore = null, submission = null, phase = null, shown = null, ticker = null;
+  // `confirmation`: the shared half of this modal's transaction; `shown`/`shownView`: the plan on screen and what it says.
+  let life = 0, ticket = 0, applying = false, restore = null, confirmation = null, phase = null, shown = null, shownView = null, ticker = null;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const capture = () => ({ life, ticket, generation: generation(), target, overlay });
   const owns = ref => alive && overlay && ref.overlay === overlay && overlay.isConnected && ref.life === life && ref.ticket === ticket
@@ -110,7 +86,8 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
   const question = () => `${retire() ? 'Retire' : 'Stop'} ${target.instance}?`;
   function close({ restoreFocus = true } = {}) {
     if (!overlay) return;
-    life++; ticket++; overlay.remove(); overlay = null; ui = null; prLink = null; target = null; plan = null; planRef = null; applying = false; submission = null; phase = null; shown = null;
+    life++; ticket++; confirmation?.close(); confirmation = null;
+    overlay.remove(); overlay = null; ui = null; prLink = null; target = null; plan = null; planRef = null; applying = false; phase = null; shown = null; shownView = null;
     clearInterval(ticker); ticker = null;
     // The opener (or a control with its identity), else the host's fallback (a retired row's successor in the
     // roster), else the generic return (a control near where the opener was), never <body>.
@@ -141,7 +118,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.stateSection.hidden = !before;
     for (const region of [ui.happen, ui.facts]) region.setAttribute('aria-busy', String(phase === 'loading' || phase === 'updating'));
     // The worktree choice is offered for the instance's own tree, and stays while it is checked so that it can be undone.
-    const option = shown && (retire() ? treeOf(shown).own || choices.discardWorktree : true);
+    const option = shownView && (retire() ? shownView.own || choices.discardWorktree : true);
     ui.options.hidden = !(phase === 'loading' || planned && option);
     ui.optionSkeleton.hidden = phase !== 'loading';
     ui.recursive.parentElement.hidden = phase === 'loading' || retire(); ui.discard.parentElement.hidden = phase === 'loading' || !retire();
@@ -152,23 +129,21 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     ui.status.hidden = !ui.statusText.textContent;
     ui.close.hidden = phase === 'done'; ui.close.textContent = before ? 'Cancel' : 'Close';
     ui.confirm.hidden = !before;
-    const applicable = !!plan && lifecycleChoicesApplicable(plan, choices);
-    ui.confirm.disabled = phase !== 'review' || !planRef || !applicable;
-    if (phase === 'review' && plan && !applicable) say(lifecycleReason('E_OPTION_UNAVAILABLE', DESKTOP_TERMS).message);
+    const offers = confirmation?.state().offers ?? ['close'];
+    ui.confirm.disabled = phase !== 'review' || !offers.includes('apply');
+    if (phase === 'review' && plan && shownView?.notice) say(shownView.notice.sentence);
     ui.status.hidden = !ui.statusText.textContent;
     if (!ui.confirm.hidden && ui.confirm.disabled) ui.confirm.setAttribute('aria-describedby', ui.status.id); else ui.confirm.removeAttribute('aria-describedby');
-    ui.retry.hidden = !(phase === 'result' && submission?.uncertain);
-    ui.review.hidden = !(phase === 'result' && !submission?.uncertain);
+    ui.retry.hidden = !(phase === 'result' && offers.includes('check-again'));
+    ui.review.hidden = !(phase === 'result' && offers.includes('refresh'));
     ui.done.hidden = phase !== 'done';
     // A control that leaves while it has focus hands focus to the button that stays.
     const active = doc.activeElement;
     if (had && (!isShown(had) || active !== had) && (!active || active === doc.body || !isShown(active))) focusOn(phase === 'done' ? ui.done : ui.close);
   }
-  /** A local reason's code and the CLI's own message, re-validated here (main relays the server's reply as it
-   * is), or null: a code that may show one (lifecycleDetailCode) and a detail that is already a display line.
-   * The headline stays the fixed sentence for the code; the detail is only ever shown, in Details. */
-  const localDetail = reason => reason && typeof reason === 'object' && !Object.hasOwn(reason, 'remote')
-    && lifecycleDetailCode(reason.code) && cleanLine(reason.detail) ? { code: reason.code, detail: reason.detail } : null;
+  /** A reason's code and the kernel's message, behind a Details disclosure (keyboard and screen reader
+   * reachable). The code is text; the message is alone in its <bdi> (remote-address.mjs codeLineNodes).
+   * `bare`: shown for the code alone when there is no message (a headline that does not name its code). */
   /** A reason's code and the kernel's message, behind a Details disclosure (keyboard and screen reader
    * reachable). The code is text; the message is alone in its <bdi> (remote-address.mjs codeLineNodes).
    * `bare`: shown for the code alone when there is no message (a headline that does not name its code). */
@@ -178,107 +153,37 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     more.append(node('summary', 'Details'), line);
     parent.append(more);
   }
-  /** A refusal: a remote host's headline, else the fixed sentence for the code (main's frame refusal is the
-   * Desktop's own, lifecycle-frame.mjs; every other code is the shared table's); the code and the kernel's
-   * message in Details when there is one to show. */
-  function refusal(reason, snapshot = null) {
-    // The kernel's busy answer, read by who holds the claim: the headline, the target it is about when that
-    // is another one of this plan, and the kernel's own sentence as the main text when it names what ends it.
-    const busy = busyRefusal(reason, snapshot);
-    if (busy) {
-      const lines = [busy.about, busy.lead].filter(Boolean).map(text => node('span', text));
-      if (busy.sentence) { const quote = node('span'); quote.append(node('bdi', busy.sentence)); lines.push(quote); }
-      say(busy.headline, lines);
-      if (busy.details) details(ui.result, busy.details);
-      return;
+  /** What a view says under its status line, in order (lifecycle-confirmation.mjs `blocks`). */
+  function drawBlocks(blocks) {
+    for (const block of blocks) {
+      if (block.type === 'details') details(ui.result, block.reason, block.bare);
+      else if (block.type === 'quote') { const p = node('p'); p.append(node('bdi', block.text)); ui.result.append(p); }
+      else if (block.type === 'note') ui.result.append(node('p', block.text, 'lifecycle-note'));
+      else if (block.type === 'rows') ui.result.append(stopped(block.rows));
+      else if (block.type === 'lines') ui.result.append(list(block.lines.map(line)));
     }
-    // An error the kernel answered that Desktop has no sentence for: the fallback sentence, and its code in Details.
-    const remote = remoteReason(reason), undescribed = undescribedRefusal(remote || reason, DESKTOP_TERMS), shownReason = remote || undescribed || localDetail(reason);
-    // The kernel's own busy refusal (it carries the kernel's message; Desktop's own busy does not) for a home
-    // a spawn left: its sentence, and the kernel's message, which names the process, shown under it.
-    if (!remote && shownReason && reason.code === 'E_LIFECYCLE_BUSY' && retire() && leftover) {
-      say(LEFTOVER_BUSY); const p = node('p'); p.append(node('bdi', shownReason.detail)); ui.result.append(p); return;
-    }
-    say(remote ? remote.message : undescribed ? undescribed.message : (reason?.code === LIFECYCLE_FORBIDDEN_FRAME.code ? LIFECYCLE_FORBIDDEN_FRAME : lifecycleReason(reason?.code, DESKTOP_TERMS)).message);
-    if (shownReason) details(ui.result, shownReason, !!undescribed);
   }
-  /** One line of a list, with an optional path as a muted, selectable second line. */
-  const line = (text, path, cls) => { const li = node('li', undefined, cls); li.append(node('span', text)); if (path) li.append(node('span', path, 'lifecycle-path')); return li; };
+  /** A view's status line: its headline, then the lines that belong to it (a kernel's own sentence quoted, alone in its <bdi>). */
+  function sayStatus(status) {
+    say(headlineOf(status), status.more.map(item => { if (!Object.hasOwn(item, 'quote')) return node('span', item.text);
+      const quote = node('span'); quote.append(node('bdi', item.quote)); return quote; }));
+  }
+  /** One line of a list (a shared view's `{ text, path?, tone?, title? }`), with its path as a muted, selectable second line. */
+  const line = item => { const li = node('li', undefined, item.tone ? `lifecycle-${item.tone}` : undefined); li.append(node('span', item.text));
+    if (item.path) li.append(node('span', item.path, 'lifecycle-path')); if (item.title) li.title = item.title; return li; };
   const list = lines => { const ul = node('ul'); ul.append(...lines.filter(Boolean)); return ul; };
-  /** What will happen, in plain words, built from the plan; each line only when it applies. */
-  function happening(value, requested) {
-    const lines = [];
-    if (value.action === 'stop') {
-      const t = value.targets;
-      lines.push(line(value.recursive && t.length > 1 ? `Stops ${t.length} sessions, children first: ${names(t)}.` : `Stops the session of ${value.instance}.`));
-      lines.push(line('Nothing is deleted. Its home, worktree, transcript and launch settings are kept; you can start it again.'));
-      lines.push(line('A session that refuses to stop is left running; nothing is forced.', undefined, 'lifecycle-note'));
-      for (const x of t.filter(x => x.midTask === true)) lines.push(line(`${x.instance} reports it is in the middle of a task.`, undefined, 'lifecycle-attention'));
-      if (value.skipped.length) lines.push(line(`Not stopped: ${names(value.skipped)} (children not included).`, undefined, 'lifecycle-note'));
-      return list(lines);
-    }
-    const f = value.facts, tree = treeOf(value);
-    if (f.session.established && f.session.present) lines.push(line('Stops its session.'));
-    else if (!f.session.established) lines.push(line("Stops its session, if one is running (its state couldn't be checked)."));
-    if (f.children.length) {
-      const children = line(`Stops its ${plural(f.children.length, 'child instance')} first: ${names(f.children)}. They are kept, with their homes.`);
-      children.title = f.children.map(c => c.home).join('\n'); lines.push(children);
-    }
-    lines.push(line('Saves a recovery copy of any uncommitted work, then deletes its home folder.', value.home));
-    if (tree.notOwn) lines.push(line(NOT_ITS_OWN));
-    else if (tree.unchecked) lines.push(line(requested.discardWorktree ? DELETES_UNCHECKED : KEEPS_UNCHECKED));
-    else if (tree.own) { const b = branchOf(f); lines.push(line(requested.discardWorktree ? `Deletes its worktree.${stays(b)}`
-      : `Keeps its worktree, moved aside${b ? `, on branch ${b}` : ''}.`)); }
-    // A home a spawn left (rollbackIncomplete): retire finishes its compensation, which deletes the branch
-    // the spawn created when it holds no work (the result's spawnCompensation says which).
-    lines.push(line(leftover ? 'Branches and pull requests are not changed, except a branch an interrupted spawn left with no work, which is deleted.'
-      : 'Branches and pull requests are not changed.'));
-    if (f.children.length) lines.push(line("If a child won't stop, nothing is retired.", undefined, 'lifecycle-note'));
-    return list(lines);
-  }
   /** Current state: a compact two-column list of plain values, then what is not included and why. */
-  function current(value) {
-    const dl = node('dl'), notes = [];
-    const row = (label, value, title = '') => { const dd = node('dd', value); if (title) dd.title = title; dl.append(node('dt', label), dd); };
-    if (value.action === 'stop') {
-      for (const t of value.targets) row(t.instance, sessionText(t.session));
-      for (const v of value.ambiguous) notes.push(node('p', ambiguousText(v), 'lifecycle-note'));
-    } else {
-      const f = value.facts, tree = treeOf(value);
-      row('Session', sessionText(f.session));
-      // Without a worktree of its own there is no Git work to report: the recovery line under What will happen covers it.
-      // When the kernel says the tree is not the instance's, nothing of `facts.work` is shown: it is an observation
-      // through any link, so for an attached instance it is its owner's tree, which this retire does not touch.
-      // A plan with no fact keeps the rows it had: what was observed, whoever's it is.
-      if (!tree.notOwn) {
-        if (f.work.observed || tree.own) row('Uncommitted work', workText(f.work), f.work.observed ? '' : f.work.reason);
-        if (f.work.observed) row('Branch', f.work.detached ? 'Detached' : f.work.branch);
-        if (f.work.observed && f.work.drift) notes.push(node('p', `The worktree is on ${f.work.detached ? 'a detached commit' : f.work.branch}, not the branch it was spawned on${f.recordedBranch ? ` (${f.recordedBranch})` : ''}.`, 'lifecycle-attention'));
-      }
-      for (const v of f.ambiguous) { const p = node('p', ambiguousText(v), 'lifecycle-note'); p.title = v.home; notes.push(p); }
-    }
-    return [dl, ...notes];
+  function current(state) {
+    const dl = node('dl');
+    for (const row of state.rows) { const dd = node('dd', row.value); if (row.title) dd.title = row.title; dl.append(node('dt', row.label), dd); }
+    return [dl, ...state.notes.map(note => { const p = node('p', note.text, `lifecycle-${note.tone}`); if (note.title) p.title = note.title; return p; })];
   }
-  /** The warning under a checked "Also delete the worktree": in words, not colour alone. None when the kernel
-   * says the tree is not the instance's: the choice then stays on screen only to be undone, the status says
-   * that it cannot be confirmed, and a warning would count another tree's changes and promise their deletion. */
-  function discardWarning(value) {
-    const f = value.facts, tree = treeOf(value);
-    if (tree.notOwn) return '';
-    if (tree.unchecked) return WARNS_UNCHECKED;
-    const n = f.work.observed ? f.work.changed + f.work.untracked : null;
-    const including = n === null ? ', including uncommitted changes, if any (a recovery copy is saved first)'
-      : n ? `, including ${plural(n, 'uncommitted change')} (a recovery copy is saved first)` : '';
-    return `Deletes the worktree folder${including}.${stays(branchOf(f))}`;
-  }
-  /** Deleting the worktree keeps its branch, except on a leftover row: there the kernel deletes the branch the
-   * interrupted spawn created when it holds no work, so the plan's next line is the only word on branches. */
-  const stays = b => b && !leftover ? ` Branch ${b} stays in the repository.` : '';
   /** What a PR row is correlated to: the observed revision and branch, and the remote's host and path. Null
-   * when the work is not observed, and when the kernel says the tree is not the instance's (treeOf): no PR row
+   * when the work is not observed, and when the kernel says the tree is not the instance's (ownWorktreeOf): no PR row
    * then, and no Git or forge read for it. This is the one place that decides it: overlayForge reads nothing
    * on a null, and a row on screen leaves at the swap. The connection account is held beside it, on the link. */
-  const correlation = value => value?.action === 'retire' && value.facts.work.observed && !treeOf(value).notOwn
+  const notOwn = value => { const whose = ownWorktreeOf(value); return whose.from === 'fact' && !whose.own; };
+  const correlation = value => value?.action === 'retire' && value.facts.work.observed && !notOwn(value)
     ? JSON.stringify([value.facts.work.revision, value.facts.work.branch, value.facts.work.remote?.host ?? null, value.facts.work.remote?.path ?? null]) : null;
   /** The PR row's link, or null: { anchor, url, account, key }. Its click reads this record, never the read
    * that drew it, so a link kept across a plan swap stays live exactly while its correlation and account hold. */
@@ -291,23 +196,21 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     if (focused) focusOn(link?.anchor ?? ui.close);
   }
   /** Swap a plan in, atomically: the previous facts stay on screen until this one replaces them. */
-  function renderPlan(value, requested) {
+  function renderPlan(value, view) {
     // The PR row is kept across a swap with the same correlation (and re-read); any other swap drops it.
     if (correlation(shown) === null || correlation(shown) !== correlation(value)) setForge();
-    ui.happen.replaceChildren(happening(value, requested)); ui.facts.replaceChildren(...current(value));
-    ui.warning.textContent = retire() && requested.discardWorktree ? discardWarning(value) : ''; ui.warning.hidden = !ui.warning.textContent;
-    if (!retire()) ui.confirm.textContent = value.targets.length > 1 ? 'Stop sessions' : 'Stop session';
-    shown = value; age();
+    ui.happen.replaceChildren(list(view.happening.map(line))); ui.facts.replaceChildren(...current(view.state));
+    ui.warning.textContent = view.warning; ui.warning.hidden = !ui.warning.textContent;
+    if (!retire()) ui.confirm.textContent = view.targets > 1 ? 'Stop sessions' : 'Stop session';
+    for (const item of view.choices) { const text = (item.id === 'recursive' ? ui.recursive : ui.discard).nextElementSibling; if (text.textContent !== item.sentence) text.textContent = item.sentence; }
+    shown = value; shownView = view; age();
   }
   const age = () => { if (shown && ui) ui.observedText.textContent = `Observed ${observedAgeText(shown.at) ?? 'earlier'}`; };
   function skeletons() {
     const bones = node('div', undefined, 'lifecycle-skeleton'); bones.setAttribute('aria-hidden', 'true');
     for (let i = 0; i < 4; i++) bones.append(skeleton(doc, 'line'));
     const facts = bones.cloneNode(false); for (let i = 0; i < 3; i++) facts.append(skeleton(doc, 'line'));
-    ui.happen.replaceChildren(bones); ui.facts.replaceChildren(facts); setForge(); shown = null;
-  }
-  function validTarget(result, ref) {
-    return result?.lifecycleApi === 1 && result.target && gitTargetKey(result.target) === gitTargetKey(ref.target);
+    ui.happen.replaceChildren(bones); ui.facts.replaceChildren(facts); setForge(); shown = null; shownView = null;
   }
   async function overlayForge(ref, snapshot) {
     const account = connectionGeneration(), key = correlation(snapshot);
@@ -349,117 +252,46 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     phase = next; title(heading); paint();
     focusOn(next === 'done' ? ui.done : ui.close);
   }
-  /** Read a plan. With facts on screen they stay there (aria-busy) until the new plan replaces them;
-   * otherwise the skeleton holds their place. The reference on screen is revoked at once either way. */
-  async function refresh(why = 'option') {
-    if (!overlay || applying) return;
-    ticket++; const ref = capture(), requested = { ...choices }, keep = !!shown && (phase === 'review' || phase === 'updating');
-    plan = null; planRef = null; submission = null; ui.result.replaceChildren();
-    if (keep) { phase = 'updating'; say(why === 'check' ? 'Checking again…' : 'Updating for this choice…'); }
-    else { phase = 'loading'; skeletons(); title(question()); say(server ? readingFrom(server) : `Checking what ${retire() ? 'retiring' : 'stopping'} ${target.instance} will do…`); }
-    paint();
-    const failed = reason => { phase = 'result'; skeletons(); ui.result.replaceChildren(); refusal(reason);
-      settle('result', `Couldn't check what ${retire() ? 'retiring' : 'stopping'} ${target.instance} will do`); };
-    try {
-      const result = await request(ref.target.workspace, { action: 'plan', operation, selector: selector(), options: requested });
-      if (!owns(ref)) return;
-      if (!validTarget(result, ref) || result.status !== 'plan') { failed(validTarget(result, ref) ? result.reason : { code: result?.reason?.code }); return; }
-      const value = lifecyclePlan(result.plan, ref.target, operation, requested);
-      if (!value || !planReference(result.planRef) || JSON.stringify(lifecycleOptions(operation, result.options)) !== JSON.stringify(requested)) throw new Error('Invalid plan');
-      plan = value; planRef = result.planRef; renderPlan(plan, requested); phase = 'review'; say(''); paint(); void overlayForge(ref, plan);
-    } catch { if (owns(ref)) failed({ code: 'E_CLI_PROTOCOL' }); }
-  }
-  /** One line per row of a stop's results or of a retire's child list; what a row is, and its words, are the contract's. */
-  function stopped(values) {
-    return list(values.map(v => {
-      const li = line(`${v.instance}: ${stoppedRowText(v)}`);
-      // The kernel's own sentence for a child whose home it could not lock: a quote, alone in its <bdi>.
-      if (stoppedRowKind(v) === 'locked' && cleanLine(v.detail)) { const quote = node('span', undefined, 'lifecycle-path lifecycle-quote'); quote.append(node('bdi', v.detail)); li.append(quote); }
+  /** One line per row of a stop's results or of a retire's child list; the kernel's own sentence for a child whose
+   * home it could not lock is a quote, alone in its <bdi>. */
+  function stopped(rows) {
+    return list(rows.map(row => {
+      const li = line({ text: row.text });
+      if (Object.hasOwn(row, 'quote')) { const quote = node('span', undefined, 'lifecycle-path lifecycle-quote'); quote.append(node('bdi', row.quote)); li.append(quote); }
       return li;
     }));
   }
-  /** What a retire receipt says happened, each fact on its own line; paths as muted, selectable text. */
-  function retired(receipt, snapshot, complete) {
-    const r = receipt.retention, children = receipt.childrenStopped;
-    return list([complete && snapshot.facts.session.present === true && line('Session stopped.'),
-      children.length && line(`${plural(children.length, 'child instance')} stopped and kept.`),
-      line(receipt.removedDir ? 'Home folder deleted.' : 'Home folder kept.', receipt.removedDir ? undefined : receipt.retainedHome ?? undefined),
-      r?.worktree === 'retained' && line('Worktree kept at', r.movedTo), r?.worktree === 'removed' && line('Worktree deleted.'),
-      receipt.recoveryPath && line('Recovery copy saved at', receipt.recoveryPath),
-      compensated(receipt.spawnCompensation),
-      receipt.incomplete && line("Cleanup didn't finish.")]);
-  }
-  /** The branch an interrupted spawn left, which this retire deleted or kept (spawnCompensation); else nothing. */
-  function compensated(c) {
-    const branch = displayLine(c?.branch);
-    if (!branch) return null;
-    return line(c.branchDeleted ? `Branch ${branch} deleted: an interrupted spawn left it, and it held no work.`
-      : `Branch ${branch} kept: ${displayLine(c.reason) ?? 'no reason given'}`);
-  }
-  async function apply(retry = false) {
-    if (!overlay || applying || (retry ? !submission || phase !== 'result' : phase !== 'review' || !plan || !planRef || !lifecycleChoicesApplicable(plan, choices))) return;
-    onIntent(); ticket++; const ref = capture(), snapshot = retry ? submission.plan : plan, selectedRef = retry ? submission.reference : planRef;
-    submission = { reference: selectedRef, plan: snapshot, uncertain: true };
-    const name = target.instance, verb = retire() ? 'Retiring' : 'Stopping';
-    applying = true; planRef = null; ui.result.replaceChildren(); phase = 'running'; title(`${verb} ${name}…`);
-    say(retire() ? `Retiring ${name}. This can take up to a minute while sessions stop.` : `Stopping ${name}. This can take up to a minute.`);
-    paint(); focusOn(ui.close);
-    const unconfirmed = 'Result not confirmed', didNot = `${name} wasn't ${retire() ? 'retired' : 'stopped'}`;
-    try {
-      const result = await request(ref.target.workspace, { action: 'apply', planRef: selectedRef });
-      if (!owns(ref)) return;
-      if (!validTarget(result, ref)) { say(lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message); settle('result', unconfirmed); return; }
-      submission.uncertain = ['unknown', 'pending'].includes(result.status);
-      if (result.status === 'stale') {
-        const fresh = lifecyclePlan(result.plan, ref.target, operation, choices);
-        if (!fresh) throw new Error('Invalid fresh plan');
-        plan = fresh; planRef = planReference(result.planRef) ? result.planRef : null;
-        renderPlan(fresh, choices); say(lifecycleReason('E_PLAN_STALE', DESKTOP_TERMS).message); phase = 'review'; title(question()); paint(); focusOn(ui.close);
-        void overlayForge(capture(), fresh);
-      } else if (result.receipt) {
-        const receipt = publicLifecycleReceipt(result.receipt, snapshot); if (!receipt) throw new Error('Invalid receipt');
-        const expectedStatus = receipt.deferred ? 'pending' : (receipt.action === 'stop' ? receipt.ok : receipt.removedDir && !receipt.incomplete) ? 'complete' : 'partial';
-        if (result.status !== expectedStatus) throw new Error('Invalid outcome');
-        const replay = receipt.replayed || result.repeated ? node('p', 'This is the result already recorded for this confirmation; nothing ran again.', 'lifecycle-note') : null;
-        if (receipt.deferred) {
-          say('Retirement was accepted and will finish in the background. Check the roster for its result.');
-          if (replay) ui.result.append(replay); settle('result', 'Retirement accepted');
-        } else if (result.status === 'complete') {
-          const stopTitle = receipt.action === 'stop' && receipt.results.length > 1 ? `${receipt.results.length} sessions stopped` : `${name} ${retire() ? 'retired' : 'stopped'}`;
-          ui.result.append(receipt.action === 'stop' ? stopped(receipt.results) : retired(receipt, snapshot, true)); if (replay) ui.result.append(replay);
-          say(`${stopTitle}.`); ui.mark.replaceChildren(iconElement(doc, 'check', { size: 18 })); ui.mark.dataset.tone = 'ok';
-          settle('done', stopTitle);
-        } else {
-          // A stop that is not ok: the sentence above the rows is chosen from the rows, so it agrees with them.
-          const words = receipt.action === 'stop' ? stopResultWords(receipt.results) : { status: "Retirement didn't finish. Some steps ran:", title: "Retirement didn't finish" };
-          say(words.status);
-          ui.result.append(receipt.action === 'stop' ? stopped(receipt.results) : retired(receipt, snapshot, false)); if (replay) ui.result.append(replay);
-          settle('result', words.title);
-        }
-      } else {
-        // The rows are the server's, already decoded: validated here, never decoded again.
-        const children = result.childrenStopped ? decodedStoppedTargets(result.childrenStopped, snapshot.facts?.children || []) : null;
-        if (result.childrenStopped && !children) throw new Error('Invalid child outcomes');
-        refusal(result.reason?.code ? result.reason : { code: 'E_OUTCOME_UNKNOWN' }, snapshot);
-        if (children && result.reason?.code === 'E_CHILDREN_RUNNING') say(childrenRefusedMessage(children));
-        // Why the outcome is unknown: a remote transport or host cause keeps its headline and Details; a
-        // local one says its fixed sentence, with the CLI's own message in Details when it carries one.
-        const cause = result.cause && remoteReason(result.cause);
-        const undescribed = result.cause && undescribedRefusal(cause || result.cause, DESKTOP_TERMS);
-        if (cause) { ui.result.append(node('p', cause.message, 'lifecycle-note')); details(ui.result, cause, !!undescribed); }
-        else if (result.cause) {
-          ui.result.append(node('p', undescribed ? undescribed.message : lifecycleReason(result.cause.code, DESKTOP_TERMS).message, 'lifecycle-note'));
-          const local = undescribed || localDetail(result.cause); if (local) details(ui.result, local, !!undescribed);
-        }
-        if (children) ui.result.append(node('p', 'Child instances:', 'lifecycle-note'), stopped(children));
-        settle('result', submission.uncertain ? unconfirmed : didNot);
-      }
-      if (owns(ref) && result.status !== 'stale') {
-        try { Promise.resolve(onSettled(result, ref.target)).catch(() => {}); } catch { /* refresh cannot erase a recorded outcome */ }
-      }
-    } catch {
-      if (owns(ref)) { submission.uncertain = true; ui.result.replaceChildren(); say(lifecycleReason('E_OUTCOME_UNKNOWN', DESKTOP_TERMS).message); settle('result', unconfirmed); }
-    } finally { if (owns(ref)) { applying = false; paint(); } }
+  /** The confirmation's steps, drawn. Each paints only while this modal owns it (a newer modal, a workspace
+   * change or a close drops it), and the confirmation tells nothing it has superseded. */
+  function onChange(event, detail) {
+    if (!alive || !overlay || !ui || !overlay.isConnected) return;
+    const view = detail.view;
+    if (event === 'reading') {
+      ticket++; plan = null; planRef = null; ui.result.replaceChildren();
+      if (detail.kept) { phase = 'updating'; say(view.message); }
+      else { phase = 'loading'; skeletons(); title(view.title); say(view.message); }
+      paint(); return;
+    }
+    if (event === 'applying') {
+      ticket++; applying = true; planRef = null; ui.result.replaceChildren(); phase = 'running'; title(view.title); say(view.message);
+      paint(); focusOn(ui.close); return;
+    }
+    if (event === 'plan') {
+      plan = detail.plan; planRef = detail.planRef; renderPlan(plan, view); phase = 'review'; say(''); paint(); void overlayForge(capture(), plan); return;
+    }
+    if (event === 'unavailable') {
+      phase = 'result'; skeletons(); ui.result.replaceChildren(); sayStatus(view.status); drawBlocks(view.blocks); settle('result', view.title); return;
+    }
+    if (event === 'stale') {
+      applying = false; plan = detail.plan; planRef = detail.planRef;
+      renderPlan(plan, view); say(detail.notice.sentence); phase = 'review'; title(view.question); paint(); focusOn(ui.close);
+      void overlayForge(capture(), plan); return;
+    }
+    // settled: an apply's answer.
+    ui.result.replaceChildren(); sayStatus(view.status); drawBlocks(view.blocks);
+    if (view.kind === 'complete') { ui.mark.replaceChildren(iconElement(doc, 'check', { size: 18 })); ui.mark.dataset.tone = 'ok'; settle('done', view.title); }
+    else settle('result', view.title);
+    applying = false; paint();
   }
   function open({ operation: next, instance, workspace }) {
     close({ restoreFocus: false }); if (!alive || !['stop', 'retire'].includes(next)) return;
@@ -486,16 +318,17 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     const options = node('div', undefined, 'lifecycle-options'), optionSkeleton = skeleton(doc, 'line', { width: '55%' });
     function choice(label, checked) { const line = node('label'), input = node('input'); input.type = 'checkbox'; input.checked = checked; line.append(input, node('span', label)); options.append(line); return input; }
     options.append(optionSkeleton);
+    // A plan's choice says its own sentence (planView `choices`, drawn with the plan); the other operation's stays as built, hidden.
     const recursive = choice('Include child instances', true), discard = choice('Also delete the worktree', false);
     const warning = node('p', '', 'lifecycle-warning'); warning.hidden = true; options.append(warning);
     const mounted = life, mountedGeneration = generation();
     const current = () => alive && overlay && life === mounted && dialog.isConnected && generation() === mountedGeneration;
     // The checkbox stays enabled while a plan is read: the latest choice wins, and tickets drop older answers.
     const changed = event => {
-      if (!current() || !event.target.isConnected || event.target.disabled || applying) return; onIntent();
+      if (!current() || !event.target.isConnected || event.target.disabled || applying || !confirmation) return; onIntent();
       if (operation === 'stop') choices = { recursive: recursive.checked };
       else choices = { discardWorktree: discard.checked };
-      void refresh('option');
+      const [id] = Object.keys(choices); confirmation.setChoice(id, choices[id]);
     };
     for (const input of [recursive, discard]) input.addEventListener('change', changed);
     const result = node('div', undefined, 'lifecycle-result'), footer = node('div', undefined, 'lifecycle-footer');
@@ -508,12 +341,15 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
         if (current() && b.isConnected && !b.disabled && isShown(b)) action();
       }); return b; };
     const observed = node('p', undefined, 'lifecycle-observed lifecycle-note'), observedText = node('span');
-    const check = button('Check again', () => { onIntent(); void refresh('check'); }, 'lifecycle-check');
+    const check = button('Check again', () => { onIntent(); confirmation?.refresh('check'); }, 'lifecycle-check');
     observed.append(observedText, ' ', check);
     const closeButton = button('Cancel', () => close(), 'lifecycle-close'), doneButton = button('Done', () => close(), 'lifecycle-done');
-    const confirmButton = button(next === 'stop' ? 'Stop session' : 'Retire instance', () => void apply(), 'lifecycle-confirm');
-    const retryButton = button('Check again', () => void apply(true), 'lifecycle-retry');
-    const reviewButton = button('Review again', () => { onIntent(); void refresh('review'); }, 'lifecycle-review');
+    // Each act is the confirmation's, and only while it offers it: Confirm sends the reference under review; Check
+    // again asks for the answer to the one already sent (the same reference); Review again reads a new plan.
+    const act = (name, run) => () => { if (!confirmation?.state().offers.includes(name)) return; onIntent(); run(); };
+    const confirmButton = button(next === 'stop' ? 'Stop session' : 'Retire instance', act('apply', () => confirmation.apply()), 'lifecycle-confirm');
+    const retryButton = button('Check again', act('check-again', () => confirmation.checkAgain()), 'lifecycle-retry');
+    const reviewButton = button('Review again', act('refresh', () => confirmation.refresh('review')), 'lifecycle-review');
     footer.append(retryButton, reviewButton, closeButton, confirmButton, doneButton);
     dialog.append(heading, happenSection, stateSection, options, observed, result, continues, footer); overlay.append(dialog); doc.body.append(overlay);
     ui = { dialog, title: h2, mark, status, statusText, statusMore, spinner, happen, happenSection, facts, stateSection, forge, options, optionSkeleton, warning,
@@ -529,7 +365,13 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     });
     // The age line ticks while the modal lives; a Node test host never waits on it (unref).
     ticker = setInterval(() => { if (current()) age(); }, AGE_TICK_MS); ticker?.unref?.();
-    phase = 'loading'; applyFocus(() => closeButton.focus()); void refresh('open');
+    phase = 'loading'; applyFocus(() => closeButton.focus());
+    const workspaceOf = target.workspace, owned = () => current() && confirmation === made;
+    // The confirmation reads its first plan at once; its answers paint through onChange while this modal owns it.
+    const made = createLifecycleConfirmation({ request: body => request(workspaceOf, body), target, operation, terms: DESKTOP_TERMS, label: server, leftover,
+      onChange: (event, detail) => { if (life === mounted && generation() === mountedGeneration) onChange(event, detail); },
+      onSettled: (result, settledTarget) => { if (owned()) return onSettled(result, settledTarget); } });
+    confirmation = made;
   }
   const off = subscribeWorkspace(() => close({ restoreFocus: false }));
   const offConnections = subscribeConnections(() => {

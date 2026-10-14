@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../../client/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../../client/lifecycle-cli.mjs';
 import { lifecycleOptions, lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
-import { displayLine } from '../../client/display-text.mjs';
+import { displayLine, DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { discover } from '../../client/cli-locator.mjs';
 import { cli, target, instance, context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -11,9 +11,16 @@ function fixture(overrides = {}) {
   const ctx = context(), calls = [];
   const invoke = async (bin, args) => { calls.push({ bin, args: structuredClone(args) }); return envelope(args.phase === 'plan'
     ? args.operation === 'stop' ? stopPlan(args.choices.recursive) : retirePlan() : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args)); };
-  const service = createLifecycleBoundary({ invoke, ...overrides });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke, ...overrides });
   return { service, ctx, calls, plan: operation => service(request(operation), () => ctx), apply: planRef => service({ action: 'apply', planRef }, () => ctx) };
 }
+test('a boundary is made with the client\'s terms, and refuses to be made without them', () => {
+  const invoke = assert.fail;
+  for (const made of [() => createLifecycleBoundary(), () => createLifecycleBoundary({ invoke }), () => createLifecycleBoundary({ invoke, terms: null }),
+    () => createLifecycleBoundary({ invoke, terms: { ...DESKTOP_TERMS } })])
+    assert.throws(made, { name: 'TypeError', message: /^createLifecycleBoundary: terms must be the object clientTerms\(\) returned$/ });
+  assert.equal(typeof createLifecycleBoundary({ invoke, terms: DESKTOP_TERMS }), 'function');
+});
 test('positive feature/API gate precedes EVERY plan command, never version-only or optimistic invocation', async () => {
   for (const change of [c => delete c.lifecycleApi, c => { c.lifecycleApi = '1'; }, c => { c.lifecycleApi = true; },
     c => { c.features = 'lifecycle-plans'; }, c => { c.features = []; }, c => { c.features = ['lifecycle-plans', {}]; }, c => { c.ok = false; }]) {
@@ -27,7 +34,7 @@ test('positive feature/API gate precedes EVERY plan command, never version-only 
 });
 test('locator preserves only the exact lifecycleApi integer', async () => {
   for (const value of [1, true, '1', 2, undefined]) {
-    const found = await discover({ env: { PATH: '/bin' }, isExecutableFile: () => true }, async () => ({ stdout: JSON.stringify({ schemaVersion: 1, name: '@awebai/oats', desktopApi: 1, version: '0.25.8', features: ['lifecycle-plans'], lifecycleApi: value }) }));
+    const found = await discover({ env: { PATH: '/bin' }, isExecutableFile: () => true }, async () => ({ stdout: JSON.stringify({ schemaVersion: 1, name: '@awebai/oats', desktopApi: 1, version: '0.26.0', features: ['lifecycle-plans'], lifecycleApi: value }) }));
     assert.equal(found.lifecycleApi, value === 1 ? 1 : undefined);
   }
 });
@@ -133,7 +140,7 @@ test("a local refusal's detail is withheld whole when the message looks like a c
     return (await f.apply((await f.plan('retire')).planRef)).cause;
   };
   const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS);
-  assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: 'could not read the work root\ntoken=abc123' }), { ...fixed, detail: '[Detail withheld]' });
+  assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: 'could not read the work root\ntoken=abc123' }), { ...fixed, detail: DETAIL_WITHHELD });
   for (const none of [undefined, null, '', ' \n\t ', 7, { text: 'not a string' }]) assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: none }), fixed, JSON.stringify(none));
 });
 test("a failure Desktop raises itself never carries a detail, whatever the envelope holds; a code without its own sentence keeps the fixed reply unless the kernel answered it", async () => {
@@ -377,13 +384,15 @@ test('Stop nested ok:false is partial even inside a successful envelope; all tar
   assert.equal(lifecycleReceipt(hostile, p.plan, 'k'), null);
 });
 
-test('CLI fixes every argv, caps timeout/output, supports raw/replayed retire and suppresses errors', async () => {
+test('CLI fixes every argv, caps a plan\'s timeout and the output, runs an apply in its own session with no timeout, supports raw/replayed retire and suppresses errors', async () => {
   for (const operation of ['stop', 'retire']) for (const phase of ['plan', 'apply']) {
     const args = { operation, phase, instance: instance.instance, home: instance.home, context: '/team;literal', choices: options(operation),
       ...(phase === 'apply' ? { revision: (operation === 'stop' ? 'a' : 'b').repeat(24), key: 'server-key' } : {}) };
     const r = await cliLifecycle(cli.bin, args, { timeout: 999_999, exec(bin, argv, opts, done) {
       assert.equal(bin, cli.bin); assert.deepEqual(argv, lifecycleArgv(args)); assert.equal(opts.cwd, args.context); assert.equal(opts.shell, false);
-      assert.equal(opts.timeout, phase === 'plan' ? 30000 : 600000); assert.equal(opts.maxBuffer, (phase === 'plan' ? 1 : 4) * 1024 * 1024);
+      // A plan is a read with a deadline; an apply has none and runs in a session of its own (#889).
+      assert.equal(opts.timeout, phase === 'plan' ? 30000 : undefined); assert.equal(opts.detached, phase === 'plan' ? undefined : true);
+      assert.equal(opts.maxBuffer, (phase === 'plan' ? 1 : 4) * 1024 * 1024);
       assert.ok(argv.includes('--home') && argv.includes('--dir') && argv.includes('--json')); assert.ok(!argv.includes('--force'));
       const value = phase === 'plan' ? envelope(operation === 'stop' ? stopPlan() : retirePlan()) : operation === 'stop' ? envelope(stopReceipt(args)) : retireReceipt(args);
       done(null, JSON.stringify(value), 'PRIVATE stderr');
@@ -395,6 +404,19 @@ test('CLI fixes every argv, caps timeout/output, supports raw/replayed retire an
     const result = await cliLifecycle(cli.bin, args, { exec: (_b, _a, _o, done) => done(error, 'PRIVATE') }); assert.equal(result.ok, false); assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
   }
 });
+test('a planless E_PLAN_STALE (#895, as a kernel before 0.52.0 printed it) reads unknown, stores no plan, and the same reference replays it without a CLI run', async () => {
+  // As printed on #866: the top-level error, no result, no details.plan, a message that says the hooks have run.
+  const answer = { schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_PLAN_STALE', message: 'the plan is stale: retire hooks have already run' } };
+  const phases = [];
+  const f = fixture({ invoke: async (_bin, args) => { phases.push(args.phase); return args.phase === 'plan' ? envelope(retirePlan()) : answer; } });
+  const planRef = (await f.plan('retire')).planRef, first = await f.apply(planRef);
+  assert.equal(first.status, 'unknown'); assert.equal(first.reason.code, 'E_OUTCOME_UNKNOWN');
+  assert.equal(first.planRef, planRef, 'the reference sent, never a new one'); assert.equal(first.plan, null, 'no plan is offered');
+  assert.doesNotMatch(JSON.stringify(first), /hooks have already run/, 'the kernel\'s message is not shown (the planless message stays out, 5a)');
+  const again = await f.apply(planRef);
+  assert.equal(again.status, 'unknown'); assert.equal(again.repeated, true);
+  assert.deepEqual(phases, ['plan', 'apply'], 'no second CLI run, and no plan was stored to apply');
+});
 test('a Herdr-recorded instance still plans and applies Retire: the kernel decides, the Desktop never blocks it', async () => {
   const f = fixture(), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
   Object.assign(f.ctx.instances[0], { running: null, runtimeState: 'unsupported', runtimeError: reason, sessionTarget: { backend: 'herdr' } });
@@ -403,19 +425,20 @@ test('a Herdr-recorded instance still plans and applies Retire: the kernel decid
   assert.equal((await f.apply(plan.planRef)).status, 'complete');
   assert.deepEqual(f.calls.map(c => [c.args.operation, c.args.phase]), [['retire', 'plan'], ['retire', 'apply']]);
 });
-test('BEFORE_EFFECT_CODES is a frozen list of eleven codes, and it is the set an apply reads as "refused, nothing happened"', async () => {
-  assert.deepEqual(BEFORE_EFFECT_CODES, ['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
+test('BEFORE_EFFECT_CODES is a frozen list of ten codes, and it is the set an apply reads as "refused, nothing happened"', async () => {
+  assert.deepEqual(BEFORE_EFFECT_CODES, ['E_BAD_ARGS', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
     'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_UNIDENTIFIED_INSTANCE_HOME', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
   assert.equal(Object.isFrozen(BEFORE_EFFECT_CODES), true); assert.throws(() => BEFORE_EFFECT_CODES.push('E_OTHER'), TypeError);
-  assert.equal(new Set(BEFORE_EFFECT_CODES).size, 11); assert.ok(BEFORE_EFFECT_CODES.every(code => typeof code === 'string'));
+  assert.equal(new Set(BEFORE_EFFECT_CODES).size, 10); assert.ok(BEFORE_EFFECT_CODES.every(code => typeof code === 'string'));
   const applied = async (operation, code) => {
     const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(operation === 'stop' ? stopPlan() : retirePlan())
       : { schemaVersion: 1, ok: false, error: { code, message: 'a stand-in for the kernel message' } } });
     return (await f.apply((await f.plan(operation)).planRef)).status;
   };
   for (const operation of ['stop', 'retire']) {
-    // E_PLAN_STALE without its fresh plan is no answer Desktop can read: its own branch, before the set.
-    for (const code of BEFORE_EFFECT_CODES) assert.equal(await applied(operation, code), code === 'E_PLAN_STALE' ? 'unknown' : 'refused', `${operation} ${code}`);
+    for (const code of BEFORE_EFFECT_CODES) assert.equal(await applied(operation, code), 'refused', `${operation} ${code}`);
+    // E_PLAN_STALE without its fresh plan is no answer Desktop can read: its own branch, before the set, and not in it.
+    assert.equal(await applied(operation, 'E_PLAN_STALE'), 'unknown', `${operation} E_PLAN_STALE`);
     // Outside the list, whatever the kernel's own list says: an unknown outcome.
     for (const code of ['E_WORK_INSPECTION_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_LIFECYCLE_FAILED', 'E_NOT_IN_THE_TABLE'])
       assert.equal(await applied(operation, code), 'unknown', `${operation} ${code}`);

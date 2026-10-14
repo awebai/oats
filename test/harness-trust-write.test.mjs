@@ -4,7 +4,8 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { claudeTrusts, codexTrustsRoot } from '../lib/harness-trust.mjs';
-import { harnessTrust } from '../lib/harness-trust-write.mjs';
+import { harnessTrust, refusalProblem } from '../lib/harness-trust-write.mjs';
+import { launchEnvironment } from '../lib/core.mjs';
 // The operator has run both harnesses: their ambient configuration directories exist (OATS never creates one).
 const fixture = t => { const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-write-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const root=join(base,'deployment');fs.mkdirSync(root);fs.mkdirSync(join(base,'native','.codex'),{recursive:true});return {base,root,env:{HOME:join(base,'native')}}; };
 test('plan creates nothing; apply writes exact leaves and durable audit; repeat is config no-op', t => {
@@ -269,4 +270,173 @@ test('a missing ambient config directory is never created: skipped for that harn
  const gone={HOME:join(base,'no-home')};
  assert.throws(()=>harnessTrust(root,{env:gone,harness:'claude'}),e=>e.code==='E_CONFIG_BROKEN'&&/does not exist/.test(e.message));
  assert.equal(fs.existsSync(gone.HOME),false);
+});
+// A launch whose configuration sets HOME and no selector reads its harness's default file under THAT
+// home (core.mjs launchFolderTrust): the writer writes for it, by the same answer.
+test('a launch configuration that sets HOME and no selector is a target: the default file under its HOME, literal or referenced, deduplicated with the ambient one', t => {
+ const {base,root,env}=fixture(t);
+ const own=join(base,'own-home'), ref=join(base,'ref-home');for(const d of [own,ref])fs.mkdirSync(join(d,'.codex'),{recursive:true});
+ const launchConfigs=configs({ lit:{harness:'claude',env:{HOME:own}}, refd:{harness:'claude',env:{HOME:{fromEnv:'REF_HOME'}}}, cxlit:{harness:'codex',env:{HOME:own}},
+  same:{harness:'claude',env:{HOME:env.HOME+'/'}}, plain:{harness:'claude',env:{PATH:'/usr/bin'}}, pi:{harness:'pi',env:{HOME:ref}} });
+ const host={...env,REF_HOME:ref}, real=d=>fs.realpathSync.native(d);
+ const planned=harnessTrust(root,{plan:true,env:host,launchConfigs});
+ assert.deepEqual(planned.entries.map(e=>[e.harness,e.file,e.ambient,e.launchConfigs,e.status]),[
+  ['claude',join(real(env.HOME),'.claude.json'),true,['same'],'change'],
+  ['claude',join(real(own),'.claude.json'),false,['lit'],'change'],
+  ['claude',join(real(ref),'.claude.json'),false,['refd'],'change'],
+  ['codex',join(real(env.HOME),'.codex/config.toml'),true,[],'change'],
+  ['codex',join(real(own),'.codex/config.toml'),false,['cxlit'],'change'],
+ ]);
+ assert.deepEqual(Object.keys(planned.entries[1]).sort(),Object.keys(planned.entries[0]).sort(),'an entry of the same shape as every other');
+ assert.deepEqual([fs.readdirSync(own),fs.readdirSync(ref)],[['.codex'],['.codex']],'plan writes nothing');
+ const applied=harnessTrust(root,{env:host,launchConfigs});
+ assert.deepEqual(applied.entries.map(e=>e.status),['applied','applied','applied','applied','applied']);
+ // Each file is the one the reader reads with that HOME and no selector.
+ for(const home of [own,ref])assert.equal(claudeTrusts(root,{env:{HOME:home}}),true,home);
+ assert.equal(codexTrustsRoot(root,{env:{HOME:own}}),true);
+ assert.equal(codexTrustsRoot(root,{env:{HOME:ref}}),false,'no codex configuration sets that HOME');
+});
+test('a HOME-only launch configuration is no target when its launch has a selector: it reads that one, as a launch with no configuration does', t => {
+ const {base,root,env}=fixture(t);
+ const own=join(base,'own-home'), selected=join(base,'selected');for(const d of [own,selected])fs.mkdirSync(d);
+ // NOT_SET is not resolved: the configuration's HOME names no file here.
+ const launchConfigs=configs({ lit:{harness:'claude',env:{HOME:own}}, refd:{harness:'claude',env:{HOME:{fromEnv:'NOT_SET'}}} });
+ const planned=harnessTrust(root,{plan:true,harness:'claude',env:{...env,CLAUDE_CONFIG_DIR:selected},launchConfigs});
+ assert.deepEqual(planned.entries.map(e=>[e.file,e.ambient,e.launchConfigs]),[[join(fs.realpathSync.native(selected),'.claude.json'),true,[]]]);
+ // The same from a pane's selector, whatever this process holds.
+ const pane={of:name=>name==='CLAUDE_CONFIG_DIR'?{value:selected,source:'the pane CLAUDE_CONFIG_DIR'}:{value:env.HOME,source:'the pane HOME'}};
+ assert.deepEqual(harnessTrust(root,{plan:true,harness:'claude',env,launchConfigs,launch:launchEnvironment({env,pane})}).entries.map(e=>e.file),[join(fs.realpathSync.native(selected),'.claude.json')]);
+ assert.deepEqual(fs.readdirSync(own),[]);
+});
+test('a HOME-only launch configuration whose HOME is unset, relative, unusable or without the harness directory is a named problem; nothing is written or created', t => {
+ for (const [name,c,host,problem] of [
+  ['unset',{harness:'claude',env:{HOME:{fromEnv:'NOT_SET'}}},{},'launch configuration unset: HOME references NOT_SET, not set on this host'],
+  ['rel',{harness:'codex',env:{HOME:{fromEnv:'REL'}}},{REL:'some/dir'},'launch configuration rel: HOME "some/dir" is not an absolute path'],
+  ['empty',{harness:'claude',env:{HOME:''}},{},'launch configuration empty: the HOME of launch configuration empty is empty'],
+  // An absolute HOME that is a file, or is under one, selects no directory: said so, not "not an absolute path" (#1171).
+  ['file',{harness:'claude',env:{HOME:'<base>/afile'}},{},'launch configuration file: HOME "<base>/afile" does not select a usable claude configuration directory'],
+  ['under',{harness:'codex',env:{HOME:'<base>/afile/home'}},{},'launch configuration under: HOME "<base>/afile/home" does not select a usable codex configuration directory'],
+  ['gone',{harness:'claude',env:{HOME:'<base>/missing'}},{},"launch configuration gone: <base>/missing (claude's directory under its HOME) does not exist; OATS never creates a harness configuration directory: create it, or start claude with it once, then rerun"],
+  ['bare',{harness:'codex',env:{HOME:'<base>/bare'}},{},"launch configuration bare: <base>/bare/.codex (codex's directory under its HOME) does not exist; OATS never creates a harness configuration directory: create it, or start codex with it once, then rerun"],
+ ]) {
+  const {base,root,env}=fixture(t);fs.mkdirSync(join(base,'bare'));fs.writeFileSync(join(base,'afile'),'');
+  const fix=v=>typeof v==='string'?v.replaceAll('<base>',fs.realpathSync.native(base)):v;
+  const launchConfigs=configs({[name]:{...c,env:Object.fromEntries(Object.entries(c.env).map(([k,v])=>[k,fix(v)]))}});
+  for(const plan of [true,false]) assert.throws(()=>harnessTrust(root,{plan,env:{...env,...host},launchConfigs}),e=>{
+   assert.equal(e.code,'E_CONFIG_BROKEN',e.message);assert.equal(e.details.mode,plan?'plan':'apply');
+   const refused=e.details.entries.find(x=>x.problem);assert.equal(refused.problem,fix(problem));assert.equal(refused.status,'refused');assert.deepEqual(refused.launchConfigs,[name]);
+   return true;
+  });
+  assert.deepEqual(fs.readdirSync(env.HOME),['.codex'],name);assert.deepEqual(fs.readdirSync(join(env.HOME,'.codex')),[],name);assert.deepEqual(fs.readdirSync(join(base,'bare')),[],name);
+  assert.equal(fs.existsSync(join(base,'missing')),false);assert.equal(fs.existsSync(join(root,'.agents')),false);
+ }
+});
+// "No server runs" leaves this process's file as the one to write, and says so. "The server could
+// not be asked" does not: it may run under another account.
+test('a server that could not be asked whether it runs refuses the ambient target (E_RUNTIME_ENDPOINT_UNKNOWN), plan and apply; a server known not to run does not', t => {
+ const {root,env}=fixture(t);
+ const unread='could not read the OATS tmux server for session s: permission denied';
+ const asked=pane=>launchEnvironment({env,pane});
+ for (const plan of [true,false]) assert.throws(()=>harnessTrust(root,{plan,env,launch:asked({unestablished:': this process could not read the OATS tmux server',unread})}),e=>{
+  assert.equal(e.code,'E_RUNTIME_ENDPOINT_UNKNOWN',e.message);assert.equal(e.details.operation,'harness-trust');assert.equal(e.details.mode,plan?'plan':'apply');
+  assert.deepEqual(e.details.entries.map(x=>[x.harness,x.ambient,x.status,x.file]),[['claude',true,'refused',null],['codex',true,'refused',null]]);
+  assert.equal(e.details.entries[0].problem,`the file a claude launch with no launch configuration reads could not be established: ${unread}. A server that could not be asked may run under another account than this process's, so this process's file is not written in its place`);
+  return true;
+ });
+ assert.deepEqual(fs.readdirSync(env.HOME),['.codex']);assert.deepEqual(fs.readdirSync(join(env.HOME,'.codex')),[]);assert.equal(fs.existsSync(join(root,'.agents')),false);
+ // Beside a target refused for its configuration, that one's code.
+ const launchConfigs=configs({rel:{harness:'claude',env:{CLAUDE_CONFIG_DIR:'some/dir'}}});
+ assert.throws(()=>harnessTrust(root,{env,harness:'claude',launchConfigs,launch:asked({unestablished:': x',unread})}),e=>e.code==='E_CONFIG_BROKEN'&&e.message.includes(unread)&&e.message.includes('launch configuration rel:'));
+ assert.deepEqual(fs.readdirSync(env.HOME),['.codex']);
+ // Known not to run: this process's file, and the plan says whose it is.
+ const none=harnessTrust(root,{plan:true,env,harness:'claude',launch:asked({unestablished:' until a spawn starts the OATS tmux server (none runs)'})});
+ assert.deepEqual(none.entries.map(e=>[e.file,e.status]),[[join(fs.realpathSync.native(env.HOME),'.claude.json'),'change']]);
+ assert.deepEqual(none.warnings,["claude: the pane's environment is not established until a spawn starts the OATS tmux server (none runs); read instead: this process's CLAUDE_CONFIG_DIR (not set), this process's HOME"]);
+});
+
+// awebai/oats#1109: a refused file's problem names the check that refused it, in fixed wording,
+// never the file's content (SENTINEL) or a parser message, in plan and in apply.
+const SENTINEL='never-print-this-sentinel';
+const refusal=(root,opts,file,wording)=>{
+ for(const plan of [true,false]) assert.throws(()=>harnessTrust(root,{...opts,plan}),e=>{
+  assert.equal(e.code,'E_CONFIG_BROKEN');assert.equal(e.details.mode,plan?'plan':'apply');
+  const entry=e.details.entries.find(x=>x.file===file);assert.equal(entry.status,'refused');assert.equal(entry.problem,`${file}: ${wording}`);
+  assert.ok(e.message.startsWith('Harness trust refused; nothing was written: '),e.message);assert.ok(e.message.includes(entry.problem),e.message);
+  assert.ok(!JSON.stringify(e.details).includes(SENTINEL)&&!e.message.includes(SENTINEL),'never echoes file content');return true;
+ });
+};
+test('each check that refuses a configuration file is named in its problem', async t => {
+ const mutableFs=(await import('node:fs')).default;const {syncBuiltinESMExports}=await import('node:module');
+ const cases=[
+  ['a symbolic link',(file,base)=>{fs.writeFileSync(join(base,'target'),SENTINEL);fs.symlinkSync(join(base,'target'),file);},'is not a regular file (a symbolic link, directory or other type)'],
+  ['a directory',file=>fs.mkdirSync(file),'is not a regular file (a symbolic link, directory or other type)'],
+  ['a hard link',(file,base)=>{fs.writeFileSync(join(base,'target'),SENTINEL);fs.linkSync(join(base,'target'),file);},'has more than one hard link'],
+  ['setuid',file=>{fs.writeFileSync(file,`{"x":"${SENTINEL}"}`);fs.chmodSync(file,0o4600);},'has setuid, setgid or sticky bits set'],
+  ['sticky',file=>{fs.writeFileSync(file,`{"x":"${SENTINEL}"}`);fs.chmodSync(file,0o1600);},'has setuid, setgid or sticky bits set'],
+  ['larger than 8 MiB',file=>fs.writeFileSync(file,`{"x":"${SENTINEL}${' '.repeat(8*1024*1024)}"}`),'is larger than 8 MiB'],
+  ['not UTF-8',file=>fs.writeFileSync(file,Buffer.concat([Buffer.from(`{"x":"${SENTINEL}`),Buffer.from([0xff]),Buffer.from('"}')])),'is not valid UTF-8'],
+  ['invalid JSON',file=>fs.writeFileSync(file,`{"x":"${SENTINEL}"`),'is not in the supported format (see "Qualified scope and formats" in docs/harness-trust.md)'],
+  ['an unsupported trust value',(file,base,root)=>fs.writeFileSync(file,JSON.stringify({x:SENTINEL,projects:{[fs.realpathSync.native(root)]:{hasTrustDialogAccepted:SENTINEL}}})),'is not in the supported format (see "Qualified scope and formats" in docs/harness-trust.md)'],
+ ];
+ for(const [name,make,wording] of cases){
+  const {base,root,env}=fixture(t);const file=join(fs.realpathSync.native(env.HOME),'.claude.json');make(file,base,root);
+  await t.test(name,()=>refusal(root,{env,harness:'claude'},file,wording));
+ }
+ // Codex: unsupported TOML (the editor's own error), and a native-valid shape the reader does not consume.
+ for(const [name,text] of [['unsupported TOML',root=>`[[unsupported]]\nx = "${SENTINEL}"\n`],['outside the reader',root=>`# ${SENTINEL}\n[projects]\n${JSON.stringify(root)} = { "trust_level" = "untrusted" }\n`]]){
+  const {root,env}=fixture(t);const file=join(fs.realpathSync.native(env.HOME),'.codex/config.toml');fs.writeFileSync(file,text(fs.realpathSync.native(root)));
+  await t.test(name,()=>refusal(root,{env,harness:'codex'},file,'is not in the supported format (see "Qualified scope and formats" in docs/harness-trust.md)'));
+ }
+ // Replaced between the metadata checks and the read (the probe runs in between).
+ {
+  const {root,env}=fixture(t);const file=join(fs.realpathSync.native(env.HOME),'.claude.json');fs.writeFileSync(file,'{}');
+  const metadataProbe=path=>{fs.writeFileSync(path+'.next',`{"x":"${SENTINEL}"}`);fs.renameSync(path+'.next',path);return null;};
+  await t.test('changed while it was being read',()=>refusal(root,{env,harness:'claude',metadataProbe},file,'changed while it was being read'));
+ }
+ // Owned by another user and an unnamed read error, simulated: tests cannot chown, or rely on EACCES under root.
+ const original={lstat:mutableFs.lstatSync,open:mutableFs.openSync};
+ for(const [name,mock,wording] of [
+  ['owned by another user',file=>t.mock.method(mutableFs,'lstatSync',(...a)=>{const s=original.lstat(...a);if(a[0]===file)s.uid+=1;return s;}),'is owned by another user'],
+  ['an errno read error',file=>t.mock.method(mutableFs,'openSync',(...a)=>{if(a[0]===file)throw Object.assign(new Error(`EACCES: ${SENTINEL}`),{code:'EACCES'});return original.open(...a);}),'could not be read (EACCES)'],
+ ]){
+  const {root,env}=fixture(t);const file=join(fs.realpathSync.native(env.HOME),'.claude.json');fs.writeFileSync(file,`{"x":"${SENTINEL}"}`);
+  mock(file);syncBuiltinESMExports();
+  try{await t.test(name,()=>refusal(root,{env,harness:'claude'},file,wording));}finally{t.mock.restoreAll();syncBuiltinESMExports();}
+ }
+ // An exception no check names is the generic sentence, never its message.
+ {
+  const {root,env}=fixture(t);const file=join(fs.realpathSync.native(env.HOME),'.claude.json');fs.writeFileSync(file,'{}');
+  const metadataProbe=()=>{throw new Error(SENTINEL);};
+  await t.test('an unnamed exception',()=>refusal(root,{env,harness:'claude',metadataProbe},file,'Native trust configuration is unreadable, unsafe, invalid, or outside the supported format; inspect the selected file before retrying.'));
+ }
+});
+// With no pane given, the ambient file is selected by this process's environment (the plan says so in `warnings`).
+test('an ambient environment that selects no usable file is a named problem, without its values', t => {
+ const {base,root,env}=fixture(t);const notDir=join(base,'a-file');fs.writeFileSync(notDir,SENTINEL);
+ const unusable=(harness,what)=>`the file a ${harness} launch with no launch configuration reads could not be established: ${what}`;
+ for(const [harness,host,problem] of [
+  ['codex',{CODEX_HOME:`relative/${SENTINEL}`},unusable('codex',"this process's CODEX_HOME is not an absolute path")],
+  ['claude',{HOME:`relative/${SENTINEL}`},unusable('claude',"this process's HOME is not an absolute path")],
+  ['claude',{CLAUDE_CONFIG_DIR:notDir},unusable('claude',"this process's CLAUDE_CONFIG_DIR does not select a usable claude configuration directory")],
+ ]) for(const plan of [true,false]) assert.throws(()=>harnessTrust(root,{env:{...env,...host},harness,plan}),e=>{
+  assert.equal(e.code,'E_CONFIG_BROKEN');const [entry]=e.details.entries;
+  assert.equal(entry.status,'refused');assert.equal(entry.file,null);assert.equal(entry.ambient,true);assert.equal(entry.problem,problem);
+  assert.equal(e.message,`Harness trust refused; nothing was written: ${problem}`);assert.ok(!JSON.stringify(e.details).includes(SENTINEL));return true;
+ });
+});
+test('under all, one refused file names its reason and the fine file keeps its plan; nothing is written', t => {
+ const {root,env}=fixture(t);const file=join(fs.realpathSync.native(env.HOME),'.claude.json');fs.writeFileSync(file,`{"x":"${SENTINEL}"`);
+ assert.throws(()=>harnessTrust(root,{env,plan:true}),e=>{
+  const [claude,codex]=e.details.entries;
+  assert.equal(claude.status,'refused');assert.equal(claude.problem,`${file}: is not in the supported format (see "Qualified scope and formats" in docs/harness-trust.md)`);
+  assert.equal(codex.status,'change');assert.equal(codex.problem,undefined);assert.equal(codex.current,null);assert.match(codex.afterDigest,/^[a-f0-9]{64}$/);
+  assert.equal(e.message,`Harness trust refused; nothing was written: ${claude.problem}`);return true;
+ });
+ assert.deepEqual(fs.readdirSync(join(env.HOME,'.codex')),[]);assert.equal(fs.existsSync(join(root,'.agents')),false);
+});
+test('an unusable configuration directory has its own wording, though target resolution names it first', () => {
+ // canonicalMissingDirectory's refusal reaches the plan only through nativePath, whose callers name it
+ // as the target's problem (pinned above); the wording keeps the closed set complete.
+ const e=Object.assign(new Error(SENTINEL),{code:'E_CONFIG_BROKEN',refusal:'directory'});
+ assert.equal(refusalProblem(e,'/native/.claude.json',{harness:'claude',root:'/deployment'}),'/native/.claude.json: is not in a usable configuration directory (a path that is not a directory, or one with no existing ancestor)');
 });

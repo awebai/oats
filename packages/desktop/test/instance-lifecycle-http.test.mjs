@@ -11,7 +11,7 @@ import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../../client/lifecycle-contract.mjs';
 import { lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope } from './helpers/lifecycle-fixture.mjs';
 import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 function http({ remote = false, missing = false, routed = false, entries = ['lifecycle-plans'], apply = null } = {}) {
@@ -23,7 +23,7 @@ function http({ remote = false, missing = false, routed = false, entries = ['lif
     Object.assign(ctx.workspace, { remote: true, server: 'build', name: 'Build box' }); ctx.cli.remote = entries;
     Object.assign(ctx.instances[0], { server: 'build', addressable: true });
   }
-  const calls = [], refreshed = { local: 0, remote: 0 }, service = createLifecycleBoundary({ invoke: async (bin, args) => {
+  const calls = [], refreshed = { local: 0, remote: 0 }, service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (bin, args) => {
     calls.push({ bin, args }); if (args.phase === 'apply' && apply) return apply(args);
     return envelope(args.phase === 'plan' ? args.operation === 'stop' ? stopPlan() : retirePlan()
       : args.operation === 'stop' ? stopReceipt(args) : retireReceipt(args));
@@ -131,7 +131,7 @@ test('remote lifecycle over HTTP: a row of another group of the same server is n
   const groupA = { id: 'remote:build:aaaa', name: 'Build box', scope: '/srv/a', remote: true, server: 'build' };
   const groupB = { id: 'remote:build:bbbb', name: 'Build box', scope: '/srv/b', remote: true, server: 'build' };
   const row = { ...ctx.instances[0], server: 'build', addressable: true };
-  const deps = { createServer: fn => fn, lifecycleRequest: createLifecycleBoundary({ invoke: async (...args) => { calls.push(args); return envelope(stopPlan()); } }),
+  const deps = { createServer: fn => fn, lifecycleRequest: createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (...args) => { calls.push(args); return envelope(stopPlan()); } }),
     cliState: { ...ctx.cli, remote: ['lifecycle-plans'] }, ...deploymentDoubles(() => [groupA, groupB]), ctxs: ['/Users/me/work'],
     snapshot: { byWs: new Map([[groupA.id, { instances: [] }], [groupB.id, { instances: [row] }]]) }, observeMutation: assert.fail, remoteLoop: { request: assert.fail },
     resolveInstanceOr: assert.fail, panelData: assert.fail, snapshotPanel: assert.fail, collectNow: assert.fail };

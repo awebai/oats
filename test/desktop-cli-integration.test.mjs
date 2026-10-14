@@ -21,7 +21,7 @@ const V2_FEATURES = ["workspace-v2", "instance-modules", "served-identity", "pac
 /** The workspace-model v2 reads replay JSON captured from a real CLI run on the
  * hand-built Northwind deployment, rebased onto the --dir under test.
  * `status` may be replaced by a test-supplied document (written to a file). */
-function fakeCli(dir, { version = "0.25.8", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, operationsApi, groups = [], v2 = true, status } = {}) {
+function fakeCli(dir, { version = "0.26.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, operationsApi, groups = [], v2 = true, status } = {}) {
   const log = join(dir, "cli-calls.jsonl");
   const statusFile = status ? join(dir, "status-override.json") : null;
   if (statusFile) writeFileSync(statusFile, JSON.stringify(status));
@@ -148,9 +148,9 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
     // startup probe may still be running — reprobe deterministically
     const s = await (await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
     assert.equal(s.ok, true, JSON.stringify(s));
-    assert.equal(s.version, "0.25.8");
+    assert.equal(s.version, "0.26.0");
     assert.equal(s.source, "env");
-    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.25.8 <0.56.0" });
+    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.26.0 <0.56.0" });
     // The recovery command is DERIVED from this app's own version, so it names
     // the lockstep-published kernel and always lands inside the band above —
     // never a hand-pinned version that rots below a feature floor.
@@ -195,10 +195,10 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
 // Band edges through the REAL discovery path, not just acceptProbe: the
 // v0.19.0 readiness blocker was an app whose band excluded the kernel its own
 // release published, so it degraded to observation-only in the field while
-// every unit test passed. Preserve 0.23.x acceptance, accept the paired 0.24.x
-// kernel, and reject the next minor at the exclusive ceiling.
-test("desktop server: 0.25.8 through 0.55.x CLIs are ACCEPTED and 0.56.0 is REJECTED at the band ceiling", async () => {
-  for (const version of ["0.25.8", "0.26.0", "0.26.4", "0.27.0", "0.28.0", "0.29.0", "0.30.0", "0.31.0", "0.32.0", "0.33.0", "0.34.0", "0.35.0", "0.36.0", "0.37.0", "0.38.0", "0.39.0", "0.40.0", "0.41.0", "0.42.0", "0.43.0", "0.44.0", "0.45.0", "0.46.0", "0.47.0", "0.48.0", "0.49.0", "0.50.0", "0.51.0", "0.52.0", "0.53.0", "0.54.0", "0.55.0"]) {
+// every unit test passed. Accept the band from its floor to its last minor,
+// and reject a 0.25 kernel at the floor and the next minor at the exclusive ceiling.
+test("desktop server: 0.26.0 through 0.55.x CLIs are ACCEPTED; 0.25.9 is REJECTED at the floor and 0.56.0 at the ceiling", async () => {
+  for (const version of ["0.26.0", "0.26.4", "0.27.0", "0.28.0", "0.29.0", "0.30.0", "0.31.0", "0.32.0", "0.33.0", "0.34.0", "0.35.0", "0.36.0", "0.37.0", "0.38.0", "0.39.0", "0.40.0", "0.41.0", "0.42.0", "0.43.0", "0.44.0", "0.45.0", "0.46.0", "0.47.0", "0.48.0", "0.49.0", "0.50.0", "0.51.0", "0.52.0", "0.53.0", "0.54.0", "0.55.0"]) {
     const okDir = mkdtempSync(join(tmpdir(), "oats-cli-compatible-"));
     const compatible = fakeCli(okDir, { version });
     const a = await startServer({ OATS_DESKTOP_OATS_BIN: compatible.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
@@ -211,17 +211,20 @@ test("desktop server: 0.25.8 through 0.55.x CLIs are ACCEPTED and 0.56.0 is REJE
     } finally { a.proc.kill(); }
   }
 
-  const badDir = mkdtempSync(join(tmpdir(), "oats-cli-ceiling-"));
-  const next = fakeCli(badDir, { version: "0.56.0" });
-  const b = await startServer({ OATS_DESKTOP_OATS_BIN: next.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
-  try {
-    const s = await (await fetch(`http://127.0.0.1:${b.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
-    assert.equal(s.ok, false, "0.56.0 is past the exclusive ceiling and must not become the mutation binary");
-    const tried = s.tried.find((t) => t.path === next.real);
-    assert.ok(tried, "the rejected candidate is in diagnostics");
-    assert.match(tried.reason, /outside >=0\.25\.8 <0\.56\.0/);
-    assert.equal(tried.version, "0.56.0");
-  } finally { b.proc.kill(); }
+  for (const [version, why] of [["0.25.9", "0.25.9 is below the floor"], ["0.56.0", "0.56.0 is past the exclusive ceiling"]]) {
+    const badDir = mkdtempSync(join(tmpdir(), "oats-cli-outside-"));
+    const outside = fakeCli(badDir, { version });
+    const b = await startServer({ OATS_DESKTOP_OATS_BIN: outside.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+    try {
+      const s = await (await fetch(`http://127.0.0.1:${b.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
+      assert.equal(s.ok, false, `${why} and must not become the mutation binary`);
+      const tried = s.tried.find((t) => t.path === outside.real);
+      assert.ok(tried, "the rejected candidate is in diagnostics");
+      assert.match(tried.reason, /outside >=0\.26\.0 <0\.56\.0/);
+      assert.equal(tried.version, version);
+      assert.equal(tried.above, version === "0.56.0" ? true : undefined, "refused only for being above the band: the card says the Desktop is the older");
+    } finally { b.proc.kill(); }
+  }
 });
 
 test("desktop server: a CLI that prints a valid probe but exits nonzero (or hangs) is REJECTED (review 0b83988)", async () => {

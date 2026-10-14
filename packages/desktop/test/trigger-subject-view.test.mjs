@@ -127,5 +127,5 @@ test('kernel strings are text, never markup, and pass through the display filter
   assert.match(fires.querySelector('ul[aria-label="Waiting"] li span').textContent, /^#<img src=x onerror=alert\(1\)> · opened$/);
   assert.equal(fires.querySelector('ul[aria-label="Live now"] .auto-mono').textContent, 'a�b');
   const lines = [...fires.querySelectorAll('.auto-test-line')].map(p => p.textContent);
-  assert.deepEqual(lines, ['Last poll 1 min ago failed: line1 line2', 'Last error: [Detail withheld] E_X']);
+  assert.deepEqual(lines, ['Last poll 1 min ago failed: line1 line2', 'Last error: [withheld] E_X']);
 });

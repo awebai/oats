@@ -135,8 +135,10 @@ test('a failed re-read keeps the table stale: the line with the cause behind Det
 });
 
 test("spec 02's held-table shapes: ok + reason (a failed re-read behind a held table) and non-ok + lastGood both paint the table stale with the observation's age", async t => {
+  // The age reads Date.now: one fixed instant for the observation and the view, so each age is exact by construction.
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
   const u = await setup(t, { holdReads: true });
-  const old = new Date(Date.now() - 3 * 60_000).toISOString();
+  const old = new Date(now - 3 * 60_000).toISOString();
   await u.resolveRead(0, okRead({ reason: { code: 'E_CLI_TIMEOUT', message: 'timed out' }, observedAt: old, refreshing: false })); await u.tab('capabilities');
   assert.equal(u.rows().length, 10);
   let line = u.notice().querySelector('.loading-notice[data-kind=stale]'); assert.ok(line, 'ok with a reason: stale');
@@ -151,12 +153,13 @@ test("spec 02's held-table shapes: ok + reason (a failed re-read behind a held t
 });
 
 test('a successful read of an old observation says so, muted, without Retry; a fresh one says nothing', async t => {
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
   const u = await setup(t, { holdReads: true });
-  await u.resolveRead(0, okRead({ observedAt: new Date(Date.now() - 5 * 60_000).toISOString() })); await u.tab('capabilities');
+  await u.resolveRead(0, okRead({ observedAt: new Date(now - 5 * 60_000).toISOString() })); await u.tab('capabilities');
   const line = u.notice().querySelector('.loading-notice[data-kind=observed]'); assert.ok(line);
   assert.equal(line.querySelector('.loading-notice-text').textContent, 'Observed 5 min ago'); assert.equal(line.querySelector('.loading-retry'), null);
   const v = await setup(t, { holdReads: true });
-  await v.resolveRead(0, okRead({ observedAt: new Date().toISOString() })); await v.tab('capabilities');
+  await v.resolveRead(0, okRead({ observedAt: new Date(now).toISOString() })); await v.tab('capabilities');
   assert.equal(v.notice().childElementCount, 0);
 });
 
@@ -222,8 +225,8 @@ test('a catalog refresh while the page is open updates it in place: a failed re-
 });
 
 test('the page\'s age line ticks with the roster poll, and a failed Retry with a held table keeps the table\'s line and its focused Retry', async t => {
+  const base = Date.now(); let now = base; t.mock.method(Date, 'now', () => now);
   const u = await setup(t, { holdReads: true });
-  const base = Date.now(), realNow = Date.now; t.after(() => { Date.now = realNow; });
   const old = new Date(base - 3 * 60_000).toISOString();
   await u.resolveRead(0, { workspaceSyncApi: 1, status: 'unavailable', reason: { code: 'E_CLI_FAILED', message: 'bridge down' }, lastGood: { capabilities: CATALOG, observedAt: old } }); await u.tab('capabilities');
   const line = u.notice().querySelector('.loading-notice[data-kind=stale]'); assert.ok(line);
@@ -235,7 +238,7 @@ test('the page\'s age line ticks with the roster poll, and a failed Retry with a
   u.q('.catalog-row[data-capability="nw-house-style"]').click(); await settle();
   const pageLine = pageOf(u).querySelector('.page-notice .loading-notice'); assert.ok(pageLine);
   assert.equal(pageLine.querySelector('.loading-notice-text').textContent, "Couldn't refresh capabilities · observed 3 min ago");
-  Date.now = () => base + 6 * 60_000; u.poll(); await settle();
+  now = base + 6 * 60_000; u.poll(); await settle();
   assert.equal(pageOf(u).querySelector('.page-notice .loading-notice'), pageLine, 'the same node');
   assert.equal(pageLine.querySelector('.loading-notice-text').textContent, "Couldn't refresh capabilities · observed 9 min ago", 'the age ticked with the poll');
 });
@@ -313,8 +316,9 @@ test('a catalog that failed with nothing held shows the failed treatment on the 
 });
 
 test('the age rule on the page: an old observation is said, muted, without Retry', async t => {
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
   const u = await setup(t, { holdReads: true });
-  await u.resolveRead(0, okRead({ observedAt: new Date(Date.now() - 4 * 60_000).toISOString() })); await u.tab('capabilities');
+  await u.resolveRead(0, okRead({ observedAt: new Date(now - 4 * 60_000).toISOString() })); await u.tab('capabilities');
   u.q('.catalog-row[data-capability="nw-house-style"]').click(); await settle();
   const line = pageOf(u).querySelector('.page-notice .loading-notice[data-kind=observed]'); assert.ok(line);
   assert.equal(line.querySelector('.loading-notice-text').textContent, 'Observed 4 min ago'); assert.equal(line.querySelector('.loading-retry'), null);

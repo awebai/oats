@@ -31,7 +31,9 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   stays visible across subtabs; incompatible installations are observation-only.
 - **cli-status.mjs** — shared CLI degradation state + the ONE card
   (detected path/version, required range, **Choose oats…**, **Retry**, docs
-  link, copyable install command). Views subscribe via `onCliChange`;
+  link, copyable install command; no command when the detected CLI is above
+  the band, see [Troubleshooting](../../../docs/desktop.md#troubleshooting)).
+  Views subscribe via `onCliChange`;
   re-probe triggers: launch, app focus, Retry, choose (contract).
 - **common.mjs** — shared helpers: escaping, mini-markdown, ctx.api JSON
   wrappers, roster grouping, and workspace switching (`?ws=`) — the selected
@@ -290,8 +292,24 @@ probe, asked again on every show until it says yes) the addon is not activated:
 addon-webgl 0.18 adds a canvas and listeners before it asks for the context, and
 its dispose cannot undo a constructor that threw. An activation that throws
 although WebGL2 was there is not retried for that terminal, which stays on the DOM
-renderer until it is reopened. A lost context (Chromium keeps about 16) disposes the addon, and showing
-the tab tries WebGL again. `fitTerminal` sizes the grid to the pane's padded box
+renderer until it is reopened.
+
+When Chromium replaces its GPU process (after sleep, or a Space or window switch), every
+WebGL context is lost and then restored within about 3 s. xterm keeps one glyph atlas per
+configuration, shared by every terminal in the window, and the reset wipes its canvases
+while its cache still believes the glyphs are drawn there, so every terminal would show
+only backgrounds and the cursor (#1190). Re-showing a tab, `term.refresh()` or a fresh
+addon do not cure it: they draw from the same stale atlas. `terminal-atlas-recovery.mjs`
+does, created once by the shell over the tabs map: it hears each `webglcontextrestored`
+on the document in the capture phase (the event does not bubble), waits until none has
+come for `ATLAS_RECOVERY_SETTLE_MS` (250 ms), then calls `clearTextureAtlas()` on every
+live terminal, hidden tabs included, in one synchronous pass. Never one terminal's own
+clear from its own restore: each clear re-lays out the shared atlas under terminals that
+already uploaded it again, and their glyphs garble. A context that is not restored within
+addon-webgl's 3 s wait (Chromium also keeps only about 16, dropping the oldest) disposes
+the addon instead, back to the DOM renderer, and showing the tab tries WebGL again; that
+reload re-joins the shared atlas, so it asks the same recovery for a pass
+(`createGlyphRenderer`'s `onRecovered`). `fitTerminal` sizes the grid to the pane's padded box
 with no width kept for xterm's scrollbar (tmux draws in the alternate screen, so it
 never scrolls, and `shell.css` hides it) and centres the remainder across and down,
 in whole device pixels, like a native terminal's balanced padding. It counts cells
@@ -304,6 +322,22 @@ when a terminal is created and only re-measures on a font change, so
 `terminalTypography()` (`theme.mjs`) hands out the stack without Inconsolata
 until the face has loaded, then notifies the typography listeners with the full
 family, and live terminals re-measure and refit.
+
+**Synchronized output (#1193).** Each keystroke in a program like Claude Code reaches
+a tab as one tmux redraw that hides the cursor, repaints and shows it again; when the
+IPC delivers it in two messages and xterm paints between them, the cursor flashes
+hidden. The local viewer therefore attaches with tmux's `sync` client feature
+(`-T sync`, `local-tmux-io.mjs`, where `tmux -V` says 3.2 or later; 3.0 and 3.1 have no
+`-T`, and an unreadable version means none), so tmux wraps each redraw in DEC mode 2026
+(`ESC[?2026h` … `ESC[?2026l`); a remote tab gets the same from the remote oats's
+viewer. xterm 5.5 ignores the mode, so each lease's output goes through a gate
+(`terminal-sync.mjs`) that holds a block and writes it to xterm in one call, however
+the messages split it, the 8-byte sequences included. Everything outside a block is
+written at once and unchanged (only a trailing prefix of `ESC[?2026h` waits for the
+next message), and a block whose end never comes is written after 1000 ms, the bound
+xterm 6 and tmux use. A lease that ends writes what its gate holds before the tab shows
+it ended or reconnecting, and a close writes it before the terminal is disposed. xterm
+6 honours mode 2026 itself: upgrading to it retires the gate.
 
 ### Control rules (selection, focus, search fields)
 
@@ -609,7 +643,7 @@ inspector.
 selected **soul** (`--soul`, what a spawn of it resolves now) or the selected
 **instance** (`--home`, as spawned — an instance never changes under itself).
 There is no scope subject. The gate is the probe integer `operationsApi === 2`
-(`packages/client/inspect-contract.mjs`); a 0.25 kernel gets the "update OATS" line and no
+(`packages/client/inspect-contract.mjs`); any other value gets the "update OATS" line and no
 request. The response must name exactly the selected subject, or it is not
 rendered The payload's own integer is checked too: a classic scope
 still answers `operationsApi: 1`, which the inspector names ("still uses the
@@ -778,8 +812,8 @@ or plain text. The card's CSS, the tree's keyboard model
 (`createContentsTree`: roving tab stop, arrows, Home/End, Right/Left
 expand/collapse or enter/climb, Enter/Space call the host's `activate`) and the
 reader (`createContentsReader`: sticky head, file rendering, link settling,
-copy buttons) live in `contents-reader.mjs`, shared with the soul page's
-Instructions; the host decides what is listed, read and opened. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
+copy buttons) and a skill's tree item (`skillTreeItem`) live in
+`contents-reader.mjs`, shared with the soul page's Instructions; the host decides what is listed, read and opened. `E_CAPABILITY_FILE_UNKNOWN` and `E_REMOTE_FILE_OVERSIZE` are
 muted lines, not failures. The reader sits on `--bg`, the viewer's own ground,
 so the viewer's checked colours hold, with a type scale kept under the page's
 own (headings below the 20px title, code at 12px). The page's *Provides* is one
@@ -935,6 +969,37 @@ the ids the whole AGENTS.md would give; a part's own `#fragment` links follow it
 `text` exactly (markers included); **Open capability** appears only on a
 capability part the page lists, and goes through the page's own
 `openCapability` path. Keys: `composed`, `part:<i>`.
+
+**The soul's own skills (#1144, kernel feature `soul-skills`).** The Skills
+group sits between "This soul" and "Instance" in the same tree. The request
+follows the composed AGENTS.md exactly: `skillsWanted` in `soul-inspector.mjs`
+adds `skills: true` (soul page only) when `skillsSupported` (local) or
+`routedSkillsSupported` (routed) holds; the server validates it like
+`instructions`, keys the cache on it and, routed, keeps it only when the held
+roster row's host reports it (`hostReportsSkills`; the shared host half is
+`hostAdvertises` in `composed-gate.mjs`); the adapter appends `--skills` after
+`--instructions` only when the probe's features list it. `skillsOf(soul)`
+decodes `souls[0].skills`: `undefined` (key absent), `null` (can't be listed),
+`false` (any contract break, one bad skill or file included: never a partial
+list), else the list. Each path is a plain path relative to the soul's
+directory, a file's under its skill's and unique; a file's `text` is `null`
+exactly when it is `binary` or `omitted`. A group that lists nothing is its
+label and one note as a `role=none` row in its place inside the tree (absent,
+`[]`, `null`, broken each have their own sentence), never a tree item. Each
+skill is `skillTreeItem` from `contents-reader.mjs`, the same item capability
+Contents lists (name, first sentence of its description, the full text in the
+row's title, "More files not listed.", the unlisted item for `files: null`);
+selecting it toggles it. A file opens in the reader under its repository path
+(`soulFilePath`: `<souls[0].path>/<file path>`, else the soul-relative path),
+with its size, "Truncated at 256 KiB" when cut, the binary line, or "Not
+shown: past the size limit of this answer." when omitted; the kernel's answer
+carries every text, so nothing more is read. The reader's link resolver is
+keyed by repository path across the card: a link to a listed skill file opens
+it in place (its skill expanded), from a skill file, the soul's AGENTS.md or
+the composed "From this soul" part; a change of the listed files repaints what
+the reader shows, so no link outlives its target. Keys: `file:<path>` (soul
+relative); a skill item's `skill:<path>` names it in the expanded set and its
+focus key, never the selection.
 
 **Core capabilities and Capabilities read as one system.** Wherever the two
 sections appear (the soul page, the inspector's *Modules as spawned*, the
@@ -1203,7 +1268,7 @@ The keymap, its per-platform defaults, the terminal policy, the F6 regions and
 the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
 section is the module map.
 
-- **Mod+F** reveals the sidebar and focuses the instance filter; **⌘N /
+- **⌘F / Ctrl+Shift+F** reveals the sidebar and focuses the instance filter; **⌘N /
   Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
   an instance. Visible hints and tooltips follow the effective bindings
   (including explicit unbinds). Existing user overrides are retained.
@@ -1224,9 +1289,10 @@ section is the module map.
   policy (a default chord never takes a key a terminal program reads):
   inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
   tabs.next/prev; on Linux/Windows only `TERMINAL_ALLOWLIST` action ids may
-  fire (their defaults are Ctrl+Shift+key or Ctrl+Tab) — plain Ctrl+letter,
-  F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached program, and
-  `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
+  fire (a default xterm sends nothing for, or a byte the program still gets
+  from a plainer key; `test/terminal-xterm-bytes.test.mjs` pins each) —
+  plain Ctrl+letter, F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached
+  program, and `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the footer
   shortcuts button and the editor names them. `app.quickOpenSouls` (Mod+P) is
   deliberately NOT allowlisted: ⌘P fires inside xterm on macOS via the
@@ -1303,7 +1369,16 @@ The roster row's actions menu (`instance-actions.mjs`) draws what
 order under the menu's own labels and icons, the shell's items (Open in split,
 Open pull request…) in front unless the row is `blocked` or `limited`, an act
 with a reason disabled with it, and for a `blocked` row a disabled trigger
-titled with the reason and no menu. It decides nothing itself. It reports here, never with
+titled with the reason and no menu. It decides nothing itself. The instance panel's
+lifecycle footer and the overview popover draw from the same answer (#855): a
+footer control (Restart…, Start…, Stop…, Retire…) is shown exactly when its act
+is listed and enabled exactly when the act is, so a stopped row and one whose
+state is unknown offer Stop, `inspect` has none there, and a `blocked` row shows
+no control but one muted line with the blocked reason instead (nothing more for
+a row gone from its server, whose Work note already says it); the popover's **Restart with…** is the `restart` act and its
+**Start…**/**Terminal** the `start` act on a stopped row and `openAct` on any
+other, with the view's own conditions (a current roster, a well-formed address,
+the shell's handler) on top. The menu reports here, never with
 `alert`: an action that fails says "<Action> didn't finish for <name>." with its
 error in Details. While one of its actions runs, the menu trigger is
 `aria-disabled` (focus kept, as `markStaleControl`) and says "Waiting for
@@ -1311,6 +1386,13 @@ error in Details. While one of its actions runs, the menu trigger is
 and Retire never run from the menu: they open the plan-backed confirmation
 (`lifecycle-dialog.mjs`, phases in
 [desktop-lifecycle-confirmations.md](../docs/desktop-lifecycle-confirmations.md#ui-states)).
+The one exception to "a `blocked` row has no menu" is the Desktop's own (#1131): a
+row whose reason is `missing` (its host no longer lists it) keeps its trigger and offers
+**Forget…** alone when the shell passes `openForget`. Forget… never runs from the menu
+either: it opens `forget-dialog.mjs`, the lifecycle dialog's classes and focus handling
+with no plan, which sends `{server, instance}` once to `/api/server-forget`
+(`../server/server-forget.mjs`), which answers the outcome and starts the roster read after the command; the row leaves the roster when that read lands
+([desktop-deployment-model.md](../docs/desktop-deployment-model.md#remote-rows)).
 
 `choice-popup.mjs` owns the existing provider/model popup behavior. Model search
 is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**
@@ -1389,8 +1471,8 @@ inspector fallback.
 
 There is no status bar under the editor groups. After the tabs the editor tab bar
 holds only the two split buttons (spec F). The instance panel has no tab-bar
-button: `panel.toggle` (default **Mod+I**, not terminal-allowlisted, so
-Ctrl+I, the Tab byte, stays with the program in a Linux/Windows terminal), the palette's
+button: `panel.toggle` (default **⌘I / Ctrl+Shift+I**, terminal-allowlisted;
+plain Ctrl+I, the Tab byte, stays with the program in a Linux/Windows terminal), the palette's
 "Instance panel: show / hide" and the panel's own collapse/expand controls run
 it. **Focus mode**
 (`app.focusMode`: palette and a rebindable action, no default chord) hides the
@@ -1403,7 +1485,7 @@ Focus that was in the hidden sidebar moves to the active tab's trigger, else to 
 stable visible control (`stableFocusTarget` in `shell.mjs`: the sidebar toggle or
 the restore edge), never `<body>`; a focus-mode change made
 after focus was already lost (the palette removes its input before running the
-command) lands there too. Mod+F and Mod+B leave focus
+command) lands there too. `sidebar.focusFilter` and `sidebar.toggle` leave focus
 mode. Panel collapse and selected tab are session-local per workspace; focus mode
 is a temporary presentation override. Collapsed, the panel is a rail (a 44px column, or a
 34px row when the workbench stacks): the rail centres its controls on its cross

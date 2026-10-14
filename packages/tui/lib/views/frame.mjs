@@ -60,24 +60,72 @@ function rule(cols, ascii, joint = null) {
   return spans;
 }
 
+/** A sentence made of parts (lib/model.mjs OPEN_WORDS): the TUI's own words (`{ own }`) and text
+ *  from outside (`{ shown }`, a name), each made safe on its own, so no word of the TUI's is ever
+ *  filtered with a name and no name is ever taken for the TUI's. Set on at most `max` rows of at
+ *  most `width` cells, broken at the spaces of the TUI's words; a name and what is written against
+ *  it (a full stop) are never broken apart, and a name wider than a row is cut there. Answers rows
+ *  of spans from column 0; when more was left, the last row ends in the cut mark. */
+export function partRows(parts, width, max, { ascii = false } = {}) {
+  if (width < 1 || max < 1) return [];
+  // Units: what is written together, a space between two.
+  const units = [];
+  let glue = false;
+  const put = (piece) => { if (glue && units.length) units.at(-1).push(piece); else units.push([piece]); glue = true; };
+  for (const part of parts) {
+    if (part.own !== undefined) part.own.split(" ").forEach((word, i) => { if (i > 0) glue = false; if (word) put({ text: lit(word), width: word.length }); });
+    else { const m = measured(part.shown); if (m.width > 0) put(m); }
+  }
+  const unitWidth = (unit) => unit.reduce((sum, piece) => sum + piece.width, 0);
+  const rows = [];
+  let row = [], used = 0, i = 0;
+  for (; i < units.length; i++) {
+    const w = unitWidth(units[i]);
+    if (row.length && used + 1 + w > width) {
+      rows.push(row);
+      if (rows.length === max) break;
+      row = []; used = 0;
+    }
+    let col = row.length ? used + 1 : 0;
+    for (const piece of units[i]) { if (col < width) row.push({ col, text: piece.text, width: Math.min(piece.width, width - col) }); col += piece.width; }
+    used = Math.min(width, col);
+  }
+  if (i === units.length && row.length) rows.push(row);
+  const mark = ascii ? "..." : "\u2026";
+  if (i < units.length && rows.length && mark.length <= width) {
+    const last = rows[rows.length - 1];
+    while (last.length && last.at(-1).col + last.at(-1).width + 1 + mark.length > width) last.pop();
+    const end = last.length ? last.at(-1).col + last.at(-1).width + 1 : 0;
+    last.push({ col: end, text: lit(mark), width: mark.length });
+  }
+  return rows;
+}
+
 /** Where everything stands for a size: the body under the header, the reason of a deployment
- *  that is not live and the note of the one deployment of a view without headings (both wrapped
- *  here, since their rows take room from the panes), and the panes. `notice` and `note` are the
- *  model's (lib/model.mjs): the main loop asks for the layout first, because the model's window
- *  is as tall, and the sentences in its list as wide, as the list pane this gives. The answer's
- *  `note` is the note's rows. */
-export function layout(notice, size, { observed = true, note = null, ascii = false } = {}) {
+ *  that is not live, the note of the one deployment of a view without headings and the line after
+ *  an agent was opened (each wrapped here, since their rows take room from the panes), and the
+ *  panes. `notice`, `note` and `outcome` are the model's (lib/model.mjs): the main loop asks for
+ *  the layout first, because the model's window is as tall, and the sentences in its list as wide,
+ *  as the list pane this gives. The answer's `note` is the note's rows and `outcome` the line's:
+ *  its sentence and each text under it (what the viewer printed, what the kernel said) set as a
+ *  reason is, on as many rows as a reason may take. */
+export function layout(notice, size, { observed = true, note = null, ascii = false, outcome = null } = {}) {
   const body = { top: 3, rows: Math.max(0, size.rows - 5) };
   const wide = size.cols >= WIDE;
   const listCols = wide ? clamp(Math.floor(size.cols * 0.48), 36, 60) : size.cols;
   const across = Math.max(1, size.cols - 2 * MARGIN);
-  const reason = notice ? shownLines(notice.reason, across, clamp(Math.floor(body.rows / 4), 1, REASON_ROWS), { ascii }) : [];
+  const reasonRows = clamp(Math.floor(body.rows / 4), 1, REASON_ROWS);
+  const reason = notice ? shownLines(notice.reason, across, reasonRows, { ascii }) : [];
   const noted = note ? shownLines(note, across, NOTE_ROWS, { ascii }) : [];
-  // The state and its reason, then the note, stand above the panes, over the whole width; a rule
-  // closes them when instances follow.
-  const said = (notice ? 1 + reason.length : 0) + noted.length;
+  const after = outcome ? [
+    ...partRows(outcome.said, across, reasonRows, { ascii }),
+    ...outcome.under.flatMap((text) => shownLines(text, across, reasonRows, { ascii }).map((line) => [{ col: 0, text: line, width: across }])),
+  ] : [];
+  // The state and its reason, then the note, then the line after an open, stand above the panes,
+  // over the whole width; a rule closes them when instances follow.
+  const said = (notice ? 1 + reason.length : 0) + noted.length + after.length;
   const above = said ? Math.min(body.rows, said + (observed ? 1 : 0)) : 0;
-  return { body, wide, listCols, reason, note: noted, above, panes: { top: body.top + above, rows: Math.max(0, body.rows - above) }, page: Math.max(0, body.rows - above) };
+  return { body, wide, listCols, reason, note: noted, outcome: after, above, panes: { top: body.top + above, rows: Math.max(0, body.rows - above) }, page: Math.max(0, body.rows - above) };
 }
 
 /** The header's middle, from `col` on in `room` cells: the workspace's name and, when the view
@@ -130,54 +178,87 @@ function countSpans(counts, cols) {
 
 /** The footer: the filter field while it is open; else the actions that apply now, read from the
  *  effective table, as many as fit, `help` and `quit` last and always: their room is set aside
- *  first, and a kept filter and the other hints take what is left. A hint that does not fit ends
- *  the row's hints, so the order they are tried in is the order they are given up from the end:
- *  `workspaces` stands after `refresh`, and a row too narrow for both keeps `refresh`. The
- *  switcher has a filter of its own, drawn as the list's. A key's label is the user's
- *  (views/help.mjs keyText); everything is placed by cells. */
+ *  first, and a kept filter and the other hints take what is left. The hints stand in the order
+ *  given, and when they do not all fit they are given up in an order of their own (`keep`, the
+ *  first kept longest), so a hint can stand first and still be given up before another: in the
+ *  list of instances `workspaces` goes first, then `refresh`, the key that clears a kept filter,
+ *  `detail`, `open` and last `filter` (`filter` before `open` while a filter is kept: its own `/`
+ *  stands in the footer then). A row too narrow for the whole of a hint drops it.
+ *  `open` stands first while Enter would open the selected agent's terminal, and names the key
+ *  that brings the TUI back (tui.json's `open.detachKey`, text from outside); while another
+ *  machine is asked first, the key that gives the open up stands in its place. The switcher has
+ *  a filter of its own, drawn as the list's. A key's label is the user's (views/help.mjs keyText);
+ *  everything is placed by cells. */
 function footer(m, cols) {
   const action = (id) => m.actions.find((a) => a.id === id && a.keys.length);
-  /** A hint: a key and what it does. */
-  const made = (key, word) => ({ key, word, width: key.width + 1 + word.length });
+  /** A hint: a key and what it does, the TUI's word or safe text with its width. */
+  const made = (key, word) => {
+    const said = typeof word === "string" ? { text: lit(word), width: word.length } : word;
+    return { key, word: said, width: key.width + 1 + said.width };
+  };
   const hint = (id, label) => { const a = action(id); return a ? made(keyText(keyLabel(a.keys[0])), label ?? a.label) : null; };
   const edge = cols - MARGIN; // nothing stands at or past it
   /** A hint's spans at `col`, never past the edge. */
   const put = (h, col, look) => [
     { col, text: h.key.text, width: Math.max(0, Math.min(h.key.width, edge - col)), ...look },
-    { col: col + h.key.width + 1, text: lit(h.word), width: Math.max(0, Math.min(h.word.length, edge - col - h.key.width - 1)), ...look },
+    ...h.word.spans.map((span) => ({ ...span, col: col + h.key.width + 1 + span.col })).map((span) => ({ ...span, width: Math.max(0, Math.min(span.width, edge - span.col)), ...look })),
   ].filter((span) => span.width > 0);
   const span = (hints) => hints.reduce((sum, h) => sum + h.width, 0) + Math.max(0, hints.length - 1) * GAP;
+  // A word is drawn as one span, or as the open hint's three: `open (`, the key, `returns)`.
+  const spansOf = (h) => ({ ...h, word: { ...h.word, spans: h.word.spans ?? [{ col: 0, text: h.word.text, width: h.word.width }] } });
 
   if (m.view !== "help" && m.filter.editing) {
-    const hints = [made({ text: lit("Enter"), width: "Enter".length }, "keep"), hint("close", "clear")].filter(Boolean);
+    const hints = [made({ text: lit("Enter"), width: "Enter".length }, "keep"), hint("close", "clear")].filter(Boolean).map(spansOf);
     const spans = [{ col: MARGIN, text: lit("/"), style: BOLD, width: 1 }, { col: MARGIN + 1, text: shown(m.filter.query), width: Math.max(0, edge - span(hints) - GAP - MARGIN - 1) }];
     let col = Math.max(MARGIN + 2, edge - span(hints));
     for (const h of hints) { spans.push(...put(h, col, { style: DIM })); col += h.width + GAP; }
     return spans;
   }
-  const ids = m.view === "help" ? ["close"]
+  /** The open hint: `Enter open (C-\ returns)`, the detach key drawn as text from outside. */
+  const opener = () => {
+    const a = action("open");
+    if (!a) return null;
+    const key = keyText(m.detachKey), lead = "open (", tail = "returns)";
+    const spans = [{ col: 0, text: lit(lead), width: lead.length }, { col: lead.length, text: key.text, width: key.width }, { col: lead.length + key.width + 1, text: lit(tail), width: tail.length }];
+    return made(keyText(keyLabel(a.keys[0])), { spans, width: lead.length + key.width + 1 + tail.length });
+  };
+  const listing = m.view !== "help" && m.view !== "switcher";
+  // While another machine is asked first, Esc gives the open up, and that is all it does: the
+  // hint stands where `open` stood, is kept as long, and `close` is not listed beside it.
+  const asking = listing && m.opening?.phase === "preflight";
+  // An action with no key (tui.json may unbind one) has no hint: nothing stands first then.
+  const first = (asking ? [["open", hint("close", "stop opening")]] : listing && m.openable ? [["open", opener()]] : []).filter(([, h]) => h);
+  const [ids, keep] = m.view === "help" ? [["close"], ["close"]]
     // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
     // A kept filter puts `close` before `refresh`, as in the list: the key that clears it is the hint to keep.
-    : m.view === "switcher" ? ["open-workspace", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])]
-    : m.focus === "detail" ? ["detail", "close", "refresh"]
-    : ["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces"];
-  const last = ["help", "quit"].map((id) => hint(id)).filter(Boolean);
+    : m.view === "switcher" ? [["open", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])], null]
+    : m.focus === "detail" ? [["detail", "close", "refresh"], ["open", "detail", "close", "refresh"]]
+    // A kept filter shows its own `/` beside the hints: then `open` outlives the `/ filter` hint.
+    : [["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces"], [...(m.filter.query ? ["open", "filter"] : ["filter", "open"]), "detail", "close", "refresh", "workspaces"]];
+  const hints = [...first, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
+  const last = ["help", "quit"].map((id) => hint(id)).filter(Boolean).map(spansOf);
   const spans = [];
   let col = MARGIN;
   if (m.view !== "help" && m.filter.query) {
     // The kept filter has a place of its own width, so the hints stand where they always do;
-    // it gives way, down to nothing, before `help` and `quit` do.
-    const slot = Math.min(FILTER_COLS - GAP, edge - MARGIN - span(last) - (last.length ? GAP : 0));
+    // it gives way, down to nothing, before `help` and `quit` do, and before the hint that
+    // stands first while Enter would open an agent (or Esc gives an open up).
+    const held = first.length ? first[0][1].width + GAP : 0;
+    const slot = Math.min(FILTER_COLS - GAP, edge - MARGIN - span(last) - (last.length ? GAP : 0) - held);
     if (slot >= 2) {
       spans.push({ col, text: lit("/"), style: BOLD, width: 1 }, { col: col + 1, text: shown(m.filter.query), style: BOLD, width: slot - 1 });
       col += slot + GAP;
     }
   }
-  for (const h of ids.map((id) => hint(id)).filter(Boolean)) {
-    if (col + h.width + GAP + span(last) > edge) break;
-    spans.push(...put(h, col));
-    col += h.width + GAP;
+  // Give up hints until the rest fit: the one kept least first, else (no order of its own) the last.
+  let kept = hints;
+  const room = () => col + span(kept.map(([, h]) => h)) + (kept.length ? GAP : 0) + span(last) <= edge;
+  while (kept.length && !room()) {
+    const order = keep ?? kept.map(([id]) => id);
+    const least = [...order].reverse().find((id) => kept.some(([k]) => k === id)) ?? kept.at(-1)[0];
+    kept = kept.filter(([id]) => id !== least);
   }
+  for (const [, h] of kept) { spans.push(...put(h, col)); col += h.width + GAP; }
   for (const h of last) { spans.push(...put(h, col)); col += h.width + GAP; }
   return spans;
 }
@@ -192,7 +273,7 @@ const placed = (spans, col) => spans.map((span) => ({ ...span, col: span.col + c
 export function frame(m, size) {
   if (tooSmall(size)) return { rows: tooSmallRows(size), page: 1, extent: 0, room: 1 };
   const rows = Array.from({ length: size.rows }, () => []);
-  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii });
+  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome });
   const { cols } = size;
   // The switcher is no view of the three: while it is shown, or is under the help, none is current.
   const listing = m.under === "switcher";
@@ -208,7 +289,7 @@ export function frame(m, size) {
   if (m.view === "help") {
     rows[2] = rule(cols, m.ascii);
     rows[size.rows - 2] = rule(cols, m.ascii);
-    const drawn = help(m.actions, { cols, rows: g.body.rows }, { top: m.helpTop, ascii: m.ascii });
+    const drawn = help(m.actions, { cols, rows: g.body.rows }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey });
     drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
     return { rows, page: Math.max(1, g.page), extent: drawn.extent, room: g.body.rows };
   }
@@ -232,6 +313,7 @@ export function frame(m, size) {
     for (const line of g.reason) said.push([{ col: MARGIN, text: line, width: cols - 2 * MARGIN }]);
   }
   for (const line of g.note) said.push([{ col: MARGIN, text: line, width: cols - 2 * MARGIN }]);
+  for (const spans of g.outcome) said.push(placed(spans, MARGIN));
   said.slice(0, g.above).forEach((spans, i) => { rows[g.body.top + i] = spans; });
   const paged = !g.wide && m.focus === "detail" && m.detail;
   // Two panes only over an observed deployment: with no instance there is nothing to put beside the list.

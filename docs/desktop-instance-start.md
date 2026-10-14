@@ -13,6 +13,34 @@ The Start/Restart dialog names the existing instance, harness and host. Choose
 a named launch configuration or keep the recorded launch. Without a selected
 configuration, the harness can also be changed directly. A named configuration
 fixes its harness; model and permission choices can override its defaults.
+
+The Launch configuration list's second entry is **No launch configuration (the
+harness as installed)**. It asks for the bare harness: the harness itself, with
+no configuration's executable, arguments or environment, and without the
+default configuration the host declares for that harness. The Harness list
+stays usable with it. Alone, with "Keep recorded harness", it starts the
+recorded harness bare; beside a picked harness, that one. It sends the word the
+kernel reads as no configuration, `--launch-config none`, from one constant
+(`LAUNCH_CONFIG_NONE`, `packages/client/launch-contract.mjs`) and never from a
+row of the list: a row whose name is the word, or is not a string at all, is
+not drawn as a configuration. Preview invocation sends the same choice.
+
+The entry is offered only where the kernel that would answer the start is
+known to read the word. The server says so in a key of its own on the list
+answer of `POST /api/launch-configs`, `noneKnown`: `launchConfigNoneKnown`
+(the same module) over the answering kernel's own feature list
+(`answeringFeatures`, `packages/client/lifecycle-contract.mjs`). For an
+instance on this computer that is this computer's kernel, which lists
+`launch-config`. For an instance on a server it is the host's list, as the
+roster relays it; a host that reports no list (before 0.49.0), or one this
+computer's CLI does not relay, is unknown, and unknown is not offered. The
+start route adds no refusal of its own for the word: this computer's kernel
+asks the host at the call and sends nothing to one that does not list
+`launch-config`. When the list is read again, the entry stays selected only
+while it is still offered: a save selects the saved configuration, a remove
+the recorded launch, and a read cut short by a start and repeated keeps the
+entry, or falls back to the recorded launch when it is no longer offered.
+
 Enter a model or leave the field blank to use the selected launch's default.
 An old harness's model is not carried to a different harness. Available local model
 suggestions are advisory; a model ID can also be typed. Start uses the saved
@@ -72,6 +100,28 @@ reader into its creation receipt, and the notice is the same
 (`packages/desktop/docs/desktop-spawn-preview.md`, A spawn where Claude Code
 ignored the channel option).
 
+When OATS refuses a start or a restart with `E_LAUNCH_CONFIG_AMBIGUOUS` (the
+start names a harness and no configuration, several configurations are declared
+for that harness, and none is the default), the dialog says it in its own
+words. Its status reads: "More than one launch configuration is declared for
+the chosen harness, and none is the default. Choose one under Launch
+configuration, or choose "No launch configuration" to run the harness as
+installed." Under it stands OATS's message as one line, "OATS says:
+`<message>`", through the display filter: whole, or "[withheld]" with no
+name before it when the message is withheld, and no line when there is no
+message (`kernelLines`, `packages/client/kernel-lines.mjs`). The message
+quoted is the answer's own (`answered`, set by the page's transport in
+`packages/desktop/renderer/views/common.mjs`), never the transport's stand-in
+for an answer without one, such as "HTTP 409". The
+sentence is chosen by the code alone (`startRefusalSentence`,
+`packages/client/start-messages.mjs`); no part of OATS's message is read to
+choose it. It names the dialog's two controls and no machine, so it is the
+same for an instance on this computer and on a server. A **Preview
+invocation** refused with that code reads the same sentence, then "Preview
+only. No agent was started or stopped.", with OATS's line under it. Every
+other refusal of a start, a restart or a preview reads as before: the answer's
+message as the status.
+
 If an ordinary Start dialog finds the instance already running, its action becomes
 **Open terminal**. A failed or timed-out start requires **Refresh status** before
 another attempt, because the launch may have succeeded before the reply was
@@ -106,11 +156,19 @@ Use the server's workspace to manage configurations defined on that server.
 Desktop sends `POST /api/start/<instance>?ws=…&home=…` (and `server=…` for a
 remote instance). The backend resolves that exact roster identity and calls
 `oats session start --home <absolute-home> [--server <id>] [--model <model>] --json`.
-Launch choices add `--launch-config`, `--harness` or `--yolo`/`--no-yolo`.
+Launch choices add `--launch-config` (a configuration's name, or `none` for
+the bare harness), `--harness` or `--yolo`/`--no-yolo`.
 Restart uses `POST /api/restart/<instance>?ws=…&home=…` and the single kernel
 command `oats session restart` with the same selectors and choices.
 Configuration inspection and editing use `POST /api/launch-configs?ws=…`,
-routed through `oats launch-config list/set/remove/preview`. These features
+routed through `oats launch-config list/set/remove/preview`. A refusal on that
+route answers its code and the first 300 characters of its message; for
+`E_LAUNCH_CONFIG_AMBIGUOUS` alone it answers the display filter's line over
+OATS's message as it came (`displayLine`, `packages/client/display-text.mjs`):
+withheld whole, or folded and bounded at `MAX_DISPLAY_LINE`, so the line the
+dialog shows under its sentence is not cut short and nothing withheld survives
+a cut. It answers an empty message when OATS gave none, never the stand-in text
+a refusal without a message is given. These features
 require the CLI's `launch-config` and `session-restart` capabilities; old
 clients/hosts receive an update explanation instead of unsupported arguments.
 The installed CLI must advertise `session-start`; remote starting also needs
@@ -130,14 +188,17 @@ places that list the keys an error carries (`apiJson` and `httpError` in
 In the app, main's `api` proxy waits 70 seconds for a start or a restart (the
 route class `instance-start` of `api-url.mjs`, answered for exactly the paths
 the server routes as one), where an ordinary read has 20. The kernel may watch
-a launch prompt for 30 seconds before it answers what it kept, and the CLI call
-has its own limit (`cliStart`, 60 seconds): the proxy must outlast that call,
-and a test holds the two together, so the dialog shows the kernel's outcome, or
-the CLI's own timeout, and never the proxy's.
+a launch prompt for 30 seconds before it answers what it kept, and the route
+waits 60 seconds for the CLI call (`cliStart`): the proxy must outlast that
+wait, and a test holds the two together, so the dialog shows the kernel's
+outcome, or the end of the wait, and never the proxy's.
 
-A client never ends a start. The route awaits the CLI call whatever becomes of
-its request: when the proxy gives up, or a window closes, the call runs to its
-own end and the route goes on after it. Only the call's own limit ends it.
+A client never ends a start. The CLI call runs in a process session of its own
+with no deadline. When the route's wait ends first, it answers
+`E_START_UNCONFIRMED`, and the dialog says, in the Desktop's own words: "OATS
+didn't confirm the start. It may still be running: check the roster before you
+start it again." The start goes on, and the roster shows its result. When the
+proxy gives up, or a window closes, the call runs to its own end.
 
 Status collection reads each instance's recorded tmux socket and session,
 with one query per socket per collection. A launcher shell with a harness

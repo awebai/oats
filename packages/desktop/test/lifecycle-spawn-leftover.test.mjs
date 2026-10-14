@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
 import { lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, spawnCompensationOf } from '../../client/lifecycle-contract.mjs';
-import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
+import { createLifecycleBoundary } from '../../client/instance-lifecycle.mjs';
 import { context, envelope, instance, retirePlan, retireReceipt, tick } from './helpers/lifecycle-fixture.mjs';
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -50,7 +50,7 @@ test("retire's own branch reports stay refused whole, spawnCompensation or not",
 function mount(t, { apply, row = instance }) {
   const dom = new JSDOM('<!doctype html><button id="opener">Actions</button>', { pretendToBeVisual: true });
   const doc = dom.window.document, ctx = context();
-  const service = createLifecycleBoundary({ invoke: async (_bin, a) => a.phase === 'plan' ? envelope(retirePlan()) : apply(a) });
+  const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, a) => a.phase === 'plan' ? envelope(retirePlan()) : apply(a) });
   const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => ctx) });
   t.after(() => { dialog.dispose(); dom.window.close(); });
   return { doc, open: () => dialog.open({ operation: 'retire', instance: row, workspace: 'team' }),
@@ -110,7 +110,7 @@ test('the branch and the reason are shown through displayLine, as text', async t
   assert.equal(u.doc.querySelector('.lifecycle-result b'), null);
   const v = mount(t, { apply: compensated({ branch: 'agents/dev-1', branchDeleted: false, reason: 'see https://user:pw@host/x' }) });
   await v.retire();
-  assert.ok(v.lines().includes('Branch agents/dev-1 kept: [Detail withheld]'), v.lines().join('|'));
+  assert.ok(v.lines().includes('Branch agents/dev-1 kept: [withheld]'), v.lines().join('|'));
   assert.doesNotMatch(v.doc.body.textContent, /user:pw/);
 });
 

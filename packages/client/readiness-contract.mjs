@@ -6,7 +6,7 @@ import { effectiveOf, REPORT_FROM } from './launch-contract.mjs';
 import { defaultTeamOf } from './team-rows.mjs';
 import { remoteReason } from './remote-address.mjs';
 import { warningsOf } from './capability-warnings-contract.mjs';
-import { displayLine } from './display-text.mjs';
+import { displayLine, DETAIL_WITHHELD } from './display-text.mjs';
 export const READINESS_API = 2;
 export const CHECKS = ['installed', 'configured', 'member', 'providers'];
 export const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -17,7 +17,7 @@ const states = ['pass', 'fail', 'unknown', 'not-applicable'];
 // The URL alternative finds `://` first and looks behind it for the scheme, as display-text.mjs `UNSAFE`
 // does and for its reason: time that grows with the length of the text, not with the square of a run.
 const unsafe = /[\x00-\x08\x0b-\x1f\x7f]|:\/\/(?<=[a-z][a-z0-9+.-]*:\/\/)[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+/i;
-function text(v, max = 1024) { if (typeof v !== 'string' || v.length > max) throw Error(); return unsafe.test(v) ? '[Detail withheld]' : v; }
+function text(v, max = 1024) { if (typeof v !== 'string' || v.length > max) throw Error(); return unsafe.test(v) ? DETAIL_WITHHELD : v; }
 const nullable = v => v == null ? null : text(v);
 export function readinessSelector(v) {
   if (!record(v)) return null;

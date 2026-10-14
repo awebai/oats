@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-const CLI=resolve('bin/oats.mjs');
-function fixture(t){const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-cli-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const deployment=join(base,'deployment');fs.mkdirSync(deployment);fs.writeFileSync(join(deployment,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${JSON.stringify(join(base,'workspace'))}\n`);const env={PATH:process.env.PATH,HOME:join(base,'native')};fs.mkdirSync(join(env.HOME,'.codex'),{recursive:true}); /* the operator has run both harnesses; OATS never creates their directories */return {base,deployment,env,run(args,cwd=deployment){const r=spawnSync(process.execPath,[CLI,...args,'--json'],{cwd,env,encoding:'utf8'});return {status:r.status,value:JSON.parse(r.stdout)};}};}
+import { fileURLToPath } from 'node:url';
+const CLI=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+function fixture(t){const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-cli-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const deployment=join(base,'deployment');fs.mkdirSync(deployment);fs.writeFileSync(join(deployment,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${JSON.stringify(join(base,'workspace'))}\n`);/* `oats harness trust` writes for the file a launch's pane will read: a private TMUX_TMPDIR, where no server runs, so this host's own OATS tmux server is never the one read, and no account of this host is written. */const env={PATH:process.env.PATH,HOME:join(base,'native'),TMUX_TMPDIR:join(base,'tmux')};fs.mkdirSync(join(env.HOME,'.codex'),{recursive:true}); /* the operator has run both harnesses; OATS never creates their directories */return {base,deployment,env,run(args,cwd=deployment){const r=spawnSync(process.execPath,[CLI,...args,'--json'],{cwd,env,encoding:'utf8'});return {status:r.status,value:JSON.parse(r.stdout)};}};}
 test('trust CLI plan, bare apply and deployment context from nested directory',t=>{
  const f=fixture(t);const nested=join(f.deployment,'agents/example/instances/one');fs.mkdirSync(nested,{recursive:true});
  const p=f.run(['harness','trust','--harness','claude','--plan'],nested);assert.equal(p.status,0,JSON.stringify(p.value));assert.equal(p.value.result.root,fs.realpathSync(f.deployment));assert.equal(fs.existsSync(join(f.env.HOME,'.claude.json')),false);
@@ -58,4 +59,22 @@ test('trust CLI targets every launch configuration config directory of the deplo
  local(`  gone:\n    harness: claude\n    env:\n      CLAUDE_CONFIG_DIR: ${JSON.stringify(join(f.base,'missing'))}\n`);
  const r=spawnSync(process.execPath,[CLI,'harness','trust','--harness','claude'],{cwd:f.deployment,env:f.env,encoding:'utf8'});
  assert.notEqual(r.status,0);assert.match(r.stderr,/problem: launch configuration gone: CLAUDE_CONFIG_DIR .*missing does not exist/);assert.equal(fs.existsSync(join(f.base,'missing')),false);
+});
+
+test('a refused file prints its harness, refused, the file, the key and the problem; never its content (awebai/oats#1109)', t => {
+ const f=fixture(t);const file=join(fs.realpathSync.native(f.env.HOME),'.claude.json');fs.writeFileSync(file,'{"privateSentinel":"never-print-this"');
+ const root=fs.realpathSync.native(f.deployment),key=JSON.stringify(['projects',root,'hasTrustDialogAccepted']);
+ const problem=`${file}: is not in the supported format (see "Qualified scope and formats" in docs/harness-trust.md)`;
+ const r=spawnSync(process.execPath,[CLI,'harness','trust','--plan'],{cwd:f.deployment,env:f.env,encoding:'utf8'});
+ assert.notEqual(r.status,0);
+ const lines=r.stderr.split('\n');
+ assert.ok(lines.includes(`claude: refused ${file} ${key} (ambient)`),r.stderr);
+ assert.ok(lines.includes(`problem: ${problem}`),r.stderr);
+ // The fine file still shows its plan.
+ assert.ok(lines.some(l=>/^codex: change .*config\.toml .* null -> "trusted" \(missing -> [a-f0-9]{64}\) \(ambient\)$/.test(l)),r.stderr);
+ assert.ok(!lines.some(l=>l.startsWith('claude: refused')&&l.includes('->')),'a refused row shows no current value or digests');
+ assert.ok(r.stderr.includes(`Harness trust refused; nothing was written: ${problem}`),r.stderr);
+ const json=f.run(['harness','trust','--plan']);
+ assert.equal(json.value.error.code,'E_CONFIG_BROKEN');assert.equal(json.value.error.details.entries[0].problem,problem);
+ for(const text of [r.stdout,r.stderr,JSON.stringify(json.value)])assert.ok(!text.includes('never-print-this'));
 });

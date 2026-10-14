@@ -52,6 +52,7 @@ import { unsupportedLine, speakerParts, keptFailureLine } from "../speaker-line.
 import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId, heldHome } from "../../../client/instance-tree.mjs";
+import { instanceActs, openAct } from "../../../client/instance-acts.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
 import {
   apiJson, ensureTheme,
@@ -545,9 +546,9 @@ function rowActionsCurrent(s, i) { return actionsCurrent(s) && !rowStale(i, s.pa
  * is the one the failure notice beside it names (speaker-line.mjs, from the same mark):
  *
  *   the kernel's, a line     "Roster unavailable. <own> OATS says: <line>"
- *   the kernel's, withheld   "Roster unavailable. <own> [Detail withheld]"
+ *   the kernel's, withheld   "Roster unavailable. <own> [withheld]"
  *   no speaker, a line       "Roster unavailable: <line>. <own>"
- *   no speaker, withheld     "Roster unavailable: [Detail withheld]. <own>"
+ *   no speaker, withheld     "Roster unavailable: [withheld]. <own>"
  *   nothing to show          "Roster unavailable. <own>"
  *
  * The kernel's words stand apart, after the Desktop's own sentences; a message with no speaker stays inside
@@ -1034,14 +1035,24 @@ function selectedInstance(s, id) {
   const matches = (s.panel.instances || []).filter(i => instanceId(i) === id);
   return matches.length === 1 ? matches[0] : null;
 }
+/** What the popover's two row acts may do, from the shared table (packages/client/instance-acts.mjs), as the roster
+ * menu decides it: `restart` and `start` when `instanceActs` lists them enabled, `open` (Terminal) when `openAct` is
+ * enabled, that is when the row runs. A held home (#802), a blocked row and a Herdr-recorded one get none. */
+function rowActs(i) {
+  const { acts } = instanceActs(i), on = verb => acts.some(act => act.verb === verb && act.enabled);
+  return { restart: on('restart'), start: on('start'), open: openAct(i)?.enabled === true };
+}
+
 function invokeInstance(s, id, action) {
   const i = selectedInstance(s, id);
   // #802: a held home (spawning, or left half cleaned) starts, restarts and opens nothing.
   if (!rowActionsCurrent(s, i) || !visibleOwner(s) || !canAddressInstance(i) || heldHome(i)) return;
-  const call = action === 'terminal' && i.running === true && s.ctx.openTerminal ? () => s.ctx.openTerminal({
+  // The keyboard and double-click paths act exactly when the popover's buttons would (updatePop).
+  const acts = rowActs(i);
+  const call = action === 'terminal' && acts.open && s.ctx.openTerminal ? () => s.ctx.openTerminal({
     instance: i.instance, home: i.home || undefined, agentsRoot: i.agentsRoot || undefined, ...(i.server ? { server: i.server } : {}),
-  }) : action === 'start' && i.running === false && s.ctx.startInstance ? () => s.ctx.startInstance(i)
-    : action === 'restart' && i.running === true && s.ctx.restartInstance ? () => s.ctx.restartInstance(i) : null;
+  }) : action === 'start' && acts.start && s.ctx.startInstance ? () => s.ctx.startInstance(i)
+    : action === 'restart' && acts.restart && s.ctx.restartInstance ? () => s.ctx.restartInstance(i) : null;
   if (!call) return;
   const ticket = s.actionTicket = (s.actionTicket || 0) + 1, gen = workspaceGeneration(), epoch = s.renderEpoch, pop = s.pop;
   const failed = error => {
@@ -1312,13 +1323,15 @@ function updatePop(s) {
   setText(pop.querySelector('.pstate'), `Reported state: ${held?.status ?? runtimeState(i)}${s.stale || rowStale(i, s.panel.deployments) ? ' (last observation)' : ''}`);
   setText(pop.querySelector('.rt'), i.harness || 'Harness not reported');
   setText(pop.querySelector('.pbranch'), i.branch ? `Reported branch: ${i.branch}` : 'Branch not reported');
-  const allowed = rowActionsCurrent(s, i) && canAddressInstance(i) && !held;
+  // Which acts are enabled is the shared table's (rowActs); a current roster, a well-formed address and the shell's
+  // own handler are this view's conditions on top. Terminal/Start… is the Start act on a stopped row, open otherwise.
+  const allowed = rowActionsCurrent(s, i) && canAddressInstance(i), acts = rowActs(i);
   const terminal = pop.querySelector('.pterm');
   setText(terminal, i.running === false ? 'Start…' : 'Terminal');
-  terminal.disabled = !allowed || (i.running === true ? !s.ctx.openTerminal : i.running === false ? !s.ctx.startInstance : true);
+  terminal.disabled = !allowed || (i.running === false ? !acts.start || !s.ctx.startInstance : !acts.open || !s.ctx.openTerminal);
   // A Herdr row's reason is said with who made it (speaker-line.mjs).
   terminal.title = unsupportedLine(i) || held?.sentence(i.instance) || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal');
-  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || i.running !== true; restart.title = unsupportedLine(i) || held?.sentence(i.instance) || ''; }
+  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || !acts.restart; restart.title = unsupportedLine(i) || held?.sentence(i.instance) || ''; }
   s.activity?.sync();
   positionPop(s);
 }
