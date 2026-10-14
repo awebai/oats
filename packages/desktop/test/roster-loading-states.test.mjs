@@ -562,7 +562,7 @@ test("the roster's failure notice says who made the kept message, in each spot i
   assert.equal(notice.title, 'OATS says: <b>bold</b>'); assert.equal(notice.querySelector('b'), null);
   for (const errorOrigin of ['kernel', undefined]) {
     ({ notice } = await stale({ error: 'wipe \x1b[2J the screen', ...(errorOrigin ? { errorOrigin } : {}) }));
-    assert.equal(notice.title, '[Detail withheld]', String(errorOrigin)); assert.equal(notice.querySelector('.loading-notice-cause').textContent, '[Detail withheld]');
+    assert.equal(notice.title, '[withheld]', String(errorOrigin)); assert.equal(notice.querySelector('.loading-notice-cause').textContent, '[withheld]');
   }
   ({ notice } = await stale({ error: 'first\nsecond', errorOrigin: 'kernel' }));
   assert.equal(notice.title, 'OATS says: first second');
@@ -612,7 +612,7 @@ test("a cache problem with nothing observed says who made its message, from the 
     assert.equal(s.list().querySelector('.loading-failed-message').textContent, CACHE_MESSAGE, String(origin));
   }
   s = await failed({ message: 'wipe \x1b[2J the screen', origin: 'kernel' });
-  assert.equal(s.list().querySelector('.loading-failed-message').textContent, '[Detail withheld]');
+  assert.equal(s.list().querySelector('.loading-failed-message').textContent, '[withheld]');
   s = await failed({ message: '<b>bold</b>', origin: 'kernel' });
   assert.equal(s.list().querySelector('.loading-failed-message').textContent, 'OATS says: <b>bold</b>'); assert.equal(s.list().querySelector('.loading-failed b'), null);
   // Another machine's panel is never read for this reason: its deployment, whatever it carried, is not this computer's.

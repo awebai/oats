@@ -233,7 +233,7 @@ test("a path or a reason in those lines is never written raw: a path that is not
   }
   assert.equal(noDeployment("/srv/my deployments/one").includes("/srv/my deployments/one"), true, "a space is plain");
   assert.doesNotMatch(noKernel("not the oats CLI (name: \x1b]0;owned\x07)"), /[\x00-\x1f\x7f-\x9f]/);
-  assert.match(noKernel("not the oats CLI (name: \x1b]0;owned\x07)"), /\(E_TUI_KERNEL\): \[Detail withheld\]$/);
+  assert.match(noKernel("not the oats CLI (name: \x1b]0;owned\x07)"), /\(E_TUI_KERNEL\): \[withheld\]$/);
   assert.match(noKernel("two\nlines"), /: two lines$/);
   assert.match(noKernel(""), /: it gave no reason$/);
 });

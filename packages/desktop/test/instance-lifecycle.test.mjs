@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../server/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../../client/lifecycle-cli.mjs';
 import { lifecycleOptions, lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
-import { displayLine } from '../../client/display-text.mjs';
+import { displayLine, DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { discover } from '../../client/cli-locator.mjs';
 import { cli, target, instance, context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -133,7 +133,7 @@ test("a local refusal's detail is withheld whole when the message looks like a c
     return (await f.apply((await f.plan('retire')).planRef)).cause;
   };
   const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS);
-  assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: 'could not read the work root\ntoken=abc123' }), { ...fixed, detail: '[Detail withheld]' });
+  assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: 'could not read the work root\ntoken=abc123' }), { ...fixed, detail: DETAIL_WITHHELD });
   for (const none of [undefined, null, '', ' \n\t ', 7, { text: 'not a string' }]) assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: none }), fixed, JSON.stringify(none));
 });
 test("a failure Desktop raises itself never carries a detail, whatever the envelope holds; a code without its own sentence keeps the fixed reply unless the kernel answered it", async () => {

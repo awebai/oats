@@ -114,7 +114,7 @@ test('the parts of the unavailable sentence, row by row, and the one line as tho
     [kernel('E_WORKSPACE_SCHEMA', 'the workspace file is not valid'), 'OATS answered with an error (E_WORKSPACE_SCHEMA).', 'It says:', 'the workspace file is not valid',
       'OATS answered with an error (E_WORKSPACE_SCHEMA). It says: the workspace file is not valid'],
     [kernel('E_REMOTE_UNREADABLE', 'fetch https://op:hunter2@example.com/x.git failed'), 'OATS answered with an error (E_REMOTE_UNREADABLE).', null, DETAIL_WITHHELD,
-      'OATS answered with an error (E_REMOTE_UNREADABLE). [Detail withheld]'],
+      'OATS answered with an error (E_REMOTE_UNREADABLE). [withheld]'],
     [kernel('E_X', ''), 'OATS answered with an error (E_X).', null, null, 'OATS answered with an error (E_X).'],
     [kernel('E_X', ' \n\t '), 'OATS answered with an error (E_X).', null, null, 'OATS answered with an error (E_X).'],
     [kernel('E_X'), 'OATS answered with an error (E_X).', null, null, 'OATS answered with an error (E_X).'],
@@ -354,13 +354,13 @@ test("the kept failure's mark travels: from the reader through the observer and 
   // A message the filter withholds: stale all the same, and never introduced by the speaker's words.
   const hostile = await read(refused({ code: 'E_REMOTE_UNREADABLE', message: 'wipe \x1b[2J the screen', details: { reason: 'cache' } }));
   const withheld = served(failedEntry(observedEntry, hostile.reason, AT));
-  assert.deepEqual([withheld.deployments[0].stale, withheld.deployments[0].reason, withheld.errorOrigin], [true, `${OWN} [Detail withheld]`, 'kernel']);
+  assert.deepEqual([withheld.deployments[0].stale, withheld.deployments[0].reason, withheld.errorOrigin], [true, `${OWN} [withheld]`, 'kernel']);
   // A hand-made reason with no mark: no key, and the words a client always showed, with the message filtered.
   const unmarked = served(failedEntry(observedEntry, { code: 'E_REMOTE_UNREADABLE', message: 'the remote cache is locked' }, AT));
   assert.equal(Object.hasOwn(unmarked, 'errorOrigin'), false);
   assert.equal(unmarked.deployments[0].reason, "This deployment's last read failed: the remote cache is locked. It shows what was last observed.");
   assert.equal(served(failedEntry(observedEntry, { code: 'E_REMOTE_UNREADABLE', message: 'bell\u0007' }, AT)).deployments[0].reason,
-    "This deployment's last read failed: [Detail withheld]. It shows what was last observed.");
+    "This deployment's last read failed: [withheld]. It shows what was last observed.");
   // An entry that is not observed is never a kept failure, whatever keys it carries.
   const forged = served({ deployment: { status: 'unavailable', reason: { code: 'E_CLI_FAILED', message: 'boom' } }, instances: [], generatedAt: 'g', error: '', errorOrigin: 'kernel' });
   assert.deepEqual([forged.deployments[0].stale, forged.deployments[0].reason], [undefined, 'E_CLI_FAILED: boom']);

@@ -41,7 +41,7 @@ A deployment that is not observed says why in one sentence
 | The reason | The sentence |
 |---|---|
 | the kernel's (`origin: 'kernel'`), a message | `OATS answered with an error (<code>). It says: <message>` |
-| the kernel's, a message the display filter withholds | `OATS answered with an error (<code>). [Detail withheld]` |
+| the kernel's, a message the display filter withholds | `OATS answered with an error (<code>). [withheld]` |
 | the kernel's, no message to show | `OATS answered with an error (<code>).` |
 | the reader's own (no origin) | `<code>: <message>`, the reader's fixed sentence |
 | a missing feature | the feature and the client that needs it |
@@ -150,7 +150,7 @@ speaker's words, a space, and the text as one display line
 that filter: a row's `runtimeError`, a kept failure's message, and a
 reason's sentence when the reason carries an `origin`. A text of several
 lines is shown as one; a text the filter withholds (control characters, a
-credential's shape) reads "[Detail withheld]" alone, with no speaker in
+credential's shape) reads "[withheld]" alone, with no speaker in
 front; a text with nothing to show leaves the place saying what it said
 before for a row without one. The places: a roster row's title and
 description and its hover card's Status, the actions menu (its trigger,
@@ -549,7 +549,7 @@ sentence already says what happens next, as for a timeout). The sentences:
   was last observed. OATS says: <the kernel's message>" It is `stale`. The
   Desktop's sentence comes first and the kernel's words after their
   speaker, as one display line. A message the display filter withholds reads
-  "[Detail withheld]" in its place, with no "OATS says:" in front; a
+  "[withheld]" in its place, with no "OATS says:" in front; a
   failure with no message reads the Desktop's sentence alone. A kept
   message that carries no speaker (the reader makes none today) stays inside the
   sentence as before, filtered the same way: "This deployment's last read
@@ -728,7 +728,7 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
 - **The display filter** (`packages/client/display-text.mjs`, `displayLine`) is the
   one way a refusal's `detail` reaches a view. Text that looks like a credential,
   or holds DEL or a C0 control character other than tab and line feed, is
-  withheld whole (`[Detail withheld]`), tested on the text as given, in time that
+  withheld whole (`[withheld]`), tested on the text as given, in time that
   grows with the text's length and not with its square
   (`packages/desktop/test/display-filter-time.test.mjs`). Otherwise it becomes one
   line: tab, line feed and the Unicode line and paragraph separators become a
