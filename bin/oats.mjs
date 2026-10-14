@@ -2703,7 +2703,9 @@ function herdrSpawnFlag() {
 /** A spawn preview's text: the local one, or a host's answer to a routed
  *  preview (`server`, its id), which this side printed the same way (#610). */
 function printSpawnPreview(r, { server, soulFetched = false } = {}) {
-  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+  // A host before 0.27 names the harness `runtime` (it still answers spawn-preview-2).
+  const harness = r.harness ?? r.runtime;
+  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
   if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
   for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
 }
@@ -4461,7 +4463,8 @@ async function serverRouteCmd() {
   const r = envelope.result;
   const target = r.target || {};
   // A routed preview created nothing, there or here: the local preview's lines, naming the server.
-  if (cmd === "spawn" && rest.includes("--preview")) printSpawnPreview(r, { server: id, soulFetched: r.soulFetched === true });
+  // The host's answer decides, not the flag: one that spawned is reported as the spawn it was.
+  if (cmd === "spawn" && rest.includes("--preview") && r.preview === true) printSpawnPreview(r, { server: id, soulFetched: r.soulFetched === true });
   else if (cmd === "spawn") {
     console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
     console.log(`  remote home: ${r.home}`);

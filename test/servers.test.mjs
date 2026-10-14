@@ -593,6 +593,8 @@ test("routed spawn --preview (#610): the host's preview, printed as the local on
     const keep = JSON.parse(readFileSync(snapshotPath("build", "dev-keep"), "utf8"));
     const goneHome = join(repo, "agents", "dev", "instances", "dev-stale-gone");
     writeFileSync(snapshotPath("build", "dev-stale"), JSON.stringify({ ...keep, instance: "dev-stale", home: goneHome }, null, 2) + "\n");
+    // Everything under the oats home but ssh/, the control-master directory every routed
+    // command shares (a transport cache, made by the first ssh to any server, not route state).
     const capture = () => ({ home: treeBytes(env.OATS_HOME_DIR, { skip: ["ssh"] }), routes: treeBytes(REMOTE_SNAPSHOT_DIR()), servers: readFileSync(SERVERS_FILE()).toString("base64") });
     const before = capture();
     assert.deepEqual(Object.keys(before.routes).sort(), ["build/", "build/dev-keep.json", "build/dev-stale.json"]);
@@ -733,6 +735,50 @@ test("routeCommand spawn --preview (#610): the host's result with server and tar
     routed = routeCommand("build", "spawn", args, { server, execFileSync: remote(["spawn-preview-2"], spawned).exec });
     assert.equal(routed.envelope.result.snapshot, snapshotPath("build", "dev-x"));
     assert.equal(JSON.parse(readFileSync(snapshotPath("build", "dev-x"), "utf8")).home, hostPreview.home);
+  } finally {
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("routed spawn --preview (#610), text: the host's answer picks the printer: a pre-0.27 host's preview reads its runtime; an answer that spawned prints as the spawn it was, its route saved", () => {
+  const base = mkdtempSync("/tmp/oats-pvt-");
+  const prevHomeDir = process.env.OATS_HOME_DIR;
+  try {
+    const { bin } = fakeBin(base);
+    const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
+    // A 0.26.0 host, scripted: it advertises spawn-preview-2 and names the harness `runtime`;
+    // its spawn answers whatever FAKE_SPAWN holds.
+    const host = join(base, "host-oats");
+    write(host, `#!${process.execPath}
+const a = process.argv.slice(2), out = (v) => process.stdout.write(JSON.stringify(v));
+if (a[0] === "version") out({ schemaVersion: 1, name: "@awebai/oats", version: "0.26.0", desktopApi: 1, runtimes: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "status"], features: ["spawn-preview-2"] });
+else if (a[0] === "status") out({ schemaVersion: 1, ok: true, result: { root: "/srv/ws/agents", agents: [{ name: "dev", runtime: "pi", instances: [] }] } });
+else if (a[0] === "spawn") out({ schemaVersion: 1, ok: true, result: JSON.parse(process.env.FAKE_SPAWN) });
+else process.exit(9);
+`);
+    chmodSync(host, 0o755);
+    writeServers({ legacy: { sshHost: "legacy-host", workspace: "/srv/ws", oatsPath: host } });
+    const home = "/srv/ws/agents/dev/instances/dev-x";
+    const run = (answer) => oats({ ...env, FAKE_SPAWN: JSON.stringify(answer) }, ["spawn", "dev", "--server", "legacy", "--purpose", "x", "--no-launch", "--preview"]);
+
+    let r = run({ spawnPreviewApi: 2, preview: true, agent: "dev", kind: "persistent", instance: "dev-x", home, work: "worktree", branch: "agents/dev-x", base: { ref: "origin/main", oid: "0123456789abcdef" }, runtime: "pi", model: null, modelSource: "native default", launchConfig: null, yolo: false });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.stdout, "preview dev → dev-x on legacy (worktree, branch agents/dev-x from origin/main@0123456789ab) harness pi (native default); nothing was created\n");
+    assert.equal(existsSync(REMOTE_SNAPSHOT_DIR()), false, "nothing written here");
+
+    // A host that spawned although asked for a preview: the apply's lines, and its route, as the apply records it.
+    for (const [work, branch] of [["worktree", "agents/dev-x"], ["checkout", null]]) {
+      r = run({ instance: "dev-x", agent: "dev", home, work, branch, launched: false, warnings: [] });
+      assert.equal(r.status, 0, r.stderr + r.stdout);
+      assert.equal(r.stdout.split("\n")[0], `Spawned dev-x on legacy (${work}${branch ? `, branch ${branch}` : ""}) — not launched`, r.stdout);
+      assert.match(r.stdout, /route snapshot: .*dev-x\.json/);
+      assert.doesNotMatch(r.stdout, /nothing was created/);
+      assert.equal(JSON.parse(readFileSync(snapshotPath("legacy", "dev-x"), "utf8")).home, home);
+    }
   } finally {
     if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
     rmSync(base, { recursive: true, force: true });
