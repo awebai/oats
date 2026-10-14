@@ -211,8 +211,11 @@ function refusal(reason, plan, { operation, leftover }, terms) {
   // a spawn left: its sentence, and the kernel's message, which names the process, quoted under it.
   if (!remote && shown && reason.code === 'E_LIFECYCLE_BUSY' && operation === 'retire' && leftover)
     return { status: { headline: LEFTOVER_HELD, more: [], next: 'retire-with-force', code: reason.code }, blocks: [{ type: 'quote', text: shown.detail }] };
+  // A reason with no code reads as the table's fallback, and says that fallback's code; a code only the client
+  // raises (one the table does not know) keeps its own, so the client can word it.
+  const table = lifecycleReason(reason?.code, terms), own = typeof reason?.code === 'string' && reason.code ? reason.code : table.code;
   const status = remote ? { headline: remote.message, code: remote.code } : undescribed ? { headline: undescribed.message, code: reason.code }
-    : { headline: lifecycleReason(reason?.code, terms).message, code: reason?.code };
+    : { headline: table.message, code: own };
   return { status: { more: [], next: null, ...status }, blocks: shown ? [{ type: 'details', reason: shown, bare: !!undescribed }] : [] };
 }
 /** A reply's `running` (this client's own apply that is still running), re-validated, or null: a target that names

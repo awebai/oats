@@ -179,3 +179,12 @@ test('a code beside every sentence: each refusal, partial, uncertain, invalid an
     assert.equal(view.status.holder, holder, `${name}: holder`);
   }
 });
+
+test('a plan reply that is no reply (null, {}, a reason with no code) settles unavailable with a code, through the confirmation', async () => {
+  for (const reply of [null, {}, { lifecycleApi: 1, status: 'unavailable', target, reason: {} }]) {
+    const c = createLifecycleConfirmation({ target, operation: 'stop', terms, request: async () => reply }); await tick();
+    assert.equal(c.state().outcome, 'unavailable', JSON.stringify(reply));
+    assert.equal(typeof c.view().status.code, 'string', `${JSON.stringify(reply)}: a code beside the sentence`);
+    assert.match(c.view().status.code, /^E_[A-Z_]+$/);
+  }
+});
