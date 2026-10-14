@@ -20,7 +20,9 @@ const reasons = new Set([null, "deadline", "rss", "heap", "interrupted", "input"
 export function validWorkerResult(value) {
   return value && outcomes.has(value.outcome) && reasons.has(value.reason) &&
     (value.outcome !== "complete" || value.reason === null) &&
-    (value.outcome !== "failed" || value.reason !== null);
+    (value.outcome !== "failed" || value.reason !== null) &&
+    (value.continuation === undefined || typeof value.continuation === "boolean") &&
+    !(value.outcome === "complete" && value.continuation);
 }
 
 /** Internal seams are for isolated tests, not public tuning. Only the worker
@@ -30,9 +32,14 @@ export async function superviseCapture(root, options, {
   workerPath, policy = CAPTURE_POLICY, drainSeconds = 5,
   executable = process.execPath, env = process.env, clock = captureMonotonicMs,
   acquire = acquireCaptureLock, spawnChild = spawn,
+  window, pass,
 } = {}) {
   if (typeof workerPath !== "string" || !workerPath) throw new Error("capture worker entry is required");
-  const started = clock(), deadline = started + policy.deadlineSeconds * 1000;
+  if (window && (![window.drainAt, window.finalizeAt, window.hardAt].every(Number.isFinite) ||
+      window.drainAt > window.finalizeAt || window.finalizeAt > window.hardAt)) throw new Error("invalid capture child time window");
+  const started = clock(), deadline = Math.min(started + policy.deadlineSeconds * 1000, window?.hardAt ?? Infinity);
+  const drainAt = Math.min(deadline, window?.drainAt ?? Math.max(started, deadline - drainSeconds * 1000));
+  const finalizeAt = Math.min(deadline, window?.finalizeAt ?? deadline);
   const lock = acquire(root);
   if (!lock.release) return { outcome: "overlap", reason: null, exitCode: 0, held: lock.held };
   let child, timer, finish, forced, result, ready = false, diagnostics = "", outputBytes = 0;
@@ -70,7 +77,7 @@ export async function superviseCapture(root, options, {
           lock.registerWorker(message);
           if (clock() >= deadline) { stop("deadline"); return; }
           child.send({ type: "start", root, options, policy, parent: { pid: process.pid, nonce: lock.nonce },
-            workerNonce: message.nonce, drainAt: Math.max(started, deadline - drainSeconds * 1000),
+            workerNonce: message.nonce, drainAt, finalizeAt, hardAt: deadline, pass,
             reclaimedLock: lock.reclaimed ?? null }, error => { if (error) stop("io"); });
         } catch { stop("io"); }
       } else if (ready && !result && message?.type === "result" && validWorkerResult(message.result)) {

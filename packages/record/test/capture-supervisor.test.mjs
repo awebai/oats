@@ -79,6 +79,10 @@ test('RSS stop is cooperative, while signals, missing results and output overflo
   const f = fixture(t, `await runCaptureWorker(({budget})=>{const reason=budget.sample();return {outcome:'partial',reason};});`);
   let result = await superviseCapture(f.root,{}, {workerPath:f.workerPath,policy:{...shortPolicy,rssBytes:1},drainSeconds:0});
   assert.deepEqual(result,{outcome:'partial',reason:'rss',exitCode:0});
+  writeFileSync(f.workerPath,`import {runCaptureWorker} from ${JSON.stringify(workerURL)};
+await runCaptureWorker(({budget})=>{budget.check();return {outcome:'complete',reason:null};});`);
+  result = await superviseCapture(f.root,{}, {workerPath:f.workerPath,policy:{...shortPolicy,rssBytes:1},drainSeconds:0});
+  assert.deepEqual(result,{outcome:'failed',reason:'rss',exitCode:1},'unhandled resource stop preserves its observed reason without claiming committed progress');
   for (const body of [
     `process.kill(process.pid,'SIGTERM');`,
     `process.exit(0);`,

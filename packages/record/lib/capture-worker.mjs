@@ -1,7 +1,7 @@
 // Private worker bootstrap. Reconciliation is supplied by the owning entry;
 // this handshake never captures or writes status on behalf of the operation.
 import { randomBytes } from "node:crypto";
-import { CaptureBudget } from "./capture-budget.mjs";
+import { CaptureBudget, CaptureStop } from "./capture-budget.mjs";
 import { readCaptureLockOwner } from "./capture-lock.mjs";
 import { captureMonotonicMs, validWorkerResult } from "./capture-supervisor.mjs";
 
@@ -13,7 +13,9 @@ export async function runCaptureWorker(operation) {
     const receive = message => {
       cleanup();
       if (message?.type !== "start" || message.workerNonce !== nonce || message.parent?.pid !== parentPid ||
-          typeof message.root !== "string" || !Number.isFinite(message.drainAt)) {
+          typeof message.root !== "string" || !Number.isFinite(message.drainAt) ||
+          !Number.isFinite(message.finalizeAt) || !Number.isFinite(message.hardAt) ||
+          message.drainAt > message.finalizeAt || message.finalizeAt > message.hardAt) {
         reject(new Error("invalid capture worker start")); return;
       }
       resolve(message);
@@ -39,10 +41,11 @@ export async function runCaptureWorker(operation) {
   try {
     result = await operation({ ...start, budget });
     if (!validWorkerResult(result)) throw new Error("invalid capture worker result");
-  } catch {
+  } catch (error) {
     // The operation owns failure receipts. Bootstrap never invents completed
     // progress or rewrites a receipt after an exception.
-    result = { outcome: "failed", reason: budget.reason === "interrupted" ? "interrupted" : "io" };
+    result = { outcome: "failed", reason: error instanceof CaptureStop ? error.reason :
+      budget.reason === "interrupted" ? "interrupted" : "io" };
   }
   if (process.connected) {
     await new Promise(resolve => process.send({ type: "result", result }, () => resolve()));

@@ -115,3 +115,20 @@ test('release reports an identity-read failure without deleting the lock',t=>{
  assert.match(result.error,/identity read denied/);assert.match(result.recovery,/before removal/);
  assert.equal(removals,0);assert.equal(readCaptureLockOwner(root).nonce,lock.nonce);
 });
+
+test('continuation replaces only the exact positively dead worker without dropping the root lock',t=>{
+ const root=fixture(t),prior={pid:99999998,nonce:'prior',startedAt:start},next={pid:99999999,nonce:'next',startedAt:start};
+ let status='alive';const lock=acquireCaptureLock(root,{liveness:()=>status});
+ lock.registerWorker(prior);const original=readCaptureLockOwner(root);
+ for(const live of ['alive','unknown']){
+  status=live;assert.throws(()=>lock.registerWorker(next,{previous:prior}),/not proven dead/);
+  assert.deepEqual(readCaptureLockOwner(root),original);
+ }
+ status='dead';
+ assert.throws(()=>lock.registerWorker(next),/not proven dead/);
+ assert.throws(()=>lock.registerWorker(next,{previous:{...prior,nonce:'different'}}),/not proven dead/);
+ lock.registerWorker(next,{previous:prior});
+ assert.equal(readCaptureLockOwner(root).nonce,original.nonce);
+ assert.deepEqual(readCaptureLockOwner(root).worker,{...next,host});
+ assert.deepEqual(lock.release(),{released:true});
+});

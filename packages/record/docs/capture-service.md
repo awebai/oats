@@ -249,18 +249,32 @@ Public synchronous library calls do not implicitly enter this context or acquire
 a root capture lock. Healthy derived-state opens do not run a schema write
 transaction, and identical state values do not produce redundant row updates.
 
-The private supervisor transport admits one child under the root lock. The child
+The private supervisor transport admits one child at a time under the root lock. The child
 announces its nonce and stays idle until the supervisor durably publishes its
 identity in that lock and sends permission to start. A live, reused or unknown
 worker PID prevents reclamation after supervisor death. Release occurs only
 after the owned child exits; signals target the spawned child handle, never a
-PID inferred from an abandoned lock or a process group. Workers check their
-parent and lock identity between work units. The supervisor never writes status
+PID inferred from an abandoned lock or a process group. Continuation retains the
+same root lock: it replaces only the exact previously registered worker identity
+after positive death proof. Reused or uncertain PIDs prevent replacement.
+Workers check their parent and lock identity between work units. The supervisor never writes status
 on behalf of a crashed worker. A shared monotonic deadline includes process
 startup and lock publication, with a separate cooperative drain boundary.
 Launch arguments fix the heap policy and exclude inherited Node flags and
 preloads. This transport requires a reconciliation entry that supplies bounded
 units and persists run facts; it does not itself implement a complete pass.
+
+`capture-pass.mjs` supplies serial child continuation under that same absolute
+deadline. Startup, publication, checkpoint finalization and reaping consume the
+pass budget; child replacement cannot renew it. Normal work has internal drain,
+finalization and forced-stop boundaries, and is admitted only with its full
+allowance. A reserved start and time allowance let a final worker reconcile an
+interrupted predecessor and persist run facts. All starts, including spawn
+failures and finalization, count against the fixed internal ceiling. The parent
+can report its observed process failure, but only a worker can reconcile durable
+admission and attribute it. There is no in-pass diagnostic retry mode. The
+reconciliation entry must select independent ready work before deferred failed
+work; transport tests alone do not establish that scheduling or recovery rule.
 
 Bounded index groups reuse the already acquired stream group and capture-state
 connection. Validation precedes the index write transaction; completed index

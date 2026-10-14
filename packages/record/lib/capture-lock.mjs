@@ -211,10 +211,19 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     ...(reclaimed ? { reclaimed } : {}),
     // The child must remain idle until this durable publication succeeds.
     // A dead supervisor's lock cannot then be reclaimed while its worker lives.
-    registerWorker(worker) {
+    registerWorker(worker, { previous } = {}) {
       if (!validPid(worker?.pid) || worker.pid === pid || typeof worker.nonce !== "string" || !worker.nonce || worker.nonce.length > 128 || typeof worker.startedAt !== "string" || !Number.isFinite(Date.parse(worker.startedAt))) throw new Error("invalid capture worker identity");
       const current = readOwner(dir), st = fs.lstatSync(dir);
-      if (st.dev !== identity.dev || st.ino !== identity.ino || current?.pid !== pid || current?.nonce !== nonce || Object.hasOwn(current, "worker")) throw new Error("capture lock changed before worker registration");
+      if (st.dev !== identity.dev || st.ino !== identity.ino || current?.pid !== pid || current?.nonce !== nonce) throw new Error("capture lock changed before worker registration");
+      // Continuation never drops the root lock between children. Replace only
+      // the caller's exact previous publication, after positive death proof;
+      // reused PIDs and uncertain liveness preserve the old lock unchanged.
+      if (Object.hasOwn(current, "worker")) {
+        if (!previous || current.worker?.pid !== previous.pid || current.worker?.nonce !== previous.nonce ||
+            current.worker?.startedAt !== previous.startedAt || !workerDead(current, { host, liveness })) {
+          throw new Error("previous capture worker is not proven dead and unchanged");
+        }
+      } else if (previous) throw new Error("capture lock changed before worker continuation");
       const temp = join(dir, `worker-${nonce}.tmp`); let fd, dirFd, rootFd, temporary, published = false;
       try {
         dirFd = fs.openSync(dir, constants.O_RDONLY | constants.O_NOFOLLOW);
