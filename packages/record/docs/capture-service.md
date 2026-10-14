@@ -130,13 +130,36 @@ from releasing POSIX locks belonging to another SQLite connection in the caller.
 Command snapshots reuse their owned connection for the shared projection.
 
 The shared schema is [capture-status.schema.json](capture-status.schema.json).
-In this algorithm-only phase `policy`, `lastRun`, `lastSuccess`, `lastFailure`
-and `lastProgressAt` are null: evidence has not been supplied. They never mean
-that a bounded pass, service installation or successful sweep occurred. Health
-`status: "ok"` with empty rows means no reported capture fault, not service
-liveness. Service supervision will extend this same mechanism with actual policy
-and run evidence. Status replacement is atomic with private file permissions;
-persistence failure is an operation failure, not a fabricated success.
+Existing algorithm-phase snapshots retain null `policy`, `lastRun`,
+`lastSuccess`, `lastFailure` and `lastProgressAt`: evidence has not been supplied.
+They never mean a completed pass or prove service activation. The same version-1
+schema accepts the fixed service policy and evidenced worker run/history fields;
+no second status file is used. Run identities name their trigger, worker PID and
+start; a running receipt has no finish/reason. Complete, partial and failed
+receipts have a finish, and failure has an explicit reason. Success/failure
+summaries retain run identity, finish, per-run counts and sampled peak RSS;
+failure additionally has a safe message and optional path/offset. Future-dated,
+malformed or unsupported evidence is invalid, not a freshness conclusion.
+
+`capture-status.mjs` validates this shared format and atomically replaces a
+private same-directory temporary file after its fsync. Publication failure is
+reported; the prior snapshot is not replaced by an invented success. Exact
+receipt commands refresh backlog while preserving all prior service history,
+without claiming their own unbounded operation was a bounded pass. Snapshot
+format support alone does not produce run evidence: the admitted command worker
+must supply committed facts.
+
+The private `CaptureRun` helper publishes a running identity before initializing
+its derived counter row. Counter changes join the processing transaction after
+journal fsync or index commit; rolled-back work cannot publish progress. A
+continuing worker combines those committed counters with the published sampled
+RSS peak. Sampling alone never advances `lastProgressAt`. An unfinished run
+whose counter cache is lost retains interruption evidence rather than becoming
+a successful empty pass. A finished file receipt takes precedence over a stale
+running counter row, and finalization needs one atomic file publication, not a
+second derived-state commit. Failure within a pass survives later healthy work;
+partial work preserves previous success and failure history. These are private
+accounting mechanics, not evidence that command integration has run a pass.
 
 ## Resource model
 

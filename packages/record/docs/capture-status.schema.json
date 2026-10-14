@@ -17,24 +17,82 @@
       "const": 1
     },
     "policy": {
-      "type": "null",
-      "description": "No policy or run evidence supplied in the algorithm-only phase."
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "intervalSeconds",
+            "heapMiB",
+            "rssBytes",
+            "deadlineSeconds",
+            "maxRecordBytes"
+          ],
+          "properties": {
+            "intervalSeconds": {
+              "const": 900
+            },
+            "heapMiB": {
+              "const": 256
+            },
+            "rssBytes": {
+              "const": 2147483648
+            },
+            "deadlineSeconds": {
+              "const": 300
+            },
+            "maxRecordBytes": {
+              "const": 8388608
+            }
+          }
+        }
+      ],
+      "description": "Null retains algorithm-phase absence of policy evidence. Service workers publish the fixed common policy."
     },
     "lastRun": {
-      "type": "null",
-      "description": "No policy or run evidence supplied in the algorithm-only phase."
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/run"
+        }
+      ]
     },
     "lastSuccess": {
-      "type": "null",
-      "description": "No policy or run evidence supplied in the algorithm-only phase."
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/summary"
+        }
+      ]
     },
     "lastFailure": {
-      "type": "null",
-      "description": "No policy or run evidence supplied in the algorithm-only phase."
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/failure"
+        }
+      ]
     },
     "lastProgressAt": {
-      "type": "null",
-      "description": "No policy or run evidence supplied in the algorithm-only phase."
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ],
+      "description": "Advanced only for committed progress; a running process or a sampled RSS value is not progress."
     },
     "backlog": {
       "type": "object",
@@ -161,5 +219,299 @@
         ]
       }
     }
-  }
+  },
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filesVisited",
+        "bytesCommitted",
+        "turnsAppended",
+        "turnsIndexed",
+        "inputsPending",
+        "inputsSetAside",
+        "inputsFailed",
+        "inputsIgnored"
+      ],
+      "properties": {
+        "filesVisited": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bytesCommitted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turnsAppended": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "turnsIndexed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inputsPending": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inputsSetAside": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inputsFailed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inputsIgnored": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "trigger",
+        "pid",
+        "startedAt",
+        "finishedAt",
+        "counts",
+        "peakRssBytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger": {
+          "enum": [
+            "service",
+            "hook",
+            "setup",
+            "manual",
+            "watch"
+          ]
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "peakRssBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "trigger",
+        "pid",
+        "startedAt",
+        "finishedAt",
+        "counts",
+        "peakRssBytes",
+        "reason",
+        "message"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger": {
+          "enum": [
+            "service",
+            "hook",
+            "setup",
+            "manual",
+            "watch"
+          ]
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "peakRssBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "reason": {
+          "enum": [
+            "deadline",
+            "rss",
+            "heap",
+            "interrupted",
+            "input",
+            "io"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "path": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "trigger",
+        "pid",
+        "startedAt",
+        "finishedAt",
+        "counts",
+        "peakRssBytes",
+        "outcome",
+        "reason",
+        "reclaimedLock"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger": {
+          "enum": [
+            "service",
+            "hook",
+            "setup",
+            "manual",
+            "watch"
+          ]
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "peakRssBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "outcome": {
+          "enum": [
+            "running",
+            "complete",
+            "partial",
+            "failed"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "deadline",
+                "rss",
+                "heap",
+                "interrupted",
+                "input",
+                "io"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reclaimedLock": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "pid",
+                "startedAt"
+              ],
+              "properties": {
+                "pid": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "startedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "description": "Atomic last-command snapshot. Current issue health is read separately from capture.db. Run times must be ordered and not future-dated; running has null finish/reason, complete has null reason, failed has a nonnull reason. Null policy requires null run/history evidence."
 }
