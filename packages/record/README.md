@@ -79,6 +79,10 @@ turn-record recall --reindex                    # full rebuild of the derived in
 
 Store root: `--root`, else `$TURN_RECORD_ROOT`, else `~/.turn-record`.
 
+`recall --show` refuses a turn hidden by its author's tombstone, including a
+session event whose tombstone lives in another stream. It emits no turn payload
+and exits with status 1, as it does for a missing turn.
+
 **The `node` that `setup` writes down.** The hooks and the watcher's unit name
 a `node` by its path, and only `setup` run again rewrites them. Which path
 depends on how it is run:
