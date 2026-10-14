@@ -434,9 +434,24 @@ function parseRosterEnvelope(stdout) {
   return doc;
 }
 
-/** One bounded aggregate read; the CLI owns registry and saved-route resolution. */
+/** A value the kernel takes for `server roster --workspace-key` (feature roster-workspace-key): a
+ * registration's key grammar (not empty, no whitespace or control character), and not an option
+ * (the kernel refuses a value that starts with `--`). */
+export const ROSTER_WORKSPACE_KEY = /^(?!--)[^\s\x00-\x1f\x7f]{1,2048}$/;
+/** At most this many keys in one read: one per open window. */
+export const ROSTER_WORKSPACE_KEYS_MAX = 64;
+
+/** One bounded aggregate read; the CLI owns registry and saved-route resolution. `io.workspaceKeys`, only
+ * for a CLI that lists `roster-workspace-key`: the read probes those workspaces' registrations (and those
+ * of unknown workspace, and saved routes) and no other; each is one `--workspace-key=<key>` argv element.
+ * None, or an empty list, is the unfiltered read. A key the kernel would refuse is refused here. */
 export function cliRemoteRoster(bin, io = {}) {
-  return runJson(bin, ["server", "roster", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000, parse: parseRosterEnvelope });
+  const keys = io.workspaceKeys ?? [];
+  if (!Array.isArray(keys) || keys.length > ROSTER_WORKSPACE_KEYS_MAX || !keys.every((k) => typeof k === "string" && ROSTER_WORKSPACE_KEY.test(k))) {
+    throw Object.assign(new Error("Invalid workspace keys for the roster read"), { code: "E_BAD_ARGS" });
+  }
+  const argv = ["server", "roster", ...[...new Set(keys)].map((k) => `--workspace-key=${k}`), "--json"];
+  return runJson(bin, argv, { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000, parse: parseRosterEnvelope });
 }
 
 /** Local retire predates the envelope; preserve its incomplete-cleanup result. */

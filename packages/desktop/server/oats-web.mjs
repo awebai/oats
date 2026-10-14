@@ -21,6 +21,8 @@
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
+ *   POST /api/windows               { views: [viewId|null, …] } → the views the open windows show: the remote roster
+ *                                   reads their workspaces' machines (#1124)
  *   POST /api/remote-roster/refresh → the remote roster read now (or the one in flight), answered once it has landed
  *   GET  /api/brain/<agent>?ws=<id> agent "brain" JSON: soul (AGENTS.md, skills,
  *                                   knowledge tree) + per-instance artifacts (abs paths)
@@ -81,10 +83,12 @@ import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed } from "../renderer/deployment-header.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
+import { validWorkspaceId } from "../renderer/workspace-id.mjs";
+import { MAX_WINDOW_VIEWS } from "../window-activity.mjs";
 import { START_UNCONFIRMED } from "../renderer/start-unconfirmed.mjs";
 import { startInstance, verifiedLocalHome as localHomeIn } from "../../client/session-start.mjs";
 import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
-import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes } from "../../client/panel-views.mjs";
+import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes, rosterWorkspaceKeys } from "../../client/panel-views.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -127,6 +131,11 @@ const EXIT_ON_STDIN_CLOSE = args.includes("--exit-on-stdin-close");
 const remoteIdentities = createRemoteIdentityStore({ file: typeof flag("remote-identity") === "string" ? flag("remote-identity") : null });
 let rosterAnswered = false;  // a roster answer arrived under the current CLI (remembered-only groups then leave)
 let rosterFailure = null;    // the roster read's failure while no answer has arrived
+/* The views the open windows show (#1124), as main last posted them (POST /api/windows): each window's view id, or
+   null for a window showing the switcher. null until main has posted: the roster read is then unfiltered. */
+let windowViews = null;
+let keptReadAt = new Map();  // the read time of each remote group a filtered answer kept (remote-roster.mjs `keptReadTimes`)
+let rosterAnsweredAt = null; // the time of the last roster answer
 /* ── Workspace views (#482) ──
    The deployments this server serves and the views over them are the shared home's
    (packages/client/panel-views.mjs): what the switcher lists, a view's panel, and which deployment a
@@ -134,7 +143,7 @@ let rosterFailure = null;    // the roster read's failure while no answer has ar
    built here from its own variables (the registry, the snapshot, the remote roster's last answer, the
    remembered remote identities, the kernel record), and reads it without changing it. */
 const held = () => ({
-  ctxs, snapshot, remoteGroups, remembered: remoteIdentities, rosterAnswered, rosterFailure, cli: cliState,
+  ctxs, snapshot, remoteGroups, remembered: remoteIdentities, rosterAnswered, rosterFailure, keptReadAt, cli: cliState,
   observing, remoteCollecting: remoteRead !== null, home: homedir(), at: new Date().toISOString(),
 });
 
@@ -628,16 +637,28 @@ function revalidateCatalog(wsId) {
  * (packages/client/remote-roster.mjs `remotePanelEntries`), made at the time of this merge. */
 function mergeRemotePanels(byWs) {
   for (const id of byWs.keys()) if (id.startsWith("remote:")) byWs.delete(id);
-  for (const [id, panel] of remote.remotePanelEntries(remoteGroups, new Date().toISOString())) byWs.set(id, panel);
+  for (const [id, panel] of remote.remotePanelEntries(remoteGroups, new Date().toISOString(), keptReadAt)) byWs.set(id, panel);
   return byWs;
 }
 /** One outcome of the roster read into what this process holds. What it becomes is the shared home's
  * (remote-roster.mjs `remoteRosterState`); the groups of an answer go to the remembered identities. */
 function takeRosterOutcome(outcome) {
-  const next = remote.remoteRosterState({ remoteGroups, rosterAnswered, rosterFailure }, outcome, new Date().toISOString());
+  const at = new Date().toISOString();
+  const next = remote.remoteRosterState({ remoteGroups, rosterAnswered, rosterFailure }, outcome, at);
   ({ remoteGroups, rosterAnswered, rosterFailure } = next);
+  keptReadAt = remote.keptReadTimes(keptReadAt, next, rosterAnsweredAt);
+  if (next.reported) rosterAnsweredAt = at;
   if (next.reported) remoteIdentities.observe(next.reported);
   mergeRemotePanels(snapshot.byWs);
+}
+/** What one roster read asks for (#1124): with a CLI that lists `roster-workspace-key`, the keys of the
+ * workspaces the open windows show, read now from the window set main last posted and what is held
+ * (panel-views.mjs `rosterWorkspaceKeys`), and how a held group's key is known for the merge
+ * (remote-roster.mjs `lastKnownKey`); null for the unfiltered read. */
+function rosterAsk(probe) {
+  if (!probe.features?.includes("roster-workspace-key")) return null;
+  const keys = rosterWorkspaceKeys(held(), windowViews, DESKTOP_TERMS);
+  return keys?.length ? { keys, keyOf: (group) => remote.lastKnownKey(group, remoteIdentities) } : null;
 }
 /* OATSWEB_REMOTEREAD_BEGIN — the remote roster read, one at a time and joined, extracted by tests */
 /** The roster read: one at a time, and a caller that asks while one runs joins it: the promise resolves once
@@ -662,9 +683,10 @@ function refreshRemoteSnapshotAfter() {
 async function readRemoteRoster(probe) {
   if (!cliReadsRemotes(probe)) { takeRosterOutcome({ gated: true }); return; }
   try {
-    const envelope = await adapter.cliRemoteRoster(probe.bin);
+    const asked = rosterAsk(probe); // the open windows' workspaces at this read, or null: unfiltered
+    const envelope = await (asked ? adapter.cliRemoteRoster(probe.bin, { workspaceKeys: asked.keys }) : adapter.cliRemoteRoster(probe.bin));
     if (cliState !== probe) return;
-    takeRosterOutcome({ envelope });
+    takeRosterOutcome(asked ? { envelope, asked } : { envelope });
   } catch (e) {
     if (cliState !== probe) return;
     takeRosterOutcome({ thrown: e.message });
@@ -1361,6 +1383,24 @@ const server = createServer(async (req, res) => {
       if (typeof body.focused !== "boolean" || Object.keys(body).length !== 1) return send(res, 400, { error: "body needs { focused: boolean }", code: "E_BAD_ARGS" });
       refreshLoop.setFocused(body.focused); remoteLoop.setFocused(body.focused);
       return send(res, 200, { focused: refreshLoop.focused() });
+    }
+    if (req.method === "POST" && path === "/api/windows") {
+      // The views the open windows show, from the Electron main process (main.mjs, window-activity.mjs
+      // `createViewsNotifier`), posted whole whenever they change and whenever main learns this server (#1124).
+      // POST, so the Host/Origin guards above cover it; it runs no command. The roster read asks for these
+      // windows' workspaces; a window showing a workspace the last set did not ask for gets a read now, whatever
+      // that set was: a set says what the next read asks for, never what the last read covered.
+      let body;
+      try { body = await readStrictBody(req); } catch { return send(res, 400, { error: "body needs { views: [view id | null] }", code: "E_BAD_ARGS" }); }
+      const views = body?.views;
+      if (Object.keys(body ?? {}).length !== 1 || !Array.isArray(views) || views.length > MAX_WINDOW_VIEWS || !views.every((v) => v === null || validWorkspaceId(v)))
+        return send(res, 400, { error: "body needs { views: [view id | null] }", code: "E_BAD_ARGS" });
+      const terms = DESKTOP_TERMS, before = rosterWorkspaceKeys(held(), windowViews, terms);
+      windowViews = [...views];
+      const after = rosterWorkspaceKeys(held(), windowViews, terms);
+      // Only for a CLI that filters: without the word every read covers every machine already, as before.
+      if (cliState.features?.includes("roster-workspace-key") && (after === null ? before !== null : after.some((k) => !before?.includes(k)))) void remoteLoop.request();
+      return send(res, 200, { views: windowViews.length });
     }
     if (req.method === "POST" && path === "/api/remote-roster/refresh") {
       // A remote window's Retry (#1117): the read the background loop runs, now, or the one already in flight.

@@ -377,6 +377,18 @@ a row with what OATS reported, and a step that needs you says what to run
 where, with a copy button. **Check again** re-runs both. The Desktop never asks
 for a password or key, and never runs anything over ssh itself.
 
+**Which machines the Desktop reads.** One roster read serves every window. With
+an OATS CLI that lists the `roster-workspace-key` feature, it reads only the
+machines of the workspaces your windows show: those registered for one of
+them, those whose workspace is not known yet, and those known only from a
+saved route. A machine registered for a workspace no window shows is not
+contacted, so a machine that is switched off no longer slows every window's
+roster. Opening a window on another workspace reads its machines at once. Until
+it does, that workspace's machines are shown as they were last read, marked
+stale, and the switcher still lists them, not counted live. The read covers every machine again while a window
+shows the switcher, and on the first read after the Desktop starts. With an
+older CLI, every registered machine is read, as before.
+
 ## Instances on servers
 
 Every instance a registered server reports shows in its workspace's roster, whoever spawned it. You

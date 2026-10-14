@@ -3038,11 +3038,14 @@ only which groups appear changes, and a key that matches nothing leaves the
 kinds 2 and 3. In text mode, keys that leave no group print `no remote groups
 for the given workspace keys`.
 
-The Desktop reads one roster for all its windows: it passes every open
-window's usable `workspace.key` in one read, skipping a window whose key is
-`null` or whose `keyFrom` is `"member"` (unresolved, [never
-matched](#workspace-identity-feature-workspace-identity-oats-0360)), and reads
-unfiltered when no window has a usable key.
+The Desktop reads one roster for all its windows: it passes the workspace key
+of every open window's view in one read, member-derived keys included (a
+registration records the key its host reports, whatever its `keyFrom`). A key
+that is `null`, or one the kernel would refuse, is no registration's: a view
+without a usable key adds none. The read is unfiltered when the Desktop has no
+window set or no roster answer yet, when a window shows the switcher, when a
+view without a usable key holds another machine's deployment (whose
+registration cannot then be named), and when no key is usable.
 
 <a id="forget-a-saved-route-oats-server-forget---json"></a>
 ### Forget a saved route (`oats server forget --json`)
