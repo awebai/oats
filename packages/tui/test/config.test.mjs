@@ -5,11 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ACTIONS, bindings } from "../lib/actions.mjs";
-import { CONFIG_LIMIT, MAX_PROBLEMS, configPath, effectiveConfig, loadConfig } from "../lib/config.mjs";
+import { CONFIG_LIMIT, DETACH_KEY, MAX_PROBLEMS, configPath, effectiveConfig, loadConfig } from "../lib/config.mjs";
 import { isKeyId } from "../lib/term/keys.mjs";
 
 const FILE = "/cfg/oats/tui.json";
-const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, workspaces, open-workspace, help, close, quit, suspend, redraw";
+const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, workspaces, open, help, close, quit, suspend, redraw";
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
 /** The whole line of a refusal, as it is printed. */
 const line = (clause, file = FILE) => `oats: \`oats tui\` cannot use ${file}: ${clause} (E_TUI_CONFIG)`;
@@ -69,12 +69,14 @@ test("loadConfig reads the path configPath gives: a relative or empty XDG_CONFIG
 
 // --- The defaults ---------------------------------------------------------------
 
-test("no file is the defaults: the action table itself, ascii false, and the path that was looked at; nothing is read", () => {
+test("no file is the defaults: the action table itself, ascii false, the detach key C-\\, and the path that was looked at; nothing is read", () => {
   const loaded = load("", { stat: () => null });
-  assert.deepEqual(Object.keys(loaded), ["ok", "actions", "ascii", "path", "calls"]);
+  assert.deepEqual(Object.keys(loaded), ["ok", "actions", "ascii", "detachKey", "path", "calls"]);
   assert.equal(loaded.ok, true);
   assert.equal(loaded.actions, ACTIONS);
   assert.equal(loaded.ascii, false);
+  assert.equal(loaded.detachKey, "C-\\");
+  assert.equal(DETACH_KEY, "C-\\");
   assert.equal(loaded.path, FILE);
   assert.deepEqual(loaded.calls, [["stat", FILE]]);
 });
@@ -82,10 +84,11 @@ test("no file is the defaults: the action table itself, ascii false, and the pat
 test("an empty object, or one that names no action, is the defaults: an equal table, frozen like the one it was made from", () => {
   for (const value of [{}, { keys: {} }, { ascii: false }, { ascii: false, keys: {} }]) {
     const result = effectiveConfig(value);
-    assert.deepEqual(Object.keys(result), ["ok", "actions", "ascii"]);
+    assert.deepEqual(Object.keys(result), ["ok", "actions", "ascii", "detachKey"]);
     assert.deepEqual(result.actions, ACTIONS);
     assert.equal(deepFrozen(result.actions), true);
     assert.equal(result.ascii, false);
+    assert.equal(result.detachKey, DETACH_KEY);
   }
   assert.equal(deepFrozen(ACTIONS), true);
   assert.equal(ACTIONS.every((action) => action.keys.every(isKeyId)), true, "every default key is a key id");
@@ -157,7 +160,7 @@ test("refused: a key the help cannot name, one whose label the display filter wo
 
 test("effectiveConfig checks against the table it is given", () => {
   const table = Object.freeze([{ id: "a", keys: ["x"], label: "A", extra: 1 }, { id: "b", keys: ["y"], label: "B" }]);
-  assert.deepEqual(effectiveConfig({ keys: { b: ["z"] } }, table), { ok: true, actions: [{ id: "a", keys: ["x"], label: "A", extra: 1 }, { id: "b", keys: ["z"], label: "B" }], ascii: false });
+  assert.deepEqual(effectiveConfig({ keys: { b: ["z"] } }, table), { ok: true, actions: [{ id: "a", keys: ["x"], label: "A", extra: 1 }, { id: "b", keys: ["z"], label: "B" }], ascii: false, detachKey: DETACH_KEY });
   assert.deepEqual(effectiveConfig({ keys: { quit: ["q"] } }, table), { ok: false, problems: ["unknown action quit; the actions are a, b"] });
   assert.deepEqual(effectiveConfig({ keys: { b: ["x"] } }, table), { ok: false, problems: ["the key x is given to a and to b; a key does one thing"] });
   assert.deepEqual(effectiveConfig({ keys: { b: [] } }, table).ok, true, "only quit must keep a key");
@@ -226,12 +229,12 @@ test("refused: valid JSON that is not one object", () => {
   }
 });
 
-test("refused: a top-level key other than keys and ascii", () => {
-  assert.deepEqual(load({ theme: "dark" }).lines, [line("unknown setting theme; the settings are keys and ascii")]);
-  assert.deepEqual(load({ Keys: {} }).lines, [line("unknown setting Keys; the settings are keys and ascii")]);
-  assert.deepEqual(load('{"__proto__": {"ascii": true}}').lines, [line("unknown setting __proto__; the settings are keys and ascii")]);
-  assert.deepEqual(load('{"constructor": 1}').lines, [line("unknown setting constructor; the settings are keys and ascii")]);
-  assert.deepEqual(load({ "": 1 }).lines, [line("a setting whose name cannot be shown is unknown; the settings are keys and ascii")]);
+test("refused: a top-level key other than keys, ascii and open", () => {
+  assert.deepEqual(load({ theme: "dark" }).lines, [line("unknown setting theme; the settings are keys, ascii and open")]);
+  assert.deepEqual(load({ Keys: {} }).lines, [line("unknown setting Keys; the settings are keys, ascii and open")]);
+  assert.deepEqual(load('{"__proto__": {"ascii": true}}').lines, [line("unknown setting __proto__; the settings are keys, ascii and open")]);
+  assert.deepEqual(load('{"constructor": 1}').lines, [line("unknown setting constructor; the settings are keys, ascii and open")]);
+  assert.deepEqual(load({ "": 1 }).lines, [line("a setting whose name cannot be shown is unknown; the settings are keys, ascii and open")]);
 });
 
 test("refused: keys that is not an object", () => {
@@ -243,10 +246,10 @@ test("refused: keys that is not an object", () => {
 test("a refusal of the file's shape is one line and ends the check: the first in the file's order, and nothing about its keys", () => {
   const broken = { quit: [], reload: ["x"], up: ["Ctrl+C"] };
   assert.equal(load({ keys: broken }).lines.length, 3);
-  assert.deepEqual(load({ keys: broken, theme: 1 }).lines, [line("unknown setting theme; the settings are keys and ascii")]);
+  assert.deepEqual(load({ keys: broken, theme: 1 }).lines, [line("unknown setting theme; the settings are keys, ascii and open")]);
   assert.deepEqual(load({ keys: broken, ascii: "yes" }).lines, [line("ascii must be true or false")]);
   assert.deepEqual(load({ ascii: "yes", theme: 1, keys: [] }).lines, [line("ascii must be true or false")]);
-  assert.deepEqual(load({ theme: 1, ascii: "yes", keys: [] }).lines, [line("unknown setting theme; the settings are keys and ascii")]);
+  assert.deepEqual(load({ theme: 1, ascii: "yes", keys: [] }).lines, [line("unknown setting theme; the settings are keys, ascii and open")]);
   assert.deepEqual(load({ keys: [], ascii: "yes", theme: 1 }).lines, [line('keys must be an object, like {"quit": ["q"]}')]);
 });
 
@@ -299,9 +302,9 @@ test("refused: one key given to two actions, naming the key and both; a user's k
   // existed that gives one of them to another action is refused like any other, and is
   // honoured once it gives the switcher's action another key, or none.
   assert.deepEqual(load({ keys: { refresh: ["w"] } }).lines, [line("the key w is given to workspaces and to refresh; a key does one thing")]);
-  assert.deepEqual(load({ keys: { detail: ["enter"] } }).lines, [line("the key enter is given to open-workspace and to detail; a key does one thing")]);
+  assert.deepEqual(load({ keys: { detail: ["enter"] } }).lines, [line("the key enter is given to open and to detail; a key does one thing")]);
   assert.equal(load({ keys: { refresh: ["w"], workspaces: ["f2"] } }).ok, true);
-  assert.equal(load({ keys: { detail: ["enter"], "open-workspace": [] } }).ok, true);
+  assert.equal(load({ keys: { detail: ["enter"], open: [] } }).ok, true);
 });
 
 test("refused: one key given to two actions by two lists of the file, found at the second", () => {
@@ -365,8 +368,8 @@ const HOSTILE = ["\x1b[2J", "\x1b]0;title\x07", "a\x07b", "q\x00", "\u009b31m", 
 
 test("a name from the file reaches a line only when it is plain printable ASCII of at most 40 characters", () => {
   const forty = "x".repeat(40), fortyOne = "x".repeat(41);
-  assert.deepEqual(load({ [forty]: 1 }).lines, [line(`unknown setting ${forty}; the settings are keys and ascii`)]);
-  assert.deepEqual(load({ [fortyOne]: 1 }).lines, [line("a setting whose name cannot be shown is unknown; the settings are keys and ascii")]);
+  assert.deepEqual(load({ [forty]: 1 }).lines, [line(`unknown setting ${forty}; the settings are keys, ascii and open`)]);
+  assert.deepEqual(load({ [fortyOne]: 1 }).lines, [line("a setting whose name cannot be shown is unknown; the settings are keys, ascii and open")]);
   assert.deepEqual(load({ keys: { [forty]: [] } }).lines, [line(`unknown action ${forty}; the actions are ${IDS}`)]);
   assert.deepEqual(load({ keys: { [fortyOne]: [] } }).lines, [line(`an action id that cannot be shown is unknown; the actions are ${IDS}`)]);
   assert.deepEqual(load({ keys: { help: [forty] } }).lines, [line(`the key ${forty} of help is not a key id; ${KEY_IDS}`)]);
@@ -402,7 +405,7 @@ test("a hostile name never appears in a line, wherever the file puts it, and eve
     for (const produced of lines) if (name !== " ") assert.equal(produced.includes(name), false, `${label} in: ${produced.slice(0, 200)}`);
     // In the path the rule is the path's: a space and 41 characters are plain there.
     const inPath = refused(load({ theme: 1 }, { env: { XDG_CONFIG_HOME: `/cfg/${name}` } }), `path ${label}`);
-    if (!PRINTABLE.test(name) || name.length > 200) assert.deepEqual(inPath, [line("unknown setting theme; the settings are keys and ascii", "its configuration file")], label);
+    if (!PRINTABLE.test(name) || name.length > 200) assert.deepEqual(inPath, [line("unknown setting theme; the settings are keys, ascii and open", "its configuration file")], label);
     all.push(...lines, ...inPath);
   }
   assert.ok(all.length > 300, `${all.length} lines`);
@@ -411,7 +414,7 @@ test("a hostile name never appears in a line, wherever the file puts it, and eve
 
 test("the path is echoed only when it is printable ASCII of at most 200 characters; otherwise the line says its configuration file", () => {
   const withHome = (xdg) => load({ theme: 1 }, { env: { XDG_CONFIG_HOME: xdg } }).lines;
-  const clause = "unknown setting theme; the settings are keys and ascii";
+  const clause = "unknown setting theme; the settings are keys, ascii and open";
   assert.deepEqual(withHome("/my config"), [line(clause, path.join("/my config", "oats", "tui.json"))], "a space is printable");
   for (const xdg of ["/cfg/\x1b[2J", "/cfg/a\nb", "/cfg/é", "/cfg/日本", "/cfg/a\tb", "/cfg/\x7f", "/cfg/\u009b"]) {
     assert.deepEqual(withHome(xdg), [line(clause, "its configuration file")], JSON.stringify(xdg));
@@ -428,7 +431,7 @@ test("the path is echoed only when it is printable ASCII of at most 200 characte
 
 test("on disk: no file is the defaults, a file is read, and what it says is used", () => {
   const { env, home, file } = onDisk();
-  assert.deepEqual(loadConfig({ env, home }), { ok: true, actions: ACTIONS, ascii: false, path: file });
+  assert.deepEqual(loadConfig({ env, home }), { ok: true, actions: ACTIONS, ascii: false, detachKey: DETACH_KEY, path: file });
   assert.equal(loadConfig({ env, home }).actions, ACTIONS);
   fs.writeFileSync(file, JSON.stringify({ keys: { quit: ["q"], refresh: ["r", "f5"], suspend: [] }, ascii: true }));
   const loaded = loadConfig({ env, home });
@@ -441,8 +444,8 @@ test("on disk: no file is the defaults, a file is read, and what it says is used
 
 test("on disk: with no config directory at all, or a config home that is not a directory, there is no file", () => {
   const missing = path.join(dir, "no-such-home");
-  assert.deepEqual(loadConfig({ env: { XDG_CONFIG_HOME: missing }, home: "/nonexistent" }), { ok: true, actions: ACTIONS, ascii: false, path: path.join(missing, "oats", "tui.json") });
-  assert.deepEqual(loadConfig({ env: {}, home: missing }), { ok: true, actions: ACTIONS, ascii: false, path: path.join(missing, ".config", "oats", "tui.json") });
+  assert.deepEqual(loadConfig({ env: { XDG_CONFIG_HOME: missing }, home: "/nonexistent" }), { ok: true, actions: ACTIONS, ascii: false, detachKey: DETACH_KEY, path: path.join(missing, "oats", "tui.json") });
+  assert.deepEqual(loadConfig({ env: {}, home: missing }), { ok: true, actions: ACTIONS, ascii: false, detachKey: DETACH_KEY, path: path.join(missing, ".config", "oats", "tui.json") });
   const notADirectory = path.join(dir, "a-file");
   fs.writeFileSync(notADirectory, "");
   assert.equal(loadConfig({ env: { XDG_CONFIG_HOME: notADirectory }, home: "/nonexistent" }).ok, true, "as XDG_CONFIG_HOME=/dev/null");
@@ -472,7 +475,7 @@ test("on disk: a symbolic link to a regular file is read; a link to a directory,
 
   const dangling = onDisk();
   fs.symlinkSync(path.join(dir, "nothing-here"), dangling.file);
-  assert.deepEqual(loadConfig(dangling), { ok: true, actions: ACTIONS, ascii: false, path: dangling.file }, "a link to nothing is no file");
+  assert.deepEqual(loadConfig(dangling), { ok: true, actions: ACTIONS, ascii: false, detachKey: DETACH_KEY, path: dangling.file }, "a link to nothing is no file");
 
   const loop = onDisk();
   fs.symlinkSync(loop.file, loop.file);
@@ -512,4 +515,42 @@ test("on disk: a file whose size says less than it holds is still never read pas
   const { env, home, file } = onDisk();
   fs.symlinkSync(endless, file);
   assert.deepEqual(loadConfig({ env, home }), { ok: false, lines: [line("it is larger than 64 KiB", file)] });
+});
+
+// --- open.detachKey ---------------------------------------------------------------
+
+test("open.detachKey is the key that leaves an agent's terminal, passed as it is: its grammar is the kernel's, and a file without it keeps C-\\", () => {
+  for (const key of ["F12", "C-]", "M-x", "S-F5", "C-\\", "not a key at all", "x".repeat(16)]) {
+    const loaded = load({ open: { detachKey: key } });
+    assert.equal(loaded.ok, true, key);
+    assert.equal(loaded.detachKey, key, key);
+  }
+  assert.equal(load({ open: {} }).detachKey, DETACH_KEY, "an open object that names no key");
+  assert.equal(load({ keys: { quit: ["q"] }, ascii: true }).detachKey, DETACH_KEY, "a file written before the setting existed means what it meant");
+  const all = load({ keys: { open: ["o"] }, ascii: true, open: { detachKey: "F12" } });
+  assert.deepEqual([all.ok, all.ascii, all.detachKey, bindings(all.actions).get("o")], [true, true, "F12", "open"]);
+});
+
+test("refused: an open.detachKey that is not 1 to 16 printable ASCII characters, one that begins with -, one the help cannot name, an unknown member of open, and an open that is not an object", () => {
+  const shape = 'open.detachKey must be 1 to 16 printable ASCII characters, like "F12"';
+  for (const key of ["", "x".repeat(17), "C-\u00e9", "C-\n", "\u001b[A", 12, null, true, ["F12"], { key: "F12" }]) {
+    assert.deepEqual(load({ open: { detachKey: key } }).lines, [line(shape)], JSON.stringify(key));
+  }
+  for (const key of ["-", "--detach-key", "-x", "--server"]) assert.deepEqual(load({ open: { detachKey: key } }).lines, [line("open.detachKey cannot begin with -")], key);
+  // Printable ASCII the display filter would change (a run of spaces, a space at an end): drawn
+  // in the footer and the help, it would name another key.
+  for (const key of [" ", "C-  x", " F12", "F12 "]) assert.deepEqual(load({ open: { detachKey: key } }).lines, [line("open.detachKey is a key the help cannot name; give a key whose characters can be shown")], JSON.stringify(key));
+  assert.deepEqual(load({ open: { detachKey: "F12", command: "x" } }).lines, [line("unknown member command of open; open has detachKey")]);
+  assert.deepEqual(load({ open: { "\u001b": 1 } }).lines, [line("a member of open whose name cannot be shown is unknown; open has detachKey")]);
+  for (const open of ["F12", [], null, 1, true]) assert.deepEqual(load({ open }).lines, [line('open must be an object, like {"detachKey": "F12"}')], JSON.stringify(open));
+  // A refusal of open is a refusal of the file's shape: one line, before anything about its keys.
+  assert.deepEqual(load({ keys: { nope: ["x"] }, open: { detachKey: "-x" } }).lines, [line("open.detachKey cannot begin with -")]);
+});
+
+test("a file that names open-workspace, the action's name before it became open, is refused with the name it has now", () => {
+  assert.deepEqual(load({ keys: { "open-workspace": ["o"] } }).lines, [line("open-workspace is called open now; rename it")]);
+  assert.deepEqual(load({ keys: { "open-workspace": [] } }).lines, [line("open-workspace is called open now; rename it")]);
+  assert.equal(load({ keys: { open: ["o"] } }).ok, true);
+  // Against a table that has no open, the old name is just unknown.
+  assert.deepEqual(effectiveConfig({ keys: { "open-workspace": ["o"] } }, Object.freeze([{ id: "a", keys: ["x"], label: "A" }])), { ok: false, problems: ["unknown action open-workspace; the actions are a"] });
 });

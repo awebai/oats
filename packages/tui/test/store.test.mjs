@@ -107,8 +107,8 @@ test("a key with an action answers a new state or an effect; a key bound to noth
   assert.equal(moved.effect, null);
   assert.equal(selectedName(moved.state), "alpha-kid");
   assert.deepEqual(reduce(state, { key: "r", text: "r", page: 19, extent: 9, room: 19 }).effect, { refresh: { live: true } });
-  // Enter opens a workspace in the switcher and does nothing here; neither does a letter no action holds, nor a key no table names.
-  for (const key of ["enter", "z", "Z", "f5", "insert", "ctrl+x", "shift+tab", "2", "3"]) {
+  // A letter no action holds does nothing, nor does a key no table names. (Enter opens here: its tests are with the open's.)
+  for (const key of ["z", "Z", "f5", "insert", "ctrl+x", "shift+tab", "2", "3"]) {
     const result = reduce(state, { key, ...(key.length === 1 ? { text: key } : {}), page: 19, extent: 9, room: 19 });
     assert.equal(result.state, state, key);
     assert.equal(result.effect, null, key);

@@ -10,7 +10,8 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, remoteRosterState } from "../lib/client.mjs";
+import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
+import { startViewer } from "../lib/open.mjs";
 import { KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/fake.mjs", import.meta.url));
@@ -1450,4 +1451,101 @@ test("admitDeployment: a folder is admitted by what it is now, as its canonical 
   assert.deepEqual(admitDeployment("/given", io(() => { throw new Error("EACCES"); })), { ok: false });
   assert.deepEqual(admitDeployment("/given", io(() => true, () => { throw new Error("ENOENT"); })), { ok: false });
   assert.deepEqual(admitDeployment("/given", io(() => true, () => "not/absolute")), { ok: false });
+});
+
+// ── Opening an agent: the reader holds still while the terminal is lent, runs the preflight of
+// another machine's agent as a read, and never touches the viewer, which is not its child.
+
+test("hold(): while the terminal is lent no cycle begins and no roster read starts, whoever asks; release() and a live request read again", async (t) => {
+  const world = makeWorld();
+  world.plan({ ...answering(world, [kernelRow("dev-one")]), server: { stdout: JSON.stringify(rosterAnswer([])) } });
+  const { reader, entries, rosters, spawned, begun } = reading(t, world, { cli: world.remoteCli });
+  reader.hold();
+  reader.hold(); // idempotent
+  await reader.start();
+  await reader.request({ live: true });
+  await reader.request();
+  assert.deepEqual([spawned.length, entries.length, rosters.length, begun()], [0, 0, 0, 0], "nothing started, nothing emitted, no cycle numbered");
+  reader.release();
+  await reader.request({ live: true });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].number, 1, "the first cycle after the lend is the first that was numbered");
+  assert.equal(spawned.some((call) => call.args[1] === "server"), true, "and the roster is read again");
+});
+/** The kernel record of a CLI that opens agents on other machines with a detach key. */
+const keyedCli = (world) => cliRecord({ version: VERSION, workspaceApi: 2, features: [...FEATURES, DETACH_KEY_FEATURE, "server-probe-features"], remote: ["roster", "session"] }, { bin: world.bin, source: "tui" });
+const TARGET = Object.freeze({ serverId: "garnet", instance: "dev-far", home: "/srv/acme-platform/agents/dev/instances/dev-far" });
+
+test("the preflight's exec: `node <bin> session inspect …` in a session of its own and in the reader's environment, answered as execFile answers; prepareRemoteTerm over it answers the viewer's arguments", async (t) => {
+  const world = makeWorld();
+  world.plan({ session: { stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true, state: "unknown", backend: "tmux" } }) } });
+  const { reader, spawned } = reading(t, world);
+  const cli = keyedCli(world);
+  const prepared = await prepareRemoteTerm(cli, TARGET, { exec: reader.exec, detachKey: "F12" });
+  assert.deepEqual(prepared, { binary: world.bin, args: ["session", "attach", "--server", "garnet", "--home", TARGET.home, "--detach-key", "F12"] });
+  const [call] = world.calls("session", "start");
+  assert.deepEqual(call.argv, ["session", "inspect", "--server", "garnet", "--home", TARGET.home, "--json"], "the inspect never carries the key");
+  assert.equal(call.pgid, call.pid, "it leads a process group of its own");
+  if (call.sid !== null) assert.equal(call.sid, call.pid, "and the session it leads");
+  assert.deepEqual(call.env, {}, "in the environment the reader was given, which has left the instance");
+  assert.deepEqual(spawned.map((s) => [s.file, s.args[0], s.options.detached]), [[process.execPath, world.bin, true]]);
+  assert.deepEqual(reader.children(), [], "and forgotten once it has closed");
+});
+
+test("the preflight's exec: voidInFlight() does not end it; its signal ends its whole group and it is answered at once; an aborted signal or a stopped reader starts nothing", async (t) => {
+  const world = makeWorld();
+  world.plan({ session: { sleep: true, grandchild: true } });
+  const { reader, spawned } = reading(t, world);
+  const giveUp = new AbortController();
+  const answered = new Promise((resolve) => reader.exec(world.bin, ["session", "inspect", "--json"], { signal: giveUp.signal, timeout: 20_000, encoding: "utf8" }, (error) => resolve(error)));
+  const pid = await waitFor("the inspect to start", () => world.calls("session", "start")[0]?.pid);
+  const inner = await waitFor("its grandchild to start", () => world.calls("sleeper", "start")[0]);
+  reader.voidInFlight();
+  await sleep(300);
+  assert.equal(alive(pid) && alive(inner.pid), true, "a cycle's giving up is not the preflight's");
+  assert.deepEqual(reader.children(), [pid]);
+  giveUp.abort();
+  const error = await answered;
+  assert.equal(error.killed, true, "answered as a read the reader ended");
+  await gone([pid, inner.pid], 5000);
+  assert.deepEqual(reader.children(), []);
+
+  const before = spawned.length;
+  assert.throws(() => reader.exec(world.bin, ["session", "inspect"], { signal: giveUp.signal }, () => {}), /given up before it started/);
+  reader.stop();
+  assert.throws(() => reader.exec(world.bin, ["session", "inspect"], {}, () => {}), /stopped/);
+  assert.equal(spawned.length, before);
+});
+
+test("a preflight under way when the reader stops is ended with its group, as every read is", async (t) => {
+  const world = makeWorld();
+  world.plan({ session: { sleep: true } });
+  const { reader } = reading(t, world);
+  const answered = new Promise((resolve) => reader.exec(world.bin, ["session", "inspect", "--json"], { timeout: 20_000 }, (error) => resolve(error)));
+  const pid = await waitFor("the inspect to start", () => world.calls("session", "start")[0]?.pid);
+  reader.stop();
+  assert.equal((await answered).killed, true);
+  await gone([pid], 5000);
+});
+
+test("only reads are ever ended: a viewer the loop started (lib/open.mjs) is no child of the reader, and neither voidInFlight() nor stop() signals it; its own end() does", async (t) => {
+  const world = makeWorld();
+  world.plan({ ...answering(world, [kernelRow("dev-one")]), status: { sleep: true } });
+  const { reader } = reading(t, world);
+  // The viewer stands in for `oats session attach`: the sleeper, started as the loop starts the viewer.
+  const viewer = startViewer(path.join(world.dir, "sleeper.mjs"), [], { env: CLEAN_ENV });
+  const pid = await waitFor("the viewer to start", () => world.calls("sleeper", "start")[0]?.pid);
+  if (OWN_GROUP !== null) assert.equal(groupOf(pid), OWN_GROUP, "the viewer is in the TUI's own process group, unlike a read");
+  reader.start();
+  const kernel = await waitFor("a read to start", () => world.calls("status", "start")[0]?.pid);
+  assert.equal(reader.children().includes(pid), false, "the reader does not know the viewer");
+  reader.voidInFlight();
+  reader.stop();
+  await gone([kernel], 5000);
+  await sleep(300);
+  assert.equal(alive(pid), true, "the reader's clean-up never signalled the viewer");
+  viewer.end();
+  assert.deepEqual(await viewer.closed, { status: null, stderr: "" }, "ended by a signal: no status");
+  await gone([pid], 5000);
+  viewer.end(); // after it closed: nothing
 });

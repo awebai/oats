@@ -1,0 +1,370 @@
+process.env.TZ = "UTC";
+// Opening an agent's terminal (awebai/oats#855, PR 4): what Enter decides for a row, the line after
+// the viewer returns or after a preflight fails, the stderr of the viewer, the preflight of another
+// machine's agent, and the screen of each, drawn as the main loop draws it (helpers.mjs `draw`).
+// The rows are made by the shared reader (helpers.mjs `observed`, the roster's own functions for
+// another machine); a shared sentence is read from the row or the shared function, never written
+// out: only the TUI's own words are literals.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import {
+  DETACH_KEY_FEATURE, DETAIL_WITHHELD, TERMS, deployments, displayLine, instanceActs, instanceId, kernelLines, observeIdentities, observedEntry, openAct, originLead,
+  panelInstances, preflightFailure, prepareRemoteTerm, remoteRosterState, rosterRows, sessionAttachArgv,
+} from "../lib/client.mjs";
+import { DETACH_KEY, effectiveConfig } from "../lib/config.mjs";
+import { OPEN_WORDS, heldOf, model, openDecision, roster } from "../lib/model.mjs";
+import { STDERR_KEPT, startViewer } from "../lib/open.mjs";
+import { layout } from "../lib/views/frame.mjs";
+import { reduce } from "../lib/store.mjs";
+import { CLI, NOW, draw, instanceRow, observed, press, rosterOf, stateOf } from "./helpers.mjs";
+
+const size = (cols, rows) => ({ cols, rows });
+const S80 = size(80, 24), S120 = size(120, 40);
+const AT = new Date(NOW).toISOString();
+
+/** A kernel that opens agents with a detach key, here and (relaying each host's own features) on
+ *  other machines, and reads them. */
+const KEYED = Object.freeze({ ...CLI, features: Object.freeze([...CLI.features, DETACH_KEY_FEATURE, "server-probe-features"]), remote: Object.freeze(["roster", "session"]) });
+
+/** The words the TUI writes around an open, as the screen shows them: a part from outside is
+ *  given here as it is (the fixture's names are plain). */
+const words = (parts) => parts.map((part) => part.own ?? part.shown).join("");
+
+// ── This machine ──────────────────────────────────────────────────────────────────────────────────
+
+const ALPHA = "dev-alpha", BETA = "dev-beta";
+const HERE = () => [
+  instanceRow("dev", ALPHA),
+  instanceRow("dev", BETA, { running: false, runtimeState: "stopped" }),
+  instanceRow("dev", "dev-unknown", { running: null, runtimeState: "unreachable", runtimeError: "tmux: no server running" }),
+  instanceRow("dev", "dev-half", { running: false, runtimeState: "stopped", rollbackIncomplete: true }),
+  instanceRow("dev", "dev-herdr", { running: null, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: Herdr is gone; tmux is the only session backend" }),
+];
+const here = (options = {}) => stateOf(observed(HERE(), { cli: options.cli ?? KEYED }), { cli: KEYED, ...options });
+/** The state with `name` selected (from the first row, moving down). */
+function on(state, name, sz = S80) {
+  for (let i = 0; i < 20 && model(state, { page: 19, now: 0, at: new Date(0).toISOString(), cols: 38 }).list.find((item) => item?.selected)?.name !== name; i++) state = press(state, ["j"], sz).state;
+  assert.equal(rowOf(state).instance, name, `${name} is selected`);
+  return state;
+}
+const rowOf = (state) => roster(state).instances.find((row) => instanceId(row) === state.selected);
+/** The rows above the panes, as the layout counts them: from under the header's rule to the rule
+ *  that opens the panes. */
+function above(state, sz = S80) {
+  const r = roster(state, AT);
+  const g = layout(r.notice, sz, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: state.outcome });
+  return draw(state, sz).lines.slice(3, 3 + g.above - (g.above && r.observed ? 1 : 0)).map((line) => line.trim());
+}
+const footerOf = (state, sz = S80) => draw(state, sz).lines[sz.rows - 1];
+
+test("Enter on a running instance of this machine opens it at once: the effect carries the decision with the shared target, and the store holds what is being opened", () => {
+  const state = on(here(), ALPHA);
+  assert.equal(footerOf(state), " Enter open (C-\\ returns)   / filter   Tab detail   r refresh   ? help   q quit", "at 80 columns `w workspaces` is given up first");
+  const { state: opening, effects } = press(state, ["enter"]);
+  const row = rowOf(state);
+  assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: ALPHA, machine: null, target: { home: row.home }, routed: false } }]);
+  assert.deepEqual(opening.opening, { id: instanceId(row), phase: "lent", name: ALPHA, machine: null, routed: false });
+  // The target is what the shared home builds the viewer's arguments from: nothing of them is the TUI's.
+  assert.deepEqual(sessionAttachArgv(KEYED, effects[0].open.target, { detachKey: DETACH_KEY }), ["session", "attach", "--home", row.home, "--detach-key", "C-\\"]);
+  // While something is being opened a second Enter does nothing.
+  const again = reduce(opening, { key: "enter", page: 19, extent: 0, room: 19, cols: 38 });
+  assert.deepEqual([again.state, again.effect], [opening, null]);
+});
+
+/** A state that opened `name` and heard the viewer close with `status` and `stderr`. */
+function returned(state, status, stderr = "") {
+  const opened = press(state, ["enter"]).state;
+  return reduce(opened, { returned: { id: opened.opening.id, status, stderr } });
+}
+
+test("after the return: each word of the shared attachExit is the line of the TUI's own the table says, the instances are read again at once, and nothing is being opened", () => {
+  const state = on(here(), ALPHA);
+  const cases = [
+    [20, "", [words(OPEN_WORDS.left(ALPHA))], "left by the key"],
+    [0, "", [], "ended: nothing of its own, the list shows the agent as the kernel now reports it"],
+    [1, "oats: session no longer exists\n", [words(OPEN_WORDS.failed(ALPHA)), '"oats: session no longer exists"'], "failed, with what it printed"],
+    [1, "", [words(OPEN_WORDS.failed(ALPHA))], "failed, with nothing printed: no row for it"],
+    [255, "ssh: connect to host garnet port 22: timed out\n", [words(OPEN_WORDS.unknown(ALPHA))], "255 on this machine is no link: unknown"],
+    [null, "", [words(OPEN_WORDS.unknown(ALPHA))], "ended by a signal: unknown"],
+    [2, "", [words(OPEN_WORDS.unknown(ALPHA))], "any other status"],
+  ];
+  for (const [status, stderr, lines, why] of cases) {
+    const after = returned(state, status, stderr);
+    assert.deepEqual(after.effect, { refresh: { live: true } }, why);
+    assert.equal(after.state.opening, null, why);
+    assert.deepEqual(above(after.state), lines, why);
+  }
+  assert.equal(words(OPEN_WORDS.left(ALPHA)), `You left ${ALPHA}. It keeps running.`);
+  assert.equal(words(OPEN_WORDS.failed(ALPHA)), `${ALPHA} could not be opened.`);
+  assert.equal(words(OPEN_WORDS.unknown(ALPHA)), `The viewer of ${ALPHA} ended without saying why.`);
+  // A return for another id, or with nothing being opened, changes nothing.
+  const opened = press(state, ["enter"]).state;
+  assert.equal(reduce(opened, { returned: { id: "elsewhere", status: 20, stderr: "" } }).state, opened);
+  assert.equal(reduce(state, { returned: { id: opened.opening.id, status: 20, stderr: "" } }).state, state);
+});
+
+test("the line stands until the next key bound to an action; a key bound to nothing and a paste leave it", () => {
+  const after = returned(on(here(), ALPHA), 20).state;
+  const line = [words(OPEN_WORDS.left(ALPHA))];
+  for (const key of ["z", "f5", "ctrl+x", "insert"]) assert.deepEqual(above(press(after, [key]).state), line, key);
+  assert.deepEqual(above(reduce(after, { paste: "x" }).state), line, "a paste");
+  for (const key of ["j", "r", "ctrl+l", "?", "tab", "escape"]) assert.deepEqual(above(press(after, [key]).state).filter(Boolean), [], key);
+  // The key a user's tui.json gives an action is what counts.
+  const config = effectiveConfig({ keys: { refresh: ["f5"] } });
+  const rebound = returned(on(here({ actions: config.actions }), ALPHA), 20).state;
+  assert.deepEqual(above(press(rebound, ["r"]).state), line, "r is bound to nothing there");
+  assert.deepEqual(above(press(rebound, ["f5"]).state), [], "f5 refreshes there");
+});
+
+test("Enter where open is not offered opens nothing and says why: not running, state unknown, held, a removed session backend, and a kernel record without the detach key", () => {
+  const state = here();
+  const say = (name, cli) => {
+    const at = on(cli ? here({ cli }) : state, name);
+    const { state: after, effects } = press(at, ["enter"]);
+    assert.deepEqual([effects, after.opening], [[], null], `${name}: nothing is opened`);
+    return { lines: above(after, S120), row: rowOf(at) };
+  };
+  assert.deepEqual(say(BETA).lines, [`${BETA} is not running, so it has no terminal to open.`]);
+  assert.deepEqual(say("dev-unknown").lines, ["Whether dev-unknown runs is not known, so it is not opened."]);
+  // Held: the row's own reason, as the detail draws it (a sentence of the shared home's, as written).
+  const half = say("dev-half");
+  const held = instanceActs(half.row).limited;
+  assert.equal(openAct(half.row), null);
+  assert.equal(held.origin, undefined);
+  assert.deepEqual(half.lines, [displayLine(held.sentence)]);
+  // A session backend OATS no longer has: the reason's sentence, after its speaker's words when it has one.
+  const herdr = say("dev-herdr");
+  const reason = openAct(herdr.row).reason;
+  assert.equal(reason.code, "unsupported-session");
+  const lead = originLead(reason.origin, TERMS);
+  assert.deepEqual(herdr.lines, [reason.origin === undefined ? displayLine(reason.sentence) : lead !== null ? `${lead} ${displayLine(reason.sentence)}` : `"${displayLine(reason.sentence)}"`]);
+  // This machine's kernel without the feature (never so for the kernel the TUI ships with).
+  const bare = say(ALPHA, CLI);
+  assert.deepEqual(bare.lines.join(" "), words(OPEN_WORDS.noKey(null)));
+  assert.match(bare.lines.join(" "), /^This machine's OATS has no key to leave a viewer \(it needs OATS 0\.51\.0 or later\), so it is not opened from here\. `oats session attach --server <id> --home <home>` opens it, and only closing the terminal leaves it\.$/);
+  // No footer hint for a row Enter does not open.
+  for (const name of [BETA, "dev-unknown", "dev-half", "dev-herdr"]) assert.doesNotMatch(footerOf(on(state, name)), /Enter/, name);
+});
+
+// ── Another machine ───────────────────────────────────────────────────────────────────────────────
+
+const IDENTITY = Object.freeze({ key: "github.com/acme/platform", ref: "main", keyFrom: "workspace", standalone: false, defaultTeam: Object.freeze({ label: "eng", team: "team-1" }), teams: Object.freeze({ eng: "team-1" }), teamsFrom: "observed" });
+/** This machine's entry, reporting the workspace a machine's group joins. */
+function reporting(rows) {
+  const document = { ...rosterOf(rows), workspace: { reachable: true, ...IDENTITY } }, listed = rosterRows(document, KEYED);
+  return observedEntry({ roster: document, workspaceStatus: { workspace: { name: "acme-platform" } }, observedAt: "2026-10-11T09:59:00.000Z" }, panelInstances(listed, listed.map((row) => ({ running: row.running, runtimeState: row.runtimeState, tmux: row.tmux }))), "2026-10-11T10:00:00.000Z");
+}
+const FAR = "/home/dev/Agents/acme", FAR_A = "dev-far-a", FAR_B = "dev-far-b";
+const farRow = (name, extra = {}) => ({ instance: name, agent: "dev", home: `${FAR}/agents/dev/instances/${name}`, agentsRoot: `${FAR}/agents`, work: "worktree", harness: "claude", running: true, runtimeState: "running", addressable: true, ...extra });
+/** The machine `garnet`, whose OATS lists the detach key among its features. */
+const group = (extra = {}) => ({
+  id: "garnet:acme-1", server: "garnet", label: "garnet", registrationPresent: true, target: { workspace: FAR, sshHost: "garnet.example" }, probe: { ok: true, features: [DETACH_KEY_FEATURE] },
+  workspace: IDENTITY, agentsRoot: `${FAR}/agents`, souls: [], instances: [farRow(FAR_A), farRow(FAR_B, { addressable: false, running: false, runtimeState: "stopped" })], ...extra,
+});
+/** The store after one outcome of the roster read, made as the loop makes it. */
+function heard(state, groups, at = "2026-10-11T10:00:10.000Z") {
+  const next = remoteRosterState(state.remote, { envelope: { ok: true, result: { groups } } }, at);
+  const kept = next.reported === null ? { memory: state.memory, notes: state.notes } : observeIdentities({ memory: state.memory, notes: state.notes }, next.reported, at);
+  return reduce(state, { roster: { remote: { remoteGroups: next.remoteGroups, rosterAnswered: next.rosterAnswered, rosterFailure: next.rosterFailure }, memory: kept.memory, notes: kept.notes, at } }).state;
+}
+const both = (groups = [group()], options = {}) => heard(stateOf(reporting([instanceRow("dev", ALPHA)]), { cli: KEYED, ...options }), groups);
+
+test("a row of another machine finds its roster group by the deployment it is tagged with, as the shared deployments() lists it; a row whose deployment is not listed has no group, and the gate is false", () => {
+  const state = on(both(), FAR_A), row = rowOf(state);
+  const entry = deployments(heldOf(state, "2026-10-11T10:00:30.000Z")).find((d) => d.id === row.deployment.id);
+  assert.equal(entry?.group?.server, "garnet", "the row's tag names the deployment of its group");
+  assert.equal(openDecision(state, row, instanceActs(row)).open, true);
+  // Made by hand: a row tagged with a deployment the shared home does not list.
+  const stray = { ...row, deployment: { ...row.deployment, id: `${row.deployment.id}-not-listed` } };
+  const decision = openDecision(state, stray, instanceActs(stray));
+  assert.equal(decision.open, false);
+  assert.equal(words(decision.said.said), words(OPEN_WORDS.noKey("garnet")));
+});
+
+test("Enter on a running instance of another machine whose OATS has the detach key: the preflight first, the footer says so, Enter again does nothing, and Esc gives it up", () => {
+  const state = on(both(), FAR_A), row = rowOf(state);
+  assert.match(footerOf(state), /^ Enter open \(C-\\ returns\)/);
+  const { state: asking, effects } = press(state, ["enter"]);
+  assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: FAR_A, machine: "garnet", target: { serverId: "garnet", instance: FAR_A, home: row.home }, routed: true } }]);
+  assert.deepEqual(asking.opening, { id: instanceId(row), phase: "preflight", name: FAR_A, machine: "garnet", routed: true });
+  assert.match(footerOf(asking), /^ Esc stop opening {3}\/ filter/);
+  assert.doesNotMatch(footerOf(asking), /Enter|Esc close/);
+  assert.deepEqual(press(asking, ["enter"]).effects, [], "a second Enter does nothing");
+  const given = press(asking, ["escape"]);
+  assert.deepEqual([given.effects, given.state.opening], [[{ abandon: true }], null]);
+  // What the preflight answers after it was given up is dropped.
+  assert.equal(reduce(given.state, { prepared: { id: instanceId(row) } }).state, given.state);
+});
+
+test("the preflight ends: the viewer is started for the row selected at Enter, by its id, whatever is selected now; not when that row has left the roster; and a suspend gives it up with nothing said", () => {
+  const state = on(both(), FAR_A), id = instanceId(rowOf(state));
+  const asking = press(press(state, ["enter"]).state, ["k"]).state;
+  assert.notEqual(asking.selected, id, "the selection moved during the preflight");
+  const lent = reduce(asking, { prepared: { id } });
+  assert.deepEqual([lent.effect, lent.state.opening.phase], [{ lend: id }, "lent"]);
+  const after = reduce(lent.state, { returned: { id, status: 20, stderr: "" } });
+  assert.deepEqual(above(after.state), [words(OPEN_WORDS.left(FAR_A))], "the line names the row of the Enter");
+  // The row went away while the preflight ran.
+  const gone = heard(press(state, ["enter"]).state, [group({ instances: [farRow(FAR_B, { addressable: false, running: false, runtimeState: "stopped" })] })], "2026-10-11T10:00:25.000Z");
+  const dropped = reduce(gone, { prepared: { id } });
+  assert.deepEqual([dropped.effect, dropped.state.opening, above(dropped.state)], [null, null, []]);
+  // A suspend: the loop gives it up and tells the store.
+  const given = reduce(press(state, ["enter"]).state, { given: true });
+  assert.deepEqual([given.state.opening, above(given.state)], [null, []]);
+});
+
+/** execFile's signature over a canned answer, returning a child that closes after the callback, as
+ *  the shared runner waits for both. */
+const execWith = (answer) => (bin, argv, options, callback) => {
+  const child = Object.assign(new EventEmitter(), { pid: 1, kill() {} });
+  queueMicrotask(() => { answer(callback); child.emit("close", 0, null); });
+  return child;
+};
+const refused = (error) => (callback) => { const stdout = JSON.stringify({ schemaVersion: 1, ok: false, error }); callback(Object.assign(new Error("Command failed"), { code: 1, stdout, stderr: "" }), stdout, ""); };
+/** What the shared prepareRemoteTerm throws for an answer. */
+async function thrown(answer, options = {}) {
+  try { await prepareRemoteTerm(KEYED, { serverId: "garnet", instance: FAR_A, home: `${FAR}/agents/dev/instances/${FAR_A}` }, { exec: execWith(answer), detachKey: DETACH_KEY, ...options }); } catch (error) { return error; }
+  assert.fail("the preflight was expected to fail");
+}
+
+test("a preflight that failed: the shared table's sentence and, when the kernel said something, its lines under it; a withheld text is the TUI's [withheld]; the person's own giving up says nothing", async () => {
+  const state = on(both(), FAR_A), asking = press(state, ["enter"]).state, id = asking.opening.id;
+  const after = (error) => reduce(asking, { prepared: { id, error } });
+  const cases = [
+    await thrown(refused({ code: "E_SSH", message: "ssh: connect to host garnet port 22: timed out", details: { sshStarted: true } })),
+    await thrown((callback) => callback(null, JSON.stringify({ schemaVersion: 1, ok: true, result: { present: false } }), "")),
+    await thrown(refused({ code: "E_SERVER_UNKNOWN", message: "no server named garnet is registered", details: { fix: "oats server list names them" } })),
+    await thrown(refused({ code: "E_X", message: "failed: token=abc123", details: { fix: "run oats server check garnet" } })),
+    await thrown((callback) => callback(Object.assign(new Error("timeout"), { killed: true, signal: "SIGTERM", code: null }), "", "")),
+  ];
+  for (const error of cases) {
+    const failure = preflightFailure(error, "garnet");
+    const said = failure.said === null ? [] : kernelLines(failure.said.message, failure.said.fix, TERMS).map((line) => (line === DETAIL_WITHHELD ? "[withheld]" : line));
+    const next = after(error);
+    assert.deepEqual([next.effect, next.state.opening], [null, null], failure.code);
+    assert.deepEqual(above(next.state, S120), [failure.sentence, ...said], failure.code);
+  }
+  assert.equal(after(cases[3]).state.outcome.under[0], DETAIL_WITHHELD, "the shared word for a withheld text reaches the view as it came");
+  assert.equal(above(after(cases[3]).state, S120)[1], "[withheld]");
+  const aborted = new AbortController();
+  aborted.abort();
+  const own = await thrown(() => assert.fail("nothing runs"), { signal: aborted.signal });
+  assert.equal(preflightFailure(own, "garnet").code, "E_TERM_CONTEXT_CHANGED");
+  assert.deepEqual([after(own).state.opening, above(after(own).state)], [null, []], "nothing is said");
+});
+
+test("another machine's OATS without the detach key: not offered, in the TUI's words with the machine's name and a command of placeholders only; a link that ended is said with the machine's name", () => {
+  for (const probe of [{ ok: true, features: ["waiting-on-you"] }, { ok: true, features: null }, { ok: true }]) {
+    const state = on(both([group({ probe })]), FAR_A);
+    assert.doesNotMatch(footerOf(state), /Enter/);
+    const { state: after, effects } = press(state, ["enter"]);
+    assert.deepEqual(effects, []);
+    assert.equal(above(after, S120).join(" "), words(OPEN_WORDS.noKey("garnet")), JSON.stringify(probe));
+    assert.doesNotMatch(above(after, S120).join(" "), new RegExp(FAR_A), "nothing of the row is in the command");
+  }
+  // A row the kernel does not report addressable: the row's own reason, and no act of the TUI's.
+  const blocked = on(both(), FAR_B), reason = instanceActs(rowOf(blocked)).blocked;
+  assert.equal(openAct(rowOf(blocked)), null);
+  const lead = originLead(reason.origin, TERMS);
+  assert.deepEqual(above(press(blocked, ["enter"]).state, S120), [reason.origin === undefined ? displayLine(reason.sentence) : lead !== null ? `${lead} ${displayLine(reason.sentence)}` : `"${displayLine(reason.sentence)}"`]);
+  // The link: ssh's own failure, under a routed viewer.
+  const lent = reduce(press(on(both(), FAR_A), ["enter"]).state, { prepared: { id: instanceId(rowOf(on(both(), FAR_A))) } }).state;
+  const link = reduce(lent, { returned: { id: lent.opening.id, status: 255, stderr: "Connection to garnet.example closed by remote host.\n" } }).state;
+  assert.deepEqual(above(link, S120), [words(OPEN_WORDS.link("garnet")), '"Connection to garnet.example closed by remote host."']);
+  assert.equal(words(OPEN_WORDS.link("garnet")), "The connection to garnet ended.");
+});
+
+// ── The viewer's stderr ───────────────────────────────────────────────────────────────────────────
+
+/** The kernel's first row of #855 (comment 6138104215): a tmux command line with the agents'
+ *  socket, a line feed, tmux's own line, two line feeds. */
+const SOCKET = "/tmp/oats-tmux-1000/agents";
+const KERNEL_FIRST_ROW = `oats: Command failed: tmux -u -S ${SOCKET} list-panes -t =oats-agents:=dev-alpha -F #{pane_id}\t#{pane_dead}\t#{pane_current_command}\t#{pane_pid}\nerror connecting to ${SOCKET} (Permission denied)\n\n`;
+
+test("the stderr is drawn unvouched as ONE text: its lines and tabs made one line by the display filter, in quotation marks, naming nobody (the kernel's first row, at 60 and 80 columns)", () => {
+  const after = returned(on(here(), ALPHA), 1, KERNEL_FIRST_ROW).state;
+  const line = displayLine(KERNEL_FIRST_ROW);
+  assert.equal(line.includes("\t") || line.includes("\n"), false);
+  assert.deepEqual(after.outcome.under, [`"${line}"`], "one text, quoted");
+  for (const sz of [S80, size(60, 24)]) {
+    const rows = above(after, sz);
+    assert.equal(rows[0], words(OPEN_WORDS.failed(ALPHA)));
+    const quoted = rows.slice(1).join(" ");
+    assert.equal(quoted.startsWith('"oats: Command failed: tmux -u -S'), true, `${sz.cols}: ${quoted}`);
+    assert.doesNotMatch(quoted, /OATS says|oats tui says/, "no speaker's words before it");
+    // Cut as a reason is cut (the notice's rule): a quarter of the body, at most four rows.
+    assert.equal(rows.length - 1 <= Math.min(4, Math.max(1, Math.floor((sz.rows - 5) / 4))), true);
+  }
+});
+
+test("the stderr is compared with nothing: a row whose own text is tmux's same line keeps it in the detail, and the line after the return shows the stderr once", () => {
+  const TMUX = `error connecting to ${SOCKET} (Permission denied)`;
+  // Made by hand: a running row that carries tmux's line as its own text, as a race can leave it.
+  const state = on(stateOf(observed([instanceRow("dev", ALPHA, { runtimeError: TMUX })], { cli: KEYED }), { cli: KEYED }), ALPHA);
+  const after = returned(state, 1, `${TMUX}\n`).state;
+  const screen = draw(after, S120).lines.join("\n");
+  assert.equal(screen.split(`"${TMUX}"`).length - 1 >= 1, true, "the stderr, quoted, above the panes");
+  assert.deepEqual(above(after, S120), [words(OPEN_WORDS.failed(ALPHA)), `"${TMUX}"`], "shown once there");
+  assert.equal(model(after, { page: 30, now: 0, at: new Date(0).toISOString(), cols: 57 }).detail.facts.some((fact) => fact.value.includes(TMUX)), true, "and the detail still has the row's own reason");
+});
+
+test("the stderr: a withheld text is [withheld] alone, one with nothing to show draws no row, and a control sequence never reaches the screen", () => {
+  const state = on(here(), ALPHA);
+  assert.deepEqual(above(returned(state, 1, "failed: token=abc123\n").state), [words(OPEN_WORDS.failed(ALPHA)), "[withheld]"]);
+  assert.deepEqual(above(returned(state, 1, "   \n\n\t").state), [words(OPEN_WORDS.failed(ALPHA))]);
+  const hostile = returned(state, 1, "boom \u001b[2J\u001b]0;owned\u0007 ‮evil").state;
+  const d = draw(hostile, S80);
+  for (const row of d.cells) for (const cell of row) assert.doesNotMatch(cell.text, /[\u0000-\u001f\u007f‮]/);
+});
+
+test("the viewer's stderr is kept to its last STDERR_KEPT bytes while it runs; stdin and stdout are the terminal, no shell, the TUI's environment, and end() is SIGTERM to the viewer alone", async () => {
+  const calls = [];
+  const child = Object.assign(new EventEmitter(), { pid: 77, stderr: new PassThrough(), kills: [], kill(signal) { this.kills.push(signal); } });
+  const viewer = startViewer("/opt/oats/bin/oats.mjs", ["session", "attach", "--home", "/h", "--detach-key", "C-\\"], { env: { A: "1" }, spawn: (file, args, options) => { calls.push({ file, args, options }); return child; } });
+  assert.deepEqual(calls, [{ file: process.execPath, args: ["/opt/oats/bin/oats.mjs", "session", "attach", "--home", "/h", "--detach-key", "C-\\"], options: { stdio: ["inherit", "inherit", "pipe"], env: { A: "1" }, shell: false } }]);
+  assert.equal("detached" in calls[0].options, false, "not in a session of its own");
+  child.stderr.write("x".repeat(STDERR_KEPT));
+  child.stderr.write("the end");
+  await new Promise((resolve) => setImmediate(resolve));
+  viewer.end();
+  assert.deepEqual(child.kills, ["SIGTERM"]);
+  child.emit("close", 1, null);
+  const { status, stderr } = await viewer.closed;
+  assert.equal(status, 1);
+  assert.equal(Buffer.byteLength(stderr), STDERR_KEPT);
+  assert.equal(stderr.endsWith("the end"), true);
+  viewer.end();
+  assert.deepEqual(child.kills, ["SIGTERM"], "after it closed, end() does nothing");
+  const failing = startViewer("/x", [], { spawn: () => { throw new Error("EAGAIN"); } });
+  assert.deepEqual(await failing.closed, { status: null, stderr: "" }, "a viewer that did not start: no status");
+});
+
+// ── The new keys of the store, and the roster ─────────────────────────────────────────────────────
+
+test("opening, outcome and detachKey are kept by the store and read by the model beside the roster, never through it: changing each changes the screen (MADE_FROM)", () => {
+  const state = on(both(), FAR_A);
+  const before = draw(state).lines;
+  // opening: the footer says the preflight runs.
+  const asking = press(state, ["enter"]).state;
+  assert.equal(asking.opening.phase, "preflight");
+  assert.notDeepEqual(draw(asking).lines, before);
+  assert.equal(roster(asking).instances, roster(state).instances, "the roster is the one already made");
+  // outcome: a line above the panes.
+  const said = reduce(asking, { prepared: { id: asking.opening.id, error: Object.assign(new Error("x"), { code: "E_TERM_PREPARE_TIMEOUT" }) } }).state;
+  assert.notDeepEqual(draw(said).lines, draw({ ...said, outcome: null }).lines);
+  // detachKey: the footer and the help name it.
+  const f12 = on(both([group()], { detachKey: "F12" }), FAR_A);
+  assert.match(footerOf(f12), /^ Enter open \(F12 returns\)/);
+  assert.match(draw(press(f12, ["?"]).state, size(100, 70)).lines.join("\n"), /F12 brings oats tui back; the agent keeps running\./);
+});
+
+test("a name from outside in the line and the footer goes through the display filter on its own; the TUI's words around it are never filtered with it", () => {
+  const NAME = "dev-\u001b[31mred‮";
+  const state = on(stateOf(observed([instanceRow("dev", NAME, { running: false, runtimeState: "stopped" })], { cli: KEYED }), { cli: KEYED }), NAME);
+  const lines = above(press(state, ["enter"]).state, S120);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].endsWith(" is not running, so it has no terminal to open."), true, lines[0]);
+  assert.doesNotMatch(lines[0], /[\u0000-\u001f\u007f‮]/);
+});
