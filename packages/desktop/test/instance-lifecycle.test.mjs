@@ -402,6 +402,18 @@ test('CLI fixes every argv, caps timeout/output, supports raw/replayed retire an
     const result = await cliLifecycle(cli.bin, args, { exec: (_b, _a, _o, done) => done(error, 'PRIVATE') }); assert.equal(result.ok, false); assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
   }
 });
+test('a planless E_PLAN_STALE (#895, as a kernel before 0.52.0 printed it) reads unknown, stores no plan, and the same reference replays it without a CLI run', async () => {
+  // As printed on #866: the top-level error, no result, no details.plan, a message that says the hooks have run.
+  const answer = { schemaVersion: 1, ok: false, origin: 'kernel', error: { code: 'E_PLAN_STALE', message: 'the plan is stale: retire hooks have already run' } };
+  const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(retirePlan()) : answer });
+  const planRef = (await f.plan('retire')).planRef, first = await f.apply(planRef);
+  assert.equal(first.status, 'unknown'); assert.equal(first.reason.code, 'E_OUTCOME_UNKNOWN');
+  assert.equal(first.planRef, planRef, 'the reference sent, never a new one'); assert.equal(first.plan, null, 'no plan is offered');
+  assert.doesNotMatch(JSON.stringify(first), /hooks have already run/, 'the kernel\'s message is not shown (the planless message stays out, 5a)');
+  const again = await f.apply(planRef);
+  assert.equal(again.status, 'unknown'); assert.equal(again.repeated, true);
+  assert.deepEqual(f.calls.map(c => c.args.phase), ['plan', 'apply'], 'no second CLI run, and no plan was stored to apply');
+});
 test('a Herdr-recorded instance still plans and applies Retire: the kernel decides, the Desktop never blocks it', async () => {
   const f = fixture(), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
   Object.assign(f.ctx.instances[0], { running: null, runtimeState: 'unsupported', runtimeError: reason, sessionTarget: { backend: 'herdr' } });
@@ -410,19 +422,20 @@ test('a Herdr-recorded instance still plans and applies Retire: the kernel decid
   assert.equal((await f.apply(plan.planRef)).status, 'complete');
   assert.deepEqual(f.calls.map(c => [c.args.operation, c.args.phase]), [['retire', 'plan'], ['retire', 'apply']]);
 });
-test('BEFORE_EFFECT_CODES is a frozen list of eleven codes, and it is the set an apply reads as "refused, nothing happened"', async () => {
-  assert.deepEqual(BEFORE_EFFECT_CODES, ['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
+test('BEFORE_EFFECT_CODES is a frozen list of ten codes, and it is the set an apply reads as "refused, nothing happened"', async () => {
+  assert.deepEqual(BEFORE_EFFECT_CODES, ['E_BAD_ARGS', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
     'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_UNIDENTIFIED_INSTANCE_HOME', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
   assert.equal(Object.isFrozen(BEFORE_EFFECT_CODES), true); assert.throws(() => BEFORE_EFFECT_CODES.push('E_OTHER'), TypeError);
-  assert.equal(new Set(BEFORE_EFFECT_CODES).size, 11); assert.ok(BEFORE_EFFECT_CODES.every(code => typeof code === 'string'));
+  assert.equal(new Set(BEFORE_EFFECT_CODES).size, 10); assert.ok(BEFORE_EFFECT_CODES.every(code => typeof code === 'string'));
   const applied = async (operation, code) => {
     const f = fixture({ invoke: async (_bin, args) => args.phase === 'plan' ? envelope(operation === 'stop' ? stopPlan() : retirePlan())
       : { schemaVersion: 1, ok: false, error: { code, message: 'a stand-in for the kernel message' } } });
     return (await f.apply((await f.plan(operation)).planRef)).status;
   };
   for (const operation of ['stop', 'retire']) {
-    // E_PLAN_STALE without its fresh plan is no answer Desktop can read: its own branch, before the set.
-    for (const code of BEFORE_EFFECT_CODES) assert.equal(await applied(operation, code), code === 'E_PLAN_STALE' ? 'unknown' : 'refused', `${operation} ${code}`);
+    for (const code of BEFORE_EFFECT_CODES) assert.equal(await applied(operation, code), 'refused', `${operation} ${code}`);
+    // E_PLAN_STALE without its fresh plan is no answer Desktop can read: its own branch, before the set, and not in it.
+    assert.equal(await applied(operation, 'E_PLAN_STALE'), 'unknown', `${operation} E_PLAN_STALE`);
     // Outside the list, whatever the kernel's own list says: an unknown outcome.
     for (const code of ['E_WORK_INSPECTION_FAILED', 'E_WORK_PRESERVATION_FAILED', 'E_LIFECYCLE_FAILED', 'E_NOT_IN_THE_TABLE'])
       assert.equal(await applied(operation, code), 'unknown', `${operation} ${code}`);

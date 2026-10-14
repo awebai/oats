@@ -321,7 +321,11 @@ from whether the plan observed `work/` (`facts.work.observed`):
     busy (an apply slot or the plan cap) carries no kernel message and keeps
     the fixed sentence.
 - `E_PLAN_STALE` displays the validated producer's fresh plan and a new reference;
-  the operator must explicitly confirm again. It never auto-applies.
+  the operator must explicitly confirm again. It never auto-applies. It means
+  "nothing happened" only in that shape: an `E_PLAN_STALE` without a plan that
+  reads for this target (a kernel before 0.52.0 could answer one after a
+  guarded retire's hooks had run, #895) is an unknown outcome. It is read by
+  its own branch, never by `BEFORE_EFFECT_CODES`, which does not list it.
 - Preservation/cleanup failure may follow earlier effects. Render retained/partial
   or unknown state honestly; never automatically add discard/force flags.
 - An inspection refusal of Retire (`E_WORK_INSPECTION_FAILED`) is reported as

@@ -35,8 +35,9 @@ export function supportsLifecycle(cli, operation, apply = false) {
  * its home), not about the workspace log: a guarded retire may have appended its plan's event there by then,
  * so no sentence built on this list says that nothing was recorded. A routed command's router refuses
  * E_REMOTE_INCOMPATIBLE, E_AMBIGUOUS and E_SNAPSHOT_UNKNOWN before sending, and the host's own resolution
- * refuses them (and E_HOME_MISMATCH) before any effect. */
-export const BEFORE_EFFECT_CODES = Object.freeze(['E_BAD_ARGS', 'E_PLAN_STALE', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
+ * refuses them (and E_HOME_MISMATCH) before any effect. E_PLAN_STALE is not here: it is read by its own branch
+ * (interpret), by the shape of the answer, never by this set. */
+export const BEFORE_EFFECT_CODES = Object.freeze(['E_BAD_ARGS', 'E_INSTANCE_RETIRING', 'E_LIFECYCLE_BUSY',
   'E_HOME_MISMATCH', 'E_SESSION_UNKNOWN', 'E_AMBIGUOUS_INSTANCE', 'E_UNIDENTIFIED_INSTANCE_HOME', 'E_REMOTE_INCOMPATIBLE', 'E_AMBIGUOUS', 'E_SNAPSHOT_UNKNOWN']);
 const beforeEffect = new Set(BEFORE_EFFECT_CODES);
 /** The installed CLI printed this error envelope: the kernel answered. Said by the adapter where it builds
@@ -140,6 +141,11 @@ export function createLifecycleBoundary({ invoke = cliLifecycle, now = () => per
         options: entry.choices, plan: null, receipt, reason: complete ? null : lifecycleReason(receipt.action === 'stop' ? 'E_SESSION_STOP_FAILED' : 'E_RETIRE_INCOMPLETE', terms) };
     }
     const code = envelope.error?.code;
+    // E_PLAN_STALE means "nothing happened" only in its documented shape: the answer carries the fresh plan, which
+    // is read for this target and act and offered for review. Any other E_PLAN_STALE (no plan, or one that does not
+    // read) is an unknown outcome: a kernel before 0.52.0 could answer it planless after a guarded retire's hooks had
+    // run (#895). The boundary reads only the shape: an E_PLAN_STALE that carried a valid plan after an effect
+    // could not be told apart by any client.
     if (code === 'E_PLAN_STALE') {
       const fresh = lifecyclePlan(envelope.error?.details?.plan, entry.target, entry.plan.action, entry.choices, { features });
       if (!fresh) return failure('E_OUTCOME_UNKNOWN', 'unknown', { cause: lifecycleReason('E_CLI_PROTOCOL', terms) });
