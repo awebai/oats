@@ -9,6 +9,7 @@ import { join, dirname, basename, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifiedLocalHome as localHomeIn } from "../packages/client/session-start.mjs";
 import { closeGroup, startGroup } from "./helpers/process-group.mjs";
+import { privateTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
 // Inert server tests: the backend runs against a FAKE installed CLI that
 // replays JSON captured from a real `oats` run on the hand-built Northwind
@@ -36,6 +37,14 @@ const servers = [], made = [];
 /** A new temporary directory, removed when the file has ended (below). */
 function tempDir(prefix) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
+  made.push(dir);
+  return dir;
+}
+/** A private TMUX_TMPDIR for a server, removed with the file's directories. The server asks tmux for
+ *  the panes it shows, and asks the default server when a home records no socket: here, in a
+ *  directory of this file, never at tmux's default place, where the host has its own server. */
+function tmuxTmpdir() {
+  const dir = privateTmuxTmpdir();
   made.push(dir);
   return dir;
 }
@@ -81,7 +90,7 @@ async function startServer(dir, { env = {}, drop = [], observed = true } = {}) {
   const port = await freePort();
   const proc = startGroup(process.execPath, [SRV, "start", "--port", String(port), "--dir", dir], {
     stdio: "ignore",
-    env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin, FAKE_OATS_LOG: log, FAKE_OATS_DROP_FEATURES: drop.join(","), ...env },
+    env: { ...process.env, TMUX_TMPDIR: tmuxTmpdir(), OATS_DESKTOP_OATS_BIN: bin, FAKE_OATS_LOG: log, FAKE_OATS_DROP_FEATURES: drop.join(","), ...env },
   });
   servers.push(proc);
   let panel = null;
@@ -588,7 +597,7 @@ test("desktop server: started with no --dir it serves no local deployment, never
   const cwd = realpathSync(tempDir("oatsweb-not-a-deployment-"));
   const port = await freePort();
   const proc = startGroup(process.execPath, [SRV, "start", "--port", String(port)], {
-    cwd, stdio: "ignore", env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin },
+    cwd, stdio: "ignore", env: { ...process.env, TMUX_TMPDIR: tmuxTmpdir(), OATS_DESKTOP_OATS_BIN: bin },
   });
   servers.push(proc);
   try {
