@@ -143,7 +143,8 @@ test("a home without its session receipt is refused naming the receipt path, the
   assert.equal(cli.error.code, "E_RUNTIME_ENDPOINT_UNKNOWN"); assert.ok(cli.error.message.includes(f.baselinePath), cli.error.message);
   // The receipt is there and instance.json is not valid JSON: that failure keeps its own message.
   const g = await makeHome("badmeta"); writeFileSync(join(g.home, "instance.json"), "{not json\n");
-  assert.throws(() => inspectInstanceSession(g.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN" && e.message.startsWith(`cannot read session receipt for ${g.home}: `) && !e.message.includes("oats status"));
+  // It names the record by its path, not the receipt (#1092).
+  assert.throws(() => inspectInstanceSession(g.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN" && e.message.startsWith(`cannot read ${join(g.home, "instance.json")}: `) && !e.message.includes("receipt") && !e.message.includes("oats status"));
 });
 
 test("refusals happen before any mutation", async () => {
