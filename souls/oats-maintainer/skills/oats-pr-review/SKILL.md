@@ -20,10 +20,12 @@ how user content is rendered in the Desktop.
 
 ## The gate
 OATS's pull-request CI runs the full suite (sharded), `check`, `validate`, `pack:check`
-and the clean-room smoke. Expect the author to have run the affected test files plus
-`npm run validate` and `npm run check`, and `npm run smoke:tarball` when the change touches
-the smoke script or packaging. For a knowledge change, run the OKF validator over the
-whole base and read its warnings.
+and the clean-room smoke, and is the test run: nobody runs the kernel's or the Desktop's
+suites locally (`AGENTS.md`, "Gates"). Expect the author to have run `npm run validate` and
+`npm run check`, and at most the one or two test files that reproduce or confirm the
+change's finding, named in the hand-over with the CI run linked. A hand-over that reports
+a local suite or a batch of affected files breaks that rule: say so on the PR. For a
+knowledge change, run the OKF validator over the whole base and read its warnings.
 
 ## Mergeability: notes
 Every behaviour change carries its release-notes entry as one file under
