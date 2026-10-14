@@ -81,6 +81,7 @@ import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed } from "../renderer/deployment-header.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
+import { START_UNCONFIRMED } from "../renderer/start-unconfirmed.mjs";
 import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
 import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes } from "../../client/panel-views.mjs";
 
@@ -1417,6 +1418,8 @@ const server = createServer(async (req, res) => {
           workspaceDir: inst.server ? ctxs[0] ?? homedir() : dirname(inst.agentsRoot), server: inst.server });
         observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot();
         if (env.ok) return send(res, 200, env.result);
+        // The wait for the start ended and the start goes on (cli-adapter.mjs cliStart): the Desktop's own sentence.
+        if (env.error.code === "E_START_UNCONFIRMED") return send(res, 409, { error: START_UNCONFIRMED.message, code: START_UNCONFIRMED.code });
         // A start that stopped at a launch prompt answers E_SPAWN_INCOMPLETE with the retained outcome in its
         // details, as a spawn does: it travels as `incomplete`, decoded, when it names the instance this route
         // resolved (not the home: the kernel reports its real path). Anything else answers as before.

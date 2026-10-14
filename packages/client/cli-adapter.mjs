@@ -511,15 +511,14 @@ export function execFileInSession(bin, argv, options = {}, callback = () => {}) 
 
 /** How long a client waits for a start's answer. The wait ends; the start does not. */
 export const START_WAIT_MS = ENVELOPE_TIMEOUT_MS;
-/** What a start whose wait ended answers (`E_START_UNCONFIRMED`): the client's own sentence, never the kernel's,
- * so it is shown under no speaker. Nothing is known of the start: it may still be running. */
-export const START_UNCONFIRMED = "OATS didn't confirm the start. It may still be running: check the roster before you start it again.";
 
 /** Start/restart is owned by the kernel, never a GUI stop-then-spawn pair. A start runs in a session of its own
  * (`detached`, execFileInSession) with no deadline of its own (`timeout: 0`, no kill timer), so neither a signal
  * to the client's group nor a deadline ends it (#889: a start killed mid-way can leave its lock). The client
  * waits for its answer `io.wait` (START_WAIT_MS, 60 s); `io.after(ms, fn)` runs fn once after ms and answers a
- * cancel. When the wait ends first, the start answers `E_START_UNCONFIRMED` and the child goes on: what it prints
+ * cancel. When the wait ends first, the start answers the code `E_START_UNCONFIRMED`, with no message: nothing is
+ * known of the start, and each client words that in its own words, under no speaker (it is not the kernel's).
+ * The child goes on: what it prints
  * is still read, so it neither blocks on a full pipe nor writes to a closed one, and its answer, when it comes
  * after the wait, is not kept. A start has no entry to keep it on, and its answer says nothing the roster
  * does not: after a failed start the row is read again. */
@@ -539,7 +538,7 @@ export function cliStart(bin, { home, workspaceDir, server, restart = false, ...
     cwd: workspaceDir, exec: io.exec, timeout: 0, detached: true,
   }).finally(() => cancel());
   const waited = new Promise((resolve) => {
-    cancel = after(wait, () => resolve({ schemaVersion: 1, ok: false, error: { code: "E_START_UNCONFIRMED", message: START_UNCONFIRMED } }));
+    cancel = after(wait, () => resolve({ schemaVersion: 1, ok: false, error: { code: "E_START_UNCONFIRMED" } }));
   });
   return Promise.race([answered, waited]);
 }

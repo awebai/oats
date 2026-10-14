@@ -100,12 +100,14 @@ apply meanwhile is refused `E_LIFECYCLE_BUSY` with the same `running`, and no
 `details`, so the kernel's busy holder is never read of it; the dialog words
 it with `applyRunningSentence`. A CLI that never answers holds the Desktop's
 applies until the backend restarts. A start runs in a session of its own too
-(`cliStart`), with no deadline: the route waits `START_WAIT_MS` (60 s) for its
-answer and then answers `E_START_UNCONFIRMED` ("OATS didn't confirm the start.
-It may still be running: check the roster before you start it again.", the
-client's own sentence, shown under no speaker); the start goes on, its output
-is still read, and an answer after the wait is not kept (the roster shows the
-result, and a failed start reads the row again). The quit path sends these children no
+(`cliStart`), with no deadline: `cliStart` waits `START_WAIT_MS` (60 s) for its
+answer and then answers the code `E_START_UNCONFIRMED`, with no words. The
+start route words it in the Desktop's own sentence
+(`renderer/start-unconfirmed.mjs`: "OATS didn't confirm the start. It may still
+be running: check the roster before you start it again."), shown under no
+speaker. The start goes on, its output is still read, and an answer after the
+wait is not kept (the roster shows the result, and a failed start reads the row
+again). The quit path sends these children no
 signal (`backend-quit-children.test.mjs`); `test/client-own-session.test.mjs`
 holds the own session with real processes. At most 32 settled or
 uncertain results are kept for 30 minutes, without expiring an in-flight action.

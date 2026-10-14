@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { shippedMainApi } from './helpers/shipped-main-api.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
-import { cliStart, START_UNCONFIRMED } from '../../client/cli-adapter.mjs';
+import { cliStart } from '../../client/cli-adapter.mjs';
+import { START_UNCONFIRMED } from '../renderer/start-unconfirmed.mjs';
 import { httpError } from '../renderer/views/common.mjs';
 import { retainedSpawnDetails } from '../../client/launch-prompt-outcome.mjs';
 import { retained, differed, DIFFERED, observationTimeout, observationTimeoutMessage } from './helpers/launch-prompt-fixture.mjs';
@@ -121,7 +122,7 @@ test('an Enter whose completion was not seen, answered at the kernel\'s bound, a
 
 test('the end of the wait for the CLI call, answered at its limit, arrives as the server\'s answer and not as the proxy\'s abort', async () => {
   const limit = await cliLimit(true);
-  const body = { error: START_UNCONFIRMED, code: 'E_START_UNCONFIRMED' };
+  const body = { error: START_UNCONFIRMED.message, code: START_UNCONFIRMED.code };
   const reply = await slowBackend({ status: 409, body }, limit).call(`/api/restart/dev${WS}`);
   assert.deepEqual(reply, { ok: false, status: 409, body });
   assert.equal(Object.hasOwn(httpError(reply, '/api/restart/dev'), 'incomplete'), false);

@@ -14,7 +14,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cliLifecycle } from '../packages/client/lifecycle-cli.mjs';
-import { cliStart, START_UNCONFIRMED, START_WAIT_MS } from '../packages/client/cli-adapter.mjs';
+import { cliStart, START_WAIT_MS } from '../packages/client/cli-adapter.mjs';
 
 const CLIENT = new URL('../packages/client/', import.meta.url).href;
 
@@ -159,8 +159,7 @@ setTimeout(() => { fs.writeFileSync(${JSON.stringify(at('done'))}, 'started'); p
 `);
   chmodSync(cli, 0o755);
   const answer = await cliStart(cli, { home: '/team/agents/dev/instances/dev-1', workspaceDir: dir }, { wait: 300 });
-  assert.deepEqual(answer, { schemaVersion: 1, ok: false, error: { code: 'E_START_UNCONFIRMED', message: START_UNCONFIRMED } });
-  assert.equal(START_UNCONFIRMED, "OATS didn't confirm the start. It may still be running: check the roster before you start it again.");
+  assert.deepEqual(answer, { schemaVersion: 1, ok: false, error: { code: 'E_START_UNCONFIRMED' } }, 'the code alone: the shared home words nothing here, each client does');
   assert.ok(await until(() => existsSync(at('pid')), 5000), 'premise: the start ran');
   pid = Number(readFileSync(at('pid'), 'utf8'));
   assert.equal(alive(pid), true, 'the start is still running after the wait ended');

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createInstanceStarter } from "../renderer/start-instance.mjs";
 import { setWorkspace } from "../renderer/views/common.mjs";
-import { cliStart, START_UNCONFIRMED } from "../../client/cli-adapter.mjs";
+import { cliStart } from "../../client/cli-adapter.mjs";
+import { START_UNCONFIRMED } from "../renderer/start-unconfirmed.mjs";
 import { MARKUP, CONTROL, DETAIL_WITHHELD, shown } from "./helpers/speaker-cases.mjs";
 
 const tick = () => new Promise((r) => setImmediate(r));
@@ -177,8 +178,8 @@ test("a workspace switch while the started terminal is getting ready opens nothi
 });
 
 test("a start whose wait ended reads as not confirmed, in the Desktop's own words under no speaker, and needs a status refresh before another start", async () => {
-  // As the route answers it (cli-adapter.mjs cliStart, E_START_UNCONFIRMED) and the shell raises it for a 409.
-  const s = setup({ start: () => { throw Object.assign(new Error(START_UNCONFIRMED), { code: "E_START_UNCONFIRMED", answered: START_UNCONFIRMED }); } });
+  // As the route answers it (server/oats-web.mjs: cliStart's E_START_UNCONFIRMED, worded by the Desktop) and the shell raises it for a 409.
+  const s = setup({ start: () => { throw Object.assign(new Error(START_UNCONFIRMED.message), { code: START_UNCONFIRMED.code, answered: START_UNCONFIRMED.message }); } });
   try {
     await tick(); s.submit(); await tick();
     assert.equal(s.modal.isConnected, true);
