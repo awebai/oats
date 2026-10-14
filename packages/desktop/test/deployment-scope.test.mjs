@@ -18,6 +18,7 @@ import { scheduleRequest } from '../server/schedules.mjs';
 import { FORGE_EPOCH_HEADER, validForgeEpoch } from '../forge-proxy.mjs';
 import { canAddressRemote, unaddressableSentence } from '../../client/remote-address.mjs';
 import { apiUrl, servedSelectors } from '../api-url.mjs';
+import { startInstance } from '../../client/session-start.mjs';
 import { loadServer, juanState, A, B, L, R, V, V_OATS, V_LAB } from './helpers/workspace-views-fixture.mjs';
 
 const CLI = { ok: true, bin: '/oats', version: '0.36.0', features: ['workspace-identity', 'session-start', 'session-restart', 'launch-config', 'schedule',
@@ -37,10 +38,12 @@ async function harness() {
   const events = createInstanceEventsBoundary({ invoke: record('events') });
   const git = createInstanceGitBoundary({ invoke: record('git') });
   const { state } = juanState({ cliState: CLI });
+  // A start or restart decides by the row's state (session-start.mjs startGate): B's dev-b is a stopped row here.
+  state.snapshot.byWs.get(B).instances[0].running = false;
   const extra = {
     cliState: CLI, cliProbeGeneration: 1, DEBUG: false, BACKGROUND_MAX_AGE: 60,
     adapter: { cliStart: async (bin, args) => { effects.push({ kind: 'start', args: [args] }); return { ok: true, result: { started: true } }; } },
-    locator: { requireRemoteSupport: () => {} }, harnessFlag: () => 'harness', canAddressRemote, unaddressableSentence,
+    locator: { requireRemoteSupport: () => {} }, harnessFlag: () => 'harness', canAddressRemote, unaddressableSentence, startInstance,
     verifiedLocalHome: inst => inst.home, dirname: p => p.slice(0, p.lastIndexOf('/')),
     observeMutation: () => {}, refreshRemoteSnapshot: () => {}, remoteLoop: { request: () => {} },
     tmuxTarget: inst => `=${inst.tmux.session}:=${inst.tmux.window}`,
