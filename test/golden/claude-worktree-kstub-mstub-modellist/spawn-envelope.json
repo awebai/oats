@@ -13,7 +13,7 @@
     },
     "launched": false,
     "warnings": [
-      "claude folder trust is not established in <home>/.claude.json: oats harness trust --dir <base>/deployment"
+      "claude folder trust is not established in <home>/.claude.json (the pane's environment is not established: this spawn launches nothing (--no-launch), and a start reads its own session's; read instead: this process's CLAUDE_CONFIG_DIR (not set), this process's HOME): oats harness trust --dir <base>/deployment"
     ],
     "tmux": {
       "session": "oats-golden",

@@ -103,11 +103,13 @@ test('spawn --preview: the raw warning strings, and previewData projects them', 
   const answer = await cliSpawnPreview(cli, { target, choices: { purpose: 'warn' } }, io());
   assert.equal(answer.ok, true, JSON.stringify(answer));
   assert.deepEqual(argvs.at(-1), ['spawn', SOUL, '--dir', fx.dep, '--agents-root', fx.root, '--preview', '--purpose', 'warn', '--json']);
-  assert.deepEqual(answer.result.warnings, [message()], "the preview's warnings are the messages, as strings");
+  // No OATS tmux server runs for this fixture: the preview says whose PATH its lookup read, after the capability's warning.
+  const noServer = "the harness lookup: the pane's environment is not established until a spawn starts the OATS tmux server (none runs); read instead: this process's PATH";
+  assert.deepEqual(answer.result.warnings, [message(), noServer], "the preview's warnings are the messages, as strings");
   const data = previewData(answer.result, target, { composedFrom: previewComposedFrom(cli) });
   assert.ok(data, 'the preview reader reads the live answer');
-  assert.deepEqual(previewWarningsOf(answer.result.warnings), [message()]);
-  assert.deepEqual(data.warnings, [message()], 'previewData projects the warning strings');
+  assert.deepEqual(previewWarningsOf(answer.result.warnings), [message(), noServer]);
+  assert.deepEqual(data.warnings, [message(), noServer], 'previewData projects the warning strings');
 });
 
 test('workspace status: the raw warning, and workspaceStatusData keeps capability and path', async () => {
