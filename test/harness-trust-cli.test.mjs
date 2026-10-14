@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-const CLI=resolve('bin/oats.mjs');
-function fixture(t){const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-cli-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const deployment=join(base,'deployment');fs.mkdirSync(deployment);fs.writeFileSync(join(deployment,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${JSON.stringify(join(base,'workspace'))}\n`);const env={PATH:process.env.PATH,HOME:join(base,'native')};fs.mkdirSync(join(env.HOME,'.codex'),{recursive:true}); /* the operator has run both harnesses; OATS never creates their directories */return {base,deployment,env,run(args,cwd=deployment){const r=spawnSync(process.execPath,[CLI,...args,'--json'],{cwd,env,encoding:'utf8'});return {status:r.status,value:JSON.parse(r.stdout)};}};}
+import { fileURLToPath } from 'node:url';
+const CLI=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+function fixture(t){const base=fs.mkdtempSync(join(tmpdir(),'oats-trust-cli-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));const deployment=join(base,'deployment');fs.mkdirSync(deployment);fs.writeFileSync(join(deployment,'oats-local.yaml'),`schemaVersion: 2\nworkspace: ${JSON.stringify(join(base,'workspace'))}\n`);/* `oats harness trust` writes for the file a launch's pane will read: a private TMUX_TMPDIR, where no server runs, so this host's own OATS tmux server is never the one read, and no account of this host is written. */const env={PATH:process.env.PATH,HOME:join(base,'native'),TMUX_TMPDIR:join(base,'tmux')};fs.mkdirSync(join(env.HOME,'.codex'),{recursive:true}); /* the operator has run both harnesses; OATS never creates their directories */return {base,deployment,env,run(args,cwd=deployment){const r=spawnSync(process.execPath,[CLI,...args,'--json'],{cwd,env,encoding:'utf8'});return {status:r.status,value:JSON.parse(r.stdout)};}};}
 test('trust CLI plan, bare apply and deployment context from nested directory',t=>{
  const f=fixture(t);const nested=join(f.deployment,'agents/example/instances/one');fs.mkdirSync(nested,{recursive:true});
  const p=f.run(['harness','trust','--harness','claude','--plan'],nested);assert.equal(p.status,0,JSON.stringify(p.value));assert.equal(p.value.result.root,fs.realpathSync(f.deployment));assert.equal(fs.existsSync(join(f.env.HOME,'.claude.json')),false);

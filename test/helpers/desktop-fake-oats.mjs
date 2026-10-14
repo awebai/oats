@@ -21,7 +21,8 @@ const rebase = (text, dir) => text.split(CAPTURED).join(dir);
 const dirArg = () => { const i = args.indexOf("--dir"); return i >= 0 ? args[i + 1] : null; };
 
 if (args[0] === "version" && args[1] === "--json") {
-  const probe = JSON.parse(fixture("version"));
+  // The capture's kernel printed 0.25.9, below the Desktop's floor; served as 0.26.0 so the locator accepts it.
+  const probe = { ...JSON.parse(fixture("version")), version: "0.26.0" };
   const drop = new Set(String(process.env.FAKE_OATS_DROP_FEATURES || "").split(",").filter(Boolean));
   probe.features = probe.features.filter((f) => !drop.has(f));
   out(probe);

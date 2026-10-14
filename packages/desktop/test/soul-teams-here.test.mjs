@@ -115,7 +115,9 @@ test("the kernel's captured refusals are shown verbatim with their code (a stale
 
 test('a failed re-read over a document keeps the rows and says so with the observation\'s age; a focused action keeps focus through the lock', async t => {
   let fail = false, calls = 0;
-  const observedAt = new Date(Date.now() - 45_000).toISOString();
+  // The card's age reads Date.now: one fixed instant for the observation and the card, so the age is 45 s by construction.
+  const now = Date.now(); t.mock.method(Date, 'now', () => now);
+  const observedAt = new Date(now - 45_000).toISOString();
   const u = await mount(t, () => { calls++; if (fail) return Promise.reject(refusal('E_CLI_FAILED', 'bridge down')); return { ...soulTeams('soul-teams-clear-default'), observedAt }; });
   const rows = u.q('.sth-row') ? [...u.card.element.querySelectorAll('.sth-row')].length : 0; assert.ok(rows > 0);
   const action = u.card.element.querySelector('button.sth-act'); action.focus();
