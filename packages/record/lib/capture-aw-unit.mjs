@@ -1,0 +1,118 @@
+// Private command work, one bounded log batch under the shared stream group.
+// Explicit per-file public APIs keep their full-reprojection defaults.
+import { closeSync, constants, fstatSync, openSync } from "node:fs";
+import { basename } from "node:path";
+import { awBoundaryWitness, awLogLines, awStream } from "./capture-aw.mjs";
+import { captureContext } from "./capture-context.mjs";
+import { CAPTURE_POLICY } from "./capture-budget.mjs";
+import { fileVersion, statVersion, sameVersion } from "./derived-state.mjs";
+import { fileChunks, RecordSizeError } from "./file-lines.mjs";
+import { loadIgnore } from "./ignore.mjs";
+import { projectCommLogEntry, projectInteractionLogEntry } from "./project-aweb.mjs";
+
+export function captureAwUnit(store, { owner, path, kind = "comm", selfName, workspace, ignore,
+  maxRecords = 2000, maxBytes = 8388608, maxRecordBytes = CAPTURE_POLICY.maxRecordBytes,
+  stopped = () => false, work } = {}) {
+  const stream = awStream(owner), key = `${stream}:${path}`, account = basename(path, ".jsonl");
+  const context = captureContext(store), state = context?.state;
+  if (!state?.depth || !context.held.has(stream)) throw new Error("AW command unit requires its stream work group");
+  if (!["comm", "interaction"].includes(kind) || !Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords > 2000 ||
+      !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > context.batchBytes ||
+      !Number.isSafeInteger(maxRecordBytes) || maxRecordBytes < 1 || maxRecordBytes > CAPTURE_POLICY.maxRecordBytes) {
+    throw new Error("invalid AW command unit budget");
+  }
+  const result = { stream, key, entries: 0, skipped: 0, failed: 0, appended: 0, bytesCommitted: 0, complete: false, pending: false };
+  if ((ignore ?? loadIgnore(store.root)).ignores(path, [basename(path), account])) {
+    state.delete("set-aside", key);
+    return { ...result, ignored: true, complete: true };
+  }
+  const blocked = state.get("set-aside", key);
+  if (blocked && !blocked.retry) return { ...result, setAside: blocked };
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const observe = () => {
+      const stat = fstatSync(fd, { bigint: true });
+      if (!stat.isFile()) throw new Error("AW source is not a regular file");
+      const version = statVersion(stat);
+      if (!sameVersion(version, fileVersion(path))) throw new Error("AW source descriptor differs from its named file");
+      return version;
+    };
+    const version = observe(), generation = state.get("reset", `${owner}:aw`) ?? "",
+      retryGeneration = state.get("source-retry", key) ?? "";
+    const projection = JSON.stringify(kind === "comm" ? [kind, account] : [kind, selfName ?? null, workspace ?? null]);
+    const journal = store.validateJournal(stream, state, { maxRecords, maxBytes, stopped, work: work?.journal });
+    if (!journal.complete) return { ...result, phase: "journal" };
+    const witness = offset => {
+      if (work) work.sourceProbeBytes = (work.sourceProbeBytes ?? 0) + Math.min(4096, offset);
+      return awBoundaryWitness(fd, offset);
+    };
+    const matches = value => value && Number.isSafeInteger(value.bytes) && value.bytes >= 0 && value.bytes <= version.size &&
+      value.generation === generation && (value.retryGeneration ?? "") === retryGeneration && value.epoch === journal.epoch && value.version &&
+      (value.projection === projection || value.projection === undefined && kind === "comm") &&
+      (sameVersion(value.version, version) || value.version.dev === version.dev && value.version.ino === version.ino &&
+        version.size > value.version.size && witness(value.bytes) === value.witness);
+    let job = state.get("aw-unit", key);
+    if (!matches(job) || !Number.isSafeInteger(job.end) || job.end < job.bytes || job.end > version.size) {
+      job = null; state.delete("aw-unit", key);
+    }
+    if (!job) {
+      const cursor = state.get("aw", key), qualified = matches(cursor) && !blocked;
+      if (qualified && cursor.complete && sameVersion(cursor.version, version)) {
+        // The public API's complete flag means the snapshot was scanned; an
+        // unconsumed final fragment still prevents command sweep success.
+        return { ...result, unchanged: true, complete: cursor.bytes === version.size,
+          pending: cursor.bytes < version.size, phase: "captured" };
+      }
+      job = { bytes: qualified ? cursor.bytes : 0, end: version.size, version, generation, retryGeneration,
+        epoch: journal.epoch, projection };
+    }
+    const unitStart = job.bytes, boundary = witness(version.size);
+    const chunks = function* () {
+      for (const bytes of fileChunks(fd, { start: unitStart, end: job.end, size: 65536, check: () => { stopped(); } })) {
+        if (work) work.sourceBytes = (work.sourceBytes ?? 0) + bytes.length;
+        yield bytes;
+      }
+    };
+    const project = kind === "comm" ? entry => projectCommLogEntry(entry, { selfName: account }) :
+      entry => projectInteractionLogEntry(entry, { selfName, workspace });
+    let bytes = 0, records = 0, scanned = false;
+    const turns = [], iterator = awLogLines(chunks(), { start: unitStart, maxBytes: maxRecordBytes });
+    try {
+      while (records < maxRecords && bytes < maxBytes && !stopped()) {
+        const next = iterator.next();
+        if (next.done) { scanned = true; break; }
+        const record = next.value;
+        if (records && bytes + record.bytes > maxBytes) break;
+        records++; bytes += record.bytes; job.bytes = record.end;
+        if (work) work.sourceRecords = (work.sourceRecords ?? 0) + 1;
+        if (record.skipped) result.skipped++;
+        if (record.parsed) {
+          result.entries++;
+          // Projection refusal is consumed input, not a failed durable append.
+          // Reset requests replay; ordinary growth never retries the old line.
+          try { turns.push(project(record.entry)); }
+          catch { result.failed++; }
+        }
+        if (record.final) { result.pending = true; scanned = true; break; }
+      }
+    } catch (error) {
+      if (!(error instanceof RecordSizeError)) throw error;
+      const row = { owner, source: "aw", path, offset: unitStart + error.offset, reason: "record-too-large", retry: false };
+      state.set("set-aside", key, row);
+      return { ...result, setAside: row };
+    } finally { iterator.return(); }
+    const after = observe();
+    if (!sameVersion(version, after) && !(after.dev === version.dev && after.ino === version.ino &&
+        after.size > version.size && witness(version.size) === boundary)) throw new Error("AW source changed during unit");
+    if (turns.length) result.appended = store.appendUniqueBatch(stream, turns);
+    result.bytesCommitted = job.bytes - unitStart;
+    job.version = version; job.witness = witness(job.bytes);
+    const atEnd = job.bytes === job.end;
+    state.set("aw", key, { bytes: job.bytes, version, witness: job.witness, generation, retryGeneration,
+      epoch: journal.epoch, projection, complete: (scanned || atEnd) && job.end === version.size });
+    if (blocked && (job.bytes > blocked.offset || atEnd)) state.delete("set-aside", key);
+    if (scanned || atEnd) state.delete("aw-unit", key);
+    else state.set("aw-unit", key, job);
+    return { ...result, complete: atEnd, phase: "capture" };
+  } finally { closeSync(fd); }
+}

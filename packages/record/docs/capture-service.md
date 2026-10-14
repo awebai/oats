@@ -341,6 +341,16 @@ captured prefix. The scheduler must account for pending/failed work and perform
 allocation cleanup after its deletion mark commits. These are unit interfaces,
 not a resource promise for public synchronous capture or exact receipts.
 
+`capture-aw-unit.mjs` similarly processes one fixed-end log unit. Every scanned
+raw line consumes its work allowance, including blank lines, malformed complete
+lines and projection refusals. Cursor publication follows the pending batch's
+durable append. A valid final object without its newline retains its starting
+offset and keeps the command pending; an unchanged snapshot does not repeatedly
+project that fragment. Replacement or explicit source reset reprojects through
+persistent journal-ID deduplication. Raw oversized input uses the same set-aside
+store and retry/ignore rules as native inputs; a projection refusal itself is
+consumed evidence and does not create a second issue mechanism.
+
 Public synchronous library calls do not implicitly enter this context or acquire
 a root capture lock. Healthy derived-state opens do not run a schema write
 transaction, and identical state values do not produce redundant row updates.

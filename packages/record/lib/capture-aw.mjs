@@ -51,32 +51,40 @@ export function listCommLogs(dir = defaultCommLogDir()) {
 // does not, it is a torn tail the client is still writing, never counted. An
 // interior bad line is skipped and counted (`onSkipped`), never fatal.
 function* logEntries(fd, start, end, onSkipped, onConsumed) {
+  for (const record of awLogLines(fileChunks(fd, { start, end, size: 65536 }), { start })) {
+    if (!record.final) onConsumed(record.end);
+    if (record.skipped) onSkipped();
+    if (record.parsed) yield record;
+  }
+}
+
+// Command units must account for every scanned line, including empty/malformed
+// ones. Public capture's wrapper above retains its existing entry counters.
+export function* awLogLines(chunks, { start = 0, maxBytes = Infinity } = {}) {
   let offset = start;
-  for (const line of bufferLines(fileChunks(fd, { start, end, size: 65536 }))) {
+  for (const line of bufferLines(chunks, { maxBytes })) {
     const lineStart = offset;
     offset += line.length;
     const final = line[line.length - 1] !== 10;
     // Even ignored whitespace is scanned progress when newline-terminated.
     // The caller persists it only after its pending append batch is durable.
-    if (!final) onConsumed(offset);
-    let entry;
+    const record = { start: lineStart, end: final ? lineStart : offset, bytes: line.length, final };
     try {
       // Inside the try: a line beyond V8's string limit is a bad line like any other.
       const text = line.toString("utf8");
-      if (text.trim() === "") continue;
-      entry = JSON.parse(text);
+      if (text.trim() === "") { yield record; continue; }
+      const entry = JSON.parse(text);
+      yield { ...record, entry, parsed: true };
     } catch {
-      if (!final) onSkipped();
-      continue;
+      yield { ...record, skipped: !final };
     }
-    yield { entry, start: lineStart, end: final ? lineStart : offset, bytes: line.length };
   }
 }
 
 const APPEND_BATCH = 2000;
 
 // Check only a bounded checkpoint boundary under the append-only source contract.
-function boundaryWitness(fd, offset) {
+export function awBoundaryWitness(fd, offset) {
   const size = Math.min(offset, 4096), bytes = Buffer.alloc(size);
   let done = 0;
   while (done < size) {
@@ -86,6 +94,8 @@ function boundaryWitness(fd, offset) {
   }
   return createHash("sha256").update(bytes).digest("hex");
 }
+
+const boundaryWitness = awBoundaryWitness;
 
 function captureLogFile(store, { streamId, path, project, knownIds, incremental = false }) {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
