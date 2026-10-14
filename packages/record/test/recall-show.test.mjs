@@ -32,7 +32,8 @@ function fixture(t, kind, claimant) {
   const index = new RecordIndex(store);
   try { index.rebuild(); } finally { index.close(); }
   const recall = (...args) => {
-    const result = spawnSync(process.execPath, [RECALL, "--root", root, ...args], {
+    // Assert application diagnostics independently of Node's SQLite warnings.
+    const result = spawnSync(process.execPath, ["--no-warnings", RECALL, "--root", root, ...args], {
       encoding: "utf8", timeout: 10000,
       env: { PATH: process.env.PATH, HOME: home, TMPDIR: base, XDG_CACHE_HOME: join(base, "cache") },
     });
