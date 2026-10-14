@@ -149,6 +149,25 @@ test("oats sync discovers a member's triggers and schedules into one snapshot, k
   assert.deepEqual(status.rows.map((r) => [r.kind, r.id, r.runsHere]), [["trigger", "ws/kb-review", true], ["schedule", "ws/nightly", true]]);
 });
 
+test("an external soul origin answers sourceDisplay in trigger list, schedule list and schedule show, from a snapshot written before the feature (source-display)", async (t) => {
+  const fx = fixture();
+  t.after(() => fx.cleanup());
+  ok(fx.cli(["sync", "--json"]), "sync");
+  // The snapshot as a kernel before the feature wrote it: the soul index holds { kind, repoKey, source } only.
+  const commit = "0123456789abcdef0123456789abcdef01234567";
+  const source = `ssh://user:password@host/o/r@${commit}`;
+  const stored = { kind: "external", repoKey: "host/o/r", source };
+  const snap = JSON.parse(readFileSync(A.snapshotPath(fx.dep), "utf8"));
+  snap.souls.byName.reviewer = [stored];
+  writeFileSync(A.snapshotPath(fx.dep), JSON.stringify(snap, null, 2) + "\n");
+  const before = readFileSync(A.snapshotPath(fx.dep), "utf8");
+  const expected = { ...stored, sourceDisplay: `ssh://host/o/r@${commit}` };
+  assert.deepEqual(ok(fx.cli(["trigger", "list", "--json"]), "trigger list").triggers.find((r) => r.id === "ws/kb-review").soul, { name: "reviewer", origin: expected });
+  assert.deepEqual(ok(fx.cli(["schedule", "list", "--json"]), "schedule list").schedules.find((r) => r.qualifiedId === "ws/nightly").soul.origin, expected);
+  assert.deepEqual(ok(fx.cli(["schedule", "show", "ws/nightly", "--json"]), "schedule show").schedule.soul.origin, expected);
+  assert.equal(readFileSync(A.snapshotPath(fx.dep), "utf8"), before, "the display is built when a row is answered, never stored");
+});
+
 test("the list rows (the Desktop's contract): a trigger and a schedule each answer who, where, the soul, the prompt verbatim and when", async (t) => {
   const fx = fixture();
   t.after(() => fx.cleanup());

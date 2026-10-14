@@ -117,10 +117,9 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
     assert.deepEqual(st.unsynced, []); assert.deepEqual(st.stale, []);
     assert.deepEqual(st.external.map((e) => e.soul), ["security-reviewer"]);
     // Feature source-display: the exact pinned source, and beside it its display by the one policy.
-    for (const e of st.external) {
-      assert.match(e.source, /@[0-9a-f]{40}$/, "source stays the exact pinned value");
-      assert.equal(e.sourceDisplay, displayRepoRef(e.source, { pinned: true }));
-    }
+    const configured = `${fx.urls.experts}@${fx.commits.experts}`;
+    assert.deepEqual(st.external, [{ source: configured, sourceDisplay: displayRepoRef(configured, { pinned: true }), soul: "security-reviewer" }],
+      "source is the configured value byte for byte");
     r = oats(["workspace", "status"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /member\s+status\s+commit\s+souls/);

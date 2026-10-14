@@ -39,7 +39,7 @@ import {
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { harnessTrust } from "../lib/harness-trust-write.mjs";
 import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
-import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
+import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey, externalStatusRows } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
 import { terminalText } from "../lib/refused-text.mjs";
@@ -1995,7 +1995,7 @@ async function workspaceCmd() {
   const locked = new Set(packages.map((p) => p.id));
   const unsynced = declared.filter((id) => !locked.has(id));
   const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
-  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: sharedTeamRows(discovery) }, members, packages, declaredPackages: declared, unsynced, stale, external: (discovery.external || []).map((e) => ({ source: e.source, sourceDisplay: remoteModule.displayRepoRef(e.source, { pinned: true }), soul: e.soul.name })), problems: discovery.problems, warnings: [...(discovery.warnings ?? [])] };
+  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: sharedTeamRows(discovery) }, members, packages, declaredPackages: declared, unsynced, stale, external: externalStatusRows(discovery.external), problems: discovery.problems, warnings: [...(discovery.warnings ?? [])] };
   // Workspace automations (0.29.0), from the snapshot `oats sync` took, placed on this host.
   const actx = scopeAutomations(ctx.deploymentDir, {});
   result.automations = { host: actx.host.name, snapshot: actx.snapshot ? { takenAt: actx.snapshot.takenAt, problems: actx.snapshot.problems.length } : null, rows: [...actx.triggers, ...actx.schedules].map((a) => ({ kind: a.kind, id: a.id, runsOn: a.runsOn, owner: a.owner, runsHere: a.placement.runsHere, reason: a.placement.reason, enabledHere: a.placement.enabledHere, origin: a.origin, ...(a.invalid ? { invalid: a.invalid } : {}) })) };

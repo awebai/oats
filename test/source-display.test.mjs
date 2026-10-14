@@ -3,11 +3,13 @@
 // The automations soul origin of kind `external` gains `sourceDisplay` when a row is answered
 // (lib/automations.mjs soulOriginOf), built by the one reference-display policy in pinned-source
 // context (lib/remote.mjs displayRepoRef); the snapshot index keeps its shape. `oats workspace
-// status --json` external[] calls the same entry (test/cli-workspace.test.mjs runs it over a real
-// fixture); this file holds the synthetic sources that fixture cannot read.
+// status --json` external[] is lib/workspace.mjs externalStatusRows over the same entry. The CLI
+// runs are in test/cli-workspace.test.mjs (a real fixture) and test/automations.test.mjs (a
+// snapshot written before the feature); this file holds the synthetic sources neither can read.
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as A from "../lib/automations.mjs";
+import { externalStatusRows } from "../lib/workspace.mjs";
 import { displayRepoRef } from "../lib/remote.mjs";
 
 const C = "0123456789abcdef0123456789abcdef01234567";
@@ -43,6 +45,12 @@ test("an external soul origin carries sourceDisplay, the pinned display or the w
       assert.ok(origin.sourceDisplay === WITHHELD || /^[^@]*@[0-9a-f]{40}$/.test(origin.sourceDisplay), `no user marker, only the commit's @: ${origin.sourceDisplay}`);
     }
   });
+});
+
+test("workspace status external[]: the exact source, its display beside it, the soul's name", () => {
+  const rows = externalStatusRows(discovery.external);
+  assert.deepEqual(rows, SOURCES.map(([source, shown], i) => ({ source, sourceDisplay: shown, soul: `ext-${i}` })));
+  assert.deepEqual(externalStatusRows(undefined), []);
 });
 
 test("the snapshot index keeps today's shape: sourceDisplay is built at output time, so an existing snapshot gets it", () => {
