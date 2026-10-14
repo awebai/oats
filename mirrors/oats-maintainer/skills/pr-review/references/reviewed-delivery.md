@@ -15,8 +15,10 @@
 5. A fix handoff names the new head, the full delta from the reviewed head, the tests run
    and what remains. Never approve an unpinned, moving tip.
 6. Before merging, compare the PR head, the remote branch and the head the checks ran on.
-   If the head moved, wait for the owner's hand-over of the new head, then review the
-   delta; if a relevant part of the base changed, review that first.
+   If the owner moved the head, wait for its hand-over of the new head; the skill's Merge
+   section says when both verdicts carry (every commit `=` in the range-diff) and when the
+   delta is reviewed. If the default branch moved since the checks ran, make that
+   section's check before you merge.
 7. A failed client response may follow a completed merge: observe the remote state before
    retrying or reporting.
 

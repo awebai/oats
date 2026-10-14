@@ -28,7 +28,7 @@
     },
     "oats.engineering": {
       "url": "https://github.com/awebai/oats-engineering.git",
-      "ref": "v1.9.1",
+      "ref": "v1.10.0",
       "path": "oats-package"
     },
     "oats.cloning": {

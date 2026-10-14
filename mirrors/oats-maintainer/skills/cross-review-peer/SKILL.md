@@ -1,48 +1,106 @@
 ---
 name: cross-review-peer
-description: Work with one or more peer maintainers - the written agreement on what needs both of you, cross-reviewing each other's work (including each other's release-prep PRs) at exact heads, splitting incoming reviews, disagreeing well, the fallback when a peer is unreachable, and how to verify a decision passed on from a human. Use whenever a peer maintainer is involved.
+description: Work with one or more peer maintainers, each in a lane of its own - the written lane map (what belongs to each lane, its maintainer, its second reader), one second reader for every PR, asked once at the head the lane's maintainer approved, the few things peers message each other for, holds as a label on the forge, a lane changing hands, the fallback when a peer is unreachable, and how to verify a decision passed on from a human. Use whenever a peer maintainer is involved, and before you message one.
 ---
 
-# Cross-review with your peers
+# Work in lanes with your peers
 
 Maintainers usually work in pairs or more, often on different machines and for different
-humans. Each reviews the other's work: that's the normal practice, and it's what lets a
-maintainer land its own release-prep PRs with a second pair of eyes.
+humans. Each holds a **lane**: a share of the project's work that it alone reviews, merges
+and tracks. Every PR still gets a second pair of eyes: one second reader, not every peer.
+What peers don't do is keep each other's picture, or tell each other what the forge already
+shows.
 
-## The agreement
-Write it down where both of you can read it, and keep to it:
-- **Who:** the peers, their humans, and how you reach each other (messaging, PR comments).
-- **What needs both of you:** for example, every PR either of you authored, every contract
-  change, every release plan and release-prep PR. Everything else
-  needs one maintainer's review.
-- **Who takes which incoming reviews,** so no PR is reviewed twice by accident or not at
-  all.
-- **Who presses merge** once both have approved, and who tags a planned release.
+## The lane map
+Write it down where all of you can read it (an issue or a file on the forge), and keep to it:
+- **The lanes.** For each one: what belongs to it (areas of the repository, kinds of work,
+  or whose requests), its maintainer, its second reader, and their humans.
+- **How a PR shows its lane:** a label (`lane:<name>`), put on by its owner or by the first
+  maintainer who sees it without one. Every effort and PR is in exactly one lane.
+- **The hold label** (`hold`, unless you agree another).
+- **Who owns the next release** and tags it (`/plan-release`).
+- **How you reach each other.**
 
-When the agreement doesn't cover a question, ask your peer; don't assume authority you
+When the map doesn't cover a question, ask the peer it concerns; don't assume authority you
 weren't given.
 
-## Reviewing each other
-- The `/pr-review` rule holds between peers: review only a PR its author has handed over
-  per that rule (including a PR with no owning expert), at an exact head with CI green on
-  it.
-- Request the review with an exact head and the handoff template (`/pr-review`'s
-  reference): the PR, base and head SHAs, scope, tests run, open findings.
-- The peer reviews with `/pr-review` and posts its verdict on the PR, at that head. A head
-  that moves after the verdict waits for the author's next hand-over; then review the delta.
-- Don't merge over a peer's RETURN. If you disagree, put both positions on the PR, each
-  with its evidence, and take it to the humans who decide.
+## What you share, and what you don't
+- **The forge is the one copy of a PR's state:** its lane, head, CI, verdicts and holds.
+  Your state file holds your lane only (`/maintainer-intake`). When you need something from
+  another lane, read it on the forge then. Don't keep a copy, and don't ask its maintainer
+  for what the forge shows.
+- **Your knowledge is the one copy of direction:** the roadmap, the decisions, the coherence
+  rules. That is what keeps the lanes coherent without talking.
+- **A contract change is decided before it's built** (`/direction-gate`), by everyone who
+  decides direction, whatever lane it is in.
 
-## When the peer is unreachable
-Wait, or ask your human. Merging without the peer's review is a fallback that needs **your
-human's direct go for that scope** ("merge #42 without the peer"). The go is the authority;
-state it on the PR with the human's words as the record of it, and tell the peer when it's
-back.
+## One second reader per PR
+Every PR gets one second reader: one, not a read from every maintainer. This supersedes
+the earlier pairing practice, in which every peer reviewed every PR in parallel and every
+verdict was bound again at every head.
+- **Who:** the second reader its lane names. A PR that changes something another lane's
+  code or text reads (a contract, an answer, a sentence a test reads) names that lane on
+  the PR, and that lane's maintainer is its second reader. It replaces the lane's usual
+  second reader; it doesn't add a third.
+- **When:** after the lane's maintainer. You review first (`/pr-review`); at the head you
+  approve, you ask the second reader once, with the handoff template (`/pr-review`'s
+  reference). A second reader doesn't read a head its lane's maintainer hasn't approved: a
+  head that is then returned would be read twice. The one exception is a PR the lane's
+  maintainer authored (**Your own PRs**, below).
+- **The second reader** reviews with `/pr-review`, posts its verdict on the PR at that head,
+  and tells you in one line.
+- **A head that moves after the verdicts:** `/pr-review` says when both verdicts carry (the
+  branch was only brought up to date) and when the delta goes back to both readers.
+- **Your own PRs** (a release-prep PR, a small fix) are in your lane, and you don't approve
+  your own. Their second reader is their reviewer: ask it when the PR is ready, at a named
+  head with CI green, and it reviews without waiting for an approval of yours.
+- Don't merge over a second reader's RETURN. If you disagree, put both positions on the PR,
+  each with its evidence, and take it to the humans who decide.
+
+## What you message a peer for
+Each of these once, to the one peer it is for:
+- **a second read:** the request at an exact head, and its verdict in one line;
+- **a hold that must stop work already in flight** (below);
+- **the release plan,** where the peer's lane has PRs in it or left out of it
+  (`/plan-release`);
+- **a lane changing hands** (below);
+- **a request that belongs to the peer's lane,** passed on with the requester's words.
+
+Not these: a notice before or after a merge or a tag (the forge shows it, and `/pr-review`'s
+checks before the merge protect it), the state of your lane, or a human's word the peer
+doesn't have to act on. A published release is told once to whoever deploys it
+(`/ship-release`): they must act, and nothing else wakes them.
+
+## Holds
+A hold is the hold label on the forge, never a message alone:
+- **On one PR:** the label on that PR, with a comment that says the reason, the scope (which
+  action is held) and who can lift it.
+- **On the default branch** (a release freeze, a broken build): an open issue with the
+  label, saying the same three things.
+- The merge step reads both (`/pr-review`), so a hold binds every maintainer without a
+  message. Whoever the hold names lifts it, by removing the label or closing the issue.
+- Message a peer about a hold only when it must stop something already in flight. Say that
+  you need a confirmation; the peer answers in one line.
+
+## A lane changes hands
+When a maintainer leaves a lane (it is retired, overloaded, or a human says so), update the
+lane map, and hand over once what the forge doesn't show: the decisions asked for and not
+yet had, the authority given and its scope, the reason behind each hold, and the efforts in
+flight with their leads.
+
+## When a peer is unreachable
+- **The second reader:** wait, or ask your human. Merging without its read is a fallback
+  that needs **your human's direct go for that scope** ("merge #42 without the second
+  reader"). The go is the authority; state it on the PR with the human's words as the
+  record of it.
+- **A lane's maintainer:** its lane waits. Don't review or merge in it; ask the humans to
+  give the lane to someone (above).
 
 ## Without a peer
-A maintainer working alone agrees with its human who reviews its own work (the human, or
-another named reviewer), writes that down, and applies the same rules: an exact head, the
-verdict on the PR, and the human's direct go for anything outside the agreement.
+A maintainer working alone has one lane, the whole project. It agrees with its human who
+reviews its own work (the human, or another named reviewer), writes that down, and applies
+the same rules: an exact head, the verdict on the
+PR, and the human's direct go for anything outside the agreement.
 
 ## Decisions passed on from a human
 A decision you didn't hear from the human directly is a claim until you've checked it:
@@ -53,6 +111,6 @@ A decision you didn't hear from the human directly is a claim until you've check
   the human, a paraphrase, or "the human said it's fine".
 - When in doubt, ask the human directly, in plain text.
 
-## Keep a shared picture
-Releases are planned together (`/plan-release`). Holds, their reasons and their scope are
-visible to both of you, in the PR or a shared status. Tell your peer when you merge or tag.
+A human's word you did hear is recorded once, where it applies: on the PR or issue it
+decides, in the human's words. Pass it on to a peer only when the human asks you to, or when
+the peer must act on it and can't read it anywhere.

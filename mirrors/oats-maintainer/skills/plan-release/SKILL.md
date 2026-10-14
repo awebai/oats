@@ -1,6 +1,6 @@
 ---
 name: plan-release
-description: Plan a release before anything is tagged - which PRs are in and why the others are out, patch, minor or major, release notes for each change, the merge order (including PRs that all append to the same notes file), the release-prep PR and its review, and what users must do. Agree it with the peer maintainer. Use before any tag, and when deciding whether a PR waits for the next release.
+description: Plan a release before anything is tagged - which PRs are in and why the others are out, patch, minor or major, release notes for each change, the merge order (including PRs that all append to the same notes file), the release-prep PR and its review, and what users must do. One maintainer owns each release and posts its plan on the forge, where its peers answer it. Use before any tag, and when deciding whether a PR waits for the next release.
 ---
 
 # Plan a release
@@ -31,7 +31,8 @@ merge order, the notes and the version all tell the same story.
 
 ## Hotfixes and backports
 - **A hotfix** is a patch release for a break in the current version: only the fix and its
-  notes, planned like any release but small, and reviewed by your peer like any other.
+  notes, planned like any release but small, and reviewed by its second reader like any
+  other.
   It doesn't wait for the planned release, and the rule below that new PRs wait for the
   next release doesn't hold it back.
 - **A backport** to an older supported line goes on that line's branch, from the fix
@@ -41,8 +42,8 @@ merge order, the notes and the version all tell the same story.
 ## Order
 - Consumers that accept a new shape land before the producers that emit it.
 - A PR that others rebase onto goes first; say who rebases after each merge.
-- Once the plan is set, new PRs wait for the next release unless you and your peer agree
-  otherwise.
+- Once the plan is set, new PRs wait for the next release unless the release owner says
+  otherwise, on the plan.
 
 ## Project-specific steps
 Version bumps across companion components, compatibility ranges, pinned dependencies,
@@ -52,11 +53,16 @@ that list. This skill doesn't know them.
 ## The release-prep PR
 The version bump and the assembled notes are your own small PR: open it, keep it green and
 up to date, answer its review, and merge it only once reviewed. It goes through review like
-any other, at an exact head: your peer's, or, without a peer, the reviewer you agreed
-with your human (`/cross-review-peer`).
+any other, at an exact head, by its second reader: the one your lane names, or, without a
+peer, the reviewer you agreed with your human (`/cross-review-peer`).
 
 ## Write the plan down
-In your state file (`/maintainer-intake`): the version; PRs in, and those out with their
-reasons; the merge order; who reviews the release-prep PR; the gates still to run; what
-users must do. Share it with your peer before the first merge of the plan. When it's done,
-ship it with `/ship-release`.
+**One maintainer owns a release:** with peers, the lane map names who (`/cross-review-peer`).
+The owner writes the plan on the forge, in an issue or in the release-prep PR, before the
+first merge of the plan: the version; PRs in, and those out with their reasons; the merge
+order; who reviews the release-prep PR; the gates still to run; what users must do. Your
+state file names where it is (`/maintainer-intake`) and doesn't repeat it.
+
+A peer whose lane has PRs in the plan, or left out of it, is told once where the plan is,
+and answers there. A freeze before the tag is a hold on the default branch
+(`/cross-review-peer`), not a message. When the plan is done, ship it with `/ship-release`.

@@ -92,10 +92,10 @@ before any release, agree with them in writing (`/cross-review-peer`):
 - **Who drives the area.** Before the lead starts, check whether a feature maintainer
   already has an effort, an open PR or a hold in the same area or release. If one does,
   agree how the fix fits: folded into their effort, landed before theirs, or after it.
-- **Merges.** Every support merge needs a feature maintainer's written agreement on the
-  PR, beyond your own review. A fix that touches a contract, or code a feature PR has in
-  review, needs that feature maintainer's review as well. Never merge over a peer's hold
-  or their RETURN.
+- **Merges.** Support is a lane, and its second reader is the feature maintainer who
+  drives the area: every support merge needs that maintainer's verdict on the PR, beyond
+  your own review. A fix that touches a contract, or code a feature PR has in review, is
+  read by the maintainer of that lane. Never merge over a peer's hold or their RETURN.
 - **Releases.** The release owner, the maintainer planning the next release (ask the
   feature maintainers who it is), decides what goes into it. A fix that can't wait is a
   hotfix (`/plan-release`): propose it to the release owner with the severity and the
@@ -106,7 +106,8 @@ before any release, agree with them in writing (`/cross-review-peer`):
 - **Rollout.** Where a fix has to reach deployments (a package pin, an upgrade, a
   migration), agree who announces it and who moves which deployment. Deployments are
   their operators' to change. You ask, you don't touch them.
-- **Tell them** when you merge or release a support fix, with its reference.
+- **A merge needs no notice:** the forge shows it. Tell the release owner once when a
+  merged fix must reach a release it isn't planned in.
 
 ## 5. Keep the desk informed
 In the hand-off thread, for each ticket, at each change: needs info (with the question),

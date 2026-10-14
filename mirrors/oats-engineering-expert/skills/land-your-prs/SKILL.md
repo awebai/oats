@@ -46,11 +46,17 @@ converges.
   something in your domain.
 
 ## Hand over to the maintainer
-- Hand a PR to the maintainer only once three things hold, and say all three with the head:
+- Hand a PR to one maintainer: the one who launched your effort, or whose lane the work is
+  in. Where a second maintainer reads the PR, that maintainer asks it; you don't. Put its lane's label on
+  the PR when your brief names one.
+- Hand it over only once three things hold, and say all three with the head:
   the review loop converged (the developer's, or yours for a fix you made), you verified
   it, and CI is green on that exact head.
 - Don't push to a PR under the maintainer's review without telling it. Batch the review's
   fixes, let the loop converge again, then hand over the new head with the delta.
+- After the hand-over, leave the branch alone. When the default branch moves, the
+  maintainer brings your branch up to date itself, on the forge, and comes back to you only
+  for a conflict. Fetch before you touch the branch again.
 
 ## Merge
 - Merge by the repository's rules: required approvals, required checks, and who presses the

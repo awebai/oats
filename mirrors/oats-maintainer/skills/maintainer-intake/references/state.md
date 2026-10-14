@@ -1,11 +1,15 @@
 # The maintainer's state file
 
-One file, rewritten on every intake, in this order. Keep it where your working state lives
-(your instance home, or wherever your soul says), not in the repository. Empty sections
-stay, with "none", so a reader can tell "nothing" from "not checked".
+One file, rewritten on every full sweep and updated row by row between sweeps, in this
+order. Keep it where your working state lives (your instance home, or wherever your soul
+says), not in the repository. Empty sections stay, with "none", so a reader can tell
+"nothing" from "not checked".
+
+It holds **your lane only**. Another lane's PRs, verdicts and holds are on the forge: read
+them there when you need them, and never copy them here.
 
 ```markdown
-# Maintainer state: <repositories> (swept <date and time>)
+# Maintainer state: <repositories>, lane <lane> (swept <date and time>)
 
 ## Waiting on me
 | What | From | Since | Reference | Next action |
@@ -16,7 +20,7 @@ stay, with "none", so a reader can tell "nothing" from "not checked".
 |---|---|---|---|---|---|
 
 ## Open PRs
-| PR | Owner | Head | CI | Review (me / peer) | Hold: reason, scope | Next |
+| PR | Owner | Head | CI | Review (me / second reader) | Hold: reason, scope | Next |
 |---|---|---|---|---|---|---|
 
 ## Waiting on others
@@ -24,8 +28,8 @@ stay, with "none", so a reader can tell "nothing" from "not checked".
 |---|---|---|---|---|
 
 ## Release in flight
-Version, PRs in (with the reason for each one left out), merge order, release-prep PR,
-gates run and still to run, what users must do.
+The release owner: the version, where the plan is on the forge, the release-prep PR, gates
+run and still to run. Everyone else: the version, and which of your lane's PRs are in it.
 
 ## Decisions pending
 | Question | Who decides | Asked | Recommendation |
@@ -42,6 +46,7 @@ Rules:
 - Exact references only: `repo#PR @ <sha>`, message ids, issue numbers, tags. Never "the
   latest".
 - A hold names its scope (which PR, which action) and who can lift it. GO lifts only the
-  scope it names.
+  scope it names. The hold itself is the label on the forge (`/cross-review-peer`); this
+  file only says what you wait for because of it.
 - What you merged or released appears once under "Since the last sweep", with the
   observed result (merge commit, CI on it, the published version), not the intent.
