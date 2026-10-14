@@ -18,7 +18,10 @@ import { requireRemoteSupport } from '../../client/cli-locator.mjs';
 import { harnessFlag } from '../../client/harness-names.mjs';
 import { canAddressRemote, unaddressableSentence } from '../../client/remote-address.mjs';
 import { retainedSpawnDetails } from '../../client/launch-prompt-outcome.mjs';
+import { JSDOM } from 'jsdom';
 import { launchConfigRequest } from '../server/launch-configs.mjs';
+import { launchConfigFields } from '../renderer/launch-config-fields.mjs';
+import { setWorkspace } from '../renderer/views/common.mjs';
 import { LABEL, BARE_LINE, PREVIEW_ONLY, HERE, PERSONAL, PLACES, workspace, agents, home, instances, onServer, envelope, settle, dialog } from './helpers/start-dialog.mjs';
 
 /* ── The word, and who is known to read it ── */
@@ -158,6 +161,101 @@ test('a row of the list named as the word is never drawn as a configuration, so 
       assert.equal(d.q('.launch-config-source').textContent, BARE_LINE);
       assert.equal(d.harness.disabled, false);
       assert.equal(d.q('.lc-name').value, ''); assert.equal(d.q('.lc-args').value, '[]');
+    } finally { d.close(); }
+  }
+});
+
+/* ── The list read again while the choice is selected ── */
+
+const RECORDED_LINE = "Use this home's recorded launch.";
+
+for (const [place, at] of PLACES) test(`${place}: after a save, the list read again selects the saved configuration, not the choice, and the start sends that name`, async () => {
+  const FRESH = { name: 'fresh', harness: 'pi', source: '/team' };
+  const d = dialog({ ...at, list: read => ({ context: '/team', configurations: read === 1 ? [PERSONAL] : [PERSONAL, FRESH], noneKnown: true }) });
+  try {
+    await settle();
+    d.choose(d.harness, 'codex');
+    d.choose(d.select, LAUNCH_CONFIG_NONE);
+    // The editor holds nothing of a row while the choice is selected; a new configuration is saved from it.
+    d.q('.lc-name').value = 'fresh'; d.q('.lc-runtime').value = 'pi';
+    d.q('.lc-save').click(); await settle();
+    assert.equal(d.calls.filter(call => call.body?.action === 'set').length, 1);
+    assert.equal(d.calls.filter(call => call.body?.action === 'list').length, 2, 'the list was read again');
+    assert.equal(d.select.value, 'fresh');
+    assert.equal(d.harness.disabled, true, 'a named configuration decides the harness'); assert.equal(d.harness.value, '');
+    await d.submit();
+    assert.deepEqual(d.started(), { launchConfig: 'fresh' });
+  } finally { d.close(); }
+});
+
+for (const [place, at] of PLACES) test(`${place}: a remove is not offered while the choice is selected, and a remove of a configuration lands on the recorded launch, never on the choice`, async () => {
+  const d = dialog({ ...at, list: read => ({ context: '/team', configurations: read === 1 ? [PERSONAL] : [], noneKnown: true }) });
+  try {
+    await settle();
+    d.choose(d.select, LAUNCH_CONFIG_NONE);
+    assert.equal(d.q('.lc-remove').disabled, true, 'the choice is no configuration of this scope');
+    d.choose(d.select, 'personal');
+    assert.equal(d.q('.lc-remove').disabled, false);
+    d.q('.lc-remove').click(); await settle();
+    assert.equal(d.calls.filter(call => call.body?.action === 'remove').length, 1);
+    assert.deepEqual(d.options(), [['', 'Keep the recorded launch'], [LAUNCH_CONFIG_NONE, LABEL]], 'the choice is still offered');
+    assert.equal(d.select.value, '', 'and not chosen for the person');
+    assert.equal(d.q('.launch-config-source').textContent, RECORDED_LINE);
+    assert.equal(d.harness.disabled, false);
+    d.choose(d.harness, 'codex');
+    await d.submit();
+    assert.deepEqual(d.started(), { harness: 'codex' });
+  } finally { d.close(); }
+});
+
+/** The launch fields alone, over list answers given one at a time, as launch-configs.test.mjs drives them: the
+ * dialog reads the list once before a person can pick, so only the fields' own `load()` reads it again with
+ * the choice selected after a load cut short by `disabled(true)`. */
+function fields() {
+  setWorkspace('/team');
+  const dom = new JSDOM('<body><section></section></body>'), el = dom.window.document.querySelector('section');
+  const replies = [], changes = [], previews = [];
+  const controller = launchConfigFields(el, { selector: () => ({ home }), choices: () => ({ harness: 'codex' }), changed: row => changes.push(row),
+    ctx: { api: async (path, opts) => { const body = JSON.parse(opts.body); if (body.action === 'list') return new Promise(resolve => replies.push(resolve)); previews.push(body); return { command: 'the-command', ok: true }; } } });
+  const select = el.querySelector('.launch-config-select');
+  const choose = value => { select.value = value; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); };
+  return { el, select, choose, replies, changes, previews, controller, close() { controller.dispose(); dom.window.close(); } };
+}
+
+for (const [noneKnown, kept] of [[true, LAUNCH_CONFIG_NONE], [false, '']]) test(`a load cut short and repeated with the choice selected keeps it ${noneKnown ? 'while it is still offered' : 'only if offered: here it falls back to the recorded launch'}`, async () => {
+  const f = fields();
+  try {
+    const first = f.controller.load(); f.replies.shift()({ context: '/team', configurations: [PERSONAL], noneKnown: true }); await first;
+    f.choose(LAUNCH_CONFIG_NONE); f.changes.length = 0;
+    // A load in flight, cut short as a start does, and repeated with the current selection once the start is over.
+    const cut = f.controller.load(); f.controller.disabled(true);
+    f.replies.shift()({ context: '/team', configurations: [], noneKnown: false }); await cut;
+    assert.equal(f.select.value, LAUNCH_CONFIG_NONE, 'the cut load\'s answer changed nothing');
+    f.controller.disabled(false);
+    assert.equal(f.replies.length, 1, 'the list is read again');
+    f.replies.shift()({ context: '/team', configurations: [PERSONAL], noneKnown }); await settle();
+    assert.equal(f.select.value, kept);
+    assert.equal(f.select.selectedIndex, kept ? 1 : 0, 'an entry of the list is selected, never none of them');
+    assert.equal(f.controller.value(), kept || undefined, 'what a start would send');
+    assert.equal(f.el.querySelector('.launch-config-source').textContent, noneKnown ? BARE_LINE : RECORDED_LINE);
+    assert.deepEqual(f.changes, [], 'no row was chosen: the dialog\'s Harness list is left as the person set it');
+    f.el.querySelector('.launch-preview').click(); await settle();
+    assert.deepEqual(f.previews.at(-1).choices, { harness: 'codex', ...(kept ? { launchConfig: kept } : {}) }, 'what a preview sends');
+  } finally { f.close(); }
+});
+
+for (const [place, at] of PLACES) test(`${place}: after a refused start the Harness list is usable again with the choice, and stays disabled with a named configuration`, async () => {
+  for (const [chosen, usable] of [[LAUNCH_CONFIG_NONE, true], ['personal', false]]) {
+    const d = dialog({ ...at, start: () => { throw Object.assign(new Error('a text of this test'), { code: 'E_TEST_REFUSAL' }); } });
+    try {
+      await settle();
+      d.choose(d.harness, 'codex');
+      d.choose(d.select, chosen);
+      await d.submit();
+      assert.deepEqual(d.started(), { ...(usable ? { harness: 'codex' } : {}), launchConfig: chosen });
+      assert.equal(d.q('.start-status').textContent, 'a text of this test');
+      assert.equal(d.harness.disabled, !usable, chosen);
+      assert.equal(d.harness.value, usable ? 'codex' : '', chosen);
     } finally { d.close(); }
   }
 });

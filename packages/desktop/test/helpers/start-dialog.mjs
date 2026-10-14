@@ -51,7 +51,8 @@ export function http({ invoke = assert.fail, spawnAgent = assert.fail } = {}) {
 /* ── The dialog ── */
 
 export const PERSONAL = { name: 'personal', harness: 'codex', source: '/team' };
-/** One dialog over a scripted server. `respond.start` / `respond.preview` answer or throw; `list` is the list answer. */
+/** One dialog over a scripted server. `respond.start` / `respond.preview` answer or throw; `list` is the list answer,
+ * or a function of the how-manieth list read (from 1) that answers it, for a list read again after a save or a remove. */
 export function dialog({ restart = false, server, list = { context: '/team', configurations: [PERSONAL], noneKnown: true }, start, preview } = {}) {
   const previous = currentWorkspace(); setWorkspace('/team');
   const dom = new JSDOM('<body><button>Open</button></body>'), doc = dom.window.document, calls = [];
@@ -62,7 +63,11 @@ export function dialog({ restart = false, server, list = { context: '/team', con
     if (path === '/api/cli') return HERE;
     if (path.startsWith('/api/panel')) return { instances: [instance] };
     if (path === '/api/models') return { models: [] };
-    if (path.startsWith('/api/launch-configs')) return body.action === 'list' ? list : preview ? preview(body) : { command: 'the-command', ok: true };
+    if (path.startsWith('/api/launch-configs')) {
+      if (body.action === 'list') return typeof list === 'function' ? list(calls.filter(call => call.body?.action === 'list').length) : list;
+      if (body.action === 'set' || body.action === 'remove') return {};
+      return preview ? preview(body) : { command: 'the-command', ok: true };
+    }
     if (path.startsWith(`/api/${restart ? 'restart' : 'start'}/`)) return start ? start(body) : { instance: instance.instance, home };
     throw new Error(`Unexpected request: ${path}`);
   }, openTerminal: () => {} };
