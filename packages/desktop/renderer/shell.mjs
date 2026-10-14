@@ -36,6 +36,7 @@ import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
+import { createForgetDialog } from './forget-dialog.mjs';
 import { successorRow } from "./focus-return.mjs";
 import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
@@ -1021,6 +1022,10 @@ function renderContextRoster(instances) {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
             openLifecycleDialog(operation, instance, ws);
           },
+          openForget: instance => {
+            if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
+            openForgetDialog(instance, ws);
+          },
           done: () => {},
           report: (headline, { detail } = {}) => {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
@@ -1321,6 +1326,7 @@ const contextPanel = createContextPanel({
     restart: (instance, workspace) => { if (workspace === currentWorkspace()) openInstanceStart(instance, { restart: true }); },
     stop: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('stop', instance, workspace); },
     retire: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('retire', instance, workspace); },
+    forget: (instance, workspace) => openForgetDialog(instance, workspace),
   },
   // Soul tab → the soul in the Workspace view (same hand-off as Quick Open).
   openSoul: async ({ workspace, name, agentsRoot, server }) => {
@@ -2204,7 +2210,7 @@ const connections = createConnections({ doc: document, desk,
     };
   },
 });
-function openConnections(choice = {}) { tabOpenIntents.invalidate(); lifecycleDialog.close(); shortcutsEditor.close(); connections.open(choice); }
+function openConnections(choice = {}) { tabOpenIntents.invalidate(); lifecycleDialog.close(); forgetDialog.close(); shortcutsEditor.close(); connections.open(choice); }
 window.addEventListener('pagehide', () => connections.dispose(), { once: true });
 const lifecycleDialog = createLifecycleDialog({ doc: document,
   request: async (workspace, body) => {
@@ -2239,7 +2245,7 @@ function lifecycleFallbackFocus() {
   row.tabIndex = 0; return row;
 }
 function openLifecycleDialog(operation, instance, workspace) {
-  connections.close(); shortcutsEditor.close();
+  connections.close(); shortcutsEditor.close(); forgetDialog.close();
   const order = [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].map(r => r.dataset.treeInstance);
   lifecycleRowOrder = { order, at: order.indexOf(instanceId(instance)) };
   // The callers check the workspace on screen (`workspace`); the plan and apply are addressed to the
@@ -2248,6 +2254,42 @@ function openLifecycleDialog(operation, instance, workspace) {
   lifecycleDialog.open({ operation, instance, workspace: rowDeployment(instance) });
 }
 window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
+/* Forget… (#1131): a row its host no longer lists (forget-dialog.mjs). The server composes the command from the
+ * row's { server, instance }; every answer re-reads the roster: the remote read the server started (joined by
+ * the refresh, which answers once it landed), then this window's roster. Nothing here edits a row. */
+const forgetDialog = createForgetDialog({ doc: document,
+  request: async body => (await desk.api('/api/server-forget', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })).body,
+  reread: async () => {
+    try { await desk.api('/api/remote-roster/refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }); }
+    catch { /* the window's roster is read below either way */ }
+    await refreshContextRoster();
+  },
+  notify: text => notifications.notify(text),
+  nextFocus: row => forgetNextFocus(row),
+  generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,
+  onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
+});
+/** Where focus goes once a row is forgotten: the roster row after it, else the roster itself (else a stable
+ * shell control when the sidebar is hidden). The forgotten row stays until the re-read removes it. */
+function forgetNextFocus(row) {
+  const listEl = contextRosterEl?.querySelector(".ctx-list");
+  if (!listEl || sidebarHidden()) return stableFocusTarget();
+  const shown = el => el?.isConnected && !el.disabled && !el.closest("[hidden]") && document.defaultView.getComputedStyle(el).display !== "none";
+  const rows = [...listEl.querySelectorAll(".ctx-inst")];
+  const at = row ? rows.findIndex(r => r.dataset.treeInstance === instanceId(row)) : -1;
+  const next = at >= 0 ? rows.slice(at + 1).find(shown) : null;
+  if (!next) { contextRosterEl.tabIndex = -1; return contextRosterEl; }
+  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+  next.tabIndex = 0; return next;
+}
+function openForgetDialog(instance, workspace) {
+  if (workspace !== currentWorkspace() || forgetDialog.busy()) return;
+  connections.close(); shortcutsEditor.close(); lifecycleDialog.close();
+  forgetDialog.open(instance);
+}
+window.addEventListener('pagehide', () => forgetDialog.dispose(), { once: true });
 // The theme button, the palette and the chord (app.themePicker) open it; a choice goes through setTheme,
 // so it is stored as a palette choice is.
 const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,

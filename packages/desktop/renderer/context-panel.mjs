@@ -5,7 +5,8 @@ import { createSoulMark, createRuntimeBadge, harnessName } from './identity-mark
 import { unsupportedSession } from '../../client/instance-presentation.mjs';
 import { unsupportedLine } from './speaker-line.mjs';
 import { heldHome } from '../../client/instance-tree.mjs';
-import { canAddressRemote, serverLabel, shownLabel, unaddressableSentence } from '../../client/remote-address.mjs';
+import { canAddressRemote, rowReason, serverLabel, shownLabel, unaddressableSentence } from '../../client/remote-address.mjs';
+let workNotes = 0;
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
@@ -107,6 +108,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-detail { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; min-width:0; }
 #context-panel .context-panel-detail .context-panel-path { color:var(--muted); }
 #context-panel .context-panel-actions { display:flex; gap:8px; flex-wrap:wrap; }
+#context-panel .context-panel-actions[hidden] { display:none; }
 #context-panel .context-panel-action { font:600 12.5px/1 inherit; height:32px; padding:0 14px; border-radius:7px; background:var(--primary-bg); color:var(--primary-fg); border:1px solid var(--primary-bg); cursor:pointer; }
 #context-panel .context-panel-action:disabled { background:var(--surface-2); color:var(--muted); border-color:var(--border); cursor:default; }
 /* Session: the harness mark and name, the model and where it came from, the terminal target and its age. */
@@ -441,6 +443,18 @@ export function createContextPanel({
   // A remote row without its work facts: one muted line where the Work section stands (no card, no guess).
   const workNote = node('p', 'context-panel-note context-panel-work-note'); workNote.dataset.contextWorkNote = ''; workNote.hidden = true;
   workSection.after(workNote);
+  // #1131: beside the remedy of a row its host no longer lists, the act it names: Forget…, the same
+  // confirmation as the roster menu's (forget-dialog.mjs; nothing runs here).
+  const forgetActions = node('div', 'context-panel-actions'); forgetActions.dataset.contextForget = ''; forgetActions.hidden = true;
+  const forgetControl = node('button', 'context-panel-action', 'Forget…'); forgetControl.type = 'button'; forgetControl.dataset.lifecycle = 'forget';
+  forgetControl.addEventListener('click', event => {
+    const instance = context.instance;
+    if (disposed || !hasGeneric() || !instance || typeof lifecycle?.forget !== 'function' || forgetActions.hidden || forgetControl.disabled) return;
+    onIntent(event); lifecycle.forget(instance, context.workspace);
+  });
+  // Described by the remedy above it, which names the instance and the server.
+  workNote.id = `context-panel-work-note-${++workNotes}`; forgetControl.setAttribute('aria-describedby', workNote.id);
+  forgetActions.append(forgetControl); workNote.after(forgetActions);
   let workKey = null;
   // Session: the harness (and model) it runs, its terminal session and age.
   const session = section('instance', 'Session');
@@ -609,6 +623,9 @@ export function createContextPanel({
     const note = remoteWorkNote(instance) ?? '';
     if (workNote.textContent !== note) workNote.textContent = note;
     workNote.hidden = !note;
+    // Strictly a row whose reason is `missing` (remote-address.mjs): an unknown, unreached or other row offers no Forget.
+    const forgets = !!note && typeof lifecycle?.forget === 'function' && rowReason(instance)?.key === 'missing';
+    forgetActions.hidden = !forgets;
     if (work && modeTile.dataset.work !== work) {
       modeTile.dataset.work = work; modeTile.replaceChildren(iconElement(document, WORK_MODES[work].icon, { size: 14 }));
     }

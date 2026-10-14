@@ -371,7 +371,9 @@ what a part of the panel needs, that part names the server and says which OATS t
 than showing nothing. A row that can't be opened says why on the row:
 Herdr no longer supported, gone from <server>, not reachable on <server>, or <server> not reached.
 For an instance a server no longer lists, the reason names the command that removes it from this
-computer (`oats server forget <server> --instance <name>`).
+computer (`oats server forget <server> --instance <name>`), and the row offers **Forget…**, in its
+actions menu and in the context panel, which runs that command for that row after a confirmation.
+Only this computer's saved route goes; nothing changes on the server, and the roster is read again.
 
 ## Remote terminals
 

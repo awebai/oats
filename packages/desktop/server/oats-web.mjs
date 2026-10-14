@@ -51,6 +51,7 @@ import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
 import { createMachines } from "./machines.mjs";
+import { createServerForget, forgetNotRun } from "./server-forget.mjs";
 import { machinesGated } from "../../client/machine-contract.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
@@ -677,6 +678,8 @@ const refreshLoop = createRefreshLoop({ run: observeAll, focusedMs: REFRESH_FOCU
 const remoteLoop = createRefreshLoop({ run: () => refreshRemoteSnapshot(), focusedMs: 10_000, blurredMs: REFRESH_BLURRED_MS });
 /* A workspace's own machines (#517): Where to run, the Setup tab's Machines, Add a machine. */
 const machines = createMachines({ adapter, cli: () => cliState });
+/* Forget a remote instance its host no longer lists (#1131): one `server forget` per pressed row at a time. */
+const serverForget = createServerForget({ adapter, cli: () => cliState });
 /** Observe now (or right after the cycle in flight); `live` makes the kernel observe the remotes afresh. */
 function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
 /** A mutation this backend performed for a workspace: what inspect reported may have changed, and the
@@ -1318,6 +1321,18 @@ const server = createServer(async (req, res) => {
       } catch (e) {
         return send(res, e.code === "E_BUSY" || e.code === "E_FEATURE" ? 409 : 400, { error: e.message, code: e.code || "E_BAD_ARGS" });
       }
+    }
+    if (req.method === "POST" && path === "/api/server-forget") {
+      // #1131: forget the saved route of a remote row its host no longer lists (server/server-forget.mjs). The
+      // body is that row's { server, instance }; the argv is composed there, never taken from the request.
+      // After any command that ran, whatever it answered, the remote roster is read again: the panel then
+      // shows what the CLI says, and nothing here edits it.
+      if (url.search) return send(res, 400, forgetNotRun("E_BAD_ARGS"));
+      let body;
+      try { body = await readStrictBody(req, 4096); } catch { return send(res, 400, forgetNotRun("E_BAD_ARGS")); }
+      const { http, ran, answer } = await serverForget.forget(body);
+      if (ran) { try { void remoteLoop.request(); } catch { /* a re-read must not erase the outcome */ } }
+      return send(res, http, answer);
     }
     if (req.method === "GET" && path === "/api/cli") {
       return send(res, 200, servedCliStatus());
