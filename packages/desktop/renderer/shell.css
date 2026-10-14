@@ -263,9 +263,11 @@ body {
 .start-launch-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .start-status { min-height: 1.5em; }
 /* A start that stopped at a launch prompt: under the status, what the screen differed in (launch-differed.mjs),
-   then the kernel's own message, attributed. */
-.start-outcome { display: grid; gap: 10px; margin: 0 0 4px; min-width: 0; }
-.start-outcome[hidden] { display: none; }
+   then the kernel's own message, attributed. A start the kernel refused, where the status is the Desktop's own
+   sentence: the kernel's message, attributed. The same under the launch fields' status for a refused preview
+   (.launch-config-said). */
+.start-outcome, .launch-config-said { display: grid; gap: 10px; margin: 0 0 4px; min-width: 0; }
+.start-outcome[hidden], .launch-config-said[hidden] { display: none; }
 .instance-start-dialog .start-kernel-says { margin: 0; font-size: 12px; color: var(--muted); }
 .start-launch-controls[hidden], .start-configurations[hidden], .launch-preview-output[hidden] { display: none; }
 .launch-config-fields { margin-top: 16px; }
