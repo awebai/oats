@@ -36,7 +36,7 @@ const tree = { ...treeShared, ...treeView };
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import * as markdown from "../renderer/views/markdown.mjs";
-import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { revealInStrip, revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const keySource = readFileSync(new URL("../renderer/keybindings.mjs", import.meta.url), "utf8");
@@ -100,7 +100,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Inert presenter: this fixture owns file/chooser focus, not panel layout.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
-    updateSplitControls() {}, revealInStrip, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {}, stageSidebarMode: () => "souls",
+    updateSplitControls() {}, revealInStrip, revealInScrollport, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {}, stageSidebarMode: () => "souls",
     workspaceLabel: { reset() {} }, NAV: [], ctx: {},
     alert: message => notices.push(message), onWorkspaceChange: listener => listeners.push(listener),
     api(path) { const request = { ...deferred(), path }; requests.push(request); return request.promise; },

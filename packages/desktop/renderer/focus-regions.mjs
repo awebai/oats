@@ -12,6 +12,8 @@
 // The tab strip and the split controls count as main; the workspace switcher and the sidebar
 // footer as nav (they are reached with Tab from the nav item).
 
+import { revealInScrollport } from "./reveal-in-scrollport.mjs";
+
 export const REGIONS = Object.freeze(["nav", "roster", "main", "panel"]);
 
 const TABBABLE = 'button, [href], input, select, textarea, summary, [tabindex]';
@@ -98,7 +100,11 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     }
     const item = currentItem(name);
     if (!item) return false;
-    item.focus({ preventScroll: false });
+    // A roster row is revealed inside its list only (the list shows no scrollbar); elsewhere the
+    // focus scroll brings the item into view.
+    const list = name === "roster" ? item.closest(".ctx-list") : null;
+    item.focus({ preventScroll: !!list });
+    if (list) revealInScrollport(list, item.closest(".ctx-tree-row") || item);
     return doc.activeElement === item;
   }
 

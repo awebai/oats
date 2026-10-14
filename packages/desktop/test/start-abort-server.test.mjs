@@ -12,12 +12,15 @@ const of = (calls, verb) => calls.filter(c => c.verb === verb);
 const maxAge = call => { const i = call.argv.indexOf('--max-age'); return i < 0 ? null : call.argv[i + 1]; };
 
 test('a start and a restart whose request is aborted while the CLI call is in flight: the call is not signalled, ends by itself, and the route goes on after it', async () => {
-  const s = await startLoadPathServer({ gated: ['session'], probe: v => ({ ...v, features: [...v.features, 'observe-max-age'] }) });
+  // The fake tmux, alone on PATH, answers that no server runs, so the seat is observed stopped and the start rule
+  // (packages/client/start-gate.mjs) lets both acts reach the kernel; without a tmux its state is not known.
+  const s = await startLoadPathServer({ gated: ['session'], probe: v => ({ ...v, features: [...v.features, 'observe-max-age'] }), tmux: true, env: ({ dir }) => ({ PATH: dir }) });
   try {
     await s.post('/api/window-state', { focused: false }); // no cycle of the server's own during the test
     assert.ok((await s.post('/api/cli/reprobe', {})).features.includes('session-restart'));
     const panel = await s.until(async () => { const p = await s.panel(); return p.deployment?.status === 'observed' && !p.refreshing ? p : null; });
-    const { instance, home } = panel.instances[0];
+    const { instance, home, running } = panel.instances[0];
+    assert.equal(running, false, 'the seat is observed stopped');
     let sessions = 0;
     for (const kind of ['start', 'restart']) {
       const abort = new AbortController();

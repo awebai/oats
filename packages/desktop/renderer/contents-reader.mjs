@@ -10,6 +10,7 @@
  * an in-document fragment scrolls the reader; anything else becomes its text. */
 import { renderMarkdownHtml, renderCodeHtml, isMarkdownName, decorateMarkdown, copyCodeBlock } from './views/markdown.mjs';
 import { splitFrontMatter } from './front-matter.mjs';
+import { skillRelativePath } from '../../client/capability-show-contract.mjs';
 
 export const contentsCardCSS = `
 /* The section's own display rules (grid, flex) would beat the HTML hidden attribute: hidden always wins here. */
@@ -191,7 +192,7 @@ export function skillTreeItem(doc, skill, { open, focusKey, keys, fileItem }) {
   if (sentence) copy.append(node('span', 'cap-node-desc', sentence));
   row.append(twisty, copy); item.append(row);
   const children = node('ul'); children.setAttribute('role', 'group'); children.hidden = !open;
-  for (const f of [...skill.files].sort((a, b) => isSkillMd(skill, b) - isSkillMd(skill, a))) children.append(fileItem(f, f.path.slice(skill.path.length + 1)));
+  for (const f of [...skill.files].sort((a, b) => isSkillMd(skill, b) - isSkillMd(skill, a))) children.append(fileItem(f, skillRelativePath(skill, f)));
   if (skill.filesTruncated) { const more = node('li', 'cap-more', SKILL_COPY.moreFiles); more.setAttribute('role', 'none'); more.setAttribute('aria-hidden', 'true'); children.append(more); }
   item.append(children);
   row.addEventListener('click', () => { keys.focusItem(item); keys.toggle(item); });
