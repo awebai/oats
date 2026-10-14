@@ -61,8 +61,9 @@ try {
       console.error(`no turn ${args.show}`);
       process.exitCode = 1; return;
     }
-    // Tombstoned turns are hidden from tool output, id lookup included.
-    if (store.hiddenIds(byId).has(args.show)) {
+    // Session targets are absent from the bulk union: evaluate the claims
+    // against the resolved turn so id lookup respects their tombstones too.
+    if (store.claimHides(store.tombstoneClaims(byId), turn)) {
       console.error(`turn ${args.show} is tombstoned`);
       process.exitCode = 1; return;
     }
