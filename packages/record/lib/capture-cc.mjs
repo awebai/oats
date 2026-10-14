@@ -300,7 +300,11 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     let lineNo = state.line;
     let consumed = 0;
     const walk = {};
+    const batchBytes = context?.batchBytes ?? FLUSH_BYTES;
     for (const l of completeLines(chunks(state.bytes), walk)) {
+      // Commit the earlier batch BEFORE its cursor/timestamp can include the
+      // next record. Public callers still accept a larger individual record.
+      if (fresh.length && freshBytes + l.bytes > batchBytes) flush();
       if (l.ts) lastTs = l.ts;
       lineNo++;
       consumed += l.bytes;
@@ -312,7 +316,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
         ),
       );
       freshBytes += l.bytes;
-      if (fresh.length >= 2000 || freshBytes >= FLUSH_BYTES) flush();
+      if (fresh.length >= 2000 || freshBytes >= batchBytes) flush();
     }
     stopped(walk);
     flush();

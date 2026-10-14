@@ -121,7 +121,15 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
       }
       checkpoint();
     };
+    const batchLimit = captureContext(store)?.batchBytes ?? 8 * 1024 * 1024;
     for (const record of logEntries(fd, start, end, () => skipped++, (offset) => { consumed = offset; })) {
+      if (batch.length && batchBytes + record.bytes > batchLimit) {
+        // The parser has reported this complete line as scanned, but it has
+        // not yet been appended. An earlier batch may checkpoint only up to
+        // this line's START, including intervening consumed blank lines.
+        const scanned = consumed; consumed = record.start;
+        flush(); consumed = scanned;
+      }
       entries++;
       let turn;
       // Projection refusal consumes this complete entry just like a skipped
@@ -132,7 +140,7 @@ function captureLogFile(store, { streamId, path, project, knownIds, incremental 
       catch { failed++; continue; }
       if (knownIds) { if (knownIds.has(turn.id)) continue; knownIds.add(turn.id); }
       batch.push(turn); batchBytes += record.bytes;
-      if (batch.length >= APPEND_BATCH || batchBytes >= 8 * 1024 * 1024) flush();
+      if (batch.length >= APPEND_BATCH || batchBytes >= batchLimit) flush();
     }
     // Complete refused/malformed/blank lines are consumed; an unfinished final
     // fragment keeps its starting boundary so later growth can finish it.

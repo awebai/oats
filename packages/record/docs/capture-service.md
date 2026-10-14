@@ -112,8 +112,11 @@ persistence failure is an operation failure, not a fabricated success.
 ## Resource model
 
 Source and journal reads use 64 KiB chunks. Batches commit at 2,000 records or
-8 MiB of accumulated raw bytes; a single larger record is still supported and
-can exceed that batch target. SQLite connections use a 2 MiB page-cache target
+8 MiB of accumulated raw bytes. Admission flushes the prior batch before adding
+a record that would exceed that byte target. Its checkpoint excludes the next
+record's bytes and timestamp, even when the parser has already scanned that
+line. A single larger record remains supported by public library calls and can
+exceed the batch target. SQLite connections use a 2 MiB page-cache target
 and disk-backed temporary tables. Metadata query pages hold at most 128 rows;
 keyset queries support the declared Node 22.5 SQLite API without rescanning
 prior pages. Content-processing memory therefore depends on fixed buffers,
