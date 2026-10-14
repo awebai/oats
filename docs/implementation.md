@@ -91,7 +91,7 @@ and the rules its tests pin.
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
 | `packages.mjs` | `packages:`, the catalog, `oats sync`, `oats-lock.json` |
-| `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit |
+| `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit. Its text rules (`decodeText`, `skillDescription`, the limits) are also the rules of `inspect --soul --skills` (`instance-inspect.mjs` `soulSkills`), which reads a soul copy's own skills locally |
 | `materialize.mjs` | copying modules into a home and composing it |
 | `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata. A home's record (`instance.json`) is read with `readHomeRecord`, which never throws: a record, an absent one, or one that is there and cannot be read, with the reason. Code that walks other homes (the listing, a retire's lineage repair) uses it, so that one home's record decides only for that home; `identifiedHomeRecord` is the one refusal (`E_UNIDENTIFIED_INSTANCE_HOME`) a lifecycle verb makes when it has resolved its home: `resolveRetireHome`, `startInstanceSession`, and `resolveTarget` in `instance-lifecycle.mjs` for the stop and retire plans. A plan reads its own home's record with `targetRecord` (the same refusal) and any other home's with `otherRecord` (absent or unreadable: nobody's parent or child) |
 | `instruction-composition.mjs` | the generated `AGENTS.md`; `renderInstructionParts` is the span-reporting renderer (`renderInstructionText` is its text) |
