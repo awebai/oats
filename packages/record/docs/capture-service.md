@@ -155,7 +155,14 @@ are algorithm settings, **not** a memory/deadline policy or record-size limit.
 
 Native root and path discovery retain in-memory metadata inventories, sorted by
 the existing per-directory `localeCompare` order with stable ties and depth-first
-traversal. Aweb account logs retain their code-unit sorted basename order. Their memory grows with file/profile counts, separately from streamed
+traversal. Aweb account discovery retains code-unit sorted basenames. Public synchronous
+`captureAwLogs` keeps sorted whole-file traversal. Cross-account append order
+in `owner~aw` under the service is unspecified; per-account order is preserved.
+Bounded command work may rotate between account files, serially under the same
+stream lock. IDs, projection, dedupe and journal-generation checks are unchanged.
+[`recall --thread --json`](../README.md) exposes the resulting durable sequence,
+including mixed-account ID windows; it does not regroup or sort journal history.
+Discovery metadata memory grows with file/profile counts, separately from streamed
 content processing; metadata enumeration and sorting still run on unchanged
 passes. Public list APIs retain their full sorted-array output. Per-input
 cursors in `index/capture.db` replace whole-map JSON loads and rewrites. The

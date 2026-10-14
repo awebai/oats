@@ -77,6 +77,14 @@ turn-record recall --show t1:<hex>              # print one turn
 turn-record recall --reindex                    # full rebuild of the derived index
 ```
 
+`recall --thread <thread> --json` lists a thread in capture sequence.
+For a thread spanning aweb accounts, cross-account sequence under the service
+is unspecified, and an ID window may contain turns from more than one account.
+`--after <id>` excludes its boundary; `--until <id>` includes its boundary.
+`--ids-only` uses the same window and reports IDs and output byte sizes. Later
+appends do not reorder an existing window; existing tombstone visibility rules
+still apply. Text thread listings without a query remain timestamp-sorted.
+
 Store root: `--root`, else `$TURN_RECORD_ROOT`, else `~/.turn-record`.
 
 `recall --show` refuses a turn hidden by its author's tombstone, including a
