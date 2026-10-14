@@ -41,7 +41,7 @@ export const setupCSS = `
 .setup-explain-body { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px 32px; align-items:center; padding-top:12px; min-width:0; }
 .setup-explain-body > p { margin:0; max-width:62ch; color:var(--fg); font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
 .setup-explain-body > p .mono { font-family:var(--mono,monospace); font-size:14px; }
-.setup-hs { display:grid; grid-template-columns:auto auto auto; gap:10px; align-items:center; margin:0; min-width:0; }
+.setup-hs { display:grid; grid-template-columns:auto auto auto; gap:10px; align-items:center; justify-self:start; margin:0; min-width:0; }
 .setup-hs-repo { display:flex; flex-direction:column; gap:2px; min-width:0; max-width:220px; padding:9px 12px; box-sizing:border-box; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); }
 .setup-hs-role { color:var(--muted); font-size:12px; }
 .setup-hs-name { color:var(--fg); font-size:14px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -63,7 +63,7 @@ export const setupCSS = `
 .setup-sec-lead { margin:0; color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
 /* This computer: a zone, not a box (what is not shared); its boxes are solid cards on it. */
 .setup-zone { display:flex; flex-direction:column; gap:18px; min-width:0; padding:18px 20px 20px; box-sizing:border-box; border:1px dashed var(--tree-line); border-radius:12px; background:var(--surface-2); }
-.setup-zone h4 { margin:0 0 8px; color:var(--fg); font-size:15px; font-weight:650; }
+.setup-here-clones > h4 { margin:0 0 8px; color:var(--fg); font-size:15px; font-weight:650; }
 .setup-facts { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:14px 24px; margin:0; min-width:0; }
 .setup-fact { display:flex; flex-direction:column; gap:2px; min-width:0; }
 .setup-fact dt { color:var(--muted); font-size:12px; }
@@ -428,8 +428,7 @@ function sharedSection(doc, { status, onSelect, openExternal }) {
     if (isHost(member)) name.append(hostBadge(doc, status, openExternal));
     const gives = contribution(member), state = memberState(member);
     const cell = el(doc, 'span', gives.text, `setup-cell${gives.muted ? ' muted' : ''}`); cell.title = gives.text;
-    const chip = el(doc, 'span'); chip.append(stateChip(doc, member));
-    row.append(name, chip, cell);
+    row.append(name, stateChip(doc, member), cell);
     if (!state.ok) {
       const act = el(doc, 'button', 'Why?', 'setup-link-act'); act.type = 'button';
       act.setAttribute('aria-label', `${memberName(member)}: why it ${state.why}`);
@@ -452,8 +451,8 @@ function sharedSection(doc, { status, onSelect, openExternal }) {
     row.append(name, el(doc, 'span', 'external soul', 'setup-cell muted'), from, el(doc, 'span', '', 'setup-end'));
     memberRows.append(row);
   }
-  if (memberRows.children.length) members.append(memberRows);
   if (!list(status?.members).length) members.append(el(doc, 'p', 'No member repositories reported.', 'setup-empty'));
+  if (memberRows.children.length) members.append(memberRows);
   // Packages: versioned bundles, pinned here and fingerprinted in the lock.
   const packages = box(doc, 'Packages', 'Versioned bundles, pinned here and fingerprinted in the lock.', null, { heading: 'h4' });
   const packageRows = el(doc, 'div', null, 'setup-rows'); packageRows.dataset.rows = 'packages';

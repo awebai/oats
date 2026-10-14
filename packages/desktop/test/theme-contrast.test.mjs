@@ -585,7 +585,7 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.setup-zone .setup-sec-title', '.setup-zone', 'fg', 'surface-2'], ['.setup-zone .setup-sec-lead', '.setup-zone', 'muted', 'surface-2'],
     ['.setup-fact dt', '.setup-zone', 'muted', 'surface-2'], ['.setup-fact dd.mono', '.setup-zone', 'fg', 'surface-2'],
     ['.setup-fact dd.prim:not(.warn)', '.setup-zone', 'fg', 'surface-2'], ['.setup-fact dd.warn', '.setup-zone', 'warn', 'surface-2'],
-    ['.setup-zone h4', '.setup-zone', 'fg', 'surface-2'], ['.setup-clone dt', '.setup-zone', 'muted', 'surface-2'],
+    ['.setup-here-clones > h4', '.setup-zone', 'fg', 'surface-2'], ['.setup-clone dt', '.setup-zone', 'muted', 'surface-2'],
     ['.setup-clone dd:not(.warn):not(.muted)', '.setup-zone', 'fg', 'surface-2'], ['.setup-clone dd.warn', '.setup-zone', 'warn', 'surface-2'], ['.setup-clone dd.muted', '.setup-zone', 'muted', 'surface-2'],
     ['.setup-def dt', '.setup-box', 'muted', 'surface'], ['.setup-def dd.muted', '.setup-box', 'muted', 'surface'],
     ['.setup-def-cap:not(.off) .setup-def-name', '.setup-box', 'fg', 'surface'], ['.setup-def-from', '.setup-box', 'muted', 'surface'],
