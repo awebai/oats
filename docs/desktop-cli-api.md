@@ -4977,7 +4977,10 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   `restart`),
   `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*` (among them
   `E_LAUNCH_SHIM`: the home's `oats` link cannot be written, nothing was
-  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`
+  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`,
+  `E_HARNESS_RESOURCE_MISSING` (a harness package an active capability
+  requires is not installed, disabled, or cannot be verified: nothing was
+  started; `E_HARNESS_PACKAGE` before 0.56.0), `E_SESSION_FAILED`
   (any error that is not the kernel's; with
   [`details.cause`](#kernel-codes) when it has a code of its own or is a
   defect, and without it when it is a refusal without a code).
