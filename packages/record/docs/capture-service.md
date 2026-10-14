@@ -271,6 +271,19 @@ record limit and checks it before joining an oversized line; public callers keep
 their unlimited framing default. These primitives require a scheduling caller to
 provide budgets and continuation; they do not bound public library operations.
 
+`advanceTranscriptPrefix` is the internal resumable comparison for a retained
+immutable source snapshot. Its durable phases clear obsolete hashes, consume
+the journal from a byte checkpoint, then compare source lines from a byte/line
+checkpoint. Hashes and phase progress share the surrounding stream group's
+transaction. A snapshot identity or exact journal generation change revokes
+the proof; losing the hash table or its epoch cannot qualify old checkpoints.
+Only the ready phase authorizes the caller to append. A late disagreement
+reports the conflicting source line/offset without appending any suffix.
+Cleanup revokes the proof before deleting bounded batches of hashes. Journal
+processing retains the historical-single-record qualification; the raw source
+record policy is not a serialized-journal size limit. This comparison helper
+does not own snapshot staging, transfer its ownership or read the mutable source.
+
 Public synchronous library calls do not implicitly enter this context or acquire
 a root capture lock. Healthy derived-state opens do not run a schema write
 transaction, and identical state values do not produce redundant row updates.
