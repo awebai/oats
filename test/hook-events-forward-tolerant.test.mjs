@@ -179,7 +179,9 @@ test("spawn --preview and the spawn warn, and the Desktop reads both; the unknow
   rmSync(MARKS, { force: true });
   const target = { workspace: fx.key, context: fx.dep, selector: { soul: "dev", agentsRoot: root() } };
   const preview = json(["spawn", "dev", "--dir", fx.dep, "--agents-root", root(), "--preview", "--purpose", "fut"]);
-  assert.deepEqual(preview.warnings, memberWarnings.map((w) => w.message), "the preview's warnings are strings");
+  // No OATS tmux server runs for this fixture: the preview says whose PATH its lookup read, after the capabilities' warnings.
+  const noServer = "the harness lookup: the pane's environment is not established until a spawn starts the OATS tmux server (none runs); read instead: this process's PATH";
+  assert.deepEqual(preview.warnings, [...memberWarnings.map((w) => w.message), noServer], "the preview's warnings are strings");
   assert.ok(previewData(preview, target), "the Desktop's preview reader tolerates them");
   const previewText = ok(fx.cli(["spawn", "dev", "--preview", "--purpose", "fut"])).stdout;
   for (const w of memberWarnings) assert.ok(previewText.includes(`WARNING: ${w.message}`), previewText);

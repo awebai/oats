@@ -65,24 +65,28 @@ test("spawn: codex trusts the new home only under a trusted root; claude and cod
   const userHome = fx.env.HOME, dep = realpathSync(fx.dep);
   const codexConfig = join(userHome, ".codex", "config.toml"), claudeConfig = join(userHome, ".claude.json");
   const spawn = async (purpose, harness) => { const r = await fx.spawn("dev", { purpose, harness }); return { r, meta: JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8")) }; };
-  const codexWarning = `codex folder trust is not established in ${codexConfig}: oats harness trust --dir ${dep}`;
-  const claudeWarning = `claude folder trust is not established in ${claudeConfig}: oats harness trust --dir ${dep}`;
+  // The warning says where the file comes from: these spawns launch nothing, so it is this process's.
+  const readInstead = (harness, why = " until a spawn starts the OATS tmux server (none runs)") => `the pane's environment is not established${why}; read instead: this process's ${harness === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"} (not set), this process's HOME`;
+  const codexWarning = (from) => `codex folder trust is not established in ${codexConfig} (${from}): oats harness trust --dir ${dep}`;
+  const claudeWarning = (from) => `claude folder trust is not established in ${claudeConfig} (${from}): oats harness trust --dir ${dep}`;
+  const noLaunch = ": this spawn launches nothing (--no-launch), and a start reads its own session's";
 
   // No trust anywhere: no override, and the spawn says trust is not established.
   let { r, meta } = await spawn("c1", "codex");
   assert.doesNotMatch(meta.command, /trust_level/);
   assert.match(meta.command, /-c check_for_update_on_startup=false/);
-  assert.ok(r.warnings?.includes(codexWarning), JSON.stringify(r.warnings));
+  assert.ok(r.warnings?.includes(codexWarning(readInstead("codex", noLaunch))), JSON.stringify(r.warnings));
   ({ r } = await spawn("k1", "claude"));
-  assert.ok(r.warnings?.includes(claudeWarning), JSON.stringify(r.warnings));
+  assert.ok(r.warnings?.includes(claudeWarning(readInstead("claude", noLaunch))), JSON.stringify(r.warnings));
 
-  // readiness says the same, as a configured item that does not block ready.
+  // readiness says the same, as a configured item that does not block ready. No OATS tmux server runs
+  // here, so the file is this process's and the item says it does not know the launch's: unknown.
   const trustItems = (args) => { const r = fx.cli(["readiness", ...args, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result.checks.configured.items.filter((i) => i.code === "harness-trust"); };
   const h1 = join(fx.root, "dev", "instances", "dev-c1"), k1 = join(fx.root, "dev", "instances", "dev-k1");
   for (const [args, warning, harness] of [[["--home", h1], codexWarning, "codex"], [["--home", k1], claudeWarning, "claude"], [["--soul", "dev"], codexWarning, "codex"]]) {
     const [i, ...rest] = trustItems(args);
     assert.deepEqual(rest, [], JSON.stringify(args));
-    assert.deepEqual([i.subject, i.status, i.required, i.producer, i.reason, i.harness, i.file, i.deployment], ["launch", "fail", false, "harness folder trust", warning, harness, harness === "codex" ? codexConfig : claudeConfig, dep], JSON.stringify(args));
+    assert.deepEqual([i.subject, i.status, i.required, i.producer, i.reason, i.harness, i.file, i.deployment], ["launch", "unknown", false, "harness folder trust", warning(readInstead(harness)), harness, harness === "codex" ? codexConfig : claudeConfig, dep], JSON.stringify(args));
   }
 
   // The operator trusts the deployment root once.
@@ -97,11 +101,11 @@ test("spawn: codex trusts the new home only under a trusted root; claude and cod
   assert.equal((r.warnings || []).filter((w) => /folder trust/.test(w)).length, 0, JSON.stringify(r.warnings));
   assert.deepEqual([readFileSync(codexConfig, "utf8"), statSync(codexConfig).mtimeMs, readFileSync(claudeConfig, "utf8"), statSync(claudeConfig).mtimeMs], before, "read, never written");
 
-  // Established trust is a passing item naming the file read.
+  // Established trust in this process's file is still not the launch's: unknown, naming the file read.
   for (const [args, file, harness] of [[["--home", h1], codexConfig, "codex"], [["--home", k1], claudeConfig, "claude"], [["--soul", "dev"], codexConfig, "codex"]]) {
     const [i, ...rest] = trustItems(args);
     assert.deepEqual(rest, [], JSON.stringify(args));
-    assert.deepEqual([i.status, i.required, i.reason, i.harness, i.file, i.deployment], ["pass", false, null, harness, file, dep], JSON.stringify(args));
+    assert.deepEqual([i.status, i.required, i.reason, i.harness, i.file, i.deployment], ["unknown", false, `${harness} folder trust is established in ${file}; that file is this process's, not known to be the one a launch will read: ${readInstead(harness)}`, harness, file, dep], JSON.stringify(args));
   }
 
   // A start re-plans from the home: the override follows the root's trust now.
@@ -117,8 +121,10 @@ test("readiness of a soul whose launch configuration is yolo: the codex launch t
   const fx = v2Deployment({ local: { "launch-configs": { cxyolo: { harness: "codex", yolo: true }, cxplain: { harness: "codex" } }, souls: { launch: { dev: "cxyolo", other: "cxplain" } } }, souls: { dev: {}, other: {} } });
   t.after(fx.cleanup);
   const trustItems = (soul) => { const r = fx.cli(["readiness", "--soul", soul, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result.checks.configured.items.filter((i) => i.code === "harness-trust"); };
-  assert.deepEqual(trustItems("dev").map((i) => i.status), ["pass"]);
-  assert.deepEqual(trustItems("other").map((i) => i.status), ["fail"], "the same codex launch without yolo has no trust established");
+  assert.deepEqual(trustItems("dev").map((i) => [i.status, i.reason]), [["pass", null]], "nothing of a yolo launch rests on a file, the pane's or this process's");
+  const [other] = trustItems("other");
+  assert.equal(other.status, "unknown", "the same codex launch without yolo: no trust in this process's file, and no server whose file is the launch's");
+  assert.equal(other.reason, `codex folder trust is not established in ${join(fx.env.HOME, ".codex", "config.toml")} (the pane's environment is not established until a spawn starts the OATS tmux server (none runs); read instead: this process's CODEX_HOME (not set), this process's HOME): oats harness trust --dir ${realpathSync(fx.dep)}`);
 });
 
 test("a launch configuration's CODEX_HOME is the file its trust is read from: it drives trustHome at spawn and at start, and readiness names it", async (t) => {
@@ -135,7 +141,7 @@ test("a launch configuration's CODEX_HOME is the file its trust is read from: it
   let r = await fx.spawn("dev", { purpose: "a" });
   let meta = JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8"));
   assert.doesNotMatch(meta.command, /trust_level/);
-  assert.ok(r.warnings?.includes(`codex folder trust is not established in ${workConfig}: oats harness trust --dir ${dep}`), JSON.stringify(r.warnings));
+  assert.ok(r.warnings?.includes(`codex folder trust is not established in ${workConfig} (the CODEX_HOME of launch configuration cxwork): oats harness trust --dir ${dep}`), JSON.stringify(r.warnings));
   const items = (args) => { const out = fx.cli(["readiness", ...args, "--json"]); assert.equal(out.status, 0, out.stdout + out.stderr); return out.json().result.checks.configured.items.filter((i) => i.code === "harness-trust"); };
   assert.deepEqual(items(["--soul", "dev"]).map((i) => [i.status, i.file]), [["fail", workConfig]]);
   assert.deepEqual(items(["--home", r.home]).map((i) => [i.status, i.file]), [["fail", workConfig]]);
@@ -160,7 +166,7 @@ test("readiness reads a claude launch configuration's CLAUDE_CONFIG_DIR referenc
   const items = (extra) => { const out = fx.cli(["readiness", "--soul", "dev", "--json"], { env: extra }); assert.equal(out.status, 0, out.stdout + out.stderr); return out.json().result.checks.configured.items.filter((i) => i.code === "harness-trust"); };
   // The ambient file trusts the root; the launch does not read it.
   writeFileSync(join(fx.env.HOME, ".claude.json"), JSON.stringify({ projects: { [dep]: { hasTrustDialogAccepted: true } } }));
-  assert.deepEqual(items({ WORK_CLAUDE: work }).map((i) => [i.status, i.reason]), [["fail", `claude folder trust is not established in ${workConfig}: oats harness trust --dir ${dep}`]]);
+  assert.deepEqual(items({ WORK_CLAUDE: work }).map((i) => [i.status, i.reason]), [["fail", `claude folder trust is not established in ${workConfig} (the CLAUDE_CONFIG_DIR of launch configuration work (from WORK_CLAUDE)): oats harness trust --dir ${dep}`]]);
   writeFileSync(workConfig, JSON.stringify({ projects: { [dep]: { hasTrustDialogAccepted: true } } }));
   assert.deepEqual(items({ WORK_CLAUDE: work }).map((i) => [i.status, i.file]), [["pass", workConfig]]);
   assert.deepEqual(items({}).map((i) => [i.status, i.reason]), [["fail", "claude folder trust is not established: launch configuration work: CLAUDE_CONFIG_DIR references WORK_CLAUDE, not set on this host"]]);

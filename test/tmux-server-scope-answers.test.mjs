@@ -30,6 +30,10 @@ function systemDir(fx, name, body) {
   return dir;
 }
 const answer = (r) => { assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result; };
+/** A server-scope warning, whatever its unit and reason: other warnings may name the server too
+ *  (a folder-trust warning names where its file comes from). */
+const SCOPE = serverScopeWarning({ unit: "\0", reason: "\0" }).split("\0")[0];
+const isScopeWarning = (w) => w.startsWith(SCOPE);
 
 test("without systemd-run, the spawn and the session start that start the server say it lives inside the service", async (t) => {
   const { fx, killServer, sessions } = deployment(t);
@@ -52,7 +56,7 @@ test("with the system's systemd-run, the spawn starts the server through it and 
   const { fx, sessions } = deployment(t);
   const dir = systemDir(fx, "scope", `while [ "$1" != "--" ]; do shift; done; shift\nexec "$@"`);
   const spawned = answer(fx.cli(["spawn", "dev", "--harness", "claude", "--json"], { env: { OATS_TEST_CGROUP: TICK, OATS_TEST_SYSTEM_TOOL_DIRS: dir } }));
-  assert.equal((spawned.warnings ?? []).some((w) => w.includes("OATS tmux server")), false, JSON.stringify(spawned.warnings));
+  assert.equal((spawned.warnings ?? []).some(isScopeWarning), false, JSON.stringify(spawned.warnings));
   assert.ok(sessions().length > 0);
   const args = readFileSync(join(dir, "args"), "utf8").split("\n");
   assert.deepEqual(args.slice(0, 5), ["--user", "--scope", "--collect", "--quiet", "--unit"]);

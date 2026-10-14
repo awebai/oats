@@ -231,8 +231,9 @@ operation and partial-failure recovery.
   to a Git root. An intervening repository can prevent deployment-root inheritance;
   the command does not automatically trust another root. The native field is
   `projects["<deployment>"].hasTrustDialogAccepted` in `~/.claude.json`
-  (`$CLAUDE_CONFIG_DIR/.claude.json` when the launch's environment, host or
-  launch configuration, sets it).
+  (`$CLAUDE_CONFIG_DIR/.claude.json` when the launch's environment sets it:
+  its launch configuration, else its tmux pane's, never the calling
+  process's in its place).
 - **Codex** applies only an exact entry: a trusted parent does not cover the
   folders below it. The explicit deployment-root command records
   `[projects."<deployment>"] trust_level = "trusted"` in
@@ -247,11 +248,14 @@ operation and partial-failure recovery.
 
 When the file a claude or codex launch reads does not trust the deployment,
 the spawn says so (text and `--json` `warnings`): `<harness> folder trust is
-not established in <file>: oats harness trust --dir <deployment>`. A missing
+not established in <file> (<where the launch gets that file from>): oats
+harness trust --dir <deployment>`. A missing
 entry does not prove a prompt, so it does not say the session will stop.
 `oats readiness` reports the same in `checks.configured` (code
 `harness-trust`, not required), and a passing item naming the file when trust
-is established.
+is established. When the file cannot be established, or no pane exists to
+read it from, both say that instead
+([launch-time checks](harness-trust.md#launch-time-checks-and-readiness)).
 
 [The development-channel confirmation](configuration.md#the-development-channel-confirmation)
 does not cover folder-trust prompts, and never writes trust settings.

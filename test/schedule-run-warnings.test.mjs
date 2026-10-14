@@ -18,6 +18,10 @@ import { serverScopeWarning } from "../lib/tmux-server-scope.mjs";
 const S = await import("../lib/schedule.mjs");
 const TICK = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/oats-schedule-tick.service\n";
 const answer = (r) => { assert.equal(r.status, 0, r.stdout + r.stderr); return r.json().result; };
+/** A server-scope warning, whatever its unit and reason: other warnings may name the server too
+ *  (a folder-trust warning names where its file comes from). */
+const SCOPE = serverScopeWarning({ unit: "\0", reason: "\0" }).split("\0")[0];
+const isScopeWarning = (w) => w.startsWith(SCOPE);
 /** The real CLI, run as a process inside `cgroup` whose system directories are `dirs`. */
 function inService(fx, dirs) {
   const bin = join(fx.base, "in-service-oats.mjs"), real = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
@@ -64,5 +68,5 @@ test("a scheduled spawn that starts the server unscoped inside a service records
   assert.ok(settled?.warnings?.includes(warning), JSON.stringify(settled));
   const other = answer(fx.cli(["schedule", "show", "other", "--json"])).schedule.lastRun;
   assert.equal(other.outcome, "launched");
-  assert.equal((other.warnings ?? []).some((w) => w.includes("OATS tmux server")), false, JSON.stringify(other));
+  assert.equal((other.warnings ?? []).some(isScopeWarning), false, JSON.stringify(other));
 });

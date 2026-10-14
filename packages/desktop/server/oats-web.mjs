@@ -72,6 +72,7 @@ import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
+import { displayLine } from "../../client/display-text.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
@@ -1061,7 +1062,16 @@ const server = createServer(async (req, res) => {
           instances: workspace ? deploymentRows(held(), workspace) : [],
         }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreviewCache.invalidate(workspace.id); }); // the default launch a preview reports
         return send(res, 200, result);
-      } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
+      } catch (e) {
+        const { status, body } = spawnErrorPayload(e);
+        // One code's message is not cut at 300: the Start dialog quotes it as a line under its own sentence.
+        // It is answered as that line, the shared filter over OATS's own message as it came (display-text.mjs
+        // displayLine: withheld whole, or folded and bounded), and empty when OATS gave none, never the
+        // stand-in a refusal without a message is given. #1026 lifts the cut for every refusal and removes
+        // this exception.
+        if (e.code !== "E_LAUNCH_CONFIG_AMBIGUOUS") return send(res, status, body);
+        return send(res, status, { ...body, error: displayLine(e.kernelMessage) ?? "" });
+      }
     }
     if (["/api/forge-connections", "/api/instance-forge", "/api/forge-roster", "/api/instance-review-threads"].includes(path) && req.method === "POST") {
       try {
