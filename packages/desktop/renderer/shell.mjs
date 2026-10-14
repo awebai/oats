@@ -1605,7 +1605,11 @@ function addTab({ decor = null, title, key, kind = "artifact", workspace = curre
   );
   tabbar.append(tabEl);
   tabhost.append(paneEl);
-  triggerEl.addEventListener("click", () => selectTab(id));
+  // A click is a selection: on the tab that is already active it still reveals the tab's roster row.
+  triggerEl.addEventListener("click", () => {
+    const again = activeTab === id;
+    if (selectTab(id) && again) revealActiveRosterRow(tabs.get(id));
+  });
   triggerEl.addEventListener("keydown", (e) => onTabKeydown(e, id));
   closeEl.addEventListener("click", (e) => { e.stopPropagation(); closeTab(id, true); });
   // Pane interaction supersedes pending opens, including an already-active
@@ -1646,6 +1650,7 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   // the mutation boundary before its pane can become active/receive input.
   const emptyFocused = id == null && !!split?.groups.some(g => g.id === split.focusedGroup && !g.tabs.length);
   if (!emptyFocused && !canActivateTab(current, currentWorkspace())) return false;
+  const before = activeTab; // a stage between two activations clears it (showTabLayer(false))
   activeTab = id;
   if (current?.kind === "terminal" && split && !keepGroupFocus) {
     // Editor-group semantics: an existing member activation moves its
@@ -1700,8 +1705,46 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   renderSplit(splitVisible);
   updateSplitControls();
   revealActiveTabs();
+  // Only a change of the active tab (or the tab layer coming back from a stage) reveals its roster row:
+  // a re-projection of the same tab never moves the roster from where the user scrolled it.
+  if (before !== id) revealActiveRosterRow(current);
   tabs.get(id)?.onShow?.();
   return true;
+}
+
+/** Spec B (PR 5): the active terminal tab's roster row reads as selected at once (the repaint that the
+ * activation's roster read brings paints the same) and is scrolled into the list just enough
+ * (revealInScrollport; nothing when it is fully shown). It never takes focus; the roving tab stop
+ * follows the selection only while focus is outside the list. Nothing scrolls while the sidebar is
+ * hidden or in focus mode, nor for a row the filter hides (the filter is the user's); a row under a
+ * collapsed parent reveals the nearest shown ancestor's row, without expanding it. */
+function revealActiveRosterRow(tab) {
+  const listEl = contextRosterEl?.querySelector(".ctx-list");
+  if (tab?.kind !== "terminal" || !listEl) return;
+  const ws = contextWorkspace || currentWorkspace();
+  if (tab.workspace !== ws) return;
+  const instance = contextInstances.find(i => terminalKey(ws, i) === tab.key);
+  const rows = new Map([...listEl.querySelectorAll(".ctx-inst")].map(r => [r.dataset.treeInstance, r]));
+  const selected = instance ? rows.get(instanceId(instance)) : null;
+  for (const r of rows.values()) {
+    r.classList.toggle("active", r === selected);
+    r.closest(".ctx-tree-row")?.classList.toggle("active", r === selected);
+  }
+  if (selected && !listEl.contains(document.activeElement)) {
+    for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+    selected.tabIndex = 0;
+  }
+  const app = document.getElementById("app");
+  if (!instance || app?.classList.contains("sidebar-hidden") || app?.classList.contains("focus-mode")) return;
+  let target = selected;
+  // While filtering (renderContextRoster's rule) every branch shows expanded, so a row that is not
+  // painted is one the filter hides.
+  if (!target && !contextFilter.trim()) {
+    for (let id = rosterParentId(contextInstances, instanceId(instance)), seen = new Set(); id && !seen.has(id) && !target; id = rosterParentId(contextInstances, id)) {
+      seen.add(id); target = rows.get(id) || null;
+    }
+  }
+  if (target) revealInScrollport(listEl, target.closest(".ctx-tree-row") || target);
 }
 
 function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false, passive = false } = {}) {

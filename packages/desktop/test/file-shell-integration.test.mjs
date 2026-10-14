@@ -146,7 +146,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   c.ownsInstanceTarget = target => target?.workspace === c.workspace && c.contextInstances.filter(row => sameInstanceActionTarget(target, row, c.workspace)).length === 1;
   const names = ["applyChordTitles", "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups", "onTabKeydown",
-    "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "openViewTab", "restoreWorkspaceTabs", "showTerminalContext",
+    "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "openViewTab", "restoreWorkspaceTabs", "showTerminalContext",
     "initContextRoster", "renderContextRoster", "onRosterRowKey", "setRovingRow", "focusRoster", "openTerminalTabFlow", "openTerminalTabInner", "syncTabNeedsInput"];
   const functions = names.map(name => fn(shellSource, name)).join("\n")
     .replace('import(`./views/${name}.mjs`)', "loadView(name)");

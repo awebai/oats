@@ -40,7 +40,7 @@ import { revealInStrip, revealInScrollport } from "../renderer/reveal-in-scrollp
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
-  "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
+  "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
   "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "restoreWorkspaceTabs", "showTerminalContext",
   "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster", "syncTabNeedsInput",
