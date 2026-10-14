@@ -2,6 +2,7 @@ import { harnessOf } from "./harness-names.mjs";
 import { unsupportedSession, unsupportedSessionOrigin, hasRuntimeError } from "./instance-presentation.mjs";
 import { madeByKernel } from "./kernel-made.mjs";
 import { waitingOnYouData } from "./waiting-on-you.mjs";
+import { readIdentity } from "./workspace-views.mjs";
 /** Projection of the installed CLI's remote roster. Never reads remote paths locally. */
 export function remoteWorkspace(group) {
   return {
@@ -97,16 +98,25 @@ const rosterError = (message) => ({ code: "E_REMOTE_ROSTER", message });
  *   previous: { remoteGroups, rosterAnswered, rosterFailure }
  *   outcome:  { gated: true }     no accepted CLI, or one that does not read other machines
  *                                 (panel-views.mjs `cliReadsRemotes`): the read was not made
- *           | { envelope }        what the CLI answered (cli-adapter.mjs `cliRemoteRoster`)
+ *           | { envelope, asked? } what the CLI answered (cli-adapter.mjs `cliRemoteRoster`); `asked`
+ *                                 when the read passed workspace keys (#1124): { keys, keyOf }
  *           | { thrown: string }  the read failed: the message of what was thrown
  *   at:       the caller's time, the one `remotePanel` stamps
- *   ->        { remoteGroups, rosterAnswered, rosterFailure, reported }
+ *   ->        { remoteGroups, rosterAnswered, rosterFailure, reported, kept? }
  *
  * `remoteGroups` is the last readable roster: an answer replaces it only when every group of it can be
  * projected (`remotePanel`), and a failed read keeps the groups held, each marked not reached
  * (`unavailableGroups`). `rosterAnswered` says an answer arrived; `rosterFailure` is the failure's
  * sentence, kept only while none has. `reported` is what the client hands to its memory of identities
  * (remote-identity-memory.mjs `observeIdentities`): the groups of an `ok` envelope, else null.
+ *
+ * An answer read with workspace keys (`asked`) holds only the groups the kernel probed: those registered
+ * for one of `keys`, those of unknown workspace and those known only from saved routes. It replaces
+ * those. A held group it does not list, and whose last-known key (`keyOf(group)`: `lastKnownKey`) is
+ * one the read did not ask for, was not probed: it is kept as it was last read, after the answer's
+ * groups, and named in `kept` (its id, in order), so the caller keeps its read time (`keptReadTimes`).
+ * A held group whose key is unknown, or is one of `keys`, and that the answer does not list is gone, as
+ * after any answer. `reported` then holds the kept groups too, so the memory keeps their identities.
  *
  * The sentence of a thrown read carries the message of an error from outside the client: a client
  * shows it through `displayLine` (display-text.mjs) only.
@@ -130,6 +140,12 @@ export function remoteRosterState(previous, outcome, at) {
     const incoming = env.ok && Array.isArray(env.result?.groups)
       ? env.result.groups : unavailableGroups(previous.remoteGroups, env.error || rosterError(ROSTER_UNAVAILABLE));
     for (const group of incoming) remotePanel(group, at); // validate before replacing the last readable roster
+    if (env.ok && outcome.asked) {
+      const listed = new Set(incoming.map((g) => g?.id)), keys = new Set(outcome.asked.keys);
+      const kept = previous.remoteGroups.filter((g) => { const key = listed.has(g.id) ? null : outcome.asked.keyOf(g); return key !== null && !keys.has(key); });
+      const groups = [...incoming, ...kept];
+      return { remoteGroups: groups, rosterAnswered: true, rosterFailure: null, reported: groups, kept: kept.map((g) => g.id) };
+    }
     if (env.ok) return { remoteGroups: incoming, rosterAnswered: true, rosterFailure: null, reported: incoming };
     return { remoteGroups: incoming, rosterAnswered: previous.rosterAnswered,
       rosterFailure: previous.rosterAnswered ? previous.rosterFailure : env.error?.message || ROSTER_UNAVAILABLE, reported: null };
@@ -139,10 +155,33 @@ export function remoteRosterState(previous, outcome, at) {
   }
 }
 
-/** The panel of each group, keyed as a client's snapshot keys it: [[`remote:<group id>`, panel], …], every one made at `at`. */
-export function remotePanelEntries(remoteGroups, at) {
+/** The panel of each group, keyed as a client's snapshot keys it: [[`remote:<group id>`, panel], …], every one made at `at`,
+ * except a group kept from an earlier read (`readAt`, a Map of group id → its read time: `keptReadTimes`), which is
+ * stamped with the time it was read: a read that did not probe it never makes it look newer. */
+export function remotePanelEntries(remoteGroups, at, readAt = null) {
   requireTime(at, "remotePanelEntries");
-  return remoteGroups.map((group) => { const panel = remotePanel(group, at); return [panel.workspace.id, panel]; });
+  return remoteGroups.map((group) => { const panel = remotePanel(group, readAt?.get(group.id) ?? at); return [panel.workspace.id, panel]; });
+}
+
+/** The workspace key a held group was last known by (#1124): the key its last reached read reported,
+ * else the one remembered for it (`remembered.get`, remote-identity-memory.mjs `identityMemory`), else
+ * null: unknown. Any reported key counts, member-derived included: a registration records the key the
+ * host reports, whatever its `keyFrom`. */
+export function lastKnownKey(group, remembered) {
+  const reported = group?.probe?.ok === true ? readIdentity(group.workspace) : { status: "none" };
+  if (reported.status === "identity") return typeof reported.identity.key === "string" ? reported.identity.key : null;
+  const key = remembered?.get(group?.id)?.workspace?.key;
+  return typeof key === "string" ? key : null;
+}
+
+/** The read time of each kept group after one outcome (#1124): `times` is the Map held before it,
+ * `state` what `remoteRosterState` answered, `answeredAt` the time of the answer before this one (when a
+ * group first kept was last read). Only an answer changes it: a kept group keeps its time, or takes
+ * `answeredAt` when it was read by that answer; a group read now has none. A failed read, which marks
+ * every held group not reached, changes nothing; a gated one holds no group. */
+export function keptReadTimes(times, state, answeredAt) {
+  if (!state.reported) return state.remoteGroups.length ? times : new Map();
+  return new Map((state.kept || []).map((id) => [id, times.get(id) ?? answeredAt]));
 }
 
 export function spawnedWorkspace(groups, result) {

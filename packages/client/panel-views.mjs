@@ -41,6 +41,7 @@ import { deploymentUnavailableText, keptFailure } from './deployment-facts.mjs';
 import { publicDeployment } from './deployment-panel.mjs';
 import { teamMembers } from './team-members.mjs';
 import { requireTerms } from './client-terms.mjs';
+import { ROSTER_WORKSPACE_KEY } from './cli-adapter.mjs';
 
 /** Roots come ONLY from the kernel's observed `status.root`; before (or
  * without) an observation there is nothing to act on. No layout guess. */
@@ -207,6 +208,38 @@ export function machineScope(held, wsId, terms) {
   const messaging = held.snapshot.byWs.get(local.id)?.deployment?.workspaceStatus?.defaults?.slots?.messaging?.name ?? null;
   if (identity?.keyFrom !== "workspace" || typeof identity.key !== "string" || !identity.key) return { key: null, deployment: local.id, messaging, reason: "no-key" };
   return { key: identity.key, deployment: local.id, messaging };
+}
+
+/** The workspace keys the roster read asks for (#1124, the CLI's feature roster-workspace-key): one per
+ * distinct usable key of the views the open windows show (`windowViews`: each window's view id, or null
+ * for a window bound to none), sorted; or null for the unfiltered read. The key of a view:
+ *
+ *   a matched view                     its key (every deployment of it reports that key)
+ *   an unattached view                 its one deployment's key, reported or (a machine not reached)
+ *                                      remembered, member-derived included: a registration records the
+ *                                      key the host reports, whatever its keyFrom
+ *
+ * A key that is null, or one the kernel would refuse (cli-adapter.mjs `ROSTER_WORKSPACE_KEY`), is no
+ * registration's: a view without a usable key adds none, and when that view holds another machine's
+ * deployment, whose registration then cannot be named, the read is unfiltered so that machine is still
+ * read. Unfiltered too: no window set yet (`windowViews` not an array), no roster answer yet (the first
+ * read holds every machine), a window showing the switcher (it lists every workspace), and a view id
+ * no view has (a window ahead of what is served). No window, or no usable key: `[]`, which a caller
+ * reads unfiltered as well. */
+export function rosterWorkspaceKeys(held, windowViews, terms) {
+  requireTerms(terms, 'rosterWorkspaceKeys');
+  if (!Array.isArray(windowViews) || !held.rosterAnswered) return null;
+  const model = viewModel(held, terms);
+  const keys = new Set();
+  for (const id of windowViews) {
+    if (id === null) return null;
+    const view = model.views.find((v) => v.id === id);
+    if (!view) return null;
+    const key = view.key ?? model.infos.get(view.primary)?.identity?.key ?? null;
+    if (typeof key === 'string' && ROSTER_WORKSPACE_KEY.test(key)) keys.add(key);
+    else if (view.deployments.some((d) => !model.infos.get(d)?.local)) return null;
+  }
+  return [...keys].sort();
 }
 
 /** A deployment as the panel and the rows name it. */

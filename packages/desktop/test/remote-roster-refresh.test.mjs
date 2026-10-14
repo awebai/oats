@@ -53,14 +53,14 @@ test('Retry reads the servers again: the refresh starts a roster read, answers o
 
 /** The server's roster read itself (oats-web.mjs, the OATSWEB_REMOTEREAD block), over a fake adapter whose
  * reads the test settles one by one: `reads` holds each read's deferred, `taken` each outcome taken. */
-function remoteRead() {
+function remoteRead({ rosterAsk = () => null } = {}) {
   const src = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const block = src.match(/\/\* OATSWEB_REMOTEREAD_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_REMOTEREAD_END \*\//)[1];
   const reads = [], taken = [];
-  const adapter = { cliRemoteRoster: (bin) => { let settle; const promise = new Promise(resolve => { settle = resolve; }); reads.push(Object.assign(settle, { bin })); return promise; } };
-  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome',
+  const adapter = { cliRemoteRoster: (...args) => { let settle; const promise = new Promise(resolve => { settle = resolve; }); reads.push(Object.assign(settle, { bin: args[0], args })); return promise; } };
+  const make = new Function('adapter', 'cliReadsRemotes', 'takeRosterOutcome', 'rosterAsk',
     `let remoteRead = null, cliState = { ok: true, bin: 'oats' };\n${block}\nreturn { refresh: refreshRemoteSnapshot, accept: (cli) => { cliState = cli; } };`);
-  const { refresh, accept } = make(adapter, () => true, outcome => taken.push(outcome));
+  const { refresh, accept } = make(adapter, () => true, outcome => taken.push(outcome), rosterAsk);
   return { refresh, accept, reads, taken };
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -102,4 +102,21 @@ test('a Retry joined to a read under a kernel record that is no longer accepted 
   await Promise.all([loop, retry]);
   assert.deepEqual(r.taken, [{ envelope: roster(true) }]);
   assert.equal(r.reads.length, 2, 'one read at a time: no third');
+});
+
+test('the read asks for what rosterAsk names at the time it starts (#1124): the keys reach the adapter, the outcome carries what was asked', async () => {
+  let asking = { keys: ['github.com/awebai/oats'], keyOf: () => null };
+  const r = remoteRead({ rosterAsk: () => asking });
+  const first = r.refresh();
+  await flush();
+  assert.deepEqual(r.reads[0].args, ['oats', { workspaceKeys: ['github.com/awebai/oats'] }]);
+  r.reads[0](roster(true)); await first;
+  assert.deepEqual(r.taken, [{ envelope: roster(true), asked: asking }]);
+  // Nothing to ask: the read is the unfiltered one, called as before.
+  asking = null;
+  const second = r.refresh();
+  await flush();
+  assert.deepEqual(r.reads[1].args, ['oats']);
+  r.reads[1](roster(false)); await second;
+  assert.deepEqual(r.taken.at(-1), { envelope: roster(false) });
 });

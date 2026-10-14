@@ -175,6 +175,28 @@ read under the accepted CLI is held (a read the CLI changed under is read
 again first); the renderer then reads `/api/panel`, which serves it. Main's
 proxy gives that request 70 s, longer than the CLI adapter's 60 s for the read.
 
+Which machines it reads (#1124). Main alone knows the windows: it posts the
+view each one shows (`{ views: [view id | null] }`, null for a window showing
+the switcher) to `POST /api/windows` whenever its window set changes
+(`window-set.mjs` `onChange`) and again for each server it learns
+(`window-activity.mjs` `createViewsNotifier`: one post at a time, the newest
+set last, a failed post retried at the next served-list update). With a CLI
+that lists `roster-workspace-key`, each read passes
+`--workspace-key=<key>` for every usable key of those views, computed at the
+read from the set and what is held (`packages/client/panel-views.mjs`
+`rosterWorkspaceKeys`: a matched view's key; an unattached view's reported or
+remembered key, member-derived included, since a registration records the
+key its host reports). The read is unfiltered before main has posted, before
+the first answer, while a window shows the switcher or a view this server
+does not serve, when a view's machine has no usable key, and with no window.
+With the feature, a set that adds a key, or that needs the unfiltered read,
+requests a read at once (the loop's coalesced `request()`). A filtered answer replaces only what it could list
+(`remote-roster.mjs` `remoteRosterState` with `asked`): a held group whose
+last-known key (`lastKnownKey`) is outside the keys asked is kept as it was
+last read, stays in the identity memory, and keeps its read time as its
+panel's `generatedAt` (`keptReadTimes`); a group inside the keys, of unknown
+key or from a saved route that the answer does not list is gone.
+
 Each window's sidebar roster, and its Deployments page when shown, re-read
 every 4 s while that window is focused and every 30 s (the blurred cadence)
 while it is not (`renderer/roster-cadence.mjs`); focus returning reads the
