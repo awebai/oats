@@ -188,14 +188,17 @@ places that list the keys an error carries (`apiJson` and `httpError` in
 In the app, main's `api` proxy waits 70 seconds for a start or a restart (the
 route class `instance-start` of `api-url.mjs`, answered for exactly the paths
 the server routes as one), where an ordinary read has 20. The kernel may watch
-a launch prompt for 30 seconds before it answers what it kept, and the CLI call
-has its own limit (`cliStart`, 60 seconds): the proxy must outlast that call,
-and a test holds the two together, so the dialog shows the kernel's outcome, or
-the CLI's own timeout, and never the proxy's.
+a launch prompt for 30 seconds before it answers what it kept, and the route
+waits 60 seconds for the CLI call (`cliStart`): the proxy must outlast that
+wait, and a test holds the two together, so the dialog shows the kernel's
+outcome, or the end of the wait, and never the proxy's.
 
-A client never ends a start. The route awaits the CLI call whatever becomes of
-its request: when the proxy gives up, or a window closes, the call runs to its
-own end and the route goes on after it. Only the call's own limit ends it.
+A client never ends a start. The CLI call runs in a process session of its own
+with no deadline. When the route's wait ends first, it answers
+`E_START_UNCONFIRMED`, and the dialog says, in the Desktop's own words: "OATS
+didn't confirm the start. It may still be running: check the roster before you
+start it again." The start goes on, and the roster shows its result. When the
+proxy gives up, or a window closes, the call runs to its own end.
 
 Status collection reads each instance's recorded tmux socket and session,
 with one query per socket per collection. A launcher shell with a harness
