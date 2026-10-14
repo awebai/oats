@@ -5,11 +5,20 @@
  * renderer sends reaches it. The caller re-reads the remote roster after every command that ran, whatever
  * it answered: the view is never edited from this answer.
  *
+ * It runs only for a row the held remote roster shows gone (#1170): a held group of that `server`, answered
+ * at its last read (`probe.ok === true`), lists that `instance` with `missingRemotely === true`. Anything
+ * else is refused without running, so the rule holds whatever the renderer offers. A group held through a
+ * failed read keeps its last rows, marks and all (remote-roster.mjs `unavailableGroups`), and is refused:
+ * the check reads only what is held now and never reads the roster again to decide.
+ * The checks, in order: the body, the CLI (E_FEATURE), the held row (E_FORGET_NOT_GONE), one per row at a
+ * time (E_BUSY); nothing awaits between them and the command.
+ *
  *   forget(body) -> { http, ran, answer }
  *   answer = { status: 'forgotten', server, instance }       the kernel answered `forgotten: true` for them
  *          | { status: 'refused', reason: { code, message } } the kernel's refusal, its message as printed
  *          | { status: 'unknown', reason: { code } }          no kernel answer: a timeout, no envelope, a crash
- *          | { status: 'not-run', reason: { code, message } } nothing ran: E_BAD_ARGS, E_BUSY, E_FEATURE
+ *          | { status: 'not-run', reason: { code, message } } nothing ran: E_BAD_ARGS, E_FEATURE,
+ *                                                                E_FORGET_NOT_GONE, E_BUSY
  *
  * The kernel's `home` and `target` (a path and an ssh route on the host) never leave this module. A
  * refusal's message is the kernel's text, shown only through the renderer's display filter; an unknown
@@ -24,6 +33,7 @@ const NOT_RUN = Object.freeze({
   E_BAD_ARGS: [400, 'Forget needs the server and the instance of one roster row.'],
   E_BUSY: [409, 'A Forget for this instance is already running.'],
   E_FEATURE: [409, 'Forget needs a compatible installed OATS CLI.'],
+  E_FORGET_NOT_GONE: [409, 'Forget is only for an instance its server did not list at the last read; nothing was run.'],
 });
 export const forgetNotRun = code => ({ status: 'not-run', reason: { code, message: NOT_RUN[code][1] } });
 const notRun = code => ({ http: NOT_RUN[code][0], ran: false, answer: forgetNotRun(code) });
@@ -49,7 +59,14 @@ export function forgetOutcome(envelope, server, instance) {
  * 0.22.3). An array, never a string's `includes` (cli-locator.mjs requireRemoteSupport): it fails closed. */
 const readsRemotes = cli => cli?.ok === true && Array.isArray(cli.remote) && cli.remote.includes('roster');
 
-export function createServerForget({ adapter, cli }) {
+/** Whether the held roster (`remoteGroups`, as `/api/panel` serves its rows from it) shows this row gone from
+ * its server at that server's last answered read. Identity as the row carries it: the group's `server`
+ * (remote-roster.mjs `remotePanel`, `server: group.server`) and the listed entry's own `instance`. */
+export const heldGone = (groups, server, instance) => Array.isArray(groups) && groups.some(g => g?.server === server
+  && g.probe?.ok === true && Array.isArray(g.instances) && g.instances.some(i => i?.instance === instance && i.missingRemotely === true));
+
+/** `held()` answers the remote groups the server holds at the moment of the request. */
+export function createServerForget({ adapter, cli, held }) {
   const running = new Set(); // `server\0instance` with a command in flight
   return {
     async forget(body) {
@@ -58,6 +75,8 @@ export function createServerForget({ adapter, cli }) {
       const state = cli();
       if (!readsRemotes(state)) return notRun('E_FEATURE');
       const { server, instance } = body, key = `${server}\0${instance}`;
+      let groups; try { groups = held(); } catch { groups = null; } // a roster that cannot be read shows nothing gone
+      if (!heldGone(groups, server, instance)) return notRun('E_FORGET_NOT_GONE');
       if (running.has(key)) return notRun('E_BUSY');
       running.add(key);
       try {
