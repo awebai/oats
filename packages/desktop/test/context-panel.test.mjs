@@ -353,12 +353,12 @@ test('dispose releases only component DOM and listeners; missing shell controls 
   assert.equal(u.root.hidden, true);
 });
 
-test('a Herdr-recorded instance: the footer shows Start disabled with the kernel reason, no Restart or Stop, and Retire stays available', t => {
+test('a Herdr-recorded instance: the footer shows Start disabled with the kernel reason, no Restart, and Stop and Retire stay available (#855: its state is unknown)', t => {
   const u = fixture(t), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
   u.select(instance('/A/h1', { running: null, runtimeState: 'unsupported', runtimeError: reason }));
   const control = op => u.query(`[data-lifecycle="${op}"]`);
   assert.equal(control('start').hidden, false); assert.equal(control('start').disabled, true); assert.equal(control('start').title, reason);
-  assert.equal(control('restart').hidden, true); assert.equal(control('stop').hidden, true);
+  assert.equal(control('restart').hidden, true); assert.equal(control('stop').hidden, false); assert.equal(control('stop').disabled, false);
   assert.equal(control('retire').hidden, false); assert.equal(control('retire').disabled, false);
   u.select(instance('/A/t1', { running: false }));
   assert.equal(control('start').disabled, false); assert.equal(control('start').title, '', 'a tmux row carries no Herdr reason');
@@ -522,7 +522,7 @@ test('#802: a held home: a spawning one shows no lifecycle control, a quarantine
   u.select(instance('/A/q3', { running: false, spawnInProgress: true, rollbackIncomplete: true }));
   assert.deepEqual(shown(), ['retire'], 'rollbackIncomplete wins');
   u.select(instance('/A/t1', { running: false }));
-  assert.deepEqual(shown(), ['start', 'retire'], 'an ordinary stopped row is unchanged');
+  assert.deepEqual(shown(), ['start', 'stop', 'retire'], 'an ordinary stopped row: Start, and Stop as the roster menu offers it (#855)');
 });
 
 // #1131: beside the remedy of a row its host no longer lists, Forget…: the host's confirmation, never a command here.

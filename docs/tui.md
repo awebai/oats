@@ -508,6 +508,9 @@ version:
 - Souls and Capabilities, when they come, are this machine's.
 - There is no sorting and no mouse, and a deployment's heading cannot be
   folded.
+- With an OATS older than 0.52.0, after an interrupted stop the instance can
+  be started and then cannot be stopped while `.oats-stop-pending.json` exists
+  in its home.
 
 ## What it changes in your terminal, and restores
 

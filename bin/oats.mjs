@@ -104,7 +104,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -4064,7 +4064,7 @@ async function experimentalCmd() {
 async function serverCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1];
-  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--path <dir:dir>] [--label <text>] [--replace] | connect <id> --ssh <host-alias> [--workspace-ref <ref>] [--dir </abs/path or ~/path on the host>] [--oats <path>] [--path <dir:dir>] [--label <text>] [--install-oats] [--replace] | list [--workspace-ref <ref>] | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
+  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--path <dir:dir>] [--label <text>] [--replace] | connect <id> --ssh <host-alias> [--workspace-ref <ref>] [--dir </abs/path or ~/path on the host>] [--oats <path>] [--path <dir:dir>] [--label <text>] [--install-oats] [--replace] | list [--workspace-ref <ref>] | remove <id> | check <id> | roster [--server <id>] [--workspace-key <key>]... | forget <id> --instance <name>  [--json]";
   if (!["add", "connect", "list", "remove", "check", "roster", "forget"].includes(sub)) bail("E_USAGE", usage);
   if (sub === "connect") return serverConnectCmd(bail);
   if (sub === "forget") {
@@ -4084,13 +4084,21 @@ async function serverCmd() {
   if (sub === "roster") {
     // The remote roster for the Desktop and operators: grouped by saved route
     // target, one bounded status pull per target, all at once, saved routes as the action
-    // authority. --server narrows to one registry id.
+    // authority. --server narrows to one registry id; --workspace-key (repeatable, every occurrence
+    // counts) to the groups that can belong to those workspaces (lib/servers.mjs rosterGroups).
     const only = flag("server") === true ? bail("E_BAD_ARGS", "--server needs a registered server id") : flag("server");
     const ms = (name) => { const v = flag(name); if (v === undefined) return undefined; const n = Number(v); if (!Number.isInteger(n) || n < 1000) bail("E_BAD_ARGS", `--${name} takes whole milliseconds, at least 1000`); return n; };
+    let workspaceKeys;
+    for (let i = 0; i < args.length; i++) if (args[i] === "--workspace-key") {
+      const v = args[i + 1];
+      if (!v || v.startsWith("--")) bail("E_BAD_ARGS", "--workspace-key needs a workspace key (as a host's oats status --json workspace.key reports it)");
+      (workspaceKeys ||= []).push(v);
+      i++;
+    }
     let out;
-    try { out = await rosterGroups({ server: only, io: { budgetMs: ms("budget"), perTargetTimeoutMs: ms("per-target") } }); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
+    try { out = await rosterGroups({ server: only, workspaceKeys, io: { budgetMs: ms("budget"), perTargetTimeoutMs: ms("per-target") } }); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
     if (JSON_MODE) { jsonOk(out); return; }
-    if (!out.groups.length) { console.log("no remote groups: no registrations and no saved routes"); return; }
+    if (!out.groups.length) { console.log(workspaceKeys ? "no remote groups for the given workspace keys" : "no remote groups: no registrations and no saved routes"); return; }
     for (const g of out.groups) {
       console.log(`  ${g.server}${g.label && g.label !== g.server ? `  ${g.label}` : ""}  [${g.id}]  ssh ${g.target.sshHost}  workspace ${g.target.workspace}${g.registrationPresent ? "" : "  (registration removed or changed; saved routes only)"}`);
       console.log(g.probe?.ok ? `      reachable, ${g.souls.length} soul(s)` : `      UNREACHABLE: ${g.probe?.error?.message || "?"}`);
@@ -4681,6 +4689,9 @@ Usage:
       [--budget <ms>] [--per-target <ms>]   target: one status pull per group within a total
       [--json]                              budget (45 s, 20 s per target); every instance the
                                             server reports is addressable by --home or name
+      [--workspace-key <key>]...            only groups that can belong to these workspaces:
+                                            registered for one of them, workspace not known,
+                                            or saved routes only (repeatable)
   oats server forget <id> --instance <name>  drop a saved route whose remote instance is gone
                                             (the roster shows it as missingRemotely)
   oats retire <instance> --home <path>       retire exactly that home when two agents own an

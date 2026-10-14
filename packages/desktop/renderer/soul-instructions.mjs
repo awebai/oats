@@ -11,11 +11,18 @@
  * dropped (the part headers stand for them). The kernel's ranges are trusted only when they tile the text
  * exactly as its contract says; an answer that does not is not shown.
  *
+ * The soul's own skills (feature soul-skills, `inspect --soul --skills`: `souls[0].skills`) are the Skills group
+ * between the two, in the Contents card's skill grammar (contents-reader.mjs `skillTreeItem`): each skill expands
+ * to its files, and a file opens in the reader under its repository path. The kernel's answer carries every file's
+ * text, so nothing more is read. A group that can't list anything is its label and one note, never a guess. Links
+ * resolve by repository path across the card: a link to a listed skill file opens it in place, from a skill file
+ * or from the soul's own AGENTS.md.
+ *
  * One controller per soul page subject (the inspector creates it with the frame and disposes it with the
  * subject), its element re-appended by every repaint of the page: an unchanged inspection never rebuilds its
  * tree or reader, and `hold()` carries focus and both scroll offsets across the re-append. Every text is
  * untrusted repository content, rendered by the shared reader's strict profile. */
-import { createContentsTree, createContentsReader, sizeText } from './contents-reader.mjs';
+import { createContentsTree, createContentsReader, skillTreeItem, sizeText, SKILL_COPY } from './contents-reader.mjs';
 import { createHeadingSlugger } from './views/markdown.mjs';
 
 export const SOUL_INSTRUCTIONS_COPY = Object.freeze({
@@ -41,6 +48,12 @@ export const SOUL_INSTRUCTIONS_COPY = Object.freeze({
   copyFailed: 'Copy failed',
   cannotCompose: "Can't be composed here: see the problem above.",
   cannotRead: "This OATS answered composed instructions this Desktop can't read.",
+  skillsGroup: 'Skills',
+  skillsAbsent: "This OATS doesn't report a soul's skills.",
+  noSkills: 'No skills of its own.',
+  skillsUnlistable: "Its skills can't be listed: see the problem above.",
+  skillsUnreadable: "This OATS answered skills this Desktop can't read.",
+  omitted: 'Not shown: past the size limit of this answer.',
 });
 /** When the page asks for the composed AGENTS.md: composed-gate.mjs (shared with the server). */
 export { COMPOSED_FEATURE, composedSupported } from './composed-gate.mjs';
@@ -62,18 +75,22 @@ export const soulInstructionsCSS = `
 .soul-part[data-source=soul] > .soul-part-body { border-left-color:var(--accent); }
 `;
 
-/** Selection keys: the soul's own AGENTS.md, the composed document, and a part of it (by its index). */
+/** Selection keys: the soul's own AGENTS.md, the composed document, a part of it (by its index), and a skill file (by
+ * its soul-relative path, unique in the answer). A skill item is expanded, never selected: its key names it in `expanded`. */
 export const OWN = 'own';
 export const COMPOSED = 'composed';
 const partKey = i => `part:${i}`;
+const skillKey = path => `skill:${path}`;
+const fileKey = path => `file:${path}`;
 
-/** The soul's AGENTS.md as a repository path: `<dir>/AGENTS.md` from the soul row's `path` (its directory in its
- * repository, e.g. `souls/<soul>`), when that is a plain relative path; else just `AGENTS.md`. */
-export function soulInstructionsPath(dir) {
-  if (typeof dir !== 'string') return SOUL_INSTRUCTIONS_COPY.file;
-  const trimmed = dir.replace(/\/+$/, '');
-  return plainPath(trimmed) ? `${trimmed}/${SOUL_INSTRUCTIONS_COPY.file}` : SOUL_INSTRUCTIONS_COPY.file;
+/** A soul file's repository path: `<dir>/<path>` from the soul row's `path` (its directory in its repository, e.g.
+ * `souls/<soul>`), when that is a plain relative path; else the soul-relative path alone. */
+export function soulFilePath(dir, path) {
+  const trimmed = typeof dir === 'string' ? dir.replace(/\/+$/, '') : null;
+  return plainPath(trimmed) ? `${trimmed}/${path}` : path;
 }
+/** The soul's AGENTS.md as a repository path: `<dir>/AGENTS.md`, else just `AGENTS.md`. */
+export const soulInstructionsPath = dir => soulFilePath(dir, SOUL_INSTRUCTIONS_COPY.file);
 const plainPath = p => typeof p === 'string' && !!p && !p.startsWith('/') && !/[\\\u0000-\u001f\u007f]/.test(p) && p.split('/').every(s => s && s !== '.' && s !== '..');
 /** What the section shows for an inspected soul row: the own file's path, text (null: unreadable) and truncation. */
 export function soulInstructionsOf(soul) {
@@ -131,6 +148,43 @@ export function composedOf(soul, ownPath = soulInstructionsPath(soul?.path)) {
 }
 
 /**
+ * The soul's own skills of an inspected soul row: `undefined` without the key (the CLI was not asked, or does not report
+ * them), `null` when the kernel answered they can't be listed (a problem names `skills`), `false` when the answer breaks
+ * its contract, else the list in the kernel's order. One bad skill or file makes the whole answer `false`: a partial
+ * answer is never shown. Every path is a plain path relative to the soul's directory, a file's under its skill's; a
+ * file's `text` is `null` exactly when it is binary or omitted (past the answer's text budget).
+ */
+export function skillsOf(soul) {
+  if (!record(soul) || !Object.hasOwn(soul, 'skills')) return undefined;
+  const v = soul.skills;
+  if (v === null) return null;
+  if (!Array.isArray(v)) return false;
+  const skillPaths = new Set(), filePaths = new Set(), out = [];
+  for (const s of v) {
+    if (!record(s) || typeof s.name !== 'string' || !s.name || !plainPath(s.path) || skillPaths.has(s.path)) return false;
+    if (!(s.description === undefined || s.description === null || typeof s.description === 'string')) return false;
+    if (!(s.filesTruncated === undefined || typeof s.filesTruncated === 'boolean') || !(s.files === null || Array.isArray(s.files))) return false;
+    if (s.files === null && s.filesTruncated) return false;
+    skillPaths.add(s.path);
+    let files = null;
+    if (s.files) {
+      files = [];
+      for (const f of s.files) {
+        if (!record(f) || !plainPath(f.path) || !f.path.startsWith(`${s.path}/`) || filePaths.has(f.path)) return false;
+        if (!Number.isSafeInteger(f.bytes) || f.bytes < 0 || !(f.text === null || typeof f.text === 'string') || typeof f.binary !== 'boolean' || typeof f.truncated !== 'boolean') return false;
+        if (!(f.omitted === undefined || f.omitted === true)) return false;
+        const omitted = f.omitted === true;
+        if ((f.binary || omitted) !== (f.text === null)) return false;
+        filePaths.add(f.path);
+        files.push({ path: f.path, bytes: f.bytes, text: f.text, binary: f.binary, truncated: f.truncated, omitted });
+      }
+    }
+    out.push({ name: s.name, path: s.path, description: typeof s.description === 'string' ? s.description : null, files, filesTruncated: s.filesTruncated === true });
+  }
+  return out;
+}
+
+/**
  * @param {Document} doc
  * @param {object} [o]
  * @param {(url: string) => void} [o.openExternal]  an https: link
@@ -150,15 +204,23 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
   nav.append(navBody); reader.append(head, body); card.append(nav, reader);
   element.append(heading, card);
 
-  // `shown`: what the reader holds ('own' | 'composed'); a part is a place in the composed document.
-  let alive = true, name = null, own = null, composed, navSignature = null, ownSignature = null, composedSignature = null, shown = null, selected = OWN;
-  const expanded = new Set();
+  // `shown`: what the reader holds ('own' | 'composed' | a skill file's key); a part is a place in the composed document.
+  // `files`: each listed skill file by its key ({ skill, file, path: its repository path }); `local`: the keys by repository path.
+  let alive = true, name = null, own = null, composed, skills, files = new Map(), local = new Map();
+  let navSignature = null, ownSignature = null, composedSignature = null, fileSignature = null, localSignature = null, shown = null, selected = OWN;
+  const expanded = new Set(); // the composed item's key and each expanded skill's skillKey
   const uid = `soul-instructions-${++instances}`;
   const timers = new Set();
-  const keys = createContentsTree(nav, { selected: () => selected, activate: item => { if (item.dataset.path) open(item.dataset.path); },
-    onExpand: (item, value) => { if (value) expanded.add(item.dataset.path); else expanded.delete(item.dataset.path); } });
-  const fileReader = createContentsReader(doc, { reader, head, body, alive: () => alive, openExternal });
-  const hasKey = key => key === OWN || (!!composed && (key === COMPOSED || composed.parts.some((_, i) => partKey(i) === key)));
+  // A skill item toggles (Enter/Space, as in Contents); any other item opens what it names.
+  const keys = createContentsTree(nav, { selected: () => selected,
+    activate: item => { if (item.dataset.skill !== undefined) keys.toggle(item); else if (item.dataset.path) open(item.dataset.path); },
+    onExpand: (item, value) => { const key = item.dataset.skill !== undefined ? skillKey(item.dataset.skill) : item.dataset.path; if (value) expanded.add(key); else expanded.delete(key); } });
+  const fileReader = createContentsReader(doc, { reader, head, body, alive: () => alive, openExternal,
+    isLocal: path => local.has(path), openLocal: path => open(local.get(path)) });
+  const hasKey = key => key === OWN || files.has(key) || (!!composed && (key === COMPOSED || composed.parts.some((_, i) => partKey(i) === key)));
+  // Found by its key as data, never through a selector: a key holds the soul's own paths.
+  const itemFor = focusKey => [...nav.querySelectorAll('[role=treeitem]')].find(item => item.dataset.focusKey === focusKey) || null;
+  const fileSig = key => { const entry = files.get(key); return JSON.stringify(entry ? [entry.path, entry.file] : null); };
 
   /** The page's inspected soul row (`inspected.souls[0]`). Unchanged → nothing: a repaint never touches what is open. */
   function update(soul) {
@@ -166,21 +228,32 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
     name = typeof soul?.name === 'string' && soul.name ? soul.name : null;
     own = soulInstructionsOf(soul);
     composed = composedOf(soul, own.path);
+    skills = skillsOf(soul);
+    files = new Map(); local = new Map();
+    for (const skill of Array.isArray(skills) ? skills : []) for (const file of skill.files || []) {
+      const path = soulFilePath(soul?.path, file.path);
+      files.set(fileKey(file.path), { skill, file, path }); local.set(path, fileKey(file.path));
+    }
     reader.setAttribute('aria-label', `Instructions of ${name || 'this soul'}`);
     if (!hasKey(selected)) selected = OWN;
-    const signature = JSON.stringify([name, own.path, composed && composed.parts.map(p => [p.nav, p.capability ?? null]), composed === null ? 'null' : composed === false ? 'false' : composed === undefined ? 'absent' : 'parts']);
+    const listed = Array.isArray(skills) ? skills.map(s => [s.name, s.path, s.description, s.filesTruncated, s.files && s.files.map(f => f.path)]) : String(skills);
+    const signature = JSON.stringify([name, own.path, composed && composed.parts.map(p => [p.nav, p.capability ?? null]), composed === null ? 'null' : composed === false ? 'false' : composed === undefined ? 'absent' : 'parts', listed]);
     if (signature !== navSignature) { navSignature = signature; paintNav(); }
-    const ownNow = JSON.stringify(own), composedNow = JSON.stringify(composed ?? null);
-    const ownChanged = ownNow !== ownSignature, composedChanged = composedNow !== composedSignature;
-    ownSignature = ownNow; composedSignature = composedNow;
+    // What the reader's links resolve to is part of what it shows: another set of listed files repaints it.
+    const ownNow = JSON.stringify(own), composedNow = JSON.stringify(composed ?? null), localNow = JSON.stringify([...local.keys()]);
+    const linksChanged = localNow !== localSignature;
+    const ownChanged = ownNow !== ownSignature || linksChanged, composedChanged = composedNow !== composedSignature || linksChanged;
+    ownSignature = ownNow; composedSignature = composedNow; localSignature = localNow;
     // A repaint of what is shown keeps the reader's offset (the host's hold()); the browser clamps it.
-    if (selected === OWN && (shown !== 'own' || ownChanged)) paintOwn();
-    else if (selected !== OWN && (shown !== 'composed' || composedChanged)) paintComposed();
+    if (selected === OWN) { if (shown !== 'own' || ownChanged) paintOwn(); }
+    else if (files.has(selected)) { if (shown !== selected || linksChanged || fileSig(selected) !== fileSignature) paintFile(selected); }
+    else if (shown !== 'composed' || composedChanged) paintComposed();
   }
 
   /* ── navigation ──────────────────────────────────────────────────────── */
   function paintNav() {
-    const focusKey = nav.contains(doc.activeElement) ? doc.activeElement.closest('[role=treeitem]')?.dataset.focusKey : null;
+    const focused = nav.contains(doc.activeElement) ? doc.activeElement.closest('[role=treeitem]') : null;
+    const focusKey = focused?.dataset.focusKey, parentKey = focused?.parentElement.closest('[role=treeitem]')?.dataset.focusKey;
     navBody.replaceChildren();
     // One tree of labelled groups (one tab stop; the arrows cross from one group to the other).
     const tree = node('ul', 'cap-tree'); tree.setAttribute('role', 'tree'); tree.setAttribute('aria-label', `Instructions of ${name || 'this soul'}`);
@@ -194,15 +267,27 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
     const shownPath = own.path !== SOUL_INSTRUCTIONS_COPY.file ? own.path : null;
     group(`${uid}-own`, node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.own)).append(leaf(OWN, [node('span', 'cap-node-name', SOUL_INSTRUCTIONS_COPY.file), ...(shownPath ? [node('span', 'cap-node-file', shownPath)] : [])],
       { level: 1, label: shownPath ? `${SOUL_INSTRUCTIONS_COPY.file}, ${shownPath}` : SOUL_INSTRUCTIONS_COPY.file }));
+    if (Array.isArray(skills) && skills.length) {
+      const items = group(`${uid}-skills`, node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.skillsGroup));
+      for (const skill of skills) items.append(skillTreeItem(doc, skill, { open: expanded.has(skillKey(skill.path)), focusKey: `instructions:${skillKey(skill.path)}`, keys,
+        fileItem: (file, shown) => leaf(fileKey(file.path), [node('span', 'cap-node-name mono', shown)], { level: 2, label: shown }) }));
+    } else {
+      // Nothing to list: the group's label and its note in its place, between the two groups (a row, never a tree item).
+      const row = node('li'); row.setAttribute('role', 'none');
+      row.append(node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.skillsGroup), node('p', 'cap-contents-note', skillsNote()));
+      tree.append(row);
+    }
     if (composed) group(`${uid}-composed`, node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.composedGroup)).append(composedNode());
     navBody.append(tree);
     // The kernel answered but there is nothing to list: the group's label and a note beside the tree (notes are not tree items).
     if (composed === null || composed === false) navBody.append(node('div', 'cap-contents-group-label', SOUL_INSTRUCTIONS_COPY.composedGroup),
       node('p', 'cap-contents-note', composed === null ? SOUL_INSTRUCTIONS_COPY.cannotCompose : SOUL_INSTRUCTIONS_COPY.cannotRead));
     keys.syncRoving();
-    // The tree item that held focus is found again by its key (or its group's composed item when its part is gone).
-    if (focusKey) (nav.querySelector(`[data-focus-key="${focusKey}"]`) || nav.querySelector(`[data-focus-key="instructions:${COMPOSED}"]`) || nav.querySelector('[role=treeitem]'))?.focus({ preventScroll: true });
+    // The tree item that held focus is found again by its key, else its parent's (a part's composed item, a file's skill).
+    if (focusKey) (itemFor(focusKey) || (parentKey && itemFor(parentKey)) || nav.querySelector('[role=treeitem]'))?.focus({ preventScroll: true });
   }
+  const skillsNote = () => skills === undefined ? SOUL_INSTRUCTIONS_COPY.skillsAbsent : skills === null ? SOUL_INSTRUCTIONS_COPY.skillsUnlistable
+    : skills === false ? SOUL_INSTRUCTIONS_COPY.skillsUnreadable : SOUL_INSTRUCTIONS_COPY.noSkills;
   function leaf(key, content, { level, label }) {
     const item = treeItem(key, content, { level, label });
     item.querySelector(':scope > .cap-node').addEventListener('click', () => { keys.focusItem(item); open(key); });
@@ -238,11 +323,19 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
   }
 
   /* ── reader ──────────────────────────────────────────────────────────── */
-  /** Open an item: the own file, the composed document at its top, or the composed document at a part. */
+  /** Open an item: the own file, a skill file (its skill expanded, as a link to it may come from elsewhere), the
+   * composed document at its top, or the composed document at a part. */
   function open(key) {
     if (!alive || !hasKey(key)) return;
     selected = key; keys.markSelected();
     if (key === OWN) { if (shown !== 'own') { paintOwn(); reader.scrollTop = 0; } return; }
+    const entry = files.get(key);
+    if (entry) {
+      const item = itemFor(`instructions:${skillKey(entry.skill.path)}`);
+      if (item?.getAttribute('aria-expanded') === 'false') keys.setExpanded(item, true);
+      if (shown !== key) { paintFile(key); reader.scrollTop = 0; }
+      return;
+    }
     if (shown !== 'composed') paintComposed();
     if (key === COMPOSED) {
       const item = nav.querySelector(`[data-path="${COMPOSED}"]`);
@@ -258,6 +351,14 @@ export function createSoulInstructions(doc, { openExternal = null, canOpenCapabi
     shown = 'own';
     fileReader.paintHead(own.path, { bytes: own.text !== null && !own.truncated ? utf8Bytes(own.text) : null, flag: own.truncated ? SOUL_INSTRUCTIONS_COPY.truncated : null });
     fileReader.paintFile({ path: own.path, text: own.text, binary: false }, { missing: SOUL_INSTRUCTIONS_COPY.unreadable, binary: null });
+  }
+  /** A skill file into the reader, under its repository path: its full size, the kernel's cut, and its text through the
+   * strict reader; a binary file and a file past the answer's text budget are a line each. */
+  function paintFile(key) {
+    const { file, path } = files.get(key);
+    shown = key; fileSignature = fileSig(key);
+    fileReader.paintHead(path, { bytes: file.bytes, flag: file.truncated ? SKILL_COPY.truncated : null });
+    fileReader.paintFile({ path, text: file.text, binary: file.binary }, { missing: SOUL_INSTRUCTIONS_COPY.omitted, binary: SKILL_COPY.binary });
   }
   /** The composed document: one section per part, its header saying where the part comes from. */
   function paintComposed() {
