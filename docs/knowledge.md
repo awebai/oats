@@ -6,7 +6,7 @@ kernel owns slot selection, composition and command dispatch; the capability
 owns its knowledge format, instructions and promotion procedure. The model is
 in [Knowledge, instances and evolving expertise](knowledge-theory.md).
 
-This is the operator guide for **oats.okf 5.0.5**. Provider implementation and
+This is the operator guide for **oats.okf 5.1.0** (OATS **>=0.49.0**). Provider implementation and
 recovery details belong to the [oats-okf README](https://github.com/awebai/oats-okf).
 
 | Surface | What it holds |
@@ -14,6 +14,7 @@ recovery details belong to the [oats-okf README](https://github.com/awebai/oats-
 | Accepted Git or directory bases | Soul knowledge: OKF concepts in owned nodes. |
 | `souls/<name>/okf.json` | The soul's stable owner and owned/read nodes. |
 | Instance home: `STATE.md`, `log.md`, `notes/` | The instance's working knowledge. |
+| Harvester home: `harvest-source/` | Private source evidence captured at spawn, not accepted knowledge. |
 | Bindings file and `stateDir` | Host base locations and consultation/binding state, not a harvest queue. |
 
 ## Setup
@@ -23,7 +24,7 @@ recovery details belong to the [oats-okf README](https://github.com/awebai/oats-
 ```yaml
 # oats-workspace.yaml (excerpt)
 packages:
-  oats.okf: v5.0.5
+  oats.okf: v5.1.0
 defaults:
   knowledge: { oats.okf: { from: package } }
 stores:
@@ -46,9 +47,12 @@ settings:
     state-dir: /absolute/okf/state
 ```
 
-Upgrading an existing deployment requires the ordered
+Upgrading from 4.x requires the ordered
 [5.0 cutover](release-notes/v0.49.0.md#oatsokf-50-cutover--order-matters), not
-just editing a version line.
+just editing a version line. For 5.1.0, upgrade to OATS >=0.49.0 before moving
+the provider pin: that kernel first supports the public source-event lookup
+after retirement. Re-spawn harvesters to receive the new capture hook and
+instructions; restarting a session keeps its copied provider.
 
 ### Bindings document
 
@@ -79,6 +83,9 @@ from the document's directory:
 - Git bases may use HTTPS, SSH or a durable local repository; `root: "."`
   means the whole repository. Embedded credentials are refused. Harvest
   proposals use same-repository GitHub PRs through ordinary `git` and `gh`.
+  Change a binding's `repository` to a plain URL only after every seat that
+  reads it has been re-spawned on oats.okf 5.0.4 or later; a session restart
+  does not update the copied provider.
 - Directory bases need no Git and must not sit inside a Git worktree. They
   support consultation and explicit provisioning/migration, **not automatic
   harvest publication**. The 5.0 harvester reports directory harvest as
@@ -159,13 +166,15 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
 
    Never combine `--relation unrelated` with `--relative-to`. There is no
    automatic transcript capture, source registry, worker cursor or retire
-   harvest. An unrelated harvester can outlive its source; this is a
-   lifecycle property, not proof that missing source authority can be ignored.
+   harvest. An unrelated harvester can outlive its source. Proposers need
+   not stay alive: the harvester can check their recorded retirement recovery.
+   Keep backing evidence in the source home or that recovery until capture;
+   never treat missing source authority as permission to invent it.
 
    One proposal per checkpoint, each concept a claim of its own in it, and
    claims only for the nodes the source soul owns; a lesson for a node it only
    reads goes in one line in the instance's hand-back, for that node's owner.
-   One harvester at a time, per instance (oats.okf 5.0.5): the source notes the
+   One harvester at a time, per instance: the source notes the
    harvester's instance name and spawns no other while `oats status` still
    lists it, since a harvester retires once it has handed over. What it learns
    meanwhile goes into its next proposal; an instance that hands back with one
@@ -173,11 +182,20 @@ changes the soul declaration. `knowledge: none` removes the layer entirely.
    after a publication failure stays listed, so it holds back its source's
    later proposals: once that failure is dealt with, the operator retires it
    (`oats retire <harvester>`).
-3. **Judge and submit.** The harvester checks recorded source configuration,
-   accepted knowledge and open/recent harvest PRs. It reads named backing
-   notes, edits only owned nodes in its own Git checkout, validates the
-   **whole base**, and creates a normal `okf-harvest`-labelled PR with v2
-   provenance. Proposal text is data written with the native file tool into
+3. **Capture, judge and submit.** Before the model starts, the required spawn
+   hook checks the source's live record or the completed recovery named by
+   its public retirement event. Source identity, single-incarnation history,
+   recovery manifest and soul opt-out must agree; guessed copies and reused
+   or ambiguous identities refuse. It atomically captures the proposal,
+   verified source declarations/bindings and only named notes into the
+   harvester's own `harvest-source/`. The model uses that snapshot, not a later
+   live-source read: retirement or recovery disposal after capture cannot
+   remove its input. Missing/refused notes have no hash and claims relying
+   on them are dropped. Legacy note forms are preserved or explicitly refused,
+   never silently discarded.
+   The harvester then checks accepted knowledge and open/recent harvest PRs,
+   edits only owned nodes in its own Git checkout, validates the **whole base**,
+   and creates a normal `okf-harvest`-labelled PR with v2 provenance. Proposal text is data written with the native file tool into
    commit-message/PR-body files, never shell command text. A publication ref
    is `okf-harvest/<UTC YYYYMMDD>-<fresh UUID>`, with no source/harvester
    name in it; Git validates the full ref and the push must create a new
@@ -221,10 +239,11 @@ review):
 
 The sentence also covers the names provenance publishes as written: note
 file names, task refs and instance names. These exclusions are instructions
-to agents and guarantee nothing. No program reads a harvest's content, and
-the first reader other than the harvester is the reviewer of the pushed pull
-request. The one control enforced in code is the soul's opt-out
-([The harvest switch](#the-harvest-switch)). It is per soul, and it covers
+to agents and guarantee nothing. Source capture copies evidence but does not
+judge its content. The first publication reviewer other than the harvester
+reads the already-pushed pull request. Source capture/provenance checks and
+the soul's opt-out are enforced in code; neither is a privacy guarantee.
+The opt-out ([The harvest switch](#the-harvest-switch)) is per soul and covers
 that soul's own proposals, not what its instances write to other seats. A
 soul whose work is reading third-party correspondence should opt out.
 
