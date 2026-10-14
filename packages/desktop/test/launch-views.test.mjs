@@ -106,12 +106,12 @@ for (const [place, layout, selector] of BOXES) test(`${place}: no text of the ke
   const HIDDEN = 'token: abc123 was in the file', long = 'word '.repeat(204).trim(), longer = 'step '.repeat(204).trim();
   const rows = [
     [SAID, REMEDY, [`OATS says: ${SAID}`, REMEDY]],
-    [HIDDEN, REMEDY, ['[Detail withheld]', `OATS says: ${REMEDY}`]],
+    [HIDDEN, REMEDY, ['[withheld]', `OATS says: ${REMEDY}`]],
     [' ', REMEDY, [`OATS says: ${REMEDY}`]],
-    [SAID, HIDDEN, [`OATS says: ${SAID}`, '[Detail withheld]']],
+    [SAID, HIDDEN, [`OATS says: ${SAID}`, '[withheld]']],
     [SAID, ' ', [`OATS says: ${SAID}`]],
-    [HIDDEN, HIDDEN, ['[Detail withheld]', '[Detail withheld]']],
-    [HIDDEN, ' ', ['[Detail withheld]']],
+    [HIDDEN, HIDDEN, ['[withheld]', '[withheld]']],
+    [HIDDEN, ' ', ['[withheld]']],
     [' ', ' ', []],
     // Markup is text; each text is whole at the kernel's bound; the same text in both is shown in both.
     ['<b>bold</b> <script>x</script>', '<i>it</i>', ['OATS says: <b>bold</b> <script>x</script>', '<i>it</i>']],

@@ -217,7 +217,7 @@ sent as text or on stdin, never as paths.
 
 | Command | Where it runs | The server must advertise |
 |---|---|---|
-| `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule |
+| `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule; `spawn-preview-2` for `--preview` |
 | `status` | registered workspace | |
 | `retire` | the instance's home | `retire-home` to retire by exact home |
 | `session inspect`, `session attach` | the instance's home | `session`; `session-attach-detach-key` for `attach --detach-key` |
@@ -226,7 +226,7 @@ sent as text or on stdin, never as paths.
 | `okf harvest --instance <name>` | the saved home | `harvest` |
 | `schedule ...` | registered workspace | `schedule` |
 | `launch-config list\|set\|remove\|preview` | `--dir`, the instance's home, or the registered workspace | `launch-config` |
-| `inspect`, `operation run` | `--dir`, the instance's home, or the registered workspace | `operations`; `inspect --instructions` also `soul-composed-instructions` |
+| `inspect`, `operation run` | `--dir`, the instance's home, or the registered workspace | `operations`; `inspect --instructions` also `soul-composed-instructions`, `inspect --skills` also `soul-skills` |
 | `readiness` | the instance's home, `--dir`, or the registered workspace | `readiness` (`readinessApi: 2`) |
 | `instance events` | the instance's home | `instance-events-2` (`eventsApi: 2`) |
 | `instance git`, `instance diff` | the instance's home; the Git runs there | `instance-git` (`instanceGitApi: 1`) |
@@ -238,6 +238,17 @@ missing feature (`E_REMOTE_INCOMPATIBLE`), before anything is sent. A spawn is
 checked against the harness it would use (the flag, or the soul's default as
 the remote roster reports it). A host that advertises no harness list is
 assumed to run only pi and claude, on tmux, with no launch options.
+
+**A routed preview.** `oats spawn <soul> --server <id> --preview` runs the
+spawn's checks here (`E_ROUTE_CHANGED`, `E_ROUTE_EXISTS`, the harness and
+options), then asks the server's kernel for its preview. It prints the local
+preview's line with the server named (`preview <soul> → <instance> on <id> …;
+nothing was created`), and saves no route or other state on this machine. Its
+`--json` result is the server's preview plus `server` and `target`. When a
+saved route already holds the previewed name for another home, a warning says
+a spawn would save no route. A server that does not advertise
+`spawn-preview-2` is refused (`E_REMOTE_INCOMPATIBLE`) before the spawn is
+sent, since an older kernel might spawn for real.
 
 **Addressing an instance.** Instance commands (`retire`, the `session`
 commands, `inspect`, `operation`, `launch-config`) reach any instance on the
@@ -353,8 +364,8 @@ instance's saved home on the server and relays its envelope.
 ## What this machine keeps
 
 A **saved route** per remote instance, under `~/.oats/remote/<server>/`,
-written at spawn: the ssh host, workspace, oats path and PATH prefix, and the
-remote home. Retire, harvest and session commands use
+written at spawn (never by a preview): the ssh host, workspace, oats path and
+PATH prefix, and the remote home. Retire, harvest and session commands use
 the saved route, not the current registration, so editing or removing a
 registration never orphans a remote home. The route is removed when the
 remote kernel reports the home gone.

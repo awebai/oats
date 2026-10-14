@@ -13,7 +13,7 @@ export { cliRemoteRoster } from "../../client/cli-adapter.mjs";
 export { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
 export { createRefreshLoop } from "../../client/refresh-loop.mjs";
 export { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
-export { panelData, cliReadsRemotes, workspaceChoices, viewModel } from "../../client/panel-views.mjs";
+export { panelData, cliReadsRemotes, workspaceChoices, viewModel, deployments } from "../../client/panel-views.mjs";
 export { remoteRosterState } from "../../client/remote-roster.mjs";
 export { observeIdentities, identityMemory } from "../../client/remote-identity-memory.mjs";
 export { workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
@@ -22,7 +22,10 @@ export { instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterIn
 export { rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
 export { runtimeState, runtimeCounts, originLead } from "../../client/instance-presentation.mjs";
 export { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from "../../client/waiting-on-you.mjs";
-export { instanceActs } from "../../client/instance-acts.mjs";
+export { instanceActs, openAct } from "../../client/instance-acts.mjs";
+export { sessionAttachArgv, prepareRemoteTerm, detachKeySupported, hostDetachKeySupported, preflightFailure, DETACH_KEY_FEATURE } from "../../client/session-attach.mjs";
+export { attachExit } from "../../client/attach-exit.mjs";
+export { kernelLines } from "../../client/kernel-lines.mjs";
 export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
 export { validateWorkspace, deploymentsInside } from "../../client/workspace-admission.mjs";
 

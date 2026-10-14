@@ -9,7 +9,7 @@ const AT = '2026-10-11T12:00:00.000Z';
 
 const panelAPI = ['setContext', 'attach', 'release', 'toggle', 'setCollapsed', 'setFocusMode', 'toggleFocusMode', 'isFocusMode', 'dispose'];
 const leaseAPI = ['setPresent', 'isVisible', 'collapse', 'dispose'];
-function fixture(t) {
+function fixture(t, extra = {}) {
   // Inert DOM only: no scripts, server, bridge, native processes or resources.
   const dom = new JSDOM(`<!doctype html><body><div id="app">
     <aside id="sidebar"><input id="sidebar-input"></aside>
@@ -31,7 +31,7 @@ function fixture(t) {
     onIntent: event => { assert.equal(applying, false, 'projected focus cannot mint intent'); intents.push(event.type); },
     applyFocus: callback => { applying = true; focusCalls.push('apply'); try { return callback(); } finally { applying = false; } },
     onFocusModeChange: value => modeCalls.push(value),
-    fallbackFocus: () => document.getElementById('active-tab'),
+    fallbackFocus: () => document.getElementById('active-tab'), ...extra,
   });
   t.after(() => { panel.dispose(); dom.window.close(); });
   const query = selector => document.querySelector(selector);
@@ -376,7 +376,7 @@ test("a Herdr-recorded instance: Start's title says who made the reason (#982), 
   assert.equal(title({ runtimeState: undefined, running: true, backend: 'herdr', runtimeError: 'another text', runtimeErrorOrigin: 'kernel' }).title, reason);
   assert.equal(title({ runtimeError: 'E_HERDR_REMOVED: <b>bold</b>', runtimeErrorOrigin: 'kernel' }).title, 'OATS says: E_HERDR_REMOVED: <b>bold</b>');
   const withheld = title({ runtimeError: 'E_HERDR_REMOVED: gone\u001b[2J', runtimeErrorOrigin: 'kernel' });
-  assert.equal(withheld.title, '[Detail withheld]'); assert.equal(withheld.disabled, true);
+  assert.equal(withheld.title, '[withheld]'); assert.equal(withheld.disabled, true);
 });
 
 test('the Session card names a tmux session only when one was recorded: an unknown row with none shows no session line', t => {
@@ -523,4 +523,36 @@ test('#802: a held home: a spawning one shows no lifecycle control, a quarantine
   assert.deepEqual(shown(), ['retire'], 'rollbackIncomplete wins');
   u.select(instance('/A/t1', { running: false }));
   assert.deepEqual(shown(), ['start', 'retire'], 'an ordinary stopped row is unchanged');
+});
+
+// #1131: beside the remedy of a row its host no longer lists, Forget…: the host's confirmation, never a command here.
+test('a row its host no longer lists offers Forget… beside the remedy; strictly missing, nothing runs here', t => {
+  const opened = [];
+  const u = fixture(t, { lifecycle: { forget: (...args) => opened.push(args) } });
+  const forget = () => u.query('[data-context-forget]'), note = () => u.query('[data-context-work-note]');
+  const [gone] = kernelRows([kernelGoneRow()]);
+  u.select(gone);
+  assert.equal(forget().hidden, false);
+  const button = forget().querySelector('button');
+  assert.equal(button.textContent, 'Forget…');
+  assert.equal(forget().previousElementSibling, note(), 'right after the remedy sentence');
+  assert.equal(button.getAttribute('aria-describedby'), note().id, 'described by the remedy, which names the instance and the server');
+  button.click();
+  assert.deepEqual(opened, [[gone, 'A']], 'the row as selected, and the panel\'s workspace');
+  // Not offered: a listed row, an unreached server, missingRemotely not strictly true, a local row.
+  const [listed] = kernelRows([kernelRemoteRow()]);
+  const [unreached] = kernelRows([kernelGoneRow()], { probe: { ok: false, error: { code: 'E_SSH', message: 'ssh: timeout' } } });
+  for (const [why, row] of [['listed', listed], ['unreached', unreached], ['missingRemotely "true"', { ...gone, missingRemotely: 'true' }],
+    ['missingRemotely null', { ...gone, missingRemotely: null }], ['local', instance('/w/agents/dev/instances/dev-1')]]) {
+    u.select(row);
+    assert.equal(forget().hidden, true, why);
+  }
+  assert.equal(opened.length, 1);
+});
+
+test('without a forget handler the remedy stands alone', t => {
+  const u = fixture(t, { lifecycle: { stop: () => {} } });
+  u.select(kernelRows([kernelGoneRow()])[0]);
+  assert.equal(u.query('[data-context-work-note]').hidden, false);
+  assert.equal(u.query('[data-context-forget]').hidden, true);
 });

@@ -39,7 +39,7 @@ import {
   classifyPackageValue, parsePackageRequest } from "../lib/packages.mjs";
 import { harnessTrust } from "../lib/harness-trust-write.mjs";
 import { previewLaunchEnvironment, previewPaneEnvironment } from "../lib/core.mjs";
-import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
+import { PI_BRIDGE, piBridgeFolders, piBridgeSkewWarnings, planPiBridges, piBridgePlanLines, piBridgeStepProblem, piBridgeFailure, kernelLookup, kernelLookupResult, planCliUpdate, desktopFirstLine, bridgeLookup, bridgeLookupProblem } from "../lib/pi-bridge.mjs";
 import { loadLocal, validateWorkspace, validateLocal, discoverPackageSouls, unlockedPackages, workspaceWarnings, memberRowByKey } from "../lib/workspace.mjs";
 import { discoveredTeamKeys, isTeamRefusal, localTeamsClosedProblem, recordedTeams, reportRows, soulKeyOf, soulTeams, teamKeyOf, teamModel } from "../lib/teams.mjs";
 import { LAUNCH_KEY_UNCHECKED, LAUNCH_PREFERENCE_UNMATCHED, launchKeyQuoted, launchKeysUnmatched, launchLayers, soulLaunchCommand, unmatchedKeyMessage } from "../lib/launch-preference.mjs";
@@ -63,12 +63,12 @@ import { planStop, applyStop, planRetire, retireDefaultsLine, stopClosingLine, d
 import { extraWorktreeLines, formatBytes, warningLines, workRecoveryLines } from "../lib/retire-output.mjs";
 import { retainedRecoveryLines, retainedWorktreeLines, retainedWorktrees } from "../lib/retained-after-retire.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
-import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposedInstructions, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
+import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, withComposedInstructions, withSkills, readinessDocument, policyOf, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents, setWaiting, incarnationOf } from "../lib/instance-events.mjs";
 
 const rawArgs = process.argv.slice(2);
 /** The kernel's switches: a value never rides one (`--yolo=false` must not turn yolo on). */
-const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "run-source", "self", "verbose", "yes", "yolo"]);
+const KERNEL_SWITCHES = new Set(["allow-child-spawns", "apply", "check", "clear", "delete-branch", "discard-worktree", "dry-run", "ephemeral", "force", "help", "host", "if-absent", "install-oats", "instructions", "json", "keep-dir", "keep-env", "no-child-spawns", "no-default", "no-launch", "no-recursive", "no-yolo", "plan", "policy", "preview", "print", "replace", "run-source", "self", "skills", "verbose", "yes", "yolo"]);
 /** `--flag=value` is `--flag value`: every kernel reader (flag(), valueFlag(), the onboard and
  *  routed-command loops) then applies the spaced form's validation to it. `problem` is an empty
  *  `--flag=`, a switch given a value, or a value that is itself an option (`--model=--yolo`):
@@ -104,7 +104,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -566,10 +566,14 @@ async function inspectCmd() {
   // Feature soul-composed-instructions: opt-in, soul subject only; without it nothing extra is composed.
   const instructions = args.includes("--instructions");
   if (instructions && flag("home") !== undefined) return bail("E_BAD_ARGS", "--instructions composes a soul's instructions before a spawn: it takes --soul, not --home (an instance's composed AGENTS.md is instance.instructions)");
+  // Feature soul-skills: opt-in, soul subject only; without it no skill file is read.
+  const skills = args.includes("--skills");
+  if (skills && flag("home") !== undefined) return bail("E_BAD_ARGS", "--skills lists a soul's own skills before a spawn: it takes --soul, not --home (an instance's skills are in its home's .agents/skills/)");
   let t = await workspaceTarget(bail, { command: "inspect" });
   if (t) {
     if (t.resolutionError) return bail(t.resolutionError.code, t.resolutionError.message, t.resolutionError.details ?? undefined);
     if (instructions) t = await withComposedInstructions(t);
+    if (skills) t = await withSkills(t);
     const doc = inspectDocument(t, { kernel: OATS_VERSION });
     if (JSON_MODE) { jsonOk(withObservation(doc)); return; }
     printWorkspaceInspect(doc); return;
@@ -1545,7 +1549,9 @@ function harnessTrustCmd() {
     log(`${result.mode}: native harness trust for ${result.root}`);
     const used = (entry) => [...(entry.ambient ? ["ambient"] : []), ...entry.launchConfigs.map((n) => `launch configuration ${n}`)].join(", ");
     for (const entry of result.entries) {
-      log(`${entry.harness}: ${entry.status} ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest ?? "unknown/absent"}) (${used(entry)})`);
+      // A refused file was not read through to its trust value: no current value or digests to show.
+      if (entry.status === "refused") log(`${entry.harness}: refused ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} (${used(entry)})`);
+      else log(`${entry.harness}: ${entry.status} ${entry.file ?? "unresolved file"} ${JSON.stringify(entry.key)} ${JSON.stringify(entry.current)} -> ${JSON.stringify(entry.desired)} (${entry.beforeDigest ?? "missing"} -> ${entry.afterDigest ?? "unknown/absent"}) (${used(entry)})`);
       if (entry.problem) log(`problem: ${entry.problem}`);
       if (entry.reason) log(`skipped: ${entry.reason}`);
     }
@@ -2710,6 +2716,15 @@ function herdrSpawnFlag() {
   if (flag("herdr-socket") !== undefined) return "--herdr-socket";
   return undefined;
 }
+/** A spawn preview's text: the local one, or a host's answer to a routed
+ *  preview (`server`, its id), which this side printed the same way (#610). */
+function printSpawnPreview(r, { server, soulFetched = false } = {}) {
+  // A host before 0.27 names the harness `runtime` (it still answers spawn-preview-2).
+  const harness = r.harness ?? r.runtime;
+  console.log(`preview ${r.agent} → ${r.instance}${server ? ` on ${server}` : ""} (${r.work}${r.branch ? `, branch ${r.branch}${r.base ? ` from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}` : ""}) harness ${harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (${server ? "the server's" : "this machine's"} ${harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
+  if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
+  for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
+}
 async function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg, details, exit) => (JSON_MODE ? jsonFail(code, msg, details, exit) : die(msg, exit));
@@ -2944,9 +2959,7 @@ async function spawnCmd() {
       // (the deployment's cache had no entry for its commit): the result says so.
       if (prepared) r.soulFetched = soulFetched;
       if (JSON_MODE) { jsonOk(withObservation(r)); return; }
-      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) harness ${r.harness}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}${r.launchConfig ? ` via launch configuration ${r.launchConfig}${r.launchConfigDefault ? ` (this machine's ${r.harness} default)` : ""}` : ""}${r.yolo ? " YOLO" : ""}; nothing was created${soulFetched ? " (the soul source was fetched to a temporary copy, not kept)" : ""}`);
-      if (Array.isArray(r.worktreeHooks)) console.log(r.worktreeHooks.length ? `worktree hooks: ${r.worktreeHooks.map((h) => `${h.capability}${h.required ? " (required)" : ""}`).join(", ")}` : "worktree hooks: none");
-      for (const w of r.warnings || []) console.log(`  WARNING: ${terminalText(w)}`);
+      printSpawnPreview(r, { soulFetched });
       return;
     }
   } catch (e) {
@@ -3950,6 +3963,9 @@ function updateCmd() {
   if (!steps.length) return end(untouched || ahead ? `\nNothing for \`oats update\` to run.${untouchedNote}` : "\nUp to date.");
   console.log("\nUpdate steps:");
   for (const s of steps) console.log(`  ${s.display}`);
+  // A Desktop refuses a CLI of a newer minor (docs/upgrading.md, "Why the Desktop goes first").
+  const desktopFirst = desktopFirstLine(cli);
+  if (desktopFirst) console.log(`\n${desktopFirst}`);
   if (checkOnly) return end("\n(--check: not executing)");
   const interactive = process.stdin.isTTY && process.stdout.isTTY;
   if (interactive) {
@@ -4439,7 +4455,10 @@ async function serverRouteCmd() {
   if (!envelope.ok && !(cmd === "retire" && envelope.result)) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
   const r = envelope.result;
   const target = r.target || {};
-  if (cmd === "spawn") {
+  // A routed preview created nothing, there or here: the local preview's lines, naming the server.
+  // The host's answer decides, not the flag: one that spawned is reported as the spawn it was.
+  if (cmd === "spawn" && rest.includes("--preview") && r.preview === true) printSpawnPreview(r, { server: id, soulFetched: r.soulFetched === true });
+  else if (cmd === "spawn") {
     console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
     console.log(`  remote home: ${r.home}`);
     console.log(`  route snapshot: ${r.snapshot ? shortPath(r.snapshot) : "none (see the warning)"}`);
@@ -4774,12 +4793,14 @@ Usage:
                                             a detached external retirement runs
   oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
       [--agents-root <abs>]] [--home <abs>]   (harness defaults, editability, instructions),
-      [--instructions] [--max-age <s>]      installed capabilities with health, effective
-      [--json]                              layer bindings and activation, declared
+      [--instructions] [--skills]           installed capabilities with health, effective
+      [--max-age <s>] [--json]              layer bindings and activation, declared
                                             operations with availability; --home answers the
                                             running home's recorded modules and their drift
                                             from the deployment; --instructions (--soul only)
-                                            adds the AGENTS.md a spawn of the soul here would write
+                                            adds the AGENTS.md a spawn of the soul here would write;
+                                            --skills (--soul only) adds the soul's own skills, the
+                                            ones a spawn copies, with each file's text
   oats operation run <layer>:<name>          run an operation the soul's core capability for that
       (--home <abs> | --soul <name> [--dir <d>])  layer declares (knowledge:harvest, knowledge:
       [--arg k=v ...] [--json]              inspect ...): resolved from the home's recorded

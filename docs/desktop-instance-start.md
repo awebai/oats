@@ -107,7 +107,7 @@ words. Its status reads: "More than one launch configuration is declared for
 the chosen harness, and none is the default. Choose one under Launch
 configuration, or choose "No launch configuration" to run the harness as
 installed." Under it stands OATS's message as one line, "OATS says:
-`<message>`", through the display filter: whole, or "[Detail withheld]" with no
+`<message>`", through the display filter: whole, or "[withheld]" with no
 name before it when the message is withheld, and no line when there is no
 message (`kernelLines`, `packages/client/kernel-lines.mjs`). The message
 quoted is the answer's own (`answered`, set by the page's transport in

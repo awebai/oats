@@ -24,6 +24,7 @@ import {
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "./instance-recency.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { createSurfaceReturn } from "./surface-return.mjs";
@@ -36,12 +37,14 @@ import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
+import { createForgetDialog, forgetSuccessor } from './forget-dialog.mjs';
 import { successorRow } from "./focus-return.mjs";
 import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
+import { createTerminalAtlasRecovery } from "./terminal-atlas-recovery.mjs";
 import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
@@ -1021,6 +1024,10 @@ function renderContextRoster(instances) {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
             openLifecycleDialog(operation, instance, ws);
           },
+          openForget: instance => {
+            if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
+            openForgetDialog(instance, ws);
+          },
           done: () => {},
           report: (headline, { detail } = {}) => {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
@@ -1279,10 +1286,13 @@ function showTerminalContext() {
 // ── tabs ──────────────────────────────────────────────────────────────────
 const tabbar = document.getElementById("tabbar");
 const tabhost = document.getElementById("tabhost");
-const tabs = new Map(); // id -> { tabEl, triggerEl, closeEl, paneEl, title, key, onClose, onShow }
+const tabs = new Map(); // id -> { tabEl, triggerEl, closeEl, paneEl, title, key, onClose, onShow, term }
+// After a GPU process restart every terminal's glyph atlas is cleared in one pass, hidden tabs included (#1190).
+const atlasRecovery = createTerminalAtlasRecovery({ doc: document, terminals: () => [...tabs.values()].flatMap(t => t.term ? [t.term] : []) });
 let nextTabId = 1;
 let activeTab = null;
 const wsActiveTerminal = new Map(); // workspace id -> last-active terminal tab key
+const instanceRecency = createInstanceRecency(); // per-machine: when each instance's terminal was last focused (palette order)
 const brainIntents = createIntentGate();
 // Terminal and artifact opens compete for the same foreground selection.
 const tabOpenIntents = createSelectionOwnership({ currentWorkspace, workspaceGeneration });
@@ -1324,6 +1334,7 @@ const contextPanel = createContextPanel({
     restart: (instance, workspace) => { if (workspace === currentWorkspace()) openInstanceStart(instance, { restart: true }); },
     stop: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('stop', instance, workspace); },
     retire: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('retire', instance, workspace); },
+    forget: (instance, workspace) => openForgetDialog(instance, workspace),
   },
   // Soul tab → the soul in the Workspace view (same hand-off as Quick Open).
   openSoul: async ({ workspace, name, agentsRoot, server }) => {
@@ -1579,7 +1590,7 @@ function onTabKeydown(e, id) {
   if (selectTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
+function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null, term = null }) {
   if (key) {
     for (const [tid, t] of tabs) if (t.key === key) {
       if (instanceRef && (!intent || intent())) t.instanceRef = instanceRef;
@@ -1604,7 +1615,7 @@ function addTab({ decor = null, title, key, kind = "artifact", workspace = curre
     isApplyingFocus: () => tabOpenIntents.isApplyingFocus(),
     select: () => selectTab(id),
   });
-  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, confirmClose, onShow, focusContent });
+  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, confirmClose, onShow, focusContent, term });
   if (intent) selectTab(id, { intent, focusContent: focusOnActivate });
   else activateTab(id);
   return { id, paneEl };
@@ -1648,6 +1659,9 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   if (current?.kind === "terminal" && current.workspace) {
     wsActiveTerminal.set(current.workspace, current.key);
   }
+  // The palette's last-focus order (Spec C): any activation of a terminal tab, and
+  // a terminal taking keyboard focus (wirePaneSelection selects its tab), lands here.
+  if (current?.kind === "terminal") instanceRecency.record(current.workspace, recencyIdFromTerminalKey(current.workspace, current.key));
   if (current?.kind === "terminal" || emptyFocused) {
     setSidebarMode("instances");
     setNavActive(null);
@@ -1966,7 +1980,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   term.loadAddon(fit);
   // Box drawing and blocks as a native terminal draws them (WebGL, DOM fallback).
   const glyphs = createGlyphRenderer({ term, Addon: globalThis.WebglAddon?.WebglAddon,
-    onChange: () => requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} }) });
+    onChange: () => requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} }),
+    onRecovered: () => atlasRecovery.schedule() });
 
   // Composition (setup-inside-onReady, teardown symmetry) lives in
   // terminal-tab.mjs so its ordering is unit-testable (review termlc2).
@@ -2018,6 +2033,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
+    term, // the GPU-restart recovery clears its glyph atlas
   });
   if (!made) { unwire(); term.dispose(); return; } // lost a race to an identical tab
   // A tab opened on a waiting instance shows it at once, from the last painted roster (#558).
@@ -2083,9 +2099,13 @@ const palette = createPalette({
   loadInstances: async () => {
     if (windowState() === "choosing") return { instances: [], deployments: [] }; // no workspace: nothing to read (#481)
     const ws = currentWorkspace();
+    // The terminal in front and the last-focus record as the palette opens (Spec C).
+    const front = tabLayerVisible ? tabs.get(activeTab) : null;
+    const activeId = front?.kind === "terminal" && front.workspace === ws ? recencyIdFromTerminalKey(ws, front.key) : null;
+    const recent = instanceRecency.snapshot(ws);
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
     // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
-    return { instances: p.instances || [], deployments: panelDeployments(p) };
+    return { instances: p.instances || [], deployments: panelDeployments(p), recent, activeId };
   },
   openTerminal: (name) => openTerminalTab(name),
   // While open, ⌘K / Ctrl+Shift+P moves down and Shift + it up (live keymap); Esc closes, Enter opens.
@@ -2251,6 +2271,42 @@ function openLifecycleDialog(operation, instance, workspace) {
   lifecycleDialog.open({ operation, instance, workspace: rowDeployment(instance) });
 }
 window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
+/* Forget… (#1131): a row its host no longer lists (forget-dialog.mjs). The server composes the command from the
+ * row's { server, instance }, answers its outcome, and reads the remote roster again (the one owner of that read);
+ * the row leaves this window's roster when that read lands, at the roster's own refresh. Nothing here edits a row. */
+const forgetDialog = createForgetDialog({ doc: document,
+  request: async body => (await desk.api('/api/server-forget', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })).body,
+  notify: text => notifications.notify(text),
+  nextFocus: () => forgetNextFocus(),
+  generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,
+  onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
+});
+/** The roster's rows (by identity) when the Forget confirmation opened, and where its row stood among them. */
+let forgetRowOrder = null;
+/** Where focus goes once a row is forgotten: the first row that followed it when the confirmation opened and is
+ * still shown (the forgotten row may already be gone, by this re-read or an earlier poll), else the roster itself,
+ * else a stable shell control when the sidebar is hidden. */
+function forgetNextFocus() {
+  const listEl = contextRosterEl?.querySelector(".ctx-list");
+  if (!listEl || sidebarHidden()) return stableFocusTarget();
+  const shown = el => el?.isConnected && !el.disabled && !el.closest("[hidden]") && document.defaultView.getComputedStyle(el).display !== "none";
+  const rows = [...listEl.querySelectorAll(".ctx-inst")].filter(shown);
+  const { order = [], at = -1 } = forgetRowOrder || {};
+  const next = forgetSuccessor(rows, order, at);
+  if (!next) { contextRosterEl.tabIndex = -1; return contextRosterEl; }
+  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+  next.tabIndex = 0; return next;
+}
+function openForgetDialog(instance, workspace) {
+  if (workspace !== currentWorkspace() || forgetDialog.busy()) return;
+  connections.close(); shortcutsEditor.close(); lifecycleDialog.close();
+  const order = [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].map(r => r.dataset.treeInstance);
+  forgetRowOrder = { order, at: order.indexOf(instanceId(instance)) };
+  forgetDialog.open(instance);
+}
+window.addEventListener('pagehide', () => forgetDialog.dispose(), { once: true });
 // The theme button, the palette and the chord (app.themePicker) open it; a choice goes through setTheme,
 // so it is stored as a palette choice is.
 const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,
@@ -2562,6 +2618,7 @@ function rehomeWorkspaceState(workspaces) {
   const moves = rehomeTabs(tabs, map, workspaces);
   if (!map.size && !moves.length) return;
   rehomeActiveTerminals(wsActiveTerminal, map, moves);
+  instanceRecency.rehome(map);
   workspaceTabMemory.rehome(map);
   rehomeCollapsed(collapsedInstances, map);
   spawnJobs.rehome(map);

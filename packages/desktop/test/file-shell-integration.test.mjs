@@ -2,6 +2,7 @@
 // selection policy. Only browser chooser, dynamic import, HTTP and xterm/IPC
 // boundaries are synthetic. No native dialog, server, Electron or operator state.
 import test from "node:test";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { opened, confirmed, ready as terminalReady } from './helpers/terminal-wire.mjs';
@@ -89,6 +90,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} }, contextRosterEl: null,
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // initContextRoster builds the real controller (instance-tree-view createRosterLoading)
+    // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
+    instanceRecency: createInstanceRecency({ storage: null }), recencyIdFromTerminalKey,
     wsActiveTerminal: new Map(), pendingTerms: new Set(), brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),

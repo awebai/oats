@@ -5,7 +5,7 @@ export const SPEAKERS = Object.freeze({ kernel: "OATS says:", "terminal-probe": 
 export const HERDR = "E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.";
 export const MARKUP = "<b>bold</b><script>x()</script>";
 export const CONTROL = "gone\u001b[2Jagain";
-export const DETAIL_WITHHELD = "[Detail withheld]";
+export const DETAIL_WITHHELD = "[withheld]";
 /** `[origin, line]` for each of the three speakers, then for no mark and for a value that is not one. */
 export const shown = (text) => [
   ...Object.entries(SPEAKERS).map(([origin, lead]) => [origin, `${lead} ${text}`]),

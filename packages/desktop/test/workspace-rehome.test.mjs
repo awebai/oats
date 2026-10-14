@@ -5,6 +5,7 @@
 // deployment that never reports keeps its own view and nothing moves. Pure module tests, then the
 // shipped shell functions run in a vm context against a scripted /api/panel.
 import test from "node:test";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -139,7 +140,10 @@ function shell(t, { tabs = new Map(), memory = new Map(), selection, claim = { o
     renderContextRoster() {}, refreshPanelInstance() {}, rosterPrs: { get: () => null, refresh() {} }, spawnJobs,
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
     // Re-homing's own state.
-    tabs, activeTab: null, split: null, tabLayerVisible: false, wsActiveTerminal: memory, workspaceTabMemory: createWorkspaceTabMemory(), collapsedInstances: new Set(),
+    tabs, activeTab: null, split: null, tabLayerVisible: false,
+    // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
+    instanceRecency: createInstanceRecency({ storage: null }), recencyIdFromTerminalKey,
+    wsActiveTerminal: memory, workspaceTabMemory: createWorkspaceTabMemory(), collapsedInstances: new Set(),
     rehomeTabs, rehomeActiveTerminals, rehomeCollapsed, removeSplitTab, updated: 0,
     updateContextTabs() { c.updated++; }, showTerminalContext() { c.contextShown = true; }, activateTab() {},
   };

@@ -11,6 +11,9 @@
 // finding 1); a test asserts WATCHDOG_MS > sum(phase budgets).
 export const PHASE_BUDGET_MS = {
   inventory: 10_000,
+  // The Linux glibc floor (linux-floor.mjs): unpack the DEB and the AppImage
+  // and read every ELF file's version needs. A few seconds on a CI runner.
+  linuxFloor: 120_000,
   // Rosetta's first x64 translation/start on a fresh arm64 CI runner can
   // exceed 30s. Keep one bounded phase budget that covers native + Rosetta.
   abiProbe: 90_000,
