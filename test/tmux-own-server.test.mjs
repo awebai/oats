@@ -478,7 +478,7 @@ test("option commands tmux refuses: an unknown cursor-colour is no error; a refu
   r = fx.cli(["spawn", "dev", "--name", "style-spawn", "--harness", "claude", "--json"], { env: { PATH: `${noStyle}:${spawnPath}`, OATS_TMUX_SESSION: SESSION, PI_AGENTS_TMUX_SESSION: SESSION } });
   assert.notEqual(r.status, 0, r.stdout);
   const error = r.json().error;
-  assert.equal(error.code, "E_SPAWN_FAILED", "the CLI's code for a spawn that failed; the kernel's E_SPAWN_LAUNCH_FAILED text follows");
+  assert.equal(error.code, "E_SPAWN_LAUNCH_FAILED", "the kernel's own code, as raised (E_SPAWN_FAILED before #1047)");
   assert.match(error.message, /tmux set-option failed for style-spawn/);
   assert.ok(error.message.includes(`run tmux -S ${OATS} list-windows -t ${SESSION} to inspect`), `the hint names the socket and the session: ${error.message}`);
   assert.match(error.message, /spawn rolled back/);
@@ -678,7 +678,7 @@ test("the environment OATS creates a tmux session and a window with: an instance
   const homes = tree(fx.root), refs = git(fx.repo, "for-each-ref");
   let r = fx.cli(["spawn", "dev", "--name", "env-refused", "--harness", "claude", "--json"], { env: { ...spawnEnv, ...as(unlaunched) } });
   assert.notEqual(r.status, 0, r.stdout);
-  assert.equal(r.json().error.code, "E_SPAWN_FAILED");
+  assert.equal(r.json().error.code, "E_RUNTIME_ENDPOINT_UNKNOWN", "the kernel's own code, as a start answers it (E_SPAWN_FAILED before #1047)");
   assert.match(r.json().error.message, /cannot create tmux session envs on the OATS tmux server from inside an OATS instance: the home of env-unlaunched records no tmux server/);
   assert.match(r.json().error.message, /the session was not created\. Create it from your own shell, outside every instance home \(tmux -L oats new-session -d -s envs -n hq\)/);
   assert.doesNotMatch(r.stdout + r.stderr, /s3cret/, "no value of the caller's is in what the refusal prints");
@@ -1281,7 +1281,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));
     const [first] = runs();
     assert.equal(first.identity, retiring.home, "the hook's process carries the retiring instance's identity");
     assert.equal(first.status, 1);
-    assert.equal(first.code, "E_SPAWN_FAILED");
+    assert.equal(first.code, "E_RUNTIME_ENDPOINT_UNKNOWN", "the hook's spawn answers the kernel's own code (E_SPAWN_FAILED before #1047)");
     assert.match(first.message, /cannot create tmux session .* from inside an OATS instance: the environment of the tmux server that hook-retiring is recorded on \(.*hook-lost\.sock\) could not be read/, "a person running the retire is no exception for the hook's child");
     assert.deepEqual(sessionsOf(OATS), [], "nothing was created on the OATS server");
     assert.equal(existsSync(join(dep.root, "dev", "instances", "hook-child")), false);

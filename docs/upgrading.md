@@ -53,7 +53,10 @@ Without a terminal (a script, an agent's shell) it runs only with `--yes`.
 plan starts with that install, and the bridges move to that same version in
 the same run. So where the Desktop is installed, step 0 comes before such an
 `oats update` too: `oats update --check` shows whether the plan holds that
-install, and runs nothing.
+install, and runs nothing. When that install is of another minor or major
+version, the plan says so in one line under its steps, whether or not a
+Desktop is installed: `OATS Desktop refuses a CLI newer than its own minor
+version: if you use it, install OATS Desktop <version> first.`
 
 **`oats update` only moves forward.** It never installs an older CLI or an
 older bridge than the one in place:

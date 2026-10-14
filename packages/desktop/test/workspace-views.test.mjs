@@ -231,11 +231,11 @@ test("a kept failure's reason: the kernel's words after the client's sentence an
   // The six forms.
   assert.deepEqual(parts('the cache is locked', 'kernel'), { short: 'Last read failed', headline: OWN, lead: 'OATS says:', sentence: 'the cache is locked',
     detail: `${OWN} OATS says: the cache is locked`, fix: [] });
-  for (const message of hostile) assert.deepEqual(parts(message, 'kernel'), { short: 'Last read failed', headline: OWN, lead: null, sentence: '[Detail withheld]', detail: `${OWN} [Detail withheld]`, fix: [] }, JSON.stringify(message));
+  for (const message of hostile) assert.deepEqual(parts(message, 'kernel'), { short: 'Last read failed', headline: OWN, lead: null, sentence: '[withheld]', detail: `${OWN} [withheld]`, fix: [] }, JSON.stringify(message));
   for (const message of nothing) assert.deepEqual(parts(message, 'kernel'), { short: 'Last read failed', headline: OWN, lead: null, sentence: null, detail: OWN, fix: [] }, JSON.stringify(message));
   const inside = line => `This deployment's last read failed: ${line}. It shows what was last observed.`;
   assert.deepEqual(parts('the cache is locked'), { short: 'Last read failed', headline: inside('the cache is locked'), lead: null, sentence: null, detail: inside('the cache is locked'), fix: [] });
-  for (const message of hostile) assert.deepEqual(parts(message), { short: 'Last read failed', headline: inside('[Detail withheld]'), lead: null, sentence: null, detail: inside('[Detail withheld]'), fix: [] }, JSON.stringify(message));
+  for (const message of hostile) assert.deepEqual(parts(message), { short: 'Last read failed', headline: inside('[withheld]'), lead: null, sentence: null, detail: inside('[withheld]'), fix: [] }, JSON.stringify(message));
   for (const message of nothing) assert.deepEqual(parts(message), { short: 'Last read failed', headline: OWN, lead: null, sentence: null, detail: OWN, fix: [] }, JSON.stringify(message));
   // The detail is the parts that are there, joined by one space, in every form; and the one-line reason is the detail.
   for (const origin of ['kernel', undefined]) for (const message of ['the cache is locked', ...hostile, ...nothing]) {

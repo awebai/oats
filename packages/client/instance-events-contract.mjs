@@ -17,7 +17,7 @@ export const eventsUnsafe = /[\x00-\x08\x0b-\x1f\x7f]|:\/\/(?<=[a-z][a-z0-9+.-]*
 export const eventsId = v => typeof v === 'string' && !!v && v.length <= 256 && !/[\x00-\x1f\x7f]/.test(v) && !eventsUnsafe.test(v);
 /** What stands in for text eventsUnsafe refuses. The one literal: eventsDetail and waitingMessage return it,
  * and the sidebar's claim (waitingOnYouData) reads it as "no note". */
-export const EVENTS_WITHHELD = '[Detail withheld]';
+export const EVENTS_WITHHELD = '[withheld]';
 /** A free-text detail: a string ≤ max (throws otherwise); unsafe text is withheld, never shown. */
 export function eventsDetail(v, max = 2048) {
   if (typeof v !== 'string' || v.length > max) throw Error('invalid event detail');

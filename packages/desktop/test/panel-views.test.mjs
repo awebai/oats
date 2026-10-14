@@ -85,10 +85,10 @@ test('a kept failure (#982): stale by the one rule whatever the message holds, i
       state: deploymentState(served.deployments.find(d => d.id === A)), own: views.deploymentPanel(held, { id: A, name: 'oats' }) }; };
   for (const [extra, reason] of [
     [{ error: 'the cache is locked', errorOrigin: 'kernel' }, `${OWN} OATS says: the cache is locked`],
-    [{ error: 'wipe \x1b[2J the screen', errorOrigin: 'kernel' }, `${OWN} [Detail withheld]`],
+    [{ error: 'wipe \x1b[2J the screen', errorOrigin: 'kernel' }, `${OWN} [withheld]`],
     [{ error: '', errorOrigin: 'kernel' }, OWN], [{ error: '   ', errorOrigin: 'kernel' }, OWN],
     [{ error: 'the cache is locked' }, inside('the cache is locked')],
-    [{ error: 'bell\u0007' }, inside('[Detail withheld]')],
+    [{ error: 'bell\u0007' }, inside('[withheld]')],
     [{ error: '' }, OWN], [{ error: ' \n ' }, OWN],
     // Any value but the one names nobody: the message stays inside the client's own sentence.
     [{ error: 'the cache is locked', errorOrigin: 'roster-read' }, inside('the cache is locked')],

@@ -134,7 +134,7 @@ test('a manifest\'s markup, URL, bidi and control characters, or a sentence in t
   assert.deepEqual(u.lines(), [
     { text: [`${MARKUP}: <b>opened</b>, ${URL_TEXT}`, `<a href="${URL_TEXT}">${VOICE}</a>`], notes: [] },
     { text: ['bidi\uFFFDevil\uFFFDname: up\uFFFDdated, two lines', VOICE], notes: [] },
-    { text: ['[Detail withheld]', 'a C0 control withholds its whole line'], notes: [] },
+    { text: ['[withheld]', 'a C0 control withholds its whole line'], notes: [] },
     { text: [`${URL_TEXT}: opened`, '<script>alert(1)</script> <button title="Run">Run</button>'], notes: [] },
     { text: [VOICE], notes: ['declared, but not usable: trigger source: must be an object'] },
   ]);
@@ -281,9 +281,9 @@ test('fillTriggerSourcesRow: pure over the view; kernel text that must not be sh
   fillTriggerSourcesRow(row, null);
   assert.equal(row.childElementCount, 0, 'nothing declared: an empty row');
   fillTriggerSourcesRow(row, { unreadable: ['see https://user:pw@host/x', 'two\nlines\u202E', '   '] });
-  assert.deepEqual([...row.querySelectorAll('.provides-unreadable-why')].map(n => n.textContent), ['[Detail withheld]', 'two lines\uFFFD']);
+  assert.deepEqual([...row.querySelectorAll('.provides-unreadable-why')].map(n => n.textContent), ['[withheld]', 'two lines\uFFFD']);
   fillTriggerSourcesRow(row, { sources: [{ name: 'a', events: null, description: 'never shown for an unusable source', problems: ['token=abcdef', ''] }] });
-  assert.deepEqual([...row.querySelectorAll('.source-quote-note')].map(n => n.textContent), ['declared, but not usable: [Detail withheld]']);
+  assert.deepEqual([...row.querySelectorAll('.source-quote-note')].map(n => n.textContent), ['declared, but not usable: [withheld]']);
   assert.deepEqual([...row.querySelectorAll('.source-quote-text')].map(n => n.textContent), ['a']);
 });
 

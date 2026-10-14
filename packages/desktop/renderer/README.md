@@ -31,7 +31,9 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   stays visible across subtabs; incompatible installations are observation-only.
 - **cli-status.mjs** — shared CLI degradation state + the ONE card
   (detected path/version, required range, **Choose oats…**, **Retry**, docs
-  link, copyable install command). Views subscribe via `onCliChange`;
+  link, copyable install command; no command when the detected CLI is above
+  the band, see [Troubleshooting](../../../docs/desktop.md#troubleshooting)).
+  Views subscribe via `onCliChange`;
   re-probe triggers: launch, app focus, Retry, choose (contract).
 - **common.mjs** — shared helpers: escaping, mini-markdown, ctx.api JSON
   wrappers, roster grouping, and workspace switching (`?ws=`) — the selected
@@ -290,8 +292,24 @@ probe, asked again on every show until it says yes) the addon is not activated:
 addon-webgl 0.18 adds a canvas and listeners before it asks for the context, and
 its dispose cannot undo a constructor that threw. An activation that throws
 although WebGL2 was there is not retried for that terminal, which stays on the DOM
-renderer until it is reopened. A lost context (Chromium keeps about 16) disposes the addon, and showing
-the tab tries WebGL again. `fitTerminal` sizes the grid to the pane's padded box
+renderer until it is reopened.
+
+When Chromium replaces its GPU process (after sleep, or a Space or window switch), every
+WebGL context is lost and then restored within about 3 s. xterm keeps one glyph atlas per
+configuration, shared by every terminal in the window, and the reset wipes its canvases
+while its cache still believes the glyphs are drawn there, so every terminal would show
+only backgrounds and the cursor (#1190). Re-showing a tab, `term.refresh()` or a fresh
+addon do not cure it: they draw from the same stale atlas. `terminal-atlas-recovery.mjs`
+does, created once by the shell over the tabs map: it hears each `webglcontextrestored`
+on the document in the capture phase (the event does not bubble), waits until none has
+come for `ATLAS_RECOVERY_SETTLE_MS` (250 ms), then calls `clearTextureAtlas()` on every
+live terminal, hidden tabs included, in one synchronous pass. Never one terminal's own
+clear from its own restore: each clear re-lays out the shared atlas under terminals that
+already uploaded it again, and their glyphs garble. A context that is not restored within
+addon-webgl's 3 s wait (Chromium also keeps only about 16, dropping the oldest) disposes
+the addon instead, back to the DOM renderer, and showing the tab tries WebGL again; that
+reload re-joins the shared atlas, so it asks the same recovery for a pass
+(`createGlyphRenderer`'s `onRecovered`). `fitTerminal` sizes the grid to the pane's padded box
 with no width kept for xterm's scrollbar (tmux draws in the alternate screen, so it
 never scrolls, and `shell.css` hides it) and centres the remainder across and down,
 in whole device pixels, like a native terminal's balanced padding. It counts cells
@@ -304,6 +322,22 @@ when a terminal is created and only re-measures on a font change, so
 `terminalTypography()` (`theme.mjs`) hands out the stack without Inconsolata
 until the face has loaded, then notifies the typography listeners with the full
 family, and live terminals re-measure and refit.
+
+**Synchronized output (#1193).** Each keystroke in a program like Claude Code reaches
+a tab as one tmux redraw that hides the cursor, repaints and shows it again; when the
+IPC delivers it in two messages and xterm paints between them, the cursor flashes
+hidden. The local viewer therefore attaches with tmux's `sync` client feature
+(`-T sync`, `local-tmux-io.mjs`, where `tmux -V` says 3.2 or later; 3.0 and 3.1 have no
+`-T`, and an unreadable version means none), so tmux wraps each redraw in DEC mode 2026
+(`ESC[?2026h` … `ESC[?2026l`); a remote tab gets the same from the remote oats's
+viewer. xterm 5.5 ignores the mode, so each lease's output goes through a gate
+(`terminal-sync.mjs`) that holds a block and writes it to xterm in one call, however
+the messages split it, the 8-byte sequences included. Everything outside a block is
+written at once and unchanged (only a trailing prefix of `ESC[?2026h` waits for the
+next message), and a block whose end never comes is written after 1000 ms, the bound
+xterm 6 and tmux use. A lease that ends writes what its gate holds before the tab shows
+it ended or reconnecting, and a close writes it before the terminal is disposed. xterm
+6 honours mode 2026 itself: upgrading to it retires the gate.
 
 ### Control rules (selection, focus, search fields)
 
@@ -1203,7 +1237,7 @@ The keymap, its per-platform defaults, the terminal policy, the F6 regions and
 the keyboard audit are documented in `../docs/desktop-keyboard.md`; this
 section is the module map.
 
-- **Mod+F** reveals the sidebar and focuses the instance filter; **⌘N /
+- **⌘F / Ctrl+Shift+F** reveals the sidebar and focuses the instance filter; **⌘N /
   Ctrl+Shift+N** opens Workspace's soul chooser, never automatically spawning
   an instance. Visible hints and tooltips follow the effective bindings
   (including explicit unbinds). Existing user overrides are retained.
@@ -1224,9 +1258,10 @@ section is the module map.
   policy (a default chord never takes a key a terminal program reads):
   inside `.xterm`, on macOS only ⌘-resolved chords fire, plus Ctrl+Tab for
   tabs.next/prev; on Linux/Windows only `TERMINAL_ALLOWLIST` action ids may
-  fire (their defaults are Ctrl+Shift+key or Ctrl+Tab) — plain Ctrl+letter,
-  F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached program, and
-  `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
+  fire (a default xterm sends nothing for, or a byte the program still gets
+  from a plainer key; `test/terminal-xterm-bytes.test.mjs` pins each) —
+  plain Ctrl+letter, F6, Alt+digit and Ctrl+PgUp/PgDn belong to the attached
+  program, and `focus.leaveTerminal` (Mod+Shift+F6) is the way out. `keymapConflicts`
   lists clashes that involve a stored rebind; the shell marks the footer
   shortcuts button and the editor names them. `app.quickOpenSouls` (Mod+P) is
   deliberately NOT allowlisted: ⌘P fires inside xterm on macOS via the
@@ -1320,6 +1355,13 @@ error in Details. While one of its actions runs, the menu trigger is
 and Retire never run from the menu: they open the plan-backed confirmation
 (`lifecycle-dialog.mjs`, phases in
 [desktop-lifecycle-confirmations.md](../docs/desktop-lifecycle-confirmations.md#ui-states)).
+The one exception to "a `blocked` row has no menu" is the Desktop's own (#1131): a
+row whose reason is `missing` (its host no longer lists it) keeps its trigger and offers
+**Forget…** alone when the shell passes `openForget`. Forget… never runs from the menu
+either: it opens `forget-dialog.mjs`, the lifecycle dialog's classes and focus handling
+with no plan, which sends `{server, instance}` once to `/api/server-forget`
+(`../server/server-forget.mjs`), which answers the outcome and starts the roster read after the command; the row leaves the roster when that read lands
+([desktop-deployment-model.md](../docs/desktop-deployment-model.md#remote-rows)).
 
 `choice-popup.mjs` owns the existing provider/model popup behavior. Model search
 is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**
@@ -1398,8 +1440,8 @@ inspector fallback.
 
 There is no status bar under the editor groups. After the tabs the editor tab bar
 holds only the two split buttons (spec F). The instance panel has no tab-bar
-button: `panel.toggle` (default **Mod+I**, not terminal-allowlisted, so
-Ctrl+I, the Tab byte, stays with the program in a Linux/Windows terminal), the palette's
+button: `panel.toggle` (default **⌘I / Ctrl+Shift+I**, terminal-allowlisted;
+plain Ctrl+I, the Tab byte, stays with the program in a Linux/Windows terminal), the palette's
 "Instance panel: show / hide" and the panel's own collapse/expand controls run
 it. **Focus mode**
 (`app.focusMode`: palette and a rebindable action, no default chord) hides the
@@ -1412,7 +1454,7 @@ Focus that was in the hidden sidebar moves to the active tab's trigger, else to 
 stable visible control (`stableFocusTarget` in `shell.mjs`: the sidebar toggle or
 the restore edge), never `<body>`; a focus-mode change made
 after focus was already lost (the palette removes its input before running the
-command) lands there too. Mod+F and Mod+B leave focus
+command) lands there too. `sidebar.focusFilter` and `sidebar.toggle` leave focus
 mode. Panel collapse and selected tab are session-local per workspace; focus mode
 is a temporary presentation override. Collapsed, the panel is a rail (a 44px column, or a
 34px row when the workbench stacks): the rail centres its controls on its cross

@@ -1,7 +1,7 @@
 // The message contract's parity pin (#552/#553): the kernel's test and this one read the SAME fixture,
 // test/fixtures/waiting-message-parity.json at the repository root, so the kernel's validWaitingMessage and
 // Desktop's waitingMessage are held to the same answers. The list lives only there: never copy it here.
-// Validity is "not null": a withheld note ("[Detail withheld]") is still a valid note, because what this
+// Validity is "not null": a withheld note ("[withheld]") is still a valid note, because what this
 // pins is the kernel's refused set and length rule, not Desktop's own redaction.
 import test from 'node:test';
 import assert from 'node:assert/strict';

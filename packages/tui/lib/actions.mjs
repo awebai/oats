@@ -2,6 +2,8 @@
 // both read it, so the help cannot name a key the program does not act on. `keys` are key ids
 // (term/keys.mjs keyId); they are the part a user's tui.json replaces (config.mjs), so everything
 // that acts on a key or names one reads the EFFECTIVE table it is handed, never this constant.
+// An action that does one thing in the list of instances and another in the switcher (`open`)
+// says so in `views`: what it does in each, in the order the help lists them.
 export const ACTIONS = Object.freeze([
   { id: "up", keys: ["up", "k"], label: "up" },
   { id: "down", keys: ["down", "j"], label: "down" },
@@ -16,13 +18,13 @@ export const ACTIONS = Object.freeze([
   { id: "refresh", keys: ["r"], label: "refresh" },
   { id: "instances", keys: ["1"], label: "instances" },
   { id: "workspaces", keys: ["w"], label: "workspaces" },
-  { id: "open-workspace", keys: ["enter"], label: "open" },
+  { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"]] },
   { id: "help", keys: ["?"], label: "help" },
   { id: "close", keys: ["escape"], label: "close" },
   { id: "quit", keys: ["q", "ctrl+c"], label: "quit" },
   { id: "suspend", keys: ["ctrl+z"], label: "suspend" },
   { id: "redraw", keys: ["ctrl+l"], label: "redraw" },
-].map((action) => Object.freeze({ ...action, keys: Object.freeze([...action.keys]) })));
+].map((action) => Object.freeze({ ...action, keys: Object.freeze([...action.keys]), ...(action.views ? { views: Object.freeze(action.views.map((view) => Object.freeze([...view]))) } : {}) })));
 
 /** key id -> action id. A key bound twice is a defect of the table, refused when it is read. */
 export function bindings(actions = ACTIONS) {

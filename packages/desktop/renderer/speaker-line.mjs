@@ -10,7 +10,7 @@
  * through it: a row's `runtimeError`, a kept failure's message, and a reason's sentence when the reason
  * carries an `origin` (`reasonLine`). The lead stands in front only when `origin` names
  * one of the three speakers and there is a line to introduce: a text the filter withholds reads
- * "[Detail withheld]" alone, and a text with nothing to show answers null, so the caller says what it said
+ * "[withheld]" alone, and a text with nothing to show answers null, so the caller says what it said
  * before for a row without a text. A text with no origin is shown without a lead, as the Desktop's own
  * words always were, and never under "OATS says:".
  *
@@ -27,7 +27,7 @@ import { rowReason } from '../../client/remote-address.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
 
 /** The two parts of the line, for a place that sets them in a sentence of its own: `line` the text as one
- * display line (null, or "[Detail withheld]"), `lead` the speaker's words, null when there is no speaker
+ * display line (null, or "[withheld]"), `lead` the speaker's words, null when there is no speaker
  * or no line for them to introduce. */
 export function speakerParts(origin, text) {
   const line = displayLine(text);

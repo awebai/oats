@@ -164,7 +164,9 @@ test("a spawn job whose instance's record cannot be read stays unknown", async (
   assert.deepEqual([c[0].action, c[0].reason], ["skipped", "still running"]);
   const lr = lastRun(fx);
   assert.equal(lr.outcome, "unknown");
-  assert.match(lr.error, /cannot read session receipt/);
+  // The record is named by its path, not called the receipt (#1092).
+  assert.match(lr.error, /^cannot read \S*\/instance\.json: Expected property name/);
+  assert.doesNotMatch(lr.error, /receipt/);
 });
 
 test("retiring a stopped instance frees its job: ended, the slot released, and the next due minute launches", async (t) => {

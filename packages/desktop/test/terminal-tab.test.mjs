@@ -473,3 +473,139 @@ test("losing intent does not dispose a pending attachment; subsequent explicit i
   await tab.close(); tab.focus();
   assert.equal(d.log.filter(x => x === "focus").length, 1, "closed input stays unfocused even with an owner");
 });
+
+// ── Synchronized output (#1193) ───────────────────────────────────────────
+// tmux wraps each redraw in ESC[?2026h … ESC[?2026l; the tab's per-lease gate
+// (terminal-sync.mjs) writes a block to xterm in one call however the IPC split
+// it, and a lease that ends lands its held bytes before the tab shows it ended.
+import { SYNC_BEGIN, SYNC_END } from "../renderer/terminal-sync.mjs";
+
+const REDRAW = `${SYNC_BEGIN}\x1b[?25l\x1b[23;3H> typed\x1b[K\x1b[?25h\x1b[23;10H${SYNC_END}`;
+const HALF = REDRAW.slice(0, 20);
+
+/** Timers fire only when advanced. */
+function syncClock() {
+  let now = 1_000_000, next = 1;
+  const timers = new Map();
+  return {
+    now: () => now,
+    setTimeout: (fn, ms) => { const id = next++; timers.set(id, { at: now + Math.max(0, ms), fn }); return id; },
+    clearTimeout: id => { timers.delete(id); },
+    pending: () => timers.size,
+    async advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        const due = [...timers].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        now = Math.max(now, due[1].at); timers.delete(due[0]); due[1].fn(); await new Promise(setImmediate);
+      }
+      now = end; await new Promise(setImmediate);
+    },
+  };
+}
+
+/** A tab whose output and exits are driven by lease id; every xterm write records the tab's state then. */
+function syncRig(extra = {}, d = makeDoubles(Promise.resolve(7))) {
+  const clock = syncClock(), data = new Map(), exits = new Map(), writes = [];
+  d.desk.onTermData = (h, fn) => { data.set(h.id, fn); return () => { if (data.get(h.id) === fn) data.delete(h.id); }; };
+  d.desk.onTermExit = (h, fn) => { exits.set(h.id, fn); return () => {}; };
+  d.term.options = {};
+  d.term.write = text => {
+    assert.ok(!d.log.includes("term.dispose"), "no write after the terminal is disposed");
+    writes.push({ text, banner: d.wrap.querySelector(".term-banner")?.textContent ?? null,
+      strip: Boolean(d.wrap.querySelector(".term-reconnect")) });
+    d.log.push("term.write");
+  };
+  const tab = mk(d, { clock, ...extra });
+  return { d, clock, tab, writes, output: (id, text) => data.get(id)?.(text),
+    exit: (id, more = {}) => exits.get(id)({ terminalApi: 2, status: "ended", handle: handle(id), cleanupPending: false, ...more }) };
+}
+
+test("sync: a block delivered in two messages is one term.write; plain output is written at once", async () => {
+  const r = syncRig();
+  await r.tab.start();
+  r.output(7, "plain");
+  assert.deepEqual(r.writes.map(w => w.text), ["plain"]);
+  r.output(7, HALF);
+  assert.deepEqual(r.writes.map(w => w.text), ["plain"], "held until its end");
+  r.output(7, REDRAW.slice(HALF.length));
+  assert.deepEqual(r.writes.map(w => w.text), ["plain", REDRAW]);
+  assert.equal(r.clock.pending(), 0);
+  await r.tab.close();
+});
+
+test("sync: an unfinished block reaches xterm at the bound", async () => {
+  const r = syncRig();
+  await r.tab.start();
+  r.output(7, HALF);
+  await r.clock.advance(999); assert.deepEqual(r.writes, []);
+  await r.clock.advance(1); assert.deepEqual(r.writes.map(w => w.text), [HALF]);
+  await r.tab.close();
+});
+
+test("sync: a lease that exits mid-block writes the held bytes before the ended banner, and leaves no timer", async () => {
+  const r = syncRig();
+  await r.tab.start();
+  r.output(7, HALF);
+  r.exit(7);
+  assert.deepEqual(r.writes, [{ text: HALF, banner: null, strip: false }], "flushed before the banner");
+  assert.match(r.d.wrap.querySelector(".term-banner").textContent, /session ended/);
+  assert.equal(r.clock.pending(), 0);
+  await r.tab.close();
+  assert.equal(r.writes.length, 1);
+});
+
+test("sync: close mid-block writes the held bytes before the terminal is disposed; nothing after; no timer", async () => {
+  const r = syncRig();
+  await r.tab.start();
+  r.output(7, HALF);
+  const closing = r.tab.close();
+  r.output(7, REDRAW.slice(HALF.length));
+  await closing;
+  assert.deepEqual(r.writes.map(w => w.text), [HALF], "the held half once, then nothing for a closed tab");
+  assert.ok(r.d.log.indexOf("term.write") < r.d.log.indexOf("term.dispose"));
+  assert.equal(r.clock.pending(), 0);
+});
+
+test("sync: a close that stays pending keeps showing the held bytes and arms no timer", async () => {
+  const r = syncRig();
+  r.d.desk.termClose = () => terminalFailure("E_TERM_CLOSE_PENDING");
+  await r.tab.start();
+  r.output(7, HALF);
+  assert.equal((await r.tab.close()).ok, false);
+  r.output(7, `${SYNC_BEGIN}late`);
+  assert.deepEqual(r.writes.map(w => w.text), [HALF]);
+  assert.equal(r.clock.pending(), 0, "no timer outlives the closing tab");
+});
+
+test("sync: a ready failure mid-block writes the held bytes before its banner", async () => {
+  const d = makeDoubles(Promise.resolve(7)), acknowledged = deferred();
+  d.desk.termReady = () => acknowledged.promise;
+  const r = syncRig({}, d), starting = r.tab.start();
+  await new Promise(setImmediate);
+  r.output(7, HALF);
+  acknowledged.resolve(terminalFailure("E_TERM_READY_TIMEOUT")); await starting;
+  assert.deepEqual(r.writes, [{ text: HALF, banner: null, strip: false }]);
+  assert.equal(r.d.wrap.querySelector(".term-banner").textContent, "terminal did not become ready; closed");
+  assert.equal(r.clock.pending(), 0);
+  await r.tab.close();
+});
+
+test("sync: a reconnect mid-block writes the old lease's held bytes first; the new lease has a fresh gate", async () => {
+  const d = makeDoubles(Promise.resolve(7));
+  let lease = 0;
+  d.desk.termOpen = async () => opened(++lease);
+  const r = syncRig({ remote: { serverId: "build", instance: "dev", home: "/srv/dev" }, serverLabel: "Build box", tmux: undefined }, d);
+  await r.tab.start();
+  r.output(1, HALF);
+  r.exit(1, { exitCode: 255, reason: null });
+  assert.deepEqual(r.writes, [{ text: HALF, banner: null, strip: false }], "before the disconnected strip");
+  assert.ok(r.d.wrap.querySelector(".term-reconnect"), "the strip shows after");
+  await r.clock.advance(1000);
+  assert.equal(lease, 2, "reconnected");
+  r.output(1, REDRAW.slice(HALF.length));
+  r.output(2, "\x1b[?20"); r.output(2, `26h${REDRAW.slice(SYNC_BEGIN.length)}`);
+  assert.deepEqual(r.writes.map(w => w.text), [HALF, REDRAW], "the old lease's rest is not written; the new lease's block is whole");
+  assert.equal(r.clock.pending(), 0);
+  await r.tab.close();
+});
