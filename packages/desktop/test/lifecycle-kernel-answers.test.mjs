@@ -11,6 +11,7 @@ import { JSDOM } from 'jsdom';
 import { createLifecycleDialog } from '../renderer/lifecycle-dialog.mjs';
 import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../../client/instance-lifecycle.mjs';
 import { lifecycleReason, lifecycleDetailCode, undescribedAnswer, undescribedRefusal, stoppedTargets } from '../../client/lifecycle-contract.mjs';
+import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { cliLifecycle } from '../../client/lifecycle-cli.mjs';
 import { LIFECYCLE_FORBIDDEN_FRAME, lifecycleFrameRefusal } from '../renderer/lifecycle-frame.mjs';
@@ -101,7 +102,7 @@ test("a kernel's error answer whose code has no sentence keeps its own code unde
     }
     // No message, or nothing to show: the code and the sentence alone. A message that looks like a credential: withheld whole.
     for (const none of [undefined, null, '', ' \n\t ', 7]) assert.deepEqual((await replies(context(), 'retire', { answer: answered(code, none) })).applied.cause, { code, message: UNDESCRIBED }, String(none));
-    assert.deepEqual((await replies(context(), 'retire', { answer: answered(code, 'see token=abc123') })).applied.cause, { code, message: UNDESCRIBED, detail: '[Detail withheld]' });
+    assert.deepEqual((await replies(context(), 'retire', { answer: answered(code, 'see token=abc123') })).applied.cause, { code, message: UNDESCRIBED, detail: DETAIL_WITHHELD });
   }
 });
 
@@ -340,7 +341,7 @@ test("E_UNIDENTIFIED_INSTANCE_HOME at each place the kernel raises it for a Stop
   }
   // A message the display filter withholds, and no message: Details as for any other code with its own sentence.
   const withheld = await createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: kernel('retire', 'plan', `${home}/instance.json cannot be read (token=abc123)`) })({ action: 'plan', operation: 'retire', selector: selectorOf(context()), options: optionsOf('retire') }, context);
-  assert.deepEqual(withheld.reason, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME, detail: '[Detail withheld]' });
+  assert.deepEqual(withheld.reason, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME, detail: DETAIL_WITHHELD });
   const silent = await createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: kernel('retire', 'plan', undefined) })({ action: 'plan', operation: 'retire', selector: selectorOf(context()), options: optionsOf('retire') }, context);
   assert.deepEqual(silent.reason, { code: 'E_UNIDENTIFIED_INSTANCE_HOME', message: UNREADABLE_HOME });
   // An envelope that does not say the kernel answered carries no detail, as for every code: the sentence alone.

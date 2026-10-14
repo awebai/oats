@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createLifecycleBoundary, BEFORE_EFFECT_CODES } from '../../client/instance-lifecycle.mjs';
 import { cliLifecycle, lifecycleArgv } from '../../client/lifecycle-cli.mjs';
 import { lifecycleOptions, lifecyclePlan, lifecycleReceipt, publicLifecycleReceipt, lifecycleReason, lifecycleDetailCode } from '../../client/lifecycle-contract.mjs';
-import { displayLine } from '../../client/display-text.mjs';
+import { displayLine, DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { discover } from '../../client/cli-locator.mjs';
 import { cli, target, instance, context, request, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options, deferred, tick } from './helpers/lifecycle-fixture.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
@@ -34,7 +34,7 @@ test('positive feature/API gate precedes EVERY plan command, never version-only 
 });
 test('locator preserves only the exact lifecycleApi integer', async () => {
   for (const value of [1, true, '1', 2, undefined]) {
-    const found = await discover({ env: { PATH: '/bin' }, isExecutableFile: () => true }, async () => ({ stdout: JSON.stringify({ schemaVersion: 1, name: '@awebai/oats', desktopApi: 1, version: '0.25.8', features: ['lifecycle-plans'], lifecycleApi: value }) }));
+    const found = await discover({ env: { PATH: '/bin' }, isExecutableFile: () => true }, async () => ({ stdout: JSON.stringify({ schemaVersion: 1, name: '@awebai/oats', desktopApi: 1, version: '0.26.0', features: ['lifecycle-plans'], lifecycleApi: value }) }));
     assert.equal(found.lifecycleApi, value === 1 ? 1 : undefined);
   }
 });
@@ -140,7 +140,7 @@ test("a local refusal's detail is withheld whole when the message looks like a c
     return (await f.apply((await f.plan('retire')).planRef)).cause;
   };
   const fixed = lifecycleReason('E_WORK_INSPECTION_FAILED', DESKTOP_TERMS);
-  assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: 'could not read the work root\ntoken=abc123' }), { ...fixed, detail: '[Detail withheld]' });
+  assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: 'could not read the work root\ntoken=abc123' }), { ...fixed, detail: DETAIL_WITHHELD });
   for (const none of [undefined, null, '', ' \n\t ', 7, { text: 'not a string' }]) assert.deepEqual(await cause({ code: 'E_WORK_INSPECTION_FAILED', message: none }), fixed, JSON.stringify(none));
 });
 test("a failure Desktop raises itself never carries a detail, whatever the envelope holds; a code without its own sentence keeps the fixed reply unless the kernel answered it", async () => {

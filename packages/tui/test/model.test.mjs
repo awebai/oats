@@ -2093,3 +2093,20 @@ test("each of the three leads is ASCII whole, and joined to a line by one space 
   }
   assert.deepEqual(met, { whole: 3 * (texts.length - 2 - 5 - 2), cut: 3 * 2, withheld: 5, nothing: 2 }, "every kind of text was among them");
 });
+
+test("a text that is the stand-in sentence with a space after it, on a row with no mark whose reason is the stand-in, stands in quotation marks: the two are compared as given (a row made by hand, #1085's review)", () => {
+  // Made by hand (helpers.mjs `observed` hands the collector's answers over as they are): the row
+  // carries no speaker's mark, and its session target is a backend OATS no longer has, so its
+  // reason is the shared home's stand-in, which carries no origin. The stand-in is read from that
+  // reason, never written out here.
+  const herdr = (runtimeError) => stateOf(observed([instanceRow("dev", "dev-herdr", { ...STOPPED, sessionTarget: "herdr:1", runtimeError })]));
+  const reasonOf = (state) => instanceActs(roster(state).instances[0]).acts.find((act) => act.verb === "start").reason;
+  const stem = reasonOf(herdr(undefined)).sentence;
+  const factsOf = (state) => view(press(state, ["j"]).state).detail.facts.filter((fact) => fact.label === "").map((fact) => fact.value);
+  const spaced = herdr(`${stem} `), row = roster(spaced).instances[0];
+  assert.equal(row.runtimeErrorOrigin, undefined, "no mark");
+  assert.deepEqual([reasonOf(spaced).sentence, reasonOf(spaced).origin], [stem, undefined], "the reason is the stand-in, the shared home's own");
+  assert.equal(displayLine(row.runtimeError), displayLine(stem), "filtered, the two are one line");
+  assert.deepEqual(factsOf(spaced), [`"${stem}"`], "compared as given they differ: the text is vouched for by nobody");
+  assert.deepEqual(factsOf(herdr(stem)), [stem], "the stand-in itself, as given, is the shared home's and stands as written");
+});

@@ -110,7 +110,7 @@ test('the branch and the reason are shown through displayLine, as text', async t
   assert.equal(u.doc.querySelector('.lifecycle-result b'), null);
   const v = mount(t, { apply: compensated({ branch: 'agents/dev-1', branchDeleted: false, reason: 'see https://user:pw@host/x' }) });
   await v.retire();
-  assert.ok(v.lines().includes('Branch agents/dev-1 kept: [Detail withheld]'), v.lines().join('|'));
+  assert.ok(v.lines().includes('Branch agents/dev-1 kept: [withheld]'), v.lines().join('|'));
   assert.doesNotMatch(v.doc.body.textContent, /user:pw/);
 });
 

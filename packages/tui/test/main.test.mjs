@@ -2,11 +2,11 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, cliRecord, deploymentState, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, sessionAttachArgv, cliRecord, deploymentState, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
-import { ENTER, LEAVE } from "../lib/term/tty.mjs";
+import { ENTER, LEAVE, LEND_END_GRACE_MS } from "../lib/term/tty.mjs";
 import { CLI, DEPLOYMENT, failed, fakeProcess, fakeStdin, fakeStdout, fakeTimers, instanceRow, modesOf, observed, readTerminalOutput, rosterOf } from "./helpers.mjs";
 
 /** One outcome of the roster read as an event for the store, made as lib/read.mjs `takeRoster`
@@ -27,6 +27,10 @@ function fakeReader(log, options) {
     request(how) { did("request", how); return Promise.resolve(); },
     touch() { did("touch"); },
     voidInFlight() { did("void"); },
+    hold() { did("hold"); },
+    release() { did("release"); },
+    /** The exec the loop hands the shared preflight: the test's fake prepareRemoteTerm only checks it is this one. */
+    exec() { throw new Error("the fake reader starts nothing"); },
     stop() { did("stop"); },
     children: () => [],
     /** A served deployment's answer of a cycle, as lib/read.mjs gives it: every answer under a
@@ -40,7 +44,7 @@ function fakeReader(log, options) {
 }
 /** `oats tui` on a fake terminal: the run, its streams and what it wrote. Everything outside the
  *  terminal (the user's file, the deployment, the kernel, the reader) is the test's own. */
-function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", offered = { offered: [], limited: false }, admit = (path) => ({ ok: true, deployment: path }) } = {}) {
+function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" }, columns = 80, rows = 24, stdinTTY = true, stdoutTTY = true, config = { ok: true, actions: ACTIONS, ascii: false }, deployment = { ok: true, deployment: DEPLOYMENT }, kernel = { ok: true, cli: CLI }, cwd = "/work/here", offered = { offered: [], limited: false }, admit = (path) => ({ ok: true, deployment: path }), prepare = null } = {}) {
   const log = [];
   const stdin = fakeStdin({ log, isTTY: stdinTTY }), stdout = fakeStdout({ log, columns, rows, isTTY: stdoutTTY }), proc = fakeProcess(), timers = fakeTimers();
   const kill = proc.kill;
@@ -49,7 +53,9 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   const stderr = { write(text) { errors.push(text); log.push(["stderr", text]); return true; } };
   let clock = Date.parse("2026-10-11T10:00:30.000Z");
   // `offered`: what ~/Agents holds that the run does not serve; a test may put another answer there.
-  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, tick(ms) { clock += ms; } };
+  // `viewers`: every viewer the run started, each with a way to close it; `preflights`: every
+  // preflight it began, each with what it was handed and a way to answer it.
+  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, viewers: [], preflights: [], tick(ms) { clock += ms; } };
   let up;
   r.up = new Promise((resolve) => { up = resolve; });
   const effects = {
@@ -59,6 +65,21 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     createReader(options) { r.reader = fakeReader(log, options); const start = r.reader.start; r.reader.start = () => { const answer = start(); queueMicrotask(up); return answer; }; return r.reader; },
     offeredDeployments(home, served) { log.push(["effect", "offered", home, [...served]]); return r.offered; },
     admitDeployment(path) { log.push(["effect", "admit", path]); return admit(path); },
+    startViewer(bin, args, options) {
+      log.push(["viewer", "start", bin, [...args]]);
+      let close;
+      const viewer = { bin, args, options, ended: 0, released: 0, closed: new Promise((resolve) => { close = resolve; }) };
+      viewer.close = (status, stderr = "") => { log.push(["viewer", "closed", status]); close({ status, stderr }); };
+      viewer.end = () => { viewer.ended++; log.push(["viewer", "end"]); };
+      viewer.release = () => { viewer.released++; log.push(["viewer", "release"]); };
+      r.viewers.push(viewer);
+      return { closed: viewer.closed, end: viewer.end, release: viewer.release };
+    },
+    prepareRemoteTerm(cli, target, options) {
+      log.push(["preflight", target]);
+      if (prepare) return prepare(cli, target, options);
+      return new Promise((resolve, reject) => { r.preflights.push({ cli, target, options, resolve, reject }); });
+    },
   };
   r.status = main({ argv, stdin, stdout, stderr, env, proc, now: () => clock, setTimer: timers.setTimer, clearTimer: timers.clearTimer, cwd: () => cwd, home: "/home/u", effects });
   r.status.then(up);
@@ -127,15 +148,15 @@ test("the action table binds each key to one action, and a key bound twice is re
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances",
-    w: "workspaces", enter: "open-workspace",
+    w: "workspaces", enter: "open",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
   assert.equal(Object.isFrozen(ACTIONS) && ACTIONS.every((a) => Object.isFrozen(a) && Object.isFrozen(a.keys)), true);
   assert.deepEqual(["?", "q", "escape", "ctrl+c", "shift+tab", "f5", "ctrl+alt+up", "space", "alt+x"].map(keyLabel), ["?", "q", "Esc", "Ctrl+C", "Shift+Tab", "F5", "Ctrl+Alt+Up", "Space", "Alt+X"]);
-  // Enter opens a workspace in the switcher and does nothing else yet: opening an agent is a later
-  // version's. The capitals are that version's acts: none is bound, but for G.
-  assert.equal(bindings(ACTIONS).get("enter"), "open-workspace");
+  // Enter opens the selected agent's terminal in the list and the selected workspace in the
+  // switcher: one action. The capitals are a later version's acts: none is bound, but for G.
+  assert.equal(bindings(ACTIONS).get("enter"), "open");
   assert.deepEqual([...bindings(ACTIONS).keys()].filter((key) => /^[A-Z]$/.test(key)), ["G"]);
 });
 
@@ -233,7 +254,7 @@ test("a path or a reason in those lines is never written raw: a path that is not
   }
   assert.equal(noDeployment("/srv/my deployments/one").includes("/srv/my deployments/one"), true, "a space is plain");
   assert.doesNotMatch(noKernel("not the oats CLI (name: \x1b]0;owned\x07)"), /[\x00-\x1f\x7f-\x9f]/);
-  assert.match(noKernel("not the oats CLI (name: \x1b]0;owned\x07)"), /\(E_TUI_KERNEL\): \[Detail withheld\]$/);
+  assert.match(noKernel("not the oats CLI (name: \x1b]0;owned\x07)"), /\(E_TUI_KERNEL\): \[withheld\]$/);
   assert.match(noKernel("two\nlines"), /: two lines$/);
   assert.match(noKernel(""), /: it gave no reason$/);
 });
@@ -255,8 +276,8 @@ test("a run says it is reading, draws the instances when the reader answers, ope
   assert.match(textOf(r.stdout.take()), /acme-platform.*1 running.*1 stopped.*acme-expert-tui.*claude.*acme-maintainer-ops.*stopped/s);
   assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
-  // The table gained two actions (w and Enter): at 24 rows its first page now ends at Esc.
-  assert.match(textOf(r.stdout.take()), /Keys.*w.*workspaces.*Enter.*open.*Esc.*close.*more below/s);
+  // Enter has a line per view, and rows of its own under the first: at 24 rows its first page ends before Esc.
+  assert.match(textOf(r.stdout.take()), /Keys.*w.*workspaces.*Enter.*open the selected agent's terminal.*more below/s);
   r.stdin.type("G");
   assert.match(textOf(r.stdout.take()), /Not in this version.*oats session attach --home <home>.*closes this help/s, "the movement keys scroll the help to its end");
   r.stdin.type("?");
@@ -575,9 +596,12 @@ test("w opens the switcher: ~/Agents is looked at for the folders this run does 
   assert.deepEqual(effectsOf(r).filter(([which]) => which === "offered"), [], "a run started in a deployment does not look at ~/Agents until it is asked to");
   r.stdout.take();
   r.log.length = 0;
-  // In the list of instances Enter does nothing yet: it opens a workspace, and only in the switcher.
+  // In the list of instances Enter opens the selected agent, here with a kernel record that has no
+  // detach key: it says why not, and starts nothing.
   r.stdin.type("\r");
-  assert.deepEqual([r.stdout.take(), effectsOf(r), readerDid(r)], ["", [], [["touch"]]]);
+  assert.deepEqual([effectsOf(r), readerDid(r)], [[], [["touch"]]]);
+  assert.match(textOf(r.stdout.take()), /This machine's OATS has no key to leave a viewer/);
+  assert.doesNotMatch(screenOf(r), /no key to leave a viewer/, "the next key bound to an action (Ctrl+L) takes the line away");
   r.log.length = 0;
   r.stdin.type("w");
   assert.deepEqual(effectsOf(r), [["offered", "/home/u", [DEPLOYMENT]]], "asked with the deployments the run serves, which it leaves out");
@@ -796,4 +820,207 @@ test("a deployment that could not be observed says why in the shared sentence: t
   r.stdin.type("q");
   assert.equal(await r.status, 0);
   assert.deepEqual(readTerminalOutput(written(r)).foreign, []);
+});
+
+// ── Opening an agent's terminal ─────────────────────────────────────────────────────────────────────
+
+/** A kernel record that opens agents with a detach key, here and on other machines. */
+const KEYED = cliRecord({ version: CLI.version, workspaceApi: CLI.workspaceApi, features: [...CLI.features, DETACH_KEY_FEATURE, "server-probe-features"], remote: ["roster", "session"] }, { bin: CLI.bin, source: "tui" });
+/** The agents' socket the kernel records for this machine's rows: the TUI names it nowhere. */
+const AGENTS_SOCKET = "/tmp/oats-tmux-1000/agents";
+const OPEN_ENTRY = observedAt(DEPLOYMENT, [instanceRow("acme-expert", "acme-expert-tui", { tmux: { session: "oats-agents", window: "acme-expert-tui", socket: AGENTS_SOCKET } })]);
+const KEY_CONFIG = { ok: true, actions: ACTIONS, ascii: false, detachKey: "C-\\" };
+/** A run on a deployment whose one agent runs, with a kernel that has the detach key. */
+async function opening(options = {}) {
+  const r = await started({ kernel: { ok: true, cli: KEYED }, config: KEY_CONFIG, ...options });
+  r.reader.answer(OPEN_ENTRY);
+  r.stdout.take();
+  r.log.length = 0;
+  return r;
+}
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+const HOME = `${DEPLOYMENT}/agents/acme-expert/instances/acme-expert-tui`;
+
+test("Enter on a running agent of this machine: the reads in flight are void and none starts, the terminal is lent to the kernel's viewer, and at its close reads begin again, a live read is asked and one line says what happened", async () => {
+  const r = await opening();
+  r.stdin.type("\r");
+  const [viewer] = r.viewers;
+  assert.deepEqual(viewer && [viewer.bin, viewer.args], [KEYED.bin, sessionAttachArgv(KEYED, { home: HOME }, { detachKey: "C-\\" })], "the kernel's own binary, the shared home's arguments");
+  assert.deepEqual(r.log.filter(([what]) => ["reader", "write", "raw", "viewer"].includes(what)).map(([what, which]) => [what, which === LEAVE ? "LEAVE" : which === ENTER ? "ENTER" : which]), [
+    ["reader", "touch"], ["reader", "void"], ["reader", "hold"], ["write", "LEAVE"], ["raw", false], ["viewer", "start"],
+  ], "reads made void and held before the terminal is handed over; nothing drawn after the leave");
+  assert.equal(r.stdin.paused, true, "the TUI does not read the terminal while the viewer has it");
+  r.log.length = 0;
+  r.stdout.take();
+  r.stdout.resize(100, 30);
+  r.stdin.type("x");
+  assert.deepEqual(r.stdout.take(), "", "nothing is drawn while the viewer has the terminal, a resize included");
+  viewer.close(20);
+  await settle();
+  assert.deepEqual(r.log.filter(([what]) => ["reader", "raw"].includes(what)).map(([what, which, how]) => [what, which, ...(how ? [how] : [])]), [["raw", true], ["reader", "release"], ["reader", "request", { live: true }]]);
+  const after = textOf(r.stdout.take());
+  assert.match(after, /You left acme-expert-tui\. It keeps running\./);
+  assert.equal(r.stdin.paused, false);
+  // The next key bound to an action takes the line away (screenOf presses Ctrl+L).
+  assert.doesNotMatch(screenOf(r), /You left/);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a stray detach key with oats tui in front does nothing and is not shown: the line after the return stays", async () => {
+  const r = await opening();
+  r.stdin.type("\r");
+  r.viewers[0].close(20);
+  await settle();
+  r.stdout.take();
+  r.log.length = 0;
+  r.stdin.type("\x1c\x1c");
+  assert.deepEqual(r.log.filter(([what]) => what === "viewer" || what === "preflight"), [], "nothing is opened");
+  assert.equal(r.stdout.take().includes("\x1c"), false, "not shown");
+  // The whole screen again, by a way that is no key: SIGCONT redraws in full.
+  r.proc.emit("SIGCONT", "SIGCONT");
+  assert.match(textOf(r.stdout.take()), /You left acme-expert-tui\. It keeps running\./, "the line is still there");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("no child the TUI starts for an open is tmux, and the agents' socket is in no argument it builds", async () => {
+  const r = await opening();
+  r.stdin.type("\r");
+  const [viewer] = r.viewers;
+  assert.equal(viewer.bin, KEYED.bin, "the kernel the TUI shipped with");
+  for (const arg of [viewer.bin, ...viewer.args]) {
+    assert.equal(/(^|\/)tmux$/.test(arg) || arg === "tmux", false, arg);
+    assert.equal(arg.includes(AGENTS_SOCKET), false, arg);
+  }
+  viewer.close(20);
+  await settle();
+  r.stdin.type("q");
+  await r.status;
+});
+
+test("SIGTERM while the viewer has the terminal ends the viewer first, then the run once it has closed, with 143; SIGQUIT changes nothing and the key still returns", async () => {
+  const r = await opening();
+  r.stdin.type("\r");
+  r.proc.emit("SIGQUIT", "SIGQUIT");
+  await settle();
+  assert.equal(r.viewers[0].ended, 0, "the viewer handles its own QUIT");
+  r.viewers[0].close(20);
+  await settle();
+  assert.match(textOf(r.stdout.take()), /You left acme-expert-tui/);
+  r.stdin.type("\r");
+  const viewer = r.viewers[1];
+  r.log.length = 0;
+  r.proc.emit("SIGTERM", "SIGTERM");
+  assert.equal(viewer.ended, 1);
+  let over = false;
+  r.status.then(() => { over = true; });
+  await settle();
+  assert.equal(over, false, "the run waits for the viewer");
+  viewer.close(0);
+  assert.equal(await r.status, 143);
+  assert.deepEqual(r.log.filter(([what]) => what === "write" || what === "raw"), [], "nothing more is written to a terminal already restored");
+  assert.equal(readerDid(r).some(([what]) => what === "stop"), true);
+  // A viewer that does not close: the run ends LEND_END_GRACE_MS later.
+  const s = await opening();
+  s.stdin.type("\r");
+  s.proc.emit("SIGHUP", "SIGHUP");
+  assert.equal(s.timers.delays().includes(LEND_END_GRACE_MS), true);
+  assert.equal(s.viewers[0].released, 0, "not let go before the grace is over");
+  s.timers.fire();
+  assert.equal(await s.status, 129);
+  assert.deepEqual([s.viewers[0].ended, s.viewers[0].released], [1, 1], "asked to end, then let go: its handle and its pipe hold the process no longer");
+  assert.equal(viewer.released, 0, "a viewer that closed within the grace is never let go");
+});
+
+/** The fixture's deployment and garnet, whose OATS lists the detach key, with garnet's row selected. */
+async function elsewhere(options = {}) {
+  const far = { ...garnet(), probe: { ok: true, features: [DETACH_KEY_FEATURE] } };
+  const r = await started({ kernel: { ok: true, cli: KEYED }, config: KEY_CONFIG, ...options });
+  r.reader.answer(HOME_ENTRY);
+  r.reader.roster({ envelope: rosterAnswer([far]) });
+  for (let i = 0; i < 6 && !/> +\S+ dev-far/.test(screenOf(r)); i++) r.stdin.type("j");
+  assert.match(screenOf(r), /> +\S+ dev-far/, "garnet's running row is selected");
+  r.stdout.take();
+  r.log.length = 0;
+  return r;
+}
+
+test("Enter on a running agent of another machine: the shared preflight over the reader's exec, with a signal and the key; what it prepared is lent; a failure is said and nothing is lent", async () => {
+  const r = await elsewhere();
+  r.stdin.type("\r");
+  await settle();
+  const [asked] = r.preflights;
+  assert.deepEqual([asked.cli, asked.target, asked.options.exec, asked.options.detachKey, asked.options.signal.aborted], [KEYED, { serverId: "garnet", instance: "dev-far", home: "/srv/acme-platform/agents/dev/instances/dev-far" }, r.reader.exec, "C-\\", false]);
+  assert.match(screenOf(r), /Esc stop opening/);
+  r.stdin.type("\r");
+  await settle();
+  assert.equal(r.preflights.length, 1, "a second Enter does nothing");
+  asked.resolve({ binary: KEYED.bin, args: ["session", "attach", "--server", "garnet", "--home", asked.target.home, "--detach-key", "C-\\"] });
+  await settle();
+  assert.deepEqual(r.viewers.map((v) => [v.bin, v.args.slice(0, 4)]), [[KEYED.bin, ["session", "attach", "--server", "garnet"]]]);
+  r.viewers[0].close(255, "Connection to garnet.example closed by remote host.\n");
+  await settle();
+  assert.match(textOf(r.stdout.take()), /The connection to garnet ended\.[\s\S]*"Connection to garnet\.example closed by remote host\."/);
+
+  r.stdin.type("\r");
+  await settle();
+  r.preflights[1].reject(Object.assign(new Error("remote session inspection timed out"), { code: "E_TERM_PREPARE_TIMEOUT" }));
+  await settle();
+  assert.equal(r.viewers.length, 1, "nothing is lent");
+  assert.match(textOf(r.stdout.take()), /Terminal preparation timed out\./);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("Esc during a preflight gives it up through its signal, and what it answers afterwards is dropped; a suspend gives it up first, with nothing said", async () => {
+  const r = await elsewhere();
+  r.stdin.type("\r");
+  await settle();
+  r.stdin.type("\x1b");
+  r.tick(50); // the parser's wait for what may follow ESC
+  r.timers.fire();
+  await settle();
+  assert.equal(r.preflights[0].options.signal.aborted, true);
+  r.preflights[0].resolve({ binary: KEYED.bin, args: [] });
+  await settle();
+  assert.deepEqual(r.viewers, [], "given up: nothing lent");
+  assert.doesNotMatch(screenOf(r), /Esc stop opening/);
+
+  r.stdin.type("\r");
+  await settle();
+  r.log.length = 0;
+  r.stdin.type("\x1a"); // Ctrl+Z
+  assert.equal(r.preflights[1].options.signal.aborted, true, "aborted before the reads are dropped and the process stops");
+  assert.deepEqual(r.log.filter(([what, which]) => what === "reader" && which === "void" || what === "kill").map(([what]) => what), ["reader", "kill"]);
+  r.proc.emit("SIGCONT", "SIGCONT");
+  const failure = Object.assign(new Error("Terminal context changed"), { code: "E_TERM_CONTEXT_CHANGED" });
+  r.preflights[1].reject(failure);
+  await settle();
+  const screen = screenOf(r);
+  assert.doesNotMatch(screen, /Esc stop opening|could not|timed out/, "nothing is said");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("keys that came in one chunk with the Enter that lent the terminal do nothing: a q or a Ctrl+C behind it does not end the run under a live viewer, a ? opens no help, and the key that returns brings the TUI back to its own keys (round 1 of the review)", async () => {
+  for (const behind of ["q", "\x03", "?", "w", "\x1b"]) {
+    const r = await opening();
+    let over = false;
+    r.status.then(() => { over = true; });
+    r.stdin.type(`\r${behind}`);
+    r.tick(50); // an ESC behind it would be the Esc key once nothing followed it
+    r.timers.fire();
+    await settle();
+    const [viewer] = r.viewers;
+    assert.equal(r.viewers.length, 1, JSON.stringify(behind));
+    assert.deepEqual([over, viewer.ended], [false, 0], `${JSON.stringify(behind)}: the run goes on and the viewer is not ended`);
+    viewer.close(20);
+    await settle();
+    const after = textOf(r.stdout.take());
+    assert.match(after, /You left acme-expert-tui\. It keeps running\./, JSON.stringify(behind));
+    assert.doesNotMatch(after, /oats\s+workspaces|Keys/, `${JSON.stringify(behind)}: no other view was opened`);
+    r.stdin.type("q");
+    assert.equal(await r.status, 0, JSON.stringify(behind));
+  }
 });

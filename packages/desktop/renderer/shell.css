@@ -259,9 +259,11 @@ body {
 .start-launch-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .start-status { min-height: 1.5em; }
 /* A start that stopped at a launch prompt: under the status, what the screen differed in (launch-differed.mjs),
-   then the kernel's own message, attributed. */
-.start-outcome { display: grid; gap: 10px; margin: 0 0 4px; min-width: 0; }
-.start-outcome[hidden] { display: none; }
+   then the kernel's own message, attributed. A start the kernel refused, where the status is the Desktop's own
+   sentence: the kernel's message, attributed. The same under the launch fields' status for a refused preview
+   (.launch-config-said). */
+.start-outcome, .launch-config-said { display: grid; gap: 10px; margin: 0 0 4px; min-width: 0; }
+.start-outcome[hidden], .launch-config-said[hidden] { display: none; }
 .instance-start-dialog .start-kernel-says { margin: 0; font-size: 12px; color: var(--muted); }
 .start-launch-controls[hidden], .start-configurations[hidden], .launch-preview-output[hidden] { display: none; }
 .launch-config-fields { margin-top: 16px; }
@@ -605,6 +607,9 @@ body {
 .palette-group + .palette-group, .palette-group + .palette-item { margin-top: 14px; }
 .palette-item.context { cursor: default; color: var(--muted); }
 .palette-item.context .plabel { font-weight: 400; }
+/* A Recent row is flat, so its relation context is shown as quiet text beside the name (Spec C). */
+.palette-item .punder { color: var(--muted); font-size: 11.5px; flex: none; max-width: 30%;
+                        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── keyboard shortcuts editor (⌘,) ── */
 .kb-editor {

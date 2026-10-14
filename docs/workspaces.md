@@ -55,7 +55,7 @@ members:                                   # repo refs, NO @revision (E_WORKSPAC
 
 packages:                                  # the ONLY versioned things
   oats.framework: v1.10.0                  # bare version → resolves through the official catalog
-  oats.okf: v5.0.5
+  oats.okf: v5.1.0
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
 teams:                                     # SHARED teams: the same provider team for everyone
@@ -314,6 +314,16 @@ An unconfirmed member contributes nothing but its row: its souls are invisible,
 its capabilities unresolvable (`E_NOT_A_MEMBER` / `E_MEMBERSHIP_UNCONFIRMED`).
 Reading the workspace repo *is* being in the workspace — a workspace's access
 control is Git's.
+
+**Git version failures preserve the remote cache.** Partial caches need Git
+2.45 or later. A successfully parsed older version causes OATS to rebuild a
+partial cache with whole trees. If the version command fails, times out or
+returns an unparseable version, the read instead fails with
+`E_REMOTE_UNREADABLE` and an existing reason (`unknown` for unparseable
+output, `timeout` for a timeout). The partial cache, its fetch mode and its
+commit pins are preserved, and a later read can retry the version probe.
+This also applies to library reads without a session. A cache already using
+whole trees stays in that mode when a later probe finds a newer Git.
 
 **Repo-owned capabilities.** `private: true` in a capability's `oats.json`
 makes it **repo-owned**: it is listed like any other capability (with

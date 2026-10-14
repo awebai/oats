@@ -13,7 +13,7 @@
 // Every candidate is canonicalized to an absolute executable and accepted
 // ONLY if executable and `<bin> version --json` returns the v1 probe:
 //   {"schemaVersion":1,"name":"@awebai/oats","version":"0.24.x","desktopApi":1}
-// Desktop accepts desktopApi === 1 and semver >=0.25.8 <0.56.0 (the band is
+// Desktop accepts desktopApi === 1 and semver >=0.26.0 <0.56.0 (the band is
 // spelled ONCE, in ACCEPT_RANGE below — this line only paraphrases it).
 // API version — not source adjacency — is authoritative.
 //
@@ -44,17 +44,15 @@ export const DESKTOP_API = 1;
 // surface (`version --json` probe, `spawn --json`, the retained lifecycle
 // verbs — test/cli-json-contract.test.mjs) is unchanged; the removed verbs
 // (`catalog`, install/use/…) surface as typed E_USAGE through the adapter.
-// Widened through 0.26.x for package-approval removal (F2b, maintainer
-// decision): the floor is 0.25.8 — not 0.26.0 — because main's kernel keeps
-// reporting 0.25.8 until 0.26.0 is tagged, and the Desktop must run against
-// it. The REAL gate is the positive `packages-no-approval` feature fence
-// (workspace-cli WORKSPACE_FEATURES, deployment-contract DEPLOYMENT_FEATURES):
-// released 0.25.x kernels lack it and get the "update OATS" state.
+// Widened through 0.26.x for package-approval removal (F2b). The floor is
+// the first kernel the Desktop's feature gates let through (workspace-cli
+// WORKSPACE_FEATURES, deployment-contract DEPLOYMENT_FEATURES); those gates
+// stay the REAL gate.
 // Widened through 0.43.x for the 0.43.0 release: schedule and trigger rows
 // carry a `description` for every kind and `<kind> update <id> --description`
 // sets one (feature `automation-descriptions`, which gates the Desktop's
 // summary writes). The Desktop v1 surface is otherwise unchanged.
-export const ACCEPT_RANGE = { min: [0, 25, 8], maxExclusive: [0, 56, 0] };
+export const ACCEPT_RANGE = { min: [0, 26, 0], maxExclusive: [0, 56, 0] };
 /** The band as humans read it — derived, never hand-spelled, so the probe
  * rejection reason, the backend's /api status and the degradation card can
  * never disagree with the numbers actually enforced above. */
@@ -109,7 +107,10 @@ export function parseSemver(v) {
 }
 const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
-/** Accept/reject one probe payload. Returns { ok } or { ok:false, reason }. */
+/** Accept/reject one probe payload. Returns { ok } or { ok:false, reason }, and { ok:false, reason, above:true }
+ * when the payload's sole failure is a released version at or above the band's ceiling: every other check
+ * passed first, so a prerelease, an unparsable version or another API is never `above`. A Desktop older than
+ * its CLI says so from this flag (views/cli-status.mjs), never from the reason's words. */
 export function acceptProbe(payload) {
   if (!payload || typeof payload !== "object") return { ok: false, reason: "no probe payload" };
   if (payload.schemaVersion !== 1) return { ok: false, reason: `unexpected schemaVersion ${payload.schemaVersion}` };
@@ -122,9 +123,8 @@ export function acceptProbe(payload) {
   // in-range version is not a released CLI — Desktop pairs with released
   // kernels only.
   if (v.prerelease) return { ok: false, reason: `prerelease version ${payload.version} not accepted (need a released ${ACCEPT_RANGE_TEXT})` };
-  if (cmp(v.nums, ACCEPT_RANGE.min) < 0 || cmp(v.nums, ACCEPT_RANGE.maxExclusive) >= 0) {
-    return { ok: false, reason: `version ${payload.version} outside ${ACCEPT_RANGE_TEXT}` };
-  }
+  if (cmp(v.nums, ACCEPT_RANGE.maxExclusive) >= 0) return { ok: false, reason: `version ${payload.version} outside ${ACCEPT_RANGE_TEXT}`, above: true };
+  if (cmp(v.nums, ACCEPT_RANGE.min) < 0) return { ok: false, reason: `version ${payload.version} outside ${ACCEPT_RANGE_TEXT}` };
   return { ok: true };
 }
 
@@ -211,7 +211,9 @@ export function cliRecord(payload, { bin, source }) {
  * evaluated lazily: expensive helpers never run once a candidate wins.
  * Returns:
  *   { ok:true,  bin, source, version }
- *   { ok:false, tried: [{path, source, reason}] }   — stable diagnostics
+ *   { ok:false, tried: [{path, source, reason}] }   — stable diagnostics; an entry whose probe was
+ *                                                    refused only for being above the band also has
+ *                                                    `version` and `above: true` (acceptProbe)
  */
 export async function discover(io, probe) {
   const tried = [];
@@ -238,7 +240,7 @@ export async function discover(io, probe) {
       }
       const a = acceptProbe(payload);
       if (a.ok) return cliRecord(payload, { bin: path, source: src.source });
-      tried.push({ path, source: src.source, reason: a.reason, version: payload?.version });
+      tried.push({ path, source: src.source, reason: a.reason, version: payload?.version, ...(a.above === true ? { above: true } : {}) });
     }
   }
   return { ok: false, tried };

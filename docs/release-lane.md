@@ -251,6 +251,16 @@ module's number follows the runner that builds it: the symbols it needs at
 2.34 are the ones a module gets when it is built on a system whose glibc is
 2.34 or later.
 
+**The build now holds that number.** `docs/desktop.md` states it (glibc 2.34)
+and `packages/desktop/scripts/linux-floor.json` holds it with libstdc++'s
+`GLIBCXX` and `CXXABI` (`packages/desktop/test/linux-floor.test.mjs` keeps the
+two equal). On the Linux leg of both workflows, `dist:smoke` unpacks the DEB
+and the AppImage (its runtime and the libraries it adds included), reads the
+version-needs table of every ELF file with `readelf -V -W`, and fails naming
+each file that needs a newer version than the floor. A move of the runner, a
+new `node-pty` or a new Electron that raises it is then a pull request that
+changes that file and the page together.
+
 ## Release-notes entries
 
 A release ships one notes file, `docs/release-notes/v<version>.md`. Between
@@ -332,6 +342,17 @@ node scripts/assemble-release-notes.mjs --tag v0.54.0
   file, which `test/release-packaging.test.mjs` requires for the version the
   manifests carry. The release-prep pull request runs it again for the
   entries merged since, which go after the earlier ones.
+- **The Upgrade section opens with the order of the Desktop and the CLI.**
+  The tag owner writes it in the release-prep pull request, for every
+  release, from `ACCEPT_RANGE` in `packages/client/cli-locator.mjs`:
+  - when the release moves the range's upper bound (a new minor), the first
+    Upgrade line says to install the Desktop first and the CLI second,
+    because the previous Desktop refuses this CLI ([Upgrading](upgrading.md));
+  - when the range already admits the new version (a patch), it says that
+    either order works.
+
+  No entry file writes this line: only the tag owner knows the release's
+  version when the notes are assembled.
 - **A tag is refused while anything is under `docs/release-notes/next/`:** by
   the `build-and-test` job of `release.yml` and by `release-lane.mjs build`,
   each right after its notes-file gate and before anything is built. Each

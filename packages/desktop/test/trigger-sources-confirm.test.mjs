@@ -328,7 +328,7 @@ test('a test the CLI refuses shows the kernel\'s message and code and returns fo
   const x = await mount(t, { tested: () => secret }); await x.open('ws/trusted');
   x.testButton().click(); await settle(); x.confirm().querySelector('[data-verb=run-test]').click(); await settle();
   const shown = x.$('.page-card[data-card="Test result"]').textContent;
-  assert.equal(shown.includes('abcd1234efgh5678'), false, shown); assert.match(shown, /Detail withheld/);
+  assert.equal(shown.includes('abcd1234efgh5678'), false, shown); assert.match(shown, /\[withheld\]/);
   const v = await mount(t, { tested: () => ({ killed: true }) }); await v.open('ws/trusted');
   v.testButton().click(); await settle(); v.confirm().querySelector('[data-verb=run-test]').click(); await settle();
   card = v.$('.page-card[data-card="Test result"]');

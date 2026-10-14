@@ -546,9 +546,9 @@ function rowActionsCurrent(s, i) { return actionsCurrent(s) && !rowStale(i, s.pa
  * is the one the failure notice beside it names (speaker-line.mjs, from the same mark):
  *
  *   the kernel's, a line     "Roster unavailable. <own> OATS says: <line>"
- *   the kernel's, withheld   "Roster unavailable. <own> [Detail withheld]"
+ *   the kernel's, withheld   "Roster unavailable. <own> [withheld]"
  *   no speaker, a line       "Roster unavailable: <line>. <own>"
- *   no speaker, withheld     "Roster unavailable: [Detail withheld]. <own>"
+ *   no speaker, withheld     "Roster unavailable: [withheld]. <own>"
  *   nothing to show          "Roster unavailable. <own>"
  *
  * The kernel's words stand apart, after the Desktop's own sentences; a message with no speaker stays inside

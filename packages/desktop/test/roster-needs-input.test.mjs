@@ -197,7 +197,7 @@ test("the card shows the reason, the message and the age, computed when shown", 
 const WITHHELD = [["See https://github.com/awebai/oats/pull/552", "attention", "Asked for your attention"],
   ["Which token: A or B?", "question", "Asked you a question"], ["api key: rotate now?", "approval", "Needs input"]];
 
-test("a withheld note: the card shows the reason in Waiting and no Message row, never “[Detail withheld]” (#584)", async t => {
+test("a withheld note: the card shows the reason in Waiting and no Message row, never “[withheld]” (#584)", async t => {
   const u = fixture(t);
   const rows = WITHHELD.map(([message, reason], n) => instance(`dev-${n}`, undefined, { waitingOnYou: claim({ message, reason }) }));
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 5 * 60e3 });

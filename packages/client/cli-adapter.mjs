@@ -62,6 +62,7 @@ const SPAWN_ARG_RULES = {
   backend: { flag: "--backend", re: /^tmux$/ },
   // The flag is the kernel's (harness-names.mjs harnessFlag): the caller names it, never guessed.
   harness: { flag: null, re: /^(pi|claude|codex)$/ },
+  // A configuration's name, or the word that selects none (launch-contract.mjs LAUNCH_CONFIG_NONE), which this rule admits.
   launchConfig: { flag: "--launch-config", re: /^[a-z0-9][a-z0-9._-]*$/i },
   server:  { flag: "--server",  re: /^[a-z0-9][a-z0-9-]{0,63}$/ },          // registered server id (remote route)
   model:   { flag: "--model",   re: /^[^-][^\0]*$/ },                       // model pattern — not option-shaped
@@ -308,6 +309,14 @@ export function cliServerRemove(bin, id, io = {}) {
   if (typeof id !== "string" || !MACHINE_ID.test(id)) return Promise.resolve(badMachineArgs());
   return runJson(bin, ["server", "remove", id, "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout });
 }
+/** `oats server forget <server> --instance <instance> --json` (#1131): drop this computer's saved route to a
+ * remote instance its host no longer lists. Both values are one roster row's identity, each one argv entry,
+ * never option-shaped. A clean exit is required for success (`strictExit`): an answer the CLI did not finish
+ * printing is the adapter's own error, never the kernel's. */
+export function cliServerForget(bin, { server, instance } = {}, io = {}) {
+  if (!argText(server, 256) || !argText(instance, 256)) return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid forget arguments" } });
+  return runJson(bin, ["server", "forget", server, "--instance", instance, "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 15_000, strictExit: true });
+}
 /** `oats server connect <id> --ssh <host> --dir <folder on the host> [--install-oats] --json`, in the deployment's scope. */
 export function cliServerConnect(bin, { id, host, folder, installOats, workspaceDir }, io = {}) {
   if (machineFieldProblem({ id, host, folder }) || !absoluteReadPath(workspaceDir)) return Promise.resolve(badMachineArgs());
@@ -456,7 +465,9 @@ function flagFor(harnessFlag) {
   throw Object.assign(new Error("The kernel's harness flag was not named"), { code: "E_BAD_ARGS" });
 }
 
-/** Shared explicit launch choices; every value remains one argv entry. */
+/** Shared explicit launch choices; every value remains one argv entry. `launchConfig` is a configuration's
+ * name or the word that selects none (launch-contract.mjs LAUNCH_CONFIG_NONE): `--launch-config none`
+ * asks for the bare harness, alone or beside a harness. */
 export function launchChoiceArgv({ launchConfig, harness, model, yolo, harnessFlag } = {}) {
   const argv = [];
   for (const [key, v] of Object.entries({ launchConfig, harness, model })) {

@@ -17,6 +17,11 @@ Download the installer for your platform from the
 | macOS x64 (Intel) | DMG + ZIP | ad-hoc signed — see below |
 | Linux x64 | AppImage + DEB | requires `tmux` |
 
+On Linux the installers need glibc 2.34 or later (for example Ubuntu 22.04,
+Debian 12, RHEL 9 or later). That is what their files ask of the system, read
+from each build, which fails if a file needs more; it is not a list of systems
+the app was tested on.
+
 Windows and Linux arm64 are not supported.
 
 Verify downloads against the release's `SHA256SUMS.txt`. GitHub
@@ -394,7 +399,9 @@ what a part of the panel needs, that part names the server and says which OATS t
 than showing nothing. A row that can't be opened says why on the row:
 Herdr no longer supported, gone from <server>, not reachable on <server>, or <server> not reached.
 For an instance a server no longer lists, the reason names the command that removes it from this
-computer (`oats server forget <server> --instance <name>`).
+computer (`oats server forget <server> --instance <name>`), and the row offers **Forget…**, in its
+actions menu and in the context panel, which runs that command for that row after a confirmation.
+Only this computer's saved route goes; nothing changes on the server, and the roster is read again.
 
 ## Remote terminals
 
@@ -508,6 +515,7 @@ unknown or unreported harness shows "?". Sources and licences are in
 | Symptom | Cause / fix |
 | --- | --- |
 | "Compatible oats CLI required" card | No CLI, or a version outside the range the card itself states. Copy the card's install command, or **Choose oats…** to point at the right binary; **Retry** re-probes. Spawn is disabled until a compatible CLI is verified. |
+| "This Desktop is older than the installed oats CLI" card | The CLI found is a released version above the range this Desktop works with, usually because the CLI was updated first. Install OATS Desktop of the version the card names; the card offers no npm command, since installing the CLI this Desktop pins would downgrade it. Reads and terminals keep working meanwhile; **Choose oats…** points at another, compatible CLI and **Retry** re-probes. |
 | Spawn disabled, no card | The probe hasn't settled yet (transient, resolves in ms). If it persists, the backend is unreachable — restart the app. |
 | Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux -L oats ls` (the OATS tmux server, where instances run) and `tmux ls` (your default server, where an instance started by an earlier kernel may still be). |
 | Can't select/copy text in a terminal tab | A plain drag selects, and copying is a separate step: ⌘C / Edit › Copy (macOS), Ctrl+Shift+C (Linux/Windows) or right-click › Copy ([Copy from a terminal](#copy-from-a-terminal)). A drag selects only what is on screen: wheel up first for older output. In `oats session attach` in your own terminal, hold **Option** (iTerm2, Ghostty, Terminal.app) or **Shift** while dragging. |
@@ -526,12 +534,15 @@ Developer docs live in [`packages/desktop/README.md`](../packages/desktop/README
 certificate auto-discovery disabled) and
 `npm run dist:smoke` verifies the packed artifact. Build/release CI uses the
 marked build-verify mode on every leg (inventory + strict codesign
-verification + node-pty ABI + a headless run of the bundled backend, of its
-liveness collector and of every module main imports, from `app.asar` and the
-`client/` directory beside it, no GUI launch). The Linux leg then runs the
+verification on macOS + on Linux the glibc floor, every ELF file of the DEB
+and the AppImage read against the version the Install section states, held in
+`packages/desktop/scripts/linux-floor.json` + node-pty ABI + a headless run of
+the bundled backend, of its liveness collector and of every module main
+imports, from `app.asar` and the `client/` directory beside it, no GUI
+launch). The Linux leg then runs the
 smoke once more with its launch phase, under a virtual display; no macOS leg
 launches the window. A local interactive run may also exercise the launch
 phase. The headless run starts the backend as the app does, checks that it
 answers and that it exits when its stdin closes, and runs the collector once;
 it does not exercise the GUI or, on Linux, the AppImage's launcher and
-runtime.
+runtime (the glibc floor runs the runtime only to unpack the AppImage).
