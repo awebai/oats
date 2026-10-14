@@ -327,7 +327,10 @@ the helper alone does not turn a full reconciliation into a bounded pass.
 Command groups can supply a bounded admission manifest. After acquiring all
 member locks, the helper rechecks each exact journal generation and commits the
 manifest plus the next fairness position in a separate transaction, before any
-processing. That position is queue progress, not a processing cursor. Completed
+processing. That position is queue progress, not a processing cursor. The same
+intent transaction also retains each stage's last position independently;
+intervening index work cannot reset source rotation. This adds one state-row
+write per admission, not another transaction or a per-record sync. Completed
 checkpoints and removal of the active manifest then share the processing commit.
 A crash or thrown error leaves the manifest and fairness position intact, while
 only journal bytes already fsynced survive a rolled-back processing transaction.
@@ -474,3 +477,31 @@ versions and mismatched index counts on re-upgrade, requiring derived rebuilds.
 Deleting the derived caches has the same recovery cost. No journal-byte migration
 or rollback is required. Native-prefix set-aside is essential to that guarantee;
 it does not rewrite history or append a sentinel or duplicate terminal turn.
+
+
+## Private source inventory
+
+`capture-source-queue.mjs` stores command discovery pages in the derived
+`capture_sources` table. At most 128 input descriptors and the walk checkpoint
+join one transaction. Replayed discovery preserves original ordinal positions
+and completed outcomes. A new selection or a finished visit sweep creates a
+new private scope; superseded scope rows are deleted by indexed 128-row units,
+without scanning or resetting another owner's current inventory. Losing the
+inventory table invalidates its discovery checkpoints and re-enumerates; it
+never changes journals, source cursors, IDs or prefix-proof authority.
+
+Ready-input reads use bounded database pages. Admission advances the persisted
+source position before processing; source outcome changes commit alongside the
+owning capture helper's source checkpoint. Rollback therefore retains the old
+processing state while allowing another independent ready input its turn.
+Native paths sharing a stream retain discovery precedence until the earlier
+input reaches its fixed end, pending state or refusal. AW files may rotate
+between bounded units in their shared stream; the existing retry selector still
+applies stream-scoped backoff and admits no concurrent writer. The queue does
+not clear failure rows or treat a finished inventory containing pending,
+set-aside or failed inputs as a successful pass. Directory metadata work and
+queue metadata work remain separate from source/journal content work.
+
+These private primitives do not themselves hold a root lock or implement the
+complete command runner. Their caller must own that lock, enforce the common
+budget, reconcile unfinished admissions, and publish the actual run outcome.

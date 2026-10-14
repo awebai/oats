@@ -128,3 +128,19 @@ test("stale journal generation, out-of-range cursor and unheld members refuse be
     assert.equal(readCaptureAdmission(state), null); assert.equal(state.get("capture-schedule", "position"), null);
   } finally { state.close(); }
 });
+
+
+test("stage fairness positions survive alternating admissions without an extra transaction", t => {
+  const { root, store } = fixture(t), state = new DerivedState(root), stream = "fixture~aw";
+  try {
+    const first = { ...selection(store, [stream]), next: { stage: "index", after: "source-scope:17" } };
+    const counts = countTransactions(state, () => {
+      withCaptureGroup(store, [stream], () => {}, { state, admission: first });
+      const second = { ...selection(store, [stream]), stage: "index", next: { stage: "capture", after: "index-position" } };
+      withCaptureGroup(store, [stream], () => {}, { state, admission: second });
+    });
+    assert.deepEqual(counts, { begins: 4, commits: 4 });
+    assert.deepEqual(state.get("capture-schedule", "position:capture"), { stage: "capture", after: "source-scope:17" });
+    assert.deepEqual(state.get("capture-schedule", "position:index"), { stage: "index", after: "index-position" });
+  } finally { state.close(); }
+});

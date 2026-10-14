@@ -67,6 +67,7 @@ export function commitCaptureAdmission(state, selection, held, { now = Date.now(
     }
     state.set("capture-admission", "active", row);
     state.set("capture-schedule", "position", row.next);
+    state.set("capture-schedule", `position:${row.stage}`, { stage: row.stage, after: row.next.after });
     if (row.retry) state.set("capture-schedule", "retry-after", row.members[0].stream);
   });
   return row;
