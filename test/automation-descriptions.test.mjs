@@ -214,10 +214,12 @@ test("the feature: oats version --json advertises automation-descriptions; a rem
       assert.match(help, new RegExp(`\\n  oats ${kind} update <id> --description=<text> `), `${kind} --help: update`);
     }
   } finally { fx.cleanup(); }
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-desc-remote-")));
+  // short, and its OATS_HOME_DIR is <base>/h: that holds ssh's control socket (ssh/<40 hex>), which ssh needs
+  // within 86 bytes, under the root run's directory of the file (docs/implementation.md, fixtures)
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "o-dr-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const saved = process.env.OATS_HOME_DIR;
-  process.env.OATS_HOME_DIR = join(base, "oats-home");
+  process.env.OATS_HOME_DIR = join(base, "h");
   try {
     const { scheduleRemote } = await import("../lib/servers.mjs");
     mkdirSync(process.env.OATS_HOME_DIR, { recursive: true });

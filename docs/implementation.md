@@ -506,6 +506,16 @@ the rule:
   it. A run that is killed leaves that one directory: `ot-*` under the
   temporary directory, or under `/tmp` when that path is longer than 20
   characters.
+- A file's directory, `<parent>/ot-XXXXXX/<n>`, takes from a socket's path
+  what `/tmp` alone did not. ssh binds a control socket at
+  `<OATS_HOME_DIR>/ssh/<40 hex>` plus a 17-byte suffix, in 104 bytes: 86 for
+  the path. A fixture whose `OATS_HOME_DIR` holds it keeps it short: a
+  5-character prefix and `<base>/h` (`o-up-`) come to 85 bytes when the
+  run's parent resolves to at most 12 characters, as `/tmp` does on Linux
+  and on macOS (`/private/tmp`), with up to 999 files. Longer, the kernel
+  warns that the path is too long and runs ssh without connection reuse,
+  which fails the run as any unasserted warning does: run the suite with a
+  `TMPDIR` of `/tmp` then.
 - The run sees what is made under the file's temporary directory: by the
   file's process, by a process it starts with that environment, and by the
   fixture helpers (`fixtureBase` and `privateTmuxTmpdir`, below), in a
