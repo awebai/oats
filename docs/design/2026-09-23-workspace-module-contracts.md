@@ -68,8 +68,11 @@ symlink enters as `symlink:<target>`; empty directories and a top-level `.git/` 
   output is `unknown`. This holds with or without a session. Failures are not
   memoized: a later call can probe again. Full caches remain full after a
   successful modern-version probe. The private strict probe and the
-  version-or-`null` compatibility helper share one memo per executor; each
-  waiter retains its own timeout and cancellation bounds.
+  version-or-`null` compatibility helper share one memo per executor. Each
+  waiter can leave on its own timeout/cancellation, evicting only the memo
+  entry it waited on. The launching caller's timeout and signal bound the
+  shared Git process; its rejection reaches all remaining waiters, including
+  those whose own deadlines have not expired. A later call can retry.
 - Failures: `E_REMOTE_UNREADABLE { url, key, reason }`, `reason` ∈ `auth`, `not-found`, `network`,
   `timeout`, `unknown`. Nothing half-succeeds.
 - Reference-bearing diagnostics use `redactUrl`, including parser refusals, package and

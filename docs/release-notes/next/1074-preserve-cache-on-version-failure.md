@@ -9,5 +9,6 @@
 
 - Git version probe failures preserve existing partial remote caches and all
   their commit pins. Failed probes are not cached, so later reads can retry;
-  timeout and cancellation bounds are preserved for each caller sharing a
-  probe, including reads without a session.
+  each caller may stop waiting on its own timeout or cancellation, including
+  reads without a session. A shared probe still uses the launching caller's
+  timeout and signal, whose failure reaches every remaining waiter.

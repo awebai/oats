@@ -92,7 +92,7 @@ the workspace back. `oats workspace status` shows `confirmed`, or
 fixed in the repo or in the operator's Git environment, never worked around.
 A `cannot-read` caused by a failed or unparseable Git version probe preserves
 the partial remote cache and its pins. Fix the local Git failure and retry;
-do not delete the cache to work around it. See [Git version failures](../../../../../docs/workspaces.md#membership-and-trust).
+do not delete the cache to work around it. See `docs/workspaces.md` in the installed kernel (“Membership and trust”).
 
 ## `soul.yaml` (v2)
 
