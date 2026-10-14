@@ -98,7 +98,7 @@ test("band edges: 0.25.8 through 0.55.x are accepted; 0.25.7 and 0.56.0 are not 
   for (const v of ["0.22.0", "0.25.0", "0.25.7", "0.56.0", "0.56.1", "1.0.0"]) {
     const r = acceptProbe(PROBE(v));
     assert.equal(r.ok, false, `${v} must be rejected`);
-    assert.match(r.reason, /outside >=0\.25\.8 <0\.55\.0/, v);
+    assert.match(r.reason, /outside >=0\.25\.8 <0\.56\.0/, v);
   }
   // a PRERELEASE of the new minor is still not a released kernel
   const pre = acceptProbe(PROBE("0.26.0-rc.1"));
