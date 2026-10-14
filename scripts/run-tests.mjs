@@ -112,7 +112,11 @@ const ownTmpdir = `--import=${new URL("./test-file-tmpdir.mjs", import.meta.url)
 const NODE_COMPILE_CACHE = "node-compile-cache";
 
 const args = ["--test", ownTmpdir, ...flags, ...shown, ...guard, ...KERNEL_GLOBS, ...packageGlobs, ...desktopIntegration, ...files];
-const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit", env: { ...process.env, OATS_TEST_RUN_DIR: runDir } });
+// The run's processes inherit no compile cache: with the developer's NODE_COMPILE_CACHE, every one of
+// them, and every tool a test starts, would write into that cache. A tool that asks for one makes it
+// in its file's directory (above).
+const { NODE_COMPILE_CACHE: _developersCache, ...env } = process.env;
+const run = spawnSync(process.execPath, args, { cwd: REPO_ROOT, stdio: "inherit", env: { ...env, OATS_TEST_RUN_DIR: runDir } });
 
 let found = "";
 const left = []; // { file, entries } for each test file that left something

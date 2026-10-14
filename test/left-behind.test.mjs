@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureBase, inheritedEnv } from "./helpers/host-fixture.mjs";
@@ -23,8 +23,10 @@ import { join } from "node:path";
 const LEAVES = `test("passes, and leaves a directory", () => { writeFileSync(join(mkdtempSync(join(tmpdir(), "left-")), "file"), "x"); });\n`;
 
 /** A repository of the test files `sources` (name → source), with the root runner as it is → the
- *  nested run's result. `env` is added to the runner's environment. */
-function rootRun(t, sources, { env: extra = {} } = {}) {
+ *  nested run's result. `env` is added to the runner's environment; `runner` gives node's arguments
+ *  for the runner's path, when the runner is not started as a file. The nested run starts with no
+ *  compile cache, so that one in a directory outside it was made by what the run started. */
+function rootRun(t, sources, { env: extra = {}, runner = (path) => [path] } = {}) {
   const root = fixtureBase("oats-lb-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "scripts"));
@@ -33,7 +35,8 @@ function rootRun(t, sources, { env: extra = {} } = {}) {
   for (const [name, source] of Object.entries(sources)) writeFileSync(join(root, "test", name), source);
   const env = { ...inheritedEnv(), ...extra };
   delete env.NODE_TEST_CONTEXT; // the nested run is a run of its own, not a subtest of this one
-  const r = spawnSync(process.execPath, [join(root, "scripts", "run-tests.mjs")], { cwd: root, env, encoding: "utf8", timeout: 120000 });
+  delete env.NODE_COMPILE_CACHE;
+  const r = spawnSync(process.execPath, runner(join(root, "scripts", "run-tests.mjs")), { cwd: root, env, encoding: "utf8", timeout: 120000 });
   return { ...r, root };
 }
 const says = (r) => `the nested run said:\n${r.stdout}\n${r.stderr}`;
@@ -174,4 +177,23 @@ console.log(JSON.stringify(dirs.map((dir) => dirname(dir))));`], { env: { ...inh
   mkdirSync(long);
   writeFileSync(`${long}.file`, "/a/test/file.test.mjs");
   assert.deepEqual(made(long), [tmp, tmp], "a long temporary directory that is not the run's: under /tmp, as before");
+});
+
+// Node writes a compile cache where NODE_COMPILE_CACHE says, and a tool a test starts may ask for one
+// (npm does): a run that passed a developer's NODE_COMPILE_CACHE on would write into that cache.
+test("the run's processes do not inherit a compile cache: with NODE_COMPILE_CACHE set, a test and a tool it starts write none there", (t) => {
+  const outside = fixtureBase("oats-lb-cache-");
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  // The runner itself starts with no compile cache and has the variable from then on, as the runner of
+  // a developer who set it would pass it on: what is in the directory then was made by what it started.
+  const runner = (path) => ["--input-type=module", "-e", `process.env.NODE_COMPILE_CACHE = ${JSON.stringify(outside)}; await import(${JSON.stringify(pathToFileURL(path).href)});`];
+  passes(rootRun(t, { "cache.test.mjs": `${HEAD}import { getCompileCacheDir } from "node:module";
+test("has no compile cache of the host, and neither has a tool it starts", () => {
+  assert.equal(process.env.NODE_COMPILE_CACHE, undefined);
+  assert.equal(getCompileCacheDir(), undefined);
+  const tool = spawnSync(process.execPath, ["-e", 'const m = require("node:module"); m.enableCompileCache(); console.log(m.getCompileCacheDir())'], { encoding: "utf8" });
+  assert.equal(tool.status, 0, tool.stderr);
+  assert.ok(tool.stdout.trim().startsWith(join(tmpdir(), "node-compile-cache")), tool.stdout);
+});\n` }, { runner }));
+  assert.deepEqual(readdirSync(outside), [], "nothing was written in the outside compile cache");
 });

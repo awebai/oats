@@ -496,7 +496,9 @@ the rule:
   own directory and goes with the run's. It is Node's, not something the file
   left. A developer's shared cache, the one in the platform's temporary
   directory, is neither used nor removed by a root run; a file run alone uses
-  it as before, and no test deletes it.
+  it as before, and no test deletes it. The run's processes do not inherit
+  `NODE_COMPILE_CACHE` either: with a developer's set, no process of the run
+  writes into that cache.
 - The run's directory is removed when the run has ended, whatever was left in
   it. A run that is killed leaves that one directory: `ot-*` under the
   temporary directory, or under `/tmp` when that path is longer than 20
