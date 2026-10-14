@@ -894,6 +894,10 @@ test("oats server roster --workspace-key (#1124): every occurrence counts; a mis
     assert.deepEqual(r.json().result.groups.map((g) => g.server), ["team", "third"]);
     r = oats(env, ["server", "roster", `--workspace-key=${OTHER}`, "--json"]);
     assert.deepEqual(r.json().result.groups.map((g) => g.server), ["other"]);
+    // The `=` form, one argv element per key (what the Desktop passes), selects what the separate form does.
+    r = oats(env, ["server", "roster", `--workspace-key=${TEAM}`, `--workspace-key=${THIRD}`, "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.deepEqual(r.json().result.groups.map((g) => g.server), ["team", "third"]);
     r = oats(env, ["server", "roster", "--json"]);
     assert.deepEqual(r.json().result.groups.map((g) => g.server), ["team", "other", "third"], "no key: today's answer");
     r = oats(env, ["server", "roster", "--workspace-key", "github.com/acme/none"]);
@@ -901,7 +905,7 @@ test("oats server roster --workspace-key (#1124): every occurrence counts; a mis
     assert.equal(r.stdout.trim(), "no remote groups for the given workspace keys");
     r = oats(env, ["server", "roster"]);
     assert.match(r.stdout, /team-host/, "without keys the text roster is unchanged");
-    for (const argv of [["--workspace-key"], ["--workspace-key", "--json"], ["--workspace-key", ""], ["--workspace-key="], ["--workspace-key", TEAM, "--workspace-key"], ["--workspace-key", "a b"], ["--workspace-key", "a\u0001b"]]) {
+    for (const argv of [["--workspace-key"], ["--workspace-key", "--json"], ["--workspace-key", ""], ["--workspace-key="], ["--workspace-key=--x"], [`--workspace-key=${TEAM}`, "--workspace-key="], ["--workspace-key", TEAM, "--workspace-key"], ["--workspace-key", "a b"], ["--workspace-key", "a\u0001b"]]) {
       r = oats(env, ["server", "roster", ...argv, "--json"]);
       assert.notEqual(r.status, 0, JSON.stringify(argv));
       const doc = r.json();

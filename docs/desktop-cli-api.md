@@ -2901,7 +2901,9 @@ route target:
 **`--workspace-key <key>`** (feature `roster-workspace-key`, OATS 0.56.0,
 #1124) narrows the roster to the groups that can belong to the given
 workspaces, so a host registered for another workspace, switched off or not,
-costs a window nothing. The flag is repeatable and every occurrence counts.
+costs a window nothing. The flag is repeatable and every occurrence counts;
+`--workspace-key=<key>`, one argument per key, is the same (`--workspace-key=`
+and a value that starts with `--` are `E_BAD_ARGS`).
 With one or more keys, a group is probed and returned when:
 
 1. its registration's `workspaceKey` is one of the keys;
