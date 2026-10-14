@@ -1,40 +1,69 @@
-// The Desktop's kernel line (F2b): the version band is >=0.25.8 <0.56.0 so it
-// runs against main's kernel before 0.26.0 is tagged; the REAL gate is the
-// positive packages-no-approval feature. A released 0.25.x kernel (no
-// feature) is accepted by the locator but gets the "update OATS" state from
-// every workspace and deployment read; the same version WITH the feature works.
+// The Desktop's kernel line (F2b): the version band is >=0.26.0 <0.56.0. Its
+// floor is the first kernel the Desktop's feature gates let through: 0.26.0 is
+// the first to advertise packages-no-approval beside workspace-v2. A 0.25
+// kernel is refused by the locator, so it meets the "Compatible `oats` CLI
+// required" card once instead of an "update OATS" state at every read. The
+// gates stay the REAL gate: a kernel inside the band without the feature words
+// is still refused by every workspace and deployment read.
+//
+// `fixtures/kernel-line/v0.25.9-version.json` is the standard output, byte for
+// byte, of `oats version --json` run from an export of the tag `v0.25.9` (`git
+// archive v0.25.9 bin lib package.json packages/record`, with the `yaml` and
+// `croner` versions that tag pins). The tag is a pins-only release, so its CLI
+// prints version 0.25.8; it lists workspace-v2 and not packages-no-approval.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acceptProbe } from '../../client/cli-locator.mjs';
-import { workspaceGate } from '../../client/workspace-cli.mjs';
-import { deploymentReadGate } from '../../client/deployment-contract.mjs';
+import { acceptProbe, ACCEPT_RANGE_TEXT } from '../../client/cli-locator.mjs';
+import { workspaceGate, WORKSPACE_FEATURES } from '../../client/workspace-cli.mjs';
+import { deploymentReadGate, DEPLOYMENT_FEATURES } from '../../client/deployment-contract.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 const released = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f2/version.json', import.meta.url), 'utf8'));
+const tagged = JSON.parse(readFileSync(new URL('./fixtures/kernel-line/v0.25.9-version.json', import.meta.url), 'utf8'));
 const probe = (version, features) => ({ ...released, version, features });
 const accepted = p => ({ ...p, ok: true, bin: '/fixture/bin/oats' });
+const GATE = 'packages-no-approval';
 
-test('0.25.8 without packages-no-approval is refused by every gate; with it, accepted', () => {
-  const without = probe('0.25.8', released.features.filter(f => f !== 'packages-no-approval'));
-  const withIt = probe('0.25.8', [...without.features, 'packages-no-approval']);
-  for (const p of [without, withIt]) assert.equal(acceptProbe(p).ok, true, 'both are inside the version band');
-  const older = accepted(without), current = accepted(withIt);
-  assert.equal(workspaceGate(older, DESKTOP_TERMS).reason.code, 'E_WORKSPACE_FEATURE');
-  assert.match(workspaceGate(older, DESKTOP_TERMS).reason.message, /Update OATS/);
-  for (const action of ['status', 'workspace-status']) {
-    const refused = deploymentReadGate(older, action);
-    assert.equal(refused.reason.code, 'E_DEPLOYMENT_FEATURE'); assert.equal(refused.reason.feature, 'packages-no-approval');
-    assert.equal(deploymentReadGate(current, action), null, action);
+test('0.25.8 without packages-no-approval is refused by the locator', () => {
+  assert.equal(tagged.version, '0.25.8'); assert.equal(tagged.features.includes(GATE), false, 'the released probe, as the tag prints it');
+  const without = probe('0.25.8', released.features.filter(f => f !== GATE));
+  for (const p of [tagged, without, probe('0.25.9', without.features)]) {
+    const refused = acceptProbe(p);
+    assert.equal(refused.ok, false, p.version);
+    assert.equal(refused.reason, `version ${p.version} outside ${ACCEPT_RANGE_TEXT}`, p.version);
   }
-  assert.equal(workspaceGate(current, DESKTOP_TERMS), null);
 });
 
-test('the version band alone never decides: 0.26.x without the feature is refused too; below 0.25.8 is not a kernel at all', () => {
+test('0.26.0 with workspace-v2 and packages-no-approval is accepted by the locator and let through by every gate', () => {
+  // The two words the workspace gate and the deployment reads ask for, both in the probe 0.26.0 writes.
+  assert.deepEqual([...WORKSPACE_FEATURES].sort(), ['packages-no-approval', 'workspace-v2']);
+  const first = probe('0.26.0', released.features);
+  for (const name of DEPLOYMENT_FEATURES) assert.ok(first.features.includes(name), name);
+  assert.equal(acceptProbe(first).ok, true);
+  const cli = accepted(first);
+  assert.equal(workspaceGate(cli, DESKTOP_TERMS), null);
+  for (const action of ['status', 'workspace-status']) assert.equal(deploymentReadGate(cli, action), null, action);
+});
+
+test('a kernel inside the band without the feature words is still refused by every gate', () => {
+  for (const missing of ['workspace-v2', GATE]) {
+    const lacking = accepted(probe('0.26.0', released.features.filter(f => f !== missing)));
+    assert.equal(acceptProbe(lacking).ok, true, `${missing}: inside the version band`);
+    assert.equal(workspaceGate(lacking, DESKTOP_TERMS).reason.code, 'E_WORKSPACE_FEATURE', missing);
+    assert.match(workspaceGate(lacking, DESKTOP_TERMS).reason.message, /Update OATS/, missing);
+    for (const action of ['status', 'workspace-status']) {
+      const refused = deploymentReadGate(lacking, action);
+      assert.equal(refused.reason.code, 'E_DEPLOYMENT_FEATURE', `${missing} ${action}`); assert.equal(refused.reason.feature, missing, `${missing} ${action}`);
+    }
+  }
+});
+
+test('the version band alone never decides: 0.26.x without the feature is refused too; below 0.26.0 is not a kernel at all', () => {
   const noFeature = accepted(probe('0.26.3', released.features.filter(f => f !== 'packages-no-approval')));
   assert.equal(acceptProbe(noFeature).ok, true);
   assert.equal(workspaceGate(noFeature, DESKTOP_TERMS).reason.code, 'E_WORKSPACE_FEATURE');
-  assert.equal(acceptProbe(probe('0.25.7', [...released.features, 'packages-no-approval'])).ok, false);
+  assert.equal(acceptProbe(probe('0.25.9', [...released.features, 'packages-no-approval'])).ok, false);
   assert.equal(acceptProbe(probe('0.27.4', [...released.features, 'packages-no-approval'])).ok, true, '0.27 (the harness rename) is inside the band');
   assert.equal(acceptProbe(probe('0.28.0', [...released.features, 'packages-no-approval'])).ok, true, '0.28 (package souls, triggers) is inside the band');
   assert.equal(acceptProbe(probe('0.29.0', [...released.features, 'packages-no-approval'])).ok, true, '0.29 (automations, desktop facts) is inside the band');
