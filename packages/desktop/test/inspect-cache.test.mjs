@@ -10,14 +10,18 @@ const clock = (start = 1_700_000_000_000) => { let t = start; return { now: () =
 
 test('inspectKey: every coordinate travels, absent ones as null, instructions as a boolean, and the kind is checked', () => {
   const soul = inspectKey({ deployment: '/team', kind: 'soul', soul: 'dev', agentsRoot: '/team/agents', catalogKey: 'k1' });
-  assert.deepEqual(JSON.parse(soul), ['/team', null, 'soul', 'dev', '/team/agents', 'k1', null, null, null, false]);
+  assert.deepEqual(JSON.parse(soul), ['/team', null, 'soul', 'dev', '/team/agents', 'k1', null, null, null, false, false]);
   // The composed AGENTS.md (instructions: true) is another answer of the same soul.
   assert.notEqual(soul, inspectKey({ deployment: '/team', kind: 'soul', soul: 'dev', agentsRoot: '/team/agents', catalogKey: 'k1', instructions: true }));
+  // The soul's own skills (skills: true, feature soul-skills) are another answer too, and not the composed one.
+  const skills = inspectKey({ deployment: '/team', kind: 'soul', soul: 'dev', agentsRoot: '/team/agents', catalogKey: 'k1', skills: true });
+  assert.notEqual(soul, skills);
+  assert.notEqual(skills, inspectKey({ deployment: '/team', kind: 'soul', soul: 'dev', agentsRoot: '/team/agents', catalogKey: 'k1', instructions: true }));
   assert.notEqual(soul, inspectKey({ deployment: '/team', kind: 'soul', soul: 'dev', agentsRoot: '/team/agents', catalogKey: 'k2' }));
   assert.notEqual(soul, inspectKey({ deployment: '/team', server: 'hetzner', kind: 'soul', soul: 'dev', agentsRoot: '/team/agents', catalogKey: 'k1' }));
   assert.notEqual(soul, inspectKey({ deployment: '/other', kind: 'soul', soul: 'dev', agentsRoot: '/team/agents', catalogKey: 'k1' }));
   const home = inspectKey({ deployment: '/team', kind: 'home', home: '/h', instance: 'dev-1', identity: ['c', undefined, 'dev', [{ id: 'm' }]] });
-  assert.deepEqual(JSON.parse(home), ['/team', null, 'home', null, null, null, '/h', 'dev-1', ['c', null, 'dev', [{ id: 'm' }]], false]);
+  assert.deepEqual(JSON.parse(home), ['/team', null, 'home', null, null, null, '/h', 'dev-1', ['c', null, 'dev', [{ id: 'm' }]], false, false]);
   assert.notEqual(home, inspectKey({ deployment: '/team', kind: 'home', home: '/h', instance: 'dev-1', identity: ['c', 's', 'dev', [{ id: 'm' }]] }));
   assert.throws(() => inspectKey({ deployment: '/team', kind: 'run' }), { code: 'E_BAD_ARGS' });
   assert.equal(INSPECT_CACHE_LIMIT, 256);
