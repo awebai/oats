@@ -73,8 +73,10 @@ export class CaptureSourceQueue {
         const existing = this.state.db.prepare("SELECT stream,details FROM capture_sources WHERE scope=? AND source=? AND path=?")
           .get(row.id, input.source, input.path);
         const details = JSON.stringify(input.details ?? {});
-        if (existing && (existing.stream !== input.stream || existing.details !== details)) throw new Error("capture input changed during discovery");
-        if (!existing) {
+        // Early node:sqlite can return an object of nulls for no match.
+        // stream is NOT NULL for every real inventory row.
+        if (existing?.stream != null && (existing.stream !== input.stream || existing.details !== details)) throw new Error("capture input changed during discovery");
+        if (existing?.stream == null) {
           if (!Number.isSafeInteger(row.next + 1)) throw new Error("capture source inventory position overflow");
           insert.run(row.id, row.next++, input.source, input.path, input.stream, details);
         }
@@ -166,7 +168,7 @@ export class CaptureSourceQueue {
       WHERE scope=? AND stream=? AND outcome='ready'
       ORDER BY CASE WHEN source='aw' AND position<=? THEN 1 ELSE 0 END,position LIMIT 1`)
       .get(this.sweep.id, stream, after);
-    return row ? { ...row, details: JSON.parse(row.details), next: { stage: "capture", after: this.cursor(row.position) } } : null;
+    return row?.position != null ? { ...row, details: JSON.parse(row.details), next: { stage: "capture", after: this.cursor(row.position) } } : null;
   }
 
   finish() {
@@ -186,7 +188,7 @@ export class CaptureSourceQueue {
   cleanup() {
     if (!this.state.depth) throw new Error("capture source cleanup requires a transaction");
     const obsolete = this.state.db.prepare("SELECT key FROM state WHERE kind='source-queue-garbage' ORDER BY key LIMIT 1").get()?.key;
-    if (obsolete === undefined) return 0;
+    if (obsolete == null) return 0;
     const count = Number(this.state.db.prepare(`DELETE FROM capture_sources WHERE rowid IN (
       SELECT rowid FROM capture_sources WHERE scope=? ORDER BY position LIMIT ${pageSize})`).run(obsolete).changes);
     if (!this.state.db.prepare("SELECT 1 AS found FROM capture_sources WHERE scope=? LIMIT 1").get(obsolete)?.found)

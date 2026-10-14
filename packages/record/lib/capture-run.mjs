@@ -17,9 +17,11 @@ const maximumPeak = (a, b) => a === null && b === null ? null : Math.max(a ?? 0,
 
 export class CaptureRun {
   constructor(root, state, { id, trigger = "manual", pid = process.pid, reclaimedLock = null,
-    previousFailure = null, clock = () => new Date().toISOString() } = {}) {
+    previousFailure = null, currentFailure = null, clock = () => new Date().toISOString() } = {}) {
     if (state.depth) throw new Error("capture run starts outside processing transactions");
     if (previousFailure !== null && !reasons.has(previousFailure)) throw new Error("invalid prior capture failure");
+    if (currentFailure !== null && (currentFailure?.id !== id || !reasons.has(currentFailure.reason)))
+      throw new Error("invalid current capture failure");
     this.root = root; this.state = state; this.clock = clock;
     const at = clock(), backlog = readIssueBacklog(state.db, { pending: true });
     const prior = readCaptureStatus(root) ?? emptyCaptureStatus(backlog), cached = state.get("capture-run", "current");
@@ -47,6 +49,10 @@ export class CaptureRun {
       run = { id, trigger, pid, startedAt: at, finishedAt: null, outcome: "running", reason: null,
         counts: emptyCaptureCounts(), peakRssBytes: null, reclaimedLock };
     }
+    // Supervisor evidence is explicitly bound to this pass, even if its first
+    // child died before publishing a receipt. It must not be attributed to an
+    // older abandoned receipt (whose failure alone cannot poison a new pass).
+    if (currentFailure) this.history.lastFailure = failureSummary(run, currentFailure.reason, at);
     this.id = id; this.peakRssBytes = run.peakRssBytes; this.finished = false;
     // Publish initial identity BEFORE any processing or new counter-cache
     // initialization. A death here leaves an honest unfinished receipt; a

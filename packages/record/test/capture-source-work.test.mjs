@@ -10,6 +10,7 @@ import { DerivedState } from '../lib/derived-state.mjs';
 import { CaptureSourceQueue } from '../lib/capture-source-queue.mjs';
 import { RecordStore } from '../lib/store.mjs';
 import { readCaptureStatus } from '../lib/capture-status.mjs';
+import { CaptureRun } from '../lib/capture-run.mjs';
 import { superviseCapturePass } from '../lib/capture-pass.mjs';
 const url = name => new URL(`../lib/${name}.mjs`, import.meta.url).href;
 const native = n => JSON.stringify({ timestamp:'2026-01-01T00:00:00Z',text:String(n) })+'\n';
@@ -34,10 +35,13 @@ function fixture(t, specs) {
     import {captureSourceWork} from ${JSON.stringify(url('capture-source-work'))};
     import {reconcileCaptureInterruption} from ${JSON.stringify(url('capture-retry'))};
     await runCaptureWorker(start=>{
+      // No store, admission or status publication exists for this attempt.
+      if(start.options.failBeforeReceipt && start.pass.attempt===1)throw Error('injected pre-receipt failure');
       const state=new DerivedState(start.root),store=new RecordStore(start.root,{owner:'fixture'});
       try {
         const failure=reconcileCaptureInterruption(state,{reason:start.pass.previous?.reason??'interrupted',now:start.options.now});
-        const run=new CaptureRun(start.root,state,{id:start.pass.runId,previousFailure:start.pass.failure??failure?.reason});
+        const run=new CaptureRun(start.root,state,{id:start.pass.runId,previousFailure:failure?.reason??null,
+          currentFailure:start.pass.failure?{id:start.pass.runId,reason:start.pass.failure}:null});
         if(start.pass.finalize){const s=run.finish({outcome:'partial',reason:'deadline',pending:true});
           return {outcome:s.lastRun.outcome,reason:s.lastRun.reason,continuation:false};}
         const q=new CaptureSourceQueue(state,{owner:'fixture',selection:'fixture'});
@@ -133,4 +137,23 @@ test('input category/visit facts roll back with a failed processing transaction 
       assert.deepEqual(q.visit(1,'new-run'),{filesVisited:1});
     });
   });
+});
+
+for(const olderSuccess of [false,true])test(`pre-receipt child failure stays failed after healthy same-pass work (older success: ${olderSuccess})`,async t=>{
+  const f=fixture(t,[['cc','healthy',native(1)]]);
+  let priorSuccess=null;
+  if(olderSuccess)priorSuccess=f.state(state=>new CaptureRun(f.root,state,{id:'older-success'})
+    .finish({outcome:'complete'}).lastSuccess);
+  const result=await f.run({failBeforeReceipt:true,units:4});
+  assert.equal(result.outcome,'failed');assert.equal(result.reason,'io');assert.equal(result.exitCode,1);
+  assert.equal(result.starts,2);
+  const status=readCaptureStatus(f.root);
+  assert.equal(status.lastRun.outcome,'failed');assert.equal(status.lastRun.reason,'io');
+  assert.equal(status.lastFailure.id,status.lastRun.id);
+  assert.equal(status.lastRun.counts.turnsAppended,1);
+  assert.equal(status.lastFailure.counts.turnsAppended,1);
+  assert.deepEqual(status.lastSuccess,priorSuccess);
+  assert.ok(status.lastProgressAt);
+  assert.equal(f.store.readStream('fixture~cc.healthy').length,1);
+  assert.equal(status.backlog.failedCount,0,'startup failure is not attributable to a stream');
 });

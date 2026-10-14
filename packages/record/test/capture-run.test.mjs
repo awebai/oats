@@ -98,6 +98,19 @@ test('cache loss and unfinished predecessor retain failure evidence without pois
   assert.equal(fresh.lastFailure.id, 'abandoned');
 });
 
+test('current-pass failure identity is checked and survives another worker without a predecessor receipt', t => {
+  const f=fixture(t);
+  assert.throws(()=>f.run('current',{currentFailure:{id:'other',reason:'io'}}),/invalid current capture failure/);
+  assert.equal(readCaptureStatus(f.root),null,'invalid evidence cannot publish a receipt');
+  f.run('current',{currentFailure:{id:'current',reason:'io'}});
+  f.reopen();
+  const resumed=f.run('current');
+  f.state.transaction(()=>resumed.record({turnsIndexed:2},{progress:true}));
+  const snapshot=resumed.finish({outcome:'complete'});
+  assert.equal(snapshot.lastRun.outcome,'failed');assert.equal(snapshot.lastRun.reason,'io');
+  assert.equal(snapshot.lastFailure.counts.turnsIndexed,2);assert.equal(snapshot.lastSuccess,null);
+});
+
 test('pending or active set-aside work cannot publish success; partial preserves prior history', t => {
   const f = fixture(t);
   f.run('healthy').finish({ outcome: 'complete' });

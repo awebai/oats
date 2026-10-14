@@ -25,6 +25,32 @@ function ingest(state,q,inputs){
  for(let n=0;n<inputs.length;n+=128)q.add(inputs.slice(n,n+128),{after:n+128},{complete:n+128>=inputs.length});
 }
 
+test('null-valued missing SQLite rows allow fresh discovery and replay without fabricated retries',t=>{
+ const root=fixture(t),state=new DerivedState(root);
+ const proto=Object.getPrototypeOf(state.db.prepare('SELECT 1')),original=proto.get;
+ proto.get=function(...args){
+  return original.apply(this,args)??Object.fromEntries(this.columns().map(column=>[column.name,null]));
+ };
+ try{
+  const q=queue(state),item=input(root,1);
+  assert.equal(q.forStream(item.stream),null);
+  q.add([item],{after:1});q.add([item],{after:'replay'});
+  assert.equal(q.current().next,2);
+  assert.deepEqual([...q.ready()].map(row=>row.position),[1]);
+  assert.equal(q.forStream(item.stream).path,item.path);
+  assert.throws(()=>q.add([{...item,stream:'fixture~cc.changed'}],null),/input changed/);
+  assert.throws(()=>state.transaction(()=>q.visit(99,'run')),/missing or invalid/);
+  assert.throws(()=>state.transaction(()=>q.mark(99,'complete')),/input is missing/);
+  state.transaction(()=>q.mark(1,'complete'));
+  assert.equal(q.forStream(item.stream),null);
+  q.add([],null,{complete:true});
+  const remove=state.delete.bind(state);
+  state.delete=(...args)=>{assert.notEqual(args[1],null,'absent garbage is not a cleanup key');return remove(...args);};
+  assert.equal(state.transaction(()=>q.cleanup()),0);
+  assert.equal(state.transaction(()=>q.finish()),true);
+ }finally{proto.get=original;state.close();}
+});
+
 test('discovery pages/checkpoints are atomic, replay does not renumber, and reopened queue retains progress',t=>{
  const root=fixture(t);let state=new DerivedState(root),q=queue(state);
  const items=[input(root,1),input(root,2)];

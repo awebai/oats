@@ -174,8 +174,11 @@ RSS peak. Sampling alone never advances `lastProgressAt`. An unfinished run
 whose counter cache is lost retains interruption evidence rather than becoming
 a successful empty pass. A finished file receipt takes precedence over a stale
 running counter row, and finalization needs one atomic file publication, not a
-second derived-state commit. Failure within a pass survives later healthy work;
-partial work preserves previous success and failure history. These are private
+second derived-state commit. Supervisor failure evidence is bound explicitly to
+the current run ID, including a child lost before any running receipt exists.
+It is distinct from failure of an older abandoned run: only failure in the
+current pass prevents that pass from succeeding after healthy work. Partial
+work preserves previous success and failure history. These are private
 accounting mechanics, not evidence that command integration has run a pass.
 
 ## Resource model
