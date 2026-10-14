@@ -233,7 +233,8 @@ chord. Focus follows them: hiding the sidebar with focus in it moves focus to
 Show sidebar; closing the panel with focus in it moves focus to Show instance
 panel; opening the panel with that button moves focus to the panel's selected
 tab; a chord pressed in a terminal opens or closes either and leaves focus in
-the terminal. Opening an instance's terminal never opens the panel: whether it
+the terminal. Entering focus mode is the exception: focus that was in the
+sidebar goes to the active tab, the content focus mode is for. Opening an instance's terminal never opens the panel: whether it
 is open is the user's, kept on this computer, and it starts closed. While a modal
 dialog or the palette is open, F6 and the tab switches (Ctrl+Tab, Ctrl+PgDn/PgUp,
 go to tab) do nothing; the dialog keeps focus.

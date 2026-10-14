@@ -1491,10 +1491,14 @@ of `#main`, `sidebar.toggle`, shown only while the sidebar is away) and
 and has something to show; it carries the Developer page's change dot and
 says so in its name). They are absolutely placed over the bar; every top bar
 reserves their room with `--main-lead-inset` / `--main-trail-inset` (40px each
-while its control is shown, set on `#main` by `:has()`): `#tabbar-row`, the
-split group strips at the main area's top corners, and the stage headers
-(`.hier-bar`, `.workspace-header`, `.auto-header`, `.page-bar`) add them to
-their own padding. A new top bar in `#main` must do the same.
+while its control is shown, set on `#main` by `:has()`), always outside any
+horizontal scrollport, so scrolled content never passes under a control:
+`#tabbar-row` pads around its scrolling `#tabbar`; a split group strip at the
+main area's top corners is itself the scroller, so it takes them as a margin
+and its `.group-cell` paints the bar behind it; the stage headers (`.hier-bar`,
+`.workspace-header`, `.auto-header`, `.page-bar`) do not scroll sideways
+themselves and add them to their own padding (a scroller inside one, like
+`.auto-tabs`, sits within it). A new top bar in `#main` must do the same.
 
 Instance details open or closed is ONE per-machine preference
 (`localStorage` `oats-desktop-instance-panel-open`, absent = closed): opening a
@@ -1513,8 +1517,9 @@ to Show sidebar (and showing it, from there, to the sidebar's toggle); closing
 the panel with focus in it moves focus to Show instance panel; opening the panel
 by that control moves focus to its selected tab (a stage's content: its first
 control); a chord pressed in a terminal opens or closes either without taking
-focus from it. Focus that was in a sidebar hidden by focus mode moves to the
-active tab's trigger, else to a stable visible control (`stableFocusTarget` in
+focus from it. Entering focus mode is the one deliberate exception: it means
+"work in the content", so focus that was in the sidebar it hides moves to the
+active tab's trigger, not to Show sidebar, else to a stable visible control (`stableFocusTarget` in
 `shell.mjs`: the sidebar toggle, Show sidebar, Show instance panel); a
 focus-mode change made after focus was already lost (the palette removes its
 input before running the command) lands there too. `sidebar.focusFilter` and

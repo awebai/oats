@@ -517,18 +517,23 @@ body {
    under the active tab. */
 .group-tabbar { display: flex; flex: none; box-sizing: border-box; min-width: 0; overflow-x: auto; overflow-y: hidden;
                 height: var(--bar-h); background: var(--bg); border-bottom: 1px solid var(--border);
-                padding-left: var(--main-lead-inset); padding-right: var(--main-trail-inset);
-                scroll-padding-left: var(--main-lead-inset); scroll-padding-right: var(--main-trail-inset); }
-/* Only the strips at the main area's top corners reserve the Show controls' room: the first group's
-   lead; the trail on the last group side by side, on the first stacked. (A sticky control inside the
-   strip, the split buttons, stops at its padding, clear of Show instance panel.) */
+                margin-left: var(--main-lead-inset); margin-right: var(--main-trail-inset); }
+/* The Show controls' room is a margin, outside the strip's scrollport: scrolled tabs clip at its
+   edge and never pass under a control. The cell paints the bar behind that margin, so the strip's
+   background and rule still run edge to edge. Only the strips at the main area's top corners reserve
+   it: the first group's lead; the trail on the last group side by side, on the first stacked. (The
+   sticky split buttons pin to the scrollport's end, clear of Show instance panel.) */
+.group-cell:has(> .group-tabbar) {
+  background: linear-gradient(var(--border), var(--border)) 0 calc(var(--bar-h) - 1px) / 100% 1px no-repeat,
+              linear-gradient(var(--bg), var(--bg)) 0 0 / 100% var(--bar-h) no-repeat;
+}
 #tabhost > .group-cell ~ .group-cell { --main-lead-inset: 0px; }
 #tabhost.split-row > .group-cell:has(~ .group-cell), #tabhost.split-col > .group-cell ~ .group-cell { --main-trail-inset: 0px; }
 /* In a group strip the split buttons scroll with its tabs: they stay pinned to its
    end, and the strip's scroll padding keeps a revealed tab clear of them
    (revealInStrip honours it). */
 .group-tabbar > #tab-actions { margin-left: auto; position: sticky; right: 0; z-index: 1; background: var(--bg); }
-.group-tabbar:has(> #tab-actions) { scroll-padding-right: calc(74px + var(--main-trail-inset)); }
+.group-tabbar:has(> #tab-actions) { scroll-padding-right: 74px; }
 .tab-pane.split-cell { position: relative; inset: auto; flex: 1 1 0; min-width: 0; min-height: 0; }
 .group-cell > .split-empty { flex: 1 1 0; min-width: 0; min-height: 0; }
 .split-empty { display: flex; align-items: center; justify-content: center;

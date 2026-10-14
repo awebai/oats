@@ -295,3 +295,34 @@ test("index.html ships the split buttons and shell wires the group projection th
     "the top strip disappears while the split renders per-group strips");
   assert.match(css, /\.group-cell \{[^}]*flex: 1 1 0/, "group cells share the host track");
 });
+
+// Spec B: the Show controls overlay the main area's top corners. Their room is reserved OUTSIDE every
+// horizontal tab scrollport (a scroller clips its content at its padding box, so padding inside it
+// would let scrolled tabs pass under a control): padding on the non-scrolling #tabbar-row, a margin
+// on a group strip. (jsdom has no layout, so this pins the rules that give that geometry.)
+test("Spec B: the Show controls' room sits outside every tab scrollport, so scrolled tabs never pass under them", () => {
+  const css = read("renderer/shell.css");
+  const rule = selector => {
+    const at = css.indexOf(`\n${selector} {`);
+    assert.ok(at >= 0, `shell.css has ${selector}`);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  const scrollers = { "#tabbar": rule("#tabbar"), ".group-tabbar": rule(".group-tabbar") };
+  for (const [selector, body] of Object.entries(scrollers)) {
+    assert.match(body, /overflow-x: auto/, `${selector} is a horizontal scrollport`);
+    assert.doesNotMatch(body, /padding[^;]*main-(?:lead|trail)-inset/, `${selector} keeps the inset out of its scrolling content (no padding or scroll-padding)`);
+  }
+  assert.match(scrollers[".group-tabbar"], /margin-left: var\(--main-lead-inset\); margin-right: var\(--main-trail-inset\);/,
+    "a group strip's scrollport is narrowed by a margin");
+  const row = rule("#tabbar-row");
+  assert.doesNotMatch(row, /overflow/, "the top strip's row does not scroll");
+  assert.match(row, /padding-left: var\(--main-lead-inset\); padding-right: var\(--main-trail-inset\);/);
+  // The cell paints the bar behind the margin: background and bottom rule still run edge to edge.
+  assert.match(rule(".group-cell:has(> .group-tabbar)"), /linear-gradient\(var\(--border\), var\(--border\)\) 0 calc\(var\(--bar-h\) - 1px\) \/ 100% 1px no-repeat,\s*linear-gradient\(var\(--bg\), var\(--bg\)\) 0 0 \/ 100% var\(--bar-h\) no-repeat/);
+  // Only the strips at the main area's top corners reserve it.
+  assert.match(css, /#tabhost > \.group-cell ~ \.group-cell \{ --main-lead-inset: 0px; \}/, "lead: the first group only");
+  assert.match(css, /#tabhost\.split-row > \.group-cell:has\(~ \.group-cell\), #tabhost\.split-col > \.group-cell ~ \.group-cell \{ --main-trail-inset: 0px; \}/,
+    "trail: the last group side by side, the first stacked");
+  assert.match(css, /#main:has\(> #show-sidebar:not\(\[hidden\]\)\) \{ --main-lead-inset: 40px; \}/);
+  assert.match(css, /#main:has\(> #show-panel:not\(\[hidden\]\)\) \{ --main-trail-inset: 40px; \}/);
+});

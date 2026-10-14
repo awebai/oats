@@ -617,6 +617,18 @@ test('Spec B: Show instance panel carries the Developer change dot and says so i
   assert.equal(dot.hidden, true, "another instance's read marks nothing");
 });
 
+// Lead's ruling: a deliberate exception to point 5 ("hiding the sidebar with focus in it moves focus
+// to Show sidebar"). Entering focus mode says "work in the content", so focus goes to the active tab.
+test('Spec B exception to point 5: entering focus mode from the sidebar focuses the active tab, not Show sidebar; sidebar.toggle still does', t => {
+  const s = shell(t), q = id => s.document.getElementById(id);
+  const trigger = s.document.createElement('button'); q('tabbar').append(trigger); s.c.activeTrigger = trigger;
+  q('sidebar-toggle').focus(); runAction('app.focusMode');
+  assert.equal(s.contextPanel.isFocusMode(), true); assert.equal(q('show-sidebar').hidden, false);
+  assert.equal(s.document.activeElement, trigger, 'focus mode: the active tab, the content it is for');
+  runAction('app.focusMode'); q('sidebar-toggle').focus(); runAction('sidebar.toggle');
+  assert.equal(s.document.activeElement, q('show-sidebar'), 'plain sidebar.toggle: Show sidebar');
+});
+
 test('Spec B: the soul inspector keeps opening on soul selection, whatever the instance preference', t => {
   const s = shell(t), q = id => s.document.getElementById(id), owner = {};
   const inspector = s.document.createElement('section'); inspector.append(s.document.createElement('header'));
