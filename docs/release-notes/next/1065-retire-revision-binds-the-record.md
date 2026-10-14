@@ -46,9 +46,10 @@
   `facts.repo`, `facts.recordedBranch`, a note or the text's `defaults:`
   line shared one `planRevision`. So did two plans that differed in what
   Git says of `work/` beyond its commit, branch and counts (the reason it
-  gives no answer, a detached `HEAD`, the branch's upstream, the remote),
+  gives no answer, a detached `HEAD`, whether the tree is on the recorded
+  branch, the branch's upstream, the remote),
   and in the reason of an edge that could not be followed. The revision now
   holds everything a retire plan shows but the facts that move by
   themselves: the instant, the counts against the upstream and the default
-  branch with that branch's name, and a child's session. 0.52.0 has the
-  defect too.
+  branch with that branch's name, and a child's session. 0.55.0 and every
+  release before it have the defect: it is older than 0.53.0.

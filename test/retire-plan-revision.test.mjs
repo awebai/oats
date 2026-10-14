@@ -38,6 +38,9 @@
 //   - what Git says of the tree that does not move by itself is bound (the remote's host and
 //     path, the branch's upstream, whether HEAD is detached), and so are the declared roots a
 //     recovery leaves out, as the spawn's receipt gives them and not as the note says them;
+//   - whether the tree is on the branch the record names (`facts.work.drift`) is bound as the plan
+//     shows it: it comes from a second read of the record, so a plan held between that read
+//     and the plan's own, while the record's branch is rewritten, is not the settled plan's revision;
 //   - what moves by itself is not: the counts against the upstream and the default branch and
 //     that branch's name (a fetch by anyone who shares the clone), and a child's session; each
 //     gives another plan under the same revision;
@@ -53,7 +56,8 @@ import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { CLI, v2Deployment } from "./helpers/v2-deployment.mjs";
+import { startGated } from "./helpers/fs-gate-preload.mjs";
 import { killAndReap, waitUntil } from "./helpers/host-fixture.mjs";
 import { SESSION, endServers, killServer, recordLaunch, startServer, windows } from "./helpers/recorded-tmux-server.mjs";
 
@@ -702,6 +706,46 @@ test("what a plan shows of the tree's Git state is part of the revision where it
   git("checkout", "-q", branch);
   git("update-ref", "-d", "refs/elsewhere/kept");
   back("on its branch again");
+});
+
+test("whether the tree is on the branch the record names is part of the revision as the plan shows it: facts.work.drift comes from a second read of the record, so a plan held after each of its reads of the record while the record's branch is rewritten, then written back, is either the settled plan, whole, under its revision, or shows another thing under another revision, two equal branches with drift and its note among them; and a guarded apply with that other revision is stale once the record is as it was (#1065)", async (t) => {
+  const d = deployment(t);
+  const inst = await d.fx.spawn("dev", { instance: "dev-drift" });
+  const path = join(inst.home, "instance.json"), asSpawned = readFileSync(path, "utf8");
+  const view = (plan) => ({ branch: plan.facts.work.branch, recorded: plan.facts.recordedBranch, drift: plan.facts.work.drift, notes: plan.notes.filter((n) => /, not the recorded /.test(n)) });
+  const settled = d.planTwice(inst.instance);
+  assert.deepEqual(view(settled), { branch: settled.facts.recordedBranch, recorded: settled.facts.recordedBranch, drift: false, notes: [] }, "fixture premise: a worktree home on the branch its record names");
+  let alike = 0;
+  // The nth read of the record, for each n until the plan makes no more: the plan is held right
+  // after it, the record's branch is rewritten, the plan goes on, the record is written back.
+  for (let nth = 1; ; nth++) {
+    assert.ok(nth <= 20, "a plan reads its record fewer than twenty times");
+    const run = startGated([CLI, "retire", inst.instance, "--plan", "--json"], { cwd: d.fx.dep, env: d.fx.env, gateDir: join(d.fx.base, "drift-gates", String(nth)),
+      gates: [{ name: "read", fn: "readFileSync", path, when: "after", nth }] });
+    let held = true, out;
+    try {
+      try { await run.waitGate("read"); } catch (e) { if (!/exited without reaching/.test(e.message)) throw e; held = false; }
+      if (held) { const meta = JSON.parse(asSpawned); meta.branch = "agents/some-other-branch"; writeFileSync(path, JSON.stringify(meta, null, 2) + "\n"); }
+    } finally { out = await run.finish(); writeFileSync(path, asSpawned); }
+    assert.deepEqual([out.code, out.timedOut], [0, []], out.stderr);
+    if (!held) { assert.ok(nth > 1, "the gate held the plan at its first read of the record"); break; }
+    const plan = JSON.parse(out.stdout).result;
+    t.diagnostic(`read ${nth} | ${plan.planRevision === settled.planRevision ? "the settled revision" : "another revision"} | ${JSON.stringify(view(plan))}`);
+    // A read after every one the plan's answer is made from (the address of its event): the
+    // rewrite does not reach the plan, which is the settled one, whole, under its revision.
+    if (same(whole(plan, null), whole(settled, null))) { assert.equal(plan.planRevision, settled.planRevision, `read ${nth}: the settled plan, whole`); continue; }
+    assert.notEqual(plan.planRevision, settled.planRevision, `read ${nth}: a plan that shows ${JSON.stringify(view(plan))} has the settled plan's revision`);
+    if (plan.facts.recordedBranch === settled.facts.recordedBranch) alike++;
+    // The record is as it was: the apply with the held plan's revision meets the settled plan.
+    const stale = d.apply(inst.instance, plan.planRevision, `drift-${nth}`);
+    assert.deepEqual([stale.status, stale.ok, stale.error?.code], [1, false, "E_PLAN_STALE"], `read ${nth}: ${JSON.stringify(stale.error ?? stale.result)}`);
+    assert.deepEqual(timeless(stale.error.details.plan), timeless(settled), `read ${nth}: the refusal carries the fresh plan, whole`);
+    assert.deepEqual([d.hookRan(inst.instance), existsSync(join(inst.home, "work", ".git"))], [false, true], `read ${nth}: no retire hook ran, the tree is where it was`);
+  }
+  // The read this test exists for: one the plan makes for what Git says of work/, after its own,
+  // which gives drift and its note under two equal branches. If it goes, so does this window.
+  assert.ok(alike > 0, "fixture premise: a read of the record after the plan's own, whose rewrite shows as drift alone");
+  assert.equal(d.plan(inst.instance).planRevision, settled.planRevision, "the record as it was: the settled revision");
 });
 
 test("a child's session moves by itself and is not part of the parent's revision: the plan of a parent whose child's session runs, and then is gone, shows another thing under the same revision (#1065)", async (t) => {

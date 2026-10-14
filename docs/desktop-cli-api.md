@@ -4102,7 +4102,7 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
 
   <a id="retire-revision-work"></a>**A retire plan's `planRevision` binds
   everything the plan shows, except the facts that move by themselves**
-  (0.53.0, #1065), which are these:
+  (0.56.0, #1065), which are these:
   - `at`, the instant of the read;
   - the counts against the branch's upstream and against the default branch
     (`facts.work.upstream.ahead` and `.behind`, `facts.work.base.ahead` and
@@ -4120,10 +4120,13 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   - what `work/` is by this reading, with the repository Git names for
     `work/` wherever it is a registered work tree;
   - what Git says of `work/`: the commit, the branch and whether `HEAD` is
-    detached, the counts of changed and untracked files, the branch's
-    upstream by its name (`facts.work.upstream.ref`) and the remote's host
-    and path (`facts.work.remote`); and where Git gives no answer, the
-    reason (`facts.work.reason`);
+    detached, whether that branch is not the one the record names
+    (`facts.work.drift`, as the plan shows it: it comes from a second read
+    of the record, so it is not derived from `facts.recordedBranch`),
+    the counts of changed and untracked files, the branch's upstream by its
+    name (`facts.work.upstream.ref`) and the remote's host and path
+    (`facts.work.remote`); and where Git gives no answer, the reason
+    (`facts.work.reason`);
   - the session as the plan shows it (`facts.session`, whole: its state,
     and the `reason` or the `note` of one that is not established), which
     the record's launch and endpoint decide where the session's receipt
@@ -4133,16 +4136,15 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
     out, as the spawn's receipt gives them: the roots with their owners,
     not the note made from them, which is shortened past its budget and
     then reads alike for two lists of one length. A changed recovery
-    exclusion changes the revision (it did not before 0.53.0);
+    exclusion changes the revision (it did not before 0.56.0);
   - of other homes: the children as the plan names them (`instance`,
     `agent`, `home`; a child's agent is the name its soul's file gives),
     the edges that could not be followed (`facts.ambiguous`, whole) and the
     children attached to this home's `work/`.
 
   A key that is derived is bound through what it is derived from:
-  `facts.ownWorktree` and `defaults.retainWorktree` (the reading),
-  `facts.work.drift` (the two branches), and every note and every line of
-  the plan's text.
+  `facts.ownWorktree` and `defaults.retainWorktree` (the reading), and
+  every note and every line of the plan's text.
   `lifecycleApi`, `action`, `facts.pullRequest` and the defaults
   `deleteBranch`, `stopChildren` and `retainChildren` have one value in
   every plan of a kernel.
@@ -4156,7 +4158,7 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   is refused with `E_PLAN_STALE` and the fresh plan, before anything runs.
   Two reads of a home that nobody touched give one revision.
 
-  Before 0.53.0 the revision held none of the record's fields but its
+  Before 0.56.0 the revision held none of the record's fields but its
   launch, the session's state alone, and nothing of the reading: a record
   rewritten between a plan and its apply did not make the plan stale.
   **Every retire plan read under an older kernel is stale under this one,
@@ -4291,7 +4293,7 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   The second is the line above in worktree mode, `recovery: work/ is copied
   there when it is not empty` in directory mode, and absent in checkout,
   attached and workspace modes. They are strings in `notes`: no other key
-  changes. From 0.53.0 the declared roots are part of `planRevision`, as
+  changes. From 0.56.0 the declared roots are part of `planRevision`, as
   the baseline gives them and not as the note says them (#1065,
   [the plan's revision](#retire-revision-work)); before it they were not.
 - `facts.extraWorktrees` (0.42.1) lists the instance's
