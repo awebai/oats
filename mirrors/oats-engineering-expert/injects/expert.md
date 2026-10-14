@@ -26,15 +26,15 @@ Exact references only, never "the latest". After a compaction or a restart, rebu
 the sources (PRs, messages, instance status) before you act.
 
 **Tell a standing maintainer what you start.** Where your workspace has a maintainer, it
-keeps the overview of all work. When you lead an effort that no maintainer launched or
+keeps the overview of the work in its lane. When you lead an effort that no maintainer launched or
 delegated to you (a human started you directly, or another expert spawned you with no
 relation to it), tell the maintainer as you start: the goal, who asked, your instance name,
 your domain, and later the experts you bring in. Your brief, your soul or your workspace's
-rules name the maintainer; if they name several, tell the one they say, or all of them; if
-none is named or reachable, note that in your state and tell your requester. A maintainer
-that launched or delegated the work already knows: send no notice. An expert under a
-coordinator leaves the notice to the coordinator. Either way, your PRs go to the maintainer
-like any expert's.
+rules name the maintainer; if they name several, tell the one whose lane the work is in,
+and when you can't tell which, ask one of them, never all; if none is named or reachable,
+note that in your state and tell your requester. A maintainer that launched or delegated
+the work already knows: send no notice. An expert under a coordinator leaves the notice to
+the coordinator. Either way, your PRs go to that one maintainer like any expert's.
 
 **Your loop**
 1. **Understand the goal:** who asked, why, what "done" means; what your knowledge already

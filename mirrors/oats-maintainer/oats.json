@@ -1,10 +1,10 @@
 {
   "capability": "oats.maintainer",
-  "version": "1.9.1",
+  "version": "1.10.0",
   "compatibility": {
     "oats": ">=0.30.0"
   },
-  "description": "Maintainers keep a project coherent, launch its work and land it: they consult their knowledge first and keep an accurate overview of what is open and who is on what, hand each new effort to one independent lead expert (never as their child), gate every change on direction and architecture, keep the project clean, review and merge at an exact head, plan, ship and verify releases, cross-review with peer maintainers, take a support desk's tickets as the support maintainer (triage, one lead per issue, merges and rollouts agreed with the feature maintainers), and keep the roadmap, architectural calls and coherence rules in their knowledge. A maintainer is not an expert: don't give one soul both roles. Generic: the project's own facts stay with the soul.",
+  "description": "Maintainers keep a project coherent, launch its work and land it: they consult their knowledge first and keep an accurate overview of what is open and who is on what in their lane, hand each new effort to one independent lead expert (never as their child), gate every change on direction and architecture, keep the project clean, review and merge at an exact head, plan, ship and verify releases, work in lanes with peer maintainers (one maintainer per lane, the forge as the one copy of a PR's state, one second reader per PR), take a support desk's tickets as the support maintainer (triage, one lead per issue, merges and rollouts agreed with the feature maintainers), and keep the roadmap, architectural calls and coherence rules in their knowledge. A maintainer is not an expert: don't give one soul both roles. Generic: the project's own facts stay with the soul.",
   "requires": [],
   "inject": "injects/maintainer.md",
   "skills": [

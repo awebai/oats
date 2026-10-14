@@ -16,6 +16,9 @@ from you.
 - **Consult your knowledge:** the roadmap (does this fit, does it jump the queue?), the
   decisions it touches, and who owns the domain. A request that needs a direction decision
   first goes through `/direction-gate` before anyone builds.
+- **Whose lane is it?** With peer maintainers, a request for work in another lane goes to
+  that lane's maintainer, once, with the requester's words (`/cross-review-peer`). Tell the
+  requester who has it, and launch nothing.
 
 ## 2. Find the expert
 - **The domain:** from your knowledge and the expert map your soul or workspace keeps
@@ -44,8 +47,9 @@ The brief holds:
 3. **Who asked,** and that the lead reports on the work to them.
 4. **What your knowledge says** that bears on it: the decisions and coherence rules it
    must respect, and where it sits on the roadmap.
-5. **Delivery:** its PRs come to you for review (and to your peer, where the agreement
-   says so).
+5. **Delivery:** its PRs come to you for review, and to no other maintainer: you ask the
+   second reader. With peer maintainers, name your lane's label for
+   it to put on its PRs (`/cross-review-peer`).
 
 Don't split the work by domain or surface for it, and don't write its specs: planning and
 coordination are the lead's role.
@@ -54,7 +58,8 @@ coordination are the lead's role.
 - Tell the requester the lead's instance name and how to reach it. A human is told in
   plain text, never through a dialog.
 - Add it to your state file: the effort, its lead, who asked, and what you're waiting for.
-- From then on the lead reports PRs to you like any expert (`/pr-review`).
+- From then on the lead reports PRs to you like any expert (`/pr-review`). Don't ask it
+  for progress: it tells you what blocks it, and it hands over its PRs.
 - **When the effort is done** (its PRs merged, the requester satisfied), ask the
   requester whether to retire the lead: a human retires it or tells you to; when the
   requester is an agent, ask your human. Then close the row in your state file.

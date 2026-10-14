@@ -60,5 +60,7 @@ A published release that breaks users is fixed forward, never rewritten:
 
 ## Close
 Record the outcome under "Since the last sweep" in your state file (`/maintainer-intake`).
-Tell the experts and your human it's out, with the version and what users must do.
+Tell those who must act on it that it's out, once: whoever deploys it, the experts whose
+work waited on it, and your human, with the version and what users must do. Nothing else
+wakes them.
 Publishing is not deploying: who adopts the release, and when, is separate.
