@@ -54,7 +54,7 @@ function deployment(t) {
   const envelope = (r) => { try { return r.json(); } catch { assert.fail(`no envelope: ${r.stdout}${r.stderr}`); } };
   const ok = (r) => { const e = envelope(r); assert.equal(e.ok, true, JSON.stringify(e.error)); return e.result; };
   const d = {
-    fx, git,
+    fx, git, ok,
     /** A worktree instance of `soul`: an owner. */
     owner: (instance, soul = "dev") => fx.spawn(soul, { instance }),
     /** A tree of `home` made with Git: `<home>/.work-<purpose>` on a new branch of `repo`. Clean
@@ -369,6 +369,48 @@ for (const guarded of [false, true]) {
     }
   });
 }
+
+test("the plan's revision binds the instances attached to each tree it names: one whose link comes to lead to another tree between the plan and a guarded apply makes the apply stale, nothing done (#964, as #1065 binds work/'s)", async (t) => {
+  const d = deployment(t);
+  const owner = await d.owner("dev-owner");
+  // A recorded child attached to one extra tree, whose link then comes to lead to another: the
+  // children, work/'s attached instances and the trees are all as the plan showed them; only which
+  // tree it is attached to, which the trees' notes name, has changed.
+  const from = d.tree(owner.home, "from", { dirty: true }), to = d.tree(owner.home, "to", { dirty: true });
+  const kid = d.attach("moves", from);
+  const before = d.plan(owner.instance);
+  assert.ok(before.notes.some((n) => n.startsWith(`extra worktree ${from} `) && n.endsWith(REPOINTED(kid.instance))), before.notes.join("\n"));
+  rmSync(join(kid.home, "work"));
+  symlinkSync(to, join(kid.home, "work"));
+  const fresh = d.plan(owner.instance);
+  assert.ok(fresh.notes.some((n) => n.startsWith(`extra worktree ${to} `) && n.endsWith(REPOINTED(kid.instance))), fresh.notes.join("\n"));
+  assert.notEqual(fresh.planRevision, before.planRevision, "the plan that names it on the other tree has another revision");
+  const stale = d.fx.cli(["retire", owner.instance, "--plan-revision", before.planRevision, "--idempotency-key", "late-1", "--json"]).json();
+  assert.deepEqual([stale.ok, stale.error?.code, stale.error?.details?.plan?.planRevision], [false, "E_PLAN_STALE", fresh.planRevision], JSON.stringify(stale.error));
+  assert.equal(existsSync(owner.home), true, "nothing was done");
+  for (const tree of [from, to]) assert.equal(d.registered(tree), true, `${tree} is where it was`);
+  assert.equal(d.link(kid), to);
+
+  // The same for an instance of an ambiguous name whose link comes to lead to work/: the plan names it
+  // in the note for work/, and the revision binds it.
+  const twin = await d.owner("dev-twin-1");
+  const outside = join(d.fx.base, "integration");
+  d.git(d.fx.member, "worktree", "add", "-q", "--detach", outside);
+  const guest = d.ok(d.fx.cli(["spawn", "dev", "--work", "attached", "--work-dir", outside, "--parent", "dev-twin-1", "--repo", d.fx.member, "--purpose", "guest", "--no-launch", "--json"], { env: { SHELL } }));
+  await d.owner("dev-twin-1", "dev-twin");
+  const at = ["--home", twin.home];
+  const planOf = () => { const r = d.fx.cli(["retire", "dev-twin-1", ...at, "--plan", "--json"]).json(); assert.equal(r.ok, true, JSON.stringify(r.error)); return r.result; };
+  const first = planOf();
+  assert.deepEqual(first.facts.ambiguous.map((c) => c.instance), [guest.instance], "fixture premise: it is listed as ambiguous");
+  rmSync(join(guest.home, "work"));
+  symlinkSync(join(twin.home, "work"), join(guest.home, "work"));
+  const second = planOf();
+  assert.notEqual(second.planRevision, first.planRevision, "the plan that names it in the note for work/ has another revision");
+  assert.ok(second.notes.some((n) => n.startsWith(`attached instance(s) ${guest.instance}, listed under ambiguous, use this home's work/`)), second.notes.join("\n"));
+  const staleToo = d.fx.cli(["retire", "dev-twin-1", ...at, "--plan-revision", first.planRevision, "--idempotency-key", "late-2", "--json"]).json();
+  assert.deepEqual([staleToo.ok, staleToo.error?.code], [false, "E_PLAN_STALE"], JSON.stringify(staleToo.error));
+  assert.equal(existsSync(twin.home), true, "nothing was done");
+});
 
 test("oats worktree remove refuses under an attached instance whose session is running, removes nothing, and removes once it is stopped (#964)", { skip: NO_TMUX }, async (t) => {
   const d = deployment(t);

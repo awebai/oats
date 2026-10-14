@@ -4342,7 +4342,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   - of other homes: the children as the plan names them (`instance`,
     `agent`, `home`; a child's agent is the name its soul's file gives),
     the edges that could not be followed (`facts.ambiguous`, whole) and the
-    children attached to this home's `work/`.
+    instances attached to this home's `work/` and to each of its extra
+    trees, the recorded children and those of a name that is not unique
+    alike: the plan's notes name them (#964).
 
   A key that is derived is bound through what it is derived from:
   `facts.ownWorktree` and `defaults.retainWorktree` (the reading), and
@@ -4552,7 +4554,8 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   their work link to it`. A tree the retire refuses is neither moved nor
   removed, and its note says nothing of them. Names too long for the note
   give way to `<n> of the recorded children`. They are strings in `notes`: no
-  key changes, and `planRevision` is unaffected.
+  key changes. Who is attached to each tree is part of `planRevision`
+  ([what the revision binds](#retire-revision-work)).
 - The retire does not act on an instance listed under `ambiguous`, and one
   that is attached to a tree of this home is named with what that leaves it
   with. An extra tree's note gains a clause of its own, after the one for
