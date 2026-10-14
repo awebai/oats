@@ -131,7 +131,7 @@ test('another refusal: "Couldn\'t forget", the kernel\'s lines under it (a plain
       const lines = kernelLines(message, undefined, DESKTOP_TERMS);
       assert.deepEqual(f.said, [["Couldn't forget dev-a.", ...lines].join('\n')]);
       assert.ok(lines.every(line => !line.includes('\n') && line.length <= 2048 + 16), 'each kernel text is one bounded display line');
-      if (message.startsWith('password')) assert.deepEqual(lines, ['[Detail withheld]']);
+      if (message.startsWith('password')) assert.deepEqual(lines, ['[withheld]']);
       assert.equal(f.doc.activeElement.id, 'opener');
     } finally { f.close(); }
   }
