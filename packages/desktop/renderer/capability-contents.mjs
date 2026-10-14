@@ -20,10 +20,10 @@
  * the controller owns that row too (`triggerSources`, a second long-lived element the page appends into its
  * card on every rebuild) and tells the host when it appears or disappears (`onProvidesChange`). Neither the
  * declaration nor the kernel's problems with it change the section's state, its problems or its warnings. */
-import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, skillRelativePath, triggerSourcesView, capabilityShowUnreadable } from '../../client/capability-show-contract.mjs';
+import { capabilityShowSupported, capabilitySelector, capabilityShowData, capabilityFileData, listedFiles, skillFilePath, triggerSourcesView, capabilityShowUnreadable } from '../../client/capability-show-contract.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { fillTriggerSourcesRow } from './capability-page.mjs';
-import { contentsCardCSS, sizeText, firstSentence, createContentsTree, createContentsReader } from './contents-reader.mjs';
+import { contentsCardCSS, sizeText, firstSentence, createContentsTree, createContentsReader, skillTreeItem, isSkillMd, SKILL_COPY } from './contents-reader.mjs';
 import { createDataState, skeleton, captureFocusState } from './loading.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 
@@ -37,11 +37,11 @@ export const CONTENTS_COPY = Object.freeze({
   noInject: 'Injects no instructions.',
   noSkills: 'Ships no skills.',
   skillsUnlistable: "Its skills can't be listed: a spawn of it would refuse.",
-  moreFiles: 'More files not listed.',
-  skillUnlisted: "Its files can't be listed.",
+  moreFiles: SKILL_COPY.moreFiles,
+  skillUnlisted: SKILL_COPY.unlisted,
   inject: 'Injected instructions',
-  binary: 'Binary file; not shown.',
-  truncated: 'Truncated at 256 KiB',
+  binary: SKILL_COPY.binary,
+  truncated: SKILL_COPY.truncated,
   tooLarge: size => `Too large to show${size ? ` (${size})` : ''}.`,
   notAvailable: 'Not available.',
   empty: 'Nothing to show: this capability injects no instructions and ships no skills.',
@@ -55,7 +55,6 @@ export const capabilityContentsCSS = `${contentsCardCSS}${capabilityWarningsCSS}
 .cap-contents-warnings-title { margin:0; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.05em; text-transform:uppercase; }
 `;
 
-const isSkillMd = (skill, file) => file.path === `${skill.path}/SKILL.md`;
 const shortCommit = v => typeof v === 'string' && /^[0-9a-f]{40}$/i.test(v) ? v.slice(0, 7) : null;
 export { sizeText, firstSentence };
 
@@ -271,41 +270,10 @@ export function createCapabilityContents(doc, { request, openExternal = null, on
     row.addEventListener('click', () => { keys.focusItem(item); open(path); });
     return item;
   }
+  /** A skill and its files (the shared item, contents-reader.mjs): each file a leaf that opens it. */
   function skillNode(skill) {
-    if (skill.files === null) return unlistedSkill(skill);
-    const open_ = expanded.has(skill.path);
-    const item = node('li'); item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.setAttribute('aria-expanded', String(open_));
-    item.setAttribute('aria-label', skill.name); item.dataset.skill = skill.path; item.dataset.focusKey = `skill:${skill.path}`; item.tabIndex = -1;
-    const sentence = firstSentence(skill.description);
-    if (sentence) item.setAttribute('aria-description', [sentence, skill.filesTruncated ? CONTENTS_COPY.moreFiles : ''].filter(Boolean).join(' '));
-    else if (skill.filesTruncated) item.setAttribute('aria-description', CONTENTS_COPY.moreFiles);
-    const row = node('div', 'cap-node'); if (skill.description) row.title = skill.description;
-    const twisty = node('span', 'cap-node-twisty', open_ ? '▾' : '▸'); twisty.setAttribute('aria-hidden', 'true');
-    const copy = node('span', 'cap-node-copy'); const label = node('span', 'cap-node-name mono', skill.name); label.title = skill.name; copy.append(label);
-    if (sentence) copy.append(node('span', 'cap-node-desc', sentence));
-    row.append(twisty, copy); item.append(row);
-    const children = node('ul'); children.setAttribute('role', 'group'); children.hidden = !open_;
-    // Its files relative to the skill directory, SKILL.md first, then the kernel's (sorted) order.
-    for (const f of [...skill.files].sort((a, b) => isSkillMd(skill, b) - isSkillMd(skill, a))) {
-      const shown = skillRelativePath(skill, f);
-      children.append(leaf(skillFilePath(skill, f), [node('span', 'cap-node-name', shown)], { level: 2, label: shown }));
-    }
-    if (skill.filesTruncated) { const more = node('li', 'cap-more', CONTENTS_COPY.moreFiles); more.setAttribute('role', 'none'); more.setAttribute('aria-hidden', 'true'); children.append(more); }
-    item.append(children);
-    row.addEventListener('click', () => { keys.focusItem(item); keys.toggle(item); });
-    return item;
-  }
-  /** A skill whose directory could not be listed (a problem names it): a reachable item that opens nothing. */
-  function unlistedSkill(skill) {
-    const item = node('li'); item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.setAttribute('aria-disabled', 'true');
-    item.setAttribute('aria-label', skill.name); item.setAttribute('aria-description', CONTENTS_COPY.skillUnlisted);
-    item.dataset.focusKey = `skill:${skill.path}`; item.tabIndex = -1;
-    const row = node('div', 'cap-node'); if (skill.description) row.title = skill.description;
-    const twisty = node('span', 'cap-node-twisty'); twisty.setAttribute('aria-hidden', 'true');
-    const copy = node('span', 'cap-node-copy'); copy.append(node('span', 'cap-node-name mono', skill.name), node('span', 'cap-node-desc', CONTENTS_COPY.skillUnlisted));
-    row.append(twisty, copy); item.append(row);
-    row.addEventListener('click', () => keys.focusItem(item));
-    return item;
+    return skillTreeItem(doc, skill, { open: expanded.has(skill.path), focusKey: `skill:${skill.path}`, keys,
+      fileItem: (f, shown) => leaf(skillFilePath(skill, f), [node('span', 'cap-node-name', shown)], { level: 2, label: shown }) });
   }
   /* ── reader ──────────────────────────────────────────────────────────── */
   function clearReader() { readerPath = null; fileTicket++; fileReader.clear(); fileState.reset(); }

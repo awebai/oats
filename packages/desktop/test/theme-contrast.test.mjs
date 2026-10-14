@@ -1599,6 +1599,21 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
     ['.soul-part[data-source^=capability] .soul-part-flag', '.cap-contents-reader', 'warn', 'bg'],
     ['.soul-part[data-source^=work-mode] .cap-reader-line', '.cap-contents-reader', 'muted', 'bg'],
   ]);
+  // #1144: the Skills group (the shared skill item, "more files", a selected file) and a cut skill file's head; then its note in place.
+  section.update({ ...soul('# T\n'), skills: [{ name: 'oats-pr-review', path: 'skills/oats-pr-review', description: 'Reviews. More.', filesTruncated: true,
+    files: [{ path: 'skills/oats-pr-review/SKILL.md', bytes: 300000, text: '# R\n', binary: false, truncated: true }] }] });
+  doc.querySelector('[data-skill] > .cap-node').click();
+  doc.querySelector('[data-path="file:skills/oats-pr-review/SKILL.md"] > .cap-node').click();
+  check([
+    ['[data-skill] > .cap-node .cap-node-name', '.cap-contents', 'fg', 'surface'],
+    ['[data-skill] > .cap-node .cap-node-desc', '.cap-contents', 'muted', 'surface'],
+    ['.cap-more', '.cap-contents', 'muted', 'surface'],
+    ['[aria-selected=true] .cap-node-name.mono', '[aria-selected=true] > .cap-node', 'fg', 'sel'],
+    ['.cap-reader-path', '.cap-reader-head', 'fg', 'bg'],
+    ['.cap-reader-flag', '.cap-reader-head', 'warn', 'bg'],
+  ]);
+  section.update({ ...soul('# T\n'), skills: [] });
+  check([['[role=tree] .cap-contents-group-label', '.cap-contents', 'muted', 'surface'], ['[role=tree] .cap-contents-note', '.cap-contents', 'muted', 'surface']]);
   section.dispose(); dom.window.close();
 });
 

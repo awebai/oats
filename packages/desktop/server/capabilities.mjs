@@ -4,7 +4,7 @@ import { cliCapability, operationArgs } from '../../client/cli-adapter.mjs';
 import { inspectKey } from './inspect-cache.mjs';
 import { observationData } from '../../client/deployment-data.mjs';
 import { OBSERVE_MAX_AGE_FEATURE } from '../../client/deployment-contract.mjs';
-import { hostComposes } from '../renderer/composed-gate.mjs';
+import { hostComposes, hostReportsSkills } from '../renderer/composed-gate.mjs';
 import { canAddressRemote, unaddressableSentence, hostReason, shownLabel, unroutableReason } from '../../client/remote-address.mjs';
 
 const fail = (message, code = 'E_BAD_ARGS') => { throw Object.assign(new Error(message), { code }); };
@@ -45,6 +45,11 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   // server-probe-features); otherwise it is dropped and the read is today's. The renderer's ask is never the proof.
   if (request.instructions !== undefined && (action !== 'inspect' || typeof request.instructions !== 'boolean' || selector.soul === undefined)) fail('Invalid instructions flag');
   const instructions = request.instructions === true && (!server || hostComposes(cli, workspace.group));
+  // skills (feature soul-skills): a soul's own skills (`souls[0].skills`), inspect of a soul only, gated the same way:
+  // the adapter sends it only to a CLI that advertises it, and routed only when the held roster row says the host
+  // reports them (composed-gate.mjs hostReportsSkills); otherwise it is dropped and the read is today's.
+  if (request.skills !== undefined && (action !== 'inspect' || typeof request.skills !== 'boolean' || selector.soul === undefined)) fail('Invalid skills flag');
+  const skills = request.skills === true && (!server || hostReportsSkills(cli, workspace.group));
   let soul, agentsRoot, home, key;
   let context = workspace.scope;
   if (selector.home !== undefined) {
@@ -66,11 +71,12 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     const agent = matches[0];
     soul = agent.name; agentsRoot = agent.agentsRoot;
     context = dirname(agentsRoot);
-    key = inspectKey({ deployment: workspace.scope, server, kind: 'soul', soul, agentsRoot, catalogKey, instructions });
+    key = inspectKey({ deployment: workspace.scope, server, kind: 'soul', soul, agentsRoot, catalogKey, instructions, skills });
   } else fail('Select a soul or an instance home (inspection has no scope subject)');
   const call = () => invoke(cli.bin, {
     action, context, server, soul, agentsRoot, home,
     operation: request.operation, ...(request.args !== undefined ? { args: request.args } : {}), ...(instructions ? { instructions } : {}),
+    ...(skills ? { skills } : {}),
     localCwd: server ? localCwd : context || workspace.scope,
     // --max-age travels only on a LOCAL inspect (reuse is local only: the kernel refuses it with --server)
     // and only when the probe declared observe-max-age (the adapter's call).
