@@ -1476,29 +1476,54 @@ or workspace reset ends that selection. Standalone view hosts keep the inline
 inspector fallback.
 
 There is no status bar under the editor groups. After the tabs the editor tab bar
-holds only the two split buttons (spec F). The instance panel has no tab-bar
-button: `panel.toggle` (default **⌘I / Ctrl+Shift+I**, terminal-allowlisted;
-plain Ctrl+I, the Tab byte, stays with the program in a Linux/Windows terminal), the palette's
-"Instance panel: show / hide" and the panel's own collapse/expand controls run
-it. **Focus mode**
-(`app.focusMode`: palette and a rebindable action, no default chord) hides the
-sidebar and right panel without closing tabs or changing split weights; exit
-restores the existing sidebar/panel preferences. Focus mode always has a visible
-exit: the `#sidebar-restore` edge is shown in focus mode and runs
-`sidebar.toggle`, which leaves it; `panel.toggle` also leaves it and shows the
-panel.
-Focus that was in the hidden sidebar moves to the active tab's trigger, else to a
-stable visible control (`stableFocusTarget` in `shell.mjs`: the sidebar toggle or
-the restore edge), never `<body>`; a focus-mode change made
-after focus was already lost (the palette removes its input before running the
-command) lands there too. `sidebar.focusFilter` and `sidebar.toggle` leave focus
-mode. Panel collapse and selected tab are session-local per workspace; focus mode
-is a temporary presentation override. Collapsed, the panel is a rail (a 44px column, or a
-34px row when the workbench stacks): the rail centres its controls on its cross
-axis, each control centres its block `.shell-icon` as a flex box, and no control
-has a cross-axis auto margin (the stacked expand drops its `margin-top:auto`), so
-every icon sits on the rail's centre line (`context-panel-rail.test.mjs`). Native terminal input and per-window
-lifecycle policies are unchanged.
+holds only the two split buttons (spec F). `panel.toggle` (default **⌘I /
+Ctrl+Shift+I**, terminal-allowlisted; plain Ctrl+I, the Tab byte, stays with the
+program in a Linux/Windows terminal), the palette's "Instance panel: show /
+hide", Show instance panel and the panel's own close button open and close the
+instance panel.
+
+**A closed sidebar or panel leaves nothing behind** (Spec B): no strip, rail
+or edge. The sidebar hidden (`#app.sidebar-hidden`) or in focus mode is
+`display:none`; the panel closed is `hidden`. Two shell-owned buttons reopen
+them, at the two ends of the main area's top bar: `#show-sidebar` (first child
+of `#main`, `sidebar.toggle`, shown only while the sidebar is away) and
+`#show-panel` (last child, `panel.toggle`, shown only while the panel is closed
+and has something to show; it carries the Developer page's change dot and
+says so in its name). They are absolutely placed over the bar; every top bar
+reserves their room with `--main-lead-inset` / `--main-trail-inset` (40px each
+while its control is shown, set on `#main` by `:has()`), always outside any
+horizontal scrollport, so scrolled content never passes under a control:
+`#tabbar-row` pads around its scrolling `#tabbar`; a split group strip at the
+main area's top corners is itself the scroller, so it takes them as a margin
+and its `.group-cell` paints the bar behind it; the stage headers (`.hier-bar`,
+`.workspace-header`, `.auto-header`, `.page-bar`) do not scroll sideways
+themselves and add them to their own padding (a scroller inside one, like
+`.auto-tabs`, sits within it). A new top bar in `#main` must do the same.
+
+Instance details open or closed is ONE per-machine preference
+(`localStorage` `oats-desktop-instance-panel-open`, absent = closed): opening a
+terminal never opens the panel; only `panel.toggle`, Show instance panel and the
+panel's close button change it. The panel's selected page stays per workspace,
+in memory. A stage's panel content (the Workspace soul inspector) keeps its own
+per-workspace, in-memory state, open by default: selecting a soul inspects it,
+its X closes it. **Focus mode** (`app.focusMode`: palette and a rebindable
+action, no default chord) hides the sidebar and the panel without closing tabs
+or changing split weights; leaving it restores both as they were. Show sidebar
+and (with content) Show instance panel stay shown in focus mode, and each
+leaves it.
+
+Focus never lands on `<body>`. Hiding the sidebar with focus in it moves focus
+to Show sidebar (and showing it, from there, to the sidebar's toggle); closing
+the panel with focus in it moves focus to Show instance panel; opening the panel
+by that control moves focus to its selected tab (a stage's content: its first
+control); a chord pressed in a terminal opens or closes either without taking
+focus from it. Entering focus mode is the one deliberate exception: it means
+"work in the content", so focus that was in the sidebar it hides moves to the
+active tab's trigger, not to Show sidebar, else to a stable visible control (`stableFocusTarget` in
+`shell.mjs`: the sidebar toggle, Show sidebar, Show instance panel); a
+focus-mode change made after focus was already lost (the palette removes its
+input before running the command) lands there too. `sidebar.focusFilter` and
+`sidebar.toggle` leave focus mode. Native terminal input and per-window lifecycle policies are unchanged.
 
 ### Git inspection (slice 2a)
 
@@ -1581,8 +1606,8 @@ active tab selects its adjacent group-mate, or leaves that panel empty.
 explicitly joins back to the flat strip. **Split: return to terminal
 groups** in the palette restores a covered layout, including an all-empty one.
 There is no new default shortcut. Clickable controls mirror the chords with no duplicated
-logic: the split-right/down buttons and the sidebar toggles (rail-footer button + the
-thin `#sidebar-restore` edge button shown while hidden) all dispatch the
+logic: the split-right/down buttons and the sidebar toggles (the footer button + Show
+sidebar, shown while hidden) all dispatch the
 registered actions through `runAction(id)` — context-gated exactly like
 chord dispatch — and their enablement dry-runs the same model transition
 via `split-controls.mjs` `splitControlsState`. One chrome per tab means the

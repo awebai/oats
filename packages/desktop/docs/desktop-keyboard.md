@@ -15,7 +15,8 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 `test/palette-recency.test.mjs` (its Recent group and focus record), `test/tab-strip-reveal.test.mjs`,
 `test/roster-scrollport.test.mjs` (a focused roster row is revealed inside the list),
 `test/roster-reveal-row.test.mjs` (an active terminal tab reveals its roster row),
-`test/theme-picker.test.mjs` (the theme picker's keys).
+`test/theme-picker.test.mjs` (the theme picker's keys), `test/shell-design.test.mjs` (Show sidebar,
+Show instance panel and the closed sidebar and panel).
 
 ## Principles
 
@@ -101,9 +102,9 @@ Code: `renderer/keybindings.mjs` (the engine, `DEFAULT_KEYMAP`,
 | Deployments / Workspace / Automations (`stage.hierarchy`, `stage.spawn`, `stage.automations`) | ⌘1 / ⌘2 / ⌘3 | Ctrl+1 / Ctrl+2 / Ctrl+3 | yes (Ctrl+3 is ESC, which Esc still sends) |
 | Focus next / previous region (`focus.nextRegion`, `focus.prevRegion`) | F6 / ⇧F6 | F6 / Shift+F6 | no (mc, htop, nano) |
 | Leave the terminal for the next region (`focus.leaveTerminal`) | ⇧⌘F6 | Ctrl+Shift+F6 | yes |
-| Sidebar (`sidebar.toggle`) | ⌘B | Ctrl+Shift+B | yes (plain Ctrl+B, the tmux prefix, stays the program's) |
+| Sidebar (`sidebar.toggle`; also the footer's sidebar button, and Show sidebar while it is hidden) | ⌘B | Ctrl+Shift+B | yes (plain Ctrl+B, the tmux prefix, stays the program's) |
 | Filter instances (`sidebar.focusFilter`) | ⌘F | Ctrl+Shift+F | yes |
-| Instance panel (`panel.toggle`; no tab-bar button since spec F, the panel keeps its own collapse) | ⌘I | Ctrl+Shift+I | yes (plain Ctrl+I, the Tab byte, stays the program's) |
+| Instance panel (`panel.toggle`; also Show instance panel while it is closed, and the panel's own close button) | ⌘I | Ctrl+Shift+I | yes (plain Ctrl+I, the Tab byte, stays the program's) |
 | Theme picker (`app.themePicker`; also the theme button and **Theme: choose…**) | ⇧⌘Space | Ctrl+Shift+Space | yes |
 | Theme cycle: White, Solarized, Dark, This computer (`app.themeToggle`) | none | none | – (the palette keeps it) |
 | Keyboard shortcuts (`app.shortcuts`) | ⌘, | Ctrl+, | yes |
@@ -204,20 +205,37 @@ F6 moves focus to the next region, Shift+F6 to the previous one, in this order:
 3. **Main**: with tabs open, the active tab's content (a terminal's input,
    through the same selection intent as any explicit terminal focus), else a
    focused empty split group, else the active tab in the strip; on a stage,
-   its first control. The tab strip and split controls belong here.
-4. **Instance panel**: its selected tab; when collapsed, its rail's pressed
-   button. A collapsed panel stays in the cycle on purpose: inside a terminal
-   Tab belongs to the program, so the region cycle is the way out to it
-   (⌘I / Ctrl+Shift+I shows or hides the panel from a terminal, but leaves
-   focus where it is).
+   its first control. The tab strip, the split controls, Show sidebar and Show
+   instance panel belong here.
+4. **Instance panel**: its selected tab (a stage's content, such as the soul
+   inspector: its first control), while the panel is open.
 
 Inside a terminal F6 belongs to the program (mc, htop, nano). **⇧⌘F6 /
 Ctrl+Shift+F6** (`focus.leaveTerminal`) leaves the terminal for the next region
 in the same order; from there plain F6 and Shift+F6 cycle as usual.
 
 Then back to the nav. A hidden region is skipped (the sidebar while hidden or
-in focus mode, the panel when it has nothing to show), and so is a region with
-nothing focusable at that moment: focus never lands on `<body>`. While a modal
+in focus mode, the panel while closed or when it has nothing to show), and so
+is a region with nothing focusable at that moment: focus never lands on
+`<body>`. From a terminal the closed panel is opened by `panel.toggle`'s chord.
+
+**A closed sidebar or panel leaves nothing behind** (no strip, rail or edge).
+Two buttons reopen them, at the two ends of the main area's top bar (the tab
+strip with tabs open, else the stage's header): **Show sidebar** at its start,
+shown while the sidebar is hidden or focus mode is on (`sidebar.toggle`, which
+also leaves focus mode), and **Show instance panel** at its end, shown while the
+panel is closed, or hidden by focus mode, and has something to show
+(`panel.toggle`; with the Developer page's change dot, "Show instance panel,
+Developer has changes"). They are ordinary buttons in the Main region's tab
+order, Show sidebar first and Show instance panel last, each with
+`aria-controls` and `aria-expanded="false"`, and their tooltips name the live
+chord. Focus follows them: hiding the sidebar with focus in it moves focus to
+Show sidebar; closing the panel with focus in it moves focus to Show instance
+panel; opening the panel with that button moves focus to the panel's selected
+tab; a chord pressed in a terminal opens or closes either and leaves focus in
+the terminal. Entering focus mode is the exception: focus that was in the
+sidebar goes to the active tab, the content focus mode is for. Opening an instance's terminal never opens the panel: whether it
+is open is the user's, kept on this computer, and it starts closed. While a modal
 dialog or the palette is open, F6 and the tab switches (Ctrl+Tab, Ctrl+PgDn/PgUp,
 go to tab) do nothing; the dialog keeps focus.
 
@@ -355,7 +373,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Row tools: PR link, Start…, actions menu | Tab from the focused row (shown on focus) | Enter/Space; the menu: arrows, Home/End, Esc back on its trigger, Tab closes |
 | Start / Restart dialog, lifecycle dialog | From the row or its menu | Esc (Cancel before anything is sent, Close or Done after); trapped; the lifecycle dialog starts on Cancel and focuses Close or Done when it ends; **focus returns to the row when its tool is hidden again (fixed: fell to `<body>`)**, and after a retire to the row that followed it |
 | Sidebar footer: Spawn instance, sidebar, theme, shortcuts, settings, palette | Tab | Enter/Space run the same registered actions as the chords |
-| Sidebar restore edge | Tab, while the sidebar is hidden (hiding moves focus to it) | Enter |
+| Show sidebar (start of the main area's top bar, while the sidebar is hidden or in focus mode) | Tab, first in the Main region; hiding the sidebar moves focus to it | Enter/Space: `sidebar.toggle` (leaves focus mode too) |
 | Tab bar | One roving stop per tablist (per group when split); F6 (main). Tabs shrink to fit (spec F); the active tab is scrolled fully into view in its own strip on every activation, close and strip resize, and a focused control is revealed in its strip, never by scrolling an ancestor | Left/Right/Home/End select; Delete closes the focused tab, and the keymap's `tabs.close` (⌘W / Ctrl+Shift+W, rebindable; the close button's tooltip names it) closes the active one; Ctrl+Tab from anywhere in the tab layer, and Ctrl+PgDn/PgUp and go-to-tab outside a terminal (⌥⌘digit also inside one on macOS), **keeping focus in the content (fixed: fell to `<body>`)** |
 | Terminal | Enter on its roster row; F6 (main) | Every key reaches the program except the terminal-allowlisted chords; ⇧⌘F6 / Ctrl+Shift+F6 leaves for the next region; ⌘C / Ctrl+Shift+C copy the selection and ⌘V / Ctrl+Shift+V paste |
 | Tab close buttons | Tab | Enter |
@@ -381,7 +399,7 @@ the rig). "Fixed" marks a gap this change closed.
 | Schedule delete confirm | Its row action | Trapped; Esc |
 | Brain: a running instance's heading | **Tab (fixed: a clickable heading, now a button)** | Enter/Space open its terminal |
 | Instance panel tabs | F6 (selected tab); roving | Left/Right/Home/End |
-| Collapsed panel rail | F6 (pressed button); Tab | Up/Down/Home/End; a rail button expands to its page |
+| Show instance panel (end of the main area's top bar, while the panel is closed and has something to show) | Tab, last in the Main region; closing the panel moves focus to it | Enter/Space: `panel.toggle`, then focus on the panel's selected tab |
 | Panel sections: soul link, copy, details, Open soul page, Teams, Git, lifecycle Restart…/Start…/Stop…/Retire… | Tab | Native buttons and summaries |
 | Spawn dialog | Spawn on a card, a soul page, Quick Open | See above |
 | Command palette, Quick Open | ⌘K / Ctrl+Shift+P, ⌘P / Ctrl+P | Type, arrows, Enter, Esc; Tab stays in the input; in the palette its chord cycles rows (⇧ + it: up), skipping context rows (see "The command palette") |

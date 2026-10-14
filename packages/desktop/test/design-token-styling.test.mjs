@@ -25,8 +25,8 @@ const markup = `<div id="app"><aside id="sidebar">
     </button></div></div></section>
   <div id="nav-foot"><button id="sidebar-spawn" class="primary">${icon}Spawn instance</button>
     <div id="sidebar-tools">${["Sidebar", "Theme", "Shortcuts", "Palette"].map(label => `<button class="nav-item" aria-label="${label}">${icon}</button>`).join("")}</div>
-  </div></aside><button id="sidebar-restore">${icon}</button>
-  <main id="main"><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
+  </div></aside>
+  <main id="main"><button id="show-sidebar" class="main-edge-control" hidden>${icon}</button><div id="tabstrip"><div id="tabbar-row"><div id="tabbar">
     <div class="tab active"><button class="tab-trigger">Fixture tab</button><button class="close">×</button></div>
   </div><div id="tab-actions" hidden>${["splitRight", "splitDown"].map(name => `<button>${shellIcon(name)}</button>`).join("")}</div></div></div>
   <div id="tabhost" class="split-row"><div class="group-cell focused-group">
@@ -174,9 +174,11 @@ test("component geometry: rounded popovers, 36px fields and persistent scrollabl
     u.get(selector).hidden = false;
     assert.notEqual(u.style(selector).display, "none", `${selector} can be revealed`);
   }
-  u.get("#app").classList.add("sidebar-hidden");
+  assert.equal(u.style("#show-sidebar").display, "none", "Show sidebar honors hidden");
+  u.get("#app").classList.add("sidebar-hidden"); u.get("#show-sidebar").hidden = false;
   assert.equal(u.style("#sidebar").display, "none");
-  assert.equal(u.style("#sidebar-restore").display, "flex");
+  assert.equal(u.style("#show-sidebar").display, "grid", "the sidebar leaves no edge: Show sidebar sits in the top bar");
+  assert.equal(u.style("#show-sidebar").position, "absolute");
 });
 
 test("shell component paints use tokens, not raw colors or text transparency", () => {

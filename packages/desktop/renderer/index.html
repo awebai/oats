@@ -66,10 +66,11 @@
         </div>
       </div>
     </aside>
-    <button id="sidebar-restore" type="button" data-action="sidebar.toggle"
-            title="Show the sidebar" aria-label="Show the sidebar" aria-controls="sidebar" aria-expanded="true"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
     <div id="workbench">
     <main id="main">
+      <!-- Spec B: a closed sidebar or panel leaves nothing behind; these reopen them from the top bar's two ends. -->
+      <button id="show-sidebar" class="main-edge-control" type="button" data-action="sidebar.toggle" hidden
+              title="Show sidebar" aria-label="Show sidebar" aria-controls="sidebar" aria-expanded="false"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
       <div id="tabstrip">
         <div id="tabbar-row">
           <div id="tabbar" role="tablist" aria-label="Open terminals and artifacts"></div>
@@ -83,6 +84,8 @@
       </div>
       <div id="stagehost"></div>
       <div id="tabhost" style="display:none"></div>
+      <button id="show-panel" class="main-edge-control" type="button" data-action="panel.toggle" hidden
+              title="Show instance panel" aria-label="Show instance panel" aria-controls="context-panel" aria-expanded="false"><span data-shell-icon="panel" aria-hidden="true"></span><span class="main-edge-dot" aria-hidden="true" hidden></span></button>
     </main>
     <aside id="context-panel" aria-label="Selection details" hidden></aside>
     </div>
