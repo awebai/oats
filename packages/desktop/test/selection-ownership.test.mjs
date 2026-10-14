@@ -2,6 +2,7 @@
 // close/workspace functions and terminal lifecycle. Only IPC, xterm and module
 // loading are synthetic. No Electron, processes, sockets or operator sessions.
 import test from "node:test";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -68,6 +69,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
+    // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
+    instanceRecency: createInstanceRecency({ storage: null }), recencyIdFromTerminalKey,
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
