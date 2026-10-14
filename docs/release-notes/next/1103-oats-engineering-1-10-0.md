@@ -6,10 +6,11 @@
   The official catalog, the reference workspace and the generated mirrors
   (`mirrors/oats-developer`, `mirrors/oats-code-review`,
   `mirrors/oats-engineering-expert`, `mirrors/oats-maintainer`) take published
-  `v1.10.0` at `TAG_COMMIT`; each mirror's tree equals the tag's. Instruction
-  text only: no skill is added or removed, and the requirement is unchanged
-  (OATS 0.30.0 or later). `oats.maintainer` and `oats.engineering-expert`
-  change; the other two capabilities only change version. What changes:
+  `v1.10.0` at `944470be71a96299ae4a1cfb7df0fba94a592899`; each mirror's tree
+  equals the tag's. Instruction text only: no skill is added or removed, and
+  the requirement is unchanged (OATS 0.30.0 or later). `oats.maintainer` and
+  `oats.engineering-expert` change; the other two capabilities only change
+  version. What changes:
   - **Each maintainer holds a lane.** The peers' agreement becomes a written
     lane map: what each lane covers, its maintainer and its second reader,
     the label a PR shows its lane with, the hold label, and who owns the next
