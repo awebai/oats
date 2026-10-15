@@ -611,5 +611,6 @@ the bounded parsed-read cache and the observations `--max-age` reuses; all of
 it is safe to delete); `OATS_PACKAGE_CATALOG` names an alternative package
 catalog file. The read verbs (`status`, `workspace status`, `souls`,
 `capabilities`, `inspect`, the read forms of `teams` and `soul teams`, and
-`spawn --preview`) take `--max-age <seconds>` to reuse a remote head observed that recently
+`spawn --preview`), and a spawn apply bound by `--expect-decision`, take
+`--max-age <seconds>` to reuse a remote head observed that recently
 ([Observation reuse](desktop-cli-api.md#observation-reuse-feature-observe-max-age-oats-0311)).

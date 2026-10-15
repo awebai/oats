@@ -349,6 +349,10 @@ than the server's checked one account and launched with another
     given the pane's `PATH` as the pane reads it, a relative entry (and an
     empty one) resolved against the pane's working directory, the home.
     The command a refusal names keeps the harness's name as declared.
+    The Claude probe (`claude plugin list --json`) sets `DISABLE_TELEMETRY=1`
+    for its own run, so Claude skips its telemetry flush at exit: that selects
+    no account and changes no answer, and no launch, install step or other
+    probe gets it.
   - **The folder-trust check only warns**: `<harness> folder trust: the
     configuration file this launch will read could not be established
     (<why, and what would make it readable>); nothing is said about its
