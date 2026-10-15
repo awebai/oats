@@ -98,6 +98,17 @@ const SURFACE = Object.freeze({
   "session-start.mjs": ["startGate", "startInstance", "verifiedLocalHome"],
   // Provisional: souls, inspect, spawn.
   "inspect-contract.mjs": ["inspectSupported", "inspectData", "originText", "inspectFacts"],
+  // 6a: the souls a deployment offers and one soul's inspection. A client makes its own catalog, cache and
+  // boundary (each a factory that holds nothing at module level) and lists, inspects and describes a soul with
+  // the rules the Desktop uses. The holding rules under the catalog (keyed-catalog.mjs) and the soul colours
+  // (soul-colors.mjs; a row carries its colour already) are not on it.
+  "soul-catalog.mjs": ["createSoulCatalog", "soulCatalogKey", "SOUL_CATALOG_RETRY_MS"],
+  "soul-rows.mjs": ["soulRows"],
+  "inspect-boundary.mjs": ["createInspectBoundary"],
+  "inspect-cache.mjs": ["createInspectCache"],
+  "composed-gate.mjs": ["composedSupported", "routedComposedSupported", "skillsSupported", "routedSkillsSupported", "hostComposes", "hostReportsSkills"],
+  "soul-facts.mjs": ["soulFacts", "spawnRefusal", "desktopFacts"],
+  "launch-view.mjs": ["shownLaunch", "launchHarnessName", "launchModelText", "launchFromText", "preferenceText", "declaredDiffers", "declaredText", "launchAtText"],
   "spawn-preview-cli.mjs": ["cliSpawnPreview"],
   "spawn-preview-contract.mjs": ["previewSupported", "previewSelector", "previewChoices", "choiceArgv", "previewTarget", "previewData", "previewFailure", "worktreeHooksOf", "INSTANCE_NAME_MAX"],
   "spawn-decision.mjs": ["spawnEffective", "spawnDecision", "sameSpawnDecision"],
@@ -452,7 +463,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 47);
+  assert.equal(Object.keys(SURFACE).length, 54);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
@@ -476,6 +487,11 @@ test("the stable surface names what packages/client has: every listed module, ev
   // 5a-2: a client starts through the start rule; the start's CLI call and its argv are the rule's.
   assert.deepEqual(SURFACE["session-start.mjs"], ["startGate", "startInstance", "verifiedLocalHome"]);
   for (const name of ["cliStart", "launchChoiceArgv"]) assert.ok(!SURFACE["cli-adapter.mjs"].includes(name), name);
+  // 6a: souls and inspect. The catalog's holding rules and the colours stay off; of the inspect boundary, only its
+  // factory (the admission, the call and the refusal are the boundary's, and the Desktop's run's).
+  for (const module of ["keyed-catalog.mjs", "soul-colors.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
+  assert.deepEqual(SURFACE["inspect-boundary.mjs"], ["createInspectBoundary"]);
+  assert.deepEqual(SURFACE["soul-facts.mjs"], ["soulFacts", "spawnRefusal", "desktopFacts"]);
   // Not on it: the Desktop spawn dialog's copy, and the two files nobody imports.
   for (const module of ["spawn-messages.mjs", ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
 });

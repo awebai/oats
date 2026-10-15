@@ -29,9 +29,12 @@ published as `observed` with no instances, never left `pending`. For each:
 4. On a **warm** cycle nothing but the two roster reads runs. Souls and
    capabilities are re-read only when their key moves.
 
-The holding rules live once, in `server/keyed-catalog.mjs`, and the two
-catalogs are thin wrappers over it (`soul-catalog.mjs`,
-`capability-catalog.mjs`):
+The holding rules live once, in the shared home's `keyed-catalog.mjs`
+(`packages/client/`), and the two catalogs are thin wrappers over it
+(`packages/client/soul-catalog.mjs`, which every client makes with its own
+terms, and the Desktop's `server/capability-catalog.mjs`). Each is a factory
+the client owns: nothing is held at module level, so two catalogs share no
+flight and no held entry:
 
 - one flight per deployment; a failed read keeps the last good value with the
   failure next to it, and background cycles retry it only after 60 s;
@@ -61,7 +64,7 @@ catalogs are thin wrappers over it (`soul-catalog.mjs`,
   the key it asked, never with whatever happens to be held (or nothing).
 
 Every held result also has an **age bound**: `HELD_TTL_MS` (60 s, the
-background max-age; `server/keyed-catalog.mjs`) from the time it was stored,
+background max-age; `packages/client/keyed-catalog.mjs`) from the time it was stored,
 for the souls catalog, the capabilities table and inspections alike. Past it
 the entry is `stale`, and staleness is **request-driven**: the observation
 cycle still answers from a stale entry and never starts a catalog re-read
@@ -122,8 +125,11 @@ else in `workspace status` changes it.
   without a commit, and an answer about another commit than the row's (the head moved
   between the two reads), are coalesced but never held. A `file` request is answered only for
   a path the (cached) show listing names. The cache is cleared when the CLI changes.
-- `POST /api/capabilities {action:"inspect"}` goes through a bounded LRU with
-  in-flight coalescing (`server/inspect-cache.mjs`, 256 entries): two identical
+- `POST /api/capabilities {action:"inspect"}` goes through the shared home's
+  inspect boundary (`packages/client/inspect-boundary.mjs`; `server/capabilities.mjs`
+  makes one per call, since it holds nothing) and its bounded LRU with
+  in-flight coalescing (`packages/client/inspect-cache.mjs`, 256 entries, the
+  backend's own instance): two identical
   concurrent inspections are one kernel process; a repeat is a hit for at
   most `INSPECT_CACHE_TTL_MS` (= `HELD_TTL_MS`) after it was stored, then a
   miss: the TTL bounds what no key can see (local configuration, teams
@@ -133,7 +139,7 @@ else in `workspace status` changes it.
   composed AGENTS.md (`instructions: true`, a soul inspect only, sent to the
   CLI as `--instructions` when its probe lists `soul-composed-instructions`;
   routed, only when the held roster row's `probe.features` lists it too, else
-  dropped before the key is made: `renderer/composed-gate.mjs`) and its own
+  dropped before the key is made: `packages/client/composed-gate.mjs`) and its own
   skills (`skills: true` → `--skills`, feature `soul-skills`, gated the same
   way) is
   another entry than the sidebar's plain read of the same soul;
@@ -254,11 +260,16 @@ is a 404 `E_WORKSPACE_NOT_SERVED`, never the first workspace's answer
 
 ## Testing
 
-- Unit: `test/keyed-catalog` behaviour through `test/soul-catalog.test.mjs` and
+- Unit: the keyed catalog's behaviour through `test/soul-catalog.test.mjs` and
   `test/capability-catalog.test.mjs` (both with a fake clock: no kernel run
   past the TTL without a request; a request answers at once with
   `refreshing` and starts exactly one re-read, shared by concurrent requests
-  and cycles; Refresh live); `test/inspect-cache.test.mjs`;
+  and cycles; Refresh live); `test/inspect-cache.test.mjs`. In the
+  repository's root `test/`: `client-soul-catalog.test.mjs` and
+  `client-inspect-boundary.test.mjs` (two catalogs, caches or boundaries
+  share nothing; terms required; `exec` forwarded), `client-soul-rows.test.mjs`
+  (the `/api/agents` rows against the backend's output before the move) and
+  `client-soul-facts.test.mjs`;
   `test/refresh-loop.test.mjs` (fake timers); `test/max-age.test.mjs` (flag
   gate per adapter); `test/cli-probe-signature.test.mjs`,
   `test/cli-status-parity.test.mjs` (emit on change);
