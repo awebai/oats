@@ -165,11 +165,11 @@ const COUNTS = "6 running  3 need input  1 stopped  1 unknown  1 withheld";
 /** The list's footer at 80 and 79 columns, at 120, on a terminal of any width, and at 60 columns.
  *  The selected row of the fixture runs, so Enter opens it and `open` stands first. Its acts are
  *  stop and retire (restart needs a kernel with session-restart), after `open`; when the hints do
- *  not all fit, the views' digits are given up first (`3 capabilities`, then `2 souls`), then the
- *  acts, `retire` before `stop`, then `workspaces` and `refresh` (the frame's own order). */
+ *  not all fit, the acts are given up first, `retire` before `stop`, then the views (`1-3 views`,
+ *  one hint for the three), then `workspaces` and `refresh` (the frame's own order). */
 const FOOTER = " Enter open   / filter   Tab detail   r refresh   ? help   q quit";
-const FOOTER_120 = " Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   ? help   q quit";
-const FOOTER_WIDE = " Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities   ? help   q quit";
+const FOOTER_120 = " Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit";
+const FOOTER_WIDE = FOOTER_120;
 const FOOTER_60 = " Enter open   / filter   Tab detail   ? help   q quit";
 
 // ── Golden frames ────────────────────────────────────────────────────────────────────────────────
@@ -1240,8 +1240,8 @@ test("the footer is read from the effective table: a key the user's tui.json gav
   assert.equal(config.ok, true);
   for (const sz of SIZES) {
     const footer = draw(golden({ actions: config.actions }), sz).lines[sz.rows - 1];
-    // With the room for them, the views' digits stand after the list's own hints.
-    assert.equal(footer.endsWith(` Tab detail   r refresh   w workspaces${sz.cols >= 110 ? "   2 souls   3 capabilities" : ""}   ? help   x quit`) || sz.cols < 79, true, `${sz.cols}x${sz.rows}: ${footer}`);
+    // With the room for it, the views' one hint stands after the list's own hints.
+    assert.equal(footer.endsWith(` Tab detail   r refresh   w workspaces${sz.cols >= 110 ? "   1-3 views" : ""}   ? help   x quit`) || sz.cols < 79, true, `${sz.cols}x${sz.rows}: ${footer}`);
     assert.equal(footer.includes("filter") || footer.includes("q quit") || footer.includes("/"), false);
   }
   const rebound = effectiveConfig({ keys: { help: ["f1"], detail: ["d", "tab"], refresh: ["f5", "r"], close: ["backspace"] } });
@@ -1713,7 +1713,7 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
       ], g.bar),
       `${g.rule.repeat(38)}${g.up}${g.rule.repeat(41)}`,
       // The selected row's machine was not reached and the kernel does not report it addressable: no act.
-      " / filter   Tab detail   r refresh   w workspaces   2 souls   ? help   q quit",
+      " / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit",
     ]);
   }
   // Nothing of the machine reads as stopped, or as running, that is only not reached.
@@ -2137,7 +2137,7 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
       ...blank,
     ]),
     `${"─".repeat(38)}┴${"─".repeat(41)}`,
-    " X stop   / filter   Tab detail   r refresh   w workspaces   ? help   q quit", // its state is not known: Enter does not open it
+    " / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit", // its state is not known: Enter does not open it; at 80 columns its act gives way to the views
   ]);
   assert.deepEqual(draw(told({ ascii: true }), S80).lines, [
     ` oats  acme-platform  ${COUNTS}`,
@@ -2166,7 +2166,7 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
       ...blank,
     ], "|"),
     `${"-".repeat(38)}+${"-".repeat(41)}`,
-    " X stop   / filter   Tab detail   r refresh   w workspaces   ? help   q quit", // its state is not known: Enter does not open it
+    " / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit", // its state is not known: Enter does not open it; at 80 columns its act gives way to the views
   ]);
 });
 
@@ -2607,10 +2607,10 @@ test("a view whose only deployment is a machine that is not live and has no row 
 
 const openable = (options) => stateOf(observed([instanceRow("dev", "dev-alpha"), instanceRow("dev", "dev-beta", { running: false, runtimeState: "stopped" })]), options);
 
-test("the footer names Enter open whenever Enter would open, whatever the kernel: hints are given up capabilities, souls, retire, stop, workspaces, refresh, Esc, detail, open, filter; help and quit never (the width table)", () => {
+test("the footer names Enter open whenever Enter would open, whatever the kernel: hints are given up retire, stop, views, workspaces, refresh, Esc, detail, open, filter; help and quit never (the width table)", () => {
   const state = openable(), stopped = press(state, ["j"]).state, detailed = press(state, ["tab"]).state, kept = press(state, ["/", "d", "enter"]).state;
   // The fixture's kernel has no session-start: the acts its rows offer are stop and retire. They
-  // stand after `open` and are given up after the views' digits, `retire` before `stop`. A kept
+  // stand after `open` and are given up first, `retire` before `stop`, then the views. A kept
   // filter shows its own `/`: there the open hint outlives `/ filter`, and the filter's place gives
   // way to it.
   const TABLE = [
@@ -2619,17 +2619,17 @@ test("the footer names Enter open whenever Enter would open, whatever the kernel
     [65, "Enter open   / filter   Tab detail", "Enter open   Tab detail   Esc close", "/ filter   Tab detail   r refresh", "/d                      Enter open   / filter"],
     [66, "Enter open   / filter   Tab detail   r refresh", "Enter open   Tab detail   Esc close", "/ filter   Tab detail   r refresh", "/d                      Enter open   / filter"],
     [70, "Enter open   / filter   Tab detail   r refresh", "Enter open   Tab detail   Esc close   r refresh", "/ filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter"],
-    [79, "Enter open   / filter   Tab detail   r refresh", "Enter open   X stop   Tab detail   Esc close   r refresh", "X stop   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
-    [80, "Enter open   / filter   Tab detail   r refresh", "Enter open   X stop   Tab detail   Esc close   r refresh", "X stop   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
-    [87, "Enter open   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
-    [88, "Enter open   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
-    [94, "Enter open   X stop   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail   Esc close"],
-    [99, "Enter open   X stop   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "/d                      Enter open   / filter   Tab detail   Esc close"],
-    [109, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh"],
-    [110, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh"],
-    [120, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh   w workspaces"],
-    [127, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities", "/d                      Enter open   X stop   / filter   Tab detail   Esc close   r refresh   w workspaces"],
-    [140, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities", "/d                      Enter open   X stop   D retire   / filter   Tab detail   Esc close   r refresh   w workspaces"],
+    [79, "Enter open   / filter   Tab detail   r refresh", "Enter open   X stop   Tab detail   Esc close   r refresh", "/ filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
+    [80, "Enter open   / filter   Tab detail   r refresh", "Enter open   X stop   Tab detail   Esc close   r refresh", "/ filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail"],
+    [87, "Enter open   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "/ filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail"],
+    [88, "Enter open   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "/ filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail"],
+    [94, "Enter open   / filter   Tab detail   r refresh   w workspaces   1-3 views", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   / filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail   Esc close"],
+    [99, "Enter open   / filter   Tab detail   r refresh   w workspaces   1-3 views", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   / filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail   Esc close"],
+    [109, "Enter open   X stop   / filter   Tab detail   r refresh   w workspaces   1-3 views", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh"],
+    [110, "Enter open   X stop   / filter   Tab detail   r refresh   w workspaces   1-3 views", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh"],
+    [120, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh   w workspaces"],
+    [127, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh   w workspaces"],
+    [140, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   1-3 views", "/d                      Enter open   X stop   / filter   Tab detail   Esc close   r refresh   w workspaces   1-3 views"],
   ];
   for (const [cols, list, detail, other, filtered] of TABLE) {
     const sz = size(cols, 24), foot = (s) => draw(s, sz).lines[23];
@@ -2642,13 +2642,23 @@ test("the footer names Enter open whenever Enter would open, whatever the kernel
   // not beside open.
   const config = effectiveConfig({ keys: { open: ["o"] }, open: { detachKey: "F12" } });
   assert.equal(draw(openable({ actions: config.actions, detachKey: config.detachKey }), S80).lines[23], " o open   / filter   Tab detail   r refresh   w workspaces   ? help   q quit");
-  assert.equal(draw(openable({ actions: effectiveConfig({ keys: { open: [] } }).actions }), S80).lines[23], " X stop   / filter   Tab detail   r refresh   w workspaces   ? help   q quit", "an open with no key has no hint");
+  assert.equal(draw(openable({ actions: effectiveConfig({ keys: { open: [] } }).actions }), S80).lines[23], " / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit", "an open with no key has no hint (and at 80 columns the acts give way to the views)");
+});
+
+test("the three views are one footer hint named by their keys: `1-3 views` while they are 1, 2 and 3, each key when tui.json rebinds one, a view with no key left out, and none when no view has a key; the acts are given up before it", () => {
+  const foot = (keys, sz = S120) => draw(openable({ actions: effectiveConfig({ keys }).actions }), sz).lines[sz.rows - 1];
+  assert.equal(foot({}), FOOTER_120);
+  assert.match(foot({ capabilities: ["f3"] }), /   w workspaces {3}1\/2\/F3 views {3}\? help/);
+  assert.match(foot({ instances: [] }), /   w workspaces {3}2\/3 views {3}\? help/);
+  assert.doesNotMatch(foot({ instances: [], souls: [], capabilities: [] }), /views/);
+  // A row whose acts are stop and retire, at 80 columns: the acts are given up first, and the views stay.
+  assert.equal(draw(press(openable(), ["j"]).state, S80).lines[23], " / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit");
 });
 
 test("while another machine is asked first the footer says Esc gives the open up, where the open hint stood, and Esc is not listed twice", () => {
   const preflight = Object.freeze({ ...openable(), opening: Object.freeze({ id: "x", phase: "preflight", name: "dev-alpha", machine: "garnet", routed: true }) });
   assert.equal(draw(preflight, S80).lines[23], " Esc stop opening   / filter   Tab detail   r refresh   ? help   q quit");
-  assert.equal(draw(preflight, S120).lines[39], " Esc stop opening   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities   ? help   q quit");
+  assert.equal(draw(preflight, S120).lines[39], " Esc stop opening   / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit");
   assert.equal(draw(preflight, S60).lines[14], " Esc stop opening   / filter   Tab detail   ? help   q quit");
   assert.equal(draw(Object.freeze({ ...preflight, filter: Object.freeze({ editing: false, query: "d" }) }), S120).lines[39].includes("Esc close"), false);
 });
@@ -2820,4 +2830,18 @@ test("the cursor is shown where the agent's is, only while the terminal has the 
   assert.equal(draw(panelIn("focus"), sz).cursor, null, "no capture yet: no cursor");
   const zoomed = drawPanel(panelIn("zoom"), sz);
   assert.deepEqual(zoomed.cursor, { row: zoomed.terminal.top, col: 2 });
+});
+
+test("the back key from a terminal opened from the detail's focus draws the list with the panel beside it, or the list alone under 80 columns (round 1 of the review)", () => {
+  const state = keyed(keyed(PANEL_STATE(), "tab"), "enter");
+  const back = reduce(state, { back: true }).state;
+  for (const sz of [S80, S120]) {
+    const d = drawPanel(back, sz);
+    assert.notEqual(d.terminal, null, `${sz.cols}`);
+    assert.equal(d.terminal.whole, false, `${sz.cols}`);
+    assert.match(footer(d, sz), /^ Enter focus terminal {3}z zoom {3}c close terminal/, `${sz.cols}`);
+  }
+  const narrow = drawPanel(back, S79);
+  assert.equal(narrow.terminal, null);
+  assert.match(footer(narrow, S79), /^ Enter focus terminal {3}z zoom/);
 });

@@ -375,3 +375,13 @@ test("a sentence from outside is wrapped as a reason is, on the reason's rows, n
   assert.equal(said.join(" ").includes(displayLine(reason)), true, said.join("\n"));
   assert.equal(said.some((line) => line.endsWith("\u2026")), false, "nothing cut");
 });
+
+test("a preflight that ends while the filter field is open gives the terminal the focus and settles the field, its text kept: the footer names the back key alone, and no key goes to the field (round 1 of the review)", () => {
+  const state = on(both(), FAR_A), id = instanceId(rowOf(state));
+  const typing = press(press(state, ["enter"]).state, ["/", "d", "e", "v"]).state;
+  assert.deepEqual([typing.filter.editing, typing.opening?.phase], [true, "preflight"]);
+  const started = reduce(typing, { prepared: { id } }).state;
+  assert.deepEqual([started.terminal.focus, started.filter, started.focus], ["terminal", { editing: false, query: "dev" }, "list"]);
+  assert.equal(footerOf(started), " C-\\ back to the list");
+  assert.equal(footerOf(started, S120), " C-\\ back to the list");
+});

@@ -91,7 +91,7 @@ runs.
                                               │
    ○ reviewer-api                 stopped     │
 ──────────────────────────────────────────────┴─────────────────────────────────────────────────
- / filter   Tab detail   r refresh   w workspaces   ? help   q quit
+ / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit
 ```
 
 - **The header** has the workspace's name, then what the view holds of
@@ -105,8 +105,10 @@ runs.
   is left out. The second row names the views, `Instances   Souls
   Capabilities`: the open one is drawn in reverse video, and `Souls` and
   `Capabilities` are dim because they cannot be opened yet. Their keys,
-  `1`, `2` and `3`, are in the help and the footer, not beside the names;
-  `2` and `3` say what to run instead. On the right is the time of the read
+  `1`, `2` and `3`, are not drawn beside the names: the help names each,
+  and the footer names the three as one hint, `1-3 views`, which a narrow
+  footer gives up right after the acts. `2` and `3` say what to run
+  instead. On the right is the time of the read
   of this machine that the screen shows: it moves with every read.
 - **The list** is the roster the Desktop draws: the same groups in the same
   order, from the same code. An instance that others were spawned from
@@ -622,8 +624,12 @@ with the Desktop (`packages/client/`).
 - **The private tmux server** is `tmux` found on `PATH`, 3.2 or later. It
   is started at the first open of a run, with `-f /dev/null` and the
   environment's `TMUX` and `TMUX_PANE` removed, and its socket in the run's
-  own directory. One control client of it is kept for the run; each open is
-  a window of it, closed with `kill-pane`, which hangs up the viewer's
+  own directory. The control client that `oats tui` keeps for the run
+  starts it, with `exit-unattached` set in the same command. Its first window is a keeper: it
+  watches `alive`, a FIFO in the run's directory (0600, made with the
+  system's `mkfifo`) that `oats tui` holds open for writing until it ends.
+  When `oats tui` is gone, whatever ended it and at any moment, the keeper
+  kills the server. Each open is a window of it, closed with `kill-pane`, which hangs up the viewer's
   terminal so the viewer removes its own session on the agents' server. The
   viewer's error output and exit status go to two files of the run's
   directory (0600), read back when it ends and deleted. The server is ended
@@ -654,11 +660,12 @@ with the Desktop (`packages/client/`).
   apply's answer for 10 minutes and for a start's for 60 seconds; then it
   says so, and the change goes on.
 - It runs no other command that changes a deployment or a registration, and
-  it writes no other file but the private server's: its socket, and
-  `owner.json` (`{ "tool": "oats-tui", "pid": …, "started": … }`), which lets
-  a later run tell a directory a run that is gone left. That later run
-  removes such a directory when its `pid` is not alive and its socket
-  answers no tmux; it looks only at directories named `oats-tui-*` in the
+  it writes no other file but the private server's: its socket `tmux`, the
+  keeper's FIFO `alive`, and `owner.json` (`{ "tool": "oats-tui", "pid": …,
+  "started": … }`), which lets a later run tell a directory a run that is
+  gone left. A run that ends normally removes all three. A later run removes
+  such a directory, these three files included, when its `pid` is not alive
+  and its socket answers no tmux; it looks only at directories named `oats-tui-*` in the
   system's temporary directory, yours, of mode 0700, holding that file.
 
 ## What this version does not do
@@ -763,9 +770,11 @@ stayed in the alternate screen until `tput rmcup`. Nothing else is left in
 tmux: `oats tui` creates no session, window, option or key binding.
 Nor can it end a read after SIGKILL: nothing of the TUI runs any more, so a
 read that was in flight runs to its own end. An open terminal's private
-server ends by itself once its control client sees `oats tui` gone, and the
-viewer's terminal hangs up, so the viewer removes its own session; the next
-run removes the directory that is left.
+server is ended by its keeper as soon as `oats tui` is gone, so the viewer's
+terminal hangs up and the viewer removes its own session. A stopped `oats tui`
+(`Ctrl+Z`, SIGSTOP) still holds the keeper's FIFO, so its server is left
+alone. The next run removes the directory that is left, with its `tmux`,
+`alive` and `owner.json`.
 
 ## What it never does
 

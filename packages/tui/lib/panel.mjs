@@ -17,13 +17,42 @@
 //
 // ONE SESSION, A KEEPER AND ONE WINDOW PER VIEWER. A control client hears `%output` only for the
 // panes of the session it is attached to, and a session ends with its last window: so the session
-// is made with a keeper window (`cat`, never typed to), and each viewer is a window of it, sized by
+// is made with a keeper window (never typed to; see THE KEEPER), and each viewer is a window of it, sized by
 // `default-size` before it is made (the viewer starts at its size) and by `resize-window` after
 // (`window-size manual`: the control client never resizes it).
 //
-// WHAT STARTS A PROCESS: the start of the server and the making of a window (execFile, argv, no
-// shell), and nothing else. A frame never does: every capture, key, resize and close goes through
-// the control client, as a command of constant text and tmux's own ids.
+// THE START, ONE PROCESS. The control client starts the server itself: `tmux -C new-session …`,
+// with `set-option -s exit-unattached on` and the other options in the SAME command list. The
+// order matters. `exit-unattached` set before any client is attached ends the server at once (the
+// spike's trap), so it must come after the attach; but a server started on its own (`new-session
+// -d`) and attached afterwards lives, keeper and all, with nothing to end it, if the TUI is killed
+// between the two (round 1 of the review). Here the client that starts the server is attached by
+// that very `new-session`, the list then turns `exit-unattached` on, and that client is a process of
+// its own (its own process group): a TUI killed at any moment of the start closes the client's
+// stdin, the client ends, and the server ends with its last client. Verified with tmux 3.7c: the
+// starter's stdin closed 0, 5 and 30 ms after the spawn left no server. The first blocks the
+// client prints are the answers to that list, one per command.
+//
+// THE KEEPER WATCHES THE TUI. The stdin EOF is not enough on its own. Found with tmux 3.7c: a
+// control client whose reader has gone while the server still has output queued for it is never
+// ended. tmux keeps the client until its output has drained, which it no longer can, and so never
+// acts on the EOF; the client stays attached, `exit-unattached` never fires, and the server lives
+// on, viewers and all. A TUI killed during the start (the server is writing the start's blocks)
+// always hits it, and one killed while an agent prints often does. So the keeper window watches
+// the TUI itself: the run's FIFO `<run dir>/alive`, whose write end the TUI holds for the run
+// (O_CLOEXEC, in no child's stdio). The keeper (KEEPER_SCRIPT) opens the FIFO, reads it until no
+// writer is left, and then kills the server (SIGKILL: a server ends only when its clients are gone,
+// and the stuck one never is). THE ORDER: the TUI makes the FIFO and
+// holds its write end BEFORE it starts the server, so a keeper that finds no writer always means
+// "the TUI is gone", never "not yet". A TUI that is stopped (Ctrl+Z) still holds it: nothing is
+// killed. A normal end sends `kill-server` itself first, which ends the keeper with its pane
+// before the TUI lets go of the FIFO; a keeper that still woke would find its server gone, and do
+// nothing.
+//
+// WHAT STARTS A PROCESS: the FIFO's `mkfifo` (once a run), the start of the server (the control
+// client, spawned) and the making of a window (execFile), each with argv and no shell, and nothing
+// else. A frame never does: every capture, key, resize and close goes through the control client,
+// as a command of constant text and tmux's own ids.
 //
 // THE ARGV OF A COMMAND IS NOT TEXT TO TMUX, BUT FOR ONE RULE. Verified with tmux 3.7c: new-window
 // passes its command's arguments to the program as they are (no format is expanded in them or in
@@ -33,14 +62,15 @@
 // such an argument as `x\;`, which tmux reads back as `x;` (cmd-parse.y, the same since 3.0).
 // Every argument that is not a constant of this file goes through it.
 //
-// THE END OF A RUN. A normal end calls end(): `kill-server`, then the socket, owner.json and the
-// view files are removed (the run directory is the reader's to remove, after this). On a crash or
-// a `kill -9` of the TUI nothing here runs, and nothing needs to: the control client sees EOF on
-// its stdin and exits, and the server, with `exit-unattached` on, ends with its last client; the
-// viewers' panes hang up, so each viewer gets SIGHUP and runs its own clean-up. What is left is the
-// run directory with its socket and owner.json, which the next run's sweep removes.
+// THE END OF A RUN. A normal end calls end(): `kill-server`, then the socket, owner.json, the FIFO
+// and the view files are removed (the run directory is the loop's to remove, after this). On a
+// crash or a `kill -9` of the TUI nothing here runs, and nothing needs to: the FIFO loses its
+// writer, the keeper kills the server (THE KEEPER), and the control client, whose server is gone,
+// exits; the viewers' panes hang up, so each viewer gets SIGHUP and runs its own clean-up. What is
+// left is the run directory with its socket, owner.json and FIFO, which the next run's sweep
+// removes.
 import { execFile as nodeExecFile, execFileSync as nodeExecFileSync, spawn as nodeSpawn } from "node:child_process";
-import { closeSync, fstatSync, lstatSync, openSync, readSync, readdirSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, constants as FS, fstatSync, lstatSync, openSync, readSync, readdirSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
 import { tmpdir as osTmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -59,9 +89,42 @@ export const FRAME_MS = 16;
 export const VIEW_SCRIPT = '"$0" "$@" 2>"$E"; echo $? >"$S"';
 /** The one session of the private server, and its keeper window's command. */
 export const SESSION = "oats-tui";
-const KEEPER = Object.freeze(["/bin/sh", "-c", "exec cat"]);
+/** The keeper's command (see THE KEEPER), a constant run as `sh -c KEEPER_SCRIPT oats-tui-keeper
+ *  <fifo>`: the FIFO's path is argv, never text of the script. `3<>` opens the FIFO read-write,
+ *  which never waits for a writer; `4<` then opens it for reading, at once since fd 3 is a writer;
+ *  closing 3 leaves the TUI's as the only writer. `cat` returns when no writer is left (at once if
+ *  the TUI is already gone). Then the keeper SIGKILLs its parent, the server: `kill-server` or
+ *  SIGTERM would not do, since a server ends only once its clients are gone, and the client tmux
+ *  cannot drain is never gone. The kernel then closes every pane's terminal, so each viewer gets
+ *  SIGHUP and cleans up, and the control client, its server gone, exits. The parent is killed only
+ *  while it is still the keeper's parent (`ps`): a keeper whose server has ended is reparented,
+ *  and its `$PPID` may name another process by then. `kill` is the shell's own (no `exec`): a
+ *  PATH without a kill program does not matter. All of it quietly. */
+export const KEEPER_SCRIPT = 'exec 3<>"$1" 4<"$1" 3>&-; cat <&4 >/dev/null; exec >/dev/null 2>&1; [ $(ps -o ppid= -p $$) = "$PPID" ] && kill -KILL "$PPID"';
+/** The command list the control client starts the server with (see THE START above): the session
+ *  with its keeper, attached; `exit-unattached` at once after it; then every option. `unbind-key
+ *  -a` empties the prefix table only: the root table (mouse bindings by default) and the
+ *  copy-mode tables are emptied by name. No key typed into a pane is read through a table anyway
+ *  (send-keys without -K writes to the pane), and no pane ever enters a mode: this leaves the
+ *  server nothing to do with a key but type it. -> [[command…]…] */
+export const startCommands = ({ alive }) => [
+  ["new-session", "-s", SESSION, "-x", "80", "-y", "24", "/bin/sh", "-c", KEEPER_SCRIPT, "oats-tui-keeper", tmuxArgument(alive)],
+  ["set-option", "-s", "exit-unattached", "on"],
+  ["set-option", "-s", "escape-time", "0"],
+  ["set-option", "-g", "status", "off"],
+  ["set-option", "-g", "prefix", "None"],
+  ["set-option", "-g", "prefix2", "None"],
+  ["set-option", "-gw", "window-size", "manual"],
+  ["set-option", "-gw", "remain-on-exit", "off"],
+  ["unbind-key", "-a"],
+  ["unbind-key", "-a", "-T", "root"],
+  ["unbind-key", "-a", "-T", "copy-mode"],
+  ["unbind-key", "-a", "-T", "copy-mode-vi"],
+];
+/** The most of what a control client that did not start printed on stderr that is kept. */
+const DETAIL_KEPT = 400;
 /** The names this module makes in the run directory, and the pattern of a view file. */
-const SOCKET_NAME = "tmux", OWNER_NAME = "owner.json", OWNER_TOOL = "oats-tui";
+const SOCKET_NAME = "tmux", OWNER_NAME = "owner.json", OWNER_TOOL = "oats-tui", ALIVE_NAME = "alive";
 const VIEW_FILE = /^[1-9][0-9]*\.view\.(err|status)$/;
 /** The oldest tmux this module knows to have every command it uses (`refresh-client -f`). */
 const MIN_TMUX = Object.freeze([3, 2]);
@@ -113,6 +176,16 @@ export const PANEL_FS = Object.freeze({
     const fd = openSync(path, "wx", 0o600);
     try { writeSync(fd, text); } finally { quietly(() => closeSync(fd)); }
   },
+  /** The write end of the FIFO at `path` (see THE KEEPER): opened through a reader of its own, so
+   *  it never waits, and only once fstat says it is a FIFO. -> fd. Node opens every fd O_CLOEXEC. */
+  hold: (path) => {
+    const reader = openSync(path, FS.O_RDONLY | FS.O_NONBLOCK);
+    try {
+      if (!fstatSync(reader).isFIFO()) throw refusal("E_PANEL_START", "the panel's liveness mark is not a FIFO");
+      return openSync(path, FS.O_WRONLY);
+    } finally { quietly(() => closeSync(reader)); }
+  },
+  release: (fd) => closeSync(fd),
   head: (path, max) => readPart(path, max, false),
   tail: (path, max) => readPart(path, max, true),
   lstat: (path) => lstatSync(path),
@@ -193,9 +266,11 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   /** The run directory and the socket in it, once known; whether owner.json was written, tmux's
    *  version checked, and a server ever started in this run. */
   let runDir = null, socket = null, ownerWritten = false, checked = false, everStarted = false;
+  /** The write end of `<run dir>/alive`, held for the run once made (see THE KEEPER), or null. */
+  let aliveFd = null;
   /** The server now: { child, replies (the FIFO of commands waiting for their block), block (the
-   *  block being read), attachSeen, attached, gone, onAttach }, or null. A start under way is
-   *  `starting` (its promise). */
+   *  block being read), startLeft (the blocks of the start list still to come), attached, gone,
+   *  onAttach, stderr }, or null. A start under way is `starting` (its promise). */
   let server = null, starting = null;
   /** THE SLOT: the viewer open now ({ id, pane, cols, rows, files, asked, over }), or the open
    *  under way that will be it (`opening`: { closeAsked, files }), or neither. close() frees it at
@@ -251,21 +326,24 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
    *  text is printed as it is inside a capture's block, and a line of it that looks like an end
    *  must not end the block (tmux prints the same time and number on both lines of a block; a
    *  pane would have to guess the second and the server's command number). Outside a block a line is
-   *  a notification (tmux never prints one inside a block). The FIRST block answers the attach
-   *  itself, before any command of ours; every later one answers the oldest command waiting. */
+   *  a notification (tmux never prints one inside a block). The FIRST blocks, one per command of
+   *  the start list, answer the start itself; every later one answers the oldest command waiting. */
   function heard(s, line) {
     if (s.block) {
       if (line === `%end ${s.block.head}` || line === `%error ${s.block.head}`) {
-        const { lines, attach } = s.block, ok = line.startsWith("%end ");
+        const { lines, start } = s.block, ok = line.startsWith("%end ");
         s.block = null;
-        if (attach) return attached(s, ok);
+        // A command of the list that fails ends the list there: tmux runs none after it, so the
+        // start is answered at once.
+        if (start && !ok) s.startError = lines.join("\n").slice(0, DETAIL_KEPT);
+        if (start) return ok && s.startLeft > 0 ? undefined : attached(s, ok);
         return void s.replies.shift()?.({ ok, lines });
       }
       return void s.block.lines.push(line);
     }
     if (line.startsWith("%begin ")) {
-      s.block = { head: line.slice("%begin ".length), lines: [], attach: !s.attachSeen };
-      s.attachSeen = true;
+      s.block = { head: line.slice("%begin ".length), lines: [], start: s.startLeft > 0 };
+      if (s.startLeft > 0) s.startLeft -= 1;
       return;
     }
     const [kind, first] = line.split(" ", 2);
@@ -275,7 +353,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     else if (kind === "%exit") lost(s);
   }
 
-  /** The attach block: the start waits for it (see `ensureServer`). */
+  /** The start's blocks are over, or one failed: the start waits for this (see `ensureServer`). */
   function attached(s, ok) {
     const waiting = s.onAttach;
     s.onAttach = null;
@@ -292,6 +370,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     if (server === s) server = null;
     for (const resolve of s.replies.splice(0)) resolve({ ok: false, lines: [] });
     if (s.onAttach) attached(s, false);
+    // stderr is left to end with the process: a start that failed reads what tmux said on it.
     for (const stream of [s.child.stdin, s.child.stdout]) quietly(() => stream?.destroy());
     quietly(() => s.child.kill("SIGTERM"));
     quietly(() => s.child.unref());
@@ -300,15 +379,23 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     for (const v of [...closing.values()]) finish(v, { lost: true });
   }
 
-  /** Start the control client and wait for its attach block. -> Promise<server>. */
+  /** Start the server through the control client, with startCommands as its list, and wait for
+   *  the list's blocks (see THE START). -> { s, started: Promise<boolean> }: false when it did not
+   *  start; what tmux said is in `s.startError` (the failed block's lines) or `s.stderr` (the
+   *  client's own, when it ended without a block). */
   function connect() {
-    const child = spawn(tmux, [...base(), "-C", "attach", "-t", SESSION], { env: tmuxEnvironment(env), stdio: ["pipe", "pipe", "ignore"], detached: true, windowsHide: true });
+    const commands = startCommands({ alive: join(runDir, ALIVE_NAME) });
+    const list = commands.flatMap((command, i) => (i === 0 ? command : [";", ...command]));
+    const child = spawn(tmux, [...base(), "-C", ...list], { env: tmuxEnvironment(env), stdio: ["pipe", "pipe", "pipe"], detached: true, windowsHide: true });
     // `detached`: a process group of its own. The TUI's Ctrl+Z sends SIGTSTP to the TUI's group,
     // and a stopped control client would stop the panel with it.
-    const s = { child, replies: [], block: null, attachSeen: false, attached: false, gone: false, onAttach: null };
+    const s = { child, replies: [], block: null, startLeft: commands.length, attached: false, gone: false, onAttach: null, startError: "", stderr: "", closed: null };
+    s.closed = new Promise((resolve) => child.once("close", resolve));
     let pending = Buffer.alloc(0);
     child.stdin?.on("error", () => lost(s));
     child.stdout?.on("error", () => lost(s));
+    child.stderr?.on("error", () => {});
+    child.stderr?.on("data", (chunk) => { if (s.stderr.length < DETAIL_KEPT) s.stderr = (s.stderr + chunk.toString("utf8")).slice(0, DETAIL_KEPT); });
     // Bytes, split on "\n"; each line decoded as UTF-8 by itself, so a character is never cut.
     child.stdout?.on("data", (chunk) => {
       pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
@@ -322,18 +409,19 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     child.once("close", () => lost(s));
     child.on("error", () => lost(s));
     server = s;
-    return new Promise((resolve) => {
-      s.onAttach = (ok) => resolve(ok ? s : null);
+    const started = new Promise((resolve) => {
+      s.onAttach = (ok) => resolve(ok);
       if (s.gone) attached(s, false);
     });
+    return { s, started };
   }
 
   /** The server, started if there is none: -> Promise<server>, rejected with a coded Error.
    *  In order: the run directory and owner.json (once a run), tmux's version (once a run), a
    *  server left from an earlier start of this run killed (its control client ended without it),
-   *  the server made with every option in ONE call, the control client attached, and only then
-   *  `exit-unattached` turned on through it: turned on before any client is attached, it ends the
-   *  server at once. */
+   *  the FIFO the keeper watches made and its write end held (once a run, and always before any
+   *  server: see THE KEEPER), and the server started by the control client with every option in
+   *  its ONE command list (see THE START: why `exit-unattached` comes right after the session). */
   function ensureServer() {
     if (server && !server.gone && server.attached) return Promise.resolve(server);
     if (starting) return starting;
@@ -357,38 +445,41 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         }
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
         if (everStarted) await call(["kill-server"]).catch(() => {});
+        if (aliveFd === null) {
+          const alive = join(runDir, ALIVE_NAME);
+          try {
+            await new Promise((resolve, reject) => execFile("mkfifo", ["-m", "600", alive], { timeout: CALL_TIMEOUT_MS, shell: false, windowsHide: true }, (error) => (error ? reject(error) : resolve())));
+            aliveFd = fs.hold(alive);
+          } catch (error) {
+            quietly(() => fs.unlink(alive));
+            throw refusal("E_PANEL_START", "the panel could not make the mark its server watches", { detail: detail(error) });
+          }
+          if (ended) { quietly(() => fs.release(aliveFd)); aliveFd = null; quietly(() => fs.unlink(alive)); throw refusal("E_PANEL_ENDED", "the panel has ended"); }
+        }
         everStarted = true;
         closedSeen.clear();
+        // A start that fails part way (a command of the list answered with an error, the client
+        // gone) may leave a server whose options are not all set: its client is ended and the
+        // server killed, not left to linger.
+        let s = null, ok = false;
         try {
-          await call(["new-session", "-d", "-s", SESSION, "-x", "80", "-y", "24", ...KEEPER,
-            ";", "set-option", "-s", "escape-time", "0",
-            ";", "set-option", "-g", "status", "off",
-            ";", "set-option", "-g", "prefix", "None",
-            ";", "set-option", "-g", "prefix2", "None",
-            ";", "set-option", "-gw", "window-size", "manual",
-            ";", "set-option", "-gw", "remain-on-exit", "off",
-            // `unbind-key -a` empties the prefix table only: the root table (mouse bindings by
-            // default) and the copy-mode tables are emptied by name. No key typed into a pane is
-            // read through a table anyway (send-keys without -K writes to the pane), and no pane
-            // ever enters a mode: this leaves the server nothing to do with a key but type it.
-            ";", "unbind-key", "-a",
-            ";", "unbind-key", "-a", "-T", "root",
-            ";", "unbind-key", "-a", "-T", "copy-mode",
-            ";", "unbind-key", "-a", "-T", "copy-mode-vi"]);
-        } catch (error) { throw refusal("E_PANEL_START", "the panel's tmux server did not start", { detail: detail(error) }); }
-        if (ended) { endServer(); throw refusal("E_PANEL_ENDED", "the panel has ended"); }
-        // A control client that does not attach (it did not start, or tmux answered the attach with
-        // an error) leaves a server nobody will ever attach to: it is killed, not left to linger.
-        let s = null;
-        try { s = await connect(); } catch { s = null; }
-        if (s === null) {
+          const start = connect();
+          s = start.s;
+          ok = await start.started;
+        } catch { ok = false; }
+        if (!ok) {
+          if (s) {
+            lost(s);
+            // What tmux said comes on stderr, which may still be on its way when stdout said
+            // `%exit`: the process's end is waited for (it was sent SIGTERM), bounded.
+            await Promise.race([s.closed, new Promise((resolve) => setTimeout(resolve, END_TIMEOUT_MS).unref?.())]);
+          }
+          const said = (s?.startError.trim() || s?.stderr.trim()) ?? "";
           if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
           await call(["kill-server"]).catch(() => {});
-          throw refusal("E_PANEL_START", "the panel could not connect to its tmux server");
+          throw refusal("E_PANEL_START", "the panel's tmux server did not start", said ? { detail: said } : {});
         }
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
-        const on = await ask("set-option -s exit-unattached on");
-        if (!on.ok) { lost(s); throw refusal("E_PANEL_START", "the panel's tmux server did not take its options"); }
         return s;
       } finally { starting = null; }
     })();
@@ -598,12 +689,9 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     fresh();
   }
 
-  /** Kill this run's server, synchronously and bounded: it runs in the exit path.
-   *  An end() that comes while new-session is still running kills nothing yet; the start kills
-   *  the server it made when it sees that the panel has ended. Only a process that exits in that
-   *  instant (before new-session has answered and before any client attached) can leave a server
-   *  behind: one that `exit-unattached` never reaches, and that the sweep leaves alone (its socket
-   *  answers). */
+  /** Kill this run's server, synchronously and bounded: it runs in the exit path. An end() that
+   *  comes while the start is under way ends the starting client too (below), and a server it
+   *  started ends with it (see THE START): nothing of a start is left to linger. */
   function endServer() {
     if (socket === null || !everStarted) return;
     quietly(() => execFileSync(tmux, [...base(), "kill-server"], { env: tmuxEnvironment(env), timeout: END_TIMEOUT_MS, stdio: "ignore", windowsHide: true }));
@@ -620,7 +708,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
       for (const resolve of s.replies.splice(0)) resolve({ ok: false, lines: [] });
       if (s.onAttach) attached(s, false);
       quietly(() => s.child.stdin?.end());
-      for (const stream of [s.child.stdin, s.child.stdout]) quietly(() => stream?.destroy());
+      for (const stream of [s.child.stdin, s.child.stdout, s.child.stderr]) quietly(() => stream?.destroy());
       quietly(() => s.child.kill("SIGTERM"));
       quietly(() => s.child.unref());
     }
@@ -633,6 +721,8 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     if (runDir !== null) {
       quietly(() => fs.unlink(socket));
       if (ownerWritten) quietly(() => fs.unlink(join(runDir, OWNER_NAME)));
+      // After kill-server: the keeper this wakes meets no server (see THE KEEPER).
+      if (aliveFd !== null) { quietly(() => fs.release(aliveFd)); aliveFd = null; quietly(() => fs.unlink(join(runDir, ALIVE_NAME))); }
     }
   }
 
@@ -655,8 +745,8 @@ const SWEEP_FS = PANEL_FS;
  *    its socket refuses (`tmux -S <it> list-sessions` exits nonzero; no socket file counts as
  *      refusing; a socket that answers, a call that times out or cannot run, an entry `tmux` that
  *      is not a socket, all leave the directory alone).
- *  Then it removes the socket, owner.json and the panel's view files (`<n>.view.err`,
- *  `<n>.view.status`, by that exact pattern only), and rmdirs the directory.
+ *  Then it removes the socket, owner.json, the FIFO `alive` (when it is one) and the panel's view
+ *  files (`<n>.view.err`, `<n>.view.status`, by that exact pattern only), and rmdirs the directory.
  *  It NEVER sends `kill-server` or a signal (signal 0 only asks), and never looks at a socket
  *  outside such a directory, the user's default server, or the kernel's. At most `max` candidates
  *  (SWEEP_MAX) are looked at in one run, each tmux call with a short time limit.
@@ -675,6 +765,7 @@ export function sweep({ tmpdir = osTmpdir(), uid = process.getuid?.(), pid = pro
         for (const entry of quietly(() => fs.list(at)) ?? []) {
           if (VIEW_FILE.test(entry) && quietly(() => fs.lstat(join(at, entry)).isFile())) quietly(() => fs.unlink(join(at, entry)));
         }
+        if (quietly(() => fs.lstat(join(at, ALIVE_NAME)).isFIFO())) quietly(() => fs.unlink(join(at, ALIVE_NAME)));
         quietly(() => fs.unlink(join(at, OWNER_NAME)));
         quietly(() => fs.rmdir(at));
         removed.push(at);

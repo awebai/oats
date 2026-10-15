@@ -238,7 +238,7 @@ test("the views are pure: they import only the TUI's own text, style and action 
   }
 });
 
-test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the private tmux server, and no other module starts a process; lib/read.mjs, lib/panel.mjs and lib/config.mjs alone read the file system, and only lib/read.mjs and lib/panel.mjs write a file: a change's output, the panel's owner mark and its viewer's two files, all in the run's private directory, which each removes", () => {
+test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the private tmux server, and no other module starts a process; lib/read.mjs, lib/panel.mjs and lib/config.mjs alone read the file system, and only lib/read.mjs and lib/panel.mjs write a file: a change's output, the panel's owner mark, its viewer's two files and the write end of its FIFO, all in the run's private directory, which each removes", () => {
   const builtins = (path) => staticImports(read(path)).filter((name) => name.startsWith("node:"));
   const users = (name) => TUI_SOURCES.filter((path) => builtins(path).includes(name));
   assert.deepEqual(users("node:child_process"), ["packages/tui/lib/panel.mjs", "packages/tui/lib/read.mjs"]);
@@ -253,9 +253,10 @@ test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the privat
   // each file and the directory. Nothing else of node:fs can change a file.
   const CHANGE_FILES = ["mkdtempSync", "rmdirSync", "unlinkSync"];
   // The panel (lib/panel.mjs) writes owner.json and makes its viewer's two files in the run's
-  // directory (which lib/read.mjs makes), lists that directory and the OS temp dir for its sweep,
-  // and removes its own files and a dead run's directory. It makes no directory.
-  const PANEL_FILES = ["readdirSync", "rmdirSync", "unlinkSync", "writeSync"];
+  // directory (which lib/read.mjs makes), holds the write end of the FIFO its keeper watches there
+  // (made by `mkfifo`; `constants` for the open's flags), lists that directory and the OS temp dir
+  // for its sweep, and removes its own files and a dead run's directory. It makes no directory.
+  const PANEL_FILES = ["constants", "readdirSync", "rmdirSync", "unlinkSync", "writeSync"];
   for (const path of users("node:fs")) {
     const taken = code(read(path)).match(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/);
     assert.ok(taken, `${path} names what it takes from node:fs`);
@@ -265,10 +266,15 @@ test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the privat
   }
   // A file is opened for reading only, but for the one a change writes to: made new for the child
   // alone ("wx", 0600), in lib/read.mjs, once; and the panel's two, made new the same way: its
-  // owner mark, and each of its viewer's files.
+  // owner mark, and each of its viewer's files. And the panel's FIFO, in PANEL_FS.hold alone:
+  // opened to read without waiting, checked to be a FIFO, and opened to write; it is never written.
   const writing = [];
+  const fifoOpens = [...code(read("packages/tui/lib/panel.mjs")).matchAll(/\bopenSync\((path, FS\.O_RDONLY \| FS\.O_NONBLOCK|path, FS\.O_WRONLY)\)/g)].map((call) => call[1]);
+  assert.deepEqual(fifoOpens, ["path, FS.O_RDONLY | FS.O_NONBLOCK", "path, FS.O_WRONLY"], "the FIFO's two opens");
+  assert.match(code(read("packages/tui/lib/panel.mjs")), /if \(!fstatSync\(reader\)\.isFIFO\(\)\) throw/, "the write end of a FIFO only");
   for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/\bopenSync\(([^)]*)\)/g)) {
     if (/^[^,]+,\s*"r"$/.test(call[1])) continue;
+    if (path === "packages/tui/lib/panel.mjs" && fifoOpens.includes(call[1])) continue;
     assert.match(call[1], /^path, "wx", 0o600$/, `${path} opens ${call[1]}`);
     writing.push(path);
   }
@@ -310,17 +316,16 @@ test("opening an agent: no module of the TUI holds an attach argument, the featu
   const literals = (source) => [...code(source).matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g)].map((match) => match[1] ?? match[2] ?? match[3]);
   const lib = TUI_SOURCES.filter((path) => path.startsWith("packages/tui/lib/"));
   // `attach` stands in one command the TUI writes for a person, with placeholders: what this
-  // version does not do (views/help.mjs). And in the panel's own tmux command, `-C attach`, its
-  // control client of its private server: tmux's word, not the kernel's.
+  // version does not do (views/help.mjs). The panel's control client attaches by the `new-session`
+  // that starts its private server, and names no attach.
   // A module path (lib/client.mjs's re-exports of session-attach.mjs and attach-exit.mjs) is no command.
   const attaching = lib.flatMap((path) => literals(read(path)).filter((text) => /\battach\b/.test(text) && !/^\.\.?\/.*\.mjs$/.test(text)).map((text) => [path, text]));
-  assert.deepEqual(attaching.map(([path]) => path).sort(), ["packages/tui/lib/panel.mjs", "packages/tui/lib/views/help.mjs"]);
+  assert.deepEqual(attaching.map(([path]) => path).sort(), ["packages/tui/lib/views/help.mjs"]);
   for (const [path, text] of attaching) {
-    if (path === "packages/tui/lib/panel.mjs") { assert.equal(text, "attach", path); continue; }
     assert.match(text, /`?oats session attach (--server <id> )?--home <home>`?/, `${path}: a command of placeholders only`);
     assert.doesNotMatch(text, /--detach-key/, path);
   }
-  assert.match(code(read("packages/tui/lib/panel.mjs")), /\[\.\.\.base\(\), "-C", "attach", "-t", SESSION\]/, "the control client of the panel's own server");
+  assert.match(code(read("packages/tui/lib/panel.mjs")), /\[\.\.\.base\(\), "-C", \.\.\.list\]/, "the control client starts the panel's own server");
   for (const path of lib) {
     const source = code(read(path));
     assert.doesNotMatch(source, /session-attach-detach-key/, `${path} names the feature`);

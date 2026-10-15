@@ -2,8 +2,8 @@
 // FAKE_TMUX_HOME set to a temp directory of its own; everything this fake keeps is there:
 //   calls.jsonl   one JSON line per invocation ({ pid, pgid, argv, env, commands }) and per
 //                 command a control client was sent ({ pid, control })
-//   plan.json     what to do (optional): { version, newSession: { fail }, attach: "fail",
-//                 attachDelayMs, holdCapture, screen: [lines], cursor,
+//   plan.json     what to do (optional): { version, newSession: { fail }, start: { failAt },
+//                 startDelayMs, holdCapture, screen: [lines], cursor,
 //                 window: { status, stderr, closeAtOnce }, killPaneSilent }
 //   state.json    the window counter, shared by the invocations of one test
 //   inject.txt    lines the test appends for the control client: `emit <line>` prints the line,
@@ -12,9 +12,9 @@
 // It reads its arguments as tmux does in the one way that matters here: an argument that ends in
 // `;` ends a command (a trailing `\;` is an escaped `;`), so a test can see that a hostile argument
 // reaches new-window's command intact. It never runs a real tmux.
-import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, constants, existsSync, fstatSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const home = process.env.FAKE_TMUX_HOME;
 const argv = process.argv.slice(2);
@@ -64,12 +64,7 @@ function emitted() { return existsSync(join(home, "emitted.txt")) ? readFileSync
 
 async function commandMode() {
   for (const [name, ...args] of parsed) {
-    if (name === "new-session") {
-      if (plan.newSession?.fail) { process.stderr.write("fake: the server did not start\n"); process.exit(1); }
-      // A real socket file, left behind as tmux leaves its own: this process exits without closing it.
-      if (socket && !existsSync(socket)) await new Promise((resolve) => { const server = createServer(); server.on("error", resolve); server.listen(socket, resolve); });
-      writeState({ ...readState(), server: true });
-    } else if (name === "new-window") {
+    if (name === "new-window") {
       const state = readState(), n = state.windows = (state.windows ?? 0) + 1;
       writeState(state);
       const e = {};
@@ -101,22 +96,52 @@ async function commandMode() {
   process.exit(0);
 }
 
+/** The run's FIFO as the control client finds it when it starts: { fifo, mode, held } (held: a
+ *  writer has it open, so a read finds no data but no EOF either), or null when there is none. */
+function aliveState() {
+  if (!socket) return null;
+  let fd;
+  try { fd = openSync(join(dirname(socket), "alive"), constants.O_RDONLY | constants.O_NONBLOCK); } catch { return null; }
+  try {
+    const stat = fstatSync(fd);
+    let held;
+    try { held = readSync(fd, Buffer.alloc(1)) !== 0; } catch (error) { held = error.code === "EAGAIN"; }
+    return { fifo: stat.isFIFO(), mode: stat.mode & 0o777, held };
+  } finally { closeSync(fd); }
+}
+
 async function controlMode() {
+  note({ alive: aliveState() });
   const now = () => Math.floor(Date.now() / 1000);
   const out = (text) => process.stdout.write(text);
-  if (plan.attach === "fail") {
-    out(`%begin ${now()} 1 0\ncan't find session: oats-tui\n%error ${now()} 1 0\n%exit\n`);
-    process.exit(1);
-  }
-  let number = 1, captures = 0, attached = false;
+  let number = 0, captures = 0, attached = false;
   const held = [], early = [];
-  // As tmux: the attach is answered first, and a command that came before it waits for it.
-  setTimeout(() => {
-    note({ attached: true });
-    out(`%begin ${now()} 1 0\n%end ${now()} 1 0\n%session-changed $0 oats-tui\n`);
+  // As tmux 3.7c: the client's own command list (the start: new-session, then the options) is
+  // answered first, one block per command with flags 0, and a command that came on stdin before
+  // it waits for it. A command that fails ends the list there; a new-session that fails ends the
+  // client (stderr, %exit).
+  setTimeout(async () => {
+    const failAt = plan.newSession?.fail ? 0 : plan.start?.failAt ?? -1;
+    for (const [i, command] of parsed.entries()) {
+      const n = ++number, t = now();
+      if (i === failAt) {
+        out(`%begin ${t} ${n} 0\nfake: ${i === 0 ? "the server did not start" : `${command[0]} failed`}\n%error ${t} ${n} 0\n`);
+        if (i === 0) { out("%exit\n"); process.exit(1); }
+        note({ startFailed: i });
+        return;
+      }
+      if (command[0] === "new-session") {
+        // A real socket file, left behind as tmux leaves its own: this process exits without closing it.
+        if (socket && !existsSync(socket)) await new Promise((resolve) => { const server = createServer(); server.on("error", resolve); server.listen(socket, resolve); server.unref(); });
+        writeState({ ...readState(), server: true });
+      }
+      out(`%begin ${t} ${n} 0\n%end ${t} ${n} 0\n`);
+    }
+    note({ started: true });
+    out("%session-changed $0 oats-tui\n");
     attached = true;
     for (const line of early.splice(0)) take(line);
-  }, plan.attachDelayMs ?? 0);
+  }, plan.startDelayMs ?? 0);
   function take(line) {
     if (current().holdCapture && line.startsWith("capture-pane")) held.push(line);
     else if (held.length) held.push(line); // answers stay in order behind a held one

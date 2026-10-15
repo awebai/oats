@@ -11,13 +11,15 @@
   instead. A terminal whose viewer ends closes with a line that says why,
   and is never opened again by itself. **The whole-screen open of the
   previous version is gone**: `z` replaces it. The viewer now runs in a tmux
-  server private to the run (tmux 3.2 or later), ended on every way out; a
-  later run removes what a killed one left. `open.detachKey` keeps its name
+  server private to the run (tmux 3.2 or later), ended on every way out, a
+  `kill -9` of `oats tui` included; a later run removes what a killed one
+  left. `open.detachKey` keeps its name
   and the keys it accepts, and now means the back key; a key outside them is
   refused when `tui.json` is read, and an older OATS on another machine is
   opened like a newer one. See [the TUI page](../tui.md#open-an-agents-terminal).
 - **The header's second row reads as navigation:** `Instances   Souls
   Capabilities`, the open view in reverse video and the views not built yet
-  dim. The keys `1`, `2` and `3` are in the help and the footer, not beside
-  the names; `2` and `3` say what to run instead. Every frame is now one
+  dim. The keys `1`, `2` and `3` are in the help, not beside the names, and
+  the footer names them as one hint, `1-3 views`; `2` and `3` say what to
+  run instead. Every frame is now one
   synchronized update (`CSI ?2026h` … `CSI ?2026l`).

@@ -52,8 +52,11 @@ export function backKeySequences(key) {
 const PASTE_START = escaped("[200~");
 const PASTE_END = escaped("[201~");
 /** The first bytes of a paste's start marker that are held when a read ends on them: from `ESC [ 2`
- *  on. A lone ESC or `ESC [` is never held for the paste's sake (an agent's Esc must not wait), so
- *  a start marker split before its third byte reaches the agent as it was typed. */
+ *  on. A lone ESC or `ESC [` is never held for the paste's sake (an agent's Esc must not wait):
+ *  they go to the agent at once, and when the next read completes the marker (within
+ *  PASTE_PAUSE_MS) the paste goes on to the agent RAW, as typed, its marks included, with no back
+ *  key taken from it until its end marker (round 1 of the review: a split there must not let a
+ *  back key inside a paste, or the keys after it, act). */
 const PASTE_HELD_FROM = 3;
 
 /** Whether `data` holds `seq` at `at`, whole. */
@@ -89,6 +92,10 @@ export function createThrough({ sequences, now }) {
   /** The paste being read: its content so far (null when none; only the tail that may begin the
    *  end marker once it went past the limit), and whether it did. */
   let paste = null, over = false, lastFeed = 0;
+  /** How many first bytes of a paste's start marker the last read ended with and handed on (1 or
+   *  2, or 0); and the paste passed on raw (see PASTE_HELD_FROM), with the last bytes it passed
+   *  (`tail`, which may begin its end marker), or null. */
+  let forwarded = 0, raw = null;
 
   function endPaste(out, content) {
     if (!over) out.push({ paste: decoder().decode(content) });
@@ -108,6 +115,31 @@ export function createThrough({ sequences, now }) {
     if (content.length >= PASTE_LIMIT) { over = true; paste = Uint8Array.from(content.subarray(content.length - (PASTE_END.length - 1))); return new Uint8Array(0); }
     paste = paste.length === 0 ? Uint8Array.from(content) : content; // never a view of the caller's read
     return new Uint8Array(0);
+  }
+
+  /** A raw paste: every byte to the agent as it came, up to and with the end marker, which may be
+   *  split across reads. Answers what is left after it, or nothing while it goes on. */
+  function inRaw(out, data) {
+    const seen = join(raw.tail, data);
+    for (let i = 0; i + PASTE_END.length <= seen.length; i++) {
+      if (seen[i] === ESC && at(seen, i, PASTE_END)) {
+        const end = i + PASTE_END.length - raw.tail.length;
+        if (end > 0) out.push({ input: data.subarray(0, end) });
+        raw = null;
+        return data.subarray(Math.max(0, end));
+      }
+    }
+    if (data.length) out.push({ input: data });
+    raw.tail = Uint8Array.from(seen.subarray(Math.max(0, seen.length - (PASTE_END.length - 1))));
+    return new Uint8Array(0);
+  }
+  /** How many first bytes of a paste's start marker the events end with, handed on as input. */
+  function endsOnStart(out) {
+    const last = out.at(-1);
+    if (!last?.input || held.length || paste !== null || raw !== null) return 0;
+    const b = last.input, n = b.length;
+    if (n >= 2 && b[n - 2] === ESC && b[n - 1] === PASTE_START[1]) return 2;
+    return n >= 1 && b[n - 1] === ESC ? 1 : 0;
   }
 
   function scan(out, data) {
@@ -142,14 +174,27 @@ export function createThrough({ sequences, now }) {
       if (!(bytes instanceof Uint8Array)) throw new TypeError("feed expects bytes (a Uint8Array)");
       const out = [], t = now();
       let data = bytes;
-      if (paste !== null && t - lastFeed >= PASTE_PAUSE_MS) endPaste(out, paste);
+      const soon = t - lastFeed < PASTE_PAUSE_MS;
+      if (paste !== null && !soon) endPaste(out, paste);
+      // A raw paste whose end has not come by the pause is over: what follows is scanned anew.
+      if (raw !== null && !soon) raw = null;
       lastFeed = t;
       if (paste !== null) {
         data = inPaste(out, data);
         if (paste !== null) return out;
       }
       if (held.length) { data = join(held, data); held = new Uint8Array(0); }
-      scan(out, data);
+      // The rest of a start marker whose first bytes the last read handed on: the paste is raw.
+      // A beginning of that rest waits for the next read, as a held key does.
+      if (raw === null && forwarded > 0 && soon) {
+        const rest = PASTE_START.subarray(forwarded);
+        if (at(data, 0, rest)) raw = { tail: new Uint8Array(0) };
+        else if (begins(data, 0, rest)) { held = Uint8Array.from(data); heldAt = t; return out; }
+      }
+      forwarded = 0;
+      if (raw !== null) data = inRaw(out, data);
+      if (raw === null && data.length) scan(out, data);
+      forwarded = endsOnStart(out);
       // Events are handed out as copies: the caller may keep them past the next read.
       return out.map((event) => (event.input ? { input: Uint8Array.from(event.input) } : event.rest ? { back: true, rest: Uint8Array.from(event.rest) } : event));
     },

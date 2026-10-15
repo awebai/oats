@@ -9,7 +9,7 @@ import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSyn
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FRAME_MS, MAX_TERMINALS, SESSION, STDERR_KEPT, VIEW_SCRIPT, createPanel, sweep, tmuxArgument } from "../lib/panel.mjs";
+import { FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, SESSION, STDERR_KEPT, VIEW_SCRIPT, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/panel/tmux.mjs", import.meta.url));
 const ROOT = realpathSync(mkdtempSync(path.join(os.tmpdir(), "panel-test-")));
@@ -47,7 +47,8 @@ function makeWorld(plan = {}) {
   const world = {
     dir, fake, run, tmux, socket: path.join(run, "tmux"),
     plan(next) { writeFileSync(path.join(fake, "plan.json"), JSON.stringify(next)); },
-    calls() { const log = path.join(fake, "calls.jsonl"); return existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)) : []; },
+    // Whole lines only: the last one may be in the middle of being written by the fake.
+    calls() { const log = path.join(fake, "calls.jsonl"); return existsSync(log) ? readFileSync(log, "utf8").split("\n").slice(0, -1).filter(Boolean).map((line) => JSON.parse(line)) : []; },
     invocations() { return world.calls().filter((call) => call.argv); },
     control() { return world.calls().filter((call) => call.control !== undefined).map((call) => call.control); },
     windows() { return world.calls().filter((call) => call.window !== undefined); },
@@ -97,34 +98,44 @@ const count = (lines, prefix) => lines.filter((line) => line.startsWith(prefix))
 // side: each open starts four short processes of the fake. The one test that changes the
 // process's own listeners runs alone, after them.
 describe("the panel", { concurrency: 8 }, () => {
-  test("the first open starts one private server: its version, the server with every option in one call, the control client, then exit-unattached through the control client after the attach block", async () => {
-    const world = makeWorld({ attachDelayMs: 150 }), { panel } = panelOf(world);
+  test("the first open starts one private server: its version, then the control client starting the server with exit-unattached right after the session and every option, in ONE command list; nothing is sent before the list is answered", async () => {
+    const world = makeWorld({ startDelayMs: 150 }), { panel } = panelOf(world);
     const { id } = await panel.open({ argv: VIEWER, cols: 50, rows: 10 });
     assert.equal(id, "@1");
     assert.equal(panel.current, "@1");
     const calls = world.invocations();
-    const shape = (call) => (call.flags.includes("-V") ? "version" : call.flags.includes("-C") ? `control ${call.commands[0].join(" ")}` : call.commands.map((command) => command[0]).join(","));
+    const shape = (call) => (call.flags.includes("-V") ? "version" : call.commands.map((command) => command[0]).join(","));
     assert.deepEqual(calls.map(shape), ["version",
-      "new-session,set-option,set-option,set-option,set-option,set-option,set-option,unbind-key,unbind-key,unbind-key,unbind-key",
-      `control attach -t ${SESSION}`, "set-option,new-window"]);
+      "new-session,set-option,set-option,set-option,set-option,set-option,set-option,set-option,unbind-key,unbind-key,unbind-key,unbind-key",
+      "set-option,new-window"]);
+    assert.ok(calls[1].flags.includes("-C"), "the server is started by the control client itself");
     // Every call: -u, no configuration, the run's own socket; never TMUX or TMUX_PANE.
     for (const call of calls) {
       assert.deepEqual(call.flags.slice(0, 5), ["-u", "-f", "/dev/null", "-S", world.socket], call.argv.join(" "));
       assert.deepEqual(call.env, { TMUX: false, TMUX_PANE: false, PATH: true });
     }
+    // The session (which attaches the client that made it) first, exit-unattached at once after it:
+    // never before, which would end the server before any client is attached, and never in a call
+    // of its own, which a TUI killed in between would leave out (the server would live on).
+    const alive = path.join(world.run, "alive");
     assert.deepEqual(calls[1].commands, [
-      ["new-session", "-d", "-s", SESSION, "-x", "80", "-y", "24", "/bin/sh", "-c", "exec cat"],
+      ["new-session", "-s", SESSION, "-x", "80", "-y", "24", "/bin/sh", "-c", KEEPER_SCRIPT, "oats-tui-keeper", alive],
+      ["set-option", "-s", "exit-unattached", "on"],
       ["set-option", "-s", "escape-time", "0"], ["set-option", "-g", "status", "off"], ["set-option", "-g", "prefix", "None"], ["set-option", "-g", "prefix2", "None"],
       ["set-option", "-gw", "window-size", "manual"], ["set-option", "-gw", "remain-on-exit", "off"],
       ["unbind-key", "-a"], ["unbind-key", "-a", "-T", "root"], ["unbind-key", "-a", "-T", "copy-mode"], ["unbind-key", "-a", "-T", "copy-mode-vi"]]);
-    assert.equal(calls.flatMap((call) => call.commands.flat()).includes("exit-unattached"), false, "never on the command line: it would end the server before the attach");
-    // Through the control client, and only once the attach was answered.
-    const log = world.calls(), attachedAt = log.findIndex((call) => call.attached), setAt = log.findIndex((call) => call.control === "set-option -s exit-unattached on");
-    assert.ok(attachedAt >= 0 && setAt > attachedAt, "exit-unattached after the attach block");
-    assert.equal(world.control()[0], "set-option -s exit-unattached on");
+    assert.deepEqual(calls[1].commands, startCommands({ alive }));
+    // The keeper's FIFO is made, 0600, and its write end held, BEFORE the server starts: a keeper
+    // that finds no writer means the TUI is gone, never that it has not come yet.
+    assert.deepEqual(world.calls().find((call) => "alive" in call).alive, { fifo: true, mode: 0o600, held: true });
+    assert.equal(calls.filter((call) => call.commands.flat().includes("exit-unattached")).length, 1, "only in the start list");
+    // Nothing on stdin before the start list was answered; the first command is the viewer's.
+    const log = world.calls(), startedAt = log.findIndex((call) => call.started), firstSent = log.findIndex((call) => call.control !== undefined);
+    assert.ok(startedAt >= 0 && (firstSent < 0 || firstSent > startedAt), "nothing sent before the start's blocks");
+    assert.equal(world.control().includes("set-option -s exit-unattached on"), false);
     // The control client is in a process group of its own: the TUI's Ctrl+Z does not stop it.
     const group = ownGroup();
-    if (group !== null) assert.notEqual(calls[2].pgid, group);
+    if (group !== null) assert.notEqual(calls[1].pgid, group);
     panel.end();
   });
 
@@ -210,7 +221,7 @@ describe("the panel", { concurrency: 8 }, () => {
 
   test("a capture: capture-pane -p -e -N and the cursor through the control client, its lines handed to the caller's capture with the size; a pane line that looks like %end does not end the block", async () => {
     const { world, panel, screens, captured, id } = await opened();
-    assert.deepEqual(world.control().slice(1), ["resize-window -t @1 -x 50 -y 10", "capture-pane -p -e -N -t %1", "display -p -t %1 '#{cursor_x} #{cursor_y} #{cursor_flag}'"]);
+    assert.deepEqual(world.control(), ["resize-window -t @1 -x 50 -y 10", "capture-pane -p -e -N -t %1", "display -p -t %1 '#{cursor_x} #{cursor_y} #{cursor_flag}'"]);
     assert.deepEqual(captured, [{ text: "screen 1\n%end 1 2 1\nlast", size: { cols: 50, rows: 10 } }]);
     assert.deepEqual(screens, [{ id, screen: { built: "screen 1\n%end 1 2 1\nlast", size: { cols: 50, rows: 10 } }, cursor: { x: 3, y: 4, visible: true } }]);
     panel.end();
@@ -323,7 +334,7 @@ describe("the panel", { concurrency: 8 }, () => {
   });
 
   test("close() while the open is under way: the open answers its id, its window is killed at once, and onClosed says asked", async () => {
-    const world = makeWorld({ attachDelayMs: 100 }), { panel, closed, screens } = panelOf(world);
+    const world = makeWorld({ startDelayMs: 100 }), { panel, closed, screens } = panelOf(world);
     const opening = panel.open({ argv: VIEWER, cols: 50, rows: 10 });
     panel.close();
     assert.equal(panel.current, null);
@@ -360,9 +371,9 @@ describe("the panel", { concurrency: 8 }, () => {
     const before = world.invocations().length;
     const { id: again } = await panel.open({ argv: VIEWER, cols: 50, rows: 10 });
     assert.equal(again, "@2");
-    const shape = world.invocations().slice(before).map((call) => (call.flags.includes("-C") ? "control" : call.commands[0]?.[0] ?? call.flags.at(-1)));
-    assert.deepEqual(shape, ["kill-server", "new-session", "control", "set-option"], "no version asked again; whatever was left of the old server killed first");
-    assert.equal(world.control().filter((line) => line === "set-option -s exit-unattached on").length, 2);
+    const shape = world.invocations().slice(before).map((call) => (call.flags.includes("-C") ? `control ${call.commands[0]?.[0]}` : call.commands[0]?.[0] ?? call.flags.at(-1)));
+    assert.deepEqual(shape, ["kill-server", "control new-session", "set-option"], "no version asked again; whatever was left of the old server killed first");
+    assert.equal(world.invocations().filter((call) => call.flags.includes("-C")).length, 2, "a new control client, with the whole start list again");
     panel.end();
   });
 
@@ -390,7 +401,7 @@ describe("the panel", { concurrency: 8 }, () => {
     other.end();
   });
 
-  test("open() refuses when tmux is missing or older than 3.2 (E_PANEL_TMUX), and when the server or its control client does not start (E_PANEL_START), leaving no server", async () => {
+  test("open() refuses when tmux is missing or older than 3.2 (E_PANEL_TMUX), and when the start fails (E_PANEL_START, with what tmux said), leaving no server", async () => {
     const missing = makeWorld();
     await assert.rejects(panelOf(missing, { tmux: path.join(missing.fake, "no-such-tmux") }).panel.open({ argv: VIEWER }), { code: "E_PANEL_TMUX" });
     const old = makeWorld({ version: "tmux 3.1c" });
@@ -398,13 +409,30 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.equal(old.invocations().length, 1, "nothing after the version");
     const fails = makeWorld({ newSession: { fail: true } });
     await assert.rejects(panelOf(fails).panel.open({ argv: VIEWER }), (error) => error.code === "E_PANEL_START" && /did not start/.test(error.detail));
-    const refused = makeWorld({ attach: "fail" });
-    await assert.rejects(panelOf(refused).panel.open({ argv: VIEWER }), { code: "E_PANEL_START" });
-    assert.equal(refused.invocations().at(-1).commands[0][0], "kill-server", "the server nobody attached to is killed");
+    assert.equal(fails.invocations().at(-1).commands[0][0], "kill-server");
+    // A command of the list after the session fails: the list ends there (tmux runs no more of it),
+    // the start is refused at once, its client ended, and the server killed.
+    const refused = makeWorld({ start: { failAt: 1 } });
+    await assert.rejects(panelOf(refused).panel.open({ argv: VIEWER }), { code: "E_PANEL_START", detail: "fake: set-option failed" });
+    assert.equal(refused.invocations().at(-1).commands[0][0], "kill-server", "a server whose options were not all set is killed");
+    const starter = refused.invocations().find((call) => call.flags.includes("-C")).pid;
+    await waitFor("the starting client gone", () => !isFake(starter));
     // A repository build names no version: taken as new enough.
     const master = makeWorld({ version: "tmux master" }), { panel } = panelOf(master);
     assert.deepEqual(await panel.open({ argv: VIEWER }), { id: "@1" });
     panel.end();
+  });
+
+  test("end() while the start is under way: the open rejects (E_PANEL_ENDED), the starting client is ended, and nothing is sent to it", async () => {
+    const world = makeWorld({ startDelayMs: 400 }), { panel } = panelOf(world);
+    const opening = panel.open({ argv: VIEWER, cols: 50, rows: 10 });
+    await waitFor("the starting client", () => world.invocations().some((call) => call.flags.includes("-C")));
+    const starter = world.invocations().find((call) => call.flags.includes("-C")).pid;
+    panel.end();
+    await assert.rejects(opening, { code: "E_PANEL_ENDED" });
+    await waitFor("the starting client gone", () => !isFake(starter));
+    assert.deepEqual(world.control(), []);
+    assert.equal(world.calls().some((call) => call.started), false, "it ended before its list was answered");
   });
 
   test("end(): kill-server (synchronous), the control client ended, the socket, owner.json and the view files removed, the run directory kept; idempotent, and every method quiet after it", async () => {
@@ -413,7 +441,7 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.ok(existsSync(world.socket) && lstatSync(world.socket).isSocket());
     panel.end();
     assert.equal(world.invocations().at(-1).commands[0][0], "kill-server");
-    assert.deepEqual(readdirSync(world.run), [], "the socket, owner.json and both view files");
+    assert.deepEqual(readdirSync(world.run), [], "the socket, owner.json, the FIFO and both view files");
     assert.ok(existsSync(world.run), "the directory is the reader's to remove");
     await waitFor("the control client gone", () => !isFake(control));
     const calls = world.invocations().length;
@@ -437,22 +465,23 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.ok(lstatSync(at).isSocket());
   }
   /** A run directory as a crashed run leaves it. */
-  function runDir(tmp, name, { pid, tool = "oats-tui", mode = 0o700, socket = true, owner = true, extra = [] } = {}) {
+  function runDir(tmp, name, { pid, tool = "oats-tui", mode = 0o700, socket = true, owner = true, fifo = true, extra = [] } = {}) {
     const at = path.join(tmp, name);
     mkdirSync(at);
     chmodSync(at, mode);
     if (owner) writeFileSync(path.join(at, "owner.json"), JSON.stringify({ tool, pid, started: "2026-10-14T00:00:00.000Z" }), { mode: 0o600 });
     if (socket) staleSocket(path.join(at, "tmux"));
+    if (fifo) execFileSync("mkfifo", ["-m", "600", path.join(at, "alive")]);
     for (const file of ["1.view.err", "1.view.status", ...extra]) writeFileSync(path.join(at, file), "x");
     return at;
   }
 
-  test("the sweep removes what a dead run left (socket, owner.json, view files, then the directory), and nothing else: never a live pid, a socket that answers, another tool's or user's directory, a wrong mode, a link, or a directory with no owner.json", async () => {
+  test("the sweep removes what a dead run left (socket, owner.json, the FIFO, view files, then the directory), and nothing else: never a live pid, a socket that answers, another tool's or user's directory, a wrong mode, a link, or a directory with no owner.json", async () => {
     const world = makeWorld(), tmp = path.join(world.dir, "tmp");
     mkdirSync(tmp);
     const dead = await deadPid();
     const removedDirs = [runDir(tmp, "oats-tui-dead01", { pid: dead }), runDir(tmp, "oats-tui-nosock", { pid: dead, socket: false })];
-    const withChange = runDir(tmp, "oats-tui-change", { pid: dead, extra: ["1.out", "1.err", "10.view.err.bak"] });
+    const withChange = runDir(tmp, "oats-tui-change", { pid: dead, fifo: false, extra: ["1.out", "1.err", "10.view.err.bak", "alive"] });
     const kept = {
       live: runDir(tmp, "oats-tui-live01", { pid: process.pid }),
       self: runDir(tmp, "oats-tui-self01", { pid: 4242 }),
@@ -473,7 +502,7 @@ describe("the panel", { concurrency: 8 }, () => {
     const answer = sweep({ tmpdir: tmp, uid, pid: 4242, tmux: world.tmux, env: process.env, fs: { lstat }, kill: (pid, signal) => { signals.push(signal); return process.kill(pid, signal); } });
     assert.deepEqual(answer.removed.sort(), [...removedDirs, withChange].sort());
     for (const at of removedDirs) assert.equal(existsSync(at), false, at);
-    assert.deepEqual(readdirSync(withChange).sort(), ["1.err", "1.out", "10.view.err.bak"], "a reader's files stay, and so does the directory");
+    assert.deepEqual(readdirSync(withChange).sort(), ["1.err", "1.out", "10.view.err.bak", "alive"], "a reader's files stay, an `alive` that is no FIFO stays, and so does the directory");
     for (const [why, at] of Object.entries(kept)) assert.ok(readdirSync(at).includes("owner.json") || why === "noOwner", why);
     for (const at of Object.values(kept)) assert.ok(readdirSync(at).includes("1.view.err"), at);
     assert.ok(existsSync(path.join(target, "tmux")) && existsSync(path.join(tmp, "oats-tui-link01")), "a link is not followed");

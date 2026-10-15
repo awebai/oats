@@ -15,10 +15,10 @@
 // file, within the file's budget.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -29,6 +29,9 @@ const hostTool = (name) => { try { return systemExecutable(name); } catch { retu
 
 // The host's own tools, found before the environment is isolated (PATH is then the fixture's).
 const REAL_TMUX = hostTool("tmux");
+/** The panel makes its keeper's FIFO with the base system's `mkfifo` (packages/tui/lib/panel.mjs,
+ *  THE KEEPER), which the fixture's PATH does not link: the host's is linked there for this file. */
+const HOST_MKFIFO = hostTool("mkfifo");
 /** Outside CI a host without tmux skips these tests; in CI test/tmux-in-ci.test.mjs fails. */
 const NO_TMUX = REAL_TMUX ? false : "tmux is not on PATH: these tests drive `oats tui`, its private tmux server and the kernel's viewer in a real tmux (test/tmux-in-ci.test.mjs fails for this in CI)";
 const base = fixtureBase("oats-tp-"); // short: the sockets of three servers live in it
@@ -115,10 +118,16 @@ const tmps = [];
 test.before(async () => {
   if (!REAL_TMUX) return;
   restoreEnvironment = isolateSessionEnvironment(base);
+  assert.ok(HOST_MKFIFO, "mkfifo is on the host's PATH");
+  symlinkSync(HOST_MKFIFO, join(process.env.PATH.split(delimiter)[0], "mkfifo"));
   fx = v2Deployment();
   writeFileSync(paneProgram, `for (let i = 0; i < 50; i++) console.log("history " + i);
 process.stdin.setRawMode(true);
-process.stdin.on("data", (data) => process.stdout.write([...data].map((b) => (b < 32 ? "^" + String.fromCharCode(b + 64) : b === 127 ? "^?" : String.fromCharCode(b))).join("")));
+// F starts a flood: the agent prints without pause, as a busy agent does, until its window goes.
+process.stdin.on("data", (data) => {
+  if (data.includes(70)) setInterval(() => process.stdout.write("flood ".repeat(12) + "\\n"), 1);
+  process.stdout.write([...data].map((b) => (b < 32 ? "^" + String.fromCharCode(b + 64) : b === 127 ? "^?" : String.fromCharCode(b))).join(""));
+});
 process.stdout.write("pane-ready:");
 `);
   tmuxOn(AGENTS, "new-session", "-d", "-s", SESSION, "-n", "hq", "-x", "100", "-y", "30", "-c", base, "cat");
@@ -466,6 +475,99 @@ for (const [how, end, expected] of [
     }
   });
 }
+
+// The keeper (packages/tui/lib/panel.mjs, THE KEEPER) ends the private server when the TUI is gone,
+// at any moment: a control client whose reader has gone while output is queued for it is never
+// ended by tmux, so the stdin EOF alone does not do it. The program below is the panel alone, over
+// the real tmux: killed with SIGKILL at a chosen moment of the start (as soon as the control client
+// is spawned, at the first bytes it prints, or a few ms later), or (`hold`) left running with its
+// viewer open, for the test to stop and kill.
+const panelProgram = join(base, "panel-program.mjs");
+const PANEL_MODULE = resolve(new URL("../packages/tui/lib/panel.mjs", import.meta.url).pathname);
+function writePanelProgram() {
+  writeFileSync(panelProgram, `import { spawn as nodeSpawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { createPanel } from ${JSON.stringify(PANEL_MODULE)};
+const [run, mark, when] = process.argv.slice(2);
+const die = () => process.kill(process.pid, "SIGKILL");
+const spawn = (...args) => {
+  const child = nodeSpawn(...args);
+  writeFileSync(mark, String(child.pid));
+  if (when === "spawn") die();
+  else if (when === "output") child.stdout.once("data", die);
+  else if (when !== "hold") setTimeout(die, Number(when));
+  return child;
+};
+const panel = createPanel({ dir: () => run, tmux: "tmux", spawn, env: process.env, capture: (text) => text, onScreen: () => {}, onClosed: () => {} });
+panel.open({ argv: ["/bin/sh", "-c", "exec sleep 30"], cols: 40, rows: 10 }).then(() => writeFileSync(mark + ".opened", "")).catch(() => {});
+setTimeout(() => {}, 20000);
+`);
+}
+/** A run directory for the program, in a TMPDIR of the fixture's: sweepPanels and the last test see it. */
+function programRun(tmp, name) {
+  const run = join(tmp, `oats-tui-${name}`);
+  mkdirSync(run, { mode: 0o700 });
+  chmodSync(run, 0o700);
+  return { run, mark: join(tmp, `${name}.pid`), socket: panelSocket(run) };
+}
+const budget = (ms = 10000) => Math.min(ms, Math.max(0, FILE_DEADLINE - Date.now()));
+/** The pids of the processes in a private server's panes: its keeper's and its viewers'. */
+const panePids = (socket) => { try { return lines(tmuxOn(socket, "list-panes", "-a", "-F", "#{pane_pid}")).map(Number); } catch { return []; } };
+
+test("a TUI killed with SIGKILL while its private server starts leaves no server: killed at the control client's spawn, at its first bytes, or a few ms on", { skip: NO_TMUX }, async () => {
+  writePanelProgram();
+  const tmp = tmpFor();
+  for (const when of ["spawn", "output", "0", "2", "5", "10", "20", "40"]) {
+    const { run, mark, socket } = programRun(tmp, when);
+    let signal = null;
+    try { execFileSync(process.execPath, [panelProgram, run, mark, when], { timeout: 15000, stdio: "ignore" }); } catch (error) { signal = error.signal; }
+    assert.equal(signal, "SIGKILL", `the program killed itself (${when})`);
+    assert.equal(existsSync(mark), true, `the control client was spawned before the kill (${when})`);
+    const client = Number(readFileSync(mark, "utf8"));
+    await waitUntil(() => !alive(client), `the control client ${client} to end after the TUI was killed (${when})`, budget());
+    await waitUntil(() => !answers(socket), `no private server to answer after a kill at ${when}`, budget());
+    // These two fall inside the start by construction: the open never answered.
+    if (when === "spawn" || when === "output") assert.equal(existsSync(`${mark}.opened`), false, `killed during the start (${when})`);
+  }
+});
+
+test("a stopped TUI keeps its private server and its viewer (Ctrl+Z stops the TUI, and it holds the keeper's FIFO); killed afterwards, the server and the viewer go", { skip: NO_TMUX }, async (t) => {
+  writePanelProgram();
+  const { run, mark, socket } = programRun(tmpFor(), "hold");
+  const program = spawn(process.execPath, [panelProgram, run, mark, "hold"], { stdio: "ignore" });
+  t.after(() => { try { program.kill("SIGKILL"); } catch { /* gone */ } });
+  await waitUntil(() => existsSync(`${mark}.opened`), "the program's viewer open", budget(15000));
+  const panes = panePids(socket);
+  assert.equal(panes.length, 2, "the keeper and the viewer");
+  process.kill(program.pid, "SIGSTOP");
+  await pause(1500);
+  assert.equal(answers(socket), true, "a stopped TUI's server still answers");
+  assert.deepEqual(panes.filter((pid) => !alive(pid)), [], "its keeper and its viewer still run");
+  process.kill(program.pid, "SIGCONT");
+  await pause(300);
+  assert.equal(answers(socket), true, "and after it continues");
+  process.kill(program.pid, "SIGKILL");
+  await waitUntil(() => !answers(socket), "no private server to answer after the TUI was killed", budget());
+  await waitUntil(() => panes.every((pid) => !alive(pid)), "the keeper and the viewer gone with the server", budget());
+});
+
+test("kill -9 while the agent prints without pause: the private server is gone, its viewer's session and own key table are gone from the agents' server, and the agent keeps running", { skip: NO_TMUX }, async (t) => {
+  await agentWindow();
+  t.after(() => { try { killAgentWindow(); } catch { /* gone */ } }); // the flood ends with its window
+  const term = await terminal(t);
+  const run = await tui(term);
+  await run.open("before the flood");
+  term.type("F");
+  await until(term, () => run.panel().some((text) => text.startsWith("flood flood")), "the flood in the panel");
+  await pause(300);
+  const dir = run.dir(), socket = panelSocket(dir);
+  process.kill(run.pid, "SIGKILL");
+  assert.equal(await run.ended("after kill -9"), 137, term.shows());
+  await until(term, () => !answers(socket), "the private server's socket to refuse after kill -9 with the agent printing");
+  await until(term, () => viewerSessions().length === 0, "no viewer session on the agents' server after kill -9 with the agent printing", () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`]);
+  assert.deepEqual(viewerTableFaults(), [], "no viewer's own key table on the agents' server, and the shared one holds only the mouse bindings");
+  assert.equal(agentWindowThere(), true, "the agent keeps running");
+});
 
 test("a run's sweep removes what a dead run left, its directory, and leaves a live run's directory and a look-alike without owner.json alone", { skip: NO_TMUX }, async (t) => {
   await agentWindow();

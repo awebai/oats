@@ -106,3 +106,35 @@ test("the events are copies: a later read does not change bytes already handed o
   through.feed(bytes("zzz"));
   assert.equal(text(first.input), "abc");
 });
+
+test("a paste split anywhere, its two marks included, never lets a back key inside it act: every split in three reads hands on exactly what was typed, as input or as a paste, and the back key after it is taken (round 1 of the review)", () => {
+  const typedText = "a\x1b[200~one\x1ctwo\x1b[201~b";
+  /** What reached the agent, marks put back around a paste: it must be what was typed. */
+  const reached = (events) => events.map((e) => (e.input !== undefined ? e.input : `\x1b[200~${Buffer.from(e.paste, "utf8").toString("latin1")}\x1b[201~`)).join("");
+  for (let i = 1; i < typedText.length; i++) {
+    for (let j = i + 1; j < typedText.length; j++) {
+      const s = scanner(), events = [];
+      for (const part of [typedText.slice(0, i), typedText.slice(i, j), typedText.slice(j)]) events.push(...s.feed(part));
+      events.push(...s.expire());
+      const at = `split at ${i}, ${j}`;
+      assert.equal(events.some((e) => e.back), false, `${at}: no back key: ${JSON.stringify(events)}`);
+      assert.equal(reached(events), typedText, at);
+      assert.deepEqual(s.feed("\x1c"), [{ back: true, rest: "" }], `${at}: the back key after the paste is taken`);
+    }
+  }
+});
+
+test("a raw paste (its start marker split after ESC or ESC [) whose end never comes is over after the pause: the back key is taken again", () => {
+  for (const first of ["\x1b", "x\x1b["]) {
+    const s = scanner();
+    assert.deepEqual(s.feed(first), [{ input: first }]);
+    assert.deepEqual(s.feed(first === "\x1b" ? "[200~half\x1c" : "200~half\x1c"), [{ input: first === "\x1b" ? "[200~half\x1c" : "200~half\x1c" }], "inside the paste: passed on, not taken");
+    s.wait(PASTE_PAUSE_MS);
+    assert.deepEqual(s.feed("\x1c"), [{ back: true, rest: "" }]);
+  }
+  // An Esc the agent was sent, then keys a while later: nothing is raw.
+  const s = scanner();
+  s.feed("\x1b");
+  s.wait(PASTE_PAUSE_MS);
+  assert.deepEqual(s.feed("[200~\x1c"), [{ input: "[200~" }, { back: true, rest: "" }]);
+});

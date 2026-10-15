@@ -6,12 +6,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile as nodeExecFile, execFileSync, spawn as nodeSpawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
 import { CHANGE_FILES, KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
+import { PANEL_FS } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/fake.mjs", import.meta.url));
 const LEAVE = fileURLToPath(new URL("./fixtures/leave.mjs", import.meta.url));
@@ -1573,6 +1574,22 @@ function change(c, argv, options = {}) {
   c.pids.push(child.pid);
   return { child, answer: () => answer };
 }
+
+test("a change never holds the panel's FIFO: the write end the TUI keeps for its keeper (lib/panel.mjs, THE KEEPER) is in no change's descriptors, so a change that outlives the TUI cannot keep its private server alive", { skip: existsSync("/proc/self/fd") ? false : "no /proc: a child's descriptors cannot be listed here" }, async (t) => {
+  const c = changing(t);
+  const fifo = path.join(mkdtempSync(path.join(ROOT, "fifo-")), "alive");
+  execFileSync("mkfifo", ["-m", "600", fifo]);
+  const held = PANEL_FS.hold(fifo);
+  t.after(() => quietly(() => PANEL_FS.release(held)));
+  const holders = (pid) => readdirSync(`/proc/${pid}/fd`).filter((fd) => quietly(() => readlinkSync(`/proc/${pid}/fd/${fd}`)) === fifo);
+  assert.deepEqual(holders("self"), [String(held)], "the TUI holds it");
+  const run = change(c, [c.paths.ready, c.paths.gate, c.paths.done]);
+  await waitFor("the change to be under way", () => existsSync(c.paths.ready));
+  assert.deepEqual(holders(run.child.pid), [], "the change does not");
+  writeFileSync(c.paths.gate, "");
+  await waitFor("the callback", run.answer);
+  c.reader.stop();
+});
 
 test("a change's output goes to two files of the run's private directory, never a pipe: stdin is ignore, the TUI's copies are closed, and at the close both are read back, deleted, and handed to the callback as execFile hands them", async (t) => {
   const c = changing(t);

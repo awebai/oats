@@ -191,8 +191,8 @@ function countSpans(counts, cols) {
  *  first, and a kept filter and the other hints take what is left. The hints stand in the order
  *  given, and when they do not all fit they are given up in an order of their own (`keep`, the
  *  first kept longest), so a hint can stand first and still be given up before another: in the
- *  list of instances the views' digits go first (`capabilities`, `souls`), then the acts
- *  (`restart`, `start`, `retire`, then `stop`), then `workspaces`, `refresh`, the key that clears a
+ *  list of instances the acts go first (`restart`, `start`, `retire`, then `stop`), then the views
+ *  (one hint for the three, `1-3 views`), then `workspaces`, `refresh`, the key that clears a
  *  kept filter, `detail`, the open terminal's `close-terminal` and `zoom`, `open` and last `filter`
  *  (`filter` before `open` while a filter is kept: its own `/` stands in the footer then). A row
  *  too narrow for the whole of a hint drops it.
@@ -214,6 +214,8 @@ function footer(m, cols) {
     return { key, word: said, width: key.width + 1 + said.width };
   };
   const hint = (id, label) => { const a = action(id); return a ? made(keyText(keyLabel(a.keys[0])), label ?? a.label) : null; };
+  /** The hints that are no one action's: made below. */
+  const hintOf = {};
   const edge = cols - MARGIN; // nothing stands at or past it
   /** A hint's spans at `col`, never past the edge. */
   const put = (h, col, look) => [
@@ -224,6 +226,15 @@ function footer(m, cols) {
   // A word is drawn as one span, unless it was made of spans already.
   const spansOf = (h) => ({ ...h, word: { ...h.word, spans: h.word.spans ?? [{ col: 0, text: h.word.text, width: h.word.width }] } });
 
+  // While what is typed goes to the agent the TUI takes one key, the back key, and the footer
+  // names it alone (tui.json's open.detachKey, text from outside), in every such frame: before
+  // anything else the footer could show.
+  const listing = m.view !== "help" && m.view !== "switcher";
+  if (listing && m.terminal?.focus === "terminal") {
+    const key = keyText(m.detachKey), word = "back to the list";
+    return [{ col: MARGIN, text: key.text, width: Math.max(0, Math.min(key.width, edge - MARGIN)) },
+      { col: MARGIN + key.width + 1, text: lit(word), width: Math.max(0, Math.min(word.length, edge - MARGIN - key.width - 1)) }].filter((s) => s.width > 0);
+  }
   if (m.view !== "help" && m.filter.editing) {
     const hints = [made({ text: lit("Enter"), width: "Enter".length }, "keep"), hint("close", "clear")].filter(Boolean).map(spansOf);
     const spans = [{ col: MARGIN, text: lit("/"), style: BOLD, width: 1 }, { col: MARGIN + 1, text: shown(m.filter.query), width: Math.max(0, edge - span(hints) - GAP - MARGIN - 1) }];
@@ -246,14 +257,6 @@ function footer(m, cols) {
     for (const h of all) { if (col + h.width > edge) break; spans.push(...put(h, col)); col += h.width + GAP; }
     return spans;
   }
-  const listing = m.view !== "help" && m.view !== "switcher";
-  // While what is typed goes to the agent the TUI takes one key, the back key, and the footer
-  // names it alone (tui.json's open.detachKey, text from outside), in every such frame.
-  if (listing && m.terminal?.focus === "terminal") {
-    const key = keyText(m.detachKey), word = "back to the list";
-    return [{ col: MARGIN, text: key.text, width: Math.max(0, Math.min(key.width, edge - MARGIN)) },
-      { col: MARGIN + key.width + 1, text: lit(word), width: Math.max(0, Math.min(word.length, edge - MARGIN - key.width - 1)) }].filter((s) => s.width > 0);
-  }
   // While another machine is asked first, Esc gives the open up, and that is all it does: the
   // hint stands where `open` stood, is kept as long, and `close` is not listed beside it.
   const asking = listing && m.opening?.phase === "preflight";
@@ -262,19 +265,24 @@ function footer(m, cols) {
   const first = (asking ? [["open", hint("close", "stop opening")]] : listing && m.onTerminal ? [["open", hint("open", "focus terminal")]] : listing && m.openable ? [["open", hint("open")]] : []).filter(([, h]) => h);
   // With a terminal open, the keys that zoom it and close it stand after `open`, kept as long.
   const terminal = listing && m.terminal ? [["zoom", hint("zoom")], ["close-terminal", hint("close-terminal")]].filter(([, h]) => h) : [];
-  // The acts the selected row offers now stand after those, and are the first given up but for
-  // the views' digits, which come last of all.
+  // The acts the selected row offers now stand after those, and are the first given up.
   const acts = listing && !asking ? (m.actable ?? []).map((verb) => [verb, hint(verb)]).filter(([, h]) => h) : [];
   const ACTS = ["stop", "retire", "start", "restart"];
-  const VIEW_KEYS = ["souls", "capabilities"];
+  // The three views are one hint, `views`, named by their keys: `1-3` while they are the digits
+  // in order, else each key (tui.json may rebind one), and a view with no key left out. The
+  // header shows which views there are; the help names each key.
+  const viewKeys = ["instances", "souls", "capabilities"].map((id) => action(id)).filter(Boolean).map((a) => keyLabel(a.keys[0]));
+  const views = viewKeys.length === 0 ? null : made(keyText(viewKeys.join("") === "123" ? "1-3" : viewKeys.join("/")), "views");
+  hintOf.views = views;
+  const VIEW_KEYS = ["views"];
   const [ids, keep] = m.view === "help" ? [["close"], ["close"]]
     // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
     // A kept filter puts `close` before `refresh`, as in the list: the key that clears it is the hint to keep.
     : m.view === "switcher" ? [["open", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])], null]
     : m.focus === "detail" ? [["detail", "close", "refresh"], ["open", "zoom", "close-terminal", "detail", "close", "refresh", ...ACTS]]
     // A kept filter shows its own `/` beside the hints: then `open` outlives the `/ filter` hint.
-    : [["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces", ...VIEW_KEYS], [...(m.filter.query ? ["open", "zoom", "close-terminal", "filter"] : ["filter", "open", "zoom", "close-terminal"]), "detail", "close", "refresh", "workspaces", ...ACTS, ...VIEW_KEYS]];
-  const hints = [...first, ...terminal, ...acts, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
+    : [["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces", ...VIEW_KEYS], [...(m.filter.query ? ["open", "zoom", "close-terminal", "filter"] : ["filter", "open", "zoom", "close-terminal"]), "detail", "close", "refresh", "workspaces", ...VIEW_KEYS, ...ACTS]];
+  const hints = [...first, ...terminal, ...acts, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, id in hintOf ? hintOf[id] : hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
   const last = ["help", "quit"].map((id) => hint(id)).filter(Boolean).map(spansOf);
   const spans = [];
   let col = MARGIN;

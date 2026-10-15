@@ -2183,3 +2183,17 @@ test("2 and 3 name the views that are not in this version: the line says what to
     assert.deepEqual([after.state.view, after.state.selected, after.state.terminal], [state.view, state.selected, null], k);
   }
 });
+
+test("the back key always returns to the list with the panel, unzoomed: also when the terminal was opened or zoomed from the detail's focus (round 1 of the review)", () => {
+  const state = on(TWO(), "dev-a");
+  const fromDetail = reduce(key(key(state, "tab").state, "enter").state, { back: true }).state;
+  assert.deepEqual([fromDetail.focus, fromDetail.terminal.focus, fromDetail.terminal.zoom], ["list", "list", false]);
+  // The detail shown over an open terminal, then z or Enter, then back.
+  const open = reduce(key(state, "enter").state, { back: true }).state;
+  for (const k of ["z", "enter"]) {
+    const back = reduce(key(key(open, "tab").state, k).state, { back: true }).state;
+    assert.deepEqual([back.focus, back.terminal.focus, back.terminal.zoom], ["list", "list", false], k);
+  }
+  // While the terminal has the focus the list lies under it.
+  assert.equal(key(key(state, "tab").state, "enter").state.focus, "list");
+});

@@ -323,7 +323,13 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
   // The terminal has the focus only while the list of instances is shown: anything that shows
   // another view (a workspace gone, which shows the switcher) gives the focus back to the list.
   const t = step.state.terminal;
-  return t?.focus === "terminal" && step.state.view !== "instances" ? { ...step, state: next(step.state, { terminal: Object.freeze({ ...t, focus: "list", zoom: false }) }) } : step;
+  if (t?.focus !== "terminal") return step;
+  if (step.state.view !== "instances") return { ...step, state: next(step.state, { terminal: Object.freeze({ ...t, focus: "list", zoom: false }) }) };
+  // While it has the focus, what lies under it is the list: the back key returns there, never to
+  // the detail. A filter field open when the focus came (a preflight that ended while it was
+  // typed in) is settled, its text kept as Enter keeps it: no key goes to it any more.
+  const under = step.state.focus !== "list" || step.state.filter.editing;
+  return under ? { ...step, state: next(step.state, { focus: "list", filter: Object.freeze({ ...step.state.filter, editing: false }) }) } : step;
 }
 
 /** The terminal of an open decision (the model's openDecision), starting, with the focus. */

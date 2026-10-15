@@ -58,10 +58,13 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 - Every read runs in a session of its own and is ended on every way out.
   The viewer runs in a pane of the run's private tmux server
   (`lib/panel.mjs`), never on the user's terminal: the guard never lends the
-  terminal, and `panel.end()` kills that server on every way out (after a
-  SIGKILL it ends with its control client, and the next run's sweep removes
-  the directory). The panel runs a process only to start the server and to
-  make a window; every frame, key, resize and close goes through its one
+  terminal, and `panel.end()` kills that server on every way out. After a
+  SIGKILL the server's keeper window kills it: the keeper reads the run's
+  FIFO `alive`, whose write end the TUI holds, until no writer is left (see
+  THE KEEPER in `lib/panel.mjs`, which says why the control client's stdin
+  EOF is not enough). The next run's sweep removes the directory. The panel
+  runs a process only to make that FIFO, to start the server and to make a
+  window; every frame, key, resize and close goes through its one
   control client, and a capture runs only after tmux said the pane changed. A
   change (`lib/read.mjs` `changeExec`: the apply of a stop or a retire, a
   start, a restart) is never signalled: on the way out it is let go, and its
