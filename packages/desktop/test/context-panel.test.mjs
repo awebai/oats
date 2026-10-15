@@ -523,8 +523,14 @@ test('#802: a held home: a spawning one shows no lifecycle control, a quarantine
   assert.deepEqual(shown(), [], 'setting up its worktree: no Start, Stop or Retire');
   u.select(instance('/A/q1', { running: false, rollbackIncomplete: true }));
   assert.deepEqual(shown(), ['retire'], "a spawn that didn't finish: Retire only");
-  u.select(instance('/A/q2', { running: true, retirePending: true }));
+  u.select(instance('/A/q2', { running: true, retire: { state: 'interrupted', since: '2026-10-15T00:00:00Z', self: true } }));
   assert.deepEqual(shown(), ['retire'], "a retire that didn't finish: Retire only, even with a live session");
+  // #1247: a retire that runs (an older kernel's bare retirePending reads so): its Retire is secondary, the roster
+  // menu's only; here no control, and the action row says why.
+  u.select(instance('/A/q4', { running: true, retirePending: true }));
+  assert.deepEqual(shown(), [], 'being retired: no inline Retire');
+  assert.equal(u.query('[data-context-actions-note]').hidden, false);
+  assert.equal(u.query('[data-context-actions-note]').textContent, 'same-name is being retired.');
   u.select(instance('/A/q3', { running: false, spawnInProgress: true, rollbackIncomplete: true }));
   assert.deepEqual(shown(), ['retire'], 'rollbackIncomplete wins');
   u.select(instance('/A/t1', { running: false }));

@@ -68,10 +68,11 @@ let dialogs = 0;
  * phase offers, is the shared confirmation's (packages/client/lifecycle-confirmation.mjs); this module draws it.
  * One phase decides which controls exist (loading, review, updating, running, done, result); the ownership
  * guards (life, ticket, owns, generation) decide whether an answer may paint at all. Every node is built once
- * per modal and updated in place, so a repaint never rebuilds the focused control. */
+ * per modal and updated in place, so a repaint never rebuilds the focused control. `retires` (#1247): the window's
+ * retires in flight (packages/client/retire-in-flight.mjs), told of every retire apply by the shared confirmation. */
 export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, generation = () => 0,
   subscribeWorkspace = () => () => {}, subscribeConnections = () => () => {}, connectionGeneration = () => 0,
-  onIntent = () => {}, applyFocus = fn => fn(), onSettled = () => {}, openExternal = () => {}, fallbackFocus = () => null } = {}) {
+  onIntent = () => {}, applyFocus = fn => fn(), onSettled = () => {}, openExternal = () => {}, fallbackFocus = () => null, retires = null } = {}) {
   let alive = true, overlay = null, ui = null, target = null, operation = null, choices = null, plan = null, planRef = null, server = null;
   // The row the dialog was opened for is a home a failed spawn left (quarantined, `rollbackIncomplete`).
   let leftover = false;
@@ -368,7 +369,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     phase = 'loading'; applyFocus(() => closeButton.focus());
     const workspaceOf = target.workspace, owned = () => current() && confirmation === made;
     // The confirmation reads its first plan at once; its answers paint through onChange while this modal owns it.
-    const made = createLifecycleConfirmation({ request: body => request(workspaceOf, body), target, operation, terms: DESKTOP_TERMS, label: server, leftover,
+    const made = createLifecycleConfirmation({ request: body => request(workspaceOf, body), target, operation, terms: DESKTOP_TERMS, label: server, leftover, retires,
       onChange: (event, detail) => { if (life === mounted && generation() === mountedGeneration) onChange(event, detail); },
       onSettled: (result, settledTarget) => { if (owned()) return onSettled(result, settledTarget); } });
     confirmation = made;

@@ -6,7 +6,7 @@ import { instanceActs, openAct } from "../../client/instance-acts.mjs";
 import { heldHome } from "../../client/instance-tree.mjs";
 import { unsupportedSession } from "../../client/instance-presentation.mjs";
 import { rowReason } from "../../client/remote-address.mjs";
-import { ROWS } from "./helpers/instance-menu-probe.mjs";
+import { ROWS, RETIRE_INTERRUPTED } from "./helpers/instance-menu-probe.mjs";
 import { remotePanel, unavailableGroups } from "../../client/remote-roster.mjs";
 import { parseEnvelope } from "../../client/cli-adapter.mjs";
 import { kernelRemoteRow, kernelRemoteGroup } from "./helpers/kernel-remote-row.mjs";
@@ -43,17 +43,20 @@ test("a session backend OATS no longer has: Start is listed, not enabled, with t
   assert.equal(instanceActs(rows[0]).acts[1].reason.sentence, HERDR, "the kernel's own text when it sent one");
 });
 
-test("a home the kernel holds: nothing while it spawns, Retire alone when a spawn or a retire left it half cleaned", () => {
+test("a home the kernel holds: nothing while it spawns, Retire alone when a spawn or a retire left it half cleaned, Retire secondary while it is retired", () => {
   const spawning = { ...LOCAL, running: false, spawnInProgress: true };
   assert.deepEqual(instanceActs(spawning), { blocked: { code: "held", kind: "spawning", sentence: "dev-one is setting up its worktree. It can't be used until the spawn finishes." }, limited: null, acts: [] });
   assert.deepEqual(instanceActs({ ...LOCAL, running: false, rollbackIncomplete: true }),
     { blocked: null, limited: { code: "held", kind: "spawn-incomplete", sentence: "The spawn of dev-one didn't finish. Retire it to clean up." }, acts: [on("retire")] });
-  assert.deepEqual(instanceActs({ ...LOCAL, running: true, retirePending: true }),
+  assert.deepEqual(instanceActs({ ...LOCAL, running: true, retire: RETIRE_INTERRUPTED }),
     { blocked: null, limited: { code: "held", kind: "retire-incomplete", sentence: "The retire of dev-one didn't finish. Retire it again to complete." }, acts: [on("retire")] });
+  // #1247: a retire that runs (or an older kernel's bare retirePending): Retire stays offered, enabled, but secondary.
+  assert.deepEqual(instanceActs({ ...LOCAL, running: true, retirePending: true }),
+    { blocked: null, limited: { code: "held", kind: "retiring", sentence: "dev-one is being retired." }, acts: [{ ...on("retire"), secondary: true }] });
   // The kind is the held home's own (instance-tree.mjs heldHome): a spawn that is gone wins over a live one, a live one over a pending retire.
   assert.equal(instanceActs({ ...LOCAL, rollbackIncomplete: true, spawnInProgress: true }).limited.kind, "spawn-incomplete");
   assert.equal(instanceActs({ ...LOCAL, spawnInProgress: true, retirePending: true }).blocked.kind, "spawning");
-  for (const row of [spawning, { ...LOCAL, rollbackIncomplete: true }, { ...LOCAL, retirePending: true }]) {
+  for (const row of [spawning, { ...LOCAL, rollbackIncomplete: true }, { ...LOCAL, retirePending: true }, { ...LOCAL, retire: RETIRE_INTERRUPTED }]) {
     const { blocked, limited } = instanceActs(row), held = heldHome(row);
     assert.deepEqual(blocked ?? limited, { code: "held", kind: held.kind, sentence: held.sentence(row.instance) }, "the sentence is the held home's");
   }

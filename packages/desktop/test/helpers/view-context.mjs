@@ -5,21 +5,24 @@
 // pure and shared the same way, with the tab sync's last-painted-roster state (#558).
 // #982's lines that say who made a row's text or a kept failure's message (renderer/speaker-line.mjs), and the
 // shared home's rule for a kept failure (deployment-facts.mjs keptFailure), are pure and shared the same way.
-import { rosterSections, rowStale, splitByDeployment } from "../../../client/roster-sections.mjs";
+// #1247: the window's retires in flight. A suite about other behaviour holds none: rows are drawn as the roster
+// says (`shownRows` the identity) and a read lets nothing go; a suite about them passes the shipped ones.
+import { deploymentState, rosterSections, rowStale, splitByDeployment } from "../../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "../../renderer/desktop-terms.mjs";
 import { deploymentHeading, notePanel, panelDeployments } from "../../renderer/view-deployments.mjs";
 import { createViewMembership, rehomeMap } from "../../renderer/workspace-rehome.mjs";
 import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../../../client/waiting-on-you.mjs";
 import { waitingRollup } from "../../../client/instance-tree.mjs";
-import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine } from "../../renderer/speaker-line.mjs";
+import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, heldLine } from "../../renderer/speaker-line.mjs";
 import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "../../renderer/retired-tabs.mjs";
 
 export const viewContext = () => ({
-  contextDeployments: [], rosterSections, DESKTOP_TERMS, deploymentHeading, notePanel, panelDeployments, rowStale,
+  contextDeployments: [], rosterSections, DESKTOP_TERMS, deploymentHeading, notePanel, panelDeployments, rowStale, deploymentState,
   rehomeMap, viewMembership: createViewMembership(), rehomeWorkspaceState() {},
   waitingClaim, waitingRollup, waitingSentence, waitingLabel, waitingClock, splitByDeployment,
-  rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, keptFailure,
+  rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, keptFailure, heldLine,
+  shownRows: rows => rows, retires: { landed() {}, ids: () => new Set() },
   // syncTabNeedsInput's module state (#558): the last painted roster, read when a terminal tab opens.
   // Every roster paint calls syncTabNeedsInput; a suite about other behaviour gets this no-op, and a suite
   // that extracts the shipped function by name replaces it (tab-needs-input, roster-needs-input).

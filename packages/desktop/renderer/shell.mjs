@@ -60,7 +60,7 @@ import { createInstanceTeamsSection, teamsCSS } from "./instance-teams.mjs";
 import { createInstanceSoulSection, instanceSoulCSS } from "./instance-soul.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
-import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine } from "./speaker-line.mjs";
+import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, heldLine } from "./speaker-line.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createHostTheme } from "./host-theme.mjs";
 import { createSpawnJobs } from "./spawn-jobs.mjs";
@@ -72,6 +72,7 @@ import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../..
 import { createRosterPrs, prChip, prText, rosterPrCSS } from "./roster-pr.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import { collapseKey, hasInstanceChildren, instanceRepoLabel, filterInstanceTree, instanceMatchesFilter, instanceVisibleInTree, waitingRollup, instanceId, rosterParentId, heldHome } from "../../client/instance-tree.mjs";
+import { createRetiresInFlight, retiringRows } from "../../client/retire-in-flight.mjs";
 import { treeConnectors, captureTreeRenderState, rosterResponseOwns, clusterSeparator, renderRosterCount,
   terminalKey, resolveTerminalOpen, createRosterLoading, rosterSignature, markStaleControl, staleBlocked, ROSTER_STALE_TITLE } from "./instance-tree-view.mjs";
 import {
@@ -81,7 +82,7 @@ import {
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "./retired-tabs.mjs";
 import { notePanel, panelDeployments, deploymentHeading } from "./view-deployments.mjs";
-import { rosterSections, rowStale, splitByDeployment } from "../../client/roster-sections.mjs";
+import { deploymentState, rosterSections, rowStale, splitByDeployment } from "../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "./desktop-terms.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "./roster-cadence.mjs";
@@ -179,6 +180,10 @@ const ctx = {
   // additive shell affordance (views feature-detect it): switch the STAGE
   // to a named sidebar view (stage views are not tabs — see below).
   openView: (name) => showStage(name),
+  // #1247: this window's own retires in flight. A view that reads its own roster draws its rows through
+  // `retiringRows` and draws them again when `subscribeRetires` says the held set changed.
+  retiringRows: (rows) => shownRows(rows),
+  subscribeRetires: (fn) => { retireListeners.add(fn); return () => retireListeners.delete(fn); },
 };
 const openInstanceStart = createInstanceStarter(document, ctx);
 
@@ -447,6 +452,12 @@ let contextWorkspace = "";
 // retired-tab rule ran on ({ read, workspace, panel }): an open whose own read is older than it checks it before its tab.
 let panelReads = 0;
 let judgedAnswer = null;
+// #1247: the retires this window applied (packages/client/retire-in-flight.mjs). The lifecycle dialog begins
+// and settles each; a row is held as retiring (Retiring…, its Retire secondary) from the send until an
+// observed roster read begun after the answer lands (refreshContextRoster's `landed`), or at once released
+// by a refusal. Its mark is the roster's read generation. Every surface draws rows through `shownRows`.
+const retires = createRetiresInFlight({ mark: () => contextRosterGen, onChange: () => retiresChanged() });
+const retireListeners = new Set();
 // The roster's loading state (desktop/loading-states): the controller owns the
 // pending skeleton, "Refreshing…", the stale line and Retry; shell owns the
 // latest-intent tokens (contextRosterGen / owns()) and calls it only for a
@@ -765,6 +776,20 @@ async function refreshContextRoster({ user = false } = {}) {
     renderContextRoster(contextInstances);
   }
   if (reportedFailure) rosterState?.fail(failure);
+  // #1247: an observed read begun after a retire's answer says what the retire left: its row is let go (and the
+  // rows drawn again), present or gone. Never a failed read, nor one served while a newer observation runs
+  // (`refreshing`: the rows served may predate the answer), and only for a row of a deployment this read observed
+  // live (`target.workspace` is the row's deployment, lifecycle-dialog.mjs): another workspace's read, or one whose
+  // deployment is stale, not reached or not observed, says nothing of it.
+  // A read that lists no deployments (an older server) covers the one it answered for, when it observed it.
+  if (!reportedFailure && panel.refreshing !== true) retires.landed(myGen, (target) => {
+    if (contextDeployments.length) {
+      const deployment = contextDeployments.find((d) => d.id === target?.workspace);
+      return !!deployment && deploymentState(deployment).key === "live";
+    }
+    const observed = !!panel.workspace?.remote || !panel.deployment || panel.deployment.status === "observed";
+    return observed && target?.workspace === resolvedWs;
+  });
 }
 
 /** #1237: close every terminal tab this owned roster answer shows retired (retired-tabs.mjs: the one evidence rule),
@@ -789,7 +814,22 @@ function needsInputMark(below = 0) {
   return mark;
 }
 
+/** The roster's rows as this window draws them and offers acts on them (#1247): each row of a retire this
+ * window has in flight held as retiring (`retireInFlight`), whatever the row says. */
+function shownRows(rows) {
+  return retiringRows(rows, retires.ids());
+}
+
+/** A retire of this window began, was refused or was read after: the roster rows, the instance panel and
+ * any view that reads its own roster are drawn again from the rows they hold. */
+function retiresChanged() {
+  if (contextRosterEl && rosterState?.hasData) renderContextRoster(contextInstances);
+  refreshPanelInstance(contextInstances, contextWorkspace || currentWorkspace());
+  for (const fn of [...retireListeners]) { try { fn(); } catch { /* a view's repaint changes nothing here */ } }
+}
+
 function renderContextRoster(instances) {
+  instances = shownRows(instances);
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const restoreTreeState = captureTreeRenderState(listEl);
   const restoreActionMenu = captureInstanceActionMenu(listEl);
@@ -930,13 +970,13 @@ function renderContextRoster(instances) {
         // focusable (aria-disabled, spec F): its row tools — the actions menu's Inspect/Stop/Retire — must
         // stay reachable from the keyboard. Its activation does nothing and says why.
         const unavailable = i.running == null || !canAddressRemote(i);
-        // #802: a home a spawn or a retire left half cleaned (held: the spawning one drew above) opens and starts
-        // nothing either; its actions menu offers Retire only.
+        // #802: a home a spawn or a retire left half cleaned, or one being retired (#1247; held: the spawning one drew
+        // above), opens and starts nothing either; its actions menu offers Retire only (secondary while retiring).
         if (unavailable || held) { row.setAttribute("aria-disabled", "true"); row.classList.add("unavailable"); }
         // Why it can't open: a short label on the meta line, the full sentence as its title and description.
         // A sentence that is the row's own text is said with who made it (speaker-line.mjs).
         const reason = rowReason(i);
-        const why = rowReasonLine(reason) || held?.sentence(i.instance) || runtimeErrorLine(i) || (i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
+        const why = rowReasonLine(reason) || heldLine(held) || runtimeErrorLine(i) || (i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
         // Workspace v4: an enabled row explains itself in the hover/focus card; an unavailable one keeps its reason as a title.
         const pr = held || i.server || i.remote ? null : rosterPrs.get(i.home);
         const heldStale = rowHeldStale(i);
@@ -971,8 +1011,8 @@ function renderContextRoster(instances) {
         const heldLines = [];
         if (held) {
           meta.className = "ctx-meta ctx-spawn-state"; meta.removeAttribute("title"); meta.textContent = held.state;
-          const hint = document.createElement("span"); hint.className = "ctx-meta ctx-held-hint"; hint.textContent = held.hint;
-          heldLines.push(hint);
+          // #1247: a retiring home has no hint (nothing to do but wait).
+          if (held.hint) { const hint = document.createElement("span"); hint.className = "ctx-meta ctx-held-hint"; hint.textContent = held.hint; heldLines.push(hint); }
         }
         // Spec E: a spawn the operator was not taken to says New (text and a dot, never colour alone)
         // until its row is opened, or its tab is (the first paint where it is the active row).
@@ -1447,7 +1487,8 @@ function refreshPanelInstance(instances, workspace) {
   syncTabNeedsInput(instances, workspace); // also on a poll whose roster signature is unchanged (no repaint)
   const tab = tabs.get(activeTab);
   if (!tabLayerVisible || tab?.kind !== "terminal" || tab.workspace !== workspace) return;
-  const matches = instances.filter(instance => tabShowsRow(tab, workspace, instance));
+  // #1247: the panel's row reads as the roster's does (this window's retires in flight held as retiring).
+  const matches = shownRows(instances).filter(instance => tabShowsRow(tab, workspace, instance));
   // Preserve identity, but do not present a retained Running observation as
   // current when the latest roster cannot identify the selected home uniquely.
   if (matches.length === 1) tab.instanceRef = matches[0];
@@ -1993,14 +2034,14 @@ const pendingTerms = new Set(); // [key, incarnation] with a tab CREATION in fli
  * bare-name open and a sidebar open of the same identity share one tab —
  * and an existing tab can never be activated for a name that has since
  * become ambiguous (resolution refuses before dedup can activate). */
-async function openTerminalTab(ref, { quiet = false, inSplit = false, expected = null, valid = () => true, followed = false, onError } = {}) {
+async function openTerminalTab(ref, { quiet = false, inSplit = false, expected = null, valid = () => true, followed = false, onError, refuse } = {}) {
   const notify = onError || (quiet ? (msg) => console.warn(`[terminal open] ${msg}`) : (msg) => alert(msg));
   // Quiet opens must NEVER reject either (review ff70e1c nit): the refusal
   // messages route through notify, but transport failures (the panel fetch,
   // the tab mount) would still escape as an unhandled rejection from an
   // automated caller that does not await. runOpenFlow catches every quiet
   // rejection into notify; interactive opens keep throwing.
-  return runOpenFlow(() => openTerminalTabFlow(ref, notify, { inSplit, expected, valid, followed }), { quiet, notify });
+  return runOpenFlow(() => openTerminalTabFlow(ref, notify, { inSplit, expected, valid, followed, refuse }), { quiet, notify });
 }
 
 async function openTerminalTabFlow(ref, notify, options = {}) {
@@ -2066,6 +2107,10 @@ async function openTerminalTabFlow(ref, notify, options = {}) {
     split = fillEmptyGroup(split, tid);
     selectTab(tid, { intent: owns, focusContent: true }); return;
   }
+  // A caller's own refusal of a NEW tab for the resolved row (the palette's: a held home opens nothing new, #802,
+  // #1247); its tab already open is shown above, as any open tab is.
+  const refused = options.refuse?.(inst);
+  if (refused) return notify(refused);
   const pending = JSON.stringify([key, terminalOrigin(inst).incarnation]); // one incarnation's creation
   if (pendingTerms.has(pending)) return; // an open for this key is already in flight
   pendingTerms.add(pending);
@@ -2244,7 +2289,9 @@ const palette = createPalette({
     // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
     return { instances: p.instances || [], deployments: panelDeployments(p), recent, activeId };
   },
-  openTerminal: (name) => openTerminalTab(name),
+  // A held home (spawning, retiring, left half cleaned) opens nothing from here either, as its roster row does not:
+  // the row as this window reads it (its own retires in flight held), said as the row says it.
+  openTerminal: (name) => openTerminalTab(name, { refuse: (inst) => { const held = heldHome(shownRows([inst])[0]); return held ? heldLine(held) : null; } }),
   // While open, ⌘K / Ctrl+Shift+K moves down and Shift + it up (live keymap); Esc closes, Enter opens.
   cycleKey: (e) => pickerCycleDirection(e, "app.palette", isMac),
   commands: [
@@ -2383,6 +2430,7 @@ const lifecycleDialog = createLifecycleDialog({ doc: document,
   subscribeConnections, connectionGeneration: () => connectionGeneration,
   onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
   onSettled: () => { void refreshContextRoster(); }, openExternal: ctx.openExternal, fallbackFocus: () => lifecycleFallbackFocus(),
+  retires,
 });
 /** The roster's rows (by identity) when the confirmation opened, and where its instance stood among them. */
 let lifecycleRowOrder = null;

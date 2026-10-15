@@ -4,6 +4,7 @@ import { eventsTimestamp } from '../../client/instance-events-contract.mjs';
 import { canAddressRemote } from '../../client/remote-address.mjs';
 import { knownOrigin, hasRuntimeError } from '../../client/instance-presentation.mjs';
 import { keptFailure } from '../../client/deployment-facts.mjs';
+import { retireData } from '../../client/retire-state.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
@@ -31,6 +32,9 @@ export function projectActivePanel(panel) {
     // #802: the kernel's hold on the home (a spawn setting up its worktree, a home left half cleaned), as /api/panel
     // forwards it (true only): instance-tree.mjs heldHome gates the canvas's actions on it.
     for (const key of ['spawnInProgress', 'rollbackIncomplete', 'retirePending']) if (raw[key] === true) instance[key] = true;
+    // #1247: the retire's state as /api/panel forwards it, read again (a value out of the contract is absent).
+    const retire = retireData(raw.retire);
+    if (retire) instance.retire = retire;
     for (const key of [...identityFields, ...displayed, ...reported]) instance[key] = text(raw[key]);
     // Who made the row's runtimeError, as /api/panel forwards it: only beside that text as it was reported (a
     // non-empty string), and only one of the three speakers (packages/client/instance-presentation.mjs). The

@@ -4,6 +4,8 @@
  * no element: a client draws from these answers with its own means. */
 import { waitingClaim } from './waiting-on-you.mjs';
 import { byRuntimeState } from './instance-presentation.mjs';
+import { retireData } from './retire-state.mjs';
+import { displayLine } from './display-text.mjs';
 
 export function collapseKey(workspace, instance) {
   return `${workspace || ""}\u0000${instance}`;
@@ -226,22 +228,52 @@ const HELD_HOMES = Object.freeze({
     sentence: name => `${name} is setting up its worktree. It can't be used until the spawn finishes.` },
   "spawn-incomplete": { state: "Spawn didn't finish", hint: "Retire it to clean up", status: "Spawn didn't finish", retire: true,
     sentence: name => `The spawn of ${name} didn't finish. Retire it to clean up.` },
+  // #1247: a retire that runs (or whose holder's liveness can't be read): Retire stays offered, secondary.
+  retiring: { state: "Retiring…", status: "Retiring…", retire: "secondary",
+    sentence: name => `${name} is being retired.` },
+  "retire-failed": { state: "Retire failed", hint: "Retire it again to finish", status: "Retire failed", retire: true,
+    sentence: name => `The retire of ${name} failed. Retire it again to finish.` },
   "retire-incomplete": { state: "Retire didn't finish", hint: "Retire it again to complete", status: "Retire didn't finish", retire: true,
     sentence: name => `The retire of ${name} didn't finish. Retire it again to complete.` },
 });
-/** What the kernel's roster row says holds this home, or null (#802): `spawning` while a spawn that
- * runs its worktree hooks is verifiably alive (`spawnInProgress: true`), `spawn-incomplete` when a
- * spawn left it for retire to clean up (`rollbackIncomplete`), `retire-incomplete` when a retire did
- * (`retirePending`). rollbackIncomplete wins over spawnInProgress (the spawn is gone, not live), and a
- * live spawn over retirePending (the kernel refuses to retire it). Every surface draws such a row from
- * this: a spawning one starts, stops, retires and splits nothing; a quarantined one (`retire`) offers
- * Retire only. `state` is the row's text, `hint` its muted line, `status` the hover card's Status.
- * `sentence` is every client's, so it promises no act of one client: a spawning home "can't be used
- * until the spawn finishes", whoever started the spawn and whether or not it ends finished. */
+/** Which retire kind a row's kernel facts are (#1247), or null: the kernel's `retire` (retire-state.mjs, read
+ * again here: a value out of the contract is absent); a row with no `retire` but `retirePending` (a kernel or a
+ * host before `status-retire-state`) reads `retiring`. */
+function retireKind(instance) {
+  const retire = retireData(instance.retire);
+  if (retire) return retire.state === "failed" ? "retire-failed" : retire.state === "interrupted" ? "retire-incomplete" : "retiring";
+  return instance.retirePending ? "retiring" : null;
+}
+/** What the kernel's roster row says holds this home, or null (#802, #1247): `spawning` while a spawn
+ * that runs its worktree hooks is verifiably alive (`spawnInProgress: true`), `spawn-incomplete` when a
+ * spawn left it for retire to clean up (`rollbackIncomplete`); then the retire kinds (`retireKind`):
+ * `retiring` while a retire runs, its holder can't be read, the row is an older kernel's `retirePending`
+ * or this client's own retire is in flight; `retire-failed` when a self-retire's completion recorded an
+ * error; `retire-incomplete` when a scheduled completion is gone without an outcome. A retire this client
+ * started and has not read the roster after (retire-in-flight.mjs `retireInFlight`) is `retiring` whatever
+ * the row says: it is the newest fact, and the kernel refuses it (letting the row go) where a live spawn
+ * holds the home. Of the kernel's facts, rollbackIncomplete wins over spawnInProgress (the spawn is gone,
+ * not live), and a live spawn over a retire (the kernel refuses to retire it). Every surface draws such a row from this: a spawning or retiring one starts,
+ * stops, restarts and opens nothing new; one with `retire` offers Retire only, and `retire: "secondary"`
+ * (retiring: a second retire is refused while one runs, and safe) offers it out of the way (instance-acts.mjs).
+ * `state` is the row's text, `hint` its muted line (none while retiring), `status` the hover card's Status.
+ * `sentence` is every client's, so it promises no act of one client: a spawning home "can't be used until
+ * the spawn finishes", whoever started the spawn and whether or not it ends finished. `said` is what the
+ * row's reason says (instance-acts.mjs): the sentence, or for a failed retire with a recorded message or code the
+ * kernel's words (`message`, `code`, or `message (code)`) with `origin: "kernel"`, shown only through the display
+ * filter. */
 export function heldHome(instance) {
-  const kind = !instance ? null : instance.rollbackIncomplete ? "spawn-incomplete"
-    : instance.spawnInProgress === true ? "spawning" : instance.retirePending ? "retire-incomplete" : null;
-  return kind ? { kind, ...HELD_HOMES[kind] } : null;
+  const kind = !instance ? null : instance.retireInFlight === true ? "retiring" : instance.rollbackIncomplete ? "spawn-incomplete"
+    : instance.spawnInProgress === true ? "spawning" : retireKind(instance);
+  if (!kind) return null;
+  const held = HELD_HOMES[kind], retire = kind === "retire-failed" ? retireData(instance.retire) : null;
+  // The kernel's words, message or code, are said as the kernel's, and shown only through the display filter; one the
+  // filter reduces to nothing (blank) says nothing; one it withholds is said, and shown withheld. With neither, the row's own words stand.
+  const shown = text => (text && displayLine(text) !== null ? text : null);
+  const message = shown(retire?.message), code = shown(retire?.code);
+  const said = message || code ? { sentence: message && code ? `${message} (${code})` : message || code, origin: "kernel" }
+    : { sentence: held.sentence(instance.instance) };
+  return { kind, ...held, said };
 }
 
 /* ── roster grouping: repo → agent family (soul), with sort modes ── */

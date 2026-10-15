@@ -198,7 +198,7 @@ const said = (error) => String(error?.message ?? error);
 
 /** The reader of a run: its cycles over every served deployment, the roster of other machines,
  *  their children, and the way out.
- *  -> { start(), request({ live }), touch(), voidInFlight(), exec, stop(), children() }
+ *  -> { start(), request({ live }), touch(), voidInFlight(), begun(), exec, stop(), children() }
  *
  *  `cli` is probeKernel's record (`cli.bin` the absolute path of bin/oats.mjs). The reader keeps no
  *  answer of its own: what a run holds is the caller's store, asked for when it is needed.
@@ -210,7 +210,9 @@ const said = (error) => String(error?.message ?? error);
  *                 nothing about a failed read (the shared failedEntry does). `number` is the
  *                 cycle's: it grows by one per cycle and is never reused, and every deployment of
  *                 one cycle answers under the same one, so a store can refuse an answer that
- *                 arrives out of order; a cycle that emits nothing leaves a gap.
+ *                 arrives out of order; a cycle that emits nothing leaves a gap. `read: true`
+ *                 on an entry made from the kernel's answer, absent on one a failed read made
+ *                 (failedEntry may keep the entry held, so its shape does not say).
  *    getRoster()  { remote: { remoteGroups, rosterAnswered, rosterFailure }, memory, notes }: what
  *                 the store holds of the other machines now, and its two Maps of identities.
  *    onRoster(event)  { collecting: true } when a roster read starts, and
@@ -516,7 +518,7 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     const printed = rows.length ? await collect(JSON.stringify(livenessInput(rows))) : null;
     if (over()) return;
     const instances = panelInstances(rows, livenessAnswers(rows, printed));
-    onEntry({ id, entry: observedEntry({ roster: answer.roster, workspaceStatus: answer.workspaceStatus, observedAt: answer.observedAt }, instances, at), number });
+    onEntry({ id, entry: observedEntry({ roster: answer.roster, workspaceStatus: answer.workspaceStatus, observedAt: answer.observedAt }, instances, at), number, read: true });
   }
 
   /** One cycle: the roster read is begun if it is due, then every served deployment is read, at
@@ -589,6 +591,11 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
       rosterFlight = null;
       endReads({ cycles: true });
     },
+    /** The number of the last cycle begun, 0 before the first: a cycle numbered above it, and the
+     *  roster read it begins, begin after this call. lib/main.mjs marks its retires in flight with
+     *  it (a count, not the clock: a cycle asked for when a retire answers begins in the same
+     *  millisecond, and must count as after it). */
+    begun() { return counter; },
     /** See askedExec. */
     exec: askedExec,
     /** See changeExec. */

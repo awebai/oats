@@ -94,8 +94,9 @@ test("post-spawn auto-open is QUIET: openTerminalTab failures route through noti
   // the WHOLE open flow runs under runOpenFlow so quiet transport failures
   // (panel fetch, tab mount) can never escape as an unhandled rejection —
   // behavioral coverage lives in open-intent.test.mjs (review ff70e1c nit)
-  // (#1246: the post-spawn open's `followed` rides in the same options object.)
-  assert.match(src, /return runOpenFlow\(\(\) => openTerminalTabFlow\(ref, notify, \{ inSplit, expected, valid, followed \}\), \{ quiet, notify \}\);/,
+  // (#1246: the post-spawn open's `followed` rides in the same options object, and so may further
+  // options of the flow, each a plain name: #1247's palette `refuse`.)
+  assert.match(src, /return runOpenFlow\(\(\) => openTerminalTabFlow\(ref, notify, \{ inSplit, expected, valid, followed(?:, \w+)* \}\), \{ quiet, notify \}\);/,
     "quiet rejection containment wraps the whole flow via the importable runOpenFlow");
   assert.match(src, /import \{ createIntentGate, prepareOwnedOpen, runOpenFlow \} from "\.\/open-intent\.mjs";/,
     "shell imports runOpenFlow from the tested module");

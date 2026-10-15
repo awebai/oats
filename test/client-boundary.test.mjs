@@ -93,6 +93,9 @@ const SURFACE = Object.freeze({
   "instance-lifecycle.mjs": ["createLifecycleBoundary", "supportsLifecycle"],
   "lifecycle-confirmation.mjs": ["planView", "outcomeView", "createLifecycleConfirmation", "applyRunningSentence"],
   "instance-acts.mjs": ["instanceActs", "openAct"],
+  // #1247: a client keeps its own retires in flight (one tracker per run) and marks its rows with them; how the
+  // kernel's `retire` is read (retire-state.mjs) stays the home's, behind the rows it already gives.
+  "retire-in-flight.mjs": ["createRetiresInFlight", "retiringRows"],
   // 5a-2: a client starts and restarts an existing instance through the start rule; the CLI call and the launch
   // choices' argv are the rule's, never a client's.
   "session-start.mjs": ["startGate", "startInstance", "verifiedLocalHome"],
@@ -469,7 +472,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 57);
+  assert.equal(Object.keys(SURFACE).length, 58);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
@@ -507,6 +510,9 @@ test("the stable surface names what packages/client has: every listed module, ev
   assert.deepEqual(SURFACE["spawn-preview-facts.mjs"], ["previewFacts"]); assert.ok(SURFACE["spawn-preview-contract.mjs"].includes("defaultSpawnChoices"));
   // Not on it: the two files nobody imports, and the terminal contract.
   for (const module of [ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
+  // #1247: the retires in flight are on it by their factory and the row marker; the reading of the kernel's field is not.
+  assert.deepEqual(SURFACE["retire-in-flight.mjs"], ["createRetiresInFlight", "retiringRows"]);
+  assert.ok(!Object.hasOwn(SURFACE, "retire-state.mjs"));
 });
 
 // ── The rules fail on the breaks they name ────────────────────────────────────

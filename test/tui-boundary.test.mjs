@@ -90,6 +90,7 @@ const TAKEN = Object.freeze({
   "kernel-lines.mjs": ["kernelLines"],
   "instance-lifecycle.mjs": ["createLifecycleBoundary"],
   "lifecycle-confirmation.mjs": ["createLifecycleConfirmation"],
+  "retire-in-flight.mjs": ["createRetiresInFlight", "retiringRows"],
   "session-start.mjs": ["startGate", "startInstance"],
   "launch-prompt-outcome.mjs": ["retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],

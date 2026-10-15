@@ -105,8 +105,11 @@ test("a deployment the answer does not carry, or one the tab never recorded, pro
   assert.deepEqual(retiredTabs(tabs(wrongKind), answer({ a: [], far: [] })), [], "a remote tab is never judged by a local read");
 });
 
-test("still listed is never retired: stopped, retire pending, rollback incomplete, not addressable", () => {
-  for (const extra of [{ running: false }, { retirePending: true }, { rollbackIncomplete: true }]) {
+test("still listed is never retired: stopped, retire pending, rollback incomplete, not addressable, retiring in any state (#1247)", () => {
+  const retire = state => ({ retire: { state, since: T2, self: true, ...(state === "failed" ? { code: "E_RETIRE_HOOK", message: "the hook exited 1" } : {}) } });
+  // A row reading Retiring… (the kernel's retire, or this window's own in flight) keeps its tab until (R), (G) or (A).
+  for (const extra of [{ running: false }, { retirePending: true }, { rollbackIncomplete: true }, { retireInFlight: true },
+    retire("running"), retire("unknown"), retire("failed"), retire("interrupted"), { retireInFlight: true, running: false, ...retire("running") }]) {
     assert.deepEqual(retiredTabs(tabs(LOCAL), answer({ a: [row(A, "dev-a", { createdAt: T1, ...extra })] })), [], JSON.stringify(extra));
   }
   assert.deepEqual(retiredTabs(tabs(REMOTE), answer({ far: [remoteRow("far-a", FAR, { createdAt: T1, addressable: false })] })), [], "addressable: false");

@@ -28,7 +28,7 @@
  *          { type: 'rows', rows: [{ text, quote? }] }   a stop's results or a retire's children
  *          { type: 'lines', lines: [{ text, path? }] }  what a retire did
  *   applyRunningSentence(running, terms) -> the sentence for an apply of this client that is still running
- *   createLifecycleConfirmation({ request, target, operation, terms, onSettled, onChange, label, leftover })
+ *   createLifecycleConfirmation({ request, target, operation, terms, onSettled, onChange, label, leftover, retires })
  *     -> { state(), view(), setChoice(id, value), refresh(), apply(), checkAgain(), close() }
  */
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, lifecycleDetailCode, publicLifecycleReceipt, decodedStoppedTargets,
@@ -325,8 +325,11 @@ const SETTLED_OFFERS = Object.freeze({ complete: ['close'], partial: ['refresh',
  * `onSettled(result, target)` is called once for every apply answer that reads and is not a return to review;
  * what it does or throws changes nothing here. `label`: the server's label for a routed row; `leftover`: the row
  * is a home a failed spawn left. Each step carries this confirmation's latest-intent token: an answer to an
- * earlier step, or one after close, changes nothing and is not told. Nothing is kept beyond the instance. */
-export function createLifecycleConfirmation({ request, target, operation, terms, onSettled = () => {}, onChange = () => {}, label = null, leftover = false, choices: initial = null } = {}) {
+ * earlier step, or one after close, changes nothing and is not told. Nothing is kept beyond the instance.
+ * `retires` (#1247): the client's retires in flight (retire-in-flight.mjs). Every apply of a retire is begun
+ * there before it is sent and settled with its answer's kind, whether or not the confirmation is still open
+ * or that answer is still the latest: the row reads Retiring… from the send until the roster was read after it. */
+export function createLifecycleConfirmation({ request, target, operation, terms, onSettled = () => {}, onChange = () => {}, label = null, leftover = false, choices: initial = null, retires = null } = {}) {
   requireTerms(terms, 'createLifecycleConfirmation');
   if (typeof request !== 'function' || !target?.instance || !['stop', 'retire'].includes(operation)) throw new TypeError('createLifecycleConfirmation: a request, a target and an operation (stop or retire)');
   let choices = lifecycleOptions(operation, initial) ?? (operation === 'stop' ? { recursive: true } : { discardWorktree: false });
@@ -372,9 +375,12 @@ export function createLifecycleConfirmation({ request, target, operation, terms,
     current = { kind: 'applying', title: `${operation === 'retire' ? 'Retiring' : 'Stopping'} ${target.instance}…`,
       message: operation === 'retire' ? `Retiring ${target.instance}. This can take up to a minute while sessions stop.` : `Stopping ${target.instance}. This can take up to a minute.` };
     tell('applying', { view: current });
+    let own = null;
+    if (operation === 'retire') { try { own = retires?.begin(target) ?? null; } catch { /* the hold is a drawing aid only */ } }
     let result = null, view;
     try { result = await request({ action: 'apply', planRef: reference }); view = outcomeView(result, { target, operation, choices, plan: snapshot, leftover }, terms); }
     catch { view = outcomeView(null, { target, operation, choices, plan: snapshot, leftover }, terms); }
+    try { own?.settle(view.kind); } catch { /* as above */ }
     if (mine !== ticket || closed) return;
     if (view.kind === 'stale') {
       plan = view.plan; planRef = view.planRef; shown = view.plan; notice = view.notice; phase = 'review';
