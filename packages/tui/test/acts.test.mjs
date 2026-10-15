@@ -135,7 +135,7 @@ test("a tui.json that rebinds the acts: the keys it gives open them, and the cap
 });
 
 test("the help lists the four acts with their keys, in the instances view, and the rules of a confirmation under them", () => {
-  const lines = draw(press(here(), ["?"]).state, size(100, 130)).lines.map((line) => line.trim());
+  const lines = draw(press(here(), ["?"]).state, size(100, 160)).lines.map((line) => line.trim());
   for (const [key, said] of [["X", "stop the selected agent, after a confirmation"], ["D", "retire the selected agent, after a confirmation"], ["S", "start the selected agent as it was last launched, after a confirmation"], ["R", "restart the selected agent as it was last launched, after a confirmation"]]) {
     assert.equal(lines.some((line) => line.startsWith(`${key} `) && line.endsWith(said)), true, `${key} ${said}`);
   }

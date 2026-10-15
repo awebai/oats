@@ -6,7 +6,7 @@ inside `@awebai/oats` and is never published on its own.
 
 **It is a preview.** This version shows a workspace's instances, on this
 machine and on the other machines registered on it, in one list, follows
-them, opens agents' terminals as tabs in a panel beside the list, stops, starts, restarts and retires an
+them, opens agents' terminals as tabs in a panel beside the list, split in two groups when you want, stops, starts, restarts and retires an
 agent after a confirmation, and spawns an agent on this machine. While it is a preview its screens and its
 configuration file may change without notice.
 
@@ -24,9 +24,9 @@ never does.
 | `lib/actions.mjs` | the action table and its default keys: the reducer, the footer and the help read the effective one |
 | `lib/config.mjs` | `tui.json`: read once, checked, and the effective action table |
 | `lib/client.mjs` | the one module that imports the shared readers (`packages/client/`), and the client's terms |
-| `lib/panel.mjs` | the open terminals, as tabs: the run's private tmux server (one control client, one window per tab, up to `MAX_TERMINALS`, every one at the panel's size), the kernel's `oats session attach` in a pane of each, captures of the shown tab only when tmux says its pane changed, a hidden tab's output marking it, keys typed into the shown tab, and the sweep of what a dead run left; the only module that runs tmux (THE TABS in its header) |
+| `lib/panel.mjs` | the open terminals, as tabs: the run's private tmux server (one control client, one window per tab, up to `MAX_TERMINALS`, each at the size its caller gives), the kernel's `oats session attach` in a pane of each, captures of the displayed tabs only (up to `MAX_SHOWN`, one per group of a split) when tmux says their pane changed, a hidden tab's output marking it, keys typed into the shown tab, and the sweep of what a dead run left; the only module that runs tmux (THE TABS in its header) |
 | `lib/read.mjs` | the effects of reading: the deployment, the kernel record, the observer of every deployment opened in the run, the roster of other machines (`oats server roster --json`), the refresh loop, the liveness collector, ending every read, the changes (a stop or retire apply, a start or restart: never ended, their output in files of the run's private directory), and the two looks at the file system the switcher needs (the entries of `~/Agents`, and whether a picked folder is a deployment) |
-| `lib/store.mjs` | the state and `reduce(state, event)`: pure. It holds the tabs' order, the shown one and the rule for the neighbour after a close (`TAB_LIMIT`, held to the panel's `MAX_TERMINALS` by a test) |
+| `lib/store.mjs` | the state and `reduce(state, event)`: pure. It holds the tabs' order, their groups, the shown one of each and the rule for the neighbour after a close (`TAB_LIMIT`, held to the panel's `MAX_TERMINALS` by a test) |
 | `lib/model.mjs` | from the state to the rows and the detail to draw, and to the switcher's rows, by calling the shared readers: pure, no cell position |
 | `lib/term/keys.mjs` | bytes to key events: a pure parser with an injected clock |
 | `lib/term/width.mjs` | the cells a grapheme takes |
@@ -36,7 +36,7 @@ never does.
 | `lib/term/through.mjs` | the bytes typed while a terminal has the focus: the back key's grammar and bytes, and the scanner that takes the back key and a bracketed paste out of them |
 | `lib/term/screen.mjs` | the cell buffer and the bytes of a frame |
 | `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame |
-| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the switcher, the help, the confirmation of an act (`act.mjs`), the spawn prompt (`spawn.mjs`) |
+| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the switcher, the help, the confirmation of an act (`act.mjs`), the spawn prompt (`spawn.mjs`), the split's geometry (`split.mjs`) |
 
 Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 

@@ -69,7 +69,9 @@ function fakePanel(log, options) {
       did("open", [...argv], cols, rows);
       return new Promise((resolve, reject) => { p.opens.push({ argv, cols, rows, made: (id) => resolve({ id }), refuse: reject }); });
     },
-    close(id) { did("close", ...(id === undefined ? [] : [id])); }, show(id) { did("show", id); }, resize(cols, rows) { did("resize", cols, rows); },
+    close(id) { did("close", ...(id === undefined ? [] : [id])); }, show(id) { did("show", id); }, resize(cols, rows, ids) { did("resize", cols, rows, ...(ids === undefined ? [] : [ids])); },
+    // T3: what the loop displays and gives the keys to (lib/main.mjs fitPanel).
+    hide(id) { did("hide", id); }, focus(id) { did("focus", id); },
     input(bytes) { did("input", Buffer.from(bytes).toString("latin1")); }, paste(text) { did("paste", text); },
     setVisible(on) { did("visible", on); }, refresh() { did("refresh"); }, pause() { did("pause"); }, resume() { did("resume"); }, end() { did("end"); },
     get current() { return null; },
@@ -213,7 +215,7 @@ test("the action table binds each key to one action, and a key bound twice is re
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances", 2: "souls", 3: "capabilities",
-    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", "[": "tab-previous", "]": "tab-next", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
+    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", "[": "tab-previous", "]": "tab-next", "|": "split-right", "-": "split-down", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw", "ctrl+k": "palette",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
@@ -1103,6 +1105,32 @@ test("on the last tab the leader then Right does nothing: the terminal keeps the
   assert.equal(await r.status, 0);
 });
 
+test("two groups: a split resizes the first group's windows to its region; a tab moved shows both, each at its group's size, the keys to the focused one; the group's last closed gives the other the whole panel (T3)", async () => {
+  const r = await viewingTwoTabs({ columns: 120, rows: 40 });
+  const did = () => { const d = panelDid(r).filter(([what]) => what !== "refresh"); r.log.length = 0; return d; };
+  r.stdin.type("\x1c");
+  r.stdin.type("|");
+  await settle();
+  assert.deepEqual(did(), [["resize", 44, 35, ["@1", "@2"]]], "the second group is empty: nothing else is shown");
+  r.stdin.type("\x1c");
+  r.stdin.type("\t");
+  await settle();
+  assert.deepEqual(did(), [], "from the list to the first group's terminal: its window has the keys already");
+  r.stdin.type("\x1c");
+  r.stdin.type("m");
+  await settle();
+  assert.deepEqual(did(), [["show", "@1"], ["focus", "@2"]], "both displayed; the keys to the moved one");
+  r.stdin.type("typed");
+  assert.deepEqual(did(), [["input", "typed"]]);
+  r.stdin.type("\x1c");
+  r.stdin.type("w");
+  await settle();
+  assert.deepEqual(did(), [["close", "@2"], ["resize", 89, 35, ["@1"]], ["focus", "@1"]]);
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("with two tabs open, another workspace opened closes each tab's viewer by its window id, and no terminal is left (T2)", async () => {
   const r = await viewingTwoTabs({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
   leaderTwice(r);
@@ -1232,15 +1260,16 @@ test("no argument the TUI hands the panel is tmux or the agents' socket: the pan
   await r.status;
 });
 
+// T3: each resize names the windows it is for (lib/main.mjs fitPanel: a group's tabs).
 test("the panel is told what the frame gives the terminal: zoom and back resize its window, Tab hides it and shows it again, a resize of the terminal resizes it, and under 80 columns the list's focus hides it", async () => {
   const r = await viewing();
   leaderTwice(r);
   r.log.length = 0;
   r.stdin.type("z");
-  assert.deepEqual(panelDid(r), [["resize", 80, 19]], "zoomed: the whole body");
+  assert.deepEqual(panelDid(r), [["resize", 80, 19, ["@1"]]], "zoomed: the whole body");
   r.log.length = 0;
   leaderTwice(r);
-  assert.deepEqual(panelDid(r), [["resize", 49, 19]]);
+  assert.deepEqual(panelDid(r), [["resize", 49, 19, ["@1"]]]);
   r.log.length = 0;
   r.stdin.type("\t");
   assert.deepEqual(panelDid(r), [["visible", false]], "the detail in the terminal's place: no capture runs");
@@ -1249,13 +1278,13 @@ test("the panel is told what the frame gives the terminal: zoom and back resize 
   assert.deepEqual(panelDid(r), [["visible", true]], "shown again: one fresh capture (the panel's)");
   r.log.length = 0;
   r.stdout.resize(120, 40);
-  assert.deepEqual(panelDid(r), [["resize", 89, 35]], "120 columns: the list keeps 30 beside the terminal");
+  assert.deepEqual(panelDid(r), [["resize", 89, 35, ["@1"]]], "120 columns: the list keeps 30 beside the terminal");
   r.log.length = 0;
   r.stdout.resize(70, 30);
   assert.deepEqual(panelDid(r), [["visible", false]], "under 80 columns, the list alone");
   r.log.length = 0;
   r.stdin.type("\r");
-  assert.deepEqual(panelDid(r), [["visible", true], ["resize", 70, 25]], "Enter: the terminal, zoomed");
+  assert.deepEqual(panelDid(r), [["visible", true], ["resize", 70, 25, ["@1"]]], "Enter: the terminal, zoomed");
   leaderTwice(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -1269,7 +1298,7 @@ test("the panel is told the size and the sight its new window needs: a resize wh
   r.log.length = 0;
   r.panel.opens[0].made("@1");
   await settle();
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 89, 35]], "the size the frame gives now, once the window exists");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 89, 35, ["@1"]]], "the size the frame gives now, once the window exists");
   // Closed behind the detail: the next open shows its window again.
   leaderTwice(r);
   r.stdin.type("\t");

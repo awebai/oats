@@ -36,6 +36,14 @@ export const ACTIONS = Object.freeze([
   { id: "close-terminal", keys: ["c"], label: "close terminal", views: [["instances", "close the shown terminal and show its neighbour; the agent keeps running"]] },
   { id: "tab-previous", keys: ["["], label: "previous tab", views: [["instances", "show the terminal of the tab before the shown one"]] },
   { id: "tab-next", keys: ["]"], label: "next tab", views: [["instances", "show the terminal of the tab after the shown one"]] },
+  // The split (docs/tui.md, "Splits"): two groups of tabs at most, side by side or one above the
+  // other. `group-next`, `tab-move` and `group-close` have no key of their own here by default
+  // (Tab is the detail's, and `m` and `x` are often a tui.json's): the leader's are.
+  { id: "split-right", keys: ["|"], label: "split right", views: [["instances", "split the panel side by side; the new group, on the right, is empty and focused"]] },
+  { id: "split-down", keys: ["-"], label: "split down", views: [["instances", "split the panel one above the other; the new group, below, is empty and focused"]] },
+  { id: "group-next", keys: [], label: "next group", views: [["instances", "go to the other group's terminal, or to the focused group's from the list"]] },
+  { id: "tab-move", keys: [], label: "move tab", views: [["instances", "move the shown tab to the other group, and go there"]] },
+  { id: "group-close", keys: [], label: "close group", views: [["instances", "close the focused group while it is empty"]] },
   // The four acts on an instance: each opens a confirmation, and nothing is done before a move and
   // a press in it. Capitals: a lower-case key is one slip away, a capital takes Shift.
   { id: "stop", keys: ["X"], label: "stop", views: [["instances", "stop the selected agent, after a confirmation"]] },
@@ -73,6 +81,11 @@ export const LEADER = Object.freeze([
   { keys: ["w"], does: "close-terminal", label: "close terminal", terminal: true },
   { keys: ["left"], does: "tab-previous", label: "previous tab", terminal: true },
   { keys: ["right"], does: "tab-next", label: "next tab", terminal: true },
+  { keys: ["|"], does: "split-right", label: "split right", terminal: true },
+  { keys: ["-"], does: "split-down", label: "split down", terminal: true },
+  { keys: ["tab"], does: "group-next", label: "next group", terminal: true },
+  { keys: ["m"], does: "tab-move", label: "move tab", terminal: true },
+  { keys: ["x"], does: "group-close", label: "close group", terminal: true },
   { keys: ["X"], does: "stop", label: "stop" },
   { keys: ["R"], does: "restart", label: "restart" },
   { keys: ["S"], does: "start", label: "start" },
