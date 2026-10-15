@@ -11,7 +11,7 @@ import os from "node:os";
 import { PassThrough } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
+import { DEAD_WAIT_MS, FRAME_MS, STATUS_WAIT_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/panel/tmux.mjs", import.meta.url));
 const ROOT = realpathSync(mkdtempSync(path.join(os.tmpdir(), "panel-test-")));
@@ -95,7 +95,9 @@ function panelOf(world, more = {}) {
 const VIEWER = [process.execPath, "/opt/oats/bin/oats.mjs", "session", "attach", "--home", "/home/agent"];
 /** What tmux's subscription prints for the pane of window `id` once it is dead (the fake's pane
  *  and window share their number): `status` empty when a signal ended it. */
-const dead = (id, status = "") => `%subscription-changed oats-tui-dead $0 ${id} ${id.slice(1)} %${id.slice(1)} : 1 ${status}`;
+/** The dead-pane subscription's line for a viewer's window: its exit status, or the signal that
+ *  ended it; neither while tmux has no status yet. */
+const dead = (id, status = "", signal = "") => `%subscription-changed oats-tui-dead $0 ${id} ${id.slice(1)} %${id.slice(1)} : 1 ${status} ${signal}`;
 /** A panel with one viewer open and its first (fresh) capture drawn: everything settled. */
 async function opened(plan = {}, more = {}) {
   const world = makeWorld(plan), made = panelOf(world, more);
@@ -134,7 +136,7 @@ describe("the panel", { concurrency: 8 }, () => {
       ["set-option", "-s", "exit-unattached", "on"],
       ["set-option", "-s", "escape-time", "0"], ["set-option", "-g", "status", "off"], ["set-option", "-g", "prefix", "None"], ["set-option", "-g", "prefix2", "None"],
       ["set-option", "-gw", "remain-on-exit", "on"], ["set-option", "-gwq", "remain-on-exit-format", ""],
-      ["refresh-client", "-B", "oats-tui-dead:%*:#{pane_dead} #{pane_dead_status}"],
+      ["refresh-client", "-B", "oats-tui-dead:%*:#{pane_dead} #{pane_dead_status} #{pane_dead_signal}"],
       ["unbind-key", "-a"], ["unbind-key", "-a", "-T", "root"], ["unbind-key", "-a", "-T", "copy-mode"], ["unbind-key", "-a", "-T", "copy-mode-vi"]]);
     assert.deepEqual(calls[1].commands, startCommands({ alive }));
     // No global window-size: tmux 3.3a to 3.5a crash in the next new-window when it is manual (CI's
@@ -489,16 +491,17 @@ describe("the panel", { concurrency: 8 }, () => {
   test("the dead-pane subscription: a signal's end has no status; a live pane, the keeper's dead pane, a pane no viewer has and a line not of that shape change nothing; a viewer being closed that is heard dead is over once", async () => {
     const { world, panel, closed, id, heard } = await opened();
     for (const line of [
-      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 0 ",
-      "%subscription-changed oats-tui-dead $0 @0 0 %0 : 1 0",
-      "%subscription-changed oats-tui-dead $0 @9 9 %9 : 1 1",
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 0  ",
+      "%subscription-changed oats-tui-dead $0 @0 0 %0 : 1 0 ",
+      "%subscription-changed oats-tui-dead $0 @9 9 %9 : 1 1 ",
       "%subscription-changed another $0 @1 1 %1 : 1 1",
       "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1 more",
-      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1234",
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1",
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1234 ",
     ]) world.emit(line);
-    await waitFor("the panel to hear them", () => heard().includes(": 1 1234\n"));
+    await waitFor("the panel to hear them", () => heard().includes(": 1 1234 \n"));
     assert.deepEqual([closed, panel.current, world.control().filter((line) => line.startsWith("kill-pane"))], [[], id, []]);
-    world.emit(dead(id));
+    world.emit(dead(id, "", "HUP"));
     await waitFor("the end", () => closed.length === 1);
     assert.deepEqual(closed[0], { id, status: null, stderr: "", asked: false }, "a signal ended it: no status");
     const second = await panel.open({ argv: VIEWER, cols: 50, rows: 10 });
@@ -510,6 +513,111 @@ describe("the panel", { concurrency: 8 }, () => {
     world.emit(`%unlinked-window-close ${second.id}`);
     await waitFor("the panel to hear its window's end", () => heard().includes(`%unlinked-window-close ${second.id}\n`));
     assert.equal(closed.length, 2, "over once");
+    panel.end();
+  });
+
+  test("a pane heard dead before tmux has its status (`1  `) is not over: the viewer ends with the status of the line that follows (CI, tmux 3.4)", async () => {
+    const { world, panel, closed, id, heard } = await opened({ window: { stderr: "oats: session no longer exists" } });
+    world.emit(dead(id));
+    await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
+    await sleep(200);
+    assert.deepEqual([closed, panel.current, count(world.control(), "kill-pane")], [[], id, 0], "still open, its pane not killed");
+    world.emit(dead(id, 1));
+    await waitFor("the end", () => closed.length === 1);
+    assert.deepEqual(closed[0], { id, status: 1, stderr: "oats: session no longer exists", asked: false });
+    await waitFor("the dead pane killed", () => world.control().includes("kill-pane -t %1"));
+    panel.end();
+  });
+
+  test("on tmux 3.2 (no pane_dead_signal), a pane heard dead with no status and no signal that nothing follows (a signal's end there) is over with no status after DEAD_WAIT_MS", async () => {
+    const { world, panel, closed, id, heard, timers } = await opened({ version: "tmux 3.2" });
+    world.emit(dead(id));
+    await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
+    world.emit(dead(id));
+    await waitFor("the panel to hear it again", () => heard().split(`${dead(id)}\n`).length === 3);
+    assert.deepEqual(timers.delays().filter((ms) => ms === DEAD_WAIT_MS), [DEAD_WAIT_MS], "one wait, armed once");
+    assert.deepEqual(closed, [], "not over before the wait");
+    timers.fire();
+    assert.deepEqual(closed, [{ id, status: null, stderr: "", asked: false }]);
+    await waitFor("the dead pane killed", () => world.control().includes("kill-pane -t %1"));
+    panel.end();
+  });
+
+  test("a viewer that exits at once, heard dead before new-window answered and before tmux had its status: opened, then over with the status that follows", async () => {
+    const execFile = (file, args, options, callback) => nodeExecFile(file, args, options, (...answer) => (args.includes("new-window") ? setTimeout(() => callback(...answer), 100) : callback(...answer)));
+    const world = makeWorld({ window: { stderr: "gone at once", closeAtOnce: true } }), { panel, closed } = panelOf(world, { execFile });
+    assert.deepEqual(await panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { id: "@1" });
+    await sleep(100);
+    assert.deepEqual([closed, panel.current], [[], "@1"], "open, waiting for its status");
+    world.emit(dead("@1", 7));
+    await waitFor("the end", () => closed.length === 1);
+    assert.deepEqual(closed[0], { id: "@1", status: 7, stderr: "gone at once", asked: false });
+    await waitFor("the dead pane killed", () => world.control().includes("kill-pane -t %1"));
+    panel.end();
+  });
+
+  test("on tmux 3.3 and later a pane heard dead with no status and no signal waits for its status STATUS_WAIT_MS at most: the line with its status ends it before then, and with none it is over with no status, its pane killed (CI, tmux 3.4: a status that never came left the terminal open)", async () => {
+    assert.equal(STATUS_WAIT_MS > DEAD_WAIT_MS, true);
+    for (const version of ["tmux 3.3", "tmux 3.4", "tmux 3.7c", "tmux next-3.8"]) {
+      // The status comes in time: its line ends the viewer, and the wait is put away.
+      const early = await opened({ version });
+      early.world.emit(dead(early.id));
+      await waitFor("the panel to hear it", () => early.heard().includes(`${dead(early.id)}\n`));
+      assert.deepEqual(early.timers.delays().filter((ms) => ms === STATUS_WAIT_MS || ms === DEAD_WAIT_MS), [STATUS_WAIT_MS], `${version}: one wait, of STATUS_WAIT_MS`);
+      assert.deepEqual([early.closed, early.panel.current, count(early.world.control(), "kill-pane")], [[], early.id, 0], `${version}: still open`);
+      early.world.emit(dead(early.id, 3));
+      await waitFor("the end", () => early.closed.length === 1);
+      assert.deepEqual(early.closed[0], { id: early.id, status: 3, stderr: "", asked: false }, version);
+      assert.equal(early.timers.delays().includes(STATUS_WAIT_MS), false, `${version}: the wait put away`);
+      early.panel.end();
+      // It never comes: once the wait has passed the viewer is over with no status, and its pane
+      // is killed, which closes its window. A line heard again meanwhile arms no second wait.
+      const never = await opened({ version, window: { stderr: "oats: session no longer exists" } });
+      never.world.emit(dead(never.id));
+      await waitFor("the panel to hear it", () => never.heard().includes(`${dead(never.id)}\n`));
+      never.world.emit(dead(never.id));
+      await waitFor("the panel to hear it again", () => never.heard().split(`${dead(never.id)}\n`).length === 3);
+      assert.deepEqual(never.timers.delays().filter((ms) => ms === STATUS_WAIT_MS), [STATUS_WAIT_MS], `${version}: armed once`);
+      assert.deepEqual(never.closed, [], `${version}: not over before the wait`);
+      never.timers.fire();
+      assert.deepEqual(never.closed, [{ id: never.id, status: null, stderr: "oats: session no longer exists", asked: false }], version);
+      await waitFor("the dead pane killed", () => never.world.control().includes("kill-pane -t %1"));
+      never.panel.end();
+    }
+  });
+
+  test("end() while a viewer waits for its status: the wait is put away, and nothing more is said (tmux 3.2 and 3.4)", async () => {
+    for (const [version, ms] of [["tmux 3.2", DEAD_WAIT_MS], ["tmux 3.4", STATUS_WAIT_MS]]) {
+      const { world, panel, closed, id, heard, timers } = await opened({ version });
+      world.emit(dead(id));
+      await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
+      assert.equal(timers.delays().includes(ms), true, version);
+      panel.end();
+      assert.equal(timers.delays().includes(ms), false, `${version}: cleared`);
+      assert.deepEqual(closed, [], version);
+    }
+  });
+
+  test("the trace: each line of a viewer's end the control client printed, as printed, and what the panel made of it, in order; nothing of a pane's text", async () => {
+    const lines = [];
+    const { world, panel, closed, id, heard } = await opened({ window: { stderr: "secret words of the pane" } }, { trace: (text) => lines.push(text) });
+    world.emit("%output %1 secret\\040words");
+    world.emit(dead(id));
+    await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
+    world.emit("%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 x ");
+    world.emit(dead(id, 1));
+    await waitFor("the end", () => closed.length === 1);
+    await waitFor("its window's end, after the kill", () => heard().includes(`%unlinked-window-close ${id}\n`));
+    assert.deepEqual(lines, [
+      `${id} %1 opened`,
+      dead(id),
+      `${id} dead, waiting ${STATUS_WAIT_MS} ms for its status`,
+      "oats-tui-dead: a line not of its shape",
+      dead(id, 1),
+      `${id} over, status 1`,
+      `%unlinked-window-close ${id}`,
+    ]);
+    assert.equal(lines.some((line) => line.includes("secret")), false);
     panel.end();
   });
 

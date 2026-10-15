@@ -6,7 +6,7 @@
 //                 startDelayMs, startSays: [lines] (the first start block's, as a faulty tmux
 //                 would print), holdCapture, screen: [lines], cursor, paneGone, captureFile,
 //                 answers: { <command>: [lines] },
-//                 window: { status, stderr, closeAtOnce, print }, killPaneSilent }
+//                 window: { status, signal, stderr, closeAtOnce, print }, killPaneSilent }
 //                 (window.print: what new-window prints instead of `@n %n`, `{n}` its number;
 //                 screen: the pane's lines, where `{end}` and `{begin}` are the exact end and
 //                 begin of the capture's own block, as a pane that guessed them would print;
@@ -15,7 +15,8 @@
 //                 "fifo" (it leaves a FIFO there) or "huge" (more than the panel reads); answers: the lines a command's block that
 //                 succeeds holds, by the command's name, as a faulty tmux would print;
 //                 window.closeAtOnce: the viewer ends before new-window answers, heard as its
-//                 pane dead with window.status, as tmux's subscription says it; a test makes a
+//                 pane dead with window.status and window.signal, as tmux's subscription says it:
+//                 `1 <status> <signal>`, both empty when tmux has no status yet; a test makes a
 //                 viewer end later by emitting that line itself)
 //   state.json    the window counter, shared by the invocations of one test
 //   inject.txt    lines the test appends for the control client: `emit <line>` prints the line,
@@ -106,7 +107,7 @@ async function commandMode() {
       const step = plan.window ?? {};
       if (step.stderr !== undefined && e.E) writeFileSync(e.E, step.stderr);
       if (step.closeAtOnce) {
-        const line = `%subscription-changed oats-tui-dead $0 @${n} ${n} %${n} : 1 ${step.status ?? ""}`;
+        const line = `%subscription-changed oats-tui-dead $0 @${n} ${n} %${n} : 1 ${step.status ?? ""} ${step.signal ?? ""}`;
         inject(`emit ${line}`);
         for (let waited = 0; !emitted().includes(line) && waited < 3000; waited += 5) sleepSync(5);
       }
