@@ -163,8 +163,10 @@ function isEditableTarget(target) {
 // keyboard lesson, shifted punctuation included (KEY_ALIASES, tested with the
 // real shifted event). Action ids never change, so stored overrides survive.
 export const DEFAULT_KEYMAP = Object.freeze({
-  "app.palette": { mac: "Mod+K", other: "Ctrl+Shift+P" },
-  "app.quickOpenSouls": "Mod+P",
+  // Ctrl+Shift+K / Ctrl+Shift+P on Linux/Windows: plain Ctrl+K and Ctrl+P are bytes a program
+  // reads (readline's kill-line, shell history); the shifted chords are none.
+  "app.palette": { mac: "Mod+K", other: "Ctrl+Shift+K" },
+  "app.quickOpenSouls": { mac: "Mod+P", other: "Ctrl+Shift+P" },
   "app.chooseSoul": { mac: "Mod+N", other: "Ctrl+Shift+N" },
   "app.shortcuts": "Mod+,",
   // No default (spec F): ⌘⇧T is "reopen closed tab" in browsers and Ctrl+Shift+T "new tab" in
@@ -233,12 +235,11 @@ export function defaultBinding(actionId, isMac = defaultIsMac()) {
 // runs each allowlisted default through xterm's own keydown and pins exactly
 // what it sends.
 // Every plain Ctrl+letter, Alt+key, F-key and Ctrl+PgUp/PgDn stays the program's,
-// so these stay out: app.quickOpenSouls (Ctrl+P, shell history),
-// app.openFile (Ctrl+O), tabs.goto1–9 (Alt+digit: readline's numeric argument,
-// irssi/weechat, tmux window bindings), focus.next/prevRegion (F6: mc, htop,
-// nano) and tabs.next/prevPage (Ctrl+PgUp/PgDn: vim, weechat).
+// so these stay out: app.openFile (Ctrl+O), tabs.goto1–9 (Alt+digit: readline's
+// numeric argument, irssi/weechat, tmux window bindings), focus.next/prevRegion
+// (F6: mc, htop, nano) and tabs.next/prevPage (Ctrl+PgUp/PgDn: vim, weechat).
 export const TERMINAL_ALLOWLIST = Object.freeze([
-  "app.palette", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
+  "app.palette", "app.quickOpenSouls", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
   "tabs.next", "tabs.prev", "tabs.close",
   "split.vertical", "split.horizontal", "split.close",
   "focus.leaveTerminal",
@@ -513,7 +514,7 @@ export function handleKeydown(e, opts = {}) {
 /** While a picker opened by `actionId` is open, its own chord moves the active
  * row down (1) and Shift + that chord moves it up (-1); anything else is 0.
  * Read from the live keymap, so a rebind follows. A chord that already holds
- * Shift (Ctrl+Shift+P on Linux/Windows) has no Shift form: ArrowUp moves up
+ * Shift (Ctrl+Shift+K on Linux/Windows) has no Shift form: ArrowUp moves up
  * there. An unbound action, or a plain chord (typing belongs to the input),
  * never cycles. */
 export function pickerCycleDirection(e, actionId, isMac = defaultIsMac()) {
