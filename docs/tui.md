@@ -77,7 +77,7 @@ runs.
 ## What it shows
 
 ```
- oats  acme-platform  +1 machine                 4 running  1 needs input  2 stopped  1 unknown
+ acme-platform  +1 machine                       4 running  1 needs input  2 stopped  1 unknown
   Instances   Souls   Capabilities                                                read 14:03:27
 ──────────────────────────────────────────────┬─────────────────────────────────────────────────
  This machine                                 │   api-lead
@@ -90,11 +90,11 @@ runs.
                                               │
   ? old-api-lead         gone from garnet     │
   ○ reviewer-api                              │
-──────────────────────────────────────────────┴─────────────────────────────────────────────────
- / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit
+                                              │
+C-\ commands   / filter   Tab detail   r refresh   w workspaces   ? help   q quit
 ```
 
-- **The header** has the workspace's name, then what the view holds of
+- **The header** starts with the workspace's name, then what the view holds of
   other machines, then the counts. Beside a deployment of this machine the
   other machines are counted: `+1 machine`, `+2 machines`. A view that holds
   no deployment of this machine names its one machine, `on garnet`, or
@@ -103,13 +103,18 @@ runs.
   stopped, state unknown, and rows the kernel reported that were withheld (a
   home outside its soul's directory, or one reported twice). A count of zero
   is left out. The second row names the views, `Instances   Souls
-  Capabilities`: the open one is drawn in reverse video, and `Souls` and
-  `Capabilities` are dim because they cannot be opened yet. Their keys,
-  `1`, `2` and `3`, are not drawn beside the names: the help names each,
-  and the footer names the three as one hint, `1-3 views`, which a narrow
-  footer gives up right after the acts. `2` and `3` say what to run
-  instead. On the right is the time of the read
-  of this machine that the screen shows: it moves with every read.
+  Capabilities`, the open one drawn in reverse video. `1`, `2` and `3`
+  open them in the list, and [the leader](#the-leader) then `1`, `2` or `3`
+  from anywhere; the leader's hint, [the palette](#the-palette) and the
+  help name those keys. The Souls and Capabilities views say what they will
+  hold and what to run until then: `oats souls` and
+  `oats spawn <soul>`, `oats capabilities`. On the right is the time of the
+  read of this machine that the screen shows: it moves with every read.
+- **The footer** is one row of keys from the first column, with no rule
+  above it. It names `C-\ commands` first, in every focus: the leader,
+  which reaches every action. Then come the actions that apply now, as many
+  as fit, `help` and `quit` last; a narrow footer gives the others up first.
+  While the leader waits for its key the row is the leader's hint.
 - **The list** is the roster the Desktop draws: the same groups in the same
   order, from the same code. An instance that others were spawned from
   comes first, and the ones below it are indented under it; instances
@@ -179,7 +184,7 @@ deployments on one machine) is one list, grouped as the Desktop groups it:
   follows it.
 
 **A view that holds no deployment of this machine** says so in its header:
-`oats  other  on garnet` for one machine, `2 machines` after the name for
+`other  on garnet` for one machine, `2 machines` after the name for
 two or more. The time in the header is then the time the machines' rows
 were read. A view of one machine has no heading, so its state, when it is
 not live, is said above the list with the reason, as for a deployment of
@@ -240,15 +245,15 @@ fit; the detail shows them whole.
 ## Open an agent's terminal
 
 ```
- oats  acme-platform                                                  2 running
+ acme-platform                                                        2 running
   Instances   Souls   Capabilities                                read 14:03:27
 ──────────────────────────────┬─────────────────────────────────────────────────
 > ● backend-lead              │ backend-lead
   ● docs-writer               │$ make docs
                               │Building the reference...
                               │
-──────────────────────────────┴─────────────────────────────────────────────────
- C-\ back to the list
+                              │
+C-\ commands   C-\ C-\ back to the list
 ```
 
 - **`Enter` on an instance that runs** opens its terminal on the right of
@@ -260,17 +265,20 @@ fit; the detail shows them whole.
   cut with `…` (`...` in ASCII).
 - **The terminal has the focus.** What you type, what you paste and every
   key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
-  among them, but for **the back key** (`Ctrl+\` unless
-  [`tui.json`](#change-the-keys-tuijson) names another). The back key gives
-  the focus to the list. While the terminal has the focus the footer names
-  only that key: `C-\ back to the list`. A back key inside a paste is
-  pasted, not taken.
+  among them, but for **[the leader](#the-leader)** (`Ctrl+\` unless
+  [`tui.json`](#change-the-keys-tuijson) names another), the one key the
+  TUI takes from the agent. The leader twice gives the focus to the list;
+  the leader then another key does what that key does from anywhere. While
+  the terminal has the focus the footer names it, and the leader twice:
+  `C-\ commands   C-\ C-\ back to the list`. A leader inside a bracketed
+  paste is pasted, not taken.
 - **With the list focused** the terminal stays open, and the agent's screen
   is still drawn as it changes. The footer names the keys for it:
   `Enter focus terminal` on its row, `z zoom` and `c close terminal`.
   - `Enter` on the open terminal's row gives it the focus again.
   - `z` gives it the focus and the whole body: the header and the footer
-    stay, the list is hidden. The back key brings the list back beside it.
+    stay, the list is hidden. The leader twice brings the list back beside
+    it, and the leader then `z` zooms it out and in without leaving it.
   - `c` closes it: the agent keeps running, and the right side is the
     detail again.
   - `Tab` shows the detail in its place until `Tab` or `Esc`. Nothing of
@@ -318,8 +326,8 @@ fit; the detail shows them whole.
 screen.
 
 ```
- oats  workspaces
- 1 Instances   2 Souls   3 Capabilities
+ workspaces
+  Instances   Souls   Capabilities
 ────────────────────────────────────────────────────────────────────────────────
 > * acme-platform               This machine · garnet
     ledger                      quartz
@@ -331,8 +339,8 @@ screen.
 
 
 
-────────────────────────────────────────────────────────────────────────────────
- Enter open   / filter   r refresh   Esc close   ? help   q quit
+
+C-\ commands   Enter open   / filter   r refresh   Esc close   ? help   q quit
 ```
 
 It lists, in this order:
@@ -480,12 +488,13 @@ The exit status never depends on it.
 | `/` | filter |
 | `r` | read now |
 | `1` | the Instances view |
-| `2`, `3` | the Souls and Capabilities views: not in this version, so a line says what to run instead |
+| `2`, `3` | the Souls and Capabilities views, which say what they will hold and what to run until then; `Esc` or `1` goes back |
 | `w` | opens [the switcher](#the-switcher) |
 | `Enter` | in the list of instances, opens the selected agent's terminal beside the list, or gives it the focus when it is the open one; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
 | `z` | gives the open terminal the focus and the whole body |
 | `c` | closes the open terminal; the agent keeps running |
-| `Ctrl+\` | while a terminal has the focus, the back key: the focus goes to the list ([`tui.json`](#change-the-keys-tuijson) can name another) |
+| `Ctrl+\` | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
+| `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
 | `Left`/`Right`, `Tab`/`Shift+Tab` | in a confirmation, move between its buttons |
 | `Space` | in a confirmation, switches the plan's choice |
@@ -504,10 +513,68 @@ instance can always be read, however many they are. The selection stays
 where it is, and the list returns to it at the next key that moves it.
 
 The help screen is generated from the table the program acts on, so it
-always lists the keys that work, with the marks and with what this version
-does not do. The movement keys scroll it. While a terminal has the focus
-the table's keys are the agent's: the back key alone is the TUI's. With the
-list focused the back key does nothing.
+always lists the keys that work, the leader's among them, with the marks
+and with what this version does not do. The movement keys scroll it. While
+a terminal has the focus the table's keys are the agent's: the leader alone
+is the TUI's.
+
+### The leader
+
+Every action is reached by keys from every focus, a terminal's too: the
+leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
+
+| The leader, then | Does |
+|---|---|
+| `k` or `Space` | opens [the palette](#the-palette) |
+| `1`, `2`, `3` | the Instances, Souls and Capabilities views |
+| `Up`, `Down` | opens the terminal of the instance before or after, in the list as it is drawn, the focus in it: from the open terminal's instance, or from the selection when none is open. Rows that cannot be opened are passed over, and the list does not wrap |
+| `z` | zooms the open terminal in or out; with the list focused, gives it the focus and the whole body |
+| `w` | closes the open terminal; the agent keeps running |
+| `X`, `R`, `S`, `D` | stop, restart, start, retire, [after a confirmation](#stopping-starting-restarting-and-retiring): from a terminal's focus on that terminal's instance, which has the focus again when the confirmation closes |
+| `/` | the filter |
+| `o` | [the switcher](#the-switcher) |
+| `?` | the help |
+| `Esc`, or the leader again | gives the list the focus; with the list focused, only closes the hint |
+
+- **While the leader waits** for its key the footer row is its hint, which
+  names these keys (`z` and `w` only while a terminal is open). It waits
+  with no time limit. A key not in the table cancels it and is dropped:
+  nothing is typed.
+- **Only a key in a later read counts.** A key that came in the same read of
+  input as the leader cancels it and is dropped, with the rest of that
+  read, so a paste can never run a command. In a terminal the bytes before
+  the leader in that read still go to the agent. A leader inside a
+  bracketed paste is pasted text.
+- **In the list no leader is needed:** the plain keys work as they always
+  have, and the leader works there too.
+- **The table is fixed** in this version: `keys` in `tui.json` rebinds the
+  plain keys, and `open.detachKey` the leader.
+
+### The palette
+
+The leader then `k` (or `Space`), or `Ctrl+K` in the list, opens one input
+over a list, as the OATS Desktop's ⌘K does. It takes the body, and while it
+is open no terminal is drawn and the TUI reads the keys.
+
+- **It lists, in this order:** the instances that can be opened, the most
+  recently opened in this run first, then the list's order, each with its
+  state mark, its name and, for another machine, `on <machine>`; the views,
+  Instances, Souls and Capabilities; the acts the instance offers now (the
+  open terminal's when the palette was opened from its focus, else the
+  selected one's); then Workspaces, Refresh and Help. Each row says at its
+  right edge what kind it is: `instance`, `view`, `act` or `command`.
+- **Typing filters it** with the Desktop's subsequence match, a prefix
+  first: each kind keeps the rows that match, the best first.
+  `Backspace` removes a character, and a paste adds its first line.
+  `Up`/`Down` (and `PageUp`/`PageDown`) move, `Enter` runs the selected
+  row, `Esc` closes it.
+- **Running a row:** an instance opens its terminal, the focus in it, in
+  place of the open one; a view shows it; an act opens its confirmation;
+  a command does what its key does.
+- **An `Enter` in the same read as the palette's opening runs nothing**, so
+  a paste cannot open it and run a row.
+- Closed, it gives the focus back to the terminal it was opened from.
+  Recency is kept for the run only: nothing is written.
 
 **The filter.** `/` opens a field on the last row. What you type narrows the
 list to the instances whose name, soul or repository contains it, with the
@@ -541,7 +608,7 @@ never writes it. With no file the keys are the ones above.
   do not name keeps its keys.
 - The actions are `up`, `down`, `top`, `bottom`, `page-up`, `page-down`,
   `collapse`, `expand`, `detail`, `filter`, `refresh`, `instances`,
-  `souls`, `capabilities`, `workspaces`, `open`, `zoom`, `close-terminal`,
+  `souls`, `capabilities`, `workspaces`, `palette`, `open`, `zoom`, `close-terminal`,
   `stop`, `retire`, `start`, `restart`, `help`, `close`, `quit`, `suspend`
   and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
   opens the selected agent's terminal in the list of instances and the
@@ -555,9 +622,11 @@ never writes it. With no file the keys are the ones above.
   and `Ctrl+M` as `backspace`, `tab` and `enter`, so those four are not
   keys of their own.
 - `ascii: true` is `--ascii`.
-- `open.detachKey` is **the back key**: the key that takes the focus from
-  an agent's terminal back to the list, `C-\` when you name none. It is
-  `oats tui`'s own and never reaches the agent or the kernel. It is one of
+- `open.detachKey` is **[the leader](#the-leader)**, `C-\` when you name
+  none. It is `oats tui`'s own and never reaches the agent or the kernel.
+  It is read as a key wherever the TUI reads keys, so it may not be a key
+  an action has: `C-l` is `redraw`'s `Ctrl+L`, `C-k` the palette's
+  `Ctrl+K`, `C-j` is `Enter`. It is one of
   these, written as shown: `C-` with a letter but `h`, `i` and `m` (a
   terminal sends those as `Backspace`, `Tab` and `Enter`) or one of `\`
   `]` `^` `_`; `M-` with a lower-case letter or a digit; or `F1` to `F12`,
@@ -577,6 +646,7 @@ guesses nothing. It refuses:
 | has a setting other than `keys`, `ascii` and `open`, or one of the wrong kind | `unknown setting …`, `keys must be an object`, `ascii must be true or false`, `open must be an object` |
 | has a member of `open` other than `detachKey` | `unknown member … of open; open has detachKey` |
 | gives `open.detachKey` anything but one of the keys above | `open.detachKey must be one key: …`, with the keys it can be |
+| gives `open.detachKey` a key an action has | `open.detachKey … is read as …, the key of …; give the leader a key no action has, or give … another` |
 | names `open-workspace`, the action's name before it became `open` | `open-workspace is called open now; rename it` |
 | names an action that does not exist | `unknown action …`, with the list of actions |
 | gives an action something that is not a list of strings | `… must be a list of key ids` |

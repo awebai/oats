@@ -966,6 +966,103 @@ test("while the terminal has the focus every byte but the leader goes to the age
   assert.equal(await r.status, 0);
 });
 
+// ── The leader and the palette from a terminal's focus (Spec T1b): the leader is the one key the
+// TUI takes from the agent, and what follows it in a later read is the TUI's.
+const LEDGER_HOME = `${DEPLOYMENT}/agents/acme-ledger/instances/acme-ledger-dev`;
+const TWO_ENTRY = observedAt(DEPLOYMENT, [
+  instanceRow("acme-expert", "acme-expert-tui", { tmux: { session: "oats-agents", window: "acme-expert-tui", socket: AGENTS_SOCKET } }),
+  instanceRow("acme-ledger", "acme-ledger-dev", { tmux: { session: "oats-agents", window: "acme-ledger-dev", socket: AGENTS_SOCKET } }),
+]);
+/** A run with two running agents of this machine, the first one's terminal open with the focus in it. */
+async function viewingFirstOfTwo() {
+  const r = await started({ kernel: { ok: true, cli: KEYED }, config: KEY_CONFIG });
+  r.reader.answer(TWO_ENTRY);
+  r.stdout.take();
+  r.stdin.type("\r");
+  await settle();
+  assert.deepEqual(r.panel.opens[0].argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: HOME })], "the first agent's terminal");
+  r.panel.opens[0].made("@1");
+  await settle();
+  r.log.length = 0;
+  return r;
+}
+
+test("with a terminal focused, the leader, k, a few letters and Enter, each in a read of its own, open the palette, find the other agent and swap the panel to it, the focus in the new terminal: no byte of it reaches the agent (Spec T1b)", async () => {
+  const r = await viewingFirstOfTwo();
+  r.stdin.type("\x1c");
+  r.stdin.type("k");
+  assert.match(wholeScreen(r), /acme-expert-tui +instance[\s\S]*acme-ledger-dev +instance/, "the palette, the agents first");
+  r.stdin.type("ledg");
+  const found = wholeScreen(r);
+  assert.match(found, /> ledg/);
+  assert.match(found, /acme-ledger-dev +instance/);
+  assert.doesNotMatch(found, /acme-expert-tui +instance/, "the query keeps the one it matches");
+  r.stdin.type("\r");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input" || what === "paste"), [], "nothing typed reached the agent");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "close" || what === "open").map(([what]) => what), ["close", "open"], "one terminal at a time: the open one closed first");
+  assert.deepEqual(r.panel.opens[1].argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: LEDGER_HOME })], "the chosen agent's terminal");
+  r.panel.opens[1].made("@2");
+  await settle();
+  r.log.length = 0;
+  r.stdin.type("typed");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [["input", "typed"]], "the focus is in the new terminal");
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("with a terminal focused, the leader then Down opens the next agent's terminal with the focus in it, and then Up the one before; nothing reaches the agent (Spec T1b)", async () => {
+  const r = await viewingFirstOfTwo();
+  r.stdin.type("\x1c");
+  r.stdin.type("\x1b[B");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input" || what === "paste"), []);
+  assert.deepEqual(r.panel.opens[1].argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: LEDGER_HOME })], "the next agent");
+  r.panel.opens[1].made("@2");
+  await settle();
+  r.stdin.type("\x1c");
+  r.stdin.type("\x1b[A");
+  await settle();
+  assert.deepEqual(r.panel.opens[2].argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: HOME })], "the agent before");
+  r.panel.opens[2].made("@3");
+  await settle();
+  // At the first agent, Up again goes nowhere: no wrap.
+  r.log.length = 0;
+  r.stdin.type("\x1c");
+  r.stdin.type("\x1b[A");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "open" || what === "close" || what === "input"), [], "no wrap, and nothing typed");
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a paste that holds the leader's byte and a command key runs nothing: with bracketed paste off, the bytes before the leader are the agent's and the rest of that read is dropped; inside a bracketed paste the byte is pasted text; in the list, the leader and a key in one read open nothing (Spec T1b)", async () => {
+  const r = await viewingFirstOfTwo();
+  for (const pasted of ["x\x1cX", "x\x1ck", "x\x1c\x1c", "x\x1cw"]) {
+    r.log.length = 0;
+    r.stdin.type(pasted);
+    await settle();
+    assert.deepEqual(panelDid(r).filter(([what]) => what !== "visible" && what !== "refresh"), [["input", "x"]], `${JSON.stringify(pasted)}: the x alone, nothing closed or opened`);
+    r.log.length = 0;
+    r.stdin.type("y");
+    assert.deepEqual(panelDid(r), [["input", "y"]], `${JSON.stringify(pasted)}: the leader was cancelled, and the terminal keeps the focus`);
+  }
+  r.log.length = 0;
+  r.stdin.type("\x1b[200~\x1cX\x1b[201~");
+  assert.deepEqual(panelDid(r), [["paste", "\x1cX"]], "a bracketed paste goes to the agent as a paste, its leader byte with it");
+  assert.doesNotMatch(wholeScreen(r), /Cancel| instance\b/, "no confirmation and no palette");
+  leaderTwice(r);
+  // In the list's focus: the leader with k, or X, in the same read opens nothing.
+  for (const pasted of ["\x1ck", "\x1cX", "\x1c?"]) {
+    r.stdin.type(pasted);
+    assert.doesNotMatch(wholeScreen(r), /Cancel|Keys| instance\b/, JSON.stringify(pasted));
+  }
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("keys that came in one chunk with the Enter that opened the terminal are dropped: neither the list nor the agent has them (round 1 of PR 4's review, kept)", async () => {
   for (const behind of ["q", "\x03", "?", "w", "\x1b"]) {
     const r = await opening();

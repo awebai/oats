@@ -544,6 +544,20 @@ test("refused when the file is read, naming it: an open.detachKey outside the TU
   assert.deepEqual(load({ keys: { nope: ["x"] }, open: { detachKey: "-x" } }).lines, [line(rule)]);
 });
 
+test("open.detachKey is the leader, read as a key wherever the TUI reads keys: a leader an action's key already is is refused, naming both, and one whose action was given another key is not (docs/tui.md, \"The leader\")", () => {
+  const taken = (key, as, id) => line(`open.detachKey ${key} is read as ${as}, the key of ${id}; give the leader a key no action has, or give ${id} another`);
+  for (const [key, as, id] of [["C-l", "Ctrl+L", "redraw"], ["C-k", "Ctrl+K", "palette"], ["C-j", "Enter", "open"], ["C-c", "Ctrl+C", "quit"], ["C-z", "Ctrl+Z", "suspend"]]) {
+    assert.deepEqual(load({ open: { detachKey: key } }).lines, [taken(key, as, id)], key);
+  }
+  // A key the file gives an action is that action's: the leader may not be it.
+  assert.deepEqual(load({ keys: { help: ["f12"] }, open: { detachKey: "F12" } }).lines, [taken("F12", "F12", "help")]);
+  // Moved away, the key is free for the leader.
+  const freed = load({ keys: { redraw: ["f5"] }, open: { detachKey: "C-l" } });
+  assert.deepEqual([freed.ok, freed.detachKey, bindings(freed.actions).get("ctrl+l"), bindings(freed.actions).get("f5")], [true, "C-l", undefined, "redraw"]);
+  // The default leader is no action's key.
+  assert.equal(load({}).ok, true);
+});
+
 test("a file that names open-workspace, the action's name before it became open, is refused with the name it has now", () => {
   assert.deepEqual(load({ keys: { "open-workspace": ["o"] } }).lines, [line("open-workspace is called open now; rename it")]);
   assert.deepEqual(load({ keys: { "open-workspace": [] } }).lines, [line("open-workspace is called open now; rename it")]);

@@ -8,7 +8,8 @@ import { lit, shown } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
 
-const PROMPT = "> ";
+/** The query's prompt, and the cells it takes with the gap after it. */
+const PROMPT = ">", PROMPT_CELLS = 2;
 /** The cells a row's text starts at: the selection mark, a gap, an instance's state mark, a gap. */
 const LEAD = 4;
 /** The word at a row's right edge that says what it is. */
@@ -48,12 +49,12 @@ function itemRow(item, cols, marks) {
 export function palette(m, size) {
   const rows = Array.from({ length: size.rows }, () => []);
   const p = m.palette, query = measured(p.query);
-  const room = Math.max(0, size.cols - PROMPT.length - 1);
-  if (size.rows > 0) rows[0] = [{ col: 0, text: lit(PROMPT), style: BOLD, width: PROMPT.length }, ...(query.width ? [{ col: PROMPT.length, text: query.text, width: Math.min(query.width, room) }] : [])];
+  const room = Math.max(0, size.cols - PROMPT_CELLS - 1);
+  if (size.rows > 0) rows[0] = [{ col: 0, text: lit(PROMPT), style: BOLD, width: PROMPT.length }, ...(query.width ? [{ col: PROMPT_CELLS, text: query.text, width: Math.min(query.width, room) }] : [])];
   const marks = marksOf(m.ascii);
   if (p.empty && size.rows > 1) rows[1] = [{ col: LEAD, text: lit("Nothing matches."), style: DIM, width: Math.max(0, size.cols - LEAD) }];
   p.rows.forEach((item, i) => { if (1 + i < size.rows) rows[1 + i] = itemRow(item, size.cols, marks); });
   const note = cutNote(p.above, p.below);
   if (note && size.rows > 2) rows[size.rows - 1] = [{ col: LEAD, text: lit(note), style: DIM, width: Math.max(0, size.cols - LEAD) }];
-  return { rows, cursor: PROMPT.length + Math.min(query.width, room) };
+  return { rows, cursor: PROMPT_CELLS + Math.min(query.width, room) };
 }
