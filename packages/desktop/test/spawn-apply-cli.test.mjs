@@ -265,3 +265,26 @@ test('#802: a CLI that finishes before the deadline arms no signal', async () =>
   await cliSpawnApply(hooked(), options(), { ...f.io, timer: () => { armed++; return () => {}; } });
   assert.equal(armed, 0);
 });
+
+// #1246 K1: --max-age rides right after --expect-decision, only where the CLI lists spawn-apply-max-age.
+test('#1246 K1: maxAge becomes --max-age right after --expect-decision with the feature, and nothing without it', async () => {
+  const c = { ...capable(), features: [...capable().features, 'spawn-apply-max-age'] };
+  const f = fixture(), input = options({ maxAge: 60 });
+  assert.equal((await cliSpawnApply(c, input, f.io)).started, true);
+  const argv = f.calls[0].argv, at = argv.indexOf('--expect-decision');
+  assert.deepEqual(argv.slice(at, at + 6), ['--expect-decision', input.decision.revision, '--max-age', '60', '--idempotency-key', input.key]);
+  assert.equal(argv.filter(a => a === '--max-age').length, 1);
+  const plain = fixture(); await cliSpawnApply(c, options(), plain.io);
+  assert.deepEqual(plain.calls[0].argv.filter(a => a !== '--max-age' && a !== '60'), plain.calls[0].argv, 'no maxAge: no flag');
+  assert.deepEqual(argv.filter((a, i) => !(i === at + 2 || i === at + 3)).map(a => a.replace(/\/inert\/tmp\/[^/]+/, '')), plain.calls[0].argv.map(a => a.replace(/\/inert\/tmp\/[^/]+/, '')), 'nothing else in the argv changes');
+  const older = fixture(); await cliSpawnApply(capable(), options({ maxAge: 60 }), older.io);
+  assert.equal(older.calls[0].argv.includes('--max-age'), false, 'an older kernel never sees the flag');
+});
+test('#1246 K1: an invalid maxAge is refused before any effect', async () => {
+  const c = { ...capable(), features: [...capable().features, 'spawn-apply-max-age'] };
+  for (const maxAge of [0, -1, 1.5, '60', 3601, null, NaN]) {
+    const f = fixture(), r = await cliSpawnApply(c, options({ maxAge }), f.io);
+    assert.equal(r.started, false, String(maxAge)); assert.equal(r.envelope.error.code, 'E_BAD_ARGS');
+    assert.equal(f.calls.length + f.files.length, 0);
+  }
+});
