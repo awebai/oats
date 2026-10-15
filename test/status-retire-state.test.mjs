@@ -7,30 +7,40 @@
 // home's claim. A live process is a child of this test, recorded with its real start time; a gone
 // one is a pid that exited and was reaped. The remote half feeds a fake host's status rows to the
 // real rosterGroups, as test/needs-input-desktop.test.mjs does for `waitingOnYou`.
+//
+// The file leaves nothing behind and prints no warning (docs/implementation.md, Tests and gates):
+// status asks tmux for windows, so TMUX_TMPDIR is a private directory removed with the fixture, and
+// OATS_HOME_DIR is `<short base>/h`, which keeps the roster's ssh control socket path in bounds.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn as spawnChild, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deferredRetireResultPath, listInstances, retireClaimPath, retirePendingMarkerPath } from "../lib/core.mjs";
 import { RETIRE_REFUSED_REASON_MAX } from "../lib/instance-events.mjs";
 import { readRetireState } from "../lib/retire-state.mjs";
 import { REMOTE_ROW_FACTS, rosterGroups, writeServers } from "../lib/servers.mjs";
 import { processStartToken } from "../lib/worktree-hooks.mjs";
+import { fixtureBase, privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
 const REQUESTED = "2026-10-10T00:00:00.000Z";
 const COMPLETED = "2026-10-10T00:00:09.500Z";
 const CLAIMED = "2026-10-10T01:00:00.000Z";
 
-const base = mkdtempSync(join(tmpdir(), "oats-retire-state-"));
-const prevHomeDir = process.env.OATS_HOME_DIR;
-process.env.OATS_HOME_DIR = join(base, "oh");
+let base, tmuxTmpdir;
+const prevEnv = { OATS_HOME_DIR: process.env.OATS_HOME_DIR, TMUX_TMPDIR: process.env.TMUX_TMPDIR };
 const children = [];
+test.before(() => {
+  base = fixtureBase("o-rs-");
+  tmuxTmpdir = privateTmuxTmpdir();
+  process.env.OATS_HOME_DIR = join(base, "h");
+  process.env.TMUX_TMPDIR = tmuxTmpdir;
+});
 test.after(() => {
   for (const c of children) { try { c.kill("SIGKILL"); } catch { /* already gone */ } }
-  if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
-  rmSync(base, { recursive: true, force: true });
+  for (const [k, v] of Object.entries(prevEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  if (tmuxTmpdir) removeTmuxTmpdir(tmuxTmpdir);
+  if (base) rmSync(base, { recursive: true, force: true });
 });
 
 /** A process that runs until the test ends, as a record names it: { pid, processStart }. */
