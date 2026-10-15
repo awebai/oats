@@ -222,6 +222,35 @@ test('expiry and new server lose ref authority, never recover by name or mint a 
   assert.equal((await f.send({ action: 'apply', spawnRef: p.spawnRef })).reason.code, 'E_INTENT_EXPIRED'); assert.equal(f.ids(), 1); assert.equal(f.calls.length, 0);
   const other = fixture(); assert.equal((await other.send({ action: 'apply', spawnRef: p.spawnRef })).reason.code, 'E_INTENT_EXPIRED'); assert.equal(other.ids(), 0);
 });
+test('two apply boundaries share nothing: references, keys, the applies running and the per-soul slot are each its own', async () => {
+  let n = 0; const mint = () => (++n).toString(16).padStart(64, '0'); // one id source for both: no reference or key is minted twice
+  const gates = [], invoke = () => { const g = deferred(); gates.push(g); return g.promise; };
+  const one = fixture({ mint, invoke }), two = fixture({ mint, invoke });
+  const a = await one.send(prepare()), b = await one.send(prepare({ choices: { purpose: 'other' } }));
+  const running = one.send({ action: 'apply', spawnRef: a.spawnRef }); await tick();
+  assert.equal((await one.send({ action: 'apply', spawnRef: b.spawnRef })).reason.code, 'E_BUSY', 'premise: one runs this soul\'s apply');
+  const c = await two.send(prepare()), theirs = two.send({ action: 'apply', spawnRef: c.spawnRef }); await tick();
+  assert.equal(two.calls.length, 1, 'one\'s running apply holds no slot of two');
+  for (const spawnRef of [a.spawnRef, b.spawnRef]) for (const action of ['result', 'apply'])
+    assert.equal((await two.send({ action, spawnRef })).reason.code, 'E_INTENT_EXPIRED', `two knows no reference of one (${action})`);
+  assert.equal((await one.send({ action: 'result', spawnRef: c.spawnRef })).reason.code, 'E_INTENT_EXPIRED', 'nor one of two');
+  assert.notEqual(one.calls[0].args.key, two.calls[0].args.key);
+  for (const g of gates) g.resolve({ started: true, envelope: envelope(creation(applyPreview(target))) });
+  assert.equal((await running).status, 'complete'); assert.equal((await theirs).status, 'complete');
+  assert.equal((await two.send({ action: 'apply', spawnRef: c.spawnRef })).repeated, true, 'each keeps its own outcome');
+  assert.equal((await two.send({ action: 'result', spawnRef: a.spawnRef })).reason.code, 'E_INTENT_EXPIRED');
+});
+test('two apply boundaries share nothing: one\'s preparation reservations do not bound the other', async () => {
+  const gate = deferred(), full = fixture({ read: () => gate.promise }), other = fixture();
+  const requests = Array.from({ length: 32 }, () => full.send(prepare())); await tick();
+  assert.equal((await full.send(prepare())).reason.code, 'E_BUSY', 'premise: one is at its bound');
+  assert.equal((await other.send(prepare())).status, 'prepared');
+  gate.resolve({ status: 'available', data: applyPreview(target) }); await Promise.all(requests);
+});
+test('an apply boundary is built with its client\'s preview read: without one it throws, and never falls back', () => {
+  for (const options of [undefined, {}, { read: null }, { read: 'prepareRead' }, { invoke: async () => null }])
+    assert.throws(() => createSpawnApplyBoundary(options), { name: 'TypeError', message: /^createSpawnApplyBoundary: read \(the client's prepareRead\) is required$/ });
+});
 test('32 preparation reservations are bounded even while a shared read is pending', async () => {
   const gate = deferred(), f = fixture({ read: () => gate.promise });
   const requests = Array.from({ length: 32 }, () => f.send(prepare())); await tick();

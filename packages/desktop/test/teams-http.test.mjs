@@ -29,7 +29,7 @@ function http({ reply } = {}) {
   // A writing action drops the deployment's held inspections (inspect reports a soul's teams).
   const invalidated = [], previewsInvalidated = [];
   const deps = { createServer: fn => fn, teamsRequest: boundary.teams, soulTeamsRequest: boundary.soulTeams, teamsFailure, cliState, ...deploymentDoubles(() => [workspace]),
-    inspectCache: { invalidate: ws => invalidated.push(ws) }, spawnPreviewCache: { invalidate: ws => previewsInvalidated.push(ws) },
+    inspectCache: { invalidate: ws => invalidated.push(ws) }, spawnPreview: { cache: { invalidate: ws => previewsInvalidated.push(ws) } },
     panelData: assert.fail, collectNow: assert.fail };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { calls, workspace, cliState, invalidated, previewsInvalidated, async request({ url = '/api/workspace-teams?ws=team', method = 'POST', body = { action: 'list' }, headers = HEADERS } = {}) {

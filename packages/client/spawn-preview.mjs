@@ -1,28 +1,35 @@
 /** Exact local soul/anchor admission against the deployment's spawn catalog,
  * the two-slot read-only preview budget, and the dialog's settled-answer cache.
  *
+ * A client makes its own preview (createSpawnPreview) and owns it: nothing here is
+ * held at module level, so two clients' budgets, caches and flights never meet.
  * The cache (60 s, keyed by the admission identity) serves the dialog's preview
- * route and prepare: an answer is still admitted against the current context
- * before it is returned, and a workspace's entries go when Desktop observes a
- * change that can alter a preview (oats-web.mjs). Prepare taking a held decision
- * is safe because apply binds it with the kernel's --expect-decision: a decision
- * the kernel no longer makes is refused there (E_DECISION_STALE), never applied. */
+ * read and prepare's: an answer is still admitted against the current context
+ * before it is returned, and a workspace's entries go when the client observes a
+ * change that can alter a preview (the Desktop's: server/oats-web.mjs). Prepare taking
+ * a held decision is safe because apply binds it with the kernel's --expect-decision:
+ * a decision the kernel no longer makes is refused there (E_DECISION_STALE), never applied. */
 import { dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnPreview } from './spawn-preview-cli.mjs';
 import { admitInstance } from './instance-admission.mjs';
 import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData, previewComposedFrom } from './spawn-preview-contract.mjs';
-const flights = new Set(), byInvoker = new WeakMap();
-// A monotonic clock orders flight starts against invalidations: a flight that
-// started before its workspace was invalidated never fills the cache, even when
-// a later request coalesced onto it.
-let clock = 0;
-const flightStarted = new WeakMap();
+/** One preview's flights: its two-slot budget (`slots`), the flights in the air per invoker (`byInvoker`, where
+ * exact duplicates coalesce), and the monotonic clock that stamps each flight's start (`started`). The cache is
+ * given the same clock: it orders flight starts against invalidations, so a flight that started before its
+ * workspace was invalidated never fills the cache, even when a later request coalesced onto it. */
+export function createSpawnPreviewFlights() {
+  let stamp = 0;
+  return { slots: new Set(), byInvoker: new WeakMap(), started: new WeakMap(), clock: () => ++stamp };
+}
+const missing = (factory, what) => new TypeError(`${factory}: ${what} is required`);
 export const PREVIEW_CACHE_TTL_MS = 60000;
 // A name refusal answers the same name the same way until something changes.
 const CACHED_REFUSALS = ['E_INSTANCE_NAME_TAKEN', 'E_INSTANCE_NAME_INVALID'];
 const cacheable = result => result?.status === 'available' || result?.status === 'unavailable' && CACHED_REFUSALS.includes(result.reason?.code);
-export function createSpawnPreviewCache({ ttlMs = PREVIEW_CACHE_TTL_MS, limit = 64, now = () => performance.now() } = {}) {
+/** `clock` is the flights' clock (createSpawnPreviewFlights): required, never a clock of its own. */
+export function createSpawnPreviewCache({ ttlMs = PREVIEW_CACHE_TTL_MS, limit = 64, now = () => performance.now(), clock } = {}) {
+  if (typeof clock !== 'function') throw missing('createSpawnPreviewCache', 'clock (the flights\' clock)');
   const entries = new Map(), invalidatedAt = new Map();
   let clearedAt = 0;
   return {
@@ -40,11 +47,12 @@ export function createSpawnPreviewCache({ ttlMs = PREVIEW_CACHE_TTL_MS, limit = 
     },
     /** A workspace's answers go (no argument: every workspace's), and no flight in the air may refill them. */
     invalidate(workspace) {
-      if (workspace === undefined) { clearedAt = ++clock; entries.clear(); return; }
-      invalidatedAt.set(workspace, ++clock);
+      if (workspace === undefined) { clearedAt = clock(); entries.clear(); return; }
+      invalidatedAt.set(workspace, clock());
       for (const [key, entry] of entries) if (entry.workspace === workspace) entries.delete(key);
     },
     size: () => entries.size,
+    clock,
   };
 }
 export function admitSpawnSelection(selector, choices, { workspace: w, cli, agents = [], instances = [] } = {}) {
@@ -82,9 +90,14 @@ export function admitSpawnSelection(selector, choices, { workspace: w, cli, agen
     cli.bin, cli.version, cli.spawnPreviewApi, cli.spawnApplyApi, cli.features, cli.harnesses, cli.sessionBackends, cli.launchOptions]);
   return { target, identity, cli: structuredClone(cli) };
 }
-/** maxAge: the dialog's reads may reuse member heads the kernel observed within that many seconds (feature
- * spawn-preview-max-age, passed only when the admitted CLI advertises it). Prepare's reads never do. */
-export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = null, maxAge = null } = {}) {
+/** One read of a preview. `flights` (createSpawnPreviewFlights) is required: the reads of one preview share it,
+ * and a cache given here must run on its clock. maxAge: the dialog's reads may reuse member heads the kernel
+ * observed within that many seconds (feature spawn-preview-max-age, passed only when the admitted CLI
+ * advertises it). Prepare's reads never do. */
+export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = null, maxAge = null, flights } = {}) {
+  if (!flights?.slots || !flights.byInvoker || !flights.started || typeof flights.clock !== 'function') throw missing('createSpawnPreviewBoundary', 'flights (createSpawnPreviewFlights)');
+  if (cache && cache.clock !== flights.clock) throw new TypeError('createSpawnPreviewBoundary: the cache must run on the flights\' clock');
+  const { slots, byInvoker, started } = flights;
   return async function read(request, getContext) {
     try {
       if (!record(request) || request.action !== 'preview' || Object.keys(request).some(k => !['action', 'selector', 'choices'].includes(k))) return previewFailure('E_BAD_ARGS');
@@ -100,25 +113,36 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = n
       // A reusing read and a live one never coalesce: prepare must not ride on a dialog read's older heads.
       const key = reuse.maxAge ? `${identity}\u0000max-age` : identity;
       if (!pending.has(key)) {
-        if (flights.size >= 2) return previewFailure('E_BUSY', target);
-        const slot = {}; flights.add(slot);
+        if (slots.size >= 2) return previewFailure('E_BUSY', target);
+        const slot = {}; slots.add(slot);
         const flight = Promise.resolve().then(() => invoke(cli, { target, choices, ...reuse })).then(envelope => {
           if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target, envelope?.error?.message, envelope?.error?.details?.fix);
           const data = previewData(envelope.result, target, { composedFrom: previewComposedFrom(cli) });
           return data ? { spawnPreviewViewApi: 1, status: 'available', target, data, reason: null } : previewFailure('E_CLI_PROTOCOL', target);
-        }).catch(() => previewFailure('E_CLI_FAILED', target)).finally(() => { flights.delete(slot); pending.delete(key); });
-        flightStarted.set(flight, ++clock); pending.set(key, flight);
+        }).catch(() => previewFailure('E_CLI_FAILED', target)).finally(() => { slots.delete(slot); pending.delete(key); });
+        started.set(flight, flights.clock()); pending.set(key, flight);
       }
       const flight = pending.get(key), result = await flight, current = admitSpawnSelection(selector, choices, getContext());
       if (current.identity !== identity) return previewFailure('E_TARGET_CHANGED', target);
-      cache?.set(identity, target.workspace, result, flightStarted.get(flight));
+      cache?.set(identity, target.workspace, result, started.get(flight));
       return result;
     } catch { return previewFailure('E_CLI_FAILED'); }
   };
 }
-/** The dialog's preview route and prepare's read (spawn-apply.mjs) share the settled answers (TTL). The
- * dialog's own kernel reads may reuse recent member heads (--max-age 60); prepare's never do. */
 export const PREVIEW_MAX_AGE_S = 60;
-export const spawnPreviewCache = createSpawnPreviewCache();
-export const spawnPreviewCachedRequest = createSpawnPreviewBoundary({ cache: spawnPreviewCache, maxAge: PREVIEW_MAX_AGE_S });
-export const spawnPreviewPrepareRequest = createSpawnPreviewBoundary({ cache: spawnPreviewCache });
+/** One client's spawn preview: `{ read, prepareRead, cache }`.
+ *   read         the dialog's read, through the cache; its kernel reads may reuse recent member heads (maxAge,
+ *                where the CLI declares spawn-preview-max-age)
+ *   prepareRead  prepare's read (spawn-apply.mjs createSpawnApplyBoundary's `read`), through the same cache,
+ *                never with maxAge; a reusing read and a live one never coalesce
+ *   cache        `invalidate(workspace?)` (no argument: every workspace's answers) and `size()`
+ * The two reads share one two-slot budget, one set of coalesced flights and one clock, the cache's too. */
+export function createSpawnPreview({ invoke = cliSpawnPreview, now = () => performance.now(), ttlMs = PREVIEW_CACHE_TTL_MS, limit = 64, maxAge = PREVIEW_MAX_AGE_S } = {}) {
+  const flights = createSpawnPreviewFlights();
+  const cache = createSpawnPreviewCache({ ttlMs, limit, now, clock: flights.clock });
+  return {
+    read: createSpawnPreviewBoundary({ invoke, cache, maxAge, flights }),
+    prepareRead: createSpawnPreviewBoundary({ invoke, cache, flights }),
+    cache: { invalidate: workspace => cache.invalidate(workspace), size: () => cache.size() },
+  };
+}

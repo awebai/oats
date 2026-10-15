@@ -5,16 +5,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createSpawnPreviewBoundary, createSpawnPreviewCache, PREVIEW_CACHE_TTL_MS } from '../../client/spawn-preview.mjs';
+import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewCache, createSpawnPreviewFlights, PREVIEW_CACHE_TTL_MS } from '../../client/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { selector, context, request, data, envelope, deferred, tick } from './helpers/spawn-preview-fixture.mjs';
 
 function fixture({ reply = () => envelope(data()), ttlMs, limit } = {}) {
   let time = 0; const calls = [];
   const invoke = async (cli, opts) => { calls.push(opts); return reply(opts); };
-  const cache = createSpawnPreviewCache({ now: () => time, ...(ttlMs ? { ttlMs } : {}), ...(limit ? { limit } : {}) });
+  // Prepare's read of one preview: through its cache, never with --max-age.
+  const { prepareRead, cache } = createSpawnPreview({ invoke, now: () => time, ...(ttlMs ? { ttlMs } : {}), ...(limit ? { limit } : {}) });
   const c = context();
-  return { c, calls, cache, invoke, read: createSpawnPreviewBoundary({ invoke, cache }), send(choices, ctx = c) { return this.read(request(choices), () => ctx); }, advance: ms => { time += ms; } };
+  return { c, calls, cache, invoke, read: prepareRead, send(choices, ctx = c) { return this.read(request(choices), () => ctx); }, advance: ms => { time += ms; } };
 }
 const refusal = code => () => ({ schemaVersion: 1, ok: false, error: { code, message: `refused: ${code}` } });
 
@@ -93,32 +94,56 @@ test('Spec C: prepare takes a fresh held answer for exactly these choices withou
   f.advance(PREVIEW_CACHE_TTL_MS);
   assert.equal((await prepare()).status, 'prepared'); assert.equal(f.calls.length, 4, 'past the TTL it reads fresh');
   // An uncached boundary (no cache) is what every read was before: always the kernel.
-  const fresh = createSpawnPreviewBoundary({ invoke: f.invoke });
+  const fresh = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: f.invoke });
   await fresh(request(), () => f.c); assert.equal(f.calls.length, 5);
 });
-test('the shipped wiring: the dialog route and prepare both read through the one cache; only the dialog reuses member heads (--max-age 60)', () => {
+test('two previews share nothing: each has its own two slots, coalesced flights, settled answers and invalidations', async () => {
+  const gates = [], invoke = () => { const d = deferred(); gates.push(d); return d.promise; };
+  const one = createSpawnPreview({ invoke }), two = createSpawnPreview({ invoke }), c = context();
+  const a = one.prepareRead(request({ purpose: 'a' }), () => c), b = one.read(request({ purpose: 'b' }), () => c); await tick();
+  assert.equal(gates.length, 2); assert.equal((await one.prepareRead(request({ purpose: 'c' }), () => c)).reason.code, 'E_BUSY', 'premise: one\'s two slots are taken');
+  const theirs = two.prepareRead(request({ purpose: 'a' }), () => c); await tick();
+  assert.equal(gates.length, 3, 'two is not busy, and its read of the same choices does not coalesce onto one\'s flight');
+  two.cache.invalidate(); two.cache.invalidate('northwind'); // while one's flights are in the air
+  for (const g of gates) g.resolve(envelope(data()));
+  await a; await b; await theirs;
+  assert.equal(one.cache.size(), 2, 'two\'s invalidations do not stop one\'s flights filling its cache');
+  assert.equal(two.cache.size(), 0, 'two\'s own flight was in the air across them: not held');
+  const again = two.prepareRead(request({ purpose: 'a' }), () => c); await tick(); assert.equal(gates.length, 4, 'two holds none of one\'s answers');
+  gates[3].resolve(envelope(data())); await again; assert.equal(two.cache.size(), 1);
+  await one.prepareRead(request({ purpose: 'a' }), () => c); assert.equal(gates.length, 4, 'one holds its own');
+  two.cache.invalidate(); assert.equal(two.cache.size(), 0); assert.equal(one.cache.size(), 2, 'invalidate() clears that preview only');
+  one.cache.invalidate('northwind'); assert.equal(one.cache.size(), 0);
+});
+test('the parts of a preview take its state: a boundary without flights, a cache without the flights\' clock or on another one, is refused', () => {
+  assert.throws(() => createSpawnPreviewBoundary({ invoke: assert.fail }), { name: 'TypeError', message: /^createSpawnPreviewBoundary: flights/ });
+  assert.throws(() => createSpawnPreviewCache(), { name: 'TypeError', message: /^createSpawnPreviewCache: clock/ });
+  const flights = createSpawnPreviewFlights(), other = createSpawnPreviewFlights();
+  assert.throws(() => createSpawnPreviewBoundary({ flights, cache: createSpawnPreviewCache({ clock: other.clock }) }), { name: 'TypeError', message: /the flights' clock/ });
+  assert.equal(typeof createSpawnPreviewBoundary({ flights, cache: createSpawnPreviewCache({ clock: flights.clock }) }), 'function');
+});
+test('the shipped wiring: the dialog route and prepare both read through the Desktop\'s one preview; only the dialog reuses member heads (--max-age 60)', () => {
   const web = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const route = web.slice(web.indexOf("if (path === '/api/workspace-spawn-preview'"), web.indexOf("if (path === '/api/workspace-readiness'"));
-  assert.match(route, /await spawnPreviewCachedRequest\(request, getContext\)/);
-  const apply = readFileSync(new URL('../../client/spawn-apply.mjs', import.meta.url), 'utf8');
-  assert.match(apply, /read = spawnPreviewPrepareRequest\b/);
+  assert.match(route, /await spawnPreview\.read\(request, getContext\)/);
+  assert.match(web, /\nconst spawnPreview = createSpawnPreview\(\);\nconst spawnApplyRequest = createSpawnApplyBoundary\(\{ read: spawnPreview\.prepareRead \}\);\n/);
   const preview = readFileSync(new URL('../../client/spawn-preview.mjs', import.meta.url), 'utf8');
-  assert.match(preview, /export const spawnPreviewCachedRequest = createSpawnPreviewBoundary\(\{ cache: spawnPreviewCache, maxAge: PREVIEW_MAX_AGE_S \}\);/);
-  assert.match(preview, /export const spawnPreviewPrepareRequest = createSpawnPreviewBoundary\(\{ cache: spawnPreviewCache \}\);/);
+  assert.match(preview, /read: createSpawnPreviewBoundary\(\{ invoke, cache, maxAge, flights \}\),\n\s*prepareRead: createSpawnPreviewBoundary\(\{ invoke, cache, flights \}\),/);
+  assert.match(preview, /maxAge = PREVIEW_MAX_AGE_S \}/);
   assert.match(preview, /export const PREVIEW_MAX_AGE_S = 60;/);
 });
 test('the shipped invalidation hooks: every mutation Desktop observes drops the workspace\'s held previews', () => {
   const web = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const block = (from, to) => { const start = web.indexOf(from); assert.ok(start > 0, from); return web.slice(start, web.indexOf(to, start)); };
   // observeMutation: spawn apply, local lifecycle apply, workspace sync, start/restart all call it.
-  assert.match(block('function observeMutation(', '\n}\n'), /spawnPreviewCache\.invalidate\(wsId\)/);
-  assert.match(block("path === '/api/workspace-teams'", "path === '/api/instance-lifecycle'"), /spawnPreviewCache\.invalidate\(id\)/);
-  assert.match(block('path === "/api/launch-configs"', 'path === "/api/forge-connections"'), /\['set', 'remove'\]\.includes\(request\?\.action\)\) spawnPreviewCache\.invalidate\(workspace\.id\)/);
-  assert.match(block('path === "/api/capabilities"', "path === '/api/automations'"), /request\?\.action === "run"\) spawnPreviewCache\.invalidate\(workspace\.id\)/);
-  assert.match(block('async function reprobeCli(', '\n}\n'), /inspectCache\.clear\(\);.*spawnPreviewCache\.invalidate\(\)/);
+  assert.match(block('function observeMutation(', '\n}\n'), /spawnPreview\.cache\.invalidate\(wsId\)/);
+  assert.match(block("path === '/api/workspace-teams'", "path === '/api/instance-lifecycle'"), /spawnPreview\.cache\.invalidate\(id\)/);
+  assert.match(block('path === "/api/launch-configs"', 'path === "/api/forge-connections"'), /\['set', 'remove'\]\.includes\(request\?\.action\)\) spawnPreview\.cache\.invalidate\(workspace\.id\)/);
+  assert.match(block('path === "/api/capabilities"', "path === '/api/automations'"), /request\?\.action === "run"\) spawnPreview\.cache\.invalidate\(workspace\.id\)/);
+  assert.match(block('async function reprobeCli(', '\n}\n'), /inspectCache\.clear\(\);.*spawnPreview\.cache\.invalidate\(\)/);
   // /api/spawn apply: held previews go when it starts (before the broker runs) and again when it ends.
   const spawn = block('if (req.method === "POST" && path === "/api/spawn")', 'const remoteRequest');
-  assert.ok(spawn.indexOf("spawnPreviewCache.invalidate(url.searchParams.get('ws'))") > 0 && spawn.indexOf("spawnPreviewCache.invalidate(url.searchParams.get('ws'))") < spawn.indexOf('await spawnApplyRequest(body'), 'invalidated before the apply runs');
+  assert.ok(spawn.indexOf("spawnPreview.cache.invalidate(url.searchParams.get('ws'))") > 0 && spawn.indexOf("spawnPreview.cache.invalidate(url.searchParams.get('ws'))") < spawn.indexOf('await spawnApplyRequest(body'), 'invalidated before the apply runs');
   assert.match(spawn.slice(spawn.indexOf('await spawnApplyRequest(body')), /body\.action === 'apply'\) \{ try \{ observeMutation\(/);
   for (const [from, to] of [["request.action === 'apply' && ['complete'", 'return send'], ['request?.action === "sync" && result.status === "ok"', '}']])
     assert.match(block(from, to), /observeMutation\(/, from);
@@ -143,8 +168,7 @@ test('the cache is bounded: past the limit the oldest answer goes', async () => 
 test('--max-age (feature spawn-preview-max-age): the dialog\'s reads pass it only when the CLI advertises it; prepare\'s reads never; the two never coalesce', async () => {
   const seen = [], gate = deferred();
   const invoke = async (cli, opts) => { seen.push(opts); if (opts.maxAge) await gate.promise; return envelope(data()); };
-  const cache = createSpawnPreviewCache();
-  const dialog = createSpawnPreviewBoundary({ invoke, cache, maxAge: 60 }), prepare = createSpawnPreviewBoundary({ invoke, cache });
+  const { read: dialog, prepareRead: prepare } = createSpawnPreview({ invoke });
   const plain = context(), featured = context(); featured.cli.features = [...featured.cli.features, 'spawn-preview-max-age'];
   await dialog(request(), () => plain).catch(() => {}); // no feature: no flag (not gated on the gate either)
   assert.equal(Object.hasOwn(seen[0], 'maxAge'), false, 'an older kernel refuses the flag: never sent without the feature');

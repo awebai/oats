@@ -9,7 +9,7 @@ import * as spawn from '../../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace, postJson } from '../../renderer/views/common.mjs';
 import { createSpawnJobs } from '../../renderer/spawn-jobs.mjs';
 import { refreshCli } from '../../renderer/views/cli-status.mjs';
-import { createSpawnPreviewBoundary } from '../../../client/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../../client/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../../../client/spawn-apply.mjs';
 import { soulsData, workspaceStatusData } from '../../../client/deployment-data.mjs';
 import { cli as CLI, kernel, DEPLOYMENT, ROOT, anchor, anchorHome, deferred } from './spawn-preview-fixture.mjs';
@@ -62,7 +62,7 @@ export async function mountSpawn(t, options = {}) {
   const wsOf = path => { const m = /[?&]ws=([^&]*)/.exec(path); return m ? decodeURIComponent(m[1]) : null; };
   const context = (ws = null) => ({ workspace: { id: options.deployments && ws ? ws : 'northwind', scope: DEPLOYMENT }, cli, agents, instances });
   const kernelInvoke = options.kernel ?? ((_cli, { target, choices }) => kernel(options.previewName?.(target.selector.soul, choices) ?? kernelPreviewName(target.selector.soul, choices)));
-  const previewBoundary = createSpawnPreviewBoundary({ invoke: async (c, args) => kernelInvoke(c, args) });
+  const previewBoundary = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async (c, args) => kernelInvoke(c, args) });
   let ids = 0;
   const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read: previewBoundary,
     ...(options.brokerTimer ? { timer: options.brokerTimer } : {}), // #802: the apply's answer-within timer

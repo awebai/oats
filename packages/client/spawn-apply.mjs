@@ -1,4 +1,5 @@
-/** One backend-owned confirmed-spawn broker across all workspaces.
+/** One client's confirmed-spawn broker across all workspaces: a client makes its own (createSpawnApplyBoundary)
+ * and owns it, and two share nothing (references, keys, the active applies, byte reservations).
  * RAM custody only. No kernel imports, placement logic, persistent instructions,
  * implicit retry, name-based recovery, or mutation from result/prepare.
  *
@@ -6,12 +7,12 @@
  * (spawnApplyDeadlineMs: 60 s, or 60 s + n × 30 min + 60 s for n `worktree` hooks). The apply
  * request answers within ANSWER_WITHIN_MS: with the outcome if the CLI settled, else `pending`;
  * the CLI keeps running here and `result` reads its outcome. Up to MAX_APPLIES applies run at
- * once backend-wide, one per workspace and soul. */
+ * once per boundary, one per workspace and soul. */
 import { retainedSpawnDetails, LAUNCH_DIAGNOSTIC_BYTES, FLAG_IGNORED_BYTES } from './launch-prompt-outcome.mjs';
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnApply } from './spawn-apply-cli.mjs';
-import { admitSpawnSelection, spawnPreviewPrepareRequest } from './spawn-preview.mjs';
+import { admitSpawnSelection } from './spawn-preview.mjs';
 import { record } from './spawn-preview-contract.mjs';
 import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spawnRefInput, spawnPreparedData, spawnReference,
   spawnCreationReceipt, spawnApplyFailure, spawnApplyDeadlineMs, ROLLED_BACK_CODES, WAKE_OUTCOME_UNKNOWN } from './spawn-apply-contract.mjs';
@@ -22,11 +23,13 @@ const clone = v => structuredClone(v);
 const byteSize = v => Buffer.byteLength(JSON.stringify(v));
 const scopeKey = c => JSON.stringify([c?.workspace?.id, c?.workspace?.scope, c?.workspace?.remote, c?.workspace?.server,
   c?.cli?.bin, c?.cli?.version, c?.cli?.spawnPreviewApi, c?.cli?.spawnApplyApi, c?.cli?.features, c?.cli?.harnesses, c?.cli?.sessionBackends, c?.cli?.launchOptions]);
-// Prepare reads through the dialog's cache: a fresh held answer for exactly these choices is the decision
-// (no second CLI read); apply's --expect-decision is the drift guard. No held answer: a fresh read.
-export function createSpawnApplyBoundary({ read = spawnPreviewPrepareRequest, invoke = cliSpawnApply,
+/** `read` is required: the client's own preview's `prepareRead` (spawn-preview.mjs createSpawnPreview). Prepare
+ * reads through the dialog's cache: a fresh held answer for exactly these choices is the decision (no second
+ * CLI read); apply's --expect-decision is the drift guard. No held answer: a fresh read. */
+export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply,
   now = () => performance.now(), mint = () => randomBytes(32).toString('hex'), answerWithinMs = ANSWER_WITHIN_MS,
   timer = (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); } } = {}) {
+  if (typeof read !== 'function') throw new TypeError('createSpawnApplyBoundary: read (the client\'s prepareRead) is required');
   const prepared = new Map(), submitted = new Map(), active = new Set();
   let preparing = 0, reservedBytes = 0;
   const denied = (code, entry = null, status = 'unavailable', message) => spawnApplyFailure(code, { target: entry?.target, spawnRef: entry?.ref, status, message });
@@ -198,4 +201,3 @@ export function createSpawnApplyBoundary({ read = spawnPreviewPrepareRequest, in
     } catch { return denied('E_CLI_FAILED'); }
   };
 }
-export const spawnApplyRequest = createSpawnApplyBoundary();

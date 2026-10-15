@@ -38,7 +38,7 @@ export const onServer = probe => ({ ...workspace, remote: true, server: 'host', 
 export function http({ invoke = assert.fail, spawnAgent = assert.fail } = {}) {
   const spawnErrorPayload = new Function(`${SPAWNERR_BLOCK}\nreturn spawnErrorPayload;`)();
   const deps = { createServer: fn => fn, ...deploymentDoubles(() => [workspace]), cliState: HERE, ctxs: ['/team'], homedir: () => '/home/person',
-    agentsData: () => ({ agents }), deploymentRows: () => instances, spawnPreviewCache: { invalidate() {} }, spawnErrorPayload, displayLine, spawnAgent, spawnApplyFailure,
+    agentsData: () => ({ agents }), deploymentRows: () => instances, spawnPreview: { cache: { invalidate() {} } }, spawnErrorPayload, displayLine, spawnAgent, spawnApplyFailure,
     launchConfigRequest: (request, context) => launchConfigRequest(request, { ...context, invoke }) };
   const handler = new Function(...Object.keys(deps), `${HANDLER}\nreturn server;`)(...Object.values(deps));
   return async ({ url = '/api/launch-configs?ws=%2Fteam', body }) => {

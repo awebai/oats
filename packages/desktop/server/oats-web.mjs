@@ -9,7 +9,7 @@
  *   GET  /api/panel                 roster JSON (instances, task, tmux state; local Git unobserved)
  *   GET  /api/agents                available agents (souls) per workspace root
  *                                   (both: an explicit ?ws= not served → 404 E_WORKSPACE_NOT_SERVED)
- *   POST /api/spawn?ws=<id>         { action: prepare|apply|result, … } → preview-bound spawn (server/spawn-apply.mjs);
+ *   POST /api/spawn?ws=<id>         { action: prepare|apply|result, … } → preview-bound spawn (packages/client/spawn-apply.mjs);
  *                                   { agent, agentsRoot, serverId, … } → execution-server spawn only
  *                                   (mutations require the installed `oats` CLI; see cliUnavailable)
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
@@ -65,11 +65,11 @@ import { instanceGitRequest } from "./instance-git.mjs";
 import { createLifecycleBoundary } from "../../client/instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
-import { spawnPreviewCachedRequest, spawnPreviewCache } from '../../client/spawn-preview.mjs';
+import { createSpawnPreview } from '../../client/spawn-preview.mjs';
 import { teamsRequest, soulTeamsRequest, teamsFailure } from './teams.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';
-import { spawnApplyRequest } from '../../client/spawn-apply.mjs';
+import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
 import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
@@ -304,7 +304,7 @@ function spawnErrorPayload(e) {
 /* OATSWEB_SPAWNERR_END */
 
 /** Execution-server spawn only (`--server`). A local spawn is always the
- * preview-bound prepare → apply of server/spawn-apply.mjs. */
+ * preview-bound prepare → apply of packages/client/spawn-apply.mjs. */
 async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, harness, backend, model, yolo, launchConfig, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
@@ -451,7 +451,7 @@ async function reprobeCli(chosen) {
   cliState = { ...r, probedAt: Date.now() };
   rosterAnswered = false; rosterFailure = null; // the roster belongs to the accepted CLI
   // Everything held was read with the previous CLI.
-  inspectCache.clear(); capabilityCatalog.forgetAll(); capabilityShowCache.clear(); admitted.clear(); spawnPreviewCache.invalidate();
+  inspectCache.clear(); capabilityCatalog.forgetAll(); capabilityShowCache.clear(); admitted.clear(); spawnPreview.cache.invalidate();
   void refreshSnapshot({ live: true }); // the deployment observation belongs to the accepted CLI
   void refreshRemoteSnapshot();
   return cliState;
@@ -531,6 +531,10 @@ const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCa
   observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
 // The Desktop's one lifecycle boundary: its plans, its kept answers and its one apply at a time are this backend's.
 const lifecycleRequest = createLifecycleBoundary({ terms: DESKTOP_TERMS });
+// The Desktop's one spawn preview (its two-slot budget and its settled answers) and its one apply broker,
+// whose prepare reads through that preview's cache: both are this backend's.
+const spawnPreview = createSpawnPreview();
+const spawnApplyRequest = createSpawnApplyBoundary({ read: spawnPreview.prepareRead });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
 const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({
@@ -724,7 +728,7 @@ function observeMutation(wsId) {
   const scope = deployments(held()).find((w) => w.id === wsId)?.scope;
   if (scope) inspectCache.invalidate(scope);
   // The dialog's held spawn previews are keyed by workspace id, not scope.
-  if (wsId) spawnPreviewCache.invalidate(wsId);
+  if (wsId) spawnPreview.cache.invalidate(wsId);
   return refreshSnapshot({ live: true });
 }
 /* OATSWEB_FINDINST_BEGIN — workspace-scoped instance lookup, extracted by tests */
@@ -1084,7 +1088,7 @@ const server = createServer(async (req, res) => {
           workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(),
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? deploymentRows(held(), workspace) : [],
-        }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreviewCache.invalidate(workspace.id); }); // the default launch a preview reports
+        }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreview.cache.invalidate(workspace.id); }); // the default launch a preview reports
         return send(res, 200, result);
       } catch (e) {
         const { status, body } = spawnErrorPayload(e);
@@ -1148,8 +1152,8 @@ const server = createServer(async (req, res) => {
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
-        // Settled answers are reused for a short window (server/spawn-preview.mjs); prepare never reads them.
-        return send(res, 200, await spawnPreviewCachedRequest(request, getContext));
+        // Settled answers are reused for a short window (packages/client/spawn-preview.mjs); prepare never reads them.
+        return send(res, 200, await spawnPreview.read(request, getContext));
       } catch { return send(res, 400, previewFailure('E_BAD_ARGS')); }
     }
     if (path === '/api/workspace-readiness' && req.method === 'POST') {
@@ -1177,7 +1181,7 @@ const server = createServer(async (req, res) => {
         if (['add', 'remove', 'default', 'clear-default'].includes(request.action)) {
           const { scope, id } = getContext().workspace || {};
           if (scope) inspectCache.invalidate(scope);
-          if (id) spawnPreviewCache.invalidate(id); // a spawn preview reports the soul's teams
+          if (id) spawnPreview.cache.invalidate(id); // a spawn preview reports the soul's teams
         }
         return send(res, 200, result);
       } catch { return send(res, 400, teamsFailure('E_BAD_ARGS')); }
@@ -1269,7 +1273,7 @@ const server = createServer(async (req, res) => {
           instances: workspace ? deploymentRows(held(), workspace) : [],
           cache: inspectCache, maxAge: BACKGROUND_MAX_AGE,
           catalogKey: observed?.status === "observed" ? capabilityCatalogKey(cliState, observed.workspaceStatus) : null,
-        }).finally(() => { if (workspace && request?.action === "run") spawnPreviewCache.invalidate(workspace.id); }); // an operation can change what a spawn preview reads
+        }).finally(() => { if (workspace && request?.action === "run") spawnPreview.cache.invalidate(workspace.id); }); // an operation can change what a spawn preview reads
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
@@ -1433,9 +1437,9 @@ const server = createServer(async (req, res) => {
         // A spawn in the air changes what a preview answers (the next instance number, the roster): held
         // previews go when it starts, and again when it ends (observeMutation), so a preview read meanwhile
         // never refills them with the pre-spawn answer (the cache's flight clock).
-        if (body.action === 'apply') { try { spawnPreviewCache.invalidate(url.searchParams.get('ws')); } catch { /* never blocks the apply */ } }
+        if (body.action === 'apply') { try { spawnPreview.cache.invalidate(url.searchParams.get('ws')); } catch { /* never blocks the apply */ } }
         // An apply that answered `pending` keeps its CLI running in the broker: refresh again when it settles.
-        const refresh = () => { try { spawnPreviewCache.invalidate(url.searchParams.get('ws')); observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } };
+        const refresh = () => { try { spawnPreview.cache.invalidate(url.searchParams.get('ws')); observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } };
         const result = await spawnApplyRequest(body, getContext, { settled: refresh });
         if (body.action === 'apply') { try { observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } }
         return send(res, 200, result);

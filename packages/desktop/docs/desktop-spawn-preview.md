@@ -83,8 +83,13 @@ with a `fix` is therefore one whose `message` is the kernel's. A test of what
 reaches the dialog starts from the CLI's printed envelope, through the exec
 owner: the boundary's `invoke` seam is after it.
 
-**The reuse window.** This route and `/api/spawn` prepare (below) answer from one
-bounded settled-answer cache (`spawnPreviewCache`, `server/spawn-preview.mjs`):
+**The reuse window.** The preview and the apply broker are boundaries of the shared
+home (`packages/client/spawn-preview.mjs`, `spawn-apply.mjs`) that a client creates
+and owns: the backend makes one preview (`createSpawnPreview`) and one broker
+(`createSpawnApplyBoundary`, reading through that preview's `prepareRead`), and
+nothing in either module is shared between clients. The preview's two reads, this
+route's and prepare's, share its two flight slots. This route and `/api/spawn`
+prepare (below) answer from the preview's one bounded settled-answer cache:
 64 entries, **60 s**, keyed by the admission identity (workspace id and scope,
 subject, soul work/repo/capability, anchor incarnation, choices and every CLI
 field the admission reads). It holds `available` answers and the name refusals
@@ -110,7 +115,7 @@ decision's revision as `--expect-decision`, and the kernel refuses a decision
 that no longer holds (`E_DECISION_STALE`) before it creates anything.
 
 **Prepare reuses the dialog's answer** (Spec C). `/api/spawn` prepare reads
-through `spawnPreviewPrepareRequest`, the same cache: when the dialog already
+through the preview's `prepareRead`, the same cache: when the dialog already
 holds a fresh settled answer for exactly this admission identity (not
 invalidated, younger than 60 s), prepare binds it without a CLI call (well under
 50 ms); otherwise it reads fresh as before, and may coalesce onto an identical

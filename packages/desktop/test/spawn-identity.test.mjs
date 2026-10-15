@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { previewChoices, previewData, choiceArgv } from '../../client/spawn-preview-contract.mjs';
 import { spawnApplyChoicesSupported } from '../../client/spawn-apply-contract.mjs';
-import { createSpawnPreviewBoundary } from '../../client/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
 import { mountSpawn, settle, ROOT } from './helpers/spawn-dialog-host.mjs';
 import { cli as CLI, target, context, request } from './helpers/spawn-preview-fixture.mjs';
@@ -85,14 +85,14 @@ test('the projection names the messaging provider, the identity the decision bin
 
 test('the boundary sends identity only when the CLI advertises spawn-provider-payload', async () => {
   let argv;
-  const read = createSpawnPreviewBoundary({ invoke: (c, args) => cliSpawnPreview(c, args, { exec: (_bin, a, _o, done) => { argv = a; done(null, JSON.stringify(f3c('preview-messaging-global'))); } }) });
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: (c, args) => cliSpawnPreview(c, args, { exec: (_bin, a, _o, done) => { argv = a; done(null, JSON.stringify(f3c('preview-messaging-global'))); } }) });
   const ok = await read(request({ purpose: 'api-v2', identity: GLOBAL }), context);
   assert.equal(ok.status, 'available'); assert.deepEqual(ok.data.messaging.identity, { mode: 'global', resident: 'ops' });
   assert.deepEqual(argv.slice(argv.indexOf('--purpose'), argv.indexOf('--json')),
     ['--purpose', 'api-v2', '--provider', 'nw.messaging', 'identity.mode=global', '--provider', 'nw.messaging', 'identity.resident=ops']);
   const older = () => { const c = context(); c.cli = withoutPayload(); return c; };
   let calls = 0;
-  const refused = await createSpawnPreviewBoundary({ invoke: () => { calls++; } })(request({ purpose: 'api-v2', identity: GLOBAL }), older);
+  const refused = await createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: () => { calls++; } })(request({ purpose: 'api-v2', identity: GLOBAL }), older);
   assert.equal(refused.reason.code, 'E_UNSUPPORTED_OPTION'); assert.equal(calls, 0);
   assert.equal(spawnApplyChoicesSupported(withoutPayload(), previewChoices({ identity: GLOBAL })), false);
   assert.equal(spawnApplyChoicesSupported(CLI, previewChoices({ identity: GLOBAL })), true);

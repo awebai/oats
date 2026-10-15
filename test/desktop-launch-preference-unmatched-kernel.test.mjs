@@ -8,7 +8,7 @@
 // (spawn-apply-contract.mjs `spawnApplyReason`), the soul's Launch report (launch-contract.mjs `launchOf`)
 // and the lines both places show (packages/client/kernel-lines.mjs `kernelLines`). The refusal is
 // also read from the CLI's printed envelope on, through the preview's own exec owner (spawn-preview-cli.mjs
-// `cliSpawnPreview`) and the server's boundary (packages/desktop/server/spawn-preview.mjs), so that no reader
+// `cliSpawnPreview`) and the preview's boundary (packages/client/spawn-preview.mjs), so that no reader
 // between the kernel's output and the dialog is skipped. That seam carries every refusal's `fix`, so the
 // kernel's two refusals of a missing harness (`harnessUnavailable`, `harnessNotOnPanePath`) are read through
 // it as well.
@@ -21,7 +21,7 @@ import { LAUNCH_PREFERENCE_UNMATCHED, LAUNCH_PROBLEM_TEXT_MAX, UNMATCHED_FIX, la
 import { launchReportFor } from "../lib/core.mjs";
 import { previewFailure } from "../packages/client/spawn-preview-contract.mjs";
 import { cliSpawnPreview } from "../packages/client/spawn-preview-cli.mjs";
-import { createSpawnPreviewBoundary } from "../packages/client/spawn-preview.mjs";
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from "../packages/client/spawn-preview.mjs";
 import { spawnApplyReason } from "../packages/client/spawn-apply-contract.mjs";
 import { spawnProblem } from "../packages/client/spawn-messages.mjs";
 import { launchOf, REPORT_FROM } from "../packages/client/launch-contract.mjs";
@@ -122,7 +122,7 @@ const context = () => ({ workspace: { id: "ws", scope: WS }, cli: structuredClon
 async function throughCli(error) {
   const execs = [], printed = { schemaVersion: 1, ok: false, error: { code: error.code, message: error.message, details: error.details } };
   let answer;
-  const read = createSpawnPreviewBoundary({ invoke: async (cli, args) => (answer = await cliSpawnPreview(cli, args, { env: {},
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async (cli, args) => (answer = await cliSpawnPreview(cli, args, { env: {},
     exec: (bin, argv, _options, done) => { execs.push([bin, argv]); done(Object.assign(new Error("exit 1"), { code: 1 }), JSON.stringify(printed)); } })) });
   const view = await read({ action: "preview", selector: SELECTOR, choices: {} }, context);
   assert.deepEqual(execs, [["/installed/oats", ["spawn", SOUL, "--dir", WS, "--agents-root", ROOT, "--preview", "--json"]]], "one read, through the preview's exec owner");

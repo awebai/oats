@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { discover } from '../../client/cli-locator.mjs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary } from '../../client/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
 import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { spawnDecision, spawnEffective, sameSpawnDecision } from '../../client/spawn-decision.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnRefInput, spawnPreparedData, spawnWake, spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
@@ -118,7 +118,7 @@ test('kernel preview bytes cross the injected argv/boundary with the decision th
   const stored = kernel('preview-worktree-purpose'), raw = stored.result, selected = { soul: raw.subject.soul, agentsRoot: raw.subject.agentsRoot };
   const c = { workspace: { id: 'northwind', scope: raw.subject.dir }, cli: capable(), agents: [{ name: selected.soul, agentsRoot: selected.agentsRoot, work: raw.work }] };
   let calls = 0;
-  const read = createSpawnPreviewBoundary({ invoke: (cli, args) => cliSpawnPreview(cli, args, { env: {}, exec: (_bin, argv, _options, callback) => {
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: (cli, args) => cliSpawnPreview(cli, args, { env: {}, exec: (_bin, argv, _options, callback) => {
     calls++; assert.ok(argv.includes('--preview')); assert.equal(argv.includes('--idempotency-key'), false); assert.equal(argv.includes('--expect-decision'), false);
     callback(null, JSON.stringify(stored));
   } }) });

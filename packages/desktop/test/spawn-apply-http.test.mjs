@@ -22,7 +22,7 @@ function http({ invoke, timer } = {}) {
     read: request => { reads.push(request); return { status: 'available', data: applyPreview(target) }; },
     ...(timer ? { timer } : {}),
     invoke: (_cli, args) => { calls.push(args); order.push('invoke'); return invoke ? invoke(args) : { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
-  const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker, spawnPreviewCache: { invalidate: ws => order.push(`invalidate:${ws}`) },
+  const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker, spawnPreview: { cache: { invalidate: ws => order.push(`invalidate:${ws}`) } },
     observeMutation: ws => order.push(`observe:${ws}`),
     spawnAgent: async body => { serverSpawns.push(body); return { instance: 'dev-1', home: '/fixture/dev-1', agent: 'dev', launched: true }; },
     spawnErrorPayload: () => assert.fail('unexpected execution-server error'), ...deploymentDoubles(() => [c.workspace]), cliState: c.cli,
