@@ -493,7 +493,10 @@ the rule:
   run sees it, instead of reaching the host's default server. `TMUX` is not
   changed: a client that names no server (no `-L` or `-S`) and inherits
   `TMUX`, as in a run from a session inside tmux, still uses that session's
-  server and makes nothing the run sees.
+  server and makes nothing the run sees. The run names its directory to the
+  preload in `OATS_TEST_RUN_DIR`, and the preload takes that variable out of
+  the file's environment before any code of the file runs. No test sees it,
+  nor any process a test starts.
 - When the run has ended it reads each file's directory. If one is not empty
   the run fails, even if every test passed, and names each file and what it
   left.

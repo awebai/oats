@@ -179,6 +179,20 @@ console.log(JSON.stringify(dirs.map((dir) => dirname(dir))));`], { env: { ...inh
   assert.deepEqual(made(long), [tmp, tmp], "a long temporary directory that is not the run's: under /tmp, as before");
 });
 
+test("the run's directory is the runner's to know: no test file's process sees OATS_TEST_RUN_DIR, nor a process it starts, and each file still has a directory of its own", (t) => {
+  const r = rootRun(t, { "env.test.mjs": `${HEAD}test("the variable is in no environment of the file", () => {
+  assert.equal(process.env.OATS_TEST_RUN_DIR, undefined);
+  const child = spawnSync(process.execPath, ["-p", 'process.env.OATS_TEST_RUN_DIR ?? "absent"'], { encoding: "utf8" });
+  assert.equal(child.stdout.trim(), "absent", child.stderr);
+  console.log("@@TMPDIR " + tmpdir());
+});\n` });
+  passes(r);
+  counts(r, 1, 0);
+  const own = r.stdout.match(/@@TMPDIR (\S+)/)?.[1];
+  assert.ok(own, says(r));
+  assert.match(dirname(own), /[/\\]ot-[A-Za-z0-9]{6}$/, "the file's temporary directory is in the run's directory");
+});
+
 // Node writes a compile cache where NODE_COMPILE_CACHE says, and a tool a test starts may ask for one
 // (npm does): a run that passed a developer's NODE_COMPILE_CACHE on would write into that cache.
 test("the run's processes do not inherit a compile cache: with NODE_COMPILE_CACHE set, a test and a tool it starts write none there", (t) => {

@@ -17,10 +17,17 @@
 // Only a test file's process takes a directory: node --test names it by NODE_TEST_CONTEXT. A process
 // a file starts is not preloaded and inherits the file's directory; one that is preloaded all the
 // same (it was given this process's execArgv) keeps the directory it inherited.
+//
+// OATS_TEST_RUN_DIR, which names the run's directory, is how the run reaches this preload, and no test
+// sees it: a test file's process takes it out of its environment before any code of the file runs, so
+// no process the file starts inherits it either (a test that compares a whole environment, or the
+// OATS_ variables of one, sees the environment it was given). node --test's own process keeps it:
+// that process starts the files.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 
 const run = process.env.OATS_TEST_RUN_DIR;
+if (process.env.NODE_TEST_CONTEXT) delete process.env.OATS_TEST_RUN_DIR;
 if (run && process.env.NODE_TEST_CONTEXT && !`${process.env.TMPDIR}${sep}`.startsWith(`${run}${sep}`)) {
   for (let n = 0; ; n++) {
     const dir = join(run, String(n)); // short: a socket path under it has about 104 bytes in all
