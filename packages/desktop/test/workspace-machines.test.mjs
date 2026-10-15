@@ -41,7 +41,7 @@ test('lists this workspace\'s machines (name, host, folder, OATS version, reacha
   await settle();
   assert.equal(u.q('.setup-box-head h4').textContent, 'Machines');
   // A solid card (Setup's This computer zone says it is not shared): no scope chip, Add at the end of its head.
-  assert.ok(u.ui.element.classList.contains('setup-box') && !u.ui.element.classList.contains('setup-local'));
+  assert.ok(u.ui.element.classList.contains('setup-box'));
   assert.equal(u.q('.setup-scope'), null);
   assert.deepEqual([...u.q('.setup-box-head').children].map(c => c.className), ['', 'setup-box-lead', 'machines-add']);
   assert.deepEqual(u.calls.map(c => c.path), [`/api/servers?ws=${encodeURIComponent(WS)}`, `/api/server-check?ws=${encodeURIComponent(WS)}`]);

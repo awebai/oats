@@ -1,4 +1,4 @@
-/* oats desktop — command palette (app.palette: ⌘K on macOS, Ctrl+Shift+P on
+/* oats desktop — command palette (app.palette: ⌘K on macOS, Ctrl+Shift+K on
    Linux/Windows; the keymap engine owns the chord and its terminal policy).
    One input, two result kinds: instances (default; jump-to-terminal) and
    commands (also matched by name — ">" prefix restricts to commands).

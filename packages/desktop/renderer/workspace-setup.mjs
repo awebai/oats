@@ -143,8 +143,6 @@ export const setupCSS = `
 .setup-team-adds { display:flex; flex-wrap:wrap; gap:2px 12px; color:var(--muted); font-size:11.5px; line-height:1.45; }
 .setup-team-adds > span { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; min-width:0; }
 .setup-team-note { margin:0; padding:10px 20px; border-top:1px solid var(--border); color:var(--muted); font-size:11.5px; line-height:1.5; }
-/* box(..., { local: true }): a dashed box for what is not shared, where a caller still wants one. */
-.setup-local { background:var(--surface-2); border:1px dashed var(--tree-line); border-radius:10px; overflow:hidden; min-width:0; container:setup-rows / inline-size; }
 .oats-view .setup button.setup-file { height:auto; min-height:0; padding:0; border:0; background:transparent; color:var(--accent); font:inherit; font-family:var(--mono,monospace); text-decoration:underline; text-underline-offset:2px; cursor:pointer; overflow-wrap:anywhere; text-align:left; }
 .oats-view .setup button.setup-file:focus-visible { background:var(--sel); border-radius:4px; padding:0 3px; margin:0 -3px; }
 /* W2: this computer → the workspace → its members and packages. */
@@ -276,12 +274,11 @@ export function lockText(status) {
   if (!unsynced && !stale) return { text: 'current', warn: false };
   return { text: ['out of date', unsynced ? `${unsynced} not locked` : null, stale ? `${stale} no longer declared` : null].filter(Boolean).join(' · '), warn: true };
 }
-/** A box: its title (an h3, or the level `heading` names) and a muted lead. `scopeLabel` is kept for its
- * callers: the section or zone a box sits in says what is shared, so the box no longer repeats it. */
-export function box(doc, title, lead, scopeLabel, { local = false, icon = null, heading = 'h3' } = {}) {
-  const card = el(doc, 'section', null, local ? 'setup-local' : 'setup-box'); card.dataset.box = title;
+/** A box: its title (an h3, or the level `heading` names) and a muted lead. The section or zone a box
+ * sits in says what is shared, so the box doesn't repeat it. */
+export function box(doc, title, lead, { heading = 'h3' } = {}) {
+  const card = el(doc, 'section', null, 'setup-box'); card.dataset.box = title;
   const head = el(doc, 'div', null, 'setup-box-head');
-  if (icon) head.append(iconElement(doc, icon, { size: 15 }));
   head.append(el(doc, heading === 'h4' ? 'h4' : 'h3', title));
   if (lead) head.append(el(doc, 'span', lead, 'setup-box-lead'));
   card.append(head);
@@ -424,7 +421,7 @@ function sharedSection(doc, { status, onSelect, openExternal }) {
   const shared = section(doc, 'setup-sec', 'Shared through Git', 'What the workspace declares: the same on every computer that runs it.');
   shared.dataset.zone = 'shared';
   // Members: the repositories the workspace trusts for souls and capabilities, always at their latest.
-  const members = box(doc, 'Members', 'Each repository and whether both of its links are in place.', null, { heading: 'h4' });
+  const members = box(doc, 'Members', 'Each repository and whether both of its links are in place.', { heading: 'h4' });
   const memberRows = el(doc, 'div', null, 'setup-rows'); memberRows.dataset.rows = 'members';
   // The host first (it is a member too); the others in the kernel's order.
   const isHost = m => !!text(ws.key) && m?.key === ws.key;
@@ -461,7 +458,7 @@ function sharedSection(doc, { status, onSelect, openExternal }) {
   if (!list(status?.members).length) members.append(el(doc, 'p', 'No member repositories reported.', 'setup-empty'));
   if (memberRows.children.length) members.append(memberRows);
   // Packages: versioned bundles, pinned here and fingerprinted in the lock.
-  const packages = box(doc, 'Packages', 'Versioned bundles, pinned here and fingerprinted in the lock.', null, { heading: 'h4' });
+  const packages = box(doc, 'Packages', 'Versioned bundles, pinned here and fingerprinted in the lock.', { heading: 'h4' });
   const packageRows = el(doc, 'div', null, 'setup-rows'); packageRows.dataset.rows = 'packages';
   const packageRow = (id, version, originText, originTitle, caps, end) => {
     const row = el(doc, 'div', null, 'setup-row'); row.dataset.package = id;
@@ -525,7 +522,7 @@ function hereZone(doc, { status, instances, cli, machines }) {
  * how many souls take each, what each adds to the defaults, and the kernel's warnings about them. */
 export function teamsBox(doc, { status, souls = [] }) {
   const ws = status?.workspace || {};
-  const teams = box(doc, 'Teams', null, null);
+  const teams = box(doc, 'Teams', null);
   const unmapped = new Map(list(status?.warnings).filter(w => w?.code === 'unmapped-team-label' && text(w.label)).map(w => [w.label, w]));
   for (const label of list(ws.teams).filter(text)) {
     const row = el(doc, 'div', null, 'setup-team'); row.dataset.team = label;
@@ -579,7 +576,7 @@ function defaultsBox(doc, status) {
   const caps = capRows(defaults.capabilities);
   // Standalone (slots null, no capabilities): the workspace declares no defaults.
   if (!slots.some(([, value]) => value !== null) && !caps.length) return null;
-  const card = box(doc, 'Defaults', 'Every soul starts from these.', null, { heading: 'h4' });
+  const card = box(doc, 'Defaults', 'Every soul starts from these.', { heading: 'h4' });
   const rows = el(doc, 'dl', null, 'setup-def-rows');
   const row = (key, cls = '') => { const r = el(doc, 'div', null, 'setup-def'); const dd = el(doc, 'dd', null, cls); r.append(el(doc, 'dt', key), dd); rows.append(r); return { r, dd }; };
   for (const [slot, value] of slots) {
