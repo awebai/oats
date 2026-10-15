@@ -30,11 +30,12 @@ export function captureCleanupPage(state, { after = "", limit = 128 } = {}) {
 // item to the current durable reference; retained-scratch then verifies every
 // directory, owner and payload identity and the registered root-lock worker.
 export function cleanupCaptureRecovery(store, state, start, job, {
-  maxRecords = 2000, stopped = () => start.budget.sample() !== null,
+  maxRecords = 2000, stopped = () => start.budget.sample() !== null, onCommit = () => {},
 } = {}) {
   if (state.depth || typeof job?.key !== "string" || !job.key ||
       typeof job.stream !== "string" || !job.stream || !/^[a-f0-9]{32}$/.test(job.allocation) ||
-      !Number.isSafeInteger(maxRecords) || maxRecords < 2 || maxRecords > 2000 || typeof stopped !== "function")
+      !Number.isSafeInteger(maxRecords) || maxRecords < 2 || maxRecords > 2000 || typeof stopped !== "function" ||
+      typeof onCommit !== "function")
     throw new Error("invalid capture recovery cleanup unit");
   const current = () => {
     const claim = state.get("recovery-allocation", job.key);
@@ -56,6 +57,7 @@ export function cleanupCaptureRecovery(store, state, start, job, {
   if (stopped()) return { complete: false, stopped: true };
   return withCaptureGroup(store, [job.stream], () => {
     current();
+    const before = state.db.prepare("SELECT total_changes() AS n").get().n;
     // Divide one allowance between the two tables, including on restarts.
     // Neither table's full cleanup is a prerequisite to checkpointing the other.
     const chunks = discardRecoveryChunks(state, job.allocation, { maxRecords: Math.floor(maxRecords / 2) });
@@ -66,6 +68,10 @@ export function cleanupCaptureRecovery(store, state, start, job, {
     }
     // Keep the deleting reference across partial cleanup and transaction loss.
     // Source/journal cursors and run counts are never reconstructed here.
-    return { complete: chunks && prefix, stopped: false };
+    const result = { complete: chunks && prefix, stopped: false };
+    // Admission retirement and confirmed progress share this final commit.
+    // A failed callback leaves both the deleting claim and admission resumable.
+    onCommit(result, { progress: state.db.prepare("SELECT total_changes() AS n").get().n !== before });
+    return result;
   }, { state, check: () => start.budget.check() });
 }

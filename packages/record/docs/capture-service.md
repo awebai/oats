@@ -192,8 +192,8 @@ Source-stage fixtures use the private retained recovery cleanup unit described
 below. A due retry may need it even for a tiny source after an interrupted
 append. Cleanup failure is a failure in the current pass and preserves
 confirmed work; it cannot be ignored to make a later receipt successful.
-These fixtures do not qualify the unfinished production scheduler's cleanup
-routing.
+The private worker dispatcher also routes these units; fixture coverage is
+separate from ordinary-command and installed-service qualification.
 
 ## Resource model
 
@@ -315,7 +315,36 @@ unit, cooperative stop after removal, or failed final metadata commit retains
 the deleting reference; the next registered worker revalidates it and resumes.
 The source's committed cursor and journal bytes are not rewritten or recounted.
 The caller still owns fair selection, operational failure handling, budgeting
-and final receipt publication; this unit adds no separate retry policy.
+and final receipt publication; this unit adds no separate retry policy. Its
+optional commit callback joins admission retirement and confirmed progress to
+the final stream-locked metadata transaction. Callback failure rolls back those
+facts and metadata deletion together, even if the directory is already absent.
+
+`CaptureCleanupQueue` supplies private worker scheduling for deleting claims.
+Healthy and retry enumeration have independent durable keyset cursors; each
+turn inspects at most 128 references and processes at most one allocation under
+the shared hash-row allowance. Reaching the end wraps that cursor for later
+work. A scan endpoint describes enumeration only: partial jobs or newly added
+earlier keys can still need work on the next rotation.
+
+Before filesystem work, the queue commits an allocation-bound admission and
+the next cursor. The cleanup unit must still acquire the stream lock, prove
+ownership and commit adoption; queued identities never grant pathname authority.
+Its final metadata transaction retires admission and records actual metadata
+progress without inventing source/index counts. Cooperative deadline/RSS stop
+retires only admission, preserving the deleting claim for continuation. Other
+throws or worker death retain admission until the registered replacement
+reconciles it after predecessor death.
+
+Reconciliation records a pass-bound failure and allocation-specific backoff
+using the fixed 30/60/120/240-minute schedule. It does not diagnose a journal
+frame, create a public failed-stream row, or change source/index retry evidence.
+Skipped work does not increment attempts or move the retry date. A failed
+allocation cannot retry in the same pass; a due partial unit retains its retry
+until complete and admits at most once in a pass. Successful deletion clears
+only that allocation's retry. Historical run failure remains history; current
+pass failure survives independent healthy processing. Final completion still
+requires the owning runner's all-stage audit, not an empty cleanup page.
 
 `capture-recovery-snapshot.mjs` copies the fixed source end in 64 KiB chunks under
 the stream group. Payload fsync precedes committed copy offsets and chunk hashes.
@@ -723,19 +752,22 @@ budget, reconcile unfinished admissions, and publish the actual run outcome.
 accounting inside an already registered supervisor worker. Its bootstrap caller
 must own the root lock and have ended the predecessor before construction. The
 session shares one capture-state connection and one search-index connection,
-reconciles durable stream and union-reset admissions, then opens current run
+reconciles durable stream, cleanup and union-reset admissions, then opens current run
 accounting. A recorded failure is bound to its run identity: an observed failure
 in the new pass cannot diagnose an older abandoned admission. Prior history
 remains distinct from failure in the current pass, including a child that died
 before publishing any receipt. Persisted reconciliation facts survive a second
 interruption before run publication.
 
-Each dispatch step advances at most one bounded index-discovery page and one
-source or index group. Source discovery pages still enter the session's source
+Each dispatch step advances at most one bounded index-discovery page, one
+source or index group and one healthy cleanup turn after a selected group.
+Source discovery pages still enter the session's source
 queue through its caller. The last durable admission's stage determines which
 processing stage goes first next, including after a rolled-back group; no extra
 per-record or per-unit routing transaction is added. Source groups register new
 streams in the current index inventory as part of their processing commit.
+Cleanup uses its own allocation admission and cursor transactions; it does not
+replace the durable source/index stage position or claim lower sync cost.
 
 Healthy selection in both processing stages suppresses retries. Only after both
 healthy stages and discovery are exhausted does the session route a due retry
@@ -745,17 +777,26 @@ or retry date, so they do not hide eligible source/index retries. Selection
 checks cooperative stop between bounded metadata pages/rows. Stage helpers keep
 their earlier default retry behavior when used without this dispatcher.
 
+When no healthy group is selected, the session advances healthy cleanup pages
+before due work. Due cleanup follows healthy source/index work, both discovery
+inventories and eligible source/index retries. Cleanup can progress without a
+ready source. A cleanup exception leaves the already-committed group counts
+intact; replacement reconciliation applies backoff while independent healthy
+work remains eligible. A completed page or idle selection does not prove that
+every deleting reference has finished, especially across cursor wraparound.
+
 A fresh reset worker dispatches the union operation before ordinary work. A
 committed reset reopens the published pending inventory; an interrupted one is
 reconciled before processing. Detection requests a new worker rather than
 resetting in place. Deferred reset leaves independent source work eligible while
 index processing is blocked. Finalization can recover a committed reset's
-bounded metadata publication, but performs no source/index group or new reset.
+bounded metadata publication, but performs no source/index group, cleanup
+deletion or new reset.
 
 This session deliberately has no successful-completion path. Yielding publishes
 pending run facts; finishing an idle or finalization session reports partial,
 or failed when the current pass carries failure. Existing `lastSuccess` history
-is preserved. Source discovery wiring, retained cleanup/backoff, final union
+is preserved. Source discovery wiring, final union
 audit and all-stage completion still belong to the remaining command runner;
 idle selection, reset completion and completed inventories do not substitute
 for those gates. The ordinary CLI, installed service and setup/hook entry points

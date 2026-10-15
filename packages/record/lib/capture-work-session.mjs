@@ -1,6 +1,6 @@
 // Private owning worker session. Bootstrap has already registered this worker
 // under the root lock and reaped its predecessor. Source discovery is caller-
-// fed; cleanup/final completion and ordinary command routing remain separate.
+// fed; final completion and ordinary command routing remain separate.
 import { randomUUID } from "node:crypto";
 import { RecordStore } from "./store.mjs";
 import { RecordIndex } from "./index-db.mjs";
@@ -15,6 +15,7 @@ import { readCaptureStatus } from "./capture-status.mjs";
 import { reconcileCaptureInterruption, selectCaptureWork } from "./capture-retry.mjs";
 import { readCaptureAdmission } from "./capture-admission.mjs";
 import { FAILURE_REASONS } from "./capture-failures.mjs";
+import { CaptureCleanupQueue } from "./capture-cleanup-queue.mjs";
 
 export class CaptureWorkSession {
   constructor(start, { owner, selection, trigger = "manual", now = Date.now, unit = {} } = {}) {
@@ -33,6 +34,8 @@ export class CaptureWorkSession {
       // older abandoned admission merely because this child reconciles it.
       const reasonFor = id => id === start.pass.runId && FAILURE_REASONS.includes(previous) ? previous : "interrupted";
       reconcileCaptureInterruption(this.state, { reason: reasonFor(readCaptureAdmission(this.state)?.runId), now: now() });
+      this.cleanup = new CaptureCleanupQueue(this.store, this.state);
+      this.cleanup.reconcile(start, { reason: reasonFor(this.cleanup.active()?.runId), now: now() });
       this.queue = new CaptureSourceQueue(this.state, { owner, selection });
       // Retain a reset's scope even if derived inventory tables were lost.
       // Recreating membership may restart enumeration; it cannot erase reset
@@ -43,7 +46,7 @@ export class CaptureWorkSession {
       this.reset.reconcile(start, { reason: reasonFor(this.reset.current()?.attempt?.runId), now: now() });
       const prior = readCaptureStatus(start.root);
       const failures = [this.state.get("capture-run-failure", "last"),
-        this.state.get("capture-index-reset-failure", "last")].filter(Boolean);
+        this.state.get("capture-index-reset-failure", "last"), this.state.get("capture-cleanup-failure", "last")].filter(Boolean);
       const currentReason = start.pass.failure ?? failures.find(row => row.runId === start.pass.runId)?.reason ?? null;
       const previousReason = failures.find(row => row.runId === prior?.lastRun?.id)?.reason ??
         (prior?.lastRun?.id === start.pass.runId ? previous : null);
@@ -67,7 +70,16 @@ export class CaptureWorkSession {
       ? captureSourceWork(this.store, this.state, this.queue, this.run, this.start, { ...options, indexInventory: this.inventory })
       : this.outcomes.advance(this.run, this.start, options);
     if (result.resetRequired) this.reset.request(this.start);
-    return { stage, ...result };
+    // One independent bounded cleanup turn cannot change stream-stage rotation.
+    // A throw retains the already-committed source/index counts and its own
+    // admission, so a replacement can back off deletion and keep healthy work.
+    const cleanupWork = result.selected ? this.clean(false) : null;
+    return { stage, ...result, cleanupWork };
+  }
+
+  clean(retry) {
+    return this.cleanup.advance(this.run, this.start, { now: this.now(), retry,
+      maxRecords: Math.max(2, this.unit.maxRecords ?? 2000) });
   }
 
   step() {
@@ -95,6 +107,8 @@ export class CaptureWorkSession {
       if (result.selected || result.resetRequired || result.stopped) return { ...result, discovery };
     }
     if (stopped()) return { stopped: true, discovery };
+    const cleanup = this.clean(false);
+    if (cleanup.selected || !cleanup.complete) return { stage: "cleanup", ...cleanup, discovery };
     // Unknown discovery can still contain healthy work. Exhaust both healthy
     // stages and discovery before considering any due single-stream retry.
     if (!this.queue.current().discovered || this.inventory.current().phase !== "complete")
@@ -103,6 +117,8 @@ export class CaptureWorkSession {
       retryFilter: retry => retry.stage === "index" ? !blockedIndex :
         retry.stage === "capture" && this.queue.forStream(retry.stream) !== null });
     if (selection) return { ...this.process(selection.stage, true), discovery };
+    const cleanupRetry = this.clean(true);
+    if (cleanupRetry.selected || !cleanupRetry.complete) return { stage: "cleanup", ...cleanupRetry, discovery };
     return { idle: true, discovery };
   }
 
