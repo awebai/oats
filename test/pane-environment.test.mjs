@@ -211,6 +211,7 @@ test("case A: the server runs without a CLAUDE_CONFIG_DIR and the spawner has it
     assert.equal(probed().CLAUDE_CONFIG_DIR, undefined, `${name}: the probe ran with no selector`);
     assert.equal(probed().HOME, serverHome.dir, `${name}: and with the pane's HOME`);
     assert.equal(probed().PATH, SERVER_PATH, `${name}: and the pane's PATH`);
+    assert.equal(probed().DISABLE_TELEMETRY, "1", `${name}: and, for the probe's own run, no telemetry flush (#1246)`);
     // The other way round: refused, and the remedy starts with no selector.
     serverHome.plugin(false); spawnerAccount.plugin(true);
     const message = refused(spawn(`${name}-missing`, { soul: "gated", env }), `${name}-missing`);

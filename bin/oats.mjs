@@ -104,7 +104,7 @@ const OWN_ARGV_COMMANDS = new Set(["capture", "recall", "setup", "experimental",
  *  probe) and in `status --json`, which a remote roster relays as the host's (feature
  *  server-probe-features, lib/servers.mjs hostFeatures). ONE list for both, emitted at output
  *  time, never stored. A name must pass hostFeatures's check (test/cli-json-contract.test.mjs). */
-const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key"];
+const KERNEL_FEATURES = ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "schedule-host-caps", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name", "settings-origins", "team-model-3", "settings-declared", "capabilities-private", "layers-from", "harness", "package-souls", "triggers", "automations", "desktop-facts", "launch-preference", "preview-composed-from", "observe-max-age", "spawn-preview-max-age", "launch-config-default", "capability-show", "capture-file", "workspace-identity", "server-connect", "capability-route", "servers-per-workspace", "operator-default-soul", "waiting-on-you", "automation-descriptions", "souls-capabilities", "soul-composed-instructions", "teams-conditional-default", "server-probe-features", "worktree-event", "trigger-sources", "session-attach-detach-key", "lifecycle-kernel-codes", "schedule-run-warnings", "lifecycle-claim-stop", "launch-prompt-dev-channel", "soul-launch", "retire-plan-own-worktree", "spawn-kernel-codes", "soul-skills", "roster-workspace-key", "spawn-apply-max-age"];
 /** Commands `--server <id>` runs on a registered server. */
 const ROUTED_COMMANDS = new Set(["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "launch-config", "readiness", "instance"]);
 const flag = (name) => {
@@ -1484,16 +1484,24 @@ function sayReadNotices() {
   for (const notice of readSession?.notices.splice(0) ?? []) process.stderr.write(`oats: warning: ${notice}\n`);
 }
 /** Which kernel command forms take --max-age: THE allow-list (docs/desktop-cli-api.md "Observation reuse").
- *  → null when this form reads with observation reuse, else the E_BAD_ARGS message. `head` is argv before `--`. */
-const MAX_AGE_READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, trigger poll, and the read forms of teams and soul teams";
+ *  → null when this form reads with observation reuse, else the E_BAD_ARGS message. `head` is argv before `--`.
+ *  Write verbs refuse it: a writer acting on a reused observation could persist a fact the workspace no
+ *  longer holds. A preview-bound spawn apply is the exception: its fence (--expect-decision) binds it to
+ *  the decision the operator confirmed, so a reused head applies nothing beyond that decision. */
+const MAX_AGE_READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, spawn --expect-decision <revision>, trigger poll, and the read forms of teams and soul teams";
 function maxAgeRefusal(command, head) {
   const word = (i) => (head[i] !== undefined && !head[i].startsWith("--") ? head[i] : undefined);
-  const refuse = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${MAX_AGE_READS})`;
+  const refuse = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs and a preview-bound spawn apply reuse observations (${MAX_AGE_READS})`;
   if (head.includes("--server")) return "--max-age cannot be combined with --server: observation reuse is local to this machine";
   switch (command) {
     case "status": case "souls": case "capabilities": case "inspect": return null;
-    // A preview reads (feature spawn-preview-max-age); an apply always observes live.
-    case "spawn": return head.includes("--preview") ? null : refuse("spawn");
+    // A preview reads (feature spawn-preview-max-age); an apply only when a confirmed decision binds it
+    // (feature spawn-apply-max-age), with a value as spawn reads it: a bare --expect-decision binds nothing.
+    case "spawn": {
+      const expected = flag("expect-decision");
+      if (head.includes("--preview") || (expected !== undefined && expected !== true)) return null;
+      return "--max-age is not accepted by `oats spawn` without --expect-decision: a spawn apply reuses observations only with --expect-decision <revision>, which binds it to the decision a preview showed";
+    }
     case "workspace": return word(1) === "status" ? null : refuse(["workspace", word(1)].filter(Boolean).join(" "));
     case "teams": return word(1) === undefined ? null : refuse(`teams ${word(1)}`);
     // `soul teams` only reads (its edit flags were removed in 0.38.0, and refuse as such).
@@ -2686,8 +2694,8 @@ async function status() {
 const livenessWord = (i) => i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown";
 /** The flags `oats spawn` reads: those taking a value, and switches. `--provider` takes two words.
  *  `--instance` is refused by a local spawn (with its replacement) but still travels to an older
- *  host through `--server`, whose route reads it. `--max-age` reaches here only on a preview: the
- *  dispatch allow-list (maxAgeRefusal) refuses it on an apply. */
+ *  host through `--server`, whose route reads it. `--max-age` reaches here only on a preview or an
+ *  apply bound by --expect-decision: the dispatch allow-list (maxAgeRefusal) refuses it otherwise. */
 const SPAWN_VALUE_FLAGS = new Set(["agents-root", "backend", "base", "branch", "dir", "expect-decision", "harness", "idempotency-key", "instance", "launch-config", "max-age", "model", "name", "parent", "purpose", "relation", "relative-root", "relative-to", "repo", "runtime", "task", "task-file", "trigger-event", "wake-cron", "wake-every", "wake-file", "wake-json", "wake-message", "wake-message-file", "wake-tz", "work", "work-dir"]);
 const SPAWN_SWITCHES = new Set(["allow-child-spawns", "json", "no-child-spawns", "no-launch", "no-yolo", "preview", "yolo"]);
 /** Why `argv` (after `spawn`, the soul first) is not a spawn, or undefined: a positional after the
@@ -4803,7 +4811,8 @@ Usage:
                                             instance.json providers.<capability>)
       [--preview [--max-age <s>]]           decide everything, create nothing; the JSON's
                                             decision binds an apply (--expect-decision <rev>);
-                                            --max-age reuses recent heads (preview only)
+                                            --max-age reuses recent heads, on a preview and
+                                            on an apply bound by --expect-decision only
   oats retire <instance> [--force]           retire an instance (window, hooks,
       [--self]                              worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then
@@ -4981,9 +4990,13 @@ Observation reuse (feature observe-max-age):
                                             remote again; the JSON
                                             then carries observation { observedAt (the oldest
                                             head used), reused, localRevision (a digest of
-                                            the local configuration read) }. Refused
+                                            the local configuration read) }. A spawn apply
+                                            bound by --expect-decision takes it too (feature
+                                            spawn-apply-max-age): its decision fence holds,
+                                            and its JSON carries no observation. Refused
                                             (E_BAD_ARGS) by every other command, an edit form,
-                                            a spawn apply, and with --server
+                                            a spawn apply without --expect-decision, and with
+                                            --server
 
 Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspace-module-contracts.md.`;
 }

@@ -17,10 +17,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { STATUS_WAIT_MS, createPanel } from "../packages/tui/lib/panel.mjs";
+import { captureRows } from "../packages/tui/lib/term/capture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -217,14 +219,62 @@ const PANEL_COL = listCols(COLS) + 1;
 let opened = 0, started = 0;
 
 /** Wait for what a terminal shows (or for a file), within the file's budget. A timeout says what
- *  was waited for, what is missing and what the pane shows instead. */
+ *  was waited for, what is missing and what the pane shows instead, then what the last run's
+ *  private server holds now (panelState). */
 async function until(term, predicate, what, faults = () => [], ms = 15000) {
   const left = Math.max(0, FILE_DEADLINE - Date.now());
   try { await waitUntil(predicate, what, Math.min(ms, left)); } catch (error) {
     if (!/^timed out waiting for /.test(error?.message ?? "")) throw error;
     const missing = faults();
-    assert.fail(`${error.message}${left === 0 ? ` (this file's budget of ${BUDGET_MS / 1000}s was spent before the wait began)` : ""}${missing.length ? `: ${missing.join("; ")}` : ""}; ${term.id} shows:\n${term.shows()}`);
+    assert.fail(`${error.message}${left === 0 ? ` (this file's budget of ${BUDGET_MS / 1000}s was spent before the wait began)` : ""}${missing.length ? `: ${missing.join("; ")}` : ""}; ${term.id} shows:\n${term.shows()}${panelState(lastRun, lastWatch)}`);
   }
+}
+
+/** The run `until` reports on, the last one started, and the watch of its server, while one runs. */
+let lastRun = null, lastWatch = null;
+/** What a run's private server holds now: each pane, dead or not, with the status and signal tmux
+ *  has for it, and the processes of the pane, under it and on its terminal, as ps says. With a
+ *  watch of that server (watchPanel), what tmux reported meanwhile. */
+function panelState(run, watch = null) {
+  if (!run) return "";
+  const out = [""];
+  if (watch) out.push("what the panel's server reported of its panes' ends, ms after the watch began:", ...(watch.lines().length ? watch.lines().map((line) => `  | ${line}`) : ["  (nothing)"]));
+  const dir = (() => { try { return run.dir(); } catch { return null; } })();
+  if (!dir || !answers(panelSocket(dir))) return [...out, "the panel's server: none answers"].join("\n");
+  out.push("the panel's server, its panes now:");
+  let panes = [];
+  try { panes = lines(tmuxOn(panelSocket(dir), "list-panes", "-a", "-F", "#{window_id} #{pane_id} dead=#{pane_dead} status=#{pane_dead_status} signal=#{pane_dead_signal} pid=#{pane_pid} tty=#{pane_tty}")); } catch (error) { out.push(`  (list-panes failed: ${String(error?.stderr || error?.message).trim()})`); }
+  out.push(...panes.map((pane) => `  | ${pane}`));
+  let table = [];
+  try { table = lines(execFileSync("ps", ["-A", "-o", "pid=,ppid=,stat=,etime=,tty=,args="], { encoding: "utf8", timeout: 10000, maxBuffer: 8 * 1024 * 1024 })); } catch { /* none */ }
+  const pids = new Set(panes.map((pane) => /pid=(\d+)/.exec(pane)?.[1]).filter(Boolean));
+  const ttys = new Set(panes.map((pane) => /tty=\/dev\/(\S+)/.exec(pane)?.[1]).filter(Boolean));
+  const mine = table.filter((row) => { const [pid, ppid, , , tty] = row.trim().split(/\s+/); return pids.has(pid) || pids.has(ppid) || ttys.has(tty); });
+  out.push("their processes (pid ppid stat etime tty args):", ...(mine.length ? mine.map((row) => `  | ${row.trim().slice(0, 200)}`) : ["  (none)"]));
+  return out.join("\n");
+}
+/** A watch of a run's private server, for a test's diagnostics: a control client of the test's own,
+ *  attached to the panel's session as the panel's is (no `-d`, which would detach it), subscribed to
+ *  the same report of each pane's end and its process, every line kept with its time. It holds the
+ *  server open while it is attached (`exit-unattached`): stop() it before the run is ended. */
+function watchPanel(socket) {
+  const began = Date.now(), seen = [];
+  const child = spawn(REAL_TMUX, ["-u", "-f", "/dev/null", "-S", socket, "-C", "attach", "-t", "=oats-tui"], { stdio: ["pipe", "pipe", "ignore"] });
+  child.on("error", () => {});
+  child.stdin.on("error", () => {});
+  child.stdin.write("refresh-client -B 'oats-test-dead:%*:#{pane_dead} #{pane_dead_status} #{pane_dead_signal} #{pane_pid}'\n");
+  let rest = "";
+  child.stdout.on("data", (chunk) => {
+    const text = rest + chunk.toString("utf8"), parts = text.split("\n");
+    rest = parts.pop();
+    for (const line of parts) if (/^%(subscription-changed oats-test-dead|window-close|unlinked-window-close|exit)\b/.test(line)) seen.push(`${Date.now() - began} ${line}`);
+  });
+  const watch = {
+    lines: () => [...seen],
+    stop() { if (lastWatch === watch) lastWatch = null; try { child.stdin.end(); } catch { /* gone */ } if (child.exitCode === null) child.kill("SIGTERM"); },
+  };
+  lastWatch = watch;
+  return watch;
 }
 
 /** A terminal of `cols`x`rows`: a new session of TERM, removed after the test, whose pane runs an
@@ -325,6 +375,7 @@ async function tui(term, { tmp = tmpFor() } = {}) {
       }
     },
   };
+  lastRun = run;
   await run.ready("after the start");
   run.pid = Number(readFileSync(pidFile, "utf8").trim());
   assert.ok(Number.isInteger(run.pid) && run.pid > 1, `the wrapper wrote the pid (${run.pid})`);
@@ -442,7 +493,13 @@ test("a viewer that ends at once closes the terminal: the line says it could not
   // panel starts finds no window, says so on stderr and exits 1.
   killAgentWindow();
   term.press("Enter");
+  // What tmux reports of the viewer's pane is watched from the moment the panel's server answers,
+  // so a viewer that never closes says whether tmux ever had its status (CI, tmux 3.4).
+  let watch = null;
+  t.after(() => watch?.stop());
+  await waitUntil(() => { const dir = run.dir(); if (dir && answers(panelSocket(dir))) watch = watchPanel(panelSocket(dir)); return watch !== null; }, "the panel's server", 10000);
   await until(term, () => run.outcome() === FAILED && !run.beside() && run.footer() !== BACK, `the line ${JSON.stringify(FAILED)}, and the panel closed`, () => [`the line is ${JSON.stringify(run.outcome())}`]);
+  watch.stop();
   // The kernel's viewer found no window to attach to (lib/session-viewer.mjs), said so and exited 1.
   assert.equal(run.under(), '"oats: session no longer exists"', `what the viewer printed stands under the line, in quotation marks:\n${term.shows()}`);
   const dir = run.dir();
@@ -454,6 +511,53 @@ test("a viewer that ends at once closes the terminal: the line says it could not
   assert.equal(run.status(), null, "oats tui still runs");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
+});
+
+test("a viewer whose terminal hangs up before its process has exited keeps its exit status: tmux reports such a pane dead before it has the status (3.4), and the panel waits for it", { skip: NO_TMUX }, async (t) => {
+  const dir = mkdtempSync(join(base, "late-"));
+  const env = { ...process.env }; delete env.TMUX; delete env.TMUX_PANE;
+  const closed = [];
+  const panel = createPanel({ dir: () => dir, env, capture: captureRows, onClosed: (event) => closed.push(event) });
+  t.after(() => { panel.end(); rmSync(dir, { recursive: true, force: true }); });
+  // The process closes its terminal's files (the hang-up), ignores the SIGHUP tmux's closing of the
+  // pane then sends it, and exits 3 four seconds later, past DEAD_WAIT_MS and well within
+  // STATUS_WAIT_MS, the panel's waits on tmux 3.2 and on a later tmux: tmux marks
+  // the pane dead at the hang-up and has its status only once it reaps the process. A viewer that
+  // exits does the same in a moment.
+  await panel.open({ argv: ["/bin/sh", "-c", 'trap "" HUP; exec 0<&- 1>&- 2>&-; sleep 4; exit 3'], cols: 80, rows: 20 });
+  await waitUntil(() => closed.length === 1, "the viewer's end", 12000);
+  assert.equal(closed[0].status, 3, `the status it exited with: ${JSON.stringify(closed[0])}`);
+});
+
+test("a viewer whose terminal hangs up and whose process lives on: where tmux reports its pane dead at the hang-up (3.4) it is over with no status once STATUS_WAIT_MS have passed, and its pane is killed, so the panel never keeps a terminal open that nothing will close (CI); where tmux keeps the pane live while its process runs (3.7c) it stays open until that process ends", { skip: NO_TMUX }, async (t) => {
+  const dir = mkdtempSync(join(base, "never-"));
+  const env = { ...process.env }; delete env.TMUX; delete env.TMUX_PANE;
+  const closed = [], traced = [];
+  const panel = createPanel({ dir: () => dir, env, capture: captureRows, onClosed: (event) => closed.push(event), trace: (text) => traced.push(text) });
+  let pid = null;
+  t.after(() => { panel.end(); if (pid !== null && alive(pid)) process.kill(pid, "SIGKILL"); rmSync(dir, { recursive: true, force: true }); });
+  // The process closes its terminal's files, ignores SIGHUP and sleeps on: tmux has no status for it.
+  const { id } = await panel.open({ argv: ["/bin/sh", "-c", 'trap "" HUP; exec 0<&- 1>&- 2>&- sleep 60'], cols: 80, rows: 20 });
+  const socket = panelSocket(dir), from = Date.now();
+  pid = Number(tmuxOn(socket, "list-panes", "-t", id, "-F", "#{pane_pid}"));
+  assert.ok(Number.isInteger(pid) && pid > 1, `the pane's process (${pid})`);
+  let deadAtHangUp = false;
+  for (const until = Date.now() + 3000; Date.now() < until && !deadAtHangUp;) {
+    try { deadAtHangUp = tmuxOn(socket, "list-panes", "-t", id, "-F", "#{pane_dead}") === "1"; } catch { break; }
+    if (!deadAtHangUp) await pause(100);
+  }
+  if (deadAtHangUp) {
+    await waitUntil(() => closed.length === 1, "the viewer's end", STATUS_WAIT_MS + 8000);
+    assert.ok(Date.now() - from >= STATUS_WAIT_MS - 1000, `not before the wait: ${Date.now() - from} ms`);
+    assert.deepEqual(closed[0], { id, status: null, stderr: "", asked: false });
+    assert.ok(traced.includes(`${id} no status after ${STATUS_WAIT_MS} ms`), traced.join("\n"));
+    await waitUntil(() => !panelWindows(socket).includes(id), "its window gone", 5000);
+  } else {
+    assert.deepEqual(closed, [], `${TMUX_VERSION} says the pane runs: it is open`);
+    process.kill(pid, "SIGKILL");
+    await waitUntil(() => closed.length === 1, "the viewer's end once its process is killed", 8000);
+    assert.deepEqual(closed[0], { id, status: null, stderr: "", asked: false }, "a signal ended it");
+  }
 });
 
 // When a viewer's session outlives a way out, what explains it: the viewer's two files (linked
