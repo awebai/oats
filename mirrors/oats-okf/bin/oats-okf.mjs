@@ -6,8 +6,11 @@ import { CONSULT } from '../lib/consult.mjs';
 import { initBase, migrate, deliverMigration, cutoverMigration, forgetMigration } from '../lib/migration.mjs';
 import { inspect } from '../lib/inspection.mjs';
 import { loadInvocationKnowledgeBinding } from '../lib/binding-wire.mjs';
-import { refuseLegacySettings, removeLegacySettings, soulOptOut } from '../lib/legacy-settings.mjs';
-const HELP=`oats okf inspect [--home PATH] [--json]
+import { refuseLegacySettings, removeLegacySettings } from '../lib/legacy-settings.mjs';
+import { writeHarvestPolicy, harvestPolicy } from '../lib/harvest-policy.mjs';
+const HELP=`oats okf status [--home PATH] [--json]
+  (spawn-recorded harvest duty: on, off, or unknown; no base/network read)
+oats okf inspect [--home PATH] [--json]
 oats okf bases [--fresh] [--json]
 oats okf index [--base ALIAS] [NODE | ALIAS/NODE] [--fresh] [--json]
 oats okf cat --base ALIAS PATH [--from PATH] [--fresh] [--json]
@@ -24,22 +27,20 @@ oats okf unlock --lock PATH --token TOKEN [--json]
 oats okf setup --remove-legacy-settings [--plan] --soul SOUL [--json]
   (from the deployment: deletes only settings.oats.okf.harvest/harvest-runtime/harvest-model
   from its oats-local.yaml; --plan writes nothing)
-Knowledge reaches the accepted base by proposal: at a checkpoint the working agent writes a
-short proposal and runs \`oats spawn oats.okf/knowledge-harvester --task-file FILE --relation unrelated\`
-(the spawn brief in TASK.md). All settings use one absolute bindings-file.
+Knowledge reaches the accepted base through reviewed proposals. Read the compulsory
+okf-propose skill for checkpoint, opt-out and spawn instructions; check oats okf status
+from your instance home. Consultation settings use one absolute bindings-file.
 `;
 // okf 5.0.0: the 4.x harvest surfaces refuse, naming the new way; they never
 // capture, run, complete or drain anything.
-// The proposal procedure is in the spawn brief only, so a soul that opts out
-// (knowledge: { harvest: off }) is never told to propose: the shared inject and
-// skills carry no harvest direction.
+// The shared inject and okf-propose skill own the conditional duty. The
+// provider writes its effective policy at spawn; TASK.md carries none of it.
 // The spawn hook answers no meta, on success or failure: the kernel keeps a
 // hook's meta as the receipt of external state, and a capability with no retire
 // hook that reported one is quarantined when the spawn rolls back. This hook
-// only writes STATE.md, log.md and notes/ in the home (removed with it) and
+// only writes working memory and the policy in the home (removed with it) and
 // primes the shared host cache.
-const PROPOSE=`At an important checkpoint (a decision made, a PR opened or handed over, a task finished), after updating STATE.md, log.md and notes/, propose what you learned when it passes the promotion test (knowledge-theory) and is not already accepted (\`oats okf search\` first). Write a short, self-contained Markdown proposal in your instance home (proposals/<YYYY-MM-DD>-<slug>.md) with: exactly one line \`Source: instance <your instance name>, home <your instance home>, soul <your soul's name>\` (a pointer for the harvester, which checks it against the deployment's records; never authority); What (the claim, one concept each); Why (why it outlives this task); Evidence (what was observed and when, the accepted concepts it confirms or contradicts, task refs); and optionally a \`## Backing notes\` section with one \`- notes/<file>.md\` entry per note, relative to your home (the harvester reads only those). No secrets, credentials or private paths outside the Source line. Never include personal data about people outside the team (clients, correspondents, any other third party): a name, a contact detail, or anything else that identifies a person, including detail derived from correspondence. Keep the lesson and leave the person out. Naming the author of a published source you cite is fine. That covers the names you choose as well: a note's file name, a task ref and an instance's name are published as provenance when knowledge is harvested. Then, from your instance home, run \`oats spawn oats.okf/knowledge-harvester --task-file <proposal> --relation unrelated\` (relation unrelated alone; no harness, model, wrapper or permission bypass). One proposal per checkpoint, with each concept a claim of its own in it, and claims only for the nodes you own: a lesson for a node you only read is not a claim; name it in one line, with that node, in your hand-back, for its owner. One harvester at a time: note the proposal and the harvester's instance name in log.md. A harvester retires once it has handed over; while \`oats status\` still lists the last one you spawned, don't spawn another: what you learn meanwhile goes into your next proposal. If you hand back with it still listed, name it and the claims still waiting in your hand-back; don't wait for it or spawn around it. Report a refused spawn rather than retrying it in a loop, and keep a proposal's backing notes until its harvester has retired. You need not stay alive: retirement's recovery copy can supply the source, and the harvester snapshots verified inputs at spawn. Do not dispose of that recovery before capture. Nothing durable, no proposal.`;
-const NEW_WAY='at a checkpoint the working agent writes a short proposal and runs `oats spawn oats.okf/knowledge-harvester --task-file <proposal> --relation unrelated` from its instance home (its spawn brief in TASK.md); oats.okf 5.0 keeps no source custody, runs or drains and never processes 4.x ones (README#upgrading-to-50)';
+const NEW_WAY='the working agent follows the compulsory okf-propose skill and checks `oats okf status` from its instance home before proposing at a finished task or PR hand-over; oats.okf 5.0 keeps no source custody, runs or drains and never processes 4.x ones (README#upgrading-to-50)';
 const removed=(what)=>fail('E_REMOVED',`${what} was removed in oats.okf 5.0: ${NEW_WAY}`);
 const args=process.argv.slice(2);
 if(args.includes('--help') || args.includes('-h')) {process.stdout.write(HELP);}
@@ -67,7 +68,7 @@ else {
     for(const name of ['OATS_SOURCE_RECEIPT_FILE','OATS_INVOCATION_CONTEXT_FILE']) if(Object.hasOwn(process.env,name)) removed(`the captured source receipt/invocation context (${name})`);
     if(flags.source!==undefined) removed('--source (a 4.x source descriptor)');
     const accepted={
-      spawn:[],'soul-scaffold':[],inspect:['home'],read:['home','base','path','fresh'],refresh:['home'],
+      spawn:[],'soul-scaffold':[],status:['home'],inspect:['home'],read:['home','base','path','fresh'],refresh:['home'],
       bases:['home','fresh'],index:['home','base','fresh'],cat:['home','base','from','fresh'],ls:['home','base','fresh'],
       links:['home','base','fresh'],search:['home','base','all','node','regex','case-sensitive','fresh'],
       setup:['remove-legacy-settings','plan','harvest','enable','disable','install-host','remove-schedules'],init:['base','nodes','output','confirm'],
@@ -77,8 +78,9 @@ else {
     if(!cleanup && loadInvocationKnowledgeBinding().kind==='captured' && ['setup','init','migrate','unlock'].includes(event)) fail('E_MIGRATION',`captured ${event} is not supported; use an explicit operator administration path`);
     const home=resolve(flags.home || process.env.OATS_INSTANCE_HOME || process.env.OATS_HOME || process.cwd());
     let result;
-    if(event==='read') fail('E_REMOVED','okf 4.0.0 removed read: use `oats okf cat --base ALIAS PATH` (same path, text and receipt)');
-    if(consult) {const answer=CONSULT[event](consultSource(home),flags,positionals);result=answer.result;text=answer.text;}
+    if(event==='status') result=harvestPolicy(home);
+    else if(event==='read') fail('E_REMOVED','okf 4.0.0 removed read: use `oats okf cat --base ALIAS PATH` (same path, text and receipt)');
+    else if(consult) {const answer=CONSULT[event](consultSource(home),flags,positionals);result=answer.result;text=answer.text;}
     else if(event==='refresh') fail('E_REMOVED','okf 3.0.0 has no per-instance views; index/cat always read the accepted state: run `oats okf index`, then `oats okf cat --base ALIAS PATH`');
     else if(event==='soul-scaffold') {
       // Souls are portable declarations, never an implicit knowledge store.
@@ -86,9 +88,9 @@ else {
     } else if(event==='spawn') {
       if(service(home)) result={brief:'Service agent: follow your own task; no working-memory upkeep.'};
       else {
-        const {decl,warnings}=checkSeat(home);ensureInstanceKnowledge(home);
-        const nodes=(list)=>list.join(', ') || 'none',optOut=soulOptOut();
-        result={brief:`Your soul knowledge is read remotely at its accepted state; there is no local copy. Start every task with your instance knowledge (STATE.md, log.md, notes/), then \`oats okf index\` (owns: ${nodes(decl.owns)}; reads: ${nodes(decl.reads.filter(r=>!decl.owns.includes(r)))}) and \`oats okf cat --base ALIAS PATH\` for the concepts the task needs; \`oats okf search\` before re-deriving a decision. Load okf-consultation and okf-instance-knowledge. Never edit accepted knowledge. ${optOut?'Your soul opts out of harvest (knowledge: { harvest: off }): keep your instance knowledge for your own work, and never propose knowledge or spawn a knowledge harvester.':PROPOSE}`,
+        const {decl,warnings}=checkSeat(home);ensureInstanceKnowledge(home);writeHarvestPolicy(home);
+        const nodes=(list)=>list.join(', ') || 'none';
+        result={brief:`Your soul knowledge is read remotely at its accepted state; there is no local copy. Start every task with your instance knowledge (STATE.md, log.md, notes/), then \`oats okf index\` (owns: ${nodes(decl.owns)}; reads: ${nodes(decl.reads.filter(r=>!decl.owns.includes(r)))}) and \`oats okf cat --base ALIAS PATH\` for the concepts the task needs; \`oats okf search\` before re-deriving a decision. Load okf-consultation and okf-instance-knowledge. Never edit accepted knowledge.`,
           ...(warnings.length?{warning:`oats-okf: ${warnings.join('; ')}`}:{})};
       }
     } else if(event==='inspect') result=inspect(consultSource(home));

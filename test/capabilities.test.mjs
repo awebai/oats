@@ -3206,10 +3206,15 @@ test("with the knowledge layer active, ONE block owns the protocol (reviewer-foc
     "assigned soul-maintenance work is distinguished from promotion of learnings");
 });
 
-test("checkpoint briefing and package skills give an independent harvester the proposal, not completion custody", t => {
+test("capability instructions and package skills give an independent harvester the proposal, not completion custody", t => {
   const f = okfFixture(t);
   write(join(f.home, "notes/lesson.md"), "A durable source observation.\n");
-  assert.match(readFileSync(join(f.home, "TASK.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
+  assert.doesNotMatch(readFileSync(join(f.home, "TASK.md"), "utf8"), /harvest|propos|okf-propose/i);
+  const instructions = readFileSync(join(f.home, "AGENTS.md"), "utf8");
+  assert.match(instructions, /IMPORTANT/);
+  assert.match(instructions, /\*\*okf-propose\*\* skill is \*\*compulsory\*\*/);
+  assert.deepEqual(f.cli(["okf", "status", "--json"], f.as(f.source)), { harvest: "on", reason: "default" });
+  assert.match(readFileSync(join(f.home, ".agents/skills/okf-propose/SKILL.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
   const file = f.proposal(), run = f.propose({ file });
   assert.equal(lstatSync(join(run.home, "work")).isSymbolicLink(), false);
   assert.ok(readFileSync(join(run.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));

@@ -841,9 +841,14 @@ fails, the spawn result still carries the instance receipt, plus
 
 ## Knowledge harvest and review
 
-**oats.okf 5.0 does not schedule harvest jobs.** At important checkpoints a
-working instance updates its notes, writes its own proposal (what to save,
-why, and backing notes), and directly spawns the package harvester:
+**oats.okf 5.x does not schedule harvest jobs.** In 5.2 the capability's
+IMPORTANT inject and compulsory `okf-propose` skill give the duty, not TASK.md.
+A working instance keeps its notes current, checks `oats okf status`, and at
+a finished task or PR hand-over proposes only durable, non-duplicate claims.
+At most one proposal per completed unit of work, one harvester at a time,
+and no spawn under memory pressure or below 8 GB available; otherwise defer
+and hand back the pending claims. Most checkpoints propose nothing. When the
+skill's gates pass, the instance directly spawns the package harvester:
 
 ```sh
 oats spawn oats.okf/knowledge-harvester --task-file <proposal> --relation unrelated
