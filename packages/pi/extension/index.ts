@@ -8,7 +8,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { appendLogEntry, PACKAGED_SKILLS_DIR } from "./core-loader.mjs";
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export default function (pi: ExtensionAPI) {
@@ -44,13 +44,12 @@ export default function (pi: ExtensionAPI) {
       }, { deliverAs: "steer" });
     });
 
-    pi.on("session_start", async (event) => {
+    pi.on("session_start", async (event, ctx) => {
       if (event.reason !== "startup" && event.reason !== "resume" && event.reason !== "new") return;
-      const statePath = join(agentHome!, "STATE.md");
-      if (!existsSync(statePath)) return;
-      const state = readFileSync(statePath, "utf8");
-      const touched = !/_No task assigned yet/.test(state) || !/_\(the single next action/.test(state);
-      if (event.reason === "startup" && !touched) return;
+      if (!existsSync(join(agentHome!, "STATE.md"))) return;
+      // A home's first startup gets no resume nudge, whatever a capability
+      // seeded into its STATE.md.
+      if (event.reason === "startup" && !hasWorkedBefore(agentHome!, ctx)) return;
       pi.sendMessage({
         customType: "oats-memory",
         content: `You are agent instance home ${agentHome}. Read ./STATE.md and the recent entries of ./log.md now, then continue from STATE.md's "Next" section. Keep STATE.md current as you work.`,
@@ -58,6 +57,50 @@ export default function (pi: ExtensionAPI) {
       }, { deliverAs: "steer", triggerTurn: false });
     });
   }
+}
+
+/**
+ * Whether pi kept an earlier session of this home. pi files a session only
+ * once it holds a message (an assistant one in pi 0.80.3,
+ * core/session-manager.js:641-665; any in pi 1.x), groups sessions by working
+ * directory, and starts each file with a header naming its cwd and start time
+ * (docs/session-format.md). A session that started before the home was
+ * created belongs to an earlier instance of the same name. Where the birth
+ * time is unknown (0, or ctime, which libuv reports without statx) none is
+ * told apart. A file last written before the home was created is skipped
+ * unread. Unreadable history reads as none: memory automation must never
+ * break a session.
+ */
+function hasWorkedBefore(home: string, ctx: ExtensionContext): boolean {
+  try {
+    const sessions = ctx.sessionManager;
+    const dir = sessions.getSessionDir();
+    const current = sessions.getSessionFile();
+    const cwd = sessions.getCwd();
+    const { birthtimeMs, ctimeMs } = statSync(home);
+    const born = birthtimeMs !== ctimeMs ? birthtimeMs : 0;
+    const head = Buffer.alloc(16 * 1024);
+    for (const name of readdirSync(dir)) {
+      const file = join(dir, name);
+      if (!name.endsWith(".jsonl") || file === current) continue;
+      if (statSync(file).mtimeMs < born) continue;
+      const header = sessionHeader(file, head);
+      if (header?.type === "session" && header.cwd === cwd && typeof header.timestamp === "string" && Date.parse(header.timestamp) >= born) return true;
+    }
+  } catch { /* no history read */ }
+  return false;
+}
+
+/** A session file's first line, parsed, or undefined. Only its head is read. */
+function sessionHeader(file: string, head: Buffer): { type?: unknown; cwd?: unknown; timestamp?: unknown } | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openSync(file, "r");
+    const text = head.subarray(0, readSync(fd, head, 0, head.length, 0)).toString("utf8");
+    const end = text.indexOf("\n");
+    return end < 0 ? undefined : JSON.parse(text.slice(0, end));
+  } catch { return undefined; }
+  finally { if (fd !== undefined) closeSync(fd); }
 }
 
 /**

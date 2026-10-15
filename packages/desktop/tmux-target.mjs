@@ -76,7 +76,10 @@ export function viewerPrefix(pid) {
  *      interaction is raw input to the pty and unaffected.
  * Destroying the source window then TERMINATES the viewer (its only window
  * is gone → pty exits → the tab shows "session ended") — verified
- * empirically; it can never activate a sibling.
+ * empirically; it can never activate a sibling. The pty exit rests on the
+ * viewer's own detach-on-destroy on: with a global `detach-on-destroy off`
+ * tmux would otherwise move the client to another session (often another
+ * viewer) and the tab would show another agent under the old name (#1237).
  *
  * Cleanup contract: kill ONLY the viewer session (=-anchored, unique name);
  * killing the viewer never kills the linked source window (link refcount).
@@ -176,6 +179,12 @@ export function openTerm(spec, io) {
     // The Desktop already labels this terminal. Hide only its viewer's
     // status bar; the durable agent session keeps the operator's settings.
     io.tmux(["set-option", "-t", viewer, "status", "off"]);
+    // When the source window dies the viewer is destroyed; this makes tmux
+    // DETACH its client (pty exits → "session ended") instead of moving it
+    // to another session, whatever the operator's global detach-on-destroy
+    // (#1237). Viewer-scoped only, never -g: the operator's global and own
+    // sessions are untouched.
+    io.tmux(["set-option", "-t", viewer, "detach-on-destroy", "on"]);
     const pty = io.spawnPty(`=${viewer}`, Math.max(20, Number(spec.cols) || 80), Math.max(5, Number(spec.rows) || 24));
     return { target, viewer, pty, killViewer };
   } catch (e) {

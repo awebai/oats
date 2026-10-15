@@ -49,6 +49,11 @@ this is an algorithmic-shape measurement, not a native latency benchmark.
 - tmux component validation/anchors, saved socket, linked-window-only viewer,
   source-death isolation and the provisioned locked key table (wheel scrollback
   and drag-to-select) are unchanged.
+  Each viewer is created with its own `detach-on-destroy on` (`-t <viewer>`,
+  never `-g`): when the source window dies, tmux detaches the client and the
+  PTY exits ("session ended"), instead of moving it to another session (often
+  another tab's viewer) under an operator's global `detach-on-destroy off`
+  (#1237). The operator's global option and own sessions are untouched.
   Cleanup targets only the exact owned viewer, never the durable source.
 - PTY exit and confirmed viewer cleanup are both necessary to release a slot.
   A successful exact-name inventory can confirm an already-absent viewer;
@@ -94,6 +99,18 @@ there is no synchronous IPC or awaited keystroke round trip.
   **terminal did not become ready; closed**. Neither is a healthy terminal or
   silently removed tab. Only confirmed explicit close disposes a pending view.
   Late completion must not steal a newer workspace/stage/selection or focus.
+- A retired instance's tabs close on roster evidence (#1237). A tab is keyed
+  by home + incarnation `createdAt`; the pure rule is
+  `renderer/retired-tabs.mjs` `retiredTabs(tabs, panel)`. Retired means a
+  successful, current read of the deployment lists the same home with another
+  incarnation, or its reached host no longer lists it (a remote row the kernel
+  marks gone), or no longer lists it at all. An unreachable server, a
+  kept/stale read or a filtered read that did not ask that server is never
+  evidence, not even for the facts its held rows were last read with. A stopped instance keeps its tab. Every
+  matching tab closes in every group of the workspace through the normal
+  close (next tab, else previous; empty groups stay); focus follows only if
+  it was in a closed tab. A hidden workspace is reconciled on its next roster
+  read, and a respawn under the same name opens a new tab.
 
 ## Remote reconnect (renderer)
 
