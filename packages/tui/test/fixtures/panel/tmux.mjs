@@ -141,6 +141,9 @@ async function controlMode() {
   const out = (text) => process.stdout.write(text);
   let number = 0, captures = 0, attached = false;
   const buffers = new Map();
+  // The panes this client paused (refresh-client -A '%N:pause'): tmux prints `%pause %N` inside the
+  // command's block when it pauses one, and `%continue %N` when it continues a paused one.
+  const paused = new Set();
   const held = [], early = [];
   // As tmux 3.7c: the client's own command list (the start: new-session, then the options) is
   // answered first, one block per command with flags 0, and a command that came on stdin before
@@ -199,6 +202,10 @@ async function controlMode() {
     } else if (name === "delete-buffer") {
       const into = /-b (\S+)/.exec(line)?.[1];
       if (!buffers.delete(into)) failed = `unknown buffer: ${into}`;
+    } else if (name === "refresh-client") {
+      const [, pane, what] = /^refresh-client -A '(%\d+):(pause|continue)'$/.exec(line) ?? [];
+      if (what === "pause" && !paused.has(pane)) { paused.add(pane); lines = [`%pause ${pane}`]; }
+      else if (what === "continue" && paused.delete(pane)) lines = [`%continue ${pane}`];
     } else if (name === "display") {
       if (step.paneGone) failed = `can't find pane: ${/-t (%\d+)/.exec(line)?.[1]}`;
       else lines = [step.cursor ?? "3 4 1"];
