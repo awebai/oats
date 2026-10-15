@@ -13,7 +13,7 @@ import { dirname, resolve } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { soulsData, capabilitiesData, soulCapabilitiesOf } from '../../client/deployment-data.mjs';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../../client/soul-colors.mjs';
+import { soulRows } from '../../client/soul-rows.mjs';
 import { catalogCSS, renderCapabilities, renderCapabilitySections, capabilitySections, composes, soulsUsing, rosterAgentName, soulsComposition, SOULS_CAPABILITIES_FEATURE } from '../renderer/workspace-catalog.mjs';
 import { renderCapabilityPage } from '../renderer/capability-page.mjs';
 import { SOULS_STALE_TITLE, ROSTER_STALE_TITLE } from '../renderer/loading.mjs';
@@ -90,11 +90,11 @@ test('anything but the contract\'s entry shape refuses the document (the parse\'
 test('/api/agents carries each soul\'s composition (a copy; null kept; absent stays absent)', () => {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
-  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
+  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'soulRows', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const run = catalogSouls => {
     const snapshot = { byWs: new Map([['/d', { deployment: { status: 'observed', root: ROOT, souls: [], catalog: { souls: catalogSouls, ambiguous: [], reason: null } } }]]) };
     const ws = { id: '/d', name: 'fixture', roots: [ROOT] };
-    return Object.fromEntries(agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents.map(a => [a.key, a]));
+    return Object.fromEntries(agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, soulRows)().agents.map(a => [a.key, a]));
   };
   const souls = soulsData(capture('souls')).souls, agents = run(souls);
   assert.deepEqual(agents.dev.capabilities, souls.find(s => s.key === 'dev').capabilities);
