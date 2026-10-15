@@ -21,7 +21,7 @@ import { LAUNCH_PREFERENCE_UNMATCHED, LAUNCH_PROBLEM_TEXT_MAX, UNMATCHED_FIX, la
 import { launchReportFor } from "../lib/core.mjs";
 import { previewFailure } from "../packages/client/spawn-preview-contract.mjs";
 import { cliSpawnPreview } from "../packages/client/spawn-preview-cli.mjs";
-import { createSpawnPreviewBoundary } from "../packages/desktop/server/spawn-preview.mjs";
+import { createSpawnPreviewBoundary } from "../packages/client/spawn-preview.mjs";
 import { spawnApplyReason } from "../packages/client/spawn-apply-contract.mjs";
 import { spawnProblem } from "../packages/client/spawn-messages.mjs";
 import { launchOf, REPORT_FROM } from "../packages/client/launch-contract.mjs";

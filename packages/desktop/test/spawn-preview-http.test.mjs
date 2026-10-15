@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
 import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
-import { createSpawnPreviewBoundary, createSpawnPreviewCache } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewCache } from '../../client/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';

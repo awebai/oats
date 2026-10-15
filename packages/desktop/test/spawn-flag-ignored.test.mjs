@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { spawnCreationReceipt, spawnApplyView } from '../../client/spawn-apply-contract.mjs';
 import { launchFlagIgnored, flagIgnoredFact, FLAG_IGNORED_WARNINGS, FLAG_IGNORED_UNITS, FLAG_IGNORED_BYTES, LAUNCH_DIAGNOSTIC_BYTES } from '../../client/launch-prompt-outcome.mjs';
 import { DETAIL_WITHHELD, MAX_DISPLAY_LINE } from '../../client/display-text.mjs';
-import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
+import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { target, selector, data, kernel, cli as CLI, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 import { creation } from './helpers/spawn-apply-fixture.mjs';
 import { flagIgnored, EXAMPLE_WARNING_TWO, EXAMPLE_WARNING_ONE } from './helpers/launch-prompt-fixture.mjs';
@@ -128,7 +128,7 @@ test('the broker keeps the fact on its reply, for the apply and for every later 
     assert.deepEqual(spawnApplyView(JSON.parse(JSON.stringify(main)), { workspace: 'northwind', ref: prepared.spawnRef, selector }).receipt.flagIgnored, fact);
   }
   // The server holds no logic of its own for it: it passes the kernel's result to the receipt and reserves the bound.
-  const server = read('../server/spawn-apply.mjs');
+  const server = read('../../client/spawn-apply.mjs');
   assert.doesNotMatch(server, /'flag-ignored'|\.flagIgnored|launchFlagIgnored|flagIgnoredFact|flagIgnoredNotice|channels-unavailable|launchPrompts\.status/);
   assert.match(server, /Math\.max\(LAUNCH_DIAGNOSTIC_BYTES, FLAG_IGNORED_BYTES\)/);
 });

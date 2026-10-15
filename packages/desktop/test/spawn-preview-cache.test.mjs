@@ -5,8 +5,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createSpawnPreviewBoundary, createSpawnPreviewCache, PREVIEW_CACHE_TTL_MS } from '../server/spawn-preview.mjs';
-import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewCache, PREVIEW_CACHE_TTL_MS } from '../../client/spawn-preview.mjs';
+import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { selector, context, request, data, envelope, deferred, tick } from './helpers/spawn-preview-fixture.mjs';
 
 function fixture({ reply = () => envelope(data()), ttlMs, limit } = {}) {
@@ -100,9 +100,9 @@ test('the shipped wiring: the dialog route and prepare both read through the one
   const web = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const route = web.slice(web.indexOf("if (path === '/api/workspace-spawn-preview'"), web.indexOf("if (path === '/api/workspace-readiness'"));
   assert.match(route, /await spawnPreviewCachedRequest\(request, getContext\)/);
-  const apply = readFileSync(new URL('../server/spawn-apply.mjs', import.meta.url), 'utf8');
+  const apply = readFileSync(new URL('../../client/spawn-apply.mjs', import.meta.url), 'utf8');
   assert.match(apply, /read = spawnPreviewPrepareRequest\b/);
-  const preview = readFileSync(new URL('../server/spawn-preview.mjs', import.meta.url), 'utf8');
+  const preview = readFileSync(new URL('../../client/spawn-preview.mjs', import.meta.url), 'utf8');
   assert.match(preview, /export const spawnPreviewCachedRequest = createSpawnPreviewBoundary\(\{ cache: spawnPreviewCache, maxAge: PREVIEW_MAX_AGE_S \}\);/);
   assert.match(preview, /export const spawnPreviewPrepareRequest = createSpawnPreviewBoundary\(\{ cache: spawnPreviewCache \}\);/);
   assert.match(preview, /export const PREVIEW_MAX_AGE_S = 60;/);

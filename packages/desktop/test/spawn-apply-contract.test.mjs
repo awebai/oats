@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { discover } from '../../client/cli-locator.mjs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary } from '../../client/spawn-preview.mjs';
 import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { spawnDecision, spawnEffective, sameSpawnDecision } from '../../client/spawn-decision.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnRefInput, spawnPreparedData, spawnWake, spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';

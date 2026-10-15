@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { acceptProbe } from '../../client/cli-locator.mjs';
 import { harnessList, harnessOf, harnessFlag, harnessKey } from '../../client/harness-names.mjs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary } from '../../client/spawn-preview.mjs';
 import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { spawnCreationReceipt } from '../../client/spawn-apply-contract.mjs';
 import { deploymentStatusData } from '../../client/deployment-data.mjs';

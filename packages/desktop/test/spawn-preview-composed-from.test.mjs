@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary } from '../../client/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewData, previewComposedFrom } from '../../client/spawn-preview-contract.mjs';
 import { composePreviewModules, moduleWhyText, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';

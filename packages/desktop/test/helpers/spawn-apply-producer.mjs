@@ -4,7 +4,7 @@
 // captured preview for the same purpose.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createSpawnApplyBoundary } from '../../server/spawn-apply.mjs';
+import { createSpawnApplyBoundary } from '../../../client/spawn-apply.mjs';
 import { cliSpawnApply } from '../../../client/spawn-apply-cli.mjs';
 import { spawnApplyView } from '../../../client/spawn-apply-contract.mjs';
 import { cli, kernel, DEPLOYMENT, ROOT } from './spawn-preview-fixture.mjs';

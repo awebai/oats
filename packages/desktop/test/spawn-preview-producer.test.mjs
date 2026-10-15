@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary } from '../../client/spawn-preview.mjs';
 import { previewData, INSTANCE_NAME_MAX } from '../../client/spawn-preview-contract.mjs';
 import { cli, kernel, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 import { harnessOf } from '../../client/harness-names.mjs';

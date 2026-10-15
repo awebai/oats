@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
+import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { spawnCreationReceipt, spawnWakeOutcome, WAKE_OUTCOME_UNKNOWN } from '../../client/spawn-apply-contract.mjs';
 import { selector, target, anchor, deferred, tick, DEPLOYMENT } from './helpers/spawn-preview-fixture.mjs';
 import { applyContext, applyPreview, creation, envelope } from './helpers/spawn-apply-fixture.mjs';
