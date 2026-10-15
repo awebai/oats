@@ -310,7 +310,7 @@ unit with the steps the message prints, then rerun `install`:
 - Linux: `systemctl --user disable --now <unit>`, then remove the file;
 - macOS: `launchctl bootout gui/<uid>/<label>`, then remove the file.
 
-On macOS, run it from the Mac's desktop login (see the launchd fallback).
+On macOS, run it at the desktop login: over ssh it writes the plist, then fails (`E_WAKE_UNIT`); rerun it there.
 
 ### Fallback: a hand-written unit
 
