@@ -133,7 +133,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `spawn-kernel-codes` | `oats spawn`, apply and `--preview`, answers the kernel's own code, as raised, whatever stage of the spawn raised it; `E_SPAWN_FAILED` is for an error with no kernel code (with `details.cause`, as the lifecycle commands' general codes have it). A code says nothing about how far the spawn got: `details.unconfirmed` does. Details are those each code had before; OATS 0.56.0 ([spawn errors](#spawn-errors)). A kernel without it answers `E_SPAWN_FAILED` for most kernel codes its kernel stage raised: there, that code may hide one | |
 | `roster-workspace-key` | `oats server roster --workspace-key <key>`, repeatable: only the groups that can belong to one of the given workspaces are probed and returned (registered for one of them, registered with no known `workspaceKey`, or saved routes only); the answer's shape is unchanged, OATS 0.56.0 ([The remote roster](#roster-workspace-key)). Gate on the probe: a kernel without it ignores the flag and probes and answers every group | |
 | `spawn-apply-max-age` | `--max-age <s>` on a spawn apply bound by `--expect-decision <revision>`: the apply reuses member heads as the preview does, its decision fence unchanged, and its answer carries no `observation` block, OATS 0.58.0 ([Apply](#apply)). Gate on the probe: a kernel without it refuses the flag on an apply (`E_BAD_ARGS`) | |
-| `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.58.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
+| `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.59.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -2870,7 +2870,7 @@ its absence.
   against its session (as `oats session inspect` observes it) and reads
   `null` unless a harness runs there.
 - <a id="row-retire"></a>**`retire`** (feature `status-retire-state`, OATS
-  0.58.0): `{state, since, self, code?, message?}` while a retire of the home
+  0.59.0): `{state, since, self, code?, message?}` while a retire of the home
   is running, scheduled or owed; absent otherwise, and from older kernels.
   `retirePending` keeps its meaning (the self-retire marker is there) and is
   not replaced. Status only reads: it takes no claim, removes no file and
@@ -3072,7 +3072,7 @@ route target:
   `producer`) is `null`, and an unknown `reason` or an invalid `message` is
   `null` inside a claim that still counts. As on a local row, the host
   reports a claim only for a running instance.
-- **`retire`** (feature `status-retire-state`, OATS 0.58.0) is on a row only
+- **`retire`** (feature `status-retire-state`, OATS 0.59.0) is on a row only
   when the host's row has the key: a host whose kernel predates the feature,
   and a saved route the host did not list, carry none. When present it is
   passed through the [local row's](#row-retire) rule again on this side: a
