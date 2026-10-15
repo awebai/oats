@@ -93,11 +93,11 @@ export function admitSpawnSelection(selector, choices, { workspace: w, cli, agen
 /** One read of a preview. `flights` (createSpawnPreviewFlights) is required: the reads of one preview share it,
  * and a cache given here must run on its clock. maxAge: the dialog's reads may reuse member heads the kernel
  * observed within that many seconds (feature spawn-preview-max-age, passed only when the admitted CLI
- * advertises it). Prepare's reads never do. */
-export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = null, maxAge = null, flights } = {}) {
+ * advertises it). Prepare's reads never do. exec: as createSpawnPreview's. */
+export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = null, maxAge = null, flights, exec } = {}) {
   if (!flights?.slots || !flights.byInvoker || !flights.started || typeof flights.clock !== 'function') throw missing('createSpawnPreviewBoundary', 'flights (createSpawnPreviewFlights)');
   if (cache && cache.clock !== flights.clock) throw new TypeError('createSpawnPreviewBoundary: the cache must run on the flights\' clock');
-  const { slots, byInvoker, started } = flights;
+  const { slots, byInvoker, started } = flights, io = exec ? [{ exec }] : [];
   return async function read(request, getContext) {
     try {
       if (!record(request) || request.action !== 'preview' || Object.keys(request).some(k => !['action', 'selector', 'choices'].includes(k))) return previewFailure('E_BAD_ARGS');
@@ -115,7 +115,7 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = n
       if (!pending.has(key)) {
         if (slots.size >= 2) return previewFailure('E_BUSY', target);
         const slot = {}; slots.add(slot);
-        const flight = Promise.resolve().then(() => invoke(cli, { target, choices, ...reuse })).then(envelope => {
+        const flight = Promise.resolve().then(() => invoke(cli, { target, choices, ...reuse }, ...io)).then(envelope => {
           if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target, envelope?.error?.message, envelope?.error?.details?.fix);
           const data = previewData(envelope.result, target, { composedFrom: previewComposedFrom(cli) });
           return data ? { spawnPreviewViewApi: 1, status: 'available', target, data, reason: null } : previewFailure('E_CLI_PROTOCOL', target);
@@ -136,13 +136,17 @@ export const PREVIEW_MAX_AGE_S = 60;
  *   prepareRead  prepare's read (spawn-apply.mjs createSpawnApplyBoundary's `read`), through the same cache,
  *                never with maxAge; a reusing read and a live one never coalesce
  *   cache        `invalidate(workspace?)` (no argument: every workspace's answers) and `size()`
- * The two reads share one two-slot budget, one set of coalesced flights and one clock, the cache's too. */
-export function createSpawnPreview({ invoke = cliSpawnPreview, now = () => performance.now(), ttlMs = PREVIEW_CACHE_TTL_MS, limit = 64, maxAge = PREVIEW_MAX_AGE_S } = {}) {
+ * The two reads share one two-slot budget, one set of coalesced flights and one clock, the cache's too.
+ *   exec  optional: the client's own execFile, passed to `invoke` as `invoke(cli, options, { exec })` for both
+ *         reads (cli-adapter.mjs `runJson` has the rule); without it `invoke` is given no third argument and
+ *         cliSpawnPreview's own default runs. A read is a read: its options carry no `detached` and a 30 s
+ *         deadline, and it ends with its caller. */
+export function createSpawnPreview({ invoke = cliSpawnPreview, exec, now = () => performance.now(), ttlMs = PREVIEW_CACHE_TTL_MS, limit = 64, maxAge = PREVIEW_MAX_AGE_S } = {}) {
   const flights = createSpawnPreviewFlights();
   const cache = createSpawnPreviewCache({ ttlMs, limit, now, clock: flights.clock });
   return {
-    read: createSpawnPreviewBoundary({ invoke, cache, maxAge, flights }),
-    prepareRead: createSpawnPreviewBoundary({ invoke, cache, flights }),
+    read: createSpawnPreviewBoundary({ invoke, cache, maxAge, flights, exec }),
+    prepareRead: createSpawnPreviewBoundary({ invoke, cache, flights, exec }),
     cache: { invalidate: workspace => cache.invalidate(workspace), size: () => cache.size() },
   };
 }

@@ -128,7 +128,7 @@ test('the shipped wiring: the dialog route and prepare both read through the Des
   assert.match(route, /await spawnPreview\.read\(request, getContext\)/);
   assert.match(web, /\nconst spawnPreview = createSpawnPreview\(\);\nconst spawnApplyRequest = createSpawnApplyBoundary\(\{ read: spawnPreview\.prepareRead \}\);\n/);
   const preview = readFileSync(new URL('../../client/spawn-preview.mjs', import.meta.url), 'utf8');
-  assert.match(preview, /read: createSpawnPreviewBoundary\(\{ invoke, cache, maxAge, flights \}\),\n\s*prepareRead: createSpawnPreviewBoundary\(\{ invoke, cache, flights \}\),/);
+  assert.match(preview, /read: createSpawnPreviewBoundary\(\{ invoke, cache, maxAge, flights, exec \}\),\n\s*prepareRead: createSpawnPreviewBoundary\(\{ invoke, cache, flights, exec \}\),/);
   assert.match(preview, /maxAge = PREVIEW_MAX_AGE_S \}/);
   assert.match(preview, /export const PREVIEW_MAX_AGE_S = 60;/);
 });

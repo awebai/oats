@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { discover } from '../../client/cli-locator.mjs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
+import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
+import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { spawnDecision, spawnEffective, sameSpawnDecision } from '../../client/spawn-decision.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnRefInput, spawnPreparedData, spawnWake, spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
@@ -127,4 +128,49 @@ test('kernel preview bytes cross the injected argv/boundary with the decision th
   assert.equal(response.data.decision.revision, raw.decision.revision);
   assert.deepEqual(spawnPreparedData(response.data, response.target).decision, response.data.decision);
   assert.equal(kernel('apply-bound').result.decision.revision, raw.decision.revision, 'the captured apply bound this very decision');
+});
+test('a client\'s exec runs every read and apply, through the CLI callers: one call each; a read carries no detached and its 30 s deadline', async () => {
+  const stored = kernel('preview-worktree-purpose'), raw = stored.result, selected = { soul: raw.subject.soul, agentsRoot: raw.subject.agentsRoot };
+  const c = { workspace: { id: 'northwind', scope: raw.subject.dir }, cli: capable(), agents: [{ name: selected.soul, agentsRoot: selected.agentsRoot, work: raw.work }], instances: [] };
+  const seen = [];
+  const exec = (_bin, argv, options, callback) => {
+    seen.push({ argv, options });
+    callback(null, JSON.stringify(argv.includes('--preview') ? stored : kernel('apply-bound')));
+    return { kill() {} }; // the child: what the apply's deadline signals
+  };
+  const preview = createSpawnPreview({ exec }), broker = createSpawnApplyBoundary({ read: preview.prepareRead, exec });
+  const choices = { purpose: 'api-v2' };
+  assert.equal((await preview.read({ action: 'preview', selector: selected, choices }, () => c)).status, 'available');
+  assert.equal(seen.length, 1, 'the dialog\'s read');
+  preview.cache.invalidate(); // prepare reads fresh: no held answer
+  const prepared = await broker({ action: 'prepare', selector: selected, choices, task: '' }, () => c);
+  assert.equal(prepared.status, 'prepared'); assert.equal(seen.length, 2, 'prepare\'s read');
+  await broker({ action: 'apply', spawnRef: prepared.spawnRef }, () => c);
+  assert.equal(seen.length, 3, 'the apply');
+  assert.ok(seen[2].argv.includes('--idempotency-key') && !seen[2].argv.includes('--preview'));
+  for (const { argv, options } of seen.slice(0, 2)) {
+    assert.ok(argv.includes('--preview'));
+    assert.equal(Object.hasOwn(options, 'detached'), false, 'a read is a read: it ends with its caller');
+    assert.equal(options.timeout, 30000);
+  }
+});
+test('without an exec the callers are given no third argument; with one, exactly { exec }', async () => {
+  const stored = kernel('preview-worktree-purpose'), raw = stored.result, selected = { soul: raw.subject.soul, agentsRoot: raw.subject.agentsRoot };
+  const c = { workspace: { id: 'northwind', scope: raw.subject.dir }, cli: capable(), agents: [{ name: selected.soul, agentsRoot: selected.agentsRoot, work: raw.work }], instances: [] };
+  const exec = () => assert.fail('the callers are doubles here');
+  for (const given of [undefined, exec]) {
+    const reads = [], applies = [];
+    const preview = createSpawnPreview({ ...(given ? { exec: given } : {}), invoke: (...args) => { reads.push(args); return stored; } });
+    const broker = createSpawnApplyBoundary({ read: preview.prepareRead, ...(given ? { exec: given } : {}), invoke: (...args) => { applies.push(args); return { started: false, envelope: { schemaVersion: 1, ok: false, error: { code: 'E_DECISION_STALE' } } }; } });
+    await preview.read({ action: 'preview', selector: selected, choices: { purpose: 'api-v2' } }, () => c);
+    preview.cache.invalidate();
+    const prepared = await broker({ action: 'prepare', selector: selected, choices: { purpose: 'api-v2' }, task: '' }, () => c);
+    assert.equal(prepared.status, 'prepared');
+    await broker({ action: 'apply', spawnRef: prepared.spawnRef }, () => c);
+    assert.equal(reads.length, 2); assert.equal(applies.length, 1);
+    for (const args of [...reads, ...applies]) {
+      if (given) { assert.equal(args.length, 3); assert.deepEqual(Object.keys(args[2]), ['exec']); assert.equal(args[2].exec, exec); }
+      else assert.equal(args.length, 2, 'no exec: the caller\'s own default runs');
+    }
+  }
 });

@@ -25,12 +25,18 @@ const scopeKey = c => JSON.stringify([c?.workspace?.id, c?.workspace?.scope, c?.
   c?.cli?.bin, c?.cli?.version, c?.cli?.spawnPreviewApi, c?.cli?.spawnApplyApi, c?.cli?.features, c?.cli?.harnesses, c?.cli?.sessionBackends, c?.cli?.launchOptions]);
 /** `read` is required: the client's own preview's `prepareRead` (spawn-preview.mjs createSpawnPreview). Prepare
  * reads through the dialog's cache: a fresh held answer for exactly these choices is the decision (no second
- * CLI read); apply's --expect-decision is the drift guard. No held answer: a fresh read. */
-export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply,
+ * CLI read); apply's --expect-decision is the drift guard. No held answer: a fresh read.
+ *   exec  optional: the client's own execFile, passed to `invoke` as `invoke(cli, options, { exec })` for every
+ *         apply (cli-adapter.mjs `runJson` has the rule); without it `invoke` is given no third argument and
+ *         cliSpawnApply's own default runs. An apply is a change, and cliSpawnApply ends its child at the
+ *         deadline through what exec returns (`child.kill`): a given exec must return the child. One that
+ *         returns nothing leaves the apply of a worktree-event kernel unended at its deadline; there is no
+ *         fallback here. */
+export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply, exec,
   now = () => performance.now(), mint = () => randomBytes(32).toString('hex'), answerWithinMs = ANSWER_WITHIN_MS,
   timer = (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); } } = {}) {
   if (typeof read !== 'function') throw new TypeError('createSpawnApplyBoundary: read (the client\'s prepareRead) is required');
-  const prepared = new Map(), submitted = new Map(), active = new Set();
+  const prepared = new Map(), submitted = new Map(), active = new Set(), io = exec ? [{ exec }] : [];
   let preparing = 0, reservedBytes = 0;
   const denied = (code, entry = null, status = 'unavailable', message) => spawnApplyFailure(code, { target: entry?.target, spawnRef: entry?.ref, status, message });
   const sweep = () => { for (const map of [prepared, submitted]) for (const [ref, entry] of map) if (!entry.pending && entry.expires <= now()) map.delete(ref); };
@@ -161,7 +167,7 @@ export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply,
         if (!same(entry, latest)) reply = denied('E_PLAN_CHANGED', entry, 'refused');
         else {
           const result = await invoke(latest.cli, { target: clone(entry.target), choices: clone(entry.input.choices), task: entry.input.task,
-            ...(entry.input.wake ? { wake: clone(entry.input.wake) } : {}), decision: clone(entry.preview.decision), key: entry.key, deadlineMs: entry.deadlineMs });
+            ...(entry.input.wake ? { wake: clone(entry.input.wake) } : {}), decision: clone(entry.preview.decision), key: entry.key, deadlineMs: entry.deadlineMs }, ...io);
           reply = interpret(result, entry, latest.cli);
         }
       } catch { reply = denied('E_OUTCOME_UNKNOWN', entry, 'unknown'); }
