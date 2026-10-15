@@ -81,17 +81,19 @@ function table(pairs, cols, look) {
   });
 }
 
-/** The TUI's own sentences under the line of `open` in the list of instances: the kernel's rule
- *  about tmux's copy mode, and where the keys that can be chosen are listed (the help does not
- *  restate the grammar). */
+/** The TUI's own sentences under the line of `open` in the list of instances: what the terminal
+ *  takes, what it does not do, and where the keys that can be the back key are listed (the help
+ *  does not restate the grammar). */
 export const OPEN_RULES = Object.freeze([
-  "A key that tmux's copy mode binds leaves the viewer once the mode is left.",
-  "docs/execution-targets.md has the keys that can be chosen.",
+  "While the terminal has the focus every other key goes to the agent, Ctrl+C and Ctrl+Z too.",
+  "One terminal is open at a time. It has no scrollback but the viewer's own, and no mouse.",
+  "docs/tui.md has the keys that can be the back key.",
 ]);
-/** The rows under the line of `open`, in `room` cells: the key that leaves an agent's terminal
- *  (tui.json's, text from outside), then OPEN_RULES, each sentence on as many rows as it needs. */
+/** The rows under the line of `open`, in `room` cells: the back key, which takes the focus from the
+ *  open terminal (tui.json's open.detachKey, text from outside), then OPEN_RULES, each sentence on
+ *  as many rows as it needs. */
 function openRows(detachKey, room) {
-  const key = keyText(detachKey), said = "brings oats tui back; the agent keeps running.";
+  const key = keyText(detachKey), said = "takes the focus from the terminal back to the list; the agent keeps running.";
   const first = flow(words(said), Math.max(1, room - key.width - 1));
   return [
     [{ col: 0, text: key.text, width: key.width }, { col: key.width + 1, text: lit(first[0]) }],
@@ -117,8 +119,8 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
 /** Every row of the help for an area `cols` wide, before it is scrolled. Unbound actions are
  *  listed as such: the table can be changed by the user's tui.json, and the help says what is so
  *  now. An action that does one thing in each view has a line per view, its key on each; under
- *  the line of opening an agent stand the key that leaves its terminal (`detachKey`, tui.json's
- *  `open.detachKey`) and the rules of OPEN_RULES; under the line of the last act, ACT_RULES. */
+ *  the line of opening an agent stand the back key (`detachKey`, tui.json's `open.detachKey`) and
+ *  the rules of OPEN_RULES; under the line of the last act, ACT_RULES. */
 export function helpRows(actions, ascii, cols = 100, detachKey = null) {
   const marks = marksOf(ascii);
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));

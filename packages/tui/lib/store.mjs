@@ -12,7 +12,7 @@
 import { ACTIONS, bindings } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, pendingEntry } from "./client.mjs";
 import { DETACH_KEY } from "./config.mjs";
-import { BUTTON_ORDER, actDecision, disclosure, openDecision, preflightLine, returnedLine, roster, switcher } from "./model.mjs";
+import { BUTTON_ORDER, NOT_BUILT, actDecision, disclosure, openDecision, preflightLine, returnedLine, roster, switcher } from "./model.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
 /** The longest filter, in UTF-16 units. */
@@ -35,18 +35,23 @@ const NO_FILTER = Object.freeze({ editing: false, query: "" });
  *  `selected`, `top`, `detailTop` are the open view's; `places` keeps them for
  *  the views left behind, and `collapsed` holds every view's keys (each carries its `open`).
  *  `back`: the view under the help. `offered`: the deployments of `~/Agents` not served.
- *  `opening`: the agent whose terminal is being opened, or null: `{ id, phase, name, machine,
- *  routed }`, `phase` "preflight" while another machine is asked whether its session is there and
- *  "lent" while the kernel's viewer has the terminal; `name`, `machine` and `routed` are the row's
- *  as it was when Enter was pressed, for the line after. `outcome`: that line (the model's
- *  `{ said, under }`), shown above the panes until the next key bound to an action, or null.
- *  `detachKey`: tui.json's `open.detachKey`, the key that leaves an agent's terminal.
+ *  `opening`: the agent of another machine whose terminal is being opened, or null:
+ *  `{ id, phase: "preflight", name, machine, routed }` while that machine is asked whether its
+ *  session is there; `name`, `machine` and `routed` are the row's as it was when Enter was
+ *  pressed, for the line after. `terminal`: the open terminal, or null (one at a time):
+ *  `{ id, name, machine, routed, focus, zoom, status }`, `id` the row's instanceId and the next
+ *  three the row's as it was when it was opened; `focus` "terminal" while what is typed goes to
+ *  the agent and "list" while the TUI reads keys; `zoom` true while it has the whole body (only
+ *  with the terminal's focus); `status` "starting" until the panel has its window, then "open".
+ *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
+ *  the next key bound to an action, or null.
+ *  `detachKey`: tui.json's `open.detachKey`, the back key: it takes the focus from the terminal.
  *  `act`: the confirmation open in the act view (see `actOpened`), or null; `acted` counts the
  *  confirmations opened in this run, so an answer for one that was closed is told apart.
  *  `starting`: id -> `{ verb, since }` of this run's starts and restarts whose child is still
  *  alive, whether or not the TUI still waits for its answer (the loop says when one is spawned and
  *  when it closes): no act opens on such a row.
- *  The roster is made from none of `opening`, `outcome`, `act`, `acted` and `starting`
+ *  The roster is made from none of `opening`, `terminal`, `outcome`, `act`, `acted` and `starting`
  *  (lib/model.mjs MADE_FROM). */
 export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, detachKey = DETACH_KEY }) {
   return Object.freeze({
@@ -58,7 +63,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
     switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
-    helpTop: 0, actions, ascii, detachKey, opening: null, outcome: null, act: null, acted: 0, starting: new Map(),
+    helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(),
   });
 }
 
@@ -297,49 +302,80 @@ function switched(state, action, page) {
  *  (one outcome of the roster read), `{ collecting }`, `{ offered: { offered, limited } }` (the
  *  deployments of `~/Agents` not served), `{ admitted: <deployment>, at }` and `{ refused: <path> }`
  *  (what a picked folder turned out to be).
- *  Opening an agent gives three more: `{ prepared: { id, error? } }` (the preflight of another
+ *  Opening an agent gives five more: `{ prepared: { id, error? } }` (the preflight of another
  *  machine's agent ended: `error` is what the shared prepareRemoteTerm threw), `{ given: true }`
- *  (the loop gave the preflight up itself: a suspend) and `{ returned: { id, status, stderr } }`
- *  (the viewer closed: its exit status as Node reports it, and the stderr it kept).
+ *  (the loop gave the preflight up itself: a suspend), `{ shown: { id } }` (the panel has the
+ *  viewer's window), `{ returned: { id, status, stderr, asked, refused } }` (the viewer ended: what
+ *  its pane wrote of its exit status and stderr, whether it was closed because the TUI asked, and
+ *  the panel's refusal when it started none: model.mjs returnedLine) and
+ *  `{ back: true }` (the back key was typed in the terminal).
  *  An effect is something only the loop can do: "quit", "suspend", "redraw", or an object with
  *  any of `refresh: { live }` (read now), `offer: true` (list `~/Agents` again),
- *  `admit: <path>` (ask whether a picked folder is a deployment), `open: <decision>` (open the
- *  agent's terminal: the model's openDecision, with its target), `lend: <id>` (the preflight is
- *  over: start the viewer it prepared) and `abandon: true` (give the preflight up); or null.
+ *  `admit: <path>` (ask whether a picked folder is a deployment), `close: <id>` (close the open
+ *  terminal; when an `open` comes with it, before that open), `open: <decision>` (open the agent's
+ *  terminal: the model's openDecision, with its target), `panel: <id>` (the preflight is over:
+ *  start the viewer it prepared in the panel) and `abandon: true` (give the preflight up); or null.
  *  The line after an open stands until the next key that is bound to an action: a key bound to
- *  nothing (a stray detach key is no key at all) leaves it. */
+ *  nothing (a stray back key is no key at all) leaves it. */
 export function reduce(state, event, keymap = bindings(state.actions)) {
   if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
-  return reduced(state, event, keymap);
+  const step = reduced(state, event, keymap);
+  // The terminal has the focus only while the list of instances is shown: anything that shows
+  // another view (a workspace gone, which shows the switcher) gives the focus back to the list.
+  const t = step.state.terminal;
+  return t?.focus === "terminal" && step.state.view !== "instances" ? { ...step, state: next(step.state, { terminal: Object.freeze({ ...t, focus: "list", zoom: false }) }) } : step;
 }
+
+/** The terminal of an open decision (the model's openDecision), starting, with the focus. */
+const startingTerminal = ({ id, name, machine, routed }) => Object.freeze({ id, name, machine, routed, focus: "terminal", zoom: false, status: "starting" });
+/** The open terminal with what changes of it. */
+const terminalWith = (state, changes) => next(state, { terminal: Object.freeze({ ...state.terminal, ...changes }) });
 
 /** The preflight of another machine's agent ended. Given up meanwhile (Esc, a suspend, a second
  *  open): dropped. Failed: the line that says so, unless it is the person's own giving up. Else
- *  the viewer is started, unless the row it is for has gone from the roster since. */
+ *  the viewer is started in the panel, unless the row it is for has gone from the roster since. */
 function prepared(state, { id, error }) {
   const opening = state.opening;
   if (opening === null || opening.id !== id || opening.phase !== "preflight") return { state, effect: null };
   if (error !== undefined) return { state: next(state, { opening: null, outcome: preflightLine(opening, error) }), effect: null };
   if (!roster(state).instances.some((row) => instanceId(row) === id)) return { state: next(state, { opening: null }), effect: null };
-  return { state: next(state, { opening: Object.freeze({ ...opening, phase: "lent" }) }), effect: { lend: id } };
+  return { state: next(state, { opening: null, terminal: startingTerminal(opening) }), effect: { panel: id } };
 }
 
-/** The viewer closed: the line that says what happened, and the instances read again at once
- *  (an exit status says nothing of the agent but that it was left by the key). */
-function returned(state, { id, status, stderr }) {
-  const opening = state.opening;
-  if (opening === null || opening.id !== id) return { state, effect: null };
-  return { state: next(state, { opening: null, outcome: returnedLine(opening, status, stderr) }), effect: { refresh: { live: true } } };
+/** The viewer of the open terminal ended: the right side is the detail's again, the focus the
+ *  list's, the line says what happened (nothing, when the person closed it), and the instances are
+ *  read again at once. It is never opened again on its own: Enter opens it. An end of a terminal
+ *  that is no longer the open one (closed by the person, then reported) changes nothing. */
+function returned(state, { id, status, stderr, asked = false, refused = null }) {
+  const t = state.terminal;
+  if (t === null || t.id !== id) return { state, effect: null };
+  return { state: next(state, { terminal: null, outcome: returnedLine(t, status, stderr, { asked, refused }) }), effect: { refresh: { live: true } } };
 }
 
-/** Enter in the list of instances: the selected agent's terminal, or the line that says why not.
- *  Nothing while an open is under way. */
+/** Enter in the list of instances: on the row whose terminal is open, the focus goes to it; on
+ *  another, the selected agent's terminal is opened (the open one is closed first: one at a time),
+ *  or the line says why not. Nothing while another machine is asked first. */
 function openAgent(state, r, at) {
   if (state.opening !== null || at < 0) return { state, effect: null };
-  const row = r.items[at].row, decision = openDecision(state, row, instanceActs(row));
+  const row = r.items[at].row, t = state.terminal;
+  if (t !== null && t.id === instanceId(row)) return { state: terminalWith(state, { focus: "terminal", zoom: false }), effect: null };
+  const decision = openDecision(state, row, instanceActs(row));
   if (!decision.open) return { state: next(state, { outcome: decision.said }), effect: null };
-  const opening = Object.freeze({ id: decision.id, phase: decision.routed ? "preflight" : "lent", name: decision.name, machine: decision.machine, routed: decision.routed });
-  return { state: next(state, { opening, outcome: null }), effect: { open: decision } };
+  const close = t === null ? {} : { close: t.id };
+  if (decision.routed) {
+    const opening = Object.freeze({ id: decision.id, phase: "preflight", name: decision.name, machine: decision.machine, routed: true });
+    return { state: next(state, { opening, terminal: null, outcome: null }), effect: { ...close, open: decision } };
+  }
+  return { state: next(state, { terminal: startingTerminal(decision), outcome: null }), effect: { ...close, open: decision } };
+}
+
+/** The keys of the open terminal from the list: zoom gives it the focus and the whole body, and
+ *  close ends its viewer (the agent keeps running) and gives the right side back to the detail. */
+function terminalKey(state, action) {
+  const t = state.terminal;
+  if (t === null) return { state, effect: null };
+  if (action === "zoom") return { state: terminalWith(state, { focus: "terminal", zoom: true }), effect: null };
+  return { state: next(state, { terminal: null }), effect: { close: t.id } };
 }
 
 /** The keys of the act view that are not the action table's: the focus moves with these and with
@@ -443,6 +479,8 @@ function reduced(state, event, keymap) {
   if (event.prepared !== undefined) return prepared(state, event.prepared);
   if (event.given !== undefined) return state.opening?.phase === "preflight" ? { state: next(state, { opening: null }), effect: null } : stay;
   if (event.returned !== undefined) return returned(state, event.returned);
+  if (event.shown !== undefined) return state.terminal?.id === event.shown.id ? { state: terminalWith(state, { status: "open" }), effect: null } : stay;
+  if (event.back !== undefined) return state.terminal?.focus === "terminal" ? { state: terminalWith(state, { focus: "list", zoom: false }), effect: null } : stay;
   if (event.entry !== undefined) return took(state, event);
   if (event.roster !== undefined) return heard(state, event.roster);
   if (event.collecting !== undefined) return { state: event.collecting === state.collecting ? state : next(state, { collecting: event.collecting === true }), effect: null };
@@ -491,6 +529,9 @@ function reduced(state, event, keymap) {
   switch (action) {
     case "filter": return { state: next(state, { focus: "list", filter: Object.freeze({ ...state.filter, editing: true }) }), effect: null };
     case "open": return openAgent(state, r, at);
+    case "zoom": case "close-terminal": return terminalKey(state, action);
+    // The views not built yet: the line says what to run instead.
+    case "souls": case "capabilities": return { state: next(state, { outcome: NOT_BUILT[action] }), effect: null };
     case "stop": case "retire": case "start": case "restart": return actOn(state, r, at, action);
     case "detail": return at < 0 ? stay : { state: next(state, { focus: state.focus === "detail" ? "list" : "detail" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {

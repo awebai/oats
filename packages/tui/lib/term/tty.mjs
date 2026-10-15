@@ -4,8 +4,8 @@
 // no mouse or focus reporting, no keyboard protocol, no keypad or cursor-key mode, no title, no
 // clipboard, no bell, no query that expects a reply.
 //
-// Handing the terminal to someone else (the shell at a suspend; the kernel's viewer at a lend) is
-// leave() and enter(), and only that pair.
+// Handing the terminal to someone else (the shell at a suspend) is leave() and enter(), and only
+// that pair. An agent's terminal is never handed the terminal: the TUI draws it (lib/panel.mjs).
 
 const mode = (number, on) => `\x1b[?${number}${on ? "h" : "l"}`;
 /** After raw mode: the alternate screen, the cursor hidden, autowrap off, bracketed paste on.
@@ -22,9 +22,6 @@ export const SIGNAL_STATUS = Object.freeze({ SIGINT: 130, SIGTERM: 143, SIGHUP: 
 export const TERMINAL_GONE_STATUS = SIGNAL_STATUS.SIGHUP;
 /** How long a suspend waits for the stop before it concludes there was none. */
 const STOP_GRACE_MS = 100;
-/** How long a run that is ending while the terminal is lent waits for the borrower to close after
- *  it was asked to end, before it ends anyway. */
-export const LEND_END_GRACE_MS = 3000;
 
 /** A terminal on both ends that can be addressed: no escape byte is ever written to anything else. */
 export function isTerminal({ stdin, stdout, env }) {
@@ -44,9 +41,6 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   let entered = false, raw = false, modes = false;
   let suspended = false, stopTimer = null;
   let over = false, blocked = false, stale = false;
-  /** While the terminal is lent: `{ end, ending }`, the borrower's end() and, once the run is
-   *  ending, the `[status, error]` it ends with when the borrower has closed. Else null. */
-  let lent = null, endTimer = null;
   let settle;
   const done = new Promise((resolve) => { settle = resolve; });
   const listeners = [];
@@ -78,7 +72,6 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
     if (over) return;
     over = true;
     leave();
-    if (endTimer !== null) { clearTimer(endTimer); endTimer = null; }
     // What it throws must not keep the run from ending, nor replace the status it ends with.
     if (onEnd) quietly(onEnd);
     if (stopTimer !== null) { clearTimer(stopTimer); stopTimer = null; }
@@ -89,7 +82,7 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   }
 
   /** Run one of the loop's own steps. What it throws ends the run as an uncaught error would,
-   *  without waiting for the process to say so (while the terminal is lent, the borrower first). */
+   *  without waiting for the process to say so. */
   function attempt(step) {
     try { step(); } catch (error) { out(1, error); }
   }
@@ -97,7 +90,7 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   /** One write per frame. While the last write has not drained nothing is queued: the newest frame
    *  is made when it has. */
   function draw() {
-    if (!entered || over || lent) return;
+    if (!entered || over) return;
     if (blocked) { stale = true; return; }
     const bytes = frame();
     if (bytes && stdout.write(bytes) === false) blocked = true;
@@ -150,68 +143,22 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   /** SIGCONT. After our own suspend: come back. Otherwise the process was stopped and continued
    *  from outside while it held the terminal. */
   function continued() {
-    if (over || lent) return; // a lent terminal is the borrower's: it takes care of its own
+    if (over) return;
     if (suspended) return resume();
     if (onResume && entered) { attempt(() => onResume(false)); if (over) return; }
     reassert();
   }
 
-  /** Lend the terminal to a program of its own (the kernel's viewer) and take it back when it
-   *  ends. The suspend path, without the stop: leave() (the modes, then raw mode off), input
-   *  paused, so two readers do not split the keys; then `run()`, which starts the borrower with
-   *  the terminal as its own and resolves when it has closed; then enter(), input resumed and a
-   *  full redraw. Answers a promise of `{ value }` (what run resolved with) or `{ error }` (what it
-   *  threw or rejected with: the terminal is taken back all the same).
-   *  WHILE LENT nothing is drawn, whatever asks; a SIGQUIT does not end the run (a second
-   *  Ctrl+\ after the viewer gave the terminal back is the terminal's QUIT, and the viewer handles
-   *  its own); a SIGTSTP is not heard, so its default action stops the whole group and SIGCONT
-   *  continues it, and nothing of the suspend path runs. SIGINT, SIGTERM, SIGHUP, a terminal that
-   *  goes away and an uncaught error end the run as always, but the borrower first: `end()` is
-   *  called and the run ends when the borrower has closed, or LEND_END_GRACE_MS later. The
-   *  terminal is already restored, so nothing more is written to it.
-   *  Lending a terminal that is not the TUI's now (not entered, lent, over) runs nothing. */
-  function lend(run, { end = null, release = null } = {}) {
-    if (!entered || over || lent) return Promise.resolve({ error: new Error("the terminal is not the TUI's to lend now") });
-    leave();
-    quietly(() => stdin.pause());
-    proc.removeListener("SIGTSTP", suspend);
-    const mine = lent = { end, release, ending: null };
-    let running;
-    try { running = Promise.resolve(run()); } catch (error) { running = Promise.reject(error); }
-    return running.then((value) => ({ value }), (error) => ({ error })).then((outcome) => {
-      lent = null;
-      if (mine.ending) { finish(...mine.ending); return outcome; }
-      if (over) return outcome;
-      proc.on("SIGTSTP", suspend);
-      try { enter(); } catch { finish(TERMINAL_GONE_STATUS); return outcome; }
-      if (!over) stdin.resume();
-      attempt(onRedraw);
-      return outcome;
-    });
-  }
-  /** A way out that arrives while the terminal is lent: end the borrower and wait for it. A second
-   *  one does not wait. */
-  function endLent(status, error) {
-    // The run does not wait for a borrower past this: what holds it (its handle, its pipe) is let
-    // go, so the process can end with the status of the signal although the borrower lives on.
-    const mine = lent, givenUp = () => { if (mine.release) attempt(mine.release); finish(status, error); };
-    if (mine.ending) return givenUp();
-    mine.ending = [status, error];
-    if (mine.end) attempt(mine.end);
-    if (over) return;
-    endTimer = setTimer(() => { endTimer = null; givenUp(); }, LEND_END_GRACE_MS);
-  }
   /** Every way out the run can be told of: a signal, an error nobody caught, a terminal gone. */
   function out(status, error) {
     if (over) return;
-    if (lent) return endLent(status, error);
     finish(status, error);
   }
 
   /** Every way out is registered before the terminal is touched; then enter. A signal cannot land
    *  inside enter(), which is synchronous, and one that lands after it finds its listener. */
   function start() {
-    for (const [signal, status] of Object.entries(SIGNAL_STATUS)) on(proc, signal, () => { if (!(lent && signal === "SIGQUIT")) out(status); });
+    for (const [signal, status] of Object.entries(SIGNAL_STATUS)) on(proc, signal, () => out(status));
     on(proc, "SIGCONT", continued);
     proc.on("SIGTSTP", suspend);
     on(proc, "uncaughtException", (error) => out(1, error));
@@ -233,5 +180,5 @@ export function createGuard({ stdin, stdout, proc, frame, onInput, onResize, onR
   /** The terminal's size now; 80x24 when the terminal does not say. */
   const size = () => ({ cols: Number.isInteger(stdout.columns) && stdout.columns > 0 ? stdout.columns : 80, rows: Number.isInteger(stdout.rows) && stdout.rows > 0 ? stdout.rows : 24 });
 
-  return { start, enter, leave, finish, suspend, reassert, attempt, draw, lend, size, done, get entered() { return entered; }, get lent() { return lent !== null; } };
+  return { start, enter, leave, finish, suspend, reassert, attempt, draw, size, done, get entered() { return entered; } };
 }

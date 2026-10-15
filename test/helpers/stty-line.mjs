@@ -1,6 +1,6 @@
 // How the end-to-end tests of `oats tui` compare a terminal's line settings
-// (test/tui-terminal.test.mjs, test/tui-open-terminal.test.mjs): `stty -g`, read in the pane's own
-// shell, through comparableStty below. One copy for both files.
+// (test/tui-terminal.test.mjs): `stty -g`, read in the pane's own shell, through comparableStty
+// below.
 
 /** A `stty -g` line as the terminal tests compare it: the line itself, but for one bit of
  *  macOS's `lflag`. That bit, 0x20000000, is PENDIN, and it is state of the terminal driver, not a setting: the

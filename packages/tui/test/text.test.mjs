@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DETAIL_WITHHELD } from "../lib/client.mjs";
-import { EMPTY, WITHHELD, isSafeText, lit, shown, textOf } from "../lib/term/text.mjs";
+import { EMPTY, WITHHELD, cellText, isSafeText, lit, shown, textOf } from "../lib/term/text.mjs";
 
 const ESC = "\x1b";
 /** What must never reach a terminal as it is, by name. */
@@ -223,4 +223,30 @@ test("shownLines() never answers a row wider than `width`, also when one graphem
   for (const row of rowsOf(FAMILY.repeat(4), 1, 20)) assert.equal(textWidth(row) <= 1, true, "an emoji sequence in a row of one cell");
   for (const width of [1, 2]) for (const row of rowsOf(SENTENCE, width, 3, { ascii: true })) assert.equal(textWidth(row) <= width, true, `the ASCII mark in a row of ${width}: ${row}`);
   for (const row of rowsOf("名前".repeat(9), 2, 2)) assert.equal(textWidth(row) <= 2, true, `the mark after a wide character in a row of two cells: ${row}`);
+});
+
+// ── cellText(): an agent's cells, as term/capture.mjs filtered them ──────────────────────────────
+
+test("cellText() keeps a terminal's cells as they are: runs of spaces, spaces at the ends, wide characters, combining marks, emoji and the replacement character", () => {
+  for (const cells of ["a  b", "  indented", "trailing   ", " ", "", "中文 字", "e\u0301 a\u0308", "\u{1F600}\u{1F44D}\u{1F3FD}", "\u{1F1EF}\u{1F1F5}", "\uFFFD", "x\u200Dy", "tab\u00A0nbsp"]) {
+    const value = cellText(cells);
+    assert.equal(isSafeText(value), true);
+    assert.equal(textOf(value), cells, JSON.stringify(cells));
+  }
+});
+
+test("cellText() refuses every character capture.mjs drops: each C0 control, ESC among them, DEL, each C1 control and each bidi control, and its message never repeats the text", () => {
+  const refused = [
+    ...Array.from({ length: 0x20 }, (_, n) => String.fromCodePoint(n)),
+    "\x7f",
+    ...Array.from({ length: 0x20 }, (_, n) => String.fromCodePoint(0x80 + n)),
+    ...[0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069].map((n) => String.fromCodePoint(n)),
+  ];
+  assert.equal(refused.length, 32 + 1 + 32 + 12);
+  for (const character of refused) {
+    const text = `ok ${character} ok`;
+    assert.throws(() => cellText(text), (error) => error instanceof TypeError && !error.message.includes(text) && !/[\x00-\x1f\x7f-\x9f]/.test(error.message), `U+${character.codePointAt(0).toString(16).padStart(4, "0")}`);
+  }
+  assert.throws(() => cellText("\x1b[2J"), TypeError);
+  for (const value of [null, undefined, 7, ["a"], { toString: () => "a" }, lit("oats")]) assert.throws(() => cellText(value), TypeError);
 });

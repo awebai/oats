@@ -1,9 +1,16 @@
 // Safe text: the only thing the screen draws. A terminal acts on what is written to it, so the
 // screen takes strings from nobody: it takes values only this module can make (docs/tui.md,
-// awebai/oats#855 section 3.9). There are two ways in, and no third:
-//   lit(string)   the TUI's own words;
-//   shown(value)  text the TUI did not write, through the shared display filter.
+// awebai/oats#855 section 3.9). There are three ways in, and no fourth:
+//   lit(string)       the TUI's own words;
+//   shown(value)      text the TUI did not write, through the shared display filter;
+//   cellText(string)  the cells of an agent's terminal, which term/capture.mjs has already
+//                     filtered, drawn only in the terminal panel.
 // A safe value is for display only: nothing compares it, selects by it or passes it to a command.
+//
+// The third exists because the display filter is right for a line and wrong for a terminal's
+// cells: it folds runs of spaces and trims, and a terminal's spaces are its layout. cellText()
+// keeps the spaces and refuses, rather than filters: every character it would have to take out
+// is one capture.mjs drops first, so a refusal is a bug there, never text to repair here.
 //
 // Every view meets this: the filter folds a run of spaces into one and trims both ends, so lit()
 // refuses a string with two spaces together or a space at an end. A row is therefore spans placed
@@ -99,11 +106,24 @@ export function shownLines(value, width, max, { ascii = false } = {}) {
   return rows.map((row) => make(joined(row)));
 }
 
+/** What cellText() refuses: the C0 controls (ESC among them), DEL, the C1 controls, and the bidi
+ *  controls (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069), which would let a row
+ *  reorder what is drawn in it. */
+const NOT_A_CELL = /[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
+
+/** The text of an agent's terminal cells, as term/capture.mjs read them from a capture: spaces
+ *  kept as they are. It throws on any character capture.mjs drops, and its message never repeats
+ *  the string. For capture.mjs alone; any other text goes through lit() or shown(). */
+export function cellText(string) {
+  if (typeof string !== "string" || NOT_A_CELL.test(string)) throw new TypeError("cellText() takes an agent's cells as term/capture.mjs filtered them: no control or bidi character");
+  return make(string);
+}
+
 export const isSafeText = (value) => TEXT.has(value);
 
 /** The string of a safe value, for the screen (and the tests that read a row). A raw string and a
  *  forged object are refused. */
 export function textOf(value) {
-  if (!TEXT.has(value)) throw new TypeError("the screen draws safe text only: lit() for the TUI's own words, shown() for anything else");
+  if (!TEXT.has(value)) throw new TypeError("the screen draws safe text only: lit() for the TUI's own words, shown() for anything else, cellText() for an agent's cells");
   return TEXT.get(value);
 }

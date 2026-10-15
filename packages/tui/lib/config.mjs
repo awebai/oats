@@ -1,5 +1,5 @@
 // The user's key file, tui.json: which keys do what, whether the screen is drawn in ASCII, and the
-// key that leaves an agent's terminal.
+// key that takes the focus from an agent's terminal back to the list.
 // Read once at start and never written. A file that is wrong in any way is refused whole, each
 // problem as one line that says what to change: the TUI resolves no conflict and guesses nothing
 // (there is no "last wins"), because a key that silently does something else is worse than a
@@ -11,6 +11,7 @@ import { isAbsolute, join } from "node:path";
 import { ACTIONS, bindings, keyLabel } from "./actions.mjs";
 import { displayLine } from "./client.mjs";
 import { isKeyId } from "./term/keys.mjs";
+import { BACK_KEY_RULE, isBackKey } from "./term/through.mjs";
 
 /** The largest tui.json that is read, in bytes. A larger file is refused by its size, unread. */
 export const CONFIG_LIMIT = 64 * 1024;
@@ -18,11 +19,9 @@ export const CONFIG_LIMIT = 64 * 1024;
 const TOO_LARGE = `it is larger than ${CONFIG_LIMIT / 1024} KiB`;
 const NOT_AN_OBJECT = 'it is not one JSON object, like {"keys": {"quit": ["q"]}}';
 const SETTINGS = "the settings are keys, ascii and open";
-/** The key that leaves an agent's terminal when tui.json names none: the kernel's suggested key. */
+/** The back key when tui.json names none: the key that takes the focus from an agent's terminal
+ *  back to the list (the setting keeps its name, `open.detachKey`, from when it left a viewer). */
 export const DETACH_KEY = "C-\\";
-/** A detach key as tui.json may hold it: 1 to 16 printable ASCII characters. Its grammar is the
- *  kernel's, never checked here: a key the kernel refuses is said when an agent is opened. */
-const DETACH_KEY_TEXT = /^[\x20-\x7e]{1,16}$/;
 /** An action id this program had and has no more, with what it is called now. */
 const RENAMED = Object.freeze({ "open-workspace": "open" });
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
@@ -112,19 +111,15 @@ export function effectiveConfig(value, defaults = ACTIONS) {
   return { ok: true, actions, ascii: value.ascii === true, detachKey: value.open?.detachKey ?? DETACH_KEY };
 }
 
-/** What is wrong with the `open` setting, or null. It holds one member, `detachKey`: a string of 1
- *  to 16 printable ASCII characters, handed to `oats session attach --detach-key` as it is. Its
- *  grammar is the kernel's. Two things that are not grammar are refused here: a value that begins
- *  with `-`, which the kernel would read as another flag and refuse in that flag's words (no key of
- *  its grammar begins with one), and a value the display filter would change, which the footer and
- *  the help would draw as another key. */
+/** What is wrong with the `open` setting, or null. It holds one member, `detachKey`: the back key,
+ *  one key of the TUI's own grammar (term/through.mjs BACK_KEY), which the TUI takes from the bytes
+ *  typed into an agent's terminal and never hands to the kernel. A key outside the grammar is
+ *  refused here, where the file is named, and not when an agent is opened. */
 function openProblem(given) {
   if (!isObject(given)) return 'open must be an object, like {"detachKey": "F12"}';
   for (const [member, key] of Object.entries(given)) {
     if (member !== "detachKey") return `${plain(member) ? `unknown member ${member} of open` : "a member of open whose name cannot be shown is unknown"}; open has detachKey`;
-    if (typeof key !== "string" || !DETACH_KEY_TEXT.test(key)) return 'open.detachKey must be 1 to 16 printable ASCII characters, like "F12"';
-    if (key.startsWith("-")) return "open.detachKey cannot begin with -";
-    if (displayLine(key) !== key) return "open.detachKey is a key the help cannot name; give a key whose characters can be shown";
+    if (!isBackKey(key)) return `open.detachKey must be one key: ${BACK_KEY_RULE}`;
   }
   return null;
 }

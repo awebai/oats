@@ -10,17 +10,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS } from "../lib/actions.mjs";
 import {
-  DETACH_KEY_FEATURE, DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, cliRemoteRoster, deploymentState, displayLine, heldHome, instanceActs, livenessAnswers, livenessInput, observeIdentities, observedEntry,
+  DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, cliRemoteRoster, deploymentState, displayLine, heldHome, instanceActs, livenessAnswers, livenessInput, observeIdentities, observedEntry,
   originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
-import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, heldOf, model, panelOf } from "../lib/model.mjs";
+import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, heldOf, model, panelOf, roster } from "../lib/model.mjs";
 import { reduce } from "../lib/store.mjs";
+import { captureRows } from "../lib/term/capture.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
-import { isStyle, style } from "../lib/term/style.mjs";
+import { PLAIN, isStyle, style } from "../lib/term/style.mjs";
 import { isSafeText, shown, textOf } from "../lib/term/text.mjs";
 import { textWidth } from "../lib/term/width.mjs";
-import { MIN_SIZE, WIDE, frame } from "../lib/views/frame.mjs";
+import { MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
 import { ACT_RULES, MACHINES, NOT_YET, VIEWS, keysLabel } from "../lib/views/help.mjs";
 import { EMPTY_TEXT, MARKS, cutNote, marksOf } from "../lib/views/instances.mjs";
 import { OPEN_MARK, SWITCHER_TEXT } from "../lib/views/switcher.mjs";
@@ -161,13 +162,15 @@ const folded = (options) => press(selecting(stateOf(observed(CLUSTER()), options
 const NEEDS = `${waitingLabel(QUESTION)}, ${waitedText(QUESTION.since, NOW)}`;
 const STARTED = waitingClock("2026-10-11T09:00:00.000Z", NOW);
 const COUNTS = "6 running  3 need input  1 stopped  1 unknown  1 withheld";
-/** The list's footer where it has the room, which is from 79 columns up, and at 60 columns: `workspaces`
- *  is the hint given up first (the frame's own order), so the 60-column footer is 2b's. */
-// The selected row of the fixture runs: its acts are stop and retire (restart needs a kernel with
-// session-restart), and they are the first hints given up, `retire` before `stop`.
-const FOOTER = " X stop   / filter   Tab detail   r refresh   w workspaces   ? help   q quit";
-const FOOTER_WIDE = " X stop   D retire   / filter   Tab detail   r refresh   w workspaces   ? help   q quit";
-const FOOTER_60 = " / filter   Tab detail   r refresh   ? help   q quit";
+/** The list's footer at 80 and 79 columns, at 120, on a terminal of any width, and at 60 columns.
+ *  The selected row of the fixture runs, so Enter opens it and `open` stands first. Its acts are
+ *  stop and retire (restart needs a kernel with session-restart), after `open`; when the hints do
+ *  not all fit, the views' digits are given up first (`3 capabilities`, then `2 souls`), then the
+ *  acts, `retire` before `stop`, then `workspaces` and `refresh` (the frame's own order). */
+const FOOTER = " Enter open   / filter   Tab detail   r refresh   ? help   q quit";
+const FOOTER_120 = " Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   ? help   q quit";
+const FOOTER_WIDE = " Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities   ? help   q quit";
+const FOOTER_60 = " Enter open   / filter   Tab detail   ? help   q quit";
 
 // ── Golden frames ────────────────────────────────────────────────────────────────────────────────
 
@@ -175,7 +178,7 @@ test("the Instances view at 80x24 in UTF-8, cell for cell: the header, the view 
   const blank = `${" ".repeat(38)}│`;
   assert.deepEqual(draw(golden(), S80).lines, [
     ` oats  acme-platform  ${COUNTS}`,
-    " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+    "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
     " ▾ ● acme-console-e…  claude          │   acme-ledger-developer-note-target",
     "     ● acme-console…  claude         !│   soul     acme-ledger-developer",
@@ -199,7 +202,7 @@ test("the Instances view at 80x24 in ASCII, cell for cell: the same screen with 
   const blank = `${" ".repeat(38)}|`;
   assert.deepEqual(draw(golden({ ascii: true }), S80).lines, [
     ` oats  acme-platform  ${COUNTS}`,
-    " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+    "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"-".repeat(38)}+${"-".repeat(41)}`,
     " v * acme-console...  claude          |   acme-ledger-developer-note-target",
     "     * acme-conso...  claude         !|   soul     acme-ledger-developer",
@@ -227,7 +230,7 @@ test("at every size and in both modes the frame has its shape: the header on the
     for (const line of d.cells) assert.equal(line.length, sz.cols, at);
     assert.equal(cellText(d, 0, 0, 7), " oats", at);
     assert.equal(cellText(d, 0, 1, 5), "oats", at);
-    assert.equal(cellText(d, 1, 0, 40), " 1 Instances   2 Souls   3 Capabilities", at);
+    assert.equal(cellText(d, 1, 0, 40), "  Instances   Souls   Capabilities", at);
     assert.equal(cellText(d, 1).endsWith(" read 10:00:00"), true, at);
     assert.equal(d.cells[1][sz.cols - 2].text, "0", `${at}: the read time ends one cell before the edge`);
     // The two rules reach edge to edge; in the wide layout each has a joint where the panes' rule meets it.
@@ -264,7 +267,7 @@ test("from 80 columns up the list takes clamp(floor(cols x 0.48), 36, 60) cells,
 test("at 120x40 the names have room: the same roster with the longer names whole and the detail's lines uncut", () => {
   const d = draw(golden(), S120), row = (list, detail) => `${list.padEnd(57)}│${detail}`;
   assert.equal(d.lines[0], ` oats  acme-platform${" ".repeat(42)}${COUNTS}`);
-  assert.equal(d.lines[1], ` 1 Instances   2 Souls   3 Capabilities${" ".repeat(67)}read 10:00:00`);
+  assert.equal(d.lines[1], `  Instances   Souls   Capabilities     ${" ".repeat(67)}read 10:00:00`);
   assert.equal(d.lines[3], row(" ▾ ● acme-console-expert-tui-read        claude", "   acme-ledger-developer-note-target"));
   assert.equal(d.lines[4], row("     ● acme-console-developer-panel      claude         !", "   soul     acme-ledger-developer"));
   assert.equal(d.lines[5], row("     ● acme-console-developer-terms      claude         !", "   state    running"));
@@ -277,7 +280,7 @@ test("at 120x40 the names have room: the same roster with the longer names whole
   assert.equal(d.lines[12], row("", `   started  ${STARTED}`));
   assert.equal(d.lines[13], row("", "   home     …oper/instances/acme-ledger-developer-note-target"));
   for (let r = 14; r < 38; r++) assert.equal(d.lines[r], row("", ""), `row ${r}`);
-  assert.equal(d.lines[39], FOOTER_WIDE);
+  assert.equal(d.lines[39], FOOTER_120);
 });
 
 test("at 79x24 the list takes the whole width: no rule column, no detail beside it, and the waiting marks at the right edge", () => {
@@ -308,7 +311,7 @@ test("at 60x15, the smallest size drawn, the frame keeps its shape and the roste
   assert.equal(d.lines[0].startsWith(" oats  "), true);
   assert.equal(d.lines[0].endsWith("1 withheld"), true);
   assert.equal(d.lines[0].includes("3 need input"), true);
-  assert.equal(d.lines[1], " 1 Instances   2 Souls   3 Capabilities       read 10:00:00");
+  assert.equal(d.lines[1], "  Instances   Souls   Capabilities            read 10:00:00");
   assert.equal(d.lines[2], "─".repeat(60));
   assert.deepEqual(d.lines.slice(3, 13), [
     " ▾ ● acme-console-expert-tui-read           claude",
@@ -424,17 +427,17 @@ test("before the first answer the list holds the TUI's own line and not the shar
   }
 });
 
-test("the two views that cannot be opened are named dim and `1 Instances` is not, in every state", () => {
+test("the header's second row is navigation, in every state: Instances, Souls and Capabilities with no digit and no count, the open view in reverse with a cell of it on each side, the two not built yet dim (QA note 1)", () => {
   const states = [stateOf(), stateOf(observed([])), press(fresh(), ["/", "z", "z", "z"]).state, golden(), press(golden(), ["?"]).state, stateOf(failed(entry(), { code: "E_SOMETHING_NEW", message: "no" })), stateOf(failed(entry(), REFUSED("no")))];
   for (const state of states) for (const sz of SIZES) {
-    const d = draw(state, sz), line = d.cells[1].map((cell) => cell.text).join("");
-    for (const [name, dim] of [["1 Instances", false], ["2 Souls", true], ["3 Capabilities", true]]) {
-      const at = line.indexOf(name);
-      assert.equal(at > 0, true, `${name} is named`);
-      for (const cell of d.cells[1].slice(at, at + name.length).filter((c) => c.text !== " ")) {
-        if (dim) assert.equal(cell.style, DIM, `${name} is dim`);
-        else assert.equal(cell.style.dim, false, `${name} is not dim`);
-      }
+    const d = draw(state, sz), at = `${sz.cols}x${sz.rows} ${state.view}`;
+    assert.equal(cellText(d, 1, 0, 40), "  Instances   Souls   Capabilities", at);
+    // The digits are the help's and the footer's: none stands on the row of the views.
+    assert.doesNotMatch(d.lines[1].replace(/read \d\d:\d\d:\d\d$/, ""), /\d/, `${at}: no digit`);
+    for (const cell of d.cells[1].slice(1, 12)) assert.deepEqual([cell.style.reverse, cell.style.dim], [true, false], `${at}: Instances is the open view`);
+    for (const [name, from] of [["Souls", 14], ["Capabilities", 22]]) {
+      for (const cell of d.cells[1].slice(from, from + name.length)) assert.equal(cell.style, DIM, `${at}: ${name} is dim`);
+      for (const cell of d.cells[1].slice(from - 1, from + name.length + 1)) assert.equal(cell.style.reverse, false, `${at}: ${name} is not the open view`);
     }
   }
 });
@@ -482,7 +485,7 @@ test("the second row holds the time of the read, `read HH:MM:SS`, only when the 
   const notLive = [stateOf(), stateOf(failed(entry(), { code: "E_REMOTE_UNREADABLE", message: "no" })), stateOf(failed(entry(), { code: "E_SOMETHING_NEW", message: "no" })), stateOf(failed(entry(), REFUSED("no")))];
   for (const state of notLive) for (const sz of SIZES) {
     assert.notEqual(sharedState(state).key, "live");
-    assert.equal(draw(state, sz).lines[1], " 1 Instances   2 Souls   3 Capabilities", `${sz.cols}x${sz.rows}: no read time`);
+    assert.equal(draw(state, sz).lines[1], "  Instances   Souls   Capabilities", `${sz.cols}x${sz.rows}: no read time`);
   }
 });
 
@@ -583,7 +586,7 @@ test("a hostile message in the reason leaves no escape byte of its own on the sc
     assert.doesNotMatch(textOf(shown(message)), CONTROL, `${at}: the TUI's own filter leaves no control character of the message as it came`);
     const out = readTerminalOutput(createScreen().render(d.rows, sz, { full: true }));
     assert.deepEqual(out.foreign, [], `${at}: every ESC written begins a sequence of the TUI's own`);
-    assert.deepEqual([...new Set(out.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr"].includes(kind)), [], at);
+    assert.deepEqual([...new Set(out.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr", "sync"].includes(kind)), [], at);
     assert.doesNotMatch(out.text, CONTROL, at);
     d.cells.forEach((line, r) => line.forEach((cell, x) => assert.doesNotMatch(cell.text, CONTROL, `${at}: row ${r}, column ${x}`)));
     const reason = reasonRows(d, textOf(shown(shared.detail)), "…");
@@ -597,7 +600,7 @@ test("a hostile message in the reason leaves no escape byte of its own on the sc
     const raw = frame({ ...m, notice: { ...m.notice, reason: message } }, sz), handed = `${at}, the message handed raw`;
     const written = readTerminalOutput(createScreen().render(raw.rows, sz, { full: true }));
     assert.deepEqual(written.foreign, [], `${handed}: every ESC written begins a sequence of the TUI's own`);
-    assert.deepEqual([...new Set(written.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr"].includes(kind)), [], handed);
+    assert.deepEqual([...new Set(written.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr", "sync"].includes(kind)), [], handed);
     assert.doesNotMatch(written.text, CONTROL, handed);
     createScreen().cells(raw.rows, sz).forEach((line, r) => line.forEach((cell, x) => assert.doesNotMatch(cell.text, CONTROL, `${handed}: row ${r}, column ${x}`)));
   }
@@ -616,7 +619,7 @@ test("the same hostile messages in the kernel's own refusal, a reason marked `or
     assert.doesNotMatch(textOf(shown(message)), CONTROL, `${at}: the TUI's own filter leaves no control character of the message as it came`);
     const out = readTerminalOutput(createScreen().render(d.rows, sz, { full: true }));
     assert.deepEqual(out.foreign, [], `${at}: every ESC written begins a sequence of the TUI's own`);
-    assert.deepEqual([...new Set(out.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr"].includes(kind)), [], at);
+    assert.deepEqual([...new Set(out.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr", "sync"].includes(kind)), [], at);
     assert.doesNotMatch(out.text, CONTROL, at);
     d.cells.forEach((line, r) => line.forEach((cell, x) => assert.doesNotMatch(cell.text, CONTROL, `${at}: row ${r}, column ${x}`)));
     assert.equal(reasonRows(d, textOf(shown(shared.detail)), "…").whole, true, `${at}: what is drawn is the detail through shown()`);
@@ -799,7 +802,8 @@ test("the selected row is drawn in reverse video over the whole width of its pan
       const pane = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols, selected = rowAt(state, sz, name);
       assert.equal(d.cells[selected][0].text, ">", at);
       assert.deepEqual(d.cells[selected].map((cell) => cell.style.reverse), Array.from({ length: sz.cols }, (_, x) => x < pane), `${at}: every cell of the pane, and none past it`);
-      assert.deepEqual(d.cells.flatMap((line, r) => (r !== selected && line.some((cell) => cell.style.reverse) ? [r] : [])), [], `${at}: no other row is in reverse video`);
+      // The header's row of views draws the open one in reverse: it is the only other.
+      assert.deepEqual(d.cells.flatMap((line, r) => (r !== selected && line.some((cell) => cell.style.reverse) ? [r] : [])), [1], `${at}: no other row is in reverse video but the open view's name`);
       assert.deepEqual(bodyRows(sz).filter((r) => r !== selected && d.cells[r][0].text === ">"), [], `${at}: no other row carries the selection mark`);
     }
   }
@@ -1159,7 +1163,7 @@ test("at 79 columns tab replaces the list by the detail, a page of its own, and 
   const list = golden(), paged = press(list, ["tab"], S79).state, d = draw(paged, S79);
   assert.deepEqual(d.lines, [
     ` oats  acme-platfo…  ${COUNTS}`,
-    " 1 Instances   2 Souls   3 Capabilities                          read 10:00:00",
+    "  Instances   Souls   Capabilities                               read 10:00:00",
     "─".repeat(79),
     ` > ${KERNEL_DEV}`,
     "   soul     acme-ledger-developer",
@@ -1174,9 +1178,10 @@ test("at 79 columns tab replaces the list by the detail, a page of its own, and 
     "   home     …acme-ledger-developer/instances/acme-ledger-developer-note-target",
     "", "", "", "", "", "", "", "",
     "─".repeat(79),
-    " X stop   D retire   Tab detail   Esc close   r refresh   ? help   q quit",
+    " Enter open   X stop   Tab detail   Esc close   r refresh   ? help   q quit",
   ]);
-  d.cells.forEach((line) => line.forEach((cell) => assert.equal(cell.style.reverse, false, "no list row is drawn under the page")));
+  // Only the open view's name in the header is in reverse: no list row is drawn under the page.
+  d.cells.forEach((line, r) => line.forEach((cell, x) => assert.equal(cell.style.reverse, r === 1 && x >= 1 && x < 12, `no list row is drawn under the page (${r}, ${x})`)));
   for (const key of ["tab", "escape"]) assert.deepEqual(draw(press(paged, [key], S79).state, S79).lines, draw(list, S79).lines, `${key} returns to the list`);
   // At 60x15 the page is taller than its room: it scrolls with the movement keys and says what is cut off.
   const small = draw(paged, S60);
@@ -1222,8 +1227,8 @@ test("under 60x15 the screen is one line saying the terminal is too small, with 
 
 test("the footer shows the actions that apply in the current state, each with its first key, `help` and `quit` last", () => {
   assert.equal(draw(golden(), S80).lines[23], FOOTER, "the acts of the selected row after `open`, the first given up: `retire` went before `stop`");
-  assert.equal(draw(golden(), S60).lines[14], " / filter   Tab detail   r refresh   ? help   q quit", "at 60 columns the acts and `workspaces` are given up");
-  assert.equal(draw(press(golden(), ["tab"]).state, S80).lines[23], " X stop   D retire   Tab detail   Esc close   r refresh   ? help   q quit");
+  assert.equal(draw(golden(), S60).lines[14], " Enter open   / filter   Tab detail   ? help   q quit", "at 60 columns the acts, `workspaces` and `refresh` are given up");
+  assert.equal(draw(press(golden(), ["tab"]).state, S80).lines[23], " Enter open   X stop   Tab detail   Esc close   r refresh   ? help   q quit");
   assert.equal(draw(press(golden(), ["?"]).state, S80).lines[23], " Esc close   ? help   q quit");
   for (const sz of SIZES) for (const state of [golden(), press(golden(), ["tab"]).state, press(golden(), ["?"]).state, press(golden(), ["/", "t", "u", "i", "enter"]).state, stateOf(), stateOf(observed([]))]) {
     assert.equal(cellText(draw(state, sz), sz.rows - 1).endsWith("? help   q quit"), true, `${sz.cols}x${sz.rows}: help and quit last, always`);
@@ -1235,12 +1240,13 @@ test("the footer is read from the effective table: a key the user's tui.json gav
   assert.equal(config.ok, true);
   for (const sz of SIZES) {
     const footer = draw(golden({ actions: config.actions }), sz).lines[sz.rows - 1];
-    assert.equal(footer.endsWith(" Tab detail   r refresh   w workspaces   ? help   x quit") || sz.cols < 79, true, `${sz.cols}x${sz.rows}: ${footer}`);
+    // With the room for them, the views' digits stand after the list's own hints.
+    assert.equal(footer.endsWith(` Tab detail   r refresh   w workspaces${sz.cols >= 110 ? "   2 souls   3 capabilities" : ""}   ? help   x quit`) || sz.cols < 79, true, `${sz.cols}x${sz.rows}: ${footer}`);
     assert.equal(footer.includes("filter") || footer.includes("q quit") || footer.includes("/"), false);
   }
   const rebound = effectiveConfig({ keys: { help: ["f1"], detail: ["d", "tab"], refresh: ["f5", "r"], close: ["backspace"] } });
-  assert.equal(draw(golden({ actions: rebound.actions }), S80).lines[23], " X stop   / filter   d detail   F5 refresh   w workspaces   F1 help   q quit");
-  assert.equal(draw(press(golden({ actions: rebound.actions }), ["d"]).state, S80).lines[23], " X stop   D retire   d detail   Backspace close   F5 refresh   F1 help   q quit");
+  assert.equal(draw(golden({ actions: rebound.actions }), S80).lines[23], " Enter open   / filter   d detail   F5 refresh   F1 help   q quit");
+  assert.equal(draw(press(golden({ actions: rebound.actions }), ["d"]).state, S80).lines[23], " Enter open   d detail   Backspace close   F5 refresh   F1 help   q quit");
 });
 
 test("when the footer has no room for every action it shows as many as fit, and `help` and `quit` are still the last two", () => {
@@ -1312,7 +1318,7 @@ test("a query of 200 characters is cut inside its cells, open and kept: the rest
 
 test("at 60 columns, the smallest width the frame is drawn at, the help still names every command whole: what this version does not do is said with the oats command that does it", () => {
   for (const ascii of [false, true]) {
-    const lines = helpLines(golden({ ascii }), size(60, 100)), cut = glyphsOf(ascii).cut;
+    const lines = helpLines(golden({ ascii }), size(60, 120)), cut = glyphsOf(ascii).cut;
     for (const command of [...NOT_YET.map((entry_) => entry_.command), ...VIEWS.flatMap((view) => view.commands)]) {
       assert.equal(lines.some((line) => line.includes(command)), true, `${command} is whole at 60 columns${ascii ? ", in ASCII" : ""}`);
     }
@@ -1322,7 +1328,7 @@ test("at 60 columns, the smallest width the frame is drawn at, the help still na
 
 // ── The help ─────────────────────────────────────────────────────────────────────────────────────
 
-const HELP_SIZE = size(100, 85);
+const HELP_SIZE = size(140, 100);
 function helpLines(state, sz = HELP_SIZE) {
   const d = draw(press(state, ["?"], sz).state, sz);
   assert.equal(d.extent <= d.room, true, "the whole help is on this screen");
@@ -1335,7 +1341,7 @@ test("the help lists every action of the table it is given with its keys, and an
   const lines = helpLines(golden());
   // An action that does one thing in each view has a line per view, its keys on each.
   for (const action of ACTIONS) for (const said of action.views ? action.views.map(([, words]) => words) : [action.label]) assert.equal(pair(lines, keysLabel(action), said), true, `${action.id}: ${keysLabel(action)} ${said}`);
-  for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["w", "workspaces"], ["Enter", "open the selected agent's terminal, in the list of instances"], ["Enter", "open the selected workspace, in the switcher"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
+  for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["2", "souls"], ["3", "capabilities"], ["w", "workspaces"], ["Enter", "open the selected agent's terminal beside the list, or go to it when it is the open one, in the list of instances"], ["z", "go to the open terminal with the whole screen; the back key brings the list back"], ["c", "close the open terminal; the agent keeps running"], ["Enter", "open the selected workspace, in the switcher"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
     assert.equal(pair(lines, keys, label), true, `${keys} ${label}`);
   }
   const config = effectiveConfig({ keys: { quit: ["x"], filter: [], refresh: ["r", "f5"], suspend: [] } });
@@ -1353,11 +1359,11 @@ test("the help is generated from the table: another key and another action appea
   assert.equal(pair(lines, "F9, Ctrl+X", "zap the thing"), true);
   assert.equal(lines.some((line) => line.includes("redraw") || line.includes("Ctrl+L")), false, "an action that is not in the table is not in the help");
   const keys = lines.slice(lines.findIndex((line) => line.trim() === "Keys") + 1, lines.findIndex((line) => line.trim() === "Marks")).filter((line) => line.trim());
-  // One row per action and view; under the line of opening an agent, three rows of its own (the key that returns, the copy-mode rule, the pointer);
-  // under the line of the last act, the rows of ACT_RULES.
+  // One row per action and view; under the line of opening an agent, four rows of its own (the back key, what the terminal takes, its
+  // limits, the pointer); under the line of the last act, the rows of ACT_RULES.
   const rules = keys.filter((line) => ACT_RULES.some((sentence) => sentence.includes(line.trim())));
   assert.equal(rules.length >= ACT_RULES.length, true, "the rules of the acts stand under them");
-  assert.equal(keys.length, table.reduce((n, action) => n + (action.views?.length ?? 1), 0) + 3 + rules.length, "one row per action, and one more per view of an action that has two");
+  assert.equal(keys.length, table.reduce((n, action) => n + (action.views?.length ?? 1), 0) + 4 + rules.length, "one row per action, and one more per view of an action that has two");
 });
 
 test("the help lists the marks with their words, in UTF-8 and in ASCII: each mark the list draws is there", () => {
@@ -1391,7 +1397,7 @@ test("the help says, for the two views that cannot be opened yet, what to run in
 });
 
 test("the help's last section, `Not in this version`, names every act this version does not have with the oats command that does it", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 100), size(79, 90), size(200, 75)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 120), size(79, 110), size(200, 90)]) {
     const lines = helpLines(golden({ ascii }), sz), text = lines.map((line) => line.trim());
     const at = text.indexOf("Not in this version");
     assert.equal(at > 0, true);
@@ -1431,7 +1437,7 @@ test("the help scrolls: at 60x15 it does not fit, its last row says what is cut 
   assert.deepEqual(draw(press(ended, ["g"], sz).state, sz).lines, d.lines, "and goes back to its start");
   assert.deepEqual(draw(press(ended, ["k"], sz).state, sz).lines[sz.rows - 3].trim(), cutNote(d.extent - visible - 1, 1));
   // Every row of the help is reached by scrolling: nothing is lost behind the note.
-  const whole = helpLines(golden(), size(60, 100)).map((line) => line.trim()).filter(Boolean), seen = new Set();
+  const whole = helpLines(golden(), size(60, 120)).map((line) => line.trim()).filter(Boolean), seen = new Set();
   let state = open;
   for (let i = 0; i < d.extent; i++) { for (const line of draw(state, sz).lines.slice(3, sz.rows - 3)) seen.add(line.trim()); state = press(state, ["j"], sz).state; }
   for (const line of whole) assert.equal(seen.has(line), true, line);
@@ -1474,10 +1480,12 @@ test("help and quit are last and always: a kept filter gives way to them, down t
   const kept = (query, actions, sz) => cellText(draw(press(golden({ actions }), ["/", ...query, "enter"], sz).state, sz), sz.rows - 1);
   assert.equal(kept("a", long.actions, S60), " /a       Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit");
   assert.equal(kept("acme-ledger", long.actions, S60), " /acme…   Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit", "the query is cut, the two hints are whole");
+  // The hint that stands first (Enter would open the selected agent) comes before the filter's
+  // place, when it fits beside help and quit: at 60 columns it does not, and takes no room.
+  assert.equal(kept("a", long.actions, S80), " /a              Enter open   Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit");
   // With room, the kept filter has its whole place and the other hints follow it.
-  assert.equal(kept("a", long.actions, S80), " /a                      Ctrl+Alt+Shift+F11 help   Ctrl+Alt+Shift+F12 quit");
-  assert.equal(kept("a", ACTIONS, S60), " /a                      / filter   ? help   q quit", "of the other hints, as many as fit");
-  assert.equal(kept("a", ACTIONS, S80), " /a                      / filter   Tab detail   Esc close   ? help   q quit");
+  assert.equal(kept("a", ACTIONS, S60), " /a                      Enter open   ? help   q quit", "of the other hints, as many as fit");
+  assert.equal(kept("a", ACTIONS, S80), " /a                      Enter open   / filter   Tab detail   ? help   q quit");
   // Keys so long that the two hints fill the row: no kept filter is drawn, and nothing passes the edge.
   const longest = effectiveConfig({ keys: { help: ["ctrl+alt+shift+pagedown"], quit: ["ctrl+alt+shift+pageup"] } });
   const row = kept("a", longest.actions, S60);
@@ -1606,7 +1614,7 @@ test("this machine and a reached machine in one view at 80x24 in UTF-8, cell for
   const d = draw(reached(), S80);
   assert.deepEqual(d.lines, [
     " oats  acme-platform  +1 machine                           3 running  2 stopped",
-    " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+    "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
     ...beside([
       " This machine",
@@ -1645,7 +1653,7 @@ test("this machine and a reached machine in one view at 80x24 in UTF-8, cell for
 test("this machine and a reached machine at 80x24 in ASCII, cell for cell: the same screen with the rules, the marks and the cut mark in ASCII", () => {
   assert.deepEqual(draw(reached({ ascii: true }), S80).lines, [
     " oats  acme-platform  +1 machine                           3 running  2 stopped",
-    " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+    "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"-".repeat(38)}+${"-".repeat(41)}`,
     ...beside([
       " This machine",
@@ -1679,7 +1687,7 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
     const cut = (text, cells) => `${text.slice(0, cells - g.cut.length)}${g.cut}`;
     assert.deepEqual(draw(state, S80).lines, [
       " oats  acme-platform  +1 machine                2 running  1 stopped  2 unknown",
-      " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+      "  Instances   Souls   Capabilities                                read 10:00:00",
       `${g.rule.repeat(38)}${g.down}${g.rule.repeat(41)}`,
       ...beside([
         " This machine",
@@ -1705,7 +1713,7 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
       ], g.bar),
       `${g.rule.repeat(38)}${g.up}${g.rule.repeat(41)}`,
       // The selected row's machine was not reached and the kernel does not report it addressable: no act.
-      " / filter   Tab detail   r refresh   w workspaces   ? help   q quit",
+      " / filter   Tab detail   r refresh   w workspaces   2 souls   ? help   q quit",
     ]);
   }
   // Nothing of the machine reads as stopped, or as running, that is only not reached.
@@ -1749,7 +1757,7 @@ test("the view of two deployments at 120x40, 79x24 and 60x15: the same headings 
       assert.equal(cellText(d, 5, pane + 1).trim(), "machine  This machine", `${at}: the detail's machine line`);
     } else assert.equal(d.lines.some((line) => line.includes("soul ")), false, `${at}: no detail beside the list`);
     assert.deepEqual(d.cells[4].map((cell) => cell.style.reverse), Array.from({ length: sz.cols }, (_, x) => x < pane), `${at}: the selected row's bar is the pane`);
-    assert.equal(cellText(d, sz.rows - 1), sz.cols >= 94 ? FOOTER_WIDE : sz.cols >= 79 ? FOOTER : FOOTER_60, at);
+    assert.equal(cellText(d, sz.rows - 1), sz.cols >= 110 ? FOOTER_120 : sz.cols >= 79 ? FOOTER : FOOTER_60, at);
   }
 });
 
@@ -2077,7 +2085,7 @@ test("the four hostile messages as a row's runtimeError, given by each of the th
     // Whatever was shown: the bytes the real screen writes, every text of the frame, every cell.
     const out = readTerminalOutput(createScreen({ utf8: !ascii, ascii }).render(d.rows, sz, { full: true }));
     assert.deepEqual(out.foreign, [], `${at}: every ESC written begins a sequence of the TUI's own`);
-    assert.deepEqual([...new Set(out.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr"].includes(kind)), [], `${at}: a frame writes positions, erases and styles, and nothing else`);
+    assert.deepEqual([...new Set(out.sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr", "sync"].includes(kind)), [], `${at}: a frame writes positions, erases and styles in one synchronized update, and nothing else`);
     assert.doesNotMatch(out.text, CONTROL, `${at}: no control character is written`);
     if (ascii) assert.match(out.text, PRINTABLE_ASCII, `${at}: with a locale that is not UTF-8, nothing outside printable ASCII`);
     for (const spans of d.rows) for (const span of spans) if (Object.hasOwn(span, "text")) assert.doesNotMatch(textOf(span.text), CONTROL, `${at}: no text of the frame holds a control character`);
@@ -2104,7 +2112,7 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
   const blank = Array.from({ length: 5 }, () => "");
   assert.deepEqual(draw(told(), S80).lines, [
     ` oats  acme-platform  ${COUNTS}`,
-    " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+    "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
     ...beside([
       " ▾ ● acme-console-e…  claude",
@@ -2129,11 +2137,11 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
       ...blank,
     ]),
     `${"─".repeat(38)}┴${"─".repeat(41)}`,
-    FOOTER,
+    " X stop   / filter   Tab detail   r refresh   w workspaces   ? help   q quit", // its state is not known: Enter does not open it
   ]);
   assert.deepEqual(draw(told({ ascii: true }), S80).lines, [
     ` oats  acme-platform  ${COUNTS}`,
-    " 1 Instances   2 Souls   3 Capabilities                           read 10:00:00",
+    "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"-".repeat(38)}+${"-".repeat(41)}`,
     ...beside([
       " v * acme-console...  claude",
@@ -2158,7 +2166,7 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
       ...blank,
     ], "|"),
     `${"-".repeat(38)}+${"-".repeat(41)}`,
-    FOOTER,
+    " X stop   / filter   Tab detail   r refresh   w workspaces   ? help   q quit", // its state is not known: Enter does not open it
   ]);
 });
 
@@ -2190,7 +2198,7 @@ test("the switcher at 80x24 in UTF-8, cell for cell: a workspace on two machines
   const d = draw(state, S80);
   assert.deepEqual(d.lines, [
     " oats  workspaces",
-    " 1 Instances   2 Souls   3 Capabilities",
+    "  Instances   Souls   Capabilities",
     "─".repeat(80),
     placed([2, "*"], [4, "acme-platform"], [32, platform.place], [79 - platform.notLiveText.length, platform.notLiveText]),
     `  ${UNMATCHED_SECTION}`,
@@ -2210,8 +2218,11 @@ test("the switcher at 80x24 in UTF-8, cell for cell: a workspace on two machines
   for (const [r, from, to] of [[4, 2, 2 + UNMATCHED_SECTION.length], [6, 2, 2 + OFFERED_SECTION.length], [3, 32, 32 + platform.place.length], [8, 32, 50]]) for (const cell of d.cells[r].slice(from, to)) assert.equal(cell.style, DIM, `row ${r}`);
   for (const cell of d.cells[3].slice(79 - platform.notLiveText.length, 79)) assert.equal(cell.style.dim, false);
   // While the switcher is shown the header names no workspace, counts nothing and has no time, and
-  // none of the three views is the current one.
-  for (const name of ["1 Instances", "2 Souls", "3 Capabilities"]) for (const cell of d.cells[1].slice(d.lines[1].indexOf(name), d.lines[1].indexOf(name) + name.length).filter((c) => c.text !== " ")) assert.equal(cell.style, DIM, `${name} is dim`);
+  // none of the three views is the open one: nothing of the row is in reverse, Instances is plain
+  // (it is built: `1` goes back to it) and the two not built yet are dim.
+  assert.equal(d.cells[1].some((cell) => cell.style.reverse), false, "no view is the open one");
+  for (const cell of d.cells[1].slice(2, 11)) assert.equal(cell.style, PLAIN, "Instances is plain");
+  for (const [name, from] of [["Souls", 14], ["Capabilities", 22]]) for (const cell of d.cells[1].slice(from, from + name.length)) assert.equal(cell.style, DIM, `${name} is dim`);
   // Before any key the selection is on the first choice, which is also the open one.
   const first = draw(choosing(), S80);
   assert.equal(first.lines[3], placed([0, ">"], [2, "*"], [4, "acme-platform"], [32, platform.place], [79 - platform.notLiveText.length, platform.notLiveText]));
@@ -2224,7 +2235,7 @@ test("the switcher at 80x24 in ASCII, cell for cell: the rules in ASCII, and bet
   // The place is the shared home's line, drawn through shown(): the TUI chooses none of its characters.
   assert.deepEqual(d.lines, [
     " oats  workspaces",
-    " 1 Instances   2 Souls   3 Capabilities",
+    "  Instances   Souls   Capabilities",
     "-".repeat(80),
     placed([2, "*"], [4, "acme-platform"], [32, textOf(shown(platform.place))], [79 - platform.notLiveText.length, platform.notLiveText]),
     `  ${UNMATCHED_SECTION}`,
@@ -2339,7 +2350,7 @@ test("the switcher's footer offers Esc only when a workspace is open to go back 
   const rebound = effectiveConfig({ keys: { open: ["o"], close: ["backspace"], workspaces: ["f2"] } });
   assert.equal(rebound.ok, true);
   assert.equal(draw(press(reached({ actions: rebound.actions }), ["f2"]).state, S80).lines[23], " o open   / filter   r refresh   Backspace close   ? help   q quit");
-  assert.equal(draw(reached({ actions: rebound.actions }), S80).lines[23], " X stop   / filter   Tab detail   r refresh   F2 workspaces   ? help   q quit");
+  assert.equal(draw(reached({ actions: rebound.actions }), S80).lines[23], " o open   / filter   Tab detail   r refresh   F2 workspaces   ? help   q quit");
 });
 
 test("the switcher says in a line of its own that the open workspace is no longer listed, and that line hides no choice: 30 folders at 80x15", () => {
@@ -2406,7 +2417,7 @@ test("a folder that turned out not to be a deployment says so in its row, where 
 // ── The help, with machines and the switcher ─────────────────────────────────────────────────────
 
 test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment elsewhere with the oats command that does it, and what no command lifts in sentences of its own", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 100), size(79, 90), size(200, 75)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 120), size(79, 110), size(200, 90)]) {
     const text = helpLines(reached({ ascii }), sz).map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const machines = text.indexOf("Machines"), last = text.indexOf("Not in this version");
     assert.equal(machines > text.indexOf("Views") && last > machines, true, `${at}: Machines stands between Views and what is not in this version`);
@@ -2437,8 +2448,9 @@ test("the help over the switcher keeps the switcher's header and has the help's 
   for (const sz of SIZES) {
     const under = choosing(), helping = press(under, ["?"], sz).state, d = draw(helping, sz), at = `${sz.cols}x${sz.rows}`;
     assert.equal(d.lines[0], " oats  workspaces", `${at}: no workspace is named, nothing is counted`);
-    assert.equal(d.lines[1], " 1 Instances   2 Souls   3 Capabilities", `${at}: and no time`);
-    for (const cell of d.cells[1].filter((c) => c.text !== " ")) assert.equal(cell.style, DIM, `${at}: none of the three views is the current one`);
+    assert.equal(d.lines[1], "  Instances   Souls   Capabilities", `${at}: and no time`);
+    assert.equal(d.cells[1].some((cell) => cell.style.reverse), false, `${at}: none of the three views is the open one`);
+    for (const cell of d.cells[1].slice(14).filter((c) => c.text !== " ")) assert.equal(cell.style, DIM, `${at}: the two not built yet are dim`);
     assert.equal(d.lines[3].trim(), "Keys", at);
     assert.equal(d.lines[sz.rows - 1], " Esc close   ? help   q quit", at);
     for (const key of ["escape", "?"]) assert.deepEqual(draw(press(helping, [key], sz).state, sz).lines, draw(under, sz).lines, `${at}: ${key} returns to the switcher`);
@@ -2447,7 +2459,7 @@ test("the help over the switcher keeps the switcher's header and has the help's 
     assert.equal(over.lines[0].startsWith(" oats  acme-platform  "), true, at);
     assert.equal(over.lines[sz.rows - 1], " Esc close   ? help   q quit", at);
     assert.deepEqual(over.lines.slice(2, sz.rows - 1), d.lines.slice(2, sz.rows - 1), `${at}: the same rows under both headers`);
-    assert.equal(over.cells[1][1].style.dim, false, `${at}: over the list, Instances is the current view`);
+    assert.deepEqual([over.cells[1][1].style.reverse, over.cells[1][1].style.dim], [true, false], `${at}: over the list, Instances is the open view`);
   }
   // With nothing open, the help still opens and closes over the switcher.
   const none = stateOf(null, { deployment: null }), helping = press(none, ["?"]).state;
@@ -2574,7 +2586,7 @@ test("a view whose only deployment is a machine that is not live and has no row 
     const d = draw({ ...state, ascii }, sz), g = glyphsOf(ascii), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const reason = reasonRows(d, textOf(shown(said.detail)), g.cut);
     assert.equal(cellText(d, 0), " oats  billing  on garnet", `${at}: the header names the machine and counts nothing`);
-    assert.equal(d.lines[1], " 1 Instances   2 Souls   3 Capabilities", `${at}: no time: nothing was read`);
+    assert.equal(d.lines[1], "  Instances   Souls   Capabilities", `${at}: no time: nothing was read`);
     assert.equal(cellText(d, 3).trim(), said.text, `${at}: the state in the shared home's word`);
     assert.equal(reason.whole && reason.rows[0] === 4, true, `${at}: its reason, whole, on the rows under it`);
     assert.deepEqual(d.lines.slice(reason.rows.at(-1) + 1, sz.rows - 2).filter(Boolean), [], `${at}: and nothing else: no rule, no line that says no instance is listed`);
@@ -2593,59 +2605,66 @@ test("a view whose only deployment is a machine that is not live and has no row 
 
 // ── The footer while Enter would open an agent's terminal ───────────────────────────────────────────
 
-/** A kernel record that opens agents with a detach key. */
-const KEYED = Object.freeze({ ...CLI, features: Object.freeze([...CLI.features, DETACH_KEY_FEATURE]) });
-const openable = (options) => stateOf(observed([instanceRow("dev", "dev-alpha"), instanceRow("dev", "dev-beta", { running: false, runtimeState: "stopped" })], { cli: KEYED }), { cli: KEYED, ...options });
-const OPEN_HINT = "Enter open (C-\\ returns)";
+const openable = (options) => stateOf(observed([instanceRow("dev", "dev-alpha"), instanceRow("dev", "dev-beta", { running: false, runtimeState: "stopped" })]), options);
 
-test("the footer names the key that returns whenever Enter would open, down to 60 columns: hints are given up retire, stop, workspaces, refresh, detail, open, filter; help and quit never (the width table)", () => {
+test("the footer names Enter open whenever Enter would open, whatever the kernel: hints are given up capabilities, souls, retire, stop, workspaces, refresh, Esc, detail, open, filter; help and quit never (the width table)", () => {
   const state = openable(), stopped = press(state, ["j"]).state, detailed = press(state, ["tab"]).state, kept = press(state, ["/", "d", "enter"]).state;
   // The fixture's kernel has no session-start: the acts its rows offer are stop and retire. They
-  // stand after `open` and are the first given up, `retire` before `stop`.
+  // stand after `open` and are given up after the views' digits, `retire` before `stop`. A kept
+  // filter shows its own `/`: there the open hint outlives `/ filter`, and the filter's place gives
+  // way to it.
   const TABLE = [
-    // cols   an openable row selected                                                       the detail focused                                        a row Enter does not open
-    [60, `${OPEN_HINT}   / filter`, `${OPEN_HINT}   Tab detail`, "/ filter   Tab detail   r refresh"],
-    [67, `${OPEN_HINT}   / filter`, `${OPEN_HINT}   Tab detail`, "/ filter   Tab detail   r refresh"],
-    [68, `${OPEN_HINT}   / filter   Tab detail`, `${OPEN_HINT}   Tab detail`, "/ filter   Tab detail   r refresh   w workspaces"],
-    [72, `${OPEN_HINT}   / filter   Tab detail`, `${OPEN_HINT}   Tab detail   Esc close`, "/ filter   Tab detail   r refresh   w workspaces"],
-    [79, `${OPEN_HINT}   / filter   Tab detail`, `${OPEN_HINT}   Tab detail   Esc close`, "X stop   / filter   Tab detail   r refresh   w workspaces"],
-    [80, `${OPEN_HINT}   / filter   Tab detail   r refresh`, `${OPEN_HINT}   Tab detail   Esc close`, "X stop   / filter   Tab detail   r refresh   w workspaces"],
-    [94, `${OPEN_HINT}   / filter   Tab detail   r refresh`, `${OPEN_HINT}   X stop   Tab detail   Esc close   r refresh`, "X stop   D retire   / filter   Tab detail   r refresh   w workspaces"],
-    [95, `${OPEN_HINT}   / filter   Tab detail   r refresh   w workspaces`, `${OPEN_HINT}   X stop   Tab detail   Esc close   r refresh`, "X stop   D retire   / filter   Tab detail   r refresh   w workspaces"],
-    [120, `${OPEN_HINT}   X stop   D retire   / filter   Tab detail   r refresh   w workspaces`, `${OPEN_HINT}   X stop   D retire   Tab detail   Esc close   r refresh`, "X stop   D retire   / filter   Tab detail   r refresh   w workspaces"],
+    // cols  an openable row selected   the detail focused   a row Enter does not open   a kept filter
+    [60, "Enter open   / filter   Tab detail", "Enter open   Tab detail   Esc close", "/ filter   Tab detail   r refresh", "/d                      Enter open"],
+    [65, "Enter open   / filter   Tab detail", "Enter open   Tab detail   Esc close", "/ filter   Tab detail   r refresh", "/d                      Enter open   / filter"],
+    [66, "Enter open   / filter   Tab detail   r refresh", "Enter open   Tab detail   Esc close", "/ filter   Tab detail   r refresh", "/d                      Enter open   / filter"],
+    [70, "Enter open   / filter   Tab detail   r refresh", "Enter open   Tab detail   Esc close   r refresh", "/ filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter"],
+    [79, "Enter open   / filter   Tab detail   r refresh", "Enter open   X stop   Tab detail   Esc close   r refresh", "X stop   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
+    [80, "Enter open   / filter   Tab detail   r refresh", "Enter open   X stop   Tab detail   Esc close   r refresh", "X stop   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
+    [87, "Enter open   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
+    [88, "Enter open   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail"],
+    [94, "Enter open   X stop   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces", "/d                      Enter open   / filter   Tab detail   Esc close"],
+    [99, "Enter open   X stop   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "/d                      Enter open   / filter   Tab detail   Esc close"],
+    [109, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh"],
+    [110, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh"],
+    [120, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities", "/d                      Enter open   / filter   Tab detail   Esc close   r refresh   w workspaces"],
+    [127, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities", "/d                      Enter open   X stop   / filter   Tab detail   Esc close   r refresh   w workspaces"],
+    [140, "Enter open   X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities", "Enter open   X stop   D retire   Tab detail   Esc close   r refresh", "X stop   D retire   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities", "/d                      Enter open   X stop   D retire   / filter   Tab detail   Esc close   r refresh   w workspaces"],
   ];
-  for (const [cols, list, detail, other] of TABLE) {
+  for (const [cols, list, detail, other, filtered] of TABLE) {
     const sz = size(cols, 24), foot = (s) => draw(s, sz).lines[23];
     assert.equal(foot(state), ` ${list}   ? help   q quit`, `${cols}: the list`);
     assert.equal(foot(detailed), ` ${detail}   ? help   q quit`, `${cols}: the detail`);
     assert.equal(foot(stopped), ` ${other}   ? help   q quit`, `${cols}: a row Enter does not open`);
-    // A kept filter shows its own `/`: there the open hint outlives `/ filter`, and the filter's place gives way to it.
-    assert.match(foot(kept), new RegExp(`^ /d +${OPEN_HINT.replace(/[()\\]/g, "\\$&")}   `), `${cols}: a kept filter`);
+    assert.equal(foot(kept), ` ${filtered}   ? help   q quit`, `${cols}: a kept filter`);
   }
-  // The hint's key is the effective table's, and the key that returns is tui.json's, both text from outside.
+  // The hint's key is the effective table's; the back key is named while a terminal has the focus,
+  // not beside open.
   const config = effectiveConfig({ keys: { open: ["o"] }, open: { detachKey: "F12" } });
-  assert.equal(draw(openable({ actions: config.actions, detachKey: config.detachKey }), S80).lines[23], " o open (F12 returns)   / filter   Tab detail   r refresh   ? help   q quit");
-  assert.equal(draw(openable({ actions: effectiveConfig({ keys: { open: [] } }).actions }), S80).lines[23], FOOTER, "an open with no key has no hint");
+  assert.equal(draw(openable({ actions: config.actions, detachKey: config.detachKey }), S80).lines[23], " o open   / filter   Tab detail   r refresh   w workspaces   ? help   q quit");
+  assert.equal(draw(openable({ actions: effectiveConfig({ keys: { open: [] } }).actions }), S80).lines[23], " X stop   / filter   Tab detail   r refresh   w workspaces   ? help   q quit", "an open with no key has no hint");
 });
 
 test("while another machine is asked first the footer says Esc gives the open up, where the open hint stood, and Esc is not listed twice", () => {
-  const asking = reduce(openable(), { key: "enter", page: 19, extent: 0, room: 19, cols: 38 }).state;
-  assert.equal(asking.opening.phase, "lent", "this machine's agent is lent at once: no preflight");
-  const preflight = Object.freeze({ ...asking, opening: Object.freeze({ ...asking.opening, phase: "preflight" }) });
+  const preflight = Object.freeze({ ...openable(), opening: Object.freeze({ id: "x", phase: "preflight", name: "dev-alpha", machine: "garnet", routed: true }) });
   assert.equal(draw(preflight, S80).lines[23], " Esc stop opening   / filter   Tab detail   r refresh   ? help   q quit");
-  assert.equal(draw(preflight, S120).lines[39], " Esc stop opening   / filter   Tab detail   r refresh   w workspaces   ? help   q quit");
+  assert.equal(draw(preflight, S120).lines[39], " Esc stop opening   / filter   Tab detail   r refresh   w workspaces   2 souls   3 capabilities   ? help   q quit");
   assert.equal(draw(preflight, S60).lines[14], " Esc stop opening   / filter   Tab detail   ? help   q quit");
   assert.equal(draw(Object.freeze({ ...preflight, filter: Object.freeze({ editing: false, query: "d" }) }), S120).lines[39].includes("Esc close"), false);
 });
 
-test("the help lists Enter once per view with what it does there, and under the agent's line the key that returns, tmux's copy-mode rule and where the keys are listed", () => {
+test("the help lists Enter once per view with what it does there, the keys of the open terminal and the digits of the views, and under the agent's line the back key, what the terminal takes and where the keys are listed", () => {
   const lines = helpLines(openable()).map((line) => line.trim());
-  const at = lines.findIndex((line) => line.startsWith("Enter") && line.endsWith("open the selected agent's terminal, in the list of instances"));
-  assert.equal(at > 0, true);
-  assert.deepEqual(lines.slice(at + 1, at + 4), ["C-\\ brings oats tui back; the agent keeps running.", "A key that tmux's copy mode binds leaves the viewer once the mode is left.", "docs/execution-targets.md has the keys that can be chosen."]);
+  const text = lines.join(" ").replace(/ +/g, " ");
+  assert.equal(text.includes("Enter open the selected agent's terminal beside the list, or go to it when it is the open one, in the list of instances C-\\ takes the focus from the terminal back to the list; the agent keeps running. While the terminal has the focus every other key goes to the agent, Ctrl+C and Ctrl+Z too. One terminal is open at a time. It has no scrollback but the viewer's own, and no mouse. docs/tui.md has the keys that can be the back key."), true, text);
+  assert.equal(text.includes("z go to the open terminal with the whole screen; the back key brings the list back"), true);
+  assert.equal(text.includes("c close the open terminal; the agent keeps running"), true);
   assert.equal(pair(lines, "Enter", "open the selected workspace, in the switcher"), true);
   assert.equal(lines.filter((line) => line.startsWith("Enter ")).length, 2, "Enter twice, once per view");
+  for (const [key, label] of [["1", "instances"], ["2", "souls"], ["3", "capabilities"]]) assert.equal(pair(lines, key, label), true, key);
   assert.equal(lines.some((line) => line.includes("open an agent in its own tmux window") && line.includes("oats session attach --home <home>")), true);
+  // The back key is tui.json's, text from outside.
+  assert.equal(helpLines(openable({ detachKey: "F12" })).join(" ").replace(/ +/g, " ").includes("F12 takes the focus from the terminal back to the list"), true);
 });
 
 test("a tui.json that unbinds open, or close, is drawn with a kept filter: the hint that has no key is not there, and nothing else moves (round 1 of the review)", () => {
@@ -2655,13 +2674,150 @@ test("a tui.json that unbinds open, or close, is drawn with a kept filter: the h
     assert.equal(kept.filter.query, "d");
     const foot = draw(kept, sz).lines[sz.rows - 1];
     assert.match(foot, /^ \/d +\S/, `${sz.cols}: the kept filter`);
-    assert.equal(foot.includes("open ("), false, `${sz.cols}: no open hint without a key`);
+    assert.equal(/\bopen\b/.test(foot), false, `${sz.cols}: no open hint without a key`);
     assert.match(foot, /\? help   q quit$/, `${sz.cols}`);
     // While another machine is asked first, Esc's hint stands first; with no key for close there is none.
-    const asking = reduce(openable({ actions: noClose }), { key: "enter", page: 19, extent: 0, room: 19, cols: 38 }).state;
-    const preflight = Object.freeze({ ...asking, filter: Object.freeze({ editing: false, query: "d" }), opening: Object.freeze({ ...asking.opening, phase: "preflight" }) });
+    const preflight = Object.freeze({ ...openable({ actions: noClose }), filter: Object.freeze({ editing: false, query: "d" }), opening: Object.freeze({ id: "x", phase: "preflight", name: "dev-alpha", machine: "garnet", routed: true }) });
     const asked = draw(preflight, sz).lines[sz.rows - 1];
     assert.equal(asked.includes("stop opening"), false, `${sz.cols}: no Esc hint without a key`);
     assert.match(asked, /\? help   q quit$/, `${sz.cols}`);
   }
+});
+
+// ── The terminal panel (T1) ───────────────────────────────────────────────────────────────────────
+
+/** Two running agents, dev-a selected, and a key pressed as the loop hands it on. */
+const PANEL_STATE = () => { const s = stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b")])); return Object.freeze({ ...s, selected: roster(s).rows.find(({ row }) => row.instance === "dev-a").id }); };
+const keyed = (state, id) => reduce(state, { key: id, ...(id.length === 1 ? { text: id } : {}), page: 19, extent: 0, room: 19, cols: 38 }).state;
+/** dev-a's terminal, open: "focus" (it has the focus), "list" (the back key was typed), "zoom" (z
+ *  from the list), "detail" (Tab from the list); with `detachKey` as tui.json's. */
+function panelIn(how, { detachKey, status = "open" } = {}) {
+  let s = keyed(PANEL_STATE(), "enter");
+  if (status === "open") s = reduce(s, { shown: { id: s.terminal.id } }).state;
+  if (detachKey !== undefined) s = Object.freeze({ ...s, detachKey });
+  if (how === "focus") return s;
+  s = reduce(s, { back: true }).state;
+  return how === "zoom" ? keyed(s, "z") : how === "detail" ? keyed(s, "tab") : s;
+}
+/** The agent's screen as the panel hands it on: its first row a prompt, its second red text and a
+ *  run longer than any panel; the cursor after the prompt. */
+const AGENT = (cols, rows, visible = true) => ({ lines: captureRows(`$ hello\n\u001b[31mred\u001b[0m and ${"x".repeat(300)}`, { cols, rows }), cursor: { x: 2, y: 0, visible } });
+/** Draw with the agent's screen at the size the frame gives the terminal (as the loop resizes it). */
+function drawPanel(state, sz) {
+  const t = draw(state, sz).terminal;
+  return draw(state, sz, { screen: t ? AGENT(t.cols, t.rows) : null });
+}
+const footer = (d, sz) => d.lines[sz.rows - 1];
+const PANEL_WIDE = [size(80, 24), size(100, 30), S120, size(200, 50)];
+
+test("Enter: the terminal stands beside the list, where the detail was, edge to edge to the right; its top row names the agent, and its screen is placed from the row under it, the agent's colours kept and clipped to the panel", () => {
+  for (const sz of PANEL_WIDE) {
+    const d = drawPanel(panelIn("focus"), sz), t = d.terminal, at = `${sz.cols}x${sz.rows}`;
+    assert.equal(t.col, d.cols + 1, `${at}: after the list and its bar`);
+    assert.equal(t.cols, sz.cols - d.cols - 1, `${at}: to the right edge`);
+    assert.deepEqual([t.title, t.top, t.whole], [3, 4, false], at);
+    assert.equal(t.rows, sz.rows - 6, `${at}: every row of the body but the title`);
+    // The list stays on screen, both rows of it.
+    for (const name of ["dev-a", "dev-b"]) assert.equal(d.lines.slice(3, sz.rows - 2).some((line) => line.slice(0, d.cols).includes(name)), true, `${at}: ${name} in the list`);
+    assert.equal(d.lines[3].slice(t.col).trim(), "dev-a", `${at}: the title names the agent`);
+    assert.equal(d.cells[3][t.col + 1].style.bold && d.cells[3][t.col + 1].style.reverse, true, `${at}: the title of a focused terminal is drawn focused`);
+    assert.equal(d.lines[4].slice(t.col), "$ hello", at);
+    assert.equal(d.lines[5].slice(t.col, t.col + 7), "red and", at);
+    assert.notEqual(d.cells[5][t.col].style.fg, null, `${at}: the agent's red`);
+    assert.equal(d.cells[5][t.col + 4].style.fg, null, `${at}: the agent's reset`);
+    assert.equal(d.lines[5].length, sz.cols, `${at}: the long run is clipped at the right edge`);
+    assert.equal(d.lines[5].slice(t.col + 8), "x".repeat(t.cols - 8), at);
+  }
+});
+
+test("while the terminal has the focus the footer names the back key and nothing else, in every frame: each size, starting or open, zoomed or not, the default key and a rebound one (QA note 2)", () => {
+  for (const sz of [S60, S79, S80, S120, size(200, 50)]) {
+    for (const detachKey of [undefined, "F12", "M-x", "C-]"]) {
+      for (const [how, status] of [["focus", "starting"], ["focus", "open"], ["zoom", "open"]]) {
+        const d = drawPanel(panelIn(how, { detachKey, status }), sz);
+        assert.equal(footer(d, sz), ` ${detachKey ?? "C-\\"} back to the list`, `${sz.cols}x${sz.rows} ${how} ${status} ${detachKey}`);
+      }
+    }
+  }
+});
+
+test("with the list focused and a terminal open, the footer leads with the keys to go to it, zoom it and close it, and Enter's own hint says so on its row", () => {
+  assert.equal(footer(drawPanel(panelIn("list"), S120), S120), " Enter focus terminal   z zoom   c close terminal   / filter   Tab detail   r refresh   w workspaces   ? help   q quit");
+  assert.equal(footer(drawPanel(panelIn("list"), S80), S80), " Enter focus terminal   z zoom   c close terminal   / filter   ? help   q quit");
+  // On another row, Enter opens that one (and closes this).
+  const other = Object.freeze({ ...panelIn("list"), selected: roster(PANEL_STATE()).rows.find(({ row }) => row.instance === "dev-b").id });
+  assert.match(footer(drawPanel(other, S120), S120), /^ Enter open {3}z zoom {3}c close terminal {3}/);
+  // The terminal goes on being drawn beside the list, its title no longer focused.
+  const d = drawPanel(panelIn("list"), S120), t = d.terminal;
+  assert.equal(d.lines[4].slice(t.col), "$ hello");
+  assert.equal(d.cells[3][t.col + 1].style.reverse, false);
+  assert.equal(d.cells[3][t.col + 1].style.bold, true);
+});
+
+test("zoom gives the terminal the whole body: the header and the footer stay, the list is hidden; the back key brings the list back with the panel", () => {
+  for (const sz of PANEL_WIDE) {
+    const d = drawPanel(panelIn("zoom"), sz), t = d.terminal, at = `${sz.cols}x${sz.rows}`;
+    assert.deepEqual([t.col, t.cols, t.top, t.whole], [0, sz.cols, 4, true], at);
+    assert.equal(d.lines.some((line) => line.includes("dev-b")), false, `${at}: no list`);
+    assert.equal(d.lines[1].trim().startsWith("Instances"), true, `${at}: the header stays`);
+    assert.equal(d.lines[2], GLYPHS.utf8.rule.repeat(sz.cols), `${at}: one rule, with no pane bar`);
+    const back = drawPanel(reduce(panelIn("zoom"), { back: true }).state, sz);
+    assert.equal(back.terminal.whole, false, at);
+    assert.equal(back.terminal.col, back.cols + 1, at);
+  }
+});
+
+test("under 80 columns the terminal is shown zoomed whenever it has the focus, and with the list focused the list is shown alone: the terminal lives on unseen, and the footer names Enter to see it again", () => {
+  for (const sz of [S60, S79, size(70, 30)]) {
+    const at = `${sz.cols}x${sz.rows}`;
+    for (const how of ["focus", "zoom"]) {
+      const t = drawPanel(panelIn(how), sz).terminal;
+      assert.deepEqual([t.col, t.cols, t.whole], [0, sz.cols, true], `${at} ${how}`);
+    }
+    const listed = drawPanel(panelIn("list"), sz);
+    assert.equal(listed.terminal, null, at);
+    assert.equal(listed.cursor, null, at);
+    assert.match(footer(listed, sz), /^ Enter focus terminal {3}z zoom {3}/, at);
+    assert.equal(listed.lines.some((line) => line.includes("$ hello")), false, at);
+  }
+});
+
+test("beside the list the panel is never narrower than PANEL_MIN (40): at 80 columns and wider the list leaves it at least 41, and narrower terminals show it zoomed", () => {
+  assert.equal(PANEL_MIN, 40);
+  for (let cols = WIDE; cols <= 240; cols++) {
+    const t = drawPanel(panelIn("focus"), size(cols, 24)).terminal;
+    assert.equal(t.whole, false, `${cols}`);
+    assert.equal(t.cols >= PANEL_MIN + 1, true, `${cols}: ${t.cols}`);
+  }
+  assert.equal(drawPanel(panelIn("focus"), size(WIDE - 1, 24)).terminal.whole, true);
+});
+
+test("Tab from the list with a terminal open shows the detail in the panel's place, until Tab or Esc again", () => {
+  for (const sz of [S80, S120]) {
+    const d = drawPanel(panelIn("detail"), sz);
+    assert.equal(d.terminal, null);
+    assert.equal(d.lines.some((line) => line.includes("$ hello")), false);
+    assert.equal(d.lines.some((line) => line.includes("worktree")), true, "the detail's rows");
+    for (const k of ["tab", "escape"]) assert.notEqual(drawPanel(keyed(panelIn("detail"), k), sz).terminal, null, k);
+  }
+});
+
+test("close gives the right side back to the detail: the frame is the one with no terminal", () => {
+  for (const sz of [S80, S120]) {
+    const closed = keyed(panelIn("list"), "c");
+    assert.equal(closed.terminal, null);
+    assert.deepEqual(drawPanel(closed, sz).lines, draw(PANEL_STATE(), sz).lines);
+  }
+});
+
+test("the cursor is shown where the agent's is, only while the terminal has the focus and the agent shows one", () => {
+  const sz = S120;
+  const focused = drawPanel(panelIn("focus"), sz), t = focused.terminal;
+  assert.deepEqual(focused.cursor, { row: t.top, col: t.col + 2 });
+  assert.equal(drawPanel(panelIn("list"), sz).cursor, null, "the list's focus: no cursor");
+  const hidden = draw(panelIn("focus"), sz, { screen: AGENT(t.cols, t.rows, false) });
+  assert.equal(hidden.cursor, null, "the agent hides its cursor");
+  assert.equal(draw(panelIn("focus"), sz).cursor, null, "no capture yet: no cursor");
+  const zoomed = drawPanel(panelIn("zoom"), sz);
+  assert.deepEqual(zoomed.cursor, { row: zoomed.terminal.top, col: 2 });
 });

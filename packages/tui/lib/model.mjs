@@ -10,7 +10,7 @@ import {
   hasInstanceChildren, heldHome, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts,
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs,
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
-  openAct, deployments as heldDeployments, detachKeySupported, hostDetachKeySupported, attachExit, preflightFailure, kernelLines,
+  openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage,
 } from "./client.mjs";
 import { shownLines } from "./term/text.mjs";
@@ -157,13 +157,7 @@ function build(state, at) {
   // Whether a list stands under the header: not for a deployment of this machine that was never
   // observed, nor for a machine that is not live and has no row kept. Each has only its reason.
   const observed = panel !== null && !gone && (local ? status === "observed" : live || instances.length > 0);
-  // Whether each other machine's OATS has the key that leaves a viewer, by the deployment its rows
-  // are tagged with (the shared panel's `row.deployment.id`; the TUI builds no deployment id).
-  // Worked out here, once for what the roster is made from, so a paint reads no machine again.
-  const opens = new Map();
-  if (panel !== null) for (const d of heldDeployments(heldOf(state, at))) if (d.remote) opens.set(d.id, hostDetachKeySupported(state.cli, d.group));
   return {
-    opens,
     panel, gone, instances, deployments, multi, parts, rows, filtering, stale, section, live, observed,
     below: waitingRollup(instances, state.collapsed, state.open, { filtering, stale, section }),
     status,
@@ -287,13 +281,18 @@ const reasonSpoken = (reason) => spoken(reason.sentence, reason.origin, reason.o
  *  machine's name), drawn through the display filter on its own. `<id>` and `<home>` in the
  *  command are the TUI's placeholders: nothing of the row is in them. */
 export const OPEN_WORDS = Object.freeze({
-  left: (name) => [{ own: "You left " }, { shown: name }, { own: ". It keeps running." }],
   failed: (name) => [{ shown: name }, { own: " could not be opened." }],
   link: (machine) => [{ own: "The connection to " }, { shown: machine }, { own: " ended." }],
   unknown: (name) => [{ own: "The viewer of " }, { shown: name }, { own: " ended without saying why." }],
+  noTmux: (name) => [{ shown: name }, { own: " could not be opened: the terminal panel needs tmux 3.2 or later on this machine." }],
   notRunning: (name) => [{ shown: name }, { own: " is not running, so it has no terminal to open." }],
   stateUnknown: (name) => [{ own: "Whether " }, { shown: name }, { own: " runs is not known, so it is not opened." }],
-  noKey: (machine) => [machine === null ? { own: "This machine" } : { shown: machine }, { own: "'s OATS has no key to leave a viewer (it needs OATS 0.51.0 or later), so it is not opened from here. `oats session attach --server <id> --home <home>` opens it, and only closing the terminal leaves it." }],
+});
+/** The line of a view that is not in this version (its key: 2, 3), with what to run instead: the
+ *  help's commands (views/help.mjs VIEWS), in the TUI's own words. */
+export const NOT_BUILT = Object.freeze({
+  souls: Object.freeze({ said: Object.freeze([{ own: "Souls are not in this version: `oats souls` lists them, and `oats spawn <soul>` makes an instance of one." }]), under: Object.freeze([]) }),
+  capabilities: Object.freeze({ said: Object.freeze([{ own: "Capabilities are not in this version: `oats capabilities` lists them." }]), under: Object.freeze([]) }),
 });
 /** A sentence from outside (a reason of the shared home's, the preflight table's), as a text
  *  under the line: drawn as the detail draws a reason, wrapped on the reason's rows, never as one
@@ -310,7 +309,8 @@ const elsewhere = (row) => typeof row.server === "string" && row.server !== "";
  *        for a row of another machine (its preflight runs first)
  *    { open: false, said: { said, under } }             opens nothing, and this says why
  *  Whether a row can be opened is the shared openAct's, switched on its reason's code, never on a
- *  sentence; the TUI adds only the two feature gates on top of an enabled answer. */
+ *  sentence. The viewer is started with no key of its own (the TUI takes the back key before the
+ *  pane sees it), so a kernel or a host of any version is opened alike. */
 export function openDecision(state, row, acts) {
   const name = row.instance, id = instanceId(row);
   const machine = elsewhere(row) ? row.deployment?.machine ?? row.server : null;
@@ -325,23 +325,25 @@ export function openDecision(state, row, acts) {
     if (act.reason.code === "state-unknown") return no(OPEN_WORDS.stateUnknown(name));
     return no([], outside(reasonSpoken(act.reason)));
   }
-  if (!elsewhere(row)) {
-    return detachKeySupported(state.cli) ? { open: true, id, name, machine, target: { home: row.home }, routed: false } : no(OPEN_WORDS.noKey(null));
-  }
-  if (roster(state).opens.get(row.deployment?.id) !== true) return no(OPEN_WORDS.noKey(machine));
+  if (!elsewhere(row)) return { open: true, id, name, machine, target: { home: row.home }, routed: false };
   return { open: true, id, name, machine, target: { serverId: row.server, instance: row.instance, home: row.home }, routed: true };
 }
 
-/** The line after the viewer returned, or null when the TUI says nothing of its own (the viewer
- *  ended without the key: the list shows the agent as the kernel now reports it). `status` is the
- *  child's exit status as Node reports it; the shared attachExit reads it, the TUI compares no
- *  number. What the viewer printed on stderr stands under a failure, once, as one text in
- *  quotation marks naming nobody: OATS, tmux and ssh all print there, and nothing is compared
- *  with it. */
-export function returnedLine({ name, machine, routed }, status, stderr) {
-  const word = attachExit(status, { keyed: true, routed });
+/** The line after a terminal closed by itself, or null when the TUI says nothing of its own: the
+ *  viewer ended with status 0 (the list shows the agent as the kernel now reports it), or the
+ *  person closed it (`asked`: c, or Enter on another row). `status` is what the pane's shell
+ *  wrote of the viewer's exit (lib/panel.mjs), null when it wrote none; the shared attachExit reads
+ *  it, as for a viewer started with no key, and the TUI compares no number. What the viewer printed
+ *  on stderr stands under a failure, once, as one text in quotation marks naming nobody: OATS, tmux
+ *  and ssh all print there, and nothing is compared with it. `refused` is the panel's own refusal
+ *  when no viewer was started at all: "tmux" (no tmux here, or one too old), or "start" (the
+ *  panel's server or window was not made; `stderr` is then what tmux said). */
+export function returnedLine({ name, machine, routed }, status, stderr, { asked = false, refused = null } = {}) {
+  if (asked) return null;
+  if (refused === "tmux") return { said: OPEN_WORDS.noTmux(name), under: [] };
+  if (refused !== null) status = 1;
+  const word = attachExit(status, { keyed: false, routed });
   if (word === "ended") return null;
-  if (word === "left") return { said: OPEN_WORDS.left(name), under: [] };
   if (word === "unknown") return { said: OPEN_WORDS.unknown(name), under: [] };
   const line = displayLine(stderr);
   const under = line === null ? [] : [line === DETAIL_WITHHELD ? DETAIL_WITHHELD : `"${line}"`];
@@ -467,6 +469,7 @@ export function model(state, { page, now, at, cols }) {
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, outcome: state.outcome, openable: false, actable: [],
+    terminal: state.terminal, onTerminal: false,
     act: state.view === "act" && state.act ? actView(state) : null,
   };
   // The view under the help, or under a confirmation, decides what the header says.
@@ -499,8 +502,9 @@ export function model(state, { page, now, at, cols }) {
     list: r.items.slice(win.top, win.top + win.size).map((item) => (item?.id !== undefined ? { kind: "row", ...listRow(state, r, item) } : item)),
     above: win.above, below: win.below, wordWidth: r.wordWidth,
     detail: selected >= 0 ? detailOf(state, r, r.items[selected], now, acts) : null,
-    // Enter opens the selected agent's terminal now: the footer names the key that returns.
+    // Enter opens the selected agent's terminal now, or (`onTerminal`) goes to the one open on it.
     openable: decision?.open === true && state.opening === null,
+    onTerminal: row !== null && state.terminal !== null && state.terminal.id === instanceId(row),
     // The acts whose key opens a confirmation now, read from the same instanceActs answer: the
     // footer names them. A key not named still answers, with the line that says why.
     actable: row && state.opening === null ? ACT_VERBS.filter((verb) => actDecision(state, row, acts, verb).open) : [],
