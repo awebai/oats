@@ -236,10 +236,15 @@ Domain errors resolve with stable safe codes.
 
 ```text
 spawn <admitted-soul> --dir <admitted-context> --agents-root <admitted-root>
-  [original validated choices] --expect-decision <stored-revision>
+  [original validated choices] --expect-decision <stored-revision> [--max-age 60]
   --idempotency-key <stored-key> --task-file <owned-temp>
   [--wake-file <owned-temp>] --json
 ```
+
+`--max-age 60` goes only to a CLI that lists `spawn-apply-max-age` (#1246 K1): the
+kernel may then reuse deployment observations up to 60 s old instead of reading
+every member head again at the press; `--expect-decision` still refuses a
+drifted decision (`E_DECISION_STALE`, read as drifted).
 
 Private files are created0600 inside private directories; short writes refuse
 before CLI dispatch rather than launch with truncated instructions. Cleanup is

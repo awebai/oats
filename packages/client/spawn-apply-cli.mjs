@@ -45,7 +45,13 @@ function refusal(doc, cli) {
 export async function cliSpawnApply(cli, options = {}, io = {}) {
   // Repeat the complete positive mode fence here, before even creating inputs.
   if (!spawnApplySupported(cli)) return failure('E_APPLY_UNAVAILABLE');
-  if (!record(options) || Object.keys(options).some(k => !['target', 'choices', 'task', 'wake', 'decision', 'key', 'deadlineMs'].includes(k))) return failure('E_BAD_ARGS');
+  if (!record(options) || Object.keys(options).some(k => !['target', 'choices', 'task', 'wake', 'decision', 'key', 'deadlineMs', 'maxAge'].includes(k))) return failure('E_BAD_ARGS');
+  // Feature spawn-apply-max-age (#1246 K1): the kernel may reuse deployment observations up to maxAge seconds old.
+  // Only beside --expect-decision, which fences a drifted decision, and only where the CLI lists it (an older
+  // kernel refuses the flag).
+  const maxAge = options.maxAge;
+  if (maxAge !== undefined && (!Number.isInteger(maxAge) || maxAge < 1 || maxAge > 3600)) return failure('E_BAD_ARGS');
+  const reuse = maxAge !== undefined && Array.isArray(cli.features) && cli.features.includes('spawn-apply-max-age') ? ['--max-age', String(maxAge)] : [];
   // The broker derives the deadline from the confirmed preview (spawnApplyDeadlineMs); 60 s without one.
   const timeout = options.deadlineMs ?? SPAWN_APPLY_MS;
   if (!spawnApplyDeadline(timeout)) return failure('E_BAD_ARGS');
@@ -60,7 +66,7 @@ export async function cliSpawnApply(cli, options = {}, io = {}) {
     if (input.wake) wakeFile = writeTaskFile(JSON.stringify(input.wake), io);
     const choices = input.choices;
     const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot, ...choiceArgv(choices, cli)];
-    argv.push('--expect-decision', decision.revision, '--idempotency-key', options.key, '--task-file', taskFile.file);
+    argv.push('--expect-decision', decision.revision, ...reuse, '--idempotency-key', options.key, '--task-file', taskFile.file);
     if (wakeFile) argv.push('--wake-file', wakeFile.file);
     argv.push('--json');
     const env = { ...(io.env ?? process.env) };
