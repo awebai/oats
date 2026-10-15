@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fs, join, dirname, withLock } from './io.mjs';
 import { withBase, verdict, cacheDir, cacheLock, clearDeadCacheLock } from './consult.mjs';
+import { resolveNodes } from './config.mjs';
 
 const WORKER_TIMEOUT_MS = 20000;
 const OUTPUT_LIMIT = 64 * 1024;
@@ -28,17 +29,33 @@ function killGroup(child, signal = 'SIGKILL') {
   catch { try { child.kill(signal); } catch { /* already gone */ } }
 }
 
-export function runWorker(bindings, alias, refs = null) {
-  return withBase(bindings, alias, {}, ctx => {
-    const v = verdict(ctx), wanted = Array.isArray(refs?.[alias]) ? refs[alias] : null;
+export function runWorker(bindings, alias, refs = null, decl = null) {
+  const read = ctx => {
+    const v = verdict(ctx, { fetchMissing: !ctx.offline }), wanted = Array.isArray(refs?.[alias]) ? refs[alias] : null;
     const nodes = v.ok ? Object.fromEntries((wanted || []).filter(node => Object.hasOwn(v.nodes, node)).map(node => [node, v.nodes[node]])) : v.nodes;
     return v.ok
       ? { alias, primed: true, ok: true, receipt: ctx.receipt, digest: v.digest, nodes }
       : { alias, primed: true, ok: false, receipt: ctx.receipt, error: v.error };
+  };
+  return withBase(bindings, alias, { preferCached: true }, ctx => {
+    const cached = read(ctx);
+    if (cached.ok && ctx.offline && ctx.refreshDue && decl) {
+      const here = ref => ref.startsWith(`${alias}/`);
+      try {
+        resolveNodes({ ...decl, owns: decl.owns.filter(here), reads: decl.reads.filter(here) }, bindings, { [alias]: cached });
+      } catch (error) {
+        if (!['E_CONFIG', 'E_OWNER'].includes(error.code)) throw error;
+        // A node/owner may have changed upstream since this cache was fetched.
+        // Retry normal resolution once, inside this same worker's deadline.
+        // Do not force --fresh: recheck TTL/attemptedAt under the cache lock.
+        return withBase(bindings, alias, {}, read);
+      }
+    }
+    return cached;
   });
 }
 
-export function runSupervisor({ bindings, aliases, refs = null, timeoutMs = WORKER_TIMEOUT_MS }) {
+export function runSupervisor({ bindings, aliases, refs = null, decl = null, timeoutMs = WORKER_TIMEOUT_MS }) {
   const children = new Set();
   const stopAll = () => { for (const child of children) killGroup(child); };
   process.once('SIGTERM', () => { stopAll(); process.exit(143); });
@@ -55,7 +72,7 @@ export function runSupervisor({ bindings, aliases, refs = null, timeoutMs = WORK
     };
     const tooMuch = () => { tooLarge = true; killGroup(child); };
     const timer = setTimeout(() => { timedOut = true; killGroup(child); }, timeoutMs);
-    child.stdin.end(JSON.stringify({ bindings, alias, refs }));
+    child.stdin.end(JSON.stringify({ bindings, alias, refs, decl }));
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', chunk => { if (Buffer.byteLength(stdout) + Buffer.byteLength(stderr) + Buffer.byteLength(chunk) > OUTPUT_LIMIT) tooMuch(); else stdout += chunk; });
     child.stderr.on('data', chunk => { if (Buffer.byteLength(stdout) + Buffer.byteLength(stderr) + Buffer.byteLength(chunk) > OUTPUT_LIMIT) tooMuch(); else stderr += chunk; });
@@ -74,7 +91,7 @@ export function runSupervisor({ bindings, aliases, refs = null, timeoutMs = WORK
 async function main() {
   const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
   if (process.argv[2] === '--worker') {
-    try { process.stdout.write(JSON.stringify(runWorker(payload.bindings, payload.alias, payload.refs))); }
+    try { process.stdout.write(JSON.stringify(runWorker(payload.bindings, payload.alias, payload.refs, payload.decl))); }
     catch (error) { console.error(firstLine(error?.message)); process.exit(1); }
     return;
   }

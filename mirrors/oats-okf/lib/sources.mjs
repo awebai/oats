@@ -24,13 +24,13 @@ export function ensureInstanceKnowledge(home) {
 }
 const firstLine=text=>String(text||'unknown error').split(/\r?\n/).map(s=>s.trim()).find(Boolean) || 'unknown error';
 function validateRefs(bindings,decl,primed={}) {
-  const accepted={},resolvedAliases=new Set();
-  for(const [alias,base] of Object.entries(bindings.bases)) if(base.kind==='directory') {
-    accepted[alias]={nodes:validateBase(base.path,base).meta.nodes};resolvedAliases.add(alias);
+  const accepted={},referenced=refsByAlias(decl);
+  for(const [alias,base] of Object.entries(bindings.bases)) if(base.kind==='directory' && Object.hasOwn(referenced,alias)) {
+    accepted[alias]={nodes:validateBase(base.path,base).meta.nodes};
   }
   for(const [alias,v] of Object.entries(primed)) {
     if(!v?.ok) fail(v?.error?.code || 'E_VALIDATION',`base "${alias}" at ${short(v?.receipt || {base:alias,kind:'git',commit:'unknown'})}: ${v?.error?.message || 'base is not a validated knowledge tree'}`);
-    accepted[alias]={nodes:v.nodes};resolvedAliases.add(alias);
+    accepted[alias]={nodes:v.nodes};
   }
   const unprimedGit=new Set(Object.entries(bindings.bases).filter(([alias,base])=>base.kind==='git' && !Object.hasOwn(primed,alias)).map(([alias])=>alias));
   const notSkipped=ref=>!unprimedGit.has(ref.split('/')[0]);
@@ -43,12 +43,13 @@ function refsByAlias(decl) {
   return out;
 }
 function primeGitBases(bindings,decl) {
-  const allAliases=Object.entries(bindings.bases).filter(([,base])=>base.kind==='git').map(([alias])=>alias);
+  const refs=refsByAlias(decl);
+  const allAliases=Object.keys(refs).filter(alias=>bindings.bases[alias]?.kind==='git');
   const aliases=allAliases.slice(0,64), skipped=allAliases.slice(64);
   if(!aliases.length) return {warnings:[],primed:{}};
   const currentSettings=settings();
   const primingSettings={...currentSettings,'git-timeout':Math.min(currentSettings['git-timeout'] ?? 20,20)};
-  const result=spawnSync(process.execPath,[primeBasesScript],{input:JSON.stringify({bindings,aliases,refs:refsByAlias(decl)}),encoding:'utf8',timeout:25000,killSignal:'SIGTERM',env:{...process.env,OATS_SETTINGS:JSON.stringify(primingSettings)}});
+  const result=spawnSync(process.execPath,[primeBasesScript],{input:JSON.stringify({bindings,aliases,refs,decl}),encoding:'utf8',timeout:25000,killSignal:'SIGTERM',env:{...process.env,OATS_SETTINGS:JSON.stringify(primingSettings)}});
   const skippedWarnings=skipped.map(alias=>`okf base ${alias} not primed: too many git bases to prime concurrently; run \`oats okf bases\``);
   const warnAll=reason=>({warnings:[...aliases.map(alias=>`okf base ${alias} not primed: ${firstLine(reason)}; run \`oats okf bases\``),...skippedWarnings],primed:{}});
   if(result.error?.code==='ETIMEDOUT') return warnAll('timed out');
@@ -78,8 +79,10 @@ export function consultSource(home) {
   return {home,work,decl:declaration(fs.realpathSync(process.env.OATS_SOUL)),bindings:loadBindings(undefined,seat)};
 }
 /** The spawn's check: the soul's declared nodes resolve in the accepted bases
- *  (Git bases primed into the host cache within a bounded time; a base that
- *  cannot be primed is a warning, not a refusal). → { decl, warnings }. */
+ *  (only owns/reads bases are primed; a usable cached commit is checked offline,
+ *  with one bounded normal resolution on a due node/owner mismatch). Cold Git
+ *  bases retain bounded priming; unavailable priming warns rather than refusing.
+ *  Successful cached checks leave freshness to consultation. → { decl, warnings }. */
 export function checkSeat(home) {
   const {decl,bindings}=consultSource(home),priming=primeGitBases(bindings,decl);
   validateRefs(bindings,decl,priming.primed);
