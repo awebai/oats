@@ -182,13 +182,13 @@ test("across a new observation the selection stays on its instance, wherever tha
   assert.deepEqual(drawn(state), ["a", "b", "c", "d"]);
   assert.equal(state.selected, idOf("c"));
   assert.equal(selectedAt(state), 2, "one row further down, and still selected");
-  // It stopped: it is drawn after the running ones, and it is still the selection.
+  // It stopped: it keeps its place, since the roster is in name order (#1262), and it is still the selection.
   state = take(state, observed([...solos("a", "b", "d"), instanceRow("dev", "c", STOPPED)]));
-  assert.deepEqual(drawn(state), ["a", "b", "d", "c"]);
+  assert.deepEqual(drawn(state), ["a", "b", "c", "d"]);
   assert.equal(state.selected, idOf("c"));
   // It joined a cluster: the same.
   state = take(state, observed([...solos("a", "b", "d"), instanceRow("dev", "c", { parentInstance: "d" })]));
-  assert.deepEqual(drawn(state), ["d", "c", null, "a", "b"]);
+  assert.deepEqual(drawn(state), ["a", "b", null, "d", "c"]);
   assert.equal(state.selected, idOf("c"));
 });
 
@@ -1244,7 +1244,7 @@ test("collapse-to-parent and expand-to-child stay within the run of rows the ins
   const joined = reduce(stateOf(reporting([instanceRow("dev", "lead"), instanceRow("dev", "mid", { parentInstance: "lead" }), instanceRow("dev", "alone")]), { cli: READS }), { admitted: SECOND, at: AT }).state;
   const second = [instanceRow("dev", "b-root"), instanceRow("dev", "b-kid", { parentInstance: "b-root" }), instanceRow("dev", "far-kid", { parentInstance: "mid" })];
   const state = reduce(joined, { id: SECOND, entry: reporting(second.map((row) => homedIn(SECOND, row)), { dir: SECOND }), number: 1 }).state;
-  assert.deepEqual(kinds(state), ["heading", "lead", "mid", "gap", "alone", "heading", "b-root", "b-kid", "gap", "far-kid"]);
+  assert.deepEqual(kinds(state), ["heading", "alone", "gap", "lead", "mid", "heading", "b-root", "b-kid", "gap", "far-kid"]);
   const on = (name) => goTo(state, name);
   const stays = (name, key) => {
     const from = on(name), result = press(from, [key]);
@@ -1658,13 +1658,13 @@ test("with every deployment of this machine read, a machine that is no longer li
  *  last instance selected; `open` says which of the two the view was opened on. */
 function twoHere(open) {
   const first = [instanceRow("dev", "a-lead"), instanceRow("dev", "a-kid", { parentInstance: "a-lead" })];
-  const second = [instanceRow("dev", "b-lead"), instanceRow("dev", "b-kid", { parentInstance: "b-lead" }), instanceRow("dev", "b-last")].map((row) => homedIn(SECOND, row));
+  const second = [instanceRow("dev", "b-lead"), instanceRow("dev", "b-kid", { parentInstance: "b-lead" }), instanceRow("dev", "b-tail")].map((row) => homedIn(SECOND, row));
   const joined = reduce(stateOf(reporting(first), { cli: READS }), { admitted: SECOND, at: AT }).state;
   const both = reduce(joined, { id: SECOND, entry: reporting(second, { dir: SECOND }), number: 1 }).state;
   const state = open === SECOND ? both : press(both, ["w", "enter"]).state;
   assert.equal(state.open, open);
-  assert.deepEqual(drawn(state), ["a-lead", "a-kid", "b-lead", "b-kid", null, "b-last"]);
-  return { first, second, state: goTo(press(goTo(state, "b-lead"), ["h"]).state, "b-last") };
+  assert.deepEqual(drawn(state), ["a-lead", "a-kid", "b-lead", "b-kid", null, "b-tail"]);
+  return { first, second, state: goTo(press(goTo(state, "b-lead"), ["h"]).state, "b-tail") };
 }
 /** The steps of the test of two deployments, for a view opened on `open`: the second deployment's
  *  read fails with nothing kept, the first is read again, and the second is read again. */
@@ -1672,7 +1672,7 @@ function oneUnavailable(open) {
   const { first, second, state } = twoHere(open);
   const kept = place(state);
   assert.equal(kept.collapsed.length, 1);
-  assert.equal(selectedName(state), "b-last");
+  assert.equal(selectedName(state), "b-tail");
   const lostEntry = failed(state.entries.get(SECOND), LOCKED, tick(0));
   assert.equal(lostEntry.deployment.status, "unavailable");
   const lost = reduce(state, { id: SECOND, entry: lostEntry, number: 2 }).state;
@@ -1684,9 +1684,9 @@ function oneUnavailable(open) {
   assert.deepEqual(place(roster2.state), kept, "nor does an answer of the roster");
   const back = reduce(other.state, { id: SECOND, entry: reporting(second, { dir: SECOND }), number: 3 }).state;
   assert.deepEqual(place(back), kept);
-  assert.deepEqual(drawn(back), ["a-lead", "a-kid", "b-lead", null, "b-last"], "the cluster is still collapsed");
-  assert.equal(selectedName(back), "b-last");
-  assert.equal(marked(framed(back).lines).includes("b-last"), true);
+  assert.deepEqual(drawn(back), ["a-lead", "a-kid", "b-lead", null, "b-tail"], "the cluster is still collapsed");
+  assert.equal(selectedName(back), "b-tail");
+  assert.equal(marked(framed(back).lines).includes("b-tail"), true);
 }
 
 test("two deployments of this machine in one view, the open one unavailable: an observed entry of the other does not forget a collapse key of a row of the unavailable one", () => {

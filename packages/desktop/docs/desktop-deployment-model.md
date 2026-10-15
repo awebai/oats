@@ -435,9 +435,12 @@ answers the view that holds it; no `?ws=` answers the first view.
   the machine is uppercased, a path tail never is, since a path is
   case-sensitive) only when the view has two or more, and none for a deployment with no rows;
   with one it has no headings. Rows never repeat the workspace name, and a
-  row's identity line keeps its host. Rows, and the tree's clusters, stand
-  running, then unknown (`running` not a boolean), then stopped, by name
-  within each: one comparison, `byRuntimeState`
+  row's identity line keeps its host. The tree (the sidebar, the palette,
+  the TUI) stands in name order: each cluster by its first root, siblings by
+  name, ties by `instanceId` (`instance-tree.mjs` `rosterOrder`, #1262), so a
+  start or a stop moves no row. The panel's own list (`panelInstances`) still
+  stands running, then unknown (`running` not a boolean), then stopped, by
+  name within each: `byRuntimeState`
   (`packages/client/instance-presentation.mjs`).
 
 ### A workspace's own machines

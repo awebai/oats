@@ -77,7 +77,7 @@ function markOf(row) {
   return word === "stopped" && row.runtimeState === "shell" ? "shell" : word;
 }
 
-/** The group of instances that are related to no other, as the shared grouping names it. */
+/** The label of each run of instances related to no other, as the shared grouping names it. */
 const SINGLES = "independent";
 
 /** Everything of a state that does not depend on a width: the panel, the rows as the shared
@@ -119,12 +119,15 @@ function build(state, at) {
       parts.push(heading(part.deployment, part.label));
       if (text(part.deployment.note)) parts.push({ kind: "sentence", value: part.deployment.note });
     }
-    let drawn = 0;
+    let previous = null; // whether the group drawn last was a run of single instances
     for (const group of part.groups) {
-      if (group.key === SINGLES && drawn) parts.push({ kind: "gap" });
+      // A gap at every boundary between a run of single instances and a cluster, both ways (#1262).
+      const singles = group.label === SINGLES;
+      if (previous !== null && singles !== previous) parts.push({ kind: "gap" });
+      previous = singles;
       for (const cluster of group.clusters) for (const row of cluster.instances) {
         const item = { kind: "row", row, id: instanceId(row), depth: Number.isInteger(row.depth) ? row.depth : 0 };
-        parts.push(item); rows.push(item); drawn++;
+        parts.push(item); rows.push(item);
       }
     }
   }
