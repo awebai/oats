@@ -1482,6 +1482,22 @@ test("the first show of the Souls view reads the catalog once, over the reader's
   assert.deepEqual(readerDid(r).at(-1), ["stop"], "the reader is stopped on the way out, the catalog's read with it");
 });
 
+test("a read of the catalog that a newer key replaced is never shown: the newer read lands first, the older after it, and the screen keeps the newer souls", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("2"); await settle();
+  assert.equal(r.soulReads.length, 1, "the read at key A");
+  r.reader.answer(atCommit(ENTRY, "b2")); await settle();
+  assert.equal(r.soulReads.length, 2, "the read at key B");
+  r.soulReads[1].answer(soulsDocument(["new-catalog-soul"])); await settle();
+  assert.match(screenOf(r), /new-catalog-soul/);
+  r.soulReads[0].answer(soulsDocument(["old-catalog-soul"])); await settle();
+  assert.match(screenOf(r), /new-catalog-soul/, "the newer catalog stays");
+  assert.doesNotMatch(screenOf(r), /old-catalog-soul/, "the replaced read is not shown");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("the Souls view shown before the workspace was read waits for its first read; r reads the catalog again, once, and never while a read is in flight", async () => {
   const r = await started();
   r.stdin.type("2"); await settle();

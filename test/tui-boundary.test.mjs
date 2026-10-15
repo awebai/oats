@@ -94,7 +94,7 @@ const TAKEN = Object.freeze({
   "launch-prompt-outcome.mjs": ["retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
   "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
-  "soul-catalog.mjs": ["createSoulCatalog"],
+  "soul-catalog.mjs": ["createSoulCatalog", "soulCatalogKey"],
   "soul-rows.mjs": ["soulRows"],
   "soul-facts.mjs": ["soulFacts", "spawnRefusal"],
 });

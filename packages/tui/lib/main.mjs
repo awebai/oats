@@ -8,7 +8,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createSoulCatalog, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, startInstance } from "./client.mjs";
+import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createSoulCatalog, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
 import { ACT_WORDS, actContext, actCwd, localDeployments, model, roster } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
@@ -180,7 +180,14 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     try { settled = souls.settle(id, probe.cli, deployment.workspaceStatus); } catch { return; } // the reader has stopped
     const { entry, pending } = settled;
     heard({ souls: { id, entry, reading: pending !== null } });
-    if (pending) pending.then((landed) => heard({ souls: { id, entry: landed, reading: souls.refreshing(id) } }), () => {});
+    // A read lands with its own entry, even one a newer key has since replaced (the shared
+    // catalog keeps its held entry from it): only the read of the workspace as it is now is told.
+    if (pending) pending.then((landed) => { if (landed?.key === soulsKeyNow(id)) heard({ souls: { id, entry: landed, reading: souls.refreshing(id) } }); }, () => {});
+  }
+  /** The catalog's key for the workspace as the loop holds it now, or null when it is not observed. */
+  function soulsKeyNow(id) {
+    const deployment = state.entries.get(id)?.deployment;
+    return deployment?.status === "observed" ? soulCatalogKey(probe.cli, deployment.workspaceStatus) : null;
   }
   /** `r` in the Souls view: what is held for the workspace is forgotten and settled again, so one
    *  read starts; never a second while one is in flight. */

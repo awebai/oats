@@ -174,6 +174,35 @@ test("the palette lists the souls once their catalog was read, under the views' 
   assert.deepEqual([ran.state.view, soulsOf(ran.state).selected.name, ran.state.palette, ran.effect], ["souls", "reviewer", null, { souls: "settle" }]);
 });
 
+test("a soul chosen in the palette is the one shown, even where the Souls view kept a filter that hides it: that filter is cleared; one that shows it is kept", () => {
+  const choose = (state, name) => {
+    let palette = key(key(state, "1").state, "ctrl+k").state;
+    for (const ch of name) palette = key(palette, ch).state;
+    const items = paletteItems(palette).items, at = items.findIndex((item) => item.kind === "soul" && item.name === name);
+    for (let i = 0; i < at; i++) palette = key(palette, "down").state;
+    return key(palette, "enter").state;
+  };
+  const kept = keys(shown(), "/", "d", "e", "v", "enter").state;
+  assert.equal(soulsOf(kept).selected.name, "dev");
+  const hidden = choose(kept, "reviewer");
+  assert.deepEqual([hidden.view, soulsOf(hidden).selected.name, view(hidden).detail.name, hidden.souls.filter], ["souls", "reviewer", "reviewer", { editing: false, query: "" }]);
+  assert.deepEqual(key(hidden, "i").state.filter.soul.name, "reviewer", "i acts on the soul shown");
+  const visible = choose(kept, "dev");
+  assert.deepEqual([soulsOf(visible).selected.name, visible.souls.filter], ["dev", { editing: false, query: "dev" }]);
+});
+
+test("the leader's views leave the Souls view's open field kept, as Enter keeps it: the leader then 1, the leader then 2, and i is the action again", () => {
+  const typing = keys(shown(), "/", "d", "e", "v", " ").state;
+  assert.deepEqual(typing.souls.filter, { editing: true, query: "dev " });
+  const away = keys(typing, typing.leaderKey, "1").state;
+  assert.equal(away.view, "instances");
+  assert.deepEqual(away.souls.filter, { editing: false, query: "dev" }, "kept, trimmed, the field closed");
+  const back = keys(away, away.leaderKey, "2").state;
+  assert.deepEqual([back.view, back.souls.filter], ["souls", { editing: false, query: "dev" }]);
+  const i = key(back, "i").state;
+  assert.deepEqual([i.view, i.filter.soul?.name], ["instances", "dev"], "i shows dev's instances");
+});
+
 test("what the loop holds is kept per workspace, and only for a served one; the action table has soul-instances on i", () => {
   const start = shown();
   assert.equal(soulsTold(start, catalogEntry([]), { id: "/elsewhere" }).souls, start.souls, "a workspace that is not served is not kept");

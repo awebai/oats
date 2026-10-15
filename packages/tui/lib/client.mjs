@@ -33,7 +33,7 @@ export { startGate, startInstance } from "../../client/session-start.mjs";
 export { retainedStartMessage, launchFlagIgnored, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
 export { validateWorkspace, deploymentsInside } from "../../client/workspace-admission.mjs";
-export { createSoulCatalog } from "../../client/soul-catalog.mjs";
+export { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
 export { soulRows } from "../../client/soul-rows.mjs";
 export { soulFacts, spawnRefusal } from "../../client/soul-facts.mjs";
 

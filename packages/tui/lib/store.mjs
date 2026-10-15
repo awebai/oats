@@ -611,9 +611,10 @@ function toList(state) {
   if (s.palette !== null) s = next(s, { palette: null });
   if (s.view === "act" && s.act !== null) { effect = { dismiss: s.act.n }; s = next(s, { view: "instances", back: "instances", act: null }); }
   if (s.view === "help") s = next(s, { view: s.back });
-  if (s.view === "souls" || s.view === "capabilities") s = s.open === null ? toSwitcher(next(s, { back: "switcher" })) : next(s, { view: "instances", back: "instances" });
+  // The open field is the shown view's: kept before that view is left (the Souls view's too).
   const field = fieldOf(s);
   if (field) s = field.close(s, field.query(s).trim());
+  if (s.view === "souls" || s.view === "capabilities") s = s.open === null ? toSwitcher(next(s, { back: "switcher" })) : next(s, { view: "instances", back: "instances" });
   if (s.terminal?.focus === "terminal") s = terminalWith(s, { focus: "list", zoom: false });
   if (s.view === "instances" && s.focus === "detail") s = next(s, { focus: "list" });
   return { state: s, effect };
@@ -739,10 +740,12 @@ function ranFromPalette(state, item, event, keymap) {
   const from = state.palette.from;
   const settled = item.kind === "instance" || item.kind === "act" ? toInstances(state) : toList(state), shut = settled.state;
   const then = (step) => ({ state: step.state, effect: both(settled.effect, step.effect) });
-  // A soul: the Souls view, with it selected.
+  // A soul: the Souls view, with it selected. A kept filter of the view that hides it is cleared:
+  // the soul chosen is the one shown, and the one `i` acts on.
   if (item.kind === "soul") {
-    const step = soulsShown(shut);
-    return then({ state: soulsWith(step.state, { selected: item.name, loose: false, detailTop: 0 }), effect: step.effect });
+    const step = soulsShown(shut), chosen = soulsWith(step.state, { selected: item.name, loose: false, detailTop: 0 });
+    const shown = soulsOf(chosen).selected?.name === item.name ? chosen : soulsWith(chosen, { filter: Object.freeze({ editing: false, query: "" }), top: 0 });
+    return then({ state: shown, effect: step.effect });
   }
   if (item.kind === "instance" || item.kind === "act") {
     const row = shut.view === "instances" ? roster(shut).instances.find((each) => instanceId(each) === item.id) : undefined;
