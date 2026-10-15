@@ -16,6 +16,7 @@ import { GIT_OPERATION_ENTRIES, RECOVERABLE_GIT_ADMIN, gitOperationInProgress, r
 import { gitRefPresenceOf } from "../lib/instance-git.mjs";
 import { fixtureBase } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
+import { skipFor } from "./helpers/reftable.mjs";
 
 const IN_PROGRESS = "an operation is in progress in it";
 const UNCOMMITTED = "it holds uncommitted, untracked or ignored files";
@@ -59,8 +60,7 @@ diff --git a/absent-1008.txt b/absent-1008.txt
 /** Every state: `key` (a tree's purpose and an instance's name), what it is, `operation` (whether
  *  the kernel must answer that an operation is in progress there), `entry` (the entry of the Git
  *  directory that says so), `ref` (Git wrote that entry as a ref: a file in the files format, no
- *  file at all in the reftable format), `conflict` (the tree also holds unmerged files), `uncopied`
- *  (a recovery's copy does not take the entry: the copier skips a link that leads nowhere) and
+ *  file at all in the reftable format), `conflict` (the tree also holds unmerged files) and
  *  `stage(g, tree, scratch)`, which makes it in a tree on a branch. */
 const STATES = [
   // An operation, by each entry Git reads. `git status` lists no file in any of them.
@@ -88,8 +88,8 @@ const STATES = [
   { key: "badpick", what: "a CHERRY_PICK_HEAD that resolves to no commit", operation: true, entry: "CHERRY_PICK_HEAD", stage: inGitDir("CHERRY_PICK_HEAD", "not an object name\n") },
   { key: "badtodo", what: "a sequencer/todo whose first word is no command", operation: true, entry: "sequencer/todo",
     stage: (g, tree) => { mkdirSync(join(gitDirOf(g, tree), "sequencer")); writeFileSync(join(gitDirOf(g, tree), "sequencer", "todo"), "neither of the two words\n"); } },
-  { key: "dangling", what: "a dangling symbolic link at MERGE_HEAD", operation: true, uncopied: true, entry: "MERGE_HEAD", stage: (g, tree) => symlinkSync("nowhere-1008", join(gitDirOf(g, tree), "MERGE_HEAD")) },
-  { key: "loop", what: "a sequencer that is a symbolic link to itself (its todo cannot be looked at: ELOOP)", operation: true, uncopied: true, entry: "sequencer/todo", stage: (g, tree) => symlinkSync("sequencer", join(gitDirOf(g, tree), "sequencer")) },
+  { key: "dangling", what: "a dangling symbolic link at MERGE_HEAD", operation: true, entry: "MERGE_HEAD", stage: (g, tree) => symlinkSync("nowhere-1008", join(gitDirOf(g, tree), "MERGE_HEAD")) },
+  { key: "loop", what: "a sequencer that is a symbolic link to itself (its todo cannot be looked at: ELOOP)", operation: true, entry: "sequencer/todo", stage: (g, tree) => symlinkSync("sequencer", join(gitDirOf(g, tree), "sequencer")) },
   // An operation with a conflict left in the tree: kept for both reasons.
   { key: "crebase", what: "a rebase stopped on a conflict", operation: true, conflict: true, entry: "rebase-merge",
     // A stopped rebase has HEAD on the commit it rebases onto: a branch keeps that commit reached by a ref.
@@ -126,22 +126,6 @@ const STATES = [
 ];
 
 const FORMATS = ["files", "reftable"];
-/** Why this host's Git cannot turn a repository with a reflog to the reftable format (`git refs
- *  migrate`), else null. A walk in that format is skipped by name with it. */
-const NO_REFTABLE = (() => {
-  const base = fixtureBase("oats-gitop-probe-");
-  const run = (...args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { PATH: process.env.PATH, HOME: base, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", LC_ALL: "C" } }).trim();
-  try {
-    run("init", "-q", join(base, "r"));
-    run("-C", join(base, "r"), "-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "-q", "--allow-empty", "-m", "one");
-    run("-C", join(base, "r"), "refs", "migrate", "--ref-format=reftable");
-    return run("-C", join(base, "r"), "rev-parse", "--show-ref-format") === "reftable" ? null : "this host's Git did not turn a repository to the reftable format";
-  } catch (e) {
-    let version = "unknown"; try { version = run("--version"); } catch { /* said as unknown */ }
-    return `this host's Git (${version}) cannot turn a repository to the reftable format: ${String(e.stderr || e.message).trim().split("\n")[0]}`;
-  } finally { rmSync(base, { recursive: true, force: true }); }
-})();
-const skipFor = (format) => (format === "reftable" && NO_REFTABLE ? { skip: NO_REFTABLE } : {});
 /** A deployment whose member clone stores its refs in `format`, turned before any worktree is made.
  *  The files format is every Git's own and is checked without a command an older Git lacks. */
 function deployment(t, format, opts) {
@@ -407,8 +391,8 @@ for (const format of FORMATS) {
       const repo = join(r.workRecovery.path, "repo");
       if (state.operation) {
         assert.notEqual(r.workRecovery.repoCopy?.copied, false, `the recovery holds the tree: ${about}`);
-        // The copy takes files: a ref of the reftable format is not one (COPIED_GIT_PATHS).
-        if (!state.uncopied && !(state.ref && format === "reftable")) assert.equal(gitOperationInProgress(join(repo, ".git"), repo), true, `the copy carries the operation (its Git directory holds ${existsSync(join(repo, ".git")) ? left(join(repo, ".git")) : "nothing: no copy"}): ${about}`);
+        // The copy takes a link as a link, and writes a ref of the reftable format through Git (#1038).
+        assert.equal(gitOperationInProgress(join(repo, ".git"), repo), true, `the copy carries the operation (its Git directory holds ${existsSync(join(repo, ".git")) ? left(join(repo, ".git")) : "nothing: no copy"}): ${about}`);
       } else {
         assert.equal(r.workRecovery.repoCopy?.copied, false, `the recovery holds the home only: ${about}`);
         assert.equal(existsSync(repo), false, `no copy of the tree: ${about}`);

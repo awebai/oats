@@ -556,8 +556,16 @@ parses it, so it copies the files Git reads:
 - what the copy takes from the Git directories as files, each with its bytes
   and its permission bits: the state of an operation in progress (a merge, a
   rebase, a cherry-pick, a revert, a bisect), `info/attributes` and the
-  stash's log;
-- its tags and its stash;
+  stash's log. A link at one of the operation's entries is copied as the same
+  link, also one that leads nowhere;
+- the refs an operation leaves that are not files where the refs are stored
+  in the reftable format: `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `REBASE_HEAD`
+  and `AUTO_MERGE`, each written into the copy through Git at the same object
+  id. The copy itself always stores its refs as files, whatever format the
+  operator's Git configuration or environment gives a new repository;
+- its tags and its stash. Where the stash's log is not a file (the reftable
+  format), its entries are read through Git and stored again in the copy,
+  oldest first, each with its message, so `git stash list` reads the same;
 - its exclude rules (`core.excludesFile` with the file the copy reads for it,
   and `info/exclude`) and the settings that change what `git status` reports
   (`core.fileMode`, `core.ignoreCase`, `core.precomposeUnicode`,
@@ -710,7 +718,11 @@ Git in the recovery. Set by hand in the recovery only what you trust.
 **Every object the copy's Git metadata names is in it.** For the worktree's
 copy and for each nested repository's alike, the copier collects what the
 Git metadata it carries names: every commit the stash's log names (the new
-id of each entry, as `git log -g refs/stash` shows them), for a nested
+id of each entry, as `git log -g refs/stash` shows them), the commit each of
+`CHERRY_PICK_HEAD`, `REVERT_HEAD` and `REBASE_HEAD` names, every commit
+`MERGE_HEAD` names (one per line), and the tree `AUTO_MERGE` names with the
+trees and blobs under it that the copy lacks (a conflict's files are in no
+commit), whether the copy took the ref as a file or wrote it, for a nested
 repository the commit of each of its local branches (its own `refs/heads`,
 including a branch its configuration hides from a clone) and every commit
 its `HEAD` and branch reflogs name, and every blob
@@ -721,8 +733,12 @@ the missing blobs by content (a staged blob or a resolved conflict's side
 can be in no commit), then checks the whole set again. An object the
 source cannot supply (a partial clone that lacks it: the retire never
 fetches from a promisor remote) refuses the copy with
-`E_WORK_PRESERVATION_FAILED`, naming it. So `git stash show stash@{2}` and
-`git checkout -m <path>` work in the copy as in the source. What the copier
+`E_WORK_PRESERVATION_FAILED`, naming it. An operation's ref that names an
+object the source itself lacks is copied as it is and names nothing in the
+copy either; where that ref must be written (the reftable format), Git
+refuses to write it, and so the copy is refused. So `git stash show
+stash@{2}`, `git checkout -m <path>` and `git cherry-pick --continue` work in
+the copy as in the source. What the copier
 cannot carry at all (an entry that is not a file, a directory or a symbolic
 link, or a nested repository whose path is not valid UTF-8) refuses the copy,
 here as anywhere.
