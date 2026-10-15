@@ -15,6 +15,7 @@ import { createSelectionOwnership, wirePaneSelection } from "../renderer/selecti
 import { createTabChrome } from "../renderer/tab-a11y.mjs";
 import { canActivateTab } from "../renderer/workspace-tabs.mjs";
 import { terminalKey } from "../renderer/instance-tree-view.mjs";
+import { tabShowsRow, otherIncarnation } from "../renderer/retired-tabs.mjs";
 import { instanceId, rosterParentId } from "../../client/instance-tree.mjs";
 import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import * as layout from "../renderer/split-layout.mjs";
@@ -56,7 +57,7 @@ function fixture(t) {
     createTabChrome, wirePaneSelection, canActivateTab, ...layout, onTabKeydown() {}, closeTab() {},
     setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {}, showTabLayer() {}, renderSplit() {}, updateSplitControls() {}, revealActiveTabs() {},
     contextRosterEl: doc.getElementById("instance-roster"), contextWorkspace: "A", contextInstances: roster, contextFilter: "",
-    terminalKey, instanceId, rosterParentId, revealInScrollport,
+    terminalKey, instanceId, rosterParentId, revealInScrollport, tabShowsRow, otherIncarnation,
   };
   c.tabOpenIntents = createSelectionOwnership(c);
   const s = runInNewContext(`${["addTab", "selectTab", "activateTab", "revealActiveRosterRow"].map(fn).join("\n")}\n({ addTab, selectTab, activateTab });`, c);

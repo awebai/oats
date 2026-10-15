@@ -12,6 +12,7 @@ import { createInstanceStarter } from "../renderer/start-instance.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { setWorkspace, currentWorkspace, workspaceGeneration } from "../renderer/views/common.mjs";
 import { terminalKey } from "../renderer/instance-tree-view.mjs";
+import { otherIncarnation, terminalOrigin } from "../renderer/retired-tabs.mjs";
 
 const shellSource = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const flowSource = shellSource.match(/async function openTerminalTabFlow\(ref, notify, options = \{\}\) \{[\s\S]*?\n\}/)?.[0];
@@ -37,7 +38,7 @@ function compose(t) {
   const opened = [], notified = [];
   // The shell's side: its open flow, over the real selection ownership.
   const c = {
-    tabs: new Map(), activeTab: null, pendingTerms: new Set(), split: null, connectionGeneration: 0, currentWorkspace, workspaceGeneration,
+    tabs: new Map(), activeTab: null, pendingTerms: new Set(), panelReads: 0, otherIncarnation, terminalOrigin, split: null, connectionGeneration: 0, currentWorkspace, workspaceGeneration,
     setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {}, instanceSplitPlan() {}, instanceSplitIdentity() {}, splitOpenState() {},
     api: async () => ({ instances: [started ? { ...A, running: true, tmux: { session: "pi-agents" } } : A, B] }),
     resolveTerminalOpen: (instances, ref, ws) => { const found = instances.find((i) => i.home === ref.home); return found ? { inst: found, key: terminalKey(ws, found) } : { error: "unknown", name: ref.instance }; },
