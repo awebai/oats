@@ -176,6 +176,7 @@ onboarding makes both choices.
 | What runs automatically, and where? | `oats trigger list`, `oats schedule list` | local and workspace automations; for a workspace one, whether it runs here or why not |
 | Would this trigger work on this host? | `oats trigger test <id>` | `gh` credentials, repo permissions, the soul resolving, the teams declared, what would fire |
 | What is configured on this machine? | `oats doctor` | this deployment's local file and lock |
+| Is Git ready for OATS on this machine? | `/oats-git-setup`, its check | SSH auth, a signed and signed-off commit GitHub shows as Verified, `gh auth status`, and the credential helper a Git without `HOME` would use |
 | Will mail wake the agents on this machine? | `aw wake status --json`, `oats readiness --home <abs home> --json` | the broker running at the `aw version` version; no `wake-daemon-*`, `joined-team-poll-only` or `channel-dev-confirmation` the operator did not choose (`/oats-host-delivery`) |
 
 Use `--json` when you parse; read `oats help` for any flag not shown here.

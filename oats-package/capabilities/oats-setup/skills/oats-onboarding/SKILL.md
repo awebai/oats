@@ -78,7 +78,7 @@ to bypass a refusal. See the [corrected compatibility cards](https://github.com/
 
 ## 2. Inventory and select reuse or new
 
-**Prerequisites/context:** intake complete; selected `D` (OATS 0.41.0).
+**Prerequisites/context:** intake complete; selected `D` (OATS 0.41.0); this card makes the first Git reads, so a person without a checked Git and GitHub setup first completes `/oats-git-setup` (its check passes).
 **Commands (read-only):**
 
 ```bash
@@ -104,7 +104,7 @@ ancestor. `E_LOCAL_MISSING` → if `D` is the authorized new directory,
 use card 3; if reuse was selected, resolve the incorrect/missing deployment
 with its owner before writing. `no-backlink`, `backlink-elsewhere`,
 `not-listed`, `cannot-read` → correct the shared membership declaration or
-owner's Git environment, then repeat this inventory. From OATS 0.56.0, a
+owner's Git environment (`/oats-git-setup` and its check), then repeat this inventory. From OATS 0.56.0, a
 failed or unparseable Git version probe preserves the remote cache and its
 pins: fix the local Git failure and retry without deleting the cache. Never
 invent another repo.
