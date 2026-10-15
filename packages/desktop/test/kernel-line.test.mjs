@@ -1,4 +1,4 @@
-// The Desktop's kernel line (F2b): the version band is >=0.26.0 <0.59.0. Its
+// The Desktop's kernel line (F2b): the version band is >=0.26.0 <0.60.0. Its
 // floor is the first kernel the Desktop's feature gates let through: 0.26.0 is
 // the first to advertise packages-no-approval beside workspace-v2. A 0.25
 // kernel is refused by the locator, so it meets the "Compatible `oats` CLI
@@ -95,5 +95,6 @@ test('the version band alone never decides: 0.26.x without the feature is refuse
   assert.equal(acceptProbe(probe('0.56.0', [...released.features, 'packages-no-approval'])).ok, true, '0.56 is inside the band; feature gates remain authoritative');
   assert.equal(acceptProbe(probe('0.57.0', [...released.features, 'packages-no-approval'])).ok, true, '0.57 is inside the band; feature gates remain authoritative');
   assert.equal(acceptProbe(probe('0.58.0', [...released.features, 'packages-no-approval'])).ok, true, '0.58 is inside the band; feature gates remain authoritative');
-  assert.equal(acceptProbe(probe('0.59.0', [...released.features, 'packages-no-approval'])).ok, false);
+  assert.equal(acceptProbe(probe('0.59.0', [...released.features, 'packages-no-approval'])).ok, true, '0.59 is inside the band; feature gates remain authoritative');
+  assert.equal(acceptProbe(probe('0.60.0', [...released.features, 'packages-no-approval'])).ok, false);
 });
