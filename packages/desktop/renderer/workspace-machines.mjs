@@ -69,7 +69,7 @@ export function createWorkspaceMachines(doc, { ctx, ws, owns = () => true, backf
   const el = (tag, value, cls) => { const n = doc.createElement(tag); if (value !== undefined && value !== null) n.textContent = value; if (cls) n.className = cls; return n; };
   const query = () => `?ws=${encodeURIComponent(ws)}`;
   // A solid card: in the list view it sits in Setup's This computer zone, which says it is not shared.
-  const element = box(doc, 'Machines', 'that run this workspace', null, { heading: 'h4' });
+  const element = box(doc, 'Machines', 'that run this workspace', { heading: 'h4' });
   element.classList.add('setup-machines'); element.hidden = true;
   const head = element.querySelector('.setup-box-head');
   const body = el('div', undefined, 'machines-body'); element.append(body);
