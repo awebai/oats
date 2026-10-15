@@ -127,9 +127,10 @@ reused by the next one.
 `spawn-preview-max-age`, the dialog's reads pass `--max-age 60`, letting the
 kernel answer from member heads it observed within 60 s (its reply may carry an
 `observation {observedAt, reused, localRevision}` block, which the projection
-drops and never shows). Prepare's own uncached read and the apply never pass it,
-and a reusing read never coalesces with a live one (their flights are keyed
-apart). Without the feature, no read passes it.
+drops and never shows). Prepare's own uncached read never passes it, and a
+reusing read never coalesces with a live one (their flights are keyed apart).
+Without the feature, no read passes it. The apply has its own gate,
+`spawn-apply-max-age` ([Apply transport](#apply-transport-and-qualified-results)).
 
 Response: `{spawnPreviewViewApi:1,status,target,data,reason}`. Success requires
 API2, `preview:true`, byte-exact `subject{soul,agentsRoot,dir}` and consistent
