@@ -18,8 +18,12 @@
 // ONE SESSION, A KEEPER AND ONE WINDOW PER VIEWER. A control client hears `%output` only for the
 // panes of the session it is attached to, and a session ends with its last window: so the session
 // is made with a keeper window (never typed to; see THE KEEPER), and each viewer is a window of it, sized by
-// `default-size` before it is made (the viewer starts at its size) and by `resize-window` after
-// (`window-size manual`: the control client never resizes it).
+// `default-size` before it is made (the viewer starts at its size) and by `resize-window` after,
+// which sets that window's own `window-size` to manual. The control client never sizes a window
+// (it never says its size: tmux ignores the size of a control client that has not sent
+// `refresh-client -C`). The GLOBAL `window-size` is left alone: set to manual, tmux 3.3a to 3.5a
+// crash in the next `new-window` (resize.c clients_calculate_size reads the window's manual size
+// before the window exists), as CI's tmux 3.4 did.
 //
 // THE START, ONE PROCESS. The control client starts the server itself: `tmux -C new-session …`,
 // with `set-option -s exit-unattached on` and the other options in the SAME command list. The
@@ -114,7 +118,6 @@ export const startCommands = ({ alive }) => [
   ["set-option", "-g", "status", "off"],
   ["set-option", "-g", "prefix", "None"],
   ["set-option", "-g", "prefix2", "None"],
-  ["set-option", "-gw", "window-size", "manual"],
   ["set-option", "-gw", "remain-on-exit", "off"],
   ["unbind-key", "-a"],
   ["unbind-key", "-a", "-T", "root"],
