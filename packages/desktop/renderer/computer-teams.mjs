@@ -28,6 +28,10 @@ import { iconElement } from './shell-icons.mjs';
 import { createSoulMark } from './identity-marks.mjs';
 import { deploymentLabel, shortPath } from '../../client/deployment-label.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
+import { ageText } from './age-text.mjs';
+import { captureFocusState } from './loading.mjs';
+import { pageBar } from './capability-page.mjs';
+import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 
 /** The Desktop's teams routes (#269, packages/desktop/docs/desktop-teams.md): `{status: 'ok',
  * teams}` (/api/workspace-teams) or `{status: 'ok', soulTeams}` (/api/workspace-soul-teams) answer
@@ -42,8 +46,11 @@ export function teamsAnswer(answer, key, fallback) {
 }
 
 /* Rule order matters twice: the cascade, and the contrast tests' computed styles (jsdom applies
- * matching rules in source order), so a state rule (.default, .none) follows its base. Focus is the
- * shell's (rule 2); a field's one frame is its wrapper (rule 3). */
+ * matching rules in source order), so a state rule (.none, .warn) follows its base. Focus is the
+ * shell's (rule 2); a field's one frame is its wrapper (rule 3). The type steps are the Teams and Setup
+ * redesign's (packages/desktop/docs/desktop-teams.md "The Teams board"): screen title 24/700, section
+ * 18/650, card title 17/700, primary facts 14/600, body 13, secondary 12 in --muted, tags 11.5/600;
+ * mono (paths, ids, patterns) runs 1px above the sans step it stands in for. */
 export const computerTeamsCSS = `
 /* The board is one wide column: wider than the tab's 760px list default (the page sits in the tab's body box). */
 .workspace-discovery[data-tab=teams] > :has(> .computer-teams) { max-width:1120px; }
@@ -51,125 +58,196 @@ export const computerTeamsCSS = `
 .computer-teams .ct-page-head { display:flex; align-items:flex-end; gap:16px; }
 /* Pinned (spec G): 8px inside its edge, the page's 18px gap kept by pulling the next block up by 9px. */
 .computer-teams .ct-page-head.ws-sticky { padding-bottom:8px; margin-bottom:-9px; }
-.computer-teams .ct-title-wrap { display:flex; flex-direction:column; gap:4px; flex-grow:1; min-width:0; }
-.computer-teams .ct-title { margin:0; color:var(--fg); font-size:17px; font-weight:700; line-height:1.3; }
-.computer-teams .ct-lead { margin:0; color:var(--muted); font-size:12.5px; line-height:1.45; }
-.computer-teams .ct-section { display:flex; flex-direction:column; gap:12px; min-width:0; }
-/* Sections (and any problem above them) stack at the page's own gap, so the second section sits as far
-   below the first as the first sits below the page head. */
-.computer-teams .ct-body { display:flex; flex-direction:column; gap:18px; min-width:0; }
-.computer-teams .ct-section-head { display:flex; align-items:center; gap:8px; }
-.computer-teams .ct-section-title { margin:0; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; }
-.computer-teams .ct-scope { display:inline-flex; align-items:center; gap:5px; height:20px; padding:0 7px; border:1px solid var(--border); border-radius:5px; background:var(--surface); color:var(--muted); font-size:10.5px; font-weight:600; white-space:nowrap; }
-.computer-teams .ct-scope.dashed { border:1px dashed var(--tree-line); }
-.computer-teams .ct-card { display:grid; grid-template-columns:32px minmax(0,1fr) 240px; column-gap:14px; row-gap:10px; align-items:start; padding:16px 18px; background:var(--surface); border:1px solid var(--border); border-radius:10px; min-width:0; }
-.computer-teams .ct-tile { display:grid; place-items:center; width:32px; height:32px; border-radius:8px; background:var(--chip-bg); color:var(--chip-fg); }
-.computer-teams .ct-tile.default { background:var(--sel); color:var(--accent); }
-.computer-teams .ct-main { display:flex; flex-direction:column; gap:6px; min-width:0; }
-/* Nothing on the right (no members, no actions): the main column takes its width. */
-.computer-teams .ct-card.no-side > .ct-main { grid-column:2 / -1; }
-.computer-teams .ct-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; min-width:0; }
-.computer-teams .ct-label { color:var(--fg); font-size:14.5px; font-weight:650; line-height:1.3; overflow-wrap:anywhere; }
-.computer-teams .ct-pill { display:inline-flex; align-items:center; padding:1px 7px; border-radius:10px; background:var(--sel); color:var(--accent); font-size:10.5px; font-weight:650; white-space:nowrap; }
-.computer-teams .ct-desc { color:var(--fg); font-size:12.5px; line-height:1.45; overflow-wrap:anywhere; }
-.computer-teams .ct-facts { display:flex; flex-wrap:wrap; gap:4px 18px; padding-top:4px; color:var(--muted); font-size:12px; line-height:1.45; }
-.computer-teams .ct-fact { overflow-wrap:anywhere; }
-.computer-teams .ct-id { color:var(--fg); font:12px var(--mono,monospace); }
-.computer-teams .ct-id.none, .computer-teams .ct-warn { color:var(--warn); }
-.computer-teams .ct-id.none { font-family:inherit; }
-.computer-teams .ct-join { color:var(--fg); font-weight:600; }
-.computer-teams .ct-join.none { color:var(--muted); font-weight:500; }
-/* Team model 3: two labelled rows (Default for, May join), names bold; then the address, the quietest line. */
-.computer-teams .ct-audience { display:grid; grid-template-columns:92px minmax(0,1fr); align-items:baseline; gap:3px 10px; margin:2px 0 0; min-width:0; font-size:12.5px; line-height:1.45; }
-.computer-teams .ct-aud { display:contents; }
-.computer-teams .ct-aud dt { color:var(--muted); font-size:12px; }
-.computer-teams .ct-aud dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
-.computer-teams .ct-aud[data-audience=join] dd, .computer-teams .ct-quiet { color:var(--muted); }
+.computer-teams .ct-title-wrap { display:flex; flex-direction:column; gap:6px; flex-grow:1; min-width:0; }
+.computer-teams .ct-title { margin:0; color:var(--fg); font-size:24px; font-weight:700; line-height:1.2; letter-spacing:-.02em; }
+.computer-teams .ct-lead { margin:0; color:var(--muted); font-size:13px; line-height:1.45; }
+/* Sections (and any problem above them) stack 40px apart; the first sits 40px under the page head. */
+.computer-teams .ct-body { display:flex; flex-direction:column; gap:40px; margin-top:22px; min-width:0; }
+.computer-teams .ct-section { display:flex; flex-direction:column; gap:14px; min-width:0; }
+.computer-teams .ct-section-head { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.computer-teams .ct-section-title { margin:0; color:var(--fg); font-size:18px; font-weight:650; line-height:1.25; letter-spacing:-.01em; }
+.computer-teams .ct-section-lead { margin:0; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+/* A team's card: one column (header, facts, notes, foot). A local team's frame is dashed. */
+.computer-teams .ct-card { display:flex; flex-direction:column; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+.computer-teams .ct-card.local { border:1px dashed var(--tree-line); }
+/* The board's card opens its team's page: the label's button stretches over the card (::after); the card's
+   own controls sit above it. The ring is the shell's focus ring on that button. */
+.computer-teams .ct-card.ct-openable { position:relative; cursor:pointer; }
+.computer-teams .ct-card.ct-openable:hover { border-color:var(--tree-line); }
+.computer-teams .ct-card.ct-openable :is(.ct-actions, .ct-confirm, .ct-error, a[href]) { position:relative; z-index:1; }
+.computer-teams .ct-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 20px; align-items:start; padding:16px 20px 0; min-width:0; }
+.computer-teams .ct-id { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; min-width:0; }
+.computer-teams .ct-name-h { margin:0; min-width:0; font:inherit; }
+.computer-teams .ct-label { color:var(--fg); font-size:17px; font-weight:700; line-height:1.3; letter-spacing:-.01em; overflow-wrap:anywhere; }
+.oats-view .computer-teams button.ct-open { appearance:none; display:inline; height:auto; min-height:0; margin:0; padding:0; border:0; border-radius:4px; background:none; color:var(--fg); font:700 17px/1.3 var(--sans,system-ui); letter-spacing:-.01em; text-align:left; overflow-wrap:anywhere; cursor:pointer; }
+.oats-view .computer-teams button.ct-open::after { content:''; position:absolute; inset:0; border-radius:10px; }
+.computer-teams .ct-card.ct-openable:hover .ct-open { text-decoration:underline; text-underline-offset:3px; }
+.computer-teams .ct-page-card .ct-head { padding-top:20px; }
+.computer-teams .ct-page-card .ct-id { align-items:center; }
+.computer-teams .ct-page-label { margin:0; color:var(--fg); font-size:24px; font-weight:700; line-height:1.2; letter-spacing:-.02em; overflow-wrap:anywhere; }
+.computer-teams .ct-tag { align-self:center; display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:5px; background:var(--sel); color:var(--accent); font:600 11.5px var(--sans,system-ui); white-space:nowrap; }
+.computer-teams .ct-from { color:var(--muted); font-size:12px; }
+/* On a team's page, in a view of two or more deployments: which deployment's configuration its actions edit. */
+.computer-teams .ct-head > .deployment-scope { grid-column:1; }
+.computer-teams .ct-desc { grid-column:1; margin:0; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-head > .ct-actions { grid-column:2; grid-row:1; align-self:center; }
+/* The facts: labelled rows (dt muted, dd body); the May join row and an empty value are muted; names bold. */
+.computer-teams .ct-facts { display:grid; grid-template-columns:92px minmax(0,1fr); align-items:baseline; gap:4px 12px; margin:0; padding:12px 20px 16px; min-width:0; font-size:13px; line-height:1.45; }
+.computer-teams .ct-fact { display:contents; }
+.computer-teams .ct-fact dt { color:var(--muted); font-size:12px; }
+.computer-teams .ct-fact dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
+.computer-teams .ct-fact[data-fact=join] dd, .computer-teams .ct-fact dd.none, .computer-teams .ct-quiet { color:var(--muted); }
 .computer-teams .ct-name { font-weight:650; }
-.computer-teams .ct-address { color:var(--muted); font:11.5px var(--mono,monospace); overflow-wrap:anywhere; }
-.computer-teams .ct-address.none { color:var(--warn); font-family:inherit; }
-.computer-teams .ct-why { color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
-.computer-teams .ct-warn { font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
-.computer-teams .ct-blocking { display:flex; flex-direction:column; gap:2px; margin-top:4px; padding-left:8px; border-left:2px solid var(--danger); color:var(--muted); font-size:11.5px; line-height:1.45; overflow-wrap:anywhere; }
-.computer-teams .ct-blocking strong { color:var(--fg); font-size:12px; font-weight:650; }
-.computer-teams .ct-fix { display:block; color:var(--fg); font:11px var(--mono,monospace); overflow-wrap:anywhere; }
-.computer-teams .ct-side { grid-column:3; display:flex; flex-direction:column; align-items:flex-end; gap:8px; min-width:0; }
-.computer-teams .ct-inst { display:flex; align-items:center; gap:8px; }
-.computer-teams .ct-marks { display:flex; }
-.computer-teams .ct-marks .identity-mark { width:22px; height:22px; border-radius:6px; border:1.5px solid var(--surface); font-size:10px; font-weight:700; }
-/* Two-letter marks fill their tile: overlap by 1px only, so no letter hides under the next tile. */
-.computer-teams .ct-marks .identity-mark + .identity-mark { margin-left:-1px; }
-.computer-teams .ct-count { color:var(--fg); font-size:12px; font-weight:600; white-space:nowrap; }
-.computer-teams .ct-note { color:var(--muted); font-size:11.5px; line-height:1.45; text-align:right; }
+.computer-teams .ct-join { color:var(--fg); font-weight:650; }
+.computer-teams .ct-join.none { color:var(--muted); font-weight:400; }
+.computer-teams .ct-fact dd.ct-address { color:var(--muted); font:13.5px/1.45 var(--mono,monospace); }
+.computer-teams .ct-fact dd.ct-address.none { color:var(--warn); font:13px/1.45 var(--sans,system-ui); }
+/* A problem that blocks spawning: under the header, the 2px danger edge. */
+.computer-teams .ct-blocking { display:flex; flex-direction:column; gap:2px; padding-left:10px; border-left:2px solid var(--danger); color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-card > .ct-blocking { margin:12px 20px 0; }
+.computer-teams .ct-blocking strong { color:var(--fg); font-size:14px; font-weight:650; }
+/* The team's warnings: after the facts, in the attention tint; the message bold, the fix on its own line. */
+.computer-teams .ct-warn { display:flex; flex-direction:column; gap:2px; padding:8px 12px; border-radius:7px; background:var(--attn-bg); color:var(--fg); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-card > .ct-warn { margin:0 20px 14px; }
+.computer-teams .ct-warn-msg { font-weight:650; }
+.computer-teams .ct-fix { display:block; color:var(--fg); font-size:12.5px; font-weight:400; overflow-wrap:anywhere; }
+.computer-teams .ct-why { color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-card > .ct-why { margin:0 20px 14px; }
 .computer-teams .ct-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
-.oats-view .computer-teams button.ct-act { height:26px; min-height:26px; padding:0 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--fg); font:600 11.5px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .computer-teams button.ct-act { height:28px; min-height:28px; padding:0 11px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
 .oats-view .computer-teams button.ct-act:hover:not(:disabled) { background:var(--surface-2); }
 .oats-view .computer-teams button.ct-act:disabled { color:var(--muted); cursor:default; }
 .oats-view .computer-teams button.ct-act.primary:not(:disabled) { background:var(--primary-bg); border-color:var(--primary-bg); color:var(--primary-fg); }
 /* Where this deployment may not declare its own teams the head's Add is hidden: [hidden] wins over display. */
 .oats-view .computer-teams button.ct-add[hidden] { display:none; }
 .oats-view .computer-teams button.ct-add { display:inline-flex; align-items:center; gap:6px; flex:none; height:32px; min-height:32px; padding:0 12px; border-radius:7px; font-size:12.5px; }
-.oats-view .computer-teams button.ct-link { height:auto; min-height:0; padding:0 4px; border:0; border-radius:4px; background:none; color:var(--accent); font-size:12.5px; }
+.oats-view .computer-teams button.ct-link { height:auto; min-height:0; padding:0 4px; border:0; border-radius:4px; background:none; color:var(--accent); font-size:13px; }
 .oats-view .computer-teams button.ct-link:hover:not(:disabled) { background:none; color:var(--fg); }
-.computer-teams .ct-confirm, .computer-teams .ct-error { grid-column:1 / -1; }
-.computer-teams .ct-confirm { display:flex; flex-direction:column; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); }
-.computer-teams .ct-confirm p { margin:0; color:var(--fg); font-size:12px; line-height:1.45; }
-.computer-teams .ct-error { border-left:2px solid var(--danger); padding-left:8px; color:var(--fg); font-size:12px; line-height:1.45; }
+.computer-teams .ct-card > :is(.ct-confirm, .ct-error) { margin:0 20px 16px; }
+.computer-teams .ct-confirm { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); }
+.computer-teams .ct-confirm p { margin:0; color:var(--fg); font-size:13px; line-height:1.45; }
+.computer-teams .ct-confirm .ct-actions { justify-content:flex-start; }
+.computer-teams .ct-error { border-left:2px solid var(--danger); padding-left:10px; color:var(--fg); font-size:13px; line-height:1.45; }
 .computer-teams .ct-error p { margin:0; overflow-wrap:anywhere; }
-.computer-teams .ct-error summary { color:var(--muted); font-size:11.5px; cursor:pointer; }
-.computer-teams .ct-error pre { margin:4px 0 0; color:var(--fg); font:11px var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+.computer-teams .ct-error summary { color:var(--muted); font-size:12px; cursor:pointer; }
+.computer-teams .ct-error pre { margin:4px 0 0; color:var(--fg); font:13px var(--mono,monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
+/* The board card's foot: how many of your instances are on it, and the cue that the card opens. */
+.computer-teams .ct-foot { display:flex; align-items:center; gap:12px; padding:11px 20px; border-top:1px solid var(--border); min-width:0; }
+.computer-teams .ct-sum { flex:1; min-width:0; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-sum-count { color:var(--fg); font-size:14px; font-weight:650; font-variant-numeric:tabular-nums; }
+.computer-teams .ct-sum-warn { color:var(--warn); font-weight:600; }
+.computer-teams .ct-go { display:inline-flex; align-items:center; gap:2px; flex:none; margin-left:auto; color:var(--muted); font-size:12.5px; font-weight:600; white-space:nowrap; }
+.computer-teams .ct-card.ct-openable:hover .ct-go { color:var(--accent); }
+/* Page problems no card holds: a blocking one in a card of its own; a warning is its own tinted box. */
 .computer-teams .ct-problem { padding:12px 18px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
-.computer-teams .ct-empty { display:flex; align-items:center; gap:14px; padding:16px 18px; border:1px dashed var(--tree-line); border-radius:10px; color:var(--muted); font-size:12.5px; line-height:1.45; }
+.computer-teams .ct-problem:has(> .ct-warn) { padding:0; background:none; border:0; }
+.computer-teams .ct-empty { display:flex; align-items:center; gap:14px; padding:16px 18px; border:1px dashed var(--tree-line); border-radius:10px; color:var(--muted); font-size:13px; line-height:1.45; }
 .computer-teams .ct-empty > span { flex-grow:1; overflow-wrap:anywhere; }
-.computer-teams .ct-form { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:10px; padding:16px 18px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
-.computer-teams .ct-form label { display:flex; flex-direction:column; gap:3px; min-width:0; color:var(--muted); font-size:11.5px; }
+/* A sentence in place of a list (local teams closed; a team page with nothing to list): not a card. */
+.computer-teams .ct-dashed { margin:0; padding:12px 16px; border:1px dashed var(--tree-line); border-radius:10px; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-form { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:10px; padding:16px 20px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+.computer-teams .ct-form label { display:flex; flex-direction:column; gap:3px; min-width:0; color:var(--muted); font-size:12px; }
 .computer-teams .ct-form label.wide { grid-column:1 / -1; }
 /* Rule 3: the field's one frame is the wrapper's; the input inside has none, in every state. */
 .computer-teams .ct-field { display:flex; align-items:center; height:28px; min-width:0; border:1px solid var(--border); border-radius:6px; background:var(--surface); }
 .computer-teams .ct-field:focus-within { border-color:var(--accent); }
-.oats-view .computer-teams .ct-field input { flex:1 1 auto; min-width:0; height:100%; padding:0 8px; box-sizing:border-box; border:0; outline:none; box-shadow:none; background:transparent; color:var(--fg); font:12px var(--mono,monospace); }
+.oats-view .computer-teams .ct-field input { flex:1 1 auto; min-width:0; height:100%; padding:0 8px; box-sizing:border-box; border:0; outline:none; box-shadow:none; background:transparent; color:var(--fg); font:13px var(--mono,monospace); }
 .oats-view .computer-teams .ct-field input:focus, .oats-view .computer-teams .ct-field input:focus-visible { border:0; outline:none; box-shadow:none; }
 .computer-teams .ct-form .ct-actions { grid-column:1 / -1; justify-content:flex-start; }
-.computer-teams .ct-hint { grid-column:1 / -1; margin:0; color:var(--muted); font-size:11.5px; line-height:1.45; }
-.computer-teams .ct-hint code { color:var(--fg); font:11px var(--mono,monospace); }
+.computer-teams .ct-hint { grid-column:1 / -1; margin:0; color:var(--muted); font-size:12px; line-height:1.45; }
+.computer-teams .ct-hint code { color:var(--fg); font:13px var(--mono,monospace); }
 .computer-teams .ct-status { margin:0; color:var(--muted); font-size:12px; }
 .computer-teams .ct-status:empty { display:none; }
-/* Team model 3's souls: patterns, one row each: the pattern (monospace) and what it gives. */
-.computer-teams .ct-soul-rules { display:flex; flex-direction:column; gap:0; margin:0; padding:4px 0; list-style:none; background:var(--surface); border:1px solid var(--border); border-radius:10px; min-width:0; }
-.computer-teams .ct-soul-rule { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:12px; padding:7px 18px; min-width:0; }
-.computer-teams .ct-soul-rule + .ct-soul-rule { border-top:1px solid var(--border); }
-.computer-teams .ct-soul-key { color:var(--fg); font:12px var(--mono,monospace); overflow-wrap:anywhere; }
-.computer-teams .ct-soul-teams { color:var(--fg); font-size:12.5px; line-height:1.45; overflow-wrap:anywhere; }
-/* The members (spec 02): grouped by machine, one row per instance with its state in words and two buttons. */
-.computer-teams .ct-reach { margin:0; color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+.computer-teams .ct-reach { margin:0; color:var(--muted); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
 .computer-teams .ct-reach:empty { display:none; }
-.computer-teams .ct-members-head { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--muted); font-size:10.5px; font-weight:650; letter-spacing:.065em; text-transform:uppercase; }
-.computer-teams .ct-members-head::after { content:''; flex:1; border-top:1px solid var(--border); }
-.computer-teams .ct-members { display:flex; flex-direction:column; gap:10px; margin:0; padding:0; list-style:none; min-width:0; }
-.computer-teams .ct-group { display:flex; flex-direction:column; gap:4px; min-width:0; }
-.computer-teams .ct-group-head { margin:0; color:var(--muted); font-size:12px; font-weight:500; line-height:1.45; overflow-wrap:anywhere; }
-/* A group scans as a table: dot, name, soul mark, state word, Terminal, in columns shared by its rows (subgrid). */
-.computer-teams .ct-member-list { display:grid; grid-template-columns:8px fit-content(220px) 18px fit-content(220px) auto; justify-content:start; column-gap:8px; row-gap:2px; margin:0; padding:0; list-style:none; min-width:0; }
-.computer-teams .ct-member { display:grid; grid-column:1 / -1; grid-template-columns:subgrid; align-items:center; min-height:26px; min-width:0; }
-.computer-teams .ct-member .identity-mark { width:18px; height:18px; border-radius:5px; font-size:9px; font-weight:700; flex:none; }
-.computer-teams .ct-dot { box-sizing:border-box; width:8px; height:8px; flex:none; border-radius:50%; border:1.5px solid var(--faint); background:var(--surface); }
-.computer-teams .ct-dot[data-state=running] { border-color:var(--accent); background:var(--accent); }
-.computer-teams .ct-dot[data-state=unknown], .computer-teams .ct-dot[data-state=gone] { border-color:var(--warn); background:var(--warn); }
-/* The name is the roster's (proportional, 12.5px/600) and shows the row: a text control, underlined on hover and focus. */
-.oats-view .computer-teams .ct-member-name { appearance:none; justify-self:start; margin:0; padding:0; border:0; background:none; color:var(--fg); font:600 12.5px/1.3 var(--sans,system-ui); text-align:left; overflow-wrap:anywhere; min-width:0; cursor:pointer; }
-.oats-view .computer-teams .ct-member-name:hover, .oats-view .computer-teams .ct-member-name:focus-visible { text-decoration:underline; }
-.computer-teams .ct-member-state { min-width:0; color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-/* Terminal: quiet, borderless until hover or focus. */
-.oats-view .computer-teams .ct-member-term { appearance:none; display:inline-flex; align-items:center; gap:4px; flex:none; height:22px; padding:0 6px; border:1px solid transparent; border-radius:5px; background:none; color:var(--muted); font:600 11px var(--sans,system-ui); cursor:pointer; }
-.oats-view .computer-teams .ct-member-term:hover, .oats-view .computer-teams .ct-member-term:focus-visible { border-color:var(--border); background:var(--surface-2); color:var(--fg); }
-/* A narrow board: the actions and the member count move under the main column instead of squeezing it. */
-@container (max-width: 640px) {
- .computer-teams .ct-card { grid-template-columns:32px minmax(0,1fr); }
- .computer-teams .ct-side { grid-column:2; align-items:flex-start; }
- .computer-teams .ct-side .ct-actions { justify-content:flex-start; }
- .computer-teams .ct-note { text-align:left; }
- /* The count repeats the "Members · N" head right above it. */
- .computer-teams .ct-side .ct-inst { display:none; }
+/* Team model 3's souls: a table in a card: the pattern (its folder muted), its default, the other teams it may join. */
+.computer-teams .ct-souls-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; min-width:0; }
+.computer-teams .ct-souls { width:100%; border-collapse:collapse; table-layout:fixed; }
+.computer-teams .ct-souls col.pattern, .computer-teams .ct-souls col.others { width:38%; }
+.computer-teams .ct-souls th { padding:11px 20px 7px 0; color:var(--muted); font-size:12px; font-weight:600; text-align:left; }
+.computer-teams .ct-souls td { padding:9px 20px 9px 0; border-top:1px solid var(--border); color:var(--fg); font-size:13px; line-height:1.45; vertical-align:middle; overflow-wrap:anywhere; }
+.computer-teams .ct-souls :is(th, td):first-child { padding-left:20px; }
+.computer-teams .ct-pattern { color:var(--fg); font:600 14.5px/1.4 var(--mono,monospace); overflow-wrap:anywhere; }
+.computer-teams .ct-pattern-dir { color:var(--muted); font-weight:400; }
+.computer-teams .ct-every, .computer-teams .ct-souls .ct-none { color:var(--muted); }
+.computer-teams .ct-chip { display:inline-flex; align-items:center; height:20px; margin:2px 4px 2px 0; padding:0 7px; border-radius:5px; background:var(--tag-bg); color:var(--fg); font:600 11.5px var(--sans,system-ui); white-space:nowrap; }
+/* A team's page: the board's column, the team's card, then your instances on it. */
+.computer-teams.ct-team-page { gap:40px; max-width:1120px; margin:0 auto; padding:20px 24px 28px; }
+/* Your instances on it: the counts first, then one card per machine, each a table of its instances. */
+.computer-teams .ct-yours-sum { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 22px; margin:0; color:var(--muted); font-size:13px; line-height:1.45; }
+.computer-teams .ct-yours-sum b { margin-right:4px; color:var(--fg); font-size:20px; font-weight:700; letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
+.computer-teams .ct-yours-sum .warn, .computer-teams .ct-yours-sum .warn b { color:var(--warn); }
+.computer-teams .ct-yours-machines { margin-left:auto; }
+.computer-teams .ct-default-note { margin:-4px 0 0; color:var(--muted); font-size:12.5px; line-height:1.45; }
+/* The machines' cards share one grid: each card, its table and its rows are subgrids of it, so every name on the page
+   sizes the same columns and they line up from card to card. --ct-name-room is the most a name may take: the page's
+   width (100cqi of .workspace-page, at most the column's 1120px) less everything else on its row: the column's padding
+   (48px), the card's borders (2), the row's padding (32), the mark and its gap (34), the name cell's padding (16), 4px
+   to spare, and the other columns at their least (Soul gives way to 0). */
+.computer-teams .ct-mcards { display:grid; grid-template-columns:1fr minmax(0,.4fr) 200px 84px 104px; row-gap:14px; min-width:0;
+  --ct-name-room:calc(min(100cqi, 1120px) - 136px - 388px); }
+.computer-teams .ct-mcard { grid-column:1 / -1; display:grid; grid-template-columns:subgrid; position:relative; overflow:hidden; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+.computer-teams .ct-mcard-head { grid-column:1 / -1; display:flex; align-items:center; gap:9px; min-width:0; margin:0; padding:11px 16px; background:var(--surface-2); border-bottom:1px solid var(--border); color:var(--muted); font-size:12.5px; font-weight:400; line-height:1.45; }
+.computer-teams .ct-mcard-head .shell-icon { flex:none; color:var(--muted); }
+.computer-teams .ct-machine { flex:none; color:var(--fg); font-size:15px; font-weight:700; white-space:nowrap; }
+.computer-teams .ct-path { min-width:0; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:13px var(--mono,monospace); }
+.computer-teams .ct-mcard-count { flex:none; color:var(--muted); margin-left:auto; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.computer-teams .ct-mcard.unreached :is(.ct-machine, .ct-mcard-count, .shell-icon) { color:var(--warn); }
+/* Names come first: from a 760px container the Instance cell is as wide as its name, so the name is whole whenever
+   the row has room for it (--ct-name-room); the Soul column gives way, and Created, then Soul, hide as it narrows. */
+.computer-teams .ct-ilist { grid-column:1 / -1; display:grid; grid-template-columns:subgrid; min-width:0; }
+.computer-teams .ct-irow { grid-column:1 / -1; display:grid; grid-template-columns:subgrid; align-items:center; min-height:46px; padding:0 16px; border-top:1px solid var(--border); }
+.computer-teams .ct-irow > * { min-width:0; }
+.computer-teams .ct-irow.ct-ihead { min-height:34px; border-top:0; color:var(--muted); font-size:12px; font-weight:600; }
+.computer-teams .ct-irow:not(.ct-ihead):hover { background:var(--surface-2); }
+.computer-teams .ct-vh { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.computer-teams .ct-irow > .ct-iname { display:flex; align-items:center; gap:10px; min-width:max-content; padding-right:16px; }
+.computer-teams .ct-iname .identity-mark { width:24px; height:24px; border-radius:7px; font-size:10.5px; font-weight:700; flex:none; }
+/* The name shows the row: one line, cut with an ellipsis only past the row's room (the full name is its title); the
+   soul's prefix steps back. */
+.oats-view .computer-teams button.ct-member-name { appearance:none; display:block; height:auto; min-height:0; min-width:0; margin:0; padding:0; border:0; background:none; color:var(--fg); font:650 14px/1.3 var(--sans,system-ui); text-align:left; max-width:var(--ct-name-room); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.computer-teams .ct-name-pre { color:var(--muted); font-weight:500; }
+.computer-teams .ct-name-tail { color:var(--fg); font-weight:650; }
+.oats-view .computer-teams button.ct-member-name:hover .ct-name-tail { text-decoration:underline; text-underline-offset:3px; }
+.computer-teams .ct-isoul { padding-right:12px; color:var(--muted); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* The state pill: the word carries the state (its dot is decoration). */
+.computer-teams .ct-member-state { display:inline-flex; align-items:center; gap:7px; max-width:100%; height:24px; box-sizing:border-box; padding:0 9px 0 8px; border-radius:12px; color:var(--muted); font-size:12.5px; font-weight:500; white-space:nowrap; overflow:hidden; }
+.computer-teams .ct-state-word { overflow:hidden; text-overflow:ellipsis; }
+.computer-teams .ct-state-dot { flex:none; width:7px; height:7px; box-sizing:border-box; border-radius:50%; border:1.5px solid var(--faint); }
+.computer-teams .ct-member-state.run { background:var(--sel); color:var(--fg); font-weight:600; }
+.computer-teams .ct-member-state.run .ct-state-dot { border:0; background:var(--live); }
+.computer-teams .ct-member-state.stop { padding-left:0; }
+.computer-teams .ct-member-state.warn { background:var(--attn-bg); color:var(--warn); font-weight:600; }
+.computer-teams .ct-member-state.warn .ct-state-dot { border:0; background:var(--warn); }
+.computer-teams .ct-age { color:var(--muted); font-size:12.5px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.computer-teams .ct-iact { justify-self:end; }
+.oats-view .computer-teams button.ct-member-term { display:inline-flex; align-items:center; gap:6px; height:28px; min-height:28px; padding:0 10px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12px var(--sans,system-ui); white-space:nowrap; cursor:pointer; }
+.oats-view .computer-teams button.ct-member-term:hover { border-color:var(--accent); color:var(--accent); }
+@container (max-width: 999.98px) {
+ .computer-teams .ct-mcards { grid-template-columns:1fr minmax(0,.4fr) 200px 104px; --ct-name-room:calc(min(100cqi, 1120px) - 136px - 304px); }
+ .computer-teams .ct-ilist .ct-age, .computer-teams .ct-ihead > :nth-child(4) { display:none; }
+}
+/* Below 900px State may shrink: the name's room leaves it 96px beside Terminal's 104 (200), enough for "Running". */
+@container (max-width: 899.98px) {
+ .computer-teams .ct-mcards { grid-template-columns:1fr minmax(0,200px) 104px; --ct-name-room:calc(min(100cqi, 1120px) - 136px - 200px); }
+ .computer-teams .ct-ilist .ct-isoul, .computer-teams .ct-ihead > :nth-child(2) { display:none; }
+}
+/* A narrow container: the actions wrap under the description; the souls table stacks; an instance's table keeps
+   Instance, State and Terminal, and a name too long for it is cut, whole in its title. */
+@container (max-width: 759.98px) {
+ .computer-teams .ct-head { grid-template-columns:minmax(0,1fr); }
+ .computer-teams .ct-head > .ct-actions { grid-column:1; grid-row:auto; justify-content:flex-start; }
+ .computer-teams .ct-souls thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+ .computer-teams .ct-souls, .computer-teams .ct-souls tbody { display:block; }
+ .computer-teams .ct-souls colgroup { display:none; }
+ .computer-teams .ct-souls tr { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); border-top:1px solid var(--border); }
+ .computer-teams .ct-souls tbody tr:first-child { border-top:0; }
+ .computer-teams .ct-souls td { border-top:0; }
+ .computer-teams .ct-souls td:first-child { grid-column:1 / -1; padding-bottom:0; }
+ .computer-teams .ct-souls td:nth-child(2) { padding-left:20px; }
+ .computer-teams .ct-yours-machines { margin-left:0; }
+ .computer-teams .ct-mcards { grid-template-columns:minmax(0,1fr) minmax(0,max-content) 104px; column-gap:12px; --ct-name-room:none; }
+ .computer-teams .ct-irow > .ct-iname { min-width:0; }
 }
 `;
 
@@ -322,8 +400,6 @@ export function whoMayJoin(document, label) {
   return every ? 'every soul' : souls.size ? plural(souls.size, 'soul') : null;
 }
 
-const MAX_MARKS = 3;
-
 const codePoint = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 /** A member's state in words (never colour alone): running, stopped, unknown, or gone from its server. */
 export const memberState = m => m.missingRemotely ? 'gone' : m.running === true ? 'running' : m.running === false ? 'stopped' : 'unknown';
@@ -346,16 +422,19 @@ const memberDeployment = m => m.deployment && typeof m.deployment === 'object' &
  * deployment id breaking ties; within one, by instance name, then home. An answer without deployments (an older
  * route) groups by machine: "This computer", then each server. A group is not reached when every roster group its
  * members come from failed its last read; when only some did (an edited registration keeps its old group), the
- * heading stays reached and those members' own state ("unknown") and reason carry it. */
+ * heading stays reached and those members' own state ("unknown") and reason carry it. Each group also names its
+ * `machine` and its deployment's full `path` (null from an older route), which the team page heads it with. */
 export function memberGroups(members, servers = []) {
   const byGroup = new Map(list(servers).map(s => [`remote:${s.group}`, s]));
   for (const s of list(servers)) if (text(s.deployment)) byGroup.set(s.deployment, s);
   const groups = new Map();
   for (const m of members) {
     const deployment = memberDeployment(m), key = deployment ? `deployment:${deployment.id}` : m.server ?? '';
-    const label = deployment ? deploymentLabel({ machine: text(deployment.machine) ?? (m.server ? text(m.serverLabel) ?? m.server : DESKTOP_TERMS.thisMachine), label: shortPath(deployment.path) }, DESKTOP_TERMS)
-      : m.server ? text(m.serverLabel) ?? m.server : 'This computer';
-    if (!groups.has(key)) groups.set(key, { key, server: m.server ?? null, deployment: deployment?.id ?? null, label, reached: true, error: null, members: [], sources: new Map() });
+    const server = m.server ? text(m.serverLabel) ?? m.server : null;
+    const machine = deployment ? text(deployment.machine) ?? server ?? DESKTOP_TERMS.thisMachine : server ?? 'This computer';
+    const label = deployment ? deploymentLabel({ machine, label: shortPath(deployment.path) }, DESKTOP_TERMS) : machine;
+    if (!groups.has(key)) groups.set(key, { key, server: m.server ?? null, deployment: deployment?.id ?? null, label, machine, path: text(deployment?.path),
+      reached: true, error: null, members: [], sources: new Map() });
     const group = groups.get(key), source = m.server ? byGroup.get(m.workspace) : null;
     if (source) group.sources.set(source.group, source);
     group.members.push(m);
@@ -369,11 +448,31 @@ export function memberGroups(members, servers = []) {
   return [...groups.values()].sort((a, b) => (a.server === null) !== (b.server === null) ? (a.server === null ? -1 : 1)
     : codePoint(a.label, b.label) || codePoint(a.server ?? '', b.server ?? '') || codePoint(a.deployment ?? '', b.deployment ?? ''));
 }
-/** The card's summary: "N members", with "· M on other machines" when some run elsewhere; nothing for none. */
-export function memberSummary(members) {
-  if (!members.length) return null;
+/** The board card's summary of a team's members, in parts (`kind`: count, more, warn): "N of your instances", ", M on
+ * other machines" when some run elsewhere, ", <machine>[, <machine>] not reached" for its groups not reached (each
+ * machine once); "None of your instances" for none. */
+export function memberSummaryParts(members, servers = []) {
+  if (!members.length) return [{ kind: 'more', text: 'None of your instances' }];
   const elsewhere = members.filter(m => m.server).length;
-  return `${plural(members.length, 'member')}${elsewhere ? ` · ${elsewhere} on other machines` : ''}`;
+  const unreached = [...new Set(memberGroups(members, servers).filter(g => !g.reached).map(g => g.machine))];
+  return [{ kind: 'count', text: `${members.length} of your instances` },
+    ...(elsewhere ? [{ kind: 'more', text: `, ${elsewhere} on other machines` }] : []),
+    ...(unreached.length ? [{ kind: 'warn', text: `, ${unreached.join(', ')} not reached` }] : [])];
+}
+/** The same summary as one string. */
+export function memberSummary(members, servers = []) {
+  return memberSummaryParts(members, servers).map(part => part.text).join('');
+}
+/** The member's state on its row: `run` (running and it can be opened), `stop` (plainly stopped) or `warn` (anything
+ * else: its word is the roster's reason label, or unknown, gone). The team page counts its rows by it. */
+export function stateKind(m) {
+  if (m.running === true && m.addressable === true) return 'run';
+  return stateWord(m) === 'stopped' ? 'stop' : 'warn';
+}
+/** A soul's short name, as its mark's (identity-marks.mjs, step 1): after the last "/" or "--". */
+export function soulShort(name) {
+  const value = text(name) ?? '', slash = value.lastIndexOf('/'), dashes = value.lastIndexOf('--');
+  return value.slice(Math.max(slash < 0 ? 0 : slash + 1, dashes < 0 ? 0 : dashes + 2));
 }
 /** The route's answer, kept only as far as it validates (every string still enters the DOM by assignment). */
 function membersAnswer(v) {
@@ -387,19 +486,21 @@ function membersAnswer(v) {
     notReached: list(v.notReached).filter(s => s && typeof s === 'object' && text(s.label)) };
 }
 
-export function createComputerTeams(doc, { request, onDocument = null, readMembers = null, onMember = () => {} }) {
+export function createComputerTeams(doc, { request, onDocument = null, readMembers = null, onMember = () => {}, onOpenTeam = null }) {
   const page = el(doc, 'section', null, 'computer-teams'); page.dataset.box = 'Teams'; page.setAttribute('aria-label', 'Teams');
   const status = el(doc, 'p', '', 'ct-status'); status.setAttribute('role', 'status');
   // Servers we hold no rows for yet: said under the head, and kept current as they answer (outside the redraw barrier).
   const reach = el(doc, 'p', '', 'ct-reach'); reach.setAttribute('role', 'status');
-  let roster = null, rosterSerial = 0, groupIds = 0;
+  let roster = null, rosterSerial = 0;
   const body = el(doc, 'div', null, 'ct-body');
   let current = null, pending = false, serial = 0, disposed = false;
   let rowError = null, cardError = null, confirming = null, adding = false, opener = 'head';
   const draft = { label: '', team: '', description: '' };
+  // The open team page (showTeam): { host, label, content, back, onGone, scope, signature }.
+  let shown = null;
 
   // The page head is static: the title, its one line, and the add button (the form opens below,
-  // in "Only on this computer"). Opened twice, the button only brings the focus back to the form.
+  // in Local teams). Opened twice, the button only brings the focus back to the form.
   // The head stays pinned while the page scrolls (spec G: .ws-sticky, discoveryCSS and sticky-top.mjs).
   const head = el(doc, 'div', null, 'ct-page-head ws-sticky'), titles = el(doc, 'div', null, 'ct-title-wrap');
   titles.append(el(doc, 'h2', 'Teams', 'ct-title'), el(doc, 'p', 'Who your agents can message. A team never adds capabilities or restricts what a soul can do.', 'ct-lead'));
@@ -438,18 +539,21 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
   }
   const read = () => run({ action: 'list' });
 
+  /** A refusal: one sentence, then the kernel's lines (its code under Details). */
   function problemBox(error) {
     const wrap = el(doc, 'div', null, 'ct-error'); wrap.setAttribute('role', 'alert');
     wrap.append(el(doc, 'p', error.message));
     if (error.code) { const more = el(doc, 'details'); more.append(el(doc, 'summary', 'Details'), el(doc, 'pre', error.code)); wrap.append(more); }
     return wrap;
   }
-  function button(label, cls, onClick, { disabled = false, title = '', aria = '' } = {}) {
+  function button(label, cls, onClick, { disabled = false, title = '', aria = '', key = '' } = {}) {
     const b = el(doc, 'button', label, `ct-act${cls ? ` ${cls}` : ''}`); b.type = 'button';
     b.disabled = disabled || pending; if (title) b.title = title; if (aria) b.setAttribute('aria-label', aria);
+    if (key) b.dataset.focusKey = key;
     b.addEventListener('click', () => { if (!b.disabled) onClick(); });
     return b;
   }
+  const blocks = p => p.default === true || p.severity === 'failure';
   function kernelProblem(problem) {
     // The default team's problem blocks every spawn here (the kernel's `default: true`): said as such.
     // Any other failure (team model 3's local-teams-closed) is the kernel's words, as an alert.
@@ -457,7 +561,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     const line = el(doc, 'div', null, failure ? 'ct-blocking' : 'ct-warn'); line.dataset.problem = problem.code || '';
     if (failure) line.setAttribute('role', 'alert');
     if (blocking) line.append(el(doc, 'strong', `The default team ${problem.label} has no provider id yet: nothing can be spawned until it has one.`));
-    line.append(el(doc, 'span', problem.message || problem.code || 'A problem was reported.'));
+    line.append(el(doc, 'span', problem.message || problem.code || 'A problem was reported.', failure ? null : 'ct-warn-msg'));
     // A kernel message that already ends with its fix (local-teams-closed) says it once.
     if (text(problem.fix) && !(problem.message ?? '').includes(problem.fix)) line.append(el(doc, 'span', problem.fix, 'ct-fix'));
     if (blocking) line.append(el(doc, 'span', 'Or make another team the default.', 'ct-why'));
@@ -469,46 +573,33 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     if (!text(team.team) || !roster) return [];
     return roster.members.filter(m => m.team === team.team);
   }
-  /** One member: its dot, its name (which shows its roster row), its soul mark, its state in words and, only
-   * when it can be opened, a quiet Terminal. A member that can't be opened says why in its state word. */
-  function memberRow(m) {
-    const item = el(doc, 'li', null, 'ct-member'), machine = m.server ? text(m.deployment?.machine) ?? text(m.serverLabel) ?? m.server : 'this computer';
-    const dot = el(doc, 'span', null, 'ct-dot'); dot.dataset.state = memberState(m); dot.setAttribute('aria-hidden', 'true');
-    const name = el(doc, 'button', m.instance, 'ct-member-name'); name.type = 'button'; name.setAttribute('aria-label', `Show ${m.instance} in the roster`);
-    name.addEventListener('click', () => onMember('show', { ...m }));
-    const word = el(doc, 'span', stateWord(m), 'ct-member-state'), blocked = openBlocked(m);
-    if (blocked) { word.title = blocked; word.setAttribute('aria-description', blocked); }
-    item.append(dot, name, createSoulMark(doc, { name: m.agent, agentsRoot: m.agentsRoot }), word);
-    if (!blocked) {
-      const term = el(doc, 'button', null, 'ct-member-term'); term.type = 'button'; term.setAttribute('aria-label', `Open ${m.instance} terminal on ${machine}`);
-      term.append(iconElement(doc, 'terminal', { size: 12 }), el(doc, 'span', 'Terminal'));
-      term.addEventListener('click', () => onMember('open', { ...m }));
-      item.append(term);
-    }
-    return item;
-  }
-  function memberList(members) {
-    const groups = el(doc, 'ul', null, 'ct-members'), labelId = `ct-members-${++groupIds}`;
-    // "Members · N" over a hairline: the list's label.
-    const label = el(doc, 'div', `Members · ${members.length}`, 'ct-members-head'); label.id = labelId;
-    groups.setAttribute('aria-labelledby', labelId);
-    for (const group of memberGroups(members, roster?.servers)) {
-      const item = el(doc, 'li', null, 'ct-group'), id = `ct-group-${++groupIds}`;
-      item.setAttribute('role', 'group'); item.setAttribute('aria-labelledby', id);
-      const head = el(doc, 'h4', `${group.label} · ${group.reached ? group.members.length : 'not reached'}`, 'ct-group-head'); head.id = id;
-      if (!group.reached && group.error) head.title = group.error;
-      const rows = el(doc, 'ul', null, 'ct-member-list');
-      for (const m of group.members) rows.append(memberRow(m));
-      item.append(head, rows); groups.append(item);
-    }
-    return [label, groups];
-  }
 
-  /** Team model 3's two labelled rows (only those with entries), or "No soul may join it yet". Names are bold,
-   * each with its souls: key as its title; every string enters by assignment. */
-  function audienceFacts({ defaultFor, mayJoin }) {
-    if (!defaultFor.length && !mayJoin.length) return el(doc, 'span', 'No soul may join it yet', 'ct-join none');
-    const rows = el(doc, 'dl', null, 'ct-audience');
+  /** The facts rows: team model 3's Default for and May join (only those with entries, else "No soul may join it
+   * yet" as a muted May join), or team model 2's Who may join; then the address. Names are bold, each with its
+   * souls: key as its title; every string enters by assignment. */
+  function teamFacts(team) {
+    const rows = el(doc, 'dl', null, 'ct-facts');
+    const row = (key, caption, value) => {
+      const item = el(doc, 'div', null, 'ct-fact'); item.dataset.fact = key;
+      item.append(el(doc, 'dt', caption), value); rows.append(item); return value;
+    };
+    const audience = teamAudience(current, team.label);
+    if (audience && (audience.defaultFor.length || audience.mayJoin.length)) {
+      for (const [key, caption, entries, may] of [['default', 'Default for', audience.defaultFor, false], ['join', 'May join', audience.mayJoin, true]]) {
+        if (!entries.length) continue;
+        const value = el(doc, 'dd'); value.append(...audiencePhrase(entries, may)); row(key, caption, value);
+      }
+    } else if (audience) row('join', 'May join', el(doc, 'dd', 'No soul may join it yet', 'none'));
+    const address = row('address', 'Address', el(doc, 'dd', team.team ?? 'no provider id yet', `ct-address${team.team ? '' : ' none'}`));
+    address.title = 'Address: the team on the messaging provider';
+    if (!audience) {
+      const who = whoMayJoin(current, team.label), value = el(doc, 'dd');
+      value.append(el(doc, 'b', who ?? 'No soul yet', `ct-join${who ? '' : ' none'}`)); row('who', 'Who may join', value);
+    }
+    return rows;
+  }
+  /** Team model 3's audience phrases ("all souls of p except x · y (q)"), as nodes. */
+  function audiencePhrase(entries, may) {
     const name = entry => { const b = el(doc, 'b', entry.kind === 'soul' ? entry.soul : entry.repo, 'ct-name'); b.title = entry.key; return [b]; };
     const soul = entry => [...name(entry), ` (${entry.repo})`];
     const series = (items, nodes) => items.flatMap((item, i) => [...(i ? [i === items.length - 1 ? ' and ' : ', '] : []), ...nodes(item)]);
@@ -518,96 +609,83 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       if (repos.length) groups.unshift(['souls of ', ...series(repos, name)]);
       return series(groups, nodes => nodes);
     };
-    const phrase = (entries, may) => {
-      const parts = [], plainRepos = entries.filter(e => e.kind === 'repo' && !e.except), souls = entries.filter(e => e.kind === 'soul');
-      const ofRepo = may ? 'souls of ' : 'all souls of ';
-      for (const e of entries) {
-        if (e.kind === 'every') parts.push(['every soul', ...(e.except ? [' except ', ...everyBut(e.except)] : [])]);
-        else if (e.kind === 'fallback') parts.push(e.nobody ? [el(doc, 'span', 'fallback; every soul has its own default', 'ct-quiet')]
-          : [`every soul without its own default${e.from === 'deployment' ? " (this deployment's choice)" : ''}`]);
-        else if (e.kind === 'local') parts.push(['every soul (local team)']);
-        else if (e.kind === 'repo' && e.except) parts.push([ofRepo, ...name(e), ' except ', ...series(e.except, name)]);
-        // The repos without exceptions read as one series ("souls of a, b and c"), as do the single souls.
-        else if (e === plainRepos[0]) parts.push([ofRepo, ...series(plainRepos, name)]);
-        else if (e === souls[0]) parts.push(series(souls, soul));
-      }
-      return parts.flatMap((nodes, i) => [...(i ? [' · '] : []), ...nodes]);
-    };
-    const row = (key, caption, entries, may) => {
-      if (!entries.length) return;
-      const item = el(doc, 'div', null, 'ct-aud'); item.dataset.audience = key;
-      const value = el(doc, 'dd'); value.append(...phrase(entries, may));
-      item.append(el(doc, 'dt', caption), value); rows.append(item);
-    };
-    row('default', 'Default for', defaultFor, false);
-    row('join', 'May join', mayJoin, true);
-    return rows;
+    const parts = [], plainRepos = entries.filter(e => e.kind === 'repo' && !e.except), souls = entries.filter(e => e.kind === 'soul');
+    const ofRepo = may ? 'souls of ' : 'all souls of ';
+    for (const e of entries) {
+      if (e.kind === 'every') parts.push(['every soul', ...(e.except ? [' except ', ...everyBut(e.except)] : [])]);
+      else if (e.kind === 'fallback') parts.push(e.nobody ? [el(doc, 'span', 'fallback; every soul has its own default', 'ct-quiet')]
+        : [`every soul without its own default${e.from === 'deployment' ? " (this deployment's choice)" : ''}`]);
+      else if (e.kind === 'local') parts.push(['every soul (local team)']);
+      else if (e.kind === 'repo' && e.except) parts.push([ofRepo, ...name(e), ' except ', ...series(e.except, name)]);
+      // The repos without exceptions read as one series ("souls of a, b and c"), as do the single souls.
+      else if (e === plainRepos[0]) parts.push([ofRepo, ...series(plainRepos, name)]);
+      else if (e === souls[0]) parts.push(series(souls, soul));
+    }
+    return parts.flatMap((nodes, i) => [...(i ? [' · '] : []), ...nodes]);
   }
 
-  function teamCard(team) {
-    const card = el(doc, 'article', null, 'ct-card'); card.dataset.team = team.label; card.dataset.from = team.from;
+  /** A team's card. On the board (`onPage` false) the label is a button that opens the team's page, stretched
+   * over the card, and a foot sums up your instances on it; on its page the label is the page's h2 and there is
+   * no foot. Both hold the same header, facts, notes and actions, and the same confirmation flows. */
+  function teamCard(team, { onPage = false } = {}) {
+    const openable = !onPage && typeof onOpenTeam === 'function';
+    const card = el(doc, 'article', null, `ct-card${team.from === 'shared' ? '' : ' local'}${onPage ? ' ct-page-card' : ''}${openable ? ' ct-openable' : ''}`);
+    card.dataset.team = team.label; card.dataset.from = team.from;
     if (team.default) card.dataset.default = 'true';
-    // The tile: the board's users glyph.
-    const tile = el(doc, 'span', null, `ct-tile${team.default ? ' default' : ''}`); tile.setAttribute('aria-hidden', 'true');
-    tile.append(iconElement(doc, 'users', { size: 16 }));
-    const main = el(doc, 'div', null, 'ct-main'), head = el(doc, 'div', null, 'ct-head');
-    head.append(el(doc, 'span', team.label, 'ct-label'));
-    if (team.default) head.append(el(doc, 'span', !model3(current) ? 'Default on this computer'
-      : current.defaultTeam?.from === 'workspace' ? "Default · the workspace's" : 'Default · this deployment', 'ct-pill'));
-    main.append(head);
-    if (text(team.description)) main.append(el(doc, 'span', team.description, 'ct-desc'));
-    const problems = list(current.problems).filter(p => p?.label === team.label), blocks = p => p.default === true || p.severity === 'failure';
-    const audience = teamAudience(current, team.label);
-    if (audience) {
-      // Team model 3: what blocks comes first, then whose default it is and who else may join, then the
-      // address (the quietest line), then the team's warnings.
-      for (const problem of problems.filter(blocks)) main.append(kernelProblem(problem));
-      main.append(audienceFacts(audience));
-      const address = el(doc, 'span', team.team ?? 'no provider id yet', `ct-address${team.team ? '' : ' none'}`);
-      address.title = 'Address: the team on the messaging provider'; main.append(address);
-      for (const problem of problems.filter(p => !blocks(p))) main.append(kernelProblem(problem));
-    } else {
-      const facts = el(doc, 'div', null, 'ct-facts');
-      const address = el(doc, 'span', 'Address ', 'ct-fact'); address.append(el(doc, 'span', team.team ?? 'no provider id yet', `ct-id${team.team ? '' : ' none'}`));
-      const join = el(doc, 'span', 'Who may join ', 'ct-fact'), who = whoMayJoin(current, team.label);
-      join.append(el(doc, 'b', who ?? 'No soul yet', `ct-join${who ? '' : ' none'}`));
-      facts.append(address, join); main.append(facts);
-      for (const problem of problems) main.append(kernelProblem(problem));
+    const root = onPage ? () => shown?.content : () => page;
+    const header = el(doc, 'div', null, 'ct-head'), id = el(doc, 'div', null, 'ct-id');
+    if (onPage) id.append(el(doc, 'h2', team.label, 'ct-page-label'));
+    else {
+      const heading = el(doc, 'h4', null, 'ct-name-h');
+      if (openable) {
+        const open = el(doc, 'button', team.label, 'ct-open'); open.type = 'button';
+        open.setAttribute('aria-description', "Opens the team's page with your instances on it");
+        open.addEventListener('click', () => onOpenTeam(team.label));
+        heading.append(open);
+      } else heading.append(el(doc, 'span', team.label, 'ct-label'));
+      id.append(heading);
     }
+    if (team.default) id.append(el(doc, 'span', 'Default team', 'ct-tag'), el(doc, 'span', !model3(current) ? 'on this computer'
+      : current.defaultTeam?.from === 'workspace' ? 'set by the workspace' : 'set on this deployment', 'ct-from'));
+    header.append(id);
+    if (onPage && shown?.scope) header.append(shown.scope.element);
+    if (text(team.description)) header.append(el(doc, 'p', team.description, 'ct-desc'));
     const actions = el(doc, 'div', null, 'ct-actions');
     // Make default writes oats-local.yaml's defaultTeam: only where this deployment may declare it.
-    if (!team.default && localAllowed(current)) actions.append(button('Make default', '', () => { confirming = team.label; render(); focusIn(`[data-team="${team.label}"] .ct-confirm .primary`); },
-      { disabled: !team.team, title: team.team ? '' : 'A team with no provider id yet cannot be the default.', aria: `Make ${team.label} the default team` }));
-    if (team.from === 'local') {
-      const why = teamInUse(current, team.label);
-      actions.append(button('Remove', '', () => run({ action: 'remove', label: team.label }, { label: team.label }),
-        { disabled: !!why, title: why || '', aria: why ? `Remove ${team.label}: ${why}` : `Remove ${team.label}` }));
-      if (why) main.append(el(doc, 'span', why, 'ct-why'));
-    }
-    // The members come last in the main column: below the facts and the card's own notes (problems, why Remove is off).
-    const members = membersOf(team);
-    if (members.length) main.append(...memberList(members));
-    card.append(tile, main);
-    // The right column says who is in the team only when the roster shows someone; never a zero.
-    const side = el(doc, 'div', null, 'ct-side');
-    if (members.length) {
-      const line = el(doc, 'div', null, 'ct-inst'), marks = el(doc, 'span', null, 'ct-marks');
-      for (const row of members.slice(0, MAX_MARKS)) marks.append(createSoulMark(doc, { name: row.agent, agentsRoot: row.agentsRoot }));
-      line.append(marks, el(doc, 'span', memberSummary(members), 'ct-count'));
-      side.append(line);
-      if (team.default) side.append(el(doc, 'span', 'every instance joins its default team', 'ct-note'));
-    }
-    if (actions.childElementCount) side.append(actions);
-    if (side.childElementCount) card.append(side); else card.classList.add('no-side');
+    if (!team.default && localAllowed(current)) actions.append(button('Make default', '', () => { confirming = team.label; render(); focusIn(`[data-team="${team.label}"] .ct-confirm .primary`, root()); },
+      { disabled: !team.team, title: team.team ? '' : 'A team with no provider id yet cannot be the default.', aria: `Make ${team.label} the default team`, key: 'team:make-default' }));
+    const why = team.from === 'local' ? teamInUse(current, team.label) : null;
+    if (team.from === 'local') actions.append(button('Remove', '', () => run({ action: 'remove', label: team.label }, { label: team.label }),
+      { disabled: !!why, title: why || '', aria: why ? `Remove ${team.label}: ${why}` : `Remove ${team.label}`, key: 'team:remove' }));
+    if (actions.childElementCount) header.append(actions);
+    card.append(header);
+    // What blocks comes first, then the facts, then the team's warnings and why Remove is off.
+    const problems = list(current.problems).filter(p => p?.label === team.label);
+    for (const problem of problems.filter(blocks)) card.append(kernelProblem(problem));
+    card.append(teamFacts(team));
+    for (const problem of problems.filter(p => !blocks(p))) card.append(kernelProblem(problem));
+    if (why) card.append(el(doc, 'p', why, 'ct-why'));
     if (confirming === team.label) {
       const confirm = el(doc, 'div', null, 'ct-confirm');
       confirm.append(el(doc, 'p', `Make ${team.label} the default team on this computer? Running instances keep their current default team until they are respawned.`));
       const buttons = el(doc, 'div', null, 'ct-actions');
-      buttons.append(button('Make default', 'primary', () => run({ action: 'default', label: team.label }, { label: team.label })),
-        button('Cancel', '', () => { confirming = null; render(); focusIn(`[data-team="${team.label}"] .ct-side .ct-actions button`); }));
+      buttons.append(button('Make default', 'primary', () => run({ action: 'default', label: team.label }, { label: team.label }), { key: 'team:confirm' }),
+        button('Cancel', '', () => { confirming = null; render(); focusIn(`[data-team="${team.label}"] .ct-head .ct-actions button`, root()); }, { key: 'team:cancel' }));
       confirm.append(buttons); card.append(confirm);
     }
     if (rowError?.label === team.label) card.append(problemBox(rowError));
+    if (!onPage) {
+      // The foot: your instances on it (only once the members are known, and only a team with an id can have any).
+      const foot = el(doc, 'div', null, 'ct-foot'), sum = el(doc, 'span', null, 'ct-sum');
+      if (roster && text(team.team)) for (const part of memberSummaryParts(membersOf(team), roster.servers)) sum.append(el(doc, 'span', part.text, `ct-sum-${part.kind}`));
+      foot.append(sum);
+      if (openable) {
+        const go = el(doc, 'span', null, 'ct-go'); go.setAttribute('aria-hidden', 'true');
+        go.append(el(doc, 'span', 'Open team'), iconElement(doc, 'chevronRight', { size: 14 }));
+        foot.append(go);
+      }
+      if (sum.childElementCount || openable) card.append(foot);
+    }
     return card;
   }
 
@@ -638,19 +716,19 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     return form;
   }
 
-  function section(name, titleText, scopeText, dashed) {
+  /** A section: its heading (sentence case) and one muted line. */
+  function section(name, titleText, leadText) {
     const wrap = el(doc, 'section', null, 'ct-section'); wrap.dataset.section = name;
     const head = el(doc, 'div', null, 'ct-section-head');
-    head.append(el(doc, 'h3', titleText, 'ct-section-title'), el(doc, 'span', scopeText, `ct-scope${dashed ? ' dashed' : ''}`));
+    head.append(el(doc, 'h3', titleText, 'ct-section-title'), el(doc, 'p', leadText, 'ct-section-lead'));
     wrap.setAttribute('aria-label', titleText); wrap.append(head);
     return wrap;
   }
   function emptyCard(message) { const card = el(doc, 'div', null, 'ct-empty'); card.append(el(doc, 'span', message)); return card; }
-  /** Team model 3: the workspace's souls: patterns as committed, read only: each pattern's default and the
-   * other teams its souls may join (`any`: every shared team). */
+  /** Team model 3: the workspace's souls: patterns as committed, read only: a table of each pattern, its default and
+   * the other teams its souls may join (`any`: every shared team). */
   function soulsSection() {
-    const wrap = section('souls', 'Souls in the workspace', 'Shared · Git', false);
-    wrap.append(el(doc, 'p', `Which teams each soul may join, and its default: ${SOULS_WHERE}.`, 'ct-lead'));
+    const wrap = section('souls', 'Which teams each soul may join', `And its default: ${SOULS_WHERE}.`);
     const rules = record(current.souls) ? Object.entries(current.souls) : [];
     if (!rules.length) {
       // With local teams allowed, every soul may also join each of this deployment's local teams (via local).
@@ -658,25 +736,46 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       wrap.append(emptyCard(`No souls: entries: a soul may join its default team${local ? " and this deployment's local teams" : ' only'}.`));
       return wrap;
     }
-    const table = el(doc, 'ul', null, 'ct-soul-rules');
+    const card = el(doc, 'div', null, 'ct-souls-card'), table = el(doc, 'table', null, 'ct-souls');
+    // Explicit roles: the narrow layout re-displays the rows as grids, which may drop a table's implicit semantics.
+    const role = (node, value) => { node.setAttribute('role', value); return node; };
+    role(table, 'table'); table.setAttribute('aria-label', 'Which teams each soul may join');
+    const cols = el(doc, 'colgroup'); for (const name of ['pattern', 'default', 'others']) cols.append(el(doc, 'col', null, name));
+    const thead = role(el(doc, 'thead'), 'rowgroup'), headRow = role(el(doc, 'tr'), 'row');
+    for (const caption of ['Souls', 'Default team', 'May also join']) { const th = role(el(doc, 'th', caption), 'columnheader'); th.scope = 'col'; headRow.append(th); }
+    thead.append(headRow);
+    const tbody = role(el(doc, 'tbody'), 'rowgroup');
+    const none = () => el(doc, 'span', 'none', 'ct-none');
     for (const [key, rule] of rules) {
-      // "default a · may also join b, c" (any: every shared team); the default is not said twice.
-      const others = rule.teams === 'any' ? 'any shared team' : list(rule.teams).filter(l => l !== rule.default).join(', ');
-      const parts = [...(text(rule.default) ? [`default ${rule.default}`] : []), ...(others ? [`may ${text(rule.default) ? 'also ' : ''}join ${others}`] : [])];
-      const row = el(doc, 'li', null, 'ct-soul-rule');
-      row.append(el(doc, 'span', key, 'ct-soul-key'), el(doc, 'span', parts.join(' · ') || 'no other team', 'ct-soul-teams'));
-      table.append(row);
+      const row = role(el(doc, 'tr'), 'row'); row.dataset.soulKey = key;
+      const pattern = role(el(doc, 'td'), 'cell'), code = el(doc, 'span', null, 'ct-pattern');
+      // "agents/release-manager": the folder steps back, the soul stands out; "*" reads "every soul".
+      const at = key.lastIndexOf('/');
+      if (at >= 0) code.append(el(doc, 'span', key.slice(0, at + 1), 'ct-pattern-dir'), key.slice(at + 1)); else code.append(key);
+      pattern.append(code);
+      if (key === '*') pattern.append(el(doc, 'span', ' every soul', 'ct-every'));
+      const fallback = role(el(doc, 'td'), 'cell'); fallback.append(record(rule) && text(rule.default) ? el(doc, 'span', rule.default, 'ct-chip') : none());
+      // The other teams (the default is not said twice); any is every shared team.
+      const others = role(el(doc, 'td'), 'cell'), labels = record(rule) && rule.teams !== 'any' ? list(rule.teams).filter(l => l !== rule.default) : [];
+      if (record(rule) && rule.teams === 'any') others.append('any shared team');
+      else if (labels.length) others.append(...labels.map(l => el(doc, 'span', l, 'ct-chip')));
+      else others.append(none());
+      row.append(pattern, fallback, others); tbody.append(row);
     }
-    wrap.append(table);
+    table.append(cols, thead, tbody); card.append(table); wrap.append(card);
     return wrap;
   }
 
   // Who is in each team, as drawn: a roster poll that changes it redraws the cards (syncRoster).
   let rosterDrawn = '';
-  const rosterKey = () => JSON.stringify([list(current?.teams).map(team => membersOf(team).map(m => [m.server, m.home, m.instance, m.agent, m.agentsRoot,
+  const rosterKey = () => JSON.stringify([!!roster, list(current?.teams).map(team => membersOf(team).map(m => [m.server, m.home, m.instance, m.agent, m.agentsRoot,
     m.running, m.addressable, m.missingRemotely, m.reason])), list(roster?.servers).map(s => [s.group, s.reached, s.error])]);
   function render() {
     if (disposed) return;
+    paintBoard();
+    paintTeam();
+  }
+  function paintBoard() {
     body.replaceChildren();
     addButton.disabled = pending; addButton.setAttribute('aria-expanded', String(adding));
     addButton.hidden = !!current && !localAllowed(current);
@@ -689,12 +788,12 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     // The default team's card leads its section; the others keep the document's order (a stable sort).
     const teams = list(current.teams).slice().sort((a, b) => (b.default === true) - (a.default === true));
     const shared = teams.filter(t => t.from === 'shared'), local = teams.filter(t => t.from !== 'shared');
-    const sharedSection = section('shared', 'Shared with the workspace', 'Shared · Git', false);
+    const sharedSection = section('shared', 'Shared teams', 'Declared in oats-workspace.yaml and shared through Git, so every computer that runs the workspace has them.');
     for (const team of shared) sharedSection.append(teamCard(team));
     if (!shared.length) sharedSection.append(emptyCard("No shared teams. A shared team is declared in the workspace's oats-workspace.yaml and committed, so every computer running the workspace has it."));
-    const localSection = section('local', 'Only on this computer', 'Not shared', true);
+    const localSection = section('local', 'Local teams', 'Only on this computer, in its oats-local.yaml. Not shared.');
     for (const team of local) localSection.append(teamCard(team));
-    if (!local.length && !adding && !localAllowed(current)) localSection.append(emptyCard(`No local teams: ${LOCAL_TEAMS_CLOSED}.`));
+    if (!local.length && !adding && !localAllowed(current)) localSection.append(el(doc, 'p', `No local teams: ${LOCAL_TEAMS_CLOSED}.`, 'ct-dashed'));
     else if (!local.length && !adding) {
       const empty = emptyCard("No local teams. A local team lives in this computer's oats-local.yaml and is visible only here.");
       empty.append(button('Add a local team', 'ct-link', () => openAdd('link')));
@@ -707,11 +806,142 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     if (model3(current) && current.localTeams !== null) body.append(soulsSection());
     rosterDrawn = rosterKey();
   }
+
+  /* ── The team's page (packages/desktop/docs/desktop-teams.md "A team's page"): its card, then your instances on
+   * it. It follows the pages' rule, not the board's barrier: it repaints only when what it shows changed, and puts
+   * focus back on the same control by its focus key (else Back). ── */
+  /** A focus key per member control: the instance's deployment and name. */
+  const memberKey = (m, part) => JSON.stringify([m.workspace, m.instance, part]);
+  function memberRow(m, machine) {
+    const row = el(doc, 'div', null, 'ct-irow'); row.setAttribute('role', 'row');
+    const cell = cls => { const c = el(doc, 'span', null, cls); c.setAttribute('role', 'cell'); return c; };
+    // Instance: its soul's mark, then the name, which shows its roster row; the soul's prefix steps back.
+    const instance = cell('ct-iname'), soul = soulShort(m.agent);
+    const name = el(doc, 'button', null, 'ct-member-name'); name.type = 'button'; name.dataset.focusKey = memberKey(m, 'name');
+    name.setAttribute('aria-label', `Show ${m.instance} in the roster`); name.title = `Show ${m.instance} in the roster`;
+    const tail = soul && m.instance.startsWith(`${soul}-`) && m.instance.length > soul.length + 1 ? m.instance.slice(soul.length + 1) : null;
+    if (tail) name.append(el(doc, 'span', `${soul}-`, 'ct-name-pre'), el(doc, 'span', tail, 'ct-name-tail'));
+    else name.append(el(doc, 'span', m.instance, 'ct-name-tail'));
+    name.addEventListener('click', () => onMember('show', { ...m }));
+    // The mark keeps the full soul as its title where the Soul column is hidden.
+    const mark = createSoulMark(doc, { name: m.agent, agentsRoot: m.agentsRoot }); mark.title = m.agent;
+    instance.append(mark, name);
+    const soulCell = cell('ct-isoul'); soulCell.textContent = soul; soulCell.title = m.agent;
+    // State: the word carries it (never colour alone); a member that can't be opened says why.
+    const state = cell(''), kind = stateKind(m), blocked = openBlocked(m), word = stateWord(m);
+    const pill = el(doc, 'span', null, `ct-member-state ${kind}`); pill.dataset.state = memberState(m);
+    const dot = el(doc, 'span', null, 'ct-state-dot'); dot.setAttribute('aria-hidden', 'true');
+    pill.append(dot, el(doc, 'span', kind === 'run' ? 'Running' : kind === 'stop' ? 'Stopped' : word, 'ct-state-word'));
+    if (blocked) { pill.title = blocked; pill.setAttribute('aria-description', blocked); }
+    state.append(pill);
+    const created = cell('ct-age');
+    if (text(m.createdAt)) { created.textContent = ageText(m.createdAt); created.title = m.createdAt; created.dataset.created = m.createdAt; }
+    // Terminal only when it can be opened: the list holds no disabled buttons.
+    const act = cell('ct-iact');
+    if (!blocked) {
+      const term = el(doc, 'button', null, 'ct-member-term'); term.type = 'button'; term.dataset.focusKey = memberKey(m, 'term');
+      term.setAttribute('aria-label', `Open ${m.instance} terminal on ${machine}`);
+      term.append(iconElement(doc, 'terminal', { size: 13 }), el(doc, 'span', 'Terminal'));
+      term.addEventListener('click', () => onMember('open', { ...m }));
+      act.append(term);
+    }
+    row.append(instance, soulCell, state, created, act);
+    return row;
+  }
+  /** One machine's card: a head band (machine, path, its counts) and a table of its instances. */
+  function machineCard(team, group, named) {
+    const card = el(doc, 'section', null, `ct-mcard${group.reached ? '' : ' unreached'}`); card.setAttribute('role', 'group');
+    card.setAttribute('aria-label', named); card.dataset.group = group.key;
+    const path = group.path ? shortPath(group.path) : '';
+    const head = el(doc, 'h4', null, 'ct-mcard-head');
+    const running = group.members.filter(m => stateKind(m) === 'run').length;
+    head.append(iconElement(doc, group.reached ? 'computer' : 'warning', { size: 15 }), el(doc, 'span', group.machine, 'ct-machine'));
+    if (path) { const at = el(doc, 'span', path, 'ct-path'); at.title = group.path; head.append(at); }
+    head.append(el(doc, 'span', group.reached ? `${plural(group.members.length, 'instance')}, ${running} running` : 'not reached', 'ct-mcard-count'));
+    if (!group.reached && group.error) head.title = group.error;
+    const table = el(doc, 'div', null, 'ct-ilist'); table.setAttribute('role', 'table'); table.setAttribute('aria-label', `Your instances on ${team.label} on ${named}`);
+    const columns = el(doc, 'div', null, 'ct-irow ct-ihead'); columns.setAttribute('role', 'row');
+    for (const caption of ['Instance', 'Soul', 'State', 'Created', 'Terminal']) {
+      const th = el(doc, 'span', caption === 'Terminal' ? null : caption); th.setAttribute('role', 'columnheader');
+      if (caption === 'Terminal') th.append(el(doc, 'span', caption, 'ct-vh'));
+      columns.append(th);
+    }
+    table.append(columns);
+    const machine = group.server ? group.machine : 'this computer';
+    for (const m of group.members) table.append(memberRow(m, machine));
+    card.append(head, table);
+    return card;
+  }
+  /** "Your instances on this team": the counts, then one card per machine; nothing until the members are known. */
+  function yours(team) {
+    const wrap = section('yours', 'Your instances on this team',
+      `On this computer and the machines you added to this workspace. Instances other people run on ${team.label} are not listed here.`);
+    if (!text(team.team)) { wrap.append(el(doc, 'p', 'This team has no provider id yet, so no instance can be on it.', 'ct-dashed')); return wrap; }
+    if (!roster) return wrap;
+    const members = membersOf(team);
+    if (!members.length) { wrap.append(el(doc, 'p', `None of your instances is on ${team.label}.`, 'ct-dashed')); return wrap; }
+    const groups = memberGroups(members, roster.servers), kinds = members.map(stateKind);
+    const count = kind => kinds.filter(k => k === kind).length, running = count('run'), stopped = count('stop'), attention = count('warn');
+    const machines = new Set(groups.map(g => g.server ?? '')).size;
+    const sum = el(doc, 'p', null, 'ct-yours-sum');
+    const fact = (n, words, cls = '') => { const part = el(doc, 'span', null, cls || null); part.append(el(doc, 'b', String(n)), words); sum.append(part); };
+    fact(members.length, members.length === 1 ? 'instance' : 'instances'); fact(running, 'running');
+    if (stopped) fact(stopped, 'stopped');
+    if (attention) fact(attention, attention === 1 ? 'needs attention' : 'need attention', 'warn');
+    sum.append(el(doc, 'span', `on ${plural(machines, 'machine')}`, 'ct-yours-machines'));
+    wrap.append(sum);
+    if (team.default) wrap.append(el(doc, 'p', 'Every instance joins its default team, so all of your instances are here.', 'ct-default-note'));
+    // A machine's card is named by its machine, with its path where two cards share a machine.
+    const repeated = name => groups.filter(g => g.machine === name).length > 1;
+    const cards = el(doc, 'div', null, 'ct-mcards'); wrap.append(cards);
+    for (const group of groups) cards.append(machineCard(team, group, repeated(group.machine) && group.path ? `${group.machine} ${shortPath(group.path)}` : group.machine));
+    return wrap;
+  }
+  /** What the open page shows, for its repaint rule (ages excepted: they are updated in place). */
+  function teamSignature(team) {
+    const members = membersOf(team);
+    return JSON.stringify([team, list(current.problems).filter(p => p?.label === team.label), teamAudience(current, team.label), whoMayJoin(current, team.label),
+      team.from === 'local' ? teamInUse(current, team.label) : null, localAllowed(current), current.defaultTeam ?? null, pending, confirming === team.label,
+      rowError?.label === team.label ? rowError : null, !!roster, members, roster ? memberGroups(members, roster.servers).map(g => [g.key, g.machine, g.path, g.reached, g.error]) : null]);
+  }
+  function paintTeam() {
+    if (!shown || !current) return;
+    const team = list(current.teams).find(t => t.label === shown.label);
+    // Gone from the document (removed, here or elsewhere): the page closes.
+    if (!team) { const gone = shown.onGone; forget(); gone?.(); return; }
+    const signature = teamSignature(team);
+    if (signature !== shown.signature) {
+      shown.signature = signature;
+      const restore = captureFocusState(shown.content, { scroller: shown.host, fallback: () => shown.back });
+      shown.content.replaceChildren(teamCard(team, { onPage: true }), yours(team));
+      restore();
+    }
+    // The ages follow the roster poll in place.
+    for (const cell of shown.content.querySelectorAll('.ct-age[data-created]')) cell.textContent = ageText(cell.dataset.created);
+  }
+  /** Show `label`'s page in `host` (its bar, then its content), or false when the document has no such team.
+   * `onBack` is Back's; `onGone` hears that the team left the document or the page's owner went away. */
+  function showTeam(host, label, { onBack, onGone = null } = {}) {
+    if (disposed || !current || !list(current.teams).some(t => t.label === label)) return false;
+    const { bar, back } = pageBar(doc, { backLabel: 'Teams', crumbs: ['Workspace', 'Teams'], current: label, onBack });
+    const content = el(doc, 'div', null, 'computer-teams ct-team-page'); content.dataset.team = label;
+    host.replaceChildren(bar, content);
+    forget();
+    // The Workspace header's scope line is hidden with it: the page says which deployment it edits under its heading.
+    const scope = createDeploymentScopeLine(doc, { inline: true });
+    shown = { host, label, content, back, onGone, scope, signature: null };
+    paintTeam();
+    return true;
+  }
+  function hideTeam() { forget(); }
+  function forget() { shown?.scope.dispose(); shown = null; }
+
   /** The members changed: redraw only when who is in a team (or their state) changed, and never under an
    * open form, a pending confirmation or the keyboard (a redraw would drop what is typed or focused). */
   function redrawMembers() {
+    paintTeam();
     if (disposed || !current || pending || adding || confirming || page.contains(doc.activeElement) || rosterKey() === rosterDrawn) return;
-    render();
+    paintBoard();
   }
   function paintReach() {
     const labels = list(roster?.notReached).map(s => s.label);
@@ -726,8 +956,9 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     roster = answer; paintReach(); redrawMembers();
   }
   function syncRoster() { void readRoster(); }
-  function focusIn(selector) { queueMicrotask(() => page.querySelector(selector)?.focus()); }
+  function focusIn(selector, root = page) { queueMicrotask(() => root?.querySelector(selector)?.focus()); }
 
   void read(); void readRoster();
-  return { element: page, refresh: read, syncRoster, dispose() { disposed = true; serial++; rosterSerial++; } };
+  return { element: page, refresh: read, syncRoster, showTeam, hideTeam,
+    dispose() { disposed = true; serial++; rosterSerial++; const gone = shown?.onGone; forget(); gone?.(); } };
 }

@@ -1255,6 +1255,7 @@ for (const [name] of palettes) test(`${name}: launch preference notes meet compu
 // the teams panel's "Recently left" head and a spawn team with no provider id yet, on K1's
 // example documents (docs/desktop-cli-api.md "Team model v2", feat/030-team-model 8dd82158).
 import { createComputerTeams, computerTeamsCSS } from '../renderer/computer-teams.mjs';
+import { deploymentScopeCSS } from '../renderer/deployment-scope-line.mjs';
 import { createSoulTeamsHere, soulTeamsHereCSS } from '../renderer/soul-teams-here.mjs';
 import { teamsCSS } from '../renderer/teams-panel.mjs';
 import { setupCSS } from '../renderer/workspace-setup.mjs';
@@ -1284,21 +1285,20 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
   for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    // The v4.1 Teams page: one card per team on the surface; the section's scope chip; the default pill in the tint.
-    ['.ct-label', '.ct-card', 'fg', 'surface'], ['.ct-scope', '.ct-scope', 'muted', 'surface'],
-    ['[data-team="mine"] .ct-id', '.ct-card', 'fg', 'surface'], ['.ct-id.none', '.ct-card', 'warn', 'surface'],
-    ['.ct-pill', '.ct-pill', 'accent', 'sel'], ['.ct-why', '.ct-card', 'muted', 'surface'],
-    // Board 5: the team tile (its tint; the default's in the brand tint) and both scope chips ("Shared · Git", dashed "Not shared").
-    ['.ct-tile:not(.default)', '.ct-tile:not(.default)', 'chip-fg', 'chip-bg'], ['.ct-tile.default', '.ct-tile.default', 'accent', 'sel'],
-    ['.ct-scope:not(.dashed)', '.ct-scope:not(.dashed)', 'muted', 'surface'], ['.ct-scope.dashed', '.ct-scope.dashed', 'muted', 'surface'],
+    // The Teams board: one card per team on the surface; the default's tag in the brand tint and where it is set.
+    ['.ct-label', '.ct-card', 'fg', 'surface'], ['.ct-desc', '.ct-card', 'muted', 'surface'],
+    ['[data-team="mine"] dd.ct-address', '.ct-card', 'muted', 'surface'], ['dd.ct-address.none', '.ct-card', 'warn', 'surface'],
+    ['.ct-tag', '.ct-tag', 'accent', 'sel'], ['.ct-from', '.ct-card', 'muted', 'surface'], ['.ct-why', '.ct-card', 'muted', 'surface'],
+    ['.ct-fact dt', '.ct-card', 'muted', 'surface'], ['.ct-join:not(.none)', '.ct-card', 'fg', 'surface'], ['.ct-join.none', '.ct-card', 'muted', 'surface'],
+    // A team's warning: its own box in the attention tint, the message and the fix in --fg.
+    ['.ct-card .ct-warn', '.ct-card .ct-warn', 'fg', 'attn-bg'], ['.ct-warn-msg', '.ct-card .ct-warn', 'fg', 'attn-bg'], ['.ct-warn .ct-fix', '.ct-card .ct-warn', 'fg', 'attn-bg'],
+    // The foot: engineering's count, the members elsewhere, and the machine not reached.
+    ['.ct-sum-count', '.ct-card', 'fg', 'surface'], ['.ct-sum-more', '.ct-card', 'muted', 'surface'], ['.ct-sum-warn', '.ct-card', 'warn', 'surface'],
     ['button.ct-act:not(:disabled)', 'button.ct-act:not(:disabled)', 'fg', 'surface'], ['button.ct-act:disabled', 'button.ct-act:disabled', 'muted', 'surface'],
     ['.sth-default', '.soul-teams-here', 'fg', 'surface'], ['.sth-default .sth-why', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-label', '.soul-teams-here', 'fg', 'surface'], ['.sth-meta:not(.warn)', '.soul-teams-here', 'muted', 'surface'],
     ['.sth-meta.warn', '.soul-teams-here', 'warn', 'surface'], ['button.sth-act', 'button.sth-act', 'fg', 'surface'],
     ['.ct-blocking', '.ct-card', 'muted', 'surface'], ['.ct-blocking strong', '.ct-card', 'fg', 'surface'],
-    // Spec 02: the member list on the card (group heads, names, the state words, both buttons).
-    ['.ct-group-head', '.ct-card', 'muted', 'surface'], ['.ct-member-name', '.ct-card', 'fg', 'surface'], ['.ct-member-state', '.ct-card', 'muted', 'surface'],
-    ['.ct-member-term', '.ct-card', 'muted', 'surface'],
     ['.sth-blocking', '.soul-teams-here', 'muted', 'surface'], ['.sth-blocking strong', '.soul-teams-here', 'fg', 'surface'],
     ['.teams-subhead', '.soul-inspector', 'muted', 'surface'],
     ['.teams-warning-head', '.soul-inspector', 'warn', 'surface'], ['.teams-warning-text', '.soul-inspector', 'fg', 'surface'],
@@ -1310,20 +1310,27 @@ for (const [name] of palettes) test(`${name}: team model v2 cards, left entries,
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
-  // Hover and focus-visible: the name keeps --fg (underlined) on the card; Terminal turns --fg on --surface-2.
+  // The section heads sit on the page's --bg (no painted element in jsdom): the declared colour, then the token pair.
+  for (const [selector, fg] of [['.ct-section-title', 'fg'], ['.ct-section-lead', 'muted']]) {
+    const el = doc.querySelector(selector); assert.ok(el, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue('--bg').trim())) >= 4.5, `${selector} on bg`);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  // The team page's Terminal lights in the accent on hover, over its --surface rest and a --surface-2 row hover.
   const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
-  assert.equal(rule('.oats-view .computer-teams .ct-member-name:hover, .oats-view .computer-teams .ct-member-name:focus-visible').color, '', 'no colour change on the name');
-  const lit = rule('.oats-view .computer-teams .ct-member-term:hover, .oats-view .computer-teams .ct-member-term:focus-visible');
-  assert.equal(lit.color, 'var(--fg)'); assert.equal(lit.background, 'var(--surface-2)');
-  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--fg').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5, 'Terminal lit');
-    // The not-reached line is the page head's lead style: the same colour on the same ground.
+  const lit = rule('.oats-view .computer-teams button.ct-member-term:hover');
+  assert.equal(lit.getPropertyValue('border-color'), 'var(--accent)'); assert.equal(lit.color, 'var(--accent)');
+  for (const bg of ['surface', 'surface-2']) assert.ok(contrast(opaqueChannels(root.getPropertyValue('--accent').trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `Terminal lit on ${bg}`);
+  // The not-reached line is the page head's lead style: the same colour on the same ground.
   assert.equal(dom.window.getComputedStyle(doc.querySelector('.ct-reach')).color, dom.window.getComputedStyle(doc.querySelector('.ct-lead')).color);
   assert.ok(doc.querySelector('.ct-reach').textContent.includes('Far box'));
 });
 
 // Spec A (Teams says whose default it is): team model 3's card rows (Default for, May join, a quiet fallback),
-// the address line, the "Members · N" head and the nobody line, on a teamsApi 2 document shaped like the lfx rig.
-for (const [name] of palettes) test(`${name}: team model 3 card facts, address and members head meet computed AA`, async t => {
+// the address, the nobody line, the openable card's label and foot, the closed local teams' sentence and the
+// souls: table, on a teamsApi 2 document shaped like the lfx rig.
+for (const [name] of palettes) test(`${name}: team model 3 card facts, address, foot and souls table meet computed AA`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"></div></body></html>`, { pretendToBeVisual: true });
   const doc = dom.window.document;
   for (const source of [css, computerTeamsCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -1334,26 +1341,105 @@ for (const [name] of palettes) test(`${name}: team model 3 card facts, address a
     souls: { '*': { default: 'idle', teams: [] }, 'lfx-ai-engineering/*': { default: 'lfx-ai-team', teams: ['lfx-all'] } } };
   const TEAM = 'lfx-ai-team:lfx.aweb.ai';
   const page = createComputerTeams(doc, { request: async () => structuredClone(document), readMembers: async () => ({ members: [{ workspace: '/d', server: null, serverLabel: null,
-    instance: 'ai-reviewer', agent: 'ai-reviewer', agentsRoot: '/d/agents', home: '/d/agents/ai-reviewer/instances/ai-reviewer', team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null }], servers: [], notReached: [] }) });
+    instance: 'ai-reviewer', agent: 'ai-reviewer', agentsRoot: '/d/agents', home: '/d/agents/ai-reviewer/instances/ai-reviewer', team: TEAM, running: true, addressable: true, missingRemotely: false, reason: null }], servers: [], notReached: [] }),
+    onOpenTeam: () => {} });
   doc.querySelector('.oats-view').append(page.element);
   t.after(() => { page.dispose(); dom.window.close(); });
   for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['[data-team="lfx-ai-team"] .ct-aud dt', '.ct-card', 'muted', 'surface'],
-    ['[data-team="lfx-ai-team"] .ct-aud[data-audience=default] dd', '.ct-card', 'fg', 'surface'],
-    ['[data-team="lfx-ai-team"] .ct-aud[data-audience=default] .ct-name', '.ct-card', 'fg', 'surface'],
-    ['[data-team="lfx-all"] .ct-aud[data-audience=join] dd', '.ct-card', 'muted', 'surface'],
-    ['[data-team="lfx-all"] .ct-aud[data-audience=join] .ct-name', '.ct-card', 'muted', 'surface'],
+    ['[data-team="lfx-ai-team"] .ct-fact dt', '.ct-card', 'muted', 'surface'],
+    ['[data-team="lfx-ai-team"] .ct-fact[data-fact=default] dd', '.ct-card', 'fg', 'surface'],
+    ['[data-team="lfx-ai-team"] .ct-fact[data-fact=default] .ct-name', '.ct-card', 'fg', 'surface'],
+    ['[data-team="lfx-all"] .ct-fact[data-fact=join] dd', '.ct-card', 'muted', 'surface'],
+    ['[data-team="lfx-all"] .ct-fact[data-fact=join] .ct-name', '.ct-card', 'muted', 'surface'],
     ['[data-team="lfx-all"] .ct-quiet', '.ct-card', 'muted', 'surface'],
-    ['[data-team="lfx-ai-team"] .ct-address', '.ct-card', 'muted', 'surface'], ['.ct-address.none', '.ct-card', 'warn', 'surface'],
-    ['.ct-members-head', '.ct-card', 'muted', 'surface'], ['.ct-join.none', '.ct-card', 'muted', 'surface'],
+    ['[data-team="lfx-ai-team"] dd.ct-address', '.ct-card', 'muted', 'surface'], ['dd.ct-address.none', '.ct-card', 'warn', 'surface'],
+    ['[data-team="lone"] .ct-fact[data-fact=join] dd.none', '.ct-card', 'muted', 'surface'],
+    // The workspace's default: its tag in the brand tint, and where it is set.
+    ['[data-team="lfx-all"] .ct-tag', '[data-team="lfx-all"] .ct-tag', 'accent', 'sel'], ['[data-team="lfx-all"] .ct-from', '.ct-card', 'muted', 'surface'],
+    // The card opens its team's page: the label's button, the foot's count, "None of your instances" and the cue.
+    ['.ct-name-h button.ct-open', '.ct-card', 'fg', 'surface'], ['[data-team="lfx-ai-team"] .ct-sum-count', '.ct-card', 'fg', 'surface'],
+    ['[data-team="idle"] .ct-sum-more', '.ct-card', 'muted', 'surface'], ['.ct-go', '.ct-card', 'muted', 'surface'],
+    // The souls: table in its card: the headers, the pattern (its folder muted, "* every soul"), the team chips and "none".
+    ['.ct-souls th', '.ct-souls-card', 'muted', 'surface'], ['.ct-pattern', '.ct-souls-card', 'fg', 'surface'],
+    ['.ct-pattern-dir', '.ct-souls-card', 'muted', 'surface'], ['.ct-every', '.ct-souls-card', 'muted', 'surface'],
+    ['.ct-souls .ct-chip', '.ct-souls .ct-chip', 'fg', 'tag-bg'], ['.ct-souls .ct-none', '.ct-souls-card', 'muted', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
     assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  // Local teams closed and none left: the sentence in their place sits on the page's --bg (no painted element in jsdom).
+  const dashed = doc.querySelector('[data-section=local] p.ct-dashed'); assert.ok(dashed, 'the closed sentence');
+  assert.equal(dom.window.getComputedStyle(dashed).color, 'var(--muted)');
+  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--muted').trim()), opaqueChannels(root.getPropertyValue('--bg').trim())) >= 4.5, '.ct-dashed on bg');
+  for (let parent = dashed; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+});
+
+// Round 5: a team's page (showTeam): the counts and the default note on the page's --bg, each machine's head band on
+// --surface-2 (an unreached one in the warn colour), the table's header and rows on --surface (and --surface-2 under a
+// row's hover), the dimmed soul prefix, the pill words on --sel, --attn-bg and no fill, and the scope line.
+for (const [name] of palettes) test(`${name}: a team's page (counts, machine cards, instance rows and pills) meets computed AA`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><div class="oats-view"><div class="board"></div><section class="workspace-page"></section></div></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, computerTeamsCSS, identityCSS, deploymentScopeCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const document = { teamsApi: 2, deployment: '/w', localTeams: false, problems: [], souls: {},
+    defaultTeam: { label: 'eng', team: 'eng:acme.aweb.ai', from: 'workspace' },
+    teams: [{ label: 'eng', team: 'eng:acme.aweb.ai', description: 'Engineering', from: 'shared', default: true, at: 'x' }] };
+  const member = (instance, extra = {}) => ({ workspace: '/w', server: null, serverLabel: null, instance, agent: 'acme/dev', agentsRoot: '/w/agents',
+    home: `/w/agents/dev/instances/${instance}`, team: 'eng:acme.aweb.ai', running: true, addressable: true, missingRemotely: false, reason: null, reasonLabel: null,
+    createdAt: '2026-10-14T10:00:00.000Z', ...extra });
+  const far = (instance, server, extra = {}) => member(instance, { workspace: `remote:${server}:1`, server, serverLabel: server, ...extra });
+  const HERE = { id: '/w', machine: 'This Mac', path: '/Users/ana/Agents/acme' };
+  const roster = { members: [member('dev-1', { deployment: { ...HERE } }), member('dev-2', { running: false, addressable: false, deployment: { ...HERE } }),
+    far('dev-3', 'build', { running: true, addressable: false, reason: 'not-addressable', reasonLabel: 'not reachable on build' }), far('dev-4', 'down', { running: null })],
+  servers: [{ server: 'build', label: 'build', group: 'build:1', reached: true, error: null, registered: true },
+    { server: 'down', label: 'down', group: 'down:1', reached: false, error: 'ssh failed', registered: true }], notReached: [] };
+  const teams = createComputerTeams(doc, { request: async () => structuredClone(document), readMembers: async () => structuredClone(roster), onOpenTeam: () => {} });
+  doc.querySelector('.board').append(teams.element);
+  t.after(() => { teams.dispose(); dom.window.close(); });
+  for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+  const host = doc.querySelector('.workspace-page');
+  assert.equal(teams.showTeam(host, 'eng', { onBack: () => {} }), true);
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const pair = (fg, bg, what) => assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${what}: ${fg} on ${bg}`);
+  const opaque = el => { for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1'); };
+  const rows = [
+    // The team's card on its page: the label and the deployment it edits (hidden in a one-deployment view; its colour still counts).
+    ['h2.ct-page-label', '.ct-page-card', 'fg', 'surface'], ['.ct-head > .deployment-scope', '.ct-page-card', 'muted', 'surface'],
+    // A machine's head band.
+    ['.ct-mcard:not(.unreached) .ct-mcard-head', '.ct-mcard:not(.unreached) .ct-mcard-head', 'muted', 'surface-2'],
+    ['.ct-mcard:not(.unreached) .ct-machine', '.ct-mcard:not(.unreached) .ct-mcard-head', 'fg', 'surface-2'],
+    ['.ct-mcard:not(.unreached) .ct-path', '.ct-mcard:not(.unreached) .ct-mcard-head', 'muted', 'surface-2'],
+    ['.ct-mcard:not(.unreached) .ct-mcard-count', '.ct-mcard:not(.unreached) .ct-mcard-head', 'muted', 'surface-2'],
+    ['.ct-mcard.unreached .ct-machine', '.ct-mcard.unreached .ct-mcard-head', 'warn', 'surface-2'],
+    ['.ct-mcard.unreached .ct-mcard-count', '.ct-mcard.unreached .ct-mcard-head', 'warn', 'surface-2'],
+    // The table: its header row, the name (the soul's prefix steps back), the soul, the age.
+    ['.ct-irow.ct-ihead', '.ct-mcard', 'muted', 'surface'], ['.ct-name-pre', '.ct-mcard', 'muted', 'surface'], ['.ct-name-tail', '.ct-mcard', 'fg', 'surface'],
+    ['.ct-isoul', '.ct-mcard', 'muted', 'surface'], ['.ct-age', '.ct-mcard', 'muted', 'surface'],
+    // The state pill: Running on --sel, Stopped with no fill, a warn word on --attn-bg; and Terminal, on its own --surface.
+    ['.ct-member-state.run', '.ct-member-state.run', 'fg', 'sel'], ['.ct-member-state.stop', '.ct-mcard', 'muted', 'surface'],
+    ['.ct-member-state.warn', '.ct-member-state.warn', 'warn', 'attn-bg'], ['button.ct-member-term', 'button.ct-member-term', 'fg', 'surface'],
+  ];
+  for (const [selector, painted, fg, bg] of rows) {
+    const el = host.querySelector(selector), surface = host.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background.replace(/^.*(var\(--[\w-]+\)).*$/, '$1'), `var(--${bg})`, painted);
+    pair(fg, bg, selector); opaque(el);
+  }
+  assert.deepEqual([...host.querySelectorAll('.ct-member-state .ct-state-word')].map(w => w.textContent), ['Running', 'Stopped', 'not reachable on build', 'unknown']);
+  // A row's hover lays --surface-2 under its text: every colour on a row that has no fill of its own holds there too.
+  const rule = selector => [...doc.styleSheets].flatMap(sheet => [...sheet.cssRules]).find(r => r.selectorText === selector)?.style;
+  assert.equal(rule('.computer-teams .ct-irow:not(.ct-ihead):hover').background, 'var(--surface-2)');
+  for (const fg of ['fg', 'muted', 'warn']) pair(fg, 'surface-2', 'row hover');
+  // The counts and the default note sit on the page's --bg (no painted element in jsdom): the declared colour, then the token pair.
+  for (const [selector, fg] of [['.ct-yours-sum', 'muted'], ['.ct-yours-sum b', 'fg'], ['.ct-yours-sum .warn', 'warn'], ['.ct-yours-sum .warn b', 'warn'], ['.ct-default-note', 'muted']]) {
+    const el = host.querySelector(selector); assert.ok(el, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    pair(fg, 'bg', selector); opaque(el);
   }
 });
 

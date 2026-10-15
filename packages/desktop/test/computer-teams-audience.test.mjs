@@ -98,7 +98,7 @@ async function mount(t, document, readMembers = null) {
   t.after(() => { page.dispose(); dom.window.close(); });
   await tick();
   const row = label => page.element.querySelector(`[data-team="${label}"]`);
-  const fact = (label, which) => row(label).querySelector(`[data-audience=${which}] dd`)?.textContent ?? null;
+  const fact = (label, which) => row(label).querySelector(`[data-fact=${which}] dd`)?.textContent ?? null;
   return { doc, page, row, fact };
 }
 
@@ -111,18 +111,21 @@ test('lfx cards: Default for first under the description, then May join, then th
   assert.equal(u.fact('lfx-platform-team', 'join'), 'souls of lfx-agents · ai-reviewer (lfx-ai-engineering)');
   assert.equal(u.fact('lfx-all', 'default'), 'every soul without its own default');
   assert.equal(u.fact('lfx-all', 'join'), 'souls of lfx-agents, lfx-ai-engineering and lfx-platform');
-  assert.equal(u.row('lfx-all').querySelector('.ct-pill').textContent, "Default · the workspace's");
-  const main = u.row('lfx-ai-team').querySelector('.ct-main');
-  assert.deepEqual([...main.children].map(c => c.className), ['ct-head', 'ct-desc', 'ct-audience', 'ct-address']);
-  assert.deepEqual([...main.querySelectorAll('.ct-aud dt')].map(d => d.textContent), ['Default for', 'May join']);
-  assert.equal(main.querySelector('.ct-address').textContent, 'lfx-ai-team:acme.aweb.ai');
+  assert.equal(u.row('lfx-all').querySelector('.ct-tag').textContent, 'Default team');
+  assert.equal(u.row('lfx-all').querySelector('.ct-from').textContent, 'set by the workspace');
+  // The card: its head (the description under the label), then the facts: Default for, May join, the address.
+  const card = u.row('lfx-ai-team');
+  assert.deepEqual([...card.children].map(c => c.className), ['ct-head', 'ct-facts']);
+  assert.equal(card.querySelector('.ct-head > .ct-desc').textContent, 'The AI engineering agents and their reviewers.');
+  assert.deepEqual([...card.querySelectorAll('.ct-fact')].map(r => r.dataset.fact), ['default', 'join', 'address']);
+  assert.deepEqual([...card.querySelectorAll('.ct-fact dt')].map(d => d.textContent), ['Default for', 'May join', 'Address']);
+  assert.equal(card.querySelector('dd.ct-address').textContent, 'lfx-ai-team:acme.aweb.ai');
   // Names are bold, each titled with the souls: key it comes from.
   assert.deepEqual([...u.row('lfx-platform-team').querySelectorAll('b.ct-name')].map(b => [b.textContent, b.title]),
     [['lfx-platform', 'lfx-platform/*'], ['lfx-agents', 'lfx-agents/*'], ['ai-reviewer', 'lfx-ai-engineering/ai-reviewer']]);
-  assert.equal(u.page.element.querySelector('.ct-facts'), null, 'no team model 2 facts line');
-  // No members and no actions (local teams closed): no right column, and the main one takes its width.
-  assert.ok(u.row('lfx-ai-team').classList.contains('no-side')); assert.equal(u.row('lfx-ai-team').querySelector('.ct-side'), null);
-  assert.match(computerTeamsCSS, /\.computer-teams \.ct-card\.no-side > \.ct-main \{ grid-column:2 \/ -1; \}/);
+  assert.equal(u.page.element.querySelector('[data-fact=who]'), null, 'no team model 2 Who may join row');
+  // Local teams closed: a shared card has no actions at all.
+  assert.equal(card.querySelector('.ct-actions'), null);
 });
 
 test('solo cards: only the rows with entries; this deployment\'s choice; docs keeps its warning below the address', async t => {
@@ -134,12 +137,13 @@ test('solo cards: only the rows with entries; this deployment\'s choice; docs ke
   assert.equal(u.fact('mine', 'default'), "every soul without its own default (this deployment's choice)");
   assert.equal(u.fact('mine', 'join'), 'every soul (local team)');
   assert.equal(u.fact('pairing', 'join'), 'every soul (local team)');
-  const docs = u.row('docs').querySelector('.ct-main');
-  assert.ok(docs.querySelector('.ct-address.none'), 'no provider id yet: the warn line');
-  assert.ok(docs.querySelector('.ct-address').compareDocumentPosition(docs.querySelector('[data-problem=team-unmapped]')) & 4, 'the warning follows the address');
+  const docs = u.row('docs');
+  assert.equal(docs.querySelector('dd.ct-address.none').textContent, 'no provider id yet', 'no provider id yet: the warn line');
+  assert.ok(docs.querySelector('dl.ct-facts').compareDocumentPosition(docs.querySelector('.ct-warn[data-problem=team-unmapped]')) & 4, 'the warning follows the facts, the address last among them');
   assert.deepEqual([...u.page.element.querySelectorAll('[data-section=local] .ct-card')].map(c => c.dataset.team), ['mine', 'pairing']);
-  // The souls: table's right column, reworded.
-  assert.deepEqual([...u.page.element.querySelectorAll('.ct-soul-teams')].map(s => s.textContent), ['may join engineering', 'default docs · may also join engineering']);
+  // The souls: table: each key's default team and the other teams it may join.
+  assert.deepEqual([...u.page.element.querySelectorAll('tr[data-soul-key]')].map(r => [r.dataset.soulKey, r.cells[1].textContent, r.cells[2].textContent]),
+    [['*', 'none', 'engineering'], ['acme-agents/writer', 'docs', 'engineering']]);
 });
 
 test('nobody, except, a "*" default and a blocking default team: their words and places', async t => {
@@ -150,15 +154,19 @@ test('nobody, except, a "*" default and a blocking default team: their words and
   assert.equal(u.fact('b', 'default'), 'every soul except souls of p · x (p)');
   assert.equal(u.fact('c', 'default'), 'all souls of p except x');
   assert.equal(u.fact('a', 'default'), 'fallback; every soul has its own default');
-  assert.ok(u.row('a').querySelector('[data-audience=default] dd .ct-quiet'), 'said quietly');
+  assert.ok(u.row('a').querySelector('[data-fact=default] dd .ct-quiet'), 'said quietly');
   assert.equal(u.fact('idle', 'join'), 'every soul except souls of p and q');
-  const a = u.row('a').querySelector('.ct-main');
-  assert.equal(a.children[1].className, 'ct-blocking', 'the blocking problem leads the card');
+  const a = u.row('a');
+  assert.equal(a.children[0].className, 'ct-head');
+  assert.equal(a.children[1].className, 'ct-blocking', 'the blocking problem leads the card, right under its head');
+  // The souls: table: "*"'s default and any (every shared team); p/*'s default and no other team.
+  assert.deepEqual([...u.page.element.querySelectorAll('tr[data-soul-key]')].map(r => [r.dataset.soulKey, r.cells[1].textContent, r.cells[2].textContent]),
+    [['*', 'b', 'any shared team'], ['p/*', 'c', 'none'], ['p/x', 'b', 'none'], ['q/*', 'none', 'none']]);
   // Not every card is someone's: "*" lists any, so all of these may be joined; a team nobody may join says so.
   const lone = await mount(t, v3({ teams: [shared('lone')], souls: { '*': { teams: [] } } }));
-  const none = lone.row('lone').querySelector('.ct-join.none');
+  const none = lone.row('lone').querySelector('[data-fact=join] dd.none');
   assert.equal(none.textContent, 'No soul may join it yet');
-  assert.equal(lone.row('lone').querySelector('.ct-audience'), null);
+  assert.deepEqual([...lone.row('lone').querySelectorAll('.ct-fact')].map(r => r.dataset.fact), ['join', 'address'], 'no Default for row');
 });
 
 test('hostile labels and keys only ever enter as text', async t => {
@@ -169,15 +177,14 @@ test('hostile labels and keys only ever enter as text', async t => {
   assert.equal(u.fact('h', 'join'), `${evil} (r)`);
 });
 
-test('members: a "Members · N" head labels the list; a group\'s rows share its columns', async t => {
+test('members: the board card lists none of them; its foot sums them up (their rows are on the team\'s page)', async t => {
   const m = instance => ({ workspace: '/d', server: null, serverLabel: null, instance, agent: 'eng', agentsRoot: '/d/agents', home: `/d/agents/eng/instances/${instance}`,
     team: 'lfx-ai-team:acme.aweb.ai', running: true, addressable: true, missingRemotely: false, reason: null, deployment: { id: '/d', machine: '', path: '/d' } });
   const u = await mount(t, lfx(), async () => ({ members: [m('a'), m('b')], servers: [], notReached: [] }));
   await tick();
-  const main = u.row('lfx-ai-team').querySelector('.ct-main'), head = main.querySelector('.ct-members-head'), list = main.querySelector('.ct-members');
-  assert.equal(head.textContent, 'Members · 2');
-  assert.equal(list.getAttribute('aria-labelledby'), head.id);
-  assert.equal(main.lastElementChild, list);
-  assert.ok(main.querySelector('.ct-address').compareDocumentPosition(head) & 4, 'below the address');
-  assert.match(computerTeamsCSS, /\.computer-teams \.ct-member \{ display:grid; grid-column:1 \/ -1; grid-template-columns:subgrid;/);
+  const card = u.row('lfx-ai-team');
+  assert.equal(card.querySelector('.ct-irow, .ct-member-name, .ct-member-term'), null, 'no member rows on the board');
+  assert.equal(card.lastElementChild.className, 'ct-foot');
+  assert.equal(card.querySelector('.ct-foot').textContent, '2 of your instances');
+  assert.ok(card.querySelector('dl.ct-facts').compareDocumentPosition(card.querySelector('.ct-foot')) & 4, 'below the facts');
 });
