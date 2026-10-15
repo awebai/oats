@@ -1,7 +1,8 @@
 // A row keeps its roster group under a filter and a collapse (#971). rosterGroups decides a
 // cluster's group on the FULL roster: more than one member there is a group under the cluster's
-// name, exactly one goes under "independent". What is visible decides which rows are listed, and
-// whether a group is listed at all; it never moves a row to another group, nor changes a group's key.
+// name, exactly one goes into a run of single instances, an "independent" group in place (#1262), keyed by
+// its first member. What is visible decides which rows are listed, and whether a group is listed at all;
+// it never moves a row to another group, nor changes a group's key.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rosterGroups, filterInstanceTree, instanceVisibleInTree, collapseKey, instanceId } from "../../client/instance-tree.mjs";
@@ -34,6 +35,8 @@ const collapsed = (roster, names, { section } = {}) => {
 /** [group key, group label, each cluster's row names]. */
 const shape = groups => groups.map(g => [g.key, g.label, g.clusters.map(c => c.instances.map(i => i.instance))]);
 const LEAD = ["lead", "mid", "tip-one", "tip-two", "side"];
+/** An independent run's key: its first member's instanceId in the full roster (#1262). */
+const IND = (roster, name) => `independent:${instanceId(row(roster, name))}`;
 
 test("nothing hidden: the groups, their keys, the order and the rows are the ones the roster always drew", () => {
   const groups = rosterGroups(ROSTER, ROSTER);
@@ -41,7 +44,7 @@ test("nothing hidden: the groups, their keys, the order and the rows are the one
   assert.deepEqual(groups.map(g => [g.key, g.label, g.clusters.map(c => [c.key, c.instances.map(i => [i.instance, i.depth])])]), [
     ["cluster:0:duo", "duo", [["duo", [["duo", 0], ["duo-kid", 1]]]]],
     ["cluster:1:lead", "lead", [["lead", [["lead", 0], ["mid", 1], ["tip-one", 2], ["tip-two", 2], ["side", 1]]]]],
-    ["independent", "independent", [["solo", [["solo", 0]]], ["zed", [["zed", 0]]]]],
+    [IND(ROSTER, "solo"), "independent", [["solo", [["solo", 0]]], ["zed", [["zed", 0]]]]],
   ]);
   for (const group of groups) {
     assert.deepEqual(Object.keys(group), ["key", "label", "clusters"], "a group's shape");
@@ -58,7 +61,7 @@ test("a cluster of two with its root collapsed: the root stays under the cluster
   assert.deepEqual(shape(groups), [
     ["cluster:0:duo", "duo", [["duo"]]],
     ["cluster:1:lead", "lead", [LEAD]],
-    ["independent", "independent", [["solo"], ["zed"]]],
+    [IND(ROSTER, "solo"), "independent", [["solo"], ["zed"]]],
   ]);
   assert.equal(groups[0].clusters[0].instances.length, 1, "the header counts the one row shown");
 });
@@ -84,18 +87,18 @@ test("the independent group holds only one-member clusters, and is there only wh
   assert.deepEqual(shape(rosterGroups(ROSTER, collapsed(ROSTER, ["lead", "duo"]))), [
     ["cluster:0:duo", "duo", [["duo"]]],
     ["cluster:1:lead", "lead", [["lead"]]],
-    ["independent", "independent", [["solo"], ["zed"]]],
+    [IND(ROSTER, "solo"), "independent", [["solo"], ["zed"]]],
   ]);
-  assert.deepEqual(shape(rosterGroups(ROSTER, filtered(ROSTER, "solo"))), [["independent", "independent", [["solo"]]]]);
+  assert.deepEqual(shape(rosterGroups(ROSTER, filtered(ROSTER, "solo"))), [[IND(ROSTER, "solo"), "independent", [["solo"]]]]);
   // Every one-member cluster filtered out: no independent group.
   const none = rosterGroups(ROSTER, filtered(ROSTER, "tip-one"));
   assert.deepEqual(shape(none), [["cluster:1:lead", "lead", [["lead", "mid", "tip-one"]]]]);
-  assert.equal(none.some(g => g.key === "independent"), false);
+  assert.equal(none.some(g => g.label === "independent"), false);
 });
 
 test("a group's key does not depend on what is visible: hiding an earlier group shifts no key", () => {
   const before = rosterGroups(ROSTER, ROSTER), after = rosterGroups(ROSTER, filtered(ROSTER, "side"));
-  assert.deepEqual(before.map(g => g.key), ["cluster:0:duo", "cluster:1:lead", "independent"]);
+  assert.deepEqual(before.map(g => g.key), ["cluster:0:duo", "cluster:1:lead", IND(ROSTER, "solo")]);
   assert.deepEqual(after.map(g => g.key), ["cluster:1:lead"], "the lead group keeps the key it has with nothing hidden");
   const keyOf = groups => new Map(groups.flatMap(g => g.clusters.flatMap(c => c.instances.map(i => [instanceId(i), g.key]))));
   for (const [id, key] of keyOf(after)) assert.equal(key, keyOf(before).get(id), "every row left is under the key it had");
@@ -118,7 +121,7 @@ test("two roots of one name (two agents roots): each group keeps its own key whe
 
 test("a pending spawn row that joins a cluster by its parent counts as a member", () => {
   const boss = at("boss"), pending = { instance: "boss-new", agent: "dev", agentsRoot: "/w", home: "/w/boss-new", parentInstance: "boss", pendingSpawn: { id: "job-1", pending: "spawning" } };
-  assert.deepEqual(shape(rosterGroups([boss], [boss])), [["independent", "independent", [["boss"]]]], "alone, it is independent");
+  assert.deepEqual(shape(rosterGroups([boss], [boss])), [[IND([boss], "boss"), "independent", [["boss"]]]], "alone, it is independent");
   const roster = [boss, pending];
   assert.deepEqual(shape(rosterGroups(roster, roster)), [["cluster:0:boss", "boss", [["boss", "boss-new"]]]]);
   assert.deepEqual(shape(rosterGroups(roster, collapsed(roster, ["boss"]))), [["cluster:0:boss", "boss", [["boss"]]]], "collapsed over its pending child, it keeps its group");
@@ -136,12 +139,12 @@ test("several deployments: a cluster's size is counted inside its section, and a
   const sections = visible => rosterSections(roster, visible, [D1, D2], DESKTOP_TERMS).map(s => [s.deployment.id, shape(s.groups)]);
   const open = sections(roster);
   assert.deepEqual(open, [
-    [D1.id, [["cluster:0:lead", "lead", [["lead", "kid"]]], ["independent", "independent", [["solo"]]]]],
-    [D2.id, [["cluster:0:chief", "chief", [["chief", "aide"]]], ["independent", "independent", [["lone"], ["stray"]]]]],
+    [D1.id, [["cluster:0:lead", "lead", [["lead", "kid"]]], [IND(roster, "solo"), "independent", [["solo"]]]]],
+    [D2.id, [["cluster:0:chief", "chief", [["chief", "aide"]]], [IND(roster, "lone"), "independent", [["lone"], ["stray"]]]]],
   ], "a parent name in another deployment joins nothing: stray is a cluster of one in its own section");
   // stray's parent name resolves to D1's lead (a unique name), which is painted in another section.
   const shut = sections(collapsed(roster, ["lead"], { section: i => i.deployment.id }));
-  assert.deepEqual(shut[0], [D1.id, [["cluster:0:lead", "lead", [["lead"]]], ["independent", "independent", [["solo"]]]]]);
+  assert.deepEqual(shut[0], [D1.id, [["cluster:0:lead", "lead", [["lead"]]], [IND(roster, "solo"), "independent", [["solo"]]]]]);
   assert.deepEqual(shut[1], open[1], "the other section is untouched");
 });
 
@@ -153,5 +156,70 @@ test("the arguments are not changed, and `links` still decides the relations", (
   assert.deepEqual(shape(rosterGroups(all, all)), shape(rosterGroups(ROSTER, ROSTER)));
   assert.equal(JSON.stringify([all, visible]), before);
   // No relation at all: every row is a cluster of one, whatever is visible.
-  assert.deepEqual(rosterGroups(all, visible, { links: () => [] }).map(g => g.key), ["independent"]);
+  assert.deepEqual(rosterGroups(all, visible, { links: () => [] }).map(g => g.key), [IND(ROSTER, "duo")], "one run, keyed by its first member in the full roster");
+});
+
+// --- A bundle keeps its place (#1262): one sequence by root, in name order ---------------------------
+/** The rows in the order drawn, and [group label, its rows] for each group. */
+const drawn = groups => groups.flatMap(g => g.clusters.flatMap(c => c.instances.map(i => i.instance)));
+const byGroup = groups => groups.map(g => [g.label, g.clusters.flatMap(c => c.instances.map(i => i.instance))]);
+const FLAT = ["alpha", "bravo", "charlie", "delta", "echo"].map(name => at(name));
+
+test("#1262: a top-level instance that gains a child stays where it was, a group in place, and every other row stays too", () => {
+  const before = rosterGroups(FLAT, FLAT);
+  assert.deepEqual(byGroup(before), [["independent", ["alpha", "bravo", "charlie", "delta", "echo"]]]);
+  const grown = [...FLAT, at("aaa-kid", { parentInstance: "charlie" })];
+  const after = rosterGroups(grown, grown);
+  assert.deepEqual(byGroup(after), [["independent", ["alpha", "bravo"]], ["charlie", ["charlie", "aaa-kid"]], ["independent", ["delta", "echo"]]]);
+  assert.deepEqual(drawn(after).filter(n => n !== "aaa-kid"), drawn(before), "every row keeps its place");
+  assert.deepEqual(after.map(g => g.key), [`independent:${instanceId(row(FLAT, "alpha"))}`, "cluster:0:charlie", `independent:${instanceId(row(FLAT, "delta"))}`]);
+  // It loses the child: back in the run, at the same place.
+  assert.deepEqual(byGroup(rosterGroups(FLAT, FLAT)), byGroup(before));
+});
+
+test("#1262: the lower of two top-level instances that spawns a child stays below the other; the run splits around it", () => {
+  const two = [at("top"), at("bottom"), at("middle")];
+  const grown = [...two, at("a-kid", { parentInstance: "middle" })];
+  assert.deepEqual(byGroup(rosterGroups(grown, grown)), [["independent", ["bottom"]], ["middle", ["middle", "a-kid"]], ["independent", ["top"]]]);
+});
+
+test("#1262: a running child whose name sorts first moves its bundle nowhere; a cluster ranks by its first root", () => {
+  const roster = [at("mike", { running: false }), at("bravo", { running: false }), at("aaa", { parentInstance: "mike", running: true }), at("zulu")];
+  assert.deepEqual(byGroup(rosterGroups(roster, roster)), [["independent", ["bravo"]], ["mike", ["mike", "aaa"]], ["independent", ["zulu"]]]);
+  // Joined only by a sibling link: two roots, ranked by the first.
+  const siblings = [at("yankee", { siblingInstance: "kilo" }), at("kilo"), at("charlie"), at("xray")];
+  assert.deepEqual(byGroup(rosterGroups(siblings, siblings, { links: i => i.siblingInstance ? [i.siblingInstance] : [] })),
+    [["independent", ["charlie"]], ["kilo", ["kilo", "yankee"]], ["independent", ["xray"]]]);
+});
+
+test("#1262: a start or a stop moves no row, roots or siblings", () => {
+  const roster = [at("lead"), at("b-kid", { parentInstance: "lead" }), at("a-kid", { parentInstance: "lead" }), at("solo"), at("echo"), at("delta", { parentInstance: "echo" })];
+  const order = drawn(rosterGroups(roster, roster));
+  assert.deepEqual(order, ["echo", "delta", "lead", "a-kid", "b-kid", "solo"]);
+  for (const name of roster.map(i => i.instance)) for (const running of [false, null]) {
+    const toggled = roster.map(i => i.instance === name ? { ...i, running } : i);
+    assert.deepEqual(drawn(rosterGroups(toggled, toggled)), order, `${name} ${running}`);
+  }
+});
+
+test("#1262: every row keeps its place across any change that only adds or removes children", () => {
+  const base = [at("delta"), at("alpha"), at("echo"), at("bravo"), at("charlie"), at("mid", { parentInstance: "bravo" })];
+  const order = drawn(rosterGroups(base, base));
+  for (const parent of base.map(i => i.instance)) for (const kid of ["aa-kid", "zz-kid"]) {
+    const grown = [...base, at(kid, { parentInstance: parent })];
+    assert.deepEqual(drawn(rosterGroups(grown, grown)).filter(n => n !== kid), order, `${kid} under ${parent}`);
+  }
+  const shrunk = base.filter(i => i.instance !== "mid");
+  assert.deepEqual(drawn(rosterGroups(shrunk, shrunk)), order.filter(n => n !== "mid"), "bravo's last child goes: bravo stays");
+});
+
+test("#1262: an independent run's key is its first member's in the full roster, whatever a filter or a collapse hides", () => {
+  const roster = [...FLAT, at("aaa-kid", { parentInstance: "charlie" })];
+  const keys = groups => groups.map(g => g.key);
+  const all = keys(rosterGroups(roster, roster));
+  const hiddenFirst = roster.filter(i => i.instance !== "alpha" && i.instance !== "delta");
+  assert.deepEqual(keys(rosterGroups(roster, hiddenFirst)), all, "the runs keep their keys with their first members hidden");
+  assert.deepEqual(keys(rosterGroups(roster, collapsed(roster, ["charlie"]))), all, "a collapse moves no key");
+  assert.deepEqual(byGroup(rosterGroups(roster, filtered(roster, "echo"))), [["independent", ["echo"]]]);
+  assert.deepEqual(keys(rosterGroups(roster, filtered(roster, "echo"))), [all[2]]);
 });

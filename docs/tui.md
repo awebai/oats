@@ -111,9 +111,11 @@ runs.
   instead. On the right is the time of the read
   of this machine that the screen shows: it moves with every read.
 - **The list** is the roster the Desktop draws: the same groups in the same
-  order, from the same code. An instance that others were spawned from
-  comes first, and the ones below it are indented under it; instances
-  related to no other follow, after an empty row.
+  order, from the same code. It is in name order, by each group's top
+  instance, so starting or stopping an instance moves nothing. An instance
+  that others were spawned from has them indented under it, and keeps its
+  place when it gains or loses one. An empty row stands between each run
+  of instances related to no other and the group before or after it.
 - **Each row** has a mark for its state, the name, then the harness when it
   runs, else its state in a word, then `!` when it needs input.
 - **The detail** shows the selected instance: its soul, its state, and
