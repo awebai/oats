@@ -6,6 +6,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { isDeepStrictEqual } from "node:util";
 import { isUtf8 } from "node:buffer";
 import { nativeLaunchLocations } from "./session-roots.mjs";
+import { sameDirectory } from "./directory-identity.mjs";
 
 function canonical(home) {
   try { return realpathSync(home); }
@@ -215,7 +216,7 @@ function validateReceipt(row, home, id) {
 function validateWitness(row, rows) {
   const witness = row.rootWitness, establishing = witness && rows.get(witness.establishedBy.nativeRecordId);
   if (!establishing || establishing.version !== 2 || !["root-established", "started"].includes(establishing.state) || establishing.home !== row.home || establishing.incarnationId !== row.incarnationId || establishing.rootWitness?.establishedBy.nativeRecordId !== establishing.id || !isDeepStrictEqual(establishing.intent, witness.establishedBy.intent) || !isDeepStrictEqual(establishing.rootWitness, witness)) custodyError("original establishing receipt is missing or contradictory");
-  if (!isDeepStrictEqual(directoryIdentity(row.proposedRoot), witness.identity)) custodyError("original Pi session directory was replaced");
+  if (!sameDirectory(witness.identity, directoryIdentity(row.proposedRoot))) custodyError("original Pi session directory was replaced");
 }
 function selection(home, authority, withIntent = false, creating = false) {
   closed(authority, ["incarnationId", "sessionDir", ...(withIntent ? ["intent"] : []), ...(creating ? ["assertAuthority"] : [])]);
@@ -266,7 +267,7 @@ export function prepareCapturedPiStart(home, authority) {
     authority.assertAuthority();
     for (const [path, identity] of directories) if (!isDeepStrictEqual(directoryIdentity(path), identity)) custodyError("original native custody parent changed");
     for (const [id, row] of rows) if (!isDeepStrictEqual(privateJson(join(history, id + ".json")), row)) custodyError("original native receipt changed during preparation");
-    if (witness && !isDeepStrictEqual(directoryIdentity(authority.sessionDir), witness.identity)) custodyError("original root changed during preparation");
+    if (witness && !sameDirectory(witness.identity, directoryIdentity(authority.sessionDir))) custodyError("original root changed during preparation");
   };
   const id = randomUUID(), pending = { version: 2, id, home, runtime: "pi", incarnationId: authority.incarnationId, intent: structuredClone(authority.intent), state: "pending", proposedRoot: authority.sessionDir, rootWitness: structuredClone(witness) };
   const claimed = validateManifest({ version: 2, home, completeHistory: header.completeHistory, capturedPi: { incarnationId: authority.incarnationId, nativeRecordIds: [...(header.capturedPi?.nativeRecordIds ?? []), id] } }, home);
@@ -282,7 +283,7 @@ export function prepareCapturedPiStart(home, authority) {
     const identity = directoryIdentity(authority.sessionDir); syncDirectory(dirname(authority.sessionDir)); claimCheck();
     established = { schemaVersion: 1, profile: "pi-zero-print-1", path: authority.sessionDir, identity, establishedBy: { nativeRecordId: id, intent: structuredClone(authority.intent) } };
   }
-  const guard = () => { claimCheck(); if (!isDeepStrictEqual(directoryIdentity(authority.sessionDir), established.identity)) custodyError("captured root changed during establishment"); };
+  const guard = () => { claimCheck(); if (!sameDirectory(established.identity, directoryIdentity(authority.sessionDir))) custodyError("captured root changed during establishment"); };
   publishCaptured(home, { ...pending, state: "root-established", rootWitness: established }, pending, guard);
   inventory(home); // no unlisted/unfinished writes may be ignored before return
   return id;
@@ -310,7 +311,7 @@ function recordCapturedPiStart(home, id, runtime, args, env) {
     if (!isDeepStrictEqual(protectedManifest(home), header)) custodyError("expected-ID claim changed before execution");
     const current = privateJson(join(nativeHistoryPath(home), establish.id + ".json"));
     if (establish.id !== id && !isDeepStrictEqual(current, establish)) custodyError("establishing receipt changed");
-    if (!isDeepStrictEqual(directoryIdentity(row.proposedRoot), row.rootWitness.identity)) custodyError("native root changed before execution");
+    if (!sameDirectory(row.rootWitness.identity, directoryIdentity(row.proposedRoot))) custodyError("native root changed before execution");
   };
   publishCaptured(home, { ...row, state: "started", startedAt: new Date().toISOString(), locations: [row.proposedRoot] }, row, check);
 }
@@ -344,7 +345,7 @@ export function assertCapturedPiProof(proof, path) {
   for (let current = path; ; current = dirname(current)) {
     const stat = physical(current, current !== path);
     if (current === row.proposedRoot) {
-      if (!stat.isDirectory() || !isDeepStrictEqual({ dev: stat.dev, ino: stat.ino }, row.rootWitness.identity)) custodyError("native root changed during contained-path validation");
+      if (!stat.isDirectory() || !sameDirectory(row.rootWitness.identity, { dev: stat.dev, ino: stat.ino })) custodyError("native root changed during contained-path validation");
       break;
     }
   }

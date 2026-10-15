@@ -14,7 +14,7 @@ import { deploymentDoubles } from './helpers/deployment-doubles.mjs';
 const ref = 'a'.repeat(64);
 const prepared = () => ({ spawnApplyViewApi: 1, status: 'prepared', target, spawnRef: ref, preview: applyPreview(target), wakeRequested: false, receipt: null, reason: null });
 const draft = () => ({ action: 'prepare', selector, choices: {}, task: 'PRIVATE task' });
-function http({ invoke, timer } = {}) {
+function http({ invoke, timer, awaitSpawned, ctxs = ['northwind'] } = {}) {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const c = applyContext(), reads = [], calls = [], serverSpawns = [], order = []; let nonce = 0;
@@ -23,6 +23,9 @@ function http({ invoke, timer } = {}) {
     ...(timer ? { timer } : {}),
     invoke: (_cli, args) => { calls.push(args); order.push('invoke'); return invoke ? invoke(args) : { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
   const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker, spawnPreview: { cache: { invalidate: ws => order.push(`invalidate:${ws}`) } },
+    // #1246 D2: the created answer waits for its deployment's targeted read (oats-web.mjs, the OATSWEB_SPAWNREAD block).
+    CREATED_STATUSES: ['complete', 'partial', 'incomplete'], ctxs,
+    awaitSpawned: awaitSpawned ?? (async id => { order.push(`spawned:${id}`); }),
     observeMutation: ws => order.push(`observe:${ws}`),
     spawnAgent: async body => { serverSpawns.push(body); return { instance: 'dev-1', home: '/fixture/dev-1', agent: 'dev', launched: true }; },
     spawnErrorPayload: () => assert.fail('unexpected execution-server error'), ...deploymentDoubles(() => [c.workspace]), cliState: c.cli,
@@ -145,4 +148,22 @@ test('#802: an apply that answered pending refreshes again (held previews, the r
   await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(h.order.slice(3), ['invalidate:northwind', 'observe:northwind'], 'the late outcome refreshes once more');
   assert.equal((await h.request({ body: { action: 'result', spawnRef: p.spawnRef } })).body.status, 'complete');
+});
+test('#1246 D2: a created answer goes once its deployment\'s post-spawn read has landed; prepare, pending and unregistered deployments never wait', async () => {
+  const gate = deferred(), waits = [];
+  const h = http({ awaitSpawned: (id, arrivedAt) => { waits.push([id, typeof arrivedAt]); h.order.push(`spawned:${id}`); return gate.promise; } });
+  const p = (await h.request()).body;
+  assert.deepEqual(waits, [], 'prepare waits for nothing');
+  let answered = false;
+  const answer = h.request({ body: { action: 'apply', spawnRef: p.spawnRef } }).then(r => { answered = true; return r; });
+  await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(waits, [['northwind', 'number']], 'started at once, with when the request arrived');
+  assert.deepEqual(h.order, ['invalidate:northwind', 'invoke', 'spawned:northwind', 'observe:northwind'], 'the live refresh still runs');
+  assert.equal(answered, false, 'the answer waits for the read');
+  gate.resolve(); assert.equal((await answer).body.status, 'complete');
+  assert.equal((await h.request({ body: { action: 'result', spawnRef: p.spawnRef } })).body.status, 'complete');
+  assert.equal(waits.length, 2, 'a result that answers created reads the deployment too');
+  const elsewhere = http({ ctxs: [], awaitSpawned: () => assert.fail('no post-spawn read for a deployment this backend does not observe') });
+  const q = (await elsewhere.request()).body;
+  assert.equal((await elsewhere.request({ body: { action: 'apply', spawnRef: q.spawnRef } })).body.status, 'complete');
 });

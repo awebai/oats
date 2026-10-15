@@ -3,12 +3,14 @@
  *
  * A client makes its own preview (createSpawnPreview) and owns it: nothing here is
  * held at module level, so two clients' budgets, caches and flights never meet.
- * The cache (60 s, keyed by the admission identity) serves the dialog's preview
- * read and prepare's: an answer is still admitted against the current context
- * before it is returned, and a workspace's entries go when the client observes a
- * change that can alter a preview (the Desktop's: server/oats-web.mjs). Prepare taking
- * a held decision is safe because apply binds it with the kernel's --expect-decision:
- * a decision the kernel no longer makes is refused there (E_DECISION_STALE), never applied. */
+ * The cache (keyed by the admission identity) serves the dialog's preview read for
+ * 60 s and prepare's for PREPARE_REUSE_MS (#1246: the prepared intent's own lifetime,
+ * so a press after the operator lingered over the form runs no second kernel preview):
+ * an answer is still admitted against the current context before it is returned, and a
+ * workspace's entries go when the client observes a change that can alter a preview (the
+ * Desktop's: server/oats-web.mjs). Prepare taking a held decision is safe because apply
+ * binds it with the kernel's --expect-decision: a decision the kernel no longer makes is
+ * refused there (E_DECISION_STALE, read as drifted), never applied. */
 import { dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnPreview } from './spawn-preview-cli.mjs';
@@ -24,24 +26,31 @@ export function createSpawnPreviewFlights() {
 }
 const missing = (factory, what) => new TypeError(`${factory}: ${what} is required`);
 export const PREVIEW_CACHE_TTL_MS = 60000;
+/** How old a held answer prepare may take (#1246): the lifetime of the intent it prepares. */
+export const PREPARE_REUSE_MS = 300000;
 // A name refusal answers the same name the same way until something changes.
 const CACHED_REFUSALS = ['E_INSTANCE_NAME_TAKEN', 'E_INSTANCE_NAME_INVALID'];
 const cacheable = result => result?.status === 'available' || result?.status === 'unavailable' && CACHED_REFUSALS.includes(result.reason?.code);
-/** `clock` is the flights' clock (createSpawnPreviewFlights): required, never a clock of its own. */
-export function createSpawnPreviewCache({ ttlMs = PREVIEW_CACHE_TTL_MS, limit = 64, now = () => performance.now(), clock } = {}) {
+/** `clock` is the flights' clock (createSpawnPreviewFlights): required, never a clock of its own. An entry is kept
+ * for `keepMs` (at least `ttlMs`) from when it was read; `get(identity, maxAgeMs)` answers it only while it is
+ * younger than `maxAgeMs` (default `ttlMs`): the dialog's reads take 60 s, prepare's PREPARE_REUSE_MS. */
+export function createSpawnPreviewCache({ ttlMs = PREVIEW_CACHE_TTL_MS, keepMs = ttlMs, limit = 64, now = () => performance.now(), clock } = {}) {
   if (typeof clock !== 'function') throw missing('createSpawnPreviewCache', 'clock (the flights\' clock)');
   const entries = new Map(), invalidatedAt = new Map();
   let clearedAt = 0;
+  const kept = Math.max(ttlMs, keepMs);
   return {
-    get(identity) {
+    get(identity, maxAgeMs = ttlMs) {
       const entry = entries.get(identity);
       if (!entry) return null;
       if (now() >= entry.expires) { entries.delete(identity); return null; }
+      if (now() - entry.readAt >= maxAgeMs) return null; // too old for this reader; a longer-lived one may still take it
       return structuredClone(entry.result);
     },
     set(identity, workspace, result, startedAt) {
       if (!cacheable(result) || typeof startedAt !== 'number' || startedAt <= clearedAt || startedAt <= (invalidatedAt.get(workspace) ?? 0)) return;
-      entries.delete(identity); entries.set(identity, { workspace, result: structuredClone(result), expires: now() + ttlMs });
+      const readAt = now();
+      entries.delete(identity); entries.set(identity, { workspace, result: structuredClone(result), readAt, expires: readAt + kept });
       for (const [key, entry] of entries) if (now() >= entry.expires) entries.delete(key);
       while (entries.size > limit) entries.delete(entries.keys().next().value);
     },
@@ -93,8 +102,9 @@ export function admitSpawnSelection(selector, choices, { workspace: w, cli, agen
 /** One read of a preview. `flights` (createSpawnPreviewFlights) is required: the reads of one preview share it,
  * and a cache given here must run on its clock. maxAge: the dialog's reads may reuse member heads the kernel
  * observed within that many seconds (feature spawn-preview-max-age, passed only when the admitted CLI
- * advertises it). Prepare's reads never do. exec: as createSpawnPreview's. */
-export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = null, maxAge = null, flights, exec } = {}) {
+ * advertises it). Prepare's reads never do. heldMs: how old a held answer this read takes (default: the cache's
+ * TTL). exec: as createSpawnPreview's. */
+export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = null, maxAge = null, heldMs, flights, exec } = {}) {
   if (!flights?.slots || !flights.byInvoker || !flights.started || typeof flights.clock !== 'function') throw missing('createSpawnPreviewBoundary', 'flights (createSpawnPreviewFlights)');
   if (cache && cache.clock !== flights.clock) throw new TypeError('createSpawnPreviewBoundary: the cache must run on the flights\' clock');
   const { slots, byInvoker, started } = flights, io = exec ? [{ exec }] : [];
@@ -106,7 +116,7 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview, cache = n
       const selected = admitSpawnSelection(selector, choices, getContext());
       if (selected.error) return previewFailure(selected.error);
       const { target, identity, cli } = selected;
-      const held = cache?.get(identity);
+      const held = cache?.get(identity, heldMs);
       if (held) return held; // admitted above against the current context, like a fresh answer
       let pending = byInvoker.get(invoke); if (!pending) { pending = new Map(); byInvoker.set(invoke, pending); }
       const reuse = maxAge !== null && cli.features.includes('spawn-preview-max-age') ? { maxAge } : {};
@@ -134,19 +144,21 @@ export const PREVIEW_MAX_AGE_S = 60;
  *   read         the dialog's read, through the cache; its kernel reads may reuse recent member heads (maxAge,
  *                where the CLI declares spawn-preview-max-age)
  *   prepareRead  prepare's read (spawn-apply.mjs createSpawnApplyBoundary's `read`), through the same cache,
- *                never with maxAge; a reusing read and a live one never coalesce
+ *                taking a held answer up to `prepareReuseMs` old (PREPARE_REUSE_MS), never with maxAge; a reusing
+ *                read and a live one never coalesce
  *   cache        `invalidate(workspace?)` (no argument: every workspace's answers) and `size()`
  * The two reads share one two-slot budget, one set of coalesced flights and one clock, the cache's too.
  *   exec  optional: the client's own execFile, passed to `invoke` as `invoke(cli, options, { exec })` for both
  *         reads (cli-adapter.mjs `runJson` has the rule); without it `invoke` is given no third argument and
  *         cliSpawnPreview's own default runs. A read is a read: its options carry no `detached` and a 30 s
  *         deadline, and it ends with its caller. */
-export function createSpawnPreview({ invoke = cliSpawnPreview, exec, now = () => performance.now(), ttlMs = PREVIEW_CACHE_TTL_MS, limit = 64, maxAge = PREVIEW_MAX_AGE_S } = {}) {
+export function createSpawnPreview({ invoke = cliSpawnPreview, exec, now = () => performance.now(), ttlMs = PREVIEW_CACHE_TTL_MS,
+  prepareReuseMs = PREPARE_REUSE_MS, limit = 64, maxAge = PREVIEW_MAX_AGE_S } = {}) {
   const flights = createSpawnPreviewFlights();
-  const cache = createSpawnPreviewCache({ ttlMs, limit, now, clock: flights.clock });
+  const cache = createSpawnPreviewCache({ ttlMs, keepMs: prepareReuseMs, limit, now, clock: flights.clock });
   return {
-    read: createSpawnPreviewBoundary({ invoke, cache, maxAge, flights, exec }),
-    prepareRead: createSpawnPreviewBoundary({ invoke, cache, flights, exec }),
+    read: createSpawnPreviewBoundary({ invoke, cache, maxAge, heldMs: ttlMs, flights, exec }),
+    prepareRead: createSpawnPreviewBoundary({ invoke, cache, heldMs: prepareReuseMs, flights, exec }),
     cache: { invalidate: workspace => cache.invalidate(workspace), size: () => cache.size() },
   };
 }

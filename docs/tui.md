@@ -273,7 +273,10 @@ fit; the detail shows them whole.
   end once a second), or a second more when tmux took a moment more to
   have the viewer's exit status: once tmux has reported the viewer ended,
   `oats tui` waits ten seconds at most for that status, and closes the
-  terminal without it when it has not come. The instances are then read again at once, and one line above the panes
+  terminal without it when it has not come. A tmux built with libutempter
+  (Ubuntu's and Debian's are) can lose that status: while it waits,
+  `oats tui` has tmux look for it again once a second, so the terminal
+  still closes within a second or two with the line its status calls for. The instances are then read again at once, and one line above the panes
   says what happened: that it could not be opened, that the connection to
   its machine ended, or that the viewer ended without saying why. What the
   viewer printed on its error output stands under that line in quotation
@@ -660,7 +663,13 @@ with the Desktop (`packages/client/`).
   before it has that status (3.4 does, when the viewer's terminal hangs up a
   moment before its process is reaped): `oats tui` then waits for the
   status, which follows at the next report, for ten seconds at most (2.5
-  on tmux 3.2, which never says which signal ended a pane). A pane whose
+  on tmux 3.2, which never says which signal ended a pane). A tmux built
+  with libutempter can lose a status for good: as it destroys a pane at
+  the hang-up, libutempter holds back SIGCHLD while its helper runs, and
+  tmux, which reaps only on a SIGCHLD, leaves a viewer that exited in that
+  moment unreaped (tmux 3.4). So while `oats tui` waits it sends the server
+  `run-shell true` at once and every second: that child's end makes tmux
+  reap the viewer too, and its status follows at the next report. A pane whose
   status has not come by then is taken as ended without one, and closed:
   the terminal closes with the line that the viewer ended without saying
   why. What the terminal

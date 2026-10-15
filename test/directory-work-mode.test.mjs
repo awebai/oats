@@ -413,6 +413,41 @@ test("retirement fails closed for exchanged work roots, missing authority and po
   }
 });
 
+/** The one spawn baseline of the instance at `home`, alone among its siblings. */
+function soleBaseline(home) {
+  const dir = join(dirname(home), ".oats-retirement", "baselines"), [name, ...more] = readdirSync(dir);
+  assert.equal(more.length, 0);
+  return join(dir, name);
+}
+const EXCHANGED = (name) => (e) => e.code === "E_WORK_INSPECTION_FAILED" && e.message === `directory ${name} was exchanged; restore the owned root before retrying start`;
+
+test("#1261: a directory start refuses a home or work that another directory was renamed into", async (t) => {
+  const f = fixture(t);
+  const result = await f.spawn("exchange"), home = result.home, work = join(home, "work");
+  const roots = readJson(soleBaseline(home)).directoryRoots;
+  for (const [name, path] of [["home", home], ["work", work]]) {
+    const st = lstatSync(path, { bigint: true });
+    assert.deepEqual(roots[name], { dev: Number(st.dev), ino: Number(st.ino), birthtimeNs: String(st.birthtimeNs) });
+  }
+  for (const [name, path] of [["work", work], ["home", home]]) {
+    const saved = join(f.base, `saved-${name}`), other = join(f.base, `other-${name}`);
+    mkdirSync(join(other, "work"), { recursive: true });
+    renameSync(path, saved); renameSync(other, path);
+    assert.throws(() => startInstanceSession(home), EXCHANGED(name));
+    rmSync(path, { recursive: true }); renameSync(saved, path);
+  }
+});
+
+test("#1261: a released baseline whose recorded dev changed (a macOS remount) starts on darwin and is refused elsewhere", async (t) => {
+  const f = fixture(t);
+  const result = await f.spawn("remount"), file = soleBaseline(result.home), baseline = readJson(file);
+  const moved = ({ dev, ino }) => ({ dev: dev + 1, ino });
+  writeFileSync(file, JSON.stringify({ ...baseline, directoryRoots: { home: moved(baseline.directoryRoots.home), work: moved(baseline.directoryRoots.work) } }), { mode: 0o600 });
+  // The guard is the start's first check of the roots; past it, this fixture's start stops at the launch, which finds no tmux.
+  if (process.platform === "darwin") assert.throws(() => startInstanceSession(result.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN" && /tmux was not found/.test(e.message));
+  else assert.throws(() => startInstanceSession(result.home), EXCHANGED("home"));
+});
+
 test("retirement preserves work in place if recovery storage is unusable", async (t) => {
   const f = fixture(t);
   const result = await f.spawn("blocked-recovery");

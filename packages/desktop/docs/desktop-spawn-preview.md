@@ -90,7 +90,7 @@ and owns: the backend makes one preview (`createSpawnPreview`) and one broker
 nothing in either module is shared between clients. The preview's two reads, this
 route's and prepare's, share its two flight slots. This route and `/api/spawn`
 prepare (below) answer from the preview's one bounded settled-answer cache:
-64 entries, **60 s**, keyed by the admission identity (workspace id and scope,
+64 entries, **60 s** for this route and **300 s** for prepare, keyed by the admission identity (workspace id and scope,
 subject, soul work/repo/capability, anchor incarnation, choices and every CLI
 field the admission reads). It holds `available` answers and the name refusals
 `E_INSTANCE_NAME_TAKEN`/`E_INSTANCE_NAME_INVALID`, nothing else. A held answer is
@@ -110,26 +110,32 @@ a workspace replaces the backend, and its cache with it. A flight that started
 before an invalidation never fills the cache, even when a later request joined
 it (a monotonic clock stamps flight starts and invalidations). What Desktop does
 not observe (a spawn by another window's backend or by the CLI, an on-disk edit)
-may show an older answer for up to 60 s. That is safe: the apply passes the
+may show an older answer for up to 60 s, and prepare may bind one up to 300 s old. That is safe: the apply passes the
 decision's revision as `--expect-decision`, and the kernel refuses a decision
 that no longer holds (`E_DECISION_STALE`) before it creates anything.
 
 **Prepare reuses the dialog's answer** (Spec C). `/api/spawn` prepare reads
 through the preview's `prepareRead`, the same cache: when the dialog already
-holds a fresh settled answer for exactly this admission identity (not
-invalidated, younger than 60 s), prepare binds it without a CLI call (well under
-50 ms); otherwise it reads fresh as before, and may coalesce onto an identical
-read in the air. `--expect-decision` at apply is the drift guard that makes this
-safe; the apply-start invalidation keeps a spawn's own decision from being
-reused by the next one.
+holds a settled answer for exactly this admission identity (not invalidated,
+younger than `PREPARE_REUSE_MS`, **300 s**: the prepared intent's own lifetime),
+prepare binds it without a CLI call (well under 50 ms); otherwise it reads fresh
+as before, and may coalesce onto an identical read in the air. The cache keeps
+an answer for the longer of its two ages and answers each reader by its own, so
+an operator who lingers over the form (a task typed for a minute or two) presses
+Spawn without a second kernel preview (#1246, which measured 1.4–2.4 s for it).
+`--expect-decision` at apply is the drift guard that makes this safe: a decision
+the kernel no longer makes is refused there (`E_DECISION_STALE`), which reads as
+drifted, with nothing created and the values read again. The apply-start
+invalidation keeps a spawn's own decision from being reused by the next one.
 
 **Member-head reuse (`--max-age`).** When the admitted CLI advertises the feature
 `spawn-preview-max-age`, the dialog's reads pass `--max-age 60`, letting the
 kernel answer from member heads it observed within 60 s (its reply may carry an
 `observation {observedAt, reused, localRevision}` block, which the projection
-drops and never shows). Prepare's own uncached read and the apply never pass it,
-and a reusing read never coalesces with a live one (their flights are keyed
-apart). Without the feature, no read passes it.
+drops and never shows). Prepare's own uncached read never passes it, and a
+reusing read never coalesces with a live one (their flights are keyed apart).
+Without the feature, no read passes it. The apply has its own gate,
+`spawn-apply-max-age` ([Apply transport](#apply-transport-and-qualified-results)).
 
 Response: `{spawnPreviewViewApi:1,status,target,data,reason}`. Success requires
 API2, `preview:true`, byte-exact `subject{soul,agentsRoot,dir}` and consistent
@@ -236,10 +242,15 @@ Domain errors resolve with stable safe codes.
 
 ```text
 spawn <admitted-soul> --dir <admitted-context> --agents-root <admitted-root>
-  [original validated choices] --expect-decision <stored-revision>
+  [original validated choices] --expect-decision <stored-revision> [--max-age 60]
   --idempotency-key <stored-key> --task-file <owned-temp>
   [--wake-file <owned-temp>] --json
 ```
+
+`--max-age 60` goes only to a CLI that lists `spawn-apply-max-age` (#1246 K1): the
+kernel may then reuse deployment observations up to 60 s old instead of reading
+every member head again at the press; `--expect-decision` still refuses a
+drifted decision (`E_DECISION_STALE`, read as drifted).
 
 Private files are created0600 inside private directories; short writes refuse
 before CLI dispatch rather than launch with truncated instructions. Cleanup is
@@ -294,6 +305,12 @@ the spawn back.
   the CLI settled, else the `pending` view. The CLI keeps running in the broker,
   which owns the job by `spawnRef`; `result` reads its outcome when it settles, and
   the route refreshes the roster then.
+- **A created answer carries its roster.** A `complete`, `partial` or
+  `incomplete` answer (from `apply`, or from a `result` that found the apply
+  settled) is sent once a live read of that one deployment has published into
+  the roster, or after 5 s, never past the 50 s above
+  ([desktop-load-path.md](desktop-load-path.md), the post-spawn read): the
+  roster read that follows it usually shows the instance already.
 - **Concurrency.** At most 4 applies run at once backend-wide, one per workspace
   and soul, so one 30-minute spawn does not make every other spawn `E_BUSY`. The
   32-record and 8 MiB bounds stay.
@@ -503,9 +520,11 @@ alive), else **Spawning…**, so it never flashes to a stopped instance with
 actions. Any roster row with `spawnInProgress`, whoever spawned it, reads
 **Setting up worktree…** the same way, with a muted "since <local time>" when a
 job of this window knows its start, and offers no actions. The head's count stays the kernel's
-observation; pending rows are not counted. While a created instance is awaited
-the shell reads the roster every 700 ms (the dialog's former pace) instead of
-every 4 s.
+observation; pending rows are not counted. When a spawn is created the shell
+reads the roster at once (the created answer comes once the backend has read
+that deployment, above), then, while the instance is still awaited, every
+700 ms (the dialog's former pace) instead of every 4 s, never two reads at
+once (`followSpawns`).
 
 **Window reload.** Pending rows are Desktop-local. A submitted job is kept in the
 window's `sessionStorage` until its outcome has been reported: while in flight or
@@ -580,8 +599,13 @@ they are when, at the moment it runs:
   pending) and the connection generation, after the dialog's own focus return,
   and every explicit action supersedes the ticket.
 
-The open itself is asynchronous (the roster read, the terminal's key and
-readiness), so the same holds all through it: every step of the open, and the
+The open resolves the instance against the roster read that showed it ready,
+without reading `/api/panel` again, while no later roster read has started and
+the workspace is the same (`shownRoster`, #1246); otherwise, and for every
+other open, it reads the roster first. The reused answer keeps the read order of
+the read that brought it, so a newer roster answer that shows the instance
+retired still stops the open (#1237). The open itself is asynchronous (that
+read, the terminal's key and readiness), so the same holds all through it: every step of the open, and the
 terminal's readiness focus, goes on only while the operator still has not acted,
 on the same connection and workspace. Any input during the open stops it,
 nothing is selected and the row says **New**; so does any open that never

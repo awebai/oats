@@ -12,7 +12,7 @@ import { retainedSpawnDetails, LAUNCH_DIAGNOSTIC_BYTES, FLAG_IGNORED_BYTES } fro
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { cliSpawnApply } from './spawn-apply-cli.mjs';
-import { admitSpawnSelection } from './spawn-preview.mjs';
+import { admitSpawnSelection, PREVIEW_MAX_AGE_S } from './spawn-preview.mjs';
 import { record } from './spawn-preview-contract.mjs';
 import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spawnRefInput, spawnPreparedData, spawnReference,
   spawnCreationReceipt, spawnApplyFailure, spawnApplyDeadlineMs, ROLLED_BACK_CODES, WAKE_OUTCOME_UNKNOWN } from './spawn-apply-contract.mjs';
@@ -34,8 +34,11 @@ const scopeKey = c => JSON.stringify([c?.workspace?.id, c?.workspace?.scope, c?.
  *         (`child.kill`): a given exec must return the child. One that returns nothing leaves that apply
  *         unended at its deadline; there is no fallback here. On a kernel without worktree-event the options'
  *         `timeout` is the apply's only deadline: exec must honour it as execFileInSession does, killing the
- *         child when it passes and reporting `killed` even if the child then exits cleanly. */
-export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply, exec,
+ *         child when it passes and reporting `killed` even if the child then exits cleanly.
+ *   maxAge  seconds the kernel may reuse its deployment observations for the apply (#1246 K1: the member heads'
+ *         ls-remote wave at the press). Passed to `invoke` only where the apply's CLI lists spawn-apply-max-age;
+ *         null never. The fence is unchanged: apply's --expect-decision refuses a drifted decision (E_DECISION_STALE). */
+export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply, exec, maxAge = PREVIEW_MAX_AGE_S,
   now = () => performance.now(), mint = () => randomBytes(32).toString('hex'), answerWithinMs = ANSWER_WITHIN_MS,
   timer = (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); } } = {}) {
   if (typeof read !== 'function') throw new TypeError('createSpawnApplyBoundary: read (the client\'s prepareRead) is required');
@@ -170,7 +173,8 @@ export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply, exec,
         if (!same(entry, latest)) reply = denied('E_PLAN_CHANGED', entry, 'refused');
         else {
           const result = await invoke(latest.cli, { target: clone(entry.target), choices: clone(entry.input.choices), task: entry.input.task,
-            ...(entry.input.wake ? { wake: clone(entry.input.wake) } : {}), decision: clone(entry.preview.decision), key: entry.key, deadlineMs: entry.deadlineMs }, ...io);
+            ...(entry.input.wake ? { wake: clone(entry.input.wake) } : {}), decision: clone(entry.preview.decision), key: entry.key, deadlineMs: entry.deadlineMs,
+            ...(maxAge !== null && latest.cli?.features?.includes('spawn-apply-max-age') ? { maxAge } : {}) }, ...io);
           reply = interpret(result, entry, latest.cli);
         }
       } catch { reply = denied('E_OUTCOME_UNKNOWN', entry, 'unknown'); }
