@@ -179,6 +179,27 @@ export function press(state, keys, size = { cols: 80, rows: 24 }) {
   return { state, effects };
 }
 
+/** The reads of input the helpers below number their events with, as the loop does (lib/main.mjs). */
+let reads = 1000;
+/** The leader typed in the terminal (`{ back }`, term/through.mjs), then pressed again in a later
+ *  read, now read as the TUI's own key: the focus goes to the list (docs/tui.md, "The leader").
+ *  -> the store's step after the second press. */
+export function leaderTwice(state) {
+  const first = reduce(state, { back: true, read: ++reads, rest: false });
+  return reduce(first.state, { key: first.state.leaderKey, read: ++reads });
+}
+/** The leader, then `key` in a later read: what the leader's table gives that key. `key` is a key
+ *  id; a one-grapheme id that is not `space` types itself. Any of `geometry` (page, extent, room,
+ *  cols) goes with both. From the terminal's focus the leader is the `{ back }` event.
+ *  -> { state, effect, leader } (`leader`: the step of the leader alone). */
+export function leaderThen(state, key, geometry = {}) {
+  const leader = state.terminal?.focus === "terminal" && state.view === "instances" && state.palette === null
+    ? reduce(state, { back: true, read: ++reads, rest: false, ...geometry })
+    : reduce(state, { key: state.leaderKey, read: ++reads, ...geometry });
+  const text = key === "space" ? " " : [...new Intl.Segmenter().segment(key)].length === 1 ? key : undefined;
+  return { ...reduce(leader.state, { key, ...(text ? { text } : {}), read: ++reads, ...geometry }), leader };
+}
+
 // ── The shared lifecycle's kernel answers (awebai/oats#855, PR 5), in the forms the Desktop's tests
 // give them (packages/desktop/test/helpers/lifecycle-fixture.mjs, which a test of this package may
 // not import): one instance, its stop plan, and the receipt of its apply.

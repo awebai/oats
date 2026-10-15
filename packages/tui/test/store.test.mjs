@@ -311,8 +311,8 @@ test("the empty row between clusters and single instances is never selected: dow
 test("a page key moves by a pane and stops at both ends", () => {
   let state = stateOf(observed(MANY));
   const { page } = draw(state);
-  assert.equal(page, 19, "the list pane of 80x24");
-  // A pane of 19 rows shows 18 instances when rows are cut off, its last row saying so: a page is
+  assert.equal(page, 20, "the list pane of 80x24: the body's rows, the header, its rule and the footer taken");
+  // A pane of 20 rows shows 19 instances when rows are cut off, its last row saying so: a page is
   // read here as either, the pane's rows or the rows it shows. Short of an end it is never less.
   const seen = [];
   for (const key of ["pagedown", "pagedown", "pagedown", "pagedown", "pageup", "pageup", "pageup", "pageup"]) {
@@ -1395,7 +1395,7 @@ test("selecting the last instance brings what stands under it into the pane: aft
   const read = heard(stateOf(reporting(CROWD), { cli: READS }), { thrown: "ENOENT" }, tick(0));
   const failure = read.remote.rosterFailure;
   assert.equal(failure.endsWith("ENOENT"), true);
-  assert.equal(draw(read).page, 19, "the list pane of 80x24: the 25 instances and the three rows after them do not fit");
+  assert.equal(draw(read).page, 20, "the list pane of 80x24: the 25 instances and the three rows after them do not fit");
   // On the instance before the last the window is the least that shows it: the rows after the list are cut off.
   const near = goTo(read, "inst-23");
   assert.equal(framed(near).lines.some((line) => line.includes(ROSTER_FAILED)), false);
