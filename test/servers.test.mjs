@@ -1619,6 +1619,15 @@ test("routed session attach --ignore-size: advertised, forwarded, gated before r
     const { log, tools, repo, env } = detachKeyHost(base);
     assert.ok(KERNEL_FEATURES.includes(IGNORE_SIZE_FEATURE));
     const home = "/srv/team/agent with space";
+
+    for (const value of ["false", "true", ""]) {
+      const arg = `--ignore-size=${value}`;
+      writeFileSync(log, "");
+      const r = oats(env, ["session", "attach", "--server", "build", "--home", home, "--print", arg, "--json"]);
+      assert.equal(r.status, 1);
+      assert.deepEqual(r.json().error, { code: "E_BAD_ARGS", message: `--ignore-size takes no value (got ${arg})` });
+      assert.deepEqual(sshCalls(log), [], "a valued switch is refused before SSH");
+    }
     const oldOats = join(base, "old-oats");
     write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"${IGNORE_SIZE_FEATURE}"//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
     chmodSync(oldOats, 0o755);

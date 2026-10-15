@@ -406,6 +406,14 @@ test("a keyed attach that cannot go on leaves nothing: a refused key makes no tm
   const cli = (args, front = logging) => { writeFileSync(log, ""); return spawnSync(process.execPath, [CLI, "session", "attach", "--home", a.home, ...args], { encoding: "utf8", env: { ...process.env, PATH: `${front}:${process.env.PATH}` } }); };
   const calls = () => lines(readFileSync(log, "utf8"));
 
+  for (const value of ["false", "true", ""]) {
+    const arg = `--ignore-size=${value}`;
+    const r = cli([arg, "--json"]);
+    assert.equal(r.status, 1);
+    assert.deepEqual(JSON.parse(r.stdout).error, { code: "E_BAD_ARGS", message: `--ignore-size takes no value (got ${arg})` });
+    assert.deepEqual(calls(), [], "a valued switch is refused before tmux");
+  }
+
   for (const bad of ["C-h", "C-i", "C-m", "C-[", "M-[", "Any", "WheelUpPane", "a", "C-A", "C-b d", "C-]; kill-server", "F13", "true"]) {
     const r = cli(["--detach-key", bad]);
     assert.equal(r.status, 1, bad);
