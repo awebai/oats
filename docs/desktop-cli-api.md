@@ -2836,6 +2836,26 @@ its absence.
   carries `rollbackIncomplete`, where before it read `spawnInProgress: true`
   until the reap, and retire completes it. Absent otherwise, and from older
   kernels.
+- **`retire`** (feature `status-retire-state`), as the clients read it
+  (`packages/client/retire-state.mjs`): `{state, since, self, code?,
+  message?}`, absent while no retire of the home runs, is scheduled or is
+  owed. `state` is `running` (a retire holds the home with a live holder, or
+  a self-retire's completion is alive), `unknown` (that holder's liveness
+  can't be read), `failed` (a self-retire's completion recorded an error) or
+  `interrupted` (a scheduled completion is gone and left no outcome);
+  `since` is a string, `self` a boolean, `code` an `E_…` code
+  (`^E_[A-Z0-9_]+$`) and `message` a string; an optional field is absent or
+  a string, never `null`. Any other field is dropped. A value with any field out
+  of this shape is dropped whole, never repaired, and the row reads as if it
+  had none; it never fails the roster. `retirePending` is read on its own
+  and kept as reported. The Desktop and `oats tui` read `running` and
+  `unknown` as **Retiring…**, `failed` as **Retire failed** (its `message`
+  and `code` shown as OATS's words, through the display filter) and
+  `interrupted` as **Retire didn't finish**. A row with `retirePending` and
+  no `retire` (a kernel without the feature) reads **Retiring…**.
+  `rollbackIncomplete` and `spawnInProgress` are read before it. A remote
+  roster row's `retire` is relayed as the host reported it, read by the same
+  rule.
 - **`waitingOnYou`** (feature `waiting-on-you`): `{since, producer, reason,
   message}` when the row is `running: true` and a producer holds a live claim
   that the instance needs input from a human, else `null` (unknown, not "not

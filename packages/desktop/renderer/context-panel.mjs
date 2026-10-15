@@ -664,7 +664,8 @@ export function createContextPanel({
     // children); a blocked row (a remote one the kernel does not report addressable, a home still spawning) shows no
     // control; a limited one (#802: a spawn or a retire left it half cleaned) Retire alone. A listed act that is not
     // enabled (Start on a Herdr-recorded row) stays visible, disabled, its reason as its title, said as the row says it.
-    const { blocked, acts } = instanceActs(instance), offered = new Map(acts.map(act => [act.verb, act]));
+    // A secondary act (#1247: Retire on a home being retired) gets no control here: the roster menu keeps it.
+    const { blocked, limited, acts } = instanceActs(instance), offered = new Map(acts.filter(act => !act.secondary).map(act => [act.verb, act]));
     for (const [verb, b] of [['restart', restartControl], ['start', startControl], ['stop', stopControl], ['retire', retireControl]]) {
       const act = offered.get(verb);
       b.hidden = !act; b.disabled = !act?.enabled;
@@ -672,7 +673,10 @@ export function createContextPanel({
     }
     // A blocked row says why in the controls' place, once: a row gone from its server (its reason's key `missing`)
     // already says it in the Work note (remoteWorkNote, the same unaddressableSentence), so nothing more is said here.
-    const why = blocked && !(blocked.key === 'missing' && remoteWorkNote(instance) !== null) ? reasonLine(blocked) ?? '' : '';
+    // A limited row says why where its control would be when it has none (retiring) or when the reason carries the
+    // kernel's own words (a failed retire's message, after them): said as the row says it.
+    const why = blocked ? (!(blocked.key === 'missing' && remoteWorkNote(instance) !== null) ? reasonLine(blocked) ?? '' : '')
+      : limited && (acts.some(act => act.secondary) || limited.origin !== undefined) ? reasonLine(limited) ?? '' : '';
     if (actionsNote.textContent !== why) actionsNote.textContent = why;
     actionsNote.hidden = !why;
     // A section with nothing reported is not shown; the header sub-line omits an unreported description.

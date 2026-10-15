@@ -1,8 +1,11 @@
 // #802: homes the kernel holds. A spawn running its worktree hooks (`spawnInProgress: true`) reads
 // "Setting up worktree…" in the pending row's treatment; a home a spawn or a retire left half cleaned
-// (`rollbackIncomplete`, `retirePending`) reads so and offers Retire only. Projections (deployment-data,
-// /api/panel), the shipped roster render (shell.mjs renderContextRoster + pendingSpawnRow) against a stub
-// store, the hover card and the actions menu; no shell startup, HTTP, Electron, CLI or session.
+// (`rollbackIncomplete`, the kernel's `retire` failed or interrupted) reads so and offers Retire only. #1247: a
+// home being retired (the kernel's `retire` running or unknown, an older kernel's bare `retirePending`, this
+// window's own retire in flight) reads "Retiring…", never as a failure, and keeps Retire only in its menu, never
+// as its default. Projections (deployment-data, /api/panel), the shipped roster render (shell.mjs
+// renderContextRoster + pendingSpawnRow) against a stub store, the hover card and the actions menu; no shell
+// startup, HTTP, Electron, CLI or session.
 import test from "node:test";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
@@ -23,6 +26,8 @@ import { waitingClock } from "../../client/waiting-on-you.mjs";
 import { projectActivePanel } from "../renderer/active-observation.mjs";
 import { deploymentStatusData } from "../../client/deployment-data.mjs";
 import { panelInstance } from "../../client/deployment-panel.mjs";
+import { heldLine } from "../renderer/speaker-line.mjs";
+import { RETIRE_INTERRUPTED } from "./helpers/instance-menu-probe.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), html = read("index.html"), shell = read("shell.mjs");
@@ -107,7 +112,8 @@ test("heldHome: rollbackIncomplete wins over spawnInProgress, a live spawn over 
   assert.equal(kind({ spawnInProgress: true }), "spawning");
   assert.equal(kind({ spawnInProgress: "true" }), null);
   assert.equal(kind({ rollbackIncomplete: true }), "spawn-incomplete");
-  assert.equal(kind({ retirePending: true }), "retire-incomplete");
+  assert.equal(kind({ retirePending: true }), "retiring", "an older kernel's pending retire: being retired (#1247)");
+  assert.equal(kind({ retire: RETIRE_INTERRUPTED }), "retire-incomplete");
   assert.equal(kind({ spawnInProgress: true, rollbackIncomplete: true }), "spawn-incomplete");
   assert.equal(kind({ spawnInProgress: true, retirePending: true }), "spawning");
   assert.equal(kind({ rollbackIncomplete: false, retirePending: false }), null, "a remote row's false flags hold nothing");
@@ -188,11 +194,12 @@ test("the pending row turns into “Setting up worktree…” in place, never fl
   assert.equal(u.doc.activeElement, u.row("dev-new"), "focus kept across the replacement");
 });
 
-for (const [flag, state, hint] of [["rollbackIncomplete", "Spawn didn't finish", "Retire it to clean up"],
-  ["retirePending", "Retire didn't finish", "Retire it again to complete"]]) {
+for (const [flag, state, hint, hold] of [["rollbackIncomplete", "Spawn didn't finish", "Retire it to clean up", { rollbackIncomplete: true }],
+  ["retire interrupted", "Retire didn't finish", "Retire it again to complete", { retire: RETIRE_INTERRUPTED }],
+  ["retire failed", "Retire failed", "Retire it again to finish", { retire: { ...RETIRE_INTERRUPTED, state: "failed" } }]]) {
   test(`${flag}: “${state}”, muted “${hint}”, Retire instance… only, through the plan dialog`, async t => {
     const u = fixture(t, () => []);
-    const row = instance("dev-q", "root", { running: false, [flag]: true });
+    const row = instance("dev-q", "root", { running: false, ...hold });
     u.render([...roster, row]);
     const button = u.row("dev-q");
     assert.equal(button.querySelector(".ctx-spawn-state").textContent, state, "text, not colour alone");
@@ -207,10 +214,11 @@ for (const [flag, state, hint] of [["rollbackIncomplete", "Spawn didn't finish",
     u.wrap("dev-q").querySelector("[data-action=retire]").click();
     await new Promise(r => setImmediate(r));
     assert.equal(u.lifecycle.length, 1, "the ordinary plan → apply dialog");
-    assert.equal(u.lifecycle[0][0], "retire"); assert.equal(u.lifecycle[0][1].home, "/synthetic/dev-q"); assert.equal(u.lifecycle[0][1][flag], true);
+    assert.equal(u.lifecycle[0][0], "retire"); assert.equal(u.lifecycle[0][1].home, "/synthetic/dev-q");
+    for (const [key, value] of Object.entries(hold)) assert.deepEqual(u.lifecycle[0][1][key], value);
     // A running quarantined home offers no Stop or split either.
     const v = fixture(t, () => []);
-    v.render([...roster, instance("dev-q", "root", { running: true, [flag]: true })]);
+    v.render([...roster, instance("dev-q", "root", { running: true, ...hold })]);
     assert.deepEqual(v.menu("dev-q"), ["retire"]);
   });
 }
@@ -233,7 +241,8 @@ test("the hover card's Status names a held home; an ordinary row keeps its liven
   const status = row => rosterTipFacts(row).rows.find(([key]) => key === "Status")[1];
   assert.equal(status(instance("a", undefined, { running: false, spawnInProgress: true })), "Spawning (setting up worktree)");
   assert.equal(status(instance("a", undefined, { running: false, rollbackIncomplete: true })), "Spawn didn't finish");
-  assert.equal(status(instance("a", undefined, { running: true, retirePending: true })), "Retire didn't finish");
+  assert.equal(status(instance("a", undefined, { running: true, retirePending: true })), "Retiring…");
+  assert.equal(status(instance("a", undefined, { running: true, retire: RETIRE_INTERRUPTED })), "Retire didn't finish");
   assert.equal(status(instance("a", undefined, { running: false, pendingSpawn: job() })), "Spawning");
   assert.equal(status(instance("a", undefined, { running: false, spawnInProgress: true, pendingSpawn: job() })), "Spawning (setting up worktree)");
   assert.equal(status(instance("a", undefined, { running: false, retirePending: true, pendingSpawn: job() })), "Spawning", "as its pending row reads");
@@ -249,9 +258,9 @@ test("instanceActions: a spawning home has no actions (the trigger says why); a 
   assert.equal(spawning.querySelectorAll("[role=menuitem]").length, 0);
   const trigger = spawning.querySelector(".ctx-instance-actions");
   assert.equal(trigger.disabled, true); assert.match(trigger.title, /s is setting up its worktree/);
-  for (const flag of ["rollbackIncomplete", "retirePending"]) {
-    const held = instanceActions(doc, instance("q", undefined, { running: true, [flag]: true }), { extra });
-    assert.deepEqual([...held.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action), ["retire"], flag);
+  for (const hold of [{ rollbackIncomplete: true }, { retirePending: true }, { retire: RETIRE_INTERRUPTED }]) {
+    const held = instanceActions(doc, instance("q", undefined, { running: true, ...hold }), { extra });
+    assert.deepEqual([...held.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action), ["retire"], JSON.stringify(hold));
     assert.equal(held.querySelector(".ctx-instance-actions").disabled, false);
   }
 });
@@ -263,4 +272,119 @@ for (const theme of ["light", "solarized", "dark"]) test(`${theme}: the held lin
   for (const sheet of [read("theme.css"), css]) { const style = doc.createElement("style"); style.textContent = sheet; doc.head.append(style); }
   const line = dom.window.getComputedStyle(doc.querySelector(".ctx-held-hint"));
   assert.equal(line.color, "var(--muted)"); assert.equal(line.opacity, "1");
+});
+
+/* ── #1247: a retire in progress reads Retiring…, never as a failure ── */
+const SINCE = "2026-10-15T00:00:00Z";
+const retire = (state, extra = {}) => ({ retire: { state, since: SINCE, self: true, ...extra } });
+/** Every way a home reads as being retired: the kernel's running or unknown retire, an older kernel's bare
+ * retirePending, this window's own retire in flight (shell.mjs shownRows marks it so). */
+const RETIRING = { "running": retire("running"), "unknown": retire("unknown"), "an older kernel's retirePending": { retirePending: true },
+  "this window's retire in flight": { retireInFlight: true } };
+
+test("projection: the kernel's retire is passed on read again; one out of the contract is absent, retirePending stays as it is", () => {
+  const base = { instance: "dev-a", agentsRoot: "/d/agents", home: "/d/agents/dev/instances/dev-a" };
+  const active = raw => projectActivePanel({ instances: [{ ...base, ...raw }] }).instances[0];
+  for (const value of [{ state: "running", since: SINCE, self: true }, { state: "unknown", since: SINCE, self: false },
+    { state: "interrupted", since: SINCE, self: true }, { state: "failed", since: SINCE, self: true, code: "E_RETIRE_HOOK", message: "the hook exited 1" }]) {
+    assert.deepEqual(active({ retire: value }).retire, value, JSON.stringify(value));
+  }
+  for (const value of [null, { state: "failed", since: SINCE, self: true, code: null }, { state: "failed", since: SINCE, self: true, message: null }, "running", [], { state: "done", since: SINCE, self: true }, { state: "running", self: true }, { state: "running", since: 7, self: true },
+    { state: "running", since: SINCE, self: "yes" }, { state: "failed", since: SINCE, self: true, code: "boom" }, { state: "failed", since: SINCE, self: true, message: 7 }]) {
+    const row = active({ retire: value });
+    assert.equal(Object.hasOwn(row, "retire"), false, JSON.stringify(value));
+    assert.equal(tree.heldHome(row), null, `malformed reads as absent: ${JSON.stringify(value)}`);
+    // Beside retirePending, a malformed retire is still absent: the row reads as an older kernel's (retiring).
+    assert.equal(tree.heldHome(active({ retire: value, retirePending: true })).kind, "retiring", JSON.stringify(value));
+  }
+  assert.equal(active({ retirePending: true, retire: { state: "interrupted", since: SINCE, self: true } }).retirePending, true);
+});
+
+test("heldHome precedence (#1247): this window's retire wins over every kernel fact; then a gone spawn, a live spawn, the kernel's retire", () => {
+  const kind = row => tree.heldHome(row)?.kind ?? null;
+  for (const state of ["running", "unknown"]) assert.equal(kind(retire(state)), "retiring", state);
+  assert.equal(kind(retire("failed")), "retire-failed");
+  assert.equal(kind(retire("interrupted")), "retire-incomplete");
+  // The kernel's retire wins over retirePending beside it; a row without one is an older kernel's (retiring).
+  assert.equal(kind({ retirePending: true, ...retire("failed") }), "retire-failed");
+  assert.equal(kind({ retirePending: true, ...retire("interrupted") }), "retire-incomplete");
+  for (const hold of [{ rollbackIncomplete: true }, { spawnInProgress: true }, retire("failed"), retire("interrupted"), { retirePending: true }]) {
+    assert.equal(kind({ ...hold, retireInFlight: true }), "retiring", `this window's own retire is the newest fact: ${JSON.stringify(hold)}`);
+  }
+  assert.equal(kind({ retireInFlight: "true" }), null, "true only");
+  for (const state of ["running", "failed", "interrupted"]) {
+    assert.equal(kind({ rollbackIncomplete: true, ...retire(state) }), "spawn-incomplete", state);
+    assert.equal(kind({ spawnInProgress: true, ...retire(state) }), "spawning", state);
+  }
+});
+
+for (const [name, hold] of Object.entries(RETIRING)) {
+  test(`retiring (${name}): “Retiring…”, no hint, opens and starts nothing; its menu keeps Retire, never as the default`, async t => {
+    const u = fixture(t, () => []);
+    u.render([...roster, instance("dev-r", "root", { running: true, ...hold })]);
+    const button = u.row("dev-r");
+    assert.equal(button.querySelector(".ctx-spawn-state").textContent, "Retiring…", "text, not colour alone");
+    assert.equal(button.querySelector(".ctx-held-hint"), null, "nothing to do but wait: no hint line");
+    assert.equal(button.getAttribute("aria-disabled"), "true"); assert.equal(button.getAttribute("aria-description"), "dev-r is being retired.");
+    assert.doesNotMatch(button.textContent, /fail|didn't finish/i, "never read as a failure");
+    button.click(); assert.deepEqual(u.opened, [], "activation opens and starts nothing");
+    assert.equal(u.wrap("dev-r").querySelector(".ctx-start"), null, "no Start…");
+    assert.equal(u.status("dev-r"), "Retiring…");
+    assert.deepEqual(u.menu("dev-r"), ["retire"], "no Inspect, Start, Stop, Restart or split");
+    const retireItem = u.wrap("dev-r").querySelector("[data-action=retire]");
+    assert.equal(retireItem.disabled, false); assert.equal(retireItem.dataset.secondary, "true"); assert.equal(retireItem.autofocus, false);
+    // Opening the menu lands on the menu itself, not on Retire; the arrows reach Retire, which still opens the plan dialog.
+    const trigger = u.wrap("dev-r").querySelector(".ctx-instance-actions"), menu = u.wrap("dev-r").querySelector(".ctx-instance-menu");
+    for (const key of ["ArrowDown", "ArrowUp"]) {
+      trigger.focus();
+      trigger.dispatchEvent(new u.doc.defaultView.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      assert.equal(u.doc.activeElement, menu, `${key} on the trigger: focus on the menu, Retire is not the default`);
+      menu.hidePopover();
+    }
+    menu.openActionMenu();
+    assert.equal(u.doc.activeElement, menu);
+    menu.dispatchEvent(new u.doc.defaultView.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    assert.equal(u.doc.activeElement, retireItem, "reachable");
+    retireItem.click(); await new Promise(r => setImmediate(r));
+    assert.equal(u.lifecycle.length, 1); assert.equal(u.lifecycle[0][0], "retire");
+  });
+}
+
+test("a failed retire with the kernel's message: “Retire failed”, its hint, and the message said after the kernel's words, filtered", async t => {
+  const u = fixture(t, () => []);
+  const failed = extra => instance("dev-f", "root", { running: false, ...retire("failed", { code: "E_RETIRE_HOOK", ...extra }) });
+  u.render([...roster, failed({ message: "the pre-retire hook exited 1" })]);
+  const button = u.row("dev-f");
+  assert.equal(button.querySelector(".ctx-spawn-state").textContent, "Retire failed");
+  assert.equal(button.querySelector(".ctx-held-hint").textContent, "Retire it again to finish");
+  assert.equal(button.getAttribute("aria-description"), "OATS says: the pre-retire hook exited 1 (E_RETIRE_HOOK)");
+  assert.equal(u.status("dev-f"), "Retire failed · OATS says: the pre-retire hook exited 1 (E_RETIRE_HOOK)");
+  assert.deepEqual(u.menu("dev-f"), ["retire"]);
+  const retireItem = u.wrap("dev-f").querySelector("[data-action=retire]");
+  assert.equal(retireItem.dataset.secondary, undefined); assert.equal(retireItem.autofocus, true, "Retire is the way on: the default");
+  // A control character withholds the message whole; an over-long one is one bounded line.
+  u.render([...roster, failed({ message: "wipe \x1b[2J the screen" })]);
+  assert.equal(u.row("dev-f").getAttribute("aria-description"), "[withheld]");
+  assert.equal(u.status("dev-f"), "Retire failed · [withheld]");
+  u.render([...roster, failed({ message: `${"x".repeat(5000)} end` })]);
+  const said = u.row("dev-f").getAttribute("aria-description");
+  assert.ok(said.startsWith("OATS says: xxx") && said.length <= "OATS says: ".length + 2048, "bounded"); assert.doesNotMatch(said, /\x1b| end/);
+  // Only a code: the kernel's code, under its speaker and through the filter, as its message is.
+  u.render([...roster, failed({})]);
+  assert.equal(u.row("dev-f").getAttribute("aria-description"), "OATS says: E_RETIRE_HOOK");
+  assert.equal(u.status("dev-f"), "Retire failed · OATS says: E_RETIRE_HOOK");
+  assert.equal(heldLine(null), null);
+});
+
+test("the same row reads every state of its retire in turn, and back to an ordinary row when the hold is gone", async t => {
+  const u = fixture(t, () => []);
+  const read = hold => { u.render([...roster, instance("dev-r", "root", { running: true, ...hold })]); return [u.row("dev-r").querySelector(".ctx-meta").textContent, u.status("dev-r")]; };
+  assert.deepEqual(read({ retireInFlight: true }), ["Retiring…", "Retiring…"]);
+  assert.deepEqual(read(retire("running")), ["Retiring…", "Retiring…"]);
+  assert.deepEqual(read(retire("unknown")), ["Retiring…", "Retiring…"]);
+  assert.deepEqual(read(retire("failed")), ["Retire failed", "Retire failed"]);
+  assert.deepEqual(read(retire("interrupted")), ["Retire didn't finish", "Retire didn't finish"]);
+  const [meta, status] = read({});
+  assert.equal(status, "running"); assert.doesNotMatch(meta, /Retir/);
+  assert.deepEqual(u.menu("dev-r"), ["open-split", "open-pr", "inspect", "restart", "stop", "retire"]);
 });

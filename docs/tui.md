@@ -187,7 +187,7 @@ in its workspace for the rest of the run, also while it is not reached.
 | `○` | `-` | stopped |
 | `◌` | `~` | stopped, with a shell left in its terminal |
 | `?` | `?` | state unknown: the kernel or the terminal probe could not tell, or the instance's machine was not reached |
-| `◆` | `#` | held by a spawn or a retire that is not finished |
+| `◆` | `#` | held by a spawn or a retire: under way (Retiring…), failed or not finished ([below](#held-rows)) |
 | `▾` `▸` | `v` `>` | has instances below it: shown, folded away |
 | `!` | `!` | needs input |
 | `!N` | `!N` | N instances folded away below it need input |
@@ -195,6 +195,25 @@ in its workspace for the rest of the run, also while it is not reached.
 | `*` | `*` | in the switcher: the workspace that is open |
 
 Every state has a mark of its own shape, so nothing is told by colour alone.
+
+<a id="held-rows"></a>**A held row** says in its word what holds it, by the
+Desktop's rule:
+
+- `Setting up worktree…`: a spawn is running its worktree setup.
+- `Spawn didn't finish`: a spawn left the home for a retire to clean up.
+- `Retiring…`: a retire is in progress, never shown as a failure. OATS
+  reports it running, or cannot tell whether the process holding it still
+  runs; or the instance's OATS does not report a retire's state yet and
+  the instance has a retire pending; or this `oats tui` sent the retire and
+  has not read the list since its answer. A retire the kernel refused, or
+  whose plan had changed, runs nothing: the row reads as the list says at
+  once.
+- `Retire failed`: a self-retire's completion recorded an error. The detail
+  gives its reason after `OATS says:`, in OATS's words with its code,
+  through the display filter. With a code and no message, the reason is
+  its code after `OATS says:`, the same way.
+- `Retire didn't finish`: a scheduled completion is gone and left no
+  outcome.
 
 **When a read fails,** what the view then shows is one rule, shared with the
 Desktop, and `oats tui` decides none of it. Depending on the failure the
@@ -222,7 +241,8 @@ on whether that read has succeeded before in this run:
 The next read that succeeds shows the machines as they then report.
 
 Names are cut by terminal cells with `…` (`...` in ASCII) when they do not
-fit; the detail shows them whole.
+fit; the detail shows them whole. The TUI's own words end the same way:
+**Retiring…** reads `Retiring...` in ASCII.
 
 ## Open an agent's terminal
 
@@ -384,8 +404,13 @@ confirmation:
 The rules are the Desktop's, from the readers both clients share: an
 instance offers what the Desktop offers for it, and nothing else. One that
 is still being spawned, and one its machine reports it cannot reach, offers
-none; one whose spawn stopped half way offers only to be retired; a running
-one offers restart and not start, a stopped one start and not restart. The
+none; one whose spawn stopped half way, and one whose retire failed or
+didn't finish, offers only to be retired; a running one offers restart and
+not start, a stopped one start and not restart. One that is `Retiring…`
+offers no start, stop, restart or open: `D` still opens its retire
+confirmation, but the footer does not name it, since the kernel refuses a
+second retire while one runs and it is needed only when the first one's
+holder can't be read. The
 footer names the keys the selected instance offers now, after `Enter`, and
 on a narrow terminal they are the first hints it gives up. A key for an act
 the instance does not offer opens nothing, and the line above the panes

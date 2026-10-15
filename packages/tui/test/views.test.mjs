@@ -395,6 +395,25 @@ test("in ASCII nothing on the screen is outside printable ASCII: the list, the d
   }
 });
 
+test("in ASCII a held row's own words end in three full stops, never an ellipsis: the list's word, the detail's state, the help and a start's line (#1247)", () => {
+  const rows = [instanceRow("dev", "dev-retiring", { retirePending: true }), instanceRow("dev", "dev-spawning", { spawnInProgress: true, running: false, runtimeState: "stopped" })];
+  const sz = size(200, 60); // tall enough for the help's marks
+  for (const ascii of [true, false]) {
+    const at = `ascii ${ascii}`, list = stateOf(observed(rows), { ascii });
+    const screens = { list, detail: press(list, ["tab"]).state, help: press(list, ["?"]).state };
+    for (const [name, state] of Object.entries(screens)) {
+      const text = draw(state, sz).lines.join("\n");
+      assert.equal(text.includes(ascii ? "Retiring..." : "Retiring\u2026"), true, `${at}, ${name}: ${text}`);
+      if (ascii) for (const line of draw(state, sz).lines) assert.match(line, PRINTABLE_ASCII, `${at}, ${name}`);
+    }
+    const lines = draw(list, sz).lines;
+    // The spawning row's word: whole in UTF-8; in ASCII two cells wider than the column's WORD_MAX, so cut, with the ASCII cut mark.
+    assert.equal(lines.some((line) => line.includes(ascii ? "Setting up worktr..." : "Setting up worktree\u2026")), true, `${at}: the spawning row's word`);
+    const detail = draw(screens.detail, sz).lines.find((line) => /\bstate\b/.test(line) && line.includes("Retiring"));
+    assert.ok(detail, `${at}: the detail's state is the list row's word`);
+  }
+});
+
 test("without colour the screen is the same and still says everything: the bytes carry attributes only, and each state keeps a mark of its own shape", () => {
   const d = draw(golden(), S80);
   const coloured = readTerminalOutput(createScreen().render(d.rows, S80, { full: true }));
@@ -747,7 +766,8 @@ test("the disclosure mark stands only on a row with instances below it: open on 
   assert.equal(lines.filter((line) => line.includes("▸")).length, 0);
 });
 
-/** Six instances, one per state a row can be in, and what each row is to show. */
+/** One instance per state a row can be in, and what each row is to show. A retire the kernel reports
+ *  interrupted didn't finish; an older kernel's pending one (no `retire`) is in progress (#1247). */
 const STATES = () => [
   ["running", instanceRow("soul", "a-running")],
   ["stopped", instanceRow("soul", "b-stopped", { running: false, runtimeState: "stopped" })],
@@ -756,7 +776,8 @@ const STATES = () => [
   ["stopped", instanceRow("soul", "e-unsupported", { running: false, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: the session backend is gone" })],
   ["held", instanceRow("soul", "f-spawning", { running: false, runtimeState: "stopped", spawnInProgress: true })],
   ["held", instanceRow("soul", "g-half-spawned", { running: false, runtimeState: "stopped", rollbackIncomplete: true })],
-  ["held", instanceRow("soul", "h-half-retired", { retirePending: true })],
+  ["held", instanceRow("soul", "h-half-retired", { retirePending: true, retire: { state: "interrupted", since: "2026-10-15T00:00:00Z", self: true } })],
+  ["held", instanceRow("soul", "i-retiring", { retirePending: true })],
 ];
 /** The mark a row carries: the last thing drawn before its name. */
 const markOf = (d, sz, name) => { const line = cellText(d, rowOf(d, sz, name)); return line.slice(0, line.indexOf(name)).trim().split(/\s+/).at(-1); };
@@ -773,7 +794,7 @@ test("each state has a mark of its own shape, in UTF-8 and in ASCII: running, st
 test("the word at a row's right edge is the harness of a running instance, the kernel's own name for the state otherwise, and the held home's state for a home the kernel holds", () => {
   const rows = STATES().map(([, row]) => row), state = stateOf(observed(rows)), sz = S120, d = draw(state, sz);
   const held = (name) => heldHome(panelRow(state, name)).state;
-  const expected = { "a-running": "claude", "b-stopped": "stopped", "c-shell": "shell", "d-unreachable": "unreachable", "e-unsupported": "unsupported", "f-spawning": held("f-spawning"), "g-half-spawned": held("g-half-spawned"), "h-half-retired": held("h-half-retired") };
+  const expected = { "a-running": "claude", "b-stopped": "stopped", "c-shell": "shell", "d-unreachable": "unreachable", "e-unsupported": "unsupported", "f-spawning": held("f-spawning"), "g-half-spawned": held("g-half-spawned"), "h-half-retired": held("h-half-retired"), "i-retiring": held("i-retiring") };
   const widest = Math.max(...Object.values(expected).map((word) => textWidth(word)));
   assert.equal(widest, 20, "a held home's state is the long one, and it is as wide as the column may be");
   const list = listWidth(sz.cols);
@@ -1094,13 +1115,14 @@ test("the detail's state line holds the kernel's own name for the state, and the
 
 test("the detail's held line is the sentence the shared home gives for a home the kernel holds, wrapped under its label", () => {
   const rows = STATES().map(([, row]) => row), all = stateOf(observed(rows));
-  for (const name of ["f-spawning", "g-half-spawned", "h-half-retired"]) {
+  for (const name of ["f-spawning", "g-half-spawned", "h-half-retired", "i-retiring"]) {
     const state = selecting(all, name), acts = instanceActs(panelRow(state, name)), sentence = (acts.blocked ?? acts.limited).sentence;
     assert.equal(typeof sentence === "string" && sentence.includes(name), true);
     for (const sz of [S160, S80, S60]) {
       const d = draw(sz.cols < WIDE ? press(state, ["tab"], sz).state : state, sz), held = fact(factsOf(detailLines(d, sz)), "held");
       assert.equal(held.rows.join(" "), textOf(shown(sentence)), `${name} at ${sz.cols}`);
-      if (sz.cols === 80) assert.equal(held.rows.length > 1, true, `${name}: a sentence longer than the pane wraps`);
+      // A retire in progress says the least: its sentence may fit the pane.
+      if (sz.cols === 80 && name !== "i-retiring") assert.equal(held.rows.length > 1, true, `${name}: a sentence longer than the pane wraps`);
     }
   }
   for (const name of ["a-running", "b-stopped", "c-shell", "d-unreachable", "e-unsupported"]) assert.equal(fact(detailOf(selecting(all, name)), "held"), null, `${name} is not held`);
@@ -1108,7 +1130,7 @@ test("the detail's held line is the sentence the shared home gives for a home th
 
 test("the detail's state line of a home the kernel holds is the held home's state, the same word the list shows at the row's right edge", () => {
   const rows = STATES().map(([, row]) => row), all = stateOf(observed(rows));
-  for (const name of ["f-spawning", "g-half-spawned", "h-half-retired"]) {
+  for (const name of ["f-spawning", "g-half-spawned", "h-half-retired", "i-retiring"]) {
     const state = selecting(all, name), word = heldHome(panelRow(state, name)).state, d = draw(state, S160);
     assert.equal(cellText(d, rowOf(d, S160, name), 0, 60).endsWith(word), true, `${name}: the list shows the held home's state`);
     assert.deepEqual(fact(factsOf(detailLines(d, S160)), "state").rows, [textOf(shown(word))], `${name}: and so does the detail's state line`);

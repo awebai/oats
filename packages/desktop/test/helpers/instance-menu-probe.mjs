@@ -26,6 +26,9 @@ function menuDom() {
 const LOCAL = { instance: "dev-one", agent: "dev", home: "/agents/dev/instances/dev-one", createdAt: "2026-10-01T00:00:00.000Z" };
 const REMOTE = { ...LOCAL, home: "/remote/agents/dev/instances/dev-one", server: "host", repoName: "Build box" };
 const HERDR = "E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend. (dev-one)";
+// #1247: a retire whose scheduled completion is gone with no outcome: the kernel's `retire`, read as "Retire didn't
+// finish" (the capture's `retirePending` row; a bare `retirePending` reads Retiring… now, its own test in the menu suite).
+export const RETIRE_INTERRUPTED = Object.freeze({ state: "interrupted", since: "2026-10-15T00:00:00Z", self: true });
 
 /** One row per case the menu decides on, and the rows where two or three cases meet. */
 export const ROWS = Object.freeze({
@@ -44,14 +47,14 @@ export const ROWS = Object.freeze({
   "unaddressable (server not reached)": { ...REMOTE, addressable: false, serverUnreached: true, runtimeError: "ssh: connect to host timed out", running: null },
   "held: spawning": { ...LOCAL, running: false, spawnInProgress: true },
   "held: spawn incomplete": { ...LOCAL, running: false, rollbackIncomplete: true },
-  "held: retire incomplete": { ...LOCAL, running: true, retirePending: true },
+  "held: retire incomplete": { ...LOCAL, running: true, retire: RETIRE_INTERRUPTED },
   "held: a spawn that is gone wins over a live one": { ...LOCAL, running: false, rollbackIncomplete: true, spawnInProgress: true },
   "unaddressable and held: spawning": { ...REMOTE, addressable: false, running: false, spawnInProgress: true },
   "unaddressable and held: spawn incomplete": { ...REMOTE, addressable: false, running: false, rollbackIncomplete: true },
-  "unaddressable and held: retire incomplete": { ...REMOTE, addressable: false, running: true, retirePending: true },
+  "unaddressable and held: retire incomplete": { ...REMOTE, addressable: false, running: true, retire: RETIRE_INTERRUPTED },
   "held: spawning, and an unsupported session": { ...LOCAL, running: null, spawnInProgress: true, runtimeState: "unsupported", runtimeError: HERDR },
   "held: spawn incomplete, and an unsupported session": { ...LOCAL, running: null, rollbackIncomplete: true, runtimeState: "unsupported", runtimeError: HERDR },
-  "all three: unaddressable, held and an unsupported session": { ...REMOTE, addressable: false, running: true, retirePending: true, backend: "herdr" },
+  "all three: unaddressable, held and an unsupported session": { ...REMOTE, addressable: false, running: true, retire: RETIRE_INTERRUPTED, backend: "herdr" },
   "all three, spawning": { ...REMOTE, addressable: false, running: null, spawnInProgress: true, runtimeState: "unsupported", runtimeError: HERDR },
 });
 

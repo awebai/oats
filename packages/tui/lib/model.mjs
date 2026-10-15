@@ -11,9 +11,9 @@ import {
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs,
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
-  startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage,
+  startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows,
 } from "./client.mjs";
-import { shownLines } from "./term/text.mjs";
+import { ownEllipsis, shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
@@ -43,7 +43,8 @@ export function heldOf(state, at) {
 
 /** The panel of the view that holds `state.open`: the composition the Desktop's own panel is
  *  served from (panel-views.mjs `panelData`), so nothing of it is put together by hand here.
- *  Null while nothing is open (a run started outside a deployment, before a pick). */
+ *  Null while nothing is open (a run started outside a deployment, before a pick). Its rows are
+ *  as read: this run's retires in flight are put on them by `build` alone. */
 export function panelOf(state, at) {
   return state.open === null ? null : panelData(heldOf(state, at), state.open, TERMS);
 }
@@ -56,17 +57,24 @@ export function clockTime(iso) {
   return text(iso) && Number.isFinite(at.getTime()) ? `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}` : null;
 }
 
+/** The deployments of other machines whose rows the last roster outcome read (their group's probe
+ *  answered), by the ids the shared `deployments` gives them, which a row's `deployment.id` carries:
+ *  what a roster outcome covers of this run's retires in flight (lib/main.mjs). */
+export function reachedMachines(state, at) {
+  return new Set(heldDeployments(heldOf(state, at)).filter((w) => w.remote && w.group?.probe?.ok === true).map((w) => w.id));
+}
+
 /** A row's state in a word: the one the kernel or the collector reported on the row, else the
  *  shared word for what is known of it (running, stopped, unknown). A row kept from a machine
  *  that was not reached (the shared home marks it) still carries the word of its last report,
  *  which is not its state now: it gets the shared word, so nothing reads as stopped, or as
  *  running, that is only not reached. */
 const stateWord = (row) => (text(row.runtimeState) && row.serverUnreached !== true ? row.runtimeState : runtimeState(row));
-/** What a list row shows at its right edge: a held home's state, the harness of a running
- *  instance, else its state. */
-function wordOf(row) {
+/** What a list row shows at its right edge: a held home's state (Retiring… while a retire runs,
+ *  or this run's own is in flight), the harness of a running instance, else its state. */
+function wordOf(row, ascii) {
   const held = heldHome(row);
-  if (held) return held.state;
+  if (held) return ownEllipsis(held.state, ascii);
   return row.running === true && text(row.harness) ? row.harness : stateWord(row);
 }
 /** Which mark a row carries: the shared word, `held` for a home the kernel holds, and `shell`
@@ -89,7 +97,9 @@ function build(state, at) {
   // No view holds what was open (a machine that is no longer listed): the store shows the
   // switcher for it; nothing is drawn from this answer.
   const gone = panel !== null && !panel.workspace;
-  const instances = panel?.instances ?? [], deployments = panel?.deployments ?? [];
+  // A row whose retire this run sent and has not read since reads as retiring (#1247): every answer
+  // below, the acts included, is made from these rows.
+  const instances = retiringRows(panel?.instances ?? [], state.retiring), deployments = panel?.deployments ?? [];
   const multi = isMultiDeployment(deployments);
   const query = state.filter.query, filtering = query.trim() !== "";
   // The section (deployment) each row is drawn in, read from the shared split itself: the
@@ -198,7 +208,7 @@ function build(state, at) {
     empty: status === "pending" ? "reading" : !observed ? null : !instances.length ? "none" : !rows.length ? "nomatch" : null,
     // As wide as the widest word among all the rows of the list, so the column does not move
     // while the list scrolls.
-    wordWidth: Math.min(WORD_MAX, rows.reduce((widest, { row }) => Math.max(widest, textWidth(displayLine(wordOf(row)) ?? "")), 0)),
+    wordWidth: Math.min(WORD_MAX, rows.reduce((widest, { row }) => Math.max(widest, textWidth(displayLine(wordOf(row, state.ascii)) ?? "")), 0)),
   };
 }
 
@@ -229,7 +239,7 @@ function flatten(base, cols, ascii) {
  *  from read it again without asking the shared home again (its grouping walks the whole roster
  *  for each row). The state's values are never changed in place, so their identity says whether
  *  they changed. The flattening for the last width asked is kept beside it. */
-const MADE_FROM = ["entries", "remote", "memory", "notes", "rosterAt", "collecting", "ctxs", "open", "collapsed", "cli", "home"];
+const MADE_FROM = ["entries", "remote", "memory", "notes", "rosterAt", "collecting", "ctxs", "open", "collapsed", "cli", "home", "retiring", "ascii"];
 let kept = null;
 /** The roster of a state: the rows in drawn order and what the header says, for a list pane
  *  `cols` wide. Only `items` and `index` depend on the width; `rows`, the instances in drawn
@@ -253,7 +263,7 @@ function listRow(state, r, item) {
   const fold = disclosure(state, r, item);
   return {
     id: item.id, name: item.row.instance, depth: item.depth, selected: item.id === state.selected,
-    disclosure: fold, mark: markOf(item.row), word: wordOf(item.row),
+    disclosure: fold, mark: markOf(item.row), word: wordOf(item.row, state.ascii),
     waiting: waitingClaim(item.row, { stale: r.stale(item.row) }) !== null,
     below: fold === "closed" ? r.below.get(item.id)?.length ?? 0 : 0,
   };
@@ -389,7 +399,7 @@ function detailOf(state, r, item, now, acts) {
     const said = of ? deploymentState(of) : null;
     if (said && said.key !== "live") add("", said.detail, "wrap");
   }
-  add("state", heldHome(row)?.state ?? stateWord(row)); // the word of its list row, harness apart
+  add("state", heldHome(row) ? ownEllipsis(heldHome(row).state, state.ascii) : stateWord(row)); // the word of its list row, harness apart
   const held = acts.blocked ?? acts.limited;
   // The row's own text stands under its state, in the form that says who made it. Who made it is
   // the shared home's to say, in two ways, and the TUI writes no word and no sentence of its own
@@ -404,10 +414,12 @@ function detailOf(state, r, item, now, acts) {
   // in front never change the answer; a closing quotation mark can, for a text that ends in a
   // secret's name and its sign, and that text is then withheld.)
   add("", rowText(row, acts), "wrap");
-  // What holds the row, when that is a sentence of the shared home's and not the row's text: a
-  // reason with an `origin` is the row's text, and so is one whose sentence is that text. Either
-  // stands once, under the state.
-  if (held && held.origin === undefined && held.sentence !== row.runtimeError) add("held", held.sentence, "wrap");
+  // What holds the row, when that is not the row's text, said as `spoken` says it. A held home's
+  // reason (code `held`) is never the row's text: the shared home's sentence, or a failed retire's
+  // words of the kernel's (#1247), whose speaker `spoken` names. Any other reason is the row's text
+  // when it carries an `origin`, or when its sentence is that text: either stands once, under the state.
+  const own = held && (held.code === "held" || (held.origin === undefined && held.sentence !== row.runtimeError));
+  if (own) add("held", reasonSpoken(held), "wrap");
   const claim = waitingClaim(row, { stale: r.stale(row) });
   if (claim) {
     add("needs", `${waitingLabel(claim)}, ${waitedText(claim.since, now)}`);
@@ -511,8 +523,9 @@ export function model(state, { page, now, at, cols }) {
     openable: decision?.open === true && state.opening === null,
     onTerminal: row !== null && state.terminal !== null && state.terminal.id === instanceId(row),
     // The acts whose key opens a confirmation now, read from the same instanceActs answer: the
-    // footer names them. A key not named still answers, with the line that says why.
-    actable: row && state.opening === null ? ACT_VERBS.filter((verb) => actDecision(state, row, acts, verb).open) : [],
+    // footer names them. A key not named still answers, with the line that says why. A secondary
+    // act (Retire while a retire runs) opens on its key and is not named.
+    actable: row && state.opening === null ? ACT_VERBS.filter((verb) => !acts.acts.some((each) => each.verb === verb && each.secondary) && actDecision(state, row, acts, verb).open) : [],
     switcher: null,
   };
 }

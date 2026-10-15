@@ -5,8 +5,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLifecycleConfirmation, planView, outcomeView, unavailableView, applyRunningSentence } from '../packages/client/lifecycle-confirmation.mjs';
 import { createLifecycleBoundary } from '../packages/client/instance-lifecycle.mjs';
+import { createRetiresInFlight } from '../packages/client/retire-in-flight.mjs';
 import { clientTerms } from '../packages/client/client-terms.mjs';
-import { context, target, stopPlan, retirePlan, stopReceipt, envelope, options, deferred, tick } from '../packages/desktop/test/helpers/lifecycle-fixture.mjs';
+import { context, target, stopPlan, retirePlan, stopReceipt, retireReceipt, envelope, options, deferred, tick } from '../packages/desktop/test/helpers/lifecycle-fixture.mjs';
 
 const terms = clientTerms({ name: 'the test client', self: 'this test client', selfInitial: 'This test client', update: 'Update the test client.', thisMachine: 'This machine' });
 const reference = n => String(n).repeat(64);
@@ -206,4 +207,108 @@ test('when the ten-minute wait ends: the result is not confirmed, the stop is st
   assert.deepEqual(c.state(), { phase: 'settled', outcome: 'unknown', notice: null, offers: ['check-again', 'close'], running: { target, operation: 'stop', since: 1_700_000_000_000 } });
   assert.equal(c.checkAgain(), true); await tick();
   assert.equal(c.view().kind, 'unknown', 'still running: answered at once'); assert.equal(applies.length, 1, 'Check again ran no second command'); assert.equal(timers.length, 1, 'and started no second wait');
+});
+
+// #1247: the client's retires in flight (retire-in-flight.mjs). A retire's apply holds its row from the send until
+// the roster was read after the answer; a refusal lets it go at once; a stop holds nothing.
+/** A tracker that logs what it is told, over the real one: `log` is [['begin', instance] | ['settle', kind]]. */
+function logged() {
+  let reads = 0; const log = [], inner = createRetiresInFlight({ mark: () => reads });
+  const retires = { begin: t => { log.push(['begin', t.instance]); const hold = inner.begin(t); return { settle: kind => { log.push(['settle', kind]); hold.settle(kind); } }; } };
+  return { retires, log, holds: () => inner.holds(target), read: () => inner.landed(++reads) };
+}
+/** A retire confirmation whose apply answers through `gate` when it is given one. */
+function retireWith(tracker, answer) {
+  const sent = [];
+  const confirmation = createLifecycleConfirmation({ target, operation: 'retire', terms, retires: tracker.retires,
+    request: async body => { sent.push(body); return body.action === 'plan' ? { ...planned('retire', reference(sent.length)), options: body.options } : answer(body); } });
+  return { confirmation, sent };
+}
+
+test('a retire apply holds its row from the send, before the answer, and settles it with the answer\'s kind', async () => {
+  const tracker = logged(), gate = deferred(), { confirmation } = retireWith(tracker, () => gate.promise);
+  await tick();
+  assert.deepEqual(tracker.log, [], 'reading and reviewing a plan holds nothing');
+  assert.equal(confirmation.apply(), true);
+  assert.deepEqual(tracker.log, [['begin', 'dev-1']], 'begun with the send');
+  assert.equal(tracker.holds(), true, 'held while the request is still pending');
+  await tick(); assert.equal(confirmation.state().phase, 'applying'); assert.equal(tracker.holds(), true);
+  gate.resolve(unknown); await tick();
+  assert.deepEqual(tracker.log, [['begin', 'dev-1'], ['settle', 'unknown']]);
+  assert.equal(tracker.holds(), true, 'an answer that may have run holds the row until a read');
+  tracker.read(); assert.equal(tracker.holds(), false, 'the read after the answer lets it go');
+});
+
+test('a retire\'s outcome kinds reach the tracker: complete and invalid hold until a read, refused and stale let go at once', async () => {
+  const boundary = createLifecycleBoundary({ terms, invoke: async (_bin, args) => envelope(args.phase === 'plan' ? retirePlan() : retireReceipt(args)) });
+  const ctx = context(), tracker = logged();
+  const done = createLifecycleConfirmation({ target, operation: 'retire', terms, retires: tracker.retires, request: body => boundary(body, () => ctx) });
+  await tick(); done.apply(); await tick(); await tick();
+  assert.equal(done.state().outcome, 'complete'); assert.deepEqual(tracker.log.at(-1), ['settle', 'complete']); assert.equal(tracker.holds(), true);
+  tracker.read(); assert.equal(tracker.holds(), false);
+  const thrown = logged(), { confirmation: broken } = retireWith(thrown, async () => { throw new Error('the request failed'); });
+  await tick(); broken.apply(); await tick();
+  assert.equal(broken.state().outcome, 'invalid'); assert.deepEqual(thrown.log, [['begin', 'dev-1'], ['settle', 'invalid']]); assert.equal(thrown.holds(), true);
+  const refusing = logged(), { confirmation: refusal } = retireWith(refusing, () => refused('E_INSTANCE_RETIRING'));
+  await tick(); refusal.apply(); await tick();
+  assert.equal(refusal.state().outcome, 'refused'); assert.deepEqual(refusing.log, [['begin', 'dev-1'], ['settle', 'refused']]);
+  assert.equal(refusing.holds(), false, 'a refusal ran nothing: the row reads as the roster says at once');
+  const fresh = retirePlan(); fresh.planRevision = 'c'.repeat(24);
+  const staling = logged(), { confirmation: stale } = retireWith(staling, () => ({ ...planned('retire', reference(9), fresh), status: 'stale', reason: { code: 'E_PLAN_STALE' } }));
+  await tick(); stale.apply(); await tick();
+  assert.equal(stale.state().phase, 'review'); assert.deepEqual(staling.log, [['begin', 'dev-1'], ['settle', 'stale']]); assert.equal(staling.holds(), false);
+});
+
+test('a stop never begins a hold, and a retire\'s check again begins a new one for the same row', async () => {
+  const stopping = logged(), stop = createLifecycleConfirmation({ target, operation: 'stop', terms, retires: stopping.retires,
+    request: async body => body.action === 'plan' ? { ...planned('stop', reference(1)), options: body.options } : complete() });
+  await tick(); stop.apply(); await tick();
+  assert.equal(stop.state().outcome, 'complete'); assert.deepEqual(stopping.log, []); assert.equal(stopping.holds(), false);
+  const tracker = logged(), { confirmation } = retireWith(tracker, () => unknown);
+  await tick(); confirmation.apply(); await tick();
+  assert.equal(confirmation.checkAgain(), true); await tick();
+  assert.deepEqual(tracker.log, [['begin', 'dev-1'], ['settle', 'unknown'], ['begin', 'dev-1'], ['settle', 'unknown']]);
+});
+
+test('closing the dialog before the answer still settles the hold', async () => {
+  for (const [answer, held] of [[unknown, true], [refused('E_LIFECYCLE_BUSY'), false]]) {
+    const tracker = logged(), gate = deferred(), events = [];
+    const confirmation = createLifecycleConfirmation({ target, operation: 'retire', terms, retires: tracker.retires, onChange: event => events.push(event),
+      request: async body => body.action === 'plan' ? { ...planned('retire', reference(1)), options: body.options } : gate.promise });
+    await tick(); confirmation.apply(); confirmation.close();
+    const told = events.length;
+    gate.resolve(answer); await tick();
+    assert.deepEqual(tracker.log, [['begin', 'dev-1'], ['settle', answer.status]], answer.status);
+    assert.equal(tracker.holds(), held, `${answer.status}: settled though closed`);
+    assert.equal(events.length, told, `${answer.status}: the closed confirmation is told nothing`);
+  }
+});
+
+test('a second confirmation\'s refusal, while the first apply still runs, keeps the row held until the first is read after', async () => {
+  // One tracker for the client: the first dialog closed with its apply in flight, Retire opened again (secondary on a
+  // retiring row) and applied; the kernel refuses that second one (E_LIFECYCLE_BUSY), the first answering after it.
+  const tracker = logged(), first = deferred();
+  const one = createLifecycleConfirmation({ target, operation: 'retire', terms, retires: tracker.retires,
+    request: async body => body.action === 'plan' ? { ...planned('retire', reference(1)), options: body.options } : first.promise });
+  await tick(); one.apply(); one.close();
+  const two = createLifecycleConfirmation({ target, operation: 'retire', terms, retires: tracker.retires,
+    request: async body => body.action === 'plan' ? { ...planned('retire', reference(2)), options: body.options } : refused('E_LIFECYCLE_BUSY') });
+  await tick(); two.apply(); await tick();
+  assert.equal(two.state().outcome, 'refused');
+  assert.equal(tracker.holds(), true, 'the refusal lets go of its own apply only: the first still runs');
+  tracker.read(); assert.equal(tracker.holds(), true, 'a read while the first is unanswered lets nothing go');
+  first.resolve(unknown); await tick();
+  assert.equal(tracker.holds(), true, 'the first\'s answer holds the row until a read');
+  tracker.read(); assert.equal(tracker.holds(), false);
+  assert.deepEqual(tracker.log, [['begin', 'dev-1'], ['begin', 'dev-1'], ['settle', 'refused'], ['settle', 'unknown']]);
+});
+
+test('a tracker that throws changes nothing of the apply: the hold is a drawing aid only', async () => {
+  for (const retires of [{ begin: () => { throw new Error('begin'); } }, { begin: () => ({ settle: () => { throw new Error('settle'); } }) }, { begin: () => null }, {}]) {
+    const sent = [];
+    const c = createLifecycleConfirmation({ target, operation: 'retire', terms, retires,
+      request: async body => { sent.push(body); return body.action === 'plan' ? { ...planned('retire', reference(1)), options: body.options } : refused('E_INSTANCE_RETIRING'); } });
+    await tick(); assert.equal(c.apply(), true); await tick();
+    assert.equal(c.state().outcome, 'refused'); assert.equal(sent.filter(b => b.action === 'apply').length, 1);
+  }
 });

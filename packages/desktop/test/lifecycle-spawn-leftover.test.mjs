@@ -47,11 +47,11 @@ test("retire's own branch reports stay refused whole, spawnCompensation or not",
 });
 
 /** The dialog over the real server boundary, for a local workspace; `row` is the roster row it opens for. */
-function mount(t, { apply, row = instance }) {
+function mount(t, { apply, row = instance, retires = null }) {
   const dom = new JSDOM('<!doctype html><button id="opener">Actions</button>', { pretendToBeVisual: true });
   const doc = dom.window.document, ctx = context();
   const service = createLifecycleBoundary({ terms: DESKTOP_TERMS, invoke: async (_bin, a) => a.phase === 'plan' ? envelope(retirePlan()) : apply(a) });
-  const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => ctx) });
+  const dialog = createLifecycleDialog({ doc, request: (_ws, body) => service(body, () => ctx), retires });
   t.after(() => { dialog.dispose(); dom.window.close(); });
   return { doc, open: () => dialog.open({ operation: 'retire', instance: row, workspace: 'team' }),
     async retire() { dialog.open({ operation: 'retire', instance: row, workspace: 'team' }); await tick();
@@ -64,7 +64,8 @@ test('the retire plan of a quarantined row says the branch an interrupted spawn 
   const quarantined = await plan({ ...instance, rollbackIncomplete: true }).open();
   assert.ok(quarantined.includes('Branches and pull requests are not changed, except a branch an interrupted spawn left with no work, which is deleted.'), quarantined.join('|'));
   assert.equal(quarantined.includes('Branches and pull requests are not changed.'), false);
-  for (const row of [instance, { ...instance, spawnInProgress: true }, { ...instance, retirePending: true }, { ...instance, rollbackIncomplete: 'true' }]) {
+  for (const row of [instance, { ...instance, spawnInProgress: true }, { ...instance, retirePending: true },
+    { ...instance, retire: { state: 'interrupted', since: '2026-10-15T00:00:00Z', self: true } }, { ...instance, rollbackIncomplete: 'true' }]) {
     const lines = await plan(row).open();
     assert.ok(lines.includes('Branches and pull requests are not changed.'), lines.join('|'));
     assert.equal(lines.some(line => /interrupted spawn/.test(line)), false, lines.join('|'));
@@ -156,4 +157,13 @@ test('every other E_LIFECYCLE_BUSY keeps today\'s sentence', async t => {
   dialog.open({ operation: 'retire', instance: { ...instance, rollbackIncomplete: true }, workspace: 'team' }); await tick();
   doc.querySelector('.lifecycle-confirm').click(); await tick();
   assert.equal(doc.querySelector('.lifecycle-dialog [role=status]').textContent, lifecycleReason('E_LIFECYCLE_BUSY', DESKTOP_TERMS).message);
+});
+
+// #1247: the window's retires in flight learn of every retire this dialog applies, from before it is sent to its answer.
+test('a retire apply is begun on the window\'s tracker before it is sent, and settled with its answer', async t => {
+  const log = [];
+  const retires = { begin: target => { log.push(['begin', target.home, target.instance]); return { settle: kind => log.push(['settle', kind]) }; } };
+  const u = mount(t, { apply: a => { log.push(['sent']); return envelope(retireReceipt(a)); }, retires });
+  await u.retire(); await tick();
+  assert.deepEqual(log, [['begin', instance.home, instance.instance], ['sent'], ['settle', 'complete']]);
 });

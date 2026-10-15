@@ -51,8 +51,10 @@ const NO_FILTER = Object.freeze({ editing: false, query: "" });
  *  `starting`: id -> `{ verb, since }` of this run's starts and restarts whose child is still
  *  alive, whether or not the TUI still waits for its answer (the loop says when one is spawned and
  *  when it closes): no act opens on such a row.
- *  The roster is made from none of `opening`, `terminal`, `outcome`, `act`, `acted` and `starting`
- *  (lib/model.mjs MADE_FROM). */
+ *  `retiring`: the instanceIds of the rows whose retire this run sent and has not read since
+ *  (#1247), as lib/main.mjs's tracker says them (`{ retiring }`): they read as retiring. The roster
+ *  is made from it (lib/model.mjs MADE_FROM), and from none of `opening`, `terminal`, `outcome`,
+ *  `act`, `acted` and `starting`. */
 export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, detachKey = DETACH_KEY }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
@@ -63,7 +65,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
     switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
-    helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(),
+    helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
   });
 }
 
@@ -299,7 +301,8 @@ function switched(state, action, page) {
  *  and `room` the rows the other scrolling pane holds and shows, as the last frame drew them: the
  *  store keeps no size); a paste, `{ paste: <text> }`; or what the loop read:
  *  `{ id, entry, number }` (a served deployment's entry), `{ roster: { remote, memory, notes, at } }`
- *  (one outcome of the roster read), `{ collecting }`, `{ offered: { offered, limited } }` (the
+ *  (one outcome of the roster read), `{ collecting }`, `{ retiring: <Set of instanceIds> }` (this
+ *  run's retires in flight now), `{ offered: { offered, limited } }` (the
  *  deployments of `~/Agents` not served), `{ admitted: <deployment>, at }` and `{ refused: <path> }`
  *  (what a picked folder turned out to be).
  *  Opening an agent gives five more: `{ prepared: { id, error? } }` (the preflight of another
@@ -490,6 +493,8 @@ function reduced(state, event, keymap) {
   if (event.entry !== undefined) return took(state, event);
   if (event.roster !== undefined) return heard(state, event.roster);
   if (event.collecting !== undefined) return { state: event.collecting === state.collecting ? state : next(state, { collecting: event.collecting === true }), effect: null };
+  // The rows stay where they are: only what they read changes.
+  if (event.retiring !== undefined) return { state: next(state, { retiring: new Set(event.retiring) }), effect: null };
   if (event.offered !== undefined) return { state: next(state, { offered: Object.freeze({ offered: Object.freeze([...event.offered.offered]), limited: event.offered.limited === true }) }), effect: null };
   if (event.admitted !== undefined) return { state: admitted(state, event), effect: { refresh: { live: true } } };
   if (event.refused !== undefined) return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }) }), effect: null };

@@ -28,8 +28,10 @@
        Anything else — a deployment that left the view or that a rehome moved to an id the tab did not
        record, a deployment the read did not ask, a kept failure, an unreached server, a pending or
        empty answer — proves nothing.
-   Never evidence: the PTY ending (Stop ends it too), `running: false`, `retirePending`,
-   `rollbackIncomplete`, `addressable: false`, a reconnect failure, the Desktop's own retire receipt. */
+   Never evidence: the PTY ending (Stop ends it too), `running: false`, `retirePending`, the kernel's
+   `retire` in any state, `rollbackIncomplete`, `addressable: false`, a reconnect failure, the Desktop's own
+   retire receipt or its retire in flight (#1247: the shell judges the kernel's answer, never `shownRows`'
+   copies, so a row held as Retiring… only by this window closes nothing). */
 import { terminalKey } from "./instance-tree-view.mjs";
 import { keptFailure } from "../../client/deployment-facts.mjs";
 

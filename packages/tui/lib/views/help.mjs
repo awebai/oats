@@ -3,7 +3,7 @@
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list and the switcher draw (views/instances.mjs, views/switcher.mjs).
 import { keyLabel } from "../actions.mjs";
-import { lit } from "../term/text.mjs";
+import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
@@ -141,7 +141,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
       [marks.stopped, "stopped"],
       [marks.shell, "stopped, with a shell left in its terminal"],
       [marks.unknown, "state unknown"],
-      [marks.held, "held by a spawn or a retire that is not finished"],
+      [marks.held, ownEllipsis("held by a spawn or a retire: under way (Retiring\u2026), failed or not finished", ascii)],
       [`${marks.open} ${marks.closed}`, "has instances below it: shown, folded away"],
       [marks.waiting, "needs input"],
       [`${marks.waiting}N`, "N instances folded away below it need input"],

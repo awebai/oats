@@ -1400,7 +1400,20 @@ no control but one muted line with the blocked reason instead (nothing more for
 a row gone from its server, whose Work note already says it); the popover's **Restart with…** is the `restart` act and its
 **Start…**/**Terminal** the `start` act on a stopped row and `openAct` on any
 other, with the view's own conditions (a current roster, a well-formed address,
-the shell's handler) on top. The menu reports here, never with
+the shell's handler) on top. A held home (#802, #1247; `heldHome`) reads its state
+on the row in words ("Setting up worktree…", "Spawn didn't finish", "Retiring…",
+"Retire failed", "Retire didn't finish"), its muted hint when it has one (a retiring
+row has none), and its reason (`speaker-line.mjs` `heldLine`: a failed retire's
+recorded message after "OATS says:", filtered) as the row's description; the hover
+card and the popover say `heldStatus`. A `secondary` act (Retire on a retiring row)
+stays in the menu, enabled, but is never its default: no `autofocus`, the menu opens
+on itself (`tabIndex -1`) and the arrows reach it; the footer draws no control for it
+and its note says the limited reason (as it does for a reason carrying the kernel's
+words). The rows every surface draws pass `shell.mjs` `shownRows` first: this
+window's own retires in flight (`retire-in-flight.mjs`) read as retiring until a
+roster read after their answer that observed their deployment live
+([desktop-lifecycle-confirmations.md](../docs/desktop-lifecycle-confirmations.md#quarantined-and-spawning-rows)).
+The menu reports here, never with
 `alert`: an action that fails says "<Action> didn't finish for <name>." with its
 error in Details. While one of its actions runs, the menu trigger is
 `aria-disabled` (focus kept, as `markStaleControl`) and says "Waiting for

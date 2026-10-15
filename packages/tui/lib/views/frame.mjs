@@ -5,7 +5,7 @@
 // footer. The TUI's own words are lit(); everything else is shown(). Meaning never
 // rests on colour alone: what is dim or bold also says what it is in words or by a mark.
 import { keyLabel } from "../actions.mjs";
-import { lit, shown, shownLines } from "../term/text.mjs";
+import { lit, ownEllipsis, shown, shownLines } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { act } from "./act.mjs";
 import { detail } from "./detail.mjs";
@@ -83,7 +83,7 @@ export function partRows(parts, width, max, { ascii = false } = {}) {
   let glue = false;
   const put = (piece) => { if (glue && units.length) units.at(-1).push(piece); else units.push([piece]); glue = true; };
   for (const part of parts) {
-    if (part.own !== undefined) part.own.split(" ").forEach((word, i) => { if (i > 0) glue = false; if (word) put({ text: lit(word), width: word.length }); });
+    if (part.own !== undefined) ownEllipsis(part.own, ascii).split(" ").forEach((word, i) => { if (i > 0) glue = false; if (word) put({ text: lit(word), width: word.length }); });
     else { const m = measured(part.shown); if (m.width > 0) put(m); }
   }
   const unitWidth = (unit) => unit.reduce((sum, piece) => sum + piece.width, 0);
@@ -200,9 +200,10 @@ function countSpans(counts, cols) {
  *  go to the one open on the selected row; while another machine is asked first, the key that
  *  gives the open up stands in its place. With a terminal open, `zoom` and `close-terminal` follow
  *  it; then the acts whose key opens a confirmation for the selected row now (the model's
- *  `actable`). While the terminal has the focus the TUI reads no key but the back key, and the
- *  footer names that alone (tui.json's `open.detachKey`, text from outside). In a confirmation the
- *  buttons are on the screen, and the footer says how to work them: the close key with the close
+ *  `actable`, which leaves out a secondary act: Retire while a retire runs). While the terminal
+ *  has the focus the TUI reads no key but the back key, and the footer names that alone
+ *  (tui.json's `open.detachKey`, text from outside). In a confirmation the buttons are on the
+ *  screen, and the footer says how to work them: the close key with the close
  *  button's label, the keys that move, Enter, and `quit`. The switcher has a filter of its own,
  *  drawn as the list's. A key's label is the user's (views/help.mjs keyText); everything is placed
  *  by cells. */
