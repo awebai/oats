@@ -484,7 +484,7 @@ emptied environment. So:
 | a repository's own hook stopped running | it is not executable, it is `push-to-checkout` or `proc-receive` (step 6's `find`), or it sits outside the repository's hooks folder | `ls -l "$(git rev-parse --git-common-dir)/hooks"` shows what the global hook will run |
 | `gh: … needs the "<scope>" scope` | gh's token lacks that scope | `gh auth refresh --hostname github.com --scopes <scope>`, with `--insecure-storage` if step 3 chose the file; remove admin scopes afterwards |
 | repeated macOS keychain popups naming `git-credential-osxkeychain` | usually a process runs Git without `HOME` and falls back to the system `osxkeychain` helper; or a repository sets that helper itself | [The macOS credential helper](#the-macos-credential-helper) |
-| OATS reports `E_REMOTE_UNREADABLE` with the hint `keychain-non-interactive` | a session without a terminal on a Mac cannot open the keychain | `docs/servers.md`, “Git on a macOS host” |
+| From OATS 0.39.0, OATS reports `E_REMOTE_UNREADABLE` with the hint `keychain-non-interactive` | a session without a terminal on a Mac cannot open the keychain | `docs/servers.md`, “Git on a macOS host” |
 
 ## Never
 
