@@ -543,11 +543,21 @@ function toList(state) {
   return { state: s, effect };
 }
 
+/** As toList, then the Instances view itself: the switcher, while a workspace is open, closed onto
+ *  it. Where the terminal commands (open, previous, next, zoom, close) and the acts go, from
+ *  whatever was shown; with no workspace open the switcher stays. -> { state, effect } */
+function toInstances(state) {
+  const settled = toList(state), s = settled.state;
+  if (s.view !== "switcher" || s.open === null) return settled;
+  return { state: next(s, { view: "instances", back: "instances", switcher: Object.freeze({ ...s.switcher, line: null, refused: null }) }), effect: settled.effect };
+}
+
 /** What the leader's key does (LEADER's `does`), from wherever the focus was. From the terminal's
  *  focus the acts are the open terminal's instance's and give the focus back when their
  *  confirmation closes, zoom zooms it in or out, and the palette gives it back when it is closed;
  *  Up and Down go from the open terminal's instance. Every other key first gives the focus to
- *  the list, then does what its action does there. */
+ *  the list, then does what its action does there; the terminal's keys and the acts first go to
+ *  the Instances view, from any view (toInstances). */
 function led(state, does, event, keymap) {
   const stay = { state, effect: null }, t = state.terminal;
   const inTerminal = t?.focus === "terminal" && state.view === "instances";
@@ -556,7 +566,8 @@ function led(state, does, event, keymap) {
   if (does === "zoom" || does === "close-terminal") {
     if (t === null) return stay;
     if (does === "zoom" && inTerminal) return { state: terminalWith(state, { zoom: !t.zoom }), effect: null };
-    const settledState = toList(state);
+    const settledState = toInstances(state);
+    if (settledState.state.view !== "instances") return stay;
     const step = terminalKey(settledState.state, does);
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
@@ -565,7 +576,7 @@ function led(state, does, event, keymap) {
     const id = inTerminal ? t.id : state.selected;
     const row = id === null ? null : roster(state).instances.find((each) => instanceId(each) === id) ?? null;
     if (row === null || state.open === null) return stay;
-    const settledState = toList(state);
+    const settledState = toInstances(state);
     const step = actOn(settledState.state, row, does, inTerminal ? "terminal" : null);
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
@@ -577,20 +588,25 @@ function led(state, does, event, keymap) {
 
 /** The leader's Up and Down: the instance before or after the open terminal's (or the selection's,
  *  with none open) in the list as it is drawn, passing over the rows that cannot be opened, is
- *  selected and opened with the focus in it. At either end of the list nothing moves. */
+ *  selected and opened with the focus in it, in the Instances view from whatever was shown (a
+ *  confirmation is closed, the loop told). At either end of the list nothing moves, and nothing
+ *  is left. */
 function stepped(state, step, event) {
-  if (state.opening !== null || state.open === null || state.view !== "instances") return { state, effect: null };
+  const stay = { state, effect: null };
+  if (state.opening !== null || state.open === null) return stay;
+  const settled = toInstances(state), s = settled.state;
+  if (s.view !== "instances") return stay;
   const page = Math.max(1, Number.isInteger(event.page) ? event.page : 1);
-  const r = roster(state, undefined, Number.isInteger(event.cols) ? event.cols : undefined);
-  const from = indexOf(r, state.terminal !== null && r.index.has(state.terminal.id) ? state.terminal.id : state.selected);
-  if (from < 0) return { state, effect: null };
+  const r = roster(s, undefined, Number.isInteger(event.cols) ? event.cols : undefined);
+  const from = indexOf(r, s.terminal !== null && r.index.has(s.terminal.id) ? s.terminal.id : s.selected);
+  if (from < 0) return stay;
   for (let i = from + step; i >= 0 && i < r.items.length; i += step) {
     const item = r.items[i];
-    if (!isRow(item) || !openDecision(state, item.row, instanceActs(item.row)).open) continue;
-    const picked = toList(selectAt(state, r, i, page, step)).state;
-    return openAgent(picked, item.row);
+    if (!isRow(item) || !openDecision(s, item.row, instanceActs(item.row)).open) continue;
+    const opened = openAgent(selectAt(s, r, i, page, step), item.row);
+    return { state: opened.state, effect: both(settled.effect, opened.effect) };
   }
-  return { state, effect: null };
+  return stay;
 }
 
 /** THE PALETTE (docs/tui.md, "The palette"), opened: one input over the rows lib/model.mjs
@@ -638,24 +654,26 @@ function inPalette(state, event, keymap) {
   const item = list.items.find((each) => each.key === list.selected);
   return item ? ranFromPalette(state, item, event, keymap) : stay;
 }
-/** A palette row run: an instance is opened (its terminal swapped into the panel), a view or a
- *  command does what its action does, an act opens its confirmation on the palette's instance. */
+/** A palette row run, what was open under the palette settled first as the leader settles it (a
+ *  filter field kept, a confirmation closed, the loop told): an instance is opened (its terminal
+ *  swapped into the panel) and an act opens its confirmation on the palette's instance, both in
+ *  the Instances view whatever was shown (toInstances); a view or a command does what its action
+ *  does from the list (toList). */
 function ranFromPalette(state, item, event, keymap) {
-  const from = state.palette.from, shut = next(state, { palette: null });
-  if (item.kind === "instance") {
-    const row = roster(shut).instances.find((each) => instanceId(each) === item.id);
-    if (!row) return { state: shut, effect: null };
+  const from = state.palette.from;
+  const settled = item.kind === "instance" || item.kind === "act" ? toInstances(state) : toList(state), shut = settled.state;
+  const then = (step) => ({ state: step.state, effect: both(settled.effect, step.effect) });
+  if (item.kind === "instance" || item.kind === "act") {
+    const row = shut.view === "instances" ? roster(shut).instances.find((each) => instanceId(each) === item.id) : undefined;
+    if (!row) return settled;
+    if (item.kind === "act") return then(actOn(shut, row, item.does, from === "terminal" ? "terminal" : null));
     const r = roster(shut, undefined, Number.isInteger(event.cols) ? event.cols : undefined);
     const page = Math.max(1, Number.isInteger(event.page) ? event.page : 1);
     const at = indexOf(r, item.id);
-    return openAgent(at < 0 ? shut : selectAt(shut, r, at, page), row);
-  }
-  if (item.kind === "act") {
-    const row = roster(shut).instances.find((each) => instanceId(each) === item.id);
-    return row ? actOn(shut, row, item.does, from === "terminal" ? "terminal" : null) : { state: shut, effect: null };
+    return then(openAgent(at < 0 ? shut : selectAt(shut, r, at, page), row));
   }
   const { key, text, ...rest } = event;
-  return reduced(shut, { ...rest, action: item.does }, keymap);
+  return then(reduced(shut, { ...rest, action: item.does }, keymap));
 }
 
 function reduced(state, event, keymap) {

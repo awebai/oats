@@ -550,6 +550,11 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
   bracketed paste is pasted text.
 - **In the list no leader is needed:** the plain keys work as they always
   have, and the leader works there too.
+- **What was open under it is settled first,** from whatever view: a
+  filter field keeps its filter, as `Enter` does, and a confirmation
+  closes. `Up`, `Down`, `z`, `w` and the acts then go to the Instances view,
+  from Souls, Capabilities, the help or the switcher too; with no workspace
+  open they do nothing.
 - **The table is fixed** in this version: `keys` in `tui.json` rebinds the
   plain keys, and `open.detachKey` the leader.
 
@@ -571,9 +576,10 @@ is open no terminal is drawn and the TUI reads the keys.
   `Backspace` removes a character, and a paste adds its first line.
   `Up`/`Down` (and `PageUp`/`PageDown`) move, `Enter` runs the selected
   row, `Esc` closes it.
-- **Running a row:** an instance opens its terminal, the focus in it, in
-  place of the open one; a view shows it; an act opens its confirmation;
-  a command does what its key does.
+- **Running a row** settles what was open under the palette, as the leader
+  does: an instance opens its terminal in the Instances view, the focus in
+  it, in place of the open one; an act opens its confirmation; a view shows
+  it; a command does what its key does.
 - **An `Enter` in the same read as the palette's opening runs nothing**, so
   a paste cannot open it and run a row.
 - Closed, it gives the focus back to the terminal it was opened from.

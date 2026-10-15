@@ -420,3 +420,98 @@ test("with no workspace open, 2 and 3, plain or after the leader, show Souls and
   const typing = keys(none, "/", "a").state;
   assert.deepEqual([leaderThen(typing, "2", AT).state.view, leaderThen(typing, "2", AT).state.switcher.query, leaderThen(typing, "2", AT).state.switcher.editing], ["souls", "a", false]);
 });
+
+// ── From every view: the terminal's commands go to the Instances view ─────────────────────────────
+
+/** What can be shown under a command, each reached from the list of THREE with dev-a selected and
+ *  no terminal open: the views of this machine, the help, the switcher, a confirmation, a filter
+ *  field being typed in. */
+const SHOWN = Object.freeze([
+  ["Souls", (s) => key(s, "2").state],
+  ["Capabilities", (s) => key(s, "3").state],
+  ["the help", (s) => key(s, "?").state],
+  ["the switcher", (s) => key(s, "w").state],
+  ["a restart confirmation", (s) => key(s, "R").state],
+  ["the filter field", (s) => keys(s, "/", "d").state],
+]);
+/** The palette opened by the leader, `query` typed, its first row checked to be `label`'s, then
+ *  Enter in a later read. -> the step */
+function runFromPalette(state, query, label) {
+  let s = key(leader(state).state, "k").state;
+  for (const ch of query) s = key(s, ch).state;
+  assert.equal(paletteItems(s).items[0]?.label ?? paletteItems(s).items[0]?.name, label, `${query}: the first row`);
+  return key(s, "enter");
+}
+/** What a confirmation that was open under a command is told: closed (the loop's `dismiss`). */
+const dismissed = (before, effect) => (before.act ? assert.equal(effect?.dismiss, before.act.n, "the confirmation is closed, the loop told") : undefined);
+
+test("an instance run from the palette opens in the Instances view with the focus in its terminal, from any view: Souls, Capabilities, the help, the switcher, a confirmation (closed, the loop told) and a filter field (kept, as Enter keeps it)", () => {
+  for (const [what, reach] of SHOWN) {
+    const before = reach(on(THREE(), "dev-a"));
+    const step = runFromPalette(before, "dev-c", "dev-c");
+    assert.equal(step.effect?.open?.id, idOf(before, "dev-c"), what);
+    assert.deepEqual([step.state.view, step.state.palette, step.state.act, step.state.terminal?.focus, step.state.filter.editing], ["instances", null, null, "terminal", false], what);
+    assert.equal(step.state.selected, idOf(before, "dev-c"), `${what}: its row selected`);
+    dismissed(before, step.effect);
+  }
+});
+
+test("an act run from the palette opens its confirmation from any view, a confirmation that was open closed first and the loop told; Esc then gives the Instances view", () => {
+  for (const [what, reach] of SHOWN) {
+    const before = reach(on(THREE(), "dev-a"));
+    const step = runFromPalette(before, "stop", "Stop");
+    assert.deepEqual([step.state.view, step.state.act?.verb, step.state.act?.id, step.state.palette, step.state.filter.editing], ["act", "stop", idOf(before, "dev-a"), null, false], what);
+    assert.deepEqual(step.effect?.act?.verb, "stop", what);
+    dismissed(before, step.effect);
+    assert.equal(key(step.state, "escape").state.view, "instances", `${what}: Esc`);
+  }
+});
+
+test("a view run from the palette over a confirmation closes it (the loop told), and over a filter field keeps the filter and ends the typing, so no field's keys stand in the view's footer", () => {
+  const confirming = key(on(THREE(), "dev-a"), "R").state;
+  const fromAct = runFromPalette(confirming, "souls", "Souls");
+  assert.deepEqual([fromAct.state.view, fromAct.state.act, fromAct.effect], ["souls", null, { dismiss: confirming.act.n }]);
+  const typing = keys(on(THREE(), "dev-a"), "/", "d", "e", "v").state;
+  const fromField = runFromPalette(typing, "souls", "Souls");
+  assert.deepEqual([fromField.state.view, fromField.state.filter.editing, fromField.state.filter.query], ["souls", false, "dev"]);
+});
+
+test("the leader then Down or Up opens the next or previous instance in the Instances view from any view, a palette over it too; at the end of the list nothing moves and the view stays", () => {
+  for (const [what, reach] of SHOWN) {
+    const before = reach(on(THREE(), "dev-a"));
+    for (const [how, from] of [["", before], [" under the palette", key(leader(before).state, "k").state]]) {
+      const step = key(leader(from).state, "down");
+      assert.equal(step.effect?.open?.id, idOf(before, "dev-c"), `${what}${how}`);
+      assert.deepEqual([step.state.view, step.state.palette, step.state.act, step.state.terminal?.focus, step.state.filter.editing], ["instances", null, null, "terminal", false], `${what}${how}`);
+      dismissed(before, step.effect);
+    }
+    const atEnd = reach(on(THREE(), "dev-c"));
+    const still = key(leader(atEnd).state, "down");
+    assert.deepEqual([still.effect, still.state.view], [null, atEnd.view], `${what}: dev-b, the last row, cannot be opened, so nothing moves`);
+  }
+  const top = key(leader(key(on(THREE(), "dev-a"), "2").state).state, "up");
+  assert.deepEqual([top.effect, top.state.view], [null, "souls"], "Up from the first row: nothing moves");
+});
+
+test("with a terminal open, the leader then z zooms it and the leader then w closes it from any view: the Instances view comes back, a confirmation closed and the loop told", () => {
+  for (const [what, reach] of SHOWN) {
+    const listed = twice(opened(THREE(), "dev-a")).state;
+    assert.equal(listed.terminal.focus, "list");
+    const before = reach(listed);
+    const zoomed = key(leader(before).state, "z");
+    assert.deepEqual([zoomed.state.view, zoomed.state.terminal?.focus, zoomed.state.terminal?.zoom, zoomed.state.act], ["instances", "terminal", true, null], `${what}: z`);
+    dismissed(before, zoomed.effect);
+    const closed = key(leader(before).state, "w");
+    assert.deepEqual([closed.state.view, closed.state.terminal, closed.effect?.close], ["instances", null, idOf(before, "dev-a")], `${what}: w`);
+    dismissed(before, closed.effect);
+  }
+});
+
+test("with no workspace open the leader's terminal commands do nothing from the switcher: Down, Up, z and w", () => {
+  const none = stateOf(null, { deployment: null, cli: ACTS_CLI });
+  assert.equal(none.view, "switcher");
+  for (const k of ["down", "up", "z", "w"]) {
+    const step = key(leader(none).state, k);
+    assert.deepEqual([step.state.view, step.effect], ["switcher", null], k);
+  }
+});
