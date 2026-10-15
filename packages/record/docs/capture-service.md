@@ -530,6 +530,26 @@ its capture-state transaction remains separate from the index commit. A failure
 between the two commits is recovered through journal version/epoch validation,
 not by assuming a cross-database atomic transaction.
 
+`capture-index-work.mjs` joins a selected index group to durable admission,
+per-stage scheduling position and run accounting. Its caller supplies a finite,
+fairly ordered union of live and indexed streams; this bridge neither builds
+that inventory nor certifies sweep completion. Failure attribution starts at
+the saved validation boundary when recovery is unfinished, otherwise at the
+qualified index cursor. Changed journal generations start validation at zero.
+Only the locked group validates and consumes those cursors.
+
+Index rows commit before their confirmed `turnsIndexed` count joins the
+capture-state commit. If that later transaction fails, the durable admission
+remains for reconciliation while the index rows can survive. Resuming an
+already indexed unit does not reconstruct its lost run count. Validation or
+indexed-byte advancement can update progress; a no-op visit does not. Due
+index retries are single-stream admissions; only completion of the current
+validated journal resolves them. Partial validation/indexing and reset requests
+retain failure evidence, and other-stage retries return to the scheduler.
+Reset detection always defers: the owning scheduler must reserve a fresh full
+worker allowance for reset and restart the union sweep afterward. Source,
+discovery, cleanup and final receipt routing remain separate responsibilities.
+
 ## First-upgrade cost
 
 The first capture after upgrade must reconcile existing journals and rebuild the
