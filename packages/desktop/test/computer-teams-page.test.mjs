@@ -153,3 +153,61 @@ test('the page\'s empty states, and a team that leaves the document or a dispose
   u.teams.dispose();
   assert.deepEqual(u.events, ['back', 'gone'], 'the page\'s owner went away');
 });
+
+test('a failed read shows on the open page, in its card, as the board says it; the add form\'s errors stay on the board', async t => {
+  let fail = false;
+  const u = await mount(t, { answer: () => { if (fail) throw Object.assign(new Error('oats teams timed out.'), { code: 'E_CLI_TIMEOUT' }); return document(); } });
+  u.show('eng');
+  assert.equal(u.p('.ct-error'), null);
+  fail = true; await u.teams.refresh();
+  const error = u.p('.ct-page-card > .ct-error'), onBoard = u.board('[data-section=local] .ct-error');
+  assert.ok(error, 'in the page\'s card'); assert.equal(error.getAttribute('role'), 'alert');
+  assert.equal(error.querySelector('p').textContent, 'oats teams timed out.'); assert.equal(error.querySelector('pre').textContent, 'E_CLI_TIMEOUT');
+  assert.equal(error.textContent, onBoard.textContent, 'the board\'s words');
+  assert.equal(u.p('.ct-page-card').lastElementChild, error, 'after the card\'s confirmation and row error');
+  fail = false; await u.teams.refresh();
+  assert.equal(u.p('.ct-error'), null, 'a read that answers clears it');
+  // An answer with no teams: the document could not be read.
+  let empty = false;
+  const unreadable = await mount(t, { answer: () => empty ? {} : document() });
+  unreadable.show('eng'); empty = true; await unreadable.teams.refresh();
+  assert.equal(unreadable.p('.ct-page-card > .ct-error p').textContent, 'The teams on this computer could not be read.');
+  // The add form's own error is the board's alone.
+  u.teams.hideTeam(); u.board('.ct-add').click(); await tick();
+  u.board('.ct-form').dispatchEvent(new u.dom.window.Event('submit', { cancelable: true })); await tick();
+  assert.equal(u.board('[data-section=local] .ct-error p').textContent, 'A local team needs a label and its provider team id.');
+  u.show('eng');
+  assert.equal(u.p('.ct-error'), null);
+});
+
+test('closing the page ends a Make default confirmation opened on it, and the board redraws again', async t => {
+  const u = await mount(t);
+  u.show('eng');
+  u.p('.ct-page-card .ct-head .ct-actions button').click(); await tick();
+  assert.ok(u.p('.ct-confirm')); assert.ok(u.board('[data-team="eng"] .ct-confirm'), 'the board\'s card holds it too, under the barrier');
+  u.teams.hideTeam();
+  assert.equal(u.board('.ct-confirm'), null, 'off the board\'s card');
+  await u.roster({ members: [member('release-manager-1')], servers: [], notReached: [] });
+  assert.equal(u.board('[data-team="eng"] .ct-sum').textContent, '1 of your instances', 'the barrier is released: the roster change redraws the board');
+  // Its team leaving the document closes the page the same way.
+  let gone = false;
+  const v = await mount(t, { answer: () => { const d = document(); if (gone) d.teams = d.teams.filter(x => x.label !== 'eng'); return d; } });
+  v.show('eng');
+  v.p('.ct-page-card .ct-head .ct-actions button').click(); await tick();
+  gone = true; await v.teams.refresh();
+  assert.deepEqual(v.events, ['gone']); assert.equal(v.board('.ct-confirm'), null);
+  await v.roster({ members: [member('release-manager-1', { team: 'home:acme.aweb.ai' })], servers: [], notReached: [] });
+  assert.equal(v.board('[data-team="home"] .ct-sum').textContent, '1 of your instances', 'the board redraws');
+});
+
+test('a board card\'s problem boxes sit above its stretched name: their text is selected, not a click that opens', async t => {
+  const u = await mount(t, { answer: () => { const d = document(); d.problems = [{ label: 'eng', severity: 'warning', code: 'team-unused', message: 'No soul may join eng.', fix: 'Add eng to a soul\'s teams in oats-workspace.yaml.' }]; return d; } });
+  const card = u.board('[data-team="eng"]'), warn = card.querySelector(':scope > .ct-warn');
+  assert.equal(warn.querySelector('.ct-fix').textContent, 'Add eng to a soul\'s teams in oats-workspace.yaml.');
+  warn.click(); warn.querySelector('.ct-fix').click();
+  assert.deepEqual(u.opened, [], 'a click on the box opens nothing');
+  card.querySelector('.ct-open').click(); assert.deepEqual(u.opened, ['eng'], 'the name still does');
+  const rule = computerTeamsCSS.match(/^\.computer-teams \.ct-card\.ct-openable > :is\(\.ct-blocking, \.ct-warn\) \{([^}]*)\}/m);
+  assert.ok(rule, 'the boxes are raised'); assert.match(rule[1], /position:relative; z-index:1; cursor:auto/);
+  assert.deepEqual([...card.querySelectorAll('button:not(:disabled), a[href], [tabindex]')].map(b => b.className), ['ct-open', 'ct-act'], 'still the name, then Make default: no new Tab stop');
+});

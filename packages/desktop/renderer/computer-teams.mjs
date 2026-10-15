@@ -75,6 +75,8 @@ export const computerTeamsCSS = `
 .computer-teams .ct-card.ct-openable { position:relative; cursor:pointer; }
 .computer-teams .ct-card.ct-openable:hover { border-color:var(--tree-line); }
 .computer-teams .ct-card.ct-openable :is(.ct-actions, .ct-confirm, .ct-error, a[href]) { position:relative; z-index:1; }
+/* So do its problem boxes: their text (a fix to copy) is selected, not a click that opens the team. */
+.computer-teams .ct-card.ct-openable > :is(.ct-blocking, .ct-warn) { position:relative; z-index:1; cursor:auto; }
 .computer-teams .ct-head { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 20px; align-items:start; padding:16px 20px 0; min-width:0; }
 .computer-teams .ct-id { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; min-width:0; }
 .computer-teams .ct-name-h { margin:0; min-width:0; font:inherit; }
@@ -523,7 +525,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       const next = await request(action);
       if (disposed || ticket !== serial) return;
       pending = false;
-      if (!next || !Array.isArray(next.teams)) { cardError = { message: 'The teams on this computer could not be read.' }; render(); return; }
+      if (!next || !Array.isArray(next.teams)) { cardError = { message: 'The teams on this computer could not be read.', read: true }; render(); return; }
       current = next;
       if (action.action === 'add') { adding = false; Object.assign(draft, { label: '', team: '', description: '' }); }
       if (action.action === 'default') confirming = null;
@@ -533,7 +535,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       if (disposed || ticket !== serial) return;
       pending = false;
       const shown = { code: text(error?.code), message: text(error?.message) || 'The change was refused.' };
-      if (label && action.action !== 'add') rowError = { label, ...shown }; else cardError = shown;
+      if (label && action.action !== 'add') rowError = { label, ...shown }; else cardError = { ...shown, read: action.action === 'list' };
       render();
     }
   }
@@ -674,6 +676,8 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
       confirm.append(buttons); card.append(confirm);
     }
     if (rowError?.label === team.label) card.append(problemBox(rowError));
+    // A failed read: the page's facts may be stale, so its card says so as the board does (not the add form's errors).
+    if (onPage && cardError?.read) card.append(problemBox(cardError));
     if (!onPage) {
       // The foot: your instances on it (only once the members are known, and only a team with an id can have any).
       const foot = el(doc, 'div', null, 'ct-foot'), sum = el(doc, 'span', null, 'ct-sum');
@@ -902,7 +906,7 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     const members = membersOf(team);
     return JSON.stringify([team, list(current.problems).filter(p => p?.label === team.label), teamAudience(current, team.label), whoMayJoin(current, team.label),
       team.from === 'local' ? teamInUse(current, team.label) : null, localAllowed(current), current.defaultTeam ?? null, pending, confirming === team.label,
-      rowError?.label === team.label ? rowError : null, !!roster, members, roster ? memberGroups(members, roster.servers).map(g => [g.key, g.machine, g.path, g.reached, g.error]) : null]);
+      rowError?.label === team.label ? rowError : null, cardError?.read ? cardError : null, !!roster, members, roster ? memberGroups(members, roster.servers).map(g => [g.key, g.machine, g.path, g.reached, g.error]) : null]);
   }
   function paintTeam() {
     if (!shown || !current) return;
@@ -934,7 +938,15 @@ export function createComputerTeams(doc, { request, onDocument = null, readMembe
     return true;
   }
   function hideTeam() { forget(); }
-  function forget() { shown?.scope.dispose(); shown = null; }
+  /** The page closes (Back, Esc, a tab change, its team gone, a new page, the owner gone): a Make default
+   * confirmation it held ends with it, which releases the board's redraw barrier and takes it off the board's card. */
+  function forget() {
+    if (!shown) return;
+    shown.scope.dispose(); shown = null;
+    if (confirming === null) return;
+    confirming = null;
+    if (!disposed && current) paintBoard();
+  }
 
   /** The members changed: redraw only when who is in a team (or their state) changed, and never under an
    * open form, a pending confirmation or the keyboard (a redraw would drop what is typed or focused). */
