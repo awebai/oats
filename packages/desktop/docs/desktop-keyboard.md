@@ -114,7 +114,7 @@ Show instance panel and the closed sidebar and panel).
 | New window, with no workspace (`app.newWindow`) | ⌘⇧N (File → New Window, the menu's accelerator) | none (the palette's **Window: new window**) | – |
 | Cycle the app's windows | ⌘\` (macOS's own, Window menu) | none (the window manager's) | – |
 
-Changed after 0.56.0 on Linux/Windows: the palette is Ctrl+Shift+K (was
+Changed in 0.57.0 on Linux/Windows: the palette is Ctrl+Shift+K (was
 Ctrl+Shift+P), and Quick Open is Ctrl+Shift+P (was Ctrl+P) and now works from
 a terminal. Ctrl+Shift+P, which opened the palette since 0.30.3, opens Quick
 Open. A binding you set yourself is kept as it is; when it is a chord a

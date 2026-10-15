@@ -20,7 +20,7 @@ members:
 # (package-catalog.json in this repository). Declaring a package here is the
 # decision to trust it; oats-lock.json records its commit and integrity.
 packages:
-  oats.framework: v1.10.1
+  oats.framework: v1.10.2
   oats.okf: v5.2.0
   oats.aweb: v1.27.3
   oats.jira: v1.0.1
