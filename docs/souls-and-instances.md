@@ -1643,7 +1643,7 @@ choice (`--work attached`) for service agents such as reviewers.
 
 The kernel derives the owner and the repository from the tree named on the
 command line, so the spawn needs no `--repo` and no relation flag (an extra
-tree from 0.56.0, #958):
+tree from 0.57.0, #958):
 
 ```text
 oats spawn <soul> --work attached --work-dir <home>/work

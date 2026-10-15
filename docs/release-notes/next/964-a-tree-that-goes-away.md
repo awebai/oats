@@ -2,7 +2,7 @@
 
 - **A tree that goes away says what it leaves its attached instances with
   (#964).** An instance can be attached to an extra tree of its owner as to
-  the owner's `work/` (#958). Three things change for such a tree:
+  the owner's `work/` (#958). Four things change for such a tree:
 
   - **A retire that re-homes an extra tree repoints its attached children**
     to the tree's new path, as it does for `work/`: only the recorded
