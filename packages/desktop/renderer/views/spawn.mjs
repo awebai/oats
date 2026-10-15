@@ -20,7 +20,7 @@ import { SPAWN_DIALOG_KEYS, SPAWN_JUMPS, registerSpawnDialogKeys, ariaKeyShortcu
 import { pendingPlacement } from "../spawn-jobs.mjs";
 import { spawnProblem, catalogProblem } from "../../../client/spawn-messages.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
-import { shownLaunch, launchHarnessName } from "../launch-view.mjs";
+import { shownLaunch, launchHarnessName } from "../../../client/launch-view.mjs";
 import { harnessOf } from "../../../client/harness-names.mjs";
 import { memberState } from "../workspace-catalog.mjs";
 import { iconElement } from "../shell-icons.mjs";

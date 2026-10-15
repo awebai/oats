@@ -32,7 +32,7 @@ import { relayedFailure, serverLabel } from '../../client/remote-address.mjs';
 import { ageText } from './age-text.mjs';
 import { pageBar, pageCard, pageSection, isCoreCapability, compositionEntries, coreEntries, coreNote, whyElement, renderSoulCore, desktopFacts } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
-import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
+import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from '../../client/launch-view.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { createSoulInstructions } from './soul-instructions.mjs';

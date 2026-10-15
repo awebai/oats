@@ -9,7 +9,7 @@ import { JSDOM } from 'jsdom';
 import { createSoulInspector, LAUNCH_REFUSED_HERE } from '../renderer/soul-inspector.mjs';
 import { setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
-import { LAUNCH_FROM, launchFromText, launchModelText, declaredText, launchAtText, shownLaunch } from '../renderer/launch-view.mjs';
+import { LAUNCH_FROM, launchFromText, launchModelText, declaredText, launchAtText, shownLaunch } from '../../client/launch-view.mjs';
 import { launchHint } from '../renderer/spawn-dialog.mjs';
 import { spawnProblem } from '../../client/spawn-messages.mjs';
 import { previewData } from '../../client/spawn-preview-contract.mjs';
