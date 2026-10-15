@@ -11,11 +11,11 @@ import { loadIgnore } from "./ignore.mjs";
 
 export function captureSourceWork(store, state, queue, run, start, {
   limit = 128, maxRecords = 2000, maxBytes = 8388608, ignore = loadIgnore(store.root),
-  now = Date.now(), work, indexInventory = null, allowRetry = true, retryFilter,
+  now = Date.now(), work, indexInventory = null, allowRetry = true, retryFilter, inputReady = () => true,
 } = {}) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 128 ||
       !Number.isSafeInteger(maxRecords) || maxRecords < limit || maxRecords > 2000 ||
-      !Number.isSafeInteger(maxBytes) || maxBytes < limit || maxBytes > 8388608)
+      !Number.isSafeInteger(maxBytes) || maxBytes < limit || maxBytes > 8388608 || typeof inputReady !== "function")
     throw new Error("invalid capture source work allowance");
   if (indexInventory !== null && (indexInventory.state !== state || typeof indexInventory.include !== "function"))
     throw new Error("capture source index inventory must belong to the current state");
@@ -24,7 +24,7 @@ export function captureSourceWork(store, state, queue, run, start, {
   const inputs = new Map();
   function* candidates() {
     for (const input of queue.ready({ stopped, work })) {
-      if (readCaptureRetry(state, input.stream) || inputs.has(input.stream)) continue;
+      if (readCaptureRetry(state, input.stream) || inputs.has(input.stream) || !inputReady(input)) continue;
       // At most one file from a shared stream belongs to an admission. The
       // durable queue position rotates AW accounts between such admissions.
       inputs.set(input.stream, input);
@@ -39,7 +39,7 @@ export function captureSourceWork(store, state, queue, run, start, {
   if (selection.stage !== "capture") return { selected: 0, deferred: selection, cleanup: [] };
   if (selection.retry) {
     const input = queue.forStream(selection.members[0].stream);
-    if (!input) return { selected: 0, deferred: selection, cleanup: [] };
+    if (!input || !inputReady(input)) return { selected: 0, deferred: selection, cleanup: [] };
     inputs.set(input.stream, input);
     selection.next = input.next;
   }

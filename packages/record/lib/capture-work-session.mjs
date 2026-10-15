@@ -63,9 +63,23 @@ export class CaptureWorkSession {
     this.reset = new CaptureIndexReset(this.index, this.inventory);
   }
 
+  sourceReady(input) {
+    if (!input) return false;
+    if (input.source === "aw") return true;
+    // Native recovery keys bind the exact input, not every source sharing a
+    // stream. A deleting allocation is a dependency, even if its directory is
+    // already gone: admitting cleanup-only capture would starve its due retry.
+    const claim = this.state.get("recovery-allocation", `${input.stream}:${input.path}`);
+    if (claim?.phase !== "deleting") return true;
+    if (claim.stream !== input.stream || !/^[a-f0-9]{32}$/.test(claim.id))
+      throw new Error("invalid native cleanup dependency");
+    return false;
+  }
+
   process(stage, allowRetry) {
     const options = { ...this.unit, now: this.now(), allowRetry,
-      retryFilter: retry => retry.stage === stage && (stage !== "capture" || this.queue.forStream(retry.stream) !== null) };
+      inputReady: input => this.sourceReady(input),
+      retryFilter: retry => retry.stage === stage && (stage !== "capture" || this.sourceReady(this.queue.forStream(retry.stream))) };
     const result = stage === "capture"
       ? captureSourceWork(this.store, this.state, this.queue, this.run, this.start, { ...options, indexInventory: this.inventory })
       : this.outcomes.advance(this.run, this.start, options);
@@ -115,7 +129,7 @@ export class CaptureWorkSession {
       return { waitingForDiscovery: true, discovery };
     const selection = selectCaptureWork(this.store, this.state, [], { runId: this.run.id, now: this.now(), stopped,
       retryFilter: retry => retry.stage === "index" ? !blockedIndex :
-        retry.stage === "capture" && this.queue.forStream(retry.stream) !== null });
+        retry.stage === "capture" && this.sourceReady(this.queue.forStream(retry.stream)) });
     if (selection) return { ...this.process(selection.stage, true), discovery };
     const cleanupRetry = this.clean(true);
     if (cleanupRetry.selected || !cleanupRetry.complete) return { stage: "cleanup", ...cleanupRetry, discovery };

@@ -15,7 +15,7 @@ import { finishTurn } from '../lib/canonical.mjs';
 const url = name => new URL(`../lib/${name}.mjs`, import.meta.url).href;
 const now = Date.parse('2026-01-01T00:00:00.000Z');
 const stream = 'fixture~cc.finished';
-function fixture(t, { healthy = false } = {}) {
+function fixture(t, { healthy = false, dependentNative = false } = {}) {
   const base = fs.mkdtempSync(join(tmpdir(), 'capture-cleanup-queue-')), root = join(base, 'record');
   const workerPath = join(base, 'worker.mjs'), env = { HOME: base, TMPDIR: base, XDG_CACHE_HOME: base, PATH: process.env.PATH };
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -23,7 +23,10 @@ function fixture(t, { healthy = false } = {}) {
   const queue = new CaptureSourceQueue(state, { owner: 'fixture', selection: 'fixture' });
   const path = join(base, 'mail.jsonl');
   fs.writeFileSync(path, [1, 2].map(n => JSON.stringify({ ts: '2026-01-01T00:00:00Z', ch: 'mail', dir: 'recv', from: 'peer', body: String(n) }) + '\n').join(''));
-  queue.add(healthy ? [{ source: 'aw', path, stream: 'fixture~aw' }] : [], null, { complete: true });
+  const nativePath = join(base, 'native.jsonl'), nativeStream = 'fixture~cc.native', nativeKey = `${nativeStream}:${nativePath}`;
+  fs.writeFileSync(nativePath, JSON.stringify({ timestamp: '2026-01-01T00:00:00Z', text: 'dependent native turn' }) + '\n');
+  queue.add([...(dependentNative ? [{ source: 'cc', path: nativePath, stream: nativeStream }] : []),
+    ...(healthy ? [{ source: 'aw', path, stream: 'fixture~aw' }] : [])], null, { complete: true });
   state.close();
   fs.writeFileSync(workerPath, `
     import fs from 'node:fs';import {join} from 'node:path';import {syncBuiltinESMExports} from 'node:module';
@@ -38,27 +41,37 @@ function fixture(t, { healthy = false } = {}) {
       const {root,options}=start;
       if(options.seed){
         const state=new DerivedState(root),store=new RecordStore(root,{owner:'fixture'});
+        const stream=options.dependency?.stream??${JSON.stringify(stream)};
         try{
-          withCaptureGroup(store,[${JSON.stringify(stream)}],()=>{
+          withCaptureGroup(store,[stream],()=>{
             state.db.exec('CREATE TABLE recovery_chunks (allocation TEXT, offset INTEGER, length INTEGER, hash TEXT, PRIMARY KEY(allocation,offset));'+
               'CREATE TABLE transcript_prefix (job TEXT, line INTEGER, hash TEXT, PRIMARY KEY(job,line))');
             for(const key of options.seed){
-              const allocation=createRetainedCaptureScratch(store,${JSON.stringify(stream)},key,start);
+              const allocation=createRetainedCaptureScratch(store,stream,key,start);
               try{
-                fs.writeFileSync(join(root,key+'-path'),allocation.path);
+                fs.writeFileSync(join(root,(options.dependency?'a':key)+'-path'),allocation.path);
+                // Missing stage identity models derived recovery-state loss.
+                // The actual native unit must invalidate the active allocation.
                 state.set('recovery-stage',key,{allocation:allocation.claim.id});
-                state.set('recovery-garbage',allocation.claim.id,true);state.set('prefix-proof',key,{stream:${JSON.stringify(stream)}});
+                state.set('recovery-garbage',allocation.claim.id,true);state.set('prefix-proof',key,{stream});
                 state.set('cc',key,{bytes:123,line:7});
                 for(let n=0;n<7;n++)state.db.prepare('INSERT INTO recovery_chunks VALUES (?,?,1,?)').run(allocation.claim.id,n,'hash');
                 for(let n=0;n<5;n++)state.db.prepare('INSERT INTO transcript_prefix VALUES (?,?,?)').run(key,n,'hash');
               }finally{allocation.close();}
-              prepareRetainedCaptureCleanup(store,${JSON.stringify(stream)},key,start);
+              if(!options.dependency)prepareRetainedCaptureCleanup(store,stream,key,start);
             }
           },{state});return {outcome:'complete',reason:null};
         }finally{state.close();}
       }
       const session=new CaptureWorkSession(start,{owner:'fixture',selection:'fixture',now:()=>options.now,
         unit:{limit:1,maxRecords:options.records??1}});
+      const transaction=session.state.transaction.bind(session.state);let logged=null;
+      session.state.transaction=fn=>{
+        const result=transaction(fn),admission=session.state.get('capture-admission','active');
+        if(admission && admission.id!==logged && !session.state.depth){logged=admission.id;
+          fs.appendFileSync(join(root,'admissions'),JSON.stringify(admission)+'\\n');}
+        return result;
+      };
       let removed=false;
       const remove=fs.rmSync;fs.rmSync=(path,...args)=>{
         const result=remove(path,...args);
@@ -83,7 +96,8 @@ function fixture(t, { healthy = false } = {}) {
         for(let n=0;n<4;n++){
           const result=session.step();
           fs.appendFileSync(join(root,'events'),JSON.stringify({runId:session.run.id,stage:result.stage,
-            selected:result.selected??0,cleanup:result.cleanupWork?.selected??0})+'\\n');
+            selected:result.selected??0,cleanup:result.cleanupWork?.selected??0,
+            streams:(result.results??result.streams??[]).map(row=>row.stream)})+'\\n');
           if(result.resetRequired)return session.yieldWorker({resetRequired:true});
           if(result.finalize)return session.finish({reason:'deadline'});
           if(result.stopped)return session.yieldWorker();
@@ -94,8 +108,9 @@ function fixture(t, { healthy = false } = {}) {
       finally{session.close();}
     });
   `);
-  return { root, store,
-    seed: (keys = ['a']) => superviseCapture(root, { seed: keys }, { workerPath, env }),
+  return { root, store, nativeKey, nativeStream,
+    seed: (keys = ['a']) => superviseCapture(root, dependentNative ? { seed: [nativeKey], dependency: { stream: nativeStream } } :
+      { seed: keys }, { workerPath, env }),
     run: (options = {}, transport = {}) => superviseCapturePass(root, { now, ...options }, { workerPath, env, ...transport }),
     state(fn) { const state = new DerivedState(root); try { return fn(state); } finally { state.close(); } },
     path: key => fs.readFileSync(join(root, key + '-path'), 'utf8'),
@@ -158,6 +173,63 @@ test('cleanup death retains backoff while healthy work progresses and a due allo
   assert.equal(f.state(s => s.get('capture-cleanup-retry', allocation)), null);
   assert.equal(f.state(s => s.get('recovery-allocation', 'a')), null); assert.equal(f.rows(), 0);
   assert.deepEqual(f.state(s => s.get('capture-retry', unrelated.stream)), unrelated);
+});
+
+for (const sourceRetry of [false, true])
+test(`a ready native cleanup dependency cannot suppress due cleanup or independent work (source retry: ${sourceRetry})`, async t => {
+  const f = fixture(t, { healthy: true, dependentNative: true });
+  assert.equal((await f.seed()).outcome, 'complete');
+  const allocation = f.state(s => s.get('recovery-allocation', f.nativeKey).id);
+  assert.equal(f.state(s => s.get('recovery-allocation', f.nativeKey).phase), 'active');
+  const admissions = runId => fs.readFileSync(join(f.root, 'admissions'), 'utf8').trim().split('\n').map(JSON.parse)
+    .filter(row => row.runId === runId && row.stage === 'capture' && row.members.some(member => member.stream === f.nativeStream));
+  const outcome = () => f.state(s => s.db.prepare('SELECT outcome FROM capture_sources WHERE source=? AND stream=?').get('cc', f.nativeStream).outcome);
+  const failed = await f.run({ crashAfterRemove: true });
+  assert.equal(failed.outcome, 'failed', f.diagnostic(failed));
+  let status = readCaptureStatus(f.root); const oldFailure = status.lastFailure;
+  assert.equal(admissions(status.lastRun.id).length, 1, 'only the invalidating source admission, never cleanup-only repeats');
+  assert.equal(status.lastRun.counts.turnsAppended, 2); assert.equal(status.lastRun.counts.turnsIndexed, 2);
+  assert.equal(f.state(s => s.get('recovery-stage', f.nativeKey).reason), 'recovery-state-lost');
+  assert.equal(f.state(s => s.get('recovery-allocation', f.nativeKey).phase), 'deleting');
+  assert.equal(outcome(), 'ready'); assert.equal(fs.existsSync(f.path('a')), false); assert.equal(f.rows(), 12);
+  assert.equal(f.store.readStream(f.nativeStream).length, 0);
+  const retry = f.state(s => s.get('capture-cleanup-retry', allocation));
+  assert.equal(retry.attemptedRun, status.lastRun.id); assert.equal(retry.attempts, 1);
+  assert.equal(Date.parse(retry.nextRetryAt), now + 30 * 60 * 1000);
+  const streamRetry = { stream: f.nativeStream, stage: 'capture', unitId: 'earlier-source-attempt', attemptedRun: 'older',
+    generation: null, offset: 0, nextRetryAt: new Date(now).toISOString() };
+  const unrelated = { ...streamRetry, stream: 'fixture~unrelated', stage: 'prefix' };
+  f.state(s => s.transaction(() => {
+    s.set('capture-retry', unrelated.stream, unrelated);
+    if (sourceRetry) s.set('capture-retry', f.nativeStream, streamRetry);
+  }));
+  f.store.append('fixture~aw', finishTurn({ v: 1, ts: '2026-01-01T00:00:00Z', from: 'fixture', kind: 'mail',
+    body: { text: 'independent before-due index progress' }, provenance: { source: 'aw', fidelity: 'projected' } }));
+  const beforeDue = await f.run({ now: now + 1, records: 2000 });
+  assert.equal(beforeDue.outcome, 'partial', f.diagnostic(beforeDue));
+  status = readCaptureStatus(f.root);
+  assert.equal(status.lastRun.counts.turnsIndexed, 1); assert.equal(status.lastRun.counts.turnsAppended, 0);
+  assert.equal(admissions(status.lastRun.id).length, 0, 'waiting dependency is neither healthy nor eligible source retry');
+  assert.equal(outcome(), 'ready'); assert.equal(f.rows(), 12);
+  assert.deepEqual(f.state(s => s.get('capture-cleanup-retry', allocation)), retry);
+  assert.deepEqual(f.state(s => s.get('capture-retry', f.nativeStream)), sourceRetry ? streamRetry : null);
+  assert.deepEqual(status.lastFailure, oldFailure);
+  const due = await f.run({ now: Date.parse(retry.nextRetryAt), records: 2000 });
+  assert.equal(due.outcome, 'partial', f.diagnostic(due)); assert.equal(due.exitCode, 0);
+  status = readCaptureStatus(f.root);
+  const events = fs.readFileSync(join(f.root, 'events'), 'utf8').trim().split('\n').map(JSON.parse)
+    .filter(row => row.runId === status.lastRun.id);
+  const cleaned = events.findIndex(row => row.stage === 'cleanup' && row.selected === 1);
+  const resumed = events.findIndex(row => row.stage === 'capture' && row.streams.includes(f.nativeStream));
+  assert.ok(cleaned >= 0 && resumed > cleaned, 'due cleanup must retire the dependency before source admission resumes');
+  assert.equal(admissions(status.lastRun.id).length, 1); assert.equal(outcome(), 'complete');
+  assert.equal(status.lastRun.counts.turnsAppended, 1); assert.equal(status.lastRun.counts.turnsIndexed, 1);
+  assert.equal(f.store.readStream(f.nativeStream).length, 1);
+  assert.equal(f.state(s => s.get('recovery-allocation', f.nativeKey)), null);
+  assert.equal(f.state(s => s.get('capture-cleanup-retry', allocation)), null); assert.equal(f.rows(), 0);
+  assert.equal(f.state(s => s.get('capture-retry', f.nativeStream)), null);
+  assert.deepEqual(f.state(s => s.get('capture-retry', unrelated.stream)), unrelated);
+  assert.deepEqual(status.lastFailure, oldFailure); assert.equal(status.lastSuccess, null); assert.equal(status.backlog.pending, true);
 });
 
 test('cleanup accounting rollback retains metadata/admission evidence and only a later due commit records progress', async t => {

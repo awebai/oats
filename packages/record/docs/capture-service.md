@@ -785,6 +785,16 @@ intact; replacement reconciliation applies backoff while independent healthy
 work remains eligible. A completed page or idle selection does not prove that
 every deleting reference has finished, especially across cursor wraparound.
 
+A native input with its exact `stream:path` recovery claim in deleting phase
+depends on that allocation's cleanup. Selection rechecks the durable claim and
+excludes that input from both healthy capture and due capture retry until the
+claim retires, even if its directory is already absent. The source stays ready;
+neither its completion nor retry resolution is invented. Independent source and
+index work can drain before due allocation cleanup, after which the next
+selection can resume the native input. This avoids repeated cleanup-only source
+admissions starving the allocation's own backoff queue. Unrelated paths/streams
+and existing stream retry evidence retain their normal scheduling rules.
+
 A fresh reset worker dispatches the union operation before ordinary work. A
 committed reset reopens the published pending inventory; an interrupted one is
 reconciled before processing. Detection requests a new worker rather than
