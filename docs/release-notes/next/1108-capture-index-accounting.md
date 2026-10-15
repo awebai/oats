@@ -1,4 +1,4 @@
-### Changed
+## Changed
 
 - Extended the private capture-service foundations with bounded index-work
   admission and confirmed run accounting. Interrupted index groups retain
