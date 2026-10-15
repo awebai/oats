@@ -348,6 +348,23 @@ const LEADER_CLOSE = LEADER.find((entry) => entry.does === "close-terminal").key
 export const TAB_WORDS = Object.freeze({
   full: (limit, leader) => [{ own: `${limit} terminals are open; close one with ` }, { own: `${leader} ${keyLabel(LEADER_CLOSE)}`, whole: true }, { own: "." }],
 });
+/** The lines of a split that is not made (docs/tui.md, "Splits"): a second split, and a panel too
+ *  small for two groups (`min` views/split.mjs SPLIT_MIN). */
+export const SPLIT_WORDS = Object.freeze({
+  twice: () => [{ own: "The panel has two groups already." }],
+  small: (dir, min) => [{ own: dir === "right" ? `No room to split side by side: each group needs ${min.cols} columns.` : `No room to split one above the other: each group needs ${min.rows} rows.` }],
+});
+/** The groups of the panel as the frame draws them (docs/tui.md, "Splits"): one, or two with a
+ *  split, each `{ tabs, shown }`: its tabs in the strip's order (`{ id, name, machine, routed,
+ *  shown, activity }`, `machine` only for another machine's) and its shown tab's id, or null for
+ *  an empty group. */
+function groupsOf(state) {
+  return Array.from({ length: state.split === null ? 1 : 2 }, (_, g) => {
+    const shown = g === state.group ? state.terminal?.id ?? null : state.aside;
+    const tabs = state.tabs.filter((tab) => tab.group === g).map((tab) => ({ id: tab.id, name: tab.name, machine: tab.routed ? tab.machine : null, routed: tab.routed, shown: tab.id === shown, activity: tab.activity }));
+    return { tabs, shown };
+  });
+}
 /** The body of a view of this machine that is not in this version (Capabilities): what it will
  *  hold, and what to run until then, the help's commands (views/help.mjs VIEWS), in the TUI's own
  *  words; each command is whole, never broken over two rows. */
@@ -540,6 +557,11 @@ export function subsequenceScore(text, query) {
 /** The palette's views and commands, each a row's label and the action it runs. */
 const PALETTE_VIEWS = Object.freeze([["instances", "Instances"], ["souls", "Souls"], ["capabilities", "Capabilities"]]);
 const PALETTE_COMMANDS = Object.freeze([["spawn", "Spawn an agent"], ["workspaces", "Workspaces"], ["refresh", "Refresh"], ["help", "Help"]]);
+const PALETTE_SPLIT = Object.freeze({
+  one: Object.freeze([["split-right", "Split right"], ["split-down", "Split down"]]),
+  shown: Object.freeze([["tab-move", "Move tab to the other group"]]),
+  empty: Object.freeze([["group-close", "Close the empty group"]]),
+});
 const PALETTE_ACTS = Object.freeze({ stop: "Stop", restart: "Restart", retire: "Retire", start: "Start" });
 
 /** THE PALETTE'S ROWS (docs/tui.md, "The palette"), in this order: the instances that can be
@@ -547,7 +569,7 @@ const PALETTE_ACTS = Object.freeze({ stop: "Stop", restart: "Restart", retire: "
  *  open workspace once its catalog was read, the views, the acts
  *  the palette's instance offers (the open terminal's, when the palette came from its focus; else
  *  the selected one) and, once the catalog lists its soul, another of that soul, then spawning an
- *  agent, workspaces, refresh and help. With a query, each group keeps the rows the
+ *  agent, workspaces, refresh and help, and the split's that apply. With a query, each group keeps the rows the
  *  Desktop's subsequence score matches, the best first (a prefix first); a tie keeps that order.
  *  A row: `{ key, kind, label, does?, id?, name?, machine?, mark? }`; `selected` is the key the
  *  selection stands on (the first row when the palette's own is not listed). */
@@ -581,7 +603,12 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
       ...(another ? [{ key: "act\u0000spawn-another", kind: "act", label: "Spawn another", does: "spawn-another", id: instanceId(row), name: another.name, text: `Spawn another ${another.name}` }] : []),
     ]);
   }
-  groups.push(PALETTE_COMMANDS.map(([does, label]) => ({ key: `command\u0000${does}`, kind: "command", label, does, text: label })));
+  // The split's, after them, where each applies (docs/tui.md, "Splits"): a split while there is one
+  // group, and with two the move of the shown tab, or the close of the focused group while it is
+  // empty. A split there is no room for says so when it is run.
+  const splitting = state.tabs.length > 0 && state.opening === null && !state.tabs.some((tab) => tab.status === "starting");
+  const SPLIT = splitting ? (state.split === null ? PALETTE_SPLIT.one : state.terminal !== null ? PALETTE_SPLIT.shown : PALETTE_SPLIT.empty) : [];
+  groups.push([...PALETTE_COMMANDS, ...SPLIT].map(([does, label]) => ({ key: `command\u0000${does}`, kind: "command", label, does, text: label })));
   const query = p.query.trim();
   const items = groups.flatMap((group) => (query === ""
     ? group
@@ -620,9 +647,11 @@ export function model(state, { page, now, at, cols }) {
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, openable: false, actable: [],
     terminal: state.terminal, onTerminal: false,
-    // The strip (views/frame.mjs): each tab in order, the shown one marked, a hidden one's
-    // activity. Drawn only with two tabs or more; one reads as the terminal's title row.
-    tabs: state.tabs.map((tab) => ({ name: tab.name, machine: tab.routed ? tab.machine : null, shown: tab.id === state.terminal?.id, activity: tab.activity })),
+    // The panel's groups (views/frame.mjs), the split and the focused group; the panel stands while
+    // any tab is open. `tabs` is the focused group's strip: each tab in order, the shown one marked,
+    // a hidden one's activity. A strip is drawn with two tabs or more; one reads as a title row.
+    split: state.split, group: state.group, panelOpen: state.tabs.length > 0, groups: groupsOf(state),
+    tabs: groupsOf(state)[state.group].tabs,
     act: state.view === "act" && state.act ? actView(state) : null,
     // The leader waits for its key (the footer is its hint), and the palette, while it is open.
     leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, page, at),

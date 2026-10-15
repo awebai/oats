@@ -11,7 +11,7 @@ import os from "node:os";
 import { PassThrough } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEAD_WAIT_MS, FRAME_MS, REAP_ASK_MS, STATUS_WAIT_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
+import { DEAD_WAIT_MS, FRAME_MS, REAP_ASK_MS, STATUS_WAIT_MS, KEEPER_SCRIPT, MAX_SHOWN, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/panel/tmux.mjs", import.meta.url));
 const ROOT = realpathSync(mkdtempSync(path.join(os.tmpdir(), "panel-test-")));
@@ -387,16 +387,26 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("resize(): resize-window of the open window, then a capture of the new size", async () => {
+  // T3 moved one meaning here: a resize captures only a window whose size changed (it captured the
+  // shown tab after every resize), so the size that is no number is now followed by nothing at all.
+  test("resize(): resize-window of the open window, then a capture of the new size; a size that is no number, or the window's own, resizes and captures nothing", async () => {
     const { world, panel, screens, captured } = await opened();
     panel.resize(72, 20);
     await waitFor("the capture", () => screens.length === 2);
     const lines = world.control();
     assert.ok(lines.indexOf("resize-window -t @1 -x 72 -y 20") < lines.lastIndexOf("capture-pane -e -N -b oats-tui-capture -t %1"));
     assert.deepEqual(captured[1].size, { cols: 72, rows: 20 });
+    const from = world.control().length;
     panel.resize("x", -1);
-    await waitFor("the next capture", () => screens.length === 3);
+    panel.resize(72, 20);
+    panel.refresh();
+    await waitFor("the refresh's capture", () => screens.length === 3);
+    await sleep(30);
+    const after = world.control().slice(from);
+    assert.equal(after.filter((line) => line.startsWith("resize-window")).length, 0, "nothing resized");
+    assert.equal(count(after, "capture-pane"), 1, "the refresh's capture alone");
     assert.equal(world.control().filter((line) => line.startsWith("resize-window")).at(-1), "resize-window -t @1 -x 72 -y 20", "a size that is no number keeps the last");
+    assert.deepEqual(captured[2].size, { cols: 72, rows: 20 });
     panel.end();
   });
 
@@ -708,7 +718,7 @@ describe("the panel", { concurrency: 8 }, () => {
     const second = panel.open({ argv: VIEWER });
     await assert.rejects(panel.open({ argv: VIEWER }), { code: "E_PANEL_BUSY" });
     assert.deepEqual(await second, { id: "@2" }, "an open beside an open viewer is a second tab");
-    assert.deepEqual(panel.tabs, { ids: ["@1", "@2"], shown: "@2" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", "@2"], shown: "@2", displayed: ["@2"] });
     panel.close();
     const one = panel.open({ argv: VIEWER });
     await assert.rejects(panel.open({ argv: VIEWER }), { code: "E_PANEL_BUSY" });
@@ -786,21 +796,21 @@ describe("the panel", { concurrency: 8 }, () => {
 
   test("tabs: each open is a new window, listed in opening order and shown, the tab before hidden from the call on; show() switches; close(id) ends a hidden or the shown tab; after the shown one is closed nothing is shown until show(), and current is always tabs.shown", async () => {
     const { world, panel, screens, closed, id } = await opened();
-    assert.deepEqual(panel.tabs, { ids: [id], shown: id });
+    assert.deepEqual(panel.tabs, { ids: [id], shown: id, displayed: [id] });
     const opening = panel.open({ argv: VIEWER, cols: 50, rows: 10 });
-    assert.deepEqual(panel.tabs, { ids: ["@1"], shown: null }, "the tab before is hidden from the call, and an open under way is not listed");
+    assert.deepEqual(panel.tabs, { ids: ["@1"], shown: null, displayed: [] }, "the tab before is hidden from the call, and an open under way is not listed");
     assert.equal(panel.current, null);
     assert.deepEqual(await opening, { id: "@2" });
-    assert.deepEqual(panel.tabs, { ids: ["@1", "@2"], shown: "@2" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", "@2"], shown: "@2", displayed: ["@2"] });
     assert.deepEqual(await moreTabs(panel, 1), ["@3"]);
-    assert.deepEqual(panel.tabs, { ids: ["@1", "@2", "@3"], shown: "@3" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", "@2", "@3"], shown: "@3", displayed: ["@3"] });
     assert.equal(panel.current, "@3");
     assert.equal(world.windows().length, 3, "a window each");
     await waitFor("the third tab's first capture", () => screens.some((screen) => screen.id === "@3"));
     // show(): the tab, and one fresh capture of it.
     const before = capturedPanes(world).length;
     panel.show("@1");
-    assert.deepEqual(panel.tabs, { ids: ["@1", "@2", "@3"], shown: "@1" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", "@2", "@3"], shown: "@1", displayed: ["@1"] });
     await waitFor("the capture of the tab shown", () => screens.at(-1).id === "@1" && capturedPanes(world).length === before + 1);
     assert.equal(capturedPanes(world).at(-1), "%1");
     // The tab already shown, or an id no tab has: nothing.
@@ -810,13 +820,13 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.deepEqual([capturedPanes(world).length, panel.tabs.shown], [before + 1, "@1"]);
     // close(id) of a hidden tab: its place is free at once, the shown one stays.
     panel.close("@2");
-    assert.deepEqual(panel.tabs, { ids: ["@1", "@3"], shown: "@1" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", "@3"], shown: "@1", displayed: ["@1"] });
     await waitFor("the hidden tab's end", () => closed.length === 1);
     assert.deepEqual(closed[0], { id: "@2", status: null, stderr: "", asked: true });
     assert.ok(world.control().includes("kill-pane -t %2"));
     // close() with no id: the shown tab. Nothing is shown then, and the panel picks no neighbour.
     panel.close();
-    assert.deepEqual(panel.tabs, { ids: ["@3"], shown: null });
+    assert.deepEqual(panel.tabs, { ids: ["@3"], shown: null, displayed: [] });
     assert.equal(panel.current, null);
     await waitFor("the shown tab's end", () => closed.length === 2);
     assert.deepEqual(closed[1], { id: "@1", status: null, stderr: "", asked: true });
@@ -824,9 +834,9 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.close("@9");
     await sleep(30);
     assert.equal(count(world.control(), "send-keys"), 0, "with none shown, keys are dropped");
-    assert.deepEqual(panel.tabs, { ids: ["@3"], shown: null }, "an unknown id closes nothing");
+    assert.deepEqual(panel.tabs, { ids: ["@3"], shown: null, displayed: [] }, "an unknown id closes nothing");
     panel.show("@3");
-    assert.deepEqual(panel.tabs, { ids: ["@3"], shown: "@3" });
+    assert.deepEqual(panel.tabs, { ids: ["@3"], shown: "@3", displayed: ["@3"] });
     assert.equal(panel.current, "@3");
     panel.end();
   });
@@ -915,7 +925,9 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("tabs: a resize reaches every tab's window, each by its own resize-window (never the global window-size), then one capture of the shown tab; an open of another size fits the tabs to it, and a resize while a tab opens is that tab's too", async () => {
+  // T3 moved one meaning here: an open of another size made it the panel's and fitted every tab to
+  // it; now each window has its own size, and an open sizes its own window only.
+  test("tabs: a resize reaches every tab's window, each by its own resize-window (never the global window-size), then one capture of the shown tab; an open of another size makes its own window at it and resizes no other, and a resize of every tab while a tab opens is that tab's too", async () => {
     const { world, panel, screens, captured } = await opened();
     await moreTabs(panel, 2);
     await waitFor("the third tab's first capture", () => screens.at(-1).id === "@3");
@@ -928,15 +940,14 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.deepEqual(capturedPanes(world).slice(-1), ["%3"]);
     assert.deepEqual(captured.at(-1).size, { cols: 72, rows: 20 });
     assert.equal(world.control().some((line) => line.includes("window-size")), false, "no global window-size");
-    // An open of another size: the panel's size from then on, every tab's window fitted to it.
+    // An open of another size: its own window made at it, and no other window resized.
     const at = world.control().length;
     const opening = panel.open({ argv: VIEWER, cols: 60, rows: 15 });
-    panel.resize(64, 16); // while the window is being made
+    panel.resize(64, 16); // every tab, while the window is being made (no 60x15 below: the open resized no other)
     assert.deepEqual(await opening, { id: "@4" });
     await waitFor("the new tab's capture", () => screens.at(-1).id === "@4");
     const resized = world.control().slice(at).filter((line) => line.startsWith("resize-window"));
-    assert.deepEqual(resized, ["resize-window -t @1 -x 60 -y 15", "resize-window -t @2 -x 60 -y 15", "resize-window -t @3 -x 60 -y 15",
-      "resize-window -t @1 -x 64 -y 16", "resize-window -t @2 -x 64 -y 16", "resize-window -t @3 -x 64 -y 16", "resize-window -t @4 -x 64 -y 16"]);
+    assert.deepEqual(resized, ["resize-window -t @1 -x 64 -y 16", "resize-window -t @2 -x 64 -y 16", "resize-window -t @3 -x 64 -y 16", "resize-window -t @4 -x 64 -y 16"]);
     const made = world.invocations().filter((call) => call.commands.some((command) => command[0] === "new-window")).at(-1);
     assert.deepEqual(made.commands[0], ["set-option", "-t", SESSION, "default-size", "60x15"], "the window made at the size its open gave");
     assert.deepEqual(captured.at(-1).size, { cols: 64, rows: 16 });
@@ -955,22 +966,22 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.deepEqual(await fourth, { id: "@4" });
     // A refused open changes nothing: the shown tab stays shown.
     await assert.rejects(panel.open({ argv: VIEWER }), { code: "E_PANEL_FULL" });
-    assert.deepEqual(panel.tabs, { ids: ["@1", "@2", "@3", "@4"], shown: "@4" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", "@2", "@3", "@4"], shown: "@4", displayed: ["@4"] });
     panel.close("@2");
     assert.deepEqual(await panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { id: "@5" }, "the place is free when close() returns");
-    assert.deepEqual(panel.tabs, { ids: ["@1", "@3", "@4", "@5"], shown: "@5" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", "@3", "@4", "@5"], shown: "@5", displayed: ["@5"] });
     await assert.rejects(panel.open({ argv: VIEWER }), { code: "E_PANEL_FULL" });
     // An open given up (close() with no id while it is under way) frees its place at once too.
     panel.close("@1");
     const given = panel.open({ argv: VIEWER, cols: 50, rows: 10 });
     panel.close();
-    assert.deepEqual(panel.tabs, { ids: ["@3", "@4", "@5"], shown: null }, "close() with no id gave up the open, not a tab");
+    assert.deepEqual(panel.tabs, { ids: ["@3", "@4", "@5"], shown: null, displayed: [] }, "close() with no id gave up the open, not a tab");
     // The next would not be refused now; it follows the given-up one's window (the fake numbers
     // windows one invocation at a time).
     assert.deepEqual(await given, { id: "@6" });
     const next = panel.open({ argv: VIEWER, cols: 50, rows: 10 });
     assert.deepEqual(await next, { id: "@7" });
-    assert.deepEqual(panel.tabs, { ids: ["@3", "@4", "@5", "@7"], shown: "@7" });
+    assert.deepEqual(panel.tabs, { ids: ["@3", "@4", "@5", "@7"], shown: "@7", displayed: ["@7"] });
     panel.end();
   });
 
@@ -982,11 +993,11 @@ describe("the panel", { concurrency: 8 }, () => {
     await waitFor("the hidden tab's end", () => closed.length === 1);
     assert.deepEqual(closed[0], { id: "@1", status: 5, stderr: "tab's words", asked: false });
     await waitFor("its dead pane killed", () => world.control().includes("kill-pane -t %1"));
-    assert.deepEqual(panel.tabs, { ids: ["@2", "@3"], shown: "@2" });
+    assert.deepEqual(panel.tabs, { ids: ["@2", "@3"], shown: "@2", displayed: ["@2"] });
     // A hidden tab heard dead before tmux has its status waits for it, as a shown one does.
     world.emit(dead("@3"));
     await waitFor("the ask to reap", () => world.control().includes("run-shell true"));
-    assert.deepEqual(panel.tabs, { ids: ["@2", "@3"], shown: "@2" });
+    assert.deepEqual(panel.tabs, { ids: ["@2", "@3"], shown: "@2", displayed: ["@2"] });
     world.emit(dead("@3", 0));
     await waitFor("the second hidden tab's end", () => closed.length === 2);
     assert.deepEqual(closed[1], { id: "@3", status: 0, stderr: "tab's words", asked: false });
@@ -995,7 +1006,7 @@ describe("the panel", { concurrency: 8 }, () => {
     world.emit(`%window-close @2`);
     await waitFor("the shown tab's end", () => closed.length === 3);
     assert.deepEqual(closed[2], { id: "@2", status: null, stderr: "tab's words", asked: false });
-    assert.deepEqual(panel.tabs, { ids: ["@4"], shown: null }, "nothing shown: the neighbour is the caller's");
+    assert.deepEqual(panel.tabs, { ids: ["@4"], shown: null, displayed: [] }, "nothing shown: the neighbour is the caller's");
     assert.deepEqual(readdirSync(world.run).filter((name) => name.includes(".view.")), ["4.view.err"], "the ended tabs' files removed");
     panel.end();
   });
@@ -1007,9 +1018,9 @@ describe("the panel", { concurrency: 8 }, () => {
     world.inject("exit");
     await waitFor("every tab's end", () => closed.length === 3);
     assert.deepEqual(closed.map((event) => [event.id, event.status, event.asked]).sort(), [["@1", null, false], ["@2", null, false], ["@3", null, false]]);
-    assert.deepEqual(panel.tabs, { ids: [], shown: null });
+    assert.deepEqual(panel.tabs, { ids: [], shown: null, displayed: [] });
     assert.deepEqual(await panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { id: "@4" });
-    assert.deepEqual(panel.tabs, { ids: ["@4"], shown: "@4" });
+    assert.deepEqual(panel.tabs, { ids: ["@4"], shown: "@4", displayed: ["@4"] });
     panel.end();
   });
 
@@ -1025,13 +1036,322 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
     assert.deepEqual(world.invocations().slice(before).map((call) => call.commands[0][0]), ["kill-server"], "one kill-server ends every tab");
     assert.deepEqual(readdirSync(world.run), []);
-    assert.deepEqual(panel.tabs, { ids: [], shown: null });
+    assert.deepEqual(panel.tabs, { ids: [], shown: null, displayed: [] });
     assert.equal(panel.current, null);
     assert.equal(timers.count, 0, "the wait put away");
     await waitFor("the control client gone", () => !isFake(control));
     assert.deepEqual(closed, [], "nothing is said on the way out");
     for (const act of [() => panel.show("@1"), () => panel.close("@1"), () => panel.close(), () => panel.resize(10, 10)]) assert.doesNotThrow(act);
     assert.equal(world.invocations().length, before + 1, "every method quiet after it");
+  });
+
+  // TWO DISPLAYED (THE TABS: one tab displayed per group of a split, one of them shown) ---------
+
+  /** The keys the control client was sent, as [pane, text]. */
+  const sentKeys = (world) => world.control().filter((line) => line.startsWith("send-keys")).map((line) => {
+    const [, pane, bytes] = /^send-keys -t (%\d+) -H (.*)$/.exec(line);
+    return [pane, Buffer.from(bytes.split(" ").map((h) => parseInt(h, 16))).toString("latin1")];
+  });
+  /** Each window's size as the panel last asked it (resize-window), by window id. */
+  const windowSizes = (world) => Object.fromEntries(world.control().map((line) => /^resize-window -t (@\d+) -x (\d+) -y (\d+)$/.exec(line)).filter(Boolean).map(([, id, cols, rows]) => [id, `${cols}x${rows}`]));
+  /** A panel with @1 (50x10) displayed and @2 (40x8) opened beside it (`instead: null`), shown,
+   *  each with its first capture drawn. */
+  async function twoDisplayed(plan = {}, more = {}) {
+    const made = await opened(plan, more);
+    const { id } = await made.panel.open({ argv: VIEWER, cols: 40, rows: 8, instead: null });
+    await waitFor("the second tab's first capture", () => made.screens.some((screen) => screen.id === id));
+    return { ...made, second: id };
+  }
+
+  test("two displayed: an open with instead: null displays its tab beside the one displayed (that one stays displayed, nothing shown while it opens), at its own size; both are captured when tmux says they changed, each handed back with its own id and size, and neither is activity", async () => {
+    assert.equal(MAX_SHOWN, 2);
+    const activity = [];
+    const made = await opened({}, { onActivity: (event) => activity.push(event) });
+    const { world, panel, timers, screens, heard } = made;
+    const opening = panel.open({ argv: VIEWER, cols: 40, rows: 8, instead: null });
+    assert.deepEqual(panel.tabs, { ids: ["@1"], shown: null, displayed: ["@1"] }, "the one displayed stays displayed; nothing is shown while the new one opens");
+    assert.deepEqual(await opening, { id: "@2" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", "@2"], shown: "@2", displayed: ["@1", "@2"] });
+    assert.equal(panel.current, "@2");
+    await waitFor("the second tab's first capture", () => screens.some((screen) => screen.id === "@2"));
+    const made2 = world.invocations().filter((call) => call.commands.some((command) => command[0] === "new-window")).at(-1);
+    assert.deepEqual(made2.commands[0], ["set-option", "-t", SESSION, "default-size", "40x8"], "its window made at its own size");
+    assert.deepEqual(windowSizes(world), { "@1": "50x10", "@2": "40x8" }, "each window its own size: the open resized no other");
+    // Both changed: one tick, then both captured, one after the other.
+    const drawn = screens.length;
+    world.emit("%output %1 left");
+    world.emit("%output %2 right");
+    await waitFor("the panel to hear both", () => heard().includes("%output %2 right\n"));
+    assert.deepEqual(timers.delays(), [FRAME_MS], "one tick for both");
+    timers.fire();
+    await waitFor("both captured", () => screens.length === drawn + 2);
+    assert.deepEqual(screens.slice(drawn).map((screen) => [screen.id, screen.screen.size]).sort(), [["@1", { cols: 50, rows: 10 }], ["@2", { cols: 40, rows: 8 }]]);
+    assert.deepEqual(capturedPanes(world).slice(-2).sort(), ["%1", "%2"]);
+    // A layout change of either displayed window is a change of its screen.
+    world.emit("%layout-change @1 fa5e,50x10,0,0,1 fa5e,50x10,0,0,1 *");
+    await waitFor("the tick of a layout change", () => timers.count === 1);
+    timers.fire();
+    await waitFor("its capture", () => screens.length === drawn + 3);
+    assert.equal(screens.at(-1).id, "@1");
+    assert.deepEqual(activity, [], "a displayed tab's output is never activity, shown or not");
+    panel.end();
+  });
+
+  test("two displayed: captures are one at a time, out of band: the second displayed pane is captured only after the first's four commands are answered, never mixed, the one waiting longest first", async () => {
+    const { world, panel, timers, screens, heard, second } = await twoDisplayed();
+    world.plan({ holdCapture: true });
+    const from = world.control().length, drawn = screens.length;
+    world.emit("%output %2 first");
+    await waitFor("the tick", () => timers.count === 1);
+    world.emit("%output %1 then");
+    await waitFor("the panel to hear it", () => heard().includes("%output %1 then\n"));
+    timers.fire();
+    await waitFor("the first capture asked", () => count(world.control().slice(from), "capture-pane") === 1);
+    await sleep(50);
+    assert.equal(count(world.control().slice(from), "capture-pane"), 1, "one capture in flight");
+    world.inject("release");
+    await waitFor("the first drawn, the second asked", () => screens.length === drawn + 1 && count(world.control().slice(from), "capture-pane") === 2);
+    world.plan({});
+    world.inject("release");
+    await waitFor("the second drawn", () => screens.length === drawn + 2);
+    const lines = world.control().slice(from).filter((line) => !line.startsWith("resize-window"));
+    assert.deepEqual(lines, [
+      "capture-pane -e -N -b oats-tui-capture -t %2", `save-buffer -b oats-tui-capture '${path.join(world.run, "capture")}'`, "delete-buffer -b oats-tui-capture", "display -p -t %2 '#{cursor_x} #{cursor_y} #{cursor_flag}'",
+      "capture-pane -e -N -b oats-tui-capture -t %1", `save-buffer -b oats-tui-capture '${path.join(world.run, "capture")}'`, "delete-buffer -b oats-tui-capture", "display -p -t %1 '#{cursor_x} #{cursor_y} #{cursor_flag}'"]);
+    assert.deepEqual(screens.slice(drawn).map((screen) => screen.id), [second, "@1"], "the one stale first is captured first");
+    // A fresh capture asked while one is in flight waits for it.
+    world.plan({ holdCapture: true });
+    world.emit("%output %1 again");
+    await waitFor("the tick", () => timers.count === 1);
+    timers.fire();
+    await waitFor("its capture asked", () => count(world.control().slice(from), "capture-pane") === 3);
+    panel.refresh();
+    await sleep(50);
+    assert.equal(count(world.control().slice(from), "capture-pane"), 3, "the refresh waits for the capture in flight");
+    world.plan({});
+    world.inject("release");
+    await waitFor("the refresh's captures", () => count(world.control().slice(from), "capture-pane") === 5);
+    assert.deepEqual(capturedPanes(world).slice(-3), ["%1", "%1", "%2"], "after the one in flight, each displayed tab once, in the order they began to wait");
+    panel.end();
+  });
+
+  test("two displayed: input() and paste() go to the shown one only; focus() moves the keys and captures nothing; focus() of a tab not displayed, or unknown, does nothing", async () => {
+    const { world, panel, second } = await twoDisplayed();
+    panel.input("b");
+    const asked = capturedPanes(world).length;
+    panel.focus("@1");
+    assert.deepEqual(panel.tabs, { ids: ["@1", second], shown: "@1", displayed: ["@1", second] }, "nothing else changes");
+    panel.input("a");
+    panel.paste("p");
+    panel.focus(second);
+    panel.input("c");
+    // A third tab, opened in @1's place: @1 is no longer displayed, and focus() of it does nothing.
+    const { id: third } = await panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: "@1" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: third, displayed: [second, third] });
+    panel.focus("@1");
+    panel.focus("@9");
+    assert.equal(panel.tabs.shown, third, "a tab not displayed, or unknown, takes no keys");
+    panel.input("d");
+    await waitFor("the keys sent", () => count(world.control(), "send-keys") === 5);
+    await sleep(30);
+    assert.deepEqual(sentKeys(world), [[`%${second.slice(1)}`, "b"], ["%1", "a"], ["%1", "\x1b[200~p\x1b[201~"], [`%${second.slice(1)}`, "c"], [`%${third.slice(1)}`, "d"]]);
+    assert.equal(capturedPanes(world).length, asked + 1, "focus() captured nothing: the one capture is the new tab's");
+    panel.end();
+  });
+
+  test("two displayed: show() with instead an id replaces that displayed tab, with instead: null puts it beside while there is room and with two displayed acts as omitted (the shown one's place); a tab already displayed only becomes the shown one, captured nothing; open() with instead an id; hide() of the other or the shown one", async () => {
+    const { world, panel, screens, second } = await twoDisplayed();
+    const third = (await panel.open({ argv: VIEWER, cols: 40, rows: 8, instead: second })).id;
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: third, displayed: ["@1", third] }, "open() instead of the shown tab");
+    await waitFor("its first capture", () => screens.at(-1).id === third);
+    // show() instead of the tab that is not shown: replaced, and the new one shown and captured.
+    let asked = capturedPanes(world).length;
+    panel.show(second, { instead: "@1" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: second, displayed: [second, third] });
+    await waitFor("one fresh capture of it", () => capturedPanes(world).length === asked + 1 && screens.at(-1).id === second);
+    // instead: null with two displayed: as omitted, the shown one's place.
+    panel.show("@1", { instead: null });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: "@1", displayed: ["@1", third] });
+    // Omitted: the shown one's place.
+    panel.show(second);
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: second, displayed: [second, third] });
+    // A tab already displayed only becomes the shown one: no capture, `instead` ignored.
+    await waitFor("the captures of the shows", () => capturedPanes(world).length === asked + 3);
+    asked = capturedPanes(world).length;
+    panel.show(third, { instead: second });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: third, displayed: [second, third] });
+    await sleep(30);
+    assert.equal(capturedPanes(world).length, asked, "nothing captured");
+    // hide() of the one not shown: it alone goes; then the room it leaves takes a show beside.
+    panel.hide(second);
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: third, displayed: [third] });
+    panel.show("@1", { instead: null });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: "@1", displayed: ["@1", third] }, "beside, there is room");
+    // hide() of the shown one: the other displayed is shown.
+    panel.hide("@1");
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: third, displayed: [third] });
+    panel.hide(third);
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: null, displayed: [] }, "the last one hidden: none shown");
+    for (const act of [() => panel.hide(third), () => panel.hide("@9"), () => panel.show("@9"), () => panel.show("@9", { instead: null })]) act();
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: null, displayed: [] }, "a tab not displayed, or unknown, does nothing");
+    // With none displayed, a show takes a place of its own whatever `instead` names.
+    panel.show(second, { instead: "@1" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: second, displayed: [second] });
+    panel.end();
+  });
+
+  test("two displayed: activity only for a tab not displayed, once in each spell: replaced by an open or a show it is marked once, displayed again it is not, and replaced again it may be marked again; the displayed ones never", async () => {
+    const activity = [];
+    const { world, panel, heard, second } = await twoDisplayed({}, { onActivity: (event) => activity.push(event) });
+    const third = (await panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: "@1" })).id;
+    assert.deepEqual(panel.tabs.displayed, [second, third]);
+    for (const n of [1, 2, 3]) world.emit(`%output %1 unseen ${n}`);
+    world.emit(`%output %${second.slice(1)} seen`);
+    world.emit(`%output %${third.slice(1)} seen`);
+    await waitFor("the panel to hear them", () => heard().includes(`%output %${third.slice(1)} seen\n`));
+    assert.deepEqual(activity, [{ id: "@1" }], "once in the spell; the two displayed never");
+    panel.show("@1", { instead: second });
+    world.emit("%output %1 now displayed");
+    world.emit(`%output %${second.slice(1)} now not`);
+    await waitFor("the second spell's mark", () => activity.length === 2);
+    await waitFor("the panel to hear it", () => heard().includes(`%output %${second.slice(1)} now not\n`));
+    assert.deepEqual(activity, [{ id: "@1" }, { id: second }]);
+    panel.hide("@1");
+    world.emit("%output %1 a new spell");
+    await waitFor("the new spell's mark", () => activity.length === 3);
+    assert.deepEqual(activity.at(-1), { id: "@1" });
+    panel.end();
+  });
+
+  test("resize(cols, rows, ids): only those windows, each by its own resize-window, then one capture of each displayed tab whose size changed; the same size again resizes and captures nothing; without ids every window; each window keeps its own size", async () => {
+    const { world, panel, screens, second } = await twoDisplayed();
+    // A third tab in the second's place (the second's group, as the caller sees it), at its size.
+    const third = (await panel.open({ argv: VIEWER, cols: 40, rows: 8, instead: second })).id;
+    await waitFor("its first capture", () => screens.at(-1).id === third);
+    assert.deepEqual(windowSizes(world), { "@1": "50x10", [second]: "40x8", [third]: "40x8" });
+    let from = world.control().length, drawn = screens.length;
+    panel.resize(44, 9, [second, third]);
+    await waitFor("the capture of the displayed one", () => screens.length === drawn + 1);
+    await sleep(30);
+    let after = world.control().slice(from);
+    assert.deepEqual(after.filter((line) => line.startsWith("resize-window")), [`resize-window -t ${second} -x 44 -y 9`, `resize-window -t ${third} -x 44 -y 9`], "those windows, and no other");
+    assert.deepEqual(capturedPanes(world).slice(-1), [`%${third.slice(1)}`], "one capture: the displayed one's (the other is not displayed)");
+    assert.deepEqual([screens.at(-1).id, screens.at(-1).screen.size], [third, { cols: 44, rows: 9 }]);
+    assert.ok(after.findIndex((line) => line.startsWith("capture-pane")) > after.findLastIndex((line) => line.startsWith("resize-window")));
+    assert.deepEqual(windowSizes(world), { "@1": "50x10", [second]: "44x9", [third]: "44x9" }, "each window its own size");
+    // The same size again, an unknown id and an empty list: nothing.
+    from = world.control().length;
+    panel.resize(44, 9, [second, third, "@9"]);
+    panel.resize(70, 20, []);
+    await sleep(50);
+    assert.deepEqual(world.control().slice(from), [], "nothing resized, nothing captured");
+    // The other displayed one alone.
+    drawn = screens.length;
+    panel.resize(60, 12, ["@1"]);
+    await waitFor("its capture", () => screens.length === drawn + 1);
+    assert.deepEqual([screens.at(-1).id, screens.at(-1).screen.size], ["@1", { cols: 60, rows: 12 }]);
+    assert.deepEqual(windowSizes(world), { "@1": "60x12", [second]: "44x9", [third]: "44x9" });
+    // Without ids: every window, and a capture of each displayed one.
+    from = world.control().length;
+    drawn = screens.length;
+    panel.resize(72, 20);
+    await waitFor("both displayed captured", () => screens.length === drawn + 2);
+    after = world.control().slice(from);
+    assert.deepEqual(after.filter((line) => line.startsWith("resize-window")), ["resize-window -t @1 -x 72 -y 20", `resize-window -t ${second} -x 72 -y 20`, `resize-window -t ${third} -x 72 -y 20`]);
+    assert.deepEqual(screens.slice(drawn).map((screen) => screen.id).sort(), ["@1", third].sort());
+    assert.equal(world.control().some((line) => line.includes("window-size")), false, "never the global window-size");
+    panel.end();
+  });
+
+  test("two displayed: closing the one not shown leaves the shown one shown; closing the shown one leaves nothing shown, the other still displayed and captured, until focus(); a displayed tab's viewer ending by itself, the other's or the shown one's", async () => {
+    const { world, panel, timers, screens, closed, second } = await twoDisplayed({ window: { stderr: "words" } });
+    panel.close("@1");
+    assert.deepEqual(panel.tabs, { ids: [second], shown: second, displayed: [second] }, "the other closed: the shown one stays shown");
+    await waitFor("its end", () => closed.length === 1);
+    assert.deepEqual(closed[0], { id: "@1", status: null, stderr: "words", asked: true });
+    const third = (await panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: null })).id;
+    assert.deepEqual(panel.tabs, { ids: [second, third], shown: third, displayed: [second, third] });
+    panel.close();
+    assert.deepEqual(panel.tabs, { ids: [second], shown: null, displayed: [second] }, "the shown one closed: nothing shown, and the panel picks no neighbour, the other still displayed");
+    await waitFor("its end", () => closed.length === 2);
+    assert.deepEqual(closed[1], { id: third, status: null, stderr: "words", asked: true });
+    panel.input("dropped");
+    // Still displayed: captured when tmux says it changed.
+    const drawn = screens.length;
+    world.emit(`%output %${second.slice(1)} still drawn`);
+    await waitFor("the tick", () => timers.count === 1);
+    timers.fire();
+    await waitFor("its capture", () => screens.length === drawn + 1);
+    assert.equal(screens.at(-1).id, second);
+    panel.focus(second);
+    panel.input("k");
+    await waitFor("the key", () => count(world.control(), "send-keys") === 1);
+    assert.deepEqual(sentKeys(world), [[`%${second.slice(1)}`, "k"]], "nothing while none was shown; then to the focused one");
+    // Viewers that end by themselves: the one not shown, then the shown one.
+    const fourth = (await panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: null })).id;
+    assert.deepEqual(panel.tabs, { ids: [second, fourth], shown: fourth, displayed: [second, fourth] });
+    world.emit(dead(second, 5));
+    await waitFor("its end", () => closed.length === 3);
+    assert.deepEqual(closed[2], { id: second, status: 5, stderr: "words", asked: false });
+    assert.deepEqual(panel.tabs, { ids: [fourth], shown: fourth, displayed: [fourth] }, "the shown one stays shown");
+    const fifth = (await panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: null })).id;
+    panel.focus(fourth);
+    world.emit(dead(fourth, 0));
+    await waitFor("the shown one's end", () => closed.length === 4);
+    assert.deepEqual(closed[3], { id: fourth, status: 0, stderr: "words", asked: false });
+    assert.deepEqual(panel.tabs, { ids: [fifth], shown: null, displayed: [fifth] }, "nothing shown: the neighbour is the caller's");
+    panel.end();
+  });
+
+  test("two displayed: the cap counts every tab, displayed or not, and the open under way (E_PANEL_FULL); E_PANEL_BUSY only while another open is under way, an open beside included", async () => {
+    const { panel, second } = await twoDisplayed();
+    const beside = panel.open({ argv: VIEWER, cols: 40, rows: 8, instead: null });
+    await assert.rejects(panel.open({ argv: VIEWER, instead: null }), { code: "E_PANEL_BUSY" });
+    const third = (await beside).id;
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: third, displayed: ["@1", third] }, "instead: null with two displayed: the shown one's place");
+    const fourth = panel.open({ argv: VIEWER, cols: 40, rows: 8, instead: "@1" });
+    await assert.rejects(panel.open({ argv: VIEWER, instead: null }), { code: "E_PANEL_FULL", message: "4 terminals are open in the panel" }, "three open, two of them displayed, and one under way");
+    await fourth;
+    await assert.rejects(panel.open({ argv: VIEWER, instead: null }), { code: "E_PANEL_FULL" });
+    assert.equal(panel.tabs.ids.length, MAX_TERMINALS);
+    assert.deepEqual(panel.tabs.displayed, [third, "@4"], "a refused open changes nothing");
+    panel.close(second);
+    assert.deepEqual(await panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: null }), { id: "@5" }, "a tab not displayed closed frees its place at once");
+    panel.end();
+  });
+
+  test("an open under way holds its place: a show() or focus() meanwhile is overridden when its window exists; a failed open displays nothing in its place, the other displayed tab stays, and its place is free again", async () => {
+    const { world, panel, second } = await twoDisplayed();
+    const opening = panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: "@1" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second], shown: null, displayed: [second] }, "@1 is no longer displayed from the call on");
+    // A show meanwhile, omitted `instead` and nothing shown: in the place the open holds.
+    panel.show("@1");
+    assert.deepEqual(panel.tabs, { ids: ["@1", second], shown: "@1", displayed: ["@1", second] });
+    panel.input("s");
+    panel.focus(second);
+    panel.input("f");
+    const third = (await opening).id;
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: third, displayed: [second, third] }, "the new tab in its place, shown: the show and the focus overridden");
+    panel.input("n");
+    await waitFor("the keys", () => count(world.control(), "send-keys") === 3);
+    assert.deepEqual(sentKeys(world), [["%1", "s"], [`%${second.slice(1)}`, "f"], [`%${third.slice(1)}`, "n"]]);
+    // A failed open: nothing displayed in its place, the other stays displayed, nothing shown.
+    world.plan({ window: { print: "no id here\n" } });
+    await assert.rejects(panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { code: "E_PANEL_OPEN" });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: null, displayed: [second] }, "the shown one's place was the open's: nothing in it now");
+    world.plan({});
+    // Its place is free: a show beside fits.
+    panel.show(third, { instead: null });
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: third, displayed: [second, third] });
+    // An open given up (close() with no id) frees its place at once: the tab shown there before stays out.
+    const given = panel.open({ argv: VIEWER, cols: 50, rows: 10, instead: second });
+    panel.close();
+    assert.deepEqual(panel.tabs, { ids: ["@1", second, third], shown: null, displayed: [third] });
+    panel.show("@1", { instead: null });
+    assert.deepEqual(panel.tabs.displayed, ["@1", third], "its place free again");
+    await given;
+    assert.deepEqual(panel.tabs.displayed, ["@1", third], "the given-up open displays nothing");
+    panel.end();
   });
 
   // THE SWEEP ------------------------------------------------------------------------------------

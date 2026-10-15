@@ -10,7 +10,7 @@ import { isKeyId } from "../lib/term/keys.mjs";
 import { BACK_KEY_RULE } from "../lib/term/through.mjs";
 
 const FILE = "/cfg/oats/tui.json";
-const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, souls, capabilities, workspaces, palette, open, soul-instances, zoom, close-terminal, tab-previous, tab-next, stop, retire, start, restart, spawn, spawn-another, spawn-check, help, close, quit, suspend, redraw";
+const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, souls, capabilities, workspaces, palette, open, soul-instances, zoom, close-terminal, tab-previous, tab-next, split-right, split-down, group-next, tab-move, group-close, stop, retire, start, restart, spawn, spawn-another, spawn-check, help, close, quit, suspend, redraw";
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
 /** The whole line of a refusal, as it is printed. */
 const line = (clause, file = FILE) => `oats: \`oats tui\` cannot use ${file}: ${clause} (E_TUI_CONFIG)`;

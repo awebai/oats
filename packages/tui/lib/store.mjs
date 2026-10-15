@@ -12,9 +12,10 @@
 import { ACTIONS, LEADER_KEYS, bindings } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { DETACH_KEY } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, TAB_WORDS, actDecision, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, SPLIT_WORDS, TAB_WORDS, actDecision, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher } from "./model.mjs";
 import { backKeyId } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
+import { SPLIT_MIN, splitFits } from "./views/split.mjs";
 
 /** The longest filter, in UTF-16 units. */
 export const QUERY_LIMIT = 200;
@@ -50,13 +51,17 @@ const NO_SOULS = Object.freeze({ wanted: false, held: new Map(), selected: null,
  *  `{ id, phase: "preflight", name, machine, routed }` while that machine is asked whether its
  *  session is there; `name`, `machine` and `routed` are the row's as it was when Enter was
  *  pressed, for the line after. `tabs`: the terminals open in the panel (docs/tui.md, "Tabs"),
- *  in the strip's order, at most TAB_LIMIT: each `{ id, name, machine, routed, status, activity }`,
- *  `id` the row's instanceId and the next three the row's as it was when it was opened, `status`
- *  "starting" until the panel has its window, then "open", `activity` true while it is hidden and
- *  its agent wrote since it was last shown. `terminal`: the SHOWN tab, or null when no tab is open:
- *  `{ id, name, machine, routed, focus, zoom, status }`, its tab's fields with `focus` "terminal"
- *  while what is typed goes to the agent and "list" while the TUI reads keys, and `zoom` true while
- *  it has the whole body (only with the terminal's focus).
+ *  in the strips' order (each group's tabs in this order), at most TAB_LIMIT across both groups:
+ *  each `{ id, name, machine, routed, status, activity, group }`, `id` the row's instanceId and the
+ *  next three the row's as it was when it was opened, `status` "starting" until the panel has its
+ *  window, then "open", `activity` true while it is hidden and its agent wrote since it was last
+ *  shown, `group` 0 or 1 (docs/tui.md, "Splits"). `split`: null, or "right" or "down" while the
+ *  panel is split in two groups; `group` the focused group (where an open goes); `aside` the other
+ *  group's shown tab's id, or null (no split, or that group empty). `terminal`: the focused group's
+ *  SHOWN tab, or null when no tab is open or the focused group is empty:
+ *  `{ id, name, machine, routed, group, focus, zoom, status }`, its tab's fields with `focus`
+ *  "terminal" while what is typed goes to the agent and "list" while the TUI reads keys, and `zoom`
+ *  true while it has the whole body (only with the terminal's focus).
  *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
  *  the next key bound to an action, or null.
  *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"), and
@@ -93,7 +98,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
     leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]), souls: NO_SOULS,
-    spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]),
+    spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]), split: null, group: 0, aside: null,
   });
 }
 
@@ -424,10 +429,11 @@ function switched(state, action, page) {
 export function reduce(state, event, keymap = bindings(state.actions)) {
   if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
   let step = reduced(state, event, keymap);
-  // The tabs are the open workspace's: whatever opened another (or left it, gone), they all close.
-  if (step.state.open !== state.open && step.state.tabs.length) {
+  // The tabs are the open workspace's: whatever opened another (or left it, gone), they all close,
+  // and the split with them.
+  if (step.state.open !== state.open && (step.state.tabs.length || step.state.split !== null)) {
     const ids = step.state.tabs.map((tab) => tab.id);
-    step = { state: next(step.state, { tabs: Object.freeze([]), terminal: null }), effect: both(step.effect, { close: ids }) };
+    step = { state: next(step.state, { tabs: Object.freeze([]), terminal: null, ...NO_SPLIT }), effect: ids.length ? both(step.effect, { close: ids }) : step.effect };
   }
   // The terminal has the focus only while the list of instances is shown: anything that shows
   // another view (a workspace gone, which shows the switcher) gives the focus back to the list.
@@ -450,19 +456,27 @@ function tabWith(state, id, changes) {
   const { activity, ...shared } = changes;
   return next(state, { tabs, ...(state.terminal?.id === id ? { terminal: Object.freeze({ ...state.terminal, ...shared }) } : {}) });
 }
+/** No split: one group, focused. */
+const NO_SPLIT = Object.freeze({ split: null, group: 0, aside: null });
+/** Group `g`'s tabs, in the strip's order. */
+const inGroup = (state, g) => state.tabs.filter((tab) => tab.group === g);
+/** Group `g`'s shown tab's id: the focused group's is the terminal's, the other's `aside`. */
+const shownOf = (state, g) => (g === state.group ? state.terminal?.id ?? null : state.aside);
 /** The cap's line: every tab is taken, and how to free one (the leader's close). */
 const fullLine = (state) => Object.freeze({ said: TAB_WORDS.full(TAB_LIMIT, state.detachKey), under: Object.freeze([]) });
 
-/** A new tab for an open decision (the model's openDecision), starting: placed after the shown
- *  one (last, with none shown) and shown, with the focus. */
+/** A new tab for an open decision (the model's openDecision), starting, in the focused group:
+ *  placed after its shown one (last, with none shown: an empty group's first) and shown, with the
+ *  focus. */
 function tabOpened(state, { id, name, machine, routed }) {
-  const tab = Object.freeze({ id, name, machine, routed, status: "starting", activity: false });
+  const group = state.group, tab = Object.freeze({ id, name, machine, routed, status: "starting", activity: false, group });
   const at = state.terminal === null ? state.tabs.length : state.tabs.findIndex((each) => each.id === state.terminal.id) + 1;
   const tabs = Object.freeze([...state.tabs.slice(0, at), tab, ...state.tabs.slice(at)]);
-  return next(state, { tabs, terminal: Object.freeze({ id, name, machine, routed, focus: "terminal", zoom: false, status: "starting" }) });
+  return next(state, { tabs, terminal: Object.freeze({ id, name, machine, routed, group, focus: "terminal", zoom: false, status: "starting" }) });
 }
 
-/** Tab `id` shown (docs/tui.md, "Tabs"), with `focus` and `zoom` (the shown one's, by default):
+/** Tab `id` shown (docs/tui.md, "Tabs"), with `focus` and `zoom` (the shown one's, by default),
+ *  in its group, which is the focused one from then on (docs/tui.md, "Splits"):
  *  its activity mark goes, it is the most recent for the palette, its instance's row is selected
  *  and revealed (a filter that hides it is cleared, a collapsed parent opened), and the focus stays
  *  where it was. The loop is told to show it unless it is the one shown already. */
@@ -471,10 +485,13 @@ function showTab(state, id, { focus = state.terminal?.focus ?? "list", zoom = st
   if (!tab) return { state, effect: null };
   const { activity, ...fields } = tab;
   const before = state.terminal?.id ?? null;
+  // A tab of the other group: that group is focused now, and the one left keeps its shown tab.
+  const across = tab.group !== state.group ? { group: tab.group, aside: before } : {};
   const shown = next(state, {
     tabs: Object.freeze(state.tabs.map((each) => (each.id === id && each.activity ? Object.freeze({ ...each, activity: false }) : each))),
     terminal: Object.freeze({ ...fields, focus, zoom: focus === "terminal" && zoom }),
     recent: recentWith(state, id),
+    ...across,
   });
   return { state: revealed(shown, id), effect: before === id ? null : { show: id } };
 }
@@ -496,29 +513,43 @@ function revealed(state, id) {
 
 /** The shown tab closed by the person (`c` in the list, the leader then `w`): its viewer ends
  *  (the agent keeps running), the tab to its right is shown, else the one to its left, with the
- *  focus `focus` and the zoom `zoom` (the closed one's); the last one closed gives the right
- *  side back to the detail and the focus to the list. */
+ *  focus `focus` and the zoom `zoom` (the closed one's), within its group; a group's last one
+ *  closed removes the group (ungrouped), and the last one of all gives the right side back to the
+ *  detail and the focus to the list. */
 function shownClosed(state, focus, zoom = state.terminal?.zoom ?? false) {
   const t = state.terminal;
   if (t === null) return { state, effect: null };
-  const at = state.tabs.findIndex((tab) => tab.id === t.id);
-  const tabs = Object.freeze(state.tabs.filter((tab) => tab.id !== t.id));
-  const neighbour = tabs[at] ?? tabs[at - 1] ?? null;
-  const closed = next(state, { tabs, terminal: null });
-  if (neighbour === null) return { state: next(closed, { focus: "list" }), effect: { close: [t.id] } };
-  const step = showTab(closed, neighbour.id, { focus, zoom });
+  const mine = inGroup(state, state.group), at = mine.findIndex((tab) => tab.id === t.id);
+  const rest = mine.filter((tab) => tab.id !== t.id), neighbour = rest[at] ?? rest[at - 1] ?? null;
+  const closed = next(state, { tabs: Object.freeze(state.tabs.filter((tab) => tab.id !== t.id)), terminal: null });
+  // The group's last tab: the group goes, and the other takes the panel (or none is left).
+  const step = neighbour !== null ? showTab(closed, neighbour.id, { focus, zoom })
+    : state.split !== null ? ungrouped(closed, state.group, focus)
+    : { state: next(closed, { focus: "list" }), effect: null };
   return { state: step.state, effect: both({ close: [t.id] }, step.effect) };
 }
 
-/** The tab before or after the shown one (`step` -1 or 1) shown, without wrapping: at either end
+/** Group `g` of a split, empty now, removed (docs/tui.md, "Splits"): the other group takes the
+ *  whole panel, as group 0, and is focused, its shown tab with the focus `focus`. When it is empty
+ *  too nothing is left, and the panel closes. */
+function ungrouped(state, g, focus) {
+  const left = shownOf(state, 1 - g);
+  const tabs = Object.freeze(state.tabs.map((tab) => (tab.group === 0 ? tab : Object.freeze({ ...tab, group: 0 }))));
+  const one = next(state, { tabs, terminal: null, ...NO_SPLIT });
+  if (left === null) return { state: next(one, { focus: "list" }), effect: null };
+  return showTab(one, left, { focus, zoom: false });
+}
+
+/** The tab before or after the shown one (`step` -1 or 1) in the focused group shown, without
+ *  wrapping and never into the other group: at either end
  *  nothing moves, nor while a tab is still starting (it is the shown one until the panel has its
  *  window). The focus stays where it was, and so does the zoom. */
 function tabStepped(state, step, { focus = state.terminal?.focus ?? "list", zoom = state.terminal?.zoom ?? false } = {}) {
   const t = state.terminal;
   if (t === null || state.tabs.some((tab) => tab.status === "starting")) return { state, effect: null };
-  const at = state.tabs.findIndex((tab) => tab.id === t.id) + step;
-  if (at < 0 || at >= state.tabs.length) return { state, effect: null };
-  return showTab(state, state.tabs[at].id, { focus, zoom });
+  const mine = inGroup(state, state.group), at = mine.findIndex((tab) => tab.id === t.id) + step;
+  if (at < 0 || at >= mine.length) return { state, effect: null };
+  return showTab(state, mine[at].id, { focus, zoom });
 }
 
 /** The preflight of another machine's agent ended. Given up meanwhile (Esc, a suspend, a second
@@ -535,18 +566,31 @@ function prepared(state, { id, error }) {
 /** The viewer of a tab ended by itself: its tab closes, the line says what happened, naming its
  *  instance (nothing when it ended cleanly), and the instances are read again at once. The shown
  *  one's end shows the tab to its right, else the one to its left, with the focus in the list
- *  (Settled 6 of T2); the last one's gives the right side back to the detail. A hidden one's end
- *  changes neither the shown tab nor the focus. A tab is never opened again on its own: Enter opens
+ *  (Settled 6 of T2); the last one's gives the right side back to the detail. The other group's
+ *  shown one's end shows its neighbour there; a group's last one's removes the group (Settled 5 of
+ *  T3). A hidden one's end changes neither the shown tab nor the focus. A tab is never opened again on its own: Enter opens
  *  it. The end of a tab the person closed (no longer a tab, then reported) changes nothing. */
 function returned(state, { id, status, stderr, asked = false, refused = null }) {
-  const at = state.tabs.findIndex((tab) => tab.id === id);
-  if (at < 0) return { state, effect: null };
-  const t = state.terminal, line = returnedLine(state.tabs[at], status, stderr, { asked, refused });
-  const tabs = Object.freeze(state.tabs.filter((tab) => tab.id !== id));
+  const tab = state.tabs.find((each) => each.id === id);
+  if (!tab) return { state, effect: null };
+  const line = returnedLine(tab, status, stderr, { asked, refused });
+  const mine = inGroup(state, tab.group), at = mine.findIndex((each) => each.id === id);
+  const rest = mine.filter((each) => each.id !== id), neighbour = rest[at] ?? rest[at - 1] ?? null;
+  const tabs = Object.freeze(state.tabs.filter((each) => each.id !== id));
   const read = { refresh: { live: true } };
-  if (t?.id !== id) return { state: next(state, { tabs, ...(line ? { outcome: line } : {}) }), effect: read };
-  const closed = next(state, { tabs, terminal: null, outcome: line });
-  const neighbour = tabs[at] ?? tabs[at - 1] ?? null;
+  const focused = state.terminal?.id === id, aside = state.aside === id;
+  if (!focused && !aside) return { state: next(state, { tabs, ...(line ? { outcome: line } : {}) }), effect: read };
+  // The other group's shown tab: its neighbour is shown there, and nothing else moves.
+  if (aside && neighbour !== null) {
+    const shown = Object.freeze(tabs.map((each) => (each.id === neighbour.id && each.activity ? Object.freeze({ ...each, activity: false }) : each)));
+    return { state: next(state, { tabs: shown, aside: neighbour.id, ...(line ? { outcome: line } : {}) }), effect: read };
+  }
+  const closed = next(state, { tabs, ...(focused ? { terminal: null } : { aside: null }), outcome: line });
+  // A group's last tab ended: the group goes, the other takes the panel, the list the focus (Settled 5 of T3).
+  if (neighbour === null && state.split !== null) {
+    const step = ungrouped(next(closed, { focus: "list" }), tab.group, "list");
+    return { state: step.state, effect: both(read, step.effect) };
+  }
   if (neighbour === null) return { state: closed, effect: read };
   // The list takes the focus, from the detail too (Settled 6 of T2), so the neighbour is drawn.
   const step = showTab(next(closed, { focus: "list" }), neighbour.id, { focus: "list" });
@@ -589,6 +633,65 @@ function terminalKey(state, action, focus = "list", zoom = false) {
   if (t === null) return { state, effect: null };
   if (action === "zoom") return { state: terminalWith(state, { focus: "terminal", zoom: true }), effect: null };
   return shownClosed(state, focus, zoom);
+}
+
+/** THE SPLIT'S KEYS (docs/tui.md, "Splits"). Why `does` would do nothing now: `true` for nothing
+ *  at all (no tab, a tab starting, a key that does not apply), the line that says why (a split
+ *  there is no room for, a second split), or null when it acts. `room` is the panel's size as the
+ *  Instances view gives it with the terminal's focus (`{ cols, rows }`, its strip row counted:
+ *  views/frame.mjs panelPlace), measured when the key is read; a room not known admits no split. Asked
+ *  before anything is settled, so that a key that does nothing moves no focus. */
+export function splitRefused(state, does, room, inTerminal = false) {
+  if (state.tabs.length === 0 || state.tabs.some((tab) => tab.status === "starting") || state.opening !== null) return true;
+  switch (does) {
+    case "split-right": case "split-down": {
+      const dir = does === "split-right" ? "right" : "down";
+      if (state.split !== null) return Object.freeze({ said: SPLIT_WORDS.twice(), under: Object.freeze([]) });
+      return splitFits(dir, room) ? null : Object.freeze({ said: SPLIT_WORDS.small(dir, SPLIT_MIN), under: Object.freeze([]) });
+    }
+    // One group: only from the list, to its terminal.
+    case "group-next": return state.split === null && (inTerminal || state.terminal === null) ? true : null;
+    case "tab-move": return state.split === null || state.terminal === null ? true : null;
+    case "group-close": return state.split === null || state.terminal !== null ? true : null;
+    default: return true;
+  }
+}
+/** A key of the split that acts (splitRefused said null), from the Instances view, `inTerminal`
+ *  when it came from the terminal's focus:
+ *    split-right, split-down: the tabs stay in the first group (left or top), and the second, empty,
+ *      is the focused one; the keys are the list's (Settled 2 of T3), so Enter on a row opens there;
+ *    group-next: to the other group's shown terminal, with the focus (to the empty group: focused,
+ *      the keys the list's); from the list, to the focused group's terminal, or with that group
+ *      empty to the other's;
+ *    tab-move: the focused group's shown tab to the other group, after its shown tab, shown there
+ *      with the focus; the group it leaves shows its neighbour, or stays, empty;
+ *    group-close: the empty focused group goes; the other takes the panel and is focused, and the
+ *      keys stay the list's (Settled 8 of T3). */
+function splitKey(state, does, inTerminal) {
+  const t = state.terminal, other = 1 - state.group;
+  switch (does) {
+    case "split-right": case "split-down":
+      return { state: next(state, { split: does === "split-right" ? "right" : "down", group: 1, aside: t?.id ?? null, terminal: null, focus: "list" }), effect: null };
+    case "group-next": {
+      if (state.split === null || (!inTerminal && t !== null)) return { state: terminalWith(state, { focus: "terminal" }), effect: null };
+      const there = shownOf(state, other);
+      if (there !== null) return showTab(state, there, { focus: "terminal", zoom: false });
+      return { state: next(state, { group: other, aside: t?.id ?? null, terminal: null, focus: "list" }), effect: null };
+    }
+    case "tab-move": {
+      const mine = inGroup(state, state.group), at = mine.findIndex((tab) => tab.id === t.id);
+      const rest = mine.filter((tab) => tab.id !== t.id), neighbour = rest[at] ?? rest[at - 1] ?? null;
+      const without = state.tabs.filter((tab) => tab.id !== t.id);
+      const place = state.aside === null ? without.length : without.findIndex((tab) => tab.id === state.aside) + 1;
+      const moved = Object.freeze({ ...state.tabs.find((tab) => tab.id === t.id), group: other, activity: false });
+      const tabs = Object.freeze([...without.slice(0, place), moved, ...without.slice(place)].map((tab) => (tab.id === neighbour?.id && tab.activity ? Object.freeze({ ...tab, activity: false }) : tab)));
+      const { activity, ...fields } = moved;
+      const s = next(state, { tabs, group: other, aside: neighbour?.id ?? null, terminal: Object.freeze({ ...fields, focus: "terminal", zoom: false }) });
+      return { state: revealed(s, t.id), effect: { show: t.id } };
+    }
+    case "group-close": return ungrouped(state, state.group, "list");
+    default: return { state, effect: null };
+  }
 }
 
 /** The keys of the act view that are not the action table's: the focus moves with these and with
@@ -695,6 +798,8 @@ function acted(state, event) {
 
 /** The instances the palette's recency keeps. */
 const RECENT_KEPT = 50;
+/** The actions of the split (docs/tui.md, "Splits"). */
+const SPLIT_KEYS = Object.freeze(["split-right", "split-down", "group-next", "tab-move", "group-close"]);
 /** The palette's recency with `id` the most recent: an open, and a tab shown. */
 const recentWith = (state, id) => Object.freeze([id, ...state.recent.filter((each) => each !== id)].slice(0, RECENT_KEPT));
 /** How many terminals the panel holds open at once (lib/panel.mjs MAX_TERMINALS, which a test
@@ -786,6 +891,16 @@ function led(state, does, event, keymap) {
     const settledState = toInstances(state);
     if (settledState.state.view !== "instances") return stay;
     const step = tabStepped(settledState.state, does === "tab-previous" ? -1 : 1, { focus: inTerminal ? "terminal" : "list", zoom: inTerminal && t.zoom });
+    return { state: step.state, effect: both(settledState.effect, step.effect) };
+  }
+  // The split's keys, from any focus: nothing at all when they do not apply (splitRefused).
+  if (SPLIT_KEYS.includes(does)) {
+    const refused = splitRefused(state, does, event.panel, inTerminal);
+    if (refused === true) return stay;
+    if (refused !== null) return { state: next(state, { outcome: refused }), effect: null };
+    const settledState = toInstances(state);
+    if (settledState.state.view !== "instances") return stay;
+    const step = splitKey(settledState.state, does, inTerminal);
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
   if (does === "previous" || does === "next") return stepped(state, does === "previous" ? -1 : 1, event);
@@ -998,6 +1113,10 @@ function reduced(state, event, keymap) {
     case "open": return at < 0 ? stay : openAgent(state, r.items[at].row);
     case "zoom": case "close-terminal": return terminalKey(state, action);
     case "tab-previous": case "tab-next": return tabStepped(state, action === "tab-previous" ? -1 : 1);
+    case "split-right": case "split-down": case "group-next": case "tab-move": case "group-close": {
+      const refused = splitRefused(state, action, event.panel);
+      return refused === true ? { state, effect: null } : refused !== null ? { state: next(state, { outcome: refused }), effect: null } : splitKey(state, action, false);
+    }
     case "stop": case "retire": case "start": case "restart": return at < 0 ? stay : actOn(state, r.items[at].row, action);
     case "detail": return at < 0 ? stay : { state: next(state, { focus: state.focus === "detail" ? "list" : "detail" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {

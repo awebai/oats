@@ -17,6 +17,7 @@ import { textWidth } from "../term/width.mjs";
 import { palette } from "./palette.mjs";
 import { soulDetail, soulsList, soulsListed } from "./souls.mjs";
 import { spawn } from "./spawn.mjs";
+import { splitFits, splitRegions } from "./split.mjs";
 import { switcher } from "./switcher.mjs";
 
 /** The frame is drawn from this size up (docs/tui.md); the design size is 80x24. */
@@ -399,7 +400,8 @@ function spawnHints(s, start, edge, put, own, ascii) {
 }
 /** The leader's hint (docs/tui.md, "The leader"): the leader's key, then what each key after it
  *  does, from actions.mjs LEADER, the views, the instances and the acts each one hint. The keys
- *  that need a terminal are named only while one is open, and the tabs' only with two or more.
+ *  that need a terminal are named only while one is open, the tabs' only with two or more, and the
+ *  split's only where they apply.
  *  Hints are given up from the end until the rest fit, the last, the list's, never. */
 function leaderHint(m, edge, put, own) {
   const by = (does) => LEADER.find((entry) => entry.does === does);
@@ -412,6 +414,10 @@ function leaderHint(m, edge, put, own) {
     ...(m.terminal ? [one("zoom"), one("close-terminal")] : []),
     // With two tabs or more, the keys that move between them.
     ...((m.tabs?.length ?? 0) > 1 ? [own(keysOf(["tab-previous", "tab-next"]), "tab")] : []),
+    // The split's (docs/tui.md, "Splits"): to split while there is one group; with two, the next
+    // group, and the move of the shown tab, or the close of the focused group while it is empty.
+    ...(m.panelOpen && !m.split ? [own(keysOf(["split-right", "split-down"]), "split")] : []),
+    ...(m.split ? [one("group-next"), ...(m.terminal ? [one("tab-move")] : [one("group-close")])] : []),
     own(keysOf(["stop", "restart", "start", "retire"]), "acts"),
     one("filter"), one("workspaces"), one("help"),
   ];
@@ -432,10 +438,17 @@ const placed = (spans, col) => spans.map((span) => ({ ...span, col: span.col + c
  *  pane (of the whole body, for the switcher); `extent` and `room` are how many rows the other
  *  scrolling pane (the help, else the detail) holds and shows. The main loop hands the three back
  *  with the next key, so the store scrolls by what is on the screen without holding a size. */
+/** The frame for model `m` at `size`: its rows, the paging the store scrolls by, the cursor, and
+ *  for the loop (lib/main.mjs fitPanel) `regions`, each group of the panel this frame draws, empty
+ *  when it draws none (another view, an overlay, a screen too small). */
 export function frame(m, size) {
+  const made = framed(m, size);
+  return made.regions ? made : { ...made, regions: [] };
+}
+function framed(m, size) {
   if (tooSmall(size)) return { rows: tooSmallRows(size), page: 1, extent: 0, room: 1 };
   const rows = Array.from({ length: size.rows }, () => []);
-  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: Boolean(m.terminal) });
+  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m) });
   const { cols } = size;
   // The switcher is no view of the three: while it is shown, or is under the help, none is current.
   const listing = m.under === "switcher";
@@ -530,17 +543,26 @@ export function frame(m, size) {
   const bar = split ? [{ col: g.listCols, text: lit(m.ascii ? "|" : "│"), style: DIM, width: 1 }] : [];
   if (area !== null) {
     for (let i = 0; i < g.panes.rows; i++) rows[g.panes.top + i] = [...rows[g.panes.top + i], ...bar];
-    terminalRows(m, area).forEach((spans, i) => { rows[area.title + i] = [...rows[area.title + i], ...spans]; });
+    for (const region of area.regions) regionRows(m, region).forEach((spans, i) => { rows[region.title + i] = [...rows[region.title + i], ...spans]; });
+    // The rule between two groups: a column side by side, a row one above the other.
+    const p = area.panel, r = area.rule;
+    if (r?.col !== undefined) for (let i = 0; i <= p.rows; i++) rows[p.title + i] = [...rows[p.title + i], { col: r.col, text: lit(m.ascii ? "|" : "\u2502"), style: DIM, width: 1 }];
+    if (r?.row !== undefined) rows[r.row] = [...rows[r.row], { col: p.col, text: lit((m.ascii ? "-" : "\u2500").repeat(p.cols)), style: DIM, width: p.cols }];
   } else if (split || paged) {
     const at = paged ? MARGIN : g.listCols + 2;
     const drawn = detail(m, { cols: Math.max(0, cols - at - MARGIN), rows: g.panes.rows });
     extent = drawn.extent;
     drawn.rows.forEach((spans, i) => { rows[g.panes.top + i] = [...rows[g.panes.top + i], ...bar, ...placed(spans, at)]; });
   }
-  // The agent's cursor, where the agent has it, while what is typed goes to the agent.
-  const agent = area !== null && m.terminal.focus === "terminal" ? m.screen?.cursor : null;
-  const cursor = agent?.visible && agent.y < area.rows && agent.x < area.cols ? { row: area.top + agent.y, col: area.col + agent.x } : null;
-  return { rows, page: Math.max(1, g.page), extent, room: Math.max(1, g.panes.rows), terminal: area, cursor };
+  // The focused group's terminal, when it shows one: the agent's cursor, where the agent has it,
+  // while what is typed goes to the agent.
+  const shownArea = area !== null && area.id !== null && m.terminal ? { title: area.title, top: area.top, col: area.col, cols: area.cols, rows: area.rows, whole: area.whole } : null;
+  const agent = shownArea !== null && m.terminal.focus === "terminal" ? m.screen?.cursor : null;
+  const cursor = agent?.visible && agent.y < shownArea.rows && agent.x < shownArea.cols ? { row: shownArea.top + agent.y, col: shownArea.col + agent.x } : null;
+  // The regions the loop gives the panel (lib/main.mjs): each group drawn, its shown tab's id and
+  // its size; and the panel's room as the terminal's focus would give it, for a split's size.
+  const regions = area === null ? [] : area.regions.map(({ group, id, focused, cols: c, rows: r }) => ({ group, id, focused, cols: c, rows: r }));
+  return { rows, page: Math.max(1, g.page), extent, room: Math.max(1, g.panes.rows), terminal: shownArea, cursor, regions };
 }
 
 /** The Souls view in the panes of the list (views/souls.mjs), under the header and what stands
@@ -570,25 +592,57 @@ function soulsFrame(m, size, g, rows) {
 
 /** Where the open terminal stands for a model and a size, or null while it is not shown (no
  *  terminal; another view over the body; the detail in its place; the list's focus on a terminal
- *  too narrow for it beside the list). `{ title, top, col, cols, rows, whole }`: `title` is the row
- *  that names the agent, and the agent's screen is `rows` rows of `cols` cells from (`top`, `col`)
- *  (the size the panel gives the viewer). With the terminal's focus it has the whole body when it is
+ *  too narrow for it beside the list). `{ title, top, col, cols, rows, whole }`, the focused
+ *  group's: `title` is the row that names the agent, and the agent's screen is `rows` rows of
+ *  `cols` cells from (`top`, `col`) (the size the panel gives the viewer); with `panel` the whole
+ *  panel's place, `regions` each group drawn (`group`, `id` its shown tab's or null, `focused`),
+ *  and `rule` between two (views/split.mjs). With the terminal's focus it has the whole body when it is
  *  zoomed, under WIDE columns, and when the side beside the list would be under PANEL_MIN cells
  *  (`whole`); else it stands beside the list, edge to edge, in the detail's place. */
 export function terminalArea(m, size) {
   if (tooSmall(size)) return null;
-  return terminalAt(m, size, layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: Boolean(m.terminal) }));
+  return terminalAt(m, size, layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m) }));
+}
+/** Where the panel stands as the Instances view gives it with the terminal's focus, whatever this
+ *  frame draws (an overlay, another view, the list's focus): `{ panel, focused }`, the panel's
+ *  room with its strip row counted (what a split is measured against: lib/store.mjs
+ *  splitRefused) and the focused group's screen (`{ cols, rows }`, what a viewer opened now starts
+ *  at), or null on a screen too small. */
+export function panelPlace(m, size) {
+  if (tooSmall(size)) return null;
+  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: true });
+  const area = terminalAt({ ...m, view: "instances", under: "instances", palette: null, spawn: null, panelOpen: true, terminal: { ...(m.terminal ?? {}), focus: "terminal" } }, size, g);
+  return { panel: panelRoom(size, g), focused: area === null ? null : { cols: area.cols, rows: area.rows } };
+}
+/** Whether the panel stands: a tab is open (a model made by hand may name only its terminal). */
+const panelOpen = (m) => Boolean(m.panelOpen) || Boolean(m.terminal);
+/** The panel's groups, or one made of the terminal for a model that names no groups. */
+const groupsIn = (m) => m.groups ?? [{ tabs: m.tabs ?? [], shown: m.terminal?.id ?? null }];
+/** The panel's size as the terminal's focus would give it, its strip row counted: what a split
+ *  is measured against (lib/store.mjs splitRefused). */
+function panelRoom(size, g) {
+  const side = size.cols - g.listCols - 1;
+  return { cols: !g.wide || side < PANEL_MIN ? size.cols : side, rows: g.panes.rows };
 }
 function terminalAt(m, size, g) {
   const t = m.terminal;
-  if (!t || m.view !== "instances" || m.under === "switcher" || m.palette || m.spawn || g.panes.rows < 2) return null;
+  if (!panelOpen(m) || m.view !== "instances" || m.under === "switcher" || m.palette || m.spawn || g.panes.rows < 2) return null;
+  const focus = t?.focus ?? "list", zoom = Boolean(t?.zoom);
   const side = size.cols - g.listCols - 1;
   const narrow = !g.wide || side < PANEL_MIN;
-  const whole = t.focus === "terminal" && (t.zoom || narrow);
+  const whole = focus === "terminal" && (zoom || narrow);
   // From the list's focus it stands beside the list, unless the detail stands there or there is no room.
-  if (t.focus !== "terminal" && (m.focus === "detail" || narrow)) return null;
+  if (focus !== "terminal" && (m.focus === "detail" || narrow)) return null;
   const col = whole ? 0 : g.listCols + 1;
-  return { title: g.panes.top, top: g.panes.top + 1, col, cols: whole ? size.cols : side, rows: g.panes.rows - 1, whole };
+  const panel = { title: g.panes.top, top: g.panes.top + 1, col, cols: whole ? size.cols : side, rows: g.panes.rows - 1 };
+  // Both groups while the panel holds them and nothing is zoomed; else the focused one alone, the
+  // other kept (Settled 3 of T3).
+  const groups = groupsIn(m), focused = m.group ?? 0;
+  const both = Boolean(m.split) && !zoom && groups.length === 2 && splitFits(m.split, { cols: panel.cols, rows: panel.rows + 1 });
+  const [first, second, rule] = both ? splitRegions(panel, m.split) : [panel, null, null];
+  const regions = (both ? [{ ...first, group: 0 }, { ...second, group: 1 }] : [{ ...panel, group: focused }])
+    .map((r) => ({ ...r, id: groups[r.group]?.shown ?? null, focused: r.group === focused, whole }));
+  return { ...regions.find((r) => r.focused), panel, regions, rule };
 }
 
 /** A hidden tab's mark for output since it was last shown (docs/tui.md, "Tabs"). */
@@ -601,10 +655,9 @@ const ACTIVITY = "\u2022";
  *  machines, then their names, each to an equal share of what the shown tab leaves with `…`, then
  *  the shown tab's machine, then the hidden tabs farthest from the shown one are left out. The
  *  shown tab's name stays whole while the row can hold it. */
-function stripRow(m, area) {
-  const focused = m.terminal.focus === "terminal", ascii = m.ascii;
+function stripRow(given, area, { focused, ascii }) {
   const mark = ascii ? "*" : ACTIVITY;
-  const tabs = m.tabs.map((tab) => ({ ...tab, name: measured(tab.name), machine: tab.machine === null ? null : measured(tab.machine), mark: !tab.shown && tab.activity }));
+  const tabs = given.map((tab) => ({ ...tab, name: measured(tab.name), machine: tab.machine === null ? null : measured(tab.machine), mark: !tab.shown && tab.activity }));
   const machineCells = (tab) => (tab.machine ? 1 + ON.length + 1 + tab.machine.width : 0);
   const cellsOf = (tab, { machine, name = tab.name.width, dropped = false }) => (dropped ? 0 : 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + 1);
   const total = (plan) => tabs.reduce((sum, tab, i) => sum + cellsOf(tab, plan[i]), 0);
@@ -655,20 +708,44 @@ function stripRow(m, area) {
  *  stripRow), then the shown agent's screen as the last capture made it (lib/panel.mjs,
  *  term/capture.mjs: spans of the agent's own text and styles), each row placed at the terminal's
  *  first column and kept inside its cells. */
-function terminalRows(m, area) {
-  const t = m.terminal, focused = t.focus === "terminal";
-  const name = measured(t.name);
+/** What an empty group shows (docs/tui.md, "Splits"), under an empty strip row: that Enter on an
+ *  agent in the list opens it here, in reverse while it is the focused group, then the leader's
+ *  keys for the groups. */
+const EMPTY_HINT = "Enter on an agent opens it here";
+function emptyRows(m, area) {
+  const end = area.col + area.cols, at = area.col + 1;
+  const hint = [{ col: at, text: lit(EMPTY_HINT), width: Math.max(0, Math.min(EMPTY_HINT.length, end - at - 1)), ...(area.focused ? { style: FOCUSED } : {}) }];
+  const leader = keyText(m.detachKey), keys = [];
+  let col = at;
+  for (const does of ["group-next", "group-close"]) {
+    const entry = LEADER.find((each) => each.does === does), key = keyLabel(entry.keys[0]), word = entry.label;
+    const after = col + leader.width + 1, at2 = after + key.length + 1;
+    if (at2 + word.length > end - 1) break;
+    keys.push({ col, text: leader.text, style: BOLD, width: leader.width }, { col: after, text: lit(key), style: BOLD, width: key.length }, { col: at2, text: lit(word), style: DIM, width: word.length });
+    col = at2 + word.length + GAP;
+  }
+  return [[], hint, keys];
+}
+function regionRows(m, area) {
+  const group = groupsIn(m)[area.group] ?? { tabs: [], shown: null };
+  if (group.shown === null) return emptyRows(m, area);
+  // The focused group's shown tab is in reverse while what is typed goes to it; the other group's
+  // is bold, never in reverse, so one terminal at a time reads as focused (T3).
+  const focused = area.focused && m.terminal?.focus === "terminal";
+  const tab = group.tabs.find((each) => each.shown) ?? { name: m.terminal?.name, machine: m.terminal?.routed ? m.terminal.machine : null };
+  const name = measured(tab.name);
   let title = [];
-  if ((m.tabs?.length ?? 0) > 1) title = stripRow(m, area);
+  if (group.tabs.length > 1) title = stripRow(group.tabs, area, { focused, ascii: m.ascii });
   else {
     if (focused) title.push({ col: area.col, width: Math.min(area.cols, name.width + 2), style: FOCUSED });
     title.push({ col: area.col + 1, text: name.text, style: focused ? FOCUSED : BOLD, width: Math.max(0, Math.min(name.width, area.cols - 2)) });
-    if (t.routed && t.machine !== null) {
-      const where = measured(t.machine), at = area.col + name.width + 3;
+    if (tab.machine) {
+      const where = measured(tab.machine), at = area.col + name.width + 3;
       if (at + ON.length + 1 < area.col + area.cols) title.push({ col: at, text: lit(ON), style: DIM, width: ON.length }, { col: at + ON.length + 1, text: where.text, style: DIM, width: Math.max(0, area.col + area.cols - (at + ON.length + 1)) });
     }
   }
-  const lines = m.screen?.lines ?? [];
+  const screenOf = area.focused ? m.screen : m.screens?.get(group.shown) ?? null;
+  const lines = screenOf?.lines ?? [];
   const body = Array.from({ length: area.rows }, (_, r) => (lines[r] ?? [])
     .filter((span) => span.col < area.cols)
     .map((span) => ({ ...span, col: area.col + span.col, width: Math.min(span.width ?? area.cols, area.cols - span.col) })));

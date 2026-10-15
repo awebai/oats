@@ -13,7 +13,8 @@ install.
 
 - **This version shows a workspace's instances, on this machine and on the
   other machines registered on this machine, in one list, opens agents'
-  terminals as tabs, spawns an agent on this machine, and stops, starts, restarts
+  terminals as tabs, in one group or two ([Splits](#splits)), spawns an agent
+  on this machine, and stops, starts, restarts
   and retires an agent after a confirmation.** The registered machines are
   the ones `oats server list` names. It follows the instances as they
   start, stop and wait for you. It cannot spawn an agent on another machine
@@ -437,6 +438,91 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   workspace no longer being listed; their agents keep running. Coming back
   opens none of them again.
 
+## Splits
+
+```
+ acme-platform                                                                                        3 running
+  Instances   Souls   Capabilities                                                                read 14:03:27
+──────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────
+  ● backend-lead              │ backend-lead  docs-writer              │ qa-runner
+  ● docs-writer               │$ git log --oneline -2                  │$ make test
+> ● qa-runner                 │4be1c0d Fix the reader                  │ok 41 of 41
+                              │9a03e7f Add the roster                  │
+                              │                                        │
+C-\ commands   C-\ C-\ back to the list
+```
+
+The panel can be split in two **groups**, side by side or one above the
+other. Each group is a panel of [tabs](#tabs) of its own: a strip, a shown
+tab and the marks of its hidden ones.
+
+- **Splitting.** The leader then `|` splits the panel side by side, and the
+  leader then `-` one above the other; in the Instances view `|` and `-`
+  do the same without the leader. The tabs open stay in the first group
+  (left, or top). The second group starts empty and is the focused group.
+  - A split needs a tab open, and none starting.
+  - **There are at most two groups.** With two, the split keys do nothing,
+    and the line above the panes says `The panel has two groups already.`
+  - **Each group needs 40 columns side by side, and 8 rows one above the
+    other**, its strip counted. The panel beside the list then needs 81
+    columns (a terminal of 112), or 17 rows. A split that would leave a
+    group smaller does nothing, and the line says so:
+    `No room to split side by side: each group needs 40 columns.` or
+    `No room to split one above the other: each group needs 8 rows.`
+- **What is drawn.** A rule separates the groups. Both groups' shown tabs
+  are drawn as their agents write; hidden tabs only set their marks.
+  - The focused group's strip is drawn as with one group: its shown tab in
+    reverse while its terminal has the focus, bold otherwise. The other
+    group's shown tab is bold, never in reverse, so one terminal at a time
+    reads as the one you type into.
+  - **An empty group** says `Enter on an agent opens it here`, in reverse
+    while it is the focused group, and the leader's keys to go to the other
+    group or to close it. It never takes keys: while it is the focused
+    group, the keys are the list's.
+  - A resize gives each group its share and reaches every tab's window in
+    it. **When the terminal becomes too small for both groups,** the split
+    stays and the focused group is drawn alone; the other group's shown tab
+    is not drawn, only marked, until there is room again.
+  - **Under 80 columns** the terminal's focus gives the whole body to both
+    groups, and the list's focus shows the list alone, as with one group.
+  - **Zoom** (`z`, or the leader then `z`) gives the focused group's shown
+    terminal the whole body, and the same key brings the split back. With
+    the empty group focused it does nothing.
+- **Opening.** `Enter`, the palette, the leader then `Up`/`Down` and a
+  spawn open as with one group:
+  - an instance that has a tab, in either group: that tab is shown in its
+    group, and that group takes the focus;
+  - any other: a new tab in the focused group, after its shown tab, or as
+    the first tab of the empty group.
+  - **The four tabs are counted across both groups.** At four, the line
+    says `4 terminals are open; close one with C-\ w.` as with one group.
+- **Moving between the groups.** The leader then `Tab` from a terminal goes
+  to the other group's shown terminal, or to the other group when it is
+  empty. From the list it goes to the focused group's terminal, or, with
+  the focused group empty, to the other group's. Showing a tab selects its
+  row in the list. `[`, `]` and the leader then `Left`/`Right` show the tab
+  before or after within the focused group only.
+- **Moving a tab.** The leader then `m` moves the focused group's shown tab
+  to the other group, after that group's shown tab, and shows it there with
+  the focus. The group it leaves shows its neighbour, or stays, empty.
+- **Closing.** Closing a tab (`c`, or the leader then `w`) shows its
+  neighbour in its group: the tab to its right, else the one to its left.
+  - **A group's last tab closed removes the group:** the other takes the
+    whole panel and the focus. When the other group was empty, the panel
+    closes, as when the last tab of the only group closes.
+  - The leader then `x` closes the focused group while it is empty: the
+    other takes the whole panel and is the focused group, and the keys stay
+    the list's. With tabs in the group, `x` does nothing.
+  - **A tab that closes by itself** shows its neighbour in its group. A
+    group's last tab closing by itself removes the group, and the list
+    takes the focus; when what is left is an empty group, the panel closes.
+- **The palette** lists `Split right` and `Split down` while there is one
+  group, then `Move tab to the other group` while the focused group shows a
+  tab, or `Close the empty group` while it is empty.
+- **Another workspace** closes every tab and the split.
+- The split cannot be resized or nested, and is not kept from one run to
+  the next.
+
 ## The Souls view
 
 `2`, or the leader then `2`, shows the souls of the open workspace: the
@@ -747,6 +833,7 @@ The line after leaving says so and names `oats status` to see it.
 | `z` | gives the shown terminal the focus and the whole body |
 | `c` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
 | `[`, `]` | in the Instances view, shows the tab before or after the shown one |
+| `\|`, `-` | in the Instances view, [splits](#splits) the panel side by side or one above the other |
 | `Ctrl+\` | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
@@ -788,6 +875,10 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
 | `Left`, `Right` | shows the tab before or after the shown one; the strip does not wrap, and the focus stays where it was |
 | `z` | zooms the shown terminal in or out; with the list focused, gives it the focus and the whole body |
 | `w` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
+| `\|`, `-` | [splits](#splits) the panel side by side or one above the other |
+| `Tab` | goes to the other group's terminal (or to the other group, when it is empty); from the list, to the focused group's |
+| `m` | with two groups, moves the shown tab to the other group, and goes there |
+| `x` | closes the focused group while it is empty |
 | `X`, `R`, `S`, `D` | stop, restart, start, retire, [after a confirmation](#stopping-starting-restarting-and-retiring): from a terminal's focus on that terminal's instance, which has the focus again when the confirmation closes |
 | `n`, `N` | [spawns an agent](#spawning-an-agent); `N` of the shown terminal's soul from its focus |
 | `/` | the filter |
@@ -797,7 +888,9 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
 
 - **While the leader waits** for its key the footer row is its hint, which
   names these keys (`z` and `w` only while a terminal is open, `Left` and
-  `Right` only with two tabs or more). It waits
+  `Right` only with two tabs or more, `|` and `-` while the panel has one
+  group, `Tab` with two, then `m` while the focused group shows a tab or
+  `x` while it is empty). It waits
   with no time limit. A key not in the table cancels it and is dropped:
   nothing is typed.
 - **Only a key in a later read counts.** A key that came in the same read of
@@ -809,7 +902,7 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
   have, and the leader works there too.
 - **What was open under it is settled first,** from whatever view: a
   filter field keeps its filter, as `Enter` does, and a confirmation
-  closes. `Up`, `Down`, `Left`, `Right`, `z`, `w` and the acts then go to
+  closes. `Up`, `Down`, `Left`, `Right`, `z`, `w`, the split's keys and the acts then go to
   the Instances view, from Souls, Capabilities, the help or the switcher
   too; with no workspace open they do nothing, and `Left`, `Right`, `z` and
   `w` do nothing with no terminal open.
@@ -831,7 +924,8 @@ is open no terminal is drawn and the TUI reads the keys.
   reads them); the views, Instances, Souls and Capabilities; the acts the
   instance offers now (the shown terminal's when the palette was opened from
   its focus, else the selected one's), with `Spawn another <soul>` once the
-  catalog lists its soul; then Spawn an agent, Workspaces, Refresh and Help.
+  catalog lists its soul; then Spawn an agent, Workspaces, Refresh and Help, and [the split's](#splits)
+  rows where each applies.
   Each row says at its right edge what kind it is: `instance`, `soul`,
   `view`, `act` or `command`.
 - **Typing filters it** with the Desktop's subsequence match, a prefix
@@ -882,13 +976,17 @@ never writes it. With no file the keys are the ones above.
 - The actions are `up`, `down`, `top`, `bottom`, `page-up`, `page-down`,
   `collapse`, `expand`, `detail`, `filter`, `refresh`, `instances`,
   `souls`, `capabilities`, `workspaces`, `palette`, `open`, `soul-instances`, `zoom`, `close-terminal`,
-  `tab-previous`, `tab-next`, `stop`, `retire`, `start`, `restart`, `spawn`, `spawn-another`,
+  `tab-previous`, `tab-next`, `split-right`, `split-down`, `group-next`, `tab-move`,
+  `group-close`, `stop`, `retire`, `start`, `restart`, `spawn`, `spawn-another`,
   `spawn-check`, `help`, `close`, `quit`, `suspend` and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
   opens the selected agent's terminal in the list of instances, the
   selected row in the switcher and the detail in the Souls view;
   `soul-instances` (`i`) shows the selected soul's instances. `zoom` (`z`) and `close-terminal` (`c`) act
   on the shown terminal, and `tab-previous` (`[`) and `tab-next` (`]`) show
-  the tab before and after it. In an open filter field `Enter` keeps the filter,
+  the tab before and after it. `split-right` (`|`) and `split-down` (`-`)
+  [split](#splits) the panel; `group-next`, `tab-move` and `group-close`
+  have no key of their own by default (the leader then `Tab`, `m` and `x`
+  reach them). In an open filter field `Enter` keeps the filter,
   whatever key `open` has.
 - A key is written as the help shows it, in lower case: `q`, `G`, `?`,
   `space`, `enter`, `tab`, `escape`, `backspace`, `up`, `pageup`, `f5`,
@@ -1017,12 +1115,13 @@ with the Desktop (`packages/client/`).
     directory alone while its socket answers.
 
   Each tab is a window of the server, whose process is the viewer itself,
-  with no shell between them. Beside the keeper it holds up to four, one
-  of them shown, and every one has the panel's size: a resize resizes each tab's
-  window. Only the shown tab's pane is captured and typed into. tmux tells
-  `oats tui` of every pane's output: a hidden tab's output captures
-  nothing, and only sets that tab's mark, once until the tab is shown and
-  hidden again. The panel refuses a fifth open (`E_PANEL_FULL`, an open
+  with no shell between them. Beside the keeper it holds up to four. Up
+  to two are displayed, each group's shown tab ([Splits](#splits)), and
+  every tab has its group's size: a resize resizes each tab's window in the
+  groups drawn. Only the displayed tabs' panes are captured, and only the
+  focused group's shown tab is typed into. tmux tells `oats tui` of every
+  pane's output: a hidden tab's output captures nothing, and only sets that
+  tab's mark, once until the tab is displayed and hidden again. The panel refuses a fifth open (`E_PANEL_FULL`, an open
   still under way counted) and a second open while one is under way
   (`E_PANEL_BUSY`); the TUI asks for neither, since it refuses such an open
   itself ([Tabs](#tabs)). It is closed with `kill-pane`, which hangs up
@@ -1133,9 +1232,10 @@ version:
   Capabilities, when it comes, is this machine's too.
 - There is no sorting and no mouse, and a deployment's heading cannot be
   folded. An open terminal has no scrollback but the viewer's own.
-- Up to four terminals are open at a time, as tabs. A tab cannot be moved
-  or split, and no tab is kept from one run to the next, or across a switch
-  of workspace.
+- Up to four terminals are open at a time, as tabs, in at most two
+  groups. The split cannot be resized or nested, a tab moves only between
+  the two groups, and no tab or split is kept from one run to the next, or
+  across a switch of workspace.
 - With an OATS older than 0.52.0, after an interrupted stop the instance can
   be started and then cannot be stopped while `.oats-stop-pending.json` exists
   in its home.
@@ -1192,7 +1292,7 @@ suspends as one job.
 
 **While an agent's terminal is open** the terminal stays `oats tui`'s: the
 viewer draws into the private server's pane, never into your terminal, and
-`oats tui` draws what the shown tab's pane shows. Every way out in the
+`oats tui` draws what the displayed tabs' panes show. Every way out in the
 table above ends the private server and with it every tab's viewer, with
 that status. A suspend
 leaves the server and its viewers running; `fg` draws the terminal afresh.

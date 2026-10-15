@@ -403,7 +403,7 @@ test("in ASCII nothing on the screen is outside printable ASCII: the list, the d
 
 test("in ASCII a held row's own words end in three full stops, never an ellipsis: the list's word, the detail's state, the help and a start's line (#1247)", () => {
   const rows = [instanceRow("dev", "dev-retiring", { retirePending: true }), instanceRow("dev", "dev-spawning", { spawnInProgress: true, running: false, runtimeState: "stopped" })];
-  const sz = size(200, 100); // tall enough for the help's marks, under the leader's table and the spawn prompt's
+  const sz = size(200, 110); // tall enough for the help's marks, under the leader's table (with the split's keys) and the spawn prompt's
   for (const ascii of [true, false]) {
     const at = `ascii ${ascii}`, list = stateOf(observed(rows), { ascii });
     const screens = { list, detail: press(list, ["tab"]).state, help: press(list, ["?"]).state };
@@ -1399,7 +1399,8 @@ test("at 60 columns, the smallest width the frame is drawn at, the help still na
 
 // ── The help ─────────────────────────────────────────────────────────────────────────────────────
 
-const HELP_SIZE = size(140, 130);
+// Tall enough for the whole help (T3 added the split's rows).
+const HELP_SIZE = size(140, 200);
 function helpLines(state, sz = HELP_SIZE) {
   const d = draw(press(state, ["?"], sz).state, sz);
   assert.equal(d.extent <= d.room, true, "the whole help is on this screen");
@@ -1411,7 +1412,10 @@ const pair = (lines, left, right) => lines.some((line) => { const text = line.tr
 test("the help lists every action of the table it is given with its keys, and an unbound action as `(no key)`", () => {
   const lines = helpLines(golden());
   // An action that does one thing in each view has a line per view, its keys on each.
-  for (const action of ACTIONS) for (const said of action.views ? action.views.map(([, words]) => words) : [action.label]) assert.equal(pair(lines, keysLabel(action), said), true, `${action.id}: ${keysLabel(action)} ${said}`);
+  // An action with no key by default (the split's group-next, tab-move and group-close, which the
+  // leader reaches) is listed as `(no key)`, as one tui.json unbinds.
+  const labelOf = (action) => (action.keys.length ? keysLabel(action) : "(no key)");
+  for (const action of ACTIONS) for (const said of action.views ? action.views.map(([, words]) => words) : [action.label]) assert.equal(pair(lines, labelOf(action), said), true, `${action.id}: ${labelOf(action)} ${said}`);
   for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["2", "souls"], ["3", "capabilities"], ["w", "workspaces"], ["Enter", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["z", "go to the shown terminal with the whole screen; the leader twice brings the list back"], ["c", "close the shown terminal and show its neighbour; the agent keeps running"], ["[", "show the terminal of the tab before the shown one"], ["]", "show the terminal of the tab after the shown one"], ["Enter", "open the selected workspace, in the switcher"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
     assert.equal(pair(lines, keys, label), true, `${keys} ${label}`);
   }
@@ -1474,7 +1478,7 @@ test("the help says what each view holds, and what to run for what it does not d
 });
 
 test("the help's last section, `Not in this version`, names every act this version does not have with the oats command that does it", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 200), size(79, 150), size(200, 130)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 200), size(79, 170), size(200, 140)]) {
     const lines = helpLines(golden({ ascii }), sz), text = lines.map((line) => line.trim());
     const at = text.indexOf("Not in this version");
     assert.equal(at > 0, true);
@@ -1542,7 +1546,7 @@ test("every key a tui.json may give an action is drawn: the footer and the help 
     // The wide key takes two cells: the word after it stands one cell past them.
     const d = draw(state, sz), last = d.cells[sz.rows - 1], at = last.findIndex((cell) => cell.text === "日");
     assert.equal(last.slice(at + 2, at + 7).map((cell) => cell.text).join(""), " help");
-    const big = size(100, 140), lines = draw(press(state, ["日"], big).state, big).lines.slice(3, big.rows - 1);
+    const big = size(100, 160), lines = draw(press(state, ["日"], big).state, big).lines.slice(3, big.rows - 1);
     for (const id of Object.keys(keys)) assert.ok(lines.some((line) => line.trim().startsWith(`${labelOf(id)}  `)), `the help lists ${id} under ${labelOf(id)}`);
     assert.ok(lines.some((line) => line.trim() === `${labelOf("close").split(", ")[0]} or 日 closes this help`), "the closing line names the two keys");
     // The meanings stand in one column, whatever cells the keys take.
@@ -2516,7 +2520,7 @@ test("a folder that turned out not to be a deployment says so in its row, where 
 // ── The help, with machines and the switcher ─────────────────────────────────────────────────────
 
 test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment elsewhere with the oats command that does it, and what no command lifts in sentences of its own", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 200), size(79, 150), size(200, 130)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 200), size(79, 170), size(200, 140)]) {
     const text = helpLines(reached({ ascii }), sz).map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const machines = text.indexOf("Machines"), last = text.indexOf("Not in this version");
     assert.equal(machines > text.indexOf("Views") && last > machines, true, `${at}: Machines stands between Views and what is not in this version`);
@@ -2800,6 +2804,8 @@ test("the help lists Enter once per view with what it does there, the keys of th
     "k, Space  palette", "1  instances", "2  souls", "3  capabilities", "Up  previous instance", "Down  next instance",
     "z  zoom, while a terminal is open", "w  close terminal, while a terminal is open",
     "Left  previous tab, while a terminal is open", "Right  next tab, while a terminal is open",
+    "|  split right, while a terminal is open", "-  split down, while a terminal is open", "Tab  next group, while a terminal is open",
+    "m  move tab, while a terminal is open", "x  close group, while a terminal is open",
     "X  stop", "R  restart", "S  start", "D  retire", "n  spawn", "N  spawn another", "/  filter", "o  workspaces", "?  help",
     "Esc  the list; the leader again does the same",
   ]);
@@ -3012,7 +3018,8 @@ const waiting = (state) => leaderThen(state, "escape").leader.state;
 /** What the hint names after the leader's key, in the leader's table's order (actions.mjs LEADER);
  *  the terminal's keys only while one is open ("Settled" 4). `Esc the list` stands last, always. */
 const HINTS = Object.freeze(["k palette", "1-3 views", "Up/Down instance", "X/R/S/D acts", "/ filter", "o workspaces", "? help"]);
-const TERMINAL_HINTS = Object.freeze(["k palette", "1-3 views", "Up/Down instance", "z zoom", "w close terminal", "X/R/S/D acts", "/ filter", "o workspaces", "? help"]);
+// With one tab open the split keys are named too (T3: one group, so `|/- split`).
+const TERMINAL_HINTS = Object.freeze(["k palette", "1-3 views", "Up/Down instance", "z zoom", "w close terminal", "|/- split", "X/R/S/D acts", "/ filter", "o workspaces", "? help"]);
 const LAST_HINT = "Esc the list";
 /** The hint on a row `cols` wide: the leader's key, then the hints, given up from the end until the
  *  rest and `Esc the list` stand before the last column, three cells between two. */
@@ -3035,7 +3042,7 @@ test("while the leader waits, the footer row is its hint and nothing else on the
 test("the leader's hint at every width from 60 to 200 columns: as many hints as fit, given up from the end, `Esc the list` never; the terminal's `z zoom` and `w close terminal` named only while a terminal is open, from its focus or the list's (Settled 4)", () => {
   assert.equal(hintAt(60), "C-\\   k palette   1-3 views   Esc the list");
   assert.equal(hintAt(120), `C-\\   ${HINTS.join("   ")}   Esc the list`, "at 120 columns every key is named");
-  assert.equal(hintAt(120, TERMINAL_HINTS), "C-\\   k palette   1-3 views   Up/Down instance   z zoom   w close terminal   X/R/S/D acts   / filter   Esc the list");
+  assert.equal(hintAt(120, TERMINAL_HINTS), "C-\\   k palette   1-3 views   Up/Down instance   z zoom   w close terminal   |/- split   X/R/S/D acts   Esc the list");
   for (let cols = MIN_SIZE.cols; cols <= 200; cols++) {
     const sz = size(cols, 24);
     const listed = footer(draw(waiting(golden()), sz), sz);
@@ -3282,6 +3289,11 @@ test("at 60 columns the help's `The leader` section has every row whole: the sen
       "  w          close terminal, while a terminal is open",
       "  Left       previous tab, while a terminal is open",
       "  Right      next tab, while a terminal is open",
+      "  |          split right, while a terminal is open",
+      "  -          split down, while a terminal is open",
+      "  Tab        next group, while a terminal is open",
+      "  m          move tab, while a terminal is open",
+      "  x          close group, while a terminal is open",
       "  X          stop",
       "  R          restart",
       "  S          start",

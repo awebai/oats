@@ -1210,13 +1210,15 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends forty rows above `quit`: the table holds the three
+  // At 80x24 the help's first page ends forty-eight rows above `quit`: the table holds the three
   // views, `workspaces`, `open` three times with the agent's terminal in nine rows and the Souls
   // view's in two, `soul-instances`, `zoom` in two, `close-terminal` in two, `tab-previous` and
-  // `tab-next`, the four acts in six rows with the two rules of a confirmation in four under them,
-  // and the spawn's three in nine rows (`spawn` in four, `spawn-another` in three, `spawn-check` in
-  // two) (HELP_KEYS); the movement keys scroll the help, and forty rows down show it.
-  for (let i = 0; i < 40; i++) term.press("j");
+  // `tab-next`, the split's five in eight rows (`split-right`, `split-down` and `group-next` in two
+  // each, `tab-move` and `group-close` in one), the four acts in six rows with the two rules of a
+  // confirmation in four under them, and the spawn's three in nine rows (`spawn` in four,
+  // `spawn-another` in three, `spawn-check` in two) (HELP_KEYS); the movement keys scroll the help,
+  // and forty-eight rows down show it.
+  for (let i = 0; i < 48; i++) term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");

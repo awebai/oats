@@ -3,7 +3,9 @@
 // drawn from the state. This version shows a workspace's instances, on this machine and on the
 // machines registered here, follows them, opens agents' terminals as tabs of a panel beside the
 // list (up to four, each the kernel's own viewer in a pane of the run's private tmux server:
-// lib/panel.mjs; `viewers` maps each tab's instance to its window), stops,
+// lib/panel.mjs; `viewers` maps each tab's instance to its window), in one group or two (a split;
+// after every frame `fitPanel` tells the panel which windows the frame's regions display, at what
+// size, and which has the keys), stops,
 // starts, restarts and retires an instance after a confirmation, through the shared lifecycle
 // boundary and start rule, and spawns an agent on this machine from the shared preview and apply
 // (docs/tui.md).
@@ -22,7 +24,7 @@ import { createScreen, glyphs } from "./term/screen.mjs";
 import { colorEnabled } from "./term/style.mjs";
 import { backKeySequences, createThrough } from "./term/through.mjs";
 import { createGuard, isTerminal } from "./term/tty.mjs";
-import { frame, layout } from "./views/frame.mjs";
+import { frame, layout, panelPlace } from "./views/frame.mjs";
 
 export const USAGE = "oats tui [--dir <path>] [--ascii]";
 const HELP = `Usage:
@@ -140,7 +142,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   let through = createThrough({ sequences: backKey, now }), throughTimer = null;
   if (offered) state = reduce(state, { offered }, keymap).state;
   // What the last frame drew, for the store: how tall the list pane is and how far the other
-  // pane scrolls. The store holds no size of its own.
+  // pane scrolls. The store holds no size of its own; the panel's room goes with each key as it
+  // is when the key is read (placed), whatever the last frame drew.
   let drawn = { page: 1, extent: 0, room: 1, cols: 1 };
   let full = true, escTimer = null, ended = false, reads = 0;
   /** The preflight of another machine's agent under way: `{ id, controller, prepared }`, where
@@ -186,18 +189,21 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     onEntry: entered, onRoster: rostered,
     files: { ...CHANGE_FILES, dir: runDir },
   });
-  // THE TABS (docs/tui.md, "Tabs"): the terminals open in the panel, at most the store's
-  // TAB_LIMIT. `viewers` maps each tab's instanceId to its viewer, `{ id, panel }` (the panel's own
-  // id once the window exists, null before); the store holds their order and which is shown, and
-  // the panel shows what the store last said (`show`). `screenNow` is the shown tab's last capture
-  // (`{ lines, cursor }`), drawn until the next; `panelSize` and `panelShown` what the panel was
-  // last told.
-  const viewers = new Map();
-  let screenNow = null, panelSize = null, panelShown = true;
+  // THE TABS AND THE SPLIT (docs/tui.md, "Tabs", "Splits"): the terminals open in the panel, at
+  // most the store's TAB_LIMIT across its groups. `viewers` maps each tab's instanceId to its
+  // viewer, `{ id, panel, cols, rows }` (the panel's own id once the window exists, null before,
+  // and the size its window was last given); the store holds their groups, their order and which
+  // are shown, and after every frame the panel is brought to what the frame drew (fitPanel): the
+  // tabs it displays (each group's shown one, as the frame has room for), the one that takes the
+  // keys (the focused group's), and each group's size for every tab of it. `screens` is each
+  // displayed tab's last capture (`{ lines, cursor }`), drawn until the next; `displayed`, `keysTo`
+  // and `panelShown` what the panel was last told.
+  const viewers = new Map(), screens = new Map(), displayed = new Set();
+  let keysTo = null, panelShown = true;
   const viewerOf = (panelId) => [...viewers.values()].find((each) => each.panel === panelId) ?? null;
   const panel = effects.createPanel({
     dir: runDir, env, capture: captureRows,
-    onScreen: ({ id, screen: lines, cursor }) => { const v = viewerOf(id); if (!ended && v !== null && v.id === state.terminal?.id) { screenNow = { lines, cursor }; guard.attempt(() => guard.draw()); } },
+    onScreen: ({ id, screen: lines, cursor }) => { const v = viewerOf(id); if (!ended && v !== null && displayed.has(id)) { screens.set(v.id, { lines, cursor }); guard.attempt(() => guard.draw()); } },
     // A hidden tab's agent wrote: its mark.
     onActivity: ({ id }) => { const v = viewerOf(id); if (!ended && v !== null) heard({ activity: { id: v.id } }); },
     // A viewer ended. The store is told, whatever ended it; a tab the person closed is no longer
@@ -205,8 +211,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     onClosed: ({ id, status = null, stderr = "", asked = false }) => {
       const v = viewerOf(id);
       if (v === null) return;
-      viewers.delete(v.id);
-      if (v.id === state.terminal?.id) screenNow = null;
+      forgetViewer(v);
       heard({ returned: { id: v.id, status, stderr, asked } });
     },
   });
@@ -347,8 +352,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       took(reduce(state, admitted.ok ? { admitted: admitted.deployment, at: clock() } : { refused: effect.admit }, keymap));
     }
     if (effect.abandon) giveUpPreflight();
+    // A tab shown (`show`) needs nothing here: the frame after it brings the panel to it (fitPanel).
     if (effect.close !== undefined) for (const id of effect.close) closeTerminal(id);
-    if (effect.show !== undefined) showTerminal(effect.show);
     if (effect.open) open(effect.open);
     if (effect.panel !== undefined) {
       const ready = preflight;
@@ -442,67 +447,94 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     preflight = null;
   }
   /** Start the viewer of row `id` (`node <bin> <args…>`) in the panel, at the size the frame gives
-   *  the terminal, and tell the store when its window exists. One the panel could not start is a
-   *  viewer that ended, with the panel's refusal: no tmux (or one too old), or tmux's own words.
-   *  Nothing is lent: the reads and the screen go on. */
+   *  the focused group, and tell the store when its window exists. The tab it takes the place of is
+   *  no longer displayed from then on (the frame for the new state is fitted first). One the panel
+   *  could not start is a viewer that ended, with the panel's refusal: no tmux (or one too old), or
+   *  tmux's own words. Nothing is lent: the reads and the screen go on. */
   function view(id, bin, args) {
-    const mine = { id, panel: null };
+    const size = guard.size();
+    // The focused group's screen as the Instances view gives it, also behind the help or another
+    // overlay, which draw no panel (round 1 of T3's review).
+    const region = placed()?.focused ?? { cols: Math.max(1, size.cols), rows: Math.max(1, size.rows - 6) };
+    const mine = { id, panel: null, cols: region.cols, rows: region.rows };
     viewers.set(id, mine);
-    screenNow = null;
-    const size = guard.size(), area = composed().made.terminal ?? { cols: size.cols, rows: Math.max(1, size.rows - 6) };
-    panelSize = { cols: area.cols, rows: area.rows };
-    // Shown: the panel keeps hidden or shown across its viewers, and the last one may have been
-    // closed hidden (behind the detail, or the list alone under 80 columns).
-    if (!panelShown) panel.setVisible(true);
-    panelShown = true;
+    // Shown or hidden as this frame draws the panel: behind an overlay it shows once that closes.
+    fitPanel(composed().made);
     Promise.resolve()
-      .then(() => panel.open({ argv: [process.execPath, bin, ...args], cols: area.cols, rows: area.rows }))
+      .then(() => panel.open({ argv: [process.execPath, bin, ...args], cols: region.cols, rows: region.rows, instead: null }))
       .then(({ id: made }) => {
         if (viewers.get(id) !== mine) return;
         mine.panel = made;
-        // A frame of another size while the window was being made told a panel with no window yet.
-        if (panelSize.cols !== area.cols || panelSize.rows !== area.rows) panel.resize(panelSize.cols, panelSize.rows);
+        // The panel displays it, and it takes the keys; a frame of another size meanwhile is the
+        // next fitPanel's.
+        displayed.add(made);
+        keysTo = made;
         heard({ shown: { id } });
       },
-        (error) => { if (viewers.get(id) === mine) { viewers.delete(id); heard({ returned: { id, status: null, stderr: typeof error?.detail === "string" ? error.detail : "", refused: error?.code === "E_PANEL_TMUX" ? "tmux" : "start" } }); } });
+        (error) => { if (viewers.get(id) === mine) { forgetViewer(mine); heard({ returned: { id, status: null, stderr: typeof error?.detail === "string" ? error.detail : "", refused: error?.code === "E_PANEL_TMUX" ? "tmux" : "start" } }); } });
+  }
+  /** What the loop holds of viewer `v` let go: the panel no longer displays it, or gives it keys. */
+  function forgetViewer(v) {
+    viewers.delete(v.id);
+    screens.delete(v.id);
+    if (v.panel !== null) { displayed.delete(v.panel); if (keysTo === v.panel) keysTo = null; }
   }
   /** Close tab `id`'s viewer (also one whose window is still being made: the open under way): the
    *  agent keeps running, and the panel reports the end as asked for, which nobody waits for. */
   function closeTerminal(id) {
     const v = viewers.get(id);
     if (v === undefined) return;
-    viewers.delete(id);
+    forgetViewer(v);
     if (v.panel === null) panel.close(); else panel.close(v.panel);
-    screenNow = null;
   }
-  /** Tab `id` shown in the panel, as the store says: its screen is captured afresh, and the one
-   *  drawn until then is the old tab's no longer. */
-  function showTerminal(id) {
-    const v = viewers.get(id);
-    if (v === undefined || v.panel === null) return;
-    screenNow = null;
-    panel.show(v.panel);
-  }
-  /** The panel told what the frame gives the terminal: shown or not (no capture runs while it is
-   *  hidden, and one runs when it shows again), and its size (the viewer's window follows it). */
-  function fitPanel(given) {
-    // A view that draws no terminal (the help, the switcher, a confirmation) gives none.
-    const area = given ?? null;
+  /** The panel brought to what the frame drew (`made.regions`, one per group drawn): shown or not
+   *  (no capture runs while it is hidden, and one runs when it shows again); every tab of a drawn
+   *  group at that group's size (the viewer's window follows it); each region's shown tab
+   *  displayed, and no other; and the focused region's taking the keys. A group not drawn (the
+   *  focused one alone, zoomed or with no room for both) keeps its tabs at their size, and its
+   *  shown tab only marks. */
+  function fitPanel(made) {
     if (viewers.size === 0) return;
-    if ((area !== null) !== panelShown) { panelShown = area !== null; panel.setVisible(panelShown); }
-    if (area !== null && (area.cols !== panelSize.cols || area.rows !== panelSize.rows)) { panelSize = { cols: area.cols, rows: area.rows }; panel.resize(area.cols, area.rows); }
+    const regions = made.regions ?? [];
+    if ((regions.length > 0) !== panelShown) { panelShown = regions.length > 0; panel.setVisible(panelShown); }
+    if (!panelShown) return;
+    const groupOf = (id) => state.tabs.find((tab) => tab.id === id)?.group ?? null;
+    for (const r of regions) {
+      const resized = [...viewers.values()].filter((v) => v.panel !== null && groupOf(v.id) === r.group && (v.cols !== r.cols || v.rows !== r.rows));
+      if (resized.length === 0) continue;
+      panel.resize(r.cols, r.rows, resized.map((v) => v.panel));
+      for (const v of resized) { v.cols = r.cols; v.rows = r.rows; }
+    }
+    const wanted = regions.map((r) => ({ r, v: r.id === null ? null : viewers.get(r.id) ?? null })).filter(({ v }) => v !== null && v.panel !== null);
+    const pids = new Set(wanted.map(({ v }) => v.panel));
+    // The shown tab hidden: the panel shows the other displayed one, or none (lib/panel.mjs hide).
+    for (const pid of [...displayed]) if (!pids.has(pid)) { panel.hide(pid); displayed.delete(pid); if (keysTo === pid) keysTo = [...displayed][0] ?? null; const v = viewerOf(pid); if (v) screens.delete(v.id); }
+    for (const { v } of wanted) if (!displayed.has(v.panel)) { panel.show(v.panel, { instead: null }); displayed.add(v.panel); keysTo = v.panel; }
+    const keys = wanted.find(({ r }) => r.focused)?.v.panel ?? null;
+    if (keys !== null && keys !== keysTo) { panel.focus(keys); keysTo = keys; }
   }
   /** The frame for the state now, with what the loop needs of it: the layout first, because the
    *  model's window is as tall, and its sentences as wide, as the list pane it gives. The switcher
-   *  takes the whole body and has no notice of a deployment. The last capture of the open
-   *  terminal goes with the model: it is the panel's, not the store's. */
+   *  takes the whole body and has no notice of a deployment. The last captures of the displayed
+   *  tabs go with the model: they are the panel's, not the store's. */
   function composed() {
+    const { size, g, m } = modelled();
+    return { size, g, made: frame(m, size) };
+  }
+  function modelled() {
     const size = guard.size(), at = clock();
     const listing = (state.view === "help" ? state.back : state.view) === "switcher";
     const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
-    const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.terminal !== null });
-    const m = { ...model(state, { page: g.page, now: now(), at, cols: g.listCols }), screen: screenNow };
-    return { size, g, made: frame(m, size) };
+    const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.tabs.length > 0 });
+    const m = { ...model(state, { page: g.page, now: now(), at, cols: g.listCols }), screen: screens.get(state.terminal?.id) ?? null, screens };
+    return { size, g, m };
+  }
+  /** Where the panel stands for the state and the size now, as the Instances view gives it with
+   *  the terminal's focus (views/frame.mjs panelPlace): measured whatever is drawn over it, and
+   *  while no frame can be written. */
+  function placed() {
+    const { size, m } = modelled();
+    return panelPlace(m, size);
   }
   /** Whether what is typed goes to the agent: the open terminal has the focus, and the leader
    *  does not wait for its key (docs/tui.md, "The leader"). */
@@ -513,8 +545,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  read is dropped: it cancels the leader (a paste), and it is not the agent's either. */
   function typed(events) {
     for (const event of events) {
-      if (event.input) panel.input(event.input);
-      else if (event.paste !== undefined) panel.paste(event.paste);
+      if (event.input) { if (keysReady()) panel.input(event.input); }
+      else if (event.paste !== undefined) { if (keysReady()) panel.paste(event.paste); }
       else if (event.back) {
         parser = createKeyParser({ now });
         if (took(reduce(state, { back: true, read: ++reads, rest: event.rest.length > 0 }, keymap))) return;
@@ -522,6 +554,18 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       }
     }
     watchThrough();
+  }
+  /** Whether the keys typed now reach the agent the state gives them to, the focused group's shown
+   *  tab: the panel is fitted to the state first when it was not, also while no frame is written
+   *  (the output blocked), so a tab or a group switched to takes what is typed after the switch,
+   *  never the one before it. A tab whose window is still being made takes nothing (round 1 of
+   *  T3's review). */
+  function keysReady() {
+    const v = state.terminal === null ? undefined : viewers.get(state.terminal.id);
+    if (v === undefined || v.panel === null) return false;
+    const ready = () => keysTo === v.panel && displayed.has(v.panel);
+    if (!ready()) fitPanel(composed().made);
+    return ready();
   }
   /** A beginning of the back key that nothing has followed for the parser's timeout is the agent's. */
   function watchThrough() {
@@ -534,7 +578,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     frame() {
       const { size, g, made } = composed();
       drawn = { page: made.page, extent: made.extent, room: made.room, cols: g.listCols };
-      fitPanel(made.terminal);
+      fitPanel(made);
       const bytes = screen.render(made.rows, size, { full, cursor: made.cursor });
       full = false;
       // This frame is written (the guard makes one only to write it): a ready preview on it is
@@ -585,7 +629,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   function act(events) {
     const read = ++reads;
     for (const event of events) {
-      if (took(reduce(state, "paste" in event ? { paste: event.paste, read } : { key: keyId(event), ...(typeof event.text === "string" && !event.alt ? { text: event.text } : {}), read, ...drawn }, keymap))) return;
+      if (took(reduce(state, "paste" in event ? { paste: event.paste, read } : { key: keyId(event), ...(typeof event.text === "string" && !event.alt ? { text: event.text } : {}), read, ...drawn, panel: placed()?.panel ?? null }, keymap))) return;
       if (typing()) {
         if (escTimer !== null) { clearTimer(escTimer); escTimer = null; }
         through = createThrough({ sequences: backKey, now });

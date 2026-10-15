@@ -69,7 +69,9 @@ function fakePanel(log, options) {
       did("open", [...argv], cols, rows);
       return new Promise((resolve, reject) => { p.opens.push({ argv, cols, rows, made: (id) => resolve({ id }), refuse: reject }); });
     },
-    close(id) { did("close", ...(id === undefined ? [] : [id])); }, show(id) { did("show", id); }, resize(cols, rows) { did("resize", cols, rows); },
+    close(id) { did("close", ...(id === undefined ? [] : [id])); }, show(id) { did("show", id); }, resize(cols, rows, ids) { did("resize", cols, rows, ...(ids === undefined ? [] : [ids])); },
+    // T3: what the loop displays and gives the keys to (lib/main.mjs fitPanel).
+    hide(id) { did("hide", id); }, focus(id) { did("focus", id); },
     input(bytes) { did("input", Buffer.from(bytes).toString("latin1")); }, paste(text) { did("paste", text); },
     setVisible(on) { did("visible", on); }, refresh() { did("refresh"); }, pause() { did("pause"); }, resume() { did("resume"); }, end() { did("end"); },
     get current() { return null; },
@@ -213,7 +215,7 @@ test("the action table binds each key to one action, and a key bound twice is re
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances", 2: "souls", 3: "capabilities",
-    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", "[": "tab-previous", "]": "tab-next", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
+    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", "[": "tab-previous", "]": "tab-next", "|": "split-right", "-": "split-down", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw", "ctrl+k": "palette",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
@@ -1103,6 +1105,98 @@ test("on the last tab the leader then Right does nothing: the terminal keeps the
   assert.equal(await r.status, 0);
 });
 
+test("two groups: a split resizes the first group's windows to its region; a tab moved shows both, each at its group's size, the keys to the focused one; the group's last closed gives the other the whole panel (T3)", async () => {
+  const r = await viewingTwoTabs({ columns: 120, rows: 40 });
+  const did = () => { const d = panelDid(r).filter(([what]) => what !== "refresh"); r.log.length = 0; return d; };
+  r.stdin.type("\x1c");
+  r.stdin.type("|");
+  await settle();
+  assert.deepEqual(did(), [["resize", 44, 35, ["@1", "@2"]]], "the second group is empty: nothing else is shown");
+  r.stdin.type("\x1c");
+  r.stdin.type("\t");
+  await settle();
+  assert.deepEqual(did(), [], "from the list to the first group's terminal: its window has the keys already");
+  r.stdin.type("\x1c");
+  r.stdin.type("m");
+  await settle();
+  assert.deepEqual(did(), [["show", "@1"], ["focus", "@2"]], "both displayed; the keys to the moved one");
+  r.stdin.type("typed");
+  assert.deepEqual(did(), [["input", "typed"]]);
+  r.stdin.type("\x1c");
+  r.stdin.type("w");
+  await settle();
+  assert.deepEqual(did(), [["close", "@2"], ["resize", 89, 35, ["@1"]], ["focus", "@1"]]);
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("keys typed after a switch of group or tab reach the agent switched to, also while the output is blocked and no frame is written: the panel is fitted first (T3, round 1 of the review)", async () => {
+  const r = await viewingTwoTabs({ columns: 120, rows: 40 });
+  for (const k of ["|", "\t", "m"]) { r.stdin.type("\x1c"); r.stdin.type(k); await settle(); } // @1 in the first group, @2 in the second, focused
+  r.log.length = 0;
+  const did = () => { const d = panelDid(r).filter(([what]) => what !== "refresh"); r.log.length = 0; return d; };
+  // The leader's hint is the frame that blocks; Tab, in a later read, is drawn by none.
+  r.stdout.accepts = false;
+  r.stdin.type("\x1c");
+  r.stdout.accepts = true;
+  r.stdin.type("\t");
+  await settle();
+  r.stdin.type("for-first-agent");
+  assert.deepEqual(did(), [["focus", "@1"], ["input", "for-first-agent"]], "the keys go to @1, never to @2");
+  r.stdout.emit("drain"); await settle();
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  // A tab hidden by a resize is no destination: the empty group focused and drawn alone at 80
+  // columns hides @2; the leader then Tab back to it, blocked, shows it before the keys go.
+  const h = await viewingTwoTabs({ columns: 120, rows: 40 });
+  h.stdin.type("\x1c"); h.stdin.type("|"); await settle();
+  h.stdout.resize(80, 24); await settle();
+  assert.deepEqual(panelDid(h).filter(([what]) => what === "hide"), [["hide", "@2"]], "the focused empty group alone");
+  h.log.length = 0;
+  h.stdout.accepts = false;
+  h.stdin.type("\x1c");
+  h.stdout.accepts = true;
+  h.stdin.type("\t");
+  await settle();
+  h.stdin.type("keep-these-bytes");
+  assert.deepEqual(panelDid(h).filter(([what]) => what !== "refresh"), [["resize", 49, 19, ["@1", "@2"]], ["show", "@2"], ["input", "keep-these-bytes"]], "its group drawn alone, at its size, and shown before the keys");
+  h.stdout.emit("drain"); await settle();
+  leaderTwice(h);
+  h.stdin.type("q");
+  assert.equal(await h.status, 0);
+  // A tab switched within one group, blocked the same way: the tab before shown first, then the keys.
+  const t = await viewingTwoTabs();
+  t.stdout.accepts = false;
+  t.stdin.type("\x1c");
+  t.stdout.accepts = true;
+  t.stdin.type("\x1b[D");
+  await settle();
+  t.log.length = 0;
+  t.stdin.type("for-first");
+  assert.deepEqual(panelDid(t).filter(([what]) => what !== "refresh"), [["hide", "@2"], ["show", "@1"], ["input", "for-first"]]);
+  t.stdout.emit("drain"); await settle();
+  leaderTwice(t);
+  t.stdin.type("q");
+  assert.equal(await t.status, 0);
+});
+
+test("the palette's Split right at 80 columns is refused with the line, measured on the panel the Instances view gives, and its Split down splits (T3, round 1 of the review)", async () => {
+  const r = await viewingTwoTabs();
+  const choose = async (text) => { r.stdin.type("\x1c"); r.stdin.type("k"); await settle(); r.stdin.type(text); await settle(); r.stdin.type("\r"); await settle(); };
+  await choose("splitr");
+  assert.match(wholeScreen(r), /No room to split side by side: each group needs 40 columns\./);
+  // The line takes rows above the panes, so the panel is resized for it: at the whole width still.
+  assert.deepEqual(panelDid(r).filter(([what, cols]) => what === "hide" || (what === "resize" && cols !== 49)), [], "no split: nothing hidden, no window narrower");
+  r.log.length = 0;
+  await choose("splitd");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 49, 9, ["@1", "@2"]]], "the first group above, 9 rows of the 19");
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("with two tabs open, another workspace opened closes each tab's viewer by its window id, and no terminal is left (T2)", async () => {
   const r = await viewingTwoTabs({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
   leaderTwice(r);
@@ -1232,15 +1326,16 @@ test("no argument the TUI hands the panel is tmux or the agents' socket: the pan
   await r.status;
 });
 
+// T3: each resize names the windows it is for (lib/main.mjs fitPanel: a group's tabs).
 test("the panel is told what the frame gives the terminal: zoom and back resize its window, Tab hides it and shows it again, a resize of the terminal resizes it, and under 80 columns the list's focus hides it", async () => {
   const r = await viewing();
   leaderTwice(r);
   r.log.length = 0;
   r.stdin.type("z");
-  assert.deepEqual(panelDid(r), [["resize", 80, 19]], "zoomed: the whole body");
+  assert.deepEqual(panelDid(r), [["resize", 80, 19, ["@1"]]], "zoomed: the whole body");
   r.log.length = 0;
   leaderTwice(r);
-  assert.deepEqual(panelDid(r), [["resize", 49, 19]]);
+  assert.deepEqual(panelDid(r), [["resize", 49, 19, ["@1"]]]);
   r.log.length = 0;
   r.stdin.type("\t");
   assert.deepEqual(panelDid(r), [["visible", false]], "the detail in the terminal's place: no capture runs");
@@ -1249,13 +1344,13 @@ test("the panel is told what the frame gives the terminal: zoom and back resize 
   assert.deepEqual(panelDid(r), [["visible", true]], "shown again: one fresh capture (the panel's)");
   r.log.length = 0;
   r.stdout.resize(120, 40);
-  assert.deepEqual(panelDid(r), [["resize", 89, 35]], "120 columns: the list keeps 30 beside the terminal");
+  assert.deepEqual(panelDid(r), [["resize", 89, 35, ["@1"]]], "120 columns: the list keeps 30 beside the terminal");
   r.log.length = 0;
   r.stdout.resize(70, 30);
   assert.deepEqual(panelDid(r), [["visible", false]], "under 80 columns, the list alone");
   r.log.length = 0;
   r.stdin.type("\r");
-  assert.deepEqual(panelDid(r), [["visible", true], ["resize", 70, 25]], "Enter: the terminal, zoomed");
+  assert.deepEqual(panelDid(r), [["visible", true], ["resize", 70, 25, ["@1"]]], "Enter: the terminal, zoomed");
   leaderTwice(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -1269,7 +1364,7 @@ test("the panel is told the size and the sight its new window needs: a resize wh
   r.log.length = 0;
   r.panel.opens[0].made("@1");
   await settle();
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 89, 35]], "the size the frame gives now, once the window exists");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 89, 35, ["@1"]]], "the size the frame gives now, once the window exists");
   // Closed behind the detail: the next open shows its window again.
   leaderTwice(r);
   r.stdin.type("\t");
@@ -1373,6 +1468,28 @@ test("Enter on a running agent of another machine: the shared preflight over the
   await settle();
   assert.equal(r.panel.opens.length, 1, "nothing starts");
   assert.match(textOf(r.stdout.take()), /Terminal preparation timed out\./);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a preflight that answers behind the help opens the viewer at the size the Instances view gives it, and the run goes on: the help is no frame of the panel's (T3, round 1 of the review)", async () => {
+  const r = await elsewhere();
+  r.stdin.type("\r");
+  await settle();
+  r.stdin.type("?");
+  await settle();
+  const [asked] = r.preflights;
+  asked.resolve({ binary: KEYED.bin, args: ["session", "attach", "--server", "garnet", "--home", asked.target.home] });
+  await settle();
+  assert.deepEqual(r.panel.opens.map((o) => [o.cols, o.rows]), [[49, 19]]);
+  r.panel.opens[0].made("@1");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "visible").at(-1), ["visible", false], "hidden behind the help");
+  r.log.length = 0;
+  r.stdin.type("?");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "visible"), [["visible", true]], "shown once the help closes");
+  leaderTwice(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1734,6 +1851,8 @@ test("a spawn through the loop: n reads the catalog, the preview is read once pe
   r.reader.answer(observed([instanceRow("acme-expert", "acme-expert-tui"), instanceRow("acme-maintainer", "acme-maintainer-ops", { running: false, runtimeState: "stopped" }), instanceRow("acme-expert", "acme-expert-2")])); await settle();
   assert.equal(r.panel.opens.length, 1, "its terminal, in the panel");
   assert.equal(r.panel.opens[0].argv.some((arg) => String(arg).endsWith("/acme-expert-2")), true);
+  // Its window made, what is typed is the agent's (before it, nothing has a window to take it).
+  r.panel.opens[0].made("@1"); await settle();
   r.stdin.type("q"); await settle();
   assert.equal(r.log.some(([what, bytes]) => what === "panel" && bytes === "input"), true, "the q went to the agent: the terminal has the focus");
 });

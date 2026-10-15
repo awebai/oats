@@ -64,7 +64,7 @@ test("Enter on a running instance of this machine opens it at once in the panel:
   const { state: opening, effects } = press(state, ["enter"]);
   const row = rowOf(state);
   assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: ALPHA, machine: null, target: { home: row.home }, routed: false } }]);
-  assert.deepEqual([opening.opening, opening.terminal], [null, { id: instanceId(row), name: ALPHA, machine: null, routed: false, focus: "terminal", zoom: false, status: "starting" }]);
+  assert.deepEqual([opening.opening, opening.terminal], [null, { id: instanceId(row), name: ALPHA, machine: null, routed: false, group: 0, focus: "terminal", zoom: false, status: "starting" }]);
   // The target is what the shared home builds the viewer's arguments from: nothing of them is the
   // TUI's, and no key is among them.
   assert.deepEqual(sessionAttachArgv(KEYED, effects[0].open.target), ["session", "attach", "--home", row.home]);
@@ -218,7 +218,7 @@ test("the preflight ends: the viewer is started in the panel for the row selecte
   const asking = press(press(state, ["enter"]).state, ["k"]).state;
   assert.notEqual(asking.selected, id, "the selection moved during the preflight");
   const started = reduce(asking, { prepared: { id } });
-  assert.deepEqual([started.effect, started.state.opening, started.state.terminal], [{ panel: id }, null, { id, name: FAR_A, machine: "garnet", routed: true, focus: "terminal", zoom: false, status: "starting" }]);
+  assert.deepEqual([started.effect, started.state.opening, started.state.terminal], [{ panel: id }, null, { id, name: FAR_A, machine: "garnet", routed: true, group: 0, focus: "terminal", zoom: false, status: "starting" }]);
   const after = reduce(started.state, { returned: { id, status: 1, stderr: "" } });
   assert.deepEqual(above(after.state), [words(OPEN_WORDS.failed(FAR_A))], "the line names the row of the Enter");
   // The row went away while the preflight ran.

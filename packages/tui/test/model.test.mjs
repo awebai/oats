@@ -2358,7 +2358,7 @@ const key = (state, id) => reduce(state, { key: id, ...(id.length === 1 ? { text
 test("the open terminal in the store: Enter opens it with the focus; the leader twice gives the focus to the list and the terminal stays; Enter on its row focuses it unzoomed, z zoomed, and c closes it, the agent left running", () => {
   const state = on(TWO(), "dev-a"), id = instanceId(panelRow(state, "dev-a").row);
   const opened = key(state, "enter");
-  assert.deepEqual(opened.state.terminal, { id, name: "dev-a", machine: null, routed: false, focus: "terminal", zoom: false, status: "starting" });
+  assert.deepEqual(opened.state.terminal, { id, name: "dev-a", machine: null, routed: false, group: 0, focus: "terminal", zoom: false, status: "starting" });
   assert.equal(opened.effect.open.id, id);
   // The panel has the window: open. One of another id changes nothing.
   assert.equal(reduce(opened.state, { shown: { id: "elsewhere" } }).state, opened.state);
