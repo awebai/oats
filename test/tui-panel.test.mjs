@@ -17,7 +17,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -446,6 +446,28 @@ test("a viewer that ends at once closes the terminal: the line says it could not
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
 
+// When a viewer's session outlives a way out, what explains it: the viewer's two files (linked
+// before the end, which removes them), its processes as ps shows them now, the agents' sessions,
+// and how long the session took to go, if it went at all within 30 s.
+/** The viewer's processes: its node (`session attach`) and its tmux client of the agents' server. */
+const viewerProcesses = () => lines(execFileSync("ps", ["-eo", "pid,ppid,pgid,stat,args"], { encoding: "utf8", timeout: 10000 })).filter((line) => /session attach|agents\.sock/.test(line) && !/list-sessions|ps -eo| new-session -d -s team /.test(line));
+/** Hard links to the run's view files, kept after the run removes its own. */
+function keepViewFiles(dir, label) {
+  const kept = join(base, `diag-${label}-${Date.now()}`);
+  mkdirSync(kept);
+  for (const name of readdirSync(dir).filter((entry) => /\.view\.(err|status)$/.test(entry))) { try { linkSync(join(dir, name), join(kept, name)); } catch { /* gone */ } }
+  return kept;
+}
+function viewerFaults(kept, before) {
+  const files = readdirSync(kept).map((name) => `${name}: ${JSON.stringify(readFileSync(join(kept, name), "utf8").slice(-2000))}`);
+  const now = viewerProcesses(), sessions = sessionsOf(AGENTS);
+  if (viewerSessions().length === 0) return [`view files: ${files.join("; ") || "none"}`, `viewer processes before the end: ${JSON.stringify(before)}`, `viewer processes now: ${JSON.stringify(now)}`, `agents' sessions: ${JSON.stringify(sessions)}`, "the session was gone by the time these were read"];
+  const started = Date.now();
+  while (viewerSessions().length > 0 && Date.now() - started < 30000) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  const went = viewerSessions().length === 0 ? `the session went ${Date.now() - started} ms after the wait gave up` : "the session was still there 30 s after the wait gave up";
+  return [`view files: ${files.join("; ") || "none"}`, `viewer processes before the end: ${JSON.stringify(before)}`, `viewer processes now: ${JSON.stringify(now)}`, `agents' sessions: ${JSON.stringify(sessions)}`, went];
+}
+
 for (const [how, end, expected] of [
   ["q", (term) => { term.press("C-\\"); term.press("q"); }, 0],
   ["SIGTERM", (term, run) => process.kill(run.pid, "SIGTERM"), 143],
@@ -459,11 +481,12 @@ for (const [how, end, expected] of [
     term.type("k");
     await until(term, () => typed() === "k", "the agent read a key");
     const dir = run.dir(), socket = panelSocket(dir);
+    const kept = keepViewFiles(dir, how.replace(/\W/g, "")), before = viewerProcesses();
     end(term, run);
     assert.equal(await run.ended(`after ${how}`), expected, term.shows());
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
     await until(term, () => !answers(socket), `the private server's socket to refuse after ${how}`);
-    await until(term, () => viewerSessions().length === 0, `no viewer session on the agents' server after ${how}`, () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`]);
+    await until(term, () => viewerSessions().length === 0, `no viewer session on the agents' server after ${how}`, () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`, ...viewerFaults(kept, before)]);
     assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}, and the shared one holds only the mouse bindings`);
     assert.equal(agentWindowThere(), true, `the agent keeps running after ${how}`);
     assert.equal(typed(), "k", "and nothing more reached it");
