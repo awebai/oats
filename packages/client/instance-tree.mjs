@@ -256,7 +256,7 @@ export function heldHome(instance) {
   if (!kind) return null;
   const held = HELD_HOMES[kind], retire = kind === "retire-failed" ? retireData(instance.retire) : null;
   // The kernel's words, message or code, are said as the kernel's, and shown only through the display filter; one the
-  // filter reduces to nothing (blank, withheld) says nothing. With neither, the row's own words stand.
+  // filter reduces to nothing (blank) says nothing; one it withholds is said, and shown withheld. With neither, the row's own words stand.
   const shown = text => (text && displayLine(text) !== null ? text : null);
   const message = shown(retire?.message), code = shown(retire?.code);
   const said = message || code ? { sentence: message && code ? `${message} (${code})` : message || code, origin: "kernel" }

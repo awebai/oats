@@ -21,7 +21,7 @@
  * "roster-read" when the row names the speaker of its `runtimeError`, "unattributed" when the row's text
  * stands beside no speaker. It is absent on a sentence this home wrote and on the stand-in for an older
  * kernel's Herdr row. A `held` reason has one ("kernel") only for a failed retire whose row carries the
- * kernel's message (#1247, instance-tree.mjs heldHome `said`). A client shows a sentence with an `origin`
+ * kernel's message or code (#1247, instance-tree.mjs heldHome `said`). A client shows a sentence with an `origin`
  * through its display filter, after instance-presentation.mjs `originLead`'s words when the value names
  * a speaker, and a sentence with none as written, as this home's own.
  *
