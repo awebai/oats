@@ -1721,6 +1721,15 @@ change to work is in the same recovery, under
 nothing needed preserving before the hooks). The work-root cannot be
 exchanged for a symlink. Recovery does not replace the worker's delivery protocol.
 
+A start refuses a directory home whose home or `work/` is no longer the
+directory the spawn recorded (`directory home was exchanged` or `directory work
+was exchanged`), for example when another directory was renamed into its
+place. The spawn records each root's device, inode and birth time. A root is
+the same directory when its device and inode match. On macOS, which gives a
+volume a new device number each time it is mounted (every reboot), an equal
+inode is enough, provided the birth time also matches when one was recorded
+(a home spawned by a kernel that recorded none is judged by the inode alone).
+
 ### `workspace` — cross-repo coordinator
 
 `work/` is a symlink to the **whole deployment**: the directory holding
