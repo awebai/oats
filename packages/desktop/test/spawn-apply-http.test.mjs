@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { proxySpawnApply } from '../spawn-apply-proxy.mjs';
-import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
+import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { spawnApplyFailure, spawnApplyView } from '../../client/spawn-apply-contract.mjs';
 import { selector, target, deferred } from './helpers/spawn-preview-fixture.mjs';
 import { applyContext, applyPreview, creation, envelope } from './helpers/spawn-apply-fixture.mjs';
@@ -22,7 +22,7 @@ function http({ invoke, timer } = {}) {
     read: request => { reads.push(request); return { status: 'available', data: applyPreview(target) }; },
     ...(timer ? { timer } : {}),
     invoke: (_cli, args) => { calls.push(args); order.push('invoke'); return invoke ? invoke(args) : { started: true, envelope: envelope(creation(applyPreview(args.target))) }; } });
-  const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker, spawnPreviewCache: { invalidate: ws => order.push(`invalidate:${ws}`) },
+  const deps = { createServer: fn => fn, spawnApplyFailure, spawnApplyRequest: broker, spawnPreview: { cache: { invalidate: ws => order.push(`invalidate:${ws}`) } },
     observeMutation: ws => order.push(`observe:${ws}`),
     spawnAgent: async body => { serverSpawns.push(body); return { instance: 'dev-1', home: '/fixture/dev-1', agent: 'dev', launched: true }; },
     spawnErrorPayload: () => assert.fail('unexpected execution-server error'), ...deploymentDoubles(() => [c.workspace]), cliState: c.cli,

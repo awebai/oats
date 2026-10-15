@@ -14,7 +14,7 @@
 //      and the refusal becomes an unavailable entry that keeps nothing (deployment-panel.mjs `failedEntry`);
 //      the souls read stops the same way (workspace-cli.mjs `workspaceGate`), so the kernel runs no read at all;
 //   3. the server lists souls only for an observed deployment (oats-web.mjs `agentsData`): none;
-//   4. the preview's boundary admits a soul only from that list (server/spawn-preview.mjs
+//   4. the preview's boundary admits a soul only from that list (packages/client/spawn-preview.mjs
 //      `admitSpawnSelection`): E_SOUL_UNKNOWN, before the kernel is asked;
 //   5. the view opens the dialog only for a soul of that list (views/spawn.mjs `canLaunchSoul`): no card, no
 //      Spawn control, and Quick Open's way in finds nothing. It says why in the client's own sentence.

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewData, previewComposedFrom } from '../../client/spawn-preview-contract.mjs';
 import { composePreviewModules, moduleWhyText, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
@@ -29,7 +29,7 @@ const reasons = modules => Object.fromEntries(modules.map(m => [m.name, m.compos
 /** The boundary replaying `result` through the real adapter for `cli`; returns the response and the argv the Desktop sent. */
 async function read(result = kernel(), cli = CLI) {
   let argv;
-  const boundary = createSpawnPreviewBoundary({ invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_bin, a, _o, callback) => {
+  const boundary = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_bin, a, _o, callback) => {
     argv = a; callback(null, JSON.stringify({ schemaVersion: 1, ok: true, result }));
   } }) });
   const context = () => ({ workspace: { id: 'fixture', scope: DEPLOYMENT }, cli: structuredClone(cli), agents: [{ name: 'dev', agentsRoot: ROOT, work: 'directory' }], instances: [] });

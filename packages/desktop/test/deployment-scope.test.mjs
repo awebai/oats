@@ -47,7 +47,7 @@ async function harness() {
     verifiedLocalHome: inst => inst.home, dirname: p => p.slice(0, p.lastIndexOf('/')),
     observeMutation: () => {}, refreshRemoteSnapshot: () => {}, remoteLoop: { request: () => {} },
     tmuxTarget: inst => `=${inst.tmux.session}:=${inst.tmux.window}`,
-    agentsData: () => ({ agents: [] }), spawnPreviewCache: { invalidate: () => {} }, inspectCache: { invalidate: () => {} }, capabilityCatalogKey: () => null,
+    agentsData: () => ({ agents: [] }), spawnPreview: { cache: { invalidate: () => {} } }, inspectCache: { invalidate: () => {} }, capabilityCatalogKey: () => null,
     readinessFailure, eventsFailure,
     readinessRequest: (req, getContext) => { seen('readiness', getContext()); return readiness(req, getContext); },
     lifecycleRequest: (req, getContext) => { seen('lifecycle', getContext()); return lifecycle(req, getContext); },

@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { runInNewContext } from 'node:vm';
 import { withWindowGlobals } from './helpers/main-window-globals.mjs';
 import { classifyApiRoute } from '../api-url.mjs';
-import { createSpawnPreviewBoundary, createSpawnPreviewCache } from '../server/spawn-preview.mjs';
+import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
@@ -17,7 +17,7 @@ function http() {
   const c = context(), calls = [];
   const deps = { createServer: fn => fn, previewFailure, spawnAgent: assert.fail,
     spawnApplyFailure, spawnApplyRequest: assert.fail,
-    spawnPreviewCachedRequest: createSpawnPreviewBoundary({ cache: createSpawnPreviewCache(), invoke: async (cli, opts) => { calls.push(opts); return envelope(data(opts.target)); } }),
+    spawnPreview: createSpawnPreview({ invoke: async (cli, opts) => { calls.push(opts); return envelope(data(opts.target)); } }),
     ...deploymentDoubles(() => [c.workspace]), cliState: c.cli, agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['northwind', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
   return { c, calls, async request({ url = '/api/workspace-spawn-preview?ws=northwind', method = 'POST', body = JSON.stringify(request()), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
@@ -105,7 +105,7 @@ test('public status forwards only integer API2, never API1/string/future', () =>
 test('a kernel preview refusal reaches the dialog with its words: code, message, and a launch refusal\'s fix (boundary → proxy)', async () => {
   const refusal = { schemaVersion: 1, ok: false, error: { code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed on this machine',
     details: { harness: 'codex', from: 'local', at: 'oats-local.yaml#/souls/launch/release-manager', fix: 'install codex, or change oats-local.yaml souls.launch' } } };
-  const read = createSpawnPreviewBoundary({ invoke: async () => structuredClone(refusal) });
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async () => structuredClone(refusal) });
   const served = await read(structuredClone(request()), () => context());
   assert.deepEqual(served.reason, { code: 'E_HARNESS_UNAVAILABLE', message: refusal.error.message, fix: refusal.error.details.fix }, 'the server keeps the kernel\'s words');
   const through = async body => (await proxySpawnPreview(proxy().event, '/api/workspace-spawn-preview', proxy().opts,
@@ -118,7 +118,7 @@ test('a kernel preview refusal reaches the dialog with its words: code, message,
 });
 
 test('the preview\'s modules cross boundary → proxy as names and sources only; a malformed, duplicated, over-cap or extra-keyed row refuses as E_CLI_PROTOCOL', async () => {
-  const read = async result => createSpawnPreviewBoundary({ invoke: async () => envelope(result) })(structuredClone(request()), () => context());
+  const read = async result => createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async () => envelope(result) })(structuredClone(request()), () => context());
   const through = async body => (await proxySpawnPreview(proxy().event, '/api/workspace-spawn-preview', proxy().opts,
     { ...proxy().deps, fetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(body) }) })).body;
   const served = await read(data());

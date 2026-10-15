@@ -83,8 +83,13 @@ with a `fix` is therefore one whose `message` is the kernel's. A test of what
 reaches the dialog starts from the CLI's printed envelope, through the exec
 owner: the boundary's `invoke` seam is after it.
 
-**The reuse window.** This route and `/api/spawn` prepare (below) answer from one
-bounded settled-answer cache (`spawnPreviewCache`, `server/spawn-preview.mjs`):
+**The reuse window.** The preview and the apply broker are boundaries of the shared
+home (`packages/client/spawn-preview.mjs`, `spawn-apply.mjs`) that a client creates
+and owns: the backend makes one preview (`createSpawnPreview`) and one broker
+(`createSpawnApplyBoundary`, reading through that preview's `prepareRead`), and
+nothing in either module is shared between clients. The preview's two reads, this
+route's and prepare's, share its two flight slots. This route and `/api/spawn`
+prepare (below) answer from the preview's one bounded settled-answer cache:
 64 entries, **60 s**, keyed by the admission identity (workspace id and scope,
 subject, soul work/repo/capability, anchor incarnation, choices and every CLI
 field the admission reads). It holds `available` answers and the name refusals
@@ -110,7 +115,7 @@ decision's revision as `--expect-decision`, and the kernel refuses a decision
 that no longer holds (`E_DECISION_STALE`) before it creates anything.
 
 **Prepare reuses the dialog's answer** (Spec C). `/api/spawn` prepare reads
-through `spawnPreviewPrepareRequest`, the same cache: when the dialog already
+through the preview's `prepareRead`, the same cache: when the dialog already
 holds a fresh settled answer for exactly this admission identity (not
 invalidated, younger than 60 s), prepare binds it without a CLI call (well under
 50 ms); otherwise it reads fresh as before, and may coalesce onto an identical
@@ -292,14 +297,20 @@ the spawn back.
 - **Concurrency.** At most 4 applies run at once backend-wide, one per workspace
   and soul, so one 30-minute spawn does not make every other spawn `E_BUSY`. The
   32-record and 8 MiB bounds stay.
+- **A session of its own.** The `oats spawn` child runs in a process session of
+  its own (`detached: true` whatever exec a client gives; the default is
+  `execFileInSession`), so a hang-up or a Ctrl-C in the terminal that started
+  the client does not reach a spawn while its worktree hooks run. Only the
+  deadline below ends it, and it signals the child alone.
 - **A kill keeps its envelope.** For a `worktree-event` CLI the deadline is the
-  transport's own timer, not `execFile`'s (whose timeout destroys the child's
+  transport's own timer, not the exec's (`execFile`'s timeout destroys the child's
   output before signalling it): at the deadline the CLI gets SIGTERM with its
   output still read, and SIGKILL only if it still runs 20 s later
   (`SIGTERM_GRACE_MS`). A complete envelope on stdout (the kernel prints
   `E_INTERRUPTED` after its rollback) is the outcome, failure or success (the
   broker still qualifies a receipt); only with none is it `E_CLI_TIMEOUT`
-  (unknown). An older CLI keeps `execFile`'s timeout.
+  (unknown). An older CLI keeps the exec's own timeout (`execFileInSession` arms
+  its SIGTERM for a positive one): `E_CLI_TIMEOUT`.
 - **Rolled back is known.** A dispatched failure with `E_INTERRUPTED`,
   `E_REQUIRED_HOOK_FAILED` or `E_HOOK_ENVIRONMENT_CONTRACT` and no
   `details.unconfirmed: true` was compensated by the kernel: **refused, nothing

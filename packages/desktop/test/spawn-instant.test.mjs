@@ -5,8 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountSpawn, settle, deferred, kernel, ROOT, DEPLOYMENT, catalogAgents, kernelPreviewName } from './helpers/spawn-dialog-host.mjs';
 import { cli as CLI } from './helpers/spawn-preview-fixture.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
-import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
+import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { creation } from './helpers/spawn-apply-fixture.mjs';
 import { createSpawnJobs, pendingPlacement, DRIFT_TEXT, SPAWN_STORAGE_KEY } from '../renderer/spawn-jobs.mjs';
 import { flagIgnored, EXAMPLE_WARNING_TWO, EXAMPLE_WARNING_ONE } from './helpers/launch-prompt-fixture.mjs';
@@ -206,7 +206,7 @@ function brokerStore({ apply, wake = null, worktreeEvent = false, hooks, broker:
   const cli = { ...structuredClone(CLI), features: [...CLI.features, ...(worktreeEvent ? ['worktree-event'] : [])] };
   const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli: structuredClone(cli), agents: catalogAgents(), instances: [] });
   const preview = (target, choices) => { const k = kernel(kernelPreviewName(target.selector.soul, choices)); if (hooks) k.result.worktreeHooks = hooks; return k; };
-  const read = createSpawnPreviewBoundary({ invoke: async (_c, { target, choices }) => preview(target, choices) });
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async (_c, { target, choices }) => preview(target, choices) });
   let ids = 0;
   const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read, invoke: async args => apply(args), ...brokerOptions });
   const selector = { soul: 'release-manager', agentsRoot: ROOT };
@@ -339,7 +339,7 @@ const memoryStorage = () => { const m = new Map(); return { getItem: k => m.has(
 /** One backend (the real broker) and stores that come and go like a window reload. */
 function reloadRig(apply) {
   const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli: structuredClone(CLI), agents: catalogAgents(), instances: [] });
-  const read = createSpawnPreviewBoundary({ invoke: async (_c, { target, choices }) => kernel(kernelPreviewName(target.selector.soul, choices)) });
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async (_c, { target, choices }) => kernel(kernelPreviewName(target.selector.soul, choices)) });
   let ids = 0;
   const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read, invoke: async args => apply(args) });
   const posts = [];

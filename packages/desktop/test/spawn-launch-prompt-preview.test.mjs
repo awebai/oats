@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { previewData } from '../../client/spawn-preview-contract.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
 import { data, target, envelope, request, context } from './helpers/spawn-preview-fixture.mjs';
 import { mountSpawn, kernel } from './helpers/spawn-dialog-host.mjs';
 
@@ -14,7 +14,7 @@ test('preview launch-prompt policy is optional, bounded, and idempotent through 
     assert.deepEqual(projected.launchPromptAnswers, policy);
     assert.deepEqual(previewData(projected, target), projected);
     assert.doesNotMatch(JSON.stringify(projected), /PRIVATE|workspaceTrust/);
-    const result = await createSpawnPreviewBoundary({ invoke: async () => envelope(v) })(request(), context);
+    const result = await createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async () => envelope(v) })(request(), context);
     assert.equal(result.status, 'available');
     assert.deepEqual(result.data.launchPromptAnswers, policy);
   }
@@ -27,7 +27,7 @@ test('malformed launch-prompt policy refuses projection and the preview boundary
   for (const launchPromptAnswers of malformed) {
     const v = data(); v.launchPromptAnswers = launchPromptAnswers;
     assert.equal(previewData(v, target), null);
-    const result = await createSpawnPreviewBoundary({ invoke: async () => envelope(v) })(request(), context);
+    const result = await createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async () => envelope(v) })(request(), context);
     assert.equal(result.reason.code, 'E_CLI_PROTOCOL');
   }
 });
