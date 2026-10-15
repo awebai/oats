@@ -92,10 +92,13 @@ export function createThrough({ sequences, now }) {
   /** The paste being read: its content so far (null when none; only the tail that may begin the
    *  end marker once it went past the limit), and whether it did. */
   let paste = null, over = false, lastFeed = 0;
-  /** How many first bytes of a paste's start marker the last read ended with and handed on (1 or
-   *  2, or 0); and the paste passed on raw (see PASTE_HELD_FROM), with the last bytes it passed
-   *  (`tail`, which may begin its end marker), or null. */
-  let forwarded = 0, raw = null;
+  /** The last bytes handed on as input (at most a start marker less one), since the last event
+   *  that was not input: by a read, or by expire() (round 2 of the review: bytes the Esc timeout
+   *  handed on are as much the start of a paste as bytes a read did); how many first bytes of a
+   *  paste's start marker they end with (0 to 5); and the paste passed on raw (see
+   *  PASTE_HELD_FROM), with the last bytes it passed (`tail`, which may begin its end marker), or
+   *  null. */
+  let sent = new Uint8Array(0), forwarded = 0, raw = null;
 
   function endPaste(out, content) {
     if (!over) out.push({ paste: decoder().decode(content) });
@@ -133,13 +136,13 @@ export function createThrough({ sequences, now }) {
     raw.tail = Uint8Array.from(seen.subarray(Math.max(0, seen.length - (PASTE_END.length - 1))));
     return new Uint8Array(0);
   }
-  /** How many first bytes of a paste's start marker the events end with, handed on as input. */
-  function endsOnStart(out) {
-    const last = out.at(-1);
-    if (!last?.input || held.length || paste !== null || raw !== null) return 0;
-    const b = last.input, n = b.length;
-    if (n >= 2 && b[n - 2] === ESC && b[n - 1] === PASTE_START[1]) return 2;
-    return n >= 1 && b[n - 1] === ESC ? 1 : 0;
+  /** Take note of the events handed out, and answer how many first bytes of a paste's start
+   *  marker the input handed on now ends with: at any length, and across events and calls. */
+  function handedOn(out) {
+    for (const event of out) sent = event.input ? join(sent, event.input).slice(-(PASTE_START.length - 1)) : new Uint8Array(0);
+    if (held.length || paste !== null || raw !== null) return 0;
+    for (let k = Math.min(sent.length, PASTE_START.length - 1); k > 0; k--) if (at(sent, sent.length - k, PASTE_START.subarray(0, k))) return k;
+    return 0;
   }
 
   function scan(out, data) {
@@ -194,15 +197,16 @@ export function createThrough({ sequences, now }) {
       forwarded = 0;
       if (raw !== null) data = inRaw(out, data);
       if (raw === null && data.length) scan(out, data);
-      forwarded = endsOnStart(out);
+      forwarded = handedOn(out);
       // Events are handed out as copies: the caller may keep them past the next read.
       return out.map((event) => (event.input ? { input: Uint8Array.from(event.input) } : event.rest ? { back: true, rest: Uint8Array.from(event.rest) } : event));
     },
     expire() {
       if (!held.length || now() < heldAt + ESC_TIMEOUT_MS) return [];
-      const input = held;
+      const out = [{ input: held }];
       held = new Uint8Array(0);
-      return [{ input }];
+      forwarded = handedOn(out);
+      return out;
     },
     timeoutAt() { return held.length ? heldAt + ESC_TIMEOUT_MS : null; },
   };

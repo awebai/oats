@@ -124,6 +124,39 @@ test("a paste split anywhere, its two marks included, never lets a back key insi
   }
 });
 
+test("a paste split anywhere with the Esc timeout passing between its reads (a held start handed on by expire()) still never lets a back key inside it act, for the default back key and one that begins with ESC (round 2 of the review)", () => {
+  for (const [key, back] of [["C-\\", "\x1c"], ["M-x", "\x1bx"]]) {
+    const typedText = `a\x1b[200~one${back}two\x1b[201~b`;
+    const reached = (events) => events.map((e) => (e.input !== undefined ? e.input : `\x1b[200~${Buffer.from(e.paste, "utf8").toString("latin1")}\x1b[201~`)).join("");
+    for (let i = 1; i < typedText.length; i++) {
+      for (let j = i + 1; j < typedText.length; j++) {
+        const s = scanner(key), events = [];
+        for (const part of [typedText.slice(0, i), typedText.slice(i, j), typedText.slice(j)]) {
+          events.push(...s.feed(part));
+          s.wait(ESC_TIMEOUT_MS);
+          events.push(...s.expire());
+          s.wait(1);
+        }
+        const at = `${key}, split at ${i}, ${j}`;
+        assert.equal(events.some((e) => e.back), false, `${at}: no back key: ${JSON.stringify(events)}`);
+        assert.equal(reached(events), typedText, at);
+        assert.deepEqual(s.feed(back), [{ back: true, rest: "" }], `${at}: the back key after the paste is taken`);
+      }
+    }
+  }
+  // The reviewer's three: ESC then "[" held and expired; ESC [ 2 held and expired; and with M-x, a
+  // lone ESC expired. In each the pasted q after the back key stays the agent's.
+  for (const [key, parts] of [["C-\\", ["\x1b", "[", "200~hello\x1cq\x1b[201~"]], ["C-\\", ["\x1b[2", "00~hello\x1cq\x1b[201~"]], ["M-x", ["\x1b", "[200~hello\x1bxq\x1b[201~"]]]) {
+    const s = scanner(key), events = [];
+    for (const [n, part] of parts.entries()) {
+      events.push(...s.feed(part));
+      if (n === parts.length - 2) { s.wait(ESC_TIMEOUT_MS); events.push(...s.expire()); s.wait(1); }
+    }
+    assert.equal(events.some((e) => e.back), false, `${key} ${JSON.stringify(parts)}: ${JSON.stringify(events)}`);
+    assert.equal(events.map((e) => e.input).join(""), parts.join(""), "all of it the agent's, as typed");
+  }
+});
+
 test("a raw paste (its start marker split after ESC or ESC [) whose end never comes is over after the pause: the back key is taken again", () => {
   for (const first of ["\x1b", "x\x1b["]) {
     const s = scanner();
