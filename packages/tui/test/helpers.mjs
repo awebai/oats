@@ -154,8 +154,9 @@ export const took = (state, entry, number, id = DEPLOYMENT) => reduce(state, { i
  *  cell (the second cell of a wide character is empty), trailing blanks cut. */
 export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = true } = {}) {
   const at = new Date(now).toISOString();
-  const r = (state.view === "help" ? state.back : state.view) === "switcher" ? { notice: null, note: null, observed: true } : roster(state, at);
-  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii });
+  const listing = (state.view === "help" ? state.back : state.view) === "switcher";
+  const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
+  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : state.outcome });
   const made = { ...frame(model(state, { page: g.page, now, at, cols: g.listCols }), size), cols: g.listCols };
   const cells = createScreen({ utf8, ascii: state.ascii }).cells(made.rows, size);
   return { ...made, cells, lines: cells.map((line) => line.map((cell) => cell.text).join("").trimEnd()) };
@@ -173,3 +174,21 @@ export function press(state, keys, size = { cols: 80, rows: 24 }) {
   }
   return { state, effects };
 }
+
+// ── The shared lifecycle's kernel answers (awebai/oats#855, PR 5), in the forms the Desktop's tests
+// give them (packages/desktop/test/helpers/lifecycle-fixture.mjs, which a test of this package may
+// not import): one instance, its stop plan, and the receipt of its apply.
+export const LIFECYCLE_INSTANCE = Object.freeze({ instance: "dev-1", agent: "dev", agentsRoot: "/team/agents", home: "/team/agents/dev/instances/dev-1" });
+export const lifecycleTarget = () => ({ ...LIFECYCLE_INSTANCE, workspace: "team", server: null });
+/** What a boundary admits the fixture instance against. */
+export const lifecycleContext = () => ({ cli: { ok: true, bin: "/installed/oats", version: "0.24.6", lifecycleApi: 1, features: ["lifecycle-plans", "retire-retention", "retire-home"] }, workspace: { id: "team", scope: "/team" }, instances: [{ ...LIFECYCLE_INSTANCE }] });
+export const lifecycleSession = () => ({ state: "unknown", present: true, established: true, backend: "tmux" });
+export const lifecycleWork = () => ({ observed: true, revision: "a".repeat(40), branch: "feat/work", detached: false, drift: true, changed: 2, untracked: 1,
+  upstream: { ref: null, ahead: null, behind: null }, base: { ref: null, ahead: null, behind: null }, remote: { host: "github.com", path: "owner/repo" } });
+export const stopPlan = (recursive = true) => ({ lifecycleApi: 1, action: "stop", instance: LIFECYCLE_INSTANCE.instance, home: LIFECYCLE_INSTANCE.home,
+  recursive, at: "2026-09-22T00:00:00Z", planRevision: "a".repeat(24), notes: [], skipped: [], ambiguous: [], targets: [{
+    ...LIFECYCLE_INSTANCE, depth: 0, session: lifecycleSession(), work: lifecycleWork(), workMode: "worktree", launched: true, retiring: false, stopPending: false, midTask: true }] });
+export const envelope = (result) => ({ schemaVersion: 1, ok: true, result });
+export const stopReceipt = (args, plan = stopPlan()) => ({ lifecycleApi: 1, action: "stop", instance: plan.instance, home: plan.home,
+  planRevision: args.revision, idempotencyKey: args.key, at: "2026-09-22T00:01:00Z", replayed: false, ok: true,
+  retained: ["home", "work", "transcript", "launch"], results: plan.targets.map((t) => ({ instance: t.instance, home: t.home, ok: true, stopped: true, alreadyIdle: false, state: "stopped" })) });

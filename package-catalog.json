@@ -3,7 +3,7 @@
   "packages": {
     "oats.okf": {
       "url": "https://github.com/awebai/oats-okf.git",
-      "ref": "v5.0.5",
+      "ref": "v5.1.0",
       "path": "oats-package"
     },
     "oats.aweb": {
@@ -43,7 +43,7 @@
     },
     "oats.framework": {
       "url": "https://github.com/awebai/oats.git",
-      "ref": "oats-framework/v1.10.0",
+      "ref": "oats-framework/v1.10.1",
       "path": "oats-package"
     }
   },

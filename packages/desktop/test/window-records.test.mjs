@@ -5,7 +5,7 @@
 // closes that window while it's served.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseWindowRecords, resolveView, restorePlan, clampBounds, windowTitle, createWindowRecords } from '../window-records.mjs';
@@ -18,6 +18,11 @@ const SERVED = [
 ];
 const record = (workspace, x = 10, extra = {}) => ({ workspace, bounds: { x, y: 20, width: 800, height: 600 }, maximized: false, ...extra });
 const DISPLAYS = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }, { workArea: { x: 1440, y: 0, width: 1920, height: 1080 } }];
+
+/** Every directory tempDir() made, removed when the file has ended. */
+const made = [];
+function tempDir() { const dir = mkdtempSync(join(tmpdir(), 'oats-windows-')); made.push(dir); return dir; }
+test.after(() => { for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 test('parse: valid records kept in order, malformed ones and junk refused', () => {
   const text = JSON.stringify([record(A), { workspace: 'a\nb', bounds: record(A).bounds, maximized: false }, record(B, 30, { maximized: true, fullscreen: true }),
@@ -80,7 +85,7 @@ function timers() {
 }
 
 test('records: binding appends or rewrites the window\'s record; moves are debounced into one atomic write', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oats-windows-')), file = join(dir, 'windows.json'), t = timers();
+  const dir = tempDir(), file = join(dir, 'windows.json'), t = timers();
   const store = createWindowRecords({ file, initial: [record('/d/gone')], timers: t });
   const win = {};
   store.bind(win, '/d/oats', { bounds: record(A).bounds, maximized: false });
@@ -96,7 +101,7 @@ test('records: binding appends or rewrites the window\'s record; moves are debou
 });
 
 test('records: a restored window adopts its record; closing while served drops it, closing while not served keeps it', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oats-windows-')), file = join(dir, 'windows.json'), t = timers();
+  const dir = tempDir(), file = join(dir, 'windows.json'), t = timers();
   const initial = [record(A), record(B)];
   const store = createWindowRecords({ file, initial, timers: t });
   const a = {}, b = {};
@@ -133,7 +138,7 @@ test('restore before observation: a view id not served yet resolves through its 
 });
 
 test('records: binding keeps the view\'s deployments from the served list; an unknown view keeps the ones it had', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oats-windows-')), file = join(dir, 'windows.json'), t = timers();
+  const dir = tempDir(), file = join(dir, 'windows.json'), t = timers();
   const store = createWindowRecords({ file, initial: [], timers: t });
   const win = {};
   store.bind(win, A, { bounds: record(A).bounds, maximized: false }, SERVED);
@@ -145,7 +150,7 @@ test('records: binding keeps the view\'s deployments from the served list; an un
 });
 
 test('records: a record naming only folders that exist but are not deployments is dropped and written; missing paths and views are kept (#518)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'oats-windows-')), file = join(dir, 'windows.json'), t = timers();
+  const dir = tempDir(), file = join(dir, 'windows.json'), t = timers();
   // '/' and '/Users/me' exist without an oats-local.yaml; '/Volumes/off/oats' is missing (a volume not mounted, #472).
   const folders = new Set(['/', '/Users/me']);
   const initial = [record('/', 10, { deployments: ['/'] }), record(A, 20, { deployments: ['/d/oats'] }), record('/Volumes/off/oats'),

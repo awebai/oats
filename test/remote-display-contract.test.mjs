@@ -1,7 +1,8 @@
 /** Display projections must not overwrite values subsequently consumed by commands. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseRepoRef, redactUrl } from "../lib/remote.mjs";
+import * as remoteDisplay from "../lib/remote.mjs";
+import { parseRepoRef, displayRepoRef, displayDiagnosticText, scrubGitLine } from "../lib/remote.mjs";
 import { discoverWorkspace, observeWorkspace, readDeclaration, validateSoul } from "../lib/workspace.mjs";
 
 const TOKEN = "CONTRACT_CREDENTIAL_MARKER";
@@ -17,6 +18,38 @@ const remoteFor = (workspace, externalSoul = soul("here")) => ({
     assert.equal(at, commit);
     return { bytes: Buffer.from(JSON.stringify(path === "oats-workspace.yaml" ? workspace : externalSoul)) };
   },
+});
+
+test("named display entries fix context and preserve strict pinned sources", () => {
+  const ref = `https://${TOKEN}@host.invalid/org/repo`;
+  const shown = "https://host.invalid/org/repo";
+  const gitNotice = "Git's diagnostic was withheld; run the same Git operation by hand to see Git's own words.";
+  assert.equal(Object.hasOwn(remoteDisplay, "redactUrl"), false, "the implicit-context export has no shim");
+  assert.equal(displayRepoRef(ref), shown);
+  assert.equal(displayRepoRef("notaref"), "notaref", "selected plain values keep their spelling");
+  assert.equal(displayDiagnosticText("kernel reason"), "kernel reason");
+  assert.equal(displayDiagnosticText(`refused ${ref}`, ref, { refusal: true }),
+    `refused ${shown} (its user information is not shown)`);
+  assert.equal(scrubGitLine("kernel reason"), gitNotice, "Git requires original operation provenance");
+  assert.equal(scrubGitLine("fatal: missing", shown), "fatal: missing");
+  assert.equal(scrubGitLine("fatal: missing", ref), gitNotice);
+  assert.equal(scrubGitLine(`${"x".repeat(500)}@late`, shown), gitNotice, "Git inspects the whole original line");
+  assert.equal(displayRepoRef(ref, { known: true, reference: false }), shown);
+  assert.equal(displayDiagnosticText(`refused ${ref}`, ref, { known: true, reference: true, pinned: true }), `refused ${shown}`);
+  assert.equal(displayDiagnosticText("host.invalid", ref, { fragment: true }), "host.invalid");
+  assert.equal(displayDiagnosticText(TOKEN, ref, { fragment: true }), WITHHELD);
+  assert.equal(displayRepoRef(ref, { rejectedValue: true }), "[value withheld]");
+  assert.equal(displayDiagnosticText("fixed reason", ref, { refusal: true, substitute: false, rejectedValue: true }),
+    "fixed reason (the value was withheld)");
+  const input = `${ref}@${commit}`, pinned = `${shown}@${commit}`;
+  assert.equal(displayRepoRef(input), WITHHELD, "pins require explicit context");
+  assert.equal(displayRepoRef(input, { pinned: true }), pinned);
+  assert.equal(displayRepoRef(input, { pinned: { ref, commit } }), pinned);
+  assert.equal(displayRepoRef(pinned, { pinned: true }), pinned);
+  assert.equal(displayRepoRef(`notaref@${commit}`, { pinned: true }), WITHHELD, "pins have no plain-value exception");
+  assert.equal(displayRepoRef(`notaref@${commit}`, { pinned: { ref: "notaref", commit } }), WITHHELD);
+  assert.equal(displayRepoRef(`${ref}@short`, { pinned: true }), WITHHELD);
+  assert.equal(displayRepoRef(input, { pinned: { ref: shown, commit } }), WITHHELD, "supplied components must match the original");
 });
 
 test("soul from diagnostics retain the pointer and raw decoded configuration", () => {
@@ -73,9 +106,9 @@ test("external problem source is display-only while successful and configured so
     const success = await discoverWorkspace(workspaceRef, { remote: remoteFor(workspace) });
     assert.equal(success.external[0].source, source, "resolver repo/name matching needs the original source");
     assert.equal(success.external[0].soul.definition.capabilities["fixture.cap"].from, "here");
-    assert.equal(redactUrl(success.external[0].source, null, { reference: true }), WITHHELD, "pinned sources require explicit context");
-    assert.equal(redactUrl(success.external[0].source, null, { pinned: true }), problem.source);
-    assert.equal(redactUrl(problem.source, null, { pinned: true }), problem.source, "listing projection is idempotent");
+    assert.equal(displayRepoRef(success.external[0].source), WITHHELD, "pinned sources require explicit context");
+    assert.equal(displayRepoRef(success.external[0].source, { pinned: true }), problem.source);
+    assert.equal(displayRepoRef(problem.source, { pinned: true }), problem.source, "listing projection is idempotent");
     assert.equal(success.external[0].source, source, "display projection cannot mutate its source");
   }
 });
@@ -99,22 +132,22 @@ test("pinned display requires an explicit usable reference and a full OID", () =
   for (const ref of refs) {
     const display = ref.startsWith("ssh:") ? "ssh://host.invalid:22/org/repo" : ref;
     const input = `${ref}@${commit}`;
-    assert.equal(redactUrl(input, null, { pinned: { ref, commit } }), `${display}@${commit}`);
-    assert.equal(redactUrl(input, null, { pinned: true }), `${display}@${commit}`);
-    assert.equal(redactUrl(`${display}@${commit}`, null, { pinned: true }), `${display}@${commit}`);
+    assert.equal(displayRepoRef(input, { pinned: { ref, commit } }), `${display}@${commit}`);
+    assert.equal(displayRepoRef(input, { pinned: true }), `${display}@${commit}`);
+    assert.equal(displayRepoRef(`${display}@${commit}`, { pinned: true }), `${display}@${commit}`);
     for (const bad of ["", "a".repeat(39), "a".repeat(41), "A".repeat(40), `${commit}\n`, "not-an-oid"]) {
-      assert.equal(redactUrl(`${ref}@${bad}`, null, { pinned: { ref, commit: bad } }), WITHHELD);
-      assert.equal(redactUrl(`${ref}@${bad}`, null, { pinned: true }), WITHHELD);
+      assert.equal(displayRepoRef(`${ref}@${bad}`, { pinned: { ref, commit: bad } }), WITHHELD);
+      assert.equal(displayRepoRef(`${ref}@${bad}`, { pinned: true }), WITHHELD);
     }
   }
   for (const ref of ["notaref", "https://github.com/org", "htps://github.com/org/repo", "github.com:org/repo", "https://host.invalid/org/repo mixed", `https://u:${TOKEN}/extra@host.invalid/org/repo`, `https://host.invalid/org/repo https://${TOKEN}@other.invalid/a/b`]) {
-    assert.equal(redactUrl(`${ref}@${commit}`, null, { pinned: { ref, commit } }), WITHHELD);
-    assert.equal(redactUrl(`${ref}@${commit}`, null, { pinned: true }), WITHHELD);
+    assert.equal(displayRepoRef(`${ref}@${commit}`, { pinned: { ref, commit } }), WITHHELD);
+    assert.equal(displayRepoRef(`${ref}@${commit}`, { pinned: true }), WITHHELD);
   }
-  assert.equal(redactUrl("https://host.invalid/org/repo", null, { pinned: true }), WITHHELD);
-  assert.equal(redactUrl(WITHHELD, null, { pinned: true }), WITHHELD);
-  assert.equal(redactUrl(`https://host.invalid/org/repo@${commit}`, null, { pinned: { ref: "https://other.invalid/a/b", commit } }), WITHHELD);
-  for (const path of ["/owned/a@b/repo", "file:///owned/a@b/repo"]) assert.equal(redactUrl(path, null, { reference: true }), path);
+  assert.equal(displayRepoRef("https://host.invalid/org/repo", { pinned: true }), WITHHELD);
+  assert.equal(displayRepoRef(WITHHELD, { pinned: true }), WITHHELD);
+  assert.equal(displayRepoRef(`https://host.invalid/org/repo@${commit}`, { pinned: { ref: "https://other.invalid/a/b", commit } }), WITHHELD);
+  for (const path of ["/owned/a@b/repo", "file:///owned/a@b/repo"]) assert.equal(displayRepoRef(path), path);
 });
 
 
@@ -128,6 +161,6 @@ test("credentialed SSH pinned display does not expand configured external admiss
     assert.ok(!JSON.stringify({ message: e.message, details: e.details }).includes(TOKEN));
     return true;
   });
-  assert.equal(redactUrl(source, null, { pinned: true }), `ssh://host.invalid:2222/org/external@${commit}`);
+  assert.equal(displayRepoRef(source, { pinned: true }), `ssh://host.invalid:2222/org/external@${commit}`);
   assert.equal(workspace.external[0].source, source);
 });

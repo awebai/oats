@@ -50,8 +50,10 @@ console.log(JSON.stringify({meta: {context: e.OATS_CONTEXT, repo: e.OATS_REPO, r
   // on PATH (its own directory) because the workspace is read over Git.
   for (const key of Object.keys(process.env)) delete process.env[key];
   const bin = join(base, "bin"), gitBin = join(base, "git-bin");
+  // The fixture's TMUX_TMPDIR is part of it: a tmux client the kernel starts, here or in a CLI child,
+  // looks for the fixture's server, never at tmux's default place, where a host's live server is.
   Object.assign(process.env, { HOME: fx.env.HOME, OATS_HOME_DIR: fx.env.OATS_HOME_DIR, OATS_REMOTE_CACHE: fx.env.OATS_REMOTE_CACHE, OATS_TMUX_SESSION: fx.env.OATS_TMUX_SESSION,
-    PATH: `${bin}:${gitBin}`, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(base, "gitconfig") });
+    TMUX_TMPDIR: fx.env.TMUX_TMPDIR, PATH: `${bin}:${gitBin}`, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(base, "gitconfig") });
   write(process.env.GIT_CONFIG_GLOBAL, "");
   mkdirSync(bin); mkdirSync(gitBin);
   symlinkSync(process.execPath, join(bin, "node"));

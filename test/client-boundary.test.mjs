@@ -79,7 +79,7 @@ const SURFACE = Object.freeze({
   "panel-views.mjs": ["deployments", "deploymentInfo", "deploymentTag", "deploymentEntry", "deploymentPanel", "viewModel", "viewFor", "panelData", "workspaceChoices", "cliReadsRemotes"],
   // Provisional: machines and the switcher. 3a: what a roster answer becomes (`remotePanel` takes the time of its call, required),
   // what a client remembers of the machines that answered, and the words a switcher shows for a view.
-  "cli-adapter.mjs": ["parseEnvelope", "cliRemoteRoster", "cliStart", "launchChoiceArgv", "cliCapability", "writeTaskFile"],
+  "cli-adapter.mjs": ["parseEnvelope", "cliRemoteRoster", "cliCapability", "writeTaskFile"],
   "remote-roster.mjs": ["remoteWorkspace", "remotePanel", "remoteAgents", "unavailableGroups", "remoteRosterState", "remotePanelEntries"],
   "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"],
   "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
@@ -88,11 +88,14 @@ const SURFACE = Object.freeze({
   "remote-address.mjs": ["canAddressRemote", "serverLabel", "shownLabel", "unaddressableSentence", "rowReason", "remoteHeadline", "hostReason", "unroutableReason", "kernelCode"],
   "machine-contract.mjs": ["machinesGated"],
   "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
-  // Provisional: lifecycle.
-  "lifecycle-cli.mjs": ["cliLifecycle", "lifecycleArgv"],
-  "lifecycle-contract.mjs": ["LIFECYCLE_API", "MAX_LIFECYCLE_TARGETS", "planRevision", "planReference", "lifecyclePlan", "lifecycleOptions", "lifecycleChoicesApplicable",
-    "lifecycleReceipt", "stoppedTargets", "spawnCompensationOf", "lifecycleReason", "lifecycleFailure", "lifecycleDetailCode"],
+  // Provisional: lifecycle (5a). A client stops and retires through its own boundary and confirmation; the CLI call
+  // and the contract's readers are the boundary's, never a client's.
+  "instance-lifecycle.mjs": ["createLifecycleBoundary", "supportsLifecycle"],
+  "lifecycle-confirmation.mjs": ["planView", "outcomeView", "createLifecycleConfirmation", "applyRunningSentence"],
   "instance-acts.mjs": ["instanceActs", "openAct"],
+  // 5a-2: a client starts and restarts an existing instance through the start rule; the CLI call and the launch
+  // choices' argv are the rule's, never a client's.
+  "session-start.mjs": ["startGate", "startInstance", "verifiedLocalHome"],
   // Provisional: souls, inspect, spawn.
   "inspect-contract.mjs": ["inspectSupported", "inspectData", "originText", "inspectFacts"],
   "spawn-preview-cli.mjs": ["cliSpawnPreview"],
@@ -100,7 +103,7 @@ const SURFACE = Object.freeze({
   "spawn-decision.mjs": ["spawnEffective", "spawnDecision", "sameSpawnDecision"],
   "spawn-apply-cli.mjs": ["cliSpawnApply"],
   "spawn-apply-contract.mjs": ["spawnApplySupported", "spawnApplyDeadlineMs", "spawnReference", "spawnCreationReceipt", "ROLLED_BACK_CODES", "spawnApplyReason", "spawnApplyFailure"],
-  "launch-prompt-outcome.mjs": ["LAUNCH_INSPECTION", "LAUNCH_DIAGNOSTIC_BYTES", "launchPromptOutcome", "retainedSpawnDetails", "retainedSpawnMessage"],
+  "launch-prompt-outcome.mjs": ["LAUNCH_INSPECTION", "LAUNCH_DIAGNOSTIC_BYTES", "launchPromptOutcome", "retainedSpawnDetails", "retainedSpawnMessage", "retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "capability-warnings-contract.mjs": ["warningsOf", "previewWarningsOf", "warningsShown"],
   // Provisional: capabilities.
   "workspace-cli.mjs": ["cliWorkspace", "workspaceGate", "workspaceFailure", "WORKSPACE_ACTIONS"],
@@ -449,7 +452,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 46);
+  assert.equal(Object.keys(SURFACE).length, 47);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
@@ -470,6 +473,9 @@ test("the stable surface names what packages/client has: every listed module, ev
   // #982: the words that name who made a text are on it; how the shared home decides a speaker is not.
   assert.deepEqual(SURFACE["instance-presentation.mjs"], ["runtimeState", "runtimeCounts", "unsupportedSession", "originLead"]);
   assert.ok(!Object.hasOwn(SURFACE, "kernel-made.mjs") && !Object.hasOwn(SURFACE, "liveness.mjs"));
+  // 5a-2: a client starts through the start rule; the start's CLI call and its argv are the rule's.
+  assert.deepEqual(SURFACE["session-start.mjs"], ["startGate", "startInstance", "verifiedLocalHome"]);
+  for (const name of ["cliStart", "launchChoiceArgv"]) assert.ok(!SURFACE["cli-adapter.mjs"].includes(name), name);
   // Not on it: the Desktop spawn dialog's copy, and the two files nobody imports.
   for (const module of ["spawn-messages.mjs", ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
 });
@@ -651,6 +657,21 @@ test("fixture, packages/tui: an import of a module that is not on the surface fa
   // The two files nobody imports, whatever is taken from them.
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'import "../client/own-environment.mjs";\nexport const frame = (t) => t;\n' }, /imports own-environment\.mjs, which is never imported from outside the shared home$/);
   breaks(tuiProblems, { "packages/tui/frame.mjs": 'export const frame = () => import("../client/liveness-main.mjs");\n' }, /imports liveness-main\.mjs, which is never imported/);
+});
+
+test("fixture, packages/tui: the lifecycle CLI call is not on the surface: a client stops and retires through its boundary (5a)", () => {
+  breaks(tuiProblems, { "packages/client/lifecycle-cli.mjs": 'export function cliLifecycle() { return null; }\n',
+    "packages/tui/frame.mjs": 'import { cliLifecycle } from "../client/lifecycle-cli.mjs";\nexport const frame = cliLifecycle;\n' },
+  /^packages\/tui\/frame\.mjs: imports lifecycle-cli\.mjs, which is not on the stable surface$/);
+});
+
+test("fixture, packages/tui: the start's CLI call is not on the surface: a client starts through the start rule (5a-2)", () => {
+  const home = { "packages/client/cli-adapter.mjs": 'export function parseEnvelope() { return null; }\nexport function cliStart() { return null; }\nexport function launchChoiceArgv() { return []; }\n',
+    "packages/client/session-start.mjs": 'import { cliStart } from "./cli-adapter.mjs";\nexport function startInstance() { return cliStart; }\n' };
+  assert.deepEqual(allProblems(fixture({ ...home, "packages/tui/frame.mjs": 'import { startInstance } from "../client/session-start.mjs";\nimport { parseEnvelope } from "../client/cli-adapter.mjs";\nexport const frame = () => [startInstance, parseEnvelope];\n' })), []);
+  for (const name of ["cliStart", "launchChoiceArgv"])
+    breaks(tuiProblems, { ...home, "packages/tui/frame.mjs": `import { ${name} } from "../client/cli-adapter.mjs";\nexport const frame = ${name};\n` },
+      new RegExp(`^packages/tui/frame\\.mjs: imports ${name} from cli-adapter\\.mjs, which is not on the stable surface$`));
 });
 
 test("fixture, packages/tui: an import of an export that is not on the surface, from a module that is, fails", () => {

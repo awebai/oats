@@ -26,6 +26,7 @@ import { instanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { target as forgeTarget, pr as forgePr } from './helpers/forge-fixture.mjs';
 import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
+import { createForgetDialog } from '../renderer/forget-dialog.mjs';
 import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
 import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
 import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture, stopReceipt, retireReceipt } from './helpers/lifecycle-fixture.mjs';
@@ -791,6 +792,43 @@ for (const [name] of palettes) test(`${name}: actual Stop/Retire confirmations m
   check('result', [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-review', '.lifecycle-review', 'fg', 'surface'], ['.lifecycle-close', '.lifecycle-close', 'fg', ['surface', 'sel']]]);
 });
 
+// #1131: the Forget confirmation is the lifecycle dialog's classes in new places (a muted basis line, a confirm
+// with no danger fill), and its context-panel button is the panel's primary action beside the remedy note.
+for (const [name] of palettes) test(`${name}: the Forget confirmation and the context panel's Forget… meet computed AA without text opacity`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><aside id="context-panel"></aside></body></html>`), doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), lifecycleCSS, contextPanelCSS]) {
+    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
+  }
+  const gate = Promise.withResolvers();
+  const dialog = createForgetDialog({ doc, request: () => gate.promise });
+  const panel = createContextPanel({ document: doc, root: doc.getElementById('context-panel'), lifecycle: { forget: () => {} } });
+  t.after(() => { gate.resolve(null); dialog.dispose(); panel.dispose(); dom.window.close(); });
+  const root = dom.window.getComputedStyle(doc.documentElement), settle = () => new Promise(resolve => setImmediate(resolve));
+  const tokenOf = (value, what) => { const m = /^var\(--([\w-]+)\)$/.exec(value); assert.ok(m, `${what} is a token: ${value}`); return m[1]; };
+  const ratio = (fg, bg) => contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+  const check = (phase, rows) => {
+    for (let [selector, surfaceSelector, fg, bg, min = TEXT_CONTRAST] of rows) {
+      const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector); assert.ok(el && surface, `${phase}: ${selector}`);
+      assert.equal(tokenOf(min === TEXT_CONTRAST ? dom.window.getComputedStyle(el).color : dom.window.getComputedStyle(el).borderTopColor, selector), fg, `${phase}: ${selector}`);
+      const painted = tokenOf(dom.window.getComputedStyle(surface).background || dom.window.getComputedStyle(surface).backgroundColor, surfaceSelector);
+      assert.ok([].concat(bg).includes(painted), `${phase}: ${surfaceSelector} on --${painted}`); bg = painted;
+      assert.ok(min === TEXT_CONTRAST ? pairs.some(([f, b]) => f === fg && b === bg) : GRAPHIC_PAIRS.some(([f, b]) => f === fg && b === bg), `${phase}: --${fg} on --${bg} is in the inventory`);
+      assert.ok(ratio(fg, bg) >= min, `${name} ${phase} ${selector}: ${ratio(fg, bg).toFixed(2)}`);
+      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', `${phase}: ${selector} has no opacity`);
+    }
+  };
+  const gone = { instance: 'dev-a', agent: 'dev', home: '/srv/team/agents/dev/instances/dev-a', server: 'build', repoName: 'Build box',
+    running: null, addressable: false, savedRoute: true, missingRemotely: true, work: null };
+  dialog.open(gone);
+  check('forget review', [['.lifecycle-dialog h2', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog > p:not(.lifecycle-note)', '.lifecycle-dialog', 'fg', 'surface'],
+    ['.lifecycle-dialog > .lifecycle-note', '.lifecycle-dialog', 'muted', 'surface'], ['.lifecycle-close', '.lifecycle-close', 'fg', ['surface', 'sel']],
+    ['.lifecycle-confirm', '.lifecycle-confirm', 'primary-fg', 'primary-bg']]);
+  doc.querySelector('.lifecycle-confirm').click(); await settle();
+  check('forget running', [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog .spinner', '.lifecycle-dialog', 'accent', 'surface', GRAPHIC_CONTRAST]]);
+  panel.setContext({ workspace: 'A', instance: gone, key: gone.home });
+  check('context panel', [['[data-context-work-note]', '#context-panel', 'muted', 'surface'], ['[data-context-forget] button', '[data-context-forget] button', 'primary-fg', 'primary-bg']]);
+});
+
 for (const [name] of palettes) test(`${name}: actual readiness checks, provider problems, warnings and policy use computed AA surfaces`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`), doc = dom.window.document;
   for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -897,7 +935,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   }
 });
 
-for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reasons, workspace metadata, explicit Open toast and the Needs input pill meet computed AA`, async t => {
+for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel, disabled menu reasons, workspace metadata, explicit Open toast and the Needs input pill meet computed AA`, async t => {
   const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
   doc.documentElement.dataset.theme = name;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS, rosterPrCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -924,8 +962,10 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
   t.after(() => { panel.dispose(); notifications.dispose(); dom.window.close(); });
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.context-panel-rail-tab[aria-pressed=true]', '.context-panel-rail-tab[aria-pressed=true]', 'accent', 'sel'],
-    ['.context-panel-rail-tab[aria-pressed=false]', '#context-panel', 'muted', 'surface'],
+    // Spec B: the reopen controls at rest sit on the main area's top bar: the tab strip (--bg) or a stage
+    // header (--surface, the sidebar's paint here). Hovered or focused they are --fg on --surface-2 / --sel.
+    ['#show-sidebar', '#tabstrip', 'muted', 'bg'], ['#show-panel', '#tabstrip', 'muted', 'bg'],
+    ['#show-panel', '#sidebar', 'muted', 'surface'],
     ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
     ['.ws-option-meta', '.ws-option', 'muted', 'sel'],
@@ -1038,6 +1078,8 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#context-panel .context-panel-shared-tag', '#context-panel .context-panel-shared-tag', 'muted', 'tag-bg'],
     // #675: a remote row's "work and build not reported" line, muted on the panel.
     ['#context-panel .context-panel-work-note', '#context-panel', 'muted', 'surface'],
+    // #855: why a blocked row offers no lifecycle action, muted in the footer's place for its controls.
+    ['#context-panel .context-panel-footer-note', '#context-panel .context-panel-footer', 'muted', 'surface'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
   for (const [selector, painted, fg, bg] of checks) {
@@ -1576,6 +1618,21 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
     ['.soul-part[data-source^=capability] .soul-part-flag', '.cap-contents-reader', 'warn', 'bg'],
     ['.soul-part[data-source^=work-mode] .cap-reader-line', '.cap-contents-reader', 'muted', 'bg'],
   ]);
+  // #1144: the Skills group (the shared skill item, "more files", a selected file) and a cut skill file's head; then its note in place.
+  section.update({ ...soul('# T\n'), skills: [{ name: 'oats-pr-review', path: 'skills/oats-pr-review', description: 'Reviews. More.', filesTruncated: true,
+    files: [{ path: 'skills/oats-pr-review/SKILL.md', bytes: 300000, text: '# R\n', binary: false, truncated: true }] }] });
+  doc.querySelector('[data-skill] > .cap-node').click();
+  doc.querySelector('[data-path="file:skills/oats-pr-review/SKILL.md"] > .cap-node').click();
+  check([
+    ['[data-skill] > .cap-node .cap-node-name', '.cap-contents', 'fg', 'surface'],
+    ['[data-skill] > .cap-node .cap-node-desc', '.cap-contents', 'muted', 'surface'],
+    ['.cap-more', '.cap-contents', 'muted', 'surface'],
+    ['[aria-selected=true] .cap-node-name.mono', '[aria-selected=true] > .cap-node', 'fg', 'sel'],
+    ['.cap-reader-path', '.cap-reader-head', 'fg', 'bg'],
+    ['.cap-reader-flag', '.cap-reader-head', 'warn', 'bg'],
+  ]);
+  section.update({ ...soul('# T\n'), skills: [] });
+  check([['[role=tree] .cap-contents-group-label', '.cap-contents', 'muted', 'surface'], ['[role=tree] .cap-contents-note', '.cap-contents', 'muted', 'surface']]);
   section.dispose(); dom.window.close();
 });
 
@@ -1776,4 +1833,64 @@ for (const [name] of palettes) test(`${name}: a capability trigger source's quot
   }
   // The quote's side rule is not what tells a quote apart (the lead-in and the typeface do): it carries no text.
   assert.match(/\.source-quote-text \{([^}]*)\}/.exec(capabilityQuoteCSS)[1], /font:12px\/1\.5 var\(--mono,monospace\)/);
+});
+
+// The shortcuts editor (Spec A PR 2): search, sticky group headings, labels, keycaps, quiet markers,
+// warnings, the unbound chord and the empty line, on the surfaces they are painted on. A row's
+// hover paints --surface-2 under its text, so row text is held to both. Every pair is also in the
+// inventory, which is what holds the derived "This computer" palettes to it.
+for (const [name] of palettes) test(`${name}: the shortcuts editor's search, headings, rows, keycaps and markers meet computed AA`, async t => {
+  const { registerAction, setBinding, resetAllBindings } = await import("../renderer/keybindings.mjs");
+  const { createKeybindingsEditor } = await import("../renderer/keybindings-editor.mjs");
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
+    const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
+  }
+  resetAllBindings();
+  const offs = [
+    registerAction({ id: "sidebar.toggle", label: "Sidebar", context: "global", run: () => {} }),
+    registerAction({ id: "app.focusMode", label: "Focus mode", context: "global", run: () => {} }),
+    registerAction({ id: "x.bare", label: "Bare", context: "global", defaultChord: "B", run: () => {} }),
+  ];
+  const editor = createKeybindingsEditor({ doc, isMac: false });
+  t.after(() => { editor.close(); offs.forEach(off => off()); resetAllBindings(); dom.window.close(); });
+  setBinding("sidebar.toggle", "Ctrl+Alt+B"); // the changed marker
+  editor.open();
+  const nomatch = () => { const s = doc.querySelector(".kb-search"); s.value = "zzz"; s.dispatchEvent(new dom.window.Event("input")); };
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const value = token => root.getPropertyValue(`--${token}`).trim();
+  const row = ["surface", "surface-2"];
+  const checks = [
+    [".kb-title", "fg", ".kb-editor", ["surface"]],
+    [".kb-search", "fg", ".kb-search-field", ["bg"]],
+    [".kb-hint", "muted", ".kb-editor", ["surface"]],
+    [".kb-context", "muted", ".kb-context", ["surface"]],
+    [".kb-label", "fg", ".kb-editor", row],
+    [".kb-mark-terminal", "muted", ".kb-editor", row],
+    [".kb-mark-changed", "muted", ".kb-editor", row],
+    [".kb-keys kbd", "fg", ".kb-keys kbd", ["bg"]],
+    [".kb-chord.kb-unbound", "faint", ".kb-editor", row],
+    [".kb-conflict", "warn", ".kb-editor", row],
+  ];
+  for (const [selector, fg, painted, surfaces] of checks) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${surfaces[0]})`, painted);
+    for (const bg of surfaces) {
+      assert.ok(pairs.some(([f, b]) => f === fg && b === bg), `${fg} on ${bg} is in the inventory`);
+      assert.ok(contrast(opaqueChannels(value(fg)), opaqueChannels(value(bg))) >= 4.5, `${selector}: ${fg} on ${bg}`);
+    }
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, "1", selector);
+  }
+  // The row hover and the sticky heading are painted with tokens, never by compositing.
+  const shell = readFileSync(new URL("shell.css", renderer), "utf8");
+  assert.match(shell, /\.kb-row:hover \{ background: var\(--surface-2\); \}/);
+  assert.match(shell, /\.kb-search::placeholder \{ color: var\(--faint\); \}/);
+  assert.ok(contrast(opaqueChannels(value("faint")), opaqueChannels(value("bg"))) >= 4.5, "the placeholder on the search");
+  nomatch();
+  const none = doc.querySelector(".kb-nomatch");
+  assert.equal(none.hidden, false);
+  assert.equal(dom.window.getComputedStyle(none).color, "var(--muted)");
+  assert.ok(contrast(opaqueChannels(value("muted")), opaqueChannels(value("surface"))) >= 4.5);
 });

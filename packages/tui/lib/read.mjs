@@ -1,15 +1,36 @@
 // The effects of the TUI: finding the deployment, the kernel's record, one exec for every kernel
 // call, the observer of every served deployment, the roster of other machines, the refresh loop,
 // the liveness collector, and the two looks at the file system the switcher needs.
-// This version of the TUI ONLY READS: nothing here changes a deployment, and nothing writes a file.
+// Every child of this module is a read, except the changes (a stop or retire apply, a start or a
+// restart) that the shared callers start through `changeExec`: those are never ended by the TUI,
+// and their output goes to two files of the run's own private directory, the only files this
+// module writes. (Opening an agent's terminal starts the kernel's viewer, which is not a read and
+// is not started here: lib/open.mjs.)
 // No function of this module decodes a kernel answer. Each one passes values between the shared
 // functions (client.mjs), which decide what a roster, a row and a failed read are, once, for both
 // clients: the TUI never writes "stopped" for a row and never builds the collector's input by hand.
 import { execFile as nodeExecFile, spawn as nodeSpawn } from "node:child_process";
-import { lstatSync, opendirSync, realpathSync, statSync } from "node:fs";
+import { closeSync, fstatSync, lstatSync, mkdtempSync, openSync, opendirSync, readSync, realpathSync, rmdirSync, statSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliDeploymentRead, cliReadsRemotes, cliRecord, cliRemoteRoster, createDeploymentObserver, createRefreshLoop, deploymentsInside, failedEntry, livenessAnswers, livenessInput, mapBounded, observeIdentities, observedEntry, panelInstances, parseProbeStdout, remoteRosterState, rosterRows, validateWorkspace } from "./client.mjs";
+
+/** A path made canonical: what the shared start rule checks a local home with (session-start.mjs
+ *  verifiedLocalHome). Throws for a path that cannot be resolved; the rule answers that as no home. */
+export const realpath = (path) => realpathSync(path);
+
+/** Whether a line may be written to `stream` on the way out: only when it is a terminal (a
+ *  character device the stream says is one) or a file, by fstat of its descriptor. A closed
+ *  descriptor, a pipe, a socket or anything else gets nothing. Never throws. */
+export function tellable(stream) {
+  try {
+    const fd = stream?.fd;
+    if (!Number.isInteger(fd) || fd < 0) return false;
+    const stat = fstatSync(fd);
+    return stat.isFile() || (stat.isCharacterDevice() && stream.isTTY === true);
+  } catch { return false; }
+}
 
 /** The kernel this TUI shipped with: the absolute path of the install's own bin/oats.mjs, found by
  *  URL from this file. Every kernel call is `node <this path> …`, so the TUI depends on no shebang,
@@ -145,6 +166,29 @@ export function probeKernel({ bin = KERNEL_BIN, env = process.env, execFile = no
   });
 }
 
+/** Where a change's output goes (createReader `files`). `dir()` makes the run's private directory
+ *  (mkdtemp: mode 0700, under the OS temp dir); `open` makes one file in it for the child alone
+ *  (0600, refused if it is there); `read(path, max)` reads back at most `max` bytes and one more,
+ *  only to say whether there was more (`over`). Exported for the tests, which find the directory by it. */
+export const CHANGE_FILES = Object.freeze({
+  dir: () => mkdtempSync(join(tmpdir(), "oats-tui-")),
+  open: (path) => openSync(path, "wx", 0o600),
+  close: (fd) => closeSync(fd),
+  unlink: (path) => unlinkSync(path),
+  remove: (dir) => rmdirSync(dir),
+  read: (path, max) => {
+    const fd = openSync(path, "r");
+    try {
+      const size = fstatSync(fd).size, room = Number.isFinite(max) ? Math.min(size, max + 1) : size;
+      const buffer = Buffer.alloc(room);
+      let got = 0;
+      while (got < room) { const n = readSync(fd, buffer, got, room - got, got); if (n === 0) break; got += n; }
+      const over = got > max;
+      return { text: buffer.subarray(0, over ? max : got).toString("utf8"), over };
+    } finally { quietly(() => closeSync(fd)); }
+  },
+});
+
 /** A child that did not end well, as execFile reports one: the facts on an Error, and no text of the child's. */
 const failure = (facts) => Object.assign(new Error("the child did not end with an answer"), facts);
 /** A child the reader ended itself: its time limit, or the reader giving it up. As execFile's timeout. */
@@ -154,7 +198,7 @@ const said = (error) => String(error?.message ?? error);
 
 /** The reader of a run: its cycles over every served deployment, the roster of other machines,
  *  their children, and the way out.
- *  -> { start(), request({ live }), touch(), voidInFlight(), stop(), children() }
+ *  -> { start(), request({ live }), touch(), voidInFlight(), hold(), release(), exec, stop(), children() }
  *
  *  `cli` is probeKernel's record (`cli.bin` the absolute path of bin/oats.mjs). The reader keeps no
  *  answer of its own: what a run holds is the caller's store, asked for when it is needed.
@@ -186,20 +230,33 @@ const said = (error) => String(error?.message ?? error);
  *  list of options, `detached` is not one of them, and a child it starts stays in the TUI's group
  *  whatever it is asked. `run` below is the part of execFile's contract the shared readers use.
  *
- *  ENDING A CHILD holds because this version only reads. A KERNEL CALL THAT CHANGES SOMETHING MUST
- *  NEVER BE KILLED BY THE TUI: a killed stop or start leaves a marker that refuses every later one.
- *  So every child is remembered with its kind, only kind "read" is ever signalled, and a later
- *  version's writing calls get a kind of their own.
+ *  ENDING A CHILD: only a read is ever ended. The viewer of an opened agent is lib/open.mjs's, and
+ *  no child of the reader. A KERNEL CALL THAT CHANGES SOMETHING (kind "change", `changeExec`) IS
+ *  NEVER SIGNALLED BY THE TUI: a stop killed while it waits leaves a marker that refuses every
+ *  later stop, and a killed start leaves its lock (#889, #890). So every child is remembered with
+ *  its kind, and only kind "read" is ever signalled.
  *
- *  `timers` are the loop's, the idle timer's and the children's time limits (for tests). */
-export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onRoster, env = process.env, clock = () => new Date().toISOString(), now = Date.now, spawn = nodeSpawn, timers = { setTimeout, clearTimeout }, collector = COLLECTOR, idleMs = 600_000, focusedMs = 5000, blurredMs = 30_000, rosterMs = 15_000 }) {
-  /** child -> { kind, exited, giveUp }: every child that has not ended and was not ended. */
+ *  `timers` are the loop's, the idle timer's and the children's time limits (for tests). `files`
+ *  is where a change's output is written (for tests): `files.dir()` makes the run's private
+ *  directory. */
+export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onRoster, env = process.env, clock = () => new Date().toISOString(), now = Date.now, spawn = nodeSpawn, timers = { setTimeout, clearTimeout }, collector = COLLECTOR, idleMs = 600_000, focusedMs = 5000, blurredMs = 30_000, rosterMs = 15_000, files = CHANGE_FILES }) {
+  /** child -> { kind, exited, giveUp, asked } for a read, { kind: "change", label, letGo } for a
+   *  change: every child that has not ended and was not ended (a read) or let go (a change).
+   *  `asked`: a read the loop asked for itself (the preflight of an open, a plan read), which no
+   *  cycle owns. */
   const remembered = new Map();
+  /** The changes still running, whether or not this run still waits for them: child -> label. A
+   *  change leaves it when it exits, and stays in it after stop() let it go. */
+  const running = new Map();
+  /** The run's private directory for the output of its changes, made at the first one. */
+  let changeDir = null, changeCount = 0;
   let started = false, stopped = false, idleTimer = null;
   /** `counter` numbers the cycles. `epoch` moves when the cycles in flight are made void; `flight`
    *  is the epoch the cycle now running began in (the loop runs one at a time). `served` is what
    *  getServed() answered at the start of that cycle. */
   let counter = 0, epoch = 0, flight = 0, served = [];
+  /** The terminal is lent (hold()): no cycle and no roster read starts until release(). */
+  let held = false;
   /** The roster of other machines. `rosterFlight` is the read in flight (a token of its own, so an
    *  answer knows whether it is still awaited), or null. `rosterEnded` is now() when the last read
    *  that was not given up ended, or null while none has. `gatedSaid`: a kernel that reads no
@@ -214,9 +271,9 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
    *  other options go to spawn as they are, with `detached: true` added. Returns the child.
    *  The child is forgotten when it ends: `close`, `error` for one that did not start, or the
    *  moment the reader ends it. */
-  function run(kind, args, { timeout = 0, maxBuffer = Infinity, encoding = "utf8", ...rest }, callback) {
+  function run(kind, args, { timeout = 0, maxBuffer = Infinity, encoding = "utf8", ...rest }, callback, { asked = false } = {}) {
     const child = spawn(process.execPath, args, { ...rest, detached: true });
-    const printed = { stdout: "", stderr: "" }, record = { kind, exited: false, giveUp };
+    const printed = { stdout: "", stderr: "" }, record = { kind, exited: false, giveUp, asked };
     let over = false, severed = false, verdict = null, timer = null;
     function finish(error) {
       if (over) return;
@@ -281,8 +338,9 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     remembered.set(child, record);
     return child;
   }
-  function endReads() {
-    for (const record of [...remembered.values()]) if (record.kind === "read") record.giveUp(ended());
+  /** End the reads remembered: every one, or (`cycles`) only those a cycle or the roster started. */
+  function endReads({ cycles = false } = {}) {
+    for (const record of [...remembered.values()]) if (record.kind === "read" && !(cycles && record.asked)) record.giveUp(ended());
   }
 
   /** The exec handed to the shared readers: execFile's signature, for `node <bin> <argv…>` (see
@@ -294,6 +352,82 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     if (stopped || flight !== epoch) throw new Error("this read was given up before it started");
     return run("read", [bin, ...argv], options.env === undefined ? { ...options, env } : options, callback);
   }
+  /** The exec of a read the loop asks for itself, outside every cycle: the preflight of an agent
+   *  on another machine (`oats session inspect`, through the shared prepareRemoteTerm). The same
+   *  child as a cycle's (kind "read", a session of its own, the reader's environment where the
+   *  options name none, ended on every way out), not made void by voidInFlight(): the loop ends it
+   *  through `signal`, which ends the child's whole group as the reader's own giving up does. A
+   *  `signal` already aborted starts nothing. It throws after stop(). */
+  function askedExec(bin, argv, { signal, ...options }, callback) {
+    if (stopped) throw new Error("the reader has stopped");
+    if (signal?.aborted) throw new Error("this read was given up before it started");
+    const child = run("read", [bin, ...argv], options.env === undefined ? { ...options, env } : options, callback, { asked: true });
+    if (signal) {
+      const record = remembered.get(child);
+      const abandon = () => record?.giveUp(ended());
+      signal.addEventListener("abort", abandon, { once: true });
+      child.once("close", () => signal.removeEventListener("abort", abandon));
+    }
+    return child;
+  }
+  /** THE EXEC OF A CHANGE: a stop or retire apply (the boundary's call with `detached: true`), a
+   *  start or a restart (the shared cliStart's). execFile's signature for `node <bin> <argv…>`, in
+   *  a session of its own, outside every cycle: it is never made void by voidInFlight() and never
+   *  signalled, not by `sever`, not by stop(), not at a time limit (a `timeout` given is not
+   *  armed: the shared callers end their wait, never the child). `options.label` is the caller's
+   *  `{ verb, name }`, kept for the line after leaving (`changes()`), and is not passed on.
+   *  ITS OUTPUT GOES TO FILES, NEVER TO A PIPE. Before the spawn two files are opened in the run's
+   *  private directory (made once, mode 0700, under the OS temp dir) and given to the child as its
+   *  stdout and stderr; stdin is `ignore`. The TUI's own copies are closed after the spawn. So
+   *  whatever the TUI does (quits, is stopped, loses its terminal) the child can always write, and
+   *  nothing it writes meets EPIPE or SIGPIPE. When the child closes, both files are read back,
+   *  each bounded by `maxBuffer` (over it: ERR_CHILD_PROCESS_STDIO_MAXBUFFER, as a read answers),
+   *  deleted, and the callback is called as execFile calls it, with text (UTF-8).
+   *  It throws after stop(): nothing new starts on the way out. Returns the child. */
+  function changeExec(bin, argv, { label = null, timeout: _never, maxBuffer = Infinity, encoding: _utf8, ...options }, callback) {
+    if (stopped) throw new Error("the reader has stopped");
+    if (changeDir === null) changeDir = files.dir();
+    const number = ++changeCount, paths = { stdout: join(changeDir, `${number}.out`), stderr: join(changeDir, `${number}.err`) };
+    const fds = {};
+    try {
+      for (const name of ["stdout", "stderr"]) fds[name] = files.open(paths[name]);
+    } catch (error) {
+      for (const name of ["stdout", "stderr"]) if (fds[name] !== undefined) { quietly(() => files.close(fds[name])); quietly(() => files.unlink(paths[name])); }
+      throw error;
+    }
+    let child;
+    try {
+      child = spawn(process.execPath, [bin, ...argv], { ...(options.env === undefined ? { ...options, env } : options), stdio: ["ignore", fds.stdout, fds.stderr], detached: true });
+    } finally {
+      for (const name of ["stdout", "stderr"]) quietly(() => files.close(fds[name]));
+    }
+    const record = { kind: "change", label, letGo: false };
+    let over = false;
+    const forget = () => { for (const name of ["stdout", "stderr"]) quietly(() => files.unlink(paths[name])); };
+    function finish(error) {
+      if (over) return;
+      over = true;
+      remembered.delete(child);
+      if (record.letGo) return; // stop() let it go: nobody waits for its answer any more
+      const read = {};
+      let verdict = error;
+      for (const name of ["stdout", "stderr"]) {
+        const taken = quietly(() => files.read(paths[name], maxBuffer));
+        read[name] = taken?.text ?? "";
+        if (taken?.over && verdict == null) verdict = failure({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" });
+      }
+      forget();
+      callback(verdict ?? null, read.stdout, read.stderr);
+    }
+    child.once("exit", () => { running.delete(child); });
+    child.once("close", (code, signal) => finish(code === 0 && signal === null ? null : failure({ code, signal, killed: false })));
+    child.on("error", (error) => { if (!child.pid) { running.delete(child); finish(error); } });
+    record.letItGo = () => { record.letGo = true; quietly(() => child.unref()); forget(); remembered.delete(child); };
+    remembered.set(child, record);
+    if (Number.isInteger(child.pid)) running.set(child, label);
+    return child;
+  }
+
   /** The shared observer, with the shared reader over this exec and no reader of the TUI's own: a
    *  failed read has the same reasons here as in the Desktop. It admits a deployment of the cycle
    *  now running and no other. */
@@ -392,7 +526,7 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
    *  started beside two would be refused as busy and never read). The cycle is over when its
    *  deployments are; with none served it reads nothing local. */
   async function cycle({ live }) {
-    if (stopped) return;
+    if (stopped || held) return;
     flight = epoch;
     const mine = epoch, number = ++counter, at = clock();
     const over = () => stopped || mine !== epoch;
@@ -444,6 +578,8 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
      *  children remembered are ended as stop() ends them. The reader stays usable: the loop goes
      *  on, and the next cycle (the caller requests a live one on the return) emits with the next
      *  number. A cycle requested but not begun is not in flight: it runs after the return.
+     *  A read the loop asked for itself (the preflight, `exec`) is not a cycle's: it is left as it
+     *  is, and the loop gives it up through its signal.
      *  THE SAME HOLDS FOR A ROSTER READ IN FLIGHT, which is not part of a cycle and may outlive
      *  the one that began it: its child is ended, whatever it answers is dropped (no onRoster; the
      *  caller tells its store that nothing is being collected), and it is no longer in flight, so
@@ -453,8 +589,22 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     voidInFlight() {
       epoch++;
       rosterFlight = null;
-      endReads();
+      endReads({ cycles: true });
     },
+    /** The terminal is lent to the kernel's viewer: from now until release() no cycle begins and
+     *  no roster read starts (a cycle the loop's timer or a request would begin does nothing and
+     *  emits nothing). What is in flight is not touched here: the caller made it void first, as at
+     *  a stop. Idempotent. */
+    hold() { held = true; },
+    /** The terminal is back: cycles begin again. The caller asks for a live one. */
+    release() { held = false; },
+    /** See askedExec. */
+    exec: askedExec,
+    /** See changeExec. */
+    changeExec,
+    /** The changes still running, `[{ pid, label }]` (label: what the caller gave), whether or not
+     *  this run still waits for them: for the line after leaving. Answers after stop() too. */
+    changes() { return [...running].map(([child, label]) => ({ pid: child.pid, label })); },
     /** Leave: synchronous and idempotent, safe before start(). The loop and the idle timer are
      *  stopped, the observer disposed and every reading child ended (see `sever`), the roster's
      *  included. A cycle in flight ends without emitting and without starting anything, and so
@@ -466,6 +616,11 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
       observer.dispose();
       clearIdle();
       endReads();
+      // Every change is LET GO, never signalled: its handle no longer holds the process, and its two
+      // files are unlinked (the child goes on writing to them, and nothing is left behind). The
+      // private directory goes when it is empty.
+      for (const record of [...remembered.values()]) if (record.kind === "change") record.letItGo();
+      if (changeDir !== null) quietly(() => files.remove(changeDir));
     },
     /** The pids of the children remembered now (for tests). */
     children() { return [...remembered.keys()].map((child) => child.pid).filter((pid) => Number.isInteger(pid)); },

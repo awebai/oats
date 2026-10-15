@@ -19,7 +19,8 @@ const EVERY_NOT_NOTE_TEXT = new RegExp(NOT_NOTE_TEXT.source, 'gu');
  * what follows stops at the next `/`, and every `://` holds one. Asked only whether it matches: this form
  * and the scheme-first one match the same texts, not the same part of them. */
 export const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f]|:\/\/(?<=[a-z][a-z0-9+.-]*:\/\/)[^\s/]*@|(?:token|authorization|password|secret|api[_ -]?key)\s*[:=]\s*\S+|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/i;
-export const DETAIL_WITHHELD = '[Detail withheld]';
+/** What stands in for a withheld text. The name is kept on purpose until the terminal client's own change renames it. */
+export const DETAIL_WITHHELD = '[withheld]';
 export const MAX_DISPLAY_LINE = 2048;
 
 /** One line: tab, line feed and the line and paragraph separators each become a space, runs of spaces

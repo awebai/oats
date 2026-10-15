@@ -6,12 +6,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile as nodeExecFile, execFileSync, spawn as nodeSpawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { COLLECTOR, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, remoteRosterState } from "../lib/client.mjs";
-import { KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
+import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
+import { startViewer } from "../lib/open.mjs";
+import { CHANGE_FILES, KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/fake.mjs", import.meta.url));
 const LEAVE = fileURLToPath(new URL("./fixtures/leave.mjs", import.meta.url));
@@ -1450,4 +1451,194 @@ test("admitDeployment: a folder is admitted by what it is now, as its canonical 
   assert.deepEqual(admitDeployment("/given", io(() => { throw new Error("EACCES"); })), { ok: false });
   assert.deepEqual(admitDeployment("/given", io(() => true, () => { throw new Error("ENOENT"); })), { ok: false });
   assert.deepEqual(admitDeployment("/given", io(() => true, () => "not/absolute")), { ok: false });
+});
+
+// ── Opening an agent: the reader holds still while the terminal is lent, runs the preflight of
+// another machine's agent as a read, and never touches the viewer, which is not its child.
+
+test("hold(): while the terminal is lent no cycle begins and no roster read starts, whoever asks; release() and a live request read again", async (t) => {
+  const world = makeWorld();
+  world.plan({ ...answering(world, [kernelRow("dev-one")]), server: { stdout: JSON.stringify(rosterAnswer([])) } });
+  const { reader, entries, rosters, spawned, begun } = reading(t, world, { cli: world.remoteCli });
+  reader.hold();
+  reader.hold(); // idempotent
+  await reader.start();
+  await reader.request({ live: true });
+  await reader.request();
+  assert.deepEqual([spawned.length, entries.length, rosters.length, begun()], [0, 0, 0, 0], "nothing started, nothing emitted, no cycle numbered");
+  reader.release();
+  await reader.request({ live: true });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].number, 1, "the first cycle after the lend is the first that was numbered");
+  assert.equal(spawned.some((call) => call.args[1] === "server"), true, "and the roster is read again");
+});
+/** The kernel record of a CLI that opens agents on other machines with a detach key. */
+const keyedCli = (world) => cliRecord({ version: VERSION, workspaceApi: 2, features: [...FEATURES, DETACH_KEY_FEATURE, "server-probe-features"], remote: ["roster", "session"] }, { bin: world.bin, source: "tui" });
+const TARGET = Object.freeze({ serverId: "garnet", instance: "dev-far", home: "/srv/acme-platform/agents/dev/instances/dev-far" });
+
+test("the preflight's exec: `node <bin> session inspect …` in a session of its own and in the reader's environment, answered as execFile answers; prepareRemoteTerm over it answers the viewer's arguments", async (t) => {
+  const world = makeWorld();
+  world.plan({ session: { stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true, state: "unknown", backend: "tmux" } }) } });
+  const { reader, spawned } = reading(t, world);
+  const cli = keyedCli(world);
+  const prepared = await prepareRemoteTerm(cli, TARGET, { exec: reader.exec, detachKey: "F12" });
+  assert.deepEqual(prepared, { binary: world.bin, args: ["session", "attach", "--server", "garnet", "--home", TARGET.home, "--detach-key", "F12"] });
+  const [call] = world.calls("session", "start");
+  assert.deepEqual(call.argv, ["session", "inspect", "--server", "garnet", "--home", TARGET.home, "--json"], "the inspect never carries the key");
+  assert.equal(call.pgid, call.pid, "it leads a process group of its own");
+  if (call.sid !== null) assert.equal(call.sid, call.pid, "and the session it leads");
+  assert.deepEqual(call.env, {}, "in the environment the reader was given, which has left the instance");
+  assert.deepEqual(spawned.map((s) => [s.file, s.args[0], s.options.detached]), [[process.execPath, world.bin, true]]);
+  assert.deepEqual(reader.children(), [], "and forgotten once it has closed");
+});
+
+test("the preflight's exec: voidInFlight() does not end it; its signal ends its whole group and it is answered at once; an aborted signal or a stopped reader starts nothing", async (t) => {
+  const world = makeWorld();
+  world.plan({ session: { sleep: true, grandchild: true } });
+  const { reader, spawned } = reading(t, world);
+  const giveUp = new AbortController();
+  const answered = new Promise((resolve) => reader.exec(world.bin, ["session", "inspect", "--json"], { signal: giveUp.signal, timeout: 20_000, encoding: "utf8" }, (error) => resolve(error)));
+  const pid = await waitFor("the inspect to start", () => world.calls("session", "start")[0]?.pid);
+  const inner = await waitFor("its grandchild to start", () => world.calls("sleeper", "start")[0]);
+  reader.voidInFlight();
+  await sleep(300);
+  assert.equal(alive(pid) && alive(inner.pid), true, "a cycle's giving up is not the preflight's");
+  assert.deepEqual(reader.children(), [pid]);
+  giveUp.abort();
+  const error = await answered;
+  assert.equal(error.killed, true, "answered as a read the reader ended");
+  await gone([pid, inner.pid], 5000);
+  assert.deepEqual(reader.children(), []);
+
+  const before = spawned.length;
+  assert.throws(() => reader.exec(world.bin, ["session", "inspect"], { signal: giveUp.signal }, () => {}), /given up before it started/);
+  reader.stop();
+  assert.throws(() => reader.exec(world.bin, ["session", "inspect"], {}, () => {}), /stopped/);
+  assert.equal(spawned.length, before);
+});
+
+test("a preflight under way when the reader stops is ended with its group, as every read is", async (t) => {
+  const world = makeWorld();
+  world.plan({ session: { sleep: true } });
+  const { reader } = reading(t, world);
+  const answered = new Promise((resolve) => reader.exec(world.bin, ["session", "inspect", "--json"], { timeout: 20_000 }, (error) => resolve(error)));
+  const pid = await waitFor("the inspect to start", () => world.calls("session", "start")[0]?.pid);
+  reader.stop();
+  assert.equal((await answered).killed, true);
+  await gone([pid], 5000);
+});
+
+test("only reads are ever ended: a viewer the loop started (lib/open.mjs) is no child of the reader, and neither voidInFlight() nor stop() signals it; its own end() does", async (t) => {
+  const world = makeWorld();
+  world.plan({ ...answering(world, [kernelRow("dev-one")]), status: { sleep: true } });
+  const { reader } = reading(t, world);
+  // The viewer stands in for `oats session attach`: the sleeper, started as the loop starts the viewer.
+  const viewer = startViewer(path.join(world.dir, "sleeper.mjs"), [], { env: CLEAN_ENV });
+  const pid = await waitFor("the viewer to start", () => world.calls("sleeper", "start")[0]?.pid);
+  if (OWN_GROUP !== null) assert.equal(groupOf(pid), OWN_GROUP, "the viewer is in the TUI's own process group, unlike a read");
+  reader.start();
+  const kernel = await waitFor("a read to start", () => world.calls("status", "start")[0]?.pid);
+  assert.equal(reader.children().includes(pid), false, "the reader does not know the viewer");
+  reader.voidInFlight();
+  reader.stop();
+  await gone([kernel], 5000);
+  await sleep(300);
+  assert.equal(alive(pid), true, "the reader's clean-up never signalled the viewer");
+  viewer.end();
+  assert.deepEqual(await viewer.closed, { status: null, stderr: "" }, "ended by a signal: no status");
+  await gone([pid], 5000);
+  viewer.end(); // after it closed: nothing
+});
+
+// ── A change: a stop or retire apply, a start or a restart (awebai/oats#855, PR 5) ───────────────
+
+/** A kernel call that changes something, faked: it prints `{ out }` on stdout and `{ err }` on stderr,
+ *  says it is under way (`ready`), and with a `gate` waits for that file before it writes once more
+ *  on both and then `done`. A signal it receives is written down (`<done>.signal`) and does not end it. */
+const CHANGE = `
+import { existsSync, writeFileSync } from "node:fs";
+const [ready, gate, done, size] = process.argv.slice(2);
+for (const name of ["SIGTERM", "SIGHUP", "SIGINT", "SIGPIPE"]) process.on(name, () => writeFileSync(done + ".signal", name));
+process.stdout.write(size ? "x".repeat(Number(size)) : '{"schemaVersion":1,"ok":true,"result":{"stopped":true}}');
+process.stderr.write("the kernel's stderr\\n");
+writeFileSync(ready, String(process.pid));
+const wait = () => {
+  if (gate && !existsSync(gate)) return setTimeout(wait, 20);
+  if (gate) { process.stdout.write("written after the TUI let it go"); process.stderr.write("and on stderr"); }
+  writeFileSync(done, "done");
+  if (process.argv.includes("--fail")) process.exitCode = 3;
+};
+wait();
+`;
+/** A world for a change: its script, its files, and a reader whose private directory the test can find. */
+function changing(t) {
+  const dir = mkdtempSync(path.join(ROOT, "change-")), script = path.join(dir, "change.mjs");
+  writeFileSync(script, CHANGE);
+  const made = [];
+  const files = { ...CHANGE_FILES, dir: () => { const at = CHANGE_FILES.dir(); made.push(at); return at; } };
+  const world = makeWorld();
+  const r = reading(t, world, { files });
+  const pids = [];
+  t.after(() => { for (const pid of pids) if (alive(pid)) quietly(() => process.kill(pid, "SIGKILL")); });
+  const paths = { ready: path.join(dir, "ready"), gate: path.join(dir, "gate"), done: path.join(dir, "done") };
+  return { ...r, script, paths, made, pids, files };
+}
+/** Run one change through the reader: its child and the callback's answer, when it comes. */
+function change(c, argv, options = {}) {
+  let answer = null;
+  const child = c.reader.changeExec(c.script, argv, { label: { verb: "stop", name: "dev-1" }, ...options }, (...given) => { answer = given; });
+  c.pids.push(child.pid);
+  return { child, answer: () => answer };
+}
+
+test("a change's output goes to two files of the run's private directory, never a pipe: stdin is ignore, the TUI's copies are closed, and at the close both are read back, deleted, and handed to the callback as execFile hands them", async (t) => {
+  const c = changing(t);
+  const run = change(c, [c.paths.ready, "", c.paths.done], { timeout: 1, maxBuffer: 1024 * 1024, cwd: ROOT, encoding: "utf8" });
+  const [spawned] = c.spawned;
+  assert.deepEqual([spawned.file, spawned.args[0], spawned.options.detached, spawned.options.stdio[0]], [process.execPath, c.script, true, "ignore"]);
+  assert.equal(typeof spawned.options.stdio[1], "number", "a file, not a pipe");
+  assert.equal(typeof spawned.options.stdio[2], "number");
+  assert.equal(spawned.options.label, undefined, "the label is the TUI's, and not passed on");
+  assert.equal(spawned.options.timeout, undefined, "no time limit is armed");
+  assert.equal(spawned.options.env, CLEAN_ENV, "the reader's environment");
+  // Our copies are closed after the spawn (where /proc lists this process's descriptors).
+  if (existsSync("/proc/self/fd")) for (const fd of spawned.options.stdio.slice(1)) assert.equal(existsSync(`/proc/self/fd/${fd}`), false, `descriptor ${fd} is closed`);
+  assert.equal(c.made.length, 1);
+  assert.equal(statSync(c.made[0]).mode & 0o777, 0o700, "a private directory");
+  assert.deepEqual(readdirSync(c.made[0]).sort(), ["1.err", "1.out"]);
+  assert.deepEqual(c.reader.changes(), [{ pid: run.child.pid, label: { verb: "stop", name: "dev-1" } }]);
+  const answer = await waitFor("the callback", run.answer);
+  assert.deepEqual(answer, [null, '{"schemaVersion":1,"ok":true,"result":{"stopped":true}}', "the kernel's stderr\n"]);
+  assert.deepEqual(readdirSync(c.made[0]), [], "both files deleted");
+  assert.deepEqual(c.reader.changes(), [], "it left the list when it exited");
+  c.reader.stop();
+  assert.equal(existsSync(c.made[0]), false, "the empty directory is removed on the way out");
+});
+
+test("a change that exits nonzero answers as execFile does, its output still read; one that prints more than maxBuffer answers ERR_CHILD_PROCESS_STDIO_MAXBUFFER with maxBuffer bytes", async (t) => {
+  const c = changing(t);
+  const failed = await waitFor("the callback", change(c, [c.paths.ready, "", c.paths.done, "", "--fail"]).answer);
+  assert.deepEqual([failed[0].code, failed[0].signal, failed[0].killed, failed[1].length > 0, failed[2]], [3, null, false, true, "the kernel's stderr\n"]);
+  const over = await waitFor("the callback", change(c, [path.join(path.dirname(c.paths.ready), "ready-2"), "", `${c.paths.done}-2`, "5000"], { maxBuffer: 100 }).answer);
+  assert.deepEqual([over[0].code, over[1], over[2]], ["ERR_CHILD_PROCESS_STDIO_MAXBUFFER", "x".repeat(100), "the kernel's stderr\n"]);
+  assert.deepEqual(readdirSync(c.made[0]), []);
+});
+
+test("stop() lets a running change go and never signals it: its files are unlinked, it goes on writing after the TUI has gone and finishes; voidInFlight() does not touch it, changes() still names it, and no change starts after stop()", async (t) => {
+  const c = changing(t);
+  const run = change(c, [c.paths.ready, c.paths.gate, c.paths.done]);
+  await waitFor("the change to be under way", () => existsSync(c.paths.ready));
+  c.reader.voidInFlight();
+  await sleep(100);
+  assert.equal(alive(run.child.pid), true, "a void cycle does not end a change");
+  c.reader.stop();
+  assert.equal(existsSync(c.made[0]), false, "its files unlinked and the directory removed: nothing is left behind");
+  assert.deepEqual(c.reader.changes(), [{ pid: run.child.pid, label: { verb: "stop", name: "dev-1" } }], "still running: named for the line after leaving");
+  assert.deepEqual(c.reader.children(), [], "no child of the reader any more");
+  assert.throws(() => c.reader.changeExec(c.script, [], {}, () => {}), /stopped/);
+  writeFileSync(c.paths.gate, "");
+  await waitFor("the change to finish after the TUI let it go", () => existsSync(c.paths.done));
+  await gone([run.child.pid]);
+  assert.equal(existsSync(`${c.paths.done}.signal`), false, "no signal reached it");
+  assert.equal(run.answer(), null, "nobody waits for its answer any more");
 });

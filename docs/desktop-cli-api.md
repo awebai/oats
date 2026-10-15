@@ -45,7 +45,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "soul-launch","retire-plan-own-worktree"],
+             "soul-launch","retire-plan-own-worktree","spawn-kernel-codes","soul-skills","roster-workspace-key"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -117,6 +117,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `automation-descriptions` | a `description` on every trigger and schedule row, local or workspace, by one rule; `oats schedule update <id> --description=<text>` (the description only) and `oats trigger update <id> --description=<text>`; `--description=<text>` on `schedule add` and `trigger add`, OATS 0.43.0 ([Shared row fields](#automations-shared-rows)) | |
 | `souls-capabilities` | `capabilities` on `oats souls --json` rows: the capabilities each soul composes, keyed like `oats capabilities` rows, with `from`, OATS 0.45.0 ([`oats capabilities` and `oats souls`](#oats-capabilities---dir---json--capabilitiesapi-1--oats-souls---dir---json--soulsapi-1)) | |
 | `soul-composed-instructions` | `oats inspect --soul <soul> --instructions` and its `souls[].composedInstructions`: the AGENTS.md a spawn of the soul here would write, with the soul body and each composed block as ranges, OATS 0.46.0 ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
+| `soul-skills` | `oats inspect --soul <soul> --skills` and its `souls[].skills`: the soul's own skills, the ones a spawn of it copies, with each file's text ([`oats inspect`](#oats-inspect---home-----soul----dir----json--operationsapi-2)) | |
 | `teams-conditional-default` | `oats teams default <label> --if-absent \| --expect <label>` and `E_TEAM_DEFAULT_MISMATCH`; `oats teams add … --no-default` and its `reused` answer; `E_TEAM_EXISTS` `observed`; unknown flags on `oats teams` refused, OATS 0.48.0 ([`oats teams`](#oats-teams)). A kernel without it ignores the flags: `--if-absent` there is an unconditional set, so check the feature before passing them | |
 | `worktree-event` | the `worktree` hook event; `oats worktree add\|remove` ([`oats worktree`](#oats-worktree)); `worktreeHooks` on `spawn --preview` and on the spawn result and `spawned` event; `spawnInProgress` on `oats status --json` instance rows; the `worktree-added` event kind; `E_INTERRUPTED` and `E_WORKTREE_DIRTY`, OATS 0.49.0 | |
 | `trigger-sources` | capability-declared trigger sources: `on.source: "<capability>:<source>"` triggers and their added row keys, `oats trigger poll`, `--run-source` on `trigger test` and `trigger poll` (`E_TRIGGER_SOURCE_RUN` without it), `E_TRIGGER_SOURCE`, `E_TRIGGER_POLL` `details.cause`, and `triggerSources`/`triggerSourceProblems` on `oats capabilities show`, OATS 0.50.0 ([`oats trigger`](#oats-trigger)) | `triggerApi: 1` (payload only) |
@@ -128,6 +129,8 @@ see the [official catalog](official-catalog.md) for current pins.
 | `launch-prompt-dev-channel` | the kernel confirms Claude's development-channel prompt whenever it launches Claude with `--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace`, with no consent setting; `launchPromptAnswers` gone from previews; `consentSource` gone from `launch-prompt` events, which carry `claudeVersion`, `claudeVersionSource` and, on a miss, `differed`; `launchPrompts.status: "not-engaged"` and `"flag-ignored"`; `launchPrompts` in a launched spawn's answer; the `launch-prompt` readiness warning, OATS 0.52.0 ([Launch prompt results](#launch-prompt-results)) | |
 | `soul-launch` | `oats soul launch set\|remove`, the writer of `oats-local.yaml` `souls.launch`, and `E_LAUNCH_PREFERENCE_UNKNOWN`, OATS 0.53.0 ([`oats soul launch`](#oats-soul-launch)). Gate on the probe: a kernel without it answers `E_USAGE` | `soulLaunchApi: 1` (payload only) |
 | `retire-plan-own-worktree` | a retire plan carries `facts.ownWorktree`, a boolean: whether `work/` is the instance's own work tree, the one the retire retains or removes; in `oats retire --plan` and in the fresh plan (`details.plan`) of `E_PLAN_STALE` and `E_CHILDREN_RUNNING`; a stop plan does not carry it; OATS 0.53.0 ([the retire plan](#retire)) | |
+| `spawn-kernel-codes` | `oats spawn`, apply and `--preview`, answers the kernel's own code, as raised, whatever stage of the spawn raised it; `E_SPAWN_FAILED` is for an error with no kernel code (with `details.cause`, as the lifecycle commands' general codes have it). A code says nothing about how far the spawn got: `details.unconfirmed` does. Details are those each code had before; OATS 0.56.0 ([spawn errors](#spawn-errors)). A kernel without it answers `E_SPAWN_FAILED` for most kernel codes its kernel stage raised: there, that code may hide one | |
+| `roster-workspace-key` | `oats server roster --workspace-key <key>`, repeatable: only the groups that can belong to one of the given workspaces are probed and returned (registered for one of them, registered with no known `workspaceKey`, or saved routes only); the answer's shape is unchanged, OATS 0.56.0 ([The remote roster](#roster-workspace-key)). Gate on the probe: a kernel without it ignores the flag and probes and answers every group | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -136,6 +139,33 @@ Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 
 **Gate on the probe, never by trying.** An older kernel can ignore an unknown
 flag and act: without `lifecycle-plans`, `retire --plan` retires.
+
+## Text output
+
+A command's text (without `--json`) is for a person and is not part of this
+contract. Some of its lines hold text the kernel did not write: a path as the
+system or Git names it, a branch name, a hook's or a host's own words. In the
+lines below, each character a terminal would act on, or that hides or
+reorders text (a control character such as an escape or a newline, a bidi
+override: the set the kernel never prints in text it did not write), is
+spelled `\u{<hex>}` (OATS 0.53.0 for the local retire's warnings, #973; the
+rest 0.56.0, #1006), so that such a name cannot clear the screen, write a
+line of its own or reverse what follows it:
+
+- the `note:` lines of `oats retire --plan`, `oats instance stop --plan`,
+  `oats instance git` and `oats readiness`;
+- the `WARNING:` lines of `oats spawn` (its preview, and with `--server`
+  too), of the `oats session` commands (a start's or a restart's launch-hook
+  warnings, on stderr) and of `oats doctor` (a pi bridge's version skew);
+- the lines of `oats retire`, local and with `--server`, for the recovery it
+  wrote, for the extra trees it handled and for the receipt's warnings. A
+  retire with `--server` prints the receipt's warnings as a local one does.
+
+A newline in such a value is spelled too, so the value stays on its line.
+Text that already holds the characters of a spelling (`\u{1b}` written out)
+prints as it is: a spelling is not meant to be read back. Every other line of
+text output prints what it holds as it is. The JSON is never changed by
+this: its strings are what they are.
 
 ## The envelope and dispatch errors
 
@@ -390,7 +420,7 @@ A module's origin (`from`) is `{kind: "member", repoKey, commit}` or `{kind:
 ### `oats inspect`
 
 ```text
-oats inspect (--home <abs> | --soul <name> [--dir <d>] [--instructions]) [--max-age <s>] --json
+oats inspect (--home <abs> | --soul <name> [--dir <d>] [--instructions] [--skills]) [--max-age <s>] --json
 ```
 
 An instance subject, abridged:
@@ -475,6 +505,72 @@ travels to the host; a host whose probe does not advertise
 `soul-composed-instructions` is refused with `E_REMOTE_INCOMPATIBLE`, and
 nothing is sent.
 
+`skills` (feature `soul-skills`) is present only with `--skills`, which takes
+a soul subject (`--home` is `E_BAD_ARGS`) and combines with `--instructions`;
+without the flag the key is absent and no skill file is read. It lists the
+soul's own skills, exactly the ones a spawn of it copies (not its
+capabilities' skills), read from the same soul copy as `instructions`:
+
+```json
+"skills":[{"name":"release-checklist","path":"skills/release-checklist","description":"Cutting a release.",
+           "files":[{"path":"skills/release-checklist/SKILL.md","bytes":812,"text":"---\nname: release-checklist\n…","binary":false,"truncated":false},
+                    {"path":"skills/release-checklist/references/notes.md","bytes":2048,"text":null,"binary":false,"truncated":false,"omitted":true}],
+           "filesTruncated":false}]
+```
+
+- `skills` is the list sorted by `name` in codepoint order; `[]` when the
+  soul has no skills of its own (no `skills/` directory, or none with a
+  `SKILL.md`); `null` when they could not be listed, with a problem below,
+  including a skill directory whose `SKILL.md` could not be examined.
+  It is also `null` when the soul's copy failed, and that copy's problem
+  explains it.
+- A skill is a child directory of `skills/` holding a regular-file
+  `SKILL.md`, or `skills/` itself when it holds one (`name` is then
+  `skills`). `path` is POSIX and relative to the soul directory. Its
+  `description` is the `SKILL.md` front matter's `description`, by the same
+  function as [`oats capabilities show`](#oats-capabilities-show), which reads
+  the file up to 4 MiB: `null` when the file is unreadable, a symbolic link,
+  binary or over 4 MiB, or has no such string, and cut to 1024 bytes.
+- `files` is every regular file under the skill directory, recursively,
+  sorted by `path` in codepoint order, each `path` relative to the soul
+  directory. At most 200 are listed; beyond that `filesTruncated` is `true`.
+  `files` is `null` (and `filesTruncated` `false`) when the files could not
+  be listed: an entry whose name is not a safe path component (`.git` in any
+  case, a backslash, a control character), or a listed file that cannot be
+  read safely (unreadable, gone, changed type, or refused as below). Could
+  not list never reads as listed nothing.
+- A file is `{path, bytes, text, binary, truncated}`, by `oats capabilities
+  show`'s rules: `bytes` is its real size; `binary` (a NUL or invalid UTF-8
+  in its first 262,147 bytes) has `text: null` and `truncated: false`;
+  otherwise `text` is at most 262,144 bytes, cut on a code point boundary,
+  and `truncated` says it was cut.
+- The whole field carries at most 1 MiB (1,048,576 bytes) of `text`, as
+  UTF-8, summed over its files in answer order. The file whose text would
+  pass that, and every file after it, has `text: null, binary: false,
+  truncated: false, omitted: true`; no other file has `omitted`, and a binary
+  file costs nothing. So `text` is `null` only with `binary: true` or
+  `omitted: true`.
+- No symbolic link is followed. A symlinked file or directory inside a skill
+  is not listed, a symlinked skill directory is not a skill, and a symlinked
+  `skills/` makes `skills` `null` with a problem. FIFOs, sockets and devices
+  are not listed and never opened. A directory is listed, and a file read,
+  only once its real path lies inside its skill's, and the skill's inside the
+  soul's; one that does not makes the skill's `files` `null`. A file is
+  opened without following a symbolic link and must be the regular file the
+  listing found. One race remains: a parent directory swapped for a symbolic
+  link in the instant between that check and the open can redirect a read.
+  Only someone who can write the deployment's `agents/` tree can do that, and
+  they already control the soul copy and every instance's `AGENTS.md`.
+- Problems are `{code, message}` in `problems[]`, each message starting
+  `skills: `: `soul-skills-unreadable` when the list is `null`, and
+  `soul-skill-files-unreadable`, naming the skill's `path`, for a skill whose
+  `files` is `null`.
+
+Routed with `--server <id>`, `--skills` travels to the host; a host whose
+probe does not advertise `soul-skills` is refused with `E_REMOTE_INCOMPATIBLE`,
+and nothing is sent. Every text is untrusted repository content: render it as
+plain text or through a sanitising renderer.
+
 **Layers.** `id` is the capability filling the slot or `null`. `from`
 (feature `layers-from`) is `"soul"` or `"workspace"`, `null` for an empty slot
 or a home spawned before it was recorded.
@@ -507,10 +603,9 @@ message}`.
 
 A soul whose resolution is refused is an inspect error with the resolver's
 code and details (`E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY`,
-`E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA`, `E_REQUIREMENT_INACTIVE`,
-`E_TEAM_UNKNOWN`, and `E_WORKSPACE_SCHEMA` reason `local-teams-closed`);
-readiness reports the same condition
-as an item. Soul lookup errors are those of [spawn](#spawn-errors).
+`E_CAPABILITY_MISSING`, `E_LOCK_SCHEMA`, `E_TEAM_UNKNOWN`, and
+`E_WORKSPACE_SCHEMA` reason `local-teams-closed`); readiness reports the same
+condition as an item. Soul lookup errors are those of [spawn](#spawn-errors).
 
 <a id="oats-readiness---home-----soul----dir----policy---json--readinessapi-2"></a>
 ### `oats readiness`
@@ -2353,6 +2448,16 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 <a id="spawn-errors"></a>
 ### Spawn errors
 
+A spawn answers the kernel's own code, as raised, whatever stage raised it
+(feature `spawn-kernel-codes`, OATS 0.56.0). Beyond the codes below that is
+any code of the kernel a spawn reaches: the deployment's files, where the home
+may be, the composition written into the home, reading a package or member at
+its commit, the harness's packages, the session, and the work and what a
+failed spawn leaves. **A code says nothing about how far the spawn got:**
+`details.unconfirmed` does. `E_SPAWN_FAILED` is for an error with no kernel
+code; a kernel without `spawn-kernel-codes` answers it for most codes its
+kernel stage raised as well.
+
 | Code | Details | When |
 |---|---|---|
 | `E_USAGE`, `E_BAD_ARGS` | | no soul; bad, contradictory, removed or unknown flags; an argument after the soul |
@@ -2368,7 +2473,6 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_SLOT_CONFLICT`, `E_SKILL_DUPLICATE` | | the composition conflicts |
 | `E_WORKSPACE_SCHEMA` | `{path, key, reason}` | a removed key or invalid payload |
 | `E_CLONE_MISSING`, `E_CLONE_MISMATCH` | | the member's clone is missing or wrong |
-| `E_REQUIREMENT_INACTIVE` | `{soul, capabilities, context, remedy}` | a declared requirement is not active |
 | `E_CHILD_SPAWNS_DISABLED` | `{parent, policy}` | the parent's policy is off |
 | `E_PARENT_NOT_FOUND`, `E_RELATIVE_NOT_FOUND` | | the anchor name matches no instance |
 | `E_RELATIVE_AMBIGUOUS` | | the anchor matches several instances (`--relative-root` picks one) or a same-named instance would shadow the edge |
@@ -2378,12 +2482,16 @@ Feature `spawn-name`. `--name <slug>` is the exact name, with no prefix.
 | `E_PLACEMENT_TAKEN`, `E_IDEMPOTENCY_CONFLICT` | `{instance, home}` | |
 | `E_SPAWN_INCOMPLETE` | `{instance, home, launched, unconfirmed: true}`; retained launch-prompt outcomes additionally carry `{retained: true, target, parentLineageCommitted, launchPrompts}` | See [launch prompt results](#launch-prompt-results). |
 | `E_LAUNCH_*`, `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS` | | the launch selection is refused |
+| `E_HARNESS_UNAVAILABLE` | `{harness, from, at, fix}` | the chosen harness has no executable on this machine ([launch preferences](#soul-launch-preferences-feature-launch-preference-oats-0300)) |
+| `E_CLAUDE_CONFIG_REMOVED` | `{file, executable, fix}` | a new claude launch with an `oats-claude-config` in reach ([configuration.md](configuration.md)) |
+| `E_HARNESS_RESOURCE_MISSING` | | a harness package a capability requires for the selected harness is not installed, disabled, or cannot be verified ([capabilities.md](capabilities.md)); raised before any home exists, at a preview too, and again by an apply after the home, the work and the hooks when the pane it got differs from the one it checked in a name the probe reads, or selects another program (another creator started the OATS tmux server): then the spawn is rolled back, with `details.unconfirmed` when that cannot finish. A start, a restart and a launch plan's `harness-packages` check answer the same code |
 | `E_LAUNCH_SHIM` | | the home's `oats` (`<home>/.oats/bin/oats`) cannot be written; the spawn is rolled back |
 | `E_SCHEDULE_INVALID` | | a bad wake (`--wake-json`, `--wake-file`, `--wake-*`) |
 | `E_INTERRUPTED` | `{signal, hooks}` | SIGINT, SIGTERM or SIGHUP while the spawn's `worktree` hooks ran (feature `worktree-event`): the running hook's process group is ended, the spawn is rolled back as for a required hook failure, and the process exits 128 + the signal number |
 | `E_REQUIRED_HOOK_FAILED` | `{hooks}`, plus `unconfirmed: true` when compensation cannot finish | a required `spawn` or `worktree` hook failed or timed out; the spawn is rolled back. `hooks` holds the receipt of the event that failed: one entry per hook that ran, `{capability, ok, required, log, exitCode?, signal?, timedOut?, contract?}`, paths only. `log` is `null` for a spawn hook (it keeps no log) and once the rollback removed the home; a retained home keeps a `worktree` hook's log path. Never `home`. Before 0.49.0 a required spawn hook's failure answered `E_SPAWN_FAILED` |
 | `E_HOOK_ENVIRONMENT_CONTRACT` | the same as `E_REQUIRED_HOOK_FAILED`, the failed entry with `contract: "environment"` | a `spawn` hook answered an `env` its manifest does not allow, or a `worktree` hook answered `env` at all |
-| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish | anything else. Among them the two refusals of the harness package check, with the kernel's message: a required package that is not installed (`E_HARNESS_RESOURCE_MISSING` in the kernel), and a pane whose `PATH`, `HOME` or harness folder cannot be read for the probe (`E_RUNTIME_ENDPOINT_UNKNOWN` in the kernel: [the checks read the pane](execution-targets.md#the-checks-read-the-pane)). `oats session start` and `restart` answer the second under its own code. Passing the codes through a spawn is [#1047](https://github.com/awebai/oats/issues/1047) |
+| `E_RUNTIME_ENDPOINT_UNKNOWN` | | the session cannot be established: the OATS tmux server cannot be read at an apply (before any effect, or after the home, the work and the hooks), or the pane's `PATH`, `HOME` or harness folder cannot be read for the harness package check ([the checks read the pane](execution-targets.md#the-checks-read-the-pane)), before anything is probed or created, or at the apply's second check after the hooks, as for `E_HARNESS_RESOURCE_MISSING`. Once the home exists the spawn is rolled back, with `details.unconfirmed` when that cannot finish. A start and a restart answer the same code |
+| `E_SPAWN_FAILED` | `{unconfirmed: true}` when compensation cannot finish; `cause` for an error with a system code, or a defect | an error with no kernel code |
 
 Spawn failure envelopes carry `error.details.unconfirmed: true` when an existing
 keyed spawn is incomplete (`E_SPAWN_INCOMPLETE`) or compensation cannot confirm
@@ -2434,7 +2542,11 @@ what could not be printed is dropped. Its result:
 
 `remove` answers `{purpose, path, removed: true, rolledBack, branch,
 branchKept, branchKeptReason?, warnings?}`. After removing a `ready` tree,
-`rolledBack` is `false` and `branchKept` is `true`. When it completed an
+`rolledBack` is `false` and `branchKept` is `true`. When an instance whose
+session is stopped was [attached](souls-and-instances.md#extra-trees) to the
+removed tree, `warnings` carries one string for it: `<instance>: its work
+was <tree>, which was removed; its work link <home>/work now points at a
+path that is gone`. With no attached instance the answer is what it was. When it completed an
 interrupted add's rollback, `rolledBack` is `true` and `branchKept` says
 whether the branch still exists. The rollback deletes the branch only when
 that add created it, no worktree has it checked out, and it still points at
@@ -2546,6 +2658,7 @@ A failed `add` reports the same facts about its rollback in `details`:
 | `E_REQUIRED_HOOK_FAILED`, `E_HOOK_ENVIRONMENT_CONTRACT` | a required `worktree` hook failed or timed out, or a hook answered `env`; the tree is removed (`details.hooks`, `details.rolledBack`) |
 | `E_INTERRUPTED` | SIGINT, SIGTERM or SIGHUP while the hooks ran; the tree is removed and the process exits 128 + the signal number (`details.signal`) |
 | `E_WORKTREE_DIRTY` | `remove`: Git refused a tree with uncommitted or untracked work (`details.git` is Git's message); the record is kept. Commit and push, or discard, then retry |
+| `E_CHILDREN_RUNNING` | `remove`: an instance attached to the tree has a session that is running, or that cannot be read. Answered under the purpose's claim, before Git is asked anything: nothing is removed and the record is kept. `details: {purpose, path, children: [{instance, home, session}]}`, `session` being `"running"` or `"unknown"`; only the instances that refuse are listed. The message names each one and what was seen, and the step: `oats instance stop <instance>`, or retire it, then remove again. No flag removes anyway. It is the code [a retire](#retire-children-running) answers, with other `details`: a retire answers it for a child it asked to stop and that did not; `remove` for an attached instance it found running or unread, and it asks nobody to stop, so there is no `childrenStopped` |
 | `E_WORK_PRESERVATION_FAILED` | `remove`: Git refused for another reason, or the tree is still there; the record is kept |
 | `E_LIFECYCLE_FAILED` | an error that is not the kernel's; with [`details.cause`](#kernel-codes) when it has a code of its own or is a defect, and without it when it is a refusal without a code. When it is the purpose's claim that could not be taken (`<home>/.oats/trees` cannot be made, the claim's file cannot be written), the message is `the claim <path> could not be taken (…); nothing was done`. Also a command that was refused the claim after its takeover had ended a dead command's git step: the message names the group it ended first, then the refusal, and `details` are that refusal's (a refusal of the kernel's has no `details.cause`; anything else has it by the same rule) |
 
@@ -2798,7 +2911,7 @@ messaging identity's `address` (else `alias`), or `null`.
 ### The remote roster (`oats server roster --json`)
 
 ```text
-oats server roster [--server <id>] [--per-target <ms>] [--budget <ms>] --json
+oats server roster [--server <id>] [--workspace-key <key>]... [--per-target <ms>] [--budget <ms>] --json
 ```
 
 An envelope; `result` is `{groups, bounds}` (remote `roster`,
@@ -2883,7 +2996,9 @@ route target:
   name is unique on the host ([addressing](servers.md#run-there); a shared
   name is `E_AMBIGUOUS` with `error.details.candidates: [{agent, home}]`). A
   saved-route row the host did not list is addressable only while the host's
-  answer is unknown (`missingRemotely: false`).
+  answer is unknown (`missingRemotely: false`). A row the host was reached
+  for and did not list (`missingRemotely: true`) is the one
+  [`server forget`](#forget-a-saved-route-oats-server-forget---json) is for.
 - **`savedRoute`**: the instance was spawned from this machine and has a
   saved route here. Information only; no action depends on it.
 - `running` is `null` when unknown; `backend` is `tmux` for a row with a tmux
@@ -2895,6 +3010,92 @@ route target:
   whole answer); `elapsedMs` is what the answer took, about the slowest
   group's probe. Before 0.55.0 `bounds` also carried `skipped`, the number of
   groups the budget did not reach; it is gone with `E_ROSTER_BUDGET`.
+
+<a id="roster-workspace-key"></a>
+**`--workspace-key <key>`** (feature `roster-workspace-key`, OATS 0.56.0,
+#1124) narrows the roster to the groups that can belong to the given
+workspaces, so a host registered for another workspace, switched off or not,
+costs a window nothing. The flag is repeatable and every occurrence counts;
+`--workspace-key=<key>`, one argument per key, is the same (`--workspace-key=`
+and a value that starts with `--` are `E_BAD_ARGS`).
+With one or more keys, a group is probed and returned when:
+
+1. its registration's `workspaceKey` is one of the keys;
+2. its registration's `workspaceKey` is not known (absent; `oats server
+   check <id>` learns it);
+3. it has no registration for its target (`registrationPresent: false`:
+   saved routes only, the registration removed or changed to another
+   target). Its workspace is unknown, so it is always probed: it holds the
+   rows the Desktop offers Forget on (#1131), which no window's filter may
+   hide.
+
+A group whose registration names another workspace is neither probed nor
+returned, its saved routes under that registration and target with it. A
+group is judged by its registration when it has one, so a saved route whose
+target differs from the registration's is a group of its own, kind 3. A key
+is compared with the registration's `workspaceKey` by exact string equality:
+it is the canonical key a host's `status --json` reports as `workspace.key`,
+never parsed as a repository reference. An empty or missing value, or one
+with whitespace or a control character, is `E_BAD_ARGS`. `--server` and
+`--workspace-key` both narrow. Without the flag the answer is exactly as
+above. With it the answer's shape is unchanged (no filter is echoed in it);
+only which groups appear changes, and a key that matches nothing leaves the
+kinds 2 and 3. In text mode, keys that leave no group print `no remote groups
+for the given workspace keys`.
+
+The Desktop reads one roster for all its windows: it passes the workspace key
+of every open window's view in one read, member-derived keys included (a
+registration records the key its host reports, whatever its `keyFrom`). A key
+that is `null`, or one the kernel would refuse, is no registration's: a view
+without a usable key adds none. The read is unfiltered when the Desktop has no
+window set or no roster answer yet, when a window shows the switcher, when a
+view without a usable key holds another machine's deployment (whose
+registration cannot then be named), and when no key is usable.
+
+<a id="forget-a-saved-route-oats-server-forget---json"></a>
+### Forget a saved route (`oats server forget --json`)
+
+```text
+oats server forget <server> --instance <instance> --json
+```
+
+It removes this computer's saved route to `<instance>` through `<server>`,
+the file under `$OATS_HOME_DIR/remote/<server>/`, and nothing else. It runs
+nothing on the host and does not contact it: the home there, if it still
+exists, is untouched ([servers.md](servers.md#what-this-machine-keeps)). It
+shipped in 0.22.3 with the roster's `missingRemotely`, so every kernel that
+reports a gone row answers it; there is no feature name.
+
+An envelope; `result` is:
+
+```json
+{"server":"build","instance":"dev-a","home":"/srv/team/agents/dev/instances/dev-a",
+ "target":{"sshHost":"build-host","workspace":"/srv/team","oatsPath":"oats"},"forgotten":true}
+```
+
+- **`server`** and **`instance`**: the arguments, echoed.
+- **`home`**: the instance's home on the host, as the route recorded it.
+- **`target`**: the route's target (`{sshHost, workspace, oatsPath, …}`) as
+  the route file recorded it, less the `herdrPath` a route written before
+  0.31.0 may hold.
+- **`forgotten`**: always `true` on success.
+
+A refusal is `ok: false` with `error: {code, message}` only (no `details`,
+no `fix`), exit 1, and removes nothing:
+
+- `E_USAGE`: no server id, or no `--instance` value.
+- `E_SERVER_INVALID`: the server id is not `^[a-z0-9][a-z0-9-]{0,63}$`.
+- `E_BAD_ARGS`: the instance name is not `^[a-z0-9][a-z0-9-]*$`.
+- `E_SNAPSHOT_UNKNOWN`: this computer has no saved route for that instance
+  through that server id (a second forget of the same row answers this).
+- `E_SNAPSHOT_UNREADABLE`: the route file is not valid JSON; the file is
+  kept.
+
+The Desktop runs it only for a remote roster row with `missingRemotely:
+true`, after a confirmation, with exactly the row's `server` and `instance`
+as the arguments. It never shows `home` or `target`, and it reads the remote
+roster again after every outcome, a refusal and an unknown one included,
+instead of editing the row.
 
 <a id="servers-per-workspace"></a>
 ### Servers per workspace (feature `servers-per-workspace`)
@@ -3424,8 +3625,9 @@ that is not an object; OATS 0.52.0) decides only for itself.
   repair its lineage. Its session may go on running under a parent that was
   retired; `oats status` is where it shows.
 - A spawn that names such a home as its parent or anchor is refused
-  (`E_SPAWN_FAILED`, the same sentence with `nothing was spawned`): the
-  parent's child-spawn policy and the lineage are in that record.
+  (`E_UNIDENTIFIED_INSTANCE_HOME`, the same sentence with `nothing was
+  spawned`; `E_SPAWN_FAILED` before 0.56.0): the parent's child-spawn policy
+  and the lineage are in that record.
 - `oats session inspect`, `input` and `attach` on that home answer
   `E_RUNTIME_ENDPOINT_UNKNOWN`, and `oats instance events` still reads its
   logs.
@@ -4140,7 +4342,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   - of other homes: the children as the plan names them (`instance`,
     `agent`, `home`; a child's agent is the name its soul's file gives),
     the edges that could not be followed (`facts.ambiguous`, whole) and the
-    children attached to this home's `work/`.
+    instances attached to this home's `work/` and to each of its extra
+    trees, the recorded children and those of a name that is not unique
+    alike: the plan's notes name them (#964).
 
   A key that is derived is bound through what it is derived from:
   `facts.ownWorktree` and `defaults.retainWorktree` (the reading), and
@@ -4205,13 +4409,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   stored in the link; nothing acts on it. When the link does not resolve,
   the string ends `and it led nowhere that could be read`. The receipt holds
   the path as the system gave it. The retire's text (without `--json`)
-  prints every warning of the receipt on one line and spells each character
-  a terminal would act on, or that hides or reorders text (a control
-  character such as an escape or a newline, a bidi override: the set the
-  kernel never prints in text it did not write), as `\u{<hex>}`, so that a
-  name cannot clear the screen or write a line of its own. The JSON is not
-  changed by that: its strings are what they were. No key of the plan or of
-  the receipt is new.
+  prints every warning of the receipt on one line, spelled as
+  [Text output](#text-output) says. The JSON is not changed by that: its
+  strings are what they were. No key of the plan or of the receipt is new.
 - A link at `work/` that is no longer a link when the retire inspects the
   home again (a retire hook, or anything else, put a directory or a file in
   its place) refuses with `E_WORK_INSPECTION_FAILED` and keeps the home, in
@@ -4345,6 +4545,32 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   --discard-worktree the worktree is removed and their work link will
   dangle`. It holds for either choice; no other key changes. A relink that
   fails is a string in the receipt's `warnings`.
+- The note of an extra tree that recorded children are attached to (their
+  `work` is a link to that tree) names them and says what the retire leaves
+  them with. For a tree that would be removed it ends `; attached child
+  instance(s) <names> use it as their work, and their work link would then
+  point at a path that is gone`; for one that would be re-homed, `; attached
+  child instance(s) <names> use it as their work, and the retire repoints
+  their work link to it`. A tree the retire refuses is neither moved nor
+  removed, and its note says nothing of them. Names too long for the note
+  give way to `<n> of the recorded children`. They are strings in `notes`: no
+  key changes. Who is attached to each tree is part of `planRevision`
+  ([what the revision binds](#retire-revision-work)).
+- The retire does not act on an instance listed under `ambiguous`, and one
+  that is attached to a tree of this home is named with what that leaves it
+  with. An extra tree's note gains a clause of its own, after the one for
+  the recorded children: `; attached instance(s) <names>, listed under
+  ambiguous, use it as their work: the retire does not stop them, and their
+  work link would then point at a path that is gone` for a tree that would
+  be removed, and `…: the retire neither stops them nor repoints their work
+  link, which would then point at a path that is gone (the tree would be at
+  <movedTo>)` for one that would be re-homed. For `work/` it is a note of
+  its own, in a worktree-mode plan: `attached instance(s) <names>, listed
+  under ambiguous, use this home's work/ as their work: the retire neither
+  stops them nor repoints their work link, which will then point at a path
+  that is gone, whether the worktree is retained (the receipt names where)
+  or removed with --discard-worktree`. The note for the recorded children
+  above is unchanged.
 - `facts.recordedBranch` is `null` where the home records the word `"HEAD"`
   (a detached checkout or attached spawn before 0.49.0, #641): it is not a
   branch name, so `facts.work.drift` is `false` for it as well.
@@ -4455,6 +4681,29 @@ A first retire prints the **raw receipt**, not an envelope:
   removed unplanned (OATS 0.52.0; it was `E_PLAN_STALE`, a code that says
   nothing happened, answered after the hooks: #895).
   The key is additive.
+- `warnings` also says what the retire left the attached children of a tree
+  it moved or removed with, one string per child, for `work/` and for each
+  extra tree. A child that could not be repointed to a retained tree:
+  `<child>: its work link could not be repointed to the retained worktree
+  <movedTo> (<why>) and still points at <link>; repoint it by hand: ln -sfn
+  …`, or `<child>: its attachment changed during the retire, so its work was
+  left as it is now and not repointed to the retained worktree <movedTo>;
+  inspect <home>/work`. A child of a tree the retire removed (a clean extra
+  tree, or `work/` with `--discard-worktree`): `<child>: its work was
+  <tree>, which this retire removed (<why>); its work link <home>/work now
+  points at a path that is gone`. A child that was repointed has no string:
+  the text summary's `child <name>` line says where its work now links. No
+  key is new.
+
+  An attached instance the plan lists under `ambiguous` is not stopped and
+  not repointed, and has a string for each tree that was moved or removed:
+  the sentence above for a removed tree, followed by ` (it records this
+  instance as its parent under a name that is not unique, so the retire did
+  not stop it)`, or, for a re-homed tree, `<instance>: its work was <tree>,
+  which this retire re-homed to <movedTo>; its work link <home>/work was not
+  repointed and now points at a path that is gone (it records … did not stop
+  it); to repoint it by hand: ln -sfn …`. A `--self` retirement's receipt
+  does not carry these strings.
 - `workRecovery`: `{path, classes, bytes, home, outputs?, repoCopy?,
   notCopied?, afterHooks?}`, present when a recovery was written. One retire
   writes at most one recovery directory, and `path` is that directory.
@@ -4543,7 +4792,7 @@ nothing is established. A plain or
 always does (`[]` when there are none). One child still running after the
 grace, or whose stop could not be established (`E_SESSION_UNAVAILABLE`,
 `E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY`, …), refuses everything: nothing is retired, exit 1,
-`E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
+<a id="retire-children-running"></a>`E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
 `code`, always a [kernel code](#kernel-codes); the message says `still running after a bounded stop`
 only of a child whose row lists processes in `stillRunning`, and `<child> could not be stopped
 (<code>)` of any other, OATS 0.52.0). **`--force` does not bypass it**: `--force` covers incomplete
@@ -4963,7 +5212,10 @@ selection flags. See [the start workflow](desktop-instance-start.md).
   `restart`),
   `E_SESSION_START_BUSY`, `E_INSTANCE_RETIRING`, `E_LAUNCH_*` (among them
   `E_LAUNCH_SHIM`: the home's `oats` link cannot be written, nothing was
-  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`, `E_SESSION_FAILED`
+  started), `E_MODEL_UNKNOWN`, `E_UNSUPPORTED_HARNESS`,
+  `E_HARNESS_RESOURCE_MISSING` (a harness package an active capability
+  requires is not installed, disabled, or cannot be verified: nothing was
+  started; `E_HARNESS_PACKAGE` before 0.56.0), `E_SESSION_FAILED`
   (any error that is not the kernel's; with
   [`details.cause`](#kernel-codes) when it has a code of its own or is a
   defect, and without it when it is a refusal without a code).
@@ -5046,7 +5298,11 @@ accept `--server <id>`.
   launchConfig, launchConfigSource, launchConfigDefault, executable: {path,
   declared, resolvedFrom}, argv, environment: [{name, fromEnv} | {name, redacted:
   true} | {name, reference: true}], command (redacted), prompt, hooks,
-  preflight: [{check, ok, detail}], ok}`.
+  preflight: [{check, ok, detail, code?}], ok}`. A failed check carries the
+  code a start would refuse with; the `harness-packages` check's is the
+  gate's own, `E_HARNESS_RESOURCE_MISSING` (`E_HARNESS_PACKAGE` before
+  0.56.0). A fault of the gate, which is no verdict on a package, is not a
+  row: the preview fails as a whole.
 
 `launchConfigDefault` (0.32) is `true` when `launchConfig` is this host's
 default for the harness rather than a chosen configuration; the spawn preview
@@ -5528,7 +5784,11 @@ server runs, which `warnings` then says:
 configurations that select it (sorted). A launch configuration whose directory cannot
 be resolved (an unset reference, a relative path) or does not exist is a
 `refused` entry with a `problem` string naming it; `file` is null when the path
-is unresolved. The directory is never created.
+is unresolved. The directory is never created. A file the writer refuses (its
+type, links, owner, mode bits, `ls` metadata markers, size, encoding or format)
+is a `refused` entry whose `problem` is the file and the check that refused it,
+in fixed wording that never includes the file's content; such an entry's
+`current` and digests do not describe the file's trust.
 
 Entry statuses are `change|unchanged|refused|applied|failed|incomplete|not-attempted|skipped`. `skipped` (with `reason`) is a harness whose ambient configuration directory does not exist under `--harness all`; it is never created.
 `current` contains only the known trust scalar, or null when missing. Codex's key

@@ -2,32 +2,21 @@ import { servedIdentityText } from '../../client/deployment-facts.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { ageText } from './age-text.mjs';
 import { createSoulMark, createRuntimeBadge, harnessName } from './identity-marks.mjs';
-import { unsupportedSession } from '../../client/instance-presentation.mjs';
-import { unsupportedLine } from './speaker-line.mjs';
-import { heldHome } from '../../client/instance-tree.mjs';
-import { canAddressRemote, serverLabel, shownLabel, unaddressableSentence } from '../../client/remote-address.mjs';
+import { reasonLine, unsupportedLine } from './speaker-line.mjs';
+import { instanceActs } from '../../client/instance-acts.mjs';
+import { rowReason, serverLabel, shownLabel, unaddressableSentence } from '../../client/remote-address.mjs';
+let workNotes = 0;
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
 #context-panel.context-panel { display:flex; flex:0 0 340px; width:340px; min-width:0; min-height:0; flex-direction:column; box-sizing:border-box; overflow:hidden; border-left:1px solid var(--border); background:var(--surface); color:var(--fg); font:13px/1.45 -apple-system,"Segoe UI",system-ui,sans-serif; }
 #context-panel.context-panel[hidden], #context-panel [hidden] { display:none !important; }
-#context-panel.context-panel.is-collapsed { flex-basis:44px; width:44px; }
 #context-panel .context-panel-header { display:flex; align-items:center; flex:none; height:48px; box-sizing:border-box; border-bottom:1px solid var(--border); padding:0 6px; gap:4px; }
 #context-panel .context-panel-tabs { display:flex; flex:1; min-width:0; height:100%; align-items:center; gap:2px; }
 #context-panel .context-panel-control { font:inherit; color:var(--muted); background:var(--surface); border:0; border-radius:4px; cursor:pointer; padding:6px; }
 #context-panel .context-panel-tab { font-size:12px; white-space:nowrap; min-height:32px; }
 #context-panel .context-panel-tab[aria-selected="true"] { color:var(--accent); background:var(--sel); }
 #context-panel .context-panel-control:hover { background:var(--surface-2); color:var(--fg); }
-#context-panel .context-panel-rail { display:flex; flex-direction:column; align-items:center; flex:1; min-height:0; }
-#context-panel .context-panel-rail { gap:4px; padding:8px 0; box-sizing:border-box; }
-#context-panel .context-panel-rail-tab { position:relative; width:30px; height:30px; padding:0; }
-/* Rail icons sit on the rail's centre line: .shell-icon is display:block, which text-align cannot centre,
-   so each rail control centres its icon as a flex box; the rail centres the controls on its cross axis
-   (inside the 1px border, whatever the placement). No rail control may carry a cross-axis auto margin. */
-#context-panel :is(.context-panel-rail-tab, .context-panel-expand) { display:flex; align-items:center; justify-content:center; }
-#context-panel .context-panel-rail-tab[aria-pressed=true] { color:var(--accent); background:var(--sel); }
-#context-panel .context-panel-dot { position:absolute; right:1px; top:1px; width:7px; height:7px; border-radius:50%; background:var(--accent); border:1px solid var(--surface); }
-#context-panel .context-panel-expand { width:30px; min-height:30px; padding:0; margin-top:auto; }
 #context-panel .context-panel-generic, #context-panel .context-panel-stages { display:flex; flex:1; min-height:0; min-width:0; flex-direction:column; overflow:hidden; }
 #context-panel .context-panel-page { flex:1; min-height:0; overflow:auto; padding:16px; box-sizing:border-box; overflow-wrap:anywhere; }
 #context-panel .context-panel-page h2 { font-size:14px; margin:0 0 12px; }
@@ -107,6 +96,7 @@ export const contextPanelCSS = `
 #context-panel .context-panel-detail { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; min-width:0; }
 #context-panel .context-panel-detail .context-panel-path { color:var(--muted); }
 #context-panel .context-panel-actions { display:flex; gap:8px; flex-wrap:wrap; }
+#context-panel .context-panel-actions[hidden] { display:none; }
 #context-panel .context-panel-action { font:600 12.5px/1 inherit; height:32px; padding:0 14px; border-radius:7px; background:var(--primary-bg); color:var(--primary-fg); border:1px solid var(--primary-bg); cursor:pointer; }
 #context-panel .context-panel-action:disabled { background:var(--surface-2); color:var(--muted); border-color:var(--border); cursor:default; }
 /* Session: the harness mark and name, the model and where it came from, the terminal target and its age. */
@@ -125,6 +115,8 @@ export const contextPanelCSS = `
 #context-panel .context-panel-footer-act:hover:not(:disabled) { background:var(--surface-2); }
 #context-panel .context-panel-footer-act.danger { color:var(--danger); }
 #context-panel .context-panel-footer-act:disabled { color:var(--muted); cursor:default; }
+/* A row that offers no lifecycle action (blocked, instance-acts.mjs): one muted line saying why, in the controls' place. */
+#context-panel .context-panel-footer-note { flex:1; min-width:0; margin:0; font-size:12.5px; line-height:1.5; overflow-wrap:anywhere; }
 /* Soul tab: "Open soul page" is an outline control at the page foot. */
 #context-panel .context-panel-page[data-context-page="soul"] .context-panel-actions { margin-top:auto; }
 #context-panel .context-panel-open-soul:not(:disabled) { flex:1; background:var(--surface); color:var(--fg); border-color:var(--border); }
@@ -146,7 +138,8 @@ const noop = () => {};
 const inertLease = () => ({ setPresent: noop, isVisible: () => false, collapse: noop, dispose: noop });
 const inertPanel = () => ({
   setContext: noop, attach: inertLease, release: noop, toggle: noop, setCollapsed: noop,
-  setFocusMode: noop, toggleFocusMode: noop, isFocusMode: () => false, dispose: noop,
+  setFocusMode: noop, toggleFocusMode: noop, isFocusMode: () => false, focus: () => false,
+  state: () => ({ present: false, open: false, changes: false }), dispose: noop,
 });
 /** Where the model came from (modelFrom, desktop-facts); null (a pre-0.29 home) says nothing.
  * 0.30 launch preferences add this computer's override for the soul (`local`) and for every soul
@@ -226,7 +219,16 @@ const reported = value => typeof value === 'string' && value.length ? value
  * setContext is the ONLY foreground selector; attach never selects an owner.
  * workspace and key are exact, opaque identities supplied by the shell.
  * An attached slot starts present. setPresent only changes that slot's presence,
- * never the current context or the user's collapse preference.
+ * never the current context or whether the user left the panel open.
+ *
+ * Open or closed (Spec B): a closed panel is hidden, taking no width, with no rail. Instance details
+ * follow ONE per-machine preference (`instanceOpen`: read and write it; absent means closed), changed
+ * only by panel.toggle, the shell's Show instance panel and the panel's own close button; selecting an
+ * instance never opens it. A stage's content (the Workspace soul inspector) keeps its own per-workspace
+ * state, open by default: selecting a soul inspects it, and its X closes it. `onChange(state)` hears
+ * every projection (and the Developer page's change mark), from construction on: whether there is
+ * content (`present`), whether it is shown (`open`), and whether the Developer page would show its
+ * change dot (`changes`).
  *
  * Leases are bound to the workspace generation in which attach was called.
  * Workspace changes clear presence synchronously, retaining the real DOM. To
@@ -244,19 +246,21 @@ export function instanceDeployment(context) {
 
 export function createContextPanel({
   document: suppliedDocument, root: suppliedRoot, onIntent = noop,
-  applyFocus = callback => callback(), onFocusModeChange = noop, fallbackFocus = () => null, createGitPanel, createTeamsSection, createSoulSection, openSoul, lifecycle = null,
-  connectionGeneration = () => 0, subscribeConnections = () => noop,
+  applyFocus = callback => callback(), onFocusModeChange = noop, fallbackFocus = () => null, closedFocus = () => null, createGitPanel, createTeamsSection, createSoulSection, openSoul, lifecycle = null,
+  connectionGeneration = () => 0, subscribeConnections = () => noop, instanceOpen = { read: () => true, write: noop }, onChange = noop,
 } = {}) {
   const document = suppliedDocument ?? suppliedRoot?.ownerDocument ?? globalThis.document;
   const root = suppliedRoot ?? document?.getElementById('context-panel');
   if (!document || !root) return inertPanel();
 
   let disposed = false, focusMode = false, applyingFocus = false, epoch = 0;
+  let detailsOpen = false;
+  try { detailsOpen = instanceOpen.read() === true; } catch { /* storage-less: closed */ }
   let context = { workspace: null, owner: null, instance: null, key: null };
-  let gitSummary = null, prSummary = null;
+  let gitSummary = null, prSummary = null, gitChanged = false, notified = false;
   const contextIdentity = () => JSON.stringify([context.workspace, context.key, context.instance?.home, context.instance?.agent,
     context.instance?.agentsRoot, context.instance?.server || null, context.instance?.createdAt ?? null]);
-  const preferences = new Map(); // Only chrome preferences, never selection.
+  const preferences = new Map(); // Only chrome preferences, never selection: the selected page, a stage's open state.
   const slots = new Map();
   const app = document.getElementById('app');
   const node = (tag, className, text) => {
@@ -296,38 +300,11 @@ export function createContextPanel({
   const focus = el => {
     if (visible(el)) projectFocus(() => el.focus({ preventScroll: true }));
   };
-  const rail = node('div', 'context-panel-rail');
-  rail.setAttribute('role', 'toolbar'); rail.setAttribute('aria-label', 'Context sections'); rail.setAttribute('aria-orientation', 'vertical');
-  const expand = control('context-panel-expand', 'chevronLeft', 'Expand context panel', event => {
-    if (!disposed && visible(event.currentTarget)) { onIntent(event); setCollapsed(false); }
-  });
-  expand.setAttribute('aria-expanded', 'false'); expand.setAttribute('aria-controls', 'context-panel'); expand.dataset.action = 'panel.toggle';
-  const railTabs = new Map();
-  for (const [id, glyph, label] of [['instance', 'info', 'Instance'], ['soul', 'soul', 'Soul'], ['git', 'branch', 'Developer']]) {
-    const button = control('context-panel-rail-tab', glyph, label, event => {
-      if (disposed || root.hidden || !hasGeneric() || !pref().collapsed || !visible(button)) return;
-      onIntent(event);
-      project(() => { pref().tab = id; pref().collapsed = false; });
-      focus(tabs.get(id));
-    });
-    button.dataset.contextRail = id; button.setAttribute('aria-controls', `context-panel-page-${id}`);
-    railTabs.set(id, button); rail.append(button);
-  }
-  const gitDot = node('span', 'context-panel-dot'); gitDot.hidden = true; gitDot.setAttribute('aria-hidden', 'true'); railTabs.get('git').append(gitDot);
-  rail.append(expand);
-  rail.addEventListener('keydown', event => {
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey || !visible(event.target)) return;
-    const buttons = [...railTabs.values(), expand].filter(visible), at = buttons.indexOf(document.activeElement);
-    if (at < 0) return;
-    event.preventDefault(); event.stopPropagation(); onIntent(event);
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (at + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
-    focus(buttons[next]);
-  });
   const generic = node('div', 'context-panel-generic');
   const header = node('div', 'context-panel-header');
   const tablist = node('div', 'context-panel-tabs');
   tablist.setAttribute('role', 'tablist'); tablist.setAttribute('aria-label', 'Instance context');
-  const collapse = control('context-panel-collapse', 'close', 'Collapse context panel', event => {
+  const collapse = control('context-panel-collapse', 'close', 'Close the instance panel', event => {
     if (!disposed && visible(event.currentTarget)) { onIntent(event); setCollapsed(true); }
   });
   collapse.setAttribute('aria-expanded', 'true'); collapse.setAttribute('aria-controls', 'context-panel');
@@ -441,6 +418,18 @@ export function createContextPanel({
   // A remote row without its work facts: one muted line where the Work section stands (no card, no guess).
   const workNote = node('p', 'context-panel-note context-panel-work-note'); workNote.dataset.contextWorkNote = ''; workNote.hidden = true;
   workSection.after(workNote);
+  // #1131: beside the remedy of a row its host no longer lists, the act it names: Forget…, the same
+  // confirmation as the roster menu's (forget-dialog.mjs; nothing runs here).
+  const forgetActions = node('div', 'context-panel-actions'); forgetActions.dataset.contextForget = ''; forgetActions.hidden = true;
+  const forgetControl = node('button', 'context-panel-action', 'Forget…'); forgetControl.type = 'button'; forgetControl.dataset.lifecycle = 'forget';
+  forgetControl.addEventListener('click', event => {
+    const instance = context.instance;
+    if (disposed || !hasGeneric() || !instance || typeof lifecycle?.forget !== 'function' || forgetActions.hidden || forgetControl.disabled) return;
+    onIntent(event); lifecycle.forget(instance, context.workspace);
+  });
+  // Described by the remedy above it, which names the instance and the server.
+  workNote.id = `context-panel-work-note-${++workNotes}`; forgetControl.setAttribute('aria-describedby', workNote.id);
+  forgetActions.append(forgetControl); workNote.after(forgetActions);
   let workKey = null;
   // Session: the harness (and model) it runs, its terminal session and age.
   const session = section('instance', 'Session');
@@ -508,15 +497,14 @@ export function createContextPanel({
   }) : null;
   function paintGitDot() {
     const changed = hasGeneric() && gitSummary?.identity === contextIdentity() && gitSummary.connection === connectionGeneration() && gitSummary.changed === true;
-    gitDot.hidden = !changed;
+    gitChanged = changed;
     // The PR's unresolved review threads, as reported; unknown (null) or none shows nothing.
     const threads = hasGeneric() && prSummary?.identity === contextIdentity() && prSummary.connection === connectionGeneration()
       && Number.isSafeInteger(prSummary.unresolvedThreads) && prSummary.unresolvedThreads > 0 ? prSummary.unresolvedThreads : 0;
     const said = threads ? `${threads} unresolved review thread${threads === 1 ? '' : 's'}` : '';
     const count = tabs.get('git').querySelector('.context-panel-tab-count'); count.textContent = threads ? String(threads) : '';
     if (said) tabs.get('git').setAttribute('aria-label', `Developer, ${said}`); else tabs.get('git').removeAttribute('aria-label');
-    const label = [changed ? 'Developer — changes in the last accepted observation' : 'Developer', said].filter(Boolean).join(', ');
-    railTabs.get('git').title = label; railTabs.get('git').setAttribute('aria-label', label);
+    if (changed !== notified) { notified = changed; notify(); }
   }
   if (!gitPanel) pages.get('git').append(node('h2', null, 'Developer'), node('p', 'context-panel-note',
     'Integration unavailable. This host has no K1 Git reader. No changes, diffs, pull requests, or checks are reported here.'));
@@ -534,23 +522,26 @@ export function createContextPanel({
   };
   const restartControl = lifecycleButton('restart', 'Restart…'), startControl = lifecycleButton('start', 'Start…');
   const stopControl = lifecycleButton('stop', 'Stop…'), retireControl = lifecycleButton('retire', 'Retire…', 'danger');
+  const actionsNote = node('p', 'context-panel-note context-panel-footer-note'); actionsNote.dataset.contextActionsNote = ''; actionsNote.hidden = true;
+  footer.append(actionsNote);
   generic.append(footer);
   const stages = node('div', 'context-panel-stages');
   root.classList.add('context-panel');
   if (!root.hasAttribute('aria-label')) root.setAttribute('aria-label', 'Context panel');
-  root.append(rail, generic, stages);
+  root.append(generic, stages);
 
   const currentSlot = () => context.owner == null ? null : slots.get(context.owner);
   const slotPresent = slot => !!slot && slot.epoch === epoch && slot.present;
   function hasGeneric() { return context.owner == null && (context.instance != null || context.key != null); }
   const hasContent = () => context.owner != null ? slotPresent(currentSlot()) : hasGeneric();
+  /** Closed by the user: instance details by the per-machine preference, a stage's content by its workspace's. */
+  const closed = () => hasGeneric() ? !detailsOpen : pref().collapsed;
+  const panelState = () => ({ present: !disposed && hasContent(), open: !disposed && !root.hidden, changes: !disposed && gitChanged });
+  const notify = () => { if (!disposed) onChange(panelState()); };
   function render() {
-    const present = !disposed && hasContent(), collapsed = pref().collapsed;
-    const expanded = present && !focusMode && !collapsed;
-    root.hidden = !present || focusMode;
-    root.classList.toggle('is-collapsed', collapsed);
-    rail.hidden = !present || !collapsed || focusMode;
-    for (const [id, button] of railTabs) { button.hidden = !hasGeneric(); button.setAttribute('aria-pressed', String(pref().tab === id)); }
+    const present = !disposed && hasContent();
+    const expanded = present && !focusMode && !closed();
+    root.hidden = !expanded;
     paintGitDot();
     generic.hidden = !expanded || !hasGeneric();
     stages.hidden = !expanded || context.owner == null;
@@ -561,6 +552,7 @@ export function createContextPanel({
       pages.get(id).hidden = !selected;
     }
     footer.hidden = !expanded || !hasGeneric() || pref().tab !== 'instance' || !context.instance || !lifecycle;
+    notify();
     // The sections read and act on ONE instance: they are addressed to its own deployment (#482), never
     // the workspace view (context.workspace stays the panel's owner and preference key).
     const deployment = instanceDeployment(context);
@@ -577,15 +569,17 @@ export function createContextPanel({
     if (disposed) return;
     const active = document.activeElement;
     const inside = root.contains(active);
-    const inSidebar = document.getElementById('sidebar')?.contains(active)
-      || document.getElementById('sidebar-restore')?.contains(active);
+    const inSidebar = document.getElementById('sidebar')?.contains(active);
     // Focus already lost (the palette removes its input before running a command) counts too, but only on
     // an explicit focus-mode change, so a command never leaves focus on <body>.
     const lost = !active || active === document.body || !active.isConnected;
     const wasFocusMode = focusMode;
     change(); render(); changed();
-    if ((inside && !visible(active)) || (inSidebar && !wasFocusMode && focusMode) || (lost && wasFocusMode !== focusMode)) {
-      focus(visible(expand) ? expand : fallbackFocus());
+    // Closed by the user with focus inside: the shell's Show instance panel takes it. Hidden by focus
+    // mode or because there is nothing to show: the shell's stable target (the active tab, …).
+    if (inside && !visible(active) && root.hidden && !focusMode && hasContent()) focus(closedFocus() || fallbackFocus());
+    else if ((inside && !visible(active)) || (inSidebar && !wasFocusMode && focusMode) || (lost && wasFocusMode !== focusMode)) {
+      focus(fallbackFocus());
     }
   }
   function projectMetadata() {
@@ -609,6 +603,9 @@ export function createContextPanel({
     const note = remoteWorkNote(instance) ?? '';
     if (workNote.textContent !== note) workNote.textContent = note;
     workNote.hidden = !note;
+    // Strictly a row whose reason is `missing` (remote-address.mjs): an unknown, unreached or other row offers no Forget.
+    const forgets = !!note && typeof lifecycle?.forget === 'function' && rowReason(instance)?.key === 'missing';
+    forgetActions.hidden = !forgets;
     if (work && modeTile.dataset.work !== work) {
       modeTile.dataset.work = work; modeTile.replaceChildren(iconElement(document, WORK_MODES[work].icon, { size: 14 }));
     }
@@ -661,16 +658,23 @@ export function createContextPanel({
     startedLine.hidden = fields.get('startedAt').textContent === 'Not reported';
     createdLine.hidden = !startedLine.hidden || fields.get('createdAt').textContent === 'Not reported';
     session.hidden = !harness && !tmux && createdLine.hidden && startedLine.hidden;
-    const running = instance.running === true, stopped = instance.running === false, unsupported = unsupportedSession(instance);
-    // #802: a home the kernel holds offers no Start, Restart or Stop; Retire only when a spawn or a retire left it
-    // half cleaned, nothing while its spawn sets up the worktree (the roster menu's rule, heldHome).
-    const held = heldHome(instance);
-    restartControl.hidden = !running || !!held; startControl.hidden = (!stopped && !unsupported) || !!held; stopControl.hidden = !running || !!held;
-    retireControl.hidden = !!held && !held.retire;
-    for (const b of [restartControl, startControl, stopControl, retireControl]) b.disabled = !canAddressRemote(instance);
-    // A Herdr-recorded instance cannot start: Start stays visible, disabled, with the kernel's reason.
-    if (unsupported) startControl.disabled = true;
-    startControl.title = unsupportedLine(instance) || '';
+    // The lifecycle row offers what the roster menu offers (#855): packages/client/instance-acts.mjs `instanceActs`
+    // decides, and a control is shown exactly when its act is listed, enabled exactly when the act is (`inspect` has
+    // no control here). So Stop is offered on a stopped row or one whose state is unknown (it also stops the row's
+    // children); a blocked row (a remote one the kernel does not report addressable, a home still spawning) shows no
+    // control; a limited one (#802: a spawn or a retire left it half cleaned) Retire alone. A listed act that is not
+    // enabled (Start on a Herdr-recorded row) stays visible, disabled, its reason as its title, said as the row says it.
+    const { blocked, acts } = instanceActs(instance), offered = new Map(acts.map(act => [act.verb, act]));
+    for (const [verb, b] of [['restart', restartControl], ['start', startControl], ['stop', stopControl], ['retire', retireControl]]) {
+      const act = offered.get(verb);
+      b.hidden = !act; b.disabled = !act?.enabled;
+      b.title = act && !act.enabled ? (act.reason?.code === 'unsupported-session' ? unsupportedLine(instance) : reasonLine(act.reason)) ?? '' : '';
+    }
+    // A blocked row says why in the controls' place, once: a row gone from its server (its reason's key `missing`)
+    // already says it in the Work note (remoteWorkNote, the same unaddressableSentence), so nothing more is said here.
+    const why = blocked && !(blocked.key === 'missing' && remoteWorkNote(instance) !== null) ? reasonLine(blocked) ?? '' : '';
+    if (actionsNote.textContent !== why) actionsNote.textContent = why;
+    actionsNote.hidden = !why;
     // A section with nothing reported is not shown; the header sub-line omits an unreported description.
     soulSub.hidden = fields.get('description').textContent === 'Not reported';
     lineage.hidden = [...lineage.querySelectorAll('[data-row]')].every(r => r.hidden);
@@ -683,7 +687,12 @@ export function createContextPanel({
     onIntent(event);
     project(() => { pref().tab = id; });
   }
-  function setCollapsed(value) { project(() => { pref().collapsed = !!value; }); }
+  function setClosed(value) {
+    if (!hasGeneric()) { pref().collapsed = !!value; return; }
+    detailsOpen = !value;
+    try { instanceOpen.write(detailsOpen); } catch { /* storage-less: this window keeps it */ }
+  }
+  function setCollapsed(value) { project(() => setClosed(value)); }
   function setFocusMode(value) {
     const next = !!value;
     if (disposed || next === focusMode) return;
@@ -730,7 +739,7 @@ export function createContextPanel({
       const current = () => owns() && slot.epoch === epoch;
       return {
         setPresent(value) { if (current()) project(() => { slot.present = !!value; }); },
-        isVisible: () => current() && currentSlot() === slot && slot.present && !root.hidden && !pref().collapsed,
+        isVisible: () => current() && currentSlot() === slot && slot.present && !root.hidden && !closed(),
         collapse() { if (current() && currentSlot() === slot && slot.present) setCollapsed(true); },
         dispose() {
           if (owns()) project(() => { slots.delete(owner); slot.wrapper.remove(); });
@@ -741,16 +750,27 @@ export function createContextPanel({
       const slot = slots.get(owner);
       if (slot) project(() => { slots.delete(owner); slot.wrapper.remove(); });
     },
-    // panel.toggle (Mod+I, the palette, the rail's expand) leaves focus mode and shows the panel.
+    // panel.toggle (⌘I / Ctrl+Shift+I, the palette, the shell's Show instance panel) leaves focus mode and shows the panel.
     toggle() {
       if (disposed || !hasContent()) return;
-      if (focusMode) project(() => { focusMode = false; app?.classList.remove('focus-mode'); pref().collapsed = false; }, () => onFocusModeChange(false));
-      else setCollapsed(!pref().collapsed);
+      if (focusMode) project(() => { focusMode = false; app?.classList.remove('focus-mode'); setClosed(false); }, () => onFocusModeChange(false));
+      else setCollapsed(!closed());
     },
     setCollapsed,
     setFocusMode,
     toggleFocusMode() { setFocusMode(!focusMode); },
     isFocusMode: () => focusMode,
+    /** Focus the shown panel's selected tab (instance details), else the first control of the stage's content. */
+    focus() {
+      if (disposed || root.hidden) return false;
+      const slot = currentSlot();
+      const target = hasGeneric() ? tabs.get(pref().tab)
+        : slot ? [...slot.wrapper.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]')].find(el => el.tabIndex >= 0 && visible(el)) : null;
+      focus(target);
+      return !!target && document.activeElement === target;
+    },
+    /** What the shell's Show instance panel reflects. */
+    state: panelState,
     dispose() {
       if (disposed) return;
       project(() => {
@@ -759,7 +779,7 @@ export function createContextPanel({
         for (const slot of slots.values()) slot.wrapper.remove();
         slots.clear(); context = { workspace: null, owner: null, instance: null, key: null };
         gitPanel?.dispose(); teamsSection?.dispose?.();
-        rail.remove(); generic.remove(); stages.remove();
+        generic.remove(); stages.remove();
         if (changed) onFocusModeChange(false);
       });
       disposed = true; preferences.clear(); offConnection?.(); gitSummary = null; prSummary = null;

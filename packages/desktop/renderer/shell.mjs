@@ -24,6 +24,7 @@ import {
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, resetTerminalTypography, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "./instance-recency.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
 import { createSurfaceReturn } from "./surface-return.mjs";
@@ -36,12 +37,14 @@ import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
 import { createTerminalSettings, settingsTerminalCSS } from "./settings-terminal.mjs";
 import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
+import { createForgetDialog, forgetSuccessor } from './forget-dialog.mjs';
 import { successorRow } from "./focus-return.mjs";
 import { createThemePicker, themePickerCSS } from './theme-picker.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions, fitTerminal, createGlyphRenderer } from "./terminal-tab.mjs";
+import { createTerminalAtlasRecovery } from "./terminal-atlas-recovery.mjs";
 import { attachClipboardWrite, attachSelectionCopy, copyTerminalSelection } from "./terminal-clipboard.mjs";
 import { attachTerminalMouse } from "./terminal-mouse.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "./tab-a11y.mjs";
@@ -1021,6 +1024,10 @@ function renderContextRoster(instances) {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
             openLifecycleDialog(operation, instance, ws);
           },
+          openForget: instance => {
+            if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
+            openForgetDialog(instance, ws);
+          },
           done: () => {},
           report: (headline, { detail } = {}) => {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
@@ -1187,11 +1194,14 @@ function onRosterRowKey(e) {
   setRovingRow(listEl, rows[to]);
 }
 
-/* Move focus AND the single tab-order slot to `row` (roving tabindex). */
+/* Move focus AND the single tab-order slot to `row` (roving tabindex). The list has no visible
+   scrollbar: the row (its whole box, so its tools shown on focus too) is revealed inside the list
+   only, never by the focus scroll, which can move scrollable ancestors. */
 function setRovingRow(listEl, row) {
   for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
   row.tabIndex = 0;
-  row.focus();
+  row.focus({ preventScroll: true });
+  revealInScrollport(listEl, row.closest(".ctx-tree-row") || row);
 }
 
 /** Select a roster row of this workspace (by server and home) and move keyboard focus to it: through a
@@ -1276,10 +1286,13 @@ function showTerminalContext() {
 // ── tabs ──────────────────────────────────────────────────────────────────
 const tabbar = document.getElementById("tabbar");
 const tabhost = document.getElementById("tabhost");
-const tabs = new Map(); // id -> { tabEl, triggerEl, closeEl, paneEl, title, key, onClose, onShow }
+const tabs = new Map(); // id -> { tabEl, triggerEl, closeEl, paneEl, title, key, onClose, onShow, term }
+// After a GPU process restart every terminal's glyph atlas is cleared in one pass, hidden tabs included (#1190).
+const atlasRecovery = createTerminalAtlasRecovery({ doc: document, terminals: () => [...tabs.values()].flatMap(t => t.term ? [t.term] : []) });
 let nextTabId = 1;
 let activeTab = null;
 const wsActiveTerminal = new Map(); // workspace id -> last-active terminal tab key
+const instanceRecency = createInstanceRecency(); // per-machine: when each instance's terminal was last focused (palette order)
 const brainIntents = createIntentGate();
 // Terminal and artifact opens compete for the same foreground selection.
 const tabOpenIntents = createSelectionOwnership({ currentWorkspace, workspaceGeneration });
@@ -1321,6 +1334,7 @@ const contextPanel = createContextPanel({
     restart: (instance, workspace) => { if (workspace === currentWorkspace()) openInstanceStart(instance, { restart: true }); },
     stop: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('stop', instance, workspace); },
     retire: (instance, workspace) => { if (workspace === currentWorkspace()) openLifecycleDialog('retire', instance, workspace); },
+    forget: (instance, workspace) => openForgetDialog(instance, workspace),
   },
   // Soul tab → the soul in the Workspace view (same hand-off as Quick Open).
   openSoul: async ({ workspace, name, agentsRoot, server }) => {
@@ -1339,9 +1353,34 @@ const contextPanel = createContextPanel({
   onFocusModeChange: () => updateSidebarControls(),
   // Focus mode hides the sidebar: focus that was there lands on the active tab, else a stable visible control.
   fallbackFocus: () => stableFocusTarget(),
+  // Spec B: instance details open or closed is one per-machine preference, closed until the user opens
+  // it ("1" open; absent closed), persisted like oats-desktop-sidebar-hidden and never in a deployment.
+  instanceOpen: {
+    read: () => localStorage.getItem("oats-desktop-instance-panel-open") === "1",
+    write: open => { if (open) localStorage.setItem("oats-desktop-instance-panel-open", "1"); else localStorage.removeItem("oats-desktop-instance-panel-open"); },
+  },
+  // Closing it with focus inside hands focus to Show instance panel, which appears in its place.
+  closedFocus: () => { const show = document.getElementById("show-panel"); return show && !show.hidden ? show : null; },
+  onChange: state => updatePanelControl(state),
 });
 window.addEventListener("pagehide", () => contextPanel.dispose(), { once: true });
 
+/** Show instance panel (Spec B), at the end of the main area's top bar: shown while the panel is
+ * closed (or hidden by focus mode) and has something to show. It carries the Developer page's change
+ * dot, and says so. Hidden under focus, its focus goes to the panel it opened. */
+function updatePanelControl({ present, open, changes }) {
+  const show = document.getElementById("show-panel");
+  if (!show) return;
+  const hide = !present || open, focused = document.activeElement === show;
+  show.hidden = hide;
+  show.querySelector(".main-edge-dot").hidden = !changes;
+  const label = changes ? "Show instance panel, Developer has changes" : "Show instance panel";
+  if (show.getAttribute("aria-label") !== label) {
+    show.setAttribute("aria-label", label); baseTitles.set(show, label); applyChordTitles();
+  }
+  // Opened by its chord while it had focus: focus follows into the panel (never <body>).
+  if (hide && focused && !contextPanel.focus()) stableFocusTarget()?.focus();
+}
 /** Projection only: foreground comes from the committed active tab/stage. */
 function syncContextPanel() {
   const tab = tabLayerVisible ? tabs.get(activeTab) : null;
@@ -1351,8 +1390,8 @@ function syncContextPanel() {
 }
 function activeTabTrigger() { return activeTab != null ? tabs.get(activeTab)?.triggerEl ?? null : null; }
 /** Where focus goes when the control holding it disappears: the active tab's trigger when it is shown, else a
- * stable visible control (the sidebar toggle, or the restore edge that focus mode and a
- * hidden sidebar show), never <body>. */
+ * stable visible control (the sidebar toggle, or Show sidebar, which focus mode and a hidden sidebar
+ * show, or Show instance panel), never <body>. */
 function stableFocusTarget() {
   const shown = el => {
     if (!el?.isConnected || el.disabled) return false;
@@ -1361,7 +1400,7 @@ function stableFocusTarget() {
     }
     return true;
   };
-  return [activeTabTrigger(), ...["sidebar-toggle", "sidebar-restore"].map(id => document.getElementById(id))].find(shown) ?? null;
+  return [activeTabTrigger(), ...["sidebar-toggle", "show-sidebar", "show-panel"].map(id => document.getElementById(id))].find(shown) ?? null;
 }
 function refreshPanelInstance(instances, workspace) {
   syncTabNeedsInput(instances, workspace); // also on a poll whose roster signature is unchanged (no repaint)
@@ -1576,7 +1615,7 @@ function onTabKeydown(e, id) {
   if (selectTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
+function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null, term = null }) {
   if (key) {
     for (const [tid, t] of tabs) if (t.key === key) {
       if (instanceRef && (!intent || intent())) t.instanceRef = instanceRef;
@@ -1591,7 +1630,11 @@ function addTab({ decor = null, title, key, kind = "artifact", workspace = curre
   );
   tabbar.append(tabEl);
   tabhost.append(paneEl);
-  triggerEl.addEventListener("click", () => selectTab(id));
+  // A click is a selection: on the tab that is already active it still reveals the tab's roster row.
+  triggerEl.addEventListener("click", () => {
+    const again = activeTab === id;
+    if (selectTab(id) && again) revealActiveRosterRow(tabs.get(id));
+  });
   triggerEl.addEventListener("keydown", (e) => onTabKeydown(e, id));
   closeEl.addEventListener("click", (e) => { e.stopPropagation(); closeTab(id, true); });
   // Pane interaction supersedes pending opens, including an already-active
@@ -1601,7 +1644,7 @@ function addTab({ decor = null, title, key, kind = "artifact", workspace = curre
     isApplyingFocus: () => tabOpenIntents.isApplyingFocus(),
     select: () => selectTab(id),
   });
-  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, confirmClose, onShow, focusContent });
+  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, confirmClose, onShow, focusContent, term });
   if (intent) selectTab(id, { intent, focusContent: focusOnActivate });
   else activateTab(id);
   return { id, paneEl };
@@ -1632,6 +1675,7 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   // the mutation boundary before its pane can become active/receive input.
   const emptyFocused = id == null && !!split?.groups.some(g => g.id === split.focusedGroup && !g.tabs.length);
   if (!emptyFocused && !canActivateTab(current, currentWorkspace())) return false;
+  const before = activeTab; // a stage between two activations clears it (showTabLayer(false))
   activeTab = id;
   if (current?.kind === "terminal" && split && !keepGroupFocus) {
     // Editor-group semantics: an existing member activation moves its
@@ -1645,6 +1689,9 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   if (current?.kind === "terminal" && current.workspace) {
     wsActiveTerminal.set(current.workspace, current.key);
   }
+  // The palette's last-focus order (Spec C): any activation of a terminal tab, and
+  // a terminal taking keyboard focus (wirePaneSelection selects its tab), lands here.
+  if (current?.kind === "terminal") instanceRecency.record(current.workspace, recencyIdFromTerminalKey(current.workspace, current.key));
   if (current?.kind === "terminal" || emptyFocused) {
     setSidebarMode("instances");
     setNavActive(null);
@@ -1683,8 +1730,46 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   renderSplit(splitVisible);
   updateSplitControls();
   revealActiveTabs();
+  // Only a change of the active tab (or the tab layer coming back from a stage) reveals its roster row:
+  // a re-projection of the same tab never moves the roster from where the user scrolled it.
+  if (before !== id) revealActiveRosterRow(current);
   tabs.get(id)?.onShow?.();
   return true;
+}
+
+/** Spec B (PR 5): the active terminal tab's roster row reads as selected at once (the repaint that the
+ * activation's roster read brings paints the same) and is scrolled into the list just enough
+ * (revealInScrollport; nothing when it is fully shown). It never takes focus; the roving tab stop
+ * follows the selection only while focus is outside the list. Nothing scrolls while the sidebar is
+ * hidden or in focus mode, nor for a row the filter hides (the filter is the user's); a row under a
+ * collapsed parent reveals the nearest shown ancestor's row, without expanding it. */
+function revealActiveRosterRow(tab) {
+  const listEl = contextRosterEl?.querySelector(".ctx-list");
+  if (tab?.kind !== "terminal" || !listEl) return;
+  const ws = contextWorkspace || currentWorkspace();
+  if (tab.workspace !== ws) return;
+  const instance = contextInstances.find(i => terminalKey(ws, i) === tab.key);
+  const rows = new Map([...listEl.querySelectorAll(".ctx-inst")].map(r => [r.dataset.treeInstance, r]));
+  const selected = instance ? rows.get(instanceId(instance)) : null;
+  for (const r of rows.values()) {
+    r.classList.toggle("active", r === selected);
+    r.closest(".ctx-tree-row")?.classList.toggle("active", r === selected);
+  }
+  if (selected && !listEl.contains(document.activeElement)) {
+    for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+    selected.tabIndex = 0;
+  }
+  const app = document.getElementById("app");
+  if (!instance || app?.classList.contains("sidebar-hidden") || app?.classList.contains("focus-mode")) return;
+  let target = selected;
+  // While filtering (renderContextRoster's rule) every branch shows expanded, so a row that is not
+  // painted is one the filter hides.
+  if (!target && !contextFilter.trim()) {
+    for (let id = rosterParentId(contextInstances, instanceId(instance)), seen = new Set(); id && !seen.has(id) && !target; id = rosterParentId(contextInstances, id)) {
+      seen.add(id); target = rows.get(id) || null;
+    }
+  }
+  if (target) revealInScrollport(listEl, target.closest(".ctx-tree-row") || target);
 }
 
 function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false, passive = false } = {}) {
@@ -1963,7 +2048,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   term.loadAddon(fit);
   // Box drawing and blocks as a native terminal draws them (WebGL, DOM fallback).
   const glyphs = createGlyphRenderer({ term, Addon: globalThis.WebglAddon?.WebglAddon,
-    onChange: () => requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} }) });
+    onChange: () => requestAnimationFrame(() => { try { fitTerminal(term, fit); } catch {} }),
+    onRecovered: () => atlasRecovery.schedule() });
 
   // Composition (setup-inside-onReady, teardown symmetry) lives in
   // terminal-tab.mjs so its ordering is unit-testable (review termlc2).
@@ -2015,6 +2101,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
+    term, // the GPU-restart recovery clears its glyph atlas
   });
   if (!made) { unwire(); term.dispose(); return; } // lost a race to an identical tab
   // A tab opened on a waiting instance shows it at once, from the last painted roster (#558).
@@ -2080,9 +2167,13 @@ const palette = createPalette({
   loadInstances: async () => {
     if (windowState() === "choosing") return { instances: [], deployments: [] }; // no workspace: nothing to read (#481)
     const ws = currentWorkspace();
+    // The terminal in front and the last-focus record as the palette opens (Spec C).
+    const front = tabLayerVisible ? tabs.get(activeTab) : null;
+    const activeId = front?.kind === "terminal" && front.workspace === ws ? recencyIdFromTerminalKey(ws, front.key) : null;
+    const recent = instanceRecency.snapshot(ws);
     const p = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
     // One snapshot: the palette sections and clusters by these deployments, as the sidebar does.
-    return { instances: p.instances || [], deployments: panelDeployments(p) };
+    return { instances: p.instances || [], deployments: panelDeployments(p), recent, activeId };
   },
   openTerminal: (name) => openTerminalTab(name),
   // While open, ⌘K / Ctrl+Shift+P moves down and Shift + it up (live keymap); Esc closes, Enter opens.
@@ -2248,6 +2339,42 @@ function openLifecycleDialog(operation, instance, workspace) {
   lifecycleDialog.open({ operation, instance, workspace: rowDeployment(instance) });
 }
 window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
+/* Forget… (#1131): a row its host no longer lists (forget-dialog.mjs). The server composes the command from the
+ * row's { server, instance }, answers its outcome, and reads the remote roster again (the one owner of that read);
+ * the row leaves this window's roster when that read lands, at the roster's own refresh. Nothing here edits a row. */
+const forgetDialog = createForgetDialog({ doc: document,
+  request: async body => (await desk.api('/api/server-forget', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })).body,
+  notify: text => notifications.notify(text),
+  nextFocus: () => forgetNextFocus(),
+  generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,
+  onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
+});
+/** The roster's rows (by identity) when the Forget confirmation opened, and where its row stood among them. */
+let forgetRowOrder = null;
+/** Where focus goes once a row is forgotten: the first row that followed it when the confirmation opened and is
+ * still shown (the forgotten row may already be gone, by this re-read or an earlier poll), else the roster itself,
+ * else a stable shell control when the sidebar is hidden. */
+function forgetNextFocus() {
+  const listEl = contextRosterEl?.querySelector(".ctx-list");
+  if (!listEl || sidebarHidden()) return stableFocusTarget();
+  const shown = el => el?.isConnected && !el.disabled && !el.closest("[hidden]") && document.defaultView.getComputedStyle(el).display !== "none";
+  const rows = [...listEl.querySelectorAll(".ctx-inst")].filter(shown);
+  const { order = [], at = -1 } = forgetRowOrder || {};
+  const next = forgetSuccessor(rows, order, at);
+  if (!next) { contextRosterEl.tabIndex = -1; return contextRosterEl; }
+  for (const r of listEl.querySelectorAll('.ctx-inst[tabindex="0"]')) r.tabIndex = -1;
+  next.tabIndex = 0; return next;
+}
+function openForgetDialog(instance, workspace) {
+  if (workspace !== currentWorkspace() || forgetDialog.busy()) return;
+  connections.close(); shortcutsEditor.close(); lifecycleDialog.close();
+  const order = [...(contextRosterEl?.querySelectorAll(".ctx-list .ctx-inst") || [])].map(r => r.dataset.treeInstance);
+  forgetRowOrder = { order, at: order.indexOf(instanceId(instance)) };
+  forgetDialog.open(instance);
+}
+window.addEventListener('pagehide', () => forgetDialog.dispose(), { once: true });
 // The theme button, the palette and the chord (app.themePicker) open it; a choice goes through setTheme,
 // so it is stored as a palette choice is.
 const themePicker = createThemePicker({ doc: document, themes: THEMES, current: currentTheme, choose: setTheme,
@@ -2271,18 +2398,20 @@ function sidebarHidden() {
 }
 function updateSidebarControls() {
   const visible = !sidebarHidden() && !contextPanel.isFocusMode();
-  for (const id of ["sidebar-toggle", "sidebar-restore"]) {
-    document.getElementById(id).setAttribute("aria-expanded", String(visible));
-  }
+  document.getElementById("sidebar-toggle").setAttribute("aria-expanded", String(visible));
+  // Show sidebar (Spec B) is shown only while the sidebar is away: it is always the collapsed side.
+  const show = document.getElementById("show-sidebar");
+  const focused = document.activeElement === show;
+  show.hidden = visible;
+  if (visible && focused) document.getElementById("sidebar-toggle").focus();
 }
 function setSidebarHidden(on) {
   document.getElementById("app").classList.toggle("sidebar-hidden", on);
   updateSidebarControls();
-  // Hiding by mouse or keyboard must not strand focus in display:none.
+  // Hiding by mouse or keyboard must not strand focus in display:none: it goes to Show sidebar, which
+  // appears in the sidebar's place (and back to the sidebar's own toggle when it returns).
   if (on && document.getElementById("sidebar").contains(document.activeElement)) {
-    document.getElementById("sidebar-restore").focus();
-  } else if (!on && document.activeElement === document.getElementById("sidebar-restore")) {
-    document.getElementById("sidebar-toggle").focus();
+    document.getElementById("show-sidebar").focus();
   }
   try {
     if (on) localStorage.setItem(SIDEBAR_HIDDEN_KEY, "1");
@@ -2293,10 +2422,12 @@ function toggleSidebar() {
   if (contextPanel.isFocusMode()) { contextPanel.setFocusMode(false); setSidebarHidden(false); }
   else setSidebarHidden(!sidebarHidden());
 }
-// Restore-by-mouse must exist while the sidebar is hidden: a thin edge
-// button (CSS shows it only under #app.sidebar-hidden) runs the SAME
-// sidebar.toggle action as the chord/palette/rail-footer button.
-document.getElementById("sidebar-restore").addEventListener("click", () => runAction("sidebar.toggle"));
+// Spec B: a closed sidebar leaves nothing behind. Show sidebar, at the start of the main area's top bar
+// (shown only while the sidebar is hidden or focus mode is on), runs the SAME sidebar.toggle as the
+// chord, the palette and the footer button (it leaves focus mode too). Show instance panel, at its end,
+// runs panel.toggle and then moves focus into the panel it opened.
+document.getElementById("show-sidebar").addEventListener("click", () => runAction("sidebar.toggle"));
+document.getElementById("show-panel").addEventListener("click", () => { runAction("panel.toggle"); contextPanel.focus(); });
 try { if (localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1") setSidebarHidden(true); } catch { /* storage-less */ }
 
 // Terminal copies (#672). Each open terminal tab's xterm, by its wrap, for terminal.copySelection.
@@ -2559,6 +2690,7 @@ function rehomeWorkspaceState(workspaces) {
   const moves = rehomeTabs(tabs, map, workspaces);
   if (!map.size && !moves.length) return;
   rehomeActiveTerminals(wsActiveTerminal, map, moves);
+  instanceRecency.rehome(map);
   workspaceTabMemory.rehome(map);
   rehomeCollapsed(collapsedInstances, map);
   spawnJobs.rehome(map);

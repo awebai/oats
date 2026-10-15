@@ -7,22 +7,21 @@ import { kernelRemoteRow, kernelGoneRow, kernelRemoteGroup } from './helpers/ker
 /** The time a remote panel is made at: remotePanel reads no clock, its caller gives the time. */
 const AT = '2026-10-11T12:00:00.000Z';
 
-const panelAPI = ['setContext', 'attach', 'release', 'toggle', 'setCollapsed', 'setFocusMode', 'toggleFocusMode', 'isFocusMode', 'dispose'];
+const panelAPI = ['setContext', 'attach', 'release', 'toggle', 'setCollapsed', 'setFocusMode', 'toggleFocusMode', 'isFocusMode', 'focus', 'state', 'dispose'];
 const leaseAPI = ['setPresent', 'isVisible', 'collapse', 'dispose'];
-function fixture(t) {
+function fixture(t, extra = {}) {
   // Inert DOM only: no scripts, server, bridge, native processes or resources.
   const dom = new JSDOM(`<!doctype html><body><div id="app">
     <aside id="sidebar"><input id="sidebar-input"></aside>
-    <button id="sidebar-restore">Restore sidebar</button>
-    <main id="main"><div id="tabbar"><button id="active-tab">dev-1</button><div id="tab-actions"><button id="split-right">Split</button></div></div>
-      <div id="tabhost"><input id="terminal-input"></div></main>
+    <main id="main"><button id="show-sidebar">Show sidebar</button><div id="tabbar"><button id="active-tab">dev-1</button><div id="tab-actions"><button id="split-right">Split</button></div></div>
+      <div id="tabhost"><input id="terminal-input"></div><button id="show-panel">Show instance panel</button></main>
     <aside id="context-panel"></aside>
   </div></body>`);
   const document = dom.window.document;
   const style = document.createElement('style');
   // The parent owns these shell rules; they are only a fixture for focus tests.
   style.textContent = `${contextPanelCSS}
-    #app.focus-mode #sidebar, #app.focus-mode #sidebar-restore { display:none; }`;
+    #app.focus-mode #sidebar { display:none; }`;
   document.head.append(style);
   const root = document.getElementById('context-panel');
   const intents = [], focusCalls = [], modeCalls = [];
@@ -32,6 +31,8 @@ function fixture(t) {
     applyFocus: callback => { applying = true; focusCalls.push('apply'); try { return callback(); } finally { applying = false; } },
     onFocusModeChange: value => modeCalls.push(value),
     fallbackFocus: () => document.getElementById('active-tab'),
+    // The shell's Show instance panel, which appears where a closed panel was.
+    closedFocus: () => document.getElementById('show-panel'), ...extra,
   });
   t.after(() => { panel.dispose(); dom.window.close(); });
   const query = selector => document.querySelector(selector);
@@ -58,7 +59,8 @@ test('exact APIs, safe absent-host defaults, shell-owned root and no tab-bar tog
   assert.deepEqual(Object.keys(inert), panelAPI);
   assert.deepEqual(Object.keys(inert.attach()), leaseAPI);
   inert.setContext(); inert.toggle(); inert.toggleFocusMode(); inert.dispose();
-  assert.equal(inert.isFocusMode(), false);
+  assert.equal(inert.isFocusMode(), false); assert.equal(inert.focus(), false);
+  assert.deepEqual(inert.state(), { present: false, open: false, changes: false });
   const u = fixture(t);
   assert.deepEqual(Object.keys(u.panel), panelAPI);
   assert.equal(u.root.closest('#main, #tabhost'), null);
@@ -66,12 +68,14 @@ test('exact APIs, safe absent-host defaults, shell-owned root and no tab-bar tog
   // Spec F: the tab bar has no panel toggle; projection touches no control outside the panel.
   const outside = u.query('#tab-actions').outerHTML;
   u.select(instance('/A/one'));
-  assert.equal(u.root.hidden, false); assert.equal(u.root.classList.contains('is-collapsed'), false);
+  assert.equal(u.root.hidden, false);
   u.panel.toggle();
-  assert.equal(u.root.classList.contains('is-collapsed'), true, 'panel.toggle collapses to the rail');
+  assert.equal(u.root.hidden, true, 'panel.toggle closes it: hidden, no rail left behind');
+  assert.equal(u.root.querySelector('.context-panel-rail, .context-panel-expand'), null, 'there is no rail to show');
   assert.equal(u.panel.isFocusMode(), false);
   u.panel.toggle();
-  assert.equal(u.root.classList.contains('is-collapsed'), false);
+  assert.equal(u.root.hidden, false);
+  assert.equal(u.root.classList.contains('is-collapsed'), false, 'no collapsed form at all');
   assert.equal(u.query('#tab-actions').outerHTML, outside);
 });
 
@@ -139,13 +143,14 @@ test('collapsed stage retains form identity, pending completion and listeners', 
   lease.collapse();
   assert.equal(lease.isVisible(), false);
   assert.equal(form.element.isConnected, true, 'collapse parks DOM rather than detaching it');
-  assert.equal(u.document.activeElement, u.query('.context-panel-expand'));
+  assert.equal(u.root.hidden, true, 'closed: nothing is left in its place');
+  assert.equal(u.document.activeElement, u.query('#show-panel'), 'focus goes to Show instance panel');
   assert.equal(u.intents.length, intents, 'recovery focus is projection, not entry intent');
   assert.equal(u.focusCalls.length, 1);
   finish('Saved by pending operation'); await pending;
-  assert.equal(u.root.classList.contains('is-collapsed'), true, 'late presence is not auto-expand');
+  assert.equal(u.root.hidden, true, 'late presence is not auto-expand');
   u.query('#terminal-input').focus();
-  u.query('.context-panel-expand').click();
+  u.panel.toggle(); // what Show instance panel and the chord run
   assert.equal(lease.isVisible(), true);
   assert.equal(u.root.querySelector('textarea'), form.input);
   assert.equal(form.input.value, 'unsubmitted\ntext');
@@ -166,7 +171,7 @@ test('workspace A → B → A clears presence synchronously; reuse renews lease 
   old.setPresent(true);
   assert.equal(u.root.hidden, true, 'A completion cannot show in B');
   u.select(instance('/B/one'), 'b-key', 'B');
-  assert.equal(u.root.classList.contains('is-collapsed'), false, 'B starts with independent preference');
+  assert.equal(u.root.hidden, false, "instance details follow their own preference, not A's closed stage");
   u.panel.setContext({ workspace: 'A', owner });
   assert.equal(u.root.hidden, true, 'returning to A does not resurrect stale presence');
   old.setPresent(true); old.collapse();
@@ -177,8 +182,8 @@ test('workspace A → B → A clears presence synchronously; reuse renews lease 
   assert.equal(form.input.value, 'draft survives workspace');
   old.dispose(); old.setPresent(false);
   assert.equal(form.element.isConnected, true, 'stale disposal cannot remove renewed slot');
-  assert.equal(u.root.hidden, false);
-  assert.equal(u.root.classList.contains('is-collapsed'), true, 'A collapse preference survives');
+  assert.equal(u.root.hidden, true, "A's closed stage stays closed, leaving nothing in its place");
+  assert.equal(fresh.isVisible(), false);
   u.panel.toggle(); assert.equal(fresh.isVisible(), true);
 });
 
@@ -245,7 +250,7 @@ test('same-key polling updates values without recreating controls, stealing focu
   assert.deepEqual(u.intents.slice(count), ['pointerdown', 'focusin'], 'native entry forwards intent');
 });
 
-test('collapsed tab preferences are workspace-local; keyboard navigation keeps ARIA and focus aligned', t => {
+test('the selected page is workspace-local, open or closed is one preference; keyboard navigation keeps ARIA and focus aligned', t => {
   const u = fixture(t);
   u.select(instance('/A/one'));
   u.tab('instance').focus();
@@ -262,24 +267,25 @@ test('collapsed tab preferences are workspace-local; keyboard navigation keeps A
   assert.equal(u.query('[data-context-page="git"]').hidden, false);
   const count = u.intents.length;
   u.panel.setCollapsed(true);
-  assert.equal(u.document.activeElement, u.query('.context-panel-expand'));
+  assert.equal(u.root.hidden, true, 'closed: hidden, no rail');
+  assert.equal(u.document.activeElement, u.query('#show-panel'), 'closing with focus inside hands it to Show instance panel');
   assert.equal(u.intents.length, count);
-  assert.equal(u.query('.context-panel-expand').tagName, 'BUTTON', 'native keyboard-expand control');
   u.select(instance('/A/one', { running: false }));
   assert.equal(u.tab('git').getAttribute('aria-selected'), 'true');
   u.select(instance('/B/one'), 'b', 'B');
-  assert.equal(u.root.classList.contains('is-collapsed'), false);
-  assert.equal(u.tab('instance').getAttribute('aria-selected'), 'true');
+  assert.equal(u.root.hidden, true, 'open or closed is one preference, not one per workspace');
+  assert.equal(u.tab('instance').getAttribute('aria-selected'), 'true', 'the selected page is per workspace');
+  u.panel.toggle(); assert.equal(u.root.hidden, false);
   u.tab('soul').click();
   u.select(instance('/A/one'));
-  assert.equal(u.root.classList.contains('is-collapsed'), true);
+  assert.equal(u.root.hidden, false, 'opened in B, it is open in A too');
   assert.equal(u.tab('git').getAttribute('aria-selected'), 'true');
-  u.panel.toggle(); assert.equal(u.query('[data-context-page="git"]').hidden, false);
+  assert.equal(u.query('[data-context-page="git"]').hidden, false);
   u.select(instance('/B/one'), 'b', 'B');
   assert.equal(u.tab('soul').getAttribute('aria-selected'), 'true');
 });
 
-test('focus mode hides panel/sidebar rails, preserves preferences and stage form, and restores no content focus', t => {
+test('focus mode hides the panel and sidebar, preserves preferences and stage form, and restores no content focus', t => {
   const u = fixture(t), owner = {}, form = u.stage();
   u.query('#app').classList.add('sidebar-hidden');
   u.panel.setContext({ workspace: 'A', owner });
@@ -302,10 +308,10 @@ test('focus mode hides panel/sidebar rails, preserves preferences and stage form
   assert.equal(u.root.querySelector('textarea'), form.input);
   assert.equal(form.input.value, 'focus mode draft'); assert.equal(form.submit.disabled, true);
   assert.equal(u.document.activeElement, u.query('#active-tab'), 'no auto-refocus of draft');
-  u.panel.setCollapsed(true); u.query('.context-panel-expand').focus();
+  u.panel.setCollapsed(true); u.query('#show-panel').focus();
   u.panel.setFocusMode(true); u.panel.setFocusMode(false);
-  assert.equal(u.root.classList.contains('is-collapsed'), true, 'collapsed panel remains collapsed after mode');
-  assert.equal(u.query('.context-panel-rail').hidden, false);
+  assert.equal(u.root.hidden, true, 'a closed panel stays closed after focus mode');
+  assert.equal(u.document.activeElement, u.query('#show-panel'));
   assert.equal(u.query('#app').classList.contains('sidebar-hidden'), true);
   assert.deepEqual(u.modeCalls, [true, false, true, false]);
 });
@@ -316,8 +322,8 @@ test('focus recovery is limited to containers hidden by this transition, includi
   u.panel.setFocusMode(true);
   assert.equal(u.document.activeElement, u.query('#active-tab'));
   u.panel.setFocusMode(false);
-  u.query('#sidebar-restore').focus(); u.panel.setFocusMode(true);
-  assert.equal(u.document.activeElement, u.query('#active-tab'));
+  u.query('#show-sidebar').focus(); u.panel.setFocusMode(true);
+  assert.equal(u.document.activeElement, u.query('#show-sidebar'), 'Show sidebar stays shown in focus mode: focus stays on it');
   u.panel.setFocusMode(false);
   u.query('#terminal-input').focus();
   const count = u.focusCalls.length;
@@ -353,12 +359,12 @@ test('dispose releases only component DOM and listeners; missing shell controls 
   assert.equal(u.root.hidden, true);
 });
 
-test('a Herdr-recorded instance: the footer shows Start disabled with the kernel reason, no Restart or Stop, and Retire stays available', t => {
+test('a Herdr-recorded instance: the footer shows Start disabled with the kernel reason, no Restart, and Stop and Retire stay available (#855: its state is unknown)', t => {
   const u = fixture(t), reason = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
   u.select(instance('/A/h1', { running: null, runtimeState: 'unsupported', runtimeError: reason }));
   const control = op => u.query(`[data-lifecycle="${op}"]`);
   assert.equal(control('start').hidden, false); assert.equal(control('start').disabled, true); assert.equal(control('start').title, reason);
-  assert.equal(control('restart').hidden, true); assert.equal(control('stop').hidden, true);
+  assert.equal(control('restart').hidden, true); assert.equal(control('stop').hidden, false); assert.equal(control('stop').disabled, false);
   assert.equal(control('retire').hidden, false); assert.equal(control('retire').disabled, false);
   u.select(instance('/A/t1', { running: false }));
   assert.equal(control('start').disabled, false); assert.equal(control('start').title, '', 'a tmux row carries no Herdr reason');
@@ -376,7 +382,7 @@ test("a Herdr-recorded instance: Start's title says who made the reason (#982), 
   assert.equal(title({ runtimeState: undefined, running: true, backend: 'herdr', runtimeError: 'another text', runtimeErrorOrigin: 'kernel' }).title, reason);
   assert.equal(title({ runtimeError: 'E_HERDR_REMOVED: <b>bold</b>', runtimeErrorOrigin: 'kernel' }).title, 'OATS says: E_HERDR_REMOVED: <b>bold</b>');
   const withheld = title({ runtimeError: 'E_HERDR_REMOVED: gone\u001b[2J', runtimeErrorOrigin: 'kernel' });
-  assert.equal(withheld.title, '[Detail withheld]'); assert.equal(withheld.disabled, true);
+  assert.equal(withheld.title, '[withheld]'); assert.equal(withheld.disabled, true);
 });
 
 test('the Session card names a tmux session only when one was recorded: an unknown row with none shows no session line', t => {
@@ -522,5 +528,37 @@ test('#802: a held home: a spawning one shows no lifecycle control, a quarantine
   u.select(instance('/A/q3', { running: false, spawnInProgress: true, rollbackIncomplete: true }));
   assert.deepEqual(shown(), ['retire'], 'rollbackIncomplete wins');
   u.select(instance('/A/t1', { running: false }));
-  assert.deepEqual(shown(), ['start', 'retire'], 'an ordinary stopped row is unchanged');
+  assert.deepEqual(shown(), ['start', 'stop', 'retire'], 'an ordinary stopped row: Start, and Stop as the roster menu offers it (#855)');
+});
+
+// #1131: beside the remedy of a row its host no longer lists, Forget…: the host's confirmation, never a command here.
+test('a row its host no longer lists offers Forget… beside the remedy; strictly missing, nothing runs here', t => {
+  const opened = [];
+  const u = fixture(t, { lifecycle: { forget: (...args) => opened.push(args) } });
+  const forget = () => u.query('[data-context-forget]'), note = () => u.query('[data-context-work-note]');
+  const [gone] = kernelRows([kernelGoneRow()]);
+  u.select(gone);
+  assert.equal(forget().hidden, false);
+  const button = forget().querySelector('button');
+  assert.equal(button.textContent, 'Forget…');
+  assert.equal(forget().previousElementSibling, note(), 'right after the remedy sentence');
+  assert.equal(button.getAttribute('aria-describedby'), note().id, 'described by the remedy, which names the instance and the server');
+  button.click();
+  assert.deepEqual(opened, [[gone, 'A']], 'the row as selected, and the panel\'s workspace');
+  // Not offered: a listed row, an unreached server, missingRemotely not strictly true, a local row.
+  const [listed] = kernelRows([kernelRemoteRow()]);
+  const [unreached] = kernelRows([kernelGoneRow()], { probe: { ok: false, error: { code: 'E_SSH', message: 'ssh: timeout' } } });
+  for (const [why, row] of [['listed', listed], ['unreached', unreached], ['missingRemotely "true"', { ...gone, missingRemotely: 'true' }],
+    ['missingRemotely null', { ...gone, missingRemotely: null }], ['local', instance('/w/agents/dev/instances/dev-1')]]) {
+    u.select(row);
+    assert.equal(forget().hidden, true, why);
+  }
+  assert.equal(opened.length, 1);
+});
+
+test('without a forget handler the remedy stands alone', t => {
+  const u = fixture(t, { lifecycle: { stop: () => {} } });
+  u.select(kernelRows([kernelGoneRow()])[0]);
+  assert.equal(u.query('[data-context-work-note]').hidden, false);
+  assert.equal(u.query('[data-context-forget]').hidden, true);
 });

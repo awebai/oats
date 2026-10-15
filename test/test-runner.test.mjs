@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { DESKTOP_TEST_DEPS } from "../scripts/desktop-test-deps.mjs";
@@ -42,11 +42,18 @@ syncBuiltinESMExports();\n`);
       assert.equal(calls.length, 1);
       const call = JSON.parse(calls[0].slice("RUNNER_CALL=".length));
       assert.equal(call.bin, process.execPath);
-      // The reporter a person reads, named as node would pick it for this pipe, then the one that
-      // looks for an unasserted warning, with a file of this run as its destination.
-      const found = call.args[6];
-      assert.match(found, /^--test-reporter-destination=.*oats-test-warnings-[^/]+[/\\]found\.jsonl$/);
-      assert.deepEqual(call.args, ["--test", "--test-shard=2/6", "--test-name-pattern=roundtrip",
+      // The preload that gives each test file a temporary directory of its own in the run's
+      // directory; the reporter a person reads, named as node would pick it for this pipe; then the
+      // one that looks for an unasserted warning, with a file of the run's directory as its destination.
+      const found = call.args[7];
+      assert.match(found, /^--test-reporter-destination=.*[/\\]ot-[^/\\]+[/\\]warnings\.jsonl$/);
+      const runDir = dirname(found.slice("--test-reporter-destination=".length));
+      assert.equal(call.options.env.OATS_TEST_RUN_DIR, runDir, "the run's directory is named to the files' processes");
+      // Under a temporary directory of at most 20 characters, else under /tmp: "/ot-XXXXXX" and a file's number.
+      assert.ok(join(runDir, "9999").length <= 35, `the run's directory is short, a file's directory being the start of every socket path its fixtures make: ${runDir}`);
+      assert.equal(existsSync(runDir), false, "and is gone when the run has ended");
+      assert.deepEqual(call.args, ["--test", `--import=${pathToFileURL(join(realpathSync(root), "scripts", "test-file-tmpdir.mjs")).href}`,
+        "--test-shard=2/6", "--test-name-pattern=roundtrip",
         `--test-reporter=${Number(process.versions.node.split(".")[0]) >= 23 ? "spec" : "tap"}`, "--test-reporter-destination=stdout",
         `--test-reporter=${pathToFileURL(join(realpathSync(root), "scripts", "test-warnings-reporter.mjs")).href}`, found,
         "test/**/*.test.mjs", "tests/**/*.test.mjs", "capabilities/**/*.test.mjs",

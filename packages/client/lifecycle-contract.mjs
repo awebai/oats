@@ -139,8 +139,12 @@ export function busyRefusal(reason, plan = null) {
 }
 export function lifecycleFailure(code, terms, extra = {}) {
   requireTerms(terms, 'lifecycleFailure');
-  return { lifecycleApi: LIFECYCLE_API, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null,
-    reason: lifecycleReason(code, terms), ...extra };
+  return lifecycleFailureOf(lifecycleReason(code, terms), extra);
+}
+/** A lifecycle failure whose reason is ready: one a client words itself, for a code of its own that the shared
+ * table does not know (the Desktop's frame guard). It words nothing, so it takes no terms. */
+export function lifecycleFailureOf(reason, extra = {}) {
+  return { lifecycleApi: LIFECYCLE_API, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null, reason, ...extra };
 }
 export function lifecycleOptions(operation, v) {
   if (!object(v)) return null;

@@ -104,9 +104,10 @@ ancestor. `E_LOCAL_MISSING` → if `D` is the authorized new directory,
 use card 3; if reuse was selected, resolve the incorrect/missing deployment
 with its owner before writing. `no-backlink`, `backlink-elsewhere`,
 `not-listed`, `cannot-read` → correct the shared membership declaration or
-owner's Git environment, then repeat this inventory. A failed or unparseable
-Git version probe preserves the remote cache and its pins: fix the local Git
-failure and retry without deleting the cache. Never invent another repo.
+owner's Git environment, then repeat this inventory. From OATS 0.56.0, a
+failed or unparseable Git version probe preserves the remote cache and its
+pins: fix the local Git failure and retry without deleting the cache. Never
+invent another repo.
 
 ## 3. Establish the selected workspace
 
@@ -329,8 +330,8 @@ receipt repair.
 ## Knowledge operations with OKF
 
 Set this up only after cards 1–8 succeed, and only when the intake authorizes harvested
-knowledge reviewed and merged by an agent. It needs kernel ≥ 0.29.0 (package
-souls, triggers, workspace automations) and `oats.okf` 5.0.3. The contract is
+knowledge reviewed and merged by an agent. It needs kernel ≥ 0.49.0 (the public
+instance-event lookup after a source retires) and `oats.okf` 5.1.0. The contract is
 `docs/knowledge.md` ("Knowledge operations") and `docs/schedules.md`
 ("Triggers", "Workspace triggers and schedules") in the installed kernel, and
 okf's own README at the pinned tag; read them, and okf's own
@@ -338,7 +339,7 @@ okf's own README at the pinned tag; read them, and okf's own
 
 ### 1. Pin the package
 
-`packages: { oats.okf: v5.0.3 }` in the workspace file, then `oats sync`
+`packages: { oats.okf: v5.1.0 }` in the workspace file, then `oats sync`
 (`/oats-package-pins`). One pin brings, versioned and locked together:
 
 - the three capabilities: `oats.okf` (every working soul's knowledge slot),

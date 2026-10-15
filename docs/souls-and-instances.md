@@ -402,7 +402,9 @@ sugar for `--relative-to <instance> --relation child`):
   `oats status --json` (`parentInstance` + `siblingInstance` edges).
 - **unrelated** (default): no link, operator-origin, top-level.
 
-Attached-mode spawns are ALWAYS children of the owner of the shared work tree,
+Attached-mode spawns are ALWAYS children of the owner of the shared work tree
+(the instance in whose home the tree is, as its `work/` or as one of its
+extra trees: see [`attached`](#attached--another-instances-tree)),
 because an attached agent serves that owner; relation flags other than a
 redundant child-of-owner are rejected. Any other spawn, including one from a
 shell that inherited an agent's environment variables, is operator-origin and
@@ -1220,10 +1222,14 @@ retry. A relink that fails is a warning in the summary and the receipt's
 `warnings`, with the command to repoint the link by hand; the retire is not
 undone. A child that is not attached, whose link leads elsewhere, or that this
 retire did not stop is not touched. With `--discard-worktree` the worktree is
-removed and an attached child's link dangles. The retire plan names the
-attached children in one note that covers both cases. Only the link changes:
+removed and an attached child's link then points at a path that is gone: the
+summary and the receipt's `warnings` name each such child, the tree and the
+link. The retire plan names the attached children in one note that covers
+both cases. Only the link changes:
 the child's `instance.json` is not rewritten, and its AGENTS.md and TASK.md
-still name the old path.
+still name the old path. A child attached to one of the home's extra trees
+is handled the same way, tree by tree
+([extra trees at retire](#extra-trees-at-retire)).
 
 #### What `work/` is at retire
 
@@ -1369,6 +1375,38 @@ leaves `work/` untouched. For each tree:
   and the home is kept. At the step, trees already handled in that pass stay
   handled, and the message says what was done. `--force` does not bypass it:
   it forces past hook cleanup, not past local work.
+
+An instance can be attached to an extra tree as it can to `work/`
+([`attached`](#attached--another-instances-tree)). The retire finds the
+attached children of every tree before it moves or removes any of them, among
+the recorded children it stopped and by the test it uses for `work/`:
+
+- **Where the tree is re-homed**, each one's `work` link is repointed to the
+  tree's new path, under the conditions `work/` has (the tree is seen at its
+  new path, nothing is left at the old one, and the child's link is still the
+  one that was found) and with the same warnings when it cannot be done. It
+  is done right after that tree's move, not at the end of the retire: a later
+  step can still refuse and keep the home, and the tree has left it either
+  way.
+- **Where a clean tree is removed**, it is removed as any other, and the
+  child's link then points at a path that is gone. The receipt's `warnings`
+  and the summary name each such child, the tree and the link.
+
+The plan's note for a tree names its attached children and says which of the
+two the retire would do. A retire that refuses after it has handled trees
+says, with the trees it handled, each warning it has about their attached
+children.
+
+All of this is about the recorded children, for `work/` too. An attached
+instance that the plan lists under `ambiguous` (it records this instance as
+its parent under a name that is not unique) is not asked to stop, so the
+retire does not repoint its link, which then points at the path the tree
+has left. The retire says so. The plan's note for an extra tree names such
+instances in a clause of its own, and `work/` has a note of its own for
+them. The receipt's `warnings` name each one for every tree the retire moved
+or removed, with the command to repoint its link by hand where the tree was
+re-homed. The receipt of a `--self` retirement does not carry those
+warnings; its plan's notes are the same.
 
 `--discard-worktree` applies to `work/` only: a tree that is not clean is
 always re-homed. The retire writes one workspace event per handled tree
@@ -1598,16 +1636,56 @@ Rules:
 ### `attached` — another instance's tree
 
 `work/` points at **another instance's work tree** — same branch, same
-uncommitted state. Spawning attached requires `workDir` (the owning
-instance's `<home>/work`); it is a spawn-time choice (`--work attached`) for
-service agents such as reviewers.
+uncommitted state. Spawning attached requires `workDir` (`--work-dir`): a
+tree in the owning instance's home, its `<home>/work` or one of its
+[extra trees](#extra-trees) (`<home>/.work-<purpose>`). It is a spawn-time
+choice (`--work attached`) for service agents such as reviewers.
+
+The kernel derives the owner and the repository from the tree named on the
+command line, so the spawn needs no `--repo` and no relation flag (an extra
+tree from 0.57.0, #958):
+
+```text
+oats spawn <soul> --work attached --work-dir <home>/work
+oats spawn <soul> --work attached --work-dir <home>/.work-<purpose>
+```
+
+- **The owner** is the instance in whose home the tree is, and the new
+  instance is its child. It must be an instance of the deployment the spawn
+  runs in, and its name must resolve back to that home from there: a name
+  that resolves to another instance is refused, since the parent link would
+  be ambiguous. The parent is never read from the caller's environment.
+- **An attached instance's repository is the repository of the tree it is
+  attached to.** For `<home>/work` that is the repository its owner
+  recorded. For an extra tree it is the repository Git names for that tree,
+  which can be another member repository than the owner's own
+  (`oats worktree add --repo`).
+- `--parent <owner>` and `--repo <repository>` given explicitly are
+  accepted. A relation that is not "child of the owner" is refused.
+- An extra tree is one by the kernel's test of it, the same one a retire
+  uses ([extra trees at retire](#extra-trees-at-retire)): a linked worktree
+  in the home that Git confirms is registered in a repository outside the
+  home. The shape of the path decides nothing. A directory named `.work-x`
+  that is not such a tree (a plain directory, a clone of its own, a tree of
+  a repository inside the home, a tree whose registration was pruned) is a
+  tree of no instance, and so is a path inside an extra tree.
+- **A tree of no known instance** (an integration worktree, for example)
+  has nothing to derive from: the spawn needs `--parent <instance>` and
+  `--repo <repository>`. One refusal (`E_BAD_ARGS`) names every one still
+  missing, so one retry is enough.
 
 Attached agents are guests: never switch branches or rewrite history, touch
 only what the briefing names, keep commits small and attributable. Retiring
 an attached instance never removes the shared tree. When its owner retires
-and the tree is re-homed, the attached instance's `work` link is repointed to
-the tree's new path ([retire](#retire)); its AGENTS.md and TASK.md still name
-the old one. The packaged
+and the tree is re-homed, `work/` or an extra tree, the `work` link of an
+instance attached to it is repointed to the tree's new path
+([retire](#retire), [extra trees at retire](#extra-trees-at-retire)); its
+AGENTS.md and TASK.md still name the old one. When the retire removes the
+tree (a clean extra tree, or `work/` with `--discard-worktree`), the link
+then points at a path that is gone: the plan says so beforehand and the
+receipt's `warnings` afterwards, each naming the instance and the tree. The
+owner's `oats worktree remove` does not remove an extra tree while an
+instance attached to it is running ([extra trees](#extra-trees)). The packaged
 `work-attached` instruction source carries this discipline into each generated instance AGENTS.md.
 
 ### `directory` — independent execution
@@ -1772,6 +1850,23 @@ with no record is `E_BAD_ARGS`: remove a tree made another way with
 and nothing is removed. On a `creating` record whose process is gone, `remove`
 completes the rollback instead. Its answer then says whether the branch was
 kept (`branchKept`, `branchKeptReason`).
+
+`remove` does not remove a tree under a running session. An instance is
+attached to the tree when its `instance.json` says `work: "attached"` and its
+`work` is a link to it ([`attached`](#attached--another-instances-tree)).
+When such an instance's session is running, or cannot be read, `remove`
+refuses with `E_CHILDREN_RUNNING` before it asks Git anything: nothing is
+removed and the record is kept. The message names each such instance and
+what was seen (an unread session is not called running), and gives the step:
+stop it (`oats instance stop <instance>`) or retire it, then run `remove`
+again. `remove` stops nobody, and no flag removes the tree anyway. An
+attached instance whose session is stopped does not refuse: the tree is
+removed, and the answer's `warnings` name the instance and its `work` link,
+which then points at a path that is gone. The instances looked at are the
+recorded children of the tree's owner, as its retire plan lists them, and
+those the plan lists as `ambiguous` (they record the owner as their parent
+under a name that is not unique): the link makes an instance attached, not
+its lineage. A tree that is already gone from disk is not checked.
 
 **Working in the tree.**
 

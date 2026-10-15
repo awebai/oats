@@ -163,7 +163,7 @@ test('Paths: a background repaint keeps the disclosure and a focused Copy inside
   assert.equal(u.document.activeElement, u.q('#split-right'), "focus leaves the Copy the closed disclosure hides, for the shell's fallback");
 });
 
-test('ahead/behind leave the Instance tab; the rail dot and the Developer tab thread count still follow the Git panel', t => {
+test('ahead/behind leave the Instance tab; the changes dot and the Developer tab thread count still follow the Git panel', t => {
   let hooks = null;
   const u = fixture(t, { git: (_host, h) => { hooks = h; return { update() {}, dispose() {} }; } });
   const subject = instance({ work: 'worktree', repoName: 'northwind', branch: 'feat/checkout', createdAt: '2026-09-30T10:00:00.000Z' });
@@ -174,7 +174,7 @@ test('ahead/behind leave the Instance tab; the rail dot and the Developer tab th
   const page = u.q('[data-context-page="instance"]');
   assert.doesNotMatch(page.textContent, /[↑↓]/, 'no ↑/↓ on the Instance tab');
   assert.equal(page.querySelector('.context-panel-ahead'), null);
-  assert.equal(u.q('.context-panel-dot').hidden, false, 'the rail dot is unchanged');
+  assert.equal(u.panel.state().changes, true, 'the changes state (the Show instance panel dot) is unchanged');
   assert.equal(u.tab('git').querySelector('.context-panel-tab-count').textContent, '2', 'the review-thread count is unchanged');
   assert.equal(u.tab('git').getAttribute('aria-label'), 'Developer, 2 unresolved review threads');
 });

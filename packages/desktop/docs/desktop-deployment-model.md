@@ -41,7 +41,7 @@ A deployment that is not observed says why in one sentence
 | The reason | The sentence |
 |---|---|
 | the kernel's (`origin: 'kernel'`), a message | `OATS answered with an error (<code>). It says: <message>` |
-| the kernel's, a message the display filter withholds | `OATS answered with an error (<code>). [Detail withheld]` |
+| the kernel's, a message the display filter withholds | `OATS answered with an error (<code>). [withheld]` |
 | the kernel's, no message to show | `OATS answered with an error (<code>).` |
 | the reader's own (no origin) | `<code>: <message>`, the reader's fixed sentence |
 | a missing feature | the feature and the client that needs it |
@@ -150,7 +150,7 @@ speaker's words, a space, and the text as one display line
 that filter: a row's `runtimeError`, a kept failure's message, and a
 reason's sentence when the reason carries an `origin`. A text of several
 lines is shown as one; a text the filter withholds (control characters, a
-credential's shape) reads "[Detail withheld]" alone, with no speaker in
+credential's shape) reads "[withheld]" alone, with no speaker in
 front; a text with nothing to show leaves the place saying what it said
 before for a row without one. The places: a roster row's title and
 description and its hover card's Status, the actions menu (its trigger,
@@ -195,7 +195,7 @@ Matching deployments into workspace views needs `workspace-identity`; without
 it each deployment keeps a view of its own under its deployment id, the switcher
 lists them as before (not under "Not matched to a workspace"), and the
 deployment list says why.
-`ACCEPT_RANGE` is `>=0.26.0 <0.56.0`: the floor is the first kernel the
+`ACCEPT_RANGE` is `>=0.26.0 <0.57.0`: the floor is the first kernel the
 feature gates above let through (a 0.25 kernel is refused by the locator and
 meets the "Compatible `oats` CLI required" card), the ceiling admits 0.27 (the harness rename, gated on feature
 `harness`) through 0.30 (team model v2, gated on feature `team-model-2`; the
@@ -218,7 +218,7 @@ trigger rows carry `description`, and `<kind> update <id> --description`
 sets one, feature `automation-descriptions`, which gates the summary
 writes) and 0.44 (launch-prompt answers: the spawn preview's optional
 `launchPromptAnswers`, `E_SPAWN_INCOMPLETE` details' optional `launchPrompts`
-and the `launch-prompt` instance event, all read as optional, no new gate; `launchPromptAnswers` and the event's `consentSource` come from 0.44 to 0.51 kernels only), 0.45 (`capabilities` on `oats souls --json` rows, feature `souls-capabilities`, which gates Capabilities' "Used by") and 0.46 (opt-in `oats inspect --soul --instructions` and `composedInstructions`, feature `soul-composed-instructions`, not read by the Desktop yet; no new gate), 0.47 (Desktop lifecycle interaction improvements with unchanged kernel contracts), 0.48 (conditional team default and `--no-default`, feature `teams-conditional-default`, not read by the Desktop yet; no new gate), 0.49 (the `worktree` hook event, feature `worktree-event`, and each host's kernel features on roster groups, feature `server-probe-features`, read where present; capability warnings and the new trigger fields are read as optional; no new gate on the band), 0.50 (capability trigger sources: a trigger test runs a source only with `--run-source`, feature `trigger-sources`, which gates the informed Test; no new gate on the band), 0.51 (one retire of an instance at a time: a second retire answers `E_LIFECYCLE_BUSY`, which the Desktop already words; `--detach-key` on `session attach`, feature `session-attach-detach-key`, not used by the Desktop; no new gate on the band), 0.52 (a stop holds the claim a retire holds, feature `lifecycle-claim-stop`: under it the Desktop reads who holds the claim, `error.details.holder`, on `E_LIFECYCLE_BUSY`; lifecycle answers carry kernel codes only, feature `lifecycle-kernel-codes`: under it a failed row's `stillRunning: []` says the harness exited; the kernel's own answer to Claude's development-channel prompt is read from the data, each field as optional and listed in the next paragraph, while the feature name `launch-prompt-dev-channel` itself is not read and gates nothing; `warnings` on schedule and trigger run records, feature `schedule-run-warnings`, are not read by the Desktop; no new gate on the band), 0.53 (a retire plan says as a fact whether `work/` is the instance's own tree, `facts.ownWorktree`, feature `retire-plan-own-worktree`: under it the key is required in a retire plan and a boolean, and the Retire dialog reads it for whose tree `work/` is, [Whose tree `work/` is](desktop-lifecycle-confirmations.md#whose-tree-work-is); no new gate on the band), and the `packages-no-approval` fence is the real
+and the `launch-prompt` instance event, all read as optional, no new gate; `launchPromptAnswers` and the event's `consentSource` come from 0.44 to 0.51 kernels only), 0.45 (`capabilities` on `oats souls --json` rows, feature `souls-capabilities`, which gates Capabilities' "Used by") and 0.46 (opt-in `oats inspect --soul --instructions` and `composedInstructions`, feature `soul-composed-instructions`, not read by the Desktop yet; no new gate), 0.47 (Desktop lifecycle interaction improvements with unchanged kernel contracts), 0.48 (conditional team default and `--no-default`, feature `teams-conditional-default`, not read by the Desktop yet; no new gate), 0.49 (the `worktree` hook event, feature `worktree-event`, and each host's kernel features on roster groups, feature `server-probe-features`, read where present; capability warnings and the new trigger fields are read as optional; no new gate on the band), 0.50 (capability trigger sources: a trigger test runs a source only with `--run-source`, feature `trigger-sources`, which gates the informed Test; no new gate on the band), 0.51 (one retire of an instance at a time: a second retire answers `E_LIFECYCLE_BUSY`, which the Desktop already words; `--detach-key` on `session attach`, feature `session-attach-detach-key`, not used by the Desktop; no new gate on the band), 0.52 (a stop holds the claim a retire holds, feature `lifecycle-claim-stop`: under it the Desktop reads who holds the claim, `error.details.holder`, on `E_LIFECYCLE_BUSY`; lifecycle answers carry kernel codes only, feature `lifecycle-kernel-codes`: under it a failed row's `stillRunning: []` says the harness exited; the kernel's own answer to Claude's development-channel prompt is read from the data, each field as optional and listed in the next paragraph, while the feature name `launch-prompt-dev-channel` itself is not read and gates nothing; `warnings` on schedule and trigger run records, feature `schedule-run-warnings`, are not read by the Desktop; no new gate on the band), 0.53 (a retire plan says as a fact whether `work/` is the instance's own tree, `facts.ownWorktree`, feature `retire-plan-own-worktree`: under it the key is required in a retire plan and a boolean, and the Retire dialog reads it for whose tree `work/` is, [Whose tree `work/` is](desktop-lifecycle-confirmations.md#whose-tree-work-is); no new gate on the band), 0.54 through 0.56 (no new gate on the band), and the `packages-no-approval` fence is the real
 gate.
 
 The launch-prompt readers also follow the contract of 0.52 (feature
@@ -435,7 +435,10 @@ answers the view that holds it; no `?ws=` answers the first view.
   the machine is uppercased, a path tail never is, since a path is
   case-sensitive) only when the view has two or more, and none for a deployment with no rows;
   with one it has no headings. Rows never repeat the workspace name, and a
-  row's identity line keeps its host.
+  row's identity line keeps its host. Rows, and the tree's clusters, stand
+  running, then unknown (`running` not a boolean), then stopped, by name
+  within each: one comparison, `byRuntimeState`
+  (`packages/client/instance-presentation.mjs`).
 
 ### A workspace's own machines
 
@@ -550,7 +553,7 @@ sentence already says what happens next, as for a timeout). The sentences:
   was last observed. OATS says: <the kernel's message>" It is `stale`. The
   Desktop's sentence comes first and the kernel's words after their
   speaker, as one display line. A message the display filter withholds reads
-  "[Detail withheld]" in its place, with no "OATS says:" in front; a
+  "[withheld]" in its place, with no "OATS says:" in front; a
   failure with no message reads the Desktop's sentence alone. A kept
   message that carries no speaker (the reader makes none today) stays inside the
   sentence as before, filtered the same way: "This deployment's last read
@@ -691,7 +694,8 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   terminal, Start…, the actions menu, the context panel's buttons, the start
   and restart dialog and route, launch configurations, inspection, lifecycle
   plans and applies, readiness, activity, Git and diff, and the wait for a
-  started or spawned instance's terminal. `savedRoute` (spawned from this
+  started or spawned instance's terminal. Forget… (below) is the one act it
+  does not gate. `savedRoute` (spawned from this
   machine) decides only when this computer's OATS predates 0.31 and reports no
   `addressable`: a row it spawned stays reachable through its saved route.
 - **Why a row can't open.** `rowReason(row)` in the same module is the one
@@ -703,6 +707,45 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   ([Who made a shown text](#who-made-a-shown-text)); a sentence written
   there carries none. The server label is the registration's label, else
   the server id.
+- **Forget a row its host no longer lists (#1131).** The one act on an
+  unaddressable row, offered only where `rowReason(row).key === 'missing'`:
+  the host was reached and did not list the saved route. A server that was
+  not reached, or a state that is unknown, offers nothing. It is on the
+  roster row's actions menu, as "Forget…" alone (`renderer/instance-actions.mjs`
+  with the shell's `openForget`; `packages/client/instance-acts.mjs` is
+  unchanged, so the terminal client is unaffected), and in the context panel
+  beside the remedy note. Both open `renderer/forget-dialog.mjs`, the
+  lifecycle confirmation's dialog without a plan. Forget sends the row's
+  `{server, instance}` to `POST /api/server-forget`
+  (`server/server-forget.mjs`). The backend runs it only for a row its held
+  roster shows gone (#1170): a held group of that server, answered at its last
+  read (`probe.ok`), lists that instance with `missingRemotely === true`. Any
+  other row, a group held through a failed read among them, is refused with
+  `E_FORGET_NOT_GONE` (409): nothing runs and no read starts, and the roster
+  is never read again to decide. The checks run in order: the body, the CLI
+  (`E_FEATURE`), the held row, one Forget per row at a time (`E_BUSY`). It
+  composes the argv of `oats server forget <server> --instance <instance>
+  --json` from those two values alone; the kernel's `home` and `target` never
+  leave the backend. The route answers as soon as the command's outcome is
+  known, and after every command, whatever it answered, it starts the remote
+  roster read that follows it (`refreshRemoteSnapshotAfter` in
+  `server/oats-web.mjs`: a read already in flight, whoever started it, began
+  before the command, so one more runs after it). The backend is that read's
+  one owner; the renderer issues none and never edits the view: the row leaves
+  the roster when the read lands, and a second Forget before then answers
+  `E_SNAPSHOT_UNKNOWN`. While busy the confirmation holds the window: every
+  keydown is its own (no shortcut runs behind it) and focus stays on its
+  status line. `<server>` below is the server label:
+  - forgotten: the status line says "Forgot `<instance>` on `<server>`." and
+    focus moves to the first row that followed it when the confirmation
+    opened and is still shown, else the roster;
+  - `E_SNAPSHOT_UNKNOWN`: "This computer had no saved route for `<instance>`
+    on `<server>`; nothing was changed.", focus as for forgotten;
+  - another refusal, or a request the backend refused without running
+    anything: "Couldn't forget `<instance>`." with the kernel's lines (or the
+    Desktop's own reason), focus back to the opener;
+  - no answer (a timeout, no envelope): "It is not known whether
+    `<instance>` was forgotten.", focus back to the opener.
 - **Admission.** `admitInstance` admits a remote selector only in its own
   remote deployment (the same server id in another group is another
   deployment), for a row that passes `canAddressRemote`, when this machine's
@@ -716,8 +759,9 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
   addressed by a bare `--instance`. A remote terminal is keyed
   `["remote", server, home]`.
 - **Deadlines.** A remote read or plan has 45 s at the CLI (ssh's 15 s connect
-  timeout plus the command) and 50 s at the renderer→main proxy; an apply keeps
-  its 600 s / 610 s.
+  timeout plus the command) and 50 s at the renderer→main proxy; an apply has no
+  deadline at the CLI, and the boundary waits 600 s for it (610 s at the proxy);
+  a start or restart has none either, and `cliStart` waits 60 s for it.
 - **Refusals.** A host refusal is relayed as `{code, message, detail, remote:
   true}` (`hostReason`): the kernel's code, a headline naming the server
   (`remoteHeadline`, the view's own sentence for codes outside its table), and
@@ -729,7 +773,7 @@ held), shown in its workspace's view; its rows carry `server`, `home`, and the k
 - **The display filter** (`packages/client/display-text.mjs`, `displayLine`) is the
   one way a refusal's `detail` reaches a view. Text that looks like a credential,
   or holds DEL or a C0 control character other than tab and line feed, is
-  withheld whole (`[Detail withheld]`), tested on the text as given, in time that
+  withheld whole (`[withheld]`), tested on the text as given, in time that
   grows with the text's length and not with its square
   (`packages/desktop/test/display-filter-time.test.mjs`). Otherwise it becomes one
   line: tab, line feed and the Unicode line and paragraph separators become a

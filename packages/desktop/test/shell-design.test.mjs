@@ -45,12 +45,14 @@ function domFixture(t) {
   dom.window.document.head.append(style);
   return dom;
 }
-function shell(t, shellSource = source) {
+function shell(t, shellSource = source, { storage = {}, gitPanel } = {}) {
   const dom = domFixture(t), document = dom.window.document;
+  // A machine's earlier preferences (the shell reads them while it builds).
+  for (const [key, value] of Object.entries(storage)) dom.window.localStorage.setItem(key, value);
   const loads = [], events = [], notices = [], offs = [];
   const c = {
     document, window: dom.window, localStorage: dom.window.localStorage,
-    NAV, shellIcon, createContextPanel, createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, workspace: "A", generation: 0, events, notices,
+    NAV, shellIcon, createContextPanel, createInstanceGitPanel: gitPanel ?? createInstanceGitPanel, createInstanceTeamsSection, createInstanceSoulSection, workspace: "A", generation: 0, events, notices,
     connectionGeneration: 0, subscribeConnections: () => () => {},
     connections: { close() {}, open: () => events.push(['connections']) }, lifecycleDialog: { close() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
@@ -82,8 +84,10 @@ function shell(t, shellSource = source) {
   const s = runInNewContext(`${panelSetup}\n${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden, applyChordTitles, contextPanel });`, withShellWindowGlobals(c));
   offs.push(onKeymapChange(s.applyChordTitles));
   t.after(() => s.contextPanel.dispose());
-  // Execute the production restore-button binding too.
-  runInNewContext(shellSource.match(/document\.getElementById\("sidebar-restore"\)\.addEventListener[^\n]+/)[0], c);
+  // Execute the production Show sidebar / Show instance panel bindings too.
+  const reopen = shellSource.match(/^document\.getElementById\("show-(?:sidebar|panel)"\)\.addEventListener[^\n]+/gm);
+  assert.equal(reopen?.length, 2, "both reopen controls are wired");
+  for (const line of reopen) runInNewContext(line, c);
   t.after(() => { offs.forEach(off => off()); setActiveContexts(new Set()); });
   return { ...s, c, document, loads, events, notices,
     switchTo(workspace) { c.workspace = workspace; c.generation++; },
@@ -180,16 +184,20 @@ test("footer has one honest chooser and five permanently named tools, all dispat
   assert.match(source, /label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail\("app.chooseSoul"\), run: \(\) => runAction\("app.chooseSoul"\)/);
 });
 
-test("hide/restore returns focus to visible controls and aria-expanded follows sidebar state", t => {
+test("hide/show returns focus to visible controls and aria-expanded follows sidebar state", t => {
   const s = shell(t), q = id => s.document.getElementById(id);
+  assert.equal(q("show-sidebar").hidden, true, "Show sidebar appears only while the sidebar is away");
   q("sidebar-toggle").focus(); q("sidebar-toggle").click();
   assert.equal(q("app").classList.contains("sidebar-hidden"), true);
-  assert.equal(s.document.activeElement, q("sidebar-restore"));
+  assert.equal(s.document.activeElement, q("show-sidebar"), "hiding with focus inside moves focus to Show sidebar");
+  assert.equal(q("show-sidebar").hidden, false);
   assert.equal(q("sidebar-toggle").getAttribute("aria-expanded"), "false");
-  assert.equal(q("sidebar-restore").getAttribute("aria-expanded"), "false");
-  q("sidebar-restore").click();
+  assert.equal(q("show-sidebar").getAttribute("aria-expanded"), "false");
+  assert.equal(q("show-sidebar").getAttribute("aria-controls"), "sidebar");
+  q("show-sidebar").click();
   assert.equal(q("app").classList.contains("sidebar-hidden"), false);
-  assert.equal(s.document.activeElement, q("sidebar-toggle"));
+  assert.equal(q("show-sidebar").hidden, true);
+  assert.equal(s.document.activeElement, q("sidebar-toggle"), "never <body>: the sidebar's own toggle");
   assert.equal(q("sidebar-toggle").getAttribute("aria-expanded"), "true");
 });
 
@@ -216,11 +224,11 @@ test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on m
   for (const [key, action] of [["f", "sidebar.focusFilter"], ["n", "app.chooseSoul"]]) {
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), action);
   }
-  // Linux/Windows: Ctrl+F outside the terminal; "Spawn instance" is Ctrl+Shift+N, which also
-  // works inside it (spec F) while plain Ctrl+N stays the program's.
-  assert.equal(matchEvent({ key: "f", ctrlKey: true }, { isMac: false, insideTerminal: false }), "sidebar.focusFilter");
-  assert.equal(matchEvent({ key: "n", ctrlKey: true }, { isMac: false, insideTerminal: false }), null);
+  // Linux/Windows: the filter is Ctrl+Shift+F and "Spawn instance" Ctrl+Shift+N, both inside the
+  // terminal and out, while plain Ctrl+F and Ctrl+N stay the program's.
+  for (const key of ["f", "n"]) assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), null);
   for (const insideTerminal of [false, true]) {
+    assert.equal(matchEvent({ key: "F", ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), "sidebar.focusFilter");
     assert.equal(matchEvent({ key: "N", ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), "app.chooseSoul");
   }
 });
@@ -396,19 +404,22 @@ test('the bottom summary bar is gone; the tab bar keeps only the two split butto
   // v4.1: no status bar under the editor groups (no Details, no Focus mode, no facts strip).
   for (const id of ['context-tools', 'context-status', 'focus-mode-toggle']) assert.equal(q(id), null, id);
   assert.equal(s.document.querySelector('#main > footer'), null);
-  assert.deepEqual([...q('main').children].map(el => el.id), ['tabstrip', 'stagehost', 'tabhost']);
-  // Spec F: after the tabs, only split right and split down. Closing the split and the instance panel live on
-  // their chords and the palette; the panel keeps its own collapse control.
+  // Spec B: Show sidebar first and Show instance panel last, the Main region's tab order.
+  assert.deepEqual([...q('main').children].map(el => el.id), ['show-sidebar', 'tabstrip', 'stagehost', 'tabhost', 'show-panel']);
+  // Spec F: after the tabs, only split right and split down. Closing the split lives on its chord and the
+  // palette; the instance panel on its chord, the palette, Show instance panel and its own close button.
   assert.deepEqual([...q('tab-actions').children].map(el => el.id || el.className), ['split-right', 'split-down']);
   for (const id of ['panel-toggle', 'split-close']) assert.equal(q(id), null, id);
   assert.equal(s.document.querySelector('.tab-actions-sep'), null);
   assert.doesNotMatch(source, /panel-toggle|split-close/, 'no wiring is left for the removed buttons');
   panel.setContext({ workspace: 'A', instance: { instance: 'selected', home: '/A/selected' }, key: 'exact:A:selected' });
+  assert.equal(q('context-panel').hidden, true, 'selecting an instance never opens the panel');
   const before = s.c.tabOpenIntents.begin(); runAction('panel.toggle');
   assert.equal(before(), false, 'panel.toggle supersedes pending opens');
-  assert.equal(q('context-panel').classList.contains('is-collapsed'), true);
+  assert.equal(q('context-panel').hidden, false);
   runAction('panel.toggle');
-  assert.equal(q('context-panel').classList.contains('is-collapsed'), false);
+  assert.equal(q('context-panel').hidden, true);
+  runAction('panel.toggle');
   // Focus mode: registry action (and palette, below) only. Focus leaving the hidden sidebar lands on the active tab.
   const trigger = s.document.createElement('button'); q('tabbar').append(trigger); s.c.activeTrigger = trigger;
   q('sidebar-toggle').focus();
@@ -422,7 +433,7 @@ test('the bottom summary bar is gone; the tab bar keeps only the two split butto
   assert.equal(panel.isFocusMode(), false); assert.equal(q('context-panel').hidden, false);
 });
 
-test('the restore edge preserves a visible exit from focus mode; panel.toggle leaves it and shows the panel', t => {
+test('Show sidebar is focus mode\'s visible exit; panel.toggle leaves it and shows the panel', t => {
   const s = shell(t), q = id => s.document.getElementById(id), panel = s.contextPanel;
   const shown = el => { for (let node = el; node; node = node.parentElement) {
     if (node.hidden || node.inert || s.document.defaultView.getComputedStyle(node).display === 'none') return false; } return true; };
@@ -432,25 +443,27 @@ test('the restore edge preserves a visible exit from focus mode; panel.toggle le
   q('tabbar').append(s.document.createElement('span')); q('tab-actions').hidden = false;
   q('sidebar-toggle').focus(); runAction('app.focusMode'); assert.equal(panel.isFocusMode(), true);
   // No active trigger: focus leaving the hidden sidebar lands on a stable visible control, never <body>.
-  assert.equal(s.document.activeElement, q('sidebar-restore'), 'no active trigger: the restore edge takes focus');
-  assert.ok(shown(q('sidebar-restore')), 'the restore edge and its ancestors stay visible by shipped CSS');
-  assert.equal(q('sidebar-restore').getAttribute('aria-expanded'), 'false');
-  // panel.toggle (its chord, the palette) leaves focus mode AND shows the panel, whatever its collapse preference was.
+  assert.equal(s.document.activeElement, q('show-sidebar'), 'no active trigger: Show sidebar takes focus');
+  assert.ok(shown(q('show-sidebar')), 'Show sidebar and its ancestors stay visible by shipped CSS');
+  assert.equal(q('show-sidebar').getAttribute('aria-expanded'), 'false');
+  assert.ok(shown(q('show-panel')), 'with something to show, Show instance panel is there in focus mode too');
+  // panel.toggle (its chord, the palette, Show instance panel) leaves focus mode AND shows the panel, whatever its preference was.
   const pending = s.c.tabOpenIntents.begin(); runAction('panel.toggle');
   assert.equal(pending(), false); assert.equal(panel.isFocusMode(), false);
-  assert.equal(q('context-panel').hidden, false); assert.equal(q('context-panel').classList.contains('is-collapsed'), false);
+  assert.equal(q('context-panel').hidden, false); assert.equal(shown(q('show-panel')), false);
   assert.equal(q('app').classList.contains('focus-mode'), false);
   assert.equal(q('sidebar-toggle').getAttribute('aria-expanded'), 'true', 'the sidebar is back too');
-  // On a stage (no terminal tab, no panel content) the restore edge is the exit.
+  // On a stage (no terminal tab, no panel content) Show sidebar is the exit; Show instance panel is not shown.
   panel.setContext({ workspace: 'A' }); q('tab-actions').hidden = true;
   q('sidebar-toggle').focus(); runAction('app.focusMode'); assert.equal(panel.isFocusMode(), true);
-  assert.equal(s.document.activeElement, q('sidebar-restore'), 'on a stage focus lands on the restore edge');
-  assert.ok(shown(q('sidebar-restore'))); assert.equal(shown(q('sidebar')), false);
-  q('sidebar-restore').click();
-  assert.equal(panel.isFocusMode(), false); assert.ok(shown(q('sidebar'))); assert.equal(shown(q('sidebar-restore')), false);
+  assert.equal(s.document.activeElement, q('show-sidebar'), 'on a stage focus lands on Show sidebar');
+  assert.ok(shown(q('show-sidebar'))); assert.equal(shown(q('sidebar')), false); assert.equal(shown(q('show-panel')), false);
+  q('show-sidebar').click();
+  assert.equal(panel.isFocusMode(), false); assert.ok(shown(q('sidebar'))); assert.equal(shown(q('show-sidebar')), false);
+  assert.equal(s.document.activeElement, q('sidebar-toggle'));
 });
 
-test('focus fallback prefers a shown active tab, then the sidebar toggle or restore edge; never <body>', t => {
+test('focus fallback prefers a shown active tab, then the sidebar toggle, Show sidebar or Show instance panel; never <body>', t => {
   const s = shell(t), q = id => s.document.getElementById(id);
   const target = runInNewContext(`${fn('stableFocusTarget')}\nstableFocusTarget`, s.c);
   const trigger = s.document.createElement('button'); q('tabbar').append(trigger);
@@ -459,7 +472,7 @@ test('focus fallback prefers a shown active tab, then the sidebar toggle or rest
   s.contextPanel.setContext({ workspace: 'A', instance: { instance: 'selected', home: '/A/selected' }, key: 'exact:A:selected' });
   q('tab-actions').hidden = false; assert.equal(target(), q('sidebar-toggle'), 'the split buttons are never a fallback');
   s.c.activeTrigger = null; s.contextPanel.setContext({ workspace: 'A' }); s.setSidebarHidden(true);
-  assert.equal(target(), q('sidebar-restore'), 'sidebar hidden: the restore edge');
+  assert.equal(target(), q('show-sidebar'), 'sidebar hidden: Show sidebar');
 });
 
 test('a focus-mode change made after focus was lost (the palette removed its input) lands on a visible control, never <body>', t => {
@@ -485,9 +498,10 @@ test('the palette keeps focus mode reachable without the bar and names the insta
   });
   assert.equal(commands.some(item => /context panel/i.test(item.label)), false, 'the panel is the instance panel now');
   const panelCommand = commands.find(item => item.label === 'Instance panel: show / hide'); assert.ok(panelCommand);
-  assert.equal(panelCommand.detail(), 'Ctrl+I');
+  assert.equal(panelCommand.detail(), 'Ctrl+Shift+I');
   s.contextPanel.setContext({ workspace: 'A', instance: { instance: 'selected', home: '/A/selected' }, key: 'exact:A:selected' });
-  panelCommand.run(); assert.equal(s.document.getElementById('context-panel').classList.contains('is-collapsed'), true);
+  assert.equal(s.document.getElementById('context-panel').hidden, true, 'closed until the user opens it');
+  panelCommand.run(); assert.equal(s.document.getElementById('context-panel').hidden, false);
   const focusCommand = commands.find(item => item.label === 'Focus mode: toggle'); assert.ok(focusCommand);
   assert.equal(focusCommand.detail(), '', 'no default chord');
   focusCommand.run(); assert.equal(s.contextPanel.isFocusMode(), true);
@@ -502,15 +516,129 @@ for (const hidden of [false, true]) test(`focus mode overrides but restores raw 
   runAction('app.focusMode');
   assert.equal(q('app').classList.contains('sidebar-hidden'), hidden, 'temporary override never rewrites raw CSS preference');
   assert.equal(s.c.localStorage.getItem(key), stored);
-  assert.equal(q('sidebar-restore').getAttribute('aria-expanded'), 'false');
-  assert.equal(s.document.defaultView.getComputedStyle(q('sidebar-restore')).display, 'flex', 'the restore edge is focus mode\'s visible exit');
+  assert.equal(q('show-sidebar').getAttribute('aria-expanded'), 'false');
+  assert.equal(q('show-sidebar').hidden, false, 'Show sidebar is focus mode\'s visible exit');
   runAction('app.focusMode');
   assert.equal(q('app').classList.contains('sidebar-hidden'), hidden);
   assert.equal(s.c.localStorage.getItem(key), hidden ? '1' : null);
   assert.equal(q('sidebar-toggle').getAttribute('aria-expanded'), String(!hidden));
   assert.equal(s.document.defaultView.getComputedStyle(q('sidebar')).display, hidden ? 'none' : 'flex');
-  assert.equal(s.document.defaultView.getComputedStyle(q('sidebar-restore')).display, hidden ? 'flex' : 'none');
-  assert.equal(q('context-panel').classList.contains('is-collapsed'), true, 'focus override also preserves panel collapse preference');
+  assert.equal(q('show-sidebar').hidden, !hidden);
+  assert.equal(q('context-panel').hidden, true, 'focus override also preserves the closed panel');
+  assert.equal(s.c.localStorage.getItem('oats-desktop-instance-panel-open'), null);
+});
+
+// ── Spec B: closed sidebars, one per-machine instance-panel preference, two Show controls.
+const PANEL_OPEN_KEY = 'oats-desktop-instance-panel-open';
+const terminalOf = (home, extra = {}) => ({ workspace: 'A', instance: { instance: home.split('/').pop(), agent: 'dev', agentsRoot: '/A/agents', home, ...extra }, key: home });
+
+test('Spec B: selecting instances never opens the panel; open/closed is one per-machine preference that survives a new window', t => {
+  const s = shell(t), q = id => s.document.getElementById(id), store = () => s.c.localStorage.getItem(PANEL_OPEN_KEY);
+  s.contextPanel.setContext(terminalOf('/A/one'));
+  assert.equal(q('context-panel').hidden, true, 'preference unset: an instance terminal opens closed');
+  s.contextPanel.setContext(terminalOf('/A/two')); assert.equal(q('context-panel').hidden, true, 'another instance: still closed');
+  assert.equal(store(), null);
+  runAction('panel.toggle'); assert.equal(q('context-panel').hidden, false); assert.equal(store(), '1');
+  s.contextPanel.setContext(terminalOf('/A/one')); assert.equal(q('context-panel').hidden, false, 'open follows every instance');
+  q('context-panel').querySelector('.context-panel-collapse').click();
+  assert.equal(q('context-panel').hidden, true, "the panel's close button"); assert.equal(store(), null, 'closed is the absent default');
+  q('show-panel').click(); assert.equal(q('context-panel').hidden, false, 'Show instance panel'); assert.equal(store(), '1');
+  // A new window on this machine reads the preference; an unset machine opens closed.
+  const again = shell(t, source, { storage: { [PANEL_OPEN_KEY]: '1' } });
+  again.contextPanel.setContext(terminalOf('/A/one'));
+  assert.equal(again.document.getElementById('context-panel').hidden, false, 'open survives a re-created panel');
+  const fresh = shell(t);
+  fresh.contextPanel.setContext(terminalOf('/A/one'));
+  assert.equal(fresh.document.getElementById('context-panel').hidden, true);
+});
+
+test('Spec B: a closed panel and a hidden sidebar take no width and leave no rail or edge, side by side and stacked', t => {
+  const s = shell(t), q = id => s.document.getElementById(id), css = readFileSync(new URL('../renderer/shell.css', import.meta.url), 'utf8');
+  const style = el => s.document.defaultView.getComputedStyle(el);
+  s.contextPanel.setContext(terminalOf('/A/one')); s.setSidebarHidden(true);
+  assert.equal(style(q('sidebar')).display, 'none'); assert.equal(style(q('context-panel')).display, 'none');
+  assert.equal(s.document.querySelector('#sidebar-restore, .context-panel-rail, [data-context-rail], .context-panel-expand'), null, 'no strip, rail or edge');
+  for (const id of ['show-sidebar', 'show-panel']) {
+    assert.equal(q(id).parentElement.id, 'main', `${id} sits in the main area`); assert.equal(style(q(id)).position, 'absolute', `${id} overlays the top bar`);
+  }
+  // Stacked (the narrow layout): nothing there gives the panel back a rail or overrides its hidden rule.
+  const narrow = css.slice(css.indexOf('@media (max-width: 1000px)'), css.indexOf('}\n}', css.indexOf('@media (max-width: 1000px)')));
+  assert.doesNotMatch(narrow, /rail|is-collapsed|sidebar-restore/);
+  assert.match(contextPanelCSS, /#context-panel\.context-panel\[hidden\][^{]*\{ display:none !important; \}/, 'hidden wins in every layout');
+});
+
+test('Spec B: Show instance panel appears only while the panel is closed with something to show, and opens it into its selected tab', t => {
+  const s = shell(t), q = id => s.document.getElementById(id), show = q('show-panel');
+  assert.equal(show.hidden, true, 'nothing to show: no control');
+  assert.equal(show.dataset.action, 'panel.toggle'); assert.equal(show.getAttribute('aria-controls'), 'context-panel');
+  assert.equal(show.getAttribute('aria-expanded'), 'false');
+  s.contextPanel.setContext(terminalOf('/A/one'));
+  assert.equal(show.hidden, false, 'closed with an instance terminal: shown');
+  assert.equal(show.getAttribute('aria-label'), 'Show instance panel'); assert.match(show.title, /^Show instance panel/);
+  show.focus(); show.click();
+  assert.equal(q('context-panel').hidden, false); assert.equal(show.hidden, true, 'open: the control goes away');
+  const selected = q('context-panel').querySelector('[data-context-tab][aria-selected="true"]');
+  assert.ok(selected); assert.equal(s.document.activeElement, selected, "opening by its control focuses the panel's selected tab");
+  // Closing with focus inside: focus goes to Show instance panel, back in its place.
+  q('context-panel').querySelector('.context-panel-collapse').focus(); runAction('panel.toggle');
+  assert.equal(q('context-panel').hidden, true); assert.equal(show.hidden, false);
+  assert.equal(s.document.activeElement, show, 'closing with focus inside lands on Show instance panel');
+  // Its chord pressed while it has focus: the control hides, focus follows into the panel, never <body>.
+  runAction('panel.toggle');
+  assert.equal(show.hidden, true); assert.equal(s.document.activeElement, q('context-panel').querySelector('[data-context-tab][aria-selected="true"]'));
+  // Back on a stage with no panel content: no control.
+  runAction('panel.toggle'); s.contextPanel.setContext({ workspace: 'A' }); assert.equal(show.hidden, true);
+});
+
+test('Spec B: a chord pressed elsewhere opens or closes the panel without taking focus', t => {
+  const s = shell(t), q = id => s.document.getElementById(id);
+  const terminal = s.document.createElement('textarea'); q('tabhost').append(terminal);
+  s.contextPanel.setContext(terminalOf('/A/one')); terminal.focus();
+  runAction('panel.toggle'); assert.equal(q('context-panel').hidden, false); assert.equal(s.document.activeElement, terminal);
+  runAction('panel.toggle'); assert.equal(q('context-panel').hidden, true); assert.equal(s.document.activeElement, terminal);
+  runAction('sidebar.toggle'); assert.equal(q('app').classList.contains('sidebar-hidden'), true); assert.equal(s.document.activeElement, terminal);
+  runAction('sidebar.toggle'); assert.equal(s.document.activeElement, terminal);
+});
+
+test('Spec B: Show instance panel carries the Developer change dot and says so in its name', t => {
+  let hooks = null;
+  const s = shell(t, source, { gitPanel: (_parent, focus) => { hooks = focus; return { update() {}, dispose() {} }; } });
+  const show = s.document.getElementById('show-panel'), dot = show.querySelector('.main-edge-dot');
+  const selected = terminalOf('/A/one'); s.contextPanel.setContext(selected);
+  const identity = JSON.stringify(['A', selected.key, selected.instance.home, 'dev', '/A/agents', null, null]);
+  assert.equal(dot.hidden, true); assert.equal(dot.getAttribute('aria-hidden'), 'true');
+  hooks.onObservation({ identity, connection: 0, changed: true });
+  assert.equal(dot.hidden, false); assert.equal(s.contextPanel.state().changes, true);
+  assert.equal(show.getAttribute('aria-label'), 'Show instance panel, Developer has changes');
+  assert.match(show.title, /^Show instance panel, Developer has changes/, 'the tooltip says it too, with the live chord');
+  hooks.onObservation({ identity, connection: 0, changed: false });
+  assert.equal(dot.hidden, true); assert.equal(show.getAttribute('aria-label'), 'Show instance panel');
+  hooks.onObservation({ identity: JSON.stringify(['A', '/A/two']), connection: 0, changed: true });
+  assert.equal(dot.hidden, true, "another instance's read marks nothing");
+});
+
+// Lead's ruling: a deliberate exception to point 5 ("hiding the sidebar with focus in it moves focus
+// to Show sidebar"). Entering focus mode says "work in the content", so focus goes to the active tab.
+test('Spec B exception to point 5: entering focus mode from the sidebar focuses the active tab, not Show sidebar; sidebar.toggle still does', t => {
+  const s = shell(t), q = id => s.document.getElementById(id);
+  const trigger = s.document.createElement('button'); q('tabbar').append(trigger); s.c.activeTrigger = trigger;
+  q('sidebar-toggle').focus(); runAction('app.focusMode');
+  assert.equal(s.contextPanel.isFocusMode(), true); assert.equal(q('show-sidebar').hidden, false);
+  assert.equal(s.document.activeElement, trigger, 'focus mode: the active tab, the content it is for');
+  runAction('app.focusMode'); q('sidebar-toggle').focus(); runAction('sidebar.toggle');
+  assert.equal(s.document.activeElement, q('show-sidebar'), 'plain sidebar.toggle: Show sidebar');
+});
+
+test('Spec B: the soul inspector keeps opening on soul selection, whatever the instance preference', t => {
+  const s = shell(t), q = id => s.document.getElementById(id), owner = {};
+  const inspector = s.document.createElement('section'); inspector.append(s.document.createElement('header'));
+  s.contextPanel.setContext({ workspace: 'A' }); // the Workspace stage of workspace A, before a soul is selected
+  const lease = s.contextPanel.attach(owner, inspector);
+  s.contextPanel.setContext({ workspace: 'A', owner }); lease.setPresent(true);
+  assert.equal(q('context-panel').hidden, false, 'a selected soul shows its inspector'); assert.equal(lease.isVisible(), true);
+  assert.equal(q('show-panel').hidden, true);
+  assert.equal(s.c.localStorage.getItem(PANEL_OPEN_KEY), null, 'the instance preference is untouched');
+  s.contextPanel.setContext(terminalOf('/A/one')); assert.equal(q('context-panel').hidden, true, 'an instance terminal still opens closed');
 });
 
 test('focusRoster exits focus mode, reveals the sidebar and focuses its filter through the registered command', t => {
@@ -525,19 +653,28 @@ test('focusRoster exits focus mode, reveals the sidebar and focuses its filter t
   assert.equal(s.document.activeElement, s.document.querySelector('.ctx-filter'));
 });
 
-test('panel.toggle defaults to Mod+I (no conflict), focus mode has no default, and neither captures Linux terminal bytes', t => {
+test('panel.toggle defaults to ⌘I / Ctrl+Shift+I (no conflict) and fires in a terminal; focus mode has no default and does not', t => {
   shell(t);
-  assert.equal(DEFAULT_KEYMAP['panel.toggle'], 'Mod+I'); assert.equal(getBinding('panel.toggle'), 'Mod+I');
-  assert.deepEqual(Object.entries(DEFAULT_KEYMAP).filter(([, chord]) => chord === 'Mod+I').map(([id]) => id), ['panel.toggle']);
-  assert.equal(matchEvent({ key: 'i', ctrlKey: true }, { isMac: false, insideTerminal: false }), 'panel.toggle');
-  assert.equal(matchEvent({ key: 'i', ctrlKey: true }, { isMac: false, insideTerminal: true }), null, 'Ctrl+I (Tab) stays with the program in a Linux terminal');
+  assert.deepEqual(DEFAULT_KEYMAP['panel.toggle'], { mac: 'Mod+I', other: 'Ctrl+Shift+I' });
+  assert.equal(getBinding('panel.toggle', true), 'Mod+I'); assert.equal(getBinding('panel.toggle', false), 'Ctrl+Shift+I');
+  for (const isMac of [true, false]) {
+    const chord = getBinding('panel.toggle', isMac);
+    assert.deepEqual(listActions().filter(a => a.id !== 'panel.toggle' && getBinding(a.id, isMac) === chord).map(a => a.id), [], `mac=${isMac}: ${chord} is the panel's alone`);
+  }
+  assert.equal(TERMINAL_ALLOWLIST.includes('panel.toggle'), true);
+  // Linux/Windows: Ctrl+Shift+I (e.key "I") inside the terminal and out; plain Ctrl+I (Tab) is the program's everywhere.
+  for (const insideTerminal of [false, true]) {
+    assert.equal(matchEvent({ key: 'I', ctrlKey: true, shiftKey: true }, { isMac: false, insideTerminal }), 'panel.toggle');
+    assert.equal(matchEvent({ key: 'i', ctrlKey: true }, { isMac: false, insideTerminal }), null, 'Ctrl+I (Tab) stays with the program');
+  }
   assert.equal(matchEvent({ key: 'i', metaKey: true }, { isMac: true, insideTerminal: true }), 'panel.toggle');
   assert.equal(matchEvent({ key: 'i', metaKey: true, altKey: true }, { isMac: true, insideTerminal: false }), null, '⌥⌘I (the dev tools) is not this action');
   assert.equal(DEFAULT_KEYMAP['app.focusMode'], undefined); assert.equal(getBinding('app.focusMode'), null);
-  for (const [id, key] of [['panel.toggle', 'j'], ['app.focusMode', 'u']]) {
-    assert.equal(TERMINAL_ALLOWLIST.includes(id), false);
+  // A rebind keeps each action's terminal policy (by id): the panel's fires in a Linux terminal, focus mode's does not.
+  for (const [id, key, inLinuxTerminal] of [['panel.toggle', 'j', 'panel.toggle'], ['app.focusMode', 'u', null]]) {
+    assert.equal(TERMINAL_ALLOWLIST.includes(id), inLinuxTerminal !== null);
     t.after(() => resetBinding(id)); setBinding(id, `Mod+${key.toUpperCase()}`);
-    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: true }), null);
+    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: true }), inLinuxTerminal);
     assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), id);
     assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), id);
   }

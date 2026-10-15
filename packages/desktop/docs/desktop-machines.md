@@ -67,6 +67,9 @@ no Machines box (`machinesGated`, `awebConnectGated` in
   <id> --install-aw --json` (oats.aweb messaging only, `E_NOT_AWEB`). One run
   per machine at a time (`E_BUSY`, 409). The envelope is relayed as the CLI
   printed it.
+- The remote roster reads the machines of the workspaces the open windows show
+  (`desktop-load-path.md`, #1124): a machine registered for a workspace no
+  window shows is not probed.
 - After a remove or connect that answered `ok`, the remote roster is read at
   once, so the view gains or loses that deployment.
 - Every value is held to the kernel's rules before any argv is built

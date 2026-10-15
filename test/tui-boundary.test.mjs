@@ -74,7 +74,7 @@ const TAKEN = Object.freeze({
   "deployment-observer.mjs": ["createDeploymentObserver", "mapBounded", "MAX_DEPLOYMENT_OBSERVATIONS"],
   "refresh-loop.mjs": ["createRefreshLoop"],
   "deployment-panel.mjs": ["rosterRows", "livenessInput", "livenessAnswers", "panelInstances", "pendingEntry", "failedEntry", "observedEntry"],
-  "panel-views.mjs": ["panelData", "cliReadsRemotes", "workspaceChoices", "viewModel"],
+  "panel-views.mjs": ["panelData", "cliReadsRemotes", "workspaceChoices", "viewModel", "deployments"],
   "remote-roster.mjs": ["remoteRosterState"],
   "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"],
   "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
@@ -83,7 +83,14 @@ const TAKEN = Object.freeze({
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
   "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingBelowText"],
-  "instance-acts.mjs": ["instanceActs"],
+  "instance-acts.mjs": ["instanceActs", "openAct"],
+  "session-attach.mjs": ["sessionAttachArgv", "prepareRemoteTerm", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
+  "attach-exit.mjs": ["attachExit"],
+  "kernel-lines.mjs": ["kernelLines"],
+  "instance-lifecycle.mjs": ["createLifecycleBoundary"],
+  "lifecycle-confirmation.mjs": ["createLifecycleConfirmation"],
+  "session-start.mjs": ["startGate", "startInstance"],
+  "launch-prompt-outcome.mjs": ["retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
   "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
 });
@@ -145,13 +152,23 @@ test("who made a row's text is said by the shared home: no module of packages/tu
     for (const name of speakers) assert.doesNotMatch(source, new RegExp(`["'\`]${name}["'\`]`), `${path} holds the speaker "${name}" as a string`);
     for (const words of leads) assert.equal(source.includes(words), false, `${path} holds the words "${words}"`);
   }
-  // The mark is a value passed on, never one the TUI looks into: it stands in one place, as the
-  // argument of originLead. A reason's `origin` is asked only whether it is there.
+  // The mark is a value passed on, never one the TUI looks into: it stands in one place, handed to
+  // the model's `spoken`, which hands it to originLead and does nothing else with it (the detail
+  // and the line after an open say a text from outside the same way). A reason's `origin` is asked
+  // only whether it is there, or handed on to `spoken` beside that answer.
   const marks = lib.flatMap((path) => [...code(read(path)).matchAll(/[^\n]*\bruntimeErrorOrigin\b[^\n]*/g)].map((match) => [path, match[0].trim()]));
   assert.deepEqual(marks.map(([path]) => path), ["packages/tui/lib/model.mjs"], "the mark is read in the model, once");
-  assert.match(marks[0][1], /\boriginLead\(row\.runtimeErrorOrigin, TERMS\)/);
+  assert.match(marks[0][1], /\bspoken\(row\.runtimeError, row\.runtimeErrorOrigin, vouched\)/);
   assert.equal(marks[0][1].match(/\bruntimeErrorOrigin\b/g).length, 1);
-  for (const path of lib) for (const use of code(read(path)).matchAll(/\.origin\b(.{0,16})/g)) assert.match(use[1], /^ === undefined\b/, `${path} looks into a reason's origin: .origin${use[1]}`);
+  const saying = /\nfunction spoken\(value, origin, vouched\) \{\n([\s\S]*?)\n\}/.exec(code(read("packages/tui/lib/model.mjs")));
+  assert.ok(saying, "lib/model.mjs has spoken(value, origin, vouched)");
+  assert.deepEqual(saying[1].match(/\borigin\b[^\n]{0,8}/g), ["origin, TERMS)"], "spoken hands its mark to originLead and to nothing else");
+  assert.match(saying[1], /\boriginLead\(origin, TERMS\)/);
+  const handedOn = "spoken(reason.sentence, reason.origin, reason.origin === undefined)";
+  for (const path of lib) {
+    const source = code(read(path));
+    for (const use of source.replaceAll(handedOn, "").matchAll(/\.origin\b(.{0,16})/g)) assert.match(use[1], /^ === undefined\b/, `${path} looks into a reason's origin: .origin${use[1]}`);
+  }
 });
 
 test("lib/read.mjs gives the shared observer no reader of its own: the one observer of the package is handed the shared cliDeploymentRead, so a failed read has the same reasons as in the Desktop", () => {
@@ -213,31 +230,45 @@ test("only term/screen.mjs and term/tty.mjs can produce an ESC byte: no other sh
 test("the views are pure: they import only the TUI's own text, style and action modules, and name no IO, clock or process", () => {
   const views = filesUnder("packages/tui/lib/views");
   assert.equal(views.length >= 2, true);
-  // The five views and the window they share; the switcher of workspaces is held to the rule like the rest.
-  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "scroll.mjs", "switcher.mjs"]);
+  // The six views and the window they share; the switcher of workspaces and the confirmation of an act are held to the rule like the rest.
+  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "scroll.mjs", "switcher.mjs"]);
   for (const path of views) {
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);
   }
 });
 
-test("this version only reads: lib/read.mjs alone starts a process, lib/read.mjs and lib/config.mjs alone read the file system, and no shipped module can write, remove or rename a file", () => {
+test("lib/read.mjs starts the reads and the changes and lib/open.mjs the kernel's viewer, and no other module starts a process; lib/read.mjs and lib/config.mjs alone read the file system, and only lib/read.mjs writes a file: a change's output, in the run's private directory, which it removes", () => {
   const builtins = (path) => staticImports(read(path)).filter((name) => name.startsWith("node:"));
   const users = (name) => TUI_SOURCES.filter((path) => builtins(path).includes(name));
-  assert.deepEqual(users("node:child_process"), ["packages/tui/lib/read.mjs"]);
+  assert.deepEqual(users("node:child_process"), ["packages/tui/lib/open.mjs", "packages/tui/lib/read.mjs"]);
   assert.deepEqual(users("node:fs"), ["packages/tui/lib/config.mjs", "packages/tui/lib/read.mjs"]);
   assert.deepEqual(users("node:fs/promises"), []);
   // What the two take from node:fs is named, and each name only reads. `opendirSync` opens a folder
   // to list it (the look inside ~/Agents for the switcher): what it answers can be read and closed,
   // and has no way to change the folder.
-  const READS = ["closeSync", "lstatSync", "opendirSync", "openSync", "readSync", "realpathSync", "statSync"];
+  const READS = ["closeSync", "fstatSync", "lstatSync", "opendirSync", "openSync", "readSync", "realpathSync", "statSync"];
+  // A change (a stop or retire apply, a start) writes its output to two files of the run's own
+  // private directory, never to a pipe (Spec 5): lib/read.mjs makes that directory, and removes
+  // each file and the directory. Nothing else of node:fs can change a file.
+  const CHANGE_FILES = ["mkdtempSync", "rmdirSync", "unlinkSync"];
   for (const path of users("node:fs")) {
     const taken = code(read(path)).match(/import\s*\{([^}]*)\}\s*from\s*"node:fs"/);
     assert.ok(taken, `${path} names what it takes from node:fs`);
-    for (const name of taken[1].split(",").map((part) => part.trim().split(/\s+as\s+/)[0]).filter(Boolean)) assert.ok(READS.includes(name), `${path} takes ${name} from node:fs`);
+    for (const name of taken[1].split(",").map((part) => part.trim().split(/\s+as\s+/)[0]).filter(Boolean)) {
+      assert.ok(READS.includes(name) || (path === "packages/tui/lib/read.mjs" && CHANGE_FILES.includes(name)), `${path} takes ${name} from node:fs`);
+    }
   }
-  // A file is opened for reading only: no flag is ever passed that could say otherwise.
-  for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/\bopenSync\(([^)]*)\)/g)) assert.match(call[1], /^[^,]+,\s*"r"$/, `${path} opens ${call[1]}`);
+  // A file is opened for reading only, but for the one a change writes to: made new for the child
+  // alone ("wx", 0600), in lib/read.mjs, once.
+  const writing = [];
+  for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/\bopenSync\(([^)]*)\)/g)) {
+    if (/^[^,]+,\s*"r"$/.test(call[1])) continue;
+    assert.match(call[1], /^path, "wx", 0o600$/, `${path} opens ${call[1]}`);
+    writing.push(path);
+  }
+  assert.deepEqual(writing, ["packages/tui/lib/read.mjs"], "one file is opened to be written: a change's output");
+  assert.match(code(read("packages/tui/lib/read.mjs")), /mkdtempSync\(join\(tmpdir\(\), "oats-tui-"\)\)/, "in a private directory of its own under the OS temp dir");
   // A folder is opened by its path alone (no option: one folder, never what is under it), only
   // in lib/read.mjs, and of what that answers only the two calls that read an entry and close it
   // are made. Those two are methods of the folder's handle, not names taken from node:fs, so the
@@ -266,4 +297,33 @@ test("packages/tui is private, has no dependency of any kind, no bin and no scri
   const files = JSON.parse(read("package.json")).files;
   for (const entry of ["packages/tui/bin/", "packages/tui/lib/", "packages/tui/README.md", "packages/tui/package.json", "packages/client/"]) assert.equal(files.includes(entry), true, entry);
   assert.deepEqual(files.filter((entry) => /packages\/(tui|client)/.test(entry)).sort(), ["packages/client/", "packages/tui/README.md", "packages/tui/bin/", "packages/tui/lib/", "packages/tui/package.json"], "nothing wider: packages/tui/ whole would ship its tests");
+});
+
+test("opening an agent: no module of the TUI holds an attach argument, the feature's name, an exit status number or a kernel code; the shared home builds the viewer's arguments and reads its status", () => {
+  /** Every string literal of a source without its comments. */
+  const literals = (source) => [...code(source).matchAll(/"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g)].map((match) => match[1] ?? match[2] ?? match[3]);
+  const lib = TUI_SOURCES.filter((path) => path.startsWith("packages/tui/lib/"));
+  // `attach` stands only in the two commands the TUI writes for a person, each with placeholders:
+  // what this version does not do (views/help.mjs) and the machine whose OATS has no detach key (lib/model.mjs).
+  // A module path (lib/client.mjs's re-exports of session-attach.mjs and attach-exit.mjs) is no command.
+  const attaching = lib.flatMap((path) => literals(read(path)).filter((text) => /\battach\b/.test(text) && !/^\.\.?\/.*\.mjs$/.test(text)).map((text) => [path, text]));
+  assert.deepEqual(attaching.map(([path]) => path).sort(), ["packages/tui/lib/model.mjs", "packages/tui/lib/views/help.mjs"]);
+  for (const [path, text] of attaching) {
+    assert.match(text, /`?oats session attach (--server <id> )?--home <home>`?/, `${path}: a command of placeholders only`);
+    assert.doesNotMatch(text, /--detach-key/, path);
+  }
+  for (const path of lib) {
+    const source = code(read(path));
+    assert.doesNotMatch(source, /session-attach-detach-key/, `${path} names the feature`);
+    assert.doesNotMatch(source, /(?:[=!]==?|[<>]=?)\s*(?:20|255)\b|\b(?:20|255)\s*(?:[=!]==?|[<>]=?)/, `${path} compares a number with a status`);
+    assert.deepEqual(literals(read(path)).filter((text) => /^--/.test(text) && !["--dir", "--dir=", "--ascii", "--help", "--json"].includes(text)), [], `${path} holds a flag of the kernel`);
+    // The codes a module of the TUI names: the shared terminal table's own for an open the person gave up (preflightFailure).
+    // And the start rule's one code a client words itself, the end of the wait for a start that goes on (session-start.mjs).
+    assert.deepEqual(literals(read(path)).filter((text) => /^E_[A-Z_]+$/.test(text)), path === "packages/tui/lib/model.mjs" ? ["E_TERM_CONTEXT_CHANGED", "E_START_UNCONFIRMED"] : [], path);
+  }
+  // The viewer is started where it is built from the shared answer: lib/main.mjs hands lib/open.mjs
+  // what sessionAttachArgv or prepareRemoteTerm answered, and nothing else.
+  assert.match(code(read("packages/tui/lib/main.mjs")), /sessionAttachArgv\(probe\.cli, decision\.target, \{ detachKey: state\.detachKey \}\)/);
+  assert.match(code(read("packages/tui/lib/main.mjs")), /effects\.prepareRemoteTerm\(probe\.cli, decision\.target, \{ exec: reader\.exec, signal: mine\.controller\.signal, detachKey: state\.detachKey \}\)/);
+  assert.doesNotMatch(code(read("packages/tui/lib/open.mjs")), /tmux|"session"|"attach"/, "lib/open.mjs names no tmux and builds no argument");
 });

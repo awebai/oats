@@ -72,7 +72,7 @@ test("the cue appears with the claim and clears on the next poll, giving back th
   assert.equal(trigger.firstElementChild, dot, "absent is unknown: no cue, the drawn dot");
 });
 
-test("a withheld note: the tab's title reads the reason in words, never “[Detail withheld]” (#584 finding 12)", async t => {
+test("a withheld note: the tab's title reads the reason in words, never “[withheld]” (#584 finding 12)", async t => {
   const u = fixture(t), tab = u.open(row("dev-a")), trigger = tab.triggerEl;
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse(SINCE) + 60e3 });
   for (const [message, reason, label] of [["See https://github.com/awebai/oats/pull/552", "attention", "Asked for your attention"],

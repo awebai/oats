@@ -8,7 +8,9 @@ import { createHash } from "node:crypto";
 import { attachmentName, receiveAttachment, uploadAttachment, sha256Hex } from "../lib/attachments.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
-const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-upload-")));
+// short, and its OATS_HOME_DIR is <base>/h: that holds ssh's control socket (ssh/<40 hex>), which ssh needs
+// within 86 bytes, under the root run's directory of the file (docs/implementation.md, fixtures)
+const base = realpathSync(mkdtempSync(join(tmpdir(), "o-up-")));
 test.after(() => rmSync(base, { recursive: true, force: true }));
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 let n = 0;
@@ -16,7 +18,7 @@ function home(name = `dev-${++n}`) { const h = join(base, "ws", "agents", "dev",
 // Every byte value, twice, so text-mode or quoting damage would show.
 const payload = Buffer.concat([Buffer.from([...Array(256).keys()]), Buffer.from([...Array(256).keys()].reverse())]);
 const sha = createHash("sha256").update(payload).digest("hex");
-const cleanEnv = () => { const env = { ...process.env, OATS_HOME_DIR: join(base, "oats-home") }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete env[k]; return env; };
+const cleanEnv = () => { const env = { ...process.env, OATS_HOME_DIR: join(base, "h") }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete env[k]; return env; };
 
 test("receive stores private bytes inside the instance home, refuses hostile names and the bound, and never overwrites", () => {
   const h = home();
@@ -155,7 +157,7 @@ test("corrections: simultaneous same-name receives never clobber, a planted syml
   ];
   for (const probe of probes) {
     const exec = (bin, argv) => JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: "0.22.13", desktopApi: 1, harnesses: ["pi"], sessionBackends: ["tmux"], launchOptions: [], ...probe });
-    const saved = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home");
+    const saved = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "h");
     try {
       const src = join(base, "local", "gate.bin"); write(src, payload);
       assert.throws(() => uploadAttachment({ file: src, server: "build", instance: "dev-remote" }, { execFileSync: exec }), (e) => e.code === "E_REMOTE_INCOMPATIBLE", JSON.stringify(probe));

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { launchPromptOutcome, launchPromptDiffered, retainedSpawnDetails, retainedSpawnMessage } from '../../client/launch-prompt-outcome.mjs';
+import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { launchPrompts, retained, differed, DIFFERED } from './helpers/launch-prompt-fixture.mjs';
 const d = { instance: 'dev-one', home: '/example/dev-one' };
 test('optional/partial target and diagnostics never turn retention into success or input authority', () => {
@@ -134,10 +135,10 @@ test('differed: each side is one display line, or null when there is nothing to 
   assert.equal(launchPromptDiffered(differed({ expected: '' })).expected, null);
   assert.equal(side('Yes\tNo\u2028Maybe'), 'Yes No Maybe');
   assert.equal(side('abc\u202Edef\u2066ghi'), 'abc\uFFFDdef\uFFFDghi');
-  assert.equal(side('abc\u001b[31mdef'), '[Detail withheld]');
+  assert.equal(side('abc\u001b[31mdef'), DETAIL_WITHHELD);
   // Withheld for that side only: the other side and the fact stay.
-  assert.deepEqual(launchPromptDiffered(differed({ found: 'password: hunter2' })), { ...flat, found: '[Detail withheld]' });
-  assert.deepEqual(launchPromptDiffered(differed({ expected: 'api_key=abc', found: 'ok' })), { ...flat, expected: '[Detail withheld]', found: 'ok' });
+  assert.deepEqual(launchPromptDiffered(differed({ found: 'password: hunter2' })), { ...flat, found: DETAIL_WITHHELD });
+  assert.deepEqual(launchPromptDiffered(differed({ expected: 'api_key=abc', found: 'ok' })), { ...flat, expected: DETAIL_WITHHELD, found: 'ok' });
   // The kernel cuts at 40 UTF-16 units, so a side can end in half a pair: kept as sent, and it survives JSON.
   const cut = `${'x'.repeat(39)}\uD83D`;
   const decoded = launchPromptDiffered(differed({ found: cut }));
@@ -204,15 +205,27 @@ function filled(base, bytes = 32768) {
   return v;
 }
 test('outcome: a side withheld at the exact bound drops what differed, and the answer reads back the same', () => {
-  const at = filled({ status: 'blocked', reason: 'blocked: unexpected prompt', answers: [], differed: differed({ expected: '\u007f', found: '\u007f' }) });
-  const once = launchPromptOutcome(at);
-  // "[Detail withheld]" is longer than what it replaces: with it the answer would be over the bound.
+  // Built in this module's own form (the renderer's second read): the kernel's form has a firstDifference
+  // wrapper the answer drops, which can outweigh what the withheld word adds. How much the answer grows is
+  // measured, never assumed from the word's length; the fill then puts the answer with what differed one
+  // byte over the bound, and exactly at it.
+  const base = { status: 'blocked', reason: 'blocked: unexpected prompt', answers: [], differed: { ...DIFFERED, expected: '\u007f', found: '\u007f' } };
+  const small = filled(base, 32768 - 256), read = launchPromptOutcome(small);
+  assert.deepEqual(read.differed, { ...DIFFERED, expected: DETAIL_WITHHELD, found: DETAIL_WITHHELD }, 'both sides are withheld');
+  const growth = size(read) - size(small);
+  assert.ok(growth > 0, `withholding the sides makes the answer longer than what was read (${growth} bytes)`);
+  const at = filled(base, 32768 + 1 - growth), once = launchPromptOutcome(at);
+  assert.equal(size({ ...once, differed: read.differed }), 32769, 'with what differed, the answer is one byte over the bound');
   assert.equal(Object.hasOwn(once, 'differed'), false);
   assert.equal(once.status, 'blocked'); assert.equal(once.reason, 'blocked: unexpected prompt'); assert.equal(once.receipt.length, 16);
   assert.ok(size(once) <= 32768);
   assert.deepEqual(launchPromptOutcome(JSON.parse(JSON.stringify(once))), once);
   const kept = retainedSpawnDetails({ ...retained(d), launchPrompts: at });
   assert.equal(kept.home, d.home); assert.deepEqual(kept.launchPrompts, once);
+  // One byte less: the answer with what differed is exactly at the bound, and keeps it.
+  const fits = launchPromptOutcome(filled(base, 32768 - growth));
+  assert.deepEqual(fits.differed, read.differed); assert.equal(size(fits), 32768);
+  assert.deepEqual(launchPromptOutcome(JSON.parse(JSON.stringify(fits))), fits);
 });
 test('outcome: what differed is kept at the exact bound when the answer with it fits', () => {
   const once = launchPromptOutcome(filled({ status: 'blocked', reason: 'blocked: unexpected prompt', answers: [], differed: differed() }));

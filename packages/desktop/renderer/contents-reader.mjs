@@ -1,7 +1,7 @@
 /** The Contents card, shared by the capability page's Contents (capability-contents.mjs) and the soul page's
  * Instructions (soul-instructions.mjs): one card grammar (a navigation tree left, a reader right), one tree
- * keyboard model and one file reader. The hosts own what is listed, what is read and when; this module owns
- * how a tree moves and how a file is shown.
+ * keyboard model, one skill item and one file reader. The hosts own what is listed, what is read and when; this
+ * module owns how a tree moves, how a skill is listed and how a file is shown.
  *
  * The reader: a sticky head (path, size, a truncated flag), then the file. Every text is untrusted repository
  * content: Markdown goes through the viewer's sanitising pipeline in its strict profile (no raw HTML, no
@@ -10,6 +10,7 @@
  * an in-document fragment scrolls the reader; anything else becomes its text. */
 import { renderMarkdownHtml, renderCodeHtml, isMarkdownName, decorateMarkdown, copyCodeBlock } from './views/markdown.mjs';
 import { splitFrontMatter } from './front-matter.mjs';
+import { skillRelativePath } from '../../client/capability-show-contract.mjs';
 
 export const contentsCardCSS = `
 /* The section's own display rules (grid, flex) would beat the HTML hidden attribute: hidden always wins here. */
@@ -74,6 +75,15 @@ export const contentsCardCSS = `
 .cap-fm td { padding:5px 0; color:var(--fg); vertical-align:top; overflow-wrap:anywhere; white-space:pre-wrap; }
 .cap-reader-body .mdv .cap-fm tr + tr > * { border-top:1px solid var(--tag-bg); }
 `;
+
+/** The card's words for a skill and its files, whichever page lists them. */
+export const SKILL_COPY = Object.freeze({
+  moreFiles: 'More files not listed.',
+  unlisted: "Its files can't be listed.",
+  binary: 'Binary file; not shown.',
+  // The kernel cuts a skill file's text at 262144 bytes (capabilities show's reader, shared by inspect --soul --skills).
+  truncated: 'Truncated at 256 KiB',
+});
 
 /** "812 B" / "4.2 KiB" / "1.3 MiB"; null when unknown. */
 export function sizeText(bytes) {
@@ -147,6 +157,57 @@ export function createContentsTree(nav, { selected, activate, onExpand = null })
     syncRoving(focusedItem());
   }
   return { onKey, syncRoving, focusItem, setExpanded, toggle, markSelected, visibleItems };
+}
+
+/** A skill's SKILL.md (its file paths and its own `path` share one root: the capability's or the soul's directory). */
+export const isSkillMd = (skill, file) => file.path === `${skill.path}/SKILL.md`;
+/**
+ * A skill's tree item, shared by the capability page's Contents and the soul page's Instructions: its name
+ * (monospace), its description's first sentence on a second line (the full text in the row's title), and its
+ * files as a nested group, SKILL.md first, then the answer's order, each shown relative to the skill's directory.
+ * Selecting it toggles it; it opens nothing itself. A skill whose files can't be listed (`files: null`) is a
+ * reachable item that opens nothing and says so. Every name and description is the skill's own text, set as text.
+ *
+ * The item carries `data-skill` (the skill's path; the host's `activate` toggles such an item and its `onExpand`
+ * records it) and the host's `focusKey`; each file's item is the host's own leaf, made by `fileItem`.
+ * @param {Document} doc
+ * @param {{ name: string, path: string, description?: string|null, files: object[]|null, filesTruncated?: boolean }} skill
+ * @param {object} o
+ * @param {boolean} o.open  expanded
+ * @param {string} o.focusKey
+ * @param {{ focusItem: (item: HTMLElement) => void, toggle: (item: HTMLElement) => void }} o.keys  the tree (createContentsTree)
+ * @param {(file: object, shown: string) => HTMLElement} o.fileItem  a file's tree item (level 2), `shown` its path in the skill
+ */
+export function skillTreeItem(doc, skill, { open, focusKey, keys, fileItem }) {
+  const node = (tag, cls, text) => { const el = doc.createElement(tag); if (cls) el.className = cls; if (text !== undefined && text !== null) el.textContent = text; return el; };
+  if (skill.files === null) return unlistedSkill();
+  const item = node('li'); item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.setAttribute('aria-expanded', String(open));
+  item.setAttribute('aria-label', skill.name); item.dataset.skill = skill.path; item.dataset.focusKey = focusKey; item.tabIndex = -1;
+  const sentence = firstSentence(skill.description);
+  if (sentence) item.setAttribute('aria-description', [sentence, skill.filesTruncated ? SKILL_COPY.moreFiles : ''].filter(Boolean).join(' '));
+  else if (skill.filesTruncated) item.setAttribute('aria-description', SKILL_COPY.moreFiles);
+  const row = node('div', 'cap-node'); if (skill.description) row.title = skill.description;
+  const twisty = node('span', 'cap-node-twisty', open ? '▾' : '▸'); twisty.setAttribute('aria-hidden', 'true');
+  const copy = node('span', 'cap-node-copy'); const label = node('span', 'cap-node-name mono', skill.name); label.title = skill.name; copy.append(label);
+  if (sentence) copy.append(node('span', 'cap-node-desc', sentence));
+  row.append(twisty, copy); item.append(row);
+  const children = node('ul'); children.setAttribute('role', 'group'); children.hidden = !open;
+  for (const f of [...skill.files].sort((a, b) => isSkillMd(skill, b) - isSkillMd(skill, a))) children.append(fileItem(f, skillRelativePath(skill, f)));
+  if (skill.filesTruncated) { const more = node('li', 'cap-more', SKILL_COPY.moreFiles); more.setAttribute('role', 'none'); more.setAttribute('aria-hidden', 'true'); children.append(more); }
+  item.append(children);
+  row.addEventListener('click', () => { keys.focusItem(item); keys.toggle(item); });
+  return item;
+  function unlistedSkill() {
+    const item = node('li'); item.setAttribute('role', 'treeitem'); item.setAttribute('aria-level', '1'); item.setAttribute('aria-disabled', 'true');
+    item.setAttribute('aria-label', skill.name); item.setAttribute('aria-description', SKILL_COPY.unlisted);
+    item.dataset.focusKey = focusKey; item.tabIndex = -1;
+    const row = node('div', 'cap-node'); if (skill.description) row.title = skill.description;
+    const twisty = node('span', 'cap-node-twisty'); twisty.setAttribute('aria-hidden', 'true');
+    const copy = node('span', 'cap-node-copy'); copy.append(node('span', 'cap-node-name mono', skill.name), node('span', 'cap-node-desc', SKILL_COPY.unlisted));
+    row.append(twisty, copy); item.append(row);
+    row.addEventListener('click', () => keys.focusItem(item));
+    return item;
+  }
 }
 
 /**

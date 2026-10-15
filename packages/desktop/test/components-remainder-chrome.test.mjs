@@ -11,7 +11,7 @@ import { instance, target, state, deferred, tick } from './helpers/forge-fixture
 const birth = '2026-09-23T00:00:00.000Z';
 const selected = () => ({ ...instance, createdAt: birth });
 const git = () => { const data = state(); data.summary.changed = 1; data.files = [{ id: 'c'.repeat(24), kind: 'changed', xy: '.M', path: 'file', origPath: null, submodule: false }]; return { instanceGitApi: 1, minimumVersion: '0.24.7', status: 'available', target, data, observationKey: 'e'.repeat(64), reason: null }; };
-function rail(t, request = async () => git()) {
+function instancePanel(t, request = async () => git()) {
   const dom = new JSDOM('<body><div id="app"><input id="outside"><aside id="context-panel"></aside></div></body>', { pretendToBeVisual: true });
   const doc = dom.window.document, style = doc.createElement('style'); style.textContent = contextPanelCSS; doc.head.append(style);
   let connection = 0; const listeners = new Set(), calls = [];
@@ -23,54 +23,49 @@ function rail(t, request = async () => git()) {
   t.after(() => { panel.dispose(); dom.window.close(); });
   return { dom, doc, panel, calls, q: s => doc.querySelector(s), connect() { connection++; for (const fn of listeners) fn(); } };
 }
-test('44px rail has real Instance/Git/Soul buttons; clicking selects/expands, collapse never reads, accepted Git dot survives only its owner', async t => {
-  const u = rail(t); u.panel.setCollapsed(true);
-  assert.equal(u.dom.window.getComputedStyle(u.q('#context-panel')).width, '44px');
-  assert.deepEqual([...u.doc.querySelectorAll('[data-context-rail]')].map(b => b.dataset.contextRail), ['instance', 'soul', 'git'], 'Developer is the last section'); assert.equal(u.calls.length, 0);
-  u.q('[data-context-rail=git]').click(); await tick(); assert.equal(u.calls.length, 1); assert.equal(u.q('[data-context-tab=git]').getAttribute('aria-selected'), 'true');
-  u.panel.setCollapsed(true); assert.equal(u.calls.length, 1); assert.equal(u.q('.context-panel-dot').hidden, false);
+// Spec B: a closed panel leaves no rail. The Developer page's change mark lives on in the panel's state
+// (the shell's Show instance panel carries it), owned by the exact instance and connection it was read for.
+test('a closed panel takes no width and keeps no rail; closing never reads, and the accepted Git change mark survives only its owner', async t => {
+  const u = instancePanel(t);
+  u.q('[data-context-tab=git]').click(); await tick(); assert.equal(u.calls.length, 1); assert.equal(u.q('[data-context-tab=git]').getAttribute('aria-selected'), 'true');
+  u.panel.setCollapsed(true);
+  assert.equal(u.q('#context-panel').hidden, true); assert.equal(u.dom.window.getComputedStyle(u.q('#context-panel')).display, 'none', 'no width at all');
+  assert.equal(u.doc.querySelector('[data-context-rail], .context-panel-rail, .context-panel-expand, .context-panel-dot'), null, 'no rail, expand or dot inside');
+  assert.equal(u.calls.length, 1); assert.equal(u.panel.state().changes, true, 'the change mark the Developer page would show');
   for (let i = 0; i < 4; i++) u.panel.setContext({ workspace: 'team', key: 'target', instance: selected() });
-  assert.equal(u.calls.length, 1); assert.equal(u.q('.context-panel-dot').hidden, false);
-  u.connect(); assert.equal(u.q('.context-panel-dot').hidden, true); assert.equal(u.calls.length, 1);
-  u.panel.setContext({ workspace: 'team', key: 'target', instance: { ...selected(), createdAt: '2026-09-24T00:00:00.000Z' } }); assert.equal(u.q('.context-panel-dot').hidden, true);
-  assert.doesNotMatch(u.q('.context-panel-rail').textContent, /Knowledge|Tasks/);
+  assert.equal(u.calls.length, 1); assert.equal(u.panel.state().changes, true);
+  u.connect(); assert.equal(u.panel.state().changes, false); assert.equal(u.calls.length, 1);
+  u.panel.setContext({ workspace: 'team', key: 'target', instance: { ...selected(), createdAt: '2026-09-24T00:00:00.000Z' } }); assert.equal(u.panel.state().changes, false);
 });
-for (const reject of [false, true]) for (const change of ['connection', 'birth', 'workspace', 'collapse', 'dispose']) test(`rail ignores late Git ${reject ? 'rejection' : 'success'} after ${change}`, async t => {
+for (const reject of [false, true]) for (const change of ['connection', 'birth', 'workspace', 'collapse', 'dispose']) test(`the change mark ignores late Git ${reject ? 'rejection' : 'success'} after ${change}`, async t => {
   const g = deferred(), newer = deferred(); let calls = 0;
-  const u = rail(t, () => calls++ ? newer.promise : g.promise); u.panel.setCollapsed(true); u.q('[data-context-rail=git]').click();
+  const u = instancePanel(t, () => calls++ ? newer.promise : g.promise); u.q('[data-context-tab=git]').click();
   if (change === 'connection') u.connect();
   if (change === 'birth') u.panel.setContext({ workspace: 'team', key: 'target', instance: { ...selected(), createdAt: '2026-09-24T00:00:00.000Z' } });
   if (change === 'workspace') u.panel.setContext({ workspace: 'other' });
   if (change === 'collapse') u.panel.setCollapsed(true);
   if (change === 'dispose') u.panel.dispose();
   if (reject) g.reject(Error('PRIVATE')); else g.resolve(git()); await tick();
-  assert.notEqual(u.q('.context-panel-dot')?.hidden, false); assert.doesNotMatch(u.doc.body.textContent, /PRIVATE/);
+  assert.equal(u.panel.state().changes, false); assert.doesNotMatch(u.doc.body.textContent, /PRIVATE/);
   newer.resolve(git()); await tick();
 });
-for (const change of ['identity', 'connection']) test(`retained accepted rail summary independently refuses unsignaled ${change} drift`, t => {
+for (const change of ['identity', 'connection']) test(`a retained accepted change mark independently refuses unsignaled ${change} drift`, t => {
   const dom = new JSDOM('<body><aside id="context-panel"></aside></body>'), doc = dom.window.document; let publish, connection = 0;
   const row = selected(), identity = JSON.stringify(['team', 'target', row.home, row.agent, row.agentsRoot, null, row.createdAt]);
-  const panel = createContextPanel({ document: doc, connectionGeneration: () => connection, createGitPanel: (_p, opts) => { publish = opts.onObservation; return { update() {}, dispose() {} }; } });
+  const seen = [];
+  const panel = createContextPanel({ document: doc, connectionGeneration: () => connection, onChange: state => seen.push(state.changes),
+    createGitPanel: (_p, opts) => { publish = opts.onObservation; return { update() {}, dispose() {} }; } });
   t.after(() => { panel.dispose(); dom.window.close(); }); panel.setContext({ workspace: 'team', key: 'target', instance: row }); panel.setCollapsed(true);
-  publish({ identity, connection: 0, changed: true }); assert.equal(doc.querySelector('.context-panel-dot').hidden, false);
+  publish({ identity, connection: 0, changed: true }); assert.equal(panel.state().changes, true); assert.equal(seen.at(-1), true, 'the shell hears it at once');
   if (change === 'identity') row.createdAt = '2026-09-24T00:00:00.000Z'; else connection++;
-  panel.setCollapsed(true); assert.equal(doc.querySelector('.context-panel-dot').hidden, true);
+  panel.setCollapsed(true); assert.equal(panel.state().changes, false); assert.equal(seen.at(-1), false);
 });
-test('rail native toolbar navigation moves focus without fetching or selecting until activation', async t => {
-  const u = rail(t); u.panel.setCollapsed(true); const start = u.q('[data-context-rail=instance]'); start.focus();
-  start.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
-  assert.equal(u.doc.activeElement, u.q('[data-context-rail=soul]')); assert.equal(u.calls.length, 0);
-  u.doc.activeElement.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
-  assert.equal(u.doc.activeElement, u.q('[data-context-rail=git]')); assert.equal(u.calls.length, 0);
-  u.doc.activeElement.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }));
-  assert.equal(u.doc.activeElement, u.q('.context-panel-expand')); assert.equal(u.calls.length, 0);
-  u.q('[data-context-rail=git]').click(); await tick(); assert.equal(u.doc.activeElement, u.q('[data-context-tab=git]')); assert.equal(u.calls.length, 1);
-});
-test('stage inspector rail never exposes generic instance pages or discards its draft; hidden old buttons cannot act', t => {
-  const u = rail(t), old = u.q('[data-context-rail=git]'), owner = {}, form = u.doc.createElement('textarea'); form.value = 'Keep me';
+test('a closed stage inspector never exposes generic instance pages or discards its draft; hidden tabs cannot act', t => {
+  const u = instancePanel(t), old = u.q('[data-context-tab=git]'), owner = {}, form = u.doc.createElement('textarea'); form.value = 'Keep me';
   u.panel.setContext({ workspace: 'team', owner }); const lease = u.panel.attach(owner, form); u.panel.setCollapsed(true);
-  assert.equal(old.hidden, true); old.click(); assert.equal(lease.isVisible(), false); assert.equal(u.calls.length, 0);
-  u.q('.context-panel-expand').click(); assert.equal(lease.isVisible(), true); assert.equal(form.value, 'Keep me');
+  assert.equal(u.q('#context-panel').hidden, true); old.click(); assert.equal(lease.isVisible(), false); assert.equal(u.calls.length, 0);
+  assert.deepEqual(u.panel.state(), { present: true, open: false, changes: false }, 'Show instance panel has something to show');
+  u.panel.toggle(); assert.equal(lease.isVisible(), true); assert.equal(form.value, 'Keep me');
   u.panel.setFocusMode(true); old.click(); assert.equal(u.calls.length, 0); assert.equal(form.isConnected, true);
 });
 function notices(t) {

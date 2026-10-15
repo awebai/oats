@@ -251,10 +251,10 @@ test("the note over rows kept after a failed read: the kernel's words after the 
   const note = async (extra) => { u.setRead(() => panel([instance()], currentWorkspace(), extra)); await u.poll(); await tick(); return u.notice(); };
   // The six forms.
   assert.equal(await note({ error: 'the cache is locked', errorOrigin: 'kernel' }), `Roster unavailable. ${OWN_NOTE} OATS says: the cache is locked`);
-  assert.equal(await note({ error: 'wipe \x1b[2J the screen', errorOrigin: 'kernel' }), `Roster unavailable. ${OWN_NOTE} [Detail withheld]`);
+  assert.equal(await note({ error: 'wipe \x1b[2J the screen', errorOrigin: 'kernel' }), `Roster unavailable. ${OWN_NOTE} [withheld]`);
   assert.equal(await note({ error: '', errorOrigin: 'kernel' }), `Roster unavailable. ${OWN_NOTE}`);
   assert.equal(await note({ error: 'the cache is locked' }), `Roster unavailable: the cache is locked. ${OWN_NOTE}`);
-  assert.equal(await note({ error: 'token: abc123' }), `Roster unavailable: [Detail withheld]. ${OWN_NOTE}`);
+  assert.equal(await note({ error: 'token: abc123' }), `Roster unavailable: [withheld]. ${OWN_NOTE}`);
   assert.equal(await note({ error: '' }), `Roster unavailable. ${OWN_NOTE}`);
   // Spaces alone are nothing to show; several lines are one; the line is cut at 300 as before, the lead not counted.
   assert.equal(await note({ error: ' \n\t ', errorOrigin: 'kernel' }), `Roster unavailable. ${OWN_NOTE}`);
@@ -292,13 +292,13 @@ test("a failed read with nothing to show: the notice sets the kernel's words aft
   assert.deepEqual(await failed({ error: 'the cache is locked', errorOrigin: 'kernel' }),
     [`Roster unavailable. ${NONE} OATS says: the cache is locked`, "Couldn't refresh roster. OATS says: the cache is locked", 'Roster unknown', null]);
   assert.deepEqual((await failed({ error: 'wipe \x1b[2J the screen', errorOrigin: 'kernel' })).slice(0, 2),
-    [`Roster unavailable. ${NONE} [Detail withheld]`, "Couldn't refresh roster. [Detail withheld]"]);
+    [`Roster unavailable. ${NONE} [withheld]`, "Couldn't refresh roster. [withheld]"]);
   // No speaker (another machine's panel, or a value that is not the kernel's): inside the sentence, as on the base.
   assert.deepEqual(await failed({ error: 'the cache is locked' }),
     [`Roster unavailable: the cache is locked. ${NONE}`, "Couldn't refresh roster. the cache is locked", 'Roster unknown', null]);
   assert.deepEqual((await failed({ error: 'the cache is locked', errorOrigin: 'roster-read' })).slice(0, 2),
     [`Roster unavailable: the cache is locked. ${NONE}`, "Couldn't refresh roster. the cache is locked"]);
-  assert.deepEqual((await failed({ error: 'token: abc123' })).slice(0, 2), [`Roster unavailable: [Detail withheld]. ${NONE}`, "Couldn't refresh roster. [Detail withheld]"]);
+  assert.deepEqual((await failed({ error: 'token: abc123' })).slice(0, 2), [`Roster unavailable: [withheld]. ${NONE}`, "Couldn't refresh roster. [withheld]"]);
   // No words: a failed read all the same, never an observed empty roster, and the Desktop's sentences alone.
   for (const extra of [{ error: '' }, { error: '', errorOrigin: 'kernel' }, { error: ' \n ', errorOrigin: 'kernel' }]) {
     assert.deepEqual(await failed(extra), [`Roster unavailable. ${NONE}`, "Couldn't refresh roster.", 'Roster unknown', null], JSON.stringify(extra));
@@ -319,10 +319,10 @@ test("a failed read that kept no rows, over an observation already on screen: th
   const after = async (extra) => { u.setRead(() => panel([], currentWorkspace(), extra)); await u.poll(); await tick(); return u.notice(); };
   assert.equal(await after({ error: 'the cache is locked', errorOrigin: 'kernel' }), `Roster unavailable. ${LAST} OATS says: the cache is locked`);
   assert.equal(u.nodes().length, 1, 'the last observation stays painted');
-  assert.equal(await after({ error: 'bell\u0007', errorOrigin: 'kernel' }), `Roster unavailable. ${LAST} [Detail withheld]`);
+  assert.equal(await after({ error: 'bell\u0007', errorOrigin: 'kernel' }), `Roster unavailable. ${LAST} [withheld]`);
   assert.equal(await after({ error: '', errorOrigin: 'kernel' }), `Roster unavailable. ${LAST}`);
   assert.equal(await after({ error: 'the cache is locked' }), `Roster unavailable: the cache is locked. ${LAST}`);
-  assert.equal(await after({ error: 'token: abc123' }), `Roster unavailable: [Detail withheld]. ${LAST}`);
+  assert.equal(await after({ error: 'token: abc123' }), `Roster unavailable: [withheld]. ${LAST}`);
   assert.equal(await after({ error: '' }), `Roster unavailable. ${LAST}`);
 });
 
@@ -346,7 +346,7 @@ test('a Herdr-recorded instance: the popover says who made the reason (#982): ea
     assert.equal(u.one('.pterm').disabled, true); assert.equal(u.one('.prestart').disabled, true);
     u.dispose();
   }
-  for (const [text, line] of [['E_HERDR_REMOVED: <b>bold</b>', 'OATS says: E_HERDR_REMOVED: <b>bold</b>'], ['E_HERDR_REMOVED: gone\u001b[2J', '[Detail withheld]']]) {
+  for (const [text, line] of [['E_HERDR_REMOVED: <b>bold</b>', 'OATS says: E_HERDR_REMOVED: <b>bold</b>'], ['E_HERDR_REMOVED: gone\u001b[2J', '[withheld]']]) {
     const u = await setup(t, { instances: [instance('h1', { running: null, runtimeState: 'unsupported', runtimeError: text, runtimeErrorOrigin: 'kernel' })] }); await tick();
     u.mouse(u.nodes()[0], 'click');
     assert.equal(u.one('.pterm').title, line); assert.equal(u.one('.pterm').disabled, true);

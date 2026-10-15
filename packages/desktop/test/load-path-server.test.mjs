@@ -133,7 +133,9 @@ test('a souls catalog landing BEFORE the roster reads is adopted into the entry 
 });
 
 test('with observe-max-age declared: admission and refresh observe live (0), the prompt cycle and cache misses reuse (60); observedAt is the kernel\'s; a mutation drops held inspections and observes live', async () => {
-  const s = await startLoadPathServer({ probe: v => ({ ...v, features: [...v.features, 'observe-max-age'] }) });
+  // The fake tmux, alone on PATH, answers that no server runs, so the seat is observed stopped and the start rule
+  // (packages/client/start-gate.mjs) lets its start reach the kernel; without a tmux its state is not known.
+  const s = await startLoadPathServer({ probe: v => ({ ...v, features: [...v.features, 'observe-max-age'] }), tmux: true, env: ({ dir }) => ({ PATH: dir }) });
   try {
     await s.post('/api/window-state', { focused: false });
     const probe = await s.post('/api/cli/reprobe', {});
@@ -167,8 +169,10 @@ test('with observe-max-age declared: admission and refresh observe live (0), the
     const homeReads = () => of(s.calls(), 'inspect').filter(x => x.argv.includes('--home')).length;
     assert.equal(homeReads(), 1, 'the repeat is a hit');
     const statusCount = of(s.calls(), 'status').length;
-    const started = await s.post(`/api/start/${panel.instances[0].instance}${s.ws}&home=${encodeURIComponent(home)}`, {});
-    assert.ok(started, 'start answered');
+    assert.equal(panel.instances[0].running, false, 'the seat is observed stopped');
+    const started = await fetch(`${s.base}/api/start/${panel.instances[0].instance}${s.ws}&home=${encodeURIComponent(home)}`,
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    assert.deepEqual([started.status, await started.json()], [200, { launched: true }], 'the start reached the kernel and worked: a refusal is no start');
     await s.until(() => ended(s.calls(), 'status').length > statusCount);
     assert.equal(maxAge(of(s.calls(), 'status').at(-1)), '0', 'a mutation\'s follow-up observation is live');
     await s.post(`/api/capabilities${s.ws}`, { action: 'inspect', selector: { home } });

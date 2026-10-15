@@ -131,8 +131,8 @@
 //     `{launched:false}` shape. A full pass says nothing about launched-instance
 //     metadata, about tmuxSocket(), or about the quiesce-before-recovery
 //     sequence in retire — all of which step 5 (extract the platform) moves.
-//     test/retire-work-safety.test.mjs drives the launched path with a fake tmux
-//     and is the suite that covers it.
+//     test/retire-work-recovery.test.mjs drives the launched path with a fake
+//     tmux and is the suite that covers it.
 //   - the recovery directory. Nothing here dirties an instance home or a
 //     worktree after the baseline is stamped, so `workRecovery` is absent in all
 //     of them and the preserve-work path is never exercised.
@@ -235,6 +235,8 @@ const write = (path, content, mode) => {
 
 const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oats-golden-home-"));
 const BASES = [];
+/** Every deployment fixture made: ended, not only removed, when the file has ended (fx.cleanup). */
+const FIXTURES = [];
 
 /** The stub knowledge capability: a knowledge layer with a spawn hook
  *  (STATE.md + notes/ in the home), an injection block and one skill. A member
@@ -336,7 +338,7 @@ function fixture(kase) {
       agents: "# dev\n\nYou are the golden-fixture developer soul.\n\n## Operating notes\n\n- Do repository work in `./work`.\n" } },
     capabilities,
   });
-  BASES.push(fx.base);
+  FIXTURES.push(fx);
   const base = fx.base;
   const bin = join(base, "bin");
   // `claude` is never executed here: under --no-launch spawn only RESOLVES it on
@@ -604,8 +606,12 @@ function golden(caseId, name, actual) {
 if (UPDATE && !UPDATE_ARTIFACT) rmSync(GOLDEN_ROOT, { recursive: true, force: true });
 
 test.after(() => {
+  // Every fixture is ended, though one's cleanup throws (it names what it found left); then the first error.
+  const errors = [];
+  for (const fx of FIXTURES.splice(0)) { try { fx.cleanup(); } catch (e) { errors.push(e); } }
   for (const b of BASES.splice(0)) rmSync(b, { recursive: true, force: true });
   rmSync(HERMETIC_HOME, { recursive: true, force: true });
+  if (errors.length) throw errors[0];
 });
 
 // ---------- normalization regressions (no CLI or harness) ----------

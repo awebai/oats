@@ -54,6 +54,7 @@ test('restart uses one kernel call with the exact home and launch choices', asyn
   });
   assert.deepEqual(call.argv, ['session', 'restart', '--home', home, '--server', 'host', '--launch-config', 'personal', '--harness', 'codex', '--model', 'model-id', '--no-yolo', '--json']);
   assert.equal(call.opts.shell, false);
+  assert.equal(call.opts.detached, true, 'a start runs in a session of its own (#889)');
   for (const choices of [{ launchConfig: '--force' }, { harness: 'unknown', harnessFlag: '--harness' }, { harness: 'codex' }, { yolo: 'false' }, { model: '--launch-config' }]) {
     const r = await cliStart(cli.bin, { home, ...choices }, { exec: assert.fail }); assert.equal(r.error.code, 'E_BAD_ARGS');
   }

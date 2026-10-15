@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -40,8 +41,11 @@ function shell(t) {
     tabActionsEl: document.getElementById("tab-actions"),
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     split: null, activeTab: null, sidebarMode: "overview", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null,
-    workspaceTabMemory: createWorkspaceTabMemory(), wsActiveTerminal: new Map(),
+    contextRosterGen: 0, contextInstances: [], contextRosterEl: null, rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null,
+    workspaceTabMemory: createWorkspaceTabMemory(),
+    // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
+    instanceRecency: createInstanceRecency({ storage: null }), recencyIdFromTerminalKey,
+    wsActiveTerminal: new Map(),
     brainIntents: createIntentGate(),
     workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview",
     setNavActive() {}, refreshContextRoster() {}, renderContextRoster(list) { assert.equal(list.length, 0); },
@@ -56,7 +60,7 @@ function shell(t) {
   // Spec F: the shipped active-tab reveal runs too (jsdom has no layout or ResizeObserver).
   context.revealInStrip = revealInStrip; context.tabStripResize = null;
   const api = runInNewContext([
-    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "tabStrips", "revealActiveTabs", "observeTabStrips", "restoreWorkspaceTabs",
+    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "revealActiveRosterRow", "tabStrips", "revealActiveTabs", "observeTabStrips", "restoreWorkspaceTabs",
   ].map(shellFunction).join("\n") + "\n({ activateTab, restoreWorkspaceTabs, renderSplit });", context);
   return { ...api, context, document, tabs, switchTo(workspace) {
     context.workspace = workspace; context.generation++;

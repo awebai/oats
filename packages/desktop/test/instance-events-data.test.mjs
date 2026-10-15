@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { eventsData, eventsIncomplete, eventIncarnation, EVENT_TITLES } from '../renderer/instance-events-data.mjs';
+import { EVENTS_WITHHELD } from '../../client/instance-events-contract.mjs';
 import { target, birth, event, data, launchPromptEvent, launchPromptEvent052, launchPromptMiss052 } from './helpers/instance-events-fixture.mjs';
 import { differed, DIFFERED } from './helpers/launch-prompt-fixture.mjs';
 
@@ -24,7 +25,7 @@ test('launch-prompt audit rows preserve bounded reported outcomes across private
 test('launch-prompt facts retain event detail bounds and redaction without exposing receipt payloads', () => {
   for (const key of ['status', 'class', 'action', 'consentSource', 'reason']) {
     const out = eventsData(data([launchPromptEvent({ [key]: 'token: PRIVATE', screen: 'PRIVATE', receipt: [{ secret: 'PRIVATE' }] })]), target);
-    assert.ok(out); assert.equal(out.events[0].data[key], '[Detail withheld]');
+    assert.ok(out); assert.equal(out.events[0].data[key], EVENTS_WITHHELD);
     assert.doesNotMatch(JSON.stringify(out), /PRIVATE/);
     assert.equal(eventsData(data([launchPromptEvent({ [key]: 'x'.repeat(4097) })]), target), null);
     assert.equal(eventsData(data([launchPromptEvent({ [key]: {} })]), target), null);
@@ -68,7 +69,7 @@ test('launch-prompt: a malformed new fact drops that fact, never the read', () =
     assert.equal(out.events[0].data.status, 'submitted');
   }
   // Unsafe text is withheld, as every event detail is.
-  assert.equal(eventsData(data([launchPromptEvent052({ claudeVersion: 'token: PRIVATE' })]), target).events[0].data.claudeVersion, '[Detail withheld]');
+  assert.equal(eventsData(data([launchPromptEvent052({ claudeVersion: 'token: PRIVATE' })]), target).events[0].data.claudeVersion, EVENTS_WITHHELD);
   // A listed key still refuses the read when malformed: the tolerance is for the new facts only.
   assert.equal(eventsData(data([launchPromptEvent052({ status: {} })]), target), null);
 });
@@ -170,10 +171,10 @@ test('allowlisted facts redact reason credentials/URLs, omit task/env/commands a
     reason: 'token=PRIVATE', task: 'PRIVATE', env: { secret: 'PRIVATE' }, command: 'PRIVATE' } })]);
   value.notes = ['PRIVATE']; value.recipe = 'PRIVATE';
   const out = eventsData(value, target); assert.ok(out);
-  assert.deepEqual(out.events[0].data, { signal: 'SIGTERM', state: 'shell', waitedMs: 10, reason: '[Detail withheld]', stillRunningCount: 1 });
+  assert.deepEqual(out.events[0].data, { signal: 'SIGTERM', state: 'shell', waitedMs: 10, reason: EVENTS_WITHHELD, stillRunningCount: 1 });
   assert.doesNotMatch(JSON.stringify(out), /PRIVATE|"pid"|"comm"|"task"|"env"|"recipe"/);
   assert.deepEqual(eventsData(out, target, 100, { publicView: true }), out);
-  value.events[0].data.reason = 'visit https://private.example/secret'; assert.equal(eventsData(value, target).events[0].data.reason, '[Detail withheld]');
+  value.events[0].data.reason = 'visit https://private.example/secret'; assert.equal(eventsData(value, target).events[0].data.reason, EVENTS_WITHHELD);
 });
 test('unknown kinds remain explicit rows, not fabricated current activity or silently omitted', () => {
   const value = data([event({ kind: 'future-kind', data: { task: 'PRIVATE' } })]);
@@ -226,7 +227,7 @@ const WITHHELD_NOTES = ['see https://private.example/x', 'See https://github.com
 test('an unsafe claim message is withheld, never shown', () => {
   for (const note of WITHHELD_NOTES) {
     const out = eventsData(claimed(note, note), target); assert.ok(out, note);
-    assert.equal(out.waitingOnYou.message, '[Detail withheld]', note); assert.equal(out.waitingClaims[0].message, '[Detail withheld]', note);
+    assert.equal(out.waitingOnYou.message, EVENTS_WITHHELD, note); assert.equal(out.waitingClaims[0].message, EVENTS_WITHHELD, note);
   }
 });
 
@@ -249,7 +250,7 @@ test('K waiting rows: a malformed note is null and the read stays valid; an unsa
     assert.ok(out, JSON.stringify(message)); assert.equal(out.events[0].data.message, null);
   }
   for (const message of ['see https://evil.example/x', ...WITHHELD_NOTES]) {
-    assert.equal(eventsData(data([kSet({ message })]), target).events[0].data.message, '[Detail withheld]', message);
+    assert.equal(eventsData(data([kSet({ message })]), target).events[0].data.message, EVENTS_WITHHELD, message);
   }
   assert.equal(eventsData(data([kSet({ message: '<b>bold</b>' })]), target).events[0].data.message, '<b>bold</b>', 'kept verbatim; the view sets text');
 });

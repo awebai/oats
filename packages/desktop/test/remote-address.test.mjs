@@ -6,6 +6,7 @@ import { canAddressRemote, serverLabel, rowReason, remoteHeadline, hostReason, r
 import { assertIsolatedDetail, MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 import { originLead } from '../../client/instance-presentation.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
+import { DETAIL_WITHHELD } from '../../client/display-text.mjs';
 import { canAddressRemote as serverCanAddressRemote, admitInstance } from '../../client/instance-admission.mjs';
 
 const remote = (extra = {}) => ({ instance: 'dev-a', agent: 'dev', home: '/srv/agents/dev/instances/dev-a', server: 'build',
@@ -129,8 +130,8 @@ test('hostReason / remoteReason: the kernel\'s code and message verbatim, bounde
   assert.deepEqual(remoteReason(reason), reason, 'a relayed reason survives re-validation unchanged');
   assert.deepEqual(hostReason({ code: 'E_CLI_TIMEOUT' }, 'Build box', 'x'), { code: 'E_CLI_TIMEOUT', message: "Couldn't reach Build box.", detail: null, remote: true });
   assert.equal(hostReason({ code: 'lowercase', message: 'm' }, 'Build box', 'x'), null, 'only kernel-shaped codes');
-  assert.equal(hostReason({ code: 'E_X', message: 'token=abc123' }, 'Build box', 'x').detail, '[Detail withheld]');
-  assert.equal(hostReason({ code: 'E_X', message: 'line\u0007bell' }, 'Build box', 'x').detail, '[Detail withheld]');
+  assert.equal(hostReason({ code: 'E_X', message: 'token=abc123' }, 'Build box', 'x').detail, DETAIL_WITHHELD);
+  assert.equal(hostReason({ code: 'E_X', message: 'line\u0007bell' }, 'Build box', 'x').detail, DETAIL_WITHHELD);
   assert.equal(hostReason({ code: 'E_X', message: 'm'.repeat(5000) }, 'Build box', 'x').detail.length, 2048);
   for (const bad of [null, {}, { ...reason, remote: false }, { ...reason, code: 'bad' }, { ...reason, message: '' },
     { ...reason, extra: 1 }, { ...reason, detail: 3 }]) assert.equal(remoteReason(bad), null);
@@ -143,7 +144,7 @@ test('hostReason: the detail is one display line; remoteReason accepts a message
   assert.equal(made('fatal: bad object HEAD\n\thint: fetch first\n').detail, 'fatal: bad object HEAD hint: fetch first');
   assert.equal(made(`first${at(0x2028)}second${at(0x2029)}third`).detail, 'first second third');
   for (const cp of [0x0085, 0x202A, 0x202E, 0x2066, 0x2069, 0x200B, 0x2060, 0xFEFF, 0xE0041]) assert.equal(made(`work${at(cp)}tree`).detail, `work${replaced}tree`, cp.toString(16));
-  for (const unsafe of ['token=abc123', 'https://user:pw@host.example/x', `line one\n${at(0x202E)}password: hunter2`]) assert.equal(made(unsafe).detail, '[Detail withheld]', unsafe);
+  for (const unsafe of ['token=abc123', 'https://user:pw@host.example/x', `line one\n${at(0x202E)}password: hunter2`]) assert.equal(made(unsafe).detail, DETAIL_WITHHELD, unsafe);
   assert.equal(made('\n \n').detail, null, 'nothing to show');
   assert.equal(made(`${'m '.repeat(3000)}`).detail.length, 2047, 'bounded after filtering, never ending on a space');
   // Ordinary international names pass both hops unchanged.
@@ -171,7 +172,7 @@ test('a carriage return withholds the whole text, alone or before a line feed; a
   const made = message => hostReason({ code: 'E_GIT_FAILED', message }, 'Build box', 'The view says this.');
   const good = made('fatal: bad object HEAD');
   for (const withheld of ['one\rtwo', 'one\r\ntwo', '\r', 'one\r\n']) {
-    assert.equal(made(withheld).detail, '[Detail withheld]', JSON.stringify(withheld));
+    assert.equal(made(withheld).detail, DETAIL_WITHHELD, JSON.stringify(withheld));
     assert.deepEqual(remoteReason(made(withheld)), made(withheld), 'the marker is a display line');
     assert.equal(remoteReason({ ...good, detail: withheld }), null, `detail ${JSON.stringify(withheld)}`);
     assert.equal(remoteReason({ ...good, message: withheld }), null, `message ${JSON.stringify(withheld)}`);
@@ -230,7 +231,7 @@ test('codeLineNodes: the code and the colon are text; the detail is alone in its
   const markup = '<b>bold</b> <img src=x> &amp;';
   assertIsolatedDetail(show({ code: 'E_GIT_FAILED', detail: markup }), { before: 'E_GIT_FAILED: ', detail: markup });
   assert.equal(line.querySelector('b, img'), null);
-  assertIsolatedDetail(show({ code: 'E_GIT_FAILED', detail: '[Detail withheld]' }), { before: 'E_GIT_FAILED: ', detail: '[Detail withheld]' });
+  assertIsolatedDetail(show({ code: 'E_GIT_FAILED', detail: '[withheld]' }), { before: 'E_GIT_FAILED: ', detail: '[withheld]' });
   // No detail, or one that is not already a display line: the code alone, no <bdi>.
   for (const detail of [null, undefined, '', 3, 'two\nlines', 'a\tb', 'two  spaces', ' leading', `a${String.fromCodePoint(0x202E)}b`, 'token=abc123', 'm'.repeat(2049)]) {
     assert.equal(show({ code: 'E_GIT_FAILED', detail }).textContent, 'E_GIT_FAILED', JSON.stringify(String(detail).slice(0, 20)));

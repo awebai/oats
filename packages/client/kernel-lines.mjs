@@ -13,11 +13,11 @@ import { originLead } from "./instance-presentation.mjs";
  * the kernel's stands without its speaker:
  *
  *   message a line, fix a line       ["OATS says: <message>", "<fix>"]
- *   message withheld, fix a line     ["[Detail withheld]", "OATS says: <fix>"]
+ *   message withheld, fix a line     ["[withheld]", "OATS says: <fix>"]
  *   message nothing, fix a line      ["OATS says: <fix>"]
- *   message a line, fix withheld     ["OATS says: <message>", "[Detail withheld]"]
+ *   message a line, fix withheld     ["OATS says: <message>", "[withheld]"]
  *   message a line, fix nothing      ["OATS says: <message>"]
- *   neither has a line               what is there ("[Detail withheld]" for a withheld text), no lead
+ *   neither has a line               what is there ("[withheld]" for a withheld text), no lead
  *
  * `terms` are the client's own (client-terms.mjs), required on every call under this function's name:
  * also where no line is led, so a caller that leaves them out fails at once and not only on the day a

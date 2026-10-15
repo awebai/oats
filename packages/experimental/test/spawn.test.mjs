@@ -314,7 +314,10 @@ test("the shipped binary compiles a dry run end to end", (t) => {
   const out = execFileSync(
     process.execPath,
     [join(HERE, "..", "..", "..", "bin", "oats.mjs"), "experimental", "spawn", "--outfit", outfitId, "--dry-run", "--cwd", base],
-    { env: { ...process.env, TURN_RECORD_ROOT: store.root, TURN_RECORD_OWNER: "mac" }, encoding: "utf8" },
+    // A dry run compiles into a directory it makes under the temporary directory, and leaves it: the
+    // printed command opens the file in it. The test's base is that temporary directory, so the
+    // directory goes with the base.
+    { env: { ...process.env, TURN_RECORD_ROOT: store.root, TURN_RECORD_OWNER: "mac", TMPDIR: base }, encoding: "utf8" },
   );
   assert.match(out, /^pi --session .*\.jsonl\n$/);
 });
