@@ -304,6 +304,24 @@ test("created while the person is busy elsewhere (the palette open): nothing ope
   assert.equal(ownText(arrived.outcome.said), "Created dev-2. Open it from the list with Enter.");
 });
 
+test("created and launched with every tab taken (Settled 7 of T2): when the row appears, the created line and then the cap's sentence; nothing opens and no tab closes", () => {
+  const more = ["dev-x", "dev-y"].map((name) => instanceRow("dev", name));
+  // The first read after the spawn has the others but not dev-2 yet: four tabs are opened from it.
+  let s = took(done(pressed(), CREATED).state, observed([...ROWS, ...more], { cli: FACTS_CLI }), 2);
+  for (const name of ["dev-a", "reviewer-a", "dev-x", "dev-y"]) {
+    const id = instanceId(roster(s).instances.find((each) => each.instance === name));
+    s = reduce(key(Object.freeze({ ...s, selected: id }), "enter").state, { shown: { id } }).state;
+    s = reduce(s, { back: true, read: ++reads }).state;
+    s = key(s, s.leaderKey).state;
+  }
+  assert.deepEqual([s.tabs.length, s.arriving?.instance], [4, "dev-2"]);
+  const arrived = reduce(s, { id: DEPLOYMENT, entry: observed([...ROWS, ...more, instanceRow("dev", "dev-2")], { cli: FACTS_CLI }), number: 3 });
+  assert.deepEqual([arrived.state.tabs.map((tab) => tab.name), arrived.state.terminal.name, arrived.state.arriving], [["dev-a", "reviewer-a", "dev-x", "dev-y"], "dev-y", null]);
+  assert.equal(arrived.effect?.open, undefined, "nothing opens");
+  assert.equal(arrived.effect?.close, undefined, "nothing closes");
+  assert.equal(ownText(arrived.state.outcome.said), "Created dev-2. 4 terminals are open; close one with C-\\ w.");
+});
+
 test("created but partial, incomplete or not launched: the shared words and the TUI's for what follows; nothing opens", () => {
   const cases = [
     [{ ...CREATED, view: createdView({ status: "partial", reason: { code: "E_WAKE_OUTCOME_UNKNOWN", message: "x" } }) }, "Agent created; wake outcome unavailable. `oats schedule list` shows its schedules."],

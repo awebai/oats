@@ -463,9 +463,9 @@ function tabOpened(state, { id, name, machine, routed }) {
 }
 
 /** Tab `id` shown (docs/tui.md, "Tabs"), with `focus` and `zoom` (the shown one's, by default):
- *  its activity mark goes, its instance's row is selected and revealed (a filter that hides it is
- *  cleared, a collapsed parent opened), and the focus stays where it was. The loop is told to show
- *  it unless it is the one shown already. */
+ *  its activity mark goes, it is the most recent for the palette, its instance's row is selected
+ *  and revealed (a filter that hides it is cleared, a collapsed parent opened), and the focus stays
+ *  where it was. The loop is told to show it unless it is the one shown already. */
 function showTab(state, id, { focus = state.terminal?.focus ?? "list", zoom = state.terminal?.zoom ?? false } = {}) {
   const tab = state.tabs.find((each) => each.id === id);
   if (!tab) return { state, effect: null };
@@ -474,6 +474,7 @@ function showTab(state, id, { focus = state.terminal?.focus ?? "list", zoom = st
   const shown = next(state, {
     tabs: Object.freeze(state.tabs.map((each) => (each.id === id && each.activity ? Object.freeze({ ...each, activity: false }) : each))),
     terminal: Object.freeze({ ...fields, focus, zoom: focus === "terminal" && zoom }),
+    recent: recentWith(state, id),
   });
   return { state: revealed(shown, id), effect: before === id ? null : { show: id } };
 }
@@ -504,7 +505,7 @@ function shownClosed(state, focus) {
   const tabs = Object.freeze(state.tabs.filter((tab) => tab.id !== t.id));
   const neighbour = tabs[at] ?? tabs[at - 1] ?? null;
   const closed = next(state, { tabs, terminal: null });
-  if (neighbour === null) return { state: closed, effect: { close: [t.id] } };
+  if (neighbour === null) return { state: next(closed, { focus: "list" }), effect: { close: [t.id] } };
   const step = showTab(closed, neighbour.id, { focus, zoom: t.zoom });
   return { state: step.state, effect: both({ close: [t.id] }, step.effect) };
 }
@@ -556,7 +557,8 @@ function returned(state, { id, status, stderr, asked = false, refused = null }) 
  *  a new tab after the shown one, shown, with the focus (docs/tui.md, "Tabs"), or the line says why
  *  not. At the cap nothing closes on its own: the line says so. One open at a time (Settled 3 of
  *  T2): nothing while another machine is asked first or a tab is still starting, and a preflight
- *  holds its tab's place in the cap. Every open counts for the palette's recency (`recent`). */
+ *  holds its tab's place in the cap. Every open counts for the palette's recency (`recent`), as
+ *  every tab shown does (showTab). */
 function openAgent(state, row) {
   if (state.opening !== null) return { state, effect: null };
   const id = instanceId(row);
@@ -571,7 +573,7 @@ function openAgent(state, row) {
   const decision = openDecision(state, row, instanceActs(row));
   if (!decision.open) return { state: next(state, { outcome: decision.said }), effect: null };
   if (state.tabs.length >= TAB_LIMIT) return { state: next(state, { outcome: fullLine(state) }), effect: null };
-  state = next(state, { recent: Object.freeze([decision.id, ...state.recent.filter((each) => each !== decision.id)].slice(0, RECENT_KEPT)) });
+  state = next(state, { recent: recentWith(state, decision.id) });
   if (decision.routed) {
     const opening = Object.freeze({ id: decision.id, phase: "preflight", name: decision.name, machine: decision.machine, routed: true });
     return { state: next(state, { opening, outcome: null }), effect: { open: decision } };
@@ -692,6 +694,8 @@ function acted(state, event) {
 
 /** The instances the palette's recency keeps. */
 const RECENT_KEPT = 50;
+/** The palette's recency with `id` the most recent: an open, and a tab shown. */
+const recentWith = (state, id) => Object.freeze([id, ...state.recent.filter((each) => each !== id)].slice(0, RECENT_KEPT));
 /** How many terminals the panel holds open at once (lib/panel.mjs MAX_TERMINALS, which a test
  *  holds this to). */
 export const TAB_LIMIT = 4;

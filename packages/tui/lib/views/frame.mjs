@@ -607,7 +607,7 @@ function stripRow(m, area) {
   const machineCells = (tab) => (tab.machine ? 1 + ON.length + 1 + tab.machine.width : 0);
   const cellsOf = (tab, { machine, name = tab.name.width }) => 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + 1;
   const total = (plan) => tabs.reduce((sum, tab, i) => sum + cellsOf(tab, plan[i]), 0);
-  const plan = tabs.map(() => ({ machine: true }));
+  const plan = tabs.map((tab) => ({ machine: true, name: tab.name.width }));
   const fits = () => total(plan) <= area.cols;
   if (!fits()) tabs.forEach((tab, i) => { if (!tab.shown) plan[i].machine = false; });
   const share = () => {
@@ -625,15 +625,16 @@ function stripRow(m, area) {
     if (col >= end) return;
     const p = plan[i], width = Math.min(cellsOf(tab, p), end - col);
     const style = tab.shown ? (focused ? FOCUSED : BOLD) : null;
-    if (tab.shown && focused) row.push({ col, width, style: FOCUSED });
-    const name = p.name < tab.name.width ? shownLines(tab.name.text, p.name, 1, { ascii })[0] : tab.name.text;
+    const name = p.name < tab.name.width ? shownLines(textOf(tab.name.text), p.name, 1, { ascii })[0] ?? lit("") : tab.name.text;
     const nameWidth = Math.min(p.name, textWidth(textOf(name)), end - col - 1);
+    // In reverse, as T1's title: the name with a cell on each side; its machine stays dim.
+    if (tab.shown && focused) row.push({ col, width: Math.min(nameWidth + 2, end - col), style: FOCUSED });
     if (nameWidth > 0) row.push({ col: col + 1, text: name, width: nameWidth, ...(style ? { style } : {}) });
     let at = col + 1 + nameWidth;
     if (tab.mark && at < end) { row.push({ col: at, text: lit(mark), width: 1 }); at += 1; }
     if (p.machine && tab.machine && at + 1 + ON.length + 1 < end) {
-      row.push({ col: at + 1, text: lit(ON), style: tab.shown && focused ? FOCUSED : DIM, width: ON.length });
-      row.push({ col: at + 2 + ON.length, text: tab.machine.text, style: tab.shown && focused ? FOCUSED : DIM, width: Math.max(0, Math.min(tab.machine.width, end - (at + 2 + ON.length))) });
+      row.push({ col: at + 1, text: lit(ON), style: DIM, width: ON.length });
+      row.push({ col: at + 2 + ON.length, text: tab.machine.text, style: DIM, width: Math.max(0, Math.min(tab.machine.width, end - (at + 2 + ON.length))) });
     }
     col += width;
   });

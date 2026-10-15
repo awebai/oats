@@ -12,8 +12,8 @@ install.
 `oats tui` is marked **preview**. That means:
 
 - **This version shows a workspace's instances, on this machine and on the
-  other machines registered on this machine, in one list, opens an agent's
-  terminal, spawns an agent on this machine, and stops, starts, restarts
+  other machines registered on this machine, in one list, opens agents'
+  terminals as tabs, spawns an agent on this machine, and stops, starts, restarts
   and retires an agent after a confirmation.** The registered machines are
   the ones `oats server list` names. It follows the instances as they
   start, stop and wait for you. It cannot spawn an agent on another machine
@@ -148,8 +148,8 @@ runs.
   columns up it stands beside the list; on a narrower terminal `Tab` opens
   it as a page.
 - **Opening an agent.** `Enter` on an instance that runs opens its terminal
-  beside the list, where the detail was: see
-  [Open an agent's terminal](#open-an-agents-terminal).
+  beside the list, where the detail was, as a tab: see
+  [Open an agent's terminal](#open-an-agents-terminal) and [Tabs](#tabs).
 
 **A view of more than one deployment** (this machine and another, or two
 deployments on one machine) is one list, grouped as the Desktop groups it:
@@ -299,23 +299,25 @@ C-\ commands   C-\ C-\ back to the list
 - **With the list focused** the terminal stays open, and the agent's screen
   is still drawn as it changes. The footer names the keys for it:
   `Enter focus terminal` on its row, `z zoom` and `c close terminal`.
-  - `Enter` on the open terminal's row gives it the focus again.
+  - `Enter` on the shown terminal's row gives it the focus again.
   - `z` gives it the focus and the whole body: the header and the footer
     stay, the list is hidden. The leader twice brings the list back beside
     it, and the leader then `z` zooms it out and in without leaving it.
-  - `c` closes it: the agent keeps running, and the right side is the
-    detail again.
+  - `c` closes it: the agent keeps running. The tab beside it is shown;
+    with no other tab the right side is the detail again.
   - `Tab` shows the detail in its place until `Tab` or `Esc`. Nothing of
     the terminal is drawn meanwhile, and its screen is read afresh when it
     shows again.
-- **One terminal is open at a time.** `Enter` on another instance that runs
-  closes the open one and opens that one.
+- **Up to four terminals are open at a time, each a tab.** `Enter` on
+  another instance that runs opens its terminal in a new tab, and the
+  others stay open: see [Tabs](#tabs).
 - **Under 80 columns** the terminal is always shown with the whole body
   when it has the focus. With the list focused the list is shown alone; the
   terminal stays open, unseen, and `Enter focus terminal` in the footer
   shows it again. Beside the list the terminal is never narrower than 40
   columns.
-- **A terminal also closes by itself** when its viewer ends: the agent's
+- **A terminal also closes by itself** when its viewer ends, shown or
+  hidden ([which tab is shown then](#tabs)): the agent's
   window ended, its session went away, or the link to its machine dropped.
   It closes within a second of that (tmux tells `oats tui` of a viewer's
   end once a second), or a second more when tmux took a moment more to
@@ -349,6 +351,88 @@ C-\ commands   C-\ C-\ back to the list
   timer: an idle terminal costs no frame. Inside tmux nothing changes: the
   agent opens in the TUI's panel, and `oats tui` makes no window and no
   split in your tmux.
+
+## Tabs
+
+```
+ acme-platform                                                        3 running
+  Instances   Souls   Capabilities                                read 14:03:27
+──────────────────────────────┬─────────────────────────────────────────────────
+> ● backend-lead              │ backend-lead  docs-writer•  qa-runner
+  ● docs-writer               │$ make test
+  ● qa-runner                 │ok 41 of 41
+                              │
+                              │
+C-\ commands   C-\ C-\ back to the list
+```
+
+Each terminal open in the panel is a tab, and the panel holds up to four.
+
+- **The tab strip** is the panel's top row: each tab's agent, in the order
+  the tabs were opened. With one tab the row reads as
+  [above](#open-an-agents-terminal), the agent's name alone.
+  - **The shown tab** is the one whose screen the panel draws. Its name is
+    in reverse video while the terminal has the focus, and bold otherwise.
+  - **The other tabs are hidden**, their names plain. A hidden tab whose
+    agent wrote since it was last shown has `•` after its name (`*` in
+    ASCII); the mark goes when the tab is shown. A hidden tab's screen is
+    not read: only that its agent wrote.
+  - **An agent of another machine** reads `<name>`, then a dim
+    `on <machine>`.
+  - **A strip longer than its row is cut** in this order: the hidden tabs'
+    `on <machine>`, then the hidden tabs' names, each to an equal share,
+    with `…` (`...` in ASCII), then the shown tab's `on <machine>`. The
+    shown tab's name stays whole.
+- **Opening.** `Enter` on a row, an instance in
+  [the palette](#the-palette), the leader then `Up` or `Down`, and a
+  [spawn](#spawning-an-agent)'s new agent open a terminal the same way:
+  - an instance that has a tab: that tab is shown, with the focus in it;
+  - any other: a new tab, after the shown one, is shown with the focus in
+    it. The other tabs stay open.
+  - **One open at a time.** While a tab is starting, or an agent of another
+    machine is asked whether it can be opened, another open does nothing,
+    and neither does a key that shows another tab.
+  - **At four tabs nothing closes by itself.** The open does nothing, and
+    the line above the panes says `4 terminals are open; close one with C-\ w.`
+    (with your leader, when [`tui.json`](#change-the-keys-tuijson) names
+    another). A tab still starting, and an agent of another machine while
+    it is asked, hold a place among the four. An instance that cannot be
+    opened says why, as it does with no tab open.
+- **Switching.** `[` and `]` in the Instances view, from the list or the
+  detail, show the tab before or after the shown one. The leader then
+  `Left` or `Right` does the same from any focus, and from another view
+  goes to the Instances view first.
+  - The strip does not wrap: on the first tab `[` does nothing, and on the
+    last `]`.
+  - The focus does not move: in the terminal it stays in the terminal,
+    zoomed or not, and in the list it stays in the list.
+  - **Showing a tab selects its instance's row** in the list and brings it
+    into view: a filter that hides the row is cleared, and an instance
+    folded over it is opened.
+- **The palette** lists the instances most recently opened or shown first,
+  as the Desktop's does. When the first of them is the shown tab's, the
+  palette opens with the second selected, so the palette then `Enter` goes
+  back to the terminal shown before it.
+- **Closing.** The leader then `w`, or `c` in the Instances view, closes the
+  shown tab: its agent keeps running. The tab to its right is shown, else
+  the one to its left.
+  - After the leader then `w` from a terminal, the tab shown next has the
+    focus, and is zoomed when the one closed was. After `c`, or the leader
+    then `w` from anywhere else, the terminal does not take the focus.
+  - Closing the last tab closes the panel: the right side is the detail
+    again, and the list has the focus.
+- **A tab that closes by itself**, when its viewer ends, says so on the line
+  above the panes in the words [above](#open-an-agents-terminal), for that
+  tab's agent (no line when it ended cleanly).
+  - The shown tab: the tab to its right is shown, else the one to its left,
+    and the list takes the focus.
+  - A hidden tab: the shown tab and the focus stay as they were.
+- **Zoom** (`z`, or the leader then `z`) gives the shown tab the whole body.
+  The strip stays its top row, and the other tabs stay open.
+- **The tabs are the open workspace's.** Opening another workspace in
+  [the switcher](#the-switcher) closes them all, and so does the open
+  workspace no longer being listed; their agents keep running. Coming back
+  opens none of them again.
 
 ## The Souls view
 
@@ -630,7 +714,7 @@ the TUI adds only what to do next, naming its keys or an `oats` command:
 
 | Outcome | What follows |
 |---|---|
-| created and started | the instances are read at once; when the new row appears it is selected and its terminal opens beside the list with the focus in it. Not running after two reads: the line says it is not visible yet, and nothing opens later by itself |
+| created and started | the instances are read at once; when the new row appears it is selected and its terminal opens beside the list in a new [tab](#tabs), with the focus in it. With four tabs open the line says it was created, then `4 terminals are open; close one with C-\ w.`, and nothing opens. Not running after two reads: the line says it is not visible yet, and nothing opens later by itself |
 | created, but not started, or its wake not saved, or not finished | the line says so; nothing opens. A home the spawn left reads as [held](#held-rows) |
 | not known (the answer was lost, or still running at the deadline) | the line says so, and `C` checks its result once, without spawning again: it is offered only then |
 | its cleanup is owed | the line says so and names the retire |
@@ -656,9 +740,10 @@ The line after leaving says so and names `oats status` to see it.
 | `2` | [the Souls view](#the-souls-view); `Esc` or `1` goes back |
 | `3` | the Capabilities view, which says what it will hold and what to run until then; `Esc` or `1` goes back |
 | `w` | opens [the switcher](#the-switcher) |
-| `Enter` | in the list of instances, opens the selected agent's terminal beside the list, or gives it the focus when it is the open one; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
-| `z` | gives the open terminal the focus and the whole body |
-| `c` | closes the open terminal; the agent keeps running |
+| `Enter` | in the list of instances, opens the selected agent's terminal in a new [tab](#tabs) beside the list, or shows its tab when it has one, with the focus in it; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
+| `z` | gives the shown terminal the focus and the whole body |
+| `c` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
+| `[`, `]` | in the Instances view, shows the tab before or after the shown one |
 | `Ctrl+\` | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
@@ -696,18 +781,20 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
 |---|---|
 | `k` or `Space` | opens [the palette](#the-palette) |
 | `1`, `2`, `3` | the Instances, Souls and Capabilities views |
-| `Up`, `Down` | opens the terminal of the instance before or after, in the list as it is drawn, the focus in it: from the open terminal's instance, or from the selection when none is open. Rows that cannot be opened are passed over, and the list does not wrap |
-| `z` | zooms the open terminal in or out; with the list focused, gives it the focus and the whole body |
-| `w` | closes the open terminal; the agent keeps running |
+| `Up`, `Down` | opens the terminal of the instance before or after, in the list as it is drawn, the focus in it: from the shown terminal's instance, or from the selection when none is open. It shows the instance's tab when it has one, else opens a new [tab](#tabs). Rows that cannot be opened are passed over, and the list does not wrap |
+| `Left`, `Right` | shows the tab before or after the shown one; the strip does not wrap, and the focus stays where it was |
+| `z` | zooms the shown terminal in or out; with the list focused, gives it the focus and the whole body |
+| `w` | closes the shown terminal's tab and shows the tab beside it; the agent keeps running |
 | `X`, `R`, `S`, `D` | stop, restart, start, retire, [after a confirmation](#stopping-starting-restarting-and-retiring): from a terminal's focus on that terminal's instance, which has the focus again when the confirmation closes |
-| `n`, `N` | [spawns an agent](#spawning-an-agent); `N` of the open terminal's soul from its focus |
+| `n`, `N` | [spawns an agent](#spawning-an-agent); `N` of the shown terminal's soul from its focus |
 | `/` | the filter |
 | `o` | [the switcher](#the-switcher) |
 | `?` | the help |
 | `Esc`, or the leader again | gives the list the focus; with the list focused, only closes the hint |
 
 - **While the leader waits** for its key the footer row is its hint, which
-  names these keys (`z` and `w` only while a terminal is open). It waits
+  names these keys (`z` and `w` only while a terminal is open, `Left` and
+  `Right` only with two tabs or more). It waits
   with no time limit. A key not in the table cancels it and is dropped:
   nothing is typed.
 - **Only a key in a later read counts.** A key that came in the same read of
@@ -719,9 +806,10 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
   have, and the leader works there too.
 - **What was open under it is settled first,** from whatever view: a
   filter field keeps its filter, as `Enter` does, and a confirmation
-  closes. `Up`, `Down`, `z`, `w` and the acts then go to the Instances view,
-  from Souls, Capabilities, the help or the switcher too; with no workspace
-  open they do nothing.
+  closes. `Up`, `Down`, `Left`, `Right`, `z`, `w` and the acts then go to
+  the Instances view, from Souls, Capabilities, the help or the switcher
+  too; with no workspace open they do nothing, and `Left`, `Right`, `z` and
+  `w` do nothing with no terminal open.
 - **The table is fixed** in this version: `keys` in `tui.json` rebinds the
   plain keys, and `open.detachKey` the leader.
 
@@ -732,12 +820,13 @@ over a list, as the OATS Desktop's ⌘K does. It takes the body, and while it
 is open no terminal is drawn and the TUI reads the keys.
 
 - **It lists, in this order:** the instances that can be opened, the most
-  recently opened in this run first, then the list's order, each with its
+  recently opened or shown in this run first (when the first is the shown tab's,
+  the second is selected as it opens), then the list's order, each with its
   state mark, its name and, for another machine, `on <machine>`; the souls
   of the open workspace, once [the Souls view](#the-souls-view) has read
   them (choosing one shows that view with it selected; the palette never
   reads them); the views, Instances, Souls and Capabilities; the acts the
-  instance offers now (the open terminal's when the palette was opened from
+  instance offers now (the shown terminal's when the palette was opened from
   its focus, else the selected one's), with `Spawn another <soul>` once the
   catalog lists its soul; then Spawn an agent, Workspaces, Refresh and Help.
   Each row says at its right edge what kind it is: `instance`, `soul`,
@@ -748,8 +837,9 @@ is open no terminal is drawn and the TUI reads the keys.
   `Up`/`Down` (and `PageUp`/`PageDown`) move, `Enter` runs the selected
   row, `Esc` closes it.
 - **Running a row** settles what was open under the palette, as the leader
-  does: an instance opens its terminal in the Instances view, the focus in
-  it, in place of the open one; an act opens its confirmation; a view shows
+  does: an instance shows its tab, or opens its terminal in a new one, in
+  the Instances view, the focus in it ([Tabs](#tabs)); an act opens its
+  confirmation; a view shows
   it; a command does what its key does.
 - **An `Enter` in the same read as the palette's opening runs nothing**, so
   a paste cannot open it and run a row.
@@ -789,12 +879,13 @@ never writes it. With no file the keys are the ones above.
 - The actions are `up`, `down`, `top`, `bottom`, `page-up`, `page-down`,
   `collapse`, `expand`, `detail`, `filter`, `refresh`, `instances`,
   `souls`, `capabilities`, `workspaces`, `palette`, `open`, `soul-instances`, `zoom`, `close-terminal`,
-  `stop`, `retire`, `start`, `restart`, `spawn`, `spawn-another`,
+  `tab-previous`, `tab-next`, `stop`, `retire`, `start`, `restart`, `spawn`, `spawn-another`,
   `spawn-check`, `help`, `close`, `quit`, `suspend` and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
   opens the selected agent's terminal in the list of instances, the
   selected row in the switcher and the detail in the Souls view;
   `soul-instances` (`i`) shows the selected soul's instances. `zoom` (`z`) and `close-terminal` (`c`) act
-  on the open terminal. In an open filter field `Enter` keeps the filter,
+  on the shown terminal, and `tab-previous` (`[`) and `tab-next` (`]`) show
+  the tab before and after it. In an open filter field `Enter` keeps the filter,
   whatever key `open` has.
 - A key is written as the help shows it, in lower case: `q`, `G`, `?`,
   `space`, `enter`, `tab`, `escape`, `backspace`, `up`, `pageup`, `f5`,
@@ -917,13 +1008,21 @@ with the Desktop (`packages/client/`).
     `ps -o ppid= -p` (macOS). With neither (no `/proc`, and no `ps` or one
     that refuses `-p`, like BusyBox's), the keeper kills nothing. A normal
     end is not affected. An `oats tui` killed with SIGKILL can then leave
-    its private server running, with the open terminal's viewer still
-    attached to the agent, until you end it with `tmux -S
+    its private server running, with its tabs' viewers still
+    attached to their agents, until you end it with `tmux -S
     <run directory>/tmux kill-server`. The next run's sweep leaves that
     directory alone while its socket answers.
 
-  Each open is a window of the server, whose process is the viewer itself,
-  with no shell between them. It is closed with `kill-pane`, which hangs up
+  Each tab is a window of the server, whose process is the viewer itself,
+  with no shell between them. Beside the keeper it holds up to four, one
+  of them shown, and every one has the panel's size: a resize resizes each tab's
+  window. Only the shown tab's pane is captured and typed into. tmux tells
+  `oats tui` of every pane's output: a hidden tab's output captures
+  nothing, and only sets that tab's mark, once until the tab is shown and
+  hidden again. The panel refuses a fifth open (`E_PANEL_FULL`, an open
+  still under way counted) and a second open while one is under way
+  (`E_PANEL_BUSY`); the TUI asks for neither, since it refuses such an open
+  itself ([Tabs](#tabs)). It is closed with `kill-pane`, which hangs up
   the viewer's terminal: the viewer gets SIGHUP at once and removes its own
   session on the agents' server. The viewer's error output goes to a file
   of the run's directory (0600), read back when it ends and deleted. Its
@@ -942,19 +1041,19 @@ with the Desktop (`packages/client/`).
   reap the viewer too, and its status follows at the next report. A pane whose
   status has not come by then is taken as ended without one, and closed:
   the terminal closes with the line that the viewer ended without saying
-  why. What the terminal
+  why. What the shown terminal
   shows is captured into `capture` in that directory, which the server
   writes and `oats tui` reads back, so nothing an agent prints passes
   through the stream on which `oats tui` reads the server's answers. An
-  answer the server would never give ends that stream, and the open
-  terminal closes with it. The server is ended
+  answer the server would never give ends that stream, and every tab
+  closes with it. The server is ended
   on every way out a process can handle. At its start a run also removes
   what a run that is gone left (below), and nothing else: it signals
   nothing.
 - **Every read runs in a session of its own** and is ended when the TUI
   ends, on every way out a process can handle (for SIGKILL see
-  [below](#what-it-changes-in-your-terminal-and-restores)). An open
-  terminal's viewer ends with the private server. A read that was
+  [below](#what-it-changes-in-your-terminal-and-restores)). Every tab's
+  viewer ends with the private server. A read that was
   running when the TUI is suspended is dropped, not shown: its answer could
   arrive cut. That holds for the read of the other machines too. The return
   reads again.
@@ -991,7 +1090,7 @@ with the Desktop (`packages/client/`).
   it.
 - It runs no other command that changes a deployment or a registration, and
   it writes no other file but the private server's: its socket `tmux`, the
-  keeper's FIFO `alive`, `capture` (the open terminal's screen, which the
+  keeper's FIFO `alive`, `capture` (the shown terminal's screen, which the
   server writes there for `oats tui` to read), and `owner.json` (`{ "tool":
   "oats-tui", "pid": …, "started": … }`), which lets a later run tell a
   directory a run that is gone left. A run that ends normally removes all
@@ -1031,7 +1130,9 @@ version:
   Capabilities, when it comes, is this machine's too.
 - There is no sorting and no mouse, and a deployment's heading cannot be
   folded. An open terminal has no scrollback but the viewer's own.
-- One terminal is open at a time; tabs of several come in a later version.
+- Up to four terminals are open at a time, as tabs. A tab cannot be moved
+  or split, and no tab is kept from one run to the next, or across a switch
+  of workspace.
 - With an OATS older than 0.52.0, after an interrupted stop the instance can
   be started and then cannot be stopped while `.oats-stop-pending.json` exists
   in its home.
@@ -1088,9 +1189,10 @@ suspends as one job.
 
 **While an agent's terminal is open** the terminal stays `oats tui`'s: the
 viewer draws into the private server's pane, never into your terminal, and
-`oats tui` draws what that pane shows. Every way out in the table above ends
-the private server and with it the viewer, with that status. A suspend
-leaves the server and its viewer running; `fg` draws the terminal afresh.
+`oats tui` draws what the shown tab's pane shows. Every way out in the
+table above ends the private server and with it every tab's viewer, with
+that status. A suspend
+leaves the server and its viewers running; `fg` draws the terminal afresh.
 
 `Ctrl+C` is the quit key: in raw mode the terminal sends it as a byte, not as
 a signal, so it answers 0. A SIGINT sent from outside (`kill -INT`) answers
@@ -1103,9 +1205,9 @@ on tmux 3.7c, `reset` brought back the cursor and autowrap, and the pane
 stayed in the alternate screen until `tput rmcup`. Nothing else is left in
 tmux: `oats tui` creates no session, window, option or key binding.
 Nor can it end a read after SIGKILL: nothing of the TUI runs any more, so a
-read that was in flight runs to its own end. An open terminal's private
-server is ended by its keeper as soon as `oats tui` is gone, so the viewer's
-terminal hangs up and the viewer removes its own session. A stopped `oats tui`
+read that was in flight runs to its own end. The open terminals' private
+server is ended by its keeper as soon as `oats tui` is gone, so each tab's
+viewer has its terminal hung up and removes its own session. A stopped `oats tui`
 (`Ctrl+Z`, SIGSTOP) still holds the keeper's FIFO, so its server is left
 alone. The next run removes the directory that is left, with its `tmux`,
 `alive`, `capture` and `owner.json`.
@@ -1155,9 +1257,9 @@ alone. The next run removes the directory that is left, with its `tmux`,
   ([above](#what-it-reads-and-what-it-runs)), and a spawn's empty task file
   ([above](#what-it-reads-and-what-it-runs)). The processes it starts are
   the reads above, when you open an agent its private tmux server and the
-  viewer in it, and the acts you confirm. No read, server or viewer
+  viewers in it, one for each tab, and the acts you confirm. No read, server or viewer
   outlives it on every way out a process can handle; after SIGKILL a read
-  in flight runs to its own end, and the private server and its viewer end
+  in flight runs to its own end, and the private server and its viewers end
   by themselves. An act you confirmed is never ended by `oats tui`: it runs
   to its own end. A spawn is ended only at its deadline, while `oats tui`
   runs ([above](#what-it-reads-and-what-it-runs)): never on the way out,

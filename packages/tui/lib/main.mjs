@@ -1,8 +1,9 @@
 // `oats tui` (preview): the loop. Events from the keyboard and from the reader go through one
 // pure reduce(state, event); what only the loop can do comes back as an effect; the frame is
 // drawn from the state. This version shows a workspace's instances, on this machine and on the
-// machines registered here, follows them, opens an agent's terminal in a panel beside the list
-// (the kernel's own viewer, in a pane of the run's private tmux server: lib/panel.mjs), stops,
+// machines registered here, follows them, opens agents' terminals as tabs of a panel beside the
+// list (up to four, each the kernel's own viewer in a pane of the run's private tmux server:
+// lib/panel.mjs; `viewers` maps each tab's instance to its window), stops,
 // starts, restarts and retires an instance after a confirmation, through the shared lifecycle
 // boundary and start rule, and spawns an agent on this machine from the shared preview and apply
 // (docs/tui.md).
@@ -28,8 +29,8 @@ const HELP = `Usage:
   ${USAGE}
 
 The OATS terminal client (preview): a full-screen view of a workspace's instances,
-on this machine and on the machines registered here. It follows them, opens an
-agent's terminal beside the list with Enter, stops, retires, starts or
+on this machine and on the machines registered here. It follows them, opens
+agents' terminals beside the list with Enter, as tabs, stops, retires, starts or
 restarts an instance (X, D, S, R) after a confirmation, and spawns an agent
 on this machine (n, or N for another of the selected one's soul).
 Keys: ? help, Enter open, w workspaces, q quit.

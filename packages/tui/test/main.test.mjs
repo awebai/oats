@@ -1053,6 +1053,61 @@ test("with a terminal focused, the leader, k, a few letters and Enter, each in a
   assert.equal(await r.status, 0);
 });
 
+/** The first of two agents viewed, then the second opened beside it with the leader then Down:
+ *  `@1` is hidden and `@2` shown, the focus in it. */
+async function viewingTwoTabs(options = {}) {
+  const r = await started({ kernel: { ok: true, cli: KEYED }, config: KEY_CONFIG, ...options });
+  r.reader.answer(TWO_ENTRY);
+  r.stdin.type("\r");
+  await settle();
+  r.panel.opens[0].made("@1");
+  await settle();
+  r.stdin.type("\x1c");
+  r.stdin.type("\x1b[B");
+  await settle();
+  r.panel.opens[1].made("@2");
+  await settle();
+  r.log.length = 0;
+  return r;
+}
+
+test("a hidden tab's output marks it on the strip and draws nothing of its screen; the shown tab's screen is drawn (T2)", async () => {
+  const r = await viewingTwoTabs();
+  assert.match(wholeScreen(r), /│ acme-expert-tui {2}acme-ledger-dev/, "the strip: both tabs, no mark");
+  r.panel.activity("@1");
+  r.panel.screen("@1", "hidden words");
+  await settle();
+  const marked = wholeScreen(r);
+  assert.match(marked, /│ acme-expert-tui\u2022 {2}acme-ledger-dev/, "the hidden tab is marked");
+  assert.doesNotMatch(marked, /hidden words/, "a hidden tab's screen is not drawn");
+  r.panel.activity("@2");
+  r.panel.screen("@2", "shown words");
+  await settle();
+  const shown = wholeScreen(r);
+  assert.match(shown, /shown words/);
+  assert.match(shown, /│ acme-expert-tui\u2022 {2}acme-ledger-dev(?!\u2022)/, "the shown tab is never marked");
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("with two tabs open, another workspace opened closes each tab's viewer by its window id, and no terminal is left (T2)", async () => {
+  const r = await viewingTwoTabs({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
+  leaderTwice(r);
+  r.stdin.type("w");
+  r.stdin.type("j");
+  r.log.length = 0;
+  r.stdin.type("\r");
+  await settle();
+  assert.deepEqual(effectsOf(r), [["admit", LEDGER]]);
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "close"), [["close", "@1"], ["close", "@2"]]);
+  r.log.length = 0;
+  r.stdin.type("typed");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "input"), [], "no terminal has the focus");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("with a terminal focused, the leader then Down opens the next agent's terminal as a tab with the focus in it, and then Up shows the one before, a tab already; nothing reaches the agent (Spec T1b; T2)", async () => {
   const r = await viewingFirstOfTwo();
   r.stdin.type("\x1c");

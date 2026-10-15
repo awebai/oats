@@ -213,14 +213,15 @@ const HELP_KEYS = [
   /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
   /^ *Left, h {2,}collapse, or go to the parent$/, /^ *Right, l {2,}expand, or go to the first child$/, /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/,
   /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *2 {2,}souls$/, /^ *3 {2,}capabilities$/, /^ *w {2,}workspaces$/, /^ *Ctrl\+K {2,}palette$/,
-  /^ *Enter {2,}open the selected agent's terminal beside the list, or go to it$/, /^ {2,}when it is the open one, in the list of instances$/,
+  /^ *Enter {2,}open the selected agent's terminal as a tab beside the list, or$/, /^ {2,}show its tab when it has one, in the list of instances$/,
   /^ {2,}C-\\ C-\\ takes the focus from the terminal back to the list; the$/, /^ {2,}agent keeps running\.$/,
   /^ {2,}While the terminal has the focus every other key goes to the$/, /^ {2,}agent, Ctrl\+C and Ctrl\+Z too\.$/,
-  /^ {2,}One terminal is open at a time\. It has no scrollback but the$/, /^ {2,}viewer's own, and no mouse\.$/,
+  /^ {2,}Up to 4 terminals are open at a time, each a tab\. They have no$/, /^ {2,}scrollback but the viewer's own, and no mouse\.$/,
   /^ {2,}docs\/tui\.md has the keys that can be the leader\.$/,
   /^ *Enter {2,}open the selected workspace, in the switcher$/,
-  /^ *z {2,}go to the open terminal with the whole screen; the leader twice$/, /^ {2,}brings the list back$/,
-  /^ *c {2,}close the open terminal; the agent keeps running$/,
+  /^ *z {2,}go to the shown terminal with the whole screen; the leader twice$/, /^ {2,}brings the list back$/,
+  /^ *c {2,}close the shown terminal and show its neighbour; the agent keeps$/, /^ {2,}running$/,
+  /^ *\[ {2,}show the terminal of the tab before the shown one$/, /^ *\] {2,}show the terminal of the tab after the shown one$/,
   // The acts, and under the last of them the rules of a confirmation (views/help.mjs ACT_RULES).
   /^ *X {2,}stop the selected agent, after a confirmation$/, /^ *D {2,}retire the selected agent, after a confirmation$/,
   /^ *S {2,}start the selected agent as it was last launched, after a$/, /^ {2,}confirmation$/,
@@ -1209,13 +1210,13 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends thirty-seven rows above `quit`: the table holds the three
+  // At 80x24 the help's first page ends forty rows above `quit`: the table holds the three
   // views, `workspaces`, `open` three times with the agent's terminal in nine rows and the Souls
-  // view's in two, `soul-instances`, `zoom` in two and `close-terminal`, the four acts in six rows
-  // with the two rules of a confirmation in four under them, and the spawn's three in nine rows
-  // (`spawn` in four, `spawn-another` in three, `spawn-check` in two) (HELP_KEYS); the movement
-  // keys scroll the help, and thirty-seven rows down show it.
-  for (let i = 0; i < 37; i++) term.press("j");
+  // view's in two, `soul-instances`, `zoom` in two, `close-terminal` in two, `tab-previous` and
+  // `tab-next`, the four acts in six rows with the two rules of a confirmation in four under them,
+  // and the spawn's three in nine rows (`spawn` in four, `spawn-another` in three, `spawn-check` in
+  // two) (HELP_KEYS); the movement keys scroll the help, and forty rows down show it.
+  for (let i = 0; i < 40; i++) term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
