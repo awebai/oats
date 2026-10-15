@@ -25,12 +25,12 @@ import { distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX } from '../../client/spawn-preview-contract.mjs';
-import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
-import { sameSpawnDecision } from '../../client/spawn-decision.mjs';
+import { spawnApplySupported, spawnPrepareInput, spawnApplyReason, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
+import { createSpawnTransaction } from '../../client/spawn-transaction.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
-import { RECOVER_POLL_MS, FOLLOW_MARGIN_MS } from './spawn-jobs.mjs';
+import { RECOVER_POLL_MS } from './spawn-jobs.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
@@ -913,8 +913,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let pressed = null;
   // Spec C: this dialog's one handoff (single-flight: the store refuses a token it has seen).
   const handoffToken = {}; let handedOff = false;
-  // followUntil (#802): until when a pending submitted spawn is followed (the broker's CLI deadline + 30 s, from the press).
-  let followUntil = 0;
+  // The spawn transaction without a store (packages/client/spawn-transaction.mjs), this dialog's own: its job
+  // (`spawnJob`) carries the submitted reference and its deadline (#802: the broker's CLI deadline + 30 s, from the press).
+  const transaction = createSpawnTransaction({ request: (body, job) => postJson(ctx, `/api/spawn?ws=${encodeURIComponent(job.address)}`, body),
+    now: () => Date.now(), pollMs: pollDelay });
+  let spawnJob = null;
   let flight = null, phase = 'idle', intent = null, submitted = false, delivered = false, modelsReq = 0, configsReq = 0, remoteBusy = false, modelsFor = null;
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
   const current = () => alive && owns() && mount === workspaceGeneration();
@@ -1437,83 +1440,72 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         return;
       }
     }
-    const ws = address(), sel = selector, token = {}, connection = ctx.connectionGeneration?.() ?? 0, owner = mount;
+    const ws = address(), token = {}, connection = ctx.connectionGeneration?.() ?? 0, owner = mount;
     const valid = () => current() && owner === mount && flight === token && connection === (ctx.connectionGeneration?.() ?? 0);
     flight = token; phase = recovering ? 'checking' : 'preparing'; setStatus(recovering ? 'Checking the submitted spawn…' : 'Spawning…'); syncButton();
-    const request = async body => {
-      const raw = await postJson(ctx, `/api/spawn?ws=${encodeURIComponent(ws)}`, body);
-      if (!valid()) return null;
-      const view = spawnApplyView(raw, { workspace: ws, ref: body.spawnRef, selector: sel });
-      if (!view || view.preview && intent && body.action !== 'prepare' && !sameSpawnDecision(view.preview.decision, intent.preview.decision)) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
-      return view;
-    };
+    // The shared transaction: prepare, apply only the decision on screen at the press, follow a pending apply
+    // (#802), and Check result on the same intent (an unknown result re-applies the SAME reference only).
+    const call = { alive: valid, progress: (event, job) => {
+      if (event === 'submitted') { intent = job.prepared; spawnJob = job; submitted = true; phase = 'submitting'; }
+      else if (event === 'pending') { phase = 'pending'; setStatus('Spawning…'); syncButton(); }
+    } };
     try {
-      let view;
-      if (recovering) {
-        view = await request({ action: 'result', spawnRef: intent.spawnRef });
-        if (!view) return;
-        // An unknown outcome is retried on the SAME intent (same key) only.
-        if (view.status === 'unknown') { submitted = true; view = await request({ action: 'apply', spawnRef: intent.spawnRef }); if (!view) return; }
-        if (view.status === 'prepared') { intent = null; submitted = false; phase = 'idle'; setStatus('That spawn was never submitted. Press Spawn to spawn with the values shown.'); schedule(0); return; }
-      } else {
-        const prepared = await request(prepareInput);
-        if (!prepared) return;
-        if (prepared.status !== 'prepared') {
-          phase = 'idle'; notice = showProblem(prepared.reason, 'spawn'); schedule(0); return;
-        }
-        // The confirmation is re-read by the server; apply only what is on screen.
-        if (!shown?.data || !sameSpawnDecision(prepared.preview.decision, shown.data.decision)) {
-          phase = 'drifted'; shown = settled = { key: shown?.key, value: shown?.value, data: prepared.preview }; render();
-          setStatus('These values changed since you last looked. Check them and press Spawn again.'); return;
-        }
-        intent = prepared; submitted = true; phase = 'submitting';
-        followUntil = Date.now() + (prepared.applyWithinMs ?? SPAWN_APPLY_MS) + FOLLOW_MARGIN_MS;
-        view = await request({ action: 'apply', spawnRef: intent.spawnRef });
-        if (!view) return;
+      const outcome = recovering
+        ? await transaction.check(spawnJob, call)
+        : await transaction.submit({ address: ws, selector, input: prepareInput, decision: structuredClone(shown.data.decision) }, call);
+      if (!outcome) return;
+      const { kind, view, reason } = outcome;
+      if (kind === 'refused' && !outcome.job.submitted) {
+        // Refused before anything was submitted: the prepare's own refusal, or the request failed.
+        phase = 'idle';
+        if (view) { notice = showProblem(reason, 'spawn'); schedule(0); } else showProblem(reason, 'spawn');
+        return;
       }
-      // #802: still running in the broker (a long spawn): read `result` until it settles or the deadline passes.
-      while (view.status === 'pending' && Date.now() < followUntil) {
-        phase = 'pending'; setStatus('Spawning…'); syncButton();
-        await new Promise(resolve => setTimeout(resolve, pollDelay));
-        if (!valid()) return;
-        view = await request({ action: 'result', spawnRef: intent.spawnRef });
-        if (!view) return;
+      if (kind === 'drifted' && !reason) {
+        // The confirmation is re-read by the server; only what is on screen is applied.
+        phase = 'drifted'; shown = settled = { key: shown?.key, value: shown?.value, data: view.preview }; render();
+        setStatus('These values changed since you last looked. Check them and press Spawn again.'); return;
       }
+      if (kind === 'never-submitted' && recovering) { intent = null; submitted = false; phase = 'idle'; setStatus('That spawn was never submitted. Press Spawn to spawn with the values shown.'); schedule(0); return; }
       // Past the deadline and still pending: the outcome is unknown, with Check result (as the store does).
-      if (view.status === 'pending') { phase = 'unknown'; showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn'); return; }
-      phase = view.status;
+      if (kind === 'pending-expired') { phase = 'unknown'; showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn'); return; }
       const named = intent?.preview?.instance ?? shown?.data?.instance ?? '';
-      if (['complete', 'partial'].includes(phase)) {
-        setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
-        if (!delivered) {
-          delivered = true; deploymentField?.remember();
-          // The spawn worked while Claude Code ignored the channel option (the receipt's `flagIgnored`): a
-          // notice says so, once per completed apply, beside whatever the completion itself says. Only a
-          // dialog that runs its own apply gets here: with a store (the shipped shell) spawn-jobs.mjs says it.
-          const ignored = flagIgnoredNotice(view.receipt.instance, view.receipt.flagIgnored);
-          if (ignored) ctx.notify?.(ignored.headline, ignored.detail ? { detail: ignored.detail } : undefined);
-          await onCreated(view, () => current() && owner === mount);
+      if (kind === 'created') {
+        phase = view.status;
+        if (['complete', 'partial'].includes(phase)) {
+          setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
+          if (!delivered) {
+            delivered = true; deploymentField?.remember();
+            // The spawn worked while Claude Code ignored the channel option (the receipt's `flagIgnored`): a
+            // notice says so, once per completed apply, beside whatever the completion itself says. Only a
+            // dialog that runs its own apply gets here: with a store (the shipped shell) spawn-jobs.mjs says it.
+            const ignored = flagIgnoredNotice(view.receipt.instance, view.receipt.flagIgnored);
+            if (ignored) ctx.notify?.(ignored.headline, ignored.detail ? { detail: ignored.detail } : undefined);
+            await onCreated(view, () => current() && owner === mount);
+          }
+        } else {
+          // Incomplete: what the screen differed in goes under the sentence; the nearest entry and the position are Details' data.
+          const problem = spawnProblem(view.reason, 'spawn'), differed = view.incomplete.launchPrompts?.differed ?? null, said = differedLines(differed);
+          setStatus(retainedSpawnMessage(view.incomplete), true, said ? { ...problem, detail: `${problem.detail} · ${said.detail}` } : problem, false, said ? differed : null);
         }
-      } else if (phase === 'incomplete') {
-        // What the screen differed in goes under the sentence; the nearest entry and the position are Details' data.
-        const problem = spawnProblem(view.reason, 'spawn'), differed = view.incomplete.launchPrompts?.differed ?? null, said = differedLines(differed);
-        setStatus(retainedSpawnMessage(view.incomplete), true, said ? { ...problem, detail: `${problem.detail} · ${said.detail}` } : problem, false, said ? differed : null);
-      } else if (phase === 'unknown' && ROLLED_BACK_CODES.includes(view.reason?.code)) {
+      } else if (kind === 'cleanup-owed') {
         // #802: rolled back, its cleanup owed: retiring the quarantined home completes it; a re-apply cannot.
         intent = null; submitted = false; phase = 'idle';
-        const problem = cleanupOwedProblem(view.reason, named);
+        const problem = cleanupOwedProblem(reason, named);
         notice = problem; setStatus(problem.text, true, problem);
-      } else if (phase === 'unknown') {
-        showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn');
-      } else if (ROLLED_BACK_CODES.includes(view.reason?.code)) {
+      } else if (kind === 'unknown') {
+        // Unknown, with Check result: E_OUTCOME_UNKNOWN's words, or E_INTENT_EXPIRED's own once the press was
+        // submitted (the record is gone, which proves nothing: never "Nothing was created").
+        phase = 'unknown'; showProblem(reason, 'spawn');
+      } else if (ROLLED_BACK_CODES.includes(reason?.code)) {
         // #802: the kernel rolled the spawn back: nothing was created.
         intent = null; submitted = false; phase = 'idle';
-        notice = rolledBackProblem(view.reason, named);
+        notice = rolledBackProblem(reason, named);
         setStatus(notice.text, true, notice); schedule(0);
       } else {
-        // Refused or stale: nothing was created. Read the current values again.
+        // Refused, stale or drifted after the press: nothing was created. Read the current values again.
         intent = null; submitted = false; phase = 'idle';
-        const problem = spawnProblem(view.reason, 'spawn');
+        const problem = spawnProblem(reason, 'spawn');
         notice = /Nothing was created/.test(problem.text) ? problem : { ...problem, text: `${problem.text} Nothing was created.` };
         setStatus(notice.text, true, notice); schedule(0);
       }

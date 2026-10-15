@@ -193,6 +193,23 @@ test('an unknown outcome offers Check result on the SAME intent; the retry reuse
   assert.equal(u.opens.length, 1);
 });
 
+test('decision A: a backend restart after the press (E_INTENT_EXPIRED) reads unknown with Check result, never “Nothing was created”', async t => {
+  let u;
+  u = await mountSpawn(t, { spawnGate: body => { if (body.action === 'apply') u.restartBroker(); } });
+  await u.open(); await u.type('.fpurpose', 'api-v2');
+  await u.spawn();
+  assert.deepEqual(u.spawns().map(b => b.action), ['prepare', 'apply']); assert.equal(u.applied.length, 0, 'the new broker applied nothing');
+  assert.equal(u.q('.fstatus').dataset.code, 'E_INTENT_EXPIRED');
+  assert.equal(u.text('.fstatus'), 'This spawn request expired. Check the instance list before spawning again.');
+  assert.doesNotMatch(u.text('.fstatus'), /Nothing was created/);
+  assert.equal(u.q('.fspawn').textContent, 'Check result'); assert.equal(u.q('.fspawn').disabled, false);
+  // Check result asks on the same reference, and the record is still gone: still unknown, nothing applied.
+  await u.spawn();
+  assert.equal(u.spawns().at(-1).spawnRef, u.spawns()[1].spawnRef); assert.ok(u.spawns().slice(2).every(b => b.action !== 'prepare'));
+  assert.equal(u.applied.length, 0); assert.equal(u.q('.fstatus').dataset.code, 'E_INTENT_EXPIRED');
+  assert.equal(u.q('.fspawn').textContent, 'Check result'); assert.equal(u.opens.length, 0);
+});
+
 for (const outcome of ['success', 'rejection']) test(`closing during an in-flight spawn (${outcome}): the late result opens nothing and leaves a newer dialog alone`, async t => {
   const gate = deferred(); let hold = false, u;
   u = await mountSpawn(t, { spawnGate: body => hold && body.action === 'apply' ? gate.promise : undefined, apply: args => applyThatRuns(u)(args) });
