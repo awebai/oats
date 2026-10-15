@@ -510,9 +510,11 @@ alive), else **Spawning…**, so it never flashes to a stopped instance with
 actions. Any roster row with `spawnInProgress`, whoever spawned it, reads
 **Setting up worktree…** the same way, with a muted "since <local time>" when a
 job of this window knows its start, and offers no actions. The head's count stays the kernel's
-observation; pending rows are not counted. While a created instance is awaited
-the shell reads the roster every 700 ms (the dialog's former pace) instead of
-every 4 s.
+observation; pending rows are not counted. When a spawn is created the shell
+reads the roster at once (the created answer comes once the backend has read
+that deployment, above), then, while the instance is still awaited, every
+700 ms (the dialog's former pace) instead of every 4 s, never two reads at
+once (`followSpawns`).
 
 **Window reload.** Pending rows are Desktop-local. A submitted job is kept in the
 window's `sessionStorage` until its outcome has been reported: while in flight or
@@ -587,8 +589,11 @@ they are when, at the moment it runs:
   pending) and the connection generation, after the dialog's own focus return,
   and every explicit action supersedes the ticket.
 
-The open itself is asynchronous (the roster read, the terminal's key and
-readiness), so the same holds all through it: every step of the open, and the
+The open resolves the instance against the roster read that showed it ready,
+without reading `/api/panel` again, while no later roster read has started and
+the workspace is the same (`shownRoster`, #1246); otherwise, and for every
+other open, it reads the roster first. The open itself is asynchronous (that
+read, the terminal's key and readiness), so the same holds all through it: every step of the open, and the
 terminal's readiness focus, goes on only while the operator still has not acted,
 on the same connection and workspace. Any input during the open stops it,
 nothing is selected and the row says **New**; so does any open that never
