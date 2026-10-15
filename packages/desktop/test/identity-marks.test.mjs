@@ -166,12 +166,13 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: real marker 
   }
 });
 
-test('pure color module is served and packaged with the renderer without IO or random dependencies', () => {
-  const source = readFileSync(new URL('../renderer/soul-colors.mjs', import.meta.url), 'utf8');
+test('pure color module is served and packaged with the shared home without IO or random dependencies', () => {
+  const source = readFileSync(new URL('../../client/soul-colors.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /\bimport\b|\brequire\s*\(|Math\.random|\b(?:window|document|localStorage|fetch|process)\s*\./);
   const config = readFileSync(new URL('../electron-builder.config.cjs', import.meta.url), 'utf8');
   assert.match(config, /"renderer\/\*\*\/\*"/);
+  assert.match(config, /extraResources: \[\{ from: "\.\.\/client", to: "client", filter: \["\*\*\/\*\.mjs"\] \}\]/);
   const marks = readFileSync(new URL('../renderer/identity-marks.mjs', import.meta.url), 'utf8');
-  assert.match(marks, /from '\.\/soul-colors\.mjs'/, 'same renderer directory is served by the existing guarded harness');
+  assert.match(marks, /from '\.\.\/\.\.\/client\/soul-colors\.mjs'/, 'the shared home is served by the existing guarded harness at /client/');
   assert.match(config, /publish: null/);
 });
