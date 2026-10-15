@@ -215,11 +215,36 @@ test('unchanged capture and empty discovery inventory still validate original ro
 });
 test('each append batch revalidates root; prior committed batch survives a later refusal',t=>{
  const f=fixture(t);f.start();f.transcript();
+ const initial=fs.readFileSync(f.file,'utf8'),stream='fixture~pi.actual',limit=8*1024*1024;
  const big=JSON.stringify({type:'message',timestamp:ts,message:{role:'assistant',content:'x'.repeat(1024*1024)}})+'\n';
- for(let i=0;i<64;i++)fs.appendFileSync(f.file,big);fs.appendFileSync(f.file,JSON.stringify({timestamp:ts,type:'message',message:{role:'assistant',content:'last batch'}})+'\n');
- const files=sessionsForHome(f.home);let batches=0;const append=f.store.appendBatch.bind(f.store);
- f.store.appendBatch=(...args)=>{batches++;const value=append(...args);if(batches===1)f.replace();return value;};
- assert.throws(()=>captureSessions(f.store,{owner:'fixture',files,format:'pi',final:true}));assert.equal(batches,1);assert.ok(fs.statSync(f.store.journalPath('fixture~pi.actual')).size>=8*1024*1024,'actual earlier journal append (one 8 MB batch) was not rolled back');
+ // Admission flushes BEFORE the eighth large record would exceed the raw
+ // byte allowance. Serialized journal size is not a durability oracle.
+ const expectedPrefix=initial+big.repeat(7),expectedLines=expectedPrefix.slice(0,-1).split('\n');
+ assert.ok(Buffer.byteLength(expectedPrefix)<limit);
+ assert.ok(Buffer.byteLength(expectedPrefix)+Buffer.byteLength(big)>limit);
+ assert.equal(expectedLines.length,9,'two initial records and seven large records fit');
+ for(let i=0;i<9;i++)fs.appendFileSync(f.file,big);fs.appendFileSync(f.file,JSON.stringify({timestamp:ts,type:'message',message:{role:'assistant',content:'last batch'}})+'\n');
+ assert.ok(Buffer.byteLength(expectedPrefix)<fs.statSync(f.file).size,'the accepted prefix leaves a strict unfinished suffix');
+ const files=sessionsForHome(f.home);let batches=0,accepted,committed;const append=f.store.appendBatch.bind(f.store);
+ f.store.appendBatch=(id,turns,...args)=>{
+  batches++;assert.equal(id,stream);
+  accepted=structuredClone(turns);
+  assert.deepEqual(accepted.map(turn=>turn.body.line),expectedLines,'the batch contains the exact admitted source prefix');
+  const value=append(id,turns,...args);
+  assert.equal(value,expectedLines.length,'the real append committed every admitted turn');
+  committed=fs.readFileSync(f.store.journalPath(stream));
+  f.replace();return value;
+ };
+ assert.throws(()=>captureSessions(f.store,{owner:'fixture',files,format:'pi',final:true}),{code:'E_CAPTURED_PI_CUSTODY'});
+ assert.equal(batches,1,'no append is admitted after source-root replacement');
+ const persisted=fs.readFileSync(f.store.journalPath(stream));
+ assert.deepEqual(persisted,committed,'the successful append survives refusal byte for byte');
+ const turns=persisted.toString('utf8').trimEnd().split('\n').map(line=>JSON.parse(line));
+ assert.deepEqual(turns,accepted,'journal identities and content equal the successful append');
+ assert.equal(new Set(turns.map(turn=>turn.id)).size,expectedLines.length);
+ assert.deepEqual(turns.map(turn=>turn.provenance.origin.line),expectedLines.map((_,n)=>n+1));
+ assert.equal(turns.map(turn=>turn.body.line+'\n').join(''),expectedPrefix,'uncaptured source suffix is excluded');
+ assert.ok(turns.every(turn=>!turn.body.line.includes('last batch')));
 });
 test('empty protected CLI inventory revalidates after acquiring the capture lock',t=>{
  const f=fixture(t);f.start();const cli=new URL('../bin/capture.mjs',import.meta.url).pathname,preload=join(f.base,'controlled-fault.mjs');
