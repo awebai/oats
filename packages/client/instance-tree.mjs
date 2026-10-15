@@ -247,17 +247,20 @@ function retireKind(instance) {
  * `state` is the row's text, `hint` its muted line (none while retiring), `status` the hover card's Status.
  * `sentence` is every client's, so it promises no act of one client: a spawning home "can't be used until
  * the spawn finishes", whoever started the spawn and whether or not it ends finished. `said` is what the
- * row's reason says (instance-acts.mjs): the sentence, or for a failed retire with a recorded message the
- * kernel's words (`message`, and its `code`) with `origin: "kernel"`, shown only through the display filter. */
+ * row's reason says (instance-acts.mjs): the sentence, or for a failed retire with a recorded message or code the
+ * kernel's words (`message`, `code`, or `message (code)`) with `origin: "kernel"`, shown only through the display
+ * filter. */
 export function heldHome(instance) {
   const kind = !instance ? null : instance.retireInFlight === true ? "retiring" : instance.rollbackIncomplete ? "spawn-incomplete"
     : instance.spawnInProgress === true ? "spawning" : retireKind(instance);
   if (!kind) return null;
   const held = HELD_HOMES[kind], retire = kind === "retire-failed" ? retireData(instance.retire) : null;
-  // A message the display filter reduces to nothing says nothing: the row's own words stand.
-  const said = retire?.message && displayLine(retire.message) !== null ? { sentence: retire.code ? `${retire.message} (${retire.code})` : retire.message, origin: "kernel" }
-    : retire?.code ? { sentence: `The retire of ${instance.instance} failed (${retire.code}). Retire it again to finish.` }
-      : { sentence: held.sentence(instance.instance) };
+  // The kernel's words, message or code, are said as the kernel's, and shown only through the display filter; one the
+  // filter reduces to nothing (blank, withheld) says nothing. With neither, the row's own words stand.
+  const shown = text => (text && displayLine(text) !== null ? text : null);
+  const message = shown(retire?.message), code = shown(retire?.code);
+  const said = message || code ? { sentence: message && code ? `${message} (${code})` : message || code, origin: "kernel" }
+    : { sentence: held.sentence(instance.instance) };
   return { kind, ...held, said };
 }
 

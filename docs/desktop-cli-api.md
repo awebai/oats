@@ -2844,8 +2844,8 @@ its absence.
   can't be read), `failed` (a self-retire's completion recorded an error) or
   `interrupted` (a scheduled completion is gone and left no outcome);
   `since` is a string, `self` a boolean, `code` an `E_…` code
-  (`^E_[A-Z0-9_]+$`) and `message` a string. A `null` `code` or `message` is
-  read as absent and any other field is dropped. A value with any field out
+  (`^E_[A-Z0-9_]+$`) and `message` a string; an optional field is absent or
+  a string, never `null`. Any other field is dropped. A value with any field out
   of this shape is dropped whole, never repaired, and the row reads as if it
   had none; it never fails the roster. `retirePending` is read on its own
   and kept as reported. The Desktop and `oats tui` read `running` and

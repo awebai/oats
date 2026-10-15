@@ -280,7 +280,7 @@ When the retire has ended without finishing, the row says so and offers only
   display filter as every other text from OATS (control characters and
   line breaks never reach the screen, a long message is cut, a message that
   looks like a secret is withheld). With a code and no message, the reason
-  names the code.
+  is OATS's code, shown the same way.
 - **Retire didn't finish**: a scheduled completion is gone and left no
   outcome.
 

@@ -208,8 +208,8 @@ Desktop's rule:
   once.
 - `Retire failed`: a self-retire's completion recorded an error. The detail
   gives its reason after `OATS says:`, in OATS's words with its code,
-  through the display filter. With a code and no message, the reason names
-  the code.
+  through the display filter. With a code and no message, the reason is
+  its code after `OATS says:`, the same way.
 - `Retire didn't finish`: a scheduled completion is gone and left no
   outcome.
 

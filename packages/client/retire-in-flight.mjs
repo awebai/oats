@@ -17,9 +17,10 @@
  *
  *   retiringRows(rows, ids) -> rows, each held one copied with `retireInFlight: true`
  *
- * A row is held from the moment the apply starts until its answer is in and the roster was read after it.
- * An answer that ran nothing (a refusal, `refused`; a plan that changed under it, `stale`) lets the row go at
- * once: it reads again as the roster says. Any other answer (complete, partial, unknown, pending, unreadable)
+ * A row is held from the moment an apply starts until its answer is in and the roster was read after it, and
+ * while any other apply of a retire of it is held (a second Retire, offered while one runs, is one).
+ * An answer that ran nothing (a refusal, `refused`; a plan that changed under it, `stale`) lets its apply go at
+ * once: with no other apply held, the row reads again as the roster says. Any other answer (complete, partial, unknown, pending, unreadable)
  * holds it until a read: that read says what the retire left. instance-tree.mjs `heldHome` reads
  * `retireInFlight` as `retiring`. Nothing is kept beyond the client's run. */
 import { instanceId } from './instance-tree.mjs';
@@ -28,24 +29,31 @@ const RAN_NOTHING = new Set(['refused', 'stale']);
 
 export function createRetiresInFlight({ mark, onChange = () => {} } = {}) {
   if (typeof mark !== 'function') throw new TypeError('createRetiresInFlight: a mark of the client\'s roster reads');
-  const held = new Map(); // instanceId -> { target, settled, after }
+  // instanceId -> { target, applies }: every apply of a retire of that row, each `{ settled, after }`. The row is
+  // held while any one holds it, so an answer to a later apply (a refusal: one is still running) never lets go
+  // of an earlier one that has not answered or was not read after.
+  const held = new Map();
   const changed = () => { try { onChange(); } catch { /* a client's drawing changes nothing here */ } };
+  const drop = (id, entry, apply) => { entry.applies.delete(apply); if (!entry.applies.size && held.get(id) === entry) held.delete(id); };
   return {
     begin(target) {
-      const id = instanceId(target), entry = { target, settled: false, after: undefined };
-      held.set(id, entry); changed();
+      const id = instanceId(target), entry = held.get(id) ?? { target, applies: new Set() }, apply = { settled: false, after: undefined };
+      entry.applies.add(apply); held.set(id, entry); changed();
       return {
         settle(kind) {
-          if (entry.settled || held.get(id) !== entry) return;
-          entry.settled = true;
-          if (RAN_NOTHING.has(kind)) { held.delete(id); changed(); } else entry.after = mark();
+          if (apply.settled || !entry.applies.has(apply)) return;
+          apply.settled = true;
+          if (RAN_NOTHING.has(kind)) { drop(id, entry, apply); changed(); } else apply.after = mark();
         },
       };
     },
     landed(at, covers = () => true) {
-      let any = false;
-      for (const [id, entry] of held) if (entry.settled && at > entry.after && covers(entry.target)) { held.delete(id); any = true; }
-      if (any) changed();
+      const before = held.size;
+      for (const [id, entry] of held) {
+        if (!covers(entry.target)) continue;
+        for (const apply of [...entry.applies]) if (apply.settled && at > apply.after) drop(id, entry, apply);
+      }
+      if (held.size !== before) changed();
     },
     ids: () => new Set(held.keys()),
     holds: row => !!row && held.has(instanceId(row)),

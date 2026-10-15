@@ -902,3 +902,32 @@ test('this window\'s retire reads Retiring… from its send, before any read; a 
   s.refreshContextRoster(); await s.reply(5, panelOf('A', roster));
   assert.equal(reads('alpha'), ordinary);
 });
+
+test('a read releases this window\'s retire only when it observed the row\'s deployment live: never another workspace\'s, nor a stale or unreached deployment\'s', async t => {
+  const s = shell(t, { inFlight: true }), c = s.context;
+  const target = (name, workspace = 'A') => ({ workspace, instance: name, agent: 'dev', agentsRoot: '/synthetic/agents', home: `/synthetic/${name}`, server: null });
+  await s.reply(0, panelOf('A', roster));
+  c.retires.begin(target('alpha')).settle('complete');
+  // To B: B's observed read (its rows hold no alpha) says nothing of A's row.
+  c.workspace = 'B'; s.refreshContextRoster(); await s.reply(1, panelOf('B', [row('delta')]));
+  assert.equal(c.retires.ids().size, 1, 'another workspace\'s read releases nothing');
+  // Back to A: its observed read, begun after the answer, says what the retire left.
+  c.workspace = 'A'; s.refreshContextRoster(); await s.reply(2, panelOf('A', roster));
+  assert.equal(c.retires.ids().size, 0);
+  // A view of two deployments: each row's retire waits for a read that observed its own deployment live.
+  const dep = (id, extra = {}) => ({ id, machine: id, path: `/d/${id}`, label: id, local: id === 'dA', reachable: true, identityFrom: null, primary: id === 'dA', ...extra });
+  const tagged = [row('alpha', { deployment: { id: 'dA' } }), row('beta', { running: false, deployment: { id: 'dB' } })];
+  const view = (dB, instances = tagged) => panelOf('A', instances, { deployments: [dep('dA'), dB] });
+  s.refreshContextRoster(); await s.reply(3, view(dep('dB')));
+  c.retires.begin(target('alpha', 'dA')).settle('complete'); c.retires.begin(target('beta', 'dB')).settle('complete');
+  s.refreshContextRoster(); await s.reply(4, view(dep('dB', { stale: true, reason: 'The re-read failed.' })));
+  assert.deepEqual([...c.retires.ids()].map(id => id.split('/').at(-1)), ['beta'], 'the live deployment\'s row is let go; the stale one\'s waits');
+  s.refreshContextRoster(); await s.reply(5, view(dep('dB', { local: false, reachable: false, reason: 'Not reached.' }), [tagged[0]]));
+  assert.equal(c.retires.ids().size, 1, 'an unreached deployment, its row absent, says nothing of it');
+  s.refreshContextRoster(); await s.reply(6, view(dep('dB'), [tagged[0]]));
+  assert.equal(c.retires.ids().size, 0, 'observed live: its row gone, the retire is let go');
+  // A read that lists no deployments and did not observe the one it answered for releases nothing.
+  c.retires.begin(target('alpha')).settle('complete');
+  s.refreshContextRoster(); await s.reply(7, panelOf('A', roster, { deployment: { status: 'unavailable', reason: { code: 'E_X', message: 'no' } } }));
+  assert.equal(c.retires.ids().size, 1);
+});

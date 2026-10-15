@@ -7,7 +7,7 @@
 // shared home's rule for a kept failure (deployment-facts.mjs keptFailure), are pure and shared the same way.
 // #1247: the window's retires in flight. A suite about other behaviour holds none: rows are drawn as the roster
 // says (`shownRows` the identity) and a read lets nothing go; a suite about them passes the shipped ones.
-import { rosterSections, rowStale, splitByDeployment } from "../../../client/roster-sections.mjs";
+import { deploymentState, rosterSections, rowStale, splitByDeployment } from "../../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "../../renderer/desktop-terms.mjs";
 import { deploymentHeading, notePanel, panelDeployments } from "../../renderer/view-deployments.mjs";
 import { createViewMembership, rehomeMap } from "../../renderer/workspace-rehome.mjs";
@@ -18,7 +18,7 @@ import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "../../renderer/retired-tabs.mjs";
 
 export const viewContext = () => ({
-  contextDeployments: [], rosterSections, DESKTOP_TERMS, deploymentHeading, notePanel, panelDeployments, rowStale,
+  contextDeployments: [], rosterSections, DESKTOP_TERMS, deploymentHeading, notePanel, panelDeployments, rowStale, deploymentState,
   rehomeMap, viewMembership: createViewMembership(), rehomeWorkspaceState() {},
   waitingClaim, waitingRollup, waitingSentence, waitingLabel, waitingClock, splitByDeployment,
   rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine, keptFailure, heldLine,

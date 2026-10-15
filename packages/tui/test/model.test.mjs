@@ -484,15 +484,17 @@ test("each retire the kernel reports reads as the shared home words it: one word
   assert.equal(word("r-failed"), word("r-failed-code"));
 });
 
-test("the detail's held line: the shared home's sentence for a retire in progress or unfinished; for a failed one the kernel's own words after its lead, through the display filter, or the home's sentence naming the code", () => {
+test("the detail's held line: the shared home's sentence for a retire in progress or unfinished; for a failed one the kernel's own words after its lead, through the display filter, its code alone when it recorded no message", () => {
   const state = stateOf(observed(RETIRES));
-  for (const name of ["r-running", "r-unknown", "r-pending", "r-failed-code", "r-interrupted"]) {
+  for (const name of ["r-running", "r-unknown", "r-pending", "r-interrupted"]) {
     const reason = instanceActs(panelRow(state, name).row).limited;
     assert.equal(reason.origin, undefined, `${name}: a sentence of the shared home's`);
     assert.deepEqual(fact(detailOf(state, name), "held"), { label: "held", value: reason.sentence, form: "wrap" }, name);
     assert.equal(reason.sentence.includes(name), true, `${name}: it names the instance`);
   }
-  assert.equal(fact(detailOf(state, "r-failed-code"), "held").value.includes("E_RETIRE_COMPLETION"), true, "a code with no message is named");
+  const coded = instanceActs(panelRow(state, "r-failed-code").row).limited;
+  assert.deepEqual([coded.origin, coded.sentence], ["kernel", "E_RETIRE_COMPLETION"], "premise: a code with no message is the kernel's word");
+  assert.deepEqual(fact(detailOf(state, "r-failed-code"), "held"), { label: "held", value: `${originLead("kernel", TERMS)} E_RETIRE_COMPLETION`, form: "wrap" });
   const reason = instanceActs(panelRow(state, "r-failed").row).limited;
   assert.deepEqual([reason.code, reason.origin, reason.sentence], ["held", "kernel", `${KERNEL_MESSAGE} (E_RETIRE_COMPLETION)`], "premise: the kernel's message and code");
   const said = `${originLead("kernel", TERMS)} ${reason.sentence}`;

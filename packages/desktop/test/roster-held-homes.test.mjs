@@ -289,9 +289,7 @@ test("projection: the kernel's retire is passed on read again; one out of the co
     { state: "interrupted", since: SINCE, self: true }, { state: "failed", since: SINCE, self: true, code: "E_RETIRE_HOOK", message: "the hook exited 1" }]) {
     assert.deepEqual(active({ retire: value }).retire, value, JSON.stringify(value));
   }
-  // Optional fields that are null are absent.
-  assert.deepEqual(active({ retire: { state: "failed", since: SINCE, self: true, code: null, message: null } }).retire, { state: "failed", since: SINCE, self: true });
-  for (const value of [null, "running", [], { state: "done", since: SINCE, self: true }, { state: "running", self: true }, { state: "running", since: 7, self: true },
+  for (const value of [null, { state: "failed", since: SINCE, self: true, code: null }, { state: "failed", since: SINCE, self: true, message: null }, "running", [], { state: "done", since: SINCE, self: true }, { state: "running", self: true }, { state: "running", since: 7, self: true },
     { state: "running", since: SINCE, self: "yes" }, { state: "failed", since: SINCE, self: true, code: "boom" }, { state: "failed", since: SINCE, self: true, message: 7 }]) {
     const row = active({ retire: value });
     assert.equal(Object.hasOwn(row, "retire"), false, JSON.stringify(value));
@@ -371,10 +369,10 @@ test("a failed retire with the kernel's message: “Retire failed”, its hint, 
   u.render([...roster, failed({ message: `${"x".repeat(5000)} end` })]);
   const said = u.row("dev-f").getAttribute("aria-description");
   assert.ok(said.startsWith("OATS says: xxx") && said.length <= "OATS says: ".length + 2048, "bounded"); assert.doesNotMatch(said, /\x1b| end/);
-  // Only a code: this home's own sentence, naming it, under no speaker.
+  // Only a code: the kernel's code, under its speaker and through the filter, as its message is.
   u.render([...roster, failed({})]);
-  assert.equal(u.row("dev-f").getAttribute("aria-description"), "The retire of dev-f failed (E_RETIRE_HOOK). Retire it again to finish.");
-  assert.equal(u.status("dev-f"), "Retire failed");
+  assert.equal(u.row("dev-f").getAttribute("aria-description"), "OATS says: E_RETIRE_HOOK");
+  assert.equal(u.status("dev-f"), "Retire failed · OATS says: E_RETIRE_HOOK");
   assert.equal(heldLine(null), null);
 });
 

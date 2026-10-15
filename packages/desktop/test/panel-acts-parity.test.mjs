@@ -184,8 +184,10 @@ test('#1247: a failed retire keeps its Retire in the panel; the kernel\'s messag
   u.offer(failed({ message: `${'x'.repeat(5000)} end` }));
   assert.ok(line().textContent.startsWith('OATS says: xxx')); assert.ok(line().textContent.length < 2100, 'bounded');
   assert.doesNotMatch(line().textContent, / end$/);
-  // The shared home's own sentence (no message): nothing more is said beside the control.
-  for (const row of [failed({ code: 'E_RETIRE_HOOK' }), failed(), local('interrupted', { running: true, retire: RETIRE_INTERRUPTED })]) {
+  // A code alone is the kernel's word too: said after its words.
+  u.offer(failed({ code: 'E_RETIRE_HOOK' })); assert.equal(line().hidden, false); assert.equal(line().textContent, 'OATS says: E_RETIRE_HOOK');
+  // The shared home's own sentence (nothing recorded): nothing more is said beside the control.
+  for (const row of [failed(), local('interrupted', { running: true, retire: RETIRE_INTERRUPTED })]) {
     u.offer(row); assert.equal(line().hidden, true, JSON.stringify(row.retire)); assert.equal(line().textContent, '');
   }
 });

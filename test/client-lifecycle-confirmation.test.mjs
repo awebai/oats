@@ -284,6 +284,25 @@ test('closing the dialog before the answer still settles the hold', async () => 
   }
 });
 
+test('a second confirmation\'s refusal, while the first apply still runs, keeps the row held until the first is read after', async () => {
+  // One tracker for the client: the first dialog closed with its apply in flight, Retire opened again (secondary on a
+  // retiring row) and applied; the kernel refuses that second one (E_LIFECYCLE_BUSY), the first answering after it.
+  const tracker = logged(), first = deferred();
+  const one = createLifecycleConfirmation({ target, operation: 'retire', terms, retires: tracker.retires,
+    request: async body => body.action === 'plan' ? { ...planned('retire', reference(1)), options: body.options } : first.promise });
+  await tick(); one.apply(); one.close();
+  const two = createLifecycleConfirmation({ target, operation: 'retire', terms, retires: tracker.retires,
+    request: async body => body.action === 'plan' ? { ...planned('retire', reference(2)), options: body.options } : refused('E_LIFECYCLE_BUSY') });
+  await tick(); two.apply(); await tick();
+  assert.equal(two.state().outcome, 'refused');
+  assert.equal(tracker.holds(), true, 'the refusal lets go of its own apply only: the first still runs');
+  tracker.read(); assert.equal(tracker.holds(), true, 'a read while the first is unanswered lets nothing go');
+  first.resolve(unknown); await tick();
+  assert.equal(tracker.holds(), true, 'the first\'s answer holds the row until a read');
+  tracker.read(); assert.equal(tracker.holds(), false);
+  assert.deepEqual(tracker.log, [['begin', 'dev-1'], ['begin', 'dev-1'], ['settle', 'refused'], ['settle', 'unknown']]);
+});
+
 test('a tracker that throws changes nothing of the apply: the hold is a drawing aid only', async () => {
   for (const retires of [{ begin: () => { throw new Error('begin'); } }, { begin: () => ({ settle: () => { throw new Error('settle'); } }) }, { begin: () => null }, {}]) {
     const sent = [];

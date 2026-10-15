@@ -82,7 +82,7 @@ import {
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "./retired-tabs.mjs";
 import { notePanel, panelDeployments, deploymentHeading } from "./view-deployments.mjs";
-import { rosterSections, rowStale, splitByDeployment } from "../../client/roster-sections.mjs";
+import { deploymentState, rosterSections, rowStale, splitByDeployment } from "../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "./desktop-terms.mjs";
 import { onDeploymentTabRequest } from "./deployment-tabs.mjs";
 import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "./roster-cadence.mjs";
@@ -777,11 +777,18 @@ async function refreshContextRoster({ user = false } = {}) {
   }
   if (reportedFailure) rosterState?.fail(failure);
   // #1247: an observed read begun after a retire's answer says what the retire left: its row is let go (and the
-  // rows drawn again). Never a failed read, nor one served while a newer observation runs (`refreshing`: the
-  // rows served may predate the answer), nor for a row whose deployment's re-read failed.
+  // rows drawn again), present or gone. Never a failed read, nor one served while a newer observation runs
+  // (`refreshing`: the rows served may predate the answer), and only for a row of a deployment this read observed
+  // live (`target.workspace` is the row's deployment, lifecycle-dialog.mjs): another workspace's read, or one whose
+  // deployment is stale, not reached or not observed, says nothing of it.
+  // A read that lists no deployments (an older server) covers the one it answered for, when it observed it.
   if (!reportedFailure && panel.refreshing !== true) retires.landed(myGen, (target) => {
-    const row = contextInstances.find((i) => instanceId(i) === instanceId(target));
-    return !row || !rowStale(row, contextDeployments);
+    if (contextDeployments.length) {
+      const deployment = contextDeployments.find((d) => d.id === target?.workspace);
+      return !!deployment && deploymentState(deployment).key === "live";
+    }
+    const observed = !!panel.workspace?.remote || !panel.deployment || panel.deployment.status === "observed";
+    return observed && target?.workspace === resolvedWs;
   });
 }
 

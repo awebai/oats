@@ -88,15 +88,31 @@ test('a row is told apart by its machine: a hold on a remote row does not hold t
   assert.deepEqual(retiringRows([row()], t.retires.ids()), [row()]);
 });
 
-test('a second begin for the same row supersedes the first: the first answer is then a no-op', () => {
-  const t = tracked(), first = t.retires.begin(target()), second = t.retires.begin(target());
-  first.settle('refused');
-  assert.equal(t.retires.holds(row()), true, 'the earlier send\'s refusal does not let the newer one go');
+test('two applies of one row: each holds it, and a refusal of one lets go only of its own', () => {
+  // The later one refused (the kernel's E_LIFECYCLE_BUSY: the first still runs), the first answering after it.
+  let t = tracked(), first = t.retires.begin(target()), second = t.retires.begin(target());
+  second.settle('refused');
+  assert.equal(t.retires.holds(row()), true, 'the later send\'s refusal does not let the earlier, unanswered one go');
+  t.retires.landed(t.read());
+  assert.equal(t.retires.holds(row()), true, 'a read while the earlier one is unanswered lets nothing go');
+  first.settle('complete');
+  t.retires.landed(t.read() - 1);
+  assert.equal(t.retires.holds(row()), true, 'a read begun before its answer does not let it go');
+  t.retires.landed(t.read());
+  assert.equal(t.retires.holds(row()), false, 'the read after its answer does');
+  // The first answered and waiting for its read when the second is refused.
+  t = tracked(); first = t.retires.begin(target()); first.settle('unknown');
+  second = t.retires.begin(target()); second.settle('refused');
+  assert.equal(t.retires.holds(row()), true, 'the refusal does not let go of an answer that waits for its read');
+  t.retires.landed(t.read());
+  assert.equal(t.retires.holds(row()), false);
+  // The earlier refused, the later complete: held until its read. Once let go, an old answer holds nothing again.
+  t = tracked(); first = t.retires.begin(target()); second = t.retires.begin(target());
+  first.settle('refused'); assert.equal(t.retires.holds(row()), true);
   second.settle('complete'); first.settle('stale');
   assert.equal(t.retires.holds(row()), true);
   t.retires.landed(t.read());
   assert.equal(t.retires.holds(row()), false);
-  // Once let go, an old answer holds nothing again.
   first.settle('complete'); second.settle('complete');
   assert.equal(t.retires.ids().size, 0);
 });

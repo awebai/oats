@@ -448,7 +448,8 @@ The roster says what a home is when it is not an ordinary instance, in text
   after: **Retiring…**, no muted line, never a failure.
 - `retire` state `failed` (a self-retire's completion recorded an error):
   **Retire failed**, muted "Retire it again to finish". The kernel's recorded
-  message, when there is one, is said after "OATS says:" through the display
+  message (with its code), or its code alone when it recorded no message, is
+  said after "OATS says:" through the display
   filter (the row's description, the hover card's status, the instance panel's
   action note, the overview's popover).
 - `retire` state `interrupted` (a scheduled completion is gone with no
@@ -469,11 +470,16 @@ row is projected (`retire-state.mjs`): a value out of the contract is absent.
 The window's own retires in flight are held in the renderer
 (`packages/client/retire-in-flight.mjs`, one tracker per window in `shell.mjs`).
 The dialog begins one before the apply is sent and settles it with the answer,
-also after the dialog closed. A refusal (or a stale plan) lets the row go at
-once; any other answer keeps it Retiring… until an observed roster read begun
-after the answer lands (`refreshContextRoster`'s read generation is the mark).
-A failed read, or one served while a newer observation is still running
-(`refreshing`), releases nothing. Every surface draws rows through
+also after the dialog closed. Each apply is held on its own: a second Retire
+of the same row (offered while one runs) that the kernel refuses lets go of
+that apply only, never of the first. A refusal (or a stale plan) lets its apply
+go at once; any other answer keeps the row Retiring… until an observed roster
+read begun after the answer lands (`refreshContextRoster`'s read generation is
+the mark). That read must cover the row: the row's deployment (the dialog's
+target `workspace`) is one the read observed live (`deploymentState`), so a
+read of another workspace, or one whose deployment of the row is stale, not
+reached or not observed, releases nothing. A failed read, or one served while a
+newer observation is still running (`refreshing`), releases nothing either. Every surface draws rows through
 `shownRows`, so the roster, the instance panel, the hover card and the overview
 (through `ctx.retiringRows` and `ctx.subscribeRetires`) agree, and a change of
 the held set repaints them without a read. An open terminal tab is left alone.

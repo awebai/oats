@@ -1404,7 +1404,7 @@ on itself (`tabIndex -1`) and the arrows reach it; the footer draws no control f
 and its note says the limited reason (as it does for a reason carrying the kernel's
 words). The rows every surface draws pass `shell.mjs` `shownRows` first: this
 window's own retires in flight (`retire-in-flight.mjs`) read as retiring until a
-roster read after their answer
+roster read after their answer that observed their deployment live
 ([desktop-lifecycle-confirmations.md](../docs/desktop-lifecycle-confirmations.md#quarantined-and-spawning-rows)).
 The menu reports here, never with
 `alert`: an action that fails says "<Action> didn't finish for <name>." with its

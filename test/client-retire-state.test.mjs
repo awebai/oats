@@ -22,14 +22,13 @@ const retire = (state, extra = {}) => ({ state, since: SINCE, self: false, ...ex
 const RUNNING = retire('running'), UNKNOWN = retire('unknown'), INTERRUPTED = retire('interrupted');
 const FAILED = retire('failed', { self: true, code: 'E_RETIRE_FAILED', message: 'worktree remove failed' });
 
-test('retireData: the contract\'s value, each field checked; null optionals are absent, extra fields are dropped', () => {
+test('retireData: the contract\'s value, each field checked; extra fields are dropped', () => {
   assert.deepEqual(RETIRE_STATES, ['running', 'unknown', 'failed', 'interrupted']);
   for (const state of RETIRE_STATES) assert.deepEqual(retireData(retire(state)), { state, since: SINCE, self: false }, state);
   assert.deepEqual(retireData(FAILED), FAILED);
   assert.deepEqual(retireData(retire('failed', { code: 'E_X_2', message: '' })), retire('failed', { code: 'E_X_2', message: '' }), 'an empty message is a string');
-  // A null optional reads as absent: the key is not there, not null.
-  const nulls = retireData(retire('failed', { code: null, message: null }));
-  assert.deepEqual(nulls, retire('failed')); assert.equal(Object.hasOwn(nulls, 'code'), false); assert.equal(Object.hasOwn(nulls, 'message'), false);
+  // An absent optional stays absent: the key is not there.
+  const bare = retireData(retire('failed')); assert.equal(Object.hasOwn(bare, 'code'), false); assert.equal(Object.hasOwn(bare, 'message'), false);
   // What the contract does not name is not carried.
   assert.deepEqual(retireData({ ...FAILED, holder: 'pid 42', resultPath: '/x', state: 'failed' }), FAILED);
   // The answer is a copy: changing it changes nothing of the input.
@@ -46,6 +45,7 @@ test('retireData: one field out of the contract drops the whole value, and what 
     'a code that is not E_': retire('failed', { code: 'RETIRE_FAILED' }), 'a code with nothing after E_': retire('failed', { code: 'E_' }),
     'a code in lower case': retire('failed', { code: 'E_retire' }), 'a code with a space': retire('failed', { code: 'E_A B' }),
     'a code with a line after it': retire('failed', { code: 'E_A\nE_B' }), 'a code that is a number': retire('failed', { code: 7 }),
+    'a code that is null': retire('failed', { code: null, message: 'x' }), 'a message that is null': retire('failed', { code: 'E_X', message: null }),
     'a message that is a number': retire('failed', { message: 7 }), 'a message that is an object': retire('failed', { message: { text: 'x' } }),
   };
   for (const [what, value] of Object.entries(bad)) assert.equal(retireData(value), null, what);
@@ -64,8 +64,8 @@ test('heldHome: every retire kind, and an older kernel\'s retirePending, reads i
     ['running with a message: not a failure, no kernel words', { retire: retire('running', { code: 'E_X', message: 'still going' }) }, retiring],
     ['failed, with the kernel\'s message and code', { retire: FAILED }, failed({ sentence: 'worktree remove failed (E_RETIRE_FAILED)', origin: 'kernel' })],
     ['failed, with a message only', { retire: retire('failed', { message: 'worktree remove failed' }) }, failed({ sentence: 'worktree remove failed', origin: 'kernel' })],
-    ['failed, with a code only', { retire: retire('failed', { code: 'E_RETIRE_FAILED' }) }, failed({ sentence: 'The retire of dev-one failed (E_RETIRE_FAILED). Retire it again to finish.' })],
-    ['failed, with an empty message and a code', { retire: retire('failed', { code: 'E_RETIRE_FAILED', message: '' }) }, failed({ sentence: 'The retire of dev-one failed (E_RETIRE_FAILED). Retire it again to finish.' })],
+    ['failed, with a code only', { retire: retire('failed', { code: 'E_RETIRE_FAILED' }) }, failed({ sentence: 'E_RETIRE_FAILED', origin: 'kernel' })],
+    ['failed, with an empty message and a code', { retire: retire('failed', { code: 'E_RETIRE_FAILED', message: '' }) }, failed({ sentence: 'E_RETIRE_FAILED', origin: 'kernel' })],
     ['failed, with nothing recorded', { retire: retire('failed') }, failed({ sentence: 'The retire of dev-one failed. Retire it again to finish.' })],
     ['failed beside retirePending: the kernel\'s retire wins', { retire: FAILED, retirePending: true }, failed({ sentence: 'worktree remove failed (E_RETIRE_FAILED)', origin: 'kernel' })],
     ['interrupted', { retire: INTERRUPTED }, incomplete],
@@ -116,7 +116,7 @@ test('instanceActs: a retiring row offers Retire alone, secondary; a failed or i
   assert.deepEqual(instanceActs({ ...LOCAL, retire: FAILED }),
     { blocked: null, limited: limited('retire-failed', 'worktree remove failed (E_RETIRE_FAILED)', { origin: 'kernel' }), acts: [retireAct] });
   assert.deepEqual(instanceActs({ ...LOCAL, retire: retire('failed', { code: 'E_RETIRE_FAILED' }) }),
-    { blocked: null, limited: limited('retire-failed', 'The retire of dev-one failed (E_RETIRE_FAILED). Retire it again to finish.'), acts: [retireAct] });
+    { blocked: null, limited: limited('retire-failed', 'E_RETIRE_FAILED', { origin: 'kernel' }), acts: [retireAct] });
   assert.deepEqual(instanceActs({ ...LOCAL, retire: retire('failed') }),
     { blocked: null, limited: limited('retire-failed', 'The retire of dev-one failed. Retire it again to finish.'), acts: [retireAct] });
   assert.deepEqual(instanceActs({ ...LOCAL, retire: INTERRUPTED }),
@@ -146,9 +146,19 @@ test('a failed retire\'s kernel words reach the screen only through the display 
   // The reason instanceActs gives is the same text, with the same mark.
   const reason = instanceActs({ ...LOCAL, retire: retire('failed', { message: '\u001b[2Jgone' }) }).limited;
   assert.equal(reason.origin, 'kernel'); assert.equal(displayLine(reason.sentence), DETAIL_WITHHELD);
-  // A message the filter reduces to nothing says nothing: the row's own words stand, naming the code.
-  assert.deepEqual(said(' \n '), { sentence: 'The retire of dev-one failed (E_RETIRE_FAILED). Retire it again to finish.' });
+  // A message the filter reduces to nothing says nothing: the code alone is said, as the kernel's; with no code, the
+  // row's own words stand.
+  assert.deepEqual(said(' \n '), { sentence: 'E_RETIRE_FAILED', origin: 'kernel' });
   assert.deepEqual(heldHome({ ...LOCAL, retire: retire('failed', { message: '\t' }) }).said, { sentence: 'The retire of dev-one failed. Retire it again to finish.' });
+  // A code is the kernel's text too, with or without a message: an over-long one is cut to the filter's bound, one the
+  // filter withholds is withheld, never shown as it came.
+  const code = value => heldHome({ ...LOCAL, retire: retire('failed', { code: value }) }).said;
+  const longCode = code(`E_${'X'.repeat(5000)}`);
+  assert.equal(longCode.origin, 'kernel'); assert.equal(displayLine(longCode.sentence).length, MAX_DISPLAY_LINE);
+  const secretCode = code(`E_GHP_${'A'.repeat(20)}`);
+  assert.equal(secretCode.origin, 'kernel'); assert.equal(displayLine(secretCode.sentence), DETAIL_WITHHELD);
+  const both = heldHome({ ...LOCAL, retire: retire('failed', { code: `E_GHP_${'A'.repeat(20)}`, message: 'worktree remove failed' }) }).said;
+  assert.equal(both.origin, 'kernel'); assert.equal(displayLine(both.sentence), DETAIL_WITHHELD);
 });
 
 /** A status document of one deployment at /d, one soul and the rows given. */

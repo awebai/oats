@@ -14,16 +14,16 @@
  * `retireData` is the one reading of it every place that carries row facts uses (deployment-data.mjs,
  * deployment-panel.mjs, remote-roster.mjs, the Desktop's active-observation.mjs): the value when it is the
  * contract's, else null, and a client then holds the row as if it had none. Never guessed, never repaired: one
- * field out of the contract drops the whole value. An optional field that is null is absent. `retirePending`
- * is a fact of its own and stays as the kernel reports it. Text in `message` is the kernel's: a client shows it
- * only through display-text.mjs `displayLine`, as instance-acts.mjs says for a reason with an `origin`. */
+ * field out of the contract drops the whole value (an optional field is absent or a string, never null).
+ * `retirePending` is a fact of its own and stays as the kernel reports it. Text in `message` and `code` is the kernel's: a client
+ * shows it only through display-text.mjs `displayLine`, as instance-acts.mjs says for a reason with an `origin`. */
 export const RETIRE_STATES = Object.freeze(['running', 'unknown', 'failed', 'interrupted']);
 const CODE = /^E_[A-Z0-9_]+$/;
 
 export function retireData(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   if (!RETIRE_STATES.includes(value.state) || typeof value.since !== 'string' || typeof value.self !== 'boolean') return null;
-  const code = value.code ?? undefined, message = value.message ?? undefined;
+  const { code, message } = value;
   if (code !== undefined && !(typeof code === 'string' && CODE.test(code))) return null;
   if (message !== undefined && typeof message !== 'string') return null;
   return { state: value.state, since: value.since, self: value.self, ...(code !== undefined ? { code } : {}), ...(message !== undefined ? { message } : {}) };
