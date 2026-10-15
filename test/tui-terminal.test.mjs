@@ -178,13 +178,18 @@ const PROMPT = "tui-test$";
 const USAGE = "oats tui [--dir <path>] [--ascii]";
 /** The Instances footer with no instance selected, and with one of the fixture's selected: every
  *  instance here is stopped or unknown, and offers to be stopped and retired (and a stopped one to
- *  be started); at 80 columns only the first of those hints, `X stop`, has room. */
-const PLAIN_FOOTER = " / filter   Tab detail   r refresh   w workspaces   ? help   q quit";
-const FOOTER = ` X stop  ${PLAIN_FOOTER}`;
+ *  be started), but at 80 columns those hints are given up first: the views' one hint, `1-3 views`,
+ *  outlives them. */
+const PLAIN_FOOTER = " / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit";
+const FOOTER = PLAIN_FOOTER;
 /** The Instances footer at a width: `help` and `quit` always stand, and a hint that would reach
- *  the last cell ends the row's hints. The acts are given up first, then `w workspaces`, so a
- *  terminal too narrow for the whole row draws it without them (views/frame.mjs `footer`). */
-const footerAt = (cols) => (FOOTER.length <= cols - 1 ? FOOTER : PLAIN_FOOTER.length <= cols - 1 ? PLAIN_FOOTER : PLAIN_FOOTER.replace("   w workspaces", ""));
+ *  the last cell ends the row's hints. The acts are given up first, then `1-3 views`, then
+ *  `w workspaces`, so a terminal too narrow for the whole row draws it without them
+ *  (views/frame.mjs `footer`). */
+const footerAt = (cols) => {
+  const unviewed = PLAIN_FOOTER.replace("   1-3 views", "");
+  return PLAIN_FOOTER.length <= cols - 1 ? PLAIN_FOOTER : unviewed.length <= cols - 1 ? unviewed : unviewed.replace("   w workspaces", "");
+};
 /** With the detail focused: the selected instance's acts first, as room allows (stop and retire
  *  at 79 and 80 columns), then the detail's own keys. */
 const DETAIL_FOOTER = " X stop   D retire   Tab detail   Esc close   r refresh   ? help   q quit";
@@ -198,15 +203,20 @@ const UNMATCHED = "  Not matched to a workspace";
 const OFFERED = "  On this machine, not opened";
 const ROSTER_FAILED = "Other machines were not read.";
 /** The help's `Keys` list at 80 columns, one row per action in the table's order, and one per view
- *  for `open` (Enter): under the agent's line the key that returns, tmux's copy-mode rule (two rows
- *  at this width) and where the keys are listed (views/help.mjs `openRows`). */
+ *  for `open` (Enter): under the agent's line the back key, the terminal's rules and where the keys
+ *  are listed (views/help.mjs `openRows`). */
 const HELP_KEYS = [
   /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
   /^ *Left, h {2,}collapse, or go to the parent$/, /^ *Right, l {2,}expand, or go to the first child$/, /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/,
-  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *w {2,}workspaces$/,
-  /^ *Enter {2,}open the selected agent's terminal, in the list of instances$/, /^ {2,}C-\\ brings oats tui back; the agent keeps running\.$/,
-  /^ {2,}A key that tmux's copy mode binds leaves the viewer once the mode$/, /^ {2,}is left\.$/, /^ {2,}docs\/execution-targets\.md has the keys that can be chosen\.$/,
+  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *2 {2,}souls$/, /^ *3 {2,}capabilities$/, /^ *w {2,}workspaces$/,
+  /^ *Enter {2,}open the selected agent's terminal beside the list, or go to it$/, /^ {2,}when it is the open one, in the list of instances$/,
+  /^ {2,}C-\\ takes the focus from the terminal back to the list; the agent$/, /^ {2,}keeps running\.$/,
+  /^ {2,}While the terminal has the focus every other key goes to the$/, /^ {2,}agent, Ctrl\+C and Ctrl\+Z too\.$/,
+  /^ {2,}One terminal is open at a time\. It has no scrollback but the$/, /^ {2,}viewer's own, and no mouse\.$/,
+  /^ {2,}docs\/tui\.md has the keys that can be the back key\.$/,
   /^ *Enter {2,}open the selected workspace, in the switcher$/,
+  /^ *z {2,}go to the open terminal with the whole screen; the back key brings$/, /^ {2,}the list back$/,
+  /^ *c {2,}close the open terminal; the agent keeps running$/,
   // The acts, and under the last of them the rules of a confirmation (views/help.mjs ACT_RULES).
   /^ *X {2,}stop the selected agent, after a confirmation$/, /^ *D {2,}retire the selected agent, after a confirmation$/,
   /^ *S {2,}start the selected agent as it was last launched, after a$/, /^ {2,}confirmation$/,
@@ -229,7 +239,7 @@ const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  *  the last row, or what it matches. `title` and `views` are the two rows of the header, or what
  *  they match: the fixture's name with its count and the time of a read, unless a view says
  *  otherwise. */
-function chromeFaults(screen, { cols, rows, look, split, footer, count, title = new RegExp(`^ oats {2}fixture +${count} stopped$`), views = /^ 1 Instances {3}2 Souls {3}3 Capabilities +read \d\d:\d\d:\d\d$/ }) {
+function chromeFaults(screen, { cols, rows, look, split, footer, count, title = new RegExp(`^ oats {2}fixture +${count} stopped$`), views = /^ {2}Instances {3}Souls {3}Capabilities +read \d\d:\d\d:\d\d$/ }) {
   const faults = [];
   const expect = (row, want, what) => {
     const got = screen[row] ?? "";
@@ -306,7 +316,7 @@ function notReadFaults(screen, { title = /^ oats {2}\S+$/, reason = 1 } = {}) {
   const why = screen.slice(4, 4 + reason), said = why.findIndex((row) => row === "");
   return [
     ...(title.test(screen[0] ?? "") ? [] : [`the title row counts instances, or names another deployment: ${JSON.stringify(screen[0])}`]),
-    ...(screen[1] === " 1 Instances   2 Souls   3 Capabilities" ? [] : [`the views row is ${JSON.stringify(screen[1])}`]),
+    ...(screen[1] === "  Instances   Souls   Capabilities" ? [] : [`the views row is ${JSON.stringify(screen[1])}`]),
     ...(screen[2] === UTF8.rule.repeat(80) && screen[22] === UTF8.rule.repeat(80) ? [] : ["a rule has a joint, or is not there"]),
     ...(/^ \S/.test(screen[3] ?? "") && /^ \S/.test(screen[4] ?? "") ? [] : [`rows 4 and 5 do not say what state the deployment is in and why: ${JSON.stringify(screen.slice(3, 5))}`]),
     ...(why.slice(0, said < 0 ? reason : said).every((row) => /^ \S/.test(row)) ? [] : [`a row of the reason does not start at the margin: ${JSON.stringify(why)}`]),
@@ -321,7 +331,7 @@ function notReadFaults(screen, { title = /^ oats {2}\S+$/, reason = 1 } = {}) {
  *  under it. `open`: a workspace is open, so Esc has a view to close the switcher onto and the
  *  footer offers it. */
 function switcherFaults(screen, { cols = 80, rows = 24, look = UTF8, body, open = true }) {
-  const faults = chromeFaults(screen, { cols, rows, look, split: false, footer: open ? SWITCHER_FOOTER : SWITCHER_FOOTER.replace("   Esc close", ""), title: SWITCHER_TITLE, views: " 1 Instances   2 Souls   3 Capabilities" });
+  const faults = chromeFaults(screen, { cols, rows, look, split: false, footer: open ? SWITCHER_FOOTER : SWITCHER_FOOTER.replace("   Esc close", ""), title: SWITCHER_TITLE, views: "  Instances   Souls   Capabilities" });
   const area = screen.slice(3, rows - 2);
   body.forEach((want, i) => { if (want instanceof RegExp ? !want.test(area[i] ?? "") : area[i] !== want) faults.push(`row ${i + 4} is ${JSON.stringify(area[i])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`); });
   if (!area.slice(body.length).every((text) => text === "")) faults.push(`something is drawn under the ${body.length} rows of the switcher`);
@@ -597,7 +607,7 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   const two = (left, right) => `${left.padEnd(38)}│${right}`.trimEnd();
   assert.deepEqual(term.screen().map((row) => row.replace(/read \d\d:\d\d:\d\d$/, "read HH:MM:SS")), [
     " oats  fixture                                                        3 stopped",
-    " 1 Instances   2 Souls   3 Capabilities                           read HH:MM:SS",
+    "  Instances   Souls   Capabilities                                read HH:MM:SS",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
     two(">▾ ○ alpha                stopped", "   alpha"),
     two("     ○ beta               stopped", "   soul     dev"),
@@ -785,7 +795,7 @@ test("the reason the kernel gives for an instance it could not observe stands in
     const list = [listed(`${at("alpha")}▾ ○ alpha`, "stopped"), listed(`${at("beta")}    ○ beta`, "stopped"), "", listed(`${at("gamma")}  ? gamma`, "unreachable")];
     return [
       `${" oats  fixture".padEnd(59)}2 stopped  1 unknown`,
-      `${" 1 Instances   2 Souls   3 Capabilities".padEnd(66)}read HH:MM:SS`,
+      `${"  Instances   Souls   Capabilities".padEnd(66)}read HH:MM:SS`,
       `${"─".repeat(38)}┬${"─".repeat(41)}`,
       ...Array.from({ length: 19 }, (_, i) => two(list[i] ?? "", detail[i] ?? "")),
       `${"─".repeat(38)}┴${"─".repeat(41)}`,
@@ -1193,11 +1203,11 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends sixteen rows above `quit`: the table holds `workspaces`,
-  // `open` twice with the agent's four rows under it, and the four acts in six rows with the two
-  // rules of a confirmation in four under them (HELP_KEYS); the movement keys scroll the help, and
-  // sixteen rows down show it.
-  for (let i = 0; i < 16; i++) term.press("j");
+  // At 80x24 the help's first page ends twenty-five rows above `quit`: the table holds the three
+  // views, `workspaces`, `open` twice with the agent's terminal in nine rows, `zoom` in two and
+  // `close-terminal`, and the four acts in six rows with the two rules of a confirmation in four
+  // under them (HELP_KEYS); the movement keys scroll the help, and twenty-five rows down show it.
+  for (let i = 0; i < 25; i++) term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");

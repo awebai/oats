@@ -5,7 +5,7 @@
 // restart) that the shared callers start through `changeExec`: those are never ended by the TUI,
 // and their output goes to two files of the run's own private directory, the only files this
 // module writes. (Opening an agent's terminal starts the kernel's viewer, which is not a read and
-// is not started here: lib/open.mjs.)
+// is not started here: it runs in a pane of the panel's private tmux server, lib/panel.mjs.)
 // No function of this module decodes a kernel answer. Each one passes values between the shared
 // functions (client.mjs), which decide what a roster, a row and a failed read are, once, for both
 // clients: the TUI never writes "stopped" for a row and never builds the collector's input by hand.
@@ -198,7 +198,7 @@ const said = (error) => String(error?.message ?? error);
 
 /** The reader of a run: its cycles over every served deployment, the roster of other machines,
  *  their children, and the way out.
- *  -> { start(), request({ live }), touch(), voidInFlight(), hold(), release(), exec, stop(), children() }
+ *  -> { start(), request({ live }), touch(), voidInFlight(), exec, stop(), children() }
  *
  *  `cli` is probeKernel's record (`cli.bin` the absolute path of bin/oats.mjs). The reader keeps no
  *  answer of its own: what a run holds is the caller's store, asked for when it is needed.
@@ -230,8 +230,8 @@ const said = (error) => String(error?.message ?? error);
  *  list of options, `detached` is not one of them, and a child it starts stays in the TUI's group
  *  whatever it is asked. `run` below is the part of execFile's contract the shared readers use.
  *
- *  ENDING A CHILD: only a read is ever ended. The viewer of an opened agent is lib/open.mjs's, and
- *  no child of the reader. A KERNEL CALL THAT CHANGES SOMETHING (kind "change", `changeExec`) IS
+ *  ENDING A CHILD: only a read is ever ended. The viewer of an opened agent runs in the panel's
+ *  private tmux server (lib/panel.mjs), and is no child of the reader. A KERNEL CALL THAT CHANGES SOMETHING (kind "change", `changeExec`) IS
  *  NEVER SIGNALLED BY THE TUI: a stop killed while it waits leaves a marker that refuses every
  *  later stop, and a killed start leaves its lock (#889, #890). So every child is remembered with
  *  its kind, and only kind "read" is ever signalled.
@@ -255,8 +255,6 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
    *  is the epoch the cycle now running began in (the loop runs one at a time). `served` is what
    *  getServed() answered at the start of that cycle. */
   let counter = 0, epoch = 0, flight = 0, served = [];
-  /** The terminal is lent (hold()): no cycle and no roster read starts until release(). */
-  let held = false;
   /** The roster of other machines. `rosterFlight` is the read in flight (a token of its own, so an
    *  answer knows whether it is still awaited), or null. `rosterEnded` is now() when the last read
    *  that was not given up ended, or null while none has. `gatedSaid`: a kernel that reads no
@@ -526,7 +524,7 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
    *  started beside two would be refused as busy and never read). The cycle is over when its
    *  deployments are; with none served it reads nothing local. */
   async function cycle({ live }) {
-    if (stopped || held) return;
+    if (stopped) return;
     flight = epoch;
     const mine = epoch, number = ++counter, at = clock();
     const over = () => stopped || mine !== epoch;
@@ -591,13 +589,6 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
       rosterFlight = null;
       endReads({ cycles: true });
     },
-    /** The terminal is lent to the kernel's viewer: from now until release() no cycle begins and
-     *  no roster read starts (a cycle the loop's timer or a request would begin does nothing and
-     *  emits nothing). What is in flight is not touched here: the caller made it void first, as at
-     *  a stop. Idempotent. */
-    hold() { held = true; },
-    /** The terminal is back: cycles begin again. The caller asks for a live one. */
-    release() { held = false; },
     /** See askedExec. */
     exec: askedExec,
     /** See changeExec. */

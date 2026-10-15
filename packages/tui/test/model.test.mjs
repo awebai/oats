@@ -2110,3 +2110,90 @@ test("a text that is the stand-in sentence with a space after it, on a row with 
   assert.deepEqual(factsOf(spaced), [`"${stem}"`], "compared as given they differ: the text is vouched for by nobody");
   assert.deepEqual(factsOf(herdr(stem)), [stem], "the stand-in itself, as given, is the shared home's and stands as written");
 });
+
+// ── The open terminal (T1): its focus, zoom and close, as the store keeps them and the model hands them on ──
+
+const TWO = () => stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", "dev-b")]));
+/** A key, as the loop hands it to the store (the geometry is not read by these keys). */
+const key = (state, id) => reduce(state, { key: id, ...(id.length === 1 ? { text: id } : {}), page: 19, extent: 0, room: 19, cols: 38 });
+
+test("the open terminal in the store: Enter opens it with the focus; the back key gives the focus to the list and the terminal stays; Enter on its row focuses it unzoomed, z zoomed, and c closes it, the agent left running", () => {
+  const state = on(TWO(), "dev-a"), id = instanceId(panelRow(state, "dev-a").row);
+  const opened = key(state, "enter");
+  assert.deepEqual(opened.state.terminal, { id, name: "dev-a", machine: null, routed: false, focus: "terminal", zoom: false, status: "starting" });
+  assert.equal(opened.effect.open.id, id);
+  // The panel has the window: open. One of another id changes nothing.
+  assert.equal(reduce(opened.state, { shown: { id: "elsewhere" } }).state, opened.state);
+  const shown = reduce(opened.state, { shown: { id } }).state;
+  assert.equal(shown.terminal.status, "open");
+  const back = reduce(shown, { back: true });
+  assert.deepEqual([back.state.terminal.focus, back.state.terminal.zoom, back.state.terminal.status, back.effect], ["list", false, "open", null]);
+  assert.equal(reduce(back.state, { back: true }).state, back.state, "a back key with the list focused is no key");
+  // Enter on the open row goes to it: nothing is opened again.
+  const again = key(back.state, "enter");
+  assert.deepEqual([again.state.terminal.focus, again.state.terminal.zoom, again.effect], ["terminal", false, null]);
+  // z: the terminal, zoomed; the back key brings the list back with the panel, unzoomed.
+  const zoomed = key(back.state, "z");
+  assert.deepEqual([zoomed.state.terminal.focus, zoomed.state.terminal.zoom, zoomed.effect], ["terminal", true, null]);
+  assert.deepEqual([reduce(zoomed.state, { back: true }).state.terminal.focus, reduce(zoomed.state, { back: true }).state.terminal.zoom], ["list", false]);
+  // c: closed, as the person asked, so the end the panel reports later says nothing.
+  const closed = key(back.state, "c");
+  assert.deepEqual([closed.state.terminal, closed.effect], [null, { close: id }]);
+  assert.equal(reduce(closed.state, { returned: { id, status: null, stderr: "", asked: true } }).state, closed.state);
+  // z and c with no terminal open do nothing.
+  for (const k of ["z", "c"]) assert.deepEqual([key(state, k).state, key(state, k).effect], [state, null], k);
+});
+
+test("Enter on another openable row while a terminal is open closes it and opens that one: one terminal at a time, the close before the open", () => {
+  const state = on(TWO(), "dev-a"), a = instanceId(panelRow(state, "dev-a").row), b = instanceId(panelRow(state, "dev-b").row);
+  const open = reduce(reduce(key(state, "enter").state, { shown: { id: a } }).state, { back: true }).state;
+  const other = key(on(open, "dev-b"), "enter");
+  assert.deepEqual(Object.keys(other.effect), ["close", "open"]);
+  assert.deepEqual([other.effect.close, other.effect.open.id], [a, b]);
+  assert.deepEqual([other.state.terminal.id, other.state.terminal.focus, other.state.terminal.status], [b, "terminal", "starting"]);
+  // The closed one's end, reported after, is not the open one's: nothing changes.
+  assert.equal(reduce(other.state, { returned: { id: a, status: 1, stderr: "x", asked: true } }).state, other.state);
+});
+
+test("the model hands the views the terminal and whether the selected row is its own; the terminal is the store's beside the roster, never part of what the roster is made from (MADE_FROM)", () => {
+  const state = on(TWO(), "dev-a");
+  const open = reduce(key(state, "enter").state, { back: true }).state;
+  assert.deepEqual([view(state).terminal, view(state).onTerminal], [null, false]);
+  assert.equal(view(open).terminal, open.terminal);
+  assert.equal(view(open).onTerminal, true);
+  assert.equal(view(on(open, "dev-b")).onTerminal, false);
+  assert.equal(roster(open).instances, roster(state).instances, "the roster is the one already made");
+});
+
+test("whatever shows another view than the instances gives the focus back to the list: the terminal stays open, unzoomed", () => {
+  const state = on(TWO(), "dev-a");
+  const zoomed = key(reduce(key(state, "enter").state, { back: true }).state, "z").state;
+  assert.equal(zoomed.terminal.focus, "terminal");
+  const switched = key(zoomed, "w").state;
+  assert.equal(switched.view, "switcher");
+  assert.deepEqual([switched.terminal.focus, switched.terminal.zoom, switched.terminal.id], ["list", false, zoomed.terminal.id]);
+});
+
+test("2 and 3 name the views that are not in this version: the line says what to run instead, and nothing else changes", () => {
+  const state = on(TWO(), "dev-a");
+  for (const [k, words] of [["2", "Souls are not in this version: `oats souls` lists them, and `oats spawn <soul>` makes an instance of one."], ["3", "Capabilities are not in this version: `oats capabilities` lists them."]]) {
+    const after = key(state, k);
+    assert.equal(after.effect, null, k);
+    assert.deepEqual(after.state.outcome.said, [{ own: words }], k);
+    assert.deepEqual([after.state.view, after.state.selected, after.state.terminal], [state.view, state.selected, null], k);
+  }
+});
+
+test("the back key always returns to the list with the panel, unzoomed: also when the terminal was opened or zoomed from the detail's focus (round 1 of the review)", () => {
+  const state = on(TWO(), "dev-a");
+  const fromDetail = reduce(key(key(state, "tab").state, "enter").state, { back: true }).state;
+  assert.deepEqual([fromDetail.focus, fromDetail.terminal.focus, fromDetail.terminal.zoom], ["list", "list", false]);
+  // The detail shown over an open terminal, then z or Enter, then back.
+  const open = reduce(key(state, "enter").state, { back: true }).state;
+  for (const k of ["z", "enter"]) {
+    const back = reduce(key(key(open, "tab").state, k).state, { back: true }).state;
+    assert.deepEqual([back.focus, back.terminal.focus, back.terminal.zoom], ["list", "list", false], k);
+  }
+  // While the terminal has the focus the list lies under it.
+  assert.equal(key(key(state, "tab").state, "enter").state.focus, "list");
+});

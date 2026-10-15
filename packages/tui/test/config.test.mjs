@@ -7,9 +7,10 @@ import { spawnSync } from "node:child_process";
 import { ACTIONS, bindings } from "../lib/actions.mjs";
 import { CONFIG_LIMIT, DETACH_KEY, MAX_PROBLEMS, configPath, effectiveConfig, loadConfig } from "../lib/config.mjs";
 import { isKeyId } from "../lib/term/keys.mjs";
+import { BACK_KEY_RULE } from "../lib/term/through.mjs";
 
 const FILE = "/cfg/oats/tui.json";
-const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, workspaces, open, stop, retire, start, restart, help, close, quit, suspend, redraw";
+const IDS = "up, down, top, bottom, page-up, page-down, collapse, expand, detail, filter, refresh, instances, souls, capabilities, workspaces, open, zoom, close-terminal, stop, retire, start, restart, help, close, quit, suspend, redraw";
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
 /** The whole line of a refusal, as it is printed. */
 const line = (clause, file = FILE) => `oats: \`oats tui\` cannot use ${file}: ${clause} (E_TUI_CONFIG)`;
@@ -519,8 +520,8 @@ test("on disk: a file whose size says less than it holds is still never read pas
 
 // --- open.detachKey ---------------------------------------------------------------
 
-test("open.detachKey is the key that leaves an agent's terminal, passed as it is: its grammar is the kernel's, and a file without it keeps C-\\", () => {
-  for (const key of ["F12", "C-]", "M-x", "S-F5", "C-\\", "not a key at all", "x".repeat(16)]) {
+test("open.detachKey is the back key, the key that takes the focus from an agent's terminal back to the list: any key of the TUI's own grammar, and a file without it keeps C-\\", () => {
+  for (const key of ["F12", "C-]", "M-x", "S-F5", "C-\\", "C-a", "M-0", "C-F1"]) {
     const loaded = load({ open: { detachKey: key } });
     assert.equal(loaded.ok, true, key);
     assert.equal(loaded.detachKey, key, key);
@@ -531,20 +532,16 @@ test("open.detachKey is the key that leaves an agent's terminal, passed as it is
   assert.deepEqual([all.ok, all.ascii, all.detachKey, bindings(all.actions).get("o")], [true, true, "F12", "open"]);
 });
 
-test("refused: an open.detachKey that is not 1 to 16 printable ASCII characters, one that begins with -, one the help cannot name, an unknown member of open, and an open that is not an object", () => {
-  const shape = 'open.detachKey must be 1 to 16 printable ASCII characters, like "F12"';
-  for (const key of ["", "x".repeat(17), "C-\u00e9", "C-\n", "\u001b[A", 12, null, true, ["F12"], { key: "F12" }]) {
-    assert.deepEqual(load({ open: { detachKey: key } }).lines, [line(shape)], JSON.stringify(key));
+test("refused when the file is read, naming it: an open.detachKey outside the TUI's grammar (term/through.mjs pins the set), an unknown member of open, and an open that is not an object", () => {
+  const rule = `open.detachKey must be one key: ${BACK_KEY_RULE}`;
+  for (const key of ["", "not a key at all", "x".repeat(17), "C-m", "C-h", "C-i", "Escape", "M-[", "F13", "C-\u00e9", "C-\n", "\u001b[A", "-", "--detach-key", " ", " F12", "F12 ", 12, null, true, ["F12"], { key: "F12" }]) {
+    assert.deepEqual(load({ open: { detachKey: key } }).lines, [line(rule)], JSON.stringify(key));
   }
-  for (const key of ["-", "--detach-key", "-x", "--server"]) assert.deepEqual(load({ open: { detachKey: key } }).lines, [line("open.detachKey cannot begin with -")], key);
-  // Printable ASCII the display filter would change (a run of spaces, a space at an end): drawn
-  // in the footer and the help, it would name another key.
-  for (const key of [" ", "C-  x", " F12", "F12 "]) assert.deepEqual(load({ open: { detachKey: key } }).lines, [line("open.detachKey is a key the help cannot name; give a key whose characters can be shown")], JSON.stringify(key));
   assert.deepEqual(load({ open: { detachKey: "F12", command: "x" } }).lines, [line("unknown member command of open; open has detachKey")]);
   assert.deepEqual(load({ open: { "\u001b": 1 } }).lines, [line("a member of open whose name cannot be shown is unknown; open has detachKey")]);
   for (const open of ["F12", [], null, 1, true]) assert.deepEqual(load({ open }).lines, [line('open must be an object, like {"detachKey": "F12"}')], JSON.stringify(open));
   // A refusal of open is a refusal of the file's shape: one line, before anything about its keys.
-  assert.deepEqual(load({ keys: { nope: ["x"] }, open: { detachKey: "-x" } }).lines, [line("open.detachKey cannot begin with -")]);
+  assert.deepEqual(load({ keys: { nope: ["x"] }, open: { detachKey: "-x" } }).lines, [line(rule)]);
 });
 
 test("a file that names open-workspace, the action's name before it became open, is refused with the name it has now", () => {

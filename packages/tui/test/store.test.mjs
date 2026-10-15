@@ -108,7 +108,8 @@ test("a key with an action answers a new state or an effect; a key bound to noth
   assert.equal(selectedName(moved.state), "alpha-kid");
   assert.deepEqual(reduce(state, { key: "r", text: "r", page: 19, extent: 9, room: 19 }).effect, { refresh: { live: true } });
   // A letter no action holds does nothing, nor does a key no table names. (Enter opens here: its tests are with the open's.)
-  for (const key of ["z", "Z", "f5", "insert", "ctrl+x", "shift+tab", "2", "3"]) {
+  // z (zoom) and c (close terminal) do nothing with no terminal open: model.test.mjs has them with one.
+  for (const key of ["y", "Z", "f5", "insert", "ctrl+x", "shift+tab", "4", "9", "z", "c"]) {
     const result = reduce(state, { key, ...(key.length === 1 ? { text: key } : {}), page: 19, extent: 9, room: 19 });
     assert.equal(result.state, state, key);
     assert.equal(result.effect, null, key);

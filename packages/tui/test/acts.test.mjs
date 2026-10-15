@@ -108,7 +108,8 @@ test("a start or restart the shared start gate refuses opens nothing, and its se
 
 test("the footer names the act keys the selected row opens now, in the order stop, retire, start, restart, after open; a key it leaves out still answers (Done 1)", () => {
   const footer = (state, sz = S120) => draw(state, sz).lines[sz.rows - 1];
-  assert.match(footer(on(here(), RUN)), /^ X stop {3}D retire {3}R restart {3}\/ filter/);
+  // At 140 columns every hint has room: at 120 `R restart` is given up first (the acts go before the views).
+  assert.match(footer(on(here(), RUN), size(140, 40)), /^ Enter open {3}X stop {3}D retire {3}R restart {3}\/ filter/);
   assert.match(footer(on(here(), STOPPED)), /^ X stop {3}D retire {3}S start {3}\/ filter/);
   assert.match(footer(on(here(), HALF)), /^ D retire {3}\/ filter/);
   assert.match(footer(on(here(), SPAWNING)), /^ \/ filter/);

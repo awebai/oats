@@ -89,7 +89,7 @@ test("no text from outside can write a control sequence: a hostile fixture drawn
 
     const { sequences, text, foreign } = readTerminalOutput(output);
     assert.deepEqual(foreign, [], "every ESC begins a sequence of the TUI's own list: a position, an erase, an SGR of its parameters, one of its four modes");
-    assert.deepEqual([...new Set(sequences.map((s) => s.kind))].sort(), ["erase", "mode", "position", "sgr"]);
+    assert.deepEqual([...new Set(sequences.map((s) => s.kind))].sort(), ["erase", "mode", "position", "sgr", "sync"]);
     assert.deepEqual(sequences.filter((s) => s.kind === "mode").map((s) => s.body), ["?1049h", "?25l", "?7l", "?2004h", "?2004l", "?7h", "?25h", "?1049l"], "the modes are the guard's own, once each way");
     assert.deepEqual([...new Set(sequences.filter((s) => s.kind === "sgr").map((s) => s.body))].sort(), ["0;1;36m", "0;2m", "0m"], "the styles are the view's own");
     const control = [...bytes].filter((b) => b < 0x20 && b !== 0x1b);
@@ -165,9 +165,10 @@ const FIELDS = {
   "the name in the line after Enter on an instance that does not run": (value, options) => press(stateOf(observed([one({ running: false, runtimeState: "stopped" }, "soul", value)]), options), ["enter"]).state,
   "what the viewer printed on stderr, in the line after the return": (value, options) => {
     const opened = press(stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, ...options }), ["enter"]).state;
-    return reduce(opened, { returned: { id: opened.opening.id, status: 1, stderr: value } }).state;
+    return reduce(opened, { returned: { id: opened.terminal.id, status: 1, stderr: value } }).state;
   },
-  "the key that leaves an agent's terminal, in the footer": (value, options) => stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, detachKey: value, ...options }),
+  // The back key is named in the footer while a terminal has the focus.
+  "the key that leaves an agent's terminal, in the footer": (value, options) => press(stateOf(observed([one()], { cli: KEYED }), { cli: KEYED, detachKey: value, ...options }), ["enter"]).state,
 };
 const UTF8 = glyphs({ LANG: "en_US.UTF-8" }), NOT_UTF8 = glyphs({ LANG: "C" });
 const S80 = { cols: 80, rows: 24 }, S120 = { cols: 120, rows: 40 };
@@ -191,7 +192,7 @@ function census(rows, size, look, at, cells = null) {
   assert.equal(output.isWellFormed(), true, `${at}: well-formed, no lone surrogate`);
   const { sequences, text, foreign } = readTerminalOutput(output);
   assert.deepEqual(foreign, [], `${at}: every ESC begins a sequence of the TUI's own list`);
-  assert.deepEqual([...new Set(sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr"].includes(kind)), [], `${at}: a frame writes positions, erases and styles, and nothing else`);
+  assert.deepEqual([...new Set(sequences.map((s) => s.kind))].filter((kind) => !["erase", "position", "sgr", "sync"].includes(kind)), [], `${at}: a frame writes positions, erases and styles in one synchronized update, and nothing else`);
   assert.equal(bytes.filter((b) => b === 0x1b).length, sequences.length, `${at}: one ESC per sequence, and no other`);
   assert.equal(bytes.some((b) => (b < 0x20 && b !== 0x1b) || b === 0x7f), false, `${at}: no C0 byte but the ESC of those sequences, and no DEL`);
   assert.doesNotMatch(text, /[\u0080-\u009F]/, `${at}: no C1 control`);
@@ -201,7 +202,7 @@ function census(rows, size, look, at, cells = null) {
   const held = (cells ?? screen.cells(rows, size)).flatMap((line, r) => line.flatMap((cell, x) => (REFUSED.test(cell.text) || /[\u0080-\u009F]/.test(cell.text) ? [`row ${r}, column ${x}`] : [])));
   assert.deepEqual(held, [], `${at}: no cell holds a character the terminal acts on`);
   assert.doesNotMatch(text, /owned|EVIL|hunter2|ghp_|evil\.example/, `${at}: nothing of a withheld text is shown`);
-  assert.equal(text.includes("oats") && text.includes("1 Instances"), true, `${at}: the frame is drawn`);
+  assert.equal(text.includes("oats") && text.includes("Instances   Souls   Capabilities"), true, `${at}: the frame is drawn`);
   return text;
 }
 

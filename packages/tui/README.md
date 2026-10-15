@@ -6,7 +6,7 @@ inside `@awebai/oats` and is never published on its own.
 
 **It is a preview.** This version shows a workspace's instances, on this
 machine and on the other machines registered on it, in one list, follows
-them, opens an agent's terminal, and stops, starts, restarts and retires an
+them, opens an agent's terminal in a panel beside the list, and stops, starts, restarts and retires an
 agent after a confirmation. While it is a preview its screens and its
 configuration file may change without notice.
 
@@ -24,16 +24,18 @@ never does.
 | `lib/actions.mjs` | the action table and its default keys: the reducer, the footer and the help read the effective one |
 | `lib/config.mjs` | `tui.json`: read once, checked, and the effective action table |
 | `lib/client.mjs` | the one module that imports the shared readers (`packages/client/`), and the client's terms |
-| `lib/open.mjs` | the viewer of an opened agent: `oats session attach` run by the same kernel on the user's terminal, and the end of its standard error kept |
+| `lib/panel.mjs` | the open terminal: the run's private tmux server (one control client, one window per viewer), the kernel's `oats session attach` in a pane of it, captures when tmux says the pane changed, keys typed into it, and the sweep of what a dead run left; the only module that runs tmux |
 | `lib/read.mjs` | the effects of reading: the deployment, the kernel record, the observer of every deployment opened in the run, the roster of other machines (`oats server roster --json`), the refresh loop, the liveness collector, ending every read, the changes (a stop or retire apply, a start or restart: never ended, their output in files of the run's private directory), and the two looks at the file system the switcher needs (the entries of `~/Agents`, and whether a picked folder is a deployment) |
 | `lib/store.mjs` | the state and `reduce(state, event)`: pure |
 | `lib/model.mjs` | from the state to the rows and the detail to draw, and to the switcher's rows, by calling the shared readers: pure, no cell position |
 | `lib/term/keys.mjs` | bytes to key events: a pure parser with an injected clock |
 | `lib/term/width.mjs` | the cells a grapheme takes |
 | `lib/term/text.mjs` | safe text, the only thing the screen draws: `lit()` and `shown()` |
-| `lib/term/style.mjs` | style values: the sixteen ANSI colours and four attributes |
+| `lib/term/style.mjs` | style values: the TUI's own (the sixteen ANSI colours and four attributes) and an agent's (its colours, 256 and RGB included, and attributes, from a capture) |
+| `lib/term/capture.mjs` | a pane's capture (`capture-pane -p -e -N`) to rows of cells: characters and an allowlist of SGR, every other sequence and control dropped |
+| `lib/term/through.mjs` | the bytes typed while a terminal has the focus: the back key's grammar and bytes, and the scanner that takes the back key and a bracketed paste out of them |
 | `lib/term/screen.mjs` | the cell buffer and the bytes of a frame |
-| `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, the lend of the terminal to a viewer, one write per frame |
+| `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame |
 | `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the switcher, the help, the confirmation of an act (`act.mjs`) |
 
 Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
@@ -42,8 +44,11 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   one path in `lib/client.mjs`. No dynamic `import()`.
 - Nothing in `lib/` or `bin/` of the kernel imports this package, except the
   one dynamic import where `bin/oats.mjs` dispatches the word.
-- Only `term/screen.mjs` and `term/tty.mjs` produce an ESC byte. Views are
-  pure: no IO, no clock, no escape bytes.
+- Only `term/screen.mjs` and `term/tty.mjs` write an ESC byte in a string,
+  and only they write to the terminal. `term/through.mjs` (the back key's
+  bytes) and `lib/panel.mjs` (the paste marks it types into the agent's
+  pane) hold theirs as numbers. Views are pure: no IO, no clock, no escape
+  bytes.
 - No function of this package decodes a kernel answer, groups or orders
   instances, or decides what a failed read means: `lib/model.mjs` and
   `lib/read.mjs` call the shared readers and pass their answers on. A string
@@ -51,8 +56,16 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 - The store holds no size and no cell: a key event carries the height of the
   panes as the last frame drew them.
 - Every read runs in a session of its own and is ended on every way out.
-  The viewer (`lib/open.mjs`) shares the user's terminal, the guard lends it
-  the terminal, and it is ended first on every way out while it has it. A
+  The viewer runs in a pane of the run's private tmux server
+  (`lib/panel.mjs`), never on the user's terminal: the guard never lends the
+  terminal, and `panel.end()` kills that server on every way out. After a
+  SIGKILL the server's keeper window kills it: the keeper reads the run's
+  FIFO `alive`, whose write end the TUI holds, until no writer is left (see
+  THE KEEPER in `lib/panel.mjs`, which says why the control client's stdin
+  EOF is not enough). The next run's sweep removes the directory. The panel
+  runs a process only to make that FIFO, to start the server and to make a
+  window; every frame, key, resize and close goes through its one
+  control client, and a capture runs only after tmux said the pane changed. A
   change (`lib/read.mjs` `changeExec`: the apply of a stop or a retire, a
   start, a restart) is never signalled: on the way out it is let go, and its
   output goes to files, so it never meets a closed pipe.
@@ -68,9 +81,12 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 
 Tests: `node --test packages/tui/test/*.test.mjs`, the root tests
 `test/tui-*.test.mjs`, and the end-to-end tests in a real tmux on a private
-socket (`test/tui-terminal.test.mjs`, and `test/tui-open-terminal.test.mjs`
-for opening an agent, with a second private server for the agents;
-`test/tui-acts.test.mjs` for the acts, run on CI only). All of them need the root's install
+socket (`test/tui-terminal.test.mjs`; `test/tui-panel.test.mjs` for the
+terminal panel, with a second private server for the agents, and
+`test/tui-acts.test.mjs` for the acts, both run on CI only).
+`packages/tui/test/panel.test.mjs` drives `lib/panel.mjs` against a fake
+tmux (`test/fixtures/panel/tmux.mjs`) that records each call and plays the
+control-mode answers. All of them need the root's install
 (`npm ci` at the repository root). The package has no dependency of its own,
 but one of its tests runs the real kernel, which has: "KERNEL_BIN is this
 install's own bin/oats.mjs, and its `version --json` is a record the probe

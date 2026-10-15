@@ -17,9 +17,18 @@ export const ACTIONS = Object.freeze([
   { id: "detail", keys: ["tab"], label: "detail" },
   { id: "filter", keys: ["/"], label: "filter" },
   { id: "refresh", keys: ["r"], label: "refresh" },
+  // The views by their number. The header names the views and never draws a digit against a name
+  // (docs/tui.md, "The header"): the digits are named here, so in the help and the footer.
   { id: "instances", keys: ["1"], label: "instances" },
+  { id: "souls", keys: ["2"], label: "souls" },
+  { id: "capabilities", keys: ["3"], label: "capabilities" },
   { id: "workspaces", keys: ["w"], label: "workspaces" },
-  { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"]] },
+  { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal beside the list, or go to it when it is the open one, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"]] },
+  // The open terminal, from the list (docs/tui.md, "Open an agent's terminal"). While the terminal
+  // has the focus the TUI takes no key but the back key (tui.json's open.detachKey), so neither of
+  // these is ever read there.
+  { id: "zoom", keys: ["z"], label: "zoom", views: [["instances", "go to the open terminal with the whole screen; the back key brings the list back"]] },
+  { id: "close-terminal", keys: ["c"], label: "close terminal", views: [["instances", "close the open terminal; the agent keeps running"]] },
   // The four acts on an instance: each opens a confirmation, and nothing is done before a move and
   // a press in it. Capitals: a lower-case key is one slip away, a capital takes Shift.
   { id: "stop", keys: ["X"], label: "stop", views: [["instances", "stop the selected agent, after a confirmation"]] },

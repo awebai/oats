@@ -6,13 +6,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile as nodeExecFile, execFileSync, spawn as nodeSpawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { COLLECTOR, DETACH_KEY_FEATURE, INSTANCE_VARIABLES, MAX_DEPLOYMENT_OBSERVATIONS, acceptProbe, cliReadsRemotes, cliRecord, cliRemoteRoster, failedEntry, livenessInput, observeIdentities, prepareRemoteTerm, remoteRosterState } from "../lib/client.mjs";
-import { startViewer } from "../lib/open.mjs";
 import { CHANGE_FILES, KERNEL_BIN, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel } from "../lib/read.mjs";
+import { PANEL_FS } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/fake.mjs", import.meta.url));
 const LEAVE = fileURLToPath(new URL("./fixtures/leave.mjs", import.meta.url));
@@ -1453,25 +1453,9 @@ test("admitDeployment: a folder is admitted by what it is now, as its canonical 
   assert.deepEqual(admitDeployment("/given", io(() => true, () => "not/absolute")), { ok: false });
 });
 
-// ── Opening an agent: the reader holds still while the terminal is lent, runs the preflight of
-// another machine's agent as a read, and never touches the viewer, which is not its child.
+// ── Opening an agent: the reader runs the preflight of another machine's agent as a read, and never
+// touches the viewer, which is not its child (it runs in the panel's private tmux server).
 
-test("hold(): while the terminal is lent no cycle begins and no roster read starts, whoever asks; release() and a live request read again", async (t) => {
-  const world = makeWorld();
-  world.plan({ ...answering(world, [kernelRow("dev-one")]), server: { stdout: JSON.stringify(rosterAnswer([])) } });
-  const { reader, entries, rosters, spawned, begun } = reading(t, world, { cli: world.remoteCli });
-  reader.hold();
-  reader.hold(); // idempotent
-  await reader.start();
-  await reader.request({ live: true });
-  await reader.request();
-  assert.deepEqual([spawned.length, entries.length, rosters.length, begun()], [0, 0, 0, 0], "nothing started, nothing emitted, no cycle numbered");
-  reader.release();
-  await reader.request({ live: true });
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0].number, 1, "the first cycle after the lend is the first that was numbered");
-  assert.equal(spawned.some((call) => call.args[1] === "server"), true, "and the roster is read again");
-});
 /** The kernel record of a CLI that opens agents on other machines with a detach key. */
 const keyedCli = (world) => cliRecord({ version: VERSION, workspaceApi: 2, features: [...FEATURES, DETACH_KEY_FEATURE, "server-probe-features"], remote: ["roster", "session"] }, { bin: world.bin, source: "tui" });
 const TARGET = Object.freeze({ serverId: "garnet", instance: "dev-far", home: "/srv/acme-platform/agents/dev/instances/dev-far" });
@@ -1528,26 +1512,26 @@ test("a preflight under way when the reader stops is ended with its group, as ev
   await gone([pid], 5000);
 });
 
-test("only reads are ever ended: a viewer the loop started (lib/open.mjs) is no child of the reader, and neither voidInFlight() nor stop() signals it; its own end() does", async (t) => {
+test("only reads are ever ended: a process the reader did not start (the panel's) is no child of the reader, and neither voidInFlight() nor stop() signals it", async (t) => {
   const world = makeWorld();
   world.plan({ ...answering(world, [kernelRow("dev-one")]), status: { sleep: true } });
   const { reader } = reading(t, world);
-  // The viewer stands in for `oats session attach`: the sleeper, started as the loop starts the viewer.
-  const viewer = startViewer(path.join(world.dir, "sleeper.mjs"), [], { env: CLEAN_ENV });
-  const pid = await waitFor("the viewer to start", () => world.calls("sleeper", "start")[0]?.pid);
-  if (OWN_GROUP !== null) assert.equal(groupOf(pid), OWN_GROUP, "the viewer is in the TUI's own process group, unlike a read");
+  // The sleeper stands in for the panel's tmux server and its viewer: started outside the reader.
+  const other = nodeSpawn(process.execPath, [path.join(world.dir, "sleeper.mjs")], { env: CLEAN_ENV, stdio: "ignore" });
+  const closed = new Promise((resolve) => other.once("exit", (code, signal) => resolve({ code, signal })));
+  t.after(() => { try { other.kill("SIGKILL"); } catch { /* gone */ } });
+  const pid = await waitFor("the other process to start", () => world.calls("sleeper", "start")[0]?.pid);
   reader.start();
   const kernel = await waitFor("a read to start", () => world.calls("status", "start")[0]?.pid);
-  assert.equal(reader.children().includes(pid), false, "the reader does not know the viewer");
+  assert.equal(reader.children().includes(pid), false, "the reader does not know it");
   reader.voidInFlight();
   reader.stop();
   await gone([kernel], 5000);
   await sleep(300);
-  assert.equal(alive(pid), true, "the reader's clean-up never signalled the viewer");
-  viewer.end();
-  assert.deepEqual(await viewer.closed, { status: null, stderr: "" }, "ended by a signal: no status");
+  assert.equal(alive(pid), true, "the reader's clean-up never signalled it");
+  other.kill("SIGTERM");
+  assert.deepEqual(await closed, { code: null, signal: "SIGTERM" });
   await gone([pid], 5000);
-  viewer.end(); // after it closed: nothing
 });
 
 // ── A change: a stop or retire apply, a start or a restart (awebai/oats#855, PR 5) ───────────────
@@ -1590,6 +1574,22 @@ function change(c, argv, options = {}) {
   c.pids.push(child.pid);
   return { child, answer: () => answer };
 }
+
+test("a change never holds the panel's FIFO: the write end the TUI keeps for its keeper (lib/panel.mjs, THE KEEPER) is in no change's descriptors, so a change that outlives the TUI cannot keep its private server alive", { skip: existsSync("/proc/self/fd") ? false : "no /proc: a child's descriptors cannot be listed here" }, async (t) => {
+  const c = changing(t);
+  const fifo = path.join(mkdtempSync(path.join(ROOT, "fifo-")), "alive");
+  execFileSync("mkfifo", ["-m", "600", fifo]);
+  const held = PANEL_FS.hold(fifo);
+  t.after(() => quietly(() => PANEL_FS.release(held)));
+  const holders = (pid) => readdirSync(`/proc/${pid}/fd`).filter((fd) => quietly(() => readlinkSync(`/proc/${pid}/fd/${fd}`)) === fifo);
+  assert.deepEqual(holders("self"), [String(held)], "the TUI holds it");
+  const run = change(c, [c.paths.ready, c.paths.gate, c.paths.done]);
+  await waitFor("the change to be under way", () => existsSync(c.paths.ready));
+  assert.deepEqual(holders(run.child.pid), [], "the change does not");
+  writeFileSync(c.paths.gate, "");
+  await waitFor("the callback", run.answer);
+  c.reader.stop();
+});
 
 test("a change's output goes to two files of the run's private directory, never a pipe: stdin is ignore, the TUI's copies are closed, and at the close both are read back, deleted, and handed to the callback as execFile hands them", async (t) => {
   const c = changing(t);

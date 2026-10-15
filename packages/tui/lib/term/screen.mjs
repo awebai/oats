@@ -1,28 +1,38 @@
 // The screen: a buffer of cells and the bytes that turn the previous frame into the next one.
 // With term/tty.mjs it is the only module that produces an ESC byte, and what it writes is a closed
-// list: a position, an erase, an SGR of style.mjs's parameters. Text reaches it as safe text only
-// (term/text.mjs); a string is refused.
+// list: a position (CSI row;col H); an erase (CSI K, CSI 2J); an SGR it builds itself, a reset and
+// the parameters style.mjs answers for a style value, of either kind (CSI 0;...m); the
+// synchronized-output pair around each frame (CSI ?2026h, CSI ?2026l); and the cursor shown or
+// hidden (CSI ?25h, CSI ?25l). Text reaches it as safe text only (term/text.mjs); a string is
+// refused.
 //
 // The rules a width disagreement cannot break (docs/tui.md): every row write starts with an
 // absolute position and is erased to its end, so a character the terminal draws wider or narrower
 // than width.mjs counts moves nothing outside its own row; nothing is written past the last column.
+//
+// Each frame that writes anything is one synchronized update (DEC mode 2026): the terminal shows
+// it whole or not yet, never half drawn. The mode is set at the start of the frame and reset at its
+// end, so no frame leaves it set; a terminal that does not know the mode ignores both. The cursor
+// is placed after every row, since each row write moves it.
 import { cells } from "./width.mjs";
 import { textOf } from "./text.mjs";
-import { PLAIN, isStyle, sgr } from "./style.mjs";
+import { PLAIN, blankShows, isStyle, sgr } from "./style.mjs";
 
 const CSI = "\x1b[";
 const RESET = `${CSI}0m`;
 const CLEAR = `${CSI}2J`;
 const ERASE_TO_END = `${CSI}K`;
 const position = (row, col) => `${CSI}${row + 1};${col + 1}H`;
+const SYNC_BEGIN = `${CSI}?2026h`;
+const SYNC_END = `${CSI}?2026l`;
+const CURSOR_SHOW = `${CSI}?25h`;
+const CURSOR_HIDE = `${CSI}?25l`;
 
 const cell = (text, width, style) => Object.freeze({ text, width, style });
 const BLANK = cell(" ", 1, PLAIN);
 /** The second cell of a two-cell grapheme: it holds nothing to write. */
 const TAIL = cell("", 0, PLAIN);
 const PRINTABLE_ASCII = /^[\x20-\x7e]$/;
-/** A cell that shows nothing: a space in a style that draws nothing on a space. */
-const shows = (c) => c.text !== " " || c.style.underline || c.style.reverse;
 
 /** What the locale and `--ascii` decide: `utf8`, whether the terminal is told to read UTF-8
  *  (LC_ALL, else LC_CTYPE, else LANG names it), and `ascii`, whether the TUI's own marks and rules
@@ -33,7 +43,10 @@ export function glyphs(env, { ascii = false } = {}) {
   return { utf8, ascii: ascii || !utf8 };
 }
 
-/** A screen. `render(rows, size, { full })` answers the bytes for one frame and remembers it.
+/** A screen. `render(rows, size, { full, cursor })` answers the bytes for one frame and remembers
+ *  it: "" when nothing changed, else one synchronized update. `cursor` is null (hidden, as the
+ *  TUI keeps it) or `{ row, col }`, a cell of the frame from 0, where the cursor is left shown; one
+ *  outside the size is hidden. `full` draws the frame whole and states the cursor again.
  *  `rows[r]` is the spans of row r, drawn in order, a later one over an earlier one:
  *  `{ col, text, style?, width? }`, `text` safe text, `width` the cells the span may take (default:
  *  to the right edge); or a fill, `{ col, width, style? }`, `width` blank cells in that style.
@@ -42,6 +55,10 @@ export function glyphs(env, { ascii = false } = {}) {
 export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) {
   const mark = cells(ascii ? "..." : "\u2026");
   let previous = null;
+  /** The cursor the last frame left: null hidden, else `{ row, col }` shown there. */
+  let cursorShown = null;
+  /** A cell that shows: anything but a space, or a space in a style that paints it. */
+  const shows = (c) => c.text !== " " || blankShows(c.style, { color });
 
   /** Overwriting one half of a two-cell grapheme blanks the other half. */
   function clear(line, x) {
@@ -114,7 +131,16 @@ export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) 
     return end < line.length ? out + ERASE_TO_END : out;
   }
 
-  function render(rows, size, { full = false } = {}) {
+  /** Where the frame leaves the cursor: null hidden, else a cell inside the size. */
+  function cursorOf(cursor, size) {
+    if (cursor === null || cursor === undefined) return null;
+    if (typeof cursor !== "object" || !Number.isInteger(cursor.row) || !Number.isInteger(cursor.col)) throw new TypeError("a cursor is null or { row, col }, a cell index from 0");
+    const { row, col } = cursor;
+    return row >= 0 && col >= 0 && row < size.rows && col < size.cols ? { row, col } : null;
+  }
+
+  function render(rows, size, { full = false, cursor = null } = {}) {
+    const wanted = cursorOf(cursor, size);
     const lines = layout(rows, size);
     const redraw = full || !previous || previous.cols !== size.cols || previous.rows !== size.rows;
     let out = redraw ? RESET + CLEAR : "";
@@ -127,8 +153,18 @@ export function createScreen({ utf8 = true, ascii = !utf8, color = true } = {}) 
       // as sure as the width table, so nothing in it is addressed by column.
       out += writeRow(r, line, asciiOnly(line) && asciiOnly(old) ? changed : 0);
     }
+    // The cursor after every row: a row write leaves it at the row's end, so a shown cursor is
+    // placed again whenever a row was written, and a redraw shows it again (the guard's ENTER, at
+    // a start, a resume or a Ctrl+L, hides it). A hidden one is hidden only when this screen had
+    // shown it: hiding it is the guard's, and a frame adds no mode the guard did not switch.
+    if (wanted) {
+      const moved = out !== "" || !cursorShown || cursorShown.row !== wanted.row || cursorShown.col !== wanted.col;
+      if (moved) out += position(wanted.row, wanted.col);
+      if (redraw || !cursorShown) out += CURSOR_SHOW;
+    } else if (cursorShown) out += CURSOR_HIDE;
     previous = { cols: size.cols, rows: size.rows, lines };
-    return out;
+    cursorShown = wanted;
+    return out === "" ? "" : SYNC_BEGIN + out + SYNC_END;
   }
   return { render, cells: layout };
 }

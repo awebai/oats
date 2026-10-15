@@ -78,7 +78,7 @@ runs.
 
 ```
  oats  acme-platform  +1 machine                            4 running  1 needs input  2 stopped
- 1 Instances   2 Souls   3 Capabilities                                           read 14:03:27
+  Instances   Souls   Capabilities                                                read 14:03:27
 ──────────────────────────────────────────────┬─────────────────────────────────────────────────
  This machine                                 │   api-lead
  ▾ ● backend-lead                 claude      │   soul     tech-lead
@@ -91,7 +91,7 @@ runs.
                                               │
    ○ reviewer-api                 stopped     │
 ──────────────────────────────────────────────┴─────────────────────────────────────────────────
- / filter   Tab detail   r refresh   w workspaces   ? help   q quit
+ / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit
 ```
 
 - **The header** has the workspace's name, then what the view holds of
@@ -102,10 +102,14 @@ runs.
   every row of the view: instances running, instances that need input,
   stopped, state unknown, and rows the kernel reported that were withheld (a
   home outside its soul's directory, or one reported twice). A count of zero
-  is left out. The second row names the views; `2 Souls` and
-  `3 Capabilities` are dim because they cannot be opened yet. On the right
-  is the time of the read of this machine that the screen shows: it moves
-  with every read.
+  is left out. The second row names the views, `Instances   Souls
+  Capabilities`: the open one is drawn in reverse video, and `Souls` and
+  `Capabilities` are dim because they cannot be opened yet. Their keys,
+  `1`, `2` and `3`, are not drawn beside the names: the help names each,
+  and the footer names the three as one hint, `1-3 views`, which a narrow
+  footer gives up right after the acts. `2` and `3` say what to run
+  instead. On the right is the time of the read
+  of this machine that the screen shows: it moves with every read.
 - **The list** is the roster the Desktop draws: the same groups in the same
   order, from the same code. An instance that others were spawned from
   comes first, and the ones below it are indented under it; instances
@@ -127,29 +131,9 @@ runs.
   branch, team, parent, when it last started, and its home. From 80
   columns up it stands beside the list; on a narrower terminal `Tab` opens
   it as a page.
-- **Opening an agent.** `Enter` on an instance that runs gives your terminal
-  to that agent's own terminal, through `oats session attach`: you see what
-  the agent shows, and what you type goes to it. `Ctrl+\` brings `oats tui`
-  back, and the agent keeps running. The key is yours to change
-  ([`tui.json`](#change-the-keys-tuijson)), and the footer names it whenever
-  `Enter` would open.
-  - Inside tmux the agent opens in the same pane. `oats tui` makes no window
-    and no split.
-  - After the return the instances are read again at once, and one line
-    says what happened: that you left and the agent keeps running, that it
-    could not be opened, or that the connection to its machine ended. When
-    the agent's own terminal ended while you were in it, you are back with
-    no line: the list shows the agent as it now is.
-  - What `oats session attach` printed when it failed stands under that line
-    in quotation marks. It is not said who printed it: OATS, tmux and ssh
-    all can.
-  - `Enter` on an instance that cannot be opened opens nothing and says why:
-    it does not run, whether it runs is not known, the detail's reason holds
-    it, or its machine's OATS is older than 0.51.0 and has no key to leave a
-    viewer.
-  - For each time you open an agent, one line of tmux's own stays on your
-    screen and is there after you quit: `[detached (from session …)]`, or
-    `[exited]`.
+- **Opening an agent.** `Enter` on an instance that runs opens its terminal
+  beside the list, where the detail was: see
+  [Open an agent's terminal](#open-an-agents-terminal).
 
 **A view of more than one deployment** (this machine and another, or two
 deployments on one machine) is one list, grouped as the Desktop groups it:
@@ -237,6 +221,77 @@ The next read that succeeds shows the machines as they then report.
 
 Names are cut by terminal cells with `…` (`...` in ASCII) when they do not
 fit; the detail shows them whole.
+
+## Open an agent's terminal
+
+```
+ oats  acme-platform                                                  2 running
+  Instances   Souls   Capabilities                                read 14:03:27
+──────────────────────────────────────┬─────────────────────────────────────────
+>  ● backend-lead          claude     │ backend-lead
+   ● docs-writer           claude     │$ make docs
+                                      │Building the reference...
+                                      │
+──────────────────────────────────────┴─────────────────────────────────────────
+ C-\ back to the list
+```
+
+- **`Enter` on an instance that runs** opens its terminal on the right of
+  the body, where the detail was, with the list on the left. Its top row
+  names the agent (and `on <machine>` for one of another machine); under it
+  is the agent's screen, as the agent draws it, in its own colours.
+- **The terminal has the focus.** What you type, what you paste and every
+  key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
+  among them, but for **the back key** (`Ctrl+\` unless
+  [`tui.json`](#change-the-keys-tuijson) names another). The back key gives
+  the focus to the list. While the terminal has the focus the footer names
+  only that key: `C-\ back to the list`. A back key inside a paste is
+  pasted, not taken.
+- **With the list focused** the terminal stays open, and the agent's screen
+  is still drawn as it changes. The footer names the keys for it:
+  `Enter focus terminal` on its row, `z zoom` and `c close terminal`.
+  - `Enter` on the open terminal's row gives it the focus again.
+  - `z` gives it the focus and the whole body: the header and the footer
+    stay, the list is hidden. The back key brings the list back beside it.
+  - `c` closes it: the agent keeps running, and the right side is the
+    detail again.
+  - `Tab` shows the detail in its place until `Tab` or `Esc`. Nothing of
+    the terminal is drawn meanwhile, and its screen is read afresh when it
+    shows again.
+- **One terminal is open at a time.** `Enter` on another instance that runs
+  closes the open one and opens that one.
+- **Under 80 columns** the terminal is always shown with the whole body
+  when it has the focus. With the list focused the list is shown alone; the
+  terminal stays open, unseen, and `Enter focus terminal` in the footer
+  shows it again. Beside the list the terminal is never narrower than 40
+  columns.
+- **A terminal also closes by itself** when its viewer ends: the agent's
+  window ended, its session went away, or the link to its machine dropped.
+  The instances are then read again at once, and one line above the panes
+  says what happened: that it could not be opened, that the connection to
+  its machine ended, or that the viewer ended without saying why. What the
+  viewer printed on its error output stands under that line in quotation
+  marks, without saying who printed it: OATS, tmux and ssh all can. When
+  the viewer ended cleanly there is no line, and a terminal you closed
+  yourself says nothing. **A terminal is never opened again by itself**:
+  `Enter` opens it.
+- **`Enter` on an instance that cannot be opened** opens nothing and says
+  why: it does not run, whether it runs is not known, or the detail's
+  reason holds it. An agent on another machine is asked first whether it
+  can be opened (`Esc` gives that up); a machine whose OATS cannot open its
+  sessions is said then.
+- **No scrollback but the viewer's own, and no mouse.** The panel shows
+  what the agent's window shows now; what has scrolled away is reached as
+  the agent's own terminal reaches it.
+- **How it works.** The terminal is the kernel's own viewer,
+  `oats session attach`, run in a pane of a tmux server private to this run
+  of `oats tui`: its socket is in a directory of the run's own (mode 0700,
+  under the system's temporary directory), it reads no tmux configuration
+  of yours, and it has no prefix key, no key binding and no status line.
+  `oats tui` reads that pane's screen when tmux says it changed, never on a
+  timer: an idle terminal costs no frame. Inside tmux nothing changes: the
+  agent opens in the TUI's panel, and `oats tui` makes no window and no
+  split in your tmux.
 
 ## The switcher
 
@@ -406,8 +461,12 @@ The exit status never depends on it.
 | `/` | filter |
 | `r` | read now |
 | `1` | the Instances view |
+| `2`, `3` | the Souls and Capabilities views: not in this version, so a line says what to run instead |
 | `w` | opens [the switcher](#the-switcher) |
-| `Enter` | in the list of instances, opens the selected agent's terminal; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
+| `Enter` | in the list of instances, opens the selected agent's terminal beside the list, or gives it the focus when it is the open one; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
+| `z` | gives the open terminal the focus and the whole body |
+| `c` | closes the open terminal; the agent keeps running |
+| `Ctrl+\` | while a terminal has the focus, the back key: the focus goes to the list ([`tui.json`](#change-the-keys-tuijson) can name another) |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
 | `Left`/`Right`, `Tab`/`Shift+Tab` | in a confirmation, move between its buttons |
 | `Space` | in a confirmation, switches the plan's choice |
@@ -427,8 +486,9 @@ where it is, and the list returns to it at the next key that moves it.
 
 The help screen is generated from the table the program acts on, so it
 always lists the keys that work, with the marks and with what this version
-does not do. The movement keys scroll it. While `oats tui` has the screen,
-`Ctrl+\` does nothing.
+does not do. The movement keys scroll it. While a terminal has the focus
+the table's keys are the agent's: the back key alone is the TUI's. With the
+list focused the back key does nothing.
 
 **The filter.** `/` opens a field on the last row. What you type narrows the
 list to the instances whose name, soul or repository contains it, with the
@@ -462,10 +522,12 @@ never writes it. With no file the keys are the ones above.
   do not name keeps its keys.
 - The actions are `up`, `down`, `top`, `bottom`, `page-up`, `page-down`,
   `collapse`, `expand`, `detail`, `filter`, `refresh`, `instances`,
-  `workspaces`, `open`, `help`, `close`, `quit`, `suspend` and `redraw`.
-  `workspaces` (`w`) opens the switcher and `open` (`enter`) opens the
-  selected agent's terminal in the list of instances and the selected row
-  in the switcher. In an open filter field `Enter` keeps the filter,
+  `souls`, `capabilities`, `workspaces`, `open`, `zoom`, `close-terminal`,
+  `stop`, `retire`, `start`, `restart`, `help`, `close`, `quit`, `suspend`
+  and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
+  opens the selected agent's terminal in the list of instances and the
+  selected row in the switcher. `zoom` (`z`) and `close-terminal` (`c`) act
+  on the open terminal. In an open filter field `Enter` keeps the filter,
   whatever key `open` has.
 - A key is written as the help shows it, in lower case: `q`, `G`, `?`,
   `space`, `enter`, `tab`, `escape`, `backspace`, `up`, `pageup`, `f5`,
@@ -474,12 +536,15 @@ never writes it. With no file the keys are the ones above.
   and `Ctrl+M` as `backspace`, `tab` and `enter`, so those four are not
   keys of their own.
 - `ascii: true` is `--ascii`.
-- `open.detachKey` is the key that leaves an agent's terminal, written as
-  `oats session attach --detach-key` takes it: `C-\` when you name none.
-  [Execution targets](execution-targets.md) has the keys that can be chosen.
-  `oats tui` does not check it: a key OATS refuses is said when you open an
-  agent. A key that tmux's copy mode binds leaves the viewer once that mode
-  is left.
+- `open.detachKey` is **the back key**: the key that takes the focus from
+  an agent's terminal back to the list, `C-\` when you name none. It is
+  `oats tui`'s own and never reaches the agent or the kernel. It is one of
+  these, written as shown: `C-` with a letter but `h`, `i` and `m` (a
+  terminal sends those as `Backspace`, `Tab` and `Enter`) or one of `\`
+  `]` `^` `_`; `M-` with a lower-case letter or a digit; or `F1` to `F12`,
+  alone or with one of `C-`, `M-`, `S-` (`C-F5`). These are the keys a
+  `tui.json` written for an earlier version could name, with the same
+  meaning for the key.
 
 **A file it cannot honour stops the start.** Each problem is one line on
 stderr, the status is 1 and nothing is drawn; it resolves no conflict and
@@ -492,9 +557,7 @@ guesses nothing. It refuses:
 | is not one JSON object | `it is not valid JSON`, `it is not one JSON object` |
 | has a setting other than `keys`, `ascii` and `open`, or one of the wrong kind | `unknown setting …`, `keys must be an object`, `ascii must be true or false`, `open must be an object` |
 | has a member of `open` other than `detachKey` | `unknown member … of open; open has detachKey` |
-| gives `open.detachKey` something that is not 1 to 16 printable ASCII characters | `open.detachKey must be 1 to 16 printable ASCII characters` |
-| gives `open.detachKey` a value that begins with `-` | `open.detachKey cannot begin with -` |
-| gives `open.detachKey` a value the help would draw as another key (a run of spaces, a space at an end) | `open.detachKey is a key the help cannot name` |
+| gives `open.detachKey` anything but one of the keys above | `open.detachKey must be one key: …`, with the keys it can be |
 | names `open-workspace`, the action's name before it became `open` | `open-workspace is called open now; rename it` |
 | names an action that does not exist | `unknown action …`, with the list of actions |
 | gives an action something that is not a list of strings | `… must be a list of key ids` |
@@ -552,16 +615,36 @@ with the Desktop (`packages/client/`).
   `oats-local.yaml`. An entry that is a link is not followed. When a folder
   is opened, that one directory is asked again.
 - **Opening an agent runs one more command,** `oats session attach --home
-  <home> --detach-key <key>`, by the same kernel, with your terminal as its
-  terminal. For an agent on another machine `oats session inspect --server
-  <id> --home <home> --json` is asked first (20 seconds), then `oats session
-  attach --server <id> --home <home> --detach-key <key>`. Nothing is read
-  while the agent has the terminal, and the return reads at once.
+  <home>`, by the same kernel, in a pane of the run's private tmux server
+  ([above](#open-an-agents-terminal)), with no key of its own. For an agent
+  on another machine `oats session inspect --server <id> --home <home>
+  --json` is asked first (20 seconds), then `oats session attach --server
+  <id> --home <home>`. The reads go on while a terminal is open, and the end
+  of a viewer reads at once.
+- **The private tmux server** is `tmux` found on `PATH`, 3.2 or later. It
+  is started at the first open of a run, with `-f /dev/null` and the
+  environment's `TMUX` and `TMUX_PANE` removed, and its socket in the run's
+  own directory. The control client that `oats tui` keeps for the run
+  starts it, with `exit-unattached` set in the same command. Its first window is a keeper: it
+  watches `alive`, a FIFO in the run's directory (0600, made with the
+  system's `mkfifo`) that `oats tui` holds open for writing until it ends.
+  When `oats tui` is gone, whatever ended it and at any moment, the keeper
+  kills the server. Two tools of the base system serve the keeper, found on
+  `PATH` like `tmux`. **`mkfifo`** makes `alive`: without it an open is
+  refused, and the line says the terminal could not be opened, with what
+  was said under it. **`ps`** tells the keeper its server is still its
+  parent: without it the keeper kills nothing, and an `oats tui` killed
+  with SIGKILL can leave its private server running. Each open is a window of it, closed with `kill-pane`, which hangs up the viewer's
+  terminal so the viewer removes its own session on the agents' server. The
+  viewer's error output and exit status go to two files of the run's
+  directory (0600), read back when it ends and deleted. The server is ended
+  on every way out a process can handle. At its start a run also removes
+  what a run that is gone left (below), and nothing else: it signals
+  nothing.
 - **Every read runs in a session of its own** and is ended when the TUI
   ends, on every way out a process can handle (for SIGKILL see
-  [below](#what-it-changes-in-your-terminal-and-restores)). The viewer
-  shares your terminal, and is ended first when `oats tui` is ended while an
-  agent has the terminal. A read that was
+  [below](#what-it-changes-in-your-terminal-and-restores)). An open
+  terminal's viewer ends with the private server. A read that was
   running when the TUI is suspended is dropped, not shown: its answer could
   arrive cut. That holds for the read of the other machines too. The return
   reads again.
@@ -582,7 +665,13 @@ with the Desktop (`packages/client/`).
   apply's answer for 10 minutes and for a start's for 60 seconds; then it
   says so, and the change goes on.
 - It runs no other command that changes a deployment or a registration, and
-  it writes no other file.
+  it writes no other file but the private server's: its socket `tmux`, the
+  keeper's FIFO `alive`, and `owner.json` (`{ "tool": "oats-tui", "pid": …,
+  "started": … }`), which lets a later run tell a directory a run that is
+  gone left. A run that ends normally removes all three. A later run removes
+  such a directory, these three files included, when its `pid` is not alive
+  and its socket answers no tmux; it looks only at directories named `oats-tui-*` in the
+  system's temporary directory, yours, of mode 0700, holding that file.
 
 ## What this version does not do
 
@@ -612,7 +701,8 @@ version:
   names the machine (`on garnet`) and carries the time.
 - Souls and Capabilities, when they come, are this machine's.
 - There is no sorting and no mouse, and a deployment's heading cannot be
-  folded.
+  folded. An open terminal has no scrollback but the viewer's own.
+- One terminal is open at a time; tabs of several come in a later version.
 - With an OATS older than 0.52.0, after an interrupted stop the instance can
   be started and then cannot be stopped while `.oats-stop-pending.json` exists
   in its home.
@@ -629,6 +719,17 @@ This is the complete list. On start, in this order:
 
 On the way out, the reverse: bracketed paste off, autowrap on, the style
 reset (`CSI 0m`), the cursor shown, the alternate screen left, raw mode off.
+
+While it draws:
+
+- **every frame is one synchronized update**: it begins with
+  `CSI ?2026h` and ends with `CSI ?2026l`, so a terminal that knows the
+  mode shows the frame whole and one that does not ignores it. The mode is
+  set and reset inside each frame and is never left on; a frame with
+  nothing to change writes nothing;
+- **while an agent's terminal has the focus the cursor is shown**
+  (`CSI ?25h`) where the agent's is, when the agent shows one, and hidden
+  again (`CSI ?25l`) when the focus leaves it.
 
 Two of these have a reason worth stating:
 
@@ -656,15 +757,11 @@ It stops the whole foreground process group, as a `Ctrl+Z` does for any
 other program, so `oats tui` started through a wrapper (`sh -c`, `npx`)
 suspends as one job.
 
-**While an agent has the terminal** `oats tui` has put the terminal back in
-full, as for a suspend, and draws nothing. The viewer is OATS's own: it sets
-what it needs, the mouse for scrolling among it, and puts that back when it
-ends. Then `oats tui` sets its modes again. A SIGQUIT does not end
-`oats tui` while an agent has the terminal (a second `Ctrl+\`, pressed as the
-viewer leaves, is that signal). SIGINT, SIGTERM and SIGHUP end the viewer
-first and then `oats tui`, with the status of the table above. A viewer
-that has not ended 3 seconds after it was asked, or at a second signal, is
-left as it is, and `oats tui` ends without it.
+**While an agent's terminal is open** the terminal stays `oats tui`'s: the
+viewer draws into the private server's pane, never into your terminal, and
+`oats tui` draws what that pane shows. Every way out in the table above ends
+the private server and with it the viewer, with that status. A suspend
+leaves the server and its viewer running; `fg` draws the terminal afresh.
 
 `Ctrl+C` is the quit key: in raw mode the terminal sends it as a byte, not as
 a signal, so it answers 0. A SIGINT sent from outside (`kill -INT`) answers
@@ -677,20 +774,28 @@ on tmux 3.7c, `reset` brought back the cursor and autowrap, and the pane
 stayed in the alternate screen until `tput rmcup`. Nothing else is left in
 tmux: `oats tui` creates no session, window, option or key binding.
 Nor can it end a read after SIGKILL: nothing of the TUI runs any more, so a
-read that was in flight runs to its own end. After a SIGKILL while an agent
-has the terminal, the viewer still has it: leave it with the key and you are
-in your shell.
+read that was in flight runs to its own end. An open terminal's private
+server is ended by its keeper as soon as `oats tui` is gone, so the viewer's
+terminal hangs up and the viewer removes its own session. A stopped `oats tui`
+(`Ctrl+Z`, SIGSTOP) still holds the keeper's FIFO, so its server is left
+alone. The next run removes the directory that is left, with its `tmux`,
+`alive` and `owner.json`.
 
 ## What it never does
 
 - It switches on **no mouse reporting, no focus reporting, no keyboard
-  protocol, no keypad or cursor-key mode and no synchronized output**.
+  protocol and no keypad or cursor-key mode**, and leaves no synchronized
+  update on between frames.
 - It writes **no window title, no clipboard sequence, no bell**, and no query
   that expects the terminal to reply.
-- It uses **only your terminal's own sixteen colours** and bold, dim,
-  underline and reverse: no 256-colour or RGB value and no background fill,
-  so your theme stays the theme. With `NO_COLOR` set and not empty it uses no
-  colour at all. Nothing is told by colour alone.
+- **Its own words and marks use only your terminal's own sixteen colours**
+  and bold, dim, underline and reverse: no 256-colour or RGB value and no
+  background fill, so your theme stays the theme. An open terminal shows
+  the agent's screen in the agent's own colours (256-colour and RGB
+  included) and attributes: those are the agent's. With `NO_COLOR` set and
+  not empty it uses no colour at all, the agent's included; the agent's
+  bold, underline, reverse and the like stay. Nothing is told by colour
+  alone.
 - It draws its rules and marks in UTF-8 when `LC_ALL`, else `LC_CTYPE`, else
   `LANG` names UTF-8, and in ASCII otherwise or with `--ascii`. No icon font,
   no emoji. When the locale is not UTF-8, a character outside ASCII in text
@@ -706,23 +811,25 @@ in your shell.
   shared home's (`packages/client/`), and the TUI writes none of its own
   for a speaker. They never stand before a withheld text: a reason that is
   withheld is `[withheld]` alone.
-- It changes nothing in tmux itself: no option, key binding, server,
-  session, window or pane. Its probe only lists panes. An agent's own
-  session is started, ended or restarted only by the kernel's commands of
-  an act you confirmed
+- It changes nothing in your tmux or the agents': no option, key binding,
+  server, session, window or pane. Its probe only lists panes. An agent's
+  own session is started, ended or restarted only by the kernel's commands
+  of an act you confirmed
   ([above](#stopping-starting-restarting-and-retiring)), and an agent's
   terminal is opened by `oats session attach`, which makes its own viewer
-  session on the agents' tmux server and removes it; `oats tui` builds no
-  viewer and runs no tmux command for either.
-- It starts no daemon, opens no socket and writes no file but the output of
-  a change, in its own directory ([above](#what-it-reads-and-what-it-runs)).
-  The processes it starts are the reads above, when you open an agent the
-  viewer, and the acts you confirm. No read and no viewer outlives it on
-  every way out a process can handle, except a viewer that does not end
-  when asked (see [above](#what-it-changes-in-your-terminal-and-restores));
-  after SIGKILL a read in flight runs to its own end, and a viewer stays
-  until you leave it. An act you confirmed is never ended by `oats tui`: it
-  runs to its own end.
+  session on the agents' tmux server and removes it. The one tmux server
+  `oats tui` runs is its own private one
+  ([above](#open-an-agents-terminal)), and it never looks at another's
+  socket but to ask whether a dead run's still answers.
+- It starts no daemon, and writes no file but the output of a change and
+  its private server's own, in its own directory
+  ([above](#what-it-reads-and-what-it-runs)). The processes it starts are
+  the reads above, when you open an agent its private tmux server and the
+  viewer in it, and the acts you confirm. No read, server or viewer
+  outlives it on every way out a process can handle; after SIGKILL a read
+  in flight runs to its own end, and the private server and its viewer end
+  by themselves. An act you confirmed is never ended by `oats tui`: it runs
+  to its own end.
 
 ## Errors
 

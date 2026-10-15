@@ -59,8 +59,10 @@ export function fakeTimers() {
 }
 
 /** The sequences the TUI itself may write, each a full match of one CSI sequence's body
- *  (what follows `ESC [`): a position, the two erases, an SGR of the allowed parameters, and the
- *  four private modes. docs/tui.md states the same list for operators. */
+ *  (what follows `ESC [`): a position, the two erases, an SGR of the allowed parameters, the four
+ *  private modes, and the synchronized update (DEC 2026) set and reset around every frame, a kind
+ *  of its own. docs/tui.md states the same list for operators. An agent's own styles, drawn only in
+ *  the terminal panel, are no SGR of this list: a test of the panel reads them on their own. */
 const SGR_ALLOWED = new Set([0, 1, 2, 4, 7, ...Array.from({ length: 8 }, (_, i) => 30 + i), ...Array.from({ length: 8 }, (_, i) => 90 + i)]);
 export const OWN_MODES = Object.freeze([1049, 25, 7, 2004]);
 function ownSequence(body) {
@@ -69,6 +71,7 @@ function ownSequence(body) {
   const sgr = /^(\d+(?:;\d+)*)m$/.exec(body);
   if (sgr) return sgr[1].split(";").every((p) => SGR_ALLOWED.has(Number(p))) ? "sgr" : null;
   const mode = /^\?(\d+)([hl])$/.exec(body);
+  if (mode && mode[1] === "2026") return "sync";
   if (mode) return OWN_MODES.includes(Number(mode[1])) ? "mode" : null;
   return null;
 }
@@ -149,15 +152,16 @@ export function stateOf(entry = null, options = {}) {
 }
 /** A state after the reader gave `entry` for the fixture's deployment, as cycle `number`. */
 export const took = (state, entry, number, id = DEPLOYMENT) => reduce(state, { id, entry, number }).state;
-/** Draw a state as the main loop does: `{ rows, page, extent, room, cols, cells, lines }`. `cells` is the
- *  screen's cell buffer (term/screen.mjs `cells`), `lines` its rows as strings, one character per
- *  cell (the second cell of a wide character is empty), trailing blanks cut. */
-export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = true } = {}) {
+/** Draw a state as the main loop does: `{ rows, page, extent, room, terminal, cursor, cols, cells,
+ *  lines }`. `cells` is the screen's cell buffer (term/screen.mjs `cells`), `lines` its rows as
+ *  strings, one character per cell (the second cell of a wide character is empty), trailing blanks
+ *  cut. `screen` is the open terminal's last capture (`{ lines, cursor }`), as the loop hands it on. */
+export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = true, screen = null } = {}) {
   const at = new Date(now).toISOString();
   const listing = (state.view === "help" ? state.back : state.view) === "switcher";
   const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
   const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : state.outcome });
-  const made = { ...frame(model(state, { page: g.page, now, at, cols: g.listCols }), size), cols: g.listCols };
+  const made = { ...frame({ ...model(state, { page: g.page, now, at, cols: g.listCols }), screen }, size), cols: g.listCols };
   const cells = createScreen({ utf8, ascii: state.ascii }).cells(made.rows, size);
   return { ...made, cells, lines: cells.map((line) => line.map((cell) => cell.text).join("").trimEnd()) };
 }
