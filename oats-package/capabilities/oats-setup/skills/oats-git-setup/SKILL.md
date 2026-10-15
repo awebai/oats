@@ -264,13 +264,14 @@ git config --global user.email "<email>"
 git config --global gpg.format ssh
 git config --global user.signingkey "$HOME/.ssh/id_ed25519.pub"
 git config --global commit.gpgsign true
-echo "$(git config --global user.email) namespaces=\"git\" $(cat ~/.ssh/id_ed25519.pub)" >> ~/.ssh/allowed_signers
+line="$(git config --global user.email) namespaces=\"git\" $(cat ~/.ssh/id_ed25519.pub)"
+grep -qxF "$line" ~/.ssh/allowed_signers 2>/dev/null || echo "$line" >> ~/.ssh/allowed_signers
 git config --global gpg.ssh.allowedSignersFile "$HOME/.ssh/allowed_signers"
 ```
 
-The first five lines set who you are and sign every commit with your SSH key.
-The last two let Git on this machine check those signatures itself (the
-check uses it). These commands print nothing when they succeed.
+The first five lines set who you are and sign every commit with your SSH key;
+the rest let Git here check those signatures (step 7 uses it, and a rerun
+adds no duplicate line). They print nothing when they succeed.
 
 ## 6. DCO sign-off on every commit
 
@@ -302,10 +303,9 @@ holding repositories (this can take a minute):
 find ~ \( -name push-to-checkout -o -name proc-receive \) -path '*/hooks/*' 2>/dev/null
 ```
 
-It usually prints nothing. For each path it prints, keep that repository
-on its own hooks: in its folder, run `git config core.hooksPath "<the
-printed path, without the hook's name>"`. It keeps all its own hooks but
-gets no automatic sign-off: commit there with `git commit -s`.
+It usually prints nothing. For each path it prints, keep that repository on
+its own hooks: in its folder, `git config core.hooksPath "<the printed path,
+without the hook's name>"`. It then gets no automatic sign-off: use `-s`.
 
 A global hooks directory replaces each repository's own hooks directory, so
 the hook below does two things: it adds the sign-off, then it runs the
@@ -356,6 +356,9 @@ What it does, and why:
   commands gets no sign-off from this hook.
 - **The repository's own hooks** are found in the repository's hooks folder
   (shared by all its worktrees) and run with the same arguments and input.
+- **Its cost:** Git also runs it at every ref update (`reference-transaction`)
+  and index write (`post-index-change`): one `sh` and one `git rev-parse`
+  each, on every Git call agents make. If Git slows down, look here first.
 - **`push-to-checkout` and `proc-receive` are left out on purpose** (the
   `find` above).
 - **A repository that sets its own `core.hooksPath`** (some JavaScript
@@ -396,8 +399,7 @@ repo="oats-git-check-$(date +%Y%m%d-%H%M%S)"
 gh repo create "$repo" --private && echo "CREATED $login/$repo"
 ```
 
-**Go on only if it printed `CREATED`.** Otherwise nothing was created and
-there is nothing to delete: read the error, fix it, run the block again.
+**Go on only if it printed `CREATED`;** otherwise nothing was created: fix the error, rerun.
 
 ```bash
 git remote add origin "git@github.com:$login/$repo.git"
@@ -421,8 +423,7 @@ You should see:
    Then also check from a session without a terminal, as `docs/servers.md`,
    “Git on a macOS host”, says under **Verify**.
 
-Then check which credential helper a Git without `HOME` would use (why: the
-next section):
+Then check which credential helper a Git without `HOME` would use:
 
 ```bash
 env -u HOME -u XDG_CONFIG_HOME git config --show-origin --get-all credential.helper
@@ -437,8 +438,7 @@ one: on the second address printed (its settings), “Delete this
 repository”, at the bottom. Do not give gh the `delete_repo` scope to do it
 from the terminal: every agent here could then delete your repositories.
 
-**Record** in the onboarding hand-back: the GitHub login, the result of
-checks 4 to 6, and check 7's line or “none”.
+**Record** in the onboarding hand-back: the login, checks 4–6, and check 7's line or “none”.
 
 ## The macOS credential helper
 
