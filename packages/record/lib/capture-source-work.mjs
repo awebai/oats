@@ -11,7 +11,7 @@ import { loadIgnore } from "./ignore.mjs";
 
 export function captureSourceWork(store, state, queue, run, start, {
   limit = 128, maxRecords = 2000, maxBytes = 8388608, ignore = loadIgnore(store.root),
-  now = Date.now(), work, indexInventory = null,
+  now = Date.now(), work, indexInventory = null, allowRetry = true, retryFilter,
 } = {}) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 128 ||
       !Number.isSafeInteger(maxRecords) || maxRecords < limit || maxRecords > 2000 ||
@@ -32,7 +32,7 @@ export function captureSourceWork(store, state, queue, run, start, {
       yield { stream: input.stream, stage: "capture", offset: generation?.size ?? 0, generation, next: input.next };
     }
   }
-  const selection = selectCaptureWork(store, state, candidates(), { runId: run.id, now, limit });
+  const selection = selectCaptureWork(store, state, candidates(), { runId: run.id, now, limit, allowRetry, retryFilter, stopped });
   if (!selection) return { selected: 0, cleanup: [] };
   // Retry selection spans stages. Return other-stage work to the scheduler;
   // never execute it as capture or clear its failure through the wrong path.

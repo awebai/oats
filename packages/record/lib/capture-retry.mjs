@@ -41,18 +41,23 @@ export function reconcileCaptureInterruption(state, { reason = "interrupted", no
 // candidates is the scheduler's finite, fairly ordered sweep, not a history
 // inventory retained here. Scanning it entails metadata work; journal content
 // is never read. The caller supplies the next sweep position with each item.
-export function selectCaptureWork(store, state, candidates, { runId, now = Date.now(), limit = 128 } = {}) {
+export function selectCaptureWork(store, state, candidates, { runId, now = Date.now(), limit = 128,
+  allowRetry = true, retryFilter = () => true, stopped = () => false } = {}) {
   if (typeof runId !== "string" || !runId || !Number.isSafeInteger(now) || now < 0 ||
-      !Number.isSafeInteger(limit) || limit < 1 || limit > 128) throw new Error("invalid capture queue selection");
+      !Number.isSafeInteger(limit) || limit < 1 || limit > 128 || typeof allowRetry !== "boolean" ||
+      typeof retryFilter !== "function" || typeof stopped !== "function") throw new Error("invalid capture queue selection");
   const members = [], seen = new Set(); let stage, next;
   for (const item of candidates) {
+    if (stopped()) break;
     if (readCaptureRetry(state, item.stream) || seen.has(item.stream)) continue;
     if (stage !== undefined && stage !== item.stage) break;
     stage = item.stage; next = item.next; seen.add(item.stream);
     members.push({ stream: item.stream, offset: item.offset, generation: item.generation });
     if (members.length === limit) break;
   }
+  if (stopped()) return null;
   if (members.length) return { runId, stage, next, members };
+  if (!allowRetry) return null;
 
   // Keyset iteration retains only a bounded page. Dates are not used to erase
   // rows, and an incomplete member cannot be admitted repeatedly in one pass.
@@ -64,8 +69,9 @@ export function selectCaptureWork(store, state, candidates, { runId, now = Date.
     }
   }
   for (const { key } of deferred()) {
+    if (stopped()) return null;
     const retry = readCaptureRetry(state, key);
-    if (retry.attemptedRun === runId || now < Date.parse(retry.nextRetryAt)) continue;
+    if (retry.attemptedRun === runId || now < Date.parse(retry.nextRetryAt) || !retryFilter(retry)) continue;
     const generation = fileVersion(store.journalPath(retry.stream));
     return { runId, stage: retry.stage, retry: true,
       next: { stage: retry.stage, after: retry.stream },

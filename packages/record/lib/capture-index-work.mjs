@@ -26,7 +26,7 @@ function unitStart(index, state, stream, generation) {
 }
 
 export function captureIndexWork(index, state, streams, run, start, {
-  limit = 128, maxRecords = 2000, maxBytes = 8388608, now = Date.now(), outcomes = null,
+  limit = 128, maxRecords = 2000, maxBytes = 8388608, now = Date.now(), outcomes = null, allowRetry = true, retryFilter,
 } = {}) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 128 ||
       !Number.isSafeInteger(maxRecords) || maxRecords < limit || maxRecords > 2000 ||
@@ -47,7 +47,7 @@ export function captureIndexWork(index, state, streams, run, start, {
       yield { stream, stage: "index", offset, generation, next: { stage: "index", after: stream } };
     }
   }
-  const selection = selectCaptureWork(store, state, candidates(), { runId: run.id, now, limit });
+  const selection = selectCaptureWork(store, state, candidates(), { runId: run.id, now, limit, allowRetry, retryFilter, stopped });
   if (!selection) return { selected: 0 };
   // The common retry queue can return a different stage when this healthy
   // sweep is exhausted. Never erase that failure through index processing.

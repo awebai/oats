@@ -716,3 +716,47 @@ capture work. Allocation cleanup remains a separate committed-lifecycle step.
 These private primitives do not themselves hold a root lock or implement the
 complete command runner. Their caller must own that lock, enforce the common
 budget, reconcile unfinished admissions, and publish the actual run outcome.
+
+## Private worker dispatch
+
+`CaptureWorkSession` joins source/index processing, reset handoff and run
+accounting inside an already registered supervisor worker. Its bootstrap caller
+must own the root lock and have ended the predecessor before construction. The
+session shares one capture-state connection and one search-index connection,
+reconciles durable stream and union-reset admissions, then opens current run
+accounting. A recorded failure is bound to its run identity: an observed failure
+in the new pass cannot diagnose an older abandoned admission. Prior history
+remains distinct from failure in the current pass, including a child that died
+before publishing any receipt. Persisted reconciliation facts survive a second
+interruption before run publication.
+
+Each dispatch step advances at most one bounded index-discovery page and one
+source or index group. Source discovery pages still enter the session's source
+queue through its caller. The last durable admission's stage determines which
+processing stage goes first next, including after a rolled-back group; no extra
+per-record or per-unit routing transaction is added. Source groups register new
+streams in the current index inventory as part of their processing commit.
+
+Healthy selection in both processing stages suppresses retries. Only after both
+healthy stages and discovery are exhausted does the session route a due retry
+through its own stage as a single-stream admission. Retry filtering retains
+unavailable capture inputs and other-stage work without changing their attempt
+or retry date, so they do not hide eligible source/index retries. Selection
+checks cooperative stop between bounded metadata pages/rows. Stage helpers keep
+their earlier default retry behavior when used without this dispatcher.
+
+A fresh reset worker dispatches the union operation before ordinary work. A
+committed reset reopens the published pending inventory; an interrupted one is
+reconciled before processing. Detection requests a new worker rather than
+resetting in place. Deferred reset leaves independent source work eligible while
+index processing is blocked. Finalization can recover a committed reset's
+bounded metadata publication, but performs no source/index group or new reset.
+
+This session deliberately has no successful-completion path. Yielding publishes
+pending run facts; finishing an idle or finalization session reports partial,
+or failed when the current pass carries failure. Existing `lastSuccess` history
+is preserved. Source discovery wiring, retained cleanup/backoff, final union
+audit and all-stage completion still belong to the remaining command runner;
+idle selection, reset completion and completed inventories do not substitute
+for those gates. The ordinary CLI, installed service and setup/hook entry points
+do not yet invoke this private session.
