@@ -846,9 +846,10 @@ function renderContextRoster(instances) {
   // from SPACING/STRUCTURE (human re-test: no visible glyph): each group
   // gets an invisible separator that still exposes the group boundary to
   // AT (role=separator + aria-label).
-  // Agent groups (Redesign v3): each multi-member relation cluster under its
-  // deterministic name, then every unrelated instance under "independent"
-  // (rosterGroups, shared with the command palette). A cluster's group is
+  // Agent groups (Redesign v3): one sequence in name order (#1262), each
+  // multi-member relation cluster under its deterministic name and each run
+  // of unrelated instances under "independent", in place (rosterGroups,
+  // shared with the command palette). A cluster's group is
   // decided on the FULL roster (#971): a filter or a collapse decides which
   // rows are drawn and never moves a row to another group, a group with no
   // visible row draws nothing, and a header counts the rows drawn under it.

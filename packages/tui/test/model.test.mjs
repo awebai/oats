@@ -181,6 +181,14 @@ test("the roster is the Desktop's: the rows of its instance-tree test keep paren
   assert.deepEqual(drawnOrder(state), sharedOrder(state));
 });
 
+test("a cluster whose root is named `independent` is a cluster: the gaps stand around it, expanded and collapsed (#1262)", () => {
+  const state = stateOf(observed([instanceRow("dev", "alpha"), instanceRow("dev", "independent"), instanceRow("dev", "kid", { parentInstance: "independent" }), instanceRow("dev", "zulu")]));
+  const named = (s) => roster(s).items.map((item) => item && item.row.instance);
+  assert.deepEqual(named(state), ["alpha", null, "independent", "kid", null, "zulu"]);
+  assert.deepEqual(drawnOrder(state), sharedOrder(state));
+  assert.deepEqual(named(folded(state, "independent")), ["alpha", null, "independent", null, "zulu"]);
+});
+
 test("the drawn order is what the shared grouping gives when it is called directly: plain, collapsed, filtered, and after a row stops", () => {
   const state = stateOf(observed(TREE));
   const cases = {
