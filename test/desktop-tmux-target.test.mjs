@@ -95,6 +95,7 @@ test("openTerm: linked-window viewer built in order, keys locked, pty attaches t
     ...LOCKED_TABLE_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-locked", ...b]), // provisioned wheel and drag bindings
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "mouse", "on"],            // wheel events reach tmux
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "status", "off"],          // no duplicate terminal chrome
+    ["tmux", "set-option", "-t", "oatsdesk-test-1", "detach-on-destroy", "on"], // source death detaches the pty, never moves it (#1237)
     ["spawn", "=oatsdesk-test-1", 120, 40],                                     // pty attaches to the viewer
   ]);
   assert.equal(r.pty, fake);
@@ -102,6 +103,25 @@ test("openTerm: linked-window viewer built in order, keys locked, pty attaches t
   // cleanup contract: killViewer kills ONLY the =-anchored viewer session
   r.killViewer();
   assert.deepEqual(calls.at(-1), ["tmux", "kill-session", "-t", "=oatsdesk-test-1"]);
+});
+
+test("openTerm (#1237): detach-on-destroy on is set on the viewer before the pty spawns, and no option is set server-wide or globally", () => {
+  // With a global `detach-on-destroy off` (an operator's ~/.tmux.conf), tmux
+  // moves a destroyed session's client to another session: the tab would show
+  // another agent under the old name. The viewer's own option prevents that;
+  // the operator's global value and own sessions must stay untouched.
+  const calls = [];
+  openTerm({ session: "s", window: "w" }, fakeIo(calls));
+  const dod = calls.findIndex((c) => c[0] === "tmux" && c[1] === "set-option" && c.includes("detach-on-destroy"));
+  const spawn = calls.findIndex((c) => c[0] === "spawn");
+  assert.ok(dod >= 0, "detach-on-destroy is set");
+  assert.deepEqual(calls[dod], ["tmux", "set-option", "-t", "oatsdesk-test-1", "detach-on-destroy", "on"], "set on the viewer only");
+  assert.ok(dod < spawn, "set before the pty client attaches");
+  for (const c of calls.filter((c) => c[1] === "set-option" || c[1] === "set" || c[1] === "set-window-option" || c[1] === "setw")) {
+    assert.ok(!c.includes("-g") && !c.includes("-s"), `no global or server-wide option: ${JSON.stringify(c)}`);
+    assert.equal(c[2], "-t", `every option is targeted: ${JSON.stringify(c)}`);
+    assert.equal(c[3], "oatsdesk-test-1", `every option targets the viewer: ${JSON.stringify(c)}`);
+  }
 });
 
 test("openTerm: viewer is killed (not leaked) when link, lock, or pty spawn fails — and on a malformed window id", () => {
@@ -388,6 +408,102 @@ test("live tmux: real wheel events through an attached pty client — installed 
     spawnSync("tmux", ["-S", sock, "kill-server"], { timeout: 5000 });
     spawnSync("rm", ["-f", sock], { timeout: 5000 });
   }
+});
+
+/** #1237 live fixture: an isolated -S server whose GLOBAL detach-on-destroy is off (an
+ * operator's ~/.tmux.conf setting), a source session with instA and instB, and one openTerm
+ * viewer on each with a real attached node-pty client. Runs `body` with the fixture, then
+ * kills every client and the throwaway server. Skips when tmux or a spawnable node-pty is absent. */
+async function withTwoAttachedViewers(t, body) {
+  const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
+  if (probe.error || probe.status !== 0) return t.skip("tmux not available");
+  let ptyMod;
+  try {
+    ptyMod = createRequire(join(RENDERER_PKG, "package.json"))("node-pty");
+    const probePty = ptyMod.spawn("true", [], { name: "xterm", cols: 10, rows: 5 });
+    probePty.kill();
+  }
+  catch (error) {
+    return t.skip(`node-pty can't spawn here (${String(error?.message || error).slice(0, 120)}): not built for this node ABI, `
+      + "or its prebuilds/<platform>/spawn-helper is not executable (chmod +x it, or npm rebuild node-pty)");
+  }
+  const sock = `/tmp/oatsdod-${process.pid}.sock`;
+  const T = (args, out = false) => {
+    const r = spawnSync("tmux", ["-S", sock, ...args], { encoding: "utf8", timeout: 5000 });
+    if (r.status !== 0) throw new Error(`tmux ${args.join(" ")} failed: ${r.stderr}`);
+    return out ? r.stdout.trim() : undefined;
+  };
+  const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const env = { ...process.env };
+  delete env.TMUX; // an attached client inside an outer tmux would refuse to nest
+  const clients = [];
+  const io = {
+    preflight: (target) => T(["list-panes", "-t", target]),
+    tmux: (args) => T(args),
+    tmuxOut: (args) => T(args, true),
+    spawnPty: (target, cols, rows) => {
+      const pty = ptyMod.spawn("tmux", ["-S", sock, "attach-session", "-t", target], { name: "xterm-256color", cols, rows, env });
+      pty.exited = null;
+      pty.onExit((e) => { pty.exited = e; });
+      clients.push(pty);
+      return pty;
+    },
+  };
+  const clientSessions = () => T(["list-clients", "-F", "#{client_session}"], true).split("\n").filter(Boolean).sort();
+  try {
+    T(["new-session", "-d", "-s", "src", "-n", "instA", "sh"]);
+    T(["new-window", "-t", "=src", "-n", "instB", "sh"]);
+    T(["set-option", "-g", "detach-on-destroy", "off"]);           // the operator's hazardous global
+    const v1 = openTerm({ session: "src", window: "instA" }, io);
+    const v2 = openTerm({ session: "src", window: "instB" }, io);
+    const both = [v1.viewer, v2.viewer].sort();
+    for (let i = 0; i < 50 && clientSessions().join(" ") !== both.join(" "); i++) await sleep(100);
+    assert.deepEqual(clientSessions(), both, "one client attached to each viewer");
+    await body({ T, v1, v2, sleep, clientSessions,
+      sessionExists: (name) => spawnSync("tmux", ["-S", sock, "has-session", "-t", `=${name}`], { timeout: 5000 }).status === 0 });
+  } finally {
+    for (const c of clients) { try { c.kill(); } catch { /* gone */ } }
+    spawnSync("tmux", ["-S", sock, "kill-server"], { timeout: 5000 });
+    spawnSync("rm", ["-f", sock], { timeout: 5000 });
+  }
+}
+
+test("live tmux (#1237): under a global detach-on-destroy off, source window death exits the viewer's attached client instead of moving it to another viewer", async (t) => {
+  // An operator's `set -g detach-on-destroy off` makes tmux move a destroyed
+  // session's client to another session (often another Desktop viewer): the
+  // pty never exits and the tab shows another agent under the old name.
+  // Retiring instA must exit viewer 1's client and leave viewer 2 and the
+  // operator's global alone.
+  await withTwoAttachedViewers(t, async ({ T, v1, v2, sleep, clientSessions, sessionExists }) => {
+    T(["kill-window", "-t", "=src:=instA"]);                        // retire instA: viewer 1 is destroyed
+    for (let i = 0; i < 50 && !v1.pty.exited; i++) await sleep(100);
+    assert.ok(v1.pty.exited, "viewer 1's pty client exited (the tab shows session ended)");
+    assert.equal(sessionExists(v1.viewer), false, "viewer 1's session is gone");
+    assert.equal(T(["show-options", "-g", "detach-on-destroy"], true), "detach-on-destroy off", "the global option is untouched");
+    assert.equal(v2.pty.exited, null, "viewer 2's pty client is still alive");
+    assert.deepEqual(T(["list-windows", "-t", `=${v2.viewer}`, "-F", "#{window_name}"], true).split("\n"), ["instB"],
+      "viewer 2 still lists only instB");
+    assert.deepEqual(clientSessions(), [v2.viewer], "only viewer 2's own client remains: none was moved onto it");
+  });
+});
+
+test("live tmux (#1237) control: without the viewer's own option, the global off moves the dying viewer's client to another session", async (t) => {
+  // Proves the hazard the option guards against is real on this tmux, so the
+  // test above is not passing vacuously: unset viewer 1's option (it then
+  // inherits the global off) and the same retire moves its client to viewer 2.
+  await withTwoAttachedViewers(t, async ({ T, v1, v2, sleep, clientSessions, sessionExists }) => {
+    T(["set-option", "-u", "-t", v1.viewer, "detach-on-destroy"]);
+    T(["kill-window", "-t", "=src:=instA"]);
+    for (let i = 0; i < 50 && sessionExists(v1.viewer); i++) await sleep(100);
+    assert.equal(sessionExists(v1.viewer), false, "viewer 1's session is gone");
+    for (let i = 0; i < 10 && !v1.pty.exited; i++) await sleep(100);  // give a wrong exit time to show
+    assert.equal(v1.pty.exited, null, "viewer 1's pty client did NOT exit");
+    // tmux picks the target session (here viewer 2, the most recently active, or src): either way
+    // the client lives on, showing another session under viewer 1's tab.
+    const moved = clientSessions();
+    assert.equal(moved.length, 2, "viewer 1's client is still attached");
+    assert.ok(!moved.includes(v1.viewer), `viewer 1's client was moved to another session (${moved.join(", ")})`);
+  });
 });
 
 test("live tmux (#520): a plain drag through an attached client selects in copy mode, and its release copies and sends OSC 52 to the client", async (t) => {

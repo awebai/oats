@@ -1,3 +1,12 @@
+## Upgrade
+
+- **`oats tui`: the back key is now the leader, pressed twice to go back to
+  the list.** `Ctrl+\` (`open.detachKey` in `tui.json`) pressed once in a
+  terminal waits for a command key; pressed again it gives the focus to the
+  list, as one press did in 0.57.1. A `tui.json` whose `open.detachKey` is a
+  key an action has is now refused: give one of the two another key. See
+  Added and Changed ([#855](https://github.com/awebai/oats/issues/855)).
+
 ## Added
 
 - **`oats tui` has a leader key, so every action is reached by keys from
@@ -20,8 +29,9 @@
 ## Changed
 
 - **The header starts with the workspace's name**, with no `oats` title,
-  and the Souls and Capabilities views open: `2` and `3`, or the leader
-  then `2`/`3`, show what each will hold and what to run until then.
+  and the Souls and Capabilities views are no longer dim: `2` and `3`, or
+  the leader then `2`/`3`, show what each will hold and what to run until
+  then.
 - **The footer is one row of keys from the first column**, with no rule
   above it, and names `C-\ commands` first in every focus. The `1-3 views`
   hint is gone: the header names the views.

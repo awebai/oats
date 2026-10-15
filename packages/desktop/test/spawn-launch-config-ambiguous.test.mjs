@@ -5,6 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnProblem } from '../../client/spawn-messages.mjs';
+import { spawnText } from '../renderer/spawn-words.mjs';
 import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { spawnApplyReason, spawnApplyFailure, spawnApplyView } from '../../client/spawn-apply-contract.mjs';
 import { NO_DEFAULT_CONFIG } from '../renderer/spawn-dialog.mjs';
@@ -20,9 +21,9 @@ const configs = body => ({ selected: body.selector, configurations: [{ name: 'pe
 test('the sentence names the dialog\'s own control, at both stages; the kernel\'s message stays in Details', () => {
   for (const stage of ['preview', 'spawn']) {
     const problem = spawnProblem({ code: CODE, message: MESSAGE, fix: FIX }, stage);
-    assert.equal(problem.text, SENTENCE); assert.equal(problem.code, CODE);
+    assert.equal(spawnText(problem, stage), SENTENCE); assert.equal(problem.code, CODE);
     assert.equal(problem.detail, `${CODE} · ${MESSAGE}`);
-    assert.doesNotMatch(problem.text, /--launch-config|oats-local\.yaml|personal|work\b|couldn’t work out/);
+    assert.doesNotMatch(spawnText(problem, stage), /--launch-config|oats-local\.yaml|personal|work\b|couldn’t work out/);
   }
 });
 test('the code keeps its place where the kernel\'s message cannot travel', () => {
@@ -35,7 +36,7 @@ test('the code keeps its place where the kernel\'s message cannot travel', () =>
   assert.deepEqual(spawnApplyReason(CODE, MESSAGE), { code: CODE, message: FIXED });
   const view = spawnApplyFailure(CODE, { status: 'unavailable' });
   assert.deepEqual(spawnApplyView(JSON.parse(JSON.stringify(view))).reason, { code: CODE, message: FIXED });
-  assert.equal(spawnProblem(spawnApplyView(view).reason, 'spawn').text, SENTENCE);
+  assert.equal(spawnText(spawnProblem(spawnApplyView(view).reason, 'spawn'), 'spawn'), SENTENCE);
 });
 
 /** The preview answers the refusal while no configuration is named on the harness `ambiguousOn` resolves to. */

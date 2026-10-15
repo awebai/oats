@@ -111,9 +111,14 @@ const SURFACE = Object.freeze({
   "launch-view.mjs": ["shownLaunch", "launchHarnessName", "launchModelText", "launchFromText", "preferenceText", "declaredDiffers", "declaredText", "launchAtText"],
   // 6b-1: a client previews and spawns through boundaries it creates and owns; the raw CLI calls are theirs.
   "spawn-preview.mjs": ["createSpawnPreview"],
-  "spawn-preview-contract.mjs": ["previewSupported", "previewSelector", "previewChoices", "choiceArgv", "previewTarget", "previewData", "previewFailure", "worktreeHooksOf", "INSTANCE_NAME_MAX"],
+  "spawn-preview-contract.mjs": ["previewSupported", "previewSelector", "previewChoices", "choiceArgv", "previewTarget", "previewData", "previewFailure", "worktreeHooksOf", "INSTANCE_NAME_MAX", "defaultSpawnChoices"],
   "spawn-decision.mjs": ["spawnEffective", "spawnDecision", "sameSpawnDecision"],
   "spawn-apply.mjs": ["createSpawnApplyBoundary"],
+  // 6b-2: the spawn's client half. A client makes its own transaction and runs it, says a problem's and an
+  // outcome's shared facts with its own words for `next` (a closed set), and draws a preview's facts its own way.
+  "spawn-transaction.mjs": ["createSpawnTransaction", "RECOVER_POLL_MS", "FOLLOW_MARGIN_MS"],
+  "spawn-messages.mjs": ["spawnProblem", "outcomeWords", "catalogProblem", "SPAWN_NEXT"],
+  "spawn-preview-facts.mjs": ["previewFacts"],
   "spawn-apply-contract.mjs": ["spawnApplySupported", "spawnApplyDeadlineMs", "spawnReference", "spawnCreationReceipt", "ROLLED_BACK_CODES", "spawnApplyReason", "spawnApplyFailure"],
   "launch-prompt-outcome.mjs": ["LAUNCH_INSPECTION", "LAUNCH_DIAGNOSTIC_BYTES", "launchPromptOutcome", "retainedSpawnDetails", "retainedSpawnMessage", "retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "capability-warnings-contract.mjs": ["warningsOf", "previewWarningsOf", "warningsShown"],
@@ -464,7 +469,7 @@ test("lib/ and bin/ import nothing from packages/client or packages/desktop", (t
 
 test("the stable surface names what packages/client has: every listed module, every listed export", () => {
   assert.deepEqual(surfaceProblems(repository), []);
-  assert.equal(Object.keys(SURFACE).length, 54);
+  assert.equal(Object.keys(SURFACE).length, 57);
   // The five modules 1b made are on it, with the names the TUI's first views take.
   for (const module of ["instance-tree.mjs", "roster-sections.mjs", "kernel-environment.mjs", "workspace-admission.mjs", "instance-acts.mjs"]) assert.ok(Object.hasOwn(SURFACE, module), module);
   // 1c: a second client says its own terms with clientTerms, and that is all it takes from that module.
@@ -496,8 +501,12 @@ test("the stable surface names what packages/client has: every listed module, ev
   // 6b-1: the spawn boundaries are on it, each by its factory alone; their raw CLI calls are not.
   assert.deepEqual(SURFACE["spawn-preview.mjs"], ["createSpawnPreview"]); assert.deepEqual(SURFACE["spawn-apply.mjs"], ["createSpawnApplyBoundary"]);
   for (const module of ["spawn-preview-cli.mjs", "spawn-apply-cli.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
-  // Not on it: the Desktop spawn dialog's copy, and the two files nobody imports.
-  for (const module of ["spawn-messages.mjs", ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
+  // 6b-2: the spawn's client half; its words are facts and `next` codes, and the Desktop's sentences stay in its renderer.
+  assert.deepEqual(SURFACE["spawn-transaction.mjs"], ["createSpawnTransaction", "RECOVER_POLL_MS", "FOLLOW_MARGIN_MS"]);
+  assert.deepEqual(SURFACE["spawn-messages.mjs"], ["spawnProblem", "outcomeWords", "catalogProblem", "SPAWN_NEXT"]);
+  assert.deepEqual(SURFACE["spawn-preview-facts.mjs"], ["previewFacts"]); assert.ok(SURFACE["spawn-preview-contract.mjs"].includes("defaultSpawnChoices"));
+  // Not on it: the two files nobody imports, and the terminal contract.
+  for (const module of [ENVIRONMENT, COLLECTOR, "terminal-contract.mjs"]) assert.ok(!Object.hasOwn(SURFACE, module), module);
 });
 
 // ── The rules fail on the breaks they name ────────────────────────────────────

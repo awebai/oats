@@ -269,13 +269,20 @@ test("lib/read.mjs starts the reads and the changes and lib/panel.mjs the privat
   // alone ("wx", 0600), in lib/read.mjs, once; and the panel's two, made new the same way: its
   // owner mark, and each of its viewer's files. And the panel's FIFO, in PANEL_FS.hold alone:
   // opened to read without waiting, checked to be a FIFO, and opened to write; it is never written.
+  // And the capture's file, in PANEL_FS.whole alone: read only, no link followed, without waiting
+  // (a FIFO put there must not hold the TUI), and read only once fstat says it is a regular file
+  // within its bound.
   const writing = [];
+  const panelCode = code(read("packages/tui/lib/panel.mjs"));
+  const captureOpen = "path, FS.O_RDONLY | FS.O_NOFOLLOW | FS.O_NONBLOCK";
+  assert.equal(panelCode.split(`openSync(${captureOpen})`).length - 1, 1, "the capture file's one open");
+  assert.match(panelCode, /whole: \(path, max\) => \{\s*const fd = openSync\(path, FS\.O_RDONLY \| FS\.O_NOFOLLOW \| FS\.O_NONBLOCK\);\s*try \{\s*const stat = fstatSync\(fd\);\s*if \(!stat\.isFile\(\) \|\| stat\.size > max\) return null;/, "a regular file within its bound, checked on the open descriptor before it is read");
   const fifoOpens = [...code(read("packages/tui/lib/panel.mjs")).matchAll(/\bopenSync\((path, FS\.O_RDONLY \| FS\.O_NONBLOCK|path, FS\.O_WRONLY)\)/g)].map((call) => call[1]);
   assert.deepEqual(fifoOpens, ["path, FS.O_RDONLY | FS.O_NONBLOCK", "path, FS.O_WRONLY"], "the FIFO's two opens");
   assert.match(code(read("packages/tui/lib/panel.mjs")), /if \(!fstatSync\(reader\)\.isFIFO\(\)\) throw/, "the write end of a FIFO only");
   for (const path of TUI_SOURCES) for (const call of code(read(path)).matchAll(/\bopenSync\(([^)]*)\)/g)) {
     if (/^[^,]+,\s*"r"$/.test(call[1])) continue;
-    if (path === "packages/tui/lib/panel.mjs" && fifoOpens.includes(call[1])) continue;
+    if (path === "packages/tui/lib/panel.mjs" && (fifoOpens.includes(call[1]) || call[1] === captureOpen)) continue;
     assert.match(call[1], /^path, "wx", 0o600$/, `${path} opens ${call[1]}`);
     writing.push(path);
   }

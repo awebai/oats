@@ -180,6 +180,9 @@ export function previewChoices(v) {
   }
   return out;
 }
+/** The choices of a spawn with no field touched (#855, 6b-2): what a client sends before the operator changes
+ * anything (the soul's own model, no relation). A fresh object each call, for the client to change. */
+export const defaultSpawnChoices = () => previewChoices({});
 /** The spawn flags for admitted choices — shared by preview and apply. The
  * harness flag is the kernel's (feature harness: --harness; a released kernel: --runtime). */
 export function choiceArgv(choices, cli) {

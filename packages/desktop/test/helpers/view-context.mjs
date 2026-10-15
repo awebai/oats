@@ -13,6 +13,7 @@ import { waitingClaim, waitingSentence, waitingLabel, waitingClock } from "../..
 import { waitingRollup } from "../../../client/instance-tree.mjs";
 import { rowReasonLine, runtimeErrorLine, unsupportedLine, speakerLine, keptFailureLine } from "../../renderer/speaker-line.mjs";
 import { keptFailure } from "../../../client/deployment-facts.mjs";
+import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "../../renderer/retired-tabs.mjs";
 
 export const viewContext = () => ({
   contextDeployments: [], rosterSections, DESKTOP_TERMS, deploymentHeading, notePanel, panelDeployments, rowStale,
@@ -23,4 +24,7 @@ export const viewContext = () => ({
   // Every roster paint calls syncTabNeedsInput; a suite about other behaviour gets this no-op, and a suite
   // that extracts the shipped function by name replaces it (tab-needs-input, roster-needs-input).
   tabNeedsInputRoster: { instances: [], workspace: null }, syncTabNeedsInput() {},
+  // #1237: a terminal tab's incarnation (retired-tabs.mjs) and the retired-tab rule's module state. A roster read
+  // runs the rule; a suite about other behaviour gets this no-op, and retired-tabs-shell extracts the shipped one.
+  retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin, panelReads: 0, judgedAnswer: null, closeRetiredTabs() {},
 });

@@ -279,7 +279,7 @@ test('a fast refresh never shows "Refreshing…"; the active terminal changing r
   s.c.advance(REFRESHING_DELAY_MS * 2);
   assert.equal(s.rosterEl.querySelector('.loading-refreshing'), null);
   const before = s.rows();
-  s.context.tabs.set(1, { key: tree.terminalKey('A', roster[0]) }); s.context.activeTab = 1;
+  s.context.tabs.set(1, { kind: 'terminal', key: tree.terminalKey('A', roster[0]) }); s.context.activeTab = 1;
   s.refreshContextRoster(); await s.reply(2, panelOf('A', roster));
   assert.notEqual(s.rows()[0], before[0], 'the active highlight is part of the paint');
   assert.ok(s.rows()[0].classList.contains('active'));

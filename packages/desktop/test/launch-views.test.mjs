@@ -13,6 +13,7 @@ import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.
 import { LAUNCH_FROM, launchFromText, launchModelText, declaredText, launchAtText, shownLaunch } from '../../client/launch-view.mjs';
 import { launchHint } from '../renderer/spawn-dialog.mjs';
 import { spawnProblem } from '../../client/spawn-messages.mjs';
+import { spawnText } from '../renderer/spawn-words.mjs';
 import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
@@ -176,15 +177,15 @@ test('spawn dialog: the run hint says what this spawn runs and what chose it (de
 test('spawn dialog: a missing harness is said as the kernel words it, with its fix; the code and message stay behind Details', () => {
   // The fix travels flat on the reason (#292: the main-process proxy keeps code, message and fix).
   const p = spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed on this machine.', fix: 'install codex, or choose another --harness / --launch-config' });
-  assert.equal(p.text, 'harness codex is not installed on this machine: install codex, or choose another --harness / --launch-config');
+  assert.equal(spawnText(p), 'harness codex is not installed on this machine: install codex, or choose another --harness / --launch-config');
   assert.equal(p.detail, 'E_HARNESS_UNAVAILABLE · harness codex is not installed on this machine.');
-  assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed' }).text, 'harness codex is not installed', 'no fix sent: the message alone');
-  assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed', details: { fix: 'x' } }).text, 'harness codex is not installed', 'details.fix never reaches the renderer: not read');
+  assert.equal(spawnText(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed' })), 'harness codex is not installed', 'no fix sent: the message alone');
+  assert.equal(spawnText(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE', message: 'harness codex is not installed', details: { fix: 'x' } })), 'harness codex is not installed', 'details.fix never reaches the renderer: not read');
   // The REAL kernel's message already ends with its fix (fixtures/launch-preference, captured from 0.29.4 at
   // main 69d76a91: that kernel's wording, not a later one's): said once, verbatim.
   const real = JSON.parse(readFileSync(new URL('./fixtures/launch-preference/preview-dev-unavailable.json', import.meta.url), 'utf8')).error;
-  assert.equal(spawnProblem({ code: real.code, message: real.message, fix: real.details.fix }).text, real.message);
-  assert.equal(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE' }).text, 'The harness this soul would run isn’t installed on this machine. Install it, or pick another harness above.');
+  assert.equal(spawnText(spawnProblem({ code: real.code, message: real.message, fix: real.details.fix })), real.message);
+  assert.equal(spawnText(spawnProblem({ code: 'E_HARNESS_UNAVAILABLE' })), 'The harness this soul would run isn’t installed on this machine. Install it, or pick another harness above.');
 });
 
 // End to end (#292's boundary keeps the kernel's words and the flat fix): a preview refused
