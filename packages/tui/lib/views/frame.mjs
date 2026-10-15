@@ -40,6 +40,8 @@ const RUN = 500;
 const REASON_ROWS = 4;
 /** The rows a deployment's note may take above the list. */
 const NOTE_ROWS = 2;
+/** The TUI's word before the soul a kept filter of the instances is by. */
+const SOUL_WORD = "soul";
 /** The cells a kept filter takes in the footer. */
 const FILTER_COLS = 24;
 /** What the header holds in the workspace's place while the switcher is shown. */
@@ -232,6 +234,10 @@ function footer(m, cols) {
   // first, as `open` does in the list, so a kept filter leaves it its room.
   const soul = m.view === "souls" && m.souls ? m.souls : null;
   const filter = soul ? soul.filter : m.filter;
+  // A filter is kept by its text, or in the list of instances by a soul (the Souls view's `i`):
+  // drawn `soul <name>` where the text's `/` stands.
+  const bySoul = !soul && m.view === "instances" && filter.soul && !filter.query ? filter.soul : null;
+  const filtered = Boolean(filter.query) || bySoul !== null;
   /** A hint: a key and what it does, the TUI's word or safe text with its width. */
   const made = (key, word) => {
     const said = typeof word === "string" ? { text: lit(word), width: word.length } : word;
@@ -324,7 +330,7 @@ function footer(m, cols) {
     : m.view === "switcher" ? [["open", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])], null]
     : m.focus === "detail" ? [["detail", "close", "refresh"], ["open", "zoom", "close-terminal", "detail", "close", "refresh", ...ACTS]]
     // A kept filter shows its own `/` beside the hints: then `open` outlives the `/ filter` hint.
-    : [["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces", ...VIEW_KEYS], [...(m.filter.query ? ["open", "zoom", "close-terminal", "filter"] : ["filter", "open", "zoom", "close-terminal"]), "detail", "close", "refresh", "workspaces", ...VIEW_KEYS, ...ACTS]];
+    : [["filter", "detail", ...(filtered ? ["close"] : []), "refresh", "workspaces", ...VIEW_KEYS], [...(filtered ? ["open", "zoom", "close-terminal", "filter"] : ["filter", "open", "zoom", "close-terminal"]), "detail", "close", "refresh", "workspaces", ...VIEW_KEYS, ...ACTS]];
   const hints = [...first, ...terminal, ...acts, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, id in hintOf ? hintOf[id] : hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
   // `help` and `quit` stand last, and always but in one case: when the two do not fit whole
   // after the leader (keys tui.json made long), `help` is given up, then `quit`. The leader
@@ -333,7 +339,7 @@ function footer(m, cols) {
   while (last.length && start + span(last) > edge) last = last.slice(1);
   const spans = put(lead, FOOT);
   let col = start;
-  if (m.view !== "help" && filter.query) {
+  if (m.view !== "help" && filtered) {
     // The kept filter has a place of its own width, so the hints stand where they always do;
     // it gives way, down to nothing, before `help` and `quit` do, and before the hint that
     // stands first while Enter would open an agent (or Esc gives an open up).
@@ -342,7 +348,10 @@ function footer(m, cols) {
     const firstFits = first.length > 0 && col + first[0][1].width + GAP + span(last) <= edge;
     const held = firstFits ? first[0][1].width + GAP : 0;
     const slot = Math.min(FILTER_COLS - GAP, edge - col - span(last) - (last.length ? GAP : 0) - held);
-    if (slot >= 2) {
+    if (bySoul && slot >= SOUL_WORD.length + 2) {
+      spans.push({ col, text: lit(SOUL_WORD), style: BOLD, width: SOUL_WORD.length }, { col: col + SOUL_WORD.length + 1, text: shown(bySoul.name), style: BOLD, width: slot - SOUL_WORD.length - 1 });
+      col += slot + GAP;
+    } else if (!bySoul && slot >= 2) {
       spans.push({ col, text: lit("/"), style: BOLD, width: 1 }, { col: col + 1, text: shown(filter.query), style: BOLD, width: slot - 1 });
       col += slot + GAP;
     }

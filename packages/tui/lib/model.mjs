@@ -911,6 +911,8 @@ function soulsView(state, page, at) {
       name: row.name, color: SOUL_COLOURS[row.color] ?? null, count: count(row), refused: spawnRefusal(row, state.cli) !== null, selected: row === s.selected,
     })),
     above: win.above, below: win.below,
-    detail: s.selected ? soulDetail(state, at, s.selected) : null,
+    // The heading has room for little of a failed re-read's sentence: the detail holds it whole,
+    // as a machine's full reason stands in the detail of each of its rows.
+    detail: s.selected ? { ...soulDetail(state, at, s.selected), failure: heading ? heading.short : null } : null,
   };
 }

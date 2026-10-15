@@ -177,8 +177,8 @@ export function soulsList(m, size) {
   return rows;
 }
 
-/** Every row of the selected soul's detail for a pane `cols` wide, before it is scrolled: the name
- *  and the description; `from` and `works`; the refusal; the harness (each fact `label  value`,
+/** Every row of the selected soul's detail for a pane `cols` wide, before it is scrolled: the name,
+ *  a failed re-read's sentence (in the warning style; it says so in words) and the description; `from` and `works`; the refusal; the harness (each fact `label  value`,
  *  its notes, a launch problem); the teams; the capabilities (one line, wrapped); and the instances
  *  here, with the key that shows them. A section with nothing to say is left out. */
 export function soulDetailRows(m, cols) {
@@ -201,6 +201,8 @@ export function soulDetailRows(m, cols) {
     set.forEach((spans, i) => rows.push([...(i === 0 ? [label(name)] : []), ...spans.map((span) => ({ ...span, col: span.col + VALUE }))]));
   };
 
+  // A failed re-read's sentence, whole, under the name: the rows are the last read's.
+  if (d.failure) lines(shownLines(d.failure, wide, WRAP_ROWS, { ascii }), LEFT, wide, WARN);
   lines(shownLines(d.description, wide, DESCRIPTION_ROWS, { ascii }), LEFT, wide);
   if (d.from) fact("from", d.from);
   if (d.works) fact("works", d.works);

@@ -477,4 +477,31 @@ test("through the store and the model: 2 shows the view reading, the catalog's r
   const kept = draw(state);
   assert.equal(cellText(kept, 3, 0, 38).startsWith(" Souls  Couldn't read"), true);
   assert.equal(cellText(kept, 4, 0, 38).startsWith(`> ${SOUL_MARK.utf8} dev`), true);
+  // The heading has room for the start of the sentence; the detail holds it whole, under the name.
+  const detail = detailLines(kept, S80).map((line) => line.trim()).filter(Boolean);
+  assert.equal(detail[0], "dev");
+  assert.equal(detail.slice(1, 3).join(" "), "Couldn't read this workspace's souls: oats souls exited 1", detail.join("\n"));
+  assert.equal(detailLines(draw(soulsTold(state, catalogEntry([catalogSoul("dev")]))), S80).some((line) => line.includes("Couldn't read")), false, "a read that works again takes it away");
+});
+
+test("i from the Souls view: the Instances view's footer shows the kept soul filter as `soul <name>`, bold, where a text filter's `/` stands, with Esc that clears it; Esc clears it, and `/` replaces it with a text filter", () => {
+  const cli = { ...CLI, features: [...CLI.features, "desktop-facts"] };
+  let state = press(stateOf(observed(ROWS(), { cli }), { cli }), ["2"]).state;
+  state = soulsTold(state, catalogEntry([catalogSoul("dev")]));
+  state = press(state, ["i"]).state;
+  assert.equal(state.view, "instances");
+  // As a text filter kept with `/dev` stands, hint for hint: at 80 columns Esc close is given up as it is there.
+  const text = press(state, ["/", "d", "e", "v", "enter"]).state;
+  for (const sz of [S80, S120]) {
+    const d = draw(state, sz);
+    assert.equal(footer(d, sz), footer(draw(text, sz), sz).replace(`${LEAD}/dev    `, `${LEAD}soul dev`), `${sz.cols}`);
+    assert.equal(footer(d, sz).startsWith(`${LEAD}soul dev `), true, `${sz.cols}: ${footer(d, sz)}`);
+    for (const at of [LEAD.length, LEAD.length + "soul ".length]) assert.equal(d.cells[sz.rows - 1][at].style.bold, true, `${sz.cols}: bold at ${at}`);
+  }
+  const cleared = press(state, ["escape"]).state;
+  assert.equal(cleared.filter.soul, undefined);
+  assert.equal(footer(draw(cleared), S80).includes("soul dev"), false);
+  const typed = press(state, ["/", "a"]).state;
+  assert.deepEqual([typed.filter.soul, typed.filter.query], [undefined, "a"]);
+  assert.equal(footer(draw(typed), S80).includes("soul"), false, "the text filter replaces it");
 });

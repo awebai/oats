@@ -1209,11 +1209,12 @@ test("tui.json is honoured: the key it gives an action is that action's key in t
   const run = await tui(term, { footer: FOOTER.replace("q quit", "x quit") });
   term.press("q"); // no key now: read, and nothing happens
   term.press("?");
-  // At 80x24 the help's first page ends twenty-five rows above `quit`: the table holds the three
-  // views, `workspaces`, `open` twice with the agent's terminal in nine rows, `zoom` in two and
-  // `close-terminal`, and the four acts in six rows with the two rules of a confirmation in four
-  // under them (HELP_KEYS); the movement keys scroll the help, and twenty-five rows down show it.
-  for (let i = 0; i < 25; i++) term.press("j");
+  // At 80x24 the help's first page ends twenty-eight rows above `quit`: the table holds the three
+  // views, `workspaces`, `open` three times with the agent's terminal in nine rows and the Souls
+  // view's in two, `soul-instances`, `zoom` in two and `close-terminal`, and the four acts in six
+  // rows with the two rules of a confirmation in four under them (HELP_KEYS); the movement keys
+  // scroll the help, and twenty-eight rows down show it.
+  for (let i = 0; i < 28; i++) term.press("j");
   await until(term, () => term.screen().some((row) => /^ *x {2,}quit$/.test(row)) && term.screen().at(-1) === HELP_FOOTER.replace("q quit", "x quit"), "the help with x as the quit key, after a q that did not quit");
   assert.equal(term.screen().some((row) => /^ *q\b.* quit$/.test(row)), false, `q is no key of quit:\n${term.shows()}`);
   term.press("Escape");
@@ -1302,6 +1303,37 @@ test("in a locale that is not UTF-8 the view's rules and marks are ASCII, and th
   await run.help("in an ASCII locale");
   term.press("Escape");
   await run.view("after the help was closed", { folded: true });
+  term.press("q");
+  assert.equal(await run.ended("after q"), 0, term.shows());
+});
+
+test("the Souls view, with the real `oats souls`: the leader then 2 shows the workspace's souls, each with its instances here counted; Enter shows the selected soul's detail; i shows its instances in the Instances view, filtered by that soul and said so in the footer; Esc clears the filter; q exits 0", { skip: NO_TMUX }, async (t) => {
+  const term = await terminal(t);
+  const run = await tui(term);
+  const footer = () => term.screen().at(-1) ?? "";
+  const row = (name) => term.screen().find((line) => new RegExp(`^[> ] ■ ${name}\\b`).test(line)) ?? null;
+  term.press("C-\\");
+  await until(term, () => footer().startsWith("C-\\   k palette"), "the leader's hint");
+  term.press("2");
+  await until(term, () => row("dev") !== null && row("reviewer") !== null, "the souls, read with `oats souls`");
+  assert.match(row("dev"), /^[> ] ■ dev ·2(?: |│|$)/, "dev has alpha and beta here");
+  assert.match(row("reviewer"), /^[> ] ■ reviewer ·1(?: |│|$)/, "reviewer has gamma");
+  assert.equal(term.screen()[1].includes("Souls"), true);
+  // Move to dev, wherever soulRows sorts it.
+  if (!row("dev").startsWith(">")) { term.press("k"); await until(term, () => row("dev")?.startsWith(">"), "dev selected"); }
+  term.press("Enter");
+  await until(term, () => footer().includes("Enter instances"), "the detail holds the focus: Enter shows the soul's instances");
+  const detail = () => term.screen().slice(3, -1).map((line) => line.split("│")[1] ?? "");
+  assert.equal(detail()[0].trimEnd(), " > dev", `the detail is dev's, with the focus:\n${term.shows()}`);
+  assert.equal(detail().some((line) => line.trim() === "○ alpha  ○ beta"), true, `its instances here, with their marks:\n${term.shows()}`);
+  term.press("i");
+  await until(term, () => footer().startsWith(`${LEAD}soul dev `), "the Instances view, filtered by dev");
+  const shown = () => term.screen().slice(3, -1).map((line) => line.split("│")[0]).join("\n");
+  assert.match(shown(), /alpha/);
+  assert.match(shown(), /beta/);
+  assert.doesNotMatch(shown(), /gamma/, "the reviewer's instance is not dev's");
+  term.press("Escape");
+  await until(term, () => /gamma/.test(shown()) && !footer().includes("soul dev"), "Esc clears the soul filter");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
 });

@@ -77,21 +77,21 @@ runs.
 ## What it shows
 
 ```
- acme-platform  +1 machine                       4 running  1 needs input  2 stopped  1 unknown
-  Instances   Souls   Capabilities                                                read 14:03:27
-──────────────────────────────────────────────┬─────────────────────────────────────────────────
- This machine                                 │   api-lead
-  ● backend-lead                              │   soul     tech-lead
-    ● backend-dev-auth                       !│   machine  garnet
-                                              │   state    running
-  ○ docs-writer                               │   harness  claude, claude-opus-5-5 (soul)
- garnet                         read 14:03:21 │   work     worktree, agents/api-lead
-> ● api-lead +1                               │   home     …agents/tech-lead/instances/api-lead
-                                              │
-  ? old-api-lead         gone from garnet     │
-  ○ reviewer-api                              │
-                                              │
-C-\ commands   / filter   Tab detail   r refresh   w workspaces   ? help   q quit
+ fixture                                                              3 stopped
+  Instances   Souls   Capabilities                                read 20:02:02
+──────────────────────────────────────┬─────────────────────────────────────────
+> ■ dev ·2                            │   dev
+  ■ reviewer ·1                       │   dev fixture soul.
+                                      │   from     ws
+                                      │   works    works in directory
+                                      │   harness
+                                      │     Harness    Pi
+                                      │     Model      Pi's default model
+                                      │     Chosen by  no preference set: the
+                                      │                host default
+                                      │   instances here
+                                      │     ○ alpha  ○ beta
+                                      │     i shows them in the Instances view.
 ```
 
 - **The header** starts with the workspace's name, then what the view holds of
@@ -354,7 +354,8 @@ them, from the same code.
   `+n`. `Enter` gives the detail the focus (under 80 columns it takes the
   list's place), and the movement keys then scroll it.
 - **`i`**, or `Enter` in the detail, shows that soul's instances in the
-  Instances view: an exact filter, where a kept filter stands, `soul dev`.
+  Instances view: an exact filter, shown where a kept filter stands in
+  the footer, `soul dev`.
   An instance of another soul whose name holds `dev` is not listed. `Esc`
   clears it, and `/` replaces it with a text filter.
 - **`r`** reads the souls again; while a read is under way it starts
@@ -366,7 +367,8 @@ them, from the same code.
   commit, a member's, its externals), and `r` does. While the first read is
   under way the view says `Reading souls…`. A read that fails says why,
   with `r` to try again; one that fails after a good one keeps the souls it
-  had, under a heading that says it failed and when the souls were read.
+  had, under a heading that says it failed and when the souls were read;
+  the selected soul's detail says why in full, under its name.
 - **What is kept:** the selected soul and the filter, when the view is left
   and shown again, for the run.
 - **Only this machine's:** the view lists the souls of a workspace of this

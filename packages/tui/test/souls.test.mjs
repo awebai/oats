@@ -92,7 +92,7 @@ test("the detail is the selected soul's, from its row and the shared facts: wher
   const pkg = catalogSoul("dev", { kind: "package", package: "acme.souls", version: "1.2.0", qualifiedName: "acme.souls/dev", key: "acme.souls/dev", teams, capabilities });
   const detail = view(shown([pkg])).detail;
   assert.deepEqual({ ...detail, harness: undefined }, {
-    name: "dev", description: "The dev soul.", from: "package acme.souls 1.2.0", works: "works in its own worktree", refusal: null, harness: undefined,
+    name: "dev", failure: null, description: "The dev soul.", from: "package acme.souls 1.2.0", works: "works in its own worktree", refusal: null, harness: undefined,
     teams: [{ label: "core", default: true }, { label: "ops", default: false }],
     capabilities: ["oats.core", "acme.deploy"],
     instances: { shown: [{ name: "dev-a", mark: "running" }, { name: "dev-b", mark: "stopped" }], more: 0 },
