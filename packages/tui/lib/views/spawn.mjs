@@ -272,7 +272,9 @@ const SCROLL_MIN = 3;
  *  above them the rest scrolled to the model's `top`, or to the window that holds the fold with
  *  the focus (the store scrolls only with the movement keys; Tab can land on a fold out of sight).
  *  The scrolling part's last row says what is cut off. `extent` and `room` are the scrolling
- *  part's, for the store's scroll; `armed` is whether the ready Spawn button is on the screen. */
+ *  part's, for the store's scroll, and `top` the row the window drawn starts at (which keeps the
+ *  focused fold in sight, and so may stand where the model's `top` does not): the store scrolls
+ *  from it; `armed` is whether the ready Spawn button is on the screen. */
 function preview(s, size, ascii) {
   const rows = Array.from({ length: size.rows }, () => []);
   const fixed = previewRows(s, size.cols, ascii, { problemRows: 0 }).pinned.length;
@@ -286,10 +288,10 @@ function preview(s, size, ascii) {
   pinned.forEach((spans, i) => { rows[room + i] = spans; });
   const cut = all.pinned.length - pinned.length;
   const cursor = all.cursor && all.cursor.row >= cut ? { row: room + all.cursor.row - cut, col: all.cursor.col } : null;
-  return { rows, cursor, extent: all.scroll.length, room: Math.max(1, room), armed: s.ready === true && all.button >= cut };
+  return { rows, cursor, extent: all.scroll.length, room: Math.max(1, room), top: win.top, armed: s.ready === true && all.button >= cut };
 }
 
-/** `{ rows, cursor, extent, room, armed? }`: `size.rows` rows for an area `size.cols` wide, the step of the
+/** `{ rows, cursor, extent, room, top?, armed? }`: `size.rows` rows for an area `size.cols` wide, the step of the
  *  prompt the model is at. `cursor` is `{ row, col }` in the area (the query's end, or the name
  *  field's while it has the focus), or null; `extent` and `room` are the preview's scrolling
  *  part's, for the store's scroll (0 and 1 for the picker, which the model windows itself). */

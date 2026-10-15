@@ -24,6 +24,7 @@ import { textWidth } from "../lib/term/width.mjs";
 import { LIST_BESIDE, MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
 import { ACT_RULES, MACHINES, NOT_YET, VIEWS, keysLabel } from "../lib/views/help.mjs";
 import { EMPTY_TEXT, MARKS, cutNote, marksOf } from "../lib/views/instances.mjs";
+import { SOUL_MARK } from "../lib/views/souls.mjs";
 import { OPEN_MARK, SWITCHER_TEXT } from "../lib/views/switcher.mjs";
 import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, leaderThen, leaderTwice, observed, press, readTerminalOutput, rosterOf, stateOf } from "./helpers.mjs";
 
@@ -1462,6 +1463,9 @@ test("the help lists the marks with their words, in UTF-8 and in ASCII: each mar
     assert.equal(said(marks.selected, "selected"), true);
     assert.equal(section.some((line) => line.startsWith(`${marks.waiting}N`)), true, "and the roll-up of a collapsed row");
     assert.equal(said("+N", "folded away"), true, "a folded row's count: no fold mark");
+    // The Souls view's and the spawn picker's: a soul, and a soul a spawn here would refuse.
+    assert.equal(said(ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8, "among the souls: a soul"), true, "the soul mark");
+    assert.equal(said("!", "would be refused"), true, "the refused soul's mark");
     for (const [name, mark] of Object.entries(marks)) assert.equal(section.some((line) => line.split("  ")[0].split(" ").includes(mark) || line.startsWith(mark)), true, `${name}: ${mark}`);
   }
 });

@@ -577,7 +577,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     stdin, stdout, proc, setTimer, clearTimer,
     frame() {
       const { size, g, made } = composed();
-      drawn = { page: made.page, extent: made.extent, room: made.room, cols: g.listCols };
+      drawn = { page: made.page, extent: made.extent, room: made.room, cols: g.listCols, ...(made.drawnTop !== undefined ? { drawnTop: made.drawnTop } : {}) };
       fitPanel(made);
       const bytes = screen.render(made.rows, size, { full, cursor: made.cursor });
       full = false;

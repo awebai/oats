@@ -215,7 +215,8 @@ function countSpans(counts, cols) {
  *  first kept longest), so a hint can stand first and still be given up before another: in the
  *  list of instances the acts go first (`restart`, `start`, `retire`, then `stop`), then
  *  `workspaces`, `refresh`, the key that clears a
- *  kept filter, `detail`, the open terminal's `close-terminal` and `zoom`, `open` and last `filter`
+ *  kept filter, the keys that show the tab before and after (`[/] tab`, with two tabs or more in
+ *  the focused group), `detail`, the open terminal's `close-terminal` and `zoom`, `open` and last `filter`
  *  (`filter` before `open` while a filter is kept: its own `/` stands in the footer then); in the
  *  Souls view `workspaces`, `refresh`, `filter`, `close`, then `i` and last Enter. A row
  *  too narrow for the whole of a hint drops it. The views have no hint: the header names them.
@@ -250,6 +251,8 @@ function footer(m, cols) {
     return { key, word: said, width: key.width + 1 + said.width };
   };
   const hint = (id, label) => { const a = action(id); return a ? made(keyText(keyLabel(a.keys[0])), label ?? a.label) : null; };
+  /** `[/] tab`: the keys of `tab-previous` and `tab-next`, while both have one. */
+  const tabsHint = () => { const [before, after] = [action("tab-previous"), action("tab-next")]; return before && after ? made(keyText(`${keyLabel(before.keys[0])}/${keyLabel(after.keys[0])}`), "tab") : null; };
   /** The hints that are no one action's: made below. */
   const hintOf = {};
   const edge = cols - MARGIN; // nothing stands at or past it
@@ -317,8 +320,9 @@ function footer(m, cols) {
   // row whose terminal is open, Enter goes to it.
   const first = (asking ? [["open", hint("close", "stop opening")]] : listing && m.onTerminal ? [["open", hint("open", "focus terminal")]] : listing && m.openable ? [["open", hint("open")]]
     : soul?.detail ? [["open", hint("open", soul.focus === "detail" ? "instances" : "detail")]] : []).filter(([, h]) => h);
-  // With a terminal open, the keys that zoom it and close it stand after `open`, kept as long.
-  const terminal = listing && m.terminal ? [["zoom", hint("zoom")], ["close-terminal", hint("close-terminal")]].filter(([, h]) => h) : [];
+  // With a terminal open, the keys that zoom it and close it stand after `open`, kept as long;
+  // with two tabs or more in the focused group, then the keys that show the tab before and after.
+  const terminal = listing && m.terminal ? [["zoom", hint("zoom")], ["close-terminal", hint("close-terminal")], ...((m.tabs?.length ?? 0) > 1 ? [["tabs", tabsHint()]] : [])].filter(([, h]) => h) : [];
   // The acts the selected row offers now stand after those, and are the first given up.
   const acts = listing && !asking ? (m.actable ?? []).map((verb) => [verb, hint(verb)]).filter(([, h]) => h) : [];
   const ACTS = ["stop", "retire", "start", "restart"];
@@ -336,9 +340,9 @@ function footer(m, cols) {
     // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
     // A kept filter puts `close` before `refresh`, as in the list: the key that clears it is the hint to keep.
     : m.view === "switcher" ? [["open", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])], null]
-    : m.focus === "detail" ? [["detail", "close", "refresh"], ["open", "zoom", "close-terminal", "detail", "close", "refresh", ...ACTS]]
+    : m.focus === "detail" ? [["detail", "close", "refresh"], ["open", "zoom", "close-terminal", "detail", "tabs", "close", "refresh", ...ACTS]]
     // A kept filter shows its own `/` beside the hints: then `open` outlives the `/ filter` hint.
-    : [["filter", "detail", ...(filtered ? ["close"] : []), "refresh", "workspaces", ...VIEW_KEYS], [...(filtered ? ["open", "zoom", "close-terminal", "filter"] : ["filter", "open", "zoom", "close-terminal"]), "detail", "close", "refresh", "workspaces", ...VIEW_KEYS, ...ACTS]];
+    : [["filter", "detail", ...(filtered ? ["close"] : []), "refresh", "workspaces", ...VIEW_KEYS], [...(filtered ? ["open", "zoom", "close-terminal", "filter"] : ["filter", "open", "zoom", "close-terminal"]), "detail", "tabs", "close", "refresh", "workspaces", ...VIEW_KEYS, ...ACTS]];
   const hints = [...first, ...terminal, ...acts, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, id in hintOf ? hintOf[id] : hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
   // `help` and `quit` stand last, and always but in one case: when the two do not fit whole
   // after the leader (keys tui.json made long), `help` is given up, then `quit`. The leader
@@ -475,13 +479,14 @@ function framed(m, size) {
     return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1, cursor: { row: g.body.top, col: drawn.cursor } };
   }
   // The spawn prompt in the same place (the palette wins if both are ever set). `extent` and `room`
-  // are its preview's, which the store scrolls as it scrolls a confirmation; `armed` says the ready
+  // are its preview's, which the store scrolls as it scrolls a confirmation, from `drawnTop`, the
+  // row its window was drawn from; `armed` says the ready
   // Spawn button is drawn, which the loop tells the store once the frame is written.
   if (m.spawn) {
     rows[2] = rule(cols, m.ascii);
     const drawn = spawn(m, { cols, rows: g.body.rows });
     drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
-    return { rows, page: Math.max(1, g.body.rows), extent: drawn.extent, room: drawn.room, cursor: drawn.cursor ? { row: g.body.top + drawn.cursor.row, col: drawn.cursor.col } : null, ...(drawn.armed ? { armed: true } : {}) };
+    return { rows, page: Math.max(1, g.body.rows), extent: drawn.extent, room: drawn.room, ...(drawn.top !== undefined ? { drawnTop: drawn.top } : {}), cursor: drawn.cursor ? { row: g.body.top + drawn.cursor.row, col: drawn.cursor.col } : null, ...(drawn.armed ? { armed: true } : {}) };
   }
   if (m.view === "act" && m.act) {
     rows[2] = rule(cols, m.ascii);
@@ -547,7 +552,8 @@ function framed(m, size) {
     // The rule between two groups: a column side by side, a row one above the other.
     const p = area.panel, r = area.rule;
     if (r?.col !== undefined) for (let i = 0; i <= p.rows; i++) rows[p.title + i] = [...rows[p.title + i], { col: r.col, text: lit(m.ascii ? "|" : "\u2502"), style: DIM, width: 1 }];
-    if (r?.row !== undefined) rows[r.row] = [...rows[r.row], { col: p.col, text: lit((m.ascii ? "-" : "\u2500").repeat(p.cols)), style: DIM, width: p.cols }];
+    // Beside the list, the row meets the list's bar there: a joint (`├`, `+` in ASCII).
+    if (r?.row !== undefined) rows[r.row] = [...rows[r.row], ...(split && p.col === g.listCols + 1 ? [{ col: g.listCols, text: lit(m.ascii ? "+" : "\u251c"), style: DIM, width: 1 }] : []), { col: p.col, text: lit((m.ascii ? "-" : "\u2500").repeat(p.cols)), style: DIM, width: p.cols }];
   } else if (split || paged) {
     const at = paged ? MARGIN : g.listCols + 2;
     const drawn = detail(m, { cols: Math.max(0, cols - at - MARGIN), rows: g.panes.rows });

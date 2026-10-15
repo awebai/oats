@@ -7,6 +7,7 @@ import { lit, ownEllipsis } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
 import { windowOf } from "./scroll.mjs";
+import { SOUL_MARK } from "./souls.mjs";
 import { OPEN_MARK } from "./switcher.mjs";
 
 const TITLE = style({ bold: true });
@@ -188,6 +189,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
       [`${marks.waiting}N`, "N instances folded away below it need input"],
       [marks.selected, "the selected row, and the pane the movement keys act on"],
       [OPEN_MARK, "among the workspaces: the one that is open"],
+      [ascii ? SOUL_MARK.ascii : SOUL_MARK.utf8, "among the souls: a soul, in its colour"],
+      ["!", "among the souls: a spawn of it here would be refused"],
     ].map(([mark, meaning]) => [mark, words(meaning)]), cols),
     [],
     heading("Views"),

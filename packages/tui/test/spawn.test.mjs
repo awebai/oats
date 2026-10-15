@@ -439,3 +439,12 @@ function reached() {
   const kept = observeIdentities({ memory: state.memory, notes: state.notes }, next.reported, at);
   return reduce(state, { roster: { remote: { remoteGroups: next.remoteGroups, rosterAnswered: next.rosterAnswered, rosterFailure: next.rosterFailure }, memory: kept.memory, notes: kept.notes, at } }).state;
 }
+
+test("the preview scrolls from the window the frame drew (`drawnTop`), which keeps a focused fold in sight: a movement key moves one row from it, never back to the model's `top`", () => {
+  const s = previewOf();
+  assert.equal(s.spawn.top, 0);
+  const from = (drawnTop) => reduce(s, { key: "down", read: ++reads, ...AT, ...(drawnTop === undefined ? {} : { drawnTop }) }).state.spawn.top;
+  assert.equal(from(12), 13, "one row down from the window drawn");
+  assert.equal(from(undefined), 1, "with no window drawn, from top");
+  assert.equal(reduce(s, { key: "up", read: ++reads, ...AT, drawnTop: 12 }).state.spawn.top, 11);
+});

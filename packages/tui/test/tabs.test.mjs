@@ -367,3 +367,13 @@ test("a shown name that fits the panel stays whole however many tabs are hidden:
   const wide = stripAt(last, 120);
   assert.equal(wide.text, ` a  b  c  ${LONG}`);
 });
+
+test("the footer names [/] tab after the open terminal's keys while two tabs or more are open, from the list and from the detail; it is given up after the acts, the workspaces, refresh and close, and before detail", () => {
+  const foot = (state, cols) => draw(state, { cols, rows: 30 }).lines.at(-1);
+  const one = toList(opened(SIX(), "dev-a")), two = toList(opened(SIX(), "dev-a", "dev-b"));
+  assert.doesNotMatch(foot(one, 200), /\[\/\] tab/, "one tab: nothing to switch to");
+  assert.match(foot(two, 200), /c close terminal {3}\[\/\] tab {3}X stop/);
+  assert.match(foot(key(two, "tab").state, 200), /c close terminal {3}\[\/\] tab {3}X stop/, "from the detail too");
+  assert.equal(foot(two, 120), "C-\\ commands   Enter focus terminal   z zoom   c close terminal   [/] tab   / filter   Tab detail   ? help   q quit");
+  assert.equal(foot(two, 100), "C-\\ commands   Enter focus terminal   z zoom   c close terminal   / filter   ? help   q quit", "given up before detail");
+});

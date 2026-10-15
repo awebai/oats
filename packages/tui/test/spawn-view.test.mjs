@@ -16,6 +16,7 @@ import { textWidth } from "../lib/term/width.mjs";
 import { frame, terminalArea } from "../lib/views/frame.mjs";
 import { SPAWN_KEYS, SPAWN_RULES, helpRows, keysLabel } from "../lib/views/help.mjs";
 import { cutNote } from "../lib/views/instances.mjs";
+import { windowOf } from "../lib/views/scroll.mjs";
 import { SPAWN_TEXT, previewRows } from "../lib/views/spawn.mjs";
 import { NOW, instanceRow, observed, readTerminalOutput, rowStrings, stateOf } from "./helpers.mjs";
 
@@ -318,6 +319,9 @@ test("a fold with the focus is drawn whatever `top` says: Tab onto a fold below 
     assert.equal(d.cells[row][2].style.reverse, true, key);
     assert.equal(d.lines.some((line) => /more (above|below)/.test(line)), true, `${key}: the note says what the window cuts off`);
     assert.equal(rowStarting(d, "[ Spawn ]") > row, true, `${key}: the button still under it`);
+    // The frame says where the window it drew starts, for the store to scroll from: not `top`.
+    assert.equal(d.drawnTop !== windowOf({ top, count: d.extent, height: d.room }).top, true, `${key}: drawn away from top`);
+    assert.equal(bodyLines(d, sz)[0], linesOf(previewRows(spawn, sz.cols, false).scroll, sz.cols)[d.drawnTop], `${key}: drawnTop is the first row drawn`);
   }
 });
 

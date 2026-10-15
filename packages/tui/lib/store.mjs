@@ -1318,8 +1318,10 @@ function inSpawn(state, event, keymap) {
   }
   if (action === "quit" || action === "suspend" || action === "redraw") return { state, effect: action };
   if (MOVES.includes(action)) {
+    // From the window drawn (`drawnTop`): it keeps the focused fold in sight, so it may stand
+    // where `top` does not, and the next key must not jump back to `top`.
     const count = event.extent ?? 0, height = event.room ?? 1;
-    const from = windowOf({ top: p.top, count, height }).top;
+    const from = windowOf({ top: Number.isInteger(event.drawnTop) ? event.drawnTop : p.top, count, height }).top;
     return { state: spawnWith(state, { top: windowOf({ top: moved(action, from, count, height), count, height }).top }), effect: null };
   }
   if (event.key !== "enter" || sameRead) return stay;
