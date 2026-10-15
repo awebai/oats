@@ -629,7 +629,12 @@ with the Desktop (`packages/client/`).
   watches `alive`, a FIFO in the run's directory (0600, made with the
   system's `mkfifo`) that `oats tui` holds open for writing until it ends.
   When `oats tui` is gone, whatever ended it and at any moment, the keeper
-  kills the server. Each open is a window of it, closed with `kill-pane`, which hangs up the viewer's
+  kills the server. Two tools of the base system serve the keeper, found on
+  `PATH` like `tmux`. **`mkfifo`** makes `alive`: without it an open is
+  refused, and the line says the terminal could not be opened, with what
+  was said under it. **`ps`** tells the keeper its server is still its
+  parent: without it the keeper kills nothing, and an `oats tui` killed
+  with SIGKILL can leave its private server running. Each open is a window of it, closed with `kill-pane`, which hangs up the viewer's
   terminal so the viewer removes its own session on the agents' server. The
   viewer's error output and exit status go to two files of the run's
   directory (0600), read back when it ends and deleted. The server is ended

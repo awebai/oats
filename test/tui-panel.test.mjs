@@ -17,7 +17,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -569,7 +569,7 @@ test("kill -9 while the agent prints without pause: the private server is gone, 
   assert.equal(agentWindowThere(), true, "the agent keeps running");
 });
 
-test("a run's sweep removes what a dead run left, its directory, and leaves a live run's directory and a look-alike without owner.json alone", { skip: NO_TMUX }, async (t) => {
+test("a run's sweep removes what a dead run left, its directory (its server SIGKILLed by the keeper: a socket that refuses, the FIFO, owner.json), and leaves a live run's directory and a look-alike without owner.json alone", { skip: NO_TMUX }, async (t) => {
   await agentWindow();
   const tmp = tmpFor();
   // A live run, with its terminal open.
@@ -587,9 +587,17 @@ test("a run's sweep removes what a dead run left, its directory, and leaves a li
   deadTerm.press("Enter");
   await until(deadTerm, () => runDirs(tmp).some((dir) => !before.has(dir)) && dead.beside(), "the dead run's terminal open");
   const deadDir = runDirs(tmp).find((dir) => !before.has(dir));
+  const deadPanes = panePids(panelSocket(deadDir));
+  assert.equal(deadPanes.length, 2, "the dead run's keeper and viewer");
   process.kill(dead.pid, "SIGKILL");
   await dead.ended("after kill -9");
   await until(deadTerm, () => !answers(panelSocket(deadDir)), "the dead run's server gone");
+  // Its keeper SIGKILLed the server: the socket file is left, and refuses; the keeper and the
+  // viewer are gone, and so is the FIFO's writer; the FIFO and owner.json are left for the sweep.
+  await until(deadTerm, () => deadPanes.every((pid) => !alive(pid)), "the dead run's keeper and viewer gone");
+  assert.equal(lstatSync(panelSocket(deadDir)).isSocket(), true, "a SIGKILLed server leaves its socket file");
+  assert.equal(lstatSync(join(deadDir, "alive")).isFIFO(), true, "and the keeper's FIFO");
+  assert.equal(existsSync(join(deadDir, "owner.json")), true);
   // A dead run's directory made by hand: owner.json of a pid that has exited, and no socket.
   const goneDir = join(tmp, "oats-tui-gone00");
   mkdirSync(goneDir, { mode: 0o700 });
