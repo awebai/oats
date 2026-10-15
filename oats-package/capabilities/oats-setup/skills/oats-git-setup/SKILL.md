@@ -455,14 +455,15 @@ emptied environment. So:
   `https://` remotes; your SSH key serves `git@github.com:` remotes, which use
   no credential helper at all.
 - **Check 7 shows whether a HOME-less Git would fall back to the keychain.**
-  If it prints `osxkeychain`, Git is fine as long as every process that runs
-  it has `HOME` set, which is the normal case.
-- **Repeated keychain popups that name `git-credential-osxkeychain`** mean
-  some process runs Git without `HOME`. (A popup that names `gh` is gh
-  reading its own token from the keychain, which is step 3's default
-  choice.) Fix that process's environment: restart the app or service from
-  a normal login, or set `HOME` in its launch configuration. Never answer
-  the popups or store a token in the keychain to make them go away.
+  If it prints `osxkeychain`, Git is fine while every process has `HOME`.
+- **Repeated keychain popups that name `git-credential-osxkeychain`** can
+  mean a process runs Git without `HOME`. (One that names `gh` is gh reading
+  its own token, step 3's default choice.) First rule out a repository's
+  own helper: `git config --show-origin --get-all credential.helper` in that
+  repository must list no `osxkeychain` from `file:.git/config`. Then fix
+  the process's environment: restart the app or service from a normal
+  login, or set `HOME` in its launch configuration. Never silence the
+  popups by answering them or storing a token in the keychain.
 - Removing the line (`git config --file <the file check 7 named> --unset
   credential.helper`) changes Git for every user of that installation, and
   upgrading Git may bring it back: the person's choice, not the remedy.
@@ -482,7 +483,7 @@ emptied environment. So:
 | no `Signed-off-by` line | `core.hooksPath` is not the global hooks folder here (a repository sets its own), or `run-hook` is not executable | `git config --show-origin --get core.hooksPath` in that repository; `chmod +x ~/.config/git/hooks/run-hook` |
 | a repository's own hook stopped running | it is not executable, it is `push-to-checkout` or `proc-receive` (step 6's `find`), or it sits outside the repository's hooks folder | `ls -l "$(git rev-parse --git-common-dir)/hooks"` shows what the global hook will run |
 | `gh: … needs the "<scope>" scope` | gh's token lacks that scope | `gh auth refresh --hostname github.com --scopes <scope>`, with `--insecure-storage` if step 3 chose the file; remove admin scopes afterwards |
-| repeated macOS keychain popups naming `git-credential-osxkeychain` | a process runs Git without `HOME` and falls back to the system `osxkeychain` helper | [The macOS credential helper](#the-macos-credential-helper) |
+| repeated macOS keychain popups naming `git-credential-osxkeychain` | usually a process runs Git without `HOME` and falls back to the system `osxkeychain` helper; or a repository sets that helper itself | [The macOS credential helper](#the-macos-credential-helper) |
 | OATS reports `E_REMOTE_UNREADABLE` with the hint `keychain-non-interactive` | a session without a terminal on a Mac cannot open the keychain | `docs/servers.md`, “Git on a macOS host” |
 
 ## Never
@@ -495,4 +496,3 @@ emptied environment. So:
   key between machines or into a message: each machine gets its own key.
 - Leave the `admin:public_key` or `admin:ssh_signing_key` scope on gh's
   token, or add `delete_repo`.
-- Answer keychain popups or store tokens in the keychain to silence them.
