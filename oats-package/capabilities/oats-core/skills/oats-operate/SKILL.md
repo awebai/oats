@@ -82,6 +82,9 @@ oats worktree remove --purpose <p>
 - Before your task closes, merge each extra tree into your PR branch, or push
   its branch and name it in your hand-back; then `remove` it. `remove` keeps
   the branch and refuses a tree with uncommitted work (`E_WORKTREE_DIRTY`).
+  It also refuses a tree that is the work of an attached instance whose
+  session is running or cannot be read (`E_CHILDREN_RUNNING`): stop that
+  instance (`oats instance stop <instance>`) or retire it, then remove again.
 
 ## Modules: what you were given
 

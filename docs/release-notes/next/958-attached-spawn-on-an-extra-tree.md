@@ -14,9 +14,7 @@
   runs on this kernel and on earlier ones. The tree is an extra tree by the
   kernel's own test (a registered linked worktree in a home), never by the
   shape of its path. Nothing changes for `<home>/work`, and no flag, key or
-  field changes. One limit: when the owner is retired, an instance attached
-  to one of its extra trees is not repointed as one attached to its `work/`
-  is, so its `work` link then points at a path that is gone (#964).
+  field changes.
 
   A tree of no known instance still needs both flags. Its refusal is now
   one, `E_BAD_ARGS`, and names every flag still missing: `attached workDir
