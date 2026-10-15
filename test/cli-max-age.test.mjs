@@ -365,10 +365,12 @@ test("spawn --expect-decision --max-age: the apply reuses the previewed heads an
   const spawnArgs = (purpose) => ["spawn", "release-manager", "--purpose", purpose, "--work", "directory", "--provider", "oats.okf", "state-dir=/tmp/x"];
   const preview = (purpose) => json(oats([...spawnArgs(purpose), "--preview", "--max-age", "0", "--json"])).result;
   const apply = (purpose, revision, ...flags) => oats([...spawnArgs(purpose), "--no-launch", "--expect-decision", revision, ...flags, "--json"]);
-  // Both previews observe the member's head live (and record it); then the member moves.
+  const soulAt = (text) => moveMember(fx, "agents", async (_work, { writeTree }) => writeTree({ "souls/release-manager/AGENTS.md": `# release-manager\n\n${text}\n` }));
+  // The soul as previewed; both previews observe the member's head live (and record it); then the member moves.
+  const previewed = "As previewed (spawn-apply-max-age).", marker = "Moved after the preview (spawn-apply-max-age).";
+  await soulAt(previewed);
   const ma = preview("ma"), mb = preview("mb");
-  const marker = "Moved after the preview (spawn-apply-max-age).";
-  const moved = await moveMember(fx, "agents", async (_work, { writeTree }) => writeTree({ "souls/release-manager/AGENTS.md": `# release-manager\n\n${marker}\n` }));
+  const moved = await soulAt(marker);
   // The apply under --max-age reuses the head its preview used: the decision holds and the spawn is made from it.
   const first = apply("ma", ma.decision.revision, "--max-age", "120", "--idempotency-key", "ma-1");
   const done = json(first);
@@ -377,7 +379,7 @@ test("spawn --expect-decision --max-age: the apply reuses the previewed heads an
   assert.equal(done.result.replayed, false);
   assert.equal(JSON.stringify(done).includes('"observation"'), false, "no observation block on an apply");
   const instructions = readFileSync(join(done.result.home, "AGENTS.md"), "utf8");
-  assert.ok(instructions.includes("Moved.\n"), "the soul at the previewed head (the earlier test's move)");
+  assert.ok(instructions.includes(previewed), "the soul at the previewed head");
   assert.equal(instructions.includes(marker), false, "not the moved one");
   assert.equal(JSON.stringify(done).includes(moved.commit), false, "the moved head is not used");
   // Live (--max-age 0, then no flag): the moved head changes the decision; nothing is created.
