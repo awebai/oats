@@ -21,10 +21,10 @@
   command. See [the TUI page](../tui.md#the-leader).
 - **A palette, as the Desktop's ⌘K:** the leader then `k`, or `Ctrl+K` in
   the list, opens one input over the instances that can be opened (the
-  most recently opened in the run first), the views, the selected
+  most recently opened or shown in the run first), the views, the selected
   instance's acts, and workspaces, refresh and help, filtered as you type
-  with the Desktop's match. From a terminal, choosing an instance swaps
-  the panel to it. See [the TUI page](../tui.md#the-palette).
+  with the Desktop's match. Choosing an instance shows its tab, or opens it
+  in a new one. See [the TUI page](../tui.md#the-palette).
 
 ## Changed
 

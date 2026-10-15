@@ -183,7 +183,7 @@ test("the leader then z zooms the terminal that has the focus, in and out; then 
   assert.deepEqual([fromList.state.terminal.focus, fromList.state.terminal.zoom, fromList.effect], ["terminal", true, null]);
   for (const from of [state, zoomed.state, leaderTwice(state).state]) {
     const closed = leaderThen(from, "w", AT);
-    assert.deepEqual([closed.state.terminal, closed.state.view, closed.effect], [null, "instances", { close: a }]);
+    assert.deepEqual([closed.state.terminal, closed.state.view, closed.effect], [null, "instances", { close: [a] }]);
   }
   const none = THREE();
   for (const k of ["w", "z"]) {
@@ -226,22 +226,31 @@ test("the leader then Down or Up opens the next or previous instance that can be
   const first = leaderThen(state, "down", AT);
   assert.deepEqual(first.effect, { open: decision(state, "alpha-kid") });
   assert.deepEqual([first.state.selected, first.state.terminal.id, first.state.terminal.focus, first.state.recent], [idOf(state, "alpha-kid"), idOf(state, "alpha-kid"), "terminal", [idOf(state, "alpha-kid")]]);
-  // From the open terminal: one at a time, the close before the open.
+  // From the open terminal: each next instance opens as a tab of its own after the shown one, and
+  // nothing is closed (T2, Done 3), up to the cap.
   let at = reduce(first.state, { shown: { id: idOf(state, "alpha-kid") }, ...AT }).state;
-  for (const [from, to] of [["alpha-kid", "lead"], ["lead", "child-a"], ["child-a", "grandchild"], ["grandchild", "solo-x"]]) {
+  for (const [from, to] of [["alpha-kid", "lead"], ["lead", "child-a"], ["child-a", "grandchild"]]) {
     const step = leaderThen(at, "down", AT);
-    assert.deepEqual(Object.keys(step.effect), ["close", "open"], `${from} down`);
-    assert.deepEqual(step.effect, { close: idOf(state, from), open: decision(state, to) }, `${from} down`);
+    assert.deepEqual(step.effect, { open: decision(state, to) }, `${from} down`);
     assert.deepEqual([step.state.selected, step.state.terminal.id, step.state.terminal.focus], [idOf(state, to), idOf(state, to), "terminal"], `${from} down`);
     at = reduce(step.state, { shown: { id: idOf(state, to) }, ...AT }).state;
   }
-  // solo-y under it is stopped: the end. alpha above alpha-kid is stopped: the end.
-  const last = leaderThen(at, "down", AT);
-  assert.deepEqual([butLeader(last.state), last.effect], [butLeader(at), null], "no wrap at the bottom");
+  assert.deepEqual(at.tabs.map((tab) => tab.id), ["alpha-kid", "lead", "child-a", "grandchild"].map((name) => idOf(state, name)));
+  // The fifth: every tab is taken, nothing opens and nothing closes, and the line says so.
+  const full = leaderThen(at, "down", AT);
+  assert.deepEqual([full.effect, full.state.tabs.length, full.state.terminal.id], [null, 4, idOf(state, "grandchild")]);
+  assert.equal(full.state.outcome.said.map((part) => part.own ?? part.shown).join(""), "4 terminals are open; close one with C-\\ w.");
+  // Up from the shown tab: the instance above is a tab, and is shown.
+  const shownUp = leaderThen(at, "up", AT);
+  assert.deepEqual([shownUp.effect, shownUp.state.terminal.id, shownUp.state.terminal.focus], [{ show: idOf(state, "child-a") }, idOf(state, "child-a"), "terminal"]);
+  // solo-y under solo-x is stopped: the end. alpha above alpha-kid is stopped: the end.
+  const bottom = reduce(opened(TREE(), "solo-x"), { shown: { id: idOf(state, "solo-x") }, ...AT }).state;
+  const last = leaderThen(bottom, "down", AT);
+  assert.deepEqual([butLeader(last.state), last.effect], [butLeader(bottom), null], "no wrap at the bottom");
   const top = opened(TREE(), "alpha-kid"), firstUp = leaderThen(top, "up", AT);
   assert.deepEqual([butLeader(firstUp.state), firstUp.effect], [butLeader(top), null], "no wrap at the top");
-  const back = leaderThen(at, "up", AT);
-  assert.deepEqual(back.effect, { close: idOf(state, "solo-x"), open: decision(state, "grandchild") }, "solo-x up passes over the empty row and child-b");
+  const back = leaderThen(bottom, "up", AT);
+  assert.deepEqual(back.effect, { open: decision(state, "grandchild") }, "solo-x up passes over the empty row and child-b");
   // From the selection when none is open: child-b (stopped) up to grandchild.
   const fromStopped = leaderThen(on(state, "child-b"), "up", AT);
   assert.deepEqual(fromStopped.effect, { open: decision(state, "grandchild") });
@@ -252,7 +261,8 @@ test("the leader then Up or Down moves from the open terminal's instance, not fr
   const moved = on(state, "solo-x");
   for (const [k, to] of [["down", "grandchild"], ["up", "lead"]]) {
     const step = leaderThen(moved, k, AT);
-    assert.deepEqual(step.effect, { close: child, open: decision(state, to) }, k);
+    assert.deepEqual(step.effect, { open: decision(state, to) }, k);
+    assert.deepEqual(step.state.tabs.map((tab) => tab.id), [child, idOf(state, to)], `${k}: a tab of its own beside child-a's`);
     assert.deepEqual([step.state.selected, step.state.terminal.id, step.state.terminal.focus], [idOf(state, to), idOf(state, to), "terminal"], k);
   }
 });
@@ -323,16 +333,19 @@ test("Enter in the read that opened the palette runs nothing, and in a later rea
   assert.deepEqual([ran.state.palette, ran.state.selected, ran.state.terminal.id, ran.state.terminal.focus], [null, idOf(state, "dev-c"), idOf(state, "dev-c"), "terminal"]);
 });
 
-test("an instance run from the palette opened from a terminal swaps the panel to it: the open one is closed first", () => {
+test("an instance run from the palette opened from a terminal opens it as a tab of its own beside the open one (T2: nothing is closed)", () => {
   const state = opened(THREE(), "dev-a"), a = idOf(state, "dev-a"), c = idOf(state, "dev-c");
   const open = leaderThen(state, "k", AT).state;
   assert.deepEqual(rows(open).slice(0, 2), ["instance dev-a", "instance dev-c"]);
   const ran = keys(open, "d", "e", "v", "-", "c", "enter");
-  assert.deepEqual(Object.keys(ran.effect), ["close", "open"]);
-  assert.deepEqual(ran.effect, { close: a, open: decision(state, "dev-c") });
+  assert.deepEqual(ran.effect, { open: decision(state, "dev-c") });
+  assert.deepEqual(ran.state.tabs.map((tab) => tab.id), [a, c]);
   assert.deepEqual([ran.state.palette, ran.state.selected, ran.state.terminal.id, ran.state.terminal.focus, ran.state.recent], [null, c, c, "terminal", [c, a]]);
-  // The open terminal's own row gives it the focus back, and opens nothing.
-  const own = key(leaderThen(state, "k", AT).state, "enter");
+  // The first row is the shown tab's instance (the most recent): the second is selected (T2, Done
+  // 4), so Enter goes to the terminal before it.
+  assert.equal(paletteItems(open).selected, `instance\u0000${c}`);
+  // The open terminal's own row, chosen, gives it the focus back, and opens nothing.
+  const own = keys(leaderThen(state, "k", AT).state, "d", "e", "v", "-", "a", "enter");
   assert.deepEqual([own.state.palette, own.state.terminal, own.effect], [null, state.terminal, null]);
 });
 
@@ -506,7 +519,7 @@ test("with a terminal open, the leader then z zooms it and the leader then w clo
     assert.deepEqual([zoomed.state.view, zoomed.state.terminal?.focus, zoomed.state.terminal?.zoom, zoomed.state.act], ["instances", "terminal", true, null], `${what}: z`);
     dismissed(before, zoomed.effect);
     const closed = key(leader(before).state, "w");
-    assert.deepEqual([closed.state.view, closed.state.terminal, closed.effect?.close], ["instances", null, idOf(before, "dev-a")], `${what}: w`);
+    assert.deepEqual([closed.state.view, closed.state.terminal, closed.effect?.close], ["instances", null, [idOf(before, "dev-a")]], `${what}: w`);
     dismissed(before, closed.effect);
   }
 });

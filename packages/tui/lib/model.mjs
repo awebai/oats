@@ -14,7 +14,7 @@ import {
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
   defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel,
 } from "./client.mjs";
-import { keyLabel } from "./actions.mjs";
+import { LEADER, keyLabel } from "./actions.mjs";
 import { ownEllipsis, shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
 import { windowOf } from "./views/scroll.mjs";
@@ -342,6 +342,12 @@ export const OPEN_WORDS = Object.freeze({
   notRunning: (name) => [{ shown: name }, { own: " is not running, so it has no terminal to open." }],
   stateUnknown: (name) => [{ own: "Whether " }, { shown: name }, { own: " runs is not known, so it is not opened." }],
 });
+/** The tabs' own words (docs/tui.md, "Tabs"): at the cap, how many are open and the leader's key
+ *  that closes the shown one. */
+const LEADER_CLOSE = LEADER.find((entry) => entry.does === "close-terminal").keys[0];
+export const TAB_WORDS = Object.freeze({
+  full: (limit, leader) => [{ own: `${limit} terminals are open; close one with ` }, { own: `${leader} ${keyLabel(LEADER_CLOSE)}`, whole: true }, { own: "." }],
+});
 /** The body of a view of this machine that is not in this version (Capabilities): what it will
  *  hold, and what to run until then, the help's commands (views/help.mjs VIEWS), in the TUI's own
  *  words; each command is whole, never broken over two rows. */
@@ -580,7 +586,11 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
   const items = groups.flatMap((group) => (query === ""
     ? group
     : group.map((item, i) => ({ item, i, score: subsequenceScore(item.text, query) })).filter((each) => each.score !== null).sort((a, b) => a.score - b.score || a.i - b.i).map(({ item }) => item)));
-  return { items, selected: items.some((item) => item.key === p.selected) ? p.selected : items[0]?.key ?? null };
+  // With nothing chosen yet, the first row; but in the palette as it opens (no query), when the
+  // first row is the shown tab's instance (the most recent), the second instance: the palette and
+  // Enter go back to the terminal before it, as the Desktop's recent group does.
+  const first = p.query === "" && items[0]?.kind === "instance" && items[0].id === state.terminal?.id && items[1]?.kind === "instance" ? items[1] : items[0];
+  return { items, selected: items.some((item) => item.key === p.selected) ? p.selected : first?.key ?? null };
 }
 /** The palette as the view draws it, in a body `page` rows tall: its query on the first row, and
  *  under it the window of its rows that holds the selection (whose last row says what is cut off,
@@ -610,6 +620,9 @@ export function model(state, { page, now, at, cols }) {
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, openable: false, actable: [],
     terminal: state.terminal, onTerminal: false,
+    // The strip (views/frame.mjs): each tab in order, the shown one marked, a hidden one's
+    // activity. Drawn only with two tabs or more; one reads as the terminal's title row.
+    tabs: state.tabs.map((tab) => ({ name: tab.name, machine: tab.routed ? tab.machine : null, shown: tab.id === state.terminal?.id, activity: tab.activity })),
     act: state.view === "act" && state.act ? actView(state) : null,
     // The leader waits for its key (the footer is its hint), and the palette, while it is open.
     leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, page, at),

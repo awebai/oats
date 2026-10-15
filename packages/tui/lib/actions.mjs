@@ -25,15 +25,17 @@ export const ACTIONS = Object.freeze([
   { id: "workspaces", keys: ["w"], label: "workspaces" },
   // The palette (docs/tui.md, "The palette"): from every focus it is the leader and then `k`.
   { id: "palette", keys: ["ctrl+k"], label: "palette" },
-  { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal beside the list, or go to it when it is the open one, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"], ["souls", "show the selected soul's detail, and from the detail its instances, in the Souls view"]] },
+  { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"], ["souls", "show the selected soul's detail, and from the detail its instances, in the Souls view"]] },
   // The Souls view (docs/tui.md, "The Souls view"): the selected soul's instances, in the
   // Instances view, filtered by that soul.
   { id: "soul-instances", keys: ["i"], label: "instances", views: [["souls", "the selected soul's instances, in the Instances view"]] },
   // The open terminal, from the list (docs/tui.md, "Open an agent's terminal"). While the terminal
   // has the focus the TUI takes no key but the leader (tui.json's open.detachKey), so neither of
   // these is ever read there: the leader's table has its own (LEADER).
-  { id: "zoom", keys: ["z"], label: "zoom", views: [["instances", "go to the open terminal with the whole screen; the leader twice brings the list back"]] },
-  { id: "close-terminal", keys: ["c"], label: "close terminal", views: [["instances", "close the open terminal; the agent keeps running"]] },
+  { id: "zoom", keys: ["z"], label: "zoom", views: [["instances", "go to the shown terminal with the whole screen; the leader twice brings the list back"]] },
+  { id: "close-terminal", keys: ["c"], label: "close terminal", views: [["instances", "close the shown terminal and show its neighbour; the agent keeps running"]] },
+  { id: "tab-previous", keys: ["["], label: "previous tab", views: [["instances", "show the terminal of the tab before the shown one"]] },
+  { id: "tab-next", keys: ["]"], label: "next tab", views: [["instances", "show the terminal of the tab after the shown one"]] },
   // The four acts on an instance: each opens a confirmation, and nothing is done before a move and
   // a press in it. Capitals: a lower-case key is one slip away, a capital takes Shift.
   { id: "stop", keys: ["X"], label: "stop", views: [["instances", "stop the selected agent, after a confirmation"]] },
@@ -56,10 +58,10 @@ export const ACTIONS = Object.freeze([
 /** THE LEADER'S TABLE (docs/tui.md, "The leader"): the keys read after the leader (tui.json's
  *  open.detachKey) and what each does, from every focus. Fixed: tui.json's `keys` rebinds the plain
  *  keys of ACTIONS only. `does` is an action id of ACTIONS, or one of the leader's own: `previous`
- *  and `next` (the instance before or after the open terminal's, or the selection's, opened with
- *  the focus in it) and `list` (the list's focus). The leader pressed again is `list` too: it is
+ *  and `next` (the instance before or after the shown terminal's, or the selection's: its tab
+ *  shown, or opened as a new one, with the focus in it) and `list` (the list's focus). The leader pressed again is `list` too: it is
  *  the user's key, so it is not in this table. `terminal`: named in the hint only while a terminal
- *  is open, and nothing without one. */
+ *  is open, and nothing without one (the hint names the tab keys only with two tabs or more). */
 export const LEADER = Object.freeze([
   { keys: ["k", "space"], does: "palette", label: "palette" },
   { keys: ["1"], does: "instances", label: "instances" },
@@ -69,6 +71,8 @@ export const LEADER = Object.freeze([
   { keys: ["down"], does: "next", label: "next instance" },
   { keys: ["z"], does: "zoom", label: "zoom", terminal: true },
   { keys: ["w"], does: "close-terminal", label: "close terminal", terminal: true },
+  { keys: ["left"], does: "tab-previous", label: "previous tab", terminal: true },
+  { keys: ["right"], does: "tab-next", label: "next tab", terminal: true },
   { keys: ["X"], does: "stop", label: "stop" },
   { keys: ["R"], does: "restart", label: "restart" },
   { keys: ["S"], does: "start", label: "start" },

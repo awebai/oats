@@ -1,8 +1,9 @@
 // `oats tui` (preview): the loop. Events from the keyboard and from the reader go through one
 // pure reduce(state, event); what only the loop can do comes back as an effect; the frame is
 // drawn from the state. This version shows a workspace's instances, on this machine and on the
-// machines registered here, follows them, opens an agent's terminal in a panel beside the list
-// (the kernel's own viewer, in a pane of the run's private tmux server: lib/panel.mjs), stops,
+// machines registered here, follows them, opens agents' terminals as tabs of a panel beside the
+// list (up to four, each the kernel's own viewer in a pane of the run's private tmux server:
+// lib/panel.mjs; `viewers` maps each tab's instance to its window), stops,
 // starts, restarts and retires an instance after a confirmation, through the shared lifecycle
 // boundary and start rule, and spawns an agent on this machine from the shared preview and apply
 // (docs/tui.md).
@@ -28,8 +29,8 @@ const HELP = `Usage:
   ${USAGE}
 
 The OATS terminal client (preview): a full-screen view of a workspace's instances,
-on this machine and on the machines registered here. It follows them, opens an
-agent's terminal beside the list with Enter, stops, retires, starts or
+on this machine and on the machines registered here. It follows them, opens
+agents' terminals beside the list with Enter, as tabs, stops, retires, starts or
 restarts an instance (X, D, S, R) after a confirmation, and spawns an agent
 on this machine (n, or N for another of the selected one's soul).
 Keys: ? help, Enter open, w workspaces, q quit.
@@ -185,21 +186,28 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     onEntry: entered, onRoster: rostered,
     files: { ...CHANGE_FILES, dir: runDir },
   });
-  // THE OPEN TERMINAL (docs/tui.md, "Open an agent's terminal"): one at a time, in the panel.
-  // `viewing` is its viewer, `{ id, panel }` (the row's instanceId, and the panel's own id once
-  // the window exists, null before); `screenNow` the last capture (`{ lines, cursor }`), drawn
-  // until the next; `panelSize` and `panelShown` what the panel was last told.
-  let viewing = null, screenNow = null, panelSize = null, panelShown = true;
+  // THE TABS (docs/tui.md, "Tabs"): the terminals open in the panel, at most the store's
+  // TAB_LIMIT. `viewers` maps each tab's instanceId to its viewer, `{ id, panel }` (the panel's own
+  // id once the window exists, null before); the store holds their order and which is shown, and
+  // the panel shows what the store last said (`show`). `screenNow` is the shown tab's last capture
+  // (`{ lines, cursor }`), drawn until the next; `panelSize` and `panelShown` what the panel was
+  // last told.
+  const viewers = new Map();
+  let screenNow = null, panelSize = null, panelShown = true;
+  const viewerOf = (panelId) => [...viewers.values()].find((each) => each.panel === panelId) ?? null;
   const panel = effects.createPanel({
     dir: runDir, env, capture: captureRows,
-    onScreen: ({ id, screen: lines, cursor }) => { if (!ended && viewing !== null && viewing.panel === id) { screenNow = { lines, cursor }; guard.attempt(() => guard.draw()); } },
-    // The viewer ended. The store is told, whatever ended it; a terminal the person closed is no
-    // longer `viewing`, and the store says nothing of it.
+    onScreen: ({ id, screen: lines, cursor }) => { const v = viewerOf(id); if (!ended && v !== null && v.id === state.terminal?.id) { screenNow = { lines, cursor }; guard.attempt(() => guard.draw()); } },
+    // A hidden tab's agent wrote: its mark.
+    onActivity: ({ id }) => { const v = viewerOf(id); if (!ended && v !== null) heard({ activity: { id: v.id } }); },
+    // A viewer ended. The store is told, whatever ended it; a tab the person closed is no longer
+    // in `viewers`, and the store says nothing of it.
     onClosed: ({ id, status = null, stderr = "", asked = false }) => {
-      if (viewing === null || viewing.panel !== id) return;
-      const row = viewing.id;
-      viewing = null; screenNow = null;
-      heard({ returned: { id: row, status, stderr, asked } });
+      const v = viewerOf(id);
+      if (v === null) return;
+      viewers.delete(v.id);
+      if (v.id === state.terminal?.id) screenNow = null;
+      heard({ returned: { id: v.id, status, stderr, asked } });
     },
   });
   // THE ACTS (docs/tui.md, "Stopping, starting, restarting and retiring"). One lifecycle boundary
@@ -339,7 +347,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       took(reduce(state, admitted.ok ? { admitted: admitted.deployment, at: clock() } : { refused: effect.admit }, keymap));
     }
     if (effect.abandon) giveUpPreflight();
-    if (effect.close !== undefined) closeTerminal();
+    if (effect.close !== undefined) for (const id of effect.close) closeTerminal(id);
+    if (effect.show !== undefined) showTerminal(effect.show);
     if (effect.open) open(effect.open);
     if (effect.panel !== undefined) {
       const ready = preflight;
@@ -437,7 +446,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
    *  viewer that ended, with the panel's refusal: no tmux (or one too old), or tmux's own words.
    *  Nothing is lent: the reads and the screen go on. */
   function view(id, bin, args) {
-    const mine = viewing = { id, panel: null };
+    const mine = { id, panel: null };
+    viewers.set(id, mine);
+    screenNow = null;
     const size = guard.size(), area = composed().made.terminal ?? { cols: size.cols, rows: Math.max(1, size.rows - 6) };
     panelSize = { cols: area.cols, rows: area.rows };
     // Shown: the panel keeps hidden or shown across its viewers, and the last one may have been
@@ -447,27 +458,37 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     Promise.resolve()
       .then(() => panel.open({ argv: [process.execPath, bin, ...args], cols: area.cols, rows: area.rows }))
       .then(({ id: made }) => {
-        if (viewing !== mine) return;
+        if (viewers.get(id) !== mine) return;
         mine.panel = made;
         // A frame of another size while the window was being made told a panel with no window yet.
         if (panelSize.cols !== area.cols || panelSize.rows !== area.rows) panel.resize(panelSize.cols, panelSize.rows);
         heard({ shown: { id } });
       },
-        (error) => { if (viewing === mine) { viewing = null; heard({ returned: { id, status: null, stderr: typeof error?.detail === "string" ? error.detail : "", refused: error?.code === "E_PANEL_TMUX" ? "tmux" : "start" } }); } });
+        (error) => { if (viewers.get(id) === mine) { viewers.delete(id); heard({ returned: { id, status: null, stderr: typeof error?.detail === "string" ? error.detail : "", refused: error?.code === "E_PANEL_TMUX" ? "tmux" : "start" } }); } });
   }
-  /** Close the open terminal's viewer (also one whose window is still being made): the agent keeps
-   *  running, and the panel reports the end as asked for, which nobody waits for. */
-  function closeTerminal() {
-    if (viewing === null) return;
-    viewing = null; screenNow = null;
-    panel.close();
+  /** Close tab `id`'s viewer (also one whose window is still being made: the open under way): the
+   *  agent keeps running, and the panel reports the end as asked for, which nobody waits for. */
+  function closeTerminal(id) {
+    const v = viewers.get(id);
+    if (v === undefined) return;
+    viewers.delete(id);
+    if (v.panel === null) panel.close(); else panel.close(v.panel);
+    screenNow = null;
+  }
+  /** Tab `id` shown in the panel, as the store says: its screen is captured afresh, and the one
+   *  drawn until then is the old tab's no longer. */
+  function showTerminal(id) {
+    const v = viewers.get(id);
+    if (v === undefined || v.panel === null) return;
+    screenNow = null;
+    panel.show(v.panel);
   }
   /** The panel told what the frame gives the terminal: shown or not (no capture runs while it is
    *  hidden, and one runs when it shows again), and its size (the viewer's window follows it). */
   function fitPanel(given) {
     // A view that draws no terminal (the help, the switcher, a confirmation) gives none.
     const area = given ?? null;
-    if (viewing === null) return;
+    if (viewers.size === 0) return;
     if ((area !== null) !== panelShown) { panelShown = area !== null; panel.setVisible(panelShown); }
     if (area !== null && (area.cols !== panelSize.cols || area.rows !== panelSize.rows)) { panelSize = { cols: area.cols, rows: area.rows }; panel.resize(area.cols, area.rows); }
   }
@@ -528,7 +549,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     },
     onResize() { full = true; guard.draw(); },
     // Ctrl+L and the return from a stop: the whole screen, and the open terminal captured afresh.
-    onRedraw() { full = true; if (viewing !== null) panel.refresh(); guard.draw(); },
+    onRedraw() { full = true; if (viewers.size) panel.refresh(); guard.draw(); },
     // A cycle in flight when the process stops is no evidence about the deployment (lib/read.mjs):
     // it is dropped before the stop, and again after a stop nobody here asked for; the return
     // reads at once.
@@ -536,8 +557,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     // timeout. The person opens the agent again.
     // The open terminal's server and viewer live on through a stop; the panel stops sending output
     // while nothing reads it, and captures afresh on the way back.
-    onStop() { stopPreflight(); dropReads(); if (viewing !== null) panel.pause(); },
-    onResume(asked) { if (!asked) { stopPreflight(); dropReads(); } if (viewing !== null) panel.resume(); refresh({ live: true }); },
+    onStop() { stopPreflight(); dropReads(); if (viewers.size) panel.pause(); },
+    onResume(asked) { if (!asked) { stopPreflight(); dropReads(); } if (viewers.size) panel.resume(); refresh({ live: true }); },
     // On the way out the confirmation is closed, the private tmux server is ended (its viewer with
     // it) and the reads end; a change in flight is let go, never signalled (lib/read.mjs
     // changeExec), and named after the screen is left.

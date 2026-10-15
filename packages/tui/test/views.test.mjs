@@ -1412,7 +1412,7 @@ test("the help lists every action of the table it is given with its keys, and an
   const lines = helpLines(golden());
   // An action that does one thing in each view has a line per view, its keys on each.
   for (const action of ACTIONS) for (const said of action.views ? action.views.map(([, words]) => words) : [action.label]) assert.equal(pair(lines, keysLabel(action), said), true, `${action.id}: ${keysLabel(action)} ${said}`);
-  for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["2", "souls"], ["3", "capabilities"], ["w", "workspaces"], ["Enter", "open the selected agent's terminal beside the list, or go to it when it is the open one, in the list of instances"], ["z", "go to the open terminal with the whole screen; the leader twice brings the list back"], ["c", "close the open terminal; the agent keeps running"], ["Enter", "open the selected workspace, in the switcher"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
+  for (const [keys, label] of [["Up, k", "up"], ["Down, j", "down"], ["g, Home", "first"], ["G, End", "last"], ["PageUp", "page up"], ["PageDown", "page down"], ["Tab", "detail"], ["/", "filter"], ["r", "refresh"], ["1", "instances"], ["2", "souls"], ["3", "capabilities"], ["w", "workspaces"], ["Enter", "open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances"], ["z", "go to the shown terminal with the whole screen; the leader twice brings the list back"], ["c", "close the shown terminal and show its neighbour; the agent keeps running"], ["[", "show the terminal of the tab before the shown one"], ["]", "show the terminal of the tab after the shown one"], ["Enter", "open the selected workspace, in the switcher"], ["?", "help"], ["Esc", "close"], ["q, Ctrl+C", "quit"], ["Ctrl+Z", "suspend"], ["Ctrl+L", "redraw"]]) {
     assert.equal(pair(lines, keys, label), true, `${keys} ${label}`);
   }
   const config = effectiveConfig({ keys: { quit: ["x"], filter: [], refresh: ["r", "f5"], suspend: [] } });
@@ -2780,9 +2780,9 @@ test("while another machine is asked first the footer says Esc gives the open up
 test("the help lists Enter once per view with what it does there, the keys of the open terminal and the digits of the views, under the agent's line the leader twice, what the terminal takes and where the keys are listed, and the leader's own section with every key of its table", () => {
   const lines = helpLines(openable()).map((line) => line.trim());
   const text = lines.join(" ").replace(/ +/g, " ");
-  assert.equal(text.includes("Enter open the selected agent's terminal beside the list, or go to it when it is the open one, in the list of instances C-\\ C-\\ takes the focus from the terminal back to the list; the agent keeps running. While the terminal has the focus every other key goes to the agent, Ctrl+C and Ctrl+Z too. One terminal is open at a time. It has no scrollback but the viewer's own, and no mouse. docs/tui.md has the keys that can be the leader."), true, text);
-  assert.equal(text.includes("z go to the open terminal with the whole screen; the leader twice brings the list back"), true);
-  assert.equal(text.includes("c close the open terminal; the agent keeps running"), true);
+  assert.equal(text.includes("Enter open the selected agent's terminal as a tab beside the list, or show its tab when it has one, in the list of instances C-\\ C-\\ takes the focus from the terminal back to the list; the agent keeps running. While the terminal has the focus every other key goes to the agent, Ctrl+C and Ctrl+Z too. Up to 4 terminals are open at a time, each a tab. They have no scrollback but the viewer's own, and no mouse. docs/tui.md has the keys that can be the leader."), true, text);
+  assert.equal(text.includes("z go to the shown terminal with the whole screen; the leader twice brings the list back"), true);
+  assert.equal(text.includes("c close the shown terminal and show its neighbour; the agent keeps running"), true);
   assert.equal(pair(lines, "Enter", "open the selected workspace, in the switcher"), true);
   assert.equal(pair(lines, "Enter", "show the selected soul's detail, and from the detail its instances, in the Souls view"), true);
   // The keys' table names Enter once per view; the spawn prompt's section has its own Enter, once per step.
@@ -2799,6 +2799,7 @@ test("the help lists Enter once per view with what it does there, the keys of th
     "C-\\ then one of these keys, from every focus; a terminal too:",
     "k, Space  palette", "1  instances", "2  souls", "3  capabilities", "Up  previous instance", "Down  next instance",
     "z  zoom, while a terminal is open", "w  close terminal, while a terminal is open",
+    "Left  previous tab, while a terminal is open", "Right  next tab, while a terminal is open",
     "X  stop", "R  restart", "S  start", "D  retire", "n  spawn", "N  spawn another", "/  filter", "o  workspaces", "?  help",
     "Esc  the list; the leader again does the same",
   ]);
@@ -3179,9 +3180,10 @@ test("while the palette is open no terminal is drawn, even with one open, and th
     assert.equal(d.lines.some((line) => line.includes("$ hello") || line.includes("│")), false, `${sz.cols}: nothing of the agent's screen, and no panes`);
     assert.equal(footer(d, sz), `${LEAD}Enter run   Up/Down move   Esc close`, `${sz.cols}`);
   }
+  // dev-a is the shown tab and the first recent entry, so the second instance is selected (T2).
   assert.deepEqual(draw(opened, S80).lines.slice(2, 15), [
     "─".repeat(80), ">",
-    edged("> ● dev-a", "instance"), edged("  ● dev-b", "instance"),
+    edged("  ● dev-a", "instance"), edged("> ● dev-b", "instance"),
     edged("    Instances", "view"), edged("    Souls", "view"), edged("    Capabilities", "view"),
     edged("    Stop dev-a", "act"), edged("    Retire dev-a", "act"),
     edged("    Spawn an agent", "command"), edged("    Workspaces", "command"), edged("    Refresh", "command"), edged("    Help", "command"),
@@ -3278,6 +3280,8 @@ test("at 60 columns the help's `The leader` section has every row whole: the sen
       "  Down       next instance",
       "  z          zoom, while a terminal is open",
       "  w          close terminal, while a terminal is open",
+      "  Left       previous tab, while a terminal is open",
+      "  Right      next tab, while a terminal is open",
       "  X          stop",
       "  R          restart",
       "  S          start",

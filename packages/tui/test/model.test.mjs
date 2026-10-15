@@ -2378,21 +2378,24 @@ test("the open terminal in the store: Enter opens it with the focus; the leader 
   assert.deepEqual([leaderTwice(zoomed.state).state.terminal.focus, leaderTwice(zoomed.state).state.terminal.zoom], ["list", false]);
   // c: closed, as the person asked, so the end the panel reports later says nothing.
   const closed = key(back.state, "c");
-  assert.deepEqual([closed.state.terminal, closed.effect], [null, { close: id }]);
+  assert.deepEqual([closed.state.terminal, closed.effect], [null, { close: [id] }]);
   assert.equal(reduce(closed.state, { returned: { id, status: null, stderr: "", asked: true } }).state, closed.state);
   // z and c with no terminal open do nothing.
   for (const k of ["z", "c"]) assert.deepEqual([key(state, k).state, key(state, k).effect], [state, null], k);
 });
 
-test("Enter on another openable row while a terminal is open closes it and opens that one: one terminal at a time, the close before the open", () => {
+test("Enter on another openable row while a terminal is open opens that one as a tab of its own after it, shown with the focus; the first stays open, hidden (T2: nothing is closed)", () => {
   const state = on(TWO(), "dev-a"), a = instanceId(panelRow(state, "dev-a").row), b = instanceId(panelRow(state, "dev-b").row);
   const open = leaderTwice(reduce(key(state, "enter").state, { shown: { id: a } }).state).state;
   const other = key(on(open, "dev-b"), "enter");
-  assert.deepEqual(Object.keys(other.effect), ["close", "open"]);
-  assert.deepEqual([other.effect.close, other.effect.open.id], [a, b]);
+  assert.deepEqual(Object.keys(other.effect), ["open"]);
+  assert.equal(other.effect.open.id, b);
   assert.deepEqual([other.state.terminal.id, other.state.terminal.focus, other.state.terminal.status], [b, "terminal", "starting"]);
-  // The closed one's end, reported after, is not the open one's: nothing changes.
-  assert.equal(reduce(other.state, { returned: { id: a, status: 1, stderr: "x", asked: true } }).state, other.state);
+  assert.deepEqual(other.state.tabs.map((tab) => [tab.id, tab.status]), [[a, "open"], [b, "starting"]]);
+  // An end the person asked for, of a tab that is no longer one, changes nothing.
+  const closed = reduce(other.state, { shown: { id: b } }).state;
+  const gone = { ...closed, tabs: Object.freeze(closed.tabs.filter((tab) => tab.id !== a)) };
+  assert.equal(reduce(gone, { returned: { id: a, status: 1, stderr: "x", asked: true } }).state, gone);
 });
 
 test("the model hands the views the terminal and whether the selected row is its own; the terminal is the store's beside the roster, never part of what the roster is made from (MADE_FROM)", () => {
