@@ -61,9 +61,11 @@ function envelopeOf(stdout) {
   return envelope?.schemaVersion === 1 && typeof envelope.ok === 'boolean' ? envelope : null;
 }
 /** What a refusal said, for each error `refusal` returns from its last line: the envelope's own
- * `code`, `message` and `details.fix`, each null where it gave no string. Kept beside the error and
- * not on it, so the error thrown has the properties it always had; read by `preflightFailure` only. */
-const keptRefusals = new WeakMap();
+ * `code`, `message` and `details.fix`, each null where it gave no string. Kept on the error under this
+ * module's own symbol, not enumerable and not writable, so the error thrown has the enumerable
+ * properties it always had, the module holds no state, and an error made by hand (or a copy of one)
+ * carries none; read by `preflightFailure` only. */
+const KEPT_REFUSAL = Symbol('kept refusal');
 const stringOrNull = value => (typeof value === 'string' ? value : null);
 /** A refusal envelope as a coded error. The CLI reports ssh's own failure as E_SSH: a transport
  * failure, unless its details say ssh never started on this computer (nothing to retry); a 0.31
@@ -74,7 +76,7 @@ function refusal(envelope) {
   if (code === 'E_SSH') return unreachable();
   if (code === 'E_HERDR_REMOVED') return herdrRemoved(typeof message === 'string' && message ? message : HERDR_REMOVED);
   const error = coded(typeof code === 'string' && code ? code : 'E_TERM_OPEN_FAILED', message || 'remote session inspection failed');
-  keptRefusals.set(error, { code: stringOrNull(code), message: stringOrNull(message), fix: stringOrNull(details?.fix) });
+  Object.defineProperty(error, KEPT_REFUSAL, { value: Object.freeze({ code: stringOrNull(code), message: stringOrNull(message), fix: stringOrNull(details?.fix) }) });
   return error;
 }
 /** What a failed preflight says. `error` is what `prepareRemoteTerm` threw; `server` is the label a
@@ -92,7 +94,7 @@ function refusal(envelope) {
  * message of a CLI that did not start holds a path and is never shown. */
 export function preflightFailure(error, server) {
   const code = terminalFailure(error?.code).code;
-  const kept = code === 'E_TERM_OPEN_FAILED' ? keptRefusals.get(error) : undefined;
+  const kept = code === 'E_TERM_OPEN_FAILED' && error !== null && typeof error === 'object' && Object.hasOwn(error, KEPT_REFUSAL) ? error[KEPT_REFUSAL] : undefined;
   const said = kept && (kept.code !== null || kept.message !== null || kept.fix !== null) ? { ...kept } : null;
   return { code, sentence: terminalMessage(error?.code, server), said };
 }
