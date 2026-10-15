@@ -3090,13 +3090,15 @@ function retireCmd() {
     revalidate = () => {
       try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { planFailure = e; throw e; }
       if (fresh.planRevision !== planRev) throw (stalePlan = Object.assign(new Error(`the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`), { code: "E_PLAN_STALE", details: { plan: fresh } }));
-      return { plannedExtraWorktrees: fresh.facts.extraWorktrees, children: fresh.facts.children };
+      return { plannedExtraWorktrees: fresh.facts.extraWorktrees, children: fresh.facts.children, ambiguous: fresh.facts.ambiguous };
     };
   } else {
     // A plain or --self retire reads its recorded children the same way: under the claim, as they
     // are when the retire starts (an earlier retire that kept the home has repaired lineage by
     // then), and none when there are none.
-    revalidate = () => { const recorded = descendantsOf(root, name); return recorded.length ? { children: recorded } : {}; };
+    // The instances the plan lists under `ambiguous` go with them: the retire does not act on
+    // them, and says what it left the ones attached to a tree it moved or removed with.
+    revalidate = () => { const recorded = descendantsOf(root, name); return { ...(recorded.length ? { children: recorded } : {}), ...(recorded.ambiguous?.length ? { ambiguous: recorded.ambiguous } : {}) }; };
   }
   let r;
   try { r = retireInstance(root, name, { home: homeFlag, self: isSelf, discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), [RETIRE_UNDER_CLAIM]: revalidate }); }
@@ -3155,9 +3157,11 @@ function retireCmd() {
     process.exit(1);
   }
   console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}`);
-  // An attached child the retire repointed to the retained worktree (#718), as its link now reads.
-  const followsWorktree = (k) => { if (r.retention?.worktree !== "retained") return false; try { return readlinkSync(join(k.home, "work")) === r.retention.movedTo; } catch { return false; } };
-  for (const k of r.childrenStopped || []) console.log(`  child ${k.instance}: ${k.alreadyIdle ? "already idle" : "stopped"}${followsWorktree(k) ? `; its work now links to the retained worktree ${r.retention.movedTo}` : ""}`);
+  // An attached child the retire repointed to a retained worktree, work/ (#718) or an extra tree
+  // (#964), as its link now reads.
+  const retainedAt = [...(r.retention?.worktree === "retained" ? [r.retention.movedTo] : []), ...(r.extraWorktrees || []).filter((t) => t.outcome === "retained").map((t) => t.movedTo)];
+  const followsWorktree = (k) => { try { const to = readlinkSync(join(k.home, "work")); return retainedAt.includes(to) ? to : null; } catch { return null; } };
+  for (const k of r.childrenStopped || []) { const to = followsWorktree(k); console.log(`  child ${k.instance}: ${k.alreadyIdle ? "already idle" : "stopped"}${to ? `; its work now links to the retained worktree ${to}` : ""}`); }
   // Preserving work and not saying so leaves the operator believing it is gone,
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const line of workRecoveryLines(r)) console.log(line);
@@ -4924,7 +4928,9 @@ Usage:
                                             again with the same arguments: a no-op; --preview:
                                             the clone, path, branch, base and hooks, nothing done
   oats worktree remove --purpose <p> [--json]  git worktree remove of a tree made by add (a dirty
-                                            tree is refused: E_WORKTREE_DIRTY); the branch is kept
+                                            tree is refused: E_WORKTREE_DIRTY; so is the work of an
+                                            attached instance whose session is running or cannot
+                                            be read: E_CHILDREN_RUNNING); the branch is kept
   oats readiness (--soul <n> | --home <abs>) [--policy] [--json]
                                              readinessApi 2 for a soul or an instance home:
                                              installed | configured | member | providers, each

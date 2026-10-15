@@ -2542,7 +2542,11 @@ what could not be printed is dropped. Its result:
 
 `remove` answers `{purpose, path, removed: true, rolledBack, branch,
 branchKept, branchKeptReason?, warnings?}`. After removing a `ready` tree,
-`rolledBack` is `false` and `branchKept` is `true`. When it completed an
+`rolledBack` is `false` and `branchKept` is `true`. When an instance whose
+session is stopped was [attached](souls-and-instances.md#extra-trees) to the
+removed tree, `warnings` carries one string for it: `<instance>: its work
+was <tree>, which was removed; its work link <home>/work now points at a
+path that is gone`. With no attached instance the answer is what it was. When it completed an
 interrupted add's rollback, `rolledBack` is `true` and `branchKept` says
 whether the branch still exists. The rollback deletes the branch only when
 that add created it, no worktree has it checked out, and it still points at
@@ -2654,6 +2658,7 @@ A failed `add` reports the same facts about its rollback in `details`:
 | `E_REQUIRED_HOOK_FAILED`, `E_HOOK_ENVIRONMENT_CONTRACT` | a required `worktree` hook failed or timed out, or a hook answered `env`; the tree is removed (`details.hooks`, `details.rolledBack`) |
 | `E_INTERRUPTED` | SIGINT, SIGTERM or SIGHUP while the hooks ran; the tree is removed and the process exits 128 + the signal number (`details.signal`) |
 | `E_WORKTREE_DIRTY` | `remove`: Git refused a tree with uncommitted or untracked work (`details.git` is Git's message); the record is kept. Commit and push, or discard, then retry |
+| `E_CHILDREN_RUNNING` | `remove`: an instance attached to the tree has a session that is running, or that cannot be read. Answered under the purpose's claim, before Git is asked anything: nothing is removed and the record is kept. `details: {purpose, path, children: [{instance, home, session}]}`, `session` being `"running"` or `"unknown"`; only the instances that refuse are listed. The message names each one and what was seen, and the step: `oats instance stop <instance>`, or retire it, then remove again. No flag removes anyway. It is the code [a retire](#retire-children-running) answers, with other `details`: a retire answers it for a child it asked to stop and that did not; `remove` for an attached instance it found running or unread, and it asks nobody to stop, so there is no `childrenStopped` |
 | `E_WORK_PRESERVATION_FAILED` | `remove`: Git refused for another reason, or the tree is still there; the record is kept |
 | `E_LIFECYCLE_FAILED` | an error that is not the kernel's; with [`details.cause`](#kernel-codes) when it has a code of its own or is a defect, and without it when it is a refusal without a code. When it is the purpose's claim that could not be taken (`<home>/.oats/trees` cannot be made, the claim's file cannot be written), the message is `the claim <path> could not be taken (…); nothing was done`. Also a command that was refused the claim after its takeover had ended a dead command's git step: the message names the group it ended first, then the refusal, and `details` are that refusal's (a refusal of the kernel's has no `details.cause`; anything else has it by the same rule) |
 
@@ -4337,7 +4342,9 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   - of other homes: the children as the plan names them (`instance`,
     `agent`, `home`; a child's agent is the name its soul's file gives),
     the edges that could not be followed (`facts.ambiguous`, whole) and the
-    children attached to this home's `work/`.
+    instances attached to this home's `work/` and to each of its extra
+    trees, the recorded children and those of a name that is not unique
+    alike: the plan's notes name them (#964).
 
   A key that is derived is bound through what it is derived from:
   `facts.ownWorktree` and `defaults.retainWorktree` (the reading), and
@@ -4538,6 +4545,32 @@ oats retire <instance> --plan [--home <abs>] [--dir <d>] --json
   --discard-worktree the worktree is removed and their work link will
   dangle`. It holds for either choice; no other key changes. A relink that
   fails is a string in the receipt's `warnings`.
+- The note of an extra tree that recorded children are attached to (their
+  `work` is a link to that tree) names them and says what the retire leaves
+  them with. For a tree that would be removed it ends `; attached child
+  instance(s) <names> use it as their work, and their work link would then
+  point at a path that is gone`; for one that would be re-homed, `; attached
+  child instance(s) <names> use it as their work, and the retire repoints
+  their work link to it`. A tree the retire refuses is neither moved nor
+  removed, and its note says nothing of them. Names too long for the note
+  give way to `<n> of the recorded children`. They are strings in `notes`: no
+  key changes. Who is attached to each tree is part of `planRevision`
+  ([what the revision binds](#retire-revision-work)).
+- The retire does not act on an instance listed under `ambiguous`, and one
+  that is attached to a tree of this home is named with what that leaves it
+  with. An extra tree's note gains a clause of its own, after the one for
+  the recorded children: `; attached instance(s) <names>, listed under
+  ambiguous, use it as their work: the retire does not stop them, and their
+  work link would then point at a path that is gone` for a tree that would
+  be removed, and `…: the retire neither stops them nor repoints their work
+  link, which would then point at a path that is gone (the tree would be at
+  <movedTo>)` for one that would be re-homed. For `work/` it is a note of
+  its own, in a worktree-mode plan: `attached instance(s) <names>, listed
+  under ambiguous, use this home's work/ as their work: the retire neither
+  stops them nor repoints their work link, which will then point at a path
+  that is gone, whether the worktree is retained (the receipt names where)
+  or removed with --discard-worktree`. The note for the recorded children
+  above is unchanged.
 - `facts.recordedBranch` is `null` where the home records the word `"HEAD"`
   (a detached checkout or attached spawn before 0.49.0, #641): it is not a
   branch name, so `facts.work.drift` is `false` for it as well.
@@ -4648,6 +4681,29 @@ A first retire prints the **raw receipt**, not an envelope:
   removed unplanned (OATS 0.52.0; it was `E_PLAN_STALE`, a code that says
   nothing happened, answered after the hooks: #895).
   The key is additive.
+- `warnings` also says what the retire left the attached children of a tree
+  it moved or removed with, one string per child, for `work/` and for each
+  extra tree. A child that could not be repointed to a retained tree:
+  `<child>: its work link could not be repointed to the retained worktree
+  <movedTo> (<why>) and still points at <link>; repoint it by hand: ln -sfn
+  …`, or `<child>: its attachment changed during the retire, so its work was
+  left as it is now and not repointed to the retained worktree <movedTo>;
+  inspect <home>/work`. A child of a tree the retire removed (a clean extra
+  tree, or `work/` with `--discard-worktree`): `<child>: its work was
+  <tree>, which this retire removed (<why>); its work link <home>/work now
+  points at a path that is gone`. A child that was repointed has no string:
+  the text summary's `child <name>` line says where its work now links. No
+  key is new.
+
+  An attached instance the plan lists under `ambiguous` is not stopped and
+  not repointed, and has a string for each tree that was moved or removed:
+  the sentence above for a removed tree, followed by ` (it records this
+  instance as its parent under a name that is not unique, so the retire did
+  not stop it)`, or, for a re-homed tree, `<instance>: its work was <tree>,
+  which this retire re-homed to <movedTo>; its work link <home>/work was not
+  repointed and now points at a path that is gone (it records … did not stop
+  it); to repoint it by hand: ln -sfn …`. A `--self` retirement's receipt
+  does not carry these strings.
 - `workRecovery`: `{path, classes, bytes, home, outputs?, repoCopy?,
   notCopied?, afterHooks?}`, present when a recovery was written. One retire
   writes at most one recovery directory, and `path` is that directory.
@@ -4736,7 +4792,7 @@ nothing is established. A plain or
 always does (`[]` when there are none). One child still running after the
 grace, or whose stop could not be established (`E_SESSION_UNAVAILABLE`,
 `E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY`, …), refuses everything: nothing is retired, exit 1,
-`E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
+<a id="retire-children-running"></a>`E_CHILDREN_RUNNING {childrenStopped}` (the text form names each child and its
 `code`, always a [kernel code](#kernel-codes); the message says `still running after a bounded stop`
 only of a child whose row lists processes in `stillRunning`, and `<child> could not be stopped
 (<code>)` of any other, OATS 0.52.0). **`--force` does not bypass it**: `--force` covers incomplete
