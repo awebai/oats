@@ -2,7 +2,7 @@
 // FAKE_TMUX_HOME set to a temp directory of its own; everything this fake keeps is there:
 //   calls.jsonl   one JSON line per invocation ({ pid, pgid, argv, env, commands }) and per
 //                 command a control client was sent ({ pid, control })
-//   plan.json     what to do (optional): { version, newSession: { fail }, start: { failAt },
+//   plan.json     what to do (optional): { version, newSession: { fail }, start: { failAt, hold },
 //                 startDelayMs, holdCapture, screen: [lines], cursor,
 //                 window: { status, stderr, closeAtOnce }, killPaneSilent }
 //   state.json    the window counter, shared by the invocations of one test
@@ -121,6 +121,9 @@ async function controlMode() {
   // it waits for it. A command that fails ends the list there; a new-session that fails ends the
   // client (stderr, %exit).
   setTimeout(async () => {
+    // `start.hold`: the list is not answered until the test writes start.go (never, to end the
+    // panel while its start is under way, whatever the timing).
+    while (plan.start?.hold && !existsSync(join(home, "start.go"))) await new Promise((resolve) => setTimeout(resolve, 5));
     const failAt = plan.newSession?.fail ? 0 : plan.start?.failAt ?? -1;
     for (const [i, command] of parsed.entries()) {
       const n = ++number, t = now();

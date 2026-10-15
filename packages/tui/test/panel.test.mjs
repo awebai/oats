@@ -72,17 +72,21 @@ function frameTimers() {
     fire() { const all = [...pending.values()]; pending.clear(); for (const t of all) t.fn(); },
   };
 }
-/** A panel over a world, recording what it says. */
+/** A panel over a world, recording what it says, and what its control clients printed as the
+ *  panel reads it (`heard()`): a listener of the same stream, added before the panel's own, so a
+ *  line in it has reached the panel too. That the fake WROTE a line (world.done()) does not mean
+ *  the panel has read it yet. */
 function panelOf(world, more = {}) {
-  const timers = frameTimers(), screens = [], closed = [], captured = [];
+  const timers = frameTimers(), screens = [], closed = [], captured = [], heard = [];
+  const listening = (...args) => { const child = spawn(...args); child.stdout?.on("data", (chunk) => heard.push(chunk.toString("utf8"))); return child; };
   const panel = createPanel({
-    dir: () => world.run, tmux: world.tmux, timers, pid: 4242, clock: () => "2026-10-15T00:00:00.000Z",
+    spawn: listening, dir: () => world.run, tmux: world.tmux, timers, pid: 4242, clock: () => "2026-10-15T00:00:00.000Z",
     env: { ...process.env, TMUX: "/tmp/tmux-1000/default,1,0", TMUX_PANE: "%7" },
     capture: (text, size) => { captured.push({ text, size }); return { built: text, size }; },
     onScreen: (event) => screens.push(event), onClosed: (event) => closed.push(event), ...more,
   });
   panels.push(panel);
-  return { panel, timers, screens, closed, captured };
+  return { panel, timers, screens, closed, captured, heard: () => heard.join("") };
 }
 const VIEWER = [process.execPath, "/opt/oats/bin/oats.mjs", "session", "attach", "--home", "/home/agent"];
 /** A panel with one viewer open and its first (fresh) capture drawn: everything settled. */
@@ -106,7 +110,7 @@ describe("the panel", { concurrency: 8 }, () => {
     const calls = world.invocations();
     const shape = (call) => (call.flags.includes("-V") ? "version" : call.commands.map((command) => command[0]).join(","));
     assert.deepEqual(calls.map(shape), ["version",
-      "new-session,set-option,set-option,set-option,set-option,set-option,set-option,set-option,unbind-key,unbind-key,unbind-key,unbind-key",
+      "new-session,set-option,set-option,set-option,set-option,set-option,set-option,unbind-key,unbind-key,unbind-key,unbind-key",
       "set-option,new-window"]);
     assert.ok(calls[1].flags.includes("-C"), "the server is started by the control client itself");
     // Every call: -u, no configuration, the run's own socket; never TMUX or TMUX_PANE.
@@ -122,9 +126,12 @@ describe("the panel", { concurrency: 8 }, () => {
       ["new-session", "-s", SESSION, "-x", "80", "-y", "24", "/bin/sh", "-c", KEEPER_SCRIPT, "oats-tui-keeper", alive],
       ["set-option", "-s", "exit-unattached", "on"],
       ["set-option", "-s", "escape-time", "0"], ["set-option", "-g", "status", "off"], ["set-option", "-g", "prefix", "None"], ["set-option", "-g", "prefix2", "None"],
-      ["set-option", "-gw", "window-size", "manual"], ["set-option", "-gw", "remain-on-exit", "off"],
+      ["set-option", "-gw", "remain-on-exit", "off"],
       ["unbind-key", "-a"], ["unbind-key", "-a", "-T", "root"], ["unbind-key", "-a", "-T", "copy-mode"], ["unbind-key", "-a", "-T", "copy-mode-vi"]]);
     assert.deepEqual(calls[1].commands, startCommands({ alive }));
+    // No global window-size: tmux 3.3a to 3.5a crash in the next new-window when it is manual (CI's
+    // 3.4 did). Each viewer's window is made manual by its own resize-window.
+    assert.equal(calls[1].commands.some((command) => command.includes("window-size")), false, "no global window-size");
     // The keeper's FIFO is made, 0600, and its write end held, BEFORE the server starts: a keeper
     // that finds no writer means the TUI is gone, never that it has not come yet.
     assert.deepEqual(world.calls().find((call) => "alive" in call).alive, { fifo: true, mode: 0o600, held: true });
@@ -177,14 +184,14 @@ describe("the panel", { concurrency: 8 }, () => {
   });
 
   test("no poll timer: idle, nothing is armed; the open pane's %output arms one tick of FRAME_MS and the capture follows it; another pane's output arms nothing", async () => {
-    const { world, panel, timers, screens, id } = await opened();
+    const { world, panel, timers, screens, id, heard } = await opened();
     assert.equal(timers.count, 0, "idle: no timer");
     world.emit("%output %9 another pane");
     world.emit("%output %1 hello");
     await waitFor("the tick", () => timers.count === 1);
     assert.deepEqual(timers.delays(), [FRAME_MS]);
     world.emit("%output %1 more");
-    await waitFor("the fake to say it all", () => world.done().length === 3);
+    await waitFor("the panel to hear it all", () => heard().includes("%output %1 more\n"));
     assert.equal(timers.count, 1, "a burst arms one tick");
     timers.fire();
     await waitFor("the capture", () => screens.length === 2);
@@ -197,14 +204,14 @@ describe("the panel", { concurrency: 8 }, () => {
   });
 
   test("one capture in flight: output during a capture marks the screen stale and exactly one more capture follows it", async () => {
-    const { world, panel, timers, screens } = await opened();
+    const { world, panel, timers, screens, heard } = await opened();
     world.plan({ holdCapture: true });
     world.emit("%output %1 a");
     await waitFor("the tick", () => timers.count === 1);
     timers.fire();
     await waitFor("the capture asked", () => count(world.control(), "capture-pane") === 2);
     for (const n of [1, 2, 3]) world.emit(`%output %1 burst ${n}`);
-    await waitFor("the burst said", () => world.done().length === 4);
+    await waitFor("the panel to hear the burst", () => heard().includes("%output %1 burst 3\n"));
     assert.equal(timers.count, 0, "no tick while a capture is in flight");
     assert.equal(count(world.control(), "capture-pane"), 2);
     world.inject("release");
@@ -228,11 +235,10 @@ describe("the panel", { concurrency: 8 }, () => {
   });
 
   test("hidden, output only marks the screen stale; shown again, one fresh capture; refresh() captures now", async () => {
-    const { world, panel, timers, screens } = await opened();
+    const { world, panel, timers, screens, heard } = await opened();
     panel.setVisible(false);
     world.emit("%output %1 unseen");
-    await waitFor("the output said", () => world.done().length === 1);
-    await sleep(30);
+    await waitFor("the panel to hear the output", () => heard().includes("%output %1 unseen\n"));
     assert.equal(timers.count, 0);
     assert.equal(count(world.control(), "capture-pane"), 1);
     panel.setVisible(true);
@@ -245,12 +251,11 @@ describe("the panel", { concurrency: 8 }, () => {
   });
 
   test("pause() asks tmux for no output and captures nothing; resume() asks for it again and captures fresh", async () => {
-    const { world, panel, timers, screens } = await opened();
+    const { world, panel, timers, screens, heard } = await opened();
     panel.pause();
     world.emit("%output %1 while stopped");
     await waitFor("the pause sent", () => world.control().includes("refresh-client -f no-output"));
-    await waitFor("the output said", () => world.done().length === 1);
-    await sleep(30);
+    await waitFor("the panel to hear the output", () => heard().includes("%output %1 while stopped\n"));
     assert.equal(timers.count, 0);
     panel.resume();
     await waitFor("the fresh capture", () => screens.length === 2);
@@ -424,7 +429,7 @@ describe("the panel", { concurrency: 8 }, () => {
   });
 
   test("end() while the start is under way: the open rejects (E_PANEL_ENDED), the starting client is ended, and nothing is sent to it", async () => {
-    const world = makeWorld({ startDelayMs: 400 }), { panel } = panelOf(world);
+    const world = makeWorld({ start: { hold: true } }), { panel } = panelOf(world);
     const opening = panel.open({ argv: VIEWER, cols: 50, rows: 10 });
     await waitFor("the starting client", () => world.invocations().some((call) => call.flags.includes("-C")));
     const starter = world.invocations().find((call) => call.flags.includes("-C")).pid;
