@@ -91,7 +91,7 @@ function table(pairs, cols, look) {
  *  does not restate the grammar). */
 export const OPEN_RULES = Object.freeze([
   "While the terminal has the focus every other key goes to the agent, Ctrl+C and Ctrl+Z too.",
-  "One terminal is open at a time. It has no scrollback but the viewer's own, and no mouse.",
+  "Up to 4 terminals are open at a time, each a tab. They have no scrollback but the viewer's own, and no mouse.",
   "docs/tui.md has the keys that can be the leader.",
 ]);
 /** The rows under the line of `open`, in `room` cells: the leader pressed twice, which takes the

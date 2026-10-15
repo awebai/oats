@@ -1,10 +1,12 @@
-// An agent's terminal in a panel beside the list. The kernel's viewer (`oats session attach`, a
-// node process that runs a tmux client attached to the agent's own tmux server) runs in a pane of
-// a PRIVATE tmux server that this TUI run owns; the TUI keeps ONE control-mode client of that
-// server for the run, captures the pane when tmux says it changed, and sends the keys to it.
+// Agents' terminals in a panel beside the list, as tabs. The kernel's viewer (`oats session
+// attach`, a node process that runs a tmux client attached to the agent's own tmux server) runs in
+// a pane of a PRIVATE tmux server that this TUI run owns, one window per tab; the TUI keeps ONE
+// control-mode client of that server for the run, captures the shown tab's pane when tmux says it
+// changed, and sends the keys to it.
 // This is the only module of the TUI that runs tmux. It knows nothing of rows, keys or views: the
-// caller hands it the viewer's argv, a size and the bytes to type, and it hands back screens (built
-// by the caller's own cell builder) and the end of each viewer.
+// caller hands it the viewer's argv, a size, which tab to show and the bytes to type, and it hands
+// back screens (built by the caller's own cell builder), which hidden tab had output, and the end
+// of each viewer.
 //
 // THE SERVER. Its socket is `<run dir>/tmux`, in the run's private directory (0700, made by the
 // caller's `dir()`, shared with the reader). Every call is `tmux -u -f /dev/null -S <socket> …`
@@ -24,6 +26,19 @@
 // `refresh-client -C`). The GLOBAL `window-size` is left alone: set to manual, tmux 3.3a to 3.5a
 // crash in the next `new-window` (resize.c clients_calculate_size reads the window's manual size
 // before the window exists), as CI's tmux 3.4 did.
+//
+// THE TABS. The panel holds up to MAX_TERMINALS viewers, each a window of the one session, in the
+// order they were opened; ONE of them is shown, or none. Every tab has the panel's size: a resize
+// is one `resize-window` per tab's window (never the global `window-size`, above), and the size an
+// open gives becomes the panel's. Only the shown tab is captured, typed to and handed back as
+// screens. The control client hears `%output` for every pane of its session, so a hidden tab's
+// output is heard too: it captures nothing, and only marks that tab (`onActivity`), once in each
+// spell it is hidden (shown again and hidden again, it may be marked again). A `%layout-change` is
+// no output (every resize makes one for each window). The panel never picks a neighbour: an open
+// shows its new tab (the one shown before is hidden from the call on), and after the shown tab is
+// closed or ends by itself NOTHING is shown until the caller says which (`show`); the order of the
+// tabs and the rule for the neighbour are the caller's. One open is under way at a time, and it
+// counts towards MAX_TERMINALS; a tab closed frees its place at once.
 //
 // THE START, ONE PROCESS. The control client starts the server itself: `tmux -C new-session …`,
 // with `set-option -s exit-unattached on` and the other options in the SAME command list. The
@@ -128,15 +143,15 @@ import { closeSync, constants as FS, fstatSync, lstatSync, openSync, readSync, r
 import { tmpdir as osTmpdir } from "node:os";
 import { join } from "node:path";
 
-/** How many terminals a run may hold open at once in the next version. This version opens one at
- *  a time: `open` refuses while one is open (E_PANEL_BUSY). */
+/** How many terminals a run may hold open at once, as tabs (THE TABS): an open past it, counting
+ *  one under way, is refused (E_PANEL_FULL). */
 export const MAX_TERMINALS = 4;
 /** The most of a viewer's stderr that is kept, in bytes: the last ones. */
 export const STDERR_KEPT = 4096;
 /** The frame tick, in milliseconds: a capture follows the output that asked for it by one tick, so
  *  a burst of output is drawn once. The tick is not what bounds the rate: a fresh capture (open,
- *  resize, refresh, showing again) skips it, and what bounds them all is that at most one capture
- *  is in flight. */
+ *  show, resize, refresh, showing again) skips it, and what bounds them all is that at most one
+ *  capture is in flight. */
 export const FRAME_MS = 16;
 /** The pane's command around the viewer, a CONSTANT: its stderr to the file named by E, then the
  *  viewer itself in the shell's place (`exec "$0" "$@"`: its argv, which follows this script as
@@ -333,8 +348,9 @@ function readPart(file, max, fromEnd) {
   } finally { quietly(() => closeSync(fd)); }
 }
 
-/** The panel of a run: the private server, its control client and the viewer open in it.
- *  -> { open, close, resize, input, paste, setVisible, refresh, pause, resume, end, get current }
+/** The panel of a run: the private server, its control client and the viewers open in it, its
+ *  tabs (THE TABS).
+ *  -> { open, show, close, resize, input, paste, setVisible, refresh, pause, resume, end, get tabs, get current }
  *
  *  Options:
  *    dir()        the run's private directory: called at the first open, and expected to answer
@@ -343,8 +359,12 @@ function readPart(file, max, fromEnd) {
  *    capture(text, { cols, rows })  REQUIRED: the caller's cell builder, handed what
  *                 `capture-pane -e -N` captured (its lines joined by "\n") and the pane's size;
  *                 what it answers is handed on as `screen`.
- *    onScreen({ id, screen, cursor: { x, y, visible } })  a capture of the open viewer.
- *    onClosed({ id, status, stderr, asked })  a viewer ended: `status` its exit status as tmux
+ *    onScreen({ id, screen, cursor: { x, y, visible } })  a capture of the shown tab: never of
+ *                 another.
+ *    onActivity({ id })  a hidden tab had output: told once in each spell it is hidden (told
+ *                 again only after it was shown and hidden again). Nothing is captured for it. The
+ *                 shown tab's output is never activity, the panel hidden (setVisible) or not.
+ *    onClosed({ id, status, stderr, asked })  a viewer ended, shown or hidden: `status` its exit status as tmux
  *                 kept it for its dead pane (null when there is none: a signal ended the viewer,
  *                 its pane was killed, or its server went away), `stderr` the last STDERR_KEPT
  *                 bytes it wrote to its file, as text, `asked`
@@ -364,32 +384,44 @@ function readPart(file, max, fromEnd) {
  *  where the run hears it as any uncaught error.
  *
  *  open({ argv, cols, rows }) -> Promise<{ id }>: start the viewer `argv` ([node, bin, ...args],
- *    the kernel's `oats session attach …`) in a new window of cols x rows. `id` is tmux's window id.
- *    The first open starts the server; so does the first after the server went away. Rejected with
- *    a coded Error: E_PANEL_BUSY (a viewer is open, or an open is under way: the caller closes it
- *    first, and may open the next as soon as close() has returned),
- *    E_PANEL_TMUX (no tmux, or one older than 3.2), E_PANEL_START (the server or its control
+ *    the kernel's `oats session attach …`) in a NEW tab, a new window of cols x rows (the panel's
+ *    size from then on), and show it: the tab shown before is hidden from the call on, and the new
+ *    one is shown once its window exists. `id` is tmux's window id. The first open starts the
+ *    server; so does the first after the server went away. Rejected with a coded Error:
+ *    E_PANEL_FULL (MAX_TERMINALS tabs are open, an open under way counted: the caller closes one
+ *    first, and may open as soon as close() has returned), E_PANEL_BUSY (another open is under
+ *    way), E_PANEL_TMUX (no tmux, or one older than 3.2), E_PANEL_START (the server or its control
  *    client did not start; `detail` holds what tmux said, untrusted text), E_PANEL_OPEN (the
- *    window was not made; `detail` likewise, or a bad argv), E_PANEL_ENDED (after end()).
- *  close(): end the open viewer (`kill-pane`: its terminal hangs up, the viewer gets SIGHUP and
- *    cleans up after itself). THE SLOT IS FREE WHEN IT RETURNS: the next open may follow at once,
- *    and the closed viewer is reported by onClosed with `asked: true` when its window has ended.
- *    Asked while an open is under way, that open still answers its `{ id }`, and its window is
- *    killed as soon as it exists (reported likewise). With no viewer and no open, nothing.
- *  resize(cols, rows): the window's new size, then a fresh capture.
- *  input(bytes): bytes (a Buffer, or a string as UTF-8) typed into the viewer, in order. With no
- *    viewer window yet (an open under way) or none at all, they are dropped.
- *  paste(text): `text` as a bracketed paste (any end mark inside it removed); the agent's own
- *    server decides whether its program sees the marks (the viewer is a tmux client).
- *  setVisible(on): hidden, no capture runs and output only marks the screen stale; shown again,
- *    one fresh capture. refresh(): one fresh capture now (after `fg`, Ctrl+L).
- *  pause() / resume(): around a suspend of the TUI: tmux stops sending the pane's output (a
+ *    window was not made; `detail` likewise, or a bad argv), E_PANEL_ENDED (after end()). An open
+ *    that is refused once under way leaves nothing shown: which tab to show is the caller's.
+ *  show(id): show tab `id`, the others hidden; one fresh capture of it follows, when the panel is
+ *    visible. An unknown id, or the tab already shown, does nothing.
+ *  close(id): end tab `id`'s viewer (`kill-pane`: its terminal hangs up, the viewer gets SIGHUP
+ *    and cleans up after itself). ITS PLACE IS FREE WHEN IT RETURNS: the next open may follow at
+ *    once, and the closed viewer is reported by onClosed with `asked: true` when its window has
+ *    ended. With no id: the open under way if there is one (it still answers its `{ id }`, its
+ *    window is killed as soon as it exists, and it is reported likewise), else the shown tab.
+ *    After the shown tab is closed, or ends by itself, nothing is shown until show(). An unknown
+ *    id, or nothing to close, does nothing.
+ *  resize(cols, rows): the panel's new size: every tab's window resized to it, then a fresh
+ *    capture of the shown tab.
+ *  input(bytes): bytes (a Buffer, or a string as UTF-8) typed into the shown tab's viewer, in
+ *    order. With none shown (an open under way, or no tab), they are dropped.
+ *  paste(text): `text` as a bracketed paste (any end mark inside it removed), into the shown tab;
+ *    the agent's own server decides whether its program sees the marks (the viewer is a tmux
+ *    client).
+ *  setVisible(on): the panel as a whole (behind another view). Hidden, no capture runs and the
+ *    shown tab's output only marks its screen stale (no activity); shown again, one fresh capture.
+ *    refresh(): one fresh capture of the shown tab now (after `fg`, Ctrl+L).
+ *  pause() / resume(): around a suspend of the TUI: tmux stops sending every pane's output (a
  *    stopped TUI does not read its pipe), then sends it again, and a fresh capture follows.
- *  end(): leave, synchronously: kill the server, end the control client, remove the socket,
- *    owner.json and the view files. Idempotent.
- *  current: the id of the open viewer, or null.
+ *  end(): leave, synchronously: kill the server (every tab with it), end the control client,
+ *    remove the socket, owner.json and the view files. Idempotent.
+ *  tabs: { ids, shown }: the open tabs' window ids in opening order (an open under way is listed
+ *    once it has its id), and the shown one's, or null. A new object each time.
+ *  current: tabs.shown.
  *  No method but open() throws or rejects: a server that went away makes each of them do nothing. */
-export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () => {}, env = process.env, tmux = "tmux",
+export function createPanel({ dir, capture, onScreen = () => {}, onActivity = () => {}, onClosed = () => {}, env = process.env, tmux = "tmux",
   spawn = nodeSpawn, execFile = nodeExecFile, execFileSync = nodeExecFileSync, fs: givenFs = {}, timers = { setTimeout, clearTimeout },
   clock = () => new Date().toISOString(), pid = process.pid, trace = null } = {}) {
   if (typeof dir !== "function") throw new TypeError("createPanel needs dir(): the run's private directory");
@@ -409,17 +441,19 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
    *  block being read), startLeft (the blocks of the start list still to come), attached, gone,
    *  onAttach, stderr }, or null. A start under way is `starting` (its promise). */
   let server = null, starting = null;
-  /** THE SLOT: the viewer open now ({ id, pane, cols, rows, files, asked, over, status }), or the open
-   *  under way that will be it (`opening`: { closeAsked, files }), or neither. close() frees it at
-   *  once: the viewer it closed waits in `closing` (window id -> viewer) for its window's end, and
-   *  an open it gave up goes on to kill its window as soon as it exists. Every open under way, the
-   *  given-up ones included, is in `openings`.
+  /** THE TABS: the viewers open now, by window id in opening order (`tabs`: id -> { id, pane, cols,
+   *  rows, files, asked, over, status, marked }, `marked` once its activity was told in this spell
+   *  hidden), the one of them shown (`shown`, or null), and the open under way that will be the next
+   *  (`opening`: { closeAsked, files }), or none. close() frees a place at once: the viewer it
+   *  closed waits in `closing` (window id -> viewer) for its window's end, and an open it gave up
+   *  goes on to kill its window as soon as it exists. Every open under way, the given-up ones
+   *  included, is in `openings`. `size` is the panel's: every tab's window has it.
    *  `closedSeen`: the window ids whose end was heard while an open was under way. A viewer that
    *  exits at once can end before new-window has answered with its id; ids are never reused by a
    *  server, and the set is emptied when no open is under way, and at every new server.
    *  `diedSeen`: the same for a pane heard dead (window id -> its status, null, or PENDING). */
-  let viewer = null, opening = null;
-  const closing = new Map(), openings = new Set(), closedSeen = new Set(), diedSeen = new Map();
+  let shown = null, opening = null, size = { cols: 80, rows: 24 };
+  const tabs = new Map(), closing = new Map(), openings = new Set(), closedSeen = new Set(), diedSeen = new Map();
   /** The frames: the screen is stale (`dirty`), a tick is armed (`tick`), a capture is in flight. */
   let dirty = false, tick = null, capturing = false, visible = true, paused = false;
   let ended = false, files = 0;
@@ -499,8 +533,9 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
       return;
     }
     const [kind, first] = line.split(" ", 2);
-    if (kind === "%output" || kind === "%extended-output") { if (viewer && first === viewer.pane) stale(); }
-    else if (kind === "%layout-change") { if (viewer && first === viewer.id) stale(); }
+    if (kind === "%output" || kind === "%extended-output") output(first);
+    // Not output: a resize makes one for every tab's window (THE TABS).
+    else if (kind === "%layout-change") { if (shown && first === shown.id) stale(); }
     else if (kind === "%window-close" || kind === "%unlinked-window-close") { traced(line); windowClosed(first); }
     else if (kind === "%exit") { traced(line); lost(s); }
     else if (kind === "%subscription-changed") {
@@ -519,8 +554,8 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   }
 
   /** The control client is gone (`%exit`, its pipe closed, it did not start): the server with it,
-   *  as far as this run is concerned. Every command waiting is answered as failed, the open viewer
-   *  is closed with no status, and the next open starts a new server. */
+   *  as far as this run is concerned. Every command waiting is answered as failed, every tab is
+   *  closed with no status, and the next open starts a new server. */
   function lost(s) {
     if (s.gone) return;
     s.gone = true;
@@ -532,8 +567,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     quietly(() => s.child.kill("SIGTERM"));
     quietly(() => s.child.unref());
     stopFrames();
-    if (viewer) finish(viewer, { lost: true });
-    for (const v of [...closing.values()]) finish(v, { lost: true });
+    for (const v of [...tabs.values(), ...closing.values()]) finish(v, { lost: true });
   }
 
   /** Start the server through the control client, with startCommands as its list, and wait for
@@ -655,8 +689,8 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
 
   // FRAMES ---------------------------------------------------------------------------------------
 
-  /** Whether a capture may run now. */
-  const showing = () => viewer !== null && !viewer.over && visible && !paused && !ended;
+  /** Whether a capture (of the shown tab: no other is ever captured) may run now. */
+  const showing = () => shown !== null && !shown.over && visible && !paused && !ended;
   /** Arm the tick, unless one is armed or a capture is in flight (it arms one when it is over). */
   function arm() {
     if (!showing() || tick !== null || capturing) return;
@@ -668,6 +702,17 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   /** A notification said the screen changed: stale, and a capture one tick later. NO TIMER RUNS
    *  BUT THIS ONE: nothing is ever captured unless tmux said something changed, or the caller asked. */
   function stale() { dirty = true; arm(); }
+  /** A pane printed: the shown tab's screen is stale; a hidden tab is marked, once in this spell
+   *  hidden, and nothing is captured for it (THE TABS). Any other pane's output (the keeper's, an
+   *  open under way, a viewer being closed) is nobody's. */
+  function output(pane) {
+    if (shown !== null && pane === shown.pane) return stale();
+    for (const v of tabs.values()) {
+      if (v.pane !== pane) continue;
+      if (!v.marked && !v.over && !ended) { v.marked = true; tell(() => onActivity({ id: v.id })); }
+      return;
+    }
+  }
   /** A capture now (or right after the one in flight), whatever the tick. */
   function fresh() {
     dirty = true;
@@ -682,7 +727,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
    *  meanwhile arms the next tick after it. A capture that fails (the pane gone, the file missing,
    *  too large or not a file) draws nothing, and the next change tries again. */
   async function captureNow() {
-    const v = viewer;
+    const v = shown;
     if (!showing() || capturing) return;
     capturing = true;
     dirty = false;
@@ -693,7 +738,10 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
       ask(`display -p -t ${v.pane} '#{cursor_x} #{cursor_y} #{cursor_flag}'`, SAYS_CURSOR),
     ]);
     capturing = false;
-    if (ended || viewer !== v || v.over) return;
+    if (ended) return;
+    // Another tab shown (or none) while it was in flight: not drawn, and the capture its show
+    // asked for, which waited for this one, runs now.
+    if (shown !== v || v.over) { if (dirty) fresh(); return; }
     // Hidden or paused while it was in flight: not drawn; the capture that showing again asks for is.
     if (!showing()) { dirty = true; return; }
     const held = taken.ok && saved.ok && cursor.ok ? quietly(() => fs.whole(capturePath, CAPTURE_MAX)) : null;
@@ -715,7 +763,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
    *  known (an open under way) is remembered with what was heard; any other is not a viewer's (the
    *  keeper's, one already over). */
   function paneDied(id, status) {
-    const v = viewer?.id === id ? viewer : closing.get(id);
+    const v = tabs.get(id) ?? closing.get(id);
     if (v && status === PENDING) return waitStatus(v);
     if (v) { v.status = status; ask(`kill-pane -t ${v.pane}`); return finish(v, {}); }
     if (openings.size > 0 && !(status === PENDING && diedSeen.has(id))) diedSeen.set(id, status);
@@ -747,10 +795,10 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     ask(REAP_COMMAND);
     v.reaping = timers.setTimeout(() => reap(v), REAP_ASK_MS);
   }
-  /** A window ended: the open viewer's, one closing, or (an open under way) one to remember. */
+  /** A window ended: a tab's, shown or hidden, one closing, or (an open under way) one to remember. */
   function windowClosed(id) {
-    if (viewer && viewer.id === id) return finish(viewer, {});
-    if (closing.has(id)) return finish(closing.get(id), {});
+    const v = tabs.get(id) ?? closing.get(id);
+    if (v) return finish(v, {});
     if (openings.size > 0) closedSeen.add(id);
   }
   /** A viewer is over: read what it left, remove its file, and say so. Its status is what tmux kept
@@ -763,7 +811,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     v.over = true;
     unwait(v);
     closing.delete(v.id);
-    if (viewer === v) free();
+    leave(v);
     const stderr = quietly(() => fs.tail(v.files.err, STDERR_KEPT)) ?? "";
     traced(`${v.id} over, status ${gone ? null : status}${gone ? ", its server gone" : ""}${v.asked ? ", closed" : ""}`);
     forget(v.files);
@@ -774,8 +822,21 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     if (v.waiting !== null) { quietly(() => timers.clearTimeout(v.waiting)); v.waiting = null; }
     if (v.reaping !== null) { quietly(() => timers.clearTimeout(v.reaping)); v.reaping = null; }
   }
-  /** The slot is free: no viewer, no frame to come. */
-  function free() { viewer = null; stopFrames(); dirty = false; }
+  /** A tab is no longer one: its place is free, and when it was the shown tab, nothing is shown
+   *  (the panel never picks a neighbour: THE TABS). */
+  function leave(v) {
+    if (tabs.get(v.id) === v) tabs.delete(v.id);
+    if (shown === v) hide();
+  }
+  /** The shown tab hidden: none shown, no frame to come for it, and a new spell hidden for it, in
+   *  which its output may mark it again. */
+  function hide() {
+    if (shown === null) return;
+    shown.marked = false;
+    shown = null;
+    stopFrames();
+    dirty = false;
+  }
   const forget = (made) => { for (const path of [made?.err, made?.status]) if (path) quietly(() => fs.unlink(path)); };
   /** End a viewer the caller closed (or gave up while it opened): its pane killed through the
    *  control client, and its end awaited in `closing`. With no server, it is over now. */
@@ -789,9 +850,17 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   /** See createPanel. */
   function open({ argv, cols, rows } = {}) {
     if (ended) return Promise.reject(refusal("E_PANEL_ENDED", "the panel has ended"));
-    if (viewer || opening) return Promise.reject(refusal("E_PANEL_BUSY", "a terminal is open in the panel"));
+    if (tabs.size + (opening ? 1 : 0) >= MAX_TERMINALS) return Promise.reject(refusal("E_PANEL_FULL", `${MAX_TERMINALS} terminals are open in the panel`));
+    if (opening) return Promise.reject(refusal("E_PANEL_BUSY", "a terminal is opening in the panel"));
     if (!Array.isArray(argv) || argv.length === 0 || !argv.every((arg) => typeof arg === "string" && !arg.includes("\0"))) return Promise.reject(refusal("E_PANEL_OPEN", "the viewer's argv is not a list of strings"));
-    const size = { cols: cells(cols, 80), rows: cells(rows, 24) };
+    // The size it gives is the panel's from now on: a tab of another size is fitted to it (hidden,
+    // it is not captured), and the new window is made at it.
+    size = { cols: cells(cols, size.cols), rows: cells(rows, size.rows) };
+    const start = { ...size };
+    for (const v of tabs.values()) if (v.cols !== size.cols || v.rows !== size.rows) fit(v);
+    // The new tab is shown: the one shown before is hidden from now on, and nothing is shown, nor
+    // typed to, until the new one's window exists.
+    hide();
     const mine = opening = { closeAsked: false, files: null };
     openings.add(mine);
     /** This open is no longer under way. */
@@ -809,7 +878,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         try { fs.make(made.err); mine.files = made; } catch (error) { throw refusal("E_PANEL_OPEN", "the panel could not make the viewer's file", { detail: detail(error) }); }
         let answer;
         try {
-          answer = await call(["set-option", "-t", SESSION, "default-size", `${size.cols}x${size.rows}`,
+          answer = await call(["set-option", "-t", SESSION, "default-size", `${start.cols}x${start.rows}`,
             ";", "new-window", "-d", "-P", "-F", "#{window_id} #{pane_id}", "-t", `${SESSION}:`,
             "-e", tmuxArgument(`E=${made.err}`),
             "/bin/sh", "-c", VIEW_SCRIPT, ...argv.map(tmuxArgument)]);
@@ -823,7 +892,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
           throw refusal("E_PANEL_OPEN", "tmux did not name the window it opened");
         }
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
-        const v = { id: ids[1], pane: ids[2], ...size, files: made, asked: false, over: false, status: null, waiting: null, reaping: null };
+        const v = { id: ids[1], pane: ids[2], ...start, files: made, asked: false, over: false, status: null, waiting: null, reaping: null, marked: false };
         mine.files = null; // the viewer's now: finish() removes them
         // Heard dead with no status yet: opened as any other, and waiting for the line with it.
         const pending = diedSeen.get(v.id) === PENDING;
@@ -836,8 +905,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
           // said after open() has answered, so the caller knows the id onClosed names. A pane that
           // died is killed, as paneDied does.
           v.asked = mine.closeAsked;
-          if (!mine.closeAsked) viewer = v;
-          else closing.set(v.id, v);
+          if (!mine.closeAsked) { tabs.set(v.id, v); hide(); shown = v; } else closing.set(v.id, v);
           // The status is the viewer's from here: the window's end that answers this kill-pane can
           // come before the finish below, and finishes it with this status (CI, under load).
           v.status = status;
@@ -845,8 +913,12 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
           setImmediate(() => finish(v, { lost: gone && !already }));
         } else if (mine.closeAsked) kill(v); // given up while it opened: killed at once
         else {
-          viewer = v;
-          ask(`resize-window -t ${v.id} -x ${v.cols} -y ${v.rows}`);
+          // A tab, and the shown one (even when show() named another meanwhile), at the panel's
+          // size now: a resize while its window was being made is the panel's too.
+          tabs.set(v.id, v);
+          hide();
+          shown = v;
+          fit(v);
           fresh();
           if (pending) waitStatus(v);
         }
@@ -859,30 +931,48 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     })();
   }
 
-  /** See createPanel. The slot is free when this returns. */
-  function close() {
+  /** See createPanel. */
+  function show(id) {
     if (ended) return;
-    if (viewer) {
-      const v = viewer;
-      free();
-      return kill(v);
-    }
-    if (opening) { opening.closeAsked = true; opening = null; }
-  }
-
-  function resize(cols, rows) {
-    const v = viewer;
-    if (ended || !v || v.over) return;
-    v.cols = cells(cols, v.cols);
-    v.rows = cells(rows, v.rows);
-    ask(`resize-window -t ${v.id} -x ${v.cols} -y ${v.rows}`);
+    const v = tabs.get(id);
+    if (v === undefined || v.over || v === shown) return;
+    hide();
+    shown = v;
+    v.marked = false;
     fresh();
   }
 
-  /** Bytes to the open pane, in commands of at most INPUT_CHUNK bytes, in order (one pipe, and
-   *  tmux runs a client's commands in the order they came); their answers are consumed. */
+  /** See createPanel. The tab's place is free when this returns. */
+  function close(id) {
+    if (ended) return;
+    if (id === undefined || id === null) {
+      if (opening) { opening.closeAsked = true; opening = null; return; }
+      if (shown === null) return;
+      id = shown.id;
+    }
+    const v = tabs.get(id);
+    if (v === undefined || v.over) return;
+    leave(v);
+    kill(v);
+  }
+
+  /** A tab's window at the panel's size (THE TABS: its own `resize-window`). */
+  function fit(v) {
+    v.cols = size.cols;
+    v.rows = size.rows;
+    ask(`resize-window -t ${v.id} -x ${v.cols} -y ${v.rows}`);
+  }
+  function resize(cols, rows) {
+    if (ended) return;
+    size = { cols: cells(cols, size.cols), rows: cells(rows, size.rows) };
+    for (const v of tabs.values()) if (!v.over) fit(v);
+    fresh();
+  }
+
+  /** Bytes to the shown tab's pane, in commands of at most INPUT_CHUNK bytes, in order (one pipe,
+   *  and tmux runs a client's commands in the order they came); their answers are consumed. */
   function send(bytes) {
-    const v = viewer;
+    const v = shown;
     if (ended || !v || v.over || !server || bytes.length === 0) return;
     for (let at = 0; at < bytes.length; at += INPUT_CHUNK) ask(`send-keys -t ${v.pane} -H ${hex(bytes.subarray(at, at + INPUT_CHUNK))}`);
   }
@@ -951,10 +1041,11 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
       quietly(() => s.child.kill("SIGTERM"));
       quietly(() => s.child.unref());
     }
-    // Nothing more is said: the run is leaving. Every viewer's files go, and so do those of an open
+    // Nothing more is said: the run is leaving. Every tab's files go, and so do those of an open
     // under way (which then rejects with E_PANEL_ENDED and makes nothing more).
-    for (const v of [viewer, ...closing.values()]) if (v) { v.over = true; unwait(v); forget(v.files); }
-    viewer = null;
+    for (const v of [...tabs.values(), ...closing.values()]) { v.over = true; unwait(v); forget(v.files); }
+    shown = null;
+    tabs.clear();
     closing.clear();
     for (const under of openings) forget(under.files);
     if (runDir !== null) {
@@ -966,7 +1057,9 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     }
   }
 
-  return { open, close, resize, input, paste, setVisible, refresh, pause, resume, end, get current() { return viewer && !viewer.over ? viewer.id : null; } };
+  /** See createPanel: the open tabs in opening order, and the shown one. */
+  const listed = () => ({ ids: [...tabs.values()].filter((v) => !v.over).map((v) => v.id), shown: shown && !shown.over ? shown.id : null });
+  return { open, show, close, resize, input, paste, setVisible, refresh, pause, resume, end, get tabs() { return listed(); }, get current() { return listed().shown; } };
 }
 
 /** What the sweep reads and removes, each replaceable by a test (see PANEL_FS). */

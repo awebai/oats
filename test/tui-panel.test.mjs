@@ -12,7 +12,9 @@
 // run's private directory, and the socket of its private server in it, are inside the fixture too
 // (the fixture's tmux refuses any other socket, and a socket path has a short limit). A signal goes
 // only to the pid the command's own wrapper wrote down. Every wait is on what a pane shows or on a
-// file, within the file's budget.
+// file, within the file's budget. The panel's tabs (up to four viewers, one shown) are proved on the
+// panel itself over the same real tmux, and every way out with four tabs open under the TUI's own
+// guard (the tests after "the tabs" below).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawn } from "node:child_process";
@@ -831,6 +833,205 @@ test("a run's sweep removes what a dead run left, its directory (its server SIGK
   liveTerm.press("q");
   assert.equal(await live.ended("after q"), 0, liveTerm.shows());
 });
+
+// ---- the tabs (packages/tui/lib/panel.mjs, THE TABS) ---------------------------------------------
+// The panel over the real tmux, in this process: up to four viewers, each a window of the private
+// server, one of them shown. A tab here runs `tabProgram`, which says its name and then shows every
+// byte it reads (as the agent's pane does), so what reached which tab is on that tab's own pane,
+// read with plain commands on the private socket (never a control client of the test's own: see
+// watchPanel). `Q` ends it with status 7.
+const tabProgram = join(base, "tab-program.mjs");
+function writeTabProgram() {
+  writeFileSync(tabProgram, `process.stdin.setRawMode(true);
+process.stdin.on("data", (data) => {
+  if (data.includes(81)) process.exit(7);
+  process.stdout.write([...data].map((b) => (b < 32 ? "^" + String.fromCharCode(b + 64) : String.fromCharCode(b))).join(""));
+});
+process.stdout.write(process.argv[2] + "-ready:");
+`);
+}
+/** A panel of this process, over a private directory of the fixture's, with what it says recorded;
+ *  ended after the test. Its environment is the fixture's (fx.env: the tmux of system-bin, which
+ *  admits only the fixture's sockets), as the TUI's is. */
+function tabsPanel(t, label) {
+  const dir = mkdtempSync(join(base, `${label}-`));
+  const screens = [], closed = [], activity = [];
+  const env = { ...fx.env }; delete env.TMUX; delete env.TMUX_PANE;
+  const panel = createPanel({ dir: () => dir, env, capture: (text) => text, onScreen: (event) => screens.push(event), onClosed: (event) => closed.push(event), onActivity: (event) => activity.push(event) });
+  t.after(() => { panel.end(); rmSync(dir, { recursive: true, force: true }); });
+  const socket = panelSocket(dir);
+  return {
+    dir, socket, panel, screens, closed, activity,
+    /** Open a tab running tabProgram as `name`; resolves with its id once its name is drawn. */
+    async tab(name) {
+      const { id } = await panel.open({ argv: [process.execPath, tabProgram, name], cols: 60, rows: 10 });
+      await waitUntil(() => screens.some((screen) => screen.id === id && screen.screen.includes(`${name}-ready:`)), `the tab ${name} (${id}) drawn`, budget(15000));
+      return id;
+    },
+    /** What the tab `name` in window `id` has read, from its own pane; null before it is ready. */
+    read(id, name) {
+      let text;
+      try { text = tmuxOn(socket, "capture-pane", "-p", "-J", "-t", id).replace(/\n/g, ""); } catch { return null; }
+      const at = text.indexOf(`${name}-ready:`);
+      return at < 0 ? null : text.slice(at + `${name}-ready:`.length).trimEnd();
+    },
+    /** Each window's size, by id. */
+    sizes() { return Object.fromEntries(lines(tmuxOn(socket, "list-windows", "-t", "=oats-tui", "-F", "#{window_id} #{window_width}x#{window_height}")).map((row) => row.split(" "))); },
+  };
+}
+
+test(`three tabs opened and switched: each its own window, only the shown one drawn and typed to, a hidden one's output marking it, and a resize reaching every window (${TMUX_VERSION})`, { skip: NO_TMUX }, async (t) => {
+  writeTabProgram();
+  const p = tabsPanel(t, "tabs");
+  const names = ["one", "two", "three"], ids = [];
+  for (const name of names) ids.push(await p.tab(name));
+  assert.deepEqual(p.panel.tabs, { ids, shown: ids[2] }, "in opening order, the last opened shown");
+  assert.equal(panelWindows(p.socket).length, 4, "the keeper and a window per tab");
+  const read = (k) => p.read(ids[k], names[k]);
+  const typedTo = () => names.map((_, k) => read(k));
+  // Typing reaches the shown tab, and no other.
+  p.panel.input("c");
+  await waitUntil(() => read(2) === "c", "the shown tab read what was typed", budget());
+  assert.deepEqual(typedTo(), ["", "", "c"]);
+  // Switched: the tab shown is captured, typed to, and the only one drawn.
+  let from = p.screens.length;
+  p.panel.show(ids[0]);
+  assert.deepEqual(p.panel.tabs, { ids, shown: ids[0] });
+  await waitUntil(() => p.screens.slice(from).some((screen) => screen.id === ids[0]), "a capture of the tab shown", budget());
+  p.panel.input("a");
+  await waitUntil(() => read(0) === "a" && p.screens.at(-1).screen.includes("one-ready:a"), "the tab shown read it, and is drawn with it", budget());
+  p.panel.show(ids[1]);
+  p.panel.paste("b");
+  await waitUntil(() => read(1) === "^[[200~b^[[201~", `the second tab read the paste (${JSON.stringify(read(1))})`, budget());
+  assert.deepEqual(typedTo(), ["a", "^[[200~b^[[201~", "c"], "each tab read only what was typed while it was shown");
+  // A hidden tab's output marks it once, and is never drawn.
+  from = p.screens.length;
+  for (const key of ["x", "y"]) { tmuxOn(p.socket, "send-keys", "-t", ids[0], "-l", key); await pause(150); }
+  // (Another tab may be marked too: the echo of what it read while shown can be heard just after
+  // it was hidden, which is output while hidden.)
+  const marks = () => p.activity.filter((event) => event.id === ids[0]);
+  await waitUntil(() => read(0) === "axy" && marks().length > 0, "the hidden tab's output, and its mark", budget());
+  await pause(300);
+  assert.deepEqual(marks(), [{ id: ids[0] }], "told once in the spell");
+  assert.equal(p.activity.some((event) => event.id === ids[1]), false, "the shown tab is never marked");
+  assert.deepEqual([...new Set(p.screens.slice(from).map((screen) => screen.id))].filter((id) => id !== ids[1]), [], "nothing drawn of a hidden tab");
+  // A resize reaches every tab's window.
+  p.panel.resize(70, 12);
+  await waitUntil(() => ids.every((id) => p.sizes()[id] === "70x12"), `every tab's window at 70x12 (${JSON.stringify(p.sizes())})`, budget());
+  await waitUntil(() => p.screens.at(-1).id === ids[1], "a capture of the shown tab after the resize", budget());
+});
+
+test("a tab closed: its window goes, nothing is shown until show(), and showing its neighbour draws it and types to it", { skip: NO_TMUX }, async (t) => {
+  writeTabProgram();
+  const p = tabsPanel(t, "close");
+  const names = ["left", "middle", "right"], ids = [];
+  for (const name of names) ids.push(await p.tab(name));
+  p.panel.show(ids[1]);
+  p.panel.close(ids[1]);
+  assert.deepEqual(p.panel.tabs, { ids: [ids[0], ids[2]], shown: null }, "the panel picks no neighbour");
+  await waitUntil(() => p.closed.length === 1, "the closed tab's end", budget());
+  assert.deepEqual(p.closed[0], { id: ids[1], status: null, stderr: "", asked: true });
+  await waitUntil(() => !panelWindows(p.socket).includes(ids[1]), "its window gone", budget());
+  assert.equal(panelWindows(p.socket).length, 3, "the keeper and the two tabs left");
+  p.panel.input("lost");
+  await pause(300);
+  assert.deepEqual([p.read(ids[0], "left"), p.read(ids[2], "right")], ["", ""], "with none shown, nothing is typed");
+  const from = p.screens.length;
+  p.panel.show(ids[2]);
+  await waitUntil(() => p.screens.slice(from).some((screen) => screen.id === ids[2] && screen.screen.includes("right-ready:")), "the neighbour drawn", budget());
+  p.panel.input("n");
+  await waitUntil(() => p.read(ids[2], "right") === "n", "the neighbour typed to", budget());
+  assert.equal(p.read(ids[0], "left"), "");
+  assert.deepEqual(p.panel.tabs, { ids: [ids[0], ids[2]], shown: ids[2] });
+});
+
+test("a hidden tab's viewer that ends on its own is reported and its window goes, and the shown tab stays shown: a kernel viewer whose agent's window ended, and a program that exits 7", { skip: NO_TMUX }, async (t) => {
+  writeTabProgram();
+  await agentWindow();
+  const p = tabsPanel(t, "hidden");
+  // The kernel's viewer of the agent, then a program tab beside it, then another, shown.
+  const { id: viewer } = await p.panel.open({ argv: [process.execPath, CLI, "session", "attach", "--home", world.home], cols: 60, rows: 10 });
+  await waitUntil(() => viewerSessions().length === 1 && attached().includes(viewerSessions()[0]), "the viewer attached to the agents' server", budget(20000));
+  const quits = await p.tab("quits");
+  const shown = await p.tab("shown");
+  assert.deepEqual(p.panel.tabs, { ids: [viewer, quits, shown], shown });
+  // The agent's window ends: the viewer's client leaves, and the viewer exits, hidden.
+  killAgentWindow();
+  await waitUntil(() => p.closed.some((event) => event.id === viewer), "the hidden viewer's end", budget(20000));
+  assert.equal(p.closed.find((event) => event.id === viewer).asked, false, JSON.stringify(p.closed));
+  await waitUntil(() => viewerSessions().length === 0, "no viewer session on the agents' server", budget());
+  // A hidden program tab ends with its status.
+  tmuxOn(p.socket, "send-keys", "-t", quits, "-l", "Q");
+  await waitUntil(() => p.closed.some((event) => event.id === quits), "the hidden program's end", budget(15000));
+  assert.deepEqual(p.closed.find((event) => event.id === quits), { id: quits, status: 7, stderr: "", asked: false });
+  await waitUntil(() => panelWindows(p.socket).length === 2, `the keeper and the shown tab alone (${JSON.stringify(panelWindows(p.socket))})`, budget());
+  assert.deepEqual(p.panel.tabs, { ids: [shown], shown }, "the shown tab still shown");
+  p.panel.input("s");
+  await waitUntil(() => p.read(shown, "shown") === "s", "and typed to", budget());
+});
+
+// Every way out with FOUR tabs open, each a kernel viewer of the agent (four viewer sessions on the
+// agents' server). The program is the panel under the TUI's own guard (packages/tui/lib/term/tty.mjs,
+// createGuard: the signals, an uncaught error, `onEnd`), in a terminal: `q` ends it as the TUI's q
+// does, `!` throws from a timer as a crash would. It writes the tabs' ids to its mark once all four
+// are open.
+const tabsProgram = join(base, "tabs-program.mjs");
+const TTY_MODULE = resolve(new URL("../packages/tui/lib/term/tty.mjs", import.meta.url).pathname);
+function writeTabsProgram() {
+  writeFileSync(tabsProgram, `import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createPanel } from ${JSON.stringify(PANEL_MODULE)};
+import { createGuard } from ${JSON.stringify(TTY_MODULE)};
+const [mark, cli, home] = process.argv.slice(2);
+const run = mkdtempSync(join(tmpdir(), "oats-tui-"));
+const panel = createPanel({ dir: () => run, env: process.env, capture: (text) => text });
+const guard = createGuard({ stdin: process.stdin, stdout: process.stdout, proc: process, frame: () => "",
+  onInput: (bytes) => { if (bytes.includes(113)) guard.finish(0); else if (bytes.includes(33)) setTimeout(() => { throw new Error("a crash"); }); },
+  onResize: () => {}, onRedraw: () => {}, onEnd: () => panel.end() });
+guard.start();
+const ids = [];
+for (let n = 0; n < 4; n++) ids.push((await panel.open({ argv: [process.execPath, cli, "session", "attach", "--home", home], cols: 60, rows: 10 })).id);
+writeFileSync(mark, JSON.stringify({ ids, run, tabs: panel.tabs }));
+const { status } = await guard.done;
+process.exit(status);
+`);
+}
+
+for (const [how, end, expected] of [
+  ["q", (term) => term.type("q"), 0],
+  ["SIGTERM", (term, pid) => process.kill(pid, "SIGTERM"), 143],
+  ["SIGHUP", (term, pid) => process.kill(pid, "SIGHUP"), 129],
+  ["kill -9", (term, pid) => process.kill(pid, "SIGKILL"), 137],
+  ["a crash", (term) => term.type("!"), 1],
+]) {
+  test(`${how} with four tabs open: no viewer session of any tab is left on the agents' server, no private server answers, and the agent is untouched`, { skip: NO_TMUX }, async (t) => {
+    writeTabsProgram();
+    await agentWindow();
+    const term = await terminal(t);
+    const n = ++started, tmp = tmpFor();
+    const pidFile = join(base, `tabs-${n}.pid`), statusFile = join(base, `tabs-${n}.status`), mark = join(base, `tabs-${n}.json`);
+    await term.command(`sh -c ${shq(`echo $$ > ${shq(pidFile)}; TMPDIR=${shq(tmp)} exec ${shq(process.execPath)} ${shq(tabsProgram)} ${shq(mark)} ${shq(CLI)} ${shq(world.home)}`)}; echo $? > ${shq(statusFile)}`, "the tabs program");
+    const status = () => { const text = existsSync(statusFile) ? readFileSync(statusFile, "utf8") : ""; return /^\d+\n$/.test(text) ? Number(text) : null; };
+    await until(term, () => existsSync(mark) || status() !== null, "the four tabs open", () => [`status ${status()}`], 60000);
+    assert.equal(status(), null, `the program still runs:\n${term.shows()}`);
+    const { ids, run, tabs } = readJson(mark), socket = panelSocket(run), pid = Number(readFileSync(pidFile, "utf8").trim());
+    assert.equal(ids.length, 4);
+    assert.deepEqual(tabs, { ids, shown: ids[3] });
+    await until(term, () => viewerSessions().length === 4 && viewerSessions().every((session) => attached().includes(session)), "four viewer sessions, each attached", () => [`viewer sessions: ${JSON.stringify(viewerSessions())}, attached: ${JSON.stringify(attached())}`], 30000);
+    assert.equal(panelWindows(socket).length, 5, "the keeper and the four tabs");
+    const kept = keepViewFiles(run, `tabs${how.replace(/\W/g, "")}`), before = viewerProcesses();
+    await end(term, pid);
+    await until(term, () => status() !== null, `the program to end after ${how}`);
+    assert.equal(status(), expected, term.shows());
+    await until(term, () => !alive(pid), `the process ${pid} to be gone after ${how}`);
+    await until(term, () => !answers(socket), `the private server's socket to refuse after ${how}`);
+    await until(term, () => viewerSessions().length === 0, `no viewer session on the agents' server after ${how}`, () => [`viewer sessions: ${JSON.stringify(viewerSessions())}`, ...viewerFaults(kept, before)], 30000);
+    assert.deepEqual(viewerTableFaults(), [], `no viewer's own key table on the agents' server after ${how}, and the shared one holds only the mouse bindings`);
+    assert.equal(agentWindowThere(), true, `the agent keeps running after ${how}`);
+    assert.equal(existsSync(socket), how === "kill -9", how === "kill -9" ? "a run killed with no way to clean up leaves its socket for the sweep" : `the socket is removed after ${how}`);
+  });
+}
 
 test("afterwards no viewer session and no viewer's own key table is on the agents' server, no private server answers, and the terminals' server has the sessions, windows, key bindings and options it had before the first test", { skip: NO_TMUX }, () => {
   assert.deepEqual(viewerSessions(), [], "no oatsview-* session on AGENTS");

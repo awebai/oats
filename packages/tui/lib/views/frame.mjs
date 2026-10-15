@@ -7,12 +7,13 @@
 // Meaning never rests on colour alone: what is dim or bold also says what it is in words or by a
 // mark.
 import { LEADER, keyLabel } from "../actions.mjs";
-import { lit, ownEllipsis, shown, shownLines } from "../term/text.mjs";
+import { lit, ownEllipsis, shown, shownLines, textOf } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { act } from "./act.mjs";
 import { detail } from "./detail.mjs";
 import { help, keyText } from "./help.mjs";
 import { instances, measured } from "./instances.mjs";
+import { textWidth } from "../term/width.mjs";
 import { palette } from "./palette.mjs";
 import { soulDetail, soulsList, soulsListed } from "./souls.mjs";
 import { spawn } from "./spawn.mjs";
@@ -398,8 +399,8 @@ function spawnHints(s, start, edge, put, own, ascii) {
 }
 /** The leader's hint (docs/tui.md, "The leader"): the leader's key, then what each key after it
  *  does, from actions.mjs LEADER, the views, the instances and the acts each one hint. The keys
- *  that need a terminal are named only while one is open. Hints are given up from the end until
- *  the rest fit, the last, the list's, never. */
+ *  that need a terminal are named only while one is open, and the tabs' only with two or more.
+ *  Hints are given up from the end until the rest fit, the last, the list's, never. */
 function leaderHint(m, edge, put, own) {
   const by = (does) => LEADER.find((entry) => entry.does === does);
   const one = (does) => { const entry = by(does); return own(keyLabel(entry.keys[0]), entry.label); };
@@ -409,6 +410,8 @@ function leaderHint(m, edge, put, own) {
     own(keysOf(["instances", "souls", "capabilities"]) === "1/2/3" ? "1-3" : keysOf(["instances", "souls", "capabilities"]), "views"),
     own(keysOf(["previous", "next"]), "instance"),
     ...(m.terminal ? [one("zoom"), one("close-terminal")] : []),
+    // With two tabs or more, the keys that move between them.
+    ...((m.tabs?.length ?? 0) > 1 ? [own(keysOf(["tab-previous", "tab-next"]), "tab")] : []),
     own(keysOf(["stop", "restart", "start", "retire"]), "acts"),
     one("filter"), one("workspaces"), one("help"),
   ];
@@ -588,18 +591,72 @@ function terminalAt(m, size, g) {
   return { title: g.panes.top, top: g.panes.top + 1, col, cols: whole ? size.cols : side, rows: g.panes.rows - 1, whole };
 }
 
+/** A hidden tab's mark for output since it was last shown (docs/tui.md, "Tabs"). */
+const ACTIVITY = "\u2022";
+
+/** The tab strip (docs/tui.md, "Tabs"), the panel's top row with two tabs or more: each tab in
+ *  order as ` name ` (and ` on machine`, dim, for another machine's agent), the shown one bold, in
+ *  reverse while what is typed goes to it, a hidden one plain with `•` after its name when its
+ *  agent wrote since it was shown. What does not fit is cut in this order: the hidden tabs'
+ *  machines, then their names, each to an equal share with `…`, then the shown tab's machine; the
+ *  shown tab's name stays whole while the row can hold it. */
+function stripRow(m, area) {
+  const focused = m.terminal.focus === "terminal", ascii = m.ascii;
+  const mark = ascii ? "*" : ACTIVITY;
+  const tabs = m.tabs.map((tab) => ({ ...tab, name: measured(tab.name), machine: tab.machine === null ? null : measured(tab.machine), mark: !tab.shown && tab.activity }));
+  const machineCells = (tab) => (tab.machine ? 1 + ON.length + 1 + tab.machine.width : 0);
+  const cellsOf = (tab, { machine, name = tab.name.width }) => 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + 1;
+  const total = (plan) => tabs.reduce((sum, tab, i) => sum + cellsOf(tab, plan[i]), 0);
+  const plan = tabs.map(() => ({ machine: true }));
+  const fits = () => total(plan) <= area.cols;
+  if (!fits()) tabs.forEach((tab, i) => { if (!tab.shown) plan[i].machine = false; });
+  const share = () => {
+    const shown = tabs.findIndex((tab) => tab.shown), hidden = tabs.length - 1;
+    const left = area.cols - cellsOf(tabs[shown], plan[shown]);
+    const each = Math.floor(left / Math.max(1, hidden));
+    tabs.forEach((tab, i) => { if (!tab.shown) plan[i].name = Math.max(1, Math.min(tab.name.width, each - 2 - (tab.mark ? 1 : 0))); });
+  };
+  if (!fits()) share();
+  if (!fits()) { const shown = tabs.findIndex((tab) => tab.shown); plan[shown].machine = false; share(); }
+  const row = [];
+  let col = area.col;
+  const end = area.col + area.cols;
+  tabs.forEach((tab, i) => {
+    if (col >= end) return;
+    const p = plan[i], width = Math.min(cellsOf(tab, p), end - col);
+    const style = tab.shown ? (focused ? FOCUSED : BOLD) : null;
+    if (tab.shown && focused) row.push({ col, width, style: FOCUSED });
+    const name = p.name < tab.name.width ? shownLines(tab.name.text, p.name, 1, { ascii })[0] : tab.name.text;
+    const nameWidth = Math.min(p.name, textWidth(textOf(name)), end - col - 1);
+    if (nameWidth > 0) row.push({ col: col + 1, text: name, width: nameWidth, ...(style ? { style } : {}) });
+    let at = col + 1 + nameWidth;
+    if (tab.mark && at < end) { row.push({ col: at, text: lit(mark), width: 1 }); at += 1; }
+    if (p.machine && tab.machine && at + 1 + ON.length + 1 < end) {
+      row.push({ col: at + 1, text: lit(ON), style: tab.shown && focused ? FOCUSED : DIM, width: ON.length });
+      row.push({ col: at + 2 + ON.length, text: tab.machine.text, style: tab.shown && focused ? FOCUSED : DIM, width: Math.max(0, Math.min(tab.machine.width, end - (at + 2 + ON.length))) });
+    }
+    col += width;
+  });
+  return row;
+}
+
 /** The open terminal's rows from its title row: the agent's name (and its machine, when it is
- *  another's), in reverse while what is typed goes to it, then the agent's screen as the last
- *  capture made it (lib/panel.mjs, term/capture.mjs: spans of the agent's own text and styles), each
- *  row placed at the terminal's first column and kept inside its cells. */
+ *  another's), in reverse while what is typed goes to it (with two tabs or more, the tab strip:
+ *  stripRow), then the shown agent's screen as the last capture made it (lib/panel.mjs,
+ *  term/capture.mjs: spans of the agent's own text and styles), each row placed at the terminal's
+ *  first column and kept inside its cells. */
 function terminalRows(m, area) {
   const t = m.terminal, focused = t.focus === "terminal";
-  const name = measured(t.name), title = [];
-  if (focused) title.push({ col: area.col, width: Math.min(area.cols, name.width + 2), style: FOCUSED });
-  title.push({ col: area.col + 1, text: name.text, style: focused ? FOCUSED : BOLD, width: Math.max(0, Math.min(name.width, area.cols - 2)) });
-  if (t.routed && t.machine !== null) {
-    const where = measured(t.machine), at = area.col + name.width + 3;
-    if (at + ON.length + 1 < area.col + area.cols) title.push({ col: at, text: lit(ON), style: DIM, width: ON.length }, { col: at + ON.length + 1, text: where.text, style: DIM, width: Math.max(0, area.col + area.cols - (at + ON.length + 1)) });
+  const name = measured(t.name);
+  let title = [];
+  if ((m.tabs?.length ?? 0) > 1) title = stripRow(m, area);
+  else {
+    if (focused) title.push({ col: area.col, width: Math.min(area.cols, name.width + 2), style: FOCUSED });
+    title.push({ col: area.col + 1, text: name.text, style: focused ? FOCUSED : BOLD, width: Math.max(0, Math.min(name.width, area.cols - 2)) });
+    if (t.routed && t.machine !== null) {
+      const where = measured(t.machine), at = area.col + name.width + 3;
+      if (at + ON.length + 1 < area.col + area.cols) title.push({ col: at, text: lit(ON), style: DIM, width: ON.length }, { col: at + ON.length + 1, text: where.text, style: DIM, width: Math.max(0, area.col + area.cols - (at + ON.length + 1)) });
+    }
   }
   const lines = m.screen?.lines ?? [];
   const body = Array.from({ length: area.rows }, (_, r) => (lines[r] ?? [])

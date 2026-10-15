@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, bindings } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, outcomeWords, pendingEntry, spawnProblem } from "./client.mjs";
 import { DETACH_KEY } from "./config.mjs";
-import { BUTTON_ORDER, SPAWN_WORDS, actDecision, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher } from "./model.mjs";
+import { BUTTON_ORDER, SPAWN_WORDS, TAB_WORDS, actDecision, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulOfAgent, soulsOf, spawnChoices, spawnChoicesKey, spawnLine, spawnPickerItems, spawnReady, spawnRing, spawnSelector, spawnedRow, switcher } from "./model.mjs";
 import { backKeyId } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
@@ -49,11 +49,14 @@ const NO_SOULS = Object.freeze({ wanted: false, held: new Map(), selected: null,
  *  `opening`: the agent of another machine whose terminal is being opened, or null:
  *  `{ id, phase: "preflight", name, machine, routed }` while that machine is asked whether its
  *  session is there; `name`, `machine` and `routed` are the row's as it was when Enter was
- *  pressed, for the line after. `terminal`: the open terminal, or null (one at a time):
- *  `{ id, name, machine, routed, focus, zoom, status }`, `id` the row's instanceId and the next
- *  three the row's as it was when it was opened; `focus` "terminal" while what is typed goes to
- *  the agent and "list" while the TUI reads keys; `zoom` true while it has the whole body (only
- *  with the terminal's focus); `status` "starting" until the panel has its window, then "open".
+ *  pressed, for the line after. `tabs`: the terminals open in the panel (docs/tui.md, "Tabs"),
+ *  in the strip's order, at most TAB_LIMIT: each `{ id, name, machine, routed, status, activity }`,
+ *  `id` the row's instanceId and the next three the row's as it was when it was opened, `status`
+ *  "starting" until the panel has its window, then "open", `activity` true while it is hidden and
+ *  its agent wrote since it was last shown. `terminal`: the SHOWN tab, or null when no tab is open:
+ *  `{ id, name, machine, routed, focus, zoom, status }`, its tab's fields with `focus` "terminal"
+ *  while what is typed goes to the agent and "list" while the TUI reads keys, and `zoom` true while
+ *  it has the whole body (only with the terminal's focus).
  *  `outcome`: the line after an open (the model's `{ said, under }`), shown above the panes until
  *  the next key bound to an action, or null.
  *  `detachKey`: tui.json's `open.detachKey`, the leader (docs/tui.md, "The leader"), and
@@ -90,7 +93,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
     leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]), souls: NO_SOULS,
-    spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0,
+    spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0, tabs: Object.freeze([]),
   });
 }
 
@@ -420,7 +423,12 @@ function switched(state, action, page) {
  *  nothing (a stray back key is no key at all) leaves it. */
 export function reduce(state, event, keymap = bindings(state.actions)) {
   if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
-  const step = reduced(state, event, keymap);
+  let step = reduced(state, event, keymap);
+  // The tabs are the open workspace's: whatever opened another (or left it, gone), they all close.
+  if (step.state.open !== state.open && step.state.tabs.length) {
+    const ids = step.state.tabs.map((tab) => tab.id);
+    step = { state: next(step.state, { tabs: Object.freeze([]), terminal: null }), effect: both(step.effect, { close: ids }) };
+  }
   // The terminal has the focus only while the list of instances is shown: anything that shows
   // another view (a workspace gone, which shows the switcher) gives the focus back to the list.
   const t = step.state.terminal;
@@ -433,10 +441,84 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
   return under ? { ...step, state: next(step.state, { focus: "list", filter: Object.freeze({ ...step.state.filter, editing: false }) }) } : step;
 }
 
-/** The terminal of an open decision (the model's openDecision), starting, with the focus. */
-const startingTerminal = ({ id, name, machine, routed }) => Object.freeze({ id, name, machine, routed, focus: "terminal", zoom: false, status: "starting" });
-/** The open terminal with what changes of it. */
+/** The shown terminal with what changes of it: its focus and zoom (a change of its status goes
+ *  through tabWith, which keeps its tab in step). */
 const terminalWith = (state, changes) => next(state, { terminal: Object.freeze({ ...state.terminal, ...changes }) });
+/** Tab `id` with what changes of it, and the shown terminal with it when it is that tab. */
+function tabWith(state, id, changes) {
+  const tabs = Object.freeze(state.tabs.map((tab) => (tab.id === id ? Object.freeze({ ...tab, ...changes }) : tab)));
+  const { activity, ...shared } = changes;
+  return next(state, { tabs, ...(state.terminal?.id === id ? { terminal: Object.freeze({ ...state.terminal, ...shared }) } : {}) });
+}
+/** The cap's line: every tab is taken, and how to free one (the leader's close). */
+const fullLine = (state) => Object.freeze({ said: TAB_WORDS.full(TAB_LIMIT, state.detachKey), under: Object.freeze([]) });
+
+/** A new tab for an open decision (the model's openDecision), starting: placed after the shown
+ *  one (last, with none shown) and shown, with the focus. */
+function tabOpened(state, { id, name, machine, routed }) {
+  const tab = Object.freeze({ id, name, machine, routed, status: "starting", activity: false });
+  const at = state.terminal === null ? state.tabs.length : state.tabs.findIndex((each) => each.id === state.terminal.id) + 1;
+  const tabs = Object.freeze([...state.tabs.slice(0, at), tab, ...state.tabs.slice(at)]);
+  return next(state, { tabs, terminal: Object.freeze({ id, name, machine, routed, focus: "terminal", zoom: false, status: "starting" }) });
+}
+
+/** Tab `id` shown (docs/tui.md, "Tabs"), with `focus` and `zoom` (the shown one's, by default):
+ *  its activity mark goes, its instance's row is selected and revealed (a filter that hides it is
+ *  cleared, a collapsed parent opened), and the focus stays where it was. The loop is told to show
+ *  it unless it is the one shown already. */
+function showTab(state, id, { focus = state.terminal?.focus ?? "list", zoom = state.terminal?.zoom ?? false } = {}) {
+  const tab = state.tabs.find((each) => each.id === id);
+  if (!tab) return { state, effect: null };
+  const { activity, ...fields } = tab;
+  const before = state.terminal?.id ?? null;
+  const shown = next(state, {
+    tabs: Object.freeze(state.tabs.map((each) => (each.id === id && each.activity ? Object.freeze({ ...each, activity: false }) : each))),
+    terminal: Object.freeze({ ...fields, focus, zoom: focus === "terminal" && zoom }),
+  });
+  return { state: revealed(shown, id), effect: before === id ? null : { show: id } };
+}
+
+/** The row of instance `id` selected and on view in the list (Settled 5 of T2): a text filter
+ *  that hides it is cleared, and a collapsed instance above it is opened. The focus is not moved,
+ *  and nothing is selected when the row is not in the roster at all (it went away). */
+function revealed(state, id) {
+  if (state.view !== "instances" || state.open === null) return state;
+  let s = state;
+  if (!roster(s).index.has(id) && (s.filter.query !== "" || s.filter.soul)) s = rehomed(roster(s), next(s, { filter: NO_FILTER, top: 0, loose: false }));
+  if (!roster(s).index.has(id) && s.collapsed.size) {
+    // The collapsed instances that hide it: each one alone would.
+    const hiding = [...s.collapsed].filter((key) => !roster(next(s, { collapsed: new Set([key]) })).index.has(id));
+    if (hiding.length) { const collapsed = new Set(s.collapsed); for (const key of hiding) collapsed.delete(key); s = next(s, { collapsed }); }
+  }
+  return roster(s).index.has(id) ? next(s, { selected: id, loose: false, detailTop: id === s.selected ? s.detailTop : 0 }) : s;
+}
+
+/** The shown tab closed by the person (`c` in the list, the leader then `w`): its viewer ends
+ *  (the agent keeps running), the tab to its right is shown, else the one to its left, with the
+ *  focus `focus`; the last one closed gives the right side back to the detail and the focus to
+ *  the list. */
+function shownClosed(state, focus) {
+  const t = state.terminal;
+  if (t === null) return { state, effect: null };
+  const at = state.tabs.findIndex((tab) => tab.id === t.id);
+  const tabs = Object.freeze(state.tabs.filter((tab) => tab.id !== t.id));
+  const neighbour = tabs[at] ?? tabs[at - 1] ?? null;
+  const closed = next(state, { tabs, terminal: null });
+  if (neighbour === null) return { state: closed, effect: { close: [t.id] } };
+  const step = showTab(closed, neighbour.id, { focus, zoom: t.zoom });
+  return { state: step.state, effect: both({ close: [t.id] }, step.effect) };
+}
+
+/** The tab before or after the shown one (`step` -1 or 1) shown, without wrapping: at either end
+ *  nothing moves, nor while a tab is still starting (it is the shown one until the panel has its
+ *  window). The focus stays where it was, and so does the zoom. */
+function tabStepped(state, step, { focus = state.terminal?.focus ?? "list", zoom = state.terminal?.zoom ?? false } = {}) {
+  const t = state.terminal;
+  if (t === null || state.tabs.some((tab) => tab.status === "starting")) return { state, effect: null };
+  const at = state.tabs.findIndex((tab) => tab.id === t.id) + step;
+  if (at < 0 || at >= state.tabs.length) return { state, effect: null };
+  return showTab(state, state.tabs[at].id, { focus, zoom });
+}
 
 /** The preflight of another machine's agent ended. Given up meanwhile (Esc, a suspend, a second
  *  open): dropped. Failed: the line that says so, unless it is the person's own giving up. Else
@@ -446,45 +528,64 @@ function prepared(state, { id, error }) {
   if (opening === null || opening.id !== id || opening.phase !== "preflight") return { state, effect: null };
   if (error !== undefined) return { state: next(state, { opening: null, outcome: preflightLine(opening, error) }), effect: null };
   if (!roster(state).instances.some((row) => instanceId(row) === id)) return { state: next(state, { opening: null }), effect: null };
-  return { state: next(state, { opening: null, terminal: startingTerminal(opening) }), effect: { panel: id } };
+  return { state: tabOpened(next(state, { opening: null }), opening), effect: { panel: id } };
 }
 
-/** The viewer of the open terminal ended: the right side is the detail's again, the focus the
- *  list's, the line says what happened (nothing, when the person closed it), and the instances are
- *  read again at once. It is never opened again on its own: Enter opens it. An end of a terminal
- *  that is no longer the open one (closed by the person, then reported) changes nothing. */
+/** The viewer of a tab ended by itself: its tab closes, the line says what happened, naming its
+ *  instance (nothing when it ended cleanly), and the instances are read again at once. The shown
+ *  one's end shows the tab to its right, else the one to its left, with the focus in the list
+ *  (Settled 6 of T2); the last one's gives the right side back to the detail. A hidden one's end
+ *  changes neither the shown tab nor the focus. A tab is never opened again on its own: Enter opens
+ *  it. The end of a tab the person closed (no longer a tab, then reported) changes nothing. */
 function returned(state, { id, status, stderr, asked = false, refused = null }) {
-  const t = state.terminal;
-  if (t === null || t.id !== id) return { state, effect: null };
-  return { state: next(state, { terminal: null, outcome: returnedLine(t, status, stderr, { asked, refused }) }), effect: { refresh: { live: true } } };
+  const at = state.tabs.findIndex((tab) => tab.id === id);
+  if (at < 0) return { state, effect: null };
+  const t = state.terminal, line = returnedLine(state.tabs[at], status, stderr, { asked, refused });
+  const tabs = Object.freeze(state.tabs.filter((tab) => tab.id !== id));
+  const read = { refresh: { live: true } };
+  if (t?.id !== id) return { state: next(state, { tabs, ...(line ? { outcome: line } : {}) }), effect: read };
+  const closed = next(state, { tabs, terminal: null, outcome: line });
+  const neighbour = tabs[at] ?? tabs[at - 1] ?? null;
+  if (neighbour === null) return { state: closed, effect: read };
+  const step = showTab(closed, neighbour.id, { focus: "list" });
+  return { state: step.state, effect: both(read, step.effect) };
 }
 
-/** Enter in the list of instances (or a row of the palette, or the leader's Up and Down): on the
- *  row whose terminal is open, the focus goes to it; on another, that agent's terminal is opened
- *  (the open one is closed first: one at a time), or the line says why not. Nothing while another
- *  machine is asked first. Every open counts for the palette's recency (`recent`). */
+/** Enter in the list of instances (or a row of the palette, the leader's Up and Down, a spawn's
+ *  arrival): an instance open as a tab shows that tab, with the focus in it; another is opened as
+ *  a new tab after the shown one, shown, with the focus (docs/tui.md, "Tabs"), or the line says why
+ *  not. At the cap nothing closes on its own: the line says so. One open at a time (Settled 3 of
+ *  T2): nothing while another machine is asked first or a tab is still starting, and a preflight
+ *  holds its tab's place in the cap. Every open counts for the palette's recency (`recent`). */
 function openAgent(state, row) {
   if (state.opening !== null) return { state, effect: null };
-  const t = state.terminal;
-  if (t !== null && t.id === instanceId(row)) return { state: terminalWith(state, { focus: "terminal", zoom: false }), effect: null };
+  const id = instanceId(row);
+  // A tab still starting is the one shown until the panel has its window (one open at a time).
+  const starting = state.tabs.some((tab) => tab.status === "starting");
+  if (state.tabs.some((tab) => tab.id === id)) {
+    if (starting && state.terminal?.id !== id) return { state, effect: null };
+    const step = showTab(state, id, { focus: "terminal", zoom: false });
+    return { state: step.state, effect: step.effect };
+  }
+  if (starting) return { state, effect: null };
   const decision = openDecision(state, row, instanceActs(row));
   if (!decision.open) return { state: next(state, { outcome: decision.said }), effect: null };
-  state = next(state, { recent: Object.freeze([decision.id, ...state.recent.filter((id) => id !== decision.id)].slice(0, RECENT_KEPT)) });
-  const close = t === null ? {} : { close: t.id };
+  if (state.tabs.length >= TAB_LIMIT) return { state: next(state, { outcome: fullLine(state) }), effect: null };
+  state = next(state, { recent: Object.freeze([decision.id, ...state.recent.filter((each) => each !== decision.id)].slice(0, RECENT_KEPT)) });
   if (decision.routed) {
     const opening = Object.freeze({ id: decision.id, phase: "preflight", name: decision.name, machine: decision.machine, routed: true });
-    return { state: next(state, { opening, terminal: null, outcome: null }), effect: { ...close, open: decision } };
+    return { state: next(state, { opening, outcome: null }), effect: { open: decision } };
   }
-  return { state: next(state, { terminal: startingTerminal(decision), outcome: null }), effect: { ...close, open: decision } };
+  return { state: next(tabOpened(state, decision), { outcome: null }), effect: { open: decision } };
 }
 
-/** The keys of the open terminal from the list: zoom gives it the focus and the whole body, and
- *  close ends its viewer (the agent keeps running) and gives the right side back to the detail. */
-function terminalKey(state, action) {
+/** The keys of the shown terminal from the list: zoom gives it the focus and the whole body, and
+ *  close ends its viewer (the agent keeps running) and shows its neighbour, the focus `focus`. */
+function terminalKey(state, action, focus = "list") {
   const t = state.terminal;
   if (t === null) return { state, effect: null };
   if (action === "zoom") return { state: terminalWith(state, { focus: "terminal", zoom: true }), effect: null };
-  return { state: next(state, { terminal: null }), effect: { close: t.id } };
+  return shownClosed(state, focus);
 }
 
 /** The keys of the act view that are not the action table's: the focus moves with these and with
@@ -591,6 +692,9 @@ function acted(state, event) {
 
 /** The instances the palette's recency keeps. */
 const RECENT_KEPT = 50;
+/** How many terminals the panel holds open at once (lib/panel.mjs MAX_TERMINALS, which a test
+ *  holds this to). */
+export const TAB_LIMIT = 4;
 const leaderAt = (read, waiting) => Object.freeze({ read: Number.isInteger(read) ? read : null, waiting });
 /** Whether an event came in the same read of input as the leader. */
 const sameRead = (leader, event) => leader.read !== null && event.read === leader.read;
@@ -664,7 +768,16 @@ function led(state, does, event, keymap) {
     if (does === "zoom" && inTerminal) return { state: terminalWith(state, { zoom: !t.zoom }), effect: null };
     const settledState = toInstances(state);
     if (settledState.state.view !== "instances") return stay;
-    const step = terminalKey(settledState.state, does);
+    // A close from the terminal's focus gives that focus to the tab shown next (Settled 6 of T2).
+    const step = terminalKey(settledState.state, does, inTerminal ? "terminal" : "list");
+    return { state: step.state, effect: both(settledState.effect, step.effect) };
+  }
+  // The tabs, from any focus: the one shown next keeps the focus and the zoom it had.
+  if (does === "tab-previous" || does === "tab-next") {
+    if (t === null) return stay;
+    const settledState = toInstances(state);
+    if (settledState.state.view !== "instances") return stay;
+    const step = tabStepped(settledState.state, does === "tab-previous" ? -1 : 1, { focus: inTerminal ? "terminal" : "list", zoom: inTerminal && t.zoom });
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
   if (does === "previous" || does === "next") return stepped(state, does === "previous" ? -1 : 1, event);
@@ -797,7 +910,9 @@ function reduced(state, event, keymap) {
   if (event.prepared !== undefined) return prepared(state, event.prepared);
   if (event.given !== undefined) return state.opening?.phase === "preflight" ? { state: next(state, { opening: null }), effect: null } : stay;
   if (event.returned !== undefined) return returned(state, event.returned);
-  if (event.shown !== undefined) return state.terminal?.id === event.shown.id ? { state: terminalWith(state, { status: "open" }), effect: null } : stay;
+  if (event.shown !== undefined) return state.tabs.some((tab) => tab.id === event.shown.id) ? { state: tabWith(state, event.shown.id, { status: "open" }), effect: null } : stay;
+  // A hidden tab's agent wrote (the panel says so once per hidden spell): its mark.
+  if (event.activity !== undefined) return state.terminal?.id !== event.activity.id && state.tabs.some((tab) => tab.id === event.activity.id && !tab.activity) ? { state: tabWith(state, event.activity.id, { activity: true }), effect: null } : stay;
   if (event.entry !== undefined) return took(state, event);
   if (event.roster !== undefined) return heard(state, event.roster);
   if (event.collecting !== undefined) return { state: event.collecting === state.collecting ? state : next(state, { collecting: event.collecting === true }), effect: null };
@@ -874,6 +989,7 @@ function reduced(state, event, keymap) {
     case "filter": return { state: rehomed(roster(state), next(state, { focus: "list", filter: Object.freeze({ editing: true, query: state.filter.query }) })), effect: null };
     case "open": return at < 0 ? stay : openAgent(state, r.items[at].row);
     case "zoom": case "close-terminal": return terminalKey(state, action);
+    case "tab-previous": case "tab-next": return tabStepped(state, action === "tab-previous" ? -1 : 1);
     case "stop": case "retire": case "start": case "restart": return at < 0 ? stay : actOn(state, r.items[at].row, action);
     case "detail": return at < 0 ? stay : { state: next(state, { focus: state.focus === "detail" ? "list" : "detail" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
@@ -1154,6 +1270,12 @@ function arrived(state) {
     const done = next(state, { arriving: null });
     if (!free(done) || done.open !== a.workspace) return { state: next(done, { outcome: spawnLine({ ...a.words, next: a.words?.next ?? "open-from-list" }, a.instance, state.actions) }), effect: null };
     const settledState = toInstances(done), id = instanceId(row);
+    // Every tab taken (Settled 7 of T2): the created line, then the cap's; nothing opens.
+    if (!done.tabs.some((tab) => tab.id === id) && done.tabs.length >= TAB_LIMIT) {
+      const created = spawnLine({ ...a.words, next: null }, a.instance, state.actions), full = fullLine(done);
+      const said = created?.said.length ? [...created.said, { own: " " }, ...full.said] : full.said;
+      return { state: next(done, { outcome: Object.freeze({ said: Object.freeze(said), under: created?.under ?? [] }) }), effect: null };
+    }
     let s = settledState.state;
     if (!roster(s).index.has(id)) s = rehomed(roster(s), next(s, { filter: NO_FILTER, top: 0, loose: false }));
     const shown = roster(s).instances.find((each) => instanceId(each) === id) ?? row;

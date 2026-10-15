@@ -62,13 +62,14 @@ function fakePanel(log, options) {
     options, opens: [],
     screen: (id, text, cursor = { x: 0, y: 0, visible: true }, size = { cols: 40, rows: 10 }) => options.onScreen({ id, screen: options.capture(text, size), cursor }),
     closed: (id, status, stderr = "", asked = false) => options.onClosed({ id, status, stderr, asked }),
+    activity: (id) => options.onActivity({ id }),
   };
   p.api = {
     open({ argv, cols, rows }) {
       did("open", [...argv], cols, rows);
       return new Promise((resolve, reject) => { p.opens.push({ argv, cols, rows, made: (id) => resolve({ id }), refuse: reject }); });
     },
-    close() { did("close"); }, resize(cols, rows) { did("resize", cols, rows); },
+    close(id) { did("close", ...(id === undefined ? [] : [id])); }, show(id) { did("show", id); }, resize(cols, rows) { did("resize", cols, rows); },
     input(bytes) { did("input", Buffer.from(bytes).toString("latin1")); }, paste(text) { did("paste", text); },
     setVisible(on) { did("visible", on); }, refresh() { did("refresh"); }, pause() { did("pause"); }, resume() { did("resume"); }, end() { did("end"); },
     get current() { return null; },
@@ -212,7 +213,7 @@ test("the action table binds each key to one action, and a key bound twice is re
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances", 2: "souls", 3: "capabilities",
-    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
+    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", "[": "tab-previous", "]": "tab-next", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw", "ctrl+k": "palette",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
@@ -1027,7 +1028,7 @@ async function viewingFirstOfTwo() {
   return r;
 }
 
-test("with a terminal focused, the leader, k, a few letters and Enter, each in a read of its own, open the palette, find the other agent and swap the panel to it, the focus in the new terminal: no byte of it reaches the agent (Spec T1b)", async () => {
+test("with a terminal focused, the leader, k, a few letters and Enter, each in a read of its own, open the palette, find the other agent and open it as a tab of its own, the focus in the new terminal: no byte of it reaches the agent (Spec T1b; T2)", async () => {
   const r = await viewingFirstOfTwo();
   r.stdin.type("\x1c");
   r.stdin.type("k");
@@ -1040,7 +1041,7 @@ test("with a terminal focused, the leader, k, a few letters and Enter, each in a
   r.stdin.type("\r");
   await settle();
   assert.deepEqual(panelDid(r).filter(([what]) => what === "input" || what === "paste"), [], "nothing typed reached the agent");
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "close" || what === "open").map(([what]) => what), ["close", "open"], "one terminal at a time: the open one closed first");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "close" || what === "open").map(([what]) => what), ["open"], "a tab of its own: the open one stays (T2)");
   assert.deepEqual(r.panel.opens[1].argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: LEDGER_HOME })], "the chosen agent's terminal");
   r.panel.opens[1].made("@2");
   await settle();
@@ -1052,7 +1053,7 @@ test("with a terminal focused, the leader, k, a few letters and Enter, each in a
   assert.equal(await r.status, 0);
 });
 
-test("with a terminal focused, the leader then Down opens the next agent's terminal with the focus in it, and then Up the one before; nothing reaches the agent (Spec T1b)", async () => {
+test("with a terminal focused, the leader then Down opens the next agent's terminal as a tab with the focus in it, and then Up shows the one before, a tab already; nothing reaches the agent (Spec T1b; T2)", async () => {
   const r = await viewingFirstOfTwo();
   r.stdin.type("\x1c");
   r.stdin.type("\x1b[B");
@@ -1061,12 +1062,11 @@ test("with a terminal focused, the leader then Down opens the next agent's termi
   assert.deepEqual(r.panel.opens[1].argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: LEDGER_HOME })], "the next agent");
   r.panel.opens[1].made("@2");
   await settle();
+  r.log.length = 0;
   r.stdin.type("\x1c");
   r.stdin.type("\x1b[A");
   await settle();
-  assert.deepEqual(r.panel.opens[2].argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: HOME })], "the agent before");
-  r.panel.opens[2].made("@3");
-  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "open" || what === "show"), [["show", "@1"]], "the agent before is a tab: shown, not opened again");
   // At the first agent, Up again goes nowhere: no wrap.
   r.log.length = 0;
   r.stdin.type("\x1c");
@@ -1144,7 +1144,7 @@ test("a viewer that ends on its own closes the terminal: the line says what it p
   leaderTwice(r);
   r.log.length = 0;
   r.stdin.type("c");
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "close"), [["close"]]);
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "close"), [["close", "@2"]], "the shown tab, by its window");
   r.panel.closed("@2", null, "", true);
   await settle();
   assert.doesNotMatch(wholeScreen(r), /could not|ended|back to the list|focus terminal/);
@@ -1207,7 +1207,7 @@ test("the panel is told the size and the sight its new window needs: a resize wh
   leaderTwice(r);
   r.stdin.type("\t");
   r.stdin.type("c");
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "visible" || what === "close"), [["visible", false], ["close"]]);
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "visible" || what === "close"), [["visible", false], ["close", "@1"]]);
   r.stdin.type("\t");
   r.log.length = 0;
   r.stdin.type("\r");
