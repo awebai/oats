@@ -550,6 +550,36 @@ Reset detection always defers: the owning scheduler must reserve a fresh full
 worker allowance for reset and restart the union sweep afterward. Source,
 discovery, cleanup and final receipt routing remain separate responsibilities.
 
+The private `CaptureIndexInventory` builds the union of indexed stream names
+and live journal stream names in `capture.db`. Indexed names are enumerated
+first, including names whose journal disappeared; they remain in the inventory
+so locked index validation can detect changes to cross-stream tombstone
+authority. Each discovery call inspects at most 128 index rows or directory
+entries, including irrelevant names. Inserting that page and advancing its
+checkpoint share one transaction. Names shared by both sources occur once.
+The inventory never reads journal content, changes index rows or grants reset
+permission.
+
+A scheduler-owned sweep identity resumes discovery across connection/worker
+restarts. Live discovery retains a sorted directory-name array only within the
+worker and resumes by a binary name key when reopened, even if that anchor was
+removed. The selected streams directory's identity must remain unchanged.
+Directory listing/sorting is still metadata work proportional to directory
+size, and can recur after restart; it is not a bounded-memory metadata claim.
+New names before the saved position belong to a later sweep. A fresh absent
+directory can be empty; disappearance/replacement after selection is an error.
+
+Ordered reads use bounded database pages and rotate after the durable index
+admission position, visiting the discovered union once per iterator. Inventory
+rows are not removed on an apparent index completion: membership is not cursor
+or generation proof. The `complete` flag only means enumeration finished, never
+that indexing or a pass succeeded. The scheduler still owns index outcomes,
+new streams created by interleaved capture, reset admission and a fresh union
+sweep after reset. Replacing a sweep retires its exact scope; indexed cleanup
+deletes at most 128 obsolete rows per unit and refuses the active scope. Losing
+this private table restarts enumeration without clearing retries, journal
+checkpoints or the index. These primitives are not yet the full command runner.
+
 ## First-upgrade cost
 
 The first capture after upgrade must reconcile existing journals and rebuild the
