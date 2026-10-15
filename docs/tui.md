@@ -629,12 +629,21 @@ with the Desktop (`packages/client/`).
   watches `alive`, a FIFO in the run's directory (0600, made with the
   system's `mkfifo`) that `oats tui` holds open for writing until it ends.
   When `oats tui` is gone, whatever ended it and at any moment, the keeper
-  kills the server. Two tools of the base system serve the keeper, found on
-  `PATH` like `tmux`. **`mkfifo`** makes `alive`: without it an open is
-  refused, and the line says the terminal could not be opened, with what
-  was said under it. **`ps`** tells the keeper its server is still its
-  parent: without it the keeper kills nothing, and an `oats tui` killed
-  with SIGKILL can leave its private server running. Each open is a window of it, closed with `kill-pane`, which hangs up the viewer's
+  kills the server. The keeper needs two things from the base system,
+  found on `PATH` like `tmux`.
+  - **`mkfifo`** makes `alive`. Without it an open is refused: the line
+    says the terminal could not be opened, with what was said under it.
+  - **A way to tell that the server is still its parent.** The keeper reads
+    that from `/proc` where the system has one (Linux), and otherwise asks
+    `ps -o ppid= -p` (macOS). With neither (no `/proc`, and no `ps` or one
+    that refuses `-p`, like BusyBox's), the keeper kills nothing. A normal
+    end is not affected. An `oats tui` killed with SIGKILL can then leave
+    its private server running, with the open terminal's viewer still
+    attached to the agent, until you end it with `tmux -S
+    <run directory>/tmux kill-server`. The next run's sweep leaves that
+    directory alone while its socket answers.
+
+  Each open is a window of the server, closed with `kill-pane`, which hangs up the viewer's
   terminal so the viewer removes its own session on the agents' server. The
   viewer's error output and exit status go to two files of the run's
   directory (0600), read back when it ends and deleted. The server is ended

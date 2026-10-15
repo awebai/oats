@@ -101,10 +101,14 @@ export const SESSION = "oats-tui";
  *  SIGTERM would not do, since a server ends only once its clients are gone, and the client tmux
  *  cannot drain is never gone. The kernel then closes every pane's terminal, so each viewer gets
  *  SIGHUP and cleans up, and the control client, its server gone, exits. The parent is killed only
- *  while it is still the keeper's parent (`ps`): a keeper whose server has ended is reparented,
- *  and its `$PPID` may name another process by then. `kill` is the shell's own (no `exec`): a
- *  PATH without a kill program does not matter. All of it quietly. */
-export const KEEPER_SCRIPT = 'exec 3<>"$1" 4<"$1" 3>&-; cat <&4 >/dev/null; exec >/dev/null 2>&1; [ $(ps -o ppid= -p $$) = "$PPID" ] && kill -KILL "$PPID"';
+ *  while it is still the keeper's parent: a keeper whose server has ended is reparented, and its
+ *  `$PPID` may name another process by then. The parent now is read from `/proc/$$/stat` where
+ *  there is one (field 4, after the `) ` that ends the command name, which may itself hold one),
+ *  else from `ps -o ppid= -p $$` (macOS). FAIL SAFE: when neither names it (no /proc, and no ps or
+ *  one that refuses `-p`, as BusyBox's does), nothing is killed, and the server is left to the
+ *  stdin EOF alone (docs/tui.md says what that can leave). `read` and `kill` are the shell's own:
+ *  a PATH without them does not matter. All of it quietly. */
+export const KEEPER_SCRIPT = 'exec 3<>"$1" 4<"$1" 3>&-; cat <&4 >/dev/null; exec >/dev/null 2>&1; p=; if [ -r /proc/$$/stat ]; then read -r s </proc/$$/stat; set -- ${s##*) }; p=$2; else set -- $(ps -o ppid= -p $$); p=$1; fi; [ -n "$p" ] && [ "$p" -eq "$PPID" ] && kill -KILL "$PPID"';
 /** The command list the control client starts the server with (see THE START above): the session
  *  with its keeper, attached; `exit-unattached` at once after it; then every option. `unbind-key
  *  -a` empties the prefix table only: the root table (mouse bindings by default) and the

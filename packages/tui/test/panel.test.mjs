@@ -9,7 +9,7 @@ import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSyn
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, SESSION, STDERR_KEPT, VIEW_SCRIPT, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
+import { FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/panel/tmux.mjs", import.meta.url));
 const ROOT = realpathSync(mkdtempSync(path.join(os.tmpdir(), "panel-test-")));
@@ -553,4 +553,50 @@ test("a callback that throws does not break the panel: it is thrown again outsid
     process.removeListener("uncaughtException", listener);
     for (const other of before) process.on("uncaughtException", other);
   }
+});
+
+// THE KEEPER'S SCRIPT, run by itself: a stand-in for the server (`/bin/sh`, the keeper's parent)
+// starts it with the FIFO, then says "keeper done" and waits on its stdin. The test holds the
+// FIFO's write end and lets go: a keeper that can name its parent kills it (SIGKILL); one that
+// cannot kills nothing, and the stand-in lives on. PATH holds `cat` and, as the case says, a `ps`.
+/** A directory for PATH: `cat`, and `ps` as given (null: none). */
+function keeperPath(ps) {
+  const bin = mkdtempSync(path.join(ROOT, "keeper-bin-"));
+  symlinkSync(execFileSync("/bin/sh", ["-c", "command -v cat"], { encoding: "utf8" }).trim(), path.join(bin, "cat"));
+  if (ps !== null) { writeFileSync(path.join(bin, "ps"), ps); chmodSync(path.join(bin, "ps"), 0o755); }
+  return bin;
+}
+/** Run the keeper under a stand-in server, let go of the FIFO: -> "killed" or "left". */
+async function keeperRun(bin) {
+  const fifo = path.join(mkdtempSync(path.join(ROOT, "keeper-")), "alive");
+  execFileSync("mkfifo", ["-m", "600", fifo]);
+  const held = PANEL_FS.hold(fifo);
+  const server = spawn("/bin/sh", ["-c", '/bin/sh -c "$1" oats-tui-keeper "$2"; echo "keeper done"; read x', "server", KEEPER_SCRIPT, fifo], { env: { PATH: bin }, stdio: ["pipe", "pipe", "ignore"] });
+  let said = "";
+  server.stdout.on("data", (chunk) => { said += chunk; });
+  const ended = new Promise((resolve) => server.once("exit", (code, signal) => resolve(signal)));
+  await sleep(200); // the keeper is in its read of the FIFO (and if not yet, it finds no writer: the same)
+  PANEL_FS.release(held);
+  // Whichever comes first: the stand-in's end, or the keeper's own end with the stand-in alive.
+  let outcome = null;
+  ended.then((signal) => { outcome ??= signal === "SIGKILL" ? "killed" : `ended ${signal}`; });
+  for (let waited = 0; outcome === null && waited < 5000; waited += 10) {
+    if (said.includes("keeper done")) outcome = "left";
+    else await sleep(10);
+  }
+  try { server.kill("SIGKILL"); } catch { /* gone */ }
+  return outcome ?? "neither within 5 s";
+}
+const HAS_PROC = existsSync("/proc/self/stat");
+
+test("the keeper names its parent from /proc where there is one: with no ps on PATH it still kills its server; with no /proc and no ps it kills nothing (fail safe)", async () => {
+  assert.equal(await keeperRun(keeperPath(null)), HAS_PROC ? "killed" : "left");
+});
+
+test("the keeper with a BusyBox-like ps that refuses -p: /proc gives the parent and the server is killed", { skip: HAS_PROC ? false : "no /proc here: the ps path is the one taken" }, async () => {
+  assert.equal(await keeperRun(keeperPath("#!/bin/sh\necho 'ps: unrecognized option: p' >&2\nexit 1\n")), "killed");
+});
+
+test("the keeper with a ps that names its parent, and no /proc to read first (macOS): the server is killed", { skip: HAS_PROC ? "/proc is read first here" : false }, async () => {
+  assert.equal(await keeperRun(keeperPath(`#!/bin/sh\nexec ${execFileSync("/bin/sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim()} "$@"\n`)), "killed");
 });
