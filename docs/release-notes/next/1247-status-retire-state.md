@@ -10,7 +10,9 @@
   without a marker, the home's claim held by an `oats retire` (`self:
   false`). `state` is `running`, `unknown` (liveness cannot be read),
   `failed` (with the result's kernel `code` and its one-line `message`) or
-  `interrupted` (the completion process is gone). Status still takes no
+  `interrupted` (the completion process is gone). `since` is always an
+  instant (the recorded time, else the file's modification time), and
+  `code` and `message` are strings or absent, never `null`. Status still takes no
   claim, removes no file and signals no process. `retirePending` keeps its
   meaning. Remote roster rows relay `retire` only when the host's row has
   it, checked by the same rule, and drop a value that fails it. A client

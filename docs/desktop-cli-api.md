@@ -2895,9 +2895,11 @@ its absence.
   `code` is the result's `error.code` when it matches `^E_[A-Z0-9_]+$`, and
   is left out otherwise (the state stays `failed`); `message` is its
   `error.message` on one line and cut to a retire's one-line reason (at most
-  2048 UTF-16 code units, a cut ending in `…`), left out when empty. `since`
-  is an instant as `toISOString()` writes it, never `null`: it is left out
-  when no time can be read. `code` and `message` are only on `failed`. A
+  2048 UTF-16 code units, a cut ending in `…`), left out when empty: each is
+  a string or absent, never `null`, and only on `failed`. `since` is always
+  there, an instant as `toISOString()` writes it: the time in the table when
+  it is one, else the marker file's modification time (the claim file's for
+  a claim); a `retire` whose time cannot be read at all is not given. A
   failed retire that owes the home nothing leaves no marker: its row carries
   no `retire`, and its agent row's `retireFailures[]` holds the outcome, as
   before. A retire that was killed while it held the claim leaves a claim
@@ -3075,10 +3077,11 @@ route target:
   and a saved route the host did not list, carry none. When present it is
   passed through the [local row's](#row-retire) rule again on this side: a
   `state` that is not one of `running`, `unknown`, `failed`, `interrupted`, a
-  `self` that is not a boolean, or a value that is not an object drops the
-  key; a `since` that is not a `toISOString()` instant, a `code` that is not
-  a kernel code, and a `code` or `message` on a state other than `failed` are
-  left out, and `message` is cut to the same bound. `oats status --server
+  `since` that is not a `toISOString()` instant, a `self` that is not a
+  boolean, or a value that is not an object drops the key; a `code` that is
+  not a kernel code, a `code` or `message` that is not a string, and a `code`
+  or `message` on a state other than `failed` are left out, and `message` is
+  cut to the same bound. `oats status --server
   <id> --json` relays the host's answer verbatim, `retire` included, as it
   does every other field.
 - **`addressable`** (0.31): `true` for every row the host reports. Routed

@@ -90,6 +90,10 @@ test("a marker beside a failed result reads failed, with the result's time, code
     "the result decides, whatever the completion's liveness");
   const noTime = homeWith({ marker: { requestedAt: REQUESTED }, result: failedResult({ completedAt: "not a time" }) });
   assert.equal(retireOf(noTime).since, REQUESTED, "no completedAt: the marker's requestedAt");
+  const MTIME = new Date("2026-10-09T08:07:06.000Z");
+  const neither = homeWith({ marker: { requestedAt: null }, result: failedResult({ completedAt: null }) });
+  utimesSync(retirePendingMarkerPath(neither.home), MTIME, MTIME);
+  assert.equal(retireOf(neither).since, MTIME.toISOString(), "neither: the marker file's mtime");
 });
 
 test("a marker whose completion is alive reads running; gone reads interrupted; since is the marker's requestedAt", () => {
@@ -150,17 +154,18 @@ test("a failed result's message is one line, bounded to a retire's one-line reas
   assert.equal(message.length, RETIRE_REFUSED_REASON_MAX);
   assert.ok(message.startsWith("first line second x"), "whitespace collapsed to one space");
   assert.ok(message.endsWith("…"));
-  for (const empty of ["", "  \n ", 7]) {
+  for (const empty of ["", "  \n ", 7, null]) {
     const r = retireOf(homeWith({ marker: { requestedAt: REQUESTED }, result: failedResult({ error: { code: "E_X", message: empty } }) }));
     assert.deepEqual(r, { state: "failed", since: COMPLETED, self: true, code: "E_X" }, JSON.stringify(empty));
   }
 });
 
-test("since is a toISOString() instant or absent, never null", () => {
+test("since is always there, a toISOString() instant: a recorded time that is not one gives the marker file's mtime", () => {
+  const MTIME = new Date("2026-10-09T08:07:06.000Z");
   for (const requestedAt of [undefined, null, "yesterday", "2026-10-10T00:00:00Z", "2026-02-30T00:00:00.000Z", 1760000000000]) {
-    const r = retireOf(homeWith({ marker: { ...(requestedAt === undefined ? {} : { requestedAt }) } }));
-    assert.deepEqual(r, { state: "unknown", self: true }, JSON.stringify(requestedAt));
-    assert.equal(Object.hasOwn(r, "since"), false);
+    const fx = homeWith({ marker: { ...(requestedAt === undefined ? {} : { requestedAt }) } });
+    utimesSync(retirePendingMarkerPath(fx.home), MTIME, MTIME);
+    assert.deepEqual(retireOf(fx), { state: "unknown", since: MTIME.toISOString(), self: true }, JSON.stringify(requestedAt));
   }
 });
 
@@ -174,8 +179,10 @@ test("an external retire's claim held alive reads running, self: false, since th
   assert.equal(Object.hasOwn(row, "retirePending"), false, "retirePending is unchanged: no marker, no retirePending");
   const older = homeWith({ claim: { pid: holder.pid, processStart: holder.processStart, at: CLAIMED } });
   assert.deepEqual(retireOf(older), { state: "running", since: CLAIMED, self: false }, "a claim that names no verb is a retire's (an older kernel's)");
+  const MTIME = new Date("2026-10-09T08:07:06.000Z");
   const badTime = homeWith({ claim: { pid: holder.pid, processStart: holder.processStart, at: "soon", action: "retire" } });
-  assert.deepEqual(retireOf(badTime), { state: "running", self: false }, "a claim time that is not an instant is left out");
+  utimesSync(retireClaimPath(badTime.home), MTIME, MTIME);
+  assert.deepEqual(retireOf(badTime), { state: "running", since: MTIME.toISOString(), self: false }, "a claim time that is not an instant: the claim file's mtime");
 });
 
 test("a retire's claim whose holder's liveness cannot be read reads unknown, self: false", () => {
@@ -217,10 +224,14 @@ test("status only reads: no file beside the home changes, and no process is sign
 
 // ---- the read rule, on its own -----------------------------------------------------------------------
 
-test("readRetireState: code and message belong to failed only; anything not a state is undefined", () => {
+test("readRetireState: since is required; code and message belong to failed only, strings or absent, never null", () => {
   assert.deepEqual(readRetireState({ state: "running", since: REQUESTED, self: true, code: "E_X", message: "m" }), { state: "running", since: REQUESTED, self: true });
-  assert.deepEqual(readRetireState({ state: "failed", self: false, code: "E_X", message: "m", extra: 1 }), { state: "failed", self: false, code: "E_X", message: "m" });
-  for (const v of [undefined, null, "running", 1, [], [{ state: "running", self: true }], {}, { state: "done", self: true }, { state: "running" }, { state: "running", self: "true" }, { state: "Running", self: true }]) {
+  assert.deepEqual(readRetireState({ state: "failed", since: REQUESTED, self: false, code: "E_X", message: "m", extra: 1 }), { state: "failed", since: REQUESTED, self: false, code: "E_X", message: "m" });
+  assert.deepEqual(readRetireState({ state: "failed", since: REQUESTED, self: true, code: null, message: null }), { state: "failed", since: REQUESTED, self: true });
+  const S = { since: REQUESTED };
+  for (const v of [undefined, null, "running", 1, [], [{ state: "running", self: true, ...S }], {}, { state: "done", self: true, ...S }, { state: "running", ...S },
+    { state: "running", self: "true", ...S }, { state: "Running", self: true, ...S }, { state: "running", self: true }, { state: "failed", self: true, since: null },
+    { state: "running", self: true, since: "yesterday" }, { state: "running", self: true, since: "2026-10-10T00:00:00Z" }]) {
     assert.equal(readRetireState(v), undefined, JSON.stringify(v));
   }
 });
@@ -261,15 +272,16 @@ test("rosterGroups relays a host row's retire as the kernel reads it, and only w
 
 test("rosterGroups drops a host's retire that the kernel's read refuses, and trims what it leaves out", async () => {
   const refused = { "null": null, "a string": "running", "an array": [{ state: "running", self: true }], "an empty object": {},
-    "an unknown state": { state: "done", self: true }, "no self": { state: "running" }, "a self that is a string": { state: "running", self: "false" } };
+    "an unknown state": { state: "done", since: CLAIMED, self: true }, "no self": { state: "running", since: CLAIMED }, "a self that is a string": { state: "running", since: CLAIMED, self: "false" },
+    "no since": { state: "failed", self: true, code: "E_X" }, "a null since": { state: "running", since: null, self: false }, "a since that is not an instant": { state: "interrupted", since: "yesterday", self: true } };
   const names = Object.keys(refused).map((_, i) => `dev-r${i}`);
   const g = await roster([
     ...Object.values(refused).map((retire, i) => hostRow(names[i], { retire })),
-    hostRow("dev-trim", { retire: { state: "interrupted", since: "yesterday", self: true, code: "E_X", message: "m", extra: "x" } }),
+    hostRow("dev-trim", { retire: { state: "interrupted", since: CLAIMED, self: true, code: "E_X", message: "m", extra: "x" } }),
     hostRow("dev-long", { retire: { state: "failed", since: COMPLETED, self: true, code: "not a code", message: `a\n${"y".repeat(RETIRE_REFUSED_REASON_MAX)}` } }),
   ]);
   Object.keys(refused).forEach((what, i) => assert.equal(Object.hasOwn(remoteRow(g, names[i]), "retire"), false, what));
-  assert.deepEqual(remoteRow(g, "dev-trim").retire, { state: "interrupted", self: true });
+  assert.deepEqual(remoteRow(g, "dev-trim").retire, { state: "interrupted", since: CLAIMED, self: true });
   const long = remoteRow(g, "dev-long").retire;
   assert.deepEqual(Object.keys(long), ["state", "since", "self", "message"]);
   assert.equal(long.message.length, RETIRE_REFUSED_REASON_MAX); assert.ok(long.message.startsWith("a y") && long.message.endsWith("…"));
