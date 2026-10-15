@@ -8,7 +8,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { appendLogEntry, PACKAGED_SKILLS_DIR } from "./core-loader.mjs";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export default function (pi: ExtensionAPI) {
@@ -44,13 +44,20 @@ export default function (pi: ExtensionAPI) {
       }, { deliverAs: "steer" });
     });
 
+    // The bridge's own record that this home has had a pi session. A home's
+    // first startup gets no resume nudge: its STATE.md holds only what a
+    // capability seeded, whatever that text is. The home goes at retire, so a
+    // reused instance name starts without it.
+    const startedPath = join(agentHome!, ".oats-pi-started");
     pi.on("session_start", async (event) => {
+      const hadSession = existsSync(startedPath);
+      if (!hadSession) {
+        try { writeFileSync(startedPath, `${new Date().toISOString()}\n`, { flag: "wx" }); }
+        catch { /* memory automation must never break a session */ }
+      }
       if (event.reason !== "startup" && event.reason !== "resume" && event.reason !== "new") return;
-      const statePath = join(agentHome!, "STATE.md");
-      if (!existsSync(statePath)) return;
-      const state = readFileSync(statePath, "utf8");
-      const touched = !/_No task assigned yet/.test(state) || !/_\(the single next action/.test(state);
-      if (event.reason === "startup" && !touched) return;
+      if (!existsSync(join(agentHome!, "STATE.md"))) return;
+      if (event.reason === "startup" && !hadSession) return;
       pi.sendMessage({
         customType: "oats-memory",
         content: `You are agent instance home ${agentHome}. Read ./STATE.md and the recent entries of ./log.md now, then continue from STATE.md's "Next" section. Keep STATE.md current as you work.`,
