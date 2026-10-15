@@ -201,6 +201,12 @@ list. Open a viewer PTY at that size; inspect again to observe a resize.
 `oats session attach --home <abs-home>` has no keyboard exit (close the
 terminal); when `oats version --json` lists `session-attach-detach-key`, add
 `--detach-key <key>` (`'C-\'` is the suggested one) and that key leaves it.
+When the probe lists `session-attach-ignore-size`, add `--ignore-size` if the
+viewer must not constrain or resize the agent's window (tmux 3.2+). Default
+sizing is unchanged. With `--server <id>`, the host must advertise the feature
+too: the route refuses an unsupported host with `E_REMOTE_INCOMPATIBLE` and
+`details.feature: "session-attach-ignore-size"`, even with `--print`, before
+roster or attach. Reconnect guidance retains the flag.
 
 
 These act on **other** instances — typically children you spawned — and only

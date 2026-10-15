@@ -1033,6 +1033,7 @@ oats session inspect --home /abs/home --json
 oats session input --home /abs/home --text-file message.txt --json
 oats session attach --home /abs/home
 oats session attach --home /abs/home --detach-key 'C-\'
+oats session attach --home /abs/home --detach-key 'C-\' --ignore-size
 ```
 
 - **inspect** reports `backend`, `present` and `state`: `unknown` for a live
@@ -1105,6 +1106,22 @@ oats session attach --home /abs/home --detach-key 'C-\'
   terminal without the mode ignores it. Before 3.2, or when `tmux -V` gives
   no version it can read, the client starts as before. A routed attach
   (`--server`) runs the same viewer on the host, so the host's tmux decides.
+
+  **A viewer that does not size the window.** Add `--ignore-size` when the
+  viewer must not constrain or resize the agent's window. It attaches that
+  viewer's client with `tmux attach-session -f ignore-size` (tmux 3.2 and
+  later), excluding it from window sizing under every `window-size` policy.
+  The agent's own client can grow the window while the viewer follows it.
+  Without the flag, sizing behaviour is unchanged. It can be combined with
+  `--detach-key`.
+
+  Check for `session-attach-ignore-size` in `oats version --json` before
+  passing the flag. With `--server`, the remote kernel must advertise the
+  feature too: the route refuses an unsupported host with
+  `E_REMOTE_INCOMPATIBLE` and `details.feature: "session-attach-ignore-size"`,
+  even under `--print`, before reading its roster or sending an attach.
+  Reconnect guidance retains `--ignore-size`
+  ([routed attach](servers.md#run-there)).
 
   **Leaving the viewer.** Without `--detach-key` there is no keyboard exit:
   every key goes to the agent, the tmux prefix included. Close the terminal.

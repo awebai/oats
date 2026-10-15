@@ -205,7 +205,8 @@ Every routed ssh call carries these options, before `--` and the host:
   `session attach --server` exits 255 and says that, if the link was lost,
   the instance keeps running on the server, with the command to reattach.
   When `--detach-key` was given, that command carries it (` --detach-key
-  <key>`, shell-quoted); without one the line is as before.
+  <key>`, shell-quoted). It also retains `--ignore-size` when given; without
+  either flag the line is as before.
   When ssh fails before the viewer opens (the version probe, or a name
   resolved through the host's roster), it also exits 255, with `oats: ssh to
   <host> failed: …` (`--json`: the `E_SSH` envelope). Every other refusal
@@ -238,7 +239,7 @@ sent as text or on stdin, never as paths.
 | `spawn` | registered workspace | the requested harness, backend and yolo option; `launch-config` for `--launch-config`; `schedule` for a wake schedule; `spawn-preview-2` for `--preview` |
 | `status` | registered workspace | |
 | `retire` | the instance's home | `retire-home` to retire by exact home |
-| `session inspect`, `session attach` | the instance's home | `session`; `session-attach-detach-key` for `attach --detach-key` |
+| `session inspect`, `session attach` | the instance's home | `session`; `session-attach-detach-key` for `attach --detach-key`; `session-attach-ignore-size` for `attach --ignore-size` |
 | `session start`, `session restart` | the instance's home | `session-start`; `session-restart`; `launch-config` when `--launch-config`, `--harness` or `--yolo` is given |
 | `session upload` | the instance's home | `session-upload` |
 | `okf harvest --instance <name>` | the saved home | `harvest` |
@@ -324,6 +325,19 @@ nothing was sent`. Under `--json` the envelope's `error.details` is
 `{"feature":"session-attach-detach-key"}`. With a key the probe also runs
 under `--print`, which otherwise skips it: a printed command must not carry
 a flag its host would ignore.
+
+**A routed viewer that does not size the window.** `session attach --server
+<id> --ignore-size` passes `--ignore-size` to the host, where the viewer
+attaches with tmux's `ignore-size` client flag (tmux 3.2 and later;
+[attach behaviour](execution-targets.md#inspect-input-and-attach)). The host
+must advertise `session-attach-ignore-size`. Otherwise the route refuses
+with `E_REMOTE_INCOMPATIBLE` and
+`error.details: {"feature":"session-attach-ignore-size"}`, naming the
+missing feature and the option to upgrade the host or attach without the
+flag. This check runs after the version probe and before the roster or
+attach, including under `--print`; it never silently drops the flag.
+Reconnect guidance keeps `--ignore-size`. Without it, routing and sizing
+behaviour are unchanged.
 
 **Not routed.** `session input` runs on the execution host, where schedules
 and messaging capabilities call it. `session restart --stop-grace` is refused

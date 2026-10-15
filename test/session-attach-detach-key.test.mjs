@@ -127,11 +127,11 @@ let opened = 0;
  *  its own (the shell's job control), the terminal's foreground one, so that a signal to that group
  *  leaves the pane's shell to record the status; and the shell catches INT (its children do not
  *  inherit a handler), or bash would end itself with a job that INT ended, before recording it. */
-async function view(a, { key, front, attach = true, group = false } = {}) {
+async function view(a, { key, front, attach = true, group = false, ignoreSize = false } = {}) {
   const id = `v${++opened}`;
   const statusFile = join(base, `${id}.status`);
   const before = new Set(viewerSessions());
-  const argv = [process.execPath, CLI, "session", "attach", "--home", a.home, ...(key === undefined ? [] : ["--detach-key", key])];
+  const argv = [process.execPath, CLI, "session", "attach", "--home", a.home, ...(key === undefined ? [] : ["--detach-key", key]), ...(ignoreSize ? ["--ignore-size"] : [])];
   const script = `${group ? "trap : INT; set -m; " : ""}${front ? `PATH=${shq(`${front}:${process.env.PATH}`)}; export PATH; ` : ""}${argv.map(shq).join(" ")}; echo $? > ${shq(statusFile)}`;
   const pane = tmuxOn(TERM, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=term:", "-n", id, "-c", base, script);
   const viewer = {
@@ -507,3 +507,45 @@ test("a hang-up to the attach's process group while the viewer is being prepared
   }
   assert.equal(typed(a), "", "the agent read nothing");
 });
+
+// Resize only the terminals on TERM: their nested clients receive real terminal resizes.
+// No resize command touches the agent's window on AGENTS.
+for (const policy of ["smallest", "latest", "largest"]) for (const ignoreSize of [true, false]) {
+  test(`session attach --ignore-size ${ignoreSize}: ${policy} sizing follows participating clients`, async (t) => {
+    t.after(sweep);
+    const a = await agent(`size-${policy}-${ignoreSize}`);
+    tmuxOn(AGENTS, "set-option", "-t", SESSION, "status", "off");
+    tmuxOn(AGENTS, "set-window-option", "-t", a.target, "window-size", policy);
+    tmuxOn(AGENTS, "select-window", "-t", a.target);
+    const sourcePane = tmuxOn(TERM, "new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "=term:",
+      "-c", base, `exec ${shq(WRAPPER)} -u -S ${shq(AGENTS)} attach-session -t =${SESSION}`);
+    t.after(() => {
+      try { tmuxOn(TERM, "kill-window", "-t", sourcePane); } catch { /* gone */ }
+      tmuxOn(AGENTS, "set-option", "-t", SESSION, "status", "on");
+    });
+    const resize = (pane, cols, rows) => tmuxOn(TERM, "resize-window", "-t", pane, "-x", String(cols), "-y", String(rows));
+    const size = () => tmuxOn(AGENTS, "display-message", "-p", "-t", a.target, "#{window_width}x#{window_height}");
+    const sized = async (expected) => waitUntil(() => size() === expected, `${policy}, ignore-size=${ignoreSize}: ${expected}, saw ${size()}`);
+    await waitUntil(() => attached().includes(SESSION), "source client attached");
+    resize(sourcePane, 100, 30);
+    await sized("100x30");
+    const v = await view(a, { ignoreSize, ...(policy === "latest" ? { key: "F12" } : {}) });
+    resize(v.pane, 80, 20);
+    const flags = () => tmuxOn(AGENTS, "list-clients", "-t", `=${v.session}`, "-F", "#{client_flags}").split(",");
+    assert.equal(flags().includes("ignore-size"), ignoreSize);
+    if (ignoreSize) await sized("100x30");
+    else if (policy !== "largest") await sized("80x20");
+    resize(sourcePane, 120, 40);
+    await sized(!ignoreSize && policy === "smallest" ? "80x20" : "120x40");
+    // A larger viewer must not enlarge the source either, including under latest and largest.
+    resize(v.pane, 160, 60);
+    await sized(!ignoreSize && policy !== "smallest" ? "160x60" : "120x40");
+    if (policy === "latest") {
+      v.press("F12");
+      assert.equal(await v.ended(), SESSION_DETACHED_EXIT);
+    } else {
+      tmuxOn(AGENTS, "detach-client", "-s", `=${v.session}`);
+      assert.equal(await v.ended(), 0);
+    }
+  });
+}

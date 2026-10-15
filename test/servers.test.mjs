@@ -1513,6 +1513,12 @@ exec sh -c "$1"
     r = attach(["--detach-key", "F12"], { FAKE_ATTACH_STATUS: "255" });
     assert.equal(r.status, 255);
     assert.equal(r.stderr, `${lost} --detach-key F12\n`);
+    for (const extra of [["--ignore-size"], ["--detach-key", "F12", "--ignore-size"]]) {
+      r = attach(extra, { FAKE_ATTACH_STATUS: "255" });
+      assert.equal(r.status, 255);
+      assert.ok(r.attachWord.endsWith(extra.join(" ")));
+      assert.equal(r.stderr, `${lost} ${extra.join(" ")}\n`, "reconnect keeps ignore-size");
+    }
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -1603,4 +1609,44 @@ test("attachArgv with a detach key: validated before anything is asked of the ho
     assert.throws(() => attachArgv("build", { home, detachKey: DETACH_KEY }, { ...h.io, skipVersionCheck }), refused);
     assert.deepEqual(h.sent, [PROBE], `no session commands, skipVersionCheck ${skipVersionCheck}`);
   }
+});
+
+const IGNORE_SIZE_FEATURE = "session-attach-ignore-size";
+const shellWords = (line) => execFileSync("/bin/sh", ["-c", `for word in ${line}; do printf '%s\\n' "$word"; done`], { encoding: "utf8" }).split("\n").filter(Boolean);
+test("routed session attach --ignore-size: advertised, forwarded, gated before roster even under --print", () => {
+  const base = mkdtempSync("/tmp/oats-servers-size-");
+  try {
+    const { log, tools, repo, env } = detachKeyHost(base);
+    assert.ok(KERNEL_FEATURES.includes(IGNORE_SIZE_FEATURE));
+    const home = "/srv/team/agent with space";
+    const oldOats = join(base, "old-oats");
+    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"${IGNORE_SIZE_FEATURE}"//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
+    chmodSync(oldOats, 0o755);
+    let r = oats(env, ["server", "add", "old", "--ssh", "old-host", "--workspace", repo, "--oats", oldOats, "--path", tools, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    for (const key of [[], ["--detach-key", "F12"]]) {
+      writeFileSync(log, "");
+      r = oats(env, ["session", "attach", "--server", "build", "--home", home, "--ignore-size", ...key, "--print"]);
+      assert.equal(r.status, 0, r.stderr);
+      assert.ok(shellWords(r.stdout.trim()).at(-1).endsWith(["session", "attach", "--home", home, ...key, "--ignore-size"].map(remoteQuote).join(" ")));
+      assert.equal(sshCalls(log).length, 1, "--print still probes");
+    }
+    for (const print of [[], ["--print"]]) for (const address of [["--home", home], ["--instance", "not-on-roster"]]) {
+      writeFileSync(log, "");
+      r = oats(env, ["session", "attach", "--server", "old", ...address, "--ignore-size", ...print, "--json"]);
+      assert.equal(r.status, 1, r.stderr + r.stdout);
+      const error = r.json().error;
+      assert.equal(error.code, "E_REMOTE_INCOMPATIBLE");
+      assert.deepEqual(error.details, { feature: IGNORE_SIZE_FEATURE });
+      assert.match(error.message, /upgrade it there, or attach without --ignore-size; nothing was sent$/);
+      const sent = sshCalls(log);
+      assert.equal(sent.length, 1, "only probe, never roster or attach");
+      assert.match(sent[0].word, / version --json$/);
+    }
+    writeFileSync(log, "");
+    r = oats(env, ["session", "attach", "--server", "old", "--home", home, "--print"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(sshCalls(log), [], "default --print remains probe-free");
+    assert.ok(!shellWords(r.stdout.trim()).at(-1).includes("--ignore-size"));
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });
