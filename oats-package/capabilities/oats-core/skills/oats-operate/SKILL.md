@@ -192,6 +192,12 @@ change, never model acceptance. Unchanged/unreadable display (`verified: false`)
 does not authorize retry. Settling offers no guaranteed busy-pane submission or
 exactly-once delivery; command errors may be uncertain after partial effects.
 
+`oats session inspect --home <abs-home> --json` reports the current window's
+`size: { cols, rows }` in cells when `present` is true and the kernel advertises
+`session-inspect-size` in `oats version --json`. Size is absent otherwise.
+With `--server <id>`, the execution host supplies it: check that host's feature
+list. Open a viewer PTY at that size; inspect again to observe a resize.
+
 `oats session attach --home <abs-home>` has no keyboard exit (close the
 terminal); when `oats version --json` lists `session-attach-detach-key`, add
 `--detach-key <key>` (`'C-\'` is the suggested one) and that key leaves it.
