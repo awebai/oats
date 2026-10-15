@@ -152,7 +152,7 @@ Use `/oats-workspace-config` for the selected host launch configuration. Clone s
 the owner's Git credentials only for `worktree`/`checkout` souls: the kernel
 uses `--repo`, then the local `clones` map, then `D/<repo name>`.
 **Required:** make and record both host delivery choices (`/oats-host-delivery`): write `claudeChannelMode`
-now; the operator installs the broker once aw meets its floor (card 5 can install aw), before card 7. A
+now; the operator installs the broker once aw meets its floor (card 5 can install aw), before card 6. A
 macOS host driven over `--server` or running Git in background jobs needs Git without a terminal (`docs/servers.md`, “Git on a macOS host”).
 
 **Commands (after the authorized edits):**

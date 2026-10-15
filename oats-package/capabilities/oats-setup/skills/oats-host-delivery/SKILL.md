@@ -6,11 +6,13 @@ description: >-
   channel delivery (the approved route: Claude's managed-settings file,
   `claudeChannelMode: approved`, the aweb-channel plugin, the admitted
   banner; the development fallback and what it costs; session delivery).
-  The host wake broker (`aw wake run` as a per-user launchd or systemd
-  --user service, `AW_WAKE_OATS_BIN` and PATH, restarting it after an aw
-  upgrade, `aw wake status`). Also for "why didn't my agent wake",
+  The host wake broker (`oats aweb wake install|status|uninstall`, or a
+  hand-written launchd or systemd --user unit for `aw wake run`, with
+  `AW_WAKE_OATS_BIN` and PATH; migrating on `E_WAKE_UNIT_CONFLICT`;
+  restarting after an aw upgrade). Also for "why didn't my agent wake",
   `wake-daemon-not-running`, `joined-team-poll-only`,
-  `channel-dev-confirmation` and the development-channel prompt.
+  `claude-channel-mode-default`, `channel-dev-confirmation` and the
+  development-channel prompt.
   `/oats-onboarding` card 4 makes these choices and card 8 checks them.
   Part of the setup and config of an OATS workspace (oats.setup);
   day-to-day operation inside an instance is oats.core.
@@ -56,7 +58,7 @@ Host wake broker: installed (<manager> unit, aw <version>) | not needed (<why>) 
 | Choice | Its check |
 |---|---|
 | approved | the approved route's **Success** list below, then the nonce exchange |
-| development | the home's readiness has neither `channel-dev-confirmation` (the last start recorded the confirmation `completed`) nor `claude-channels-unavailable`; then the nonce exchange |
+| development | the key is written in `oats-local.yaml` (from oats.aweb 1.28.0, readiness warns `claude-channel-mode-default` when it is not), and the home's readiness has neither `channel-dev-confirmation` (the last start recorded the confirmation `completed`) nor `claude-channels-unavailable`; then the nonce exchange |
 | session | Choice 2's **Check** |
 | broker installed | Choice 2's **Check** |
 | not needed, no Claude seats | nothing to check; revisit when the host gains such a home |
@@ -73,7 +75,10 @@ Pick one for the host's Claude seats:
 | **session** | `delivery: session` | When Claude should be woken like Codex, by the broker typing into its terminal. It uses no plugin and shows no prompt, and it needs [Choice 2](#choice-2-the-host-wake-broker). `claudeChannelMode` is then unused. |
 
 For approved or development, write `claudeChannelMode`. A missing key is not
-a choice: it is how hosts end up in development mode by accident.
+a choice: it is how hosts end up in development mode by accident. From
+oats.aweb 1.28.0, readiness warns `claude-channel-mode-default` on such a
+home (only on a home, because the soul-scope check cannot see the harness),
+so `/oats-onboarding` card 8 is where it shows.
 
 ### Claude channel delivery (approved route)
 
@@ -263,9 +268,9 @@ revisit it whenever the host gains its first such home: a team join
 
 **Who installs it.** The operator does, in their own terminal, as the user
 who runs the instances, outside every instance home. Install it once aw
-meets the provider's floor: on a new host, after `/oats-onboarding` card 5,
-which can install aw, and before the first home that needs the broker
-starts.
+meets the provider's floor (after `/oats-onboarding` card 5, which can install
+aw) and before card 6: from oats.aweb 1.28.0, card 6's readiness fails without
+it for a soul with `delivery: session` or a join.
 
 A per-user service starts with an almost empty PATH, so the unit names
 these by absolute path:
@@ -282,7 +287,43 @@ installed by the operator (`/oats-automations`, “One host timer, no
 daemon”). An agent hands over the steps below and checks the result
 afterwards. It never runs them itself.
 
-### Before installing
+Either way it is a user service. On Linux it stops at logout unless an admin
+enables linger (`sudo loginctl enable-linger <user>`; the command warns
+`wake-linger-off`, and `--linger-required` refuses instead). On macOS it runs
+only while the user is logged in at the Mac (an unattended Mac needs automatic
+login), and it is installed from that desktop login: over ssh, `launchctl
+bootstrap` can fail after the plist is written (`E_WAKE_UNIT`); rerun it there.
+
+### Install with the command (oats.aweb 1.28.0 and later)
+
+From the deployment directory, in the operator's own shell:
+1. `oats aweb wake install --plan` prints the unit and what it would do.
+2. `oats aweb wake install` takes `aw`, `oats` and `tmux` (a warning if
+   missing) from that shell's PATH, and the kernel's node. It writes the
+   per-user unit `ai.aweb.wake` (systemd `--user` or a LaunchAgent) with the
+   PATH and `AW_WAKE_OATS_BIN` above, starts it,
+   and prints `PASS wake broker <version> (<manager> unit <path>)` once the
+   daemon runs at that `aw`'s version.
+3. `oats aweb wake status` reports the unit, the daemon, and this
+   deployment's homes that need the broker, each registered or not.
+
+Rerunning `install` re-renders the unit and restarts the daemon: that is the
+restart after an aw upgrade. `oats aweb wake uninstall` removes only the unit
+`install` wrote.
+
+Refusals and warnings: `/oats-aweb` §7 and the package's `docs/wake-service.md`.
+A host that followed the hand-written unit below (oats.setup 2.6.0) gets **`E_WAKE_UNIT_CONFLICT`** on its first
+`install`: that unit has no install marker, even at the `ai.aweb.wake` path,
+and `install` never takes it over. To move to the command, retire the old
+unit with the steps the message prints, then rerun `install`:
+- Linux: `systemctl --user disable --now <label>.service`, then remove the file;
+- macOS: `launchctl bootout gui/<uid>/<label>`, then remove the file.
+
+### Fallback: a hand-written unit
+
+For a provider older than 1.28.0, or an operator who keeps a unit of their own.
+
+#### Before installing
 
 ```bash
 command -v aw oats node tmux   # in the operator's terminal: the absolute paths for the unit
@@ -305,20 +346,16 @@ grep -rlE 'ai\.aweb\.wake|<string>wake</string>' ~/Library/LaunchAgents        #
   compare it with the unit below (its PATH especially), then use the restart
   and check steps. Replacing it is the operator's decision, made explicitly:
   stop and remove the old unit first.
-- **Paths.** Prefer stable ones. A version manager's per-version directory
-  changes when Node or aw is upgraded, and the unit then points at a path
-  that is gone. If you use one, edit the unit after each upgrade (see “After
-  an aw upgrade”).
+- **Paths.** Prefer stable ones: a version manager's per-version directory
+  is gone after an upgrade (see “After an aw upgrade”).
 
 In the units below:
 - `<AW>`, `<OATS>` and `<HOME>` are the absolute paths of `aw`, of `oats` and
   of the user's home;
-- `<DIRS>` is the directories holding `aw`, `oats`, `node` and `tmux`, joined
-  with `:`;
-- `<FALLBACK>` is `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
-  the host timer's list.
+- `<DIRS>` is the directories holding `aw`, `oats`, `node` and `tmux`, joined with `:`;
+- `<FALLBACK>` is the host timer's list, `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`.
 
-### Linux (systemd --user)
+#### Linux (systemd --user)
 
 Write `~/.config/systemd/user/ai.aweb.wake.service`:
 
@@ -347,10 +384,7 @@ systemctl --user status ai.aweb.wake.service --no-pager | head -5
 loginctl show-user "$USER" -p Linger   # Linger=no: the service stops when the user's last session ends
 ```
 
-On a host where nobody stays logged in, enable linger:
-`sudo loginctl enable-linger <user>`. That needs an admin.
-
-### macOS (launchd)
+#### macOS (launchd)
 
 Write `~/Library/LaunchAgents/ai.aweb.wake.plist`. launchd does not expand
 `~`, so every path in it is absolute, the log path included.
@@ -376,8 +410,7 @@ Write `~/Library/LaunchAgents/ai.aweb.wake.plist`. launchd does not expand
 </plist>
 ```
 
-Run these from the Mac's own desktop login, not over ssh. The `gui/<uid>`
-domain exists only while that user is logged in at the Mac:
+Run these at the Mac's desktop login, where the `gui/<uid>` domain exists:
 
 ```bash
 plutil -lint ~/Library/LaunchAgents/ai.aweb.wake.plist
@@ -385,14 +418,12 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.aweb.wake.plist
 launchctl print gui/$(id -u)/ai.aweb.wake | grep -m1 state   # state = running
 ```
 
-The agent runs while that login lasts. A Mac nobody logs into needs
-automatic login for that user, the macOS counterpart of linger.
-
 ### After an aw upgrade
 
 A running daemon keeps the code it started with until it restarts. Restart it
-after every aw upgrade, and also after `oats`, Node or tmux moves (edit the
-unit's paths first):
+after every aw upgrade, and also after `oats`, Node or tmux moves. With the
+command, rerun `oats aweb wake install`: it re-renders the paths and restarts.
+With a hand-written unit, edit its paths first, then:
 
 ```bash
 systemctl --user restart ai.aweb.wake.service           # Linux; after editing the unit: daemon-reload first
@@ -416,6 +447,12 @@ aw version
 aw wake status --json              # daemon_running, daemon_version_state, daemon_version, instances
 oats readiness --home <abs home> --json   # for each home that needs the broker
 ```
+
+From oats.aweb 1.28.0, `oats readiness --soul <soul>` (card 6) fails with
+`wake-daemon-not-running` or `wake-daemon-version-unknown` when the soul's
+settings use `delivery: session` or a join; a per-spawn `--provider` setting or
+a Codex seat is not visible there. `oats aweb wake status` lists every home
+that needs the broker.
 
 1. `aw wake status --json` shows `daemon_running: true`,
    `daemon_version_state: "reported"`, and a `daemon_version` equal to what
@@ -443,7 +480,7 @@ needs the broker, even while the broker runs and delivers
 | `wake-daemon-not-running` | no service, or it is crash-looping | install it; read its log: `journalctl --user -u ai.aweb.wake.service -n 50`, or `~/Library/Logs/ai.aweb.wake.log` |
 | `daemon_version` differs from `aw version`, or `wake-daemon-outdated` | aw was upgraded and the daemon was not restarted | restart it (above) |
 | `wake-daemon-version-unknown` | the running daemon is too old to report its version | upgrade aw, then restart |
-| the log says `oats`, `node` or `tmux` is not found, or session inspection fails | the unit's `PATH` or `AW_WAKE_OATS_BIN` misses it, or points at a moved version | fix the paths, reload, restart |
+| the log says `oats`, `node` or `tmux` is not found, or session inspection fails | the unit's `PATH` or `AW_WAKE_OATS_BIN` misses it, or points at a moved version | fix the paths, reload, restart; or rerun `oats aweb wake install` |
 | the service restarts every few seconds, and the status names a `daemon_pid` that is not the service's | a broker started by hand is running | stop that one; the service then owns the broker |
 | `joined-team-poll-only` with the broker running | the readiness problem beside it names the route's fault | `wake-target-missing`: restart the home (with the operator's word) so it registers again; `wake-target-paused`: `aw wake resume`; `wake-stream-unavailable`: the identity or its stream, see the daemon's log |
 | status is running but one home gets no wakes | its registration or stream, not the server | read the daemon's log for that identity's path (“stream connected” versus “stream unavailable”); a status row proves absence, never its cause |
