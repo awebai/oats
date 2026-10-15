@@ -99,6 +99,9 @@ const panelSocket = (dir) => join(dir, "tmux");
 const answers = (socket) => { try { tmuxOn(socket, "list-sessions"); return true; } catch { return false; } };
 /** The windows of the panel's one session: its keeper, and one per viewer. */
 const panelWindows = (socket) => { try { return lines(tmuxOn(socket, "list-windows", "-t", "=oats-tui", "-F", "#{window_id}")); } catch { return []; } };
+/** The command line of each pane's own process (`#{pane_pid}`) in the panel's session, as ps says. */
+const paneProcesses = (socket) => lines(tmuxOn(socket, "list-panes", "-s", "-t", "=oats-tui", "-F", "#{pane_pid}"))
+  .map((pid) => { try { return execFileSync("ps", ["-o", "args=", "-p", pid], { encoding: "utf8", timeout: 10000 }).trim(); } catch { return `(no process ${pid})`; } });
 /** After a test, every private server a run left (a failed test's): killed by its socket. */
 function sweepPanels() {
   for (const tmp of tmps) for (const dir of runDirs(tmp)) if (existsSync(panelSocket(dir))) { try { tmuxOn(panelSocket(dir), "kill-server"); } catch { /* gone */ } }
@@ -344,6 +347,13 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   assert.deepEqual(readJson(join(dir, "owner.json")).tool, "oats-tui");
   assert.equal(readJson(join(dir, "owner.json")).pid, run.pid, "owner.json names the run");
   assert.equal(answers(panelSocket(dir)), true, "the private server answers on its socket in the run directory");
+  // The viewer is its pane's own process, not a shell's child: the pane's hang-up (c, or the
+  // server killed) then reaches it at once, and it removes its session. A shell between them
+  // passed it on only when the shell died, late on a busy machine (CI, tmux 3.4).
+  const viewers = paneProcesses(panelSocket(dir)).filter((args) => !args.includes("oats-tui-keeper"));
+  assert.equal(viewers.length, 1, `one viewer pane: ${JSON.stringify(viewers)}`);
+  assert.match(viewers[0], /\bsession attach\b/, "the pane's process is the viewer itself");
+  assert.doesNotMatch(viewers[0], /^\S*sh -c /, "no shell between the pane and the viewer");
 
   term.press("C-\\");
   await until(term, () => run.footer().startsWith(LIST_HINTS), "the list's focus, with the keys of the open terminal in the footer");
