@@ -6,7 +6,8 @@
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { capabilityRow } from "../workspace-catalog.mjs";
-import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, desktopFacts, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
+import { renderCapabilityPage, renderSoulCapabilities, renderSoulCore, capabilityPageCSS, pageCardCSS, soulCapabilitiesCSS, catalogNotice, catalogNoticeKind, updateCatalogNotice } from "../capability-page.mjs";
+import { spawnRefusal, cantSpawnLine } from "../../../client/soul-facts.mjs";
 import { createCapabilityContents, capabilityContentsCSS } from "../capability-contents.mjs";
 import { sourceQuoteCSS } from "../source-quote.mjs";
 import { soulInstructionsCSS } from "../soul-instructions.mjs";
@@ -526,8 +527,8 @@ ${spawnDialogCSS}</style>
       inspectSoul(s, matches[0]); return true;
     },
     canLaunch: agent => canLaunchSoul(s, agent),
-    spawnRefusal: agent => spawnRefusal(agent),
-    launchReason: agent => spawnRefusal(agent) ? `Can't spawn here: ${spawnRefusal(agent)}` : cliProbePending() ? "Checking for a compatible oats CLI — spawning enables once it is verified" : "Requires a compatible installed OATS CLI and a current standalone soul.",
+    spawnRefusal: agent => spawnRefusal(agent, cliStatus()),
+    launchReason: agent => spawnRefusal(agent, cliStatus()) ? `Can't spawn here: ${spawnRefusal(agent, cliStatus())}` : cliProbePending() ? "Checking for a compatible oats CLI — spawning enables once it is verified" : "Requires a compatible installed OATS CLI and a current standalone soul.",
     available: () => cliAvailable() && inspectSupported(cliStatus()),
     files: agent => s.ctx.openBrain?.(agent.name),
     canFiles: agent => canOpenFiles(s, agent),
@@ -1012,13 +1013,8 @@ function focusCard(s, cards, index) {
   target.focus();
 }
 
-/** Kernel #217 (desktop-facts): the reason a spawn of this soul here would refuse, as the kernel
- * reports it (`spawnable: false` + `problem`), else null. */
-export function spawnRefusal(agent, cli = cliStatus()) {
-  return desktopFacts(cli) && agent?.spawnable === false ? (typeof agent.problem?.message === "string" && agent.problem.message ? agent.problem.message : "A spawn of this soul would be refused here.") : null;
-}
 function canLaunchSoul(s, agent) {
-  return !spawnRefusal(agent) && s.alive && s.rosterGen === workspaceGeneration() && cliAvailable() && !!agent?.agentsRoot
+  return !spawnRefusal(agent, cliStatus()) && s.alive && s.rosterGen === workspaceGeneration() && cliAvailable() && !!agent?.agentsRoot
     && s.souls.agents.filter(current => current.name === agent.name
       && current.agentsRoot === agent.agentsRoot && (current.server || "") === (agent.server || "")).length === 1
     && s.souls.agents.find(current => current.name === agent.name
@@ -1117,12 +1113,12 @@ function soulCard(s, a, groupTeam = null) {
   const instances = soulInstances(s, a);
   const running = instances.filter(i => i.running === true).length;
   const foot = span("sfoot");
-  const refusal = attached ? null : spawnRefusal(a);
+  const refusal = attached ? null : spawnRefusal(a, cliStatus());
   const activity = span("sactivity" + (running ? " running" : ""), activityText(running, instances.length));
   activity.title = `${running} running · ${instances.length} ${instances.length === 1 ? "instance" : "instances"}`;
   if (refusal) {
     // Both facts: why a spawn here is refused, and what of it already runs (the row's height is fixed).
-    const note = span("sproblem", `Can't spawn here · ${refusal}`); note.title = refusal;
+    const note = span("sproblem", cantSpawnLine(refusal)); note.title = refusal;
     const lines = span("sfoot-lines"); lines.append(note, activity); foot.append(lines);
   } else foot.append(activity);
   card.append(body, foot);
