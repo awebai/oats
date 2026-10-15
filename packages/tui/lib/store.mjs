@@ -638,7 +638,8 @@ function terminalKey(state, action, focus = "list", zoom = false) {
 /** THE SPLIT'S KEYS (docs/tui.md, "Splits"). Why `does` would do nothing now: `true` for nothing
  *  at all (no tab, a tab starting, a key that does not apply), the line that says why (a split
  *  there is no room for, a second split), or null when it acts. `room` is the panel's size as the
- *  frame gives it with the terminal's focus (`{ cols, rows }`, its strip row counted). Asked
+ *  Instances view gives it with the terminal's focus (`{ cols, rows }`, its strip row counted:
+ *  views/frame.mjs panelPlace), measured when the key is read; a room not known admits no split. Asked
  *  before anything is settled, so that a key that does nothing moves no focus. */
 export function splitRefused(state, does, room, inTerminal = false) {
   if (state.tabs.length === 0 || state.tabs.some((tab) => tab.status === "starting") || state.opening !== null) return true;

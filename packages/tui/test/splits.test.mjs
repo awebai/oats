@@ -7,11 +7,18 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { instanceId } from "../lib/client.mjs";
-import { paletteItems, roster } from "../lib/model.mjs";
+import { model, outcomeOf, paletteItems, roster } from "../lib/model.mjs";
 import { reduce, splitRefused } from "../lib/store.mjs";
 import { SPLIT_MIN, splitFits, splitRegions } from "../lib/views/split.mjs";
+import { layout, panelPlace } from "../lib/views/frame.mjs";
 import { draw, instanceRow, observed, stateOf } from "./helpers.mjs";
 
+/** The model the loop draws `state` from at `size` (lib/main.mjs modelled, as helpers.mjs draw makes it). */
+function modelOf(state, size, now = "2026-10-11T10:00:30.000Z") {
+  const r = roster(state, now);
+  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: outcomeOf(state), terminal: state.tabs.length > 0 });
+  return model(state, { page: g.page, now: Date.parse(now), at: now, cols: g.listCols });
+}
 /** The panel's room at 120x40 with a terminal open (the list keeps 30 columns beside it). */
 const ROOM = Object.freeze({ cols: 89, rows: 36 });
 const AT = Object.freeze({ page: 19, extent: 0, room: 19, cols: 38, panel: ROOM });
@@ -67,6 +74,10 @@ test("a second split does nothing and the line says so; a split with no room is 
   // The edges: 81 columns hold two of 40, 17 rows two of 8.
   assert.deepEqual([splitFits("right", { cols: 81, rows: 1 }), splitFits("right", { cols: 80, rows: 99 }), splitFits("down", { cols: 1, rows: 17 }), splitFits("down", { cols: 99, rows: 16 })], [true, false, true, false]);
   assert.deepEqual(SPLIT_MIN, { cols: 40, rows: 8 });
+  // A room nobody measured admits no split (round 1 of the review): the line, and nothing moves.
+  assert.deepEqual([splitFits("right", undefined), splitFits("down", { cols: 89 })], [false, false]);
+  const unknown = leaderThen(opened(SIX(), "dev-a"), "|", { ...AT, panel: null });
+  assert.deepEqual([unknown.state.split, said(unknown.state)], [null, "No room to split side by side: each group needs 40 columns."]);
   // No tab open, or one starting: nothing at all.
   assert.equal(splitRefused(SIX(), "split-right", ROOM), true);
   const starting = key(on(toList(opened(SIX(), "dev-a")), "dev-b"), "enter").state;
@@ -282,4 +293,15 @@ test("the leader's hint names the split's keys where they apply", () => {
   assert.match(hint(splitOf()), /Tab next group {3}x close group/);
   assert.match(hint(both("|")), /Tab next group {3}m move tab/);
   assert.doesNotMatch(hint(SIX()), /split/);
+});
+
+test("the panel's place is the Instances view's with the terminal's focus, whatever is drawn over it: behind the help and the palette the frame draws no region, and panelPlace still measures the panel (round 1 of the review)", () => {
+  const s = opened(SIX(), "dev-a");
+  const help = key(toList(s), "?").state, pal = leaderThen(s, "k").state;
+  for (const [name, over] of [["help", help], ["palette", pal]]) {
+    assert.deepEqual(draw(over, S80).regions, [], name);
+    assert.deepEqual(panelPlace(modelOf(over, S80), S80), { panel: { cols: 49, rows: 20 }, focused: { cols: 49, rows: 19 } }, name);
+  }
+  assert.deepEqual(panelPlace(modelOf(toList(s), { cols: 70, rows: 30 }), { cols: 70, rows: 30 }).panel.cols, 70, "under 80 columns, the whole width");
+  assert.equal(panelPlace(modelOf(s, { cols: 50, rows: 10 }), { cols: 50, rows: 10 }), null, "too small");
 });

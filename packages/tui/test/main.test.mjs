@@ -1131,6 +1131,54 @@ test("two groups: a split resizes the first group's windows to its region; a tab
   assert.equal(await r.status, 0);
 });
 
+test("keys typed after a switch of group or tab reach the agent switched to, also while the output is blocked and no frame is written: the panel is fitted first (T3, round 1 of the review)", async () => {
+  const r = await viewingTwoTabs({ columns: 120, rows: 40 });
+  for (const k of ["|", "\t", "m"]) { r.stdin.type("\x1c"); r.stdin.type(k); await settle(); } // @1 in the first group, @2 in the second, focused
+  r.log.length = 0;
+  const did = () => { const d = panelDid(r).filter(([what]) => what !== "refresh"); r.log.length = 0; return d; };
+  // The leader's hint is the frame that blocks; Tab, in a later read, is drawn by none.
+  r.stdout.accepts = false;
+  r.stdin.type("\x1c");
+  r.stdout.accepts = true;
+  r.stdin.type("\t");
+  await settle();
+  r.stdin.type("for-first-agent");
+  assert.deepEqual(did(), [["focus", "@1"], ["input", "for-first-agent"]], "the keys go to @1, never to @2");
+  r.stdout.emit("drain"); await settle();
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  // A tab switched within one group, blocked the same way: the tab before shown first, then the keys.
+  const t = await viewingTwoTabs();
+  t.stdout.accepts = false;
+  t.stdin.type("\x1c");
+  t.stdout.accepts = true;
+  t.stdin.type("\x1b[D");
+  await settle();
+  t.log.length = 0;
+  t.stdin.type("for-first");
+  assert.deepEqual(panelDid(t).filter(([what]) => what !== "refresh"), [["hide", "@2"], ["show", "@1"], ["input", "for-first"]]);
+  t.stdout.emit("drain"); await settle();
+  leaderTwice(t);
+  t.stdin.type("q");
+  assert.equal(await t.status, 0);
+});
+
+test("the palette's Split right at 80 columns is refused with the line, measured on the panel the Instances view gives, and its Split down splits (T3, round 1 of the review)", async () => {
+  const r = await viewingTwoTabs();
+  const choose = async (text) => { r.stdin.type("\x1c"); r.stdin.type("k"); await settle(); r.stdin.type(text); await settle(); r.stdin.type("\r"); await settle(); };
+  await choose("splitr");
+  assert.match(wholeScreen(r), /No room to split side by side: each group needs 40 columns\./);
+  // The line takes rows above the panes, so the panel is resized for it: at the whole width still.
+  assert.deepEqual(panelDid(r).filter(([what, cols]) => what === "hide" || (what === "resize" && cols !== 49)), [], "no split: nothing hidden, no window narrower");
+  r.log.length = 0;
+  await choose("splitd");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 49, 9, ["@1", "@2"]]], "the first group above, 9 rows of the 19");
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("with two tabs open, another workspace opened closes each tab's viewer by its window id, and no terminal is left (T2)", async () => {
   const r = await viewingTwoTabs({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
   leaderTwice(r);
@@ -1402,6 +1450,28 @@ test("Enter on a running agent of another machine: the shared preflight over the
   await settle();
   assert.equal(r.panel.opens.length, 1, "nothing starts");
   assert.match(textOf(r.stdout.take()), /Terminal preparation timed out\./);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("a preflight that answers behind the help opens the viewer at the size the Instances view gives it, and the run goes on: the help is no frame of the panel's (T3, round 1 of the review)", async () => {
+  const r = await elsewhere();
+  r.stdin.type("\r");
+  await settle();
+  r.stdin.type("?");
+  await settle();
+  const [asked] = r.preflights;
+  asked.resolve({ binary: KEYED.bin, args: ["session", "attach", "--server", "garnet", "--home", asked.target.home] });
+  await settle();
+  assert.deepEqual(r.panel.opens.map((o) => [o.cols, o.rows]), [[49, 19]]);
+  r.panel.opens[0].made("@1");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "visible").at(-1), ["visible", false], "hidden behind the help");
+  r.log.length = 0;
+  r.stdin.type("?");
+  await settle();
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "visible"), [["visible", true]], "shown once the help closes");
+  leaderTwice(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });
@@ -1763,6 +1833,8 @@ test("a spawn through the loop: n reads the catalog, the preview is read once pe
   r.reader.answer(observed([instanceRow("acme-expert", "acme-expert-tui"), instanceRow("acme-maintainer", "acme-maintainer-ops", { running: false, runtimeState: "stopped" }), instanceRow("acme-expert", "acme-expert-2")])); await settle();
   assert.equal(r.panel.opens.length, 1, "its terminal, in the panel");
   assert.equal(r.panel.opens[0].argv.some((arg) => String(arg).endsWith("/acme-expert-2")), true);
+  // Its window made, what is typed is the agent's (before it, nothing has a window to take it).
+  r.panel.opens[0].made("@1"); await settle();
   r.stdin.type("q"); await settle();
   assert.equal(r.log.some(([what, bytes]) => what === "panel" && bytes === "input"), true, "the q went to the agent: the terminal has the focus");
 });

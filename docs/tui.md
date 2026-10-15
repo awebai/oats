@@ -1115,12 +1115,13 @@ with the Desktop (`packages/client/`).
     directory alone while its socket answers.
 
   Each tab is a window of the server, whose process is the viewer itself,
-  with no shell between them. Beside the keeper it holds up to four, one
-  of them shown, and every one has the panel's size: a resize resizes each tab's
-  window. Only the shown tab's pane is captured and typed into. tmux tells
-  `oats tui` of every pane's output: a hidden tab's output captures
-  nothing, and only sets that tab's mark, once until the tab is shown and
-  hidden again. The panel refuses a fifth open (`E_PANEL_FULL`, an open
+  with no shell between them. Beside the keeper it holds up to four. Up
+  to two are displayed, each group's shown tab ([Splits](#splits)), and
+  every tab has its group's size: a resize resizes each tab's window in the
+  groups drawn. Only the displayed tabs' panes are captured, and only the
+  focused group's shown tab is typed into. tmux tells `oats tui` of every
+  pane's output: a hidden tab's output captures nothing, and only sets that
+  tab's mark, once until the tab is displayed and hidden again. The panel refuses a fifth open (`E_PANEL_FULL`, an open
   still under way counted) and a second open while one is under way
   (`E_PANEL_BUSY`); the TUI asks for neither, since it refuses such an open
   itself ([Tabs](#tabs)). It is closed with `kill-pane`, which hangs up
@@ -1291,7 +1292,7 @@ suspends as one job.
 
 **While an agent's terminal is open** the terminal stays `oats tui`'s: the
 viewer draws into the private server's pane, never into your terminal, and
-`oats tui` draws what the shown tab's pane shows. Every way out in the
+`oats tui` draws what the displayed tabs' panes show. Every way out in the
 table above ends the private server and with it every tab's viewer, with
 that status. A suspend
 leaves the server and its viewers running; `fg` draws the terminal afresh.

@@ -66,8 +66,9 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   runs a process to make that FIFO, to ask tmux's version, to start the
   server, to make a window and to end the server, and the sweep one to ask
   whether a socket answers; every frame, key, resize and close goes through
-  its one control client, and a capture runs only after tmux said the shown
-  tab's pane changed; a hidden tab's output captures nothing. A capture goes out of band: tmux saves it to the run's file
+  its one control client, and a capture runs only after tmux said a
+  displayed tab's pane changed (each group's shown tab, two at most); a
+  hidden tab's output captures nothing. A capture goes out of band: tmux saves it to the run's file
   `capture`, so no pane's text is ever in the control client's stream, and
   a block that says what its command never says ends that client (THE
   CAPTURE in `lib/panel.mjs`). A

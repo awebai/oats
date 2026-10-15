@@ -438,7 +438,14 @@ const placed = (spans, col) => spans.map((span) => ({ ...span, col: span.col + c
  *  pane (of the whole body, for the switcher); `extent` and `room` are how many rows the other
  *  scrolling pane (the help, else the detail) holds and shows. The main loop hands the three back
  *  with the next key, so the store scrolls by what is on the screen without holding a size. */
+/** The frame for model `m` at `size`: its rows, the paging the store scrolls by, the cursor, and
+ *  for the loop (lib/main.mjs fitPanel) `regions`, each group of the panel this frame draws, empty
+ *  when it draws none (another view, an overlay, a screen too small). */
 export function frame(m, size) {
+  const made = framed(m, size);
+  return made.regions ? made : { ...made, regions: [] };
+}
+function framed(m, size) {
   if (tooSmall(size)) return { rows: tooSmallRows(size), page: 1, extent: 0, room: 1 };
   const rows = Array.from({ length: size.rows }, () => []);
   const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m) });
@@ -555,7 +562,7 @@ export function frame(m, size) {
   // The regions the loop gives the panel (lib/main.mjs): each group drawn, its shown tab's id and
   // its size; and the panel's room as the terminal's focus would give it, for a split's size.
   const regions = area === null ? [] : area.regions.map(({ group, id, focused, cols: c, rows: r }) => ({ group, id, focused, cols: c, rows: r }));
-  return { rows, page: Math.max(1, g.page), extent, room: Math.max(1, g.panes.rows), terminal: shownArea, cursor, regions, panel: panelRoom(size, g) };
+  return { rows, page: Math.max(1, g.page), extent, room: Math.max(1, g.panes.rows), terminal: shownArea, cursor, regions };
 }
 
 /** The Souls view in the panes of the list (views/souls.mjs), under the header and what stands
@@ -595,6 +602,17 @@ function soulsFrame(m, size, g, rows) {
 export function terminalArea(m, size) {
   if (tooSmall(size)) return null;
   return terminalAt(m, size, layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: panelOpen(m) }));
+}
+/** Where the panel stands as the Instances view gives it with the terminal's focus, whatever this
+ *  frame draws (an overlay, another view, the list's focus): `{ panel, focused }`, the panel's
+ *  room with its strip row counted (what a split is measured against: lib/store.mjs
+ *  splitRefused) and the focused group's screen (`{ cols, rows }`, what a viewer opened now starts
+ *  at), or null on a screen too small. */
+export function panelPlace(m, size) {
+  if (tooSmall(size)) return null;
+  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: true });
+  const area = terminalAt({ ...m, view: "instances", under: "instances", palette: null, spawn: null, panelOpen: true, terminal: { ...(m.terminal ?? {}), focus: "terminal" } }, size, g);
+  return { panel: panelRoom(size, g), focused: area === null ? null : { cols: area.cols, rows: area.rows } };
 }
 /** Whether the panel stands: a tab is open (a model made by hand may name only its terminal). */
 const panelOpen = (m) => Boolean(m.panelOpen) || Boolean(m.terminal);

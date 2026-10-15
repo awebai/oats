@@ -7,9 +7,9 @@
 export const SPLIT_MIN = Object.freeze({ cols: 40, rows: 8 });
 
 /** Whether a panel of `room` (`{ cols, rows }`, its strip row counted in `rows`) holds two groups
- *  split `dir`. A room not known is taken as holding them. */
+ *  split `dir`. A room not known holds none: no split is admitted on a size nobody measured. */
 export function splitFits(dir, room) {
-  if (!room || !Number.isInteger(room.cols) || !Number.isInteger(room.rows)) return true;
+  if (!room || !Number.isInteger(room.cols) || !Number.isInteger(room.rows)) return false;
   return dir === "right" ? Math.floor((room.cols - 1) / 2) >= SPLIT_MIN.cols : Math.floor((room.rows - 1) / 2) >= SPLIT_MIN.rows;
 }
 
