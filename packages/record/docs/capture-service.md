@@ -4,6 +4,13 @@ The record package owns source cursors, journal validation, indexing and capture
 status. This version changes those algorithms; it does not install a bounded
 runner or change service scheduling, hooks, root registration or doctor.
 
+The private service foundations described below are not yet joined to the
+ordinary command or installed manager path. OATS 0.56.0, 0.57.0 and 0.58.0
+shipped without the bounded periodic service. See
+[capture service release order](../../../docs/upgrading.md#capture-service-release-order)
+for the distinction between upgrading those releases and a future setup
+conversion after installing a release that ships service A.
+
 ## Input contract
 
 Input logs are append-only: capture reads added content, rereads on replacement,
@@ -180,6 +187,15 @@ It is distinct from failure of an older abandoned run: only failure in the
 current pass prevents that pass from succeeding after healthy work. Partial
 work preserves previous success and failure history. These are private
 accounting mechanics, not evidence that command integration has run a pass.
+
+Source-stage fixtures must finish retained recovery cleanup through the same
+ownership checks as the native unit: commit the deleting claim, remove that
+exact allocation outside a database transaction, then finalize its reference
+and bounded derived metadata cleanup under the stream lock. A due retry may
+need this even for a tiny source after an interrupted append. Cleanup failure
+is a failure in the current pass and preserves confirmed work; it cannot be
+ignored to make a later receipt successful. These fixtures do not qualify the
+unfinished production scheduler's cleanup routing.
 
 ## Resource model
 

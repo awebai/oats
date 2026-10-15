@@ -74,6 +74,32 @@ Versions are compared as semver, so a prerelease is below its release:
 no other version: a local build `0.53.0+build.1` is `0.53.0`, and nothing is
 installed over it.
 
+## Capture service release order
+
+The bounded periodic capture service (service A) is **not shipped in
+[0.56.0](release-notes/v0.56.0.md), [0.57.0](release-notes/v0.57.0.md) or
+[0.58.0](release-notes/v0.58.0.md)**. Those releases retain the existing capture
+watcher. Upgrading to 0.58.0 does not install the forthcoming periodic service;
+its release and manager migration remain separate work. The capture algorithms
+and recovery commands already released do not prove that migration happened.
+
+For those released versions, follow their own Upgrade sections and the steps
+above. In particular, install the target Desktop before the CLI: the 0.58.0
+Desktop accepts CLIs `>=0.26.0 <0.59.0`; the 0.56 Desktop refuses a 0.58 CLI.
+Do not postpone the 0.58.0 macOS reboot fix while waiting for the capture service.
+
+When a later release explicitly ships service A, read that release's Upgrade
+section, install its compatible Desktop first, then its CLI and matching pi
+bridge. Only **after installing that CLI**, run its setup conversion from the
+operator's shell for each deployment. That conversion is where an owned legacy
+watcher is replaced by the periodic service; foreign or disabled definitions
+require an explicit operator choice. A CLI install alone is not conversion.
+Use that release's capture health and doctor checks after conversion. Do not
+run forthcoming service diagnostics or conversion flags as prerequisites on
+0.56–0.58 binaries, or assume that an older health command proves periodic
+activation. The [capture reference](../packages/record/docs/capture-service.md)
+distinguishes the implemented foundation from an installed service.
+
 ## Which pi folders
 
 pi keeps its packages in one folder: `~/.pi/agent`, or the folder

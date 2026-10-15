@@ -26,7 +26,7 @@ function fixture(t, specs) {
   const state=new DerivedState(root),q=new CaptureSourceQueue(state,{owner:'fixture',selection:'fixture'});
   q.add(inputs,null,{complete:true});state.close();
   fs.writeFileSync(workerPath,`
-    import {writeFileSync} from 'node:fs';import {join} from 'node:path';
+    import {appendFileSync,writeFileSync} from 'node:fs';import {join} from 'node:path';
     import {runCaptureWorker} from ${JSON.stringify(url('capture-worker'))};
     import {RecordStore} from ${JSON.stringify(url('store'))};
     import {DerivedState} from ${JSON.stringify(url('derived-state'))};
@@ -34,6 +34,10 @@ function fixture(t, specs) {
     import {CaptureSourceQueue} from ${JSON.stringify(url('capture-source-queue'))};
     import {captureSourceWork} from ${JSON.stringify(url('capture-source-work'))};
     import {reconcileCaptureInterruption} from ${JSON.stringify(url('capture-retry'))};
+    import {withCaptureGroup} from ${JSON.stringify(url('capture-context'))};
+    import {removeRetainedCaptureScratch} from ${JSON.stringify(url('capture-retained-scratch'))};
+    import {discardRecoveryChunks} from ${JSON.stringify(url('capture-recovery-snapshot'))};
+    import {discardTranscriptPrefix} from ${JSON.stringify(url('transcript-prefix'))};
     await runCaptureWorker(start=>{
       // No store, admission or status publication exists for this attempt.
       if(start.options.failBeforeReceipt && start.pass.attempt===1)throw Error('injected pre-receipt failure');
@@ -54,7 +58,24 @@ function fixture(t, specs) {
         for(let n=0;n<(start.options.units??2);n++){
           const r=captureSourceWork(store,state,q,run,start,{limit:start.options.limit??1,
             maxRecords:start.options.records??2,now:start.options.now});
-          if(r.cleanup.length)throw Error('fixture unexpectedly requires retained cleanup');
+          if(r.selected)appendFileSync(join(start.root,'committed-source-groups'),JSON.stringify({
+            runId:run.id,streams:r.results.map(result=>result.stream),cleanup:r.cleanup.length})+String.fromCharCode(10));
+          // A due retry of the killed append deliberately uses retained proof.
+          // Its committed deleting claim must pass the real ownership checks;
+          // a cleanup error remains a current-pass failure, never a success.
+          for(const {stream,key} of r.cleanup){
+            if(start.options.failCleanup)throw Error('injected retained cleanup failure');
+            const claim=state.get('recovery-allocation',key);
+            removeRetainedCaptureScratch(start.root,state,key,start);
+            withCaptureGroup(store,[stream],()=>{
+              state.set('recovery-garbage',claim.id,true);
+              // These one-record fixtures fit one bounded cleanup unit. Do
+              // not silently drop unfinished cleanup from a larger fixture.
+              if(!discardRecoveryChunks(state,claim.id) || !discardTranscriptPrefix(store,stream,key))
+                throw Error('fixture cleanup exceeded one bounded unit');
+              state.delete('recovery-allocation',key);state.delete('recovery-stage',key);
+            },{state});
+          }
           if(!r.selected){
             const pending=!!q.ready().next().value;
             const snapshot=run.finish({outcome:pending?'partial':'complete',reason:pending?'input':null,pending});
@@ -89,7 +110,7 @@ test('source-stage workers rotate inputs, preserve unique visit counts and commi
   assert.equal(f.state(s=>s.get('capture-admission','active')),null);
 });
 
-test('killed group leaves unknown attribution, same-pass healthy progress, and due members resume singly without duplicates',async t=>{
+for(const failCleanup of [false,true])test(`killed group leaves unknown attribution, same-pass healthy progress, and due members resume singly without duplicates (cleanup failure: ${failCleanup})`,async t=>{
   const f=fixture(t,[['cc','bad',native(1)],['cc','also',native(2)],['cc','healthy',native(3)]]);
   const result=await f.run({limit:2,records:4,units:4,crashStream:'fixture~cc.bad'});
   assert.equal(result.outcome,'failed');assert.equal(result.starts,2,'terminal failed receipt does not launch idle workers');
@@ -103,16 +124,42 @@ test('killed group leaves unknown attribution, same-pass healthy progress, and d
   const deferred=f.state(s=>[...s.entries('capture-retry')].map(row=>row.value));
   assert.equal(deferred.length,2);assert.ok(deferred.every(row=>row.stage==='capture'));
   const nextDue=Math.max(...deferred.map(row=>Date.parse(row.nextRetryAt)));
-  const resumed=await f.run({limit:2,records:4,units:4,now:nextDue+1});
-  assert.equal(resumed.outcome,'complete',JSON.stringify(resumed));
+  const failedRun=status.lastRun.id, priorFailure=status.lastFailure;
+  const resumed=await f.run({limit:2,records:4,units:4,now:nextDue+1,failCleanup});
+  const errorPath=join(f.root,'worker-error');
+  const diagnostic=JSON.stringify(resumed)+(fs.existsSync(errorPath)?'\n'+fs.readFileSync(errorPath,'utf8'):'');
+  assert.equal(resumed.outcome,failCleanup?'failed':'complete',diagnostic);
+  assert.equal(resumed.exitCode,failCleanup?1:0);
   for(const name of ['bad','also','healthy']){
     const turns=f.store.readStream(`fixture~cc.${name}`);
     assert.equal(turns.length,1);assert.equal(new Set(turns.map(turn=>turn.id)).size,1);
   }
-  status=readCaptureStatus(f.root);assert.equal(status.lastRun.outcome,'complete');
+  status=readCaptureStatus(f.root);
+  assert.notEqual(status.lastRun.id,failedRun,'the due attempt is a new pass');
+  const resumedGroups=fs.readFileSync(join(f.root,'committed-source-groups'),'utf8').trim().split('\n')
+    .map(line=>JSON.parse(line)).filter(group=>group.runId===status.lastRun.id);
+  assert.deepEqual(resumedGroups.map(group=>group.streams),[['fixture~cc.also'],['fixture~cc.bad']],
+    'each due member commits through a separate normal admission');
+  assert.equal(resumedGroups.reduce((n,group)=>n+group.cleanup,0),1,'recovery exercises retained cleanup');
+  assert.equal(status.lastRun.outcome,failCleanup?'failed':'complete');
   assert.equal(status.backlog.pending,false);assert.equal(status.backlog.failedCount,0);
   assert.equal(status.lastRun.counts.turnsAppended,1,'the later run appends only the previously unattempted source, not the recovered existing turn');
-  assert.ok(status.lastFailure,'prior run failure remains history after a successful later pass');
+  if(failCleanup){
+    assert.equal(resumed.reason,'io');assert.equal(resumed.starts,2);
+    assert.match(fs.readFileSync(errorPath,'utf8'),/injected retained cleanup failure/);
+    assert.equal(status.lastRun.reason,'io');assert.equal(status.lastSuccess,null);
+    assert.equal(status.lastFailure.id,status.lastRun.id);
+    assert.equal(status.lastFailure.counts.turnsAppended,1,'cleanup failure preserves committed healthy counts');
+    assert.equal(f.state(s=>[...s.entries('recovery-allocation')].length),1,'failed cleanup keeps its durable reference');
+  }else{
+    assert.deepEqual(status.lastFailure,priorFailure,'prior run failure remains history after a successful later pass');
+    assert.equal(status.lastSuccess.id,status.lastRun.id);
+    assert.equal(f.state(s=>[...s.entries('recovery-allocation')].length),0);
+    assert.equal(f.state(s=>[...s.entries('recovery-stage')].length),0);
+    assert.equal(f.state(s=>[...s.entries('recovery-garbage')].length),0);
+    assert.equal(fs.readdirSync(join(f.root,'.capture-tmp')).filter(name=>name.startsWith('recovery-')).length,0);
+    assert.equal(fs.existsSync(errorPath),false,'successful recovery has no swallowed worker error');
+  }
   assert.equal(f.state(s=>[...s.entries('capture-retry')].length),0);
 });
 
