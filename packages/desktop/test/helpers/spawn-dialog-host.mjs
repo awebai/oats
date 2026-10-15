@@ -70,7 +70,8 @@ export async function mountSpawn(t, options = {}) {
   const previewBoundary = desktopPreview ? desktopPreview.read : createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: invokePreview });
   const prepareRead = desktopPreview ? desktopPreview.prepareRead : previewBoundary;
   let ids = 0;
-  const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read: prepareRead,
+  // u.restartBroker() is a backend restart: a new broker, which knows no reference the old one prepared.
+  const newBroker = () => createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read: prepareRead,
     ...(options.brokerTimer ? { timer: options.brokerTimer } : {}), // #802: the apply's answer-within timer
     invoke: async (c, args) => {
       applied.push(structuredClone(args));
@@ -78,6 +79,7 @@ export async function mountSpawn(t, options = {}) {
       const preview = kernel(kernelPreviewName(args.target.selector.soul, args.choices)).result;
       return { started: true, envelope: { schemaVersion: 1, ok: true, result: creation(preview) } };
     } });
+  let broker = newBroker();
   // The workspace exactly as /api/panel sends it: id and name, no scope.
   const panel = () => ({ workspace: { id: 'northwind', name: 'northwind', team: null }, workspaces: options.workspaces ?? [], instances,
     ...(options.deployments ? { deployments: options.deployments } : {}),
@@ -133,6 +135,7 @@ export async function mountSpawn(t, options = {}) {
   const u = {
     doc, dom, calls, opens, notified, applied, polls, ctx, notices, reopened, schedules, shownRows, followed, jobs: ctx.spawnJobs,
     kernelPreviews: () => kernelPreviews,
+    restartBroker() { broker = newBroker(); },
     dialog: () => doc.querySelector('.spawn-dialog'),
     q: selector => doc.querySelector(`.spawn-dialog ${selector}`),
     text: selector => (doc.querySelector(`.spawn-dialog ${selector}`)?.textContent || '').trim(),

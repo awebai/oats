@@ -13,6 +13,7 @@ import { createSelectionOwnership } from '../renderer/selection-ownership.mjs';
 import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { instanceId } from '../../client/instance-tree.mjs';
 import { terminalKey } from '../renderer/instance-tree-view.mjs';
+import { otherIncarnation, terminalOrigin } from '../renderer/retired-tabs.mjs';
 
 const row = { instance: 'dev-x', home: '/d/agents/dev/instances/dev-x', agentsRoot: '/d/agents', agent: 'dev', running: true };
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -214,7 +215,7 @@ function shell(t) {
     watchOperator: target => { const w = watchOperator(target, { trusted: () => true }); watches.push(w); return w; },
     currentWorkspace: () => 'A', workspaceGeneration: () => 0, connectionGeneration: 0,
     modalOpen: () => [...document.querySelectorAll('[aria-modal="true"]')].some(d => !d.hidden),
-    tabs: new Map(), activeTab: null, pendingTerms: new Set(),
+    tabs: new Map(), activeTab: null, pendingTerms: new Set(), panelReads: 0, otherIncarnation, terminalOrigin,
     spawnJobs: { markNew: (ws, r) => marked.push(r.instance) }, contextRosterEl: {}, announceSpawn: text => said.push(text),
     // The open's own repaint starts a roster read, which bumps the roster generation, as shell.mjs's does.
     setSidebarMode() {}, setNavActive() {}, refreshContextRoster() { c.contextRosterGen++; }, contextRosterGen: 0, shownRoster: null,

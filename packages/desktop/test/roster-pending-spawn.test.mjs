@@ -178,7 +178,7 @@ test("Spec E: a just-spawned row says New (text and a dot) until its row is open
   u.render(roster); assert.equal(u.row("solo").querySelector(".ctx-new"), null);
   // Opened another way (the palette, say): the first paint where it is the active row clears it.
   fresh.add("/synthetic/root");
-  const tab = { key: tree.terminalKey("A", roster[0]) };
+  const tab = { kind: "terminal", key: tree.terminalKey("A", roster[0]) };
   const v = fixture(t, () => [], { jobs, context: { tabs: new Map([[7, tab]]), activeTab: 7 } });
   v.render(roster);
   assert.equal(v.row("root").querySelector(".ctx-new"), null); assert.equal(fresh.size, 0);

@@ -6,7 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { createSpawnDialog, spawnDialogCSS, homeText, worktreeText, relationText } from '../renderer/spawn-dialog.mjs';
+import { createSpawnDialog, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { homeText, worktreeText, relationText } from '../../client/spawn-preview-facts.mjs';
 import { identityCSS } from '../renderer/identity-marks.mjs';
 import { cli as CLI, kernel, ROOT, target, view } from './helpers/spawn-preview-fixture.mjs';
 

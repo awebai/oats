@@ -10,6 +10,7 @@ import { prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { fillEmptyGroup } from "../renderer/split-layout.mjs";
+import { otherIncarnation, terminalOrigin } from "../renderer/retired-tabs.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const extract = name => source.match(new RegExp(`async function ${name}\\([^]*?\\n\\}`))[0];
@@ -22,7 +23,7 @@ function fixture(t, kind) {
     document: dom.window.document, console,
     workspace: "A", generation: 0, connectionGeneration: 0,
     currentWorkspace: () => context.workspace, workspaceGeneration: () => context.generation,
-    tabs: new Map([[1, { key: "first" }], [2, { key: "second" }]]), pendingTerms: new Set(), split: null,
+    tabs: new Map([[1, { key: "first" }], [2, { key: "second" }]]), pendingTerms: new Set(), panelReads: 0, otherIncarnation, terminalOrigin, split: null,
     fillEmptyGroup,
     setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {},
     api() { const request = deferred(); requests.push(request); return request.promise; },
