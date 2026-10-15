@@ -475,7 +475,11 @@ runs.
 **A test file leaves nothing behind.** Where a test makes a directory, it
 registers the removal there (`t.after`, or a list the file empties when it has
 ended), so a test that fails or times out removes it too; and a fixture is
-ended, not only removed (`v2Deployment({ t })`, below). On a development host
+ended, not only removed (`v2Deployment({ t })`, below). A file whose setup is
+shared by its tests does that setup in a `test.before` hook, not at its top
+level: a file that throws while it loads runs no hook, `test.after` included,
+so a step that failed would leave what the steps before it made
+(test/tui-acts.test.mjs). On a development host
 the leftovers of runs that passed once used up the inodes of the temporary
 file system, and every test that makes a directory then failed with "no
 space", whatever the change under test (awebai/oats#1025). The root run holds
