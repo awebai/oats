@@ -852,6 +852,27 @@ the Git state did not move, or to verify the copy when it did. With nothing
 preserved before the hooks, nothing is compared: a
 recovery is written after them whenever there is something to preserve.
 
+Those reads are the inspection's own where they can be: the walk that takes
+the untracked and ignored digest of the worktree takes its bytes from the
+same read of each file. A directory instance's pre-hook copy is verified by
+reading the copy back and comparing it with the bytes the inspection before
+the hooks read. A file changed before the copy read it refuses the retire
+with `E_WORK_PRESERVATION_FAILED`, before any hook, as does a copy changed
+after it was written. A file changed during the copy, after it was copied, is
+not in the pre-hook copy: the inspection after the hooks reads the work
+again, sees the change, and copies the work again, verified, under
+`after-hooks/`. Every other copy of the work is the last read of its source
+before the home is removed, and it reads the source again after the copy:
+any change since the inspection refuses.
+
+Every digest reads its files itself, one at a time, in a fixed order. While
+it reads them, a few worker threads read the files it reads next, so a tree
+that is not in the page cache yet (a copy just made on a file system that
+clones files, a `node_modules/` not read for a while) comes from the cache.
+That changes no digest and no error, and it is bounded: at most four files
+are read at once, each through a 1 MiB buffer, and never more than 64 MiB or
+4096 files ahead of the digest.
+
 A worktree whose `git status` fails refuses the retire with
 `E_WORK_INSPECTION_FAILED` at the first inspection: no recovery was written,
 nothing was deleted, and the retire has not stopped the instance's session.
@@ -1720,6 +1741,15 @@ change to work is in the same recovery, under
 `workRecovery.path/after-hooks/work` (under `workRecovery.path/work` when
 nothing needed preserving before the hooks). The work-root cannot be
 exchanged for a symlink. Recovery does not replace the worker's delivery protocol.
+
+A start refuses a directory home whose home or `work/` is no longer the
+directory the spawn recorded (`directory home was exchanged` or `directory work
+was exchanged`), for example when another directory was renamed into its
+place. The spawn records each root's device, inode and birth time. A root is
+the same directory when its device and inode match. On macOS, which gives a
+volume a new device number each time it is mounted (every reboot), an equal
+inode is enough, provided the birth time also matches when one was recorded
+(a home spawned by a kernel that recorded none is judged by the inode alone).
 
 ### `workspace` — cross-repo coordinator
 

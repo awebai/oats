@@ -70,6 +70,12 @@ function rowAt(state, sz, name) {
   assert.equal(found.length, 1, `one list row draws ${name}`);
   return found[0];
 }
+/** The state with the instance `name` on the screen at size `sz`: as it is, or, where the list is
+ *  cut off at that size (60x15 holds ten rows of the eleven), with the selection moved to it. */
+function onScreen(state, sz, name) {
+  const reference = draw(state, size(79, sz.rows));
+  return bodyRows(sz).some((r) => cellText(reference, r).includes(` ${name} `)) ? state : selecting(state, name, sz);
+}
 /** Move the selection to the instance called `name`, with the keys a person has. */
 function selecting(state, name, sz = S80) {
   let next = press(state, ["g"], sz).state;
@@ -187,14 +193,14 @@ test("the Instances view at 80x24 in UTF-8, cell for cell: the header, the view 
     "  ● acme-console-expert-tui-read      │   acme-ledger-developer-note-target",
     "    ● acme-console-developer-pan…    !│   soul     acme-ledger-developer",
     "    ● acme-console-developer-ter…    !│   state    running",
-    `  ● acme-ledger-expert-retire         │   needs    ${NEEDS}`,
-    ">   ● acme-ledger-developer-note…    !│            the agent: \"Which base",
-    "      ○ peer-reviewer-note            │            should it use?\"",
-    "                                      │   harness  claude, claude-opus-5-5 (so…",
-    "  ● acme-maintainer-ops               │   work     worktree, agents/acme-ledge…",
-    "  ? acme-expert-t…  state unknown     │   team     eng",
+    `                                      │   needs    ${NEEDS}`,
+    "  ? acme-expert-t…  state unknown     │            the agent: \"Which base",
+    "                                      │            should it use?\"",
+    "  ● acme-ledger-expert-retire         │   harness  claude, claude-opus-5-5 (so…",
+    ">   ● acme-ledger-developer-note…    !│   work     worktree, agents/acme-ledge…",
+    "      ○ peer-reviewer-note            │   team     eng",
     "                                      │   parent   acme-ledger-expert-retire",
-    `                                      │   started  ${STARTED}`,
+    `  ● acme-maintainer-ops               │   started  ${STARTED}`,
     "                                      │   home     …edger-developer-note-target",
     blank, blank, blank, blank, blank, blank, blank, blank,
     FOOTER,
@@ -210,14 +216,14 @@ test("the Instances view at 80x24 in ASCII, cell for cell: the same screen with 
     "  * acme-console-expert-tui-read      |   acme-ledger-developer-note-target",
     "    * acme-console-developer-p...    !|   soul     acme-ledger-developer",
     "    * acme-console-developer-t...    !|   state    running",
-    `  * acme-ledger-expert-retire         |   needs    ${NEEDS}`,
-    ">   * acme-ledger-developer-no...    !|            the agent: \"Which base",
-    "      - peer-reviewer-note            |            should it use?\"",
-    "                                      |   harness  claude, claude-opus-5-5 (...",
-    "  * acme-maintainer-ops               |   work     worktree, agents/acme-led...",
-    "  ? acme-expert...  state unknown     |   team     eng",
+    `                                      |   needs    ${NEEDS}`,
+    "  ? acme-expert...  state unknown     |            the agent: \"Which base",
+    "                                      |            should it use?\"",
+    "  * acme-ledger-expert-retire         |   harness  claude, claude-opus-5-5 (...",
+    ">   * acme-ledger-developer-no...    !|   work     worktree, agents/acme-led...",
+    "      - peer-reviewer-note            |   team     eng",
     "                                      |   parent   acme-ledger-expert-retire",
-    `                                      |   started  ${STARTED}`,
+    `  * acme-maintainer-ops               |   started  ${STARTED}`,
     "                                      |   home     ...ger-developer-note-target",
     blank, blank, blank, blank, blank, blank, blank, blank,
     FOOTER,
@@ -238,8 +244,10 @@ test("at every size and in both modes the frame has its shape: the header on the
     assert.equal(d.cells[1][sz.cols - 2].text, "0", `${at}: the read time ends one cell before the edge`);
     // The rule under the header reaches edge to edge; in the wide layout it has a joint where the panes' rule meets it.
     d.cells[2].forEach((cell, x) => assert.equal(cell.text, wide && x === list ? g.down : g.rule, `${at}: row 2, column ${x}`));
-    // No rule above the footer: the row above it is the body's last, the panes' rule on it and nothing else.
-    assert.equal(cellText(d, sz.rows - 2), wide ? `${" ".repeat(list)}${g.bar}` : "", `${at}: row ${sz.rows - 2}`);
+    // No rule above the footer: the row above it is the body's last, with the panes' rule on it and
+    // no rule of its own (at 60x15 the roster reaches it).
+    assert.equal(cellText(d, sz.rows - 2).includes(g.rule.repeat(2)), false, `${at}: row ${sz.rows - 2} is no rule`);
+    if (wide) assert.equal(d.cells[sz.rows - 2][list].text, g.bar, `${at}: row ${sz.rows - 2} has the panes' rule`);
     // One rule column between the panes, on every row of the body, and nowhere else.
     for (const r of bodyRows(sz)) {
       if (wide) assert.equal(d.cells[r][list].text, g.bar, `${at}: row ${r} has the panes' rule at column ${list}`);
@@ -275,14 +283,14 @@ test("at 120x40 the names have room: the same roster with the names whole and th
   assert.equal(d.lines[3], row("  ● acme-console-expert-tui-read", "   acme-ledger-developer-note-target"));
   assert.equal(d.lines[4], row("    ● acme-console-developer-panel                      !", "   soul     acme-ledger-developer"));
   assert.equal(d.lines[5], row("    ● acme-console-developer-terms                      !", "   state    running"));
-  assert.equal(d.lines[6], row("  ● acme-ledger-expert-retire", `   needs    ${NEEDS}`));
-  assert.equal(d.lines[7], row(">   ● acme-ledger-developer-note-target                 !", "            the agent: \"Which base should it use?\""));
-  assert.equal(d.lines[8], row("      ○ peer-reviewer-note", "   harness  claude, claude-opus-5-5 (soul)"));
-  assert.equal(d.lines[9], row("", "   work     worktree, agents/acme-ledger-developer-note-targ…"));
-  assert.equal(d.lines[10], row("  ● acme-maintainer-ops", "   team     eng"));
-  assert.equal(d.lines[11], row("  ? acme-expert-tui                    state unknown", `   parent   ${KERNEL_EXPERT}`));
+  assert.equal(d.lines[6], row("", `   needs    ${NEEDS}`));
+  assert.equal(d.lines[7], row("  ? acme-expert-tui                    state unknown", "            the agent: \"Which base should it use?\""));
+  assert.equal(d.lines[8], row("", "   harness  claude, claude-opus-5-5 (soul)"));
+  assert.equal(d.lines[9], row("  ● acme-ledger-expert-retire", "   work     worktree, agents/acme-ledger-developer-note-targ…"));
+  assert.equal(d.lines[10], row(">   ● acme-ledger-developer-note-target                 !", "   team     eng"));
+  assert.equal(d.lines[11], row("      ○ peer-reviewer-note", `   parent   ${KERNEL_EXPERT}`));
   assert.equal(d.lines[12], row("", `   started  ${STARTED}`));
-  assert.equal(d.lines[13], row("", "   home     …oper/instances/acme-ledger-developer-note-target"));
+  assert.equal(d.lines[13], row("  ● acme-maintainer-ops", "   home     …oper/instances/acme-ledger-developer-note-target"));
   for (let r = 14; r < 39; r++) assert.equal(d.lines[r], row("", ""), `row ${r}`);
   assert.equal(d.lines[39], FOOTER_120);
 });
@@ -291,21 +299,23 @@ test("at 79x24 the list takes the whole width: no rule column, no detail beside 
   const d = draw(golden(), S79);
   assert.equal(d.lines[0], ` acme-platform       ${COUNTS}`);
   assert.equal(d.lines[2], "─".repeat(79));
-  assert.deepEqual(d.lines.slice(3, 12), [
+  assert.deepEqual(d.lines.slice(3, 14), [
     "  ● acme-console-expert-tui-read",
     "    ● acme-console-developer-panel                                            !",
     "    ● acme-console-developer-terms                                            !",
+    "",
+    "  ? acme-expert-tui                                          state unknown",
+    "",
     "  ● acme-ledger-expert-retire",
     ">   ● acme-ledger-developer-note-target                                       !",
     "      ○ peer-reviewer-note",
     "",
     "  ● acme-maintainer-ops",
-    "  ? acme-expert-tui                                          state unknown",
   ]);
-  assert.deepEqual(d.lines.slice(12, 23), Array.from({ length: 11 }, () => ""));
+  assert.deepEqual(d.lines.slice(14, 23), Array.from({ length: 9 }, () => ""));
   assert.equal(d.lines[23], FOOTER_79);
-  assert.deepEqual(d.cells[7].map((cell) => cell.style.reverse), Array.from({ length: 79 }, () => true), "the selected row's bar is the whole width");
-  assert.deepEqual([d.cells[4][78].text, d.cells[7][78].text], ["!", "!"], "a waiting mark stands in the last column");
+  assert.deepEqual(d.cells[10].map((cell) => cell.style.reverse), Array.from({ length: 79 }, () => true), "the selected row's bar is the whole width");
+  assert.deepEqual([d.cells[4][78].text, d.cells[10][78].text], ["!", "!"], "a waiting mark stands in the last column");
   for (const line of d.lines) assert.equal(line.includes("soul "), false, "no detail is drawn beside the list");
 });
 
@@ -320,14 +330,14 @@ test("at 60x15, the smallest size drawn, the frame keeps its shape and the roste
     "  ● acme-console-expert-tui-read",
     "    ● acme-console-developer-panel                         !",
     "    ● acme-console-developer-terms                         !",
+    "",
+    "  ? acme-expert-tui                       state unknown",
+    "",
     "  ● acme-ledger-expert-retire",
     ">   ● acme-ledger-developer-note-target                    !",
     "      ○ peer-reviewer-note",
     "",
     "  ● acme-maintainer-ops",
-    "  ? acme-expert-tui                       state unknown",
-    "",
-    "",
   ]);
   assert.equal(d.lines[14], FOOTER_60);
 });
@@ -2177,12 +2187,14 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
       "  ● acme-console-expert-tui-read",
       "    ● acme-console-developer-pan…    !",
       "    ● acme-console-developer-ter…    !",
+      "",
+      "> ? acme-expert-t…  state unknown",
+      "",
       "  ● acme-ledger-expert-retire",
       "    ● acme-ledger-developer-note…    !",
       "      ○ peer-reviewer-note",
       "",
       "  ● acme-maintainer-ops",
-      "> ? acme-expert-t…  state unknown",
     ], [
       "   acme-expert-tui",
       "   soul     acme-expert",
@@ -2205,12 +2217,14 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
       "  * acme-console-expert-tui-read",
       "    * acme-console-developer-p...    !",
       "    * acme-console-developer-t...    !",
+      "",
+      "> ? acme-expert...  state unknown",
+      "",
       "  * acme-ledger-expert-retire",
       "    * acme-ledger-developer-no...    !",
       "      - peer-reviewer-note",
       "",
       "  * acme-maintainer-ops",
-      "> ? acme-expert...  state unknown",
     ], [
       "   acme-expert-tui",
       "   soul     acme-expert",

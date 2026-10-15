@@ -14,7 +14,7 @@
  *     rosterAnswered,    // boolean: a roster answer arrived under the current CLI
  *     rosterFailure,     // string | null: the roster read's failure while no answer has arrived
  *     cli,               // the kernel record (cli-locator.mjs)
- *     observing,         // Set<deployment id>: a read in flight
+ *     observing,         // keyed by deployment id (`has`): a read in flight
  *     remoteCollecting,  // boolean: the remote roster is being read
  *     home,              // string: the user's home directory, for the short label
  *     at,                // string: the ISO time of this call

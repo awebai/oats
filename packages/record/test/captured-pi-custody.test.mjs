@@ -137,6 +137,19 @@ test('closed v2 codec rejects extra fields, cyclic proof and unsupported version
   const f=fixture(t),id=f.start();fs.writeFileSync(join(f.history,id+'.json'),JSON.stringify(mutate(f.row(id))));assert.throws(()=>sessionsForHome(f.home));assert.throws(()=>inspectCapturedPiRoot(f.home,f.inspect));
  }
 });
+test('#1261: a witness whose dev changed with the same inode (a macOS remount) holds on darwin and refuses elsewhere',t=>{
+ const f=fixture(t),id=f.start();f.transcript();const row=f.row(id);
+ fs.writeFileSync(join(f.history,id+'.json'),JSON.stringify({...row,rootWitness:{...row.rootWitness,identity:{...row.rootWitness.identity,dev:row.rootWitness.identity.dev+1}}}));
+ const next={...f.authority,intent:{...f.intent,executionId:'after-reboot'}};
+ if(process.platform==='darwin'){
+  const files=sessionsForHome(f.home);assert.equal(files.length,1);assertCapturedPiStart(f.home,id,{...f.inspect,intent:f.intent});
+  const second=f.start(next);assert.deepEqual(f.row(second).rootWitness,f.row(id).rootWitness);
+  assert.equal(captureSessions(f.store,{owner:'fixture',files,format:'pi',final:true}).complete,true);
+ }else{
+  assert.throws(()=>sessionsForHome(f.home),/original Pi session directory was replaced/);
+  assert.throws(()=>prepareCapturedPiStart(f.home,next),/original Pi session directory was replaced/);
+ }
+});
 for(const link of [false,true])test(`replaced ${link?'symlink':'real directory'} refuses fresh discovery and retained capture without append`,t=>{
  const f=fixture(t);f.start();f.transcript();const files=sessionsForHome(f.home);assert.equal(files.length,1);f.replace(link);
  assert.throws(()=>sessionsForHome(f.home));assert.throws(()=>captureSessions(f.store,{owner:'fixture',files,format:'pi',final:true}));assert.deepEqual(f.store.listStreams(),[]);
