@@ -239,7 +239,8 @@ on whether that read has succeeded before in this run:
 The next read that succeeds shows the machines as they then report.
 
 Names are cut by terminal cells with `…` (`...` in ASCII) when they do not
-fit; the detail shows them whole.
+fit; the detail shows them whole. The TUI's own words end the same way:
+**Retiring…** reads `Retiring...` in ASCII.
 
 ## Open an agent's terminal
 

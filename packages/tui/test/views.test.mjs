@@ -387,6 +387,25 @@ test("in ASCII nothing on the screen is outside printable ASCII: the list, the d
   }
 });
 
+test("in ASCII a held row's own words end in three full stops, never an ellipsis: the list's word, the detail's state, the help and a start's line (#1247)", () => {
+  const rows = [instanceRow("dev", "dev-retiring", { retirePending: true }), instanceRow("dev", "dev-spawning", { spawnInProgress: true, running: false, runtimeState: "stopped" })];
+  const sz = size(200, 60); // tall enough for the help's marks
+  for (const ascii of [true, false]) {
+    const at = `ascii ${ascii}`, list = stateOf(observed(rows), { ascii });
+    const screens = { list, detail: press(list, ["tab"]).state, help: press(list, ["?"]).state };
+    for (const [name, state] of Object.entries(screens)) {
+      const text = draw(state, sz).lines.join("\n");
+      assert.equal(text.includes(ascii ? "Retiring..." : "Retiring\u2026"), true, `${at}, ${name}: ${text}`);
+      if (ascii) for (const line of draw(state, sz).lines) assert.match(line, PRINTABLE_ASCII, `${at}, ${name}`);
+    }
+    const lines = draw(list, sz).lines;
+    // The spawning row's word: whole in UTF-8; in ASCII two cells wider than the column's WORD_MAX, so cut, with the ASCII cut mark.
+    assert.equal(lines.some((line) => line.includes(ascii ? "Setting up worktr..." : "Setting up worktree\u2026")), true, `${at}: the spawning row's word`);
+    const detail = draw(screens.detail, sz).lines.find((line) => /\bstate\b/.test(line) && line.includes("Retiring"));
+    assert.ok(detail, `${at}: the detail's state is the list row's word`);
+  }
+});
+
 test("without colour the screen is the same and still says everything: the bytes carry attributes only, and each state keeps a mark of its own shape", () => {
   const d = draw(golden(), S80);
   const coloured = readTerminalOutput(createScreen().render(d.rows, S80, { full: true }));

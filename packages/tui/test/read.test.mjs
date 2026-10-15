@@ -319,8 +319,9 @@ test("a cycle: the kernel's roster goes to the collector as the shared livenessI
   assert.deepEqual(reader.children(), []);
   await reader.request();
   assert.equal(entries.length, 1, "exactly one entry for the cycle");
-  const [{ id, entry, number }] = entries;
-  assert.deepEqual(Object.keys(entries[0]).sort(), ["entry", "id", "number"]);
+  const [{ id, entry, number, read }] = entries;
+  assert.deepEqual(Object.keys(entries[0]).sort(), ["entry", "id", "number", "read"]);
+  assert.equal(read, true, "an entry made from the kernel's answer is marked read (#1247); a failed read's is not (below)");
   assert.equal(id, world.deployment);
   assert.equal(number, 1);
   assert.equal(entry.deployment.status, "observed");

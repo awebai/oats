@@ -13,7 +13,7 @@ import {
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows,
 } from "./client.mjs";
-import { shownLines } from "./term/text.mjs";
+import { ownEllipsis, shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
@@ -72,9 +72,9 @@ export function reachedMachines(state, at) {
 const stateWord = (row) => (text(row.runtimeState) && row.serverUnreached !== true ? row.runtimeState : runtimeState(row));
 /** What a list row shows at its right edge: a held home's state (Retiring… while a retire runs,
  *  or this run's own is in flight), the harness of a running instance, else its state. */
-function wordOf(row) {
+function wordOf(row, ascii) {
   const held = heldHome(row);
-  if (held) return held.state;
+  if (held) return ownEllipsis(held.state, ascii);
   return row.running === true && text(row.harness) ? row.harness : stateWord(row);
 }
 /** Which mark a row carries: the shared word, `held` for a home the kernel holds, and `shell`
@@ -203,7 +203,7 @@ function build(state, at) {
     empty: status === "pending" ? "reading" : !observed ? null : !instances.length ? "none" : !rows.length ? "nomatch" : null,
     // As wide as the widest word among all the rows of the list, so the column does not move
     // while the list scrolls.
-    wordWidth: Math.min(WORD_MAX, rows.reduce((widest, { row }) => Math.max(widest, textWidth(displayLine(wordOf(row)) ?? "")), 0)),
+    wordWidth: Math.min(WORD_MAX, rows.reduce((widest, { row }) => Math.max(widest, textWidth(displayLine(wordOf(row, state.ascii)) ?? "")), 0)),
   };
 }
 
@@ -234,7 +234,7 @@ function flatten(base, cols, ascii) {
  *  from read it again without asking the shared home again (its grouping walks the whole roster
  *  for each row). The state's values are never changed in place, so their identity says whether
  *  they changed. The flattening for the last width asked is kept beside it. */
-const MADE_FROM = ["entries", "remote", "memory", "notes", "rosterAt", "collecting", "ctxs", "open", "collapsed", "cli", "home", "retiring"];
+const MADE_FROM = ["entries", "remote", "memory", "notes", "rosterAt", "collecting", "ctxs", "open", "collapsed", "cli", "home", "retiring", "ascii"];
 let kept = null;
 /** The roster of a state: the rows in drawn order and what the header says, for a list pane
  *  `cols` wide. Only `items` and `index` depend on the width; `rows`, the instances in drawn
@@ -258,7 +258,7 @@ function listRow(state, r, item) {
   const fold = disclosure(state, r, item);
   return {
     id: item.id, name: item.row.instance, depth: item.depth, selected: item.id === state.selected,
-    disclosure: fold, mark: markOf(item.row), word: wordOf(item.row),
+    disclosure: fold, mark: markOf(item.row), word: wordOf(item.row, state.ascii),
     waiting: waitingClaim(item.row, { stale: r.stale(item.row) }) !== null,
     below: fold === "closed" ? r.below.get(item.id)?.length ?? 0 : 0,
   };
@@ -394,7 +394,7 @@ function detailOf(state, r, item, now, acts) {
     const said = of ? deploymentState(of) : null;
     if (said && said.key !== "live") add("", said.detail, "wrap");
   }
-  add("state", heldHome(row)?.state ?? stateWord(row)); // the word of its list row, harness apart
+  add("state", heldHome(row) ? ownEllipsis(heldHome(row).state, state.ascii) : stateWord(row)); // the word of its list row, harness apart
   const held = acts.blocked ?? acts.limited;
   // The row's own text stands under its state, in the form that says who made it. Who made it is
   // the shared home's to say, in two ways, and the TUI writes no word and no sentence of its own
@@ -409,11 +409,11 @@ function detailOf(state, r, item, now, acts) {
   // in front never change the answer; a closing quotation mark can, for a text that ends in a
   // secret's name and its sign, and that text is then withheld.)
   add("", rowText(row, acts), "wrap");
-  // What holds the row, when that is not the row's text: a sentence of the shared home's, or a held
-  // home's reason that carries an `origin` (a failed retire's, in the kernel's words: #1247), said
-  // as `spoken` says it, after its speaker. Any other reason with an `origin` is the row's text, and
-  // so is one whose sentence is that text: either stands once, under the state.
-  const own = held && ((held.code === "held" && held.origin !== undefined) || (held.origin === undefined && held.sentence !== row.runtimeError));
+  // What holds the row, when that is not the row's text, said as `spoken` says it. A held home's
+  // reason (code `held`) is never the row's text: the shared home's sentence, or a failed retire's
+  // words of the kernel's (#1247), whose speaker `spoken` names. Any other reason is the row's text
+  // when it carries an `origin`, or when its sentence is that text: either stands once, under the state.
+  const own = held && (held.code === "held" || (held.origin === undefined && held.sentence !== row.runtimeError));
   if (own) add("held", reasonSpoken(held), "wrap");
   const claim = waitingClaim(row, { stale: r.stale(row) });
   if (claim) {
