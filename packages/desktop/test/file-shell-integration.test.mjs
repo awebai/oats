@@ -251,7 +251,8 @@ test("keyboard collapse and expand of a root leave the selected row under the sa
     return el?.dataset.group;
   };
   const place = control => [...listEl.querySelectorAll(".ctx-inst")].indexOf(control);
-  const open = ["alpha, 2 instances", "lead, 2 instances", "zeta, 2 instances", "independent, 1 instance"];
+  // One sequence by root name (#1262): solo's run sits between lead and zeta.
+  const open = ["alpha, 2 instances", "lead, 2 instances", "independent, 1 instance", "zeta, 2 instances"];
   assert.deepEqual(headers(), open);
   s.control(lead).focus();
   assert.equal(headerOf(s.control(lead)), "lead"); assert.equal(place(s.control(lead)), 2);
@@ -262,7 +263,7 @@ test("keyboard collapse and expand of a root leave the selected row under the sa
   assert.equal(s.document.activeElement, s.control(lead), "the selected row keeps focus");
   assert.equal(headerOf(s.control(lead)), "lead", "collapsed over its whole cluster, the root stays under its own header");
   assert.equal(place(s.control(lead)), 2, "and at its place among the rows");
-  assert.deepEqual(headers(), ["alpha, 2 instances", "lead, 1 instance", "zeta, 2 instances", "independent, 1 instance"],
+  assert.deepEqual(headers(), ["alpha, 2 instances", "lead, 1 instance", "independent, 1 instance", "zeta, 2 instances"],
     "the headers keep their order; a header counts the rows shown under it");
   assert.equal(headerOf(s.control(at("solo"))), "independent", "only the unrelated instance is independent");
 

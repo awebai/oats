@@ -45,7 +45,7 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "soul-launch","retire-plan-own-worktree","spawn-kernel-codes","soul-skills","roster-workspace-key"],
+             "soul-launch","retire-plan-own-worktree","spawn-kernel-codes","soul-skills","roster-workspace-key","spawn-apply-max-age"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -131,6 +131,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `retire-plan-own-worktree` | a retire plan carries `facts.ownWorktree`, a boolean: whether `work/` is the instance's own work tree, the one the retire retains or removes; in `oats retire --plan` and in the fresh plan (`details.plan`) of `E_PLAN_STALE` and `E_CHILDREN_RUNNING`; a stop plan does not carry it; OATS 0.53.0 ([the retire plan](#retire)) | |
 | `spawn-kernel-codes` | `oats spawn`, apply and `--preview`, answers the kernel's own code, as raised, whatever stage of the spawn raised it; `E_SPAWN_FAILED` is for an error with no kernel code (with `details.cause`, as the lifecycle commands' general codes have it). A code says nothing about how far the spawn got: `details.unconfirmed` does. Details are those each code had before; OATS 0.56.0 ([spawn errors](#spawn-errors)). A kernel without it answers `E_SPAWN_FAILED` for most kernel codes its kernel stage raised: there, that code may hide one | |
 | `roster-workspace-key` | `oats server roster --workspace-key <key>`, repeatable: only the groups that can belong to one of the given workspaces are probed and returned (registered for one of them, registered with no known `workspaceKey`, or saved routes only); the answer's shape is unchanged, OATS 0.56.0 ([The remote roster](#roster-workspace-key)). Gate on the probe: a kernel without it ignores the flag and probes and answers every group | |
+| `spawn-apply-max-age` | `--max-age <s>` on a spawn apply bound by `--expect-decision <revision>`: the apply reuses member heads as the preview does, its decision fence unchanged, and its answer carries no `observation` block, OATS 0.58.0 ([Apply](#apply)). Gate on the probe: a kernel without it refuses the flag on an apply (`E_BAD_ARGS`) | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -308,6 +309,7 @@ it and answer live, without the block.
 oats status | workspace status | souls | capabilities | inspect --soul|--home
      | teams | soul teams <soul>   … --max-age <seconds> --json
 oats spawn <soul> … --preview --max-age <seconds> --json    (feature spawn-preview-max-age)
+oats spawn <soul> … --expect-decision <revision> --max-age <seconds> --json   (feature spawn-apply-max-age)
 oats capabilities show <name> … --max-age <seconds> --json  (feature capability-show)
 oats trigger poll <id> --run-source … --max-age <seconds> --json   (feature trigger-sources)
 ```
@@ -327,10 +329,13 @@ oats trigger poll <id> --run-source … --max-age <seconds> --json   (feature tr
 - **Spawn preview** (feature `spawn-preview-max-age`, OATS 0.33.0): the
   preview's `result` gains the same block, so you can say "as of
   `<observedAt>`". The `decision` covers the heads the preview used, reused
-  or live: a reused head the member has since moved from makes the apply
-  (which always observes live) refuse `E_DECISION_STALE`, and the apply
-  records the head it observed, so the next preview under `--max-age` shows
-  it with a new `decision.revision`. The apply itself refuses the flag.
+  or live: a reused head the member has since moved from makes an apply
+  that observes live refuse `E_DECISION_STALE`, and the apply records the
+  head it observed, so the next preview under `--max-age` shows it with a new
+  `decision.revision`. The preview-bound apply takes the flag from
+  `spawn-apply-max-age` (OATS 0.58.0): with `--expect-decision`, it reuses
+  heads as the preview does, and its decision fence is unchanged
+  ([Apply](#apply)). Its answer carries no block.
 - **`localRevision`:** 24 lowercase hex characters, opaque. It digests every
   piece of local configuration the kernel read for this answer:
   `oats-local.yaml` (and each closer `oats-local.yaml` it looked for and did
@@ -361,18 +366,25 @@ oats trigger poll <id> --run-source … --max-age <seconds> --json   (feature tr
   spelling of the same repository (ssh vs https) or for a different ref; its
   commit can no longer be fetched. Each is observed live, as without the flag.
   A live observation that fails is the usual error, never an older head.
-- **Refusals:** every other command, a spawn apply (with or without
-  `--expect-decision`; the form named is `spawn`), every edit form (`teams add|remove|default`)
+- **Refusals:** every other command, every edit form (`teams add|remove|default`)
   and any `--server`
   invocation refuse the flag before reading or writing anything (the removed
   `soul teams --add|--remove|--default|--clear-default` answer their own
   `E_BAD_ARGS` first), with
   `E_BAD_ARGS` "--max-age is not accepted by \`oats <form>\`: only the read
-  verbs reuse observations (status, workspace status, souls, capabilities,
-  capabilities show, inspect --soul|--home, spawn --preview, trigger poll,
-  and the read forms of teams and soul teams)" and,
+  verbs and a preview-bound spawn apply reuse observations (status, workspace
+  status, souls, capabilities, capabilities show, inspect --soul|--home,
+  spawn --preview, spawn --expect-decision <revision>, trigger poll, and the
+  read forms of teams and soul teams)" and,
   with `--server`, "--max-age cannot be combined with --server: observation
-  reuse is local to this machine".
+  reuse is local to this machine". A spawn apply without `--expect-decision`
+  (or with no value after it) refuses it with `E_BAD_ARGS` "--max-age is not
+  accepted by \`oats spawn\` without --expect-decision: a spawn apply reuses
+  observations only with --expect-decision <revision>, which binds it to the
+  decision a preview showed". Write verbs refuse the flag because a writer
+  acting on a reused observation could persist a fact the workspace no longer
+  holds; a preview-bound apply is the exception because its fence binds it to
+  the decision the operator confirmed.
   A capability command's argv (`oats <namespace> …`) is its provider's: the
   kernel neither reads nor refuses `--max-age` there. The same holds for
   `capture`, `recall`, `setup` and `experimental`, which parse their own argv:
@@ -2316,10 +2328,11 @@ it to a temporary copy (`soulFetched: true`).
   localRevision}`, shaped exactly as the read verbs' block; without it the
   preview is exactly as before, and no other field changes shape.
 - `decision.revision` covers the heads the preview used, reused or live.
-  Apply never reuses (it refuses `--max-age`): a head that moved since the
-  reused observation refuses `E_DECISION_STALE`, and the apply records what
-  it observed, so re-preview under `--max-age` to get the new head and
-  revision.
+  An apply without `--max-age` (or with `--max-age 0`) observes live: a head
+  that moved since the reused observation refuses `E_DECISION_STALE`, and the
+  apply records what it observed, so re-preview under `--max-age` to get the
+  new head and revision. An apply with `--expect-decision` may reuse heads
+  too (feature `spawn-apply-max-age`, [Apply](#apply)).
 
 **Provider settings.**
 - `providers` is the `--provider` map as typed.
@@ -2363,6 +2376,16 @@ Feature `spawn-apply-2`, `spawnApplyApi: 1`. The Desktop gates on
   `E_INSTANCE_NAME_TAKEN` (for `--name`) or `E_PLACEMENT_TAKEN`.
 - A refused child spawn appends `child-spawn-refused` to the parent's log (on
   apply only).
+- `--max-age <s>` with `--expect-decision <revision>` (feature
+  `spawn-apply-max-age`, OATS 0.58.0) reuses member heads this machine
+  observed at most `<s>` seconds ago, exactly as the preview does (the same
+  values and fallbacks to a live observation), so an apply right after its
+  preview asks no remote again. The decision is computed from those heads, and
+  one that differs from `<revision>` is `E_DECISION_STALE`, as without the
+  flag. The answer (success, replay, every refusal) has no `observation`
+  block: the preview already gave its "as of".
+  Without `--expect-decision` the flag is `E_BAD_ARGS`
+  ([Observation reuse](#observation-reuse-feature-observe-max-age-oats-0311)).
 
 **Idempotency** (feature `spawn-idempotency-2`): `--idempotency-key <key>`
 with `--expect-decision` records the key and decision in `instance.json`.

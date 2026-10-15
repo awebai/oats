@@ -217,7 +217,8 @@ function shell(t) {
     modalOpen: () => [...document.querySelectorAll('[aria-modal="true"]')].some(d => !d.hidden),
     tabs: new Map(), activeTab: null, pendingTerms: new Set(), panelReads: 0, otherIncarnation, terminalOrigin,
     spawnJobs: { markNew: (ws, r) => marked.push(r.instance) }, contextRosterEl: {}, announceSpawn: text => said.push(text),
-    setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {},
+    // The open's own repaint starts a roster read, which bumps the roster generation, as shell.mjs's does.
+    setSidebarMode() {}, setNavActive() {}, refreshContextRoster() { c.contextRosterGen++; }, contextRosterGen: 0, shownRoster: null,
     api: () => { const gate = deferred(); panels.push(gate); return gate.promise; },
     resolveTerminalOpen: (instances, ref, ws) => { const inst = instances.find(i => i.home === ref.home); return inst ? { inst, key: terminalKey(ws, inst) } : { error: 'unknown', name: ref.instance }; },
     whenKeyFree: async () => {},
@@ -323,4 +324,134 @@ test('shell: a terminal the operator was taken to and left while it attached is 
   assert.deepEqual(u.marked, [], 'no New on a terminal already opened');
   assert.equal(u.c.activeTab, 8); assert.equal(u.document.activeElement, u.el('card'), 'readiness took no focus');
   assert.deepEqual(u.said, ['dev-x spawned']);
+});
+
+// #1246 D2: the post-spawn open resolves against the roster read that showed the row ready (shell.mjs `shownRoster`,
+// set where that read hands its rows to the store) while no later read has started, in the same workspace.
+test('shell: the post-spawn open uses the roster answer that showed the row ready, with no second /api/panel read', async t => {
+  const u = shell(t);
+  u.c.shownRoster = { gen: 0, ws: 'A', instances: [u.live] };
+  u.press();
+  assert.equal(await u.follow.arrived(u.live, 'A', 0, { id: 'spawn-1' }), 'opened');
+  assert.equal(u.panels.length, 0, 'no /api/panel read');
+  assert.equal(u.c.activeTab, 7); assert.equal(u.c.contextRosterGen, 1, 'the fire-and-forget repaint still runs');
+});
+for (const [why, shown] of [
+  ['a later roster read has started since', u => ({ gen: u.c.contextRosterGen - 1, ws: 'A', instances: [u.live] })],
+  ['it was another workspace\'s', u => ({ gen: u.c.contextRosterGen, ws: 'B', instances: [u.live] })],
+  ['there is none', () => null],
+]) test(`shell: the post-spawn open reads /api/panel as before when ${why}`, async t => {
+  const u = shell(t);
+  u.c.contextRosterGen = 3; u.c.shownRoster = shown(u);
+  u.press();
+  assert.equal(await arrive(u), 'opened');
+  assert.equal(u.panels.length, 1);
+});
+test('shell: any other open reads /api/panel, even with the shown roster current', async t => {
+  const u = shell(t);
+  u.c.shownRoster = { gen: 0, ws: 'A', instances: [u.live] };
+  const open = u.c.openTerminalTab(u.live, { quiet: true });
+  await u.settle(); assert.equal(u.panels.length, 1, 'a roster row, the palette, Quick Open: read as today');
+  u.panels[0].resolve(u.panel()); await open;
+  assert.equal(u.c.activeTab, 7);
+});
+
+// #1246 D2: shell.mjs `followSpawns`, over a fake store and fake timers. A created spawn is read at once; while it is
+// awaited, the 700 ms poll stays as the fallback; a read in flight is never doubled.
+const followSource = shellSource.slice(shellSource.indexOf('// A created instance is awaited'), shellSource.indexOf('ctx.spawnJobs = spawnJobs;'));
+function follower() {
+  const jobs = new Map(), timers = [], reads = [];
+  const c = {
+    currentWorkspace: () => 'A',
+    spawnJobs: { rows: ws => [...jobs.values()].filter(j => j.workspace === ws).map(j => ({ id: j.id })), get: id => jobs.get(id) ?? null },
+    refreshContextRoster: () => { const gate = deferred(); reads.push(gate); return gate.promise; },
+    setTimeout: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; },
+    clearTimeout: timer => { if (timer) timer.cleared = true; },
+    Set, Promise,
+  };
+  assert.ok(followSource.includes('function followSpawns()'), 'the shipped follow');
+  const followSpawns = runInNewContext(`${followSource}\nfollowSpawns`, c);
+  const armed = () => timers.filter(x => !x.cleared && !x.fired);
+  const fire = () => { const [timer] = armed(); timer.fired = true; timer.fn(); };
+  return { jobs, timers, reads, followSpawns, armed, fire, settle: () => new Promise(r => setImmediate(r)) };
+}
+
+test('follow: a created spawn reads the roster at once, then every 700 ms while it is awaited', async () => {
+  const f = follower();
+  f.jobs.set('spawn-1', { id: 'spawn-1', workspace: 'A', state: 'spawning' });
+  f.followSpawns();
+  assert.equal(f.reads.length + f.timers.length, 0, 'nothing is awaited before the outcome');
+  f.jobs.get('spawn-1').state = 'created';
+  f.followSpawns();
+  assert.equal(f.reads.length, 1, 'read at once, with no initial 700 ms wait');
+  assert.equal(f.timers.length, 0);
+  f.followSpawns(); assert.equal(f.reads.length, 1, 'a change meanwhile does not read twice');
+  f.reads[0].resolve(); await f.settle();
+  assert.deepEqual(f.armed().map(x => x.ms), [700], 'still awaited: the 700 ms poll is the fallback');
+  f.fire(); assert.equal(f.reads.length, 2);
+  f.jobs.get('spawn-1').state = 'done';
+  f.reads[1].resolve(); await f.settle();
+  assert.equal(f.armed().length, 0, 'no longer awaited: no more reads');
+});
+
+test('follow: a second spawn created while the poll waits is read at once too; a spawn of another workspace is not', async () => {
+  const f = follower();
+  f.jobs.set('spawn-1', { id: 'spawn-1', workspace: 'A', state: 'created' });
+  f.followSpawns(); f.reads[0].resolve(); await f.settle();
+  assert.equal(f.armed().length, 1);
+  f.jobs.set('spawn-9', { id: 'spawn-9', workspace: 'B', state: 'created' });
+  f.followSpawns(); assert.equal(f.reads.length, 1, 'another workspace\'s spawn changes nothing here');
+  f.jobs.set('spawn-2', { id: 'spawn-2', workspace: 'A', state: 'created' });
+  f.followSpawns();
+  assert.equal(f.reads.length, 2, 'read at once'); assert.equal(f.armed().length, 0, 'the pending poll was cleared');
+  f.reads[1].resolve(); await f.settle();
+  assert.deepEqual(f.armed().map(x => x.ms), [700]);
+});
+
+test('follow: a spawn created while a read is in flight is read at once when that read ends', async () => {
+  const f = follower();
+  f.jobs.set('spawn-1', { id: 'spawn-1', workspace: 'A', state: 'created' });
+  f.followSpawns();
+  f.jobs.set('spawn-2', { id: 'spawn-2', workspace: 'A', state: 'created' });
+  f.followSpawns(); assert.equal(f.reads.length, 1, 'never two follow reads at once');
+  f.reads[0].resolve(); await f.settle();
+  assert.equal(f.reads.length, 2, 'the new spawn reads at once after it'); assert.equal(f.armed().length, 0);
+});
+
+// #1246 × #1237: the post-spawn open reuses the shown answer with the stamp of the read that brought it, so a newer
+// roster answer (its own fire-and-forget repaint, landing while the terminal key is held) still vetoes a retired row.
+// The shipped flow and the inner open's admission checks; tab creation is replaced by a marker.
+const innerChecks = shellSource.match(/async function openTerminalTabInner\([^]*?\n\}/)[0].split('  const wrap = document.createElement("div");')[0] + '  opened.push({ name, read });\n}';
+async function followedOpen({ retiredByRepaint }) {
+  const { retiredTabs } = await import('../renderer/retired-tabs.mjs');
+  const { resolveTerminalOpen } = await import('../renderer/instance-tree-view.mjs');
+  const live = { ...row, createdAt: '2026-10-15T00:00:00Z', deployment: { id: '/d' }, tmux: { session: 's', window: 'w' } };
+  const panel = instances => ({ workspace: { id: 'A' }, instances, deployments: [{ id: '/d', local: true, reachable: true, primary: true }] });
+  const key = deferred();
+  const c = {
+    contextRosterGen: 7, panelReads: 10, shownRoster: { gen: 7, read: 10, ws: 'A', instances: [live] },
+    judgedAnswer: { read: 10, workspace: 'A', panel: panel([live]) },
+    currentWorkspace: () => 'A', setSidebarMode() {}, setNavActive() {},
+    refreshContextRoster() { c.contextRosterGen++; c.repaintRead = ++c.panelReads; },
+    tabOpenIntents: { begin: () => () => true }, connectionGeneration: 0,
+    api: () => assert.fail('the followed open reads no /api/panel'),
+    resolveTerminalOpen, terminalKey, whenKeyFree: () => key.promise, sameInstanceActionTarget,
+    tabs: new Map(), pendingTerms: new Set(), terminalOrigin, otherIncarnation, retiredTabs,
+    canAddressRemote: () => true, opened: [], notices: [],
+  };
+  const flow = runInNewContext(`${flowSource}\n${innerChecks}\nopenTerminalTabFlow`, c);
+  const open = flow(live, message => c.notices.push(message), { followed: true });
+  c.judgedAnswer = { read: c.repaintRead, workspace: 'A', panel: panel(retiredByRepaint ? [] : [live]) }; // the repaint lands
+  key.resolve(); await open;
+  return c;
+}
+test('shell: a followed open whose own repaint shows the instance retired while the key was held makes no terminal (#1237)', async () => {
+  const c = await followedOpen({ retiredByRepaint: true });
+  assert.equal(c.repaintRead, 11, 'the repaint is the newer read');
+  assert.equal(c.panelReads, 11, 'the open itself took no read stamp');
+  assert.deepEqual(c.opened, []); assert.deepEqual(c.notices, ['unknown instance "dev-x"']);
+});
+test('shell: a followed open whose repaint still shows the instance opens it, with the shown read\'s stamp', async () => {
+  const c = await followedOpen({ retiredByRepaint: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(c.opened)), [{ name: 'dev-x', read: 10 }]); assert.deepEqual(c.notices, []);
 });

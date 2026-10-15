@@ -1,7 +1,9 @@
-// The roster's one order (awebai/oats#1083): running (`running === true`), then unknown (`null`, or anything
+// Two orders. The panel's list (awebai/oats#1083): running (`running === true`), then unknown (`null`, or anything
 // not a boolean), then stopped (`false`); by name within each. One comparison, `byRuntimeState`
-// (packages/client/instance-presentation.mjs), read by every sort by state: `panelInstances` (deployment-panel.mjs),
-// `clusterInstances` and `rosterRank("status")` (instance-tree.mjs). Each is fed a row of each state in every input order.
+// (packages/client/instance-presentation.mjs), read by `panelInstances` (deployment-panel.mjs) and
+// `rosterRank("status")` (instance-tree.mjs). The roster (#1262, Pepe's decision, comment 6196531154): by name,
+// ties broken by instanceId, whatever runs; `clusterInstances` ranks clusters (by their first root) and children
+// that way, so a start or a stop moves nothing. Each is fed a row of each state in every input order.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { byRuntimeState } from '../../client/instance-presentation.mjs';
@@ -23,7 +25,7 @@ const statusOrder = rows => [...rows].sort(rosterRank('status')).map(i => i.inst
 /** A root with every row as its child: the order of children inside one cluster. */
 const childOrder = rows => clusterInstances([{ instance: 'root', running: true }, ...rows.map(r => ({ ...r, parentInstance: 'root' }))])[0].instances.slice(1).map(i => i.instance);
 
-for (const [what, order] of [['panelInstances', panelOrder], ['clusterInstances: clusters', clusterOrder], ['clusterInstances: children of one root', childOrder], ['rosterRank("status")', statusOrder]]) {
+for (const [what, order] of [['panelInstances', panelOrder], ['rosterRank("status")', statusOrder]]) {
   test(`${what}: running, then unknown, then stopped, whatever the input order`, () => {
     const one = permutations(ONE);
     assert.equal(one.length, 6);
@@ -35,12 +37,33 @@ for (const [what, order] of [['panelInstances', panelOrder], ['clusterInstances:
   });
 }
 
-test('the three sorts give the same order for the same rows', () => {
+/** The same rows by name: what the roster draws, whatever runs. */
+const byName = rows => [...rows].map(([instance]) => instance).sort((a, b) => a.localeCompare(b));
+for (const [what, order] of [['clusterInstances: clusters', clusterOrder], ['clusterInstances: children of one root', childOrder]]) {
+  test(`${what}: by name, whatever runs and whatever the input order (#1262)`, () => {
+    const one = permutations(ONE);
+    for (const input of one) assert.deepEqual(order(input.map(row)), byName(ONE), JSON.stringify(input));
+    const two = permutations(TWO);
+    assert.equal(two.length, 720);
+    for (const input of two) assert.deepEqual(order(input.map(row)), byName(TWO), JSON.stringify(input));
+  });
+}
+
+test('the panel and rosterRank("status") give the same order for the same rows; the roster gives the name order', () => {
   for (const input of permutations(TWO)) {
     const panel = panelOrder(input.map(row));
-    assert.deepEqual(clusterOrder(input.map(row)), panel, JSON.stringify(input));
     assert.deepEqual(statusOrder(input.map(row)), panel, JSON.stringify(input));
+    assert.deepEqual(clusterOrder(input.map(row)), byName(TWO), JSON.stringify(input));
   }
+});
+
+test('the roster order is total: one name in two agents roots ranks by identity, the same whatever the input order', () => {
+  const twins = [['dev', true, '/b/agents'], ['dev', false, '/a/agents'], ['dev', null, '/c/agents'], ['alpha', false, '/a/agents'], ['zulu', true, '/a/agents']]
+    .map(([instance, running, agentsRoot]) => ({ instance, agentsRoot, home: `${agentsRoot}/${instance}`, running }));
+  const roots = rows => clusterInstances(rows).map(c => `${c.instances[0].instance}@${c.instances[0].agentsRoot}`);
+  const first = roots(twins);
+  assert.deepEqual(first, ['alpha@/a/agents', 'dev@/a/agents', 'dev@/b/agents', 'dev@/c/agents', 'zulu@/a/agents']);
+  for (const input of permutations(twins)) assert.deepEqual(roots(input), first, JSON.stringify(input.map(r => r.agentsRoot + r.instance)));
 });
 
 test('byRuntimeState is a total order whatever `running` holds: anything not a boolean is unknown', () => {

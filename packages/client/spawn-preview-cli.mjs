@@ -16,7 +16,8 @@ export function cliSpawnPreview(cli, options = {}, io = {}) {
   const target = previewTarget(options.target), choices = previewChoices(options.choices);
   if (!target || !choices || Object.keys(options).some(k => !['target', 'choices', 'maxAge'].includes(k))) return Promise.resolve(failure('E_BAD_ARGS'));
   // Feature spawn-preview-max-age: reuse member heads the kernel observed within maxAge seconds. Only
-  // where the CLI advertises it (an older kernel refuses the flag); prepare and apply never pass it.
+  // where the CLI advertises it (an older kernel refuses the flag); prepare never passes it. The apply's own
+  // --max-age is spawn-apply-max-age's (spawn-apply-cli.mjs).
   const maxAge = options.maxAge;
   if (maxAge !== undefined && (!Number.isInteger(maxAge) || maxAge < 1 || maxAge > 3600)) return Promise.resolve(failure('E_BAD_ARGS'));
   const reuse = maxAge !== undefined && Array.isArray(cli.features) && cli.features.includes('spawn-preview-max-age') ? ['--max-age', String(maxAge)] : [];

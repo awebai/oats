@@ -194,7 +194,7 @@ test("clusterInstances: connected components over parent + sibling links; unrela
   const byKey = new Map(clusters.map((c) => [c.key, c.instances.map((i) => i.instance)]));
   assert.equal(clusters.length, 3);
   assert.deepEqual(byKey.get("coord-1"), ["coord-1", "dev-a", "reviewer-1", "dev-b"],
-    "cluster keeps parent-first tree order (running-first among siblings)");
+    "cluster keeps parent-first tree order (siblings by name, #1262)");
   assert.deepEqual(new Set(byKey.get("peer-1")), new Set(["peer-1", "peer-2"]),
     "sibling link alone joins a cluster");
   assert.deepEqual(byKey.get("loner"), ["loner"], "unrelated instance is its own cluster");

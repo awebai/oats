@@ -15,9 +15,9 @@
 // file, within the file's budget.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
@@ -245,7 +245,7 @@ let lastRun = null, lastWatch = null;
 function panelState(run, watch = null) {
   if (!run) return "";
   const out = [""];
-  if (watch) out.push("what the panel's server reported of its panes' ends, ms after the watch began:", ...(watch.lines().length ? watch.lines().map((line) => `  | ${line}`) : ["  (nothing)"]));
+  if (watch) out.push(`what the panel's server said of its panes, asked every ${WATCH_MS} ms, ms after the watch began:`, ...(watch.lines().length ? watch.lines().map((line) => `  | ${line}`) : ["  (nothing)"]));
   const dir = (() => { try { return run.dir(); } catch { return null; } })();
   if (!dir || !answers(panelSocket(dir))) return [...out, "the panel's server: none answers"].join("\n");
   out.push("the panel's server, its panes now:");
@@ -260,25 +260,78 @@ function panelState(run, watch = null) {
   out.push("their processes (pid ppid stat etime tty args):", ...(mine.length ? mine.map((row) => `  | ${row.trim().slice(0, 200)}`) : ["  (none)"]));
   return out.join("\n");
 }
-/** A watch of a run's private server, for a test's diagnostics: a control client of the test's own,
- *  attached to the panel's session as the panel's is (no `-d`, which would detach it), subscribed to
- *  the same report of each pane's end and its process, every line kept with its time. It holds the
- *  server open while it is attached (`exit-unattached`): stop() it before the run is ended. */
+/** What the host says of a process, for a test's diagnostics (awebai/oats#1277): ps of it, of its
+ *  threads, and of every process that is its child or in its group or its session; its state, its
+ *  threads and its signals from /proc, each thread's state and wait channel, and its open files.
+ *  Lines, each read on its own: a process that has gone says so where it was read. */
+function processState(pid) {
+  const run = (args) => { try { return lines(execFileSync("ps", args, { encoding: "utf8", timeout: 10000, maxBuffer: 8 * 1024 * 1024 })); } catch (error) { return [`(ps ${args.join(" ")}: ${String(error?.stderr || error?.message).trim() || `exit ${error?.status}`})`]; } };
+  const proc = (path) => { try { return readFileSync(`/proc/${pid}/${path}`, "utf8"); } catch (error) { return `(${error.code})`; } };
+  const out = [...run(["-o", "pid,ppid,pgid,sid,stat,wchan:20,etime,args", "-p", String(pid)]), ...run(["-L", "-o", "pid,lwp,stat,wchan:30,comm", "-p", String(pid)])];
+  const related = run(["-A", "-o", "pid=,ppid=,pgid=,sid=,stat=,wchan:20=,etime=,args="]).filter((row) => { const [own, ...ids] = row.trim().split(/\s+/); return own !== String(pid) && ids.slice(0, 3).includes(String(pid)); });
+  out.push(`its children, group and session (pid ppid pgid sid stat wchan etime args): ${related.length ? "" : "none"}`, ...related.map((row) => `  ${row.trim().slice(0, 200)}`));
+  out.push(`status: ${proc("status").split("\n").filter((line) => /^(State|Threads|SigQ|SigPnd|ShdPnd|SigBlk|SigIgn|SigCgt):/.test(line)).join("; ")}`);
+  let tasks = [];
+  try { tasks = readdirSync(`/proc/${pid}/task`); } catch (error) { tasks = []; out.push(`threads: (${error.code})`); }
+  for (const task of tasks) { const stat = proc(`task/${task}/stat`); out.push(`thread ${task} ${stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0]} ${proc(`task/${task}/comm`).trim()} wchan=${proc(`task/${task}/wchan`)}`); }
+  let fds = [];
+  try { fds = readdirSync(`/proc/${pid}/fd`).map((fd) => { try { return `${fd}->${readlinkSync(`/proc/${pid}/fd/${fd}`)}`; } catch { return `${fd}->?`; } }); } catch (error) { fds = [`(${error.code})`]; }
+  out.push(`files: ${fds.join(" ")}`);
+  return out;
+}
+/** A watch of a run's private server, for a test's diagnostics: every WATCH_MS, a `list-panes` of
+ *  the panel's session, each pane's dead flag, status, signal and process, a line kept with its
+ *  time whenever that changes. Plain commands, never a control client of the test's own: tmux 3.4
+ *  marks a control client as one before it has its state, and a `%paste-buffer-changed` of the
+ *  panel's capture sent to it in that moment crashes the server (control_write; awebai/oats#1277).
+ *  A pane seen dead with no status yet has its process's state kept then, and again DEAD_LOOK_MS
+ *  later, with what the viewers wrote on stderr so far. stop() it before the run is ended. */
+const WATCH_MS = 100, DEAD_LOOK_MS = 3000;
 function watchPanel(socket) {
-  const began = Date.now(), seen = [];
-  const child = spawn(REAL_TMUX, ["-u", "-f", "/dev/null", "-S", socket, "-C", "attach", "-t", "=oats-tui"], { stdio: ["pipe", "pipe", "ignore"] });
-  child.on("error", () => {});
-  child.stdin.on("error", () => {});
-  child.stdin.write("refresh-client -B 'oats-test-dead:%*:#{pane_dead} #{pane_dead_status} #{pane_dead_signal} #{pane_pid}'\n");
-  let rest = "";
-  child.stdout.on("data", (chunk) => {
-    const text = rest + chunk.toString("utf8"), parts = text.split("\n");
-    rest = parts.pop();
-    for (const line of parts) if (/^%(subscription-changed oats-test-dead|window-close|unlinked-window-close|exit)\b/.test(line)) seen.push(`${Date.now() - began} ${line}`);
-  });
+  const began = Date.now(), seen = [], last = new Map(), looked = new Set(), later = new Set();
+  let stopped = false, tick = null, lastError = null;
+  const stderrs = () => { try { return readdirSync(dirname(socket)).filter((name) => /\.view\.err$/.test(name)).map((name) => `${name}: ${JSON.stringify(readFileSync(join(dirname(socket), name), "utf8").slice(-500))}`); } catch (error) { return [`(${error.code})`]; } };
+  const look = (pane, pid, when) => seen.push(`${Date.now() - began} ${pane} pid ${pid}, ${when}:`, ...[...processState(pid), ...stderrs()].map((line) => `    ${line}`));
+  const poll = () => {
+    tick = null;
+    if (stopped) return;
+    execFile(REAL_TMUX, ["-u", "-f", "/dev/null", "-S", socket, "list-panes", "-s", "-t", "=oats-tui", "-F", "#{pane_id} dead=#{pane_dead} status=#{pane_dead_status} signal=#{pane_dead_signal} pid=#{pane_pid}"], { encoding: "utf8", timeout: 5000 }, (error, stdout, stderr) => {
+      if (stopped) return;
+      const at = Date.now() - began;
+      if (error) {
+        const why = String(stderr || error.message).trim().split("\n")[0];
+        if (why !== lastError) seen.push(`${at} list-panes failed: ${why}`);
+        lastError = why;
+      } else {
+        lastError = null;
+        const now = new Map(lines(stdout).map((row) => [row.split(" ", 1)[0], row]));
+        for (const [pane, row] of now) {
+          if (last.get(pane) !== row) seen.push(`${at} ${row}`);
+          const dead = /^(%\d+) dead=1 status= signal= pid=(\d+)$/.exec(row);
+          if (dead && !looked.has(pane)) {
+            looked.add(pane);
+            look(pane, dead[2], "dead with no status");
+            const timer = setTimeout(() => { later.delete(timer); if (!stopped) look(pane, dead[2], `${DEAD_LOOK_MS} ms after it was seen dead`); }, DEAD_LOOK_MS);
+            later.add(timer);
+          }
+        }
+        for (const pane of last.keys()) if (!now.has(pane)) seen.push(`${at} ${pane} gone`);
+        last.clear();
+        for (const [pane, row] of now) last.set(pane, row);
+      }
+      tick = setTimeout(poll, WATCH_MS);
+    });
+  };
+  poll();
   const watch = {
     lines: () => [...seen],
-    stop() { if (lastWatch === watch) lastWatch = null; try { child.stdin.end(); } catch { /* gone */ } if (child.exitCode === null) child.kill("SIGTERM"); },
+    stop() {
+      stopped = true;
+      if (lastWatch === watch) lastWatch = null;
+      if (tick !== null) clearTimeout(tick);
+      for (const timer of later) clearTimeout(timer);
+      later.clear();
+    },
   };
   lastWatch = watch;
   return watch;

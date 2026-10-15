@@ -233,20 +233,33 @@ const spawnFollow = createSpawnFollow({
     const key = terminalKey(workspace, target);
     const tabOf = () => { for (const [id, t] of tabs) if (t.kind === "terminal" && t.key === key && !otherIncarnation(t.origin?.incarnation, target.incarnation)) return id; return null; };
     const before = tabOf();
-    await openTerminalTab(target, { quiet: true, expected: target, valid });
+    await openTerminalTab(target, { quiet: true, expected: target, valid, followed: true });
     const after = tabOf();
     return after !== null && (after === activeTab || after !== before);
   },
   markNew: (row, workspace) => spawnJobs.markNew(workspace, row), // its change repaints the roster
   announce: text => { if (contextRosterEl) announceSpawn(text); },
 });
-// A created instance is awaited at the dialog's former pace (700 ms), not the roster's 4 s poll.
-let spawnFollowTimer = 0;
+// A created instance is awaited: the roster is read at once when a spawn of this workspace is created (#1246:
+// the created answer comes once the backend has read that deployment), then at the dialog's former pace
+// (700 ms), not the roster's 4 s poll, until the store stops awaiting it (seen, or SPAWN_VISIBLE_WITHIN_MS).
+let spawnFollowTimer = 0, spawnFollowReading = false;
+const spawnFollowRead = new Set(); // the created jobs a follow read has started since they were created
 function followSpawns() {
-  if (spawnFollowTimer || !spawnJobs.settling(currentWorkspace())) return;
-  spawnFollowTimer = setTimeout(async () => {
-    try { await refreshContextRoster(); } finally { spawnFollowTimer = 0; followSpawns(); }
-  }, 700);
+  const ws = currentWorkspace();
+  const created = spawnJobs.rows(ws).map(r => r.id).filter(id => spawnJobs.get(id)?.state === "created");
+  for (const id of spawnFollowRead) if (!created.includes(id)) spawnFollowRead.delete(id);
+  if (!created.length || spawnFollowReading) return; // a read in flight calls back when it ends
+  const fresh = created.some(id => !spawnFollowRead.has(id));
+  if (spawnFollowTimer && !fresh) return;
+  clearTimeout(spawnFollowTimer); spawnFollowTimer = 0;
+  const read = async () => {
+    spawnFollowTimer = 0; spawnFollowReading = true;
+    for (const id of created) spawnFollowRead.add(id);
+    try { await refreshContextRoster(); } finally { spawnFollowReading = false; followSpawns(); }
+  };
+  if (fresh) void read();
+  else spawnFollowTimer = setTimeout(read, 700);
 }
 ctx.spawnJobs = spawnJobs;
 // A trigger's capability source (Automations) opens its capability's page in Workspace. The handoff waits there
@@ -422,6 +435,10 @@ function updateContextTabs() {
 // ── one contextual sidebar: nav + recursive instance roster ─────────────
 let sidebarMode = "overview";
 let contextRosterGen = 0;
+// The roster read that last handed its rows to the spawn store (#1246): the post-spawn open resolves against it
+// instead of reading again, while no later read has started and the workspace is the same. `read` is that read's
+// panelReads stamp, which the open keeps (#1237: a newer roster answer still vetoes a retired row).
+let shownRoster = null;
 let contextRosterEl = null;
 let contextFilter = "";
 let contextInstances = [];
@@ -737,7 +754,10 @@ async function refreshContextRoster({ user = false } = {}) {
   if (!reportedFailure && connection === connectionGeneration) closeRetiredTabs(panel, read);
   // Background spawns: a created instance the roster now reports becomes its real row; outcomes held
   // for this workspace are posted. Only an observed roster counts (never a failed read's last rows).
-  if (!reportedFailure && !panel.workspace?.remote) spawnJobs.observe(resolvedWs, contextInstances);
+  if (!reportedFailure && !panel.workspace?.remote) {
+    shownRoster = { gen: myGen, read, ws: resolvedWs, instances: contextInstances };
+    spawnJobs.observe(resolvedWs, contextInstances);
+  }
   void rosterPrs.refresh(panel.workspace?.remote ? null : resolvedWs);
   refreshPanelInstance(contextInstances, resolvedWs);
   if (!unchanged) {
@@ -846,9 +866,10 @@ function renderContextRoster(instances) {
   // from SPACING/STRUCTURE (human re-test: no visible glyph): each group
   // gets an invisible separator that still exposes the group boundary to
   // AT (role=separator + aria-label).
-  // Agent groups (Redesign v3): each multi-member relation cluster under its
-  // deterministic name, then every unrelated instance under "independent"
-  // (rosterGroups, shared with the command palette). A cluster's group is
+  // Agent groups (Redesign v3): one sequence in name order (#1262), each
+  // multi-member relation cluster under its deterministic name and each run
+  // of unrelated instances under "independent", in place (rosterGroups,
+  // shared with the command palette). A cluster's group is
   // decided on the FULL roster (#971): a filter or a collapse decides which
   // rows are drawn and never moves a row to another group, a group with no
   // visible row draws nothing, and a header counts the rows drawn under it.
@@ -1972,18 +1993,22 @@ const pendingTerms = new Set(); // [key, incarnation] with a tab CREATION in fli
  * bare-name open and a sidebar open of the same identity share one tab —
  * and an existing tab can never be activated for a name that has since
  * become ambiguous (resolution refuses before dedup can activate). */
-async function openTerminalTab(ref, { quiet = false, inSplit = false, expected = null, valid = () => true, onError } = {}) {
+async function openTerminalTab(ref, { quiet = false, inSplit = false, expected = null, valid = () => true, followed = false, onError } = {}) {
   const notify = onError || (quiet ? (msg) => console.warn(`[terminal open] ${msg}`) : (msg) => alert(msg));
   // Quiet opens must NEVER reject either (review ff70e1c nit): the refusal
   // messages route through notify, but transport failures (the panel fetch,
   // the tab mount) would still escape as an unhandled rejection from an
   // automated caller that does not await. runOpenFlow catches every quiet
   // rejection into notify; interactive opens keep throwing.
-  return runOpenFlow(() => openTerminalTabFlow(ref, notify, { inSplit, expected, valid }), { quiet, notify });
+  return runOpenFlow(() => openTerminalTabFlow(ref, notify, { inSplit, expected, valid, followed }), { quiet, notify });
 }
 
 async function openTerminalTabFlow(ref, notify, options = {}) {
   if (options.valid && !options.valid()) return;
+  // The post-spawn open (#1246): the roster read that showed the row ready is the current one (no read started
+  // since, same workspace), so the open resolves against its rows instead of reading /api/panel again. Taken
+  // before this open's own repaint below, which starts a read. Every other open reads.
+  const shown = options.followed && shownRoster?.gen === contextRosterGen && shownRoster.ws === currentWorkspace() ? shownRoster : null;
   const planned = options.inSplit ? instanceSplitPlan(splitOpenState()) : null;
   const layoutIdentity = planned ? instanceSplitIdentity(splitOpenState()) : null;
   if (planned && !planned.available) return notify(planned.reason);
@@ -2006,9 +2031,11 @@ async function openTerminalTabFlow(ref, notify, options = {}) {
     split = planned.split; return true;
   };
   let panel;
-  const read = ++panelReads;
+  // The shown answer keeps the stamp of the read that brought it; only a request of this open's own takes a new one.
+  const reuse = shown && shown.ws === ws ? shown : null;
+  const read = reuse ? reuse.read : ++panelReads;
   try {
-    panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
+    panel = reuse ? { instances: reuse.instances } : await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   } catch (e) {
     if (!owns()) return; // stale rejection belongs to the old workspace
     throw e;

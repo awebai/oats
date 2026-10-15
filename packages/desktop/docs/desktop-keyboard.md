@@ -266,9 +266,9 @@ control.
   has been focused (its tab became the active tab, by any path, or its
   terminal took keyboard focus), most recent first, flat, each with its
   parent as quiet text ("under lead"). Then every other instance as the
-  sidebar roster lists it (the same relation groups, then independent; the
-  same order; indented by depth; the sidebar's collapsed state is ignored),
-  minus those already in Recent: each instance appears once. Then up to
+  sidebar roster lists it (the same relation groups and runs of independent
+  instances, in name order; indented by depth; the sidebar's collapsed state
+  is ignored), minus those already in Recent: each instance appears once. Then up to
   twelve commands. `>` restricts to commands. The sidebar roster keeps its
   stable order; only the palette is ordered by focus.
 - **The palette opens on the previous instance.** When the most recent
