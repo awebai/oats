@@ -9,7 +9,7 @@ import { dirname, resolve } from 'node:path';
 import { soulsData, deploymentStatusData } from '../../client/deployment-data.mjs';
 import { cliSoulTeams } from '../../client/cli-adapter.mjs';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { soulRows } from '../../client/soul-rows.mjs';
 
 const read = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/package-souls/${name}.json`, import.meta.url), 'utf8'));
 const DEPLOYMENT = '/fixture/base/deployment';
@@ -68,11 +68,11 @@ test('duplicates are judged by the key: a package soul never collides with a mem
 test('/api/agents carries key (for package and external souls too), package, version, qualifiedName; oats soul teams takes the key as argv', async () => {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
-  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
+  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'soulRows', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const souls = soulsData(read('souls-after')).souls, roster = deploymentStatusData(read('status'), DEPLOYMENT);
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: 'observed', root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s), catalog: { souls, ambiguous: [], reason: null } } }]]) };
   const ws = { id: DEPLOYMENT, name: 'acme', roots: [roster.root] };
-  const agents = agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents;
+  const agents = agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, soulRows)().agents;
   const k = agents.find(a => a.soulKind === 'package'), dev = agents.find(a => a.name === 'dev');
   assert.deepEqual([k.name, k.key, k.package, k.version, k.qualifiedName, k.repoName], ['keeper', 'acme.pkg/keeper', 'acme.pkg', '1.0.0', 'acme.pkg/keeper', 'package acme.pkg']);
   assert.deepEqual([dev.key, Object.hasOwn(dev, 'qualifiedName')], ['dev', false]);

@@ -9,7 +9,7 @@ import { cliDeploymentRead } from '../../client/deployment-read-cli.mjs';
 import { cliWorkspace, workspaceArgv } from '../../client/workspace-cli.mjs';
 import { cliCapability } from '../../client/cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
-import { createInspectCache } from '../server/inspect-cache.mjs';
+import { createInspectCache } from '../../client/inspect-cache.mjs';
 import { observationData } from '../../client/deployment-data.mjs';
 import { OBSERVE_MAX_AGE_FEATURE, validMaxAge, maxAgeArgv } from '../../client/deployment-contract.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';

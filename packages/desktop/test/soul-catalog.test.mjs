@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { soulsData } from '../../client/deployment-data.mjs';
-import { createSoulCatalog, soulCatalogKey, SOUL_CATALOG_RETRY_MS } from '../server/soul-catalog.mjs';
-import { HELD_TTL_MS } from '../server/keyed-catalog.mjs';
+import { createSoulCatalog, soulCatalogKey, SOUL_CATALOG_RETRY_MS } from '../../client/soul-catalog.mjs';
+import { HELD_TTL_MS } from '../../client/keyed-catalog.mjs';
+import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 
 // Kernel-produced `oats souls --json` (see fixtures/workspace-v2/f3/provenance.json).
 const SOULS = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f3/souls.json', import.meta.url), 'utf8'));
@@ -38,7 +39,7 @@ test('soulsData refuses anything that is not the soulsApi 1 contract', () => {
 function harness() {
   let clock = 1000, calls = 0, next = () => ({ ok: true, document: copy() });
   const gates = [];
-  const catalog = createSoulCatalog({ now: () => clock, invoke: async (cli, request) => {
+  const catalog = createSoulCatalog({ terms: DESKTOP_TERMS, now: () => clock, invoke: async (cli, request) => {
     calls++; assert.deepEqual(request, { action: 'souls', context: '/dep' });
     if (gates.length) await gates.shift();
     return next();
@@ -83,7 +84,7 @@ test('a first read that fails leaves no catalog (never a roster fallback); proto
   const h = harness(); h.answer(() => ({ ok: true, document: { ...copy(), result: { soulsApi: 9 } } }));
   assert.deepEqual((await h.catalog.observe('/dep', CLI, WS)).reason, { code: 'E_CLI_PROTOCOL', message: '' });
   assert.equal(h.catalog.held('/dep').souls, null);
-  const t = createSoulCatalog({ invoke: async () => { throw new Error('spawn ENOENT'); } });
+  const t = createSoulCatalog({ terms: DESKTOP_TERMS, invoke: async () => { throw new Error('spawn ENOENT'); } });
   assert.deepEqual((await t.observe('/dep', CLI, WS)).reason, { code: 'E_CLI_FAILED', message: '' });
   t.forget('/dep'); assert.equal(t.held('/dep'), null);
 });
@@ -113,7 +114,7 @@ test('kernel #217 (desktop-facts): spawnable, problem and file pass through; the
 function gated() {
   let clock = 1000, next = () => ({ ok: true, document: copy() });
   const requests = [], opens = [];
-  const catalog = createSoulCatalog({ now: () => clock, invoke: (cli, request) => new Promise(resolve => {
+  const catalog = createSoulCatalog({ terms: DESKTOP_TERMS, now: () => clock, invoke: (cli, request) => new Promise(resolve => {
     requests.push(request); opens.push(() => resolve(next()));
   }) });
   return { catalog, requests, opens, open: () => opens.shift()(), tick: ms => { clock += ms; }, answer: fn => { next = fn; } };

@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { dirname, resolve } from 'node:path';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { soulRows } from '../../client/soul-rows.mjs';
 import { soulsData, capabilitiesData, workspaceStatusData, deploymentStatusData } from '../../client/deployment-data.mjs';
 import { rosterRows, livenessInput, livenessAnswers, panelInstance, panelInstances, pendingEntry, failedEntry, observedEntry } from '../../client/deployment-panel.mjs';
 
@@ -86,13 +86,13 @@ test('status → /api/panel: startedAt, modelFrom and identityAddress travel wit
 
 test('/api/agents: spawnable + problem and file; no harness/model default', () => {
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
-  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor',
+  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'soulRows',
     `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const roster = deploymentStatusData(fx('status'), DEPLOYMENT), catalog = soulsData(fx('souls'));
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: 'observed', root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s),
     catalog: { souls: catalog.souls, ambiguous: [], reason: null } } }]]) };
   const ws = { id: DEPLOYMENT, name: 'northwind', roots: [roster.root] };
-  const rows = Object.fromEntries(agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents.map(a => [a.name, a]));
+  const rows = Object.fromEntries(agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, soulRows)().agents.map(a => [a.name, a]));
   const rm = rows['release-manager'], cw = rows['campaign-writer'];
   for (const key of ['spawnDefault', 'harness', 'model', 'harnessFrom']) assert.equal(Object.hasOwn(rm, key), false, key);
   assert.deepEqual([rm.spawnable, rm.problem, cw.spawnable, cw.problem.code], [true, null, false, 'E_SOUL_DISABLED']);
@@ -100,7 +100,7 @@ test('/api/agents: spawnable + problem and file; no harness/model default', () =
   // An older kernel's catalog rows: no facts, no keys.
   const older = soulsData(old('f3/souls')).souls;
   const snap2 = { byWs: new Map([[DEPLOYMENT, { deployment: { ...snapshot.byWs.get(DEPLOYMENT).deployment, catalog: { souls: older, ambiguous: [], reason: null } } }]]) };
-  const legacy = agentsData(() => ws, () => [ws], snap2, remote, dirname, resolve, normalizeSoulColor)().agents[0];
+  const legacy = agentsData(() => ws, () => [ws], snap2, remote, dirname, resolve, soulRows)().agents[0];
   for (const key of ['spawnable', 'problem', 'file']) assert.equal(Object.hasOwn(legacy, key), false, key);
 });
 

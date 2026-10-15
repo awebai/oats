@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { soulRows } from '../../client/soul-rows.mjs';
 import { deploymentStatusData, soulsData } from '../../client/deployment-data.mjs';
 
 // Exercise the actual response projection without starting the backend, CLI or
@@ -13,8 +13,8 @@ const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 
 const start = source.indexOf('function agentsData(');
 const end = source.indexOf('/* ── Model catalog', start);
 assert.ok(start >= 0 && end > start);
-const project = (ws, snapshot) => new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor',
-  `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`)(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)();
+const project = (ws, snapshot) => new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'soulRows',
+  `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`)(() => ws, () => [ws], snapshot, remote, dirname, resolve, soulRows)();
 const status = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/status.json', import.meta.url), 'utf8'));
 const context = dirname(status.root);
 

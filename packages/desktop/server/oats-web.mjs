@@ -55,10 +55,10 @@ import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } fro
 import { createMachines } from "./machines.mjs";
 import { createServerForget, forgetNotRun } from "./server-forget.mjs";
 import { machinesGated } from "../../client/machine-contract.mjs";
-import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
+import { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
 import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
-import { createInspectCache } from "./inspect-cache.mjs";
+import { createInspectCache } from "../../client/inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "../../client/refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
@@ -77,7 +77,7 @@ import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { displayLine } from "../../client/display-text.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
-import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
+import { soulRows } from "../../client/soul-rows.mjs";
 import { harnessFlag, HARNESSES } from "../../client/harness-names.mjs";
 import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed } from "../renderer/deployment-header.mjs";
@@ -155,39 +155,12 @@ function agentsData(wsId) {
   const ws = deploymentFor(held(), wsId, DESKTOP_TERMS);
   if (ws?.remote) return { workspace: { id: ws.id, name: ws.name, server: ws.server }, agents: remote.remoteAgents(ws.group), observedAt: null, refreshing: false };
   const deployment = ws ? snapshot.byWs.get(ws.id)?.deployment : null;
-  const agents = [];
-  let catalog = null;
+  let agents = [], catalog = null;
   if (deployment?.status === "observed") {
-    const root = deployment.root, context = dirname(root);
-    const memberNames = new Map((deployment.workspaceStatus?.members || []).map((m) => [m.key, m.name]));
-    const roster = new Map(deployment.souls.map((soul) => [soul.name, soul]));
     catalog = { reason: deployment.catalog?.reason ?? null, ambiguous: deployment.catalog?.ambiguous ?? [] };
-    for (const soul of deployment.catalog?.souls || []) {
-      const color = normalizeSoulColor(roster.get(soul.name)?.color);
-      agents.push({
-        name: soul.name, description: soul.description || "", kind: "persistent", work: soul.work,
-        ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}), ...(Array.isArray(soul.labels) ? { labels: [...soul.labels] } : {}),
-        // desktop-facts: whether a spawn here would refuse (problem), and the soul.yaml (path, url).
-        ...(typeof soul.spawnable === "boolean" ? { spawnable: soul.spawnable, problem: soul.problem ?? null } : {}),
-        ...(Object.hasOwn(soul, "file") ? { file: soul.file } : {}),
-        // Team model v2 (0.30): the soul's teams here (the default first) and its default, as the kernel resolved them.
-        ...(Array.isArray(soul.teams) ? { teams: soul.teams.map((t) => ({ ...t })) } : {}),
-        ...(Object.hasOwn(soul, "defaultTeam") ? { defaultTeam: soul.defaultTeam && { ...soul.defaultTeam } } : {}),
-        // Launch preferences (0.30): the soul's declared and effective harness + model, and where it came from.
-        ...(soul.launch ? { launch: structuredClone(soul.launch) } : {}),
-        // Its composed capabilities (souls-capabilities; null = it did not resolve), for Capabilities' "Used by".
-        ...(Object.hasOwn(soul, "capabilities") ? { capabilities: soul.capabilities && soul.capabilities.map((c) => ({ ...c })) } : {}),
-        // The kernel's soul key (`oats soul teams <key>`): the qualified name for a package soul, the bare name otherwise.
-        ...(typeof soul.key === "string" ? { key: soul.key } : {}),
-        ...(soul.kind === "package" ? { package: soul.package, version: soul.version, qualifiedName: soul.qualifiedName } : {}),
-        origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
-        soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },
-        agentsRoot: root, workspace: context,
-        repoName: memberNames.get(soul.repoKey) || (soul.kind === "external" ? "external" : soul.kind === "package" ? `package ${soul.package}` : soul.repoKey || ""),
-      });
-    }
+    // One row per soul of the held catalog, sorted by name (packages/client/soul-rows.mjs).
+    agents = soulRows(deployment, deployment.catalog?.souls);
   }
-  agents.sort((a, b) => a.name.localeCompare(b.name));
   // The souls read's own stamps (it runs apart from the roster reads): when the kernel observed
   // the remotes for this catalog, and whether a re-read is in flight. Both live on the snapshot
   // entry so this projection needs nothing but the snapshot.
@@ -519,7 +492,7 @@ let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances,
 const BACKGROUND_MAX_AGE = 60;
 // The collector's entry is in the shared home too, beside app.asar in the package.
 const LIVENESS = join(HERE, "..", "..", "client", "liveness-main.mjs");
-const soulCatalog = createSoulCatalog();
+const soulCatalog = createSoulCatalog({ terms: DESKTOP_TERMS });
 const capabilityCatalog = createCapabilityCatalog();
 const inspectCache = createInspectCache();
 // What a capability ships, per (deployment, row, commit[, file]): content at one commit never moves.

@@ -14,7 +14,7 @@ import { soulsData, deploymentStatusData } from '../../client/deployment-data.mj
 import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { inspectData } from '../../client/inspect-contract.mjs';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { soulRows } from '../../client/soul-rows.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
 const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));
@@ -50,10 +50,10 @@ test('oats souls rows (derived on the real 0.30 capture): launch passes through 
   const bad = v2('souls'); bad.result.souls[0].launch = { ...LAUNCH(), from: 'flag' }; assert.throws(() => soulsData(bad), { code: 'E_CLI_PROTOCOL' });
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
-  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
+  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'soulRows', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const roster = deploymentStatusData(v2('status'), DEPLOYMENT), ws = { id: DEPLOYMENT, name: 'northwind', roots: [roster.root] };
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: 'observed', root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s), catalog: { souls, ambiguous: [], reason: null } } }]]) };
-  const agents = agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents;
+  const agents = agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, soulRows)().agents;
   assert.deepEqual(agents.find(a => a.name === 'release-manager').launch, rm.launch);
   assert.equal(agents.filter(a => a.name !== 'release-manager').some(a => Object.hasOwn(a, 'launch')), false);
 });

@@ -176,6 +176,19 @@ function over what its caller holds:
   draws the menu from the rows and keeps what is only its own: the "On this
   computer" group, the new-window hint and adding a folder.
 
+It holds the souls a deployment offers and one soul's inspection: the spawn
+catalog (`soul-catalog.mjs`, over the holding rules of `keyed-catalog.mjs`),
+the row each soul is listed as (`soul-rows.mjs` `soulRows`), the inspect
+boundary and its cache (`inspect-boundary.mjs`, `inspect-cache.mjs`), the gate
+for a soul's composed AGENTS.md and skills (`composed-gate.mjs`), the launch
+vocabulary (`launch-view.mjs`) and what is said about a soul
+(`soul-facts.mjs`, which the page loads). The catalog, the cache and the
+boundary are factories: a client makes its own, with its own terms and its
+own `exec`, and two of them share nothing. The boundary holds nothing itself,
+so `server/capabilities.mjs` makes one per request around the backend's
+cache, and a provider operation (`run`, the Desktop's) is admitted by the
+boundary's own `capabilityAdmission`.
+
 - **What it holds.** `.mjs` modules and nothing else, in one flat directory:
   no test, fixture, script or manifest, and no subdirectory. A module there
   imports `node:` builtins and its own siblings only: no third-party package
@@ -200,8 +213,9 @@ function over what its caller holds:
   what holds a home, which acts apply. It stays in this package when it takes
   a document or an element, or belongs to one of the Desktop's own surfaces:
   terminal tabs, drawn connectors, loading state, its routes and its stores.
-  The shared home keeps no state: a function there takes what it needs as
-  arguments, and what must be held between calls stays here. A file that mixes the two is cut in two, and nothing is re-exported:
+  The shared home keeps no state at module level: a function there takes what
+  it needs as arguments, a factory's instance holds only what the client that
+  made it owns, and what the Desktop holds between calls stays here. A file that mixes the two is cut in two, and nothing is re-exported:
   an importer names the module that has the export
   (`renderer/instance-tree-view.mjs` is the Desktop's half of the tree,
   `renderer/view-deployments.mjs` of the sections, `workspace-registry.mjs` of

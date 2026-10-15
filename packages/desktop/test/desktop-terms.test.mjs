@@ -80,7 +80,12 @@ const TABLES = ['lifecycleReason', 'lifecycleFailure', 'undescribedAnswer', 'und
   // 5a-2: the start rule (packages/client/session-start.mjs; its gate, start-gate.mjs). Its `startInstance` is not read here: the renderer's
   // context has a handler of that name (shell.mjs `startInstance: instance => …`), which is no call of the rule;
   // the rule's own refuses a call without terms, and the start route's tests run it with DESKTOP_TERMS.
-  'startGate'];
+  'startGate',
+  // 6a: the soul catalog moved to the shared home (packages/client/soul-catalog.mjs) and takes the terms its default
+  // kernel read words refusals with; the backend makes it with the Desktop's.
+  'createSoulCatalog',
+  // 6a: a soul's facts (packages/client/soul-facts.mjs): the kernel's lines of a launch problem are said with the terms.
+  'soulFacts'];
 const ROOT = new URL('../', import.meta.url);
 function shippedModules(dir = '') {
   const out = [];
@@ -173,8 +178,8 @@ test('every shipped Desktop module that calls a table that takes terms passes DE
   // Not vacuous: the reader found the call sites, in main, the backend and the page.
   assert.deepEqual([...callers.keys()].sort(), ['main.mjs', 'renderer/capability-contents.mjs', 'renderer/computer-teams.mjs', 'renderer/deployment-scope-line.mjs',
     'renderer/deployment-tabs.mjs', 'renderer/deployments-page.mjs', 'renderer/lifecycle-dialog.mjs', 'renderer/palette.mjs', 'renderer/shell.mjs',
-    'renderer/spawn-deployment-field.mjs', 'renderer/start-instance.mjs', 'renderer/views/hierarchy.mjs', 'renderer/views/spawn.mjs', 'renderer/workspace-discovery.mjs', 'server/capability-catalog.mjs',
-    'server/capability-show.mjs', 'server/oats-web.mjs', 'server/soul-catalog.mjs', 'server/workspace-sync.mjs']);
+    'renderer/soul-inspector.mjs', 'renderer/spawn-deployment-field.mjs', 'renderer/start-instance.mjs', 'renderer/views/hierarchy.mjs', 'renderer/views/spawn.mjs', 'renderer/workspace-discovery.mjs', 'server/capability-catalog.mjs',
+    'server/capability-show.mjs', 'server/oats-web.mjs', 'server/workspace-sync.mjs']);
   const calls = [...callers.values()].reduce((a, b) => a + b, 0);
   assert.ok(calls >= 48, `the call sites were read (${calls})`);
   t.diagnostic(`${calls} calls in ${callers.size} modules: ${[...callers].map(([path, n]) => `${path} ${n}`).join(', ')}`);
