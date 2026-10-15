@@ -87,9 +87,14 @@ Loading development channels” prompt through the **approved route**: the
 development prompt. Claude admits the plugin when a root-owned machine
 managed-settings file lists it. The route does not depend on the Claude
 version and needs no OATS mechanism beyond these settings. The operator's
-ordered procedure is the `oats.setup` host step “Claude channel delivery
-(approved route)” in `/oats-workspace-config`, which `/oats-onboarding` card 4
-calls; the provider's side is `/oats-aweb` §4.
+ordered procedure is the `oats.setup` skill `/oats-host-delivery`, whose
+Choice 1 is this route and whose Choice 2 is the host wake broker;
+`/oats-onboarding` card 4 makes both choices and card 8 checks them. The provider's side is
+`/oats-aweb` §4.
+
+An unset `claudeChannelMode` is development mode, so a host that never makes
+the choice runs every Claude home with the development prompt. Set the key
+explicitly, to `approved` or, as a recorded fallback, `development`.
 
 **The managed-settings file** is a host change made by a human admin with
 sudo. OATS never writes it.
@@ -127,7 +132,11 @@ settings:
 ```
 
 With channel delivery, pi uses its `@awebai/pi` extension and Codex always
-uses the host broker.
+uses the host broker. The broker (`aw wake run`, one per host user) also wakes
+every joined team and every `delivery: session` home. Without it, joined teams
+are poll-only. It runs as a per-user launchd or systemd service that the
+operator installs, with `AW_WAKE_OATS_BIN` and a `PATH` that reaches `oats`,
+`node` and `tmux`. That procedure is Choice 2 of `/oats-host-delivery`.
 
 **The plugin.** `aweb-channel` must be installed from the marketplace named
 `awebai-marketplace` (GitHub `awebai/claude-plugins`) and enabled, in the
@@ -142,29 +151,10 @@ without the operator's word.
 confirm: [the development-channel confirmation](#the-development-channel-confirmation)
 applies only to a launch with the development-channel flag.
 
-**Verify:**
-
-1. `oats spawn <soul> --preview` shows `settings.oats.aweb.claudeChannelMode:
-   approved` and `delivery: channel`.
-2. The started session shows no development prompt, and its banner shows
-   “Channels (experimental) messages from plugin:aweb-channel@awebai-marketplace
-   inject directly in this session”, followed by “restart without --channels
-   to stop”. At normal terminal widths the banner wraps over two rows: look
-   for each part, not for one string.
-3. The banner says none of `not on the approved channels allowlist`,
-   `not on your org's approved channels list`, `blocked by org policy` or
-   `plugin not installed`.
-4. Receive is proven only by the `/oats-aweb` nonce exchange.
-
-**Failure banners**, their cause and remedy:
-
-| What the session shows | Cause | Remedy |
-|---|---|---|
-| `not on the approved channels allowlist` | the effective managed policy has no `allowedChannelPlugins` (no file, the file not read, or the key missing), so Anthropic's default list applied | write or fix the file |
-| `not on your org's approved channels list` | the effective policy has an `allowedChannelPlugins` without this plugin and marketplace pair: the names in the file are wrong, or a higher source (server-managed settings or MDM) supplies its own list | fix the entry, or have the organization admin add it |
-| `blocked by org policy` (then “Inbound messages will be silently dropped”) | the effective policy lacks `channelsEnabled: true`, which Team/Enterprise subscribers need, and API-key use whenever any managed policy exists | add the key, or have the organization admin set it |
-| `plugin:aweb-channel@awebai-marketplace · plugin not installed` | the plugin is not installed in the launch's Claude config directory | install and enable it there |
-| the development prompt still appears | the home started in development mode, not approved: the host setting is missing, or the home was spawned before the change | set `claudeChannelMode: approved`, then respawn the home |
+**Verify** with the success list and the failure-banner table of
+`/oats-host-delivery`, Choice 1: the preview's mode, the admitted banner
+with no failure banner, then the `/oats-aweb` nonce exchange, which alone
+proves receive.
 
 **Limits.** Channels are an Anthropic research preview. Anthropic's
 account-level feature flag gates channels on every route. The allowlist

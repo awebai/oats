@@ -1,13 +1,13 @@
 ---
 name: oats-onboarding
 description: >-
-  Use when helping an operator realize an OATS workspace on a machine:
-  deciding where the workspace file is hosted, writing or checking the shared
+  Use when helping an operator realize an OATS workspace on a machine: deciding
+  where the workspace file is hosted, writing or checking the shared
   declarations, choosing the deployment directory, running `oats onboard`,
-  placing host settings, syncing, setting up messaging, cloning work targets
-  and verifying before the first spawn. Also use it to set up okf knowledge
-  operations (the knowledge maintainer and harvester, the
-  harvest review trigger, a soul's harvest opt-out). For package pins see
+  placing host settings, syncing, messaging and host delivery, cloning work
+  targets and verifying before the first spawn. Also use it to set up okf
+  knowledge operations (the knowledge maintainer and harvester, the harvest
+  review trigger, a soul's harvest opt-out). For package pins see
   `/oats-package-pins`. Part of the setup and config of an OATS workspace
   (oats.setup); day-to-day operation inside an instance is oats.core.
 ---
@@ -35,7 +35,7 @@ Use inputs already supplied by the task; collect the remaining inputs together:
   soul, harness/model/launch configuration and required capabilities.
 - For GLOBAL: resident, grant profile, TTL and renewal policy. For all seats:
   primary and joined receive requirements, including whether native delivery
-  is mandatory, and authorized effects (files, identities, sessions, services).
+  is mandatory, and authorized effects (files, identities, sessions, services; host delivery: card 4).
 - Knowledge binding, if selected, and credentials supplied through the
   provider's private input channel. Never ask for secrets in conversation.
 
@@ -151,9 +151,9 @@ aliases; never substitute a central base owner or copy a running home.
 Use `/oats-workspace-config` for the selected host launch configuration. Clone selected work targets with
 the owner's Git credentials only for `worktree`/`checkout` souls: the kernel
 uses `--repo`, then the local `clones` map, then `D/<repo name>`.
-When the intake selects Claude seats with aweb channel delivery, do the host
-step “Claude channel delivery (approved route)” in `/oats-workspace-config` as
-part of these edits: it has a human admin's step outside `oats-local.yaml`.
+**Required:** make and record both host delivery choices (`/oats-host-delivery`): write `claudeChannelMode`
+now; the operator installs the broker once aw meets its floor (card 5 can install aw), before card 7. A
+macOS host driven over `--server` or running Git in background jobs needs Git without a terminal (`docs/servers.md`, “Git on a macOS host”).
 
 **Commands (after the authorized edits):**
 
@@ -165,7 +165,7 @@ oats workspace status --dir D --json
 **Effects:** resolves packages and writes the lock; refreshes shared state.
 **Success:** status still reports `result.workspace.local` exactly
 `D/oats-local.yaml`; confirmed members, correct locked pins, required host
-bindings and clones are present. **Next:** card 5.
+bindings and clones are present; both host delivery choices recorded. **Next:** card 5.
 **Error → remedy:** `E_PATH symlink not allowed` from a provider → select a
 real absolute host path within the authorized scope (on macOS `/private/tmp`
 rather than `/tmp`); preserve the failing output and rerun the provider check.
@@ -230,14 +230,13 @@ Provider/native support boundaries (retain the named owner on a blocker):
   organization membership invitation are different acts.
 
 Claude/Pi primary delivery uses its configured native channel/extension when
-selected. Claude's aweb channel needs the card 4 host step “Claude channel
-delivery (approved route)” (`/oats-workspace-config`) done and its banner
-check passed; do not assume admission. Codex has **no native
-channel**: its automatic receive path is the host broker everywhere. Joined
-`receive: native` denotes the joined-identity **broker**, not a Claude/Pi
-native channel; `receive: poll` is manual. If mandatory native enrollment is
-unavailable or unconfirmed, report that blocker rather than silently using a
-broker and claiming native success.
+selected. Claude's aweb channel needs card 4's Choice 1 (`/oats-host-delivery`)
+made and, on the approved route, its banner check passed; do not assume
+admission. Codex has **no native channel**: its automatic receive path is the
+host broker everywhere. Joined `receive: native` denotes the joined-identity
+**broker** (card 4's Choice 2), not a Claude/Pi native channel; `receive: poll`
+is manual. If mandatory native enrollment is unavailable or unconfirmed, report
+that blocker rather than silently using a broker and claiming native success.
 
 ## 6. Check operator composition and preview
 
@@ -309,7 +308,8 @@ oats readiness --home H --json
 **Effects:** starts the scaffolded session and checks prerequisites.
 **Success:** the provider's delivery card proves a nonce message actually
 presented automatically and a receiver-verified reply for the exact message
-ID; the first task is done and its result consumed. Readiness, a send receipt
+ID; the first task is done and its result consumed; each recorded choice's check in
+`/oats-host-delivery` passes, and the hand-back records both. Readiness, a send receipt
 or unread inbox status alone is insufficient. Record tested versions, source
 and composed provenance, route, exact message IDs, safe receipts, timings and
 any explicit holds. A future authorized timed acceptance measures pasted

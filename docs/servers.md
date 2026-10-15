@@ -146,6 +146,22 @@ login agent in the shell's startup file (for zsh, `~/.zshenv`, which
 non-interactive sessions read). OATS never reads or changes credentials
 itself; the hint is about where Git ran, not a probe of the keychain.
 
+- **Which remedy applies depends on the remote.**
+  - An `https://` remote is read through the credential helper: gh's token.
+  - A `git@github.com:` remote is read through the SSH key. Its
+    `UseKeychain yes` works only in the desktop session.
+  - SSH commit signing (`gpg.format=ssh`) reaches its key the same way, so it
+    has the same requirement.
+- **The trade-off.** `--insecure-storage` keeps gh's token in gh's own
+  configuration file, protected by file permissions instead of the keychain.
+  The machine's operator makes that choice.
+- **When to set it up.** At onboarding (`/oats-onboarding` card 4), on a Mac
+  that another machine will drive (`oats server add`), or that runs Git from
+  background jobs.
+- **Verify** from a session without a terminal: `ssh <host> git ls-remote
+  <workspace remote> HEAD`, or `oats server check <id>` from the driving
+  machine.
+
 ## Connections
 
 Every routed ssh call carries these options, before `--` and the host:

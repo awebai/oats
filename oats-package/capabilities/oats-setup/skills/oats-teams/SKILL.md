@@ -297,6 +297,9 @@ infer installation from a source merge or construct an alternative command.
   request through the provider. For a later join/leave, use the target's own
   instance home, never the caller's accidental scope. Provider join state is
   separate from these config reports.
+- A joined team is woken only by the host wake broker. The first joined team
+  on a host that recorded “broker not needed” reopens that choice
+  (`/oats-host-delivery`, Choice 2).
 - Token-only provider join remains blocked until supported by the installed
   release ([oats-aweb#56](https://github.com/awebai/oats-aweb/issues/56)); use
   the provider's labelled join/resume procedure. Never redeem another token
