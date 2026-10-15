@@ -531,6 +531,20 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.deepEqual(sweep({ tmpdir: tmp, uid: process.getuid(), tmux: world.tmux }).removed.sort(), [path.join(tmp, "oats-tui-many03"), path.join(tmp, "oats-tui-many04")]);
     assert.ok(existsSync(path.join(bad, "owner.json")));
   });
+
+  test("the sweep's limit counts only candidates, directories whose owner.json names this tool: look-alikes and a directory a sweep emptied but could not remove come first in order and do not crowd out a dead run", async () => {
+    const world = makeWorld(), tmp = path.join(world.dir, "tmp");
+    mkdirSync(tmp);
+    const dead = await deadPid();
+    for (let n = 0; n < 4; n++) runDir(tmp, `oats-tui-aaaa0${n}`, { pid: dead, owner: false, socket: false });
+    // A dead run's directory that holds a file the sweep does not know: the first sweep empties it
+    // of what it knows, owner.json with it, and cannot remove it; after that it is no candidate.
+    const stuck = runDir(tmp, "oats-tui-aaab00", { pid: dead, socket: false, extra: ["1.out"] });
+    assert.deepEqual(sweep({ tmpdir: tmp, uid: process.getuid(), tmux: world.tmux, max: 2 }).removed, [stuck]);
+    assert.deepEqual(readdirSync(stuck), ["1.out"]);
+    const deadRuns = [runDir(tmp, "oats-tui-zzzz01", { pid: dead, socket: false }), runDir(tmp, "oats-tui-zzzz02", { pid: dead, socket: false })];
+    assert.deepEqual(sweep({ tmpdir: tmp, uid: process.getuid(), tmux: world.tmux, max: 2 }).removed.sort(), deadRuns);
+  });
 });
 
 test("a callback that throws does not break the panel: it is thrown again outside it", async () => {

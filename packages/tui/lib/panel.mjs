@@ -143,6 +143,8 @@ const CALL_MAX_BUFFER = 64 * 1024;
 const INPUT_CHUNK = 256;
 /** The sweep looks at no more run directories than this in one run. */
 const SWEEP_MAX = 32;
+/** The sweep looks at no more names `oats-tui-*` than this in one run (each costs an lstat). */
+const SWEEP_SCAN_MAX = 1024;
 /** Bracketed paste's two marks, as bytes (CSI 200 ~ and CSI 201 ~). Only term/screen.mjs and
  *  term/tty.mjs write an escape byte in a string; here the marks are numbers sent as hex. */
 const PASTE_START = Buffer.from([0x1b, 0x5b, 0x32, 0x30, 0x30, 0x7e]);
@@ -756,7 +758,11 @@ const SWEEP_FS = PANEL_FS;
  *  files (`<n>.view.err`, `<n>.view.status`, by that exact pattern only), and rmdirs the directory.
  *  It NEVER sends `kill-server` or a signal (signal 0 only asks), and never looks at a socket
  *  outside such a directory, the user's default server, or the kernel's. At most `max` candidates
- *  (SWEEP_MAX) are looked at in one run, each tmux call with a short time limit.
+ *  (SWEEP_MAX) are looked at in one run, each tmux call with a short time limit: a candidate is a
+ *  directory whose owner.json names this tool, so a look-alike without one, or a directory a
+ *  sweep already emptied of its owner.json but could not remove (it holds another file), never
+ *  uses up the limit. At most SWEEP_SCAN_MAX names are looked at. `removed` names each directory
+ *  the sweep emptied, one it could not then remove too.
  *  `kill` is process.kill's signature, `execFileSync` child_process's, `fs` as PANEL_FS: for tests. */
 export function sweep({ tmpdir = osTmpdir(), uid = process.getuid?.(), pid = process.pid, env = process.env, tmux = "tmux",
   fs: givenFs = {}, execFileSync = nodeExecFileSync, kill = (target, signal) => process.kill(target, signal), max = SWEEP_MAX } = {}) {
@@ -764,8 +770,10 @@ export function sweep({ tmpdir = osTmpdir(), uid = process.getuid?.(), pid = pro
   try {
     if (!Number.isInteger(uid)) return { removed };
     const fs = { ...SWEEP_FS, ...givenFs };
-    const names = fs.list(tmpdir).filter((name) => typeof name === "string" && name.startsWith("oats-tui-")).sort().slice(0, max);
+    const names = fs.list(tmpdir).filter((name) => typeof name === "string" && name.startsWith("oats-tui-")).sort().slice(0, SWEEP_SCAN_MAX);
+    let candidates = 0;
     for (const name of names) {
+      if (candidates >= max) break;
       const at = join(tmpdir, name);
       if (quietly(() => deadRun(at)) === true) {
         quietly(() => fs.unlink(join(at, SOCKET_NAME)));
@@ -787,6 +795,7 @@ export function sweep({ tmpdir = osTmpdir(), uid = process.getuid?.(), pid = pro
       if (!owner.isFile() || owner.uid !== uid || owner.size > 4096) return false;
       const record = JSON.parse(fs.head(ownerPath, 4096));
       if (record?.tool !== OWNER_TOOL || !Number.isInteger(record.pid) || record.pid <= 0) return false;
+      candidates += 1;
       if (record.pid === pid || alive(record.pid)) return false;
       const sock = quietly(() => fs.lstat(join(at, SOCKET_NAME)));
       if (sock === undefined) return true; // no socket: nothing can answer
