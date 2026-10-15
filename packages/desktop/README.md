@@ -194,7 +194,15 @@ budget of two flights; and the confirmed-spawn broker (`spawn-apply.mjs`
 `createSpawnApplyBoundary`), which prepares, applies and reads a result,
 prepares through a preview's `prepareRead`, and runs each apply's `oats spawn`
 in a process session of its own. Both refuse a remote workspace. The backend
-makes one of each and owns them.
+makes one of each and owns them. And it holds the spawn's client half: the
+transaction (`spawn-transaction.mjs` `createSpawnTransaction`: prepare, apply
+the confirmed decision, follow, check and recover, each answer read as one
+outcome kind), which the background store and the dialog's store-less path
+each make and drive; a problem's and an outcome's words (`spawn-messages.mjs`:
+a shared `fact` and a `next` code, which `renderer/spawn-words.mjs` says in the
+Desktop's words); the preview's facts (`spawn-preview-facts.mjs`
+`previewFacts`); and the untouched choices (`spawn-preview-contract.mjs`
+`defaultSpawnChoices`).
 
 - **What it holds.** `.mjs` modules and nothing else, in one flat directory:
   no test, fixture, script or manifest, and no subdirectory. A module there

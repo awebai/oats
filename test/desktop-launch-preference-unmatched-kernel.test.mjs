@@ -24,6 +24,7 @@ import { cliSpawnPreview } from "../packages/client/spawn-preview-cli.mjs";
 import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from "../packages/client/spawn-preview.mjs";
 import { spawnApplyReason } from "../packages/client/spawn-apply-contract.mjs";
 import { spawnProblem } from "../packages/client/spawn-messages.mjs";
+import { spawnText } from "../packages/desktop/renderer/spawn-words.mjs";
 import { launchOf, REPORT_FROM } from "../packages/client/launch-contract.mjs";
 import { displayLine, DETAIL_WITHHELD, MAX_DISPLAY_LINE } from "../packages/client/display-text.mjs";
 import { originLead } from "../packages/client/instance-presentation.mjs";
@@ -73,15 +74,15 @@ for (const [name, keys] of CASES) test(`${name}: the refusal travels to the dial
   assert.deepEqual(reason, { code: CODE, message, fix });
 
   // The dialog as it opens: the Desktop's own sentence, and the kernel's two texts as parts, as they came.
-  const problem = spawnProblem(reason, "preview");
+  const problem = spawnProblem(reason, "preview"), text = spawnText(problem, "preview");
   assert.equal(problem.code, CODE);
   assert.deepEqual(problem.kernel, { message, fix });
   assert.equal(problem.detail, CODE, "no kernel text where it would stand without its speaker");
   // The sentence is the Desktop's: it holds no part of the kernel's message (no key, no five words in a row of it).
-  for (const key of keys) assert.equal(problem.text.includes(key), false, key);
+  for (const key of keys) assert.equal(text.includes(key), false, key);
   const words = message.split(/\s+/);
-  for (let i = 0; i + 5 <= words.length; i++) assert.equal(problem.text.includes(words.slice(i, i + 5).join(" ")), false, words.slice(i, i + 5).join(" "));
-  assert.equal(problem.text.includes(fix), false);
+  for (let i = 0; i + 5 <= words.length; i++) assert.equal(text.includes(words.slice(i, i + 5).join(" ")), false, words.slice(i, i + 5).join(" "));
+  assert.equal(text.includes(fix), false);
 
   // Each part is its own display line, whole: the filter neither withholds, cuts nor changes it.
   assert.equal(displayLine(message), message); assert.equal(displayLine(fix), fix);
@@ -92,12 +93,12 @@ for (const [name, keys] of CASES) test(`${name}: the refusal travels to the dial
   const pressed = spawnApplyReason(error.code);
   assert.equal(pressed.code, CODE);
   assert.equal(pressed.message.includes(message), false); assert.equal(Object.hasOwn(pressed, "fix"), false);
-  const atPress = spawnProblem(pressed, "spawn");
+  const atPress = spawnProblem(pressed, "spawn"), pressedText = spawnText(atPress, "spawn");
   assert.equal(atPress.code, CODE); assert.equal(Object.hasOwn(atPress, "kernel"), false);
-  assert.notEqual(atPress.text, problem.text);
-  assert.ok(atPress.text.length < problem.text.length, "the press's sentence is the shorter one");
+  assert.notEqual(pressedText, text);
+  assert.ok(pressedText.length < text.length, "the press's sentence is the shorter one");
   assert.equal(atPress.detail, `${CODE} · ${pressed.message}`);
-  for (const key of keys) assert.equal(atPress.text.includes(key) || atPress.detail.includes(key), false, key);
+  for (const key of keys) assert.equal(pressedText.includes(key) || atPress.detail.includes(key), false, key);
 });
 
 for (const [name, keys] of CASES) test(`${name}: the soul's Launch report reads as the lead and both texts, whole`, () => {
@@ -143,7 +144,7 @@ for (const [name, keys] of CASES) test(`${name}: from the CLI's printed envelope
   // What the dialog then shows: the Desktop's sentence that points at Details, and the kernel's two texts there, whole.
   const problem = spawnProblem(view.reason, "preview");
   assert.deepEqual(problem.kernel, { message: error.message, fix: UNMATCHED_FIX }); assert.equal(problem.detail, CODE);
-  assert.match(problem.text, /\(Details\)\.$/);
+  assert.match(spawnText(problem, "preview"), /\(Details\)\.$/);
   assert.deepEqual(kernelLines(problem.kernel.message, problem.kernel.fix, DESKTOP_TERMS), [`${LEAD} ${error.message}`, UNMATCHED_FIX]);
 });
 
@@ -163,7 +164,7 @@ for (const [name, error] of MISSING) test(`a missing harness, ${name}: its fix t
   for (const stage of ["preview", "spawn"]) {
     const problem = spawnProblem(view.reason, stage), without = spawnProblem({ code: error.code, message }, stage);
     assert.deepEqual(problem, without, `${stage}: nothing changes when the fix arrives`);
-    assert.equal(problem.text, message); assert.equal(problem.detail, `${error.code} · ${message}`);
+    assert.equal(spawnText(problem, stage), message); assert.equal(problem.detail, `${error.code} · ${message}`);
     assert.equal(Object.hasOwn(problem, "kernel"), false);
   }
 });

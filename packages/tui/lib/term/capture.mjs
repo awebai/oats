@@ -1,4 +1,4 @@
-// An agent's terminal, as cells: what `tmux capture-pane -p -e -N` answered, turned into the
+// An agent's terminal, as cells: what `tmux capture-pane -e -N` captured (the text `-p` prints), turned into the
 // screen's spans (term/screen.mjs). Pure: no IO.
 //
 // The capture is text the TUI did not write, from a program that may write anything, so nothing
@@ -243,7 +243,7 @@ function spans(placed) {
   return Object.freeze(result);
 }
 
-/** The rows of a capture-pane answer (`tmux capture-pane -p -e -N`) as the screen's spans, for a
+/** The rows of a capture-pane answer (`tmux capture-pane -e -N`, as `-p` prints it) as the screen's spans, for a
  *  panel of `cols` by `rows` cells: exactly `rows` rows, the first ones of the capture, each an
  *  array of `{ col, text, style, width }` with `col` from 0 inside the panel, `text` safe text
  *  (cellText), `style` an agent style (or PLAIN) and `width` the cells it takes. A row holds at

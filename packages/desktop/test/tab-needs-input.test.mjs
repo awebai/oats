@@ -7,6 +7,7 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import { createTabChrome, tabNameTailStart } from "../renderer/tab-a11y.mjs";
 import { terminalKey } from "../renderer/instance-tree-view.mjs";
+import { tabShowsRow } from "../renderer/retired-tabs.mjs";
 import { iconElement } from "../renderer/shell-icons.mjs";
 import { waitingClaim, waitingLabel, waitingClock } from "../../client/waiting-on-you.mjs";
 import { rowStale } from "../../client/roster-sections.mjs";
@@ -29,7 +30,7 @@ function fixture(t, { stale = false } = {}) {
   const dom = new JSDOM("<!doctype html><body><div class='strip-a'></div><div class='strip-b'></div></body>", { pretendToBeVisual: true });
   t.after(() => dom.window.close());
   const doc = dom.window.document, tabs = new Map();
-  const context = { document: doc, tabs, terminalKey, waitingClaim, waitingLabel, waitingClock, iconElement, rowStale,
+  const context = { document: doc, tabs, terminalKey, tabShowsRow, waitingClaim, waitingLabel, waitingClock, iconElement, rowStale,
     contextDeployments: [], rosterStale: stale, tabNeedsInputRoster: { instances: [], workspace: null } };
   Object.defineProperty(context, "Date", { get: () => Date, enumerable: true }); // the test realm's (mockable) clock
   const sync = runInNewContext(`${source}\nsyncTabNeedsInput`, context);
