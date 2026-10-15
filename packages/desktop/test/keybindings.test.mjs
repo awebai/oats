@@ -185,7 +185,7 @@ test("terminal policy non-mac: only allowlisted action ids fire inside xterm", (
     { id: "app.themeToggle", label: "Theme", context: "global", run: () => {} },
   ]);
   const inTerm = { isMac: false, insideTerminal: true };
-  assert.equal(matchEvent(ev("P", { ctrlKey: true, shiftKey: true }), inTerm), "app.palette");
+  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), inTerm), "app.palette");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true }), inTerm), "tabs.next");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true, shiftKey: true }), inTerm), "tabs.prev");
   assert.equal(matchEvent(ev("W", { ctrlKey: true, shiftKey: true }), inTerm), "tabs.close");
@@ -199,7 +199,7 @@ test("terminal policy non-mac: only allowlisted action ids fire inside xterm", (
   // allowlist is action-id based, so it follows a rebind (the user's choice)
   setBinding("app.palette", "Ctrl+K");
   assert.equal(matchEvent(ev("k", { ctrlKey: true }), inTerm), "app.palette");
-  assert.equal(matchEvent(ev("P", { ctrlKey: true, shiftKey: true }), inTerm), null, "old chord no longer bound");
+  assert.equal(matchEvent(ev("K", { ctrlKey: true, shiftKey: true }), inTerm), null, "old chord no longer bound");
 });
 
 test("the legacy palette chord check is gone: the engine is the one palette policy", async () => {
