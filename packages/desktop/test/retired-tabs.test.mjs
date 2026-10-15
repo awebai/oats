@@ -140,3 +140,29 @@ test("tabShowsRow: the key and the incarnation; otherIncarnation: only two known
   for (const [a, b] of [[T1, T1], [T1, null], [null, T2], [undefined, T2], ["", T2], [T1, 5]]) assert.equal(otherIncarnation(a, b), false, `${a} ${b}`);
   assert.equal(Object.isFrozen(terminalOrigin({})), true, "recorded once");
 });
+
+test("a row's own evidence counts only from a current read of its deployment: held rows keep their last-read facts", () => {
+  const unreached = { probe: { ok: false, error: { code: "E_SSH", message: "ssh to altair timed out" } } };
+  const remembered = { all: () => [], get: () => ({ workspace: identity() }), note: () => null };
+  // The roster learned T2 (or that the host no longer lists it), then the next probe failed: the held group
+  // (remote-roster.mjs unavailableGroups) keeps createdAt and missingRemotely, serverUnreached, reachable false.
+  const held = rows => remote.unavailableGroups([altair(rows)], { code: "E_SSH", message: "ssh to altair timed out" })[0];
+  const respawned = remoteRow("far-a", FAR, { createdAt: T2 });
+  const gone = remoteRow("far-a", FAR, { createdAt: null, running: null, savedRoute: true, addressable: false, missingRemotely: true });
+  for (const [what, rows] of [["another incarnation", [respawned]], ["missingRemotely", [gone]]]) {
+    const panel = answer({ far: held(rows).instances, groupExtra: unreached, remembered });
+    const row = panel.instances.find(i => i.instance === "far-a");
+    assert.equal(row.serverUnreached, true); assert.equal(panel.error, undefined, "the primary read fine");
+    assert.equal(panel.deployments.find(d => d.id === "remote:altair:a1").reachable, false);
+    assert.deepEqual(retiredTabs(tabs(REMOTE), panel), [], `unreached, ${what}`);
+    // A group a filtered read did not ask (#1124): reached when it was read, stale now.
+    const filtered = answer({ far: rows, keptReadAt: new Map([["altair:a1", AT]]) });
+    assert.equal(filtered.deployments.find(d => d.id === "remote:altair:a1").stale, true);
+    assert.deepEqual(retiredTabs(tabs(REMOTE), filtered), [], `kept by a filtered read, ${what}`);
+  }
+  // A local deployment whose re-read failed keeps its last observation: its rows prove nothing either.
+  const kept = { ...observed(A, { reachable: true, ...identity() }, [row(A, "dev-a", { createdAt: T2 })]), error: "status timed out" };
+  assert.deepEqual(retiredTabs(tabs(LOCAL), answer({ aEntry: kept })), [], "kept local read, another incarnation");
+  // The same facts from a current read do close it (the positives above), whichever deployment is primary.
+  assert.deepEqual(retiredTabs(tabs(REMOTE), answer({ far: [respawned] })), [1]);
+});

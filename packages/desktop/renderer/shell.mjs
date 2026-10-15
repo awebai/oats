@@ -1812,11 +1812,13 @@ function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false
       if (result?.terminalApi === 2 && result.ok && result.status === 'closed') {
         if (!t.closeIntent.background) closeTab(id, t.closeIntent.restoreFocus && latest, { explicit: false, confirmed: true, passive: !latest });
         else {
-          // Focus follows only when it was in this tab and is not elsewhere now (its xterm went with the teardown):
-          // background work never takes it from where the operator is. Passive: a covered layer stays covered.
+          // Focus follows when it is in this tab now (a batch's earlier close may have handed it this trigger), or
+          // was when the answer landed and is not elsewhere now (its xterm went with the teardown): background work
+          // never takes it from where the operator is. Passive: a covered layer stays covered.
           const at = document.activeElement;
-          const stayed = !at || at === document.body || t.triggerEl.contains(at) || t.paneEl.contains(at);
-          closeTab(id, t.closeIntent.restoreFocus && stayed, { explicit: false, confirmed: true, passive: true });
+          const inside = !!at && at !== document.body && (t.triggerEl.contains(at) || t.paneEl.contains(at));
+          const stayed = !at || at === document.body || inside;
+          closeTab(id, inside || (t.closeIntent.restoreFocus && stayed), { explicit: false, confirmed: true, passive: true });
         }
       }
       // Pending/failure retains the exact tab, its literal state and key.

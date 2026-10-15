@@ -101,12 +101,12 @@ there is no synchronous IPC or awaited keystroke round trip.
   Late completion must not steal a newer workspace/stage/selection or focus.
 - A retired instance's tabs close on roster evidence (#1237). A tab is keyed
   by home + incarnation `createdAt`; the pure rule is
-  `renderer/retired-tabs.mjs` `retiredTabs(tabs, panel)`. Retired means the
-  roster lists the same home with another incarnation, the instance's host
-  was reached and no longer lists it (a remote row the kernel marks gone), or
-  a successful, current read of the tab's deployment no longer lists it. An
-  unreachable server, a kept/stale read or a filtered read that did not ask
-  that server is never evidence. A stopped instance keeps its tab. Every
+  `renderer/retired-tabs.mjs` `retiredTabs(tabs, panel)`. Retired means a
+  successful, current read of the deployment lists the same home with another
+  incarnation, or its reached host no longer lists it (a remote row the kernel
+  marks gone), or no longer lists it at all. An unreachable server, a
+  kept/stale read or a filtered read that did not ask that server is never
+  evidence, not even for the facts its held rows were last read with. A stopped instance keeps its tab. Every
   matching tab closes in every group of the workspace through the normal
   close (next tab, else previous; empty groups stay); focus follows only if
   it was in a closed tab. A hidden workspace is reconciled on its next roster

@@ -1678,7 +1678,9 @@ retired, and its header lists the panel facts that prove each case: (R) the same
 home with another incarnation, (G) a remote row `missingRemotely`, (A) absent
 from a successful, current read of the tab's recorded deployment (its
 `deployments[]` entry reachable, not stale, of the tab's kind, and no kept
-`error` or `serverUnreached` row for it). Anything it cannot prove keeps the tab.
+`error` or `serverUnreached` row for it). (R) and (G) count only from a current
+read of the row's own deployment: a held row keeps its last-read facts. Anything
+it cannot prove keeps the tab.
 `refreshContextRoster` runs it (`closeRetiredTabs`) on an owned answer of the
 shown workspace, on the connection it was read on, only when that answer is not
 a failed, kept or pending read, and before the panel binding and the paint. A
@@ -1688,8 +1690,9 @@ The close is `closeTab(id, focused, { explicit: false, background: true })`: the
 viewer's own teardown (`confirmClose`), with a `watch()` ticket instead of
 `begin()`, so it cancels no pending open, and passive, so a covered tab layer stays
 covered. It never takes over a user's close already in flight. Focus moves to the
-group's successor's trigger only when it was in the closed tab when the answer
-landed and has not gone elsewhere during the teardown. An open whose own
+group's successor's trigger only when it is in the closed tab at its removal (a
+batch's earlier close may have handed it there), or was when the answer landed
+and has not gone elsewhere during the teardown. An open whose own
 `/api/panel` read is older than the last judged answer (`panelReads` numbers
 every read in dispatch order) checks that answer before it makes its tab, so no
 tab opens for an incarnation the roster already shows retired. The PTY ending is

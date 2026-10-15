@@ -7,7 +7,9 @@
    with the same home and another `createdAt` is a different instance: it never shows in, or activates,
    the old tab (`tabShowsRow`).
 
-   A tab is retired when the answer proves it, and only then (fail closed: keep the tab):
+   A tab is retired when the answer proves it, and only then (fail closed: keep the tab). (R) and (G) are a row's
+   own facts, so they count only from a current read of that row's deployment (the facts of (A) below): a row held
+   from an unreached, kept or unasked read keeps whatever it was last read with.
    (R) Replaced: every row with the tab's identity reports a `createdAt` string, and none is the one the
        tab recorded. Null or absent on either side is no evidence (an older kernel, a saved route).
    (G) Gone on its host: every row with the tab's identity is a remote row the kernel reports
@@ -52,18 +54,25 @@ export function tabShowsRow(tab, workspace, row) {
     && !otherIncarnation(tab.origin?.incarnation, row.createdAt);
 }
 
-/** True when this answer holds a successful, current read of the tab's deployment (rule A). */
-function readOfDeployment(panel, tab) {
-  const id = tab.origin?.deployment;
+const deploymentOf = row => typeof row?.deployment === "string" ? row.deployment : row?.deployment?.id;
+
+/** True when this answer holds a successful, current read of deployment `id` (`remote`: another machine's). */
+function currentRead(panel, id, remote) {
   if (!text(id)) return false;
   const entries = (Array.isArray(panel.deployments) ? panel.deployments : []).filter(d => d?.id === id);
   if (entries.length !== 1) return false;
   const [entry] = entries;
   if (entry.reachable !== true || entry.stale === true) return false;
-  if (entry.local !== !tab.origin.server) return false;
+  if (entry.local !== !remote) return false;
   if (entry.primary === true && keptFailure(panel)) return false;
-  return !panel.instances.some(row => row?.serverUnreached === true
-    && (typeof row.deployment === "string" ? row.deployment : row.deployment?.id) === id);
+  return !panel.instances.some(row => row?.serverUnreached === true && deploymentOf(row) === id);
+}
+
+/** A row's own evidence (R or G), only from a current read of its deployment: a row held from an unreached,
+ * kept or unasked read keeps the facts it was last read with, which prove nothing now. */
+function rowSaysGone(panel, tab, row) {
+  if (row.serverUnreached === true || !currentRead(panel, deploymentOf(row), text(row.server))) return false;
+  return otherIncarnation(tab.origin?.incarnation, row.createdAt) || (text(row.server) && row.missingRemotely === true);
 }
 
 /** The ids of the open terminal tabs of the panel's workspace that this panel answer shows retired.
@@ -77,8 +86,8 @@ export function retiredTabs(tabs, panel) {
     if (tab?.kind !== "terminal" || tab.workspace !== workspace || !text(tab.key)) continue;
     const rows = panel.instances.filter(row => row && typeof row === "object" && terminalKey(workspace, row) === tab.key);
     const gone = rows.length
-      ? rows.every(row => otherIncarnation(tab.origin?.incarnation, row.createdAt) || (text(row.server) && row.missingRemotely === true))
-      : readOfDeployment(panel, tab);
+      ? rows.every(row => rowSaysGone(panel, tab, row))
+      : currentRead(panel, tab.origin?.deployment, text(tab.origin?.server));
     if (gone) retired.push(id);
   }
   return retired;

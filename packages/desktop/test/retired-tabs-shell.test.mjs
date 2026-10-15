@@ -297,3 +297,52 @@ test("a background close cancels no pending open: the operator's open made meanw
   const c = [...s.c.tabs].find(([, tab]) => tab.title === "c");
   assert.ok(c, "the open made its tab"); assert.equal(s.c.activeTab, c[0], "and selected it");
 });
+
+/** One group [a, b, c] with a active and its xterm focused; returns the release of each teardown receipt. */
+async function batch(t, names) {
+  const s = shell(t), opened = {};
+  for (const name of names) opened[name] = await s.open(row(name));
+  assert.equal(s.selectTab(opened.a.id), true);
+  s.c.tabOpenIntents.applyFocus(() => opened.a.term.input.focus());
+  const held = new Map();
+  s.c.desk.termClose = h => new Promise(ok => { held.set(h.id, () => ok(confirmed(h))); });
+  return { s, opened, release: async name => { held.get(attachmentId(s, opened[name]))(); await settle(); } };
+}
+/** The handle id the harness gave a tab's attachment (open() resolves it with its 1-based position). */
+const attachmentId = (s, tab) => s.attachments.indexOf(tab.gate) + 1;
+
+for (const order of [["a", "b"], ["b", "a"]]) test(`a batch retiring adjacent tabs (${order.join(" then ")} confirmed): focus that was in a reaches the survivor`, async t => {
+  const { s, opened, release } = await batch(t, ["a", "b", "c"]);
+  s.closeRetiredTabs(answer([row("c")]), ++s.c.panelReads); await tick();
+  for (const name of order) await release(name);
+  assert.deepEqual([...s.c.tabs.keys()], [opened.c.id]); assert.equal(s.c.activeTab, opened.c.id);
+  assert.equal(s.document.activeElement, s.c.tabs.get(opened.c.id).triggerEl);
+});
+
+for (const order of [["a", "b"], ["b", "a"]]) test(`a batch retiring the whole group (${order.join(" then ")} confirmed): focus goes to its empty destination`, async t => {
+  const { s, opened, release } = await batch(t, ["a", "b"]);
+  s.splitPane("row"); assert.equal(s.selectTab(opened.a.id), true); s.c.tabOpenIntents.applyFocus(() => opened.a.term.input.focus());
+  s.closeRetiredTabs(answer([]), ++s.c.panelReads); await tick();
+  for (const name of order) await release(name);
+  assert.deepEqual(ids(s), [[], []]); assert.equal(s.c.activeTab, null);
+  assert.equal(s.document.activeElement, s.empty(1));
+});
+
+test("a batch never pulls focus the operator moved elsewhere", async t => {
+  const { s, opened, release } = await batch(t, ["a", "b", "c"]);
+  s.closeRetiredTabs(answer([row("c")]), ++s.c.panelReads); await tick();
+  const filter = s.c.contextRosterEl.querySelector("input"); filter.focus();
+  await release("a"); await release("b");
+  assert.equal(s.c.activeTab, opened.c.id); assert.equal(s.document.activeElement, filter);
+});
+
+test("away and back: a remote tab is kept when its server's held rows say another incarnation or gone", async t => {
+  const s = shell(t), far = { ...row("far"), server: "box", addressable: true, deployment: { id: "remote:box:1" } };
+  const tab = await s.open(far, true, [far]);
+  s.switchTo("B"); s.switchTo("A");
+  const held = extra => ({ workspace: { id: "A" }, instances: [{ ...far, running: null, serverUnreached: true, ...extra }],
+    deployments: [{ ...answer([]).deployments[0] }, { id: "remote:box:1", local: false, reachable: false }] });
+  await land(s, held({ createdAt: T2 }));
+  await land(s, held({ missingRemotely: true }));
+  assert.equal(s.c.tabs.has(tab.id), true);
+});
