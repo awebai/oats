@@ -53,7 +53,7 @@ const rowOf = (state) => roster(state).instances.find((row) => instanceId(row) =
  *  that opens the panes. */
 function above(state, sz = S80) {
   const r = roster(state, AT);
-  const g = layout(r.notice, sz, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: state.outcome });
+  const g = layout(r.notice, sz, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: state.outcome, terminal: state.terminal !== null });
   return draw(state, sz).lines.slice(3, 3 + g.above - (g.above && r.observed ? 1 : 0)).map((line) => line.trim());
 }
 const footerOf = (state, sz = S80) => draw(state, sz).lines[sz.rows - 1];

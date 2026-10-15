@@ -242,19 +242,22 @@ fit; the detail shows them whole.
 ```
  oats  acme-platform                                                  2 running
   Instances   Souls   Capabilities                                read 14:03:27
-──────────────────────────────────────┬─────────────────────────────────────────
-> ● backend-lead                      │ backend-lead
-  ● docs-writer                       │$ make docs
-                                      │Building the reference...
-                                      │
-──────────────────────────────────────┴─────────────────────────────────────────
+──────────────────────────────┬─────────────────────────────────────────────────
+> ● backend-lead              │ backend-lead
+  ● docs-writer               │$ make docs
+                              │Building the reference...
+                              │
+──────────────────────────────┴─────────────────────────────────────────────────
  C-\ back to the list
 ```
 
 - **`Enter` on an instance that runs** opens its terminal on the right of
   the body, where the detail was, with the list on the left. Its top row
   names the agent (and `on <machine>` for one of another machine); under it
-  is the agent's screen, as the agent draws it, in its own colours.
+  is the agent's screen, as the agent draws it, in its own colours. While a
+  terminal is open the list keeps 30 columns at most, also while the
+  detail stands in the terminal's place, and a name longer than its row is
+  cut with `…` (`...` in ASCII).
 - **The terminal has the focus.** What you type, what you paste and every
   key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
   among them, but for **the back key** (`Ctrl+\` unless

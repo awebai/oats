@@ -21,7 +21,7 @@ import { createScreen } from "../lib/term/screen.mjs";
 import { PLAIN, isStyle, style } from "../lib/term/style.mjs";
 import { isSafeText, shown, textOf } from "../lib/term/text.mjs";
 import { textWidth } from "../lib/term/width.mjs";
-import { MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
+import { LIST_BESIDE, MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
 import { ACT_RULES, MACHINES, NOT_YET, VIEWS, keysLabel } from "../lib/views/help.mjs";
 import { EMPTY_TEXT, MARKS, cutNote, marksOf } from "../lib/views/instances.mjs";
 import { OPEN_MARK, SWITCHER_TEXT } from "../lib/views/switcher.mjs";
@@ -2836,6 +2836,31 @@ test("beside the list the panel is never narrower than PANEL_MIN (40): at 80 col
     assert.equal(t.cols >= PANEL_MIN + 1, true, `${cols}: ${t.cols}`);
   }
   assert.equal(drawPanel(panelIn("focus"), size(WIDE - 1, 24)).terminal.whole, true);
+});
+
+test("with a terminal open the list keeps 30 columns at most, beside the terminal or the detail in its place, and a name longer than its row is cut there with the cut mark; closed, the list has its width again", () => {
+  assert.equal(LIST_BESIDE, 30);
+  for (const sz of PANEL_WIDE) for (const how of ["focus", "list", "detail"]) {
+    const d = drawPanel(panelIn(how), sz), at = `${sz.cols}x${sz.rows} ${how}`;
+    assert.equal(d.cols, LIST_BESIDE, at);
+    for (const r of bodyRows(sz)) assert.equal(d.cells[r][LIST_BESIDE].text, "│", `${at}: row ${r} has the panes' rule at column 30`);
+    if (how === "detail") assert.equal(d.terminal, null, at);
+    else assert.deepEqual([d.terminal.col, d.terminal.cols], [LIST_BESIDE + 1, sz.cols - LIST_BESIDE - 1], `${at}: the agent's screen has the rest`);
+  }
+  const LONG = "dev-z-with-a-name-far-longer-than-the-list-beside-a-terminal";
+  for (const ascii of [false, true]) {
+    const two = stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", LONG)]), { ascii });
+    let s = keyed(Object.freeze({ ...two, selected: roster(two).rows.find(({ row }) => row.instance === "dev-a").id }), "enter");
+    s = reduce(reduce(s, { shown: { id: s.terminal.id } }).state, { back: true }).state;
+    for (const sz of PANEL_WIDE) {
+      const d = drawPanel(s, sz), r = bodyRows(sz).find((row) => cellText(d, row, 0, LIST_BESIDE).includes(LONG.slice(0, 12)));
+      const cut = glyphsOf(ascii).cut, room = LIST_BESIDE - 4 - 5;
+      assert.equal(cellText(d, r, 0, LIST_BESIDE), `  ${marksOf(ascii).running} ${LONG.slice(0, room - cut.length)}${cut}`, `${sz.cols}${ascii ? " ascii" : ""}: cut inside the 30 columns`);
+      // Closed, the list has its own width again, and the name more of its cells.
+      const closed = draw(keyed(s, "c"), sz);
+      assert.deepEqual([closed.terminal ?? null, closed.cols], [null, listWidth(sz.cols)], `${sz.cols}: closed`);
+    }
+  }
 });
 
 test("Tab from the list with a terminal open shows the detail in the panel's place, until Tab or Esc again", () => {

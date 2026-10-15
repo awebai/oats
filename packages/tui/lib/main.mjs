@@ -315,7 +315,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     const size = guard.size(), at = clock();
     const listing = (state.view === "help" ? state.back : state.view) === "switcher";
     const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
-    const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : state.outcome });
+    const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : state.outcome, terminal: state.terminal !== null });
     const m = { ...model(state, { page: g.page, now: now(), at, cols: g.listCols }), screen: screenNow };
     return { size, g, made: frame(m, size) };
   }
