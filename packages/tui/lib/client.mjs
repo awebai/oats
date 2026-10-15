@@ -34,6 +34,9 @@ export { startGate, startInstance } from "../../client/session-start.mjs";
 export { retainedStartMessage, launchFlagIgnored, flagIgnoredNotice } from "../../client/launch-prompt-outcome.mjs";
 export { INSTANCE_VARIABLES } from "../../client/kernel-environment.mjs";
 export { validateWorkspace, deploymentsInside } from "../../client/workspace-admission.mjs";
+export { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
+export { soulRows } from "../../client/soul-rows.mjs";
+export { soulFacts, spawnRefusal } from "../../client/soul-facts.mjs";
 
 /** The words a shared sentence uses where it names the client that shows it (client-terms.mjs).
  *  Made once, here: every shared function that takes `terms` is passed this constant, and refuses

@@ -2414,9 +2414,12 @@ test("whatever shows another view than the instances gives the focus back to the
   assert.deepEqual([switched.terminal.focus, switched.terminal.zoom, switched.terminal.id], ["list", false, zoomed.terminal.id]);
 });
 
-test("2 and 3 show the Souls and the Capabilities views, which say what to run for now; Esc and 1 go back to the instances, the selection and the terminal as they were", () => {
+test("2 shows the Souls view (souls.test.mjs has its own) and 3 the Capabilities view, which says what to run for now; Esc and 1 go back to the instances, the selection and the terminal as they were", () => {
   const state = on(TWO(), "dev-a");
-  for (const [k, shows, words] of [["2", "souls", "This view will list the souls this machine can make instances of. It is not in this version: `oats souls` lists them, and `oats spawn <soul>` makes an instance of one."], ["3", "capabilities", "This view will list the capabilities this machine has. It is not in this version: `oats capabilities` lists them."]]) {
+  const two = key(state, "2");
+  assert.deepEqual([two.state.view, two.effect, view(two.state).body, view(two.state).souls.state], ["souls", { souls: "settle" }, null, "reading"]);
+  for (const out of ["escape", "1"]) assert.deepEqual([key(two.state, out).state.view, key(two.state, out).state.selected], ["instances", state.selected], `2 then ${out}`);
+  for (const [k, shows, words] of [["3", "capabilities", "This view will list the capabilities this machine has. It is not in this version: `oats capabilities` lists them."]]) {
     const after = key(state, k);
     assert.equal(after.effect, null, k);
     assert.deepEqual([after.state.view, after.state.outcome, after.state.selected], [shows, null, state.selected], k);

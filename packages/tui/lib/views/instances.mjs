@@ -45,7 +45,8 @@ const PLAIN = style();
 const BOLD = style({ bold: true });
 const DIM = style({ dim: true });
 const SELECTED = style({ reverse: true });
-const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: style({ fg: "yellow" }), held: style({ fg: "magenta" }) });
+/** The look of each state mark: the Souls view draws an instance's mark in its detail as the list does. */
+export const LOOK = Object.freeze({ running: style({ fg: "green" }), stopped: DIM, shell: DIM, unknown: style({ fg: "yellow" }), held: style({ fg: "magenta" }) });
 const WAITS = style({ fg: "yellow", bold: true });
 const WAITS_SELECTED = style({ reverse: true, bold: true });
 
@@ -97,8 +98,10 @@ function instanceRow(row, cols, wordWidth, marks) {
  *  live, the shared word for its state and the short reason; at the right edge the time a machine
  *  reported its rows at. The state and the time always stand. When the row is too narrow for the
  *  rest, the path is given up first, then the short reason, and then the label is cut: the full
- *  reason is in the detail of each of its rows, and under the heading when it has none. */
-function headingRow({ label, path, state, short, readAt }, cols, ascii) {
+ *  reason is in the detail of each of its rows, and under the heading when it has none. A short
+ *  reason with no state word is drawn too: the Souls view's heading of a failed re-read has a
+ *  sentence and no shared word for a state (views/souls.mjs). */
+export function headingRow({ label, path, state, short, readAt }, cols, ascii) {
   const spans = [], edge = cols - 1;
   let limit = edge;
   if (readAt) {
@@ -106,7 +109,7 @@ function headingRow({ label, path, state, short, readAt }, cols, ascii) {
     spans.push({ col, text: lit(read), style: DIM, width: Math.max(0, Math.min(read.length, edge - col)) });
     limit = col - GAP;
   }
-  const name = measured(label), word = state ? measured(state) : null, why = state && short ? measured(short) : null, where = path ? measured(path) : null;
+  const name = measured(label), word = state ? measured(state) : null, why = short ? measured(short) : null, where = path ? measured(path) : null;
   let room = limit - HEAD - (word ? GAP + word.width : 0);
   const nameWidth = Math.max(0, Math.min(name.width, room));
   room -= nameWidth;

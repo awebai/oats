@@ -77,21 +77,21 @@ runs.
 ## What it shows
 
 ```
- acme-platform  +1 machine                       4 running  1 needs input  2 stopped  1 unknown
-  Instances   Souls   Capabilities                                                read 14:03:27
-──────────────────────────────────────────────┬─────────────────────────────────────────────────
- This machine                                 │   api-lead
-  ● backend-lead                              │   soul     tech-lead
-    ● backend-dev-auth                       !│   machine  garnet
-                                              │   state    running
-  ○ docs-writer                               │   harness  claude, claude-opus-5-5 (soul)
- garnet                         read 14:03:21 │   work     worktree, agents/api-lead
-> ● api-lead +1                               │   home     …agents/tech-lead/instances/api-lead
-                                              │
-  ? old-api-lead         gone from garnet     │
-  ○ reviewer-api                              │
-                                              │
-C-\ commands   / filter   Tab detail   r refresh   w workspaces   ? help   q quit
+ fixture                                                              3 stopped
+  Instances   Souls   Capabilities                                read 20:02:02
+──────────────────────────────────────┬─────────────────────────────────────────
+> ■ dev ·2                            │   dev
+  ■ reviewer ·1                       │   dev fixture soul.
+                                      │   from     ws
+                                      │   works    works in directory
+                                      │   harness
+                                      │     Harness    Pi
+                                      │     Model      Pi's default model
+                                      │     Chosen by  no preference set: the
+                                      │                host default
+                                      │   instances here
+                                      │     ○ alpha  ○ beta
+                                      │     i shows them in the Instances view.
 ```
 
 - **The header** starts with the workspace's name, then what the view holds of
@@ -106,9 +106,9 @@ C-\ commands   / filter   Tab detail   r refresh   w workspaces   ? help   q qui
   Capabilities`, the open one drawn in reverse video. `1`, `2` and `3`
   open them in the list, and [the leader](#the-leader) then `1`, `2` or `3`
   from anywhere; the leader's hint, [the palette](#the-palette) and the
-  help name those keys. The Souls and Capabilities views say what they will
-  hold and what to run until then: `oats souls` and
-  `oats spawn <soul>`, `oats capabilities`. On the right is the time of the
+  help name those keys. [The Souls view](#the-souls-view) lists the open
+  workspace's souls; the Capabilities view says what it will hold and what
+  to run until then, `oats capabilities`. On the right is the time of the
   read of this machine that the screen shows: it moves with every read.
 - **The footer** is one row of keys from the first column, with no rule
   above it. It names `C-\ commands` first, in every focus: the leader,
@@ -349,6 +349,60 @@ C-\ commands   C-\ C-\ back to the list
   agent opens in the TUI's panel, and `oats tui` makes no window and no
   split in your tmux.
 
+## The Souls view
+
+`2`, or the leader then `2`, shows the souls of the open workspace: the
+ones `oats spawn` can make an instance of here, as the OATS Desktop lists
+them, from the same code.
+
+```
+ acme-platform                                        2 running  1 stopped
+  Instances   Souls   Capabilities                                read 14:03:27
+──────────────────────────────────────┬─────────────────────────────────────────
+> ■ dev ·2                            │   dev
+  ■ ops !                             │   Builds and ships the platform.
+  ■ reviewer ·1                       │
+                                      │   from     oats-core
+                                      │   works    works in its own worktree
+```
+
+- **A row** is the soul's colour mark (`■`, `#` in ASCII; its colour is the
+  Desktop's for that soul, uncoloured when it has none), its name, and a
+  count of its instances on this machine, `·2`. A soul a spawn here would
+  refuse is drawn dim, with `!` after its name. The list keys move, and `/`
+  filters by name, description or where the soul comes from.
+- **The detail** beside it, top to bottom: the name and the description;
+  where it comes from (its member, or its package and version); where it
+  works; why a spawn here would be refused, when it would be; the harness
+  and model a spawn would use and where that choice is set (a launch
+  problem as the kernel reports it); its teams, the default first; its
+  capabilities; and its instances on this machine, eight at most and then
+  `+n`. `Enter` gives the detail the focus (under 80 columns it takes the
+  list's place), and the movement keys then scroll it.
+- **`i`**, or `Enter` in the detail, shows that soul's instances in the
+  Instances view: an exact filter, shown where a kept filter stands in
+  the footer, `soul dev`.
+  An instance of another soul whose name holds `dev` is not listed. `Esc`
+  clears it, and `/` replaces it with a text filter.
+- **`r`** reads the souls again; while a read is under way it starts
+  nothing. `Esc` closes the detail, then clears a kept filter, then goes
+  back to the instances.
+- **When it reads:** the first time the view is shown, never before: a run
+  that never shows it never runs `oats souls`. After that, a read of the
+  workspace reads the souls again only when the workspace changed (its
+  commit, a member's, its externals), and `r` does. While the first read is
+  under way the view says `Reading souls…`. A read that fails says why,
+  with `r` to try again; one that fails after a good one keeps the souls it
+  had, under a heading that says it failed and when the souls were read;
+  the selected soul's detail says why in full, under its name.
+- **What is kept:** the selected soul and the filter, when the view is left
+  and shown again, for the run.
+- **Only this machine's:** the view lists the souls of a workspace of this
+  machine. With none open it says so.
+
+There is no spawn from this view yet: `oats spawn <soul>` makes an
+instance.
+
 ## The switcher
 
 `w` opens the switcher: what this run can show, over the whole body of the
@@ -522,7 +576,8 @@ The exit status never depends on it.
 | `/` | filter |
 | `r` | read now |
 | `1` | the Instances view |
-| `2`, `3` | the Souls and Capabilities views, which say what they will hold and what to run until then; `Esc` or `1` goes back |
+| `2` | [the Souls view](#the-souls-view); `Esc` or `1` goes back |
+| `3` | the Capabilities view, which says what it will hold and what to run until then; `Esc` or `1` goes back |
 | `w` | opens [the switcher](#the-switcher) |
 | `Enter` | in the list of instances, opens the selected agent's terminal beside the list, or gives it the focus when it is the open one; in the switcher, opens the selected row; in a confirmation, presses the button with the focus |
 | `z` | gives the open terminal the focus and the whole body |
@@ -597,11 +652,14 @@ is open no terminal is drawn and the TUI reads the keys.
 
 - **It lists, in this order:** the instances that can be opened, the most
   recently opened in this run first, then the list's order, each with its
-  state mark, its name and, for another machine, `on <machine>`; the views,
-  Instances, Souls and Capabilities; the acts the instance offers now (the
-  open terminal's when the palette was opened from its focus, else the
-  selected one's); then Workspaces, Refresh and Help. Each row says at its
-  right edge what kind it is: `instance`, `view`, `act` or `command`.
+  state mark, its name and, for another machine, `on <machine>`; the souls
+  of the open workspace, once [the Souls view](#the-souls-view) has read
+  them (choosing one shows that view with it selected; the palette never
+  reads them); the views, Instances, Souls and Capabilities; the acts the
+  instance offers now (the open terminal's when the palette was opened from
+  its focus, else the selected one's); then Workspaces, Refresh and Help.
+  Each row says at its right edge what kind it is: `instance`, `soul`,
+  `view`, `act` or `command`.
 - **Typing filters it** with the Desktop's subsequence match, a prefix
   first: each kind keeps the rows that match, the best first.
   `Backspace` removes a character, and a paste adds its first line.
@@ -648,11 +706,12 @@ never writes it. With no file the keys are the ones above.
   do not name keeps its keys.
 - The actions are `up`, `down`, `top`, `bottom`, `page-up`, `page-down`,
   `collapse`, `expand`, `detail`, `filter`, `refresh`, `instances`,
-  `souls`, `capabilities`, `workspaces`, `palette`, `open`, `zoom`, `close-terminal`,
+  `souls`, `capabilities`, `workspaces`, `palette`, `open`, `soul-instances`, `zoom`, `close-terminal`,
   `stop`, `retire`, `start`, `restart`, `help`, `close`, `quit`, `suspend`
   and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
-  opens the selected agent's terminal in the list of instances and the
-  selected row in the switcher. `zoom` (`z`) and `close-terminal` (`c`) act
+  opens the selected agent's terminal in the list of instances, the
+  selected row in the switcher and the detail in the Souls view;
+  `soul-instances` (`i`) shows the selected soul's instances. `zoom` (`z`) and `close-terminal` (`c`) act
   on the open terminal. In an open filter field `Enter` keeps the filter,
   whatever key `open` has.
 - A key is written as the help shows it, in lower case: `q`, `G`, `?`,
@@ -722,6 +781,10 @@ with the Desktop (`packages/client/`).
   read's. What a read in the background may reuse is the kernel's own look
   at the workspace's remotes, for up to 60 seconds; `r` asks the kernel to
   look again.
+- **The souls are one more read**, `oats souls --json` for the open
+  workspace, by the same kernel, with 60 seconds and 4 MiB: only once [the
+  Souls view](#the-souls-view) was shown, then only when the workspace
+  changed, and on `r` there.
 - **The other machines are one more read**, `oats server roster --json`,
   by the same kernel: one answer for every machine registered on this
   machine. It has 60 seconds and 4 MiB.
@@ -839,7 +902,7 @@ with the Desktop (`packages/client/`).
 | To | Run |
 |---|---|
 | start an agent with another harness or model | `oats session start --home <home>` with its options |
-| see souls, spawn an agent | `oats souls`, `oats spawn <soul>` |
+| spawn an agent | `oats spawn <soul>` |
 | see capabilities | `oats capabilities` |
 | add a machine to this workspace | `oats server connect <id> --ssh <alias>` |
 | check a machine | `oats server check <id>` |
@@ -861,7 +924,8 @@ version:
   machine's heading when it is not the header's time. A view of one machine
   has no heading: there the header names the machine (`on garnet`) and
   carries the time.
-- Souls and Capabilities, when they come, are this machine's.
+- The Souls view lists a workspace of this machine's souls, and
+  Capabilities, when it comes, is this machine's too.
 - There is no sorting and no mouse, and a deployment's heading cannot be
   folded. An open terminal has no scrollback but the viewer's own.
 - One terminal is open at a time; tabs of several come in a later version.

@@ -95,6 +95,9 @@ const TAKEN = Object.freeze({
   "launch-prompt-outcome.mjs": ["retainedStartMessage", "launchFlagIgnored", "flagIgnoredNotice"],
   "kernel-environment.mjs": ["INSTANCE_VARIABLES"],
   "workspace-admission.mjs": ["validateWorkspace", "deploymentsInside"],
+  "soul-catalog.mjs": ["createSoulCatalog", "soulCatalogKey"],
+  "soul-rows.mjs": ["soulRows"],
+  "soul-facts.mjs": ["soulFacts", "spawnRefusal"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
  *  A name taken under another name is read as the name the home gives it. */
@@ -233,7 +236,7 @@ test("the views are pure: they import only the TUI's own text, style and action 
   const views = filesUnder("packages/tui/lib/views");
   assert.equal(views.length >= 2, true);
   // The views and the window they share; the switcher of workspaces, the confirmation of an act and the palette are held to the rule like the rest.
-  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "switcher.mjs"]);
+  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "souls.mjs", "switcher.mjs"]);
   for (const path of views) {
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);
