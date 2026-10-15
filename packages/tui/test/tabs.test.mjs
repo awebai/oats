@@ -134,6 +134,22 @@ test("the leader then Left or Right switches tabs from the terminal's focus, kee
   assert.equal(leaderThen(right.state, "right").effect, null, "no wrap");
 });
 
+test("the leader then Left or Right at either end, or while a tab starts, does nothing at all: the terminal keeps the focus and the zoom (round 1 of the review)", () => {
+  let s = leaderThen(opened(SIX(), "dev-a", "dev-b"), "z").state;
+  assert.deepEqual([shownName(s), s.terminal.focus, s.terminal.zoom], ["dev-b", "terminal", true]);
+  const right = leaderThen(s, "right");
+  assert.deepEqual([right.effect, shownName(right.state), right.state.terminal.focus, right.state.terminal.zoom], [null, "dev-b", "terminal", true], "the last tab");
+  s = leaderThen(s, "left").state;
+  const left = leaderThen(s, "left");
+  assert.deepEqual([left.effect, shownName(left.state), left.state.terminal.focus, left.state.terminal.zoom], [null, "dev-a", "terminal", true], "the first tab");
+  // A tab starting: neither key moves, nor takes the focus.
+  const starting = key(on(toList(opened(SIX(), "dev-a")), "dev-b"), "enter").state;
+  for (const k of ["left", "right"]) {
+    const step = leaderThen(starting, k);
+    assert.deepEqual([step.effect, shownName(step.state), step.state.terminal.focus], [null, "dev-b", "terminal"], k);
+  }
+});
+
 test("the leader then Left or Right from another view goes to the Instances view and switches there, the focus in the list", () => {
   const s = toList(opened(SIX(), "dev-a", "dev-b"));
   for (const view of ["2", "3", "?"]) {
@@ -211,10 +227,24 @@ test("the leader then w from the terminal's focus closes the shown tab and gives
   const step = leaderThen(s, "w");
   assert.deepEqual(step.effect, { close: [idOf(s, "dev-b")], show: idOf(s, "dev-a") });
   assert.deepEqual([shownName(step.state), step.state.terminal.focus], ["dev-a", "terminal"]);
+  // Zoomed, the neighbour is shown zoomed too: the zoom is the panel's (round 1 of the review).
+  const zoomed = leaderThen(leaderThen(s, "z").state, "w");
+  assert.deepEqual([shownName(zoomed.state), zoomed.state.terminal.focus, zoomed.state.terminal.zoom], ["dev-a", "terminal", true]);
   const fromList = leaderThen(toList(s), "w");
   assert.deepEqual([shownName(fromList.state), fromList.state.terminal.focus], ["dev-a", "list"]);
   const last = leaderThen(step.state, "w");
   assert.deepEqual([last.effect, last.state.terminal], [{ close: [idOf(s, "dev-a")] }, null]);
+});
+
+test("the shown viewer's own end from the detail's focus gives the list the focus, so its neighbour is drawn (round 1 of the review)", () => {
+  const s = key(toList(opened(SIX(), "dev-a", "dev-b")), "tab").state;
+  assert.equal(s.focus, "detail");
+  const step = reduce(s, { returned: { id: idOf(s, "dev-b"), status: 1, stderr: "lost\n" }, ...AT });
+  assert.deepEqual([shownName(step.state), step.state.terminal.focus, step.state.focus], ["dev-a", "list", "list"]);
+  assert.notEqual(draw(step.state, { cols: 120, rows: 40 }).terminal, null, "the neighbour's terminal is drawn, not the detail");
+  // A hidden tab's end leaves the detail as it is.
+  const hidden = reduce(s, { returned: { id: idOf(s, "dev-a"), status: 1, stderr: "lost\n" }, ...AT });
+  assert.deepEqual([shownName(hidden.state), hidden.state.focus], ["dev-b", "detail"]);
 });
 
 test("the shown viewer's own end closes its tab, shows its neighbour and gives the list the focus; the line names its instance", () => {
@@ -318,4 +348,22 @@ test("with a single tab the row reads as T1's title: the name alone, and its mac
   assert.equal(s.text, " dev-a");
   const after = stripAt(leaderThen(opened(SIX(), "dev-a", "dev-b"), "w").state, 120);
   assert.equal(after.text, " dev-a", "back to one tab, back to the title");
+});
+
+test("a shown name that fits the panel stays whole however many tabs are hidden: the hidden ones farthest from it are left out first (round 1 of the review)", () => {
+  const LONG = "backend-maintainer-deployment-review-release";
+  const base = () => stateOf(observed(["a", "b", "c", LONG].map((name) => instanceRow("dev", name))));
+  const last = opened(base(), "a", "b", "c", LONG);
+  const s = stripAt(last, 80);
+  assert.equal(s.cols, 49);
+  assert.equal(s.text, ` c  ${LONG}`, "the nearest hidden tab is kept, the others left out");
+  assert.equal(textWidth(s.text) <= s.cols, true);
+  // Shown first: the strip starts with it, whole.
+  const first = key(key(key(toList(opened(base(), LONG, "a", "b", "c")), "[").state, "[").state, "[").state;
+  assert.equal(shownName(first), LONG);
+  const f = stripAt(first, 80);
+  assert.equal(f.text, ` ${LONG}  a`);
+  // Wider, every tab is there and only the hidden names are cut.
+  const wide = stripAt(last, 120);
+  assert.equal(wide.text, ` a  b  c  ${LONG}`);
 });

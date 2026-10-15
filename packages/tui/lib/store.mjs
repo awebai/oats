@@ -496,9 +496,9 @@ function revealed(state, id) {
 
 /** The shown tab closed by the person (`c` in the list, the leader then `w`): its viewer ends
  *  (the agent keeps running), the tab to its right is shown, else the one to its left, with the
- *  focus `focus`; the last one closed gives the right side back to the detail and the focus to
- *  the list. */
-function shownClosed(state, focus) {
+ *  focus `focus` and the zoom `zoom` (the closed one's); the last one closed gives the right
+ *  side back to the detail and the focus to the list. */
+function shownClosed(state, focus, zoom = state.terminal?.zoom ?? false) {
   const t = state.terminal;
   if (t === null) return { state, effect: null };
   const at = state.tabs.findIndex((tab) => tab.id === t.id);
@@ -506,7 +506,7 @@ function shownClosed(state, focus) {
   const neighbour = tabs[at] ?? tabs[at - 1] ?? null;
   const closed = next(state, { tabs, terminal: null });
   if (neighbour === null) return { state: next(closed, { focus: "list" }), effect: { close: [t.id] } };
-  const step = showTab(closed, neighbour.id, { focus, zoom: t.zoom });
+  const step = showTab(closed, neighbour.id, { focus, zoom });
   return { state: step.state, effect: both({ close: [t.id] }, step.effect) };
 }
 
@@ -548,7 +548,8 @@ function returned(state, { id, status, stderr, asked = false, refused = null }) 
   const closed = next(state, { tabs, terminal: null, outcome: line });
   const neighbour = tabs[at] ?? tabs[at - 1] ?? null;
   if (neighbour === null) return { state: closed, effect: read };
-  const step = showTab(closed, neighbour.id, { focus: "list" });
+  // The list takes the focus, from the detail too (Settled 6 of T2), so the neighbour is drawn.
+  const step = showTab(next(closed, { focus: "list" }), neighbour.id, { focus: "list" });
   return { state: step.state, effect: both(read, step.effect) };
 }
 
@@ -583,11 +584,11 @@ function openAgent(state, row) {
 
 /** The keys of the shown terminal from the list: zoom gives it the focus and the whole body, and
  *  close ends its viewer (the agent keeps running) and shows its neighbour, the focus `focus`. */
-function terminalKey(state, action, focus = "list") {
+function terminalKey(state, action, focus = "list", zoom = false) {
   const t = state.terminal;
   if (t === null) return { state, effect: null };
   if (action === "zoom") return { state: terminalWith(state, { focus: "terminal", zoom: true }), effect: null };
-  return shownClosed(state, focus);
+  return shownClosed(state, focus, zoom);
 }
 
 /** The keys of the act view that are not the action table's: the focus moves with these and with
@@ -772,13 +773,16 @@ function led(state, does, event, keymap) {
     if (does === "zoom" && inTerminal) return { state: terminalWith(state, { zoom: !t.zoom }), effect: null };
     const settledState = toInstances(state);
     if (settledState.state.view !== "instances") return stay;
-    // A close from the terminal's focus gives that focus to the tab shown next (Settled 6 of T2).
-    const step = terminalKey(settledState.state, does, inTerminal ? "terminal" : "list");
+    // A close from the terminal's focus gives that focus, and the zoom, to the tab shown next
+    // (Settled 6 of T2): both are taken before settling, which gives the list the focus.
+    const step = terminalKey(settledState.state, does, inTerminal ? "terminal" : "list", inTerminal && t.zoom);
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
   // The tabs, from any focus: the one shown next keeps the focus and the zoom it had.
   if (does === "tab-previous" || does === "tab-next") {
-    if (t === null) return stay;
+    // At either end, or while a tab starts, nothing at all: not even the settling, which would
+    // take the focus from the terminal.
+    if (tabStepped(state, does === "tab-previous" ? -1 : 1).effect === null) return stay;
     const settledState = toInstances(state);
     if (settledState.state.view !== "instances") return stay;
     const step = tabStepped(settledState.state, does === "tab-previous" ? -1 : 1, { focus: inTerminal ? "terminal" : "list", zoom: inTerminal && t.zoom });

@@ -1091,6 +1091,18 @@ test("a hidden tab's output marks it on the strip and draws nothing of its scree
   assert.equal(await r.status, 0);
 });
 
+test("on the last tab the leader then Right does nothing: the terminal keeps the focus, and q then reaches the agent (T2, round 1 of the review)", async () => {
+  const r = await viewingTwoTabs();
+  r.stdin.type("\x1c");
+  r.stdin.type("\x1b[C");
+  await settle();
+  r.stdin.type("q");
+  assert.deepEqual(panelDid(r).filter(([what]) => what !== "refresh" && what !== "visible" && what !== "resize"), [["input", "q"]]);
+  leaderTwice(r);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
 test("with two tabs open, another workspace opened closes each tab's viewer by its window id, and no terminal is left (T2)", async () => {
   const r = await viewingTwoTabs({ offered: OFFERED, admit: () => ({ ok: true, deployment: "/srv/acme-ledger" }) });
   leaderTwice(r);

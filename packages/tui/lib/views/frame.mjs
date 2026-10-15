@@ -598,31 +598,40 @@ const ACTIVITY = "\u2022";
  *  order as ` name ` (and ` on machine`, dim, for another machine's agent), the shown one bold, in
  *  reverse while what is typed goes to it, a hidden one plain with `•` after its name when its
  *  agent wrote since it was shown. What does not fit is cut in this order: the hidden tabs'
- *  machines, then their names, each to an equal share with `…`, then the shown tab's machine; the
+ *  machines, then their names, each to an equal share of what the shown tab leaves with `…`, then
+ *  the shown tab's machine, then the hidden tabs farthest from the shown one are left out. The
  *  shown tab's name stays whole while the row can hold it. */
 function stripRow(m, area) {
   const focused = m.terminal.focus === "terminal", ascii = m.ascii;
   const mark = ascii ? "*" : ACTIVITY;
   const tabs = m.tabs.map((tab) => ({ ...tab, name: measured(tab.name), machine: tab.machine === null ? null : measured(tab.machine), mark: !tab.shown && tab.activity }));
   const machineCells = (tab) => (tab.machine ? 1 + ON.length + 1 + tab.machine.width : 0);
-  const cellsOf = (tab, { machine, name = tab.name.width }) => 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + 1;
+  const cellsOf = (tab, { machine, name = tab.name.width, dropped = false }) => (dropped ? 0 : 1 + name + (tab.mark ? 1 : 0) + (machine ? machineCells(tab) : 0) + 1);
   const total = (plan) => tabs.reduce((sum, tab, i) => sum + cellsOf(tab, plan[i]), 0);
-  const plan = tabs.map((tab) => ({ machine: true, name: tab.name.width }));
+  const plan = tabs.map((tab) => ({ machine: true, name: tab.name.width, dropped: false }));
   const fits = () => total(plan) <= area.cols;
-  if (!fits()) tabs.forEach((tab, i) => { if (!tab.shown) plan[i].machine = false; });
+  const shown = tabs.findIndex((tab) => tab.shown);
+  // The least a hidden tab is drawn in: a cell of its name (the cut mark), its mark, a cell each side.
+  const least = (tab) => 3 + (tab.mark ? 1 : 0);
+  // The shown tab's cells are taken first; the hidden ones share the rest equally. Those that do
+  // not get even their least are left out, the farthest from the shown tab first.
   const share = () => {
-    const shown = tabs.findIndex((tab) => tab.shown), hidden = tabs.length - 1;
-    const left = area.cols - cellsOf(tabs[shown], plan[shown]);
-    const each = Math.floor(left / Math.max(1, hidden));
-    tabs.forEach((tab, i) => { if (!tab.shown) plan[i].name = Math.max(1, Math.min(tab.name.width, each - 2 - (tab.mark ? 1 : 0))); });
+    let left = area.cols - cellsOf(tabs[shown], plan[shown]);
+    const near = tabs.map((tab, i) => i).filter((i) => i !== shown).sort((a, b) => Math.abs(a - shown) - Math.abs(b - shown) || a - b);
+    const kept = [];
+    for (const i of near) { plan[i].dropped = left - least(tabs[i]) < 0; if (!plan[i].dropped) { kept.push(i); left -= least(tabs[i]); } }
+    const room = area.cols - cellsOf(tabs[shown], plan[shown]), each = Math.floor(room / Math.max(1, kept.length));
+    for (const i of kept) plan[i].name = Math.max(1, Math.min(tabs[i].name.width, each - 2 - (tabs[i].mark ? 1 : 0)));
+    while (!fits() && kept.length) plan[kept.pop()].dropped = true;
   };
+  if (!fits()) tabs.forEach((tab, i) => { if (i !== shown) plan[i].machine = false; });
   if (!fits()) share();
-  if (!fits()) { const shown = tabs.findIndex((tab) => tab.shown); plan[shown].machine = false; share(); }
+  if (plan.some((p) => p.dropped) && plan[shown].machine && tabs[shown].machine) { plan[shown].machine = false; plan.forEach((p) => { p.dropped = false; }); share(); }
   const row = [];
   let col = area.col;
   const end = area.col + area.cols;
   tabs.forEach((tab, i) => {
-    if (col >= end) return;
+    if (col >= end || plan[i].dropped) return;
     const p = plan[i], width = Math.min(cellsOf(tab, p), end - col);
     const style = tab.shown ? (focused ? FOCUSED : BOLD) : null;
     const name = p.name < tab.name.width ? shownLines(textOf(tab.name.text), p.name, 1, { ascii })[0] ?? lit("") : tab.name.text;

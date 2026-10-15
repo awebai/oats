@@ -380,9 +380,11 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   - **An agent of another machine** reads `<name>`, then a dim
     `on <machine>`.
   - **A strip longer than its row is cut** in this order: the hidden tabs'
-    `on <machine>`, then the hidden tabs' names, each to an equal share,
-    with `…` (`...` in ASCII), then the shown tab's `on <machine>`. The
-    shown tab's name stays whole.
+    `on <machine>`, then the hidden tabs' names, each to an equal share of
+    what the shown tab leaves, with `…` (`...` in ASCII), then the shown
+    tab's `on <machine>`; then the hidden tabs farthest from the shown one
+    are left out of the row (they stay open). The shown tab's name stays
+    whole while the row can hold it.
 - **Opening.** `Enter` on a row, an instance in
   [the palette](#the-palette), the leader then `Up` or `Down`, and a
   [spawn](#spawning-an-agent)'s new agent open a terminal the same way:
@@ -403,7 +405,8 @@ Each terminal open in the panel is a tab, and the panel holds up to four.
   `Left` or `Right` does the same from any focus, and from another view
   goes to the Instances view first.
   - The strip does not wrap: on the first tab `[` does nothing, and on the
-    last `]`.
+    last `]`; the leader then `Left` or `Right` there leaves even the focus
+    where it was.
   - The focus does not move: in the terminal it stays in the terminal,
     zoomed or not, and in the list it stays in the list.
   - **Showing a tab selects its instance's row** in the list and brings it
