@@ -8,7 +8,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, startInstance } from "./client.mjs";
+import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createSoulCatalog, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
 import { ACT_WORDS, actContext, actCwd, localDeployments, model, roster } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
@@ -71,9 +71,10 @@ function errorLines(error) {
  *  are the shared home's, replaceable so a test can drive the loop's wiring. `runDir` makes the
  *  run's private directory (the reader's change output and the panel's tmux server share it), and
  *  `removeDir` removes it on the way out once both have removed their files; `sweep` removes what
- *  runs that are gone left of theirs (lib/panel.mjs). */
+ *  runs that are gone left of theirs (lib/panel.mjs). `createSoulCatalog` is the shared home's
+ *  catalog of a workspace's souls, replaceable so a test can count its reads. */
 const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, offeredDeployments, admitDeployment, prepareRemoteTerm, createPanel, sweep,
-  runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary });
+  runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog });
 
 /** Run. Resolves with the exit status; never calls process.exit, so what was written drains.
  *  Before the alternate screen, in this order, each failure one line on stderr and status 1:
@@ -163,8 +164,42 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   /** The confirmation open now: `{ n, made }`, `made` the shared confirmation; or null. */
   let confirmation = null;
 
-  /** What the reader gave, into the state, and the screen after it. */
-  function heard(event) { if (!ended) guard.attempt(() => { if (!took(reduce(state, event, keymap))) guard.draw(); }); }
+  // THE SOULS (docs/tui.md, "The Souls view"): one catalog per run, the shared home's, over the
+  // reader's exec: its `oats souls` is a read like any other (kind "read", the reader's time limit,
+  // ended on every way out). It is settled for the open workspace with that workspace's own
+  // `workspace status`, so it is read only when nothing is held for the workspace as it is now
+  // (the shared key), and never before the Souls view was first shown.
+  const souls = effects.createSoulCatalog({ terms: TERMS, exec: reader.exec });
+  /** The catalog of workspace `id` settled now, and the store told what is held and whether a read
+   *  is in flight; once that read lands, told again. Nothing for a workspace not read yet: its
+   *  first observed entry settles it. */
+  function settleSouls(id) {
+    const deployment = state.entries.get(id)?.deployment;
+    if (ended || deployment?.status !== "observed") return;
+    let settled;
+    try { settled = souls.settle(id, probe.cli, deployment.workspaceStatus); } catch { return; } // the reader has stopped
+    const { entry, pending } = settled;
+    heard({ souls: { id, entry, reading: pending !== null } });
+    if (pending) pending.then((landed) => heard({ souls: { id, entry: landed, reading: souls.refreshing(id) } }), () => {});
+  }
+  /** `r` in the Souls view: what is held for the workspace is forgotten and settled again, so one
+   *  read starts; never a second while one is in flight. */
+  function rereadSouls(id) {
+    if (souls.refreshing(id)) return;
+    souls.forget(id);
+    settleSouls(id);
+  }
+
+  /** What the reader gave, into the state, and the screen after it. A read of the open workspace,
+   *  once the Souls view was shown, settles its catalog: read again only when the workspace moved. */
+  function heard(event) {
+    if (ended) return;
+    guard.attempt(() => {
+      if (took(reduce(state, event, keymap))) return;
+      if (event.entry !== undefined && event.id === state.open && state.souls.wanted) settleSouls(event.id);
+      guard.draw();
+    });
+  }
   /** One step of the reducer taken: the state, then what only the loop can do. True once the
    *  TUI is leaving. Listing ~/Agents and asking whether a picked folder is a deployment read the
    *  file system (lib/read.mjs); what they find is an event of its own. */
@@ -193,6 +228,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (effect.call) callConfirmation(effect.call);
     if (effect.start) startAct(effect.start);
     if (effect.refresh) refresh(effect.refresh);
+    if (effect.souls === "settle" && state.open !== null) settleSouls(state.open);
+    if (effect.souls === "reread" && state.open !== null) rereadSouls(state.open);
     return false;
   }
 

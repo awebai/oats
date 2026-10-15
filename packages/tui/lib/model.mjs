@@ -11,11 +11,12 @@ import {
   waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
-  startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage,
+  startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, soulRows, soulFacts, spawnRefusal,
 } from "./client.mjs";
 import { shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
 import { windowOf } from "./views/scroll.mjs";
+import { SOUL_COLOURS } from "./views/souls.mjs";
 
 /** The widest the word column of the list may be, in cells. */
 export const WORD_MAX = 20;
@@ -101,7 +102,9 @@ function build(state, at) {
   const gone = panel !== null && !panel.workspace;
   const instances = panel?.instances ?? [], deployments = panel?.deployments ?? [];
   const multi = isMultiDeployment(deployments);
-  const query = state.filter.query, filtering = query.trim() !== "";
+  // The filter: the text typed after `/`, or the exact soul filter the Souls view's `i` sets
+  // (`soul`: the names an instance's soul may carry), matched by the shared walk all the same.
+  const query = state.filter.query, soul = state.filter.soul ?? null, filtering = query.trim() !== "" || soul !== null;
   // The section (deployment) each row is drawn in, read from the shared split itself: the
   // sections of all rows. A collapse hides, and rolls up, only rows of its own section, as in the
   // Desktop: a parent's name can resolve to a row of another deployment of the view.
@@ -109,7 +112,7 @@ function build(state, at) {
   const sectionOf = new Map(), ordered = [];
   for (const part of rosterSections(instances, instances, deployments, TERMS)) for (const group of part.groups) for (const cluster of group.clusters) for (const row of cluster.instances) { sectionOf.set(instanceId(row), part.deployment?.id ?? null); ordered.push(row); }
   const section = (row) => sectionOf.get(instanceId(row)) ?? null;
-  const matched = filterInstanceTree(instances, query);
+  const matched = soul !== null ? filterInstanceTree(instances, soul.name, (row) => soul.names.includes(row.agent)) : filterInstanceTree(instances, query);
   const visible = matched.filter((i) => instanceVisibleInTree(i, instances, state.collapsed, state.open, filtering, { section }));
   const sections = rosterSections(instances, visible, deployments, TERMS);
   // How many instances each collapse folds away under its row: every descendant of the row in its
@@ -259,7 +262,7 @@ let kept = null;
  *  order, do not. `at` stamps a machine's panel before any roster outcome was taken, which
  *  never shows; it is passed on. */
 export function roster(state, at = new Date(0).toISOString(), cols = ANY_WIDTH) {
-  const same = kept && MADE_FROM.every((name) => kept.state[name] === state[name]) && kept.state.filter.query === state.filter.query;
+  const same = kept && MADE_FROM.every((name) => kept.state[name] === state[name]) && kept.state.filter.query === state.filter.query && kept.state.filter.soul === state.filter.soul;
   if (!same) kept = { state, base: build(state, at), flat: null };
   if (!kept.flat || kept.flat.cols !== cols || kept.flat.ascii !== state.ascii) kept.flat = { cols, ascii: state.ascii, ...flatten(kept.base, cols, state.ascii) };
   return { ...kept.base, items: kept.flat.items, index: kept.flat.index };
@@ -321,12 +324,11 @@ export const OPEN_WORDS = Object.freeze({
   notRunning: (name) => [{ shown: name }, { own: " is not running, so it has no terminal to open." }],
   stateUnknown: (name) => [{ own: "Whether " }, { shown: name }, { own: " runs is not known, so it is not opened." }],
 });
-/** The body of a view of this machine that is not in this version (Souls, Capabilities): what it
- *  will hold, and what to run until then, the help's commands (views/help.mjs VIEWS), in the TUI's
- *  own words; each command is whole, never broken over two rows. */
+/** The body of a view of this machine that is not in this version (Capabilities): what it will
+ *  hold, and what to run until then, the help's commands (views/help.mjs VIEWS), in the TUI's own
+ *  words; each command is whole, never broken over two rows. */
 const command = (text) => Object.freeze({ own: `\`${text}\``, whole: true });
 export const NOT_BUILT = Object.freeze({
-  souls: Object.freeze({ said: Object.freeze([{ own: "This view will list the souls this machine can make instances of. It is not in this version: " }, command("oats souls"), { own: " lists them, and " }, command("oats spawn <soul>"), { own: " makes an instance of one." }]), under: Object.freeze([]) }),
   capabilities: Object.freeze({ said: Object.freeze([{ own: "This view will list the capabilities this machine has. It is not in this version: " }, command("oats capabilities"), { own: " lists them." }]), under: Object.freeze([]) }),
 });
 /** A sentence from outside (a reason of the shared home's, the preflight table's), as a text
@@ -515,7 +517,8 @@ const PALETTE_COMMANDS = Object.freeze([["workspaces", "Workspaces"], ["refresh"
 const PALETTE_ACTS = Object.freeze({ stop: "Stop", restart: "Restart", retire: "Retire", start: "Start" });
 
 /** THE PALETTE'S ROWS (docs/tui.md, "The palette"), in this order: the instances that can be
- *  opened (the most recently opened in this run first, then the shared order), the views, the acts
+ *  opened (the most recently opened in this run first, then the shared order), the souls of the
+ *  open workspace once its catalog was read, the views, the acts
  *  the palette's instance offers (the open terminal's, when the palette came from its focus; else
  *  the selected one), then workspaces, refresh and help. With a query, each group keeps the rows the
  *  Desktop's subsequence score matches, the best first (a prefix first); a tie keeps that order.
@@ -535,6 +538,9 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
       return { key: `instance\u0000${instanceId(row)}`, kind: "instance", label: row.instance, id: instanceId(row), name: row.instance, machine, mark: markOf(row), text: `${row.instance} ${machine ?? ""}` };
     }));
   }
+  // The souls of the open workspace, once its catalog was read (the Souls view opened): choosing
+  // one shows the Souls view with it selected. A palette never reads the catalog.
+  groups.push(soulsOf(state).all.map((row) => ({ key: `soul\u0000${row.name}`, kind: "soul", label: row.name, name: row.name, text: row.name })));
   groups.push(PALETTE_VIEWS.map(([does, label]) => ({ key: `view\u0000${does}`, kind: "view", label, does, text: label })));
   const id = p.from === "terminal" && state.terminal !== null ? state.terminal.id : state.selected;
   const row = id === null || state.open === null ? null : roster(state, at).instances.find((each) => instanceId(each) === id) ?? null;
@@ -571,7 +577,9 @@ function paletteView(state, page, at) {
 export function model(state, { page, now, at, cols }) {
   const r = roster(state, at, cols);
   const common = {
-    view: state.view, focus: state.focus, ascii: state.ascii, actions: state.actions, filter: state.filter,
+    view: state.view, focus: state.focus, ascii: state.ascii, actions: state.actions,
+    // The filter of the view shown: the Souls view has one of its own.
+    filter: state.view === "souls" ? state.souls.filter : state.filter,
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
     detachKey: state.detachKey, opening: state.opening, outcome: state.outcome, openable: false, actable: [],
@@ -579,7 +587,8 @@ export function model(state, { page, now, at, cols }) {
     act: state.view === "act" && state.act ? actView(state) : null,
     // The leader waits for its key (the footer is its hint), and the palette, while it is open.
     leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, page, at),
-    body: state.view === "souls" || state.view === "capabilities" ? NOT_BUILT[state.view] : null,
+    body: state.view === "capabilities" ? NOT_BUILT.capabilities : null,
+    souls: state.view === "souls" ? soulsView(state, page, at) : null,
   };
   // The view under the help, or under a confirmation, decides what the header says.
   const under = state.view === "help" || state.view === "act" ? state.back : state.view;
@@ -804,4 +813,104 @@ export function actView(state) {
   }
   const buttons = a.offers.map((offer) => ({ id: offer, label: buttonLabel(offer, a.verb, a.phase), focused: offer === a.focus }));
   return { title, lines, buttons, top: a.top };
+}
+
+// ── THE SOULS VIEW (docs/tui.md, "The Souls view") ───────────────────────────────────────────────
+
+/** The sentence of a catalog read that failed: the Desktop's own (packages/desktop/renderer/views/
+ *  spawn.mjs catalogReasonText), copied until the shared home has it; the kernel's message in it is
+ *  text from outside, which the view draws through the display filter. */
+export function catalogFailure(reason) {
+  const message = typeof reason?.message === "string" && reason.message ? reason.message : "";
+  return message ? `Couldn't read this workspace's souls: ${message}` : "Couldn't read this workspace's souls.";
+}
+
+/** The names an instance's soul (its row's `agent`) may carry for a soul row: its name, and for a
+ *  package soul the kernel's key and its qualified name. The exact soul filter matches these. */
+export function soulNames(row) {
+  return [...new Set([row.name, row.key, row.qualifiedName].filter(text))];
+}
+
+/** Whether a soul row matches the Souls view's filter: its name, its description or where it comes
+ *  from contains the text, case aside, as the Desktop's soul grid filters (views/spawn.mjs). */
+const soulMatches = (row, needle) => [row.name, row.description, row.repoName].some((value) => String(value || "").toLowerCase().includes(needle));
+
+/** The souls of the open workspace as the store and the view read them: the shared rows
+ *  (soul-rows.mjs soulRows) of the catalog the loop holds for it, filtered by the view's own
+ *  filter. Only a workspace of this machine has souls here (`local`). `held` is what the loop
+ *  holds of its catalog (`{ entry, reading }`), `rows` the rows the filter keeps, `selected` the
+ *  row the selection stands on: the store's, while it is listed, else the first. */
+export function soulsOf(state) {
+  const id = state.open, local = id !== null && state.ctxs.includes(id);
+  const entry = local ? state.entries.get(id) ?? null : null;
+  const deployment = entry?.deployment?.status === "observed" ? entry.deployment : null;
+  const held = local ? state.souls.held.get(id) ?? null : null;
+  const all = deployment && Array.isArray(held?.entry?.souls) ? soulRows(deployment, held.entry.souls) : [];
+  const needle = state.souls.filter.query.trim().toLowerCase();
+  const rows = needle ? all.filter((row) => soulMatches(row, needle)) : all;
+  const selected = rows.find((row) => row.name === state.souls.selected) ?? rows[0] ?? null;
+  return { local, deployment, held, all, rows, selected };
+}
+
+/** The most instances the detail names; the rest are counted, `+n`. */
+const INSTANCES_NAMED = 8;
+
+/** This machine's instances of a soul in the open workspace, in the list's order: the rows of
+ *  another machine are not counted, since the view is of this machine's souls. */
+function instancesOf(state, at, row) {
+  const names = soulNames(row);
+  return roster(state, at).ordered.filter((each) => !elsewhere(each) && names.includes(each.agent));
+}
+
+/** Where a soul comes from, in one value: the member it is in, and for a package soul the package
+ *  and its version (the shared row's `repoName` already names the package when no member does). */
+function soulFrom(row) {
+  if (row.soulKind !== "package" || !text(row.package)) return row.repoName;
+  const pkg = `package ${row.package}${text(row.version) ? ` ${row.version}` : ""}`;
+  return row.repoName === `package ${row.package}` || !text(row.repoName) ? pkg : `${row.repoName} · ${pkg}`;
+}
+
+/** The selected soul's detail, from its row and the shared facts (soul-facts.mjs soulFacts, with
+ *  no inspection): nothing of a soul is worded here but the labels the view puts beside them. */
+function soulDetail(state, at, row) {
+  const facts = soulFacts(row, null, state.cli, TERMS);
+  const teams = Array.isArray(row.teams) && row.teams.length
+    ? [...row.teams].sort((a, b) => (b.default === true) - (a.default === true)).map((team) => ({ label: team.label, default: team.default === true || team.label === row.defaultTeam?.label }))
+    : null;
+  const capabilities = Array.isArray(row.capabilities) && row.capabilities.length ? row.capabilities.map((c) => c.name) : null;
+  const here = instancesOf(state, at, row);
+  return {
+    name: row.name, description: row.description ?? "", from: soulFrom(row), works: facts.work, refusal: facts.refusalLine,
+    harness: { rows: facts.rows, notes: facts.notes, problem: facts.problem },
+    teams, capabilities,
+    instances: { shown: here.slice(0, INSTANCES_NAMED).map((each) => ({ name: each.instance, mark: markOf(each) })), more: Math.max(0, here.length - INSTANCES_NAMED) },
+  };
+}
+
+/** What the Souls view draws, in a list pane `page` rows tall (views/souls.mjs): the state of the
+ *  catalog, the window of its rows, and the selected soul's detail. A failed re-read keeps the
+ *  rows it held, and says so on a heading above them, as a machine's heading says it. */
+function soulsView(state, page, at) {
+  const s = soulsOf(state), v = state.souls;
+  const base = { local: s.local, failure: null, heading: null, list: [], above: 0, below: 0, focus: v.focus, filter: v.filter, detail: null, detailTop: v.detailTop };
+  if (!s.local) return { ...base, state: "none" };
+  const entry = s.held?.entry ?? null, reason = entry?.reason ?? null;
+  if (!Array.isArray(entry?.souls)) {
+    // Nothing held: the first read is in flight (or the deployment not read yet), or it failed.
+    return reason && !s.held.reading ? { ...base, state: "failed", failure: catalogFailure(reason) } : { ...base, state: "reading" };
+  }
+  const heading = reason ? { label: "Souls", path: null, state: null, short: catalogFailure(reason), readAt: clockTime(entry.observedAt) } : null;
+  const state_ = !s.all.length ? "none" : !s.rows.length ? "nomatch" : "rows";
+  const height = Math.max(1, page - (heading ? 1 : 0));
+  const at_ = s.selected ? s.rows.indexOf(s.selected) : -1;
+  const win = windowOf({ top: v.top, count: s.rows.length, height, keep: v.loose ? -1 : at_ });
+  const count = (row) => instancesOf(state, at, row).length;
+  return {
+    ...base, state: state_, heading,
+    list: s.rows.slice(win.top, win.top + win.size).map((row) => ({
+      name: row.name, color: SOUL_COLOURS[row.color] ?? null, count: count(row), refused: spawnRefusal(row, state.cli) !== null, selected: row === s.selected,
+    })),
+    above: win.above, below: win.below,
+    detail: s.selected ? soulDetail(state, at, s.selected) : null,
+  };
 }

@@ -1,7 +1,8 @@
 // The frame: (model, size) -> the rows of the whole screen. Pure: no IO, no clock, no escape
 // byte. It places the views: the header, the list of instances and the detail beside it (or as a
 // page of its own on a narrow terminal), an agent's open terminal in the detail's place (or over
-// the whole body, zoomed), the switcher of workspaces over the whole body, the help, and the
+// the whole body, zoomed), the souls of the open workspace and a soul's detail in the same places,
+// the switcher of workspaces over the whole body, the help, and the
 // footer. The TUI's own words are lit(); everything else is shown(). Meaning never
 // rests on colour alone: what is dim or bold also says what it is in words or by a mark.
 import { LEADER, keyLabel } from "../actions.mjs";
@@ -12,6 +13,7 @@ import { detail } from "./detail.mjs";
 import { help, keyText } from "./help.mjs";
 import { instances, measured } from "./instances.mjs";
 import { palette } from "./palette.mjs";
+import { soulDetail, soulsList, soulsListed } from "./souls.mjs";
 import { switcher } from "./switcher.mjs";
 
 /** The frame is drawn from this size up (docs/tui.md); the design size is 80x24. */
@@ -208,7 +210,8 @@ function countSpans(counts, cols) {
  *  list of instances the acts go first (`restart`, `start`, `retire`, then `stop`), then
  *  `workspaces`, `refresh`, the key that clears a
  *  kept filter, `detail`, the open terminal's `close-terminal` and `zoom`, `open` and last `filter`
- *  (`filter` before `open` while a filter is kept: its own `/` stands in the footer then). A row
+ *  (`filter` before `open` while a filter is kept: its own `/` stands in the footer then); in the
+ *  Souls view `workspaces`, `refresh`, `filter`, `close`, then `i` and last Enter. A row
  *  too narrow for the whole of a hint drops it. The views have no hint: the header names them.
  *  The palette's footer says how to work it: Enter, Up/Down and Esc.
  *  `open` stands first while Enter would open the selected agent's terminal, or (`focus terminal`)
@@ -224,6 +227,11 @@ function countSpans(counts, cols) {
  *  by cells. */
 function footer(m, cols) {
   const action = (id) => m.actions.find((a) => a.id === id && a.keys.length);
+  // The Souls view has a filter of its own, drawn as the list's; and with a soul selected, what
+  // Enter does (from the list it shows the detail, from the detail the soul's instances) stands
+  // first, as `open` does in the list, so a kept filter leaves it its room.
+  const soul = m.view === "souls" && m.souls ? m.souls : null;
+  const filter = soul ? soul.filter : m.filter;
   /** A hint: a key and what it does, the TUI's word or safe text with its width. */
   const made = (key, word) => {
     const said = typeof word === "string" ? { text: lit(word), width: word.length } : word;
@@ -254,7 +262,8 @@ function footer(m, cols) {
   // While what is typed goes to the agent the TUI takes one key, the leader, and the footer names
   // it and the leader twice, which takes the focus back to the list.
   // The list of instances: what Enter opens, the open terminal's keys and the acts are its own
-  // (Souls and Capabilities have none of them, the help and the switcher neither).
+  // (Souls and Capabilities have none of them, the help and the switcher neither: the Souls view's
+  // Enter is its own, below).
   const listing = !["help", "switcher", "souls", "capabilities"].includes(m.view);
   if (listing && m.terminal?.focus === "terminal" && !m.palette) {
     const twice = keyText(`${m.detachKey} ${m.detachKey}`);
@@ -266,9 +275,9 @@ function footer(m, cols) {
     for (const h of hints) { if (col + h.width > edge) break; spans.push(...put(h, col)); col += h.width + GAP; }
     return led(spans);
   }
-  if (m.view !== "help" && m.filter.editing) {
+  if (m.view !== "help" && filter.editing) {
     const hints = [made({ text: lit("Enter"), width: "Enter".length }, "keep"), hint("close", "clear")].filter(Boolean).map(spansOf);
-    const spans = [...put(lead, FOOT), { col: start, text: lit("/"), style: BOLD, width: 1 }, { col: start + 1, text: shown(m.filter.query), width: Math.max(0, edge - span(hints) - GAP - start - 1) }];
+    const spans = [...put(lead, FOOT), { col: start, text: lit("/"), style: BOLD, width: 1 }, { col: start + 1, text: shown(filter.query), width: Math.max(0, edge - span(hints) - GAP - start - 1) }];
     let col = Math.max(start + 2, edge - span(hints));
     for (const h of hints) { spans.push(...put(h, col, { style: DIM })); col += h.width + GAP; }
     return spans;
@@ -293,7 +302,8 @@ function footer(m, cols) {
   const asking = listing && m.opening?.phase === "preflight";
   // An action with no key (tui.json may unbind one) has no hint: nothing stands first then. On the
   // row whose terminal is open, Enter goes to it.
-  const first = (asking ? [["open", hint("close", "stop opening")]] : listing && m.onTerminal ? [["open", hint("open", "focus terminal")]] : listing && m.openable ? [["open", hint("open")]] : []).filter(([, h]) => h);
+  const first = (asking ? [["open", hint("close", "stop opening")]] : listing && m.onTerminal ? [["open", hint("open", "focus terminal")]] : listing && m.openable ? [["open", hint("open")]]
+    : soul?.detail ? [["open", hint("open", soul.focus === "detail" ? "instances" : "detail")]] : []).filter(([, h]) => h);
   // With a terminal open, the keys that zoom it and close it stand after `open`, kept as long.
   const terminal = listing && m.terminal ? [["zoom", hint("zoom")], ["close-terminal", hint("close-terminal")]].filter(([, h]) => h) : [];
   // The acts the selected row offers now stand after those, and are the first given up.
@@ -302,7 +312,13 @@ function footer(m, cols) {
   // The views have no hint: the header names them, and the leader's hint and the help their keys.
   const VIEW_KEYS = [];
   const [ids, keep] = m.view === "help" ? [["close"], ["close"]]
-    : m.view === "souls" || m.view === "capabilities" ? [["close", "workspaces"], ["close", "workspaces"]]
+    // The Souls view: after Enter, `i` shows the selected soul's instances, then the filter, a
+    // read again, Esc and the workspaces. They are given up from the end of `keep`: the workspaces
+    // first, then `refresh`, `filter` and `close`; `i` and Enter last. With no workspace of this
+    // machine there is nothing to filter or read: Esc and the workspaces only. No spawn key yet.
+    : soul ? (soul.local === false ? [["close", "workspaces"], ["close", "workspaces"]]
+      : [[...(soul.detail ? ["soul-instances"] : []), "filter", "refresh", "close", "workspaces"], ["open", "soul-instances", "close", "filter", "refresh", "workspaces"]])
+    : m.view === "capabilities" ? [["close", "workspaces"], ["close", "workspaces"]]
     // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
     // A kept filter puts `close` before `refresh`, as in the list: the key that clears it is the hint to keep.
     : m.view === "switcher" ? [["open", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])], null]
@@ -317,7 +333,7 @@ function footer(m, cols) {
   while (last.length && start + span(last) > edge) last = last.slice(1);
   const spans = put(lead, FOOT);
   let col = start;
-  if (m.view !== "help" && m.filter.query) {
+  if (m.view !== "help" && filter.query) {
     // The kept filter has a place of its own width, so the hints stand where they always do;
     // it gives way, down to nothing, before `help` and `quit` do, and before the hint that
     // stands first while Enter would open an agent (or Esc gives an open up).
@@ -327,7 +343,7 @@ function footer(m, cols) {
     const held = firstFits ? first[0][1].width + GAP : 0;
     const slot = Math.min(FILTER_COLS - GAP, edge - col - span(last) - (last.length ? GAP : 0) - held);
     if (slot >= 2) {
-      spans.push({ col, text: lit("/"), style: BOLD, width: 1 }, { col: col + 1, text: shown(m.filter.query), style: BOLD, width: slot - 1 });
+      spans.push({ col, text: lit("/"), style: BOLD, width: 1 }, { col: col + 1, text: shown(filter.query), style: BOLD, width: slot - 1 });
       col += slot + GAP;
     }
   }
@@ -429,8 +445,9 @@ export function frame(m, size) {
     return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1 };
   }
 
-  // The views of this machine say what they will hold, and what to run until then.
-  if (m.view === "souls" || m.view === "capabilities") {
+  // The view of this machine not in this version says what it will hold, and what to run until
+  // then. The Souls view is drawn below, in the panes of the list.
+  if (m.view === "capabilities") {
     rows[2] = rule(cols, m.ascii);
     partRows(m.body?.said ?? [], cols - 2 * MARGIN, g.body.rows, { ascii: m.ascii }).forEach((spans, i) => { rows[g.body.top + 1 + i] = placed(spans, MARGIN); });
     return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1 };
@@ -448,6 +465,7 @@ export function frame(m, size) {
   for (const line of g.note) said.push([{ col: MARGIN, text: line, width: cols - 2 * MARGIN }]);
   for (const spans of g.outcome) said.push(placed(spans, MARGIN));
   said.slice(0, g.above).forEach((spans, i) => { rows[g.body.top + i] = spans; });
+  if (m.view === "souls" && m.souls) return soulsFrame(m, size, g, rows);
   const area = terminalAt(m, size, g);
   const zoomed = area !== null && area.whole;
   const paged = !zoomed && !g.wide && m.focus === "detail" && m.detail;
@@ -477,6 +495,31 @@ export function frame(m, size) {
   const agent = area !== null && m.terminal.focus === "terminal" ? m.screen?.cursor : null;
   const cursor = agent?.visible && agent.y < area.rows && agent.x < area.cols ? { row: area.top + agent.y, col: area.col + agent.x } : null;
   return { rows, page: Math.max(1, g.page), extent, room: Math.max(1, g.panes.rows), terminal: area, cursor };
+}
+
+/** The Souls view in the panes of the list (views/souls.mjs), under the header and what stands
+ *  above the panes: the souls in the list's place and width, and beside them, past the panes'
+ *  rule, the selected soul's detail; under WIDE columns the list alone, and the detail in its
+ *  place while it has the focus. A body of one sentence (reading, a failed first read, an empty
+ *  catalog, no workspace of this machine) has the whole width, with no pane beside it. */
+function soulsFrame(m, size, g, rows) {
+  const { cols } = size, s = m.souls;
+  const paged = !g.wide && s.focus === "detail" && Boolean(s.detail);
+  const split = g.wide && g.panes.rows > 0 && soulsListed(s);
+  const joint = split ? { col: g.listCols } : null;
+  const opening = m.observed && g.above > 0 ? g.panes.top - 1 : 2;
+  rows[2] = rule(cols, m.ascii, opening === 2 ? joint : null);
+  if (opening !== 2 && opening < size.rows - 1) rows[opening] = rule(cols, m.ascii, joint);
+  if (!paged) soulsList(m, { cols: split ? g.listCols : cols, rows: g.panes.rows }).forEach((spans, i) => { rows[g.panes.top + i] = spans; });
+  let extent = 0;
+  if (split || paged) {
+    const at = paged ? MARGIN : g.listCols + 2;
+    const bar = split ? [{ col: g.listCols, text: lit(m.ascii ? "|" : "│"), style: DIM, width: 1 }] : [];
+    const drawn = soulDetail(m, { cols: Math.max(0, cols - at - MARGIN), rows: g.panes.rows });
+    extent = drawn.extent;
+    drawn.rows.forEach((spans, i) => { rows[g.panes.top + i] = [...rows[g.panes.top + i], ...bar, ...placed(spans, at)]; });
+  }
+  return { rows, page: Math.max(1, g.page), extent, room: Math.max(1, g.panes.rows) };
 }
 
 /** Where the open terminal stands for a model and a size, or null while it is not shown (no

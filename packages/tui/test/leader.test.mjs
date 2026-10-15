@@ -336,9 +336,9 @@ test("an instance run from the palette opened from a terminal swaps the panel to
   assert.deepEqual([own.state.palette, own.state.terminal, own.effect], [null, state.terminal, null]);
 });
 
-test("a view run from the palette switches to it, and from a terminal gives the list the focus", () => {
+test("a view run from the palette switches to it, and from a terminal gives the list the focus; Souls asks the loop to settle its catalog", () => {
   const ran = keys(key(THREE(), "ctrl+k").state, "s", "o", "u", "l", "s", "enter");
-  assert.deepEqual([ran.state.palette, ran.state.view, ran.state.back, ran.effect], [null, "souls", "souls", null]);
+  assert.deepEqual([ran.state.palette, ran.state.view, ran.state.back, ran.effect], [null, "souls", "souls", { souls: "settle" }]);
   const fromTerminal = keys(leaderThen(opened(THREE(), "dev-a"), "k", AT).state, "c", "a", "p", "enter");
   assert.deepEqual([fromTerminal.state.palette, fromTerminal.state.view, fromTerminal.state.terminal.focus, fromTerminal.effect], [null, "capabilities", "list", null]);
   const instances = keys(key(key(THREE(), "2").state, "ctrl+k").state, "i", "n", "s", "enter");
@@ -393,11 +393,15 @@ test("Ctrl+K opens the palette from the list and Ctrl+K again closes it; Esc clo
 
 // ── The views of this machine ────────────────────────────────────────────────────────────────────
 
+/** What showing a view asks of the loop: Souls, that its catalog be settled (docs/tui.md, "The
+ *  Souls view"); Capabilities, nothing. */
+const SHOWN_ASKS = Object.freeze({ souls: { souls: "settle" }, capabilities: null });
+
 test("2 and 3, plain or after the leader, show Souls and Capabilities from the list; Esc, 1 and the leader then 1 go back to the instances, the selection as it was", () => {
   const state = on(THREE(), "dev-c");
   for (const [k, view] of [["2", "souls"], ["3", "capabilities"]]) {
     for (const shown of [key(state, k), leaderThen(state, k, AT)]) {
-      assert.deepEqual([shown.state.view, shown.state.back, shown.effect], [view, view, null], k);
+      assert.deepEqual([shown.state.view, shown.state.back, shown.effect], [view, view, SHOWN_ASKS[view]], k);
       for (const back of [key(shown.state, "escape"), key(shown.state, "1"), leaderThen(shown.state, "1", AT), leaderThen(shown.state, "escape", AT)]) {
         assert.deepEqual([back.state.view, back.state.back, back.state.selected, back.effect], ["instances", "instances", state.selected, null], `${k}, then back`);
       }
@@ -410,7 +414,7 @@ test("with no workspace open, 2 and 3, plain or after the leader, show Souls and
   assert.equal(none.view, "switcher");
   for (const [k, view] of [["2", "souls"], ["3", "capabilities"]]) {
     for (const shown of [key(none, k), leaderThen(none, k, AT)]) {
-      assert.deepEqual([shown.state.view, shown.effect], [view, null], k);
+      assert.deepEqual([shown.state.view, shown.effect], [view, SHOWN_ASKS[view]], k);
       for (const back of [key(shown.state, "escape"), key(shown.state, "1"), leaderThen(shown.state, "1", AT), leaderThen(shown.state, "escape", AT)]) {
         assert.deepEqual([back.state.view, back.state.back, back.state.open, back.effect], ["switcher", "switcher", null, null], `${k}, then back`);
       }
@@ -470,7 +474,7 @@ test("an act run from the palette opens its confirmation from any view, a confir
 test("a view run from the palette over a confirmation closes it (the loop told), and over a filter field keeps the filter and ends the typing, so no field's keys stand in the view's footer", () => {
   const confirming = key(on(THREE(), "dev-a"), "R").state;
   const fromAct = runFromPalette(confirming, "souls", "Souls");
-  assert.deepEqual([fromAct.state.view, fromAct.state.act, fromAct.effect], ["souls", null, { dismiss: confirming.act.n }]);
+  assert.deepEqual([fromAct.state.view, fromAct.state.act, fromAct.effect], ["souls", null, { dismiss: confirming.act.n, souls: "settle" }]);
   const typing = keys(on(THREE(), "dev-a"), "/", "d", "e", "v").state;
   const fromField = runFromPalette(typing, "souls", "Souls");
   assert.deepEqual([fromField.state.view, fromField.state.filter.editing, fromField.state.filter.query], ["souls", false, "dev"]);

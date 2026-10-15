@@ -44,10 +44,11 @@ export const MACHINES = Object.freeze([
   "Nothing is kept on disk: a machine not reached in this run is listed by its own name.",
   "Souls and Capabilities, when they come, are this machine's.",
 ]);
-/** The views the frame names, and for the two that cannot be opened yet, what to run instead. */
+/** The views the frame names, what each holds, and what to run for what a view does not do yet:
+ *  the Souls view shows the souls and makes no instance of one, and Capabilities is not built. */
 export const VIEWS = Object.freeze([
   Object.freeze({ name: "1 Instances", what: "the instances of the open workspace", commands: Object.freeze([]) }),
-  Object.freeze({ name: "2 Souls", what: "not in this version", commands: Object.freeze(["oats souls", "oats spawn <soul>"]) }),
+  Object.freeze({ name: "2 Souls", what: "the souls of the open workspace and their detail, i their instances; spawning is not in this version", commands: Object.freeze(["oats spawn <soul>"]) }),
   Object.freeze({ name: "3 Capabilities", what: "not in this version", commands: Object.freeze(["oats capabilities"]) }),
 ]);
 

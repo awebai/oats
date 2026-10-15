@@ -179,6 +179,20 @@ export function press(state, keys, size = { cols: 80, rows: 24 }) {
   return { state, effects };
 }
 
+// ── The Souls view (docs/tui.md, "The Souls view"): the shared catalog's answers in its forms.
+
+/** A soul of the kernel's spawn catalog (`oats souls --json`, as the shared reader hands it on). */
+export function catalogSoul(name, extra = {}) {
+  return { name, description: `The ${name} soul.`, work: "worktree", kind: "member", repoKey: "acme/oats", origin: "member", ...extra };
+}
+/** What the shared catalog holds for a workspace (soul-catalog.mjs, its projected entry): `souls`
+ *  (null: nothing read), the failure of the last read beside them, and when they were read. */
+export function catalogEntry(souls, { reason = null, observedAt = "2026-10-11T09:59:30.000Z" } = {}) {
+  return { key: "key", souls, ambiguous: [], workspace: null, problems: [], reason, at: 0, observedAt, stale: false };
+}
+/** The loop telling the store what it holds of the fixture's catalog, as lib/main.mjs does. */
+export const soulsTold = (state, entry, { reading = false, id = DEPLOYMENT } = {}) => reduce(state, { souls: { id, entry, reading } }).state;
+
 /** The reads of input the helpers below number their events with, as the loop does (lib/main.mjs). */
 let reads = 1000;
 /** The leader typed in the terminal (`{ back }`, term/through.mjs), then pressed again in a later

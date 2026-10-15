@@ -2,7 +2,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, sessionAttachArgv, cliRecord, deploymentState, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
@@ -81,7 +81,9 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // `offered`: what ~/Agents holds that the run does not serve; a test may put another answer there.
   // `panel`: the run's panel, faked (what the loop asked of it, and a way to answer as the panel
   // does); `preflights`: every preflight it began, each with what it was handed and a way to answer it.
-  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, panel: null, preflights: [], confirmations: [], starts: [], tick(ms) { clock += ms; } };
+  // `soulReads`: every `oats souls` the run's catalog asked for, with a way to answer it; `soulExec`
+  // the exec the loop made the catalog with.
+  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, tick(ms) { clock += ms; } };
   let up;
   r.up = new Promise((resolve) => { up = resolve; });
   const effects = {
@@ -105,6 +107,11 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     ...(confirm ? { createLifecycleConfirmation(options) { const made = confirm(options); r.confirmations.push(made); return made; } } : {}),
     ...(start ? { startInstance(...args) { r.starts.push(args); return start(...args); } } : {}),
     tellable,
+    // The souls: the shared catalog itself, over a kernel read the test answers.
+    createSoulCatalog(options) {
+      r.soulExec = options.exec;
+      return createSoulCatalog({ ...options, invoke: (cli, asked) => new Promise((resolve) => { log.push(["souls", asked.action]); r.soulReads.push({ asked, answer: resolve }); }) });
+    },
   };
   r.status = main({ argv, stdin, stdout, stderr, env, proc, now: () => clock, setTimer: timers.setTimer, clearTimer: timers.clearTimer, cwd: () => cwd, home: "/home/u", effects });
   r.status.then(up);
@@ -173,7 +180,7 @@ test("the action table binds each key to one action, and a key bound twice is re
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances", 2: "souls", 3: "capabilities",
-    w: "workspaces", enter: "open", z: "zoom", c: "close-terminal", X: "stop", D: "retire", S: "start", R: "restart",
+    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", X: "stop", D: "retire", S: "start", R: "restart",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw", "ctrl+k": "palette",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
@@ -1437,4 +1444,58 @@ test("a change still running when the run ends is named after the screen is left
     assert.equal(await r.status, 0, String(tell));
     assert.deepEqual(r.errors, lines, String(tell));
   }
+});
+
+// ── The Souls view's catalog (docs/tui.md, "The Souls view"; Spec 6-view, Done 1 and 4) ──────────
+
+/** `oats souls --json` answering `names`, as the kernel prints it. */
+const soulsDocument = (names) => ({ ok: true, document: { schemaVersion: 1, ok: true, result: { soulsApi: 1, workspace: { name: "acme-platform" }, problems: [], souls: names.map((name) => ({ name, origin: "member", kind: "member", repoKey: "acme/oats", work: "worktree", description: `The ${name} soul.` })) } } });
+/** The entry of the fixture's deployment with its workspace at `commit`: a move of the catalog's key. */
+const atCommit = (entry, commit) => ({ ...entry, deployment: { ...entry.deployment, workspaceStatus: { ...entry.deployment.workspaceStatus, workspace: { ...entry.deployment.workspaceStatus.workspace, commit } } } });
+
+test("a run that never shows the Souls view never runs `oats souls`, however many reads of the workspace it takes", async () => {
+  const r = await started();
+  for (let i = 0; i < 3; i++) r.reader.answer(atCommit(ENTRY, `c${i}`));
+  r.stdin.type("3"); r.stdin.type("1"); await settle();
+  assert.deepEqual(r.soulReads.length, 0);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("the first show of the Souls view reads the catalog once, over the reader's own exec; it says Reading souls… until the read lands, then lists them; reads of the workspace as it was read nothing, one that moved its key reads once", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("2"); await settle();
+  assert.equal(r.soulReads.length, 1, "one read at the first show");
+  assert.equal(r.soulExec, r.reader.exec, "the reader's exec: a read of kind \"read\", ended on every way out");
+  assert.match(textOf(written(r)), /Reading souls…/);
+  r.soulReads[0].answer(soulsDocument(["dev", "ops"])); await settle();
+  assert.match(screenOf(r), /\bops\b/);
+  r.reader.answer(ENTRY); r.reader.answer(ENTRY); r.stdin.type("1"); r.stdin.type("2"); await settle();
+  assert.equal(r.soulReads.length, 1, "the workspace as it was: nothing read");
+  r.reader.answer(atCommit(ENTRY, "b2")); await settle();
+  assert.equal(r.soulReads.length, 2, "its key moved: one read");
+  r.reader.answer(atCommit(ENTRY, "b2")); await settle();
+  assert.equal(r.soulReads.length, 2);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  assert.deepEqual(readerDid(r).at(-1), ["stop"], "the reader is stopped on the way out, the catalog's read with it");
+});
+
+test("the Souls view shown before the workspace was read waits for its first read; r reads the catalog again, once, and never while a read is in flight", async () => {
+  const r = await started();
+  r.stdin.type("2"); await settle();
+  assert.equal(r.soulReads.length, 0, "no workspace status yet: nothing to settle with");
+  r.reader.answer(ENTRY); await settle();
+  assert.equal(r.soulReads.length, 1, "its first read settles the catalog");
+  r.stdin.type("r"); r.stdin.type("r"); await settle();
+  assert.equal(r.soulReads.length, 1, "r while the read is in flight starts nothing");
+  r.soulReads[0].answer(soulsDocument(["dev"])); await settle();
+  r.stdin.type("r"); await settle();
+  assert.equal(r.soulReads.length, 2, "r after it landed: one read");
+  r.stdin.type("r"); await settle();
+  assert.equal(r.soulReads.length, 2, "and none beside it");
+  assert.equal(readerDid(r).filter(([what]) => what === "request").length, 0, "r in the Souls view asks no read of the workspace");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
 });

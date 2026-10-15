@@ -1427,10 +1427,10 @@ test("the help lists the marks with their words, in UTF-8 and in ASCII: each mar
   }
 });
 
-test("the help says, for the two views that cannot be opened yet, what to run instead", () => {
+test("the help says what each view holds, and what to run for what it does not do yet: spawning from Souls, and the Capabilities view", () => {
   const lines = helpLines(golden());
   const line = (name) => lines.find((text) => text.trim().startsWith(name));
-  assert.equal(line("2 Souls").includes("oats souls") && line("2 Souls").includes("oats spawn <soul>"), true);
+  assert.equal(line("2 Souls").includes("the souls of the open workspace") && line("2 Souls").includes("oats spawn <soul>"), true);
   assert.equal(line("3 Capabilities").includes("oats capabilities"), true);
   assert.equal(typeof line("1 Instances"), "string");
   for (const view of VIEWS) for (const command of view.commands) assert.equal(line(view.name).includes(command), true, `${view.name}: ${command}`);
@@ -2743,7 +2743,8 @@ test("the help lists Enter once per view with what it does there, the keys of th
   assert.equal(text.includes("z go to the open terminal with the whole screen; the leader twice brings the list back"), true);
   assert.equal(text.includes("c close the open terminal; the agent keeps running"), true);
   assert.equal(pair(lines, "Enter", "open the selected workspace, in the switcher"), true);
-  assert.equal(lines.filter((line) => line.startsWith("Enter ")).length, 2, "Enter twice, once per view");
+  assert.equal(pair(lines, "Enter", "show the selected soul's detail, and from the detail its instances, in the Souls view"), true);
+  assert.equal(lines.filter((line) => line.startsWith("Enter ")).length, 3, "Enter three times, once per view");
   for (const [key, label] of [["1", "instances"], ["2", "souls"], ["3", "capabilities"]]) assert.equal(pair(lines, key, label), true, key);
   assert.equal(lines.some((line) => line.includes("open an agent in its own tmux window") && line.includes("oats session attach --home <home>")), true);
   // The leader's section, after the keys and before the marks: the leader, then each key of its
@@ -3168,24 +3169,10 @@ const openView = (d) => d.cells[1].filter((cell) => cell.style.reverse).map((cel
 /** The body's text, its rows joined. */
 const bodyText = (d, sz) => d.lines.slice(3, sz.rows - 1).map((line) => line.trim()).filter(Boolean).join(" ");
 
-test("the Souls view at 80x24 in UTF-8, cell for cell but the footer: the header with Souls open, a rule with no joint, and under an empty row the sentence that says what the view will hold and what to run until then, wrapped inside the margins", () => {
-  const d = draw(press(golden(), ["2"]).state, S80);
-  assert.deepEqual(d.lines.slice(0, 23), [
-    ` acme-platform        ${COUNTS}`,
-    "  Instances   Souls   Capabilities                                read 10:00:00",
-    "─".repeat(80),
-    "",
-    " This view will list the souls this machine can make instances of. It is not in",
-    " this version: `oats souls` lists them, and `oats spawn <soul>` makes an",
-    " instance of one.",
-    ...Array(16).fill(""),
-  ]);
-  assert.equal(openView(d), " Souls ");
-  for (const x of [13, 19]) assert.equal(d.cells[1][x].style.reverse, true, `the open view's side cell ${x}`);
-});
-
-test("the Souls and Capabilities views say what they will hold and what to run, as NOT_BUILT says, at every size; the header shows the open one in reverse, reached with 2 and 3 in the list or after the leader, and the leader then 1 comes back", () => {
-  for (const [key, view, name] of [["2", "souls", " Souls "], ["3", "capabilities", " Capabilities "]]) {
+// The Souls view has its content now: test/souls-view.test.mjs draws it. Capabilities still says
+// what it will hold.
+test("the Capabilities view says what it will hold and what to run, as NOT_BUILT says, at every size; the header shows it open in reverse, reached with 3 in the list or after the leader, and the leader then 1 comes back", () => {
+  for (const [key, view, name] of [["3", "capabilities", " Capabilities "]]) {
     for (const state of [press(golden(), [key]).state, leaderThen(golden(), key).state, leaderThen(panelIn("focus"), key).state]) {
       assert.equal(state.view, view);
       for (const sz of SIZES) {
@@ -3203,8 +3190,8 @@ test("the Souls and Capabilities views say what they will hold and what to run, 
   assert.deepEqual(caps.lines.slice(3, 7), ["", " This view will list the capabilities this machine has. It is not in this", " version: `oats capabilities` lists them.", ""]);
 });
 
-test("the Souls and Capabilities views' footer offers what applies there: Esc back to the list and the workspaces, then help and quit; Enter and the acts, which do nothing there, are not offered", () => {
-  for (const [key, view] of [["2", "souls"], ["3", "capabilities"]]) {
+test("the Capabilities view's footer offers what applies there: Esc back to the list and the workspaces, then help and quit; Enter and the acts, which do nothing there, are not offered", () => {
+  for (const [key, view] of [["3", "capabilities"]]) {
     for (const base of [golden(), openable()]) {
       const state = press(base, [key]).state;
       for (const k of ["enter", "X", "D"]) {
@@ -3216,8 +3203,8 @@ test("the Souls and Capabilities views' footer offers what applies there: Esc ba
   }
 });
 
-test("the Souls and Capabilities views name each command whole on one row at every width from 60 to 200 columns: a command cut in two cannot be typed", () => {
-  for (const [key, view] of [["2", VIEWS[1]], ["3", VIEWS[2]]]) {
+test("the Capabilities view names each command whole on one row at every width from 60 to 200 columns: a command cut in two cannot be typed", () => {
+  for (const [key, view] of [["3", VIEWS[2]]]) {
     const state = press(golden(), [key]).state;
     for (let cols = MIN_SIZE.cols; cols <= 200; cols++) {
       const sz = size(cols, 24), lines = draw(state, sz).lines.slice(3, 23);

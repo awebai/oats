@@ -12,7 +12,7 @@
 import { ACTIONS, LEADER_KEYS, bindings } from "./actions.mjs";
 import { collapseKey, displayLine, instanceActs, instanceId, pendingEntry } from "./client.mjs";
 import { DETACH_KEY } from "./config.mjs";
-import { BUTTON_ORDER, actDecision, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, switcher } from "./model.mjs";
+import { BUTTON_ORDER, actDecision, disclosure, openDecision, paletteItems, preflightLine, returnedLine, roster, soulNames, soulsOf, switcher } from "./model.mjs";
 import { backKeyId } from "./term/through.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
@@ -20,7 +20,17 @@ import { windowOf } from "./views/scroll.mjs";
 export const QUERY_LIMIT = 200;
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const LINE_END = /\r\n|[\n\r\u2028\u2029]/;
+/** The instance list's filter: the text typed after `/`, or (`soul`, only while it is set) the
+ *  exact filter of one soul's instances that the Souls view's `i` sets, `{ name, names }` (the
+ *  names an instance's soul may carry: lib/model.mjs soulNames). Never both: `/` replaces the soul
+ *  filter, and Esc clears it. */
 const NO_FILTER = Object.freeze({ editing: false, query: "" });
+/** The Souls view's own (docs/tui.md, "The Souls view"): whether its catalog was ever wanted (the
+ *  view opened once: a run that never opens it never reads one), what the loop holds of each
+ *  workspace's catalog (`held`: id -> `{ entry, reading }`, the shared catalog's projected entry
+ *  and whether a read of it is in flight), and the selection (a soul's name), the scroll, the focus
+ *  and the filter of the view, kept when it is left and found again, for the run. */
+const NO_SOULS = Object.freeze({ wanted: false, held: new Map(), selected: null, top: 0, loose: false, focus: "list", detailTop: 0, filter: Object.freeze({ editing: false, query: "" }) });
 
 /** The state before the first answer. `deployment` is the one `oats tui` was started in or was
  *  told of, with its shared pending entry (lib/main.mjs makes it); null for a run started outside
@@ -69,7 +79,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(),
-    leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]),
+    leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]), souls: NO_SOULS,
   });
 }
 
@@ -220,6 +230,11 @@ const FIELDS = Object.freeze({
     put: (state, query) => queried(state, query),
     close: (state, query) => next(queried(state, query), { filter: Object.freeze({ editing: false, query }) }),
   }),
+  souls: Object.freeze({
+    query: (state) => state.souls.filter.query,
+    put: (state, query) => (query === state.souls.filter.query ? state : soulsWith(state, { filter: Object.freeze({ ...state.souls.filter, query }), top: 0, loose: false, detailTop: 0 })),
+    close: (state, query) => soulsWith(state, { filter: Object.freeze({ editing: false, query }), top: 0, loose: false }),
+  }),
   switcher: Object.freeze({
     query: (state) => state.switcher.query,
     put: (state, query) => (query === state.switcher.query ? state : next(state, { switcher: Object.freeze({ ...state.switcher, query, top: 0, loose: false }) })),
@@ -227,7 +242,9 @@ const FIELDS = Object.freeze({
   }),
 });
 /** The filter field that is open now, or null. */
-const fieldOf = (state) => (state.view === "instances" && state.filter.editing ? FIELDS.instances : state.view === "switcher" && state.switcher.editing ? FIELDS.switcher : null);
+const fieldOf = (state) => (state.view === "instances" && state.filter.editing ? FIELDS.instances
+  : state.view === "switcher" && state.switcher.editing ? FIELDS.switcher
+  : state.view === "souls" && state.souls.filter.editing ? FIELDS.souls : null);
 
 /** A key while a filter field is open. A key that is text is text, whatever the action table
  *  says, so `q` and `j` can be typed; Backspace removes one grapheme, Enter keeps the filter and
@@ -243,6 +260,65 @@ function edited(state, field, event, action) {
   if (action === "close") return { state: field.close(state, ""), effect: null };
   if (action === "quit" || action === "suspend" || action === "redraw") return { state, effect: action };
   return { state, effect: null };
+}
+
+/** The Souls view's own state with what changes of it. */
+const soulsWith = (state, changes) => next(state, { souls: Object.freeze({ ...state.souls, ...changes }) });
+
+/** The Souls view shown (docs/tui.md, "The Souls view"): from now on its catalog is wanted, and
+ *  the loop settles it for the open workspace (`souls: "settle"`), which reads it only when nothing
+ *  is held for the workspace as it is now (the shared catalog's key). */
+function soulsShown(state) {
+  // Come back to from another view, it shows its list: what was selected and filtered stays.
+  const shown = state.view === "souls" ? state : next(state, { view: "souls", back: "souls", souls: Object.freeze({ ...state.souls, focus: "list" }) });
+  return { state: soulsWith(shown, { wanted: true }), effect: { souls: "settle" } };
+}
+
+/** What the loop holds of a workspace's catalog, told: `{ id, entry, reading }` (the shared
+ *  catalog's projected entry, or null, and whether a read is in flight). Only a served workspace's
+ *  is kept. */
+function soulsHeard(state, { id, entry, reading }) {
+  if (!state.ctxs.includes(id)) return { state, effect: null };
+  return { state: soulsWith(state, { held: new Map(state.souls.held).set(id, Object.freeze({ entry: entry ?? null, reading: reading === true })) }), effect: null };
+}
+
+/** The Instances view with the instances of soul `row` alone: the exact soul filter, shown where a
+ *  kept filter stands; Esc clears it and `/` replaces it. */
+function soulInstances(state, row) {
+  const filter = Object.freeze({ editing: false, query: "", soul: Object.freeze({ name: row.name, names: Object.freeze(soulNames(row)) }) });
+  return { state: rehomed(roster(state), next(state, { view: "instances", back: "instances", focus: "list", filter, top: 0, loose: false })), effect: null };
+}
+
+/** A key in the Souls view (docs/tui.md, "The Souls view"). The list's keys move among the souls
+ *  the filter keeps, or scroll the detail while it has the focus; Enter gives the detail the focus,
+ *  and from the detail does what `i` does, the selected soul's instances in the Instances view; `/`
+ *  opens the view's own filter field; `r` reads the catalog again (`souls: "reread"`, which starts
+ *  nothing while a read is in flight); Esc closes the detail, then clears a kept filter, then goes
+ *  back to the instances (to the switcher when no workspace is open), as `1` does. */
+function inSouls(state, action, event, page, scrolled) {
+  const stay = { state, effect: null }, v = state.souls;
+  const s = soulsOf(state), at = s.selected ? s.rows.indexOf(s.selected) : -1;
+  const back = () => ({ state: state.open === null ? toSwitcher(next(state, { back: "switcher" })) : next(state, { view: "instances", back: "instances" }), effect: null });
+  switch (action) {
+    case "instances": return back();
+    case "close":
+      if (v.focus === "detail") return { state: soulsWith(state, { focus: "list" }), effect: null };
+      if (v.filter.query !== "") return { state: soulsWith(state, { filter: Object.freeze({ editing: false, query: "" }), top: 0, loose: false }), effect: null };
+      return back();
+    case "filter": return s.local ? { state: soulsWith(state, { focus: "list", filter: Object.freeze({ ...v.filter, editing: true }) }), effect: null } : stay;
+    case "refresh": return s.local ? { state, effect: { souls: "reread" } } : stay;
+    case "open": return at < 0 ? stay : v.focus === "detail" ? soulInstances(state, s.selected) : { state: soulsWith(state, { focus: "detail" }), effect: null };
+    case "detail": return at < 0 ? stay : { state: soulsWith(state, { focus: v.focus === "detail" ? "list" : "detail" }), effect: null };
+    case "soul-instances": return at < 0 ? stay : soulInstances(state, s.selected);
+    case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
+      if (v.focus === "detail") return { state: soulsWith(state, { detailTop: scrolled(v.detailTop) }), effect: null };
+      if (!s.rows.length) return stay;
+      const to = Math.min(Math.max(0, at < 0 ? 0 : moved(action, at, s.rows.length, page)), s.rows.length - 1);
+      const name = s.rows[to].name;
+      return { state: soulsWith(state, { selected: name, loose: false, detailTop: name === s.selected?.name ? v.detailTop : 0 }), effect: null };
+    }
+    default: return stay;
+  }
 }
 
 const MOVES = Object.freeze(["up", "down", "top", "bottom", "page-up", "page-down"]);
@@ -663,6 +739,11 @@ function ranFromPalette(state, item, event, keymap) {
   const from = state.palette.from;
   const settled = item.kind === "instance" || item.kind === "act" ? toInstances(state) : toList(state), shut = settled.state;
   const then = (step) => ({ state: step.state, effect: both(settled.effect, step.effect) });
+  // A soul: the Souls view, with it selected.
+  if (item.kind === "soul") {
+    const step = soulsShown(shut);
+    return then({ state: soulsWith(step.state, { selected: item.name, loose: false, detailTop: 0 }), effect: step.effect });
+  }
   if (item.kind === "instance" || item.kind === "act") {
     const row = shut.view === "instances" ? roster(shut).instances.find((each) => instanceId(each) === item.id) : undefined;
     if (!row) return settled;
@@ -692,6 +773,7 @@ function reduced(state, event, keymap) {
   if (event.offered !== undefined) return { state: next(state, { offered: Object.freeze({ offered: Object.freeze([...event.offered.offered]), limited: event.offered.limited === true }) }), effect: null };
   if (event.admitted !== undefined) return { state: admitted(state, event), effect: { refresh: { live: true } } };
   if (event.refused !== undefined) return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }) }), effect: null };
+  if (event.souls !== undefined) return soulsHeard(state, event.souls);
   // An action the leader or the palette runs comes as `{ action }`, with no key: whatever field or
   // confirmation was open has been settled first.
   const given = event.action !== undefined;
@@ -715,15 +797,18 @@ function reduced(state, event, keymap) {
   switch (action) {
     case "quit": case "suspend": case "redraw": return { state, effect: action };
     // In the switcher the folders of ~/Agents are listed again too.
-    case "refresh": return { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { offer: true } : {}) } };
+    // In the Souls view it reads the souls again, and nothing else.
+    case "refresh": return state.view === "souls" ? inSouls(state, action, event, page, scrolled) : { state, effect: { refresh: { live: true }, ...((state.view === "help" ? state.back : state.view) === "switcher" ? { offer: true } : {}) } };
     case "help": return { state: next(state, state.view === "help" ? { view: state.back } : { view: "help", back: state.view, helpTop: 0 }), effect: null };
     case "workspaces": return state.view === "switcher" ? stay : { state: toSwitcher(next(state, { back: "switcher" })), effect: { offer: true } };
     case "palette": return { state: paletteOpened(state, event, "list"), effect: null };
     // Souls and Capabilities are views of this machine, whatever workspace is open, or none.
-    case "souls": case "capabilities": return { state: state.view === action ? state : next(state, { view: action, back: action }), effect: null };
+    case "souls": return soulsShown(state);
+    case "capabilities": return { state: state.view === action ? state : next(state, { view: action, back: action }), effect: null };
     default:
   }
-  if (state.view === "souls" || state.view === "capabilities") {
+  if (state.view === "souls") return inSouls(state, action, event, page, scrolled);
+  if (state.view === "capabilities") {
     // Esc and 1 go back to the instances, or to the switcher when no workspace is open.
     if (action !== "close" && action !== "instances") return stay;
     return { state: state.open === null ? toSwitcher(next(state, { back: "switcher" })) : next(state, { view: "instances", back: "instances" }), effect: null };
@@ -738,13 +823,14 @@ function reduced(state, event, keymap) {
   if (action === "close") {
     // In this order: an open under way (another machine is asked first), a kept filter, the detail.
     if (state.opening?.phase === "preflight") return { state: next(state, { opening: null }), effect: { abandon: true } };
-    if (state.filter.query !== "") return { state: queried(state, ""), effect: null };
+    if (state.filter.query !== "" || state.filter.soul) return { state: rehomed(roster(state), next(state, { filter: NO_FILTER, top: 0, loose: false })), effect: null };
     return state.focus === "detail" ? { state: next(state, { focus: "list" }), effect: null } : stay;
   }
   const r = roster(state, undefined, Number.isInteger(event.cols) ? event.cols : undefined);
   const at = indexOf(r, state.selected);
   switch (action) {
-    case "filter": return { state: next(state, { focus: "list", filter: Object.freeze({ ...state.filter, editing: true }) }), effect: null };
+    // A soul filter gives way to the text one.
+    case "filter": return { state: rehomed(roster(state), next(state, { focus: "list", filter: Object.freeze({ editing: true, query: state.filter.query }) })), effect: null };
     case "open": return at < 0 ? stay : openAgent(state, r.items[at].row);
     case "zoom": case "close-terminal": return terminalKey(state, action);
     case "stop": case "retire": case "start": case "restart": return at < 0 ? stay : actOn(state, r.items[at].row, action);
