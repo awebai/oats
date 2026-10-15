@@ -3,7 +3,7 @@
 - **`oats tui`: the back key is now the leader, pressed twice to go back to
   the list.** `Ctrl+\` (`open.detachKey` in `tui.json`) pressed once in a
   terminal waits for a command key; pressed again it gives the focus to the
-  list, as one press did in 0.57.1. A `tui.json` whose `open.detachKey` is a
+  list, as one press did up to 0.58.0. A `tui.json` whose `open.detachKey` is a
   key an action has is now refused: give one of the two another key. See
   Added and Changed ([#855](https://github.com/awebai/oats/issues/855)).
 
