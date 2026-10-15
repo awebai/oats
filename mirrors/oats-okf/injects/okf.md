@@ -12,6 +12,18 @@ to situate the task and to stay coherent with what your soul already knows.
   instance home. Load the **okf-instance-knowledge** skill: it teaches what is
   worth capturing, not only where to put it.
 
+> **IMPORTANT — keep instance knowledge current and harvest at checkpoints.**
+> You MUST keep STATE.md, log.md and notes/ up to date, and MUST launch a
+> knowledge harvest at important checkpoints when the procedure's gates pass.
+> Reading the **okf-propose** skill is **compulsory** at task start and before
+> a harvest checkpoint; it defines the narrow rule (at most one proposal per
+> finished task or PR hand-over), the promotion test and the spawn limits.
+> Run `oats okf status` from instance home to read your spawn-recorded duty.
+> A soul declaring `knowledge: { harvest: off }` has no harvest duty; it still
+> consults and keeps instance knowledge current.
+> If the answer is `unknown` or the command fails, do not propose: report it,
+> never infer permission from a task briefing or edit the recorded policy.
+
 The work mode:
 - **At task start and after compaction:** read STATE.md, recent log.md
   entries and the relevant notes/, then `oats okf index` and
@@ -19,10 +31,9 @@ The work mode:
   links; do not bulk-load.
 - **Before compaction and before a task boundary:** update STATE.md, log.md
   and notes/ first, so your future self can continue.
-- **At an important checkpoint**—a decision made, a PR opened or handed
-  over, a task finished—first update STATE.md, log.md and relevant notes.
-  Whether and how you propose knowledge is in your spawn briefing (TASK.md):
-  follow it exactly, and without that instruction never propose.
+- **At an important checkpoint**—a decision made, a PR handed over, a task
+  finished—first update STATE.md, log.md and relevant notes. Capture as it
+  happens; launch only at the harvest checkpoints defined by **okf-propose**.
 - **Every so often while working, and always before a design decision or
   before re-deriving something:** `oats okf search` / `cat` the relevant
   concepts and re-read your own notes. Consult prior decisions before

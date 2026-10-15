@@ -25,6 +25,7 @@ test('memberGroups: one group per deployment, headed by its machine label; this 
     [['This Mac · ~/Agents/oats', ['a', 'c']], ['This Mac · ~/awebai/oats-v2', ['b']], ['altair · ~/Agents/tsm', ['far']]],
     'two deployments on this Mac are two groups; the remote one is labelled by its machine');
   assert.deepEqual(groups.map(g => g.deployment), [OATS.id, V2.id, ALTAIR.id]);
+  assert.deepEqual(groups.map(g => [g.machine, g.path]), [['This Mac', OATS.path], ['This Mac', V2.path], ['altair', ALTAIR.path]], 'each names its machine and its full path');
 });
 
 test('memberGroups: a deployment whose roster group failed its last read is not reached (servers[] carry the deployment)', () => {
@@ -33,8 +34,8 @@ test('memberGroups: a deployment whose roster group failed its last read is not 
   assert.equal(group.reached, false); assert.equal(group.error, 'ssh: timeout');
 });
 
-test('the board: deployment headings with labels and counts; a member whose deployment does not match its workspace is dropped', async t => {
-  const dom = new JSDOM('<!doctype html><body><main class="oats-view"></main></body>', { pretendToBeVisual: true }), d = dom.window.document;
+test('the team page: one card per deployment, headed by its machine and path, with counts; a member whose deployment does not match its workspace is dropped', async t => {
+  const dom = new JSDOM('<!doctype html><body><main class="oats-view"><section class="workspace-page"></section></main></body>', { pretendToBeVisual: true }), d = dom.window.document;
   const style = d.createElement('style'); style.textContent = computerTeamsCSS; d.head.append(style);
   const calls = [];
   const answer = { members: [member('a', OATS), member('b', V2), member('far', ALTAIR), { ...member('odd', OATS), deployment: { ...V2 } }],
@@ -43,9 +44,16 @@ test('the board: deployment headings with labels and counts; a member whose depl
   d.querySelector('main').append(card.element);
   t.after(() => { card.dispose(); dom.window.close(); });
   await tick();
-  const heads = [...card.element.querySelectorAll('.ct-group-head')].map(h => h.textContent);
-  assert.deepEqual(heads, ['This Mac · ~/Agents/oats · 1', 'This Mac · ~/awebai/oats-v2 · 1', 'altair · ~/Agents/tsm · 1']);
-  const far = [...card.element.querySelectorAll('.ct-member')].find(r => r.querySelector('.ct-member-name').textContent === 'far');
+  const host = d.querySelector('.workspace-page'); assert.equal(card.showTeam(host, 'tsm', { onBack: () => {} }), true);
+  const cards = [...host.querySelectorAll('.ct-mcard')];
+  assert.deepEqual(cards.map(c => [c.querySelector('.ct-machine').textContent, c.querySelector('.ct-path').textContent, c.querySelector('.ct-path').title, c.querySelector('.ct-mcard-count').textContent]),
+    [['This Mac', '~/Agents/oats', OATS.path, '1 instance, 1 running'], ['This Mac', '~/awebai/oats-v2', V2.path, '1 instance, 1 running'], ['altair', '~/Agents/tsm', ALTAIR.path, '1 instance, 1 running']]);
+  // Two cards on one machine are told apart by their path; a machine of its own is named alone.
+  assert.deepEqual(cards.map(c => c.getAttribute('aria-label')), ['This Mac ~/Agents/oats', 'This Mac ~/awebai/oats-v2', 'altair']);
+  assert.deepEqual(cards.map(c => c.querySelector('.ct-ilist').getAttribute('aria-label')), ['Your instances on tsm on This Mac ~/Agents/oats', 'Your instances on tsm on This Mac ~/awebai/oats-v2', 'Your instances on tsm on altair']);
+  assert.equal(host.querySelector('.ct-yours-machines').textContent, 'on 2 machines', 'this Mac\'s two deployments are one machine');
+  assert.equal(card.element.querySelector('[data-team="tsm"] .ct-sum').textContent, '3 of your instances, 1 on other machines');
+  const far = [...host.querySelectorAll('.ct-irow:not(.ct-ihead)')].find(r => r.querySelector('.ct-member-name').textContent === 'far');
   assert.equal(far.querySelector('.ct-member-term').getAttribute('aria-label'), 'Open far terminal on altair');
   far.querySelector('.ct-member-term').click();
   assert.deepEqual(calls, [['open', ALTAIR.id]], 'the member carries its deployment id');

@@ -19,6 +19,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { constants } from "node:os";
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
@@ -204,7 +205,9 @@ async function tui(term, { shadow = false, stderr = "pane" } = {}) {
   const run = {
     n, tmp, statusFile,
     status() { const text = existsSync(statusFile) ? readFileSync(statusFile, "utf8") : ""; return /^\d+\n$/.test(text) ? Number(text) : null; },
-    async ended(why) { await until(term, () => run.status() !== null, `oats tui in ${term.id} to end ${why}`); return run.status(); },
+    /** The status the run ended with: the one read that showed it (a second read could meet the
+     *  file being written again by a later `echo $? >`). */
+    async ended(why) { let status = null; await until(term, () => (status = run.status()) !== null, `oats tui in ${term.id} to end ${why}`); return status; },
     drawn() { const screen = term.screen(); return /^ oats {2}/.test(screen[0] ?? "") && / q quit$/.test(screen.at(-1) ?? ""); },
     /** The list of instances is on the screen: drawn, with the list's footer (`/ filter`) and no
      *  confirmation's buttons. A confirmation draws no list, so a row's absence means nothing then. */
@@ -286,6 +289,11 @@ for (const way of WAYS_OUT) {
     if (way.suspend) {
       term.press("C-z");
       await term.prompt("after Ctrl+Z");
+      // bash runs the rest of the line when a job stops: the run's own `echo $?` has written
+      // 128 + SIGTSTP (148 on Linux, 146 on macOS). Take it away, so the status read below is
+      // fg's, never this one.
+      assert.equal(run.status(), 128 + constants.signals.SIGTSTP, `the TUI stopped as a job on Ctrl+Z\n${term.shows()}`);
+      rmSync(run.statusFile);
       assert.equal(alive(pid), true, "the change runs on while the TUI is stopped");
       await term.command("fg", "fg");
       await until(term, () => run.drawn(), "the TUI again after fg");

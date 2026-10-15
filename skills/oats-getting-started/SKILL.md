@@ -61,7 +61,7 @@ members:
   - git:github.com/acme/platform
 packages:
   oats.framework: v1.10.1               # bare versions resolve through the official catalog
-  oats.okf: v5.1.0
+  oats.okf: v5.2.0
 defaults:
   capabilities: { oats.core: { from: package } }
   knowledge: { oats.okf: { from: package } }

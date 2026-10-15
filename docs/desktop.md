@@ -353,10 +353,17 @@ join** says who else may join it. Both are read from the workspace's committed
 `souls:`; a team nobody may join yet says so. The address (the team on the
 messaging provider) and the members running in it follow.
 
-The **Setup** tab's List view starts with the workspace's **host**, the
-repository that holds `oats-workspace.yaml`, and marks every repository the
-workspace trusts for souls and capabilities as a **Member**. The host is a
-member too. A legend under the title explains both badges.
+The **Setup** tab's List view is one column. Under the workspace's name, one
+line counts its members (and those that need attention), its packages and the
+state of the lock. The next line says where the workspace is declared. An
+**Overview** says that the workspace's **host**, the repository that holds
+`oats-workspace.yaml`, defines the workspace: its member repositories and its
+packages. **For developers** (folded) explains how a repository becomes a
+member and what each member state means. Then **Shared through Git** lists
+what the workspace declares (Members, with the host first and tagged
+**Host**, Packages and Defaults). **This computer** lists what is not shared:
+this deployment's settings, lock, CLI and instances, the member clones, and
+the machines that run the workspace.
 
 ## A workspace's machines
 
