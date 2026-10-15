@@ -1,8 +1,8 @@
 // `oats tui` opens an agent's terminal in a panel beside the list: Enter on a running instance
 // starts the kernel's own viewer, `oats session attach --home <home>` with no key of its own, in a
 // pane of a private tmux server the run owns, and the TUI draws that pane's screen where the detail
-// was (docs/tui.md, "Open an agent's terminal"). Typing goes to the agent; the back key (default
-// `C-\`, the byte 0x1c) gives the focus to the list, z zooms, c closes.
+// was (docs/tui.md, "Open an agent's terminal"). Typing goes to the agent; the leader (default
+// `C-\`, the byte 0x1c) pressed twice gives the focus to the list, z zooms, c closes.
 //
 // Real tmux throughout, never the operator's (the conventions of test/tui-terminal.test.mjs): the
 // fixture owns a private TMUX_TMPDIR, and every server here is a socket inside the fixture. AGENTS
@@ -202,18 +202,25 @@ test.after(() => {
 // ---- what the program says, as docs/tui.md and packages/tui/lib give it --------------------------
 const TUI = `${shq(process.execPath)} ${shq(CLI)} tui`;
 const PROMPT = "tui-panel$";
-const OPEN_HINT = "Enter open   ";
-const BACK = " C-\\ back to the list";
-const LIST_HINTS = " Enter focus terminal   z zoom   c close terminal";
+/** The leader, which every footer names first (docs/tui.md, "The footer"). */
+const LEAD = "C-\\ commands   ";
+const OPEN_HINT = `${LEAD}Enter open   `;
+/** The footer while the terminal has the focus: the leader, and the leader twice. */
+const BACK = `${LEAD}C-\\ C-\\ back to the list`;
+/** The footer while the leader waits for its key (docs/tui.md, "The leader"). */
+const LEADER_HINT = "C-\\   k palette";
+const LIST_HINTS = `${LEAD}Enter focus terminal   z zoom`;
 const FAILED = `${NAME} could not be opened.`;
-/** The agent's row in the list, selected and running (the green mark, then its harness). */
-const RUNNING_ROW = new RegExp(`^> +● ${NAME} +claude$`);
+/** The agent's row in the list, selected and running: the green mark and its name, and nothing
+ *  after it (the harness is the detail's). */
+const RUNNING_ROW = new RegExp(`^> +● ${NAME}$`);
 const ROW = new RegExp(`^[> ] +[●○◌?◆] ${NAME}\\b`);
-/** The columns of the list pane where the terminal is wide enough for two panes (docs/tui.md);
- *  the panel starts after the list and its bar. */
-const listCols = (cols) => Math.min(60, Math.max(36, Math.floor(cols * 0.48)));
+/** The columns the list keeps beside an open terminal (docs/tui.md); the panel starts after the
+ *  list and its bar. The agent's row is read from as many columns of the list: its name is short,
+ *  and the row has no word, so it is whole there with the detail beside the list too. */
+const LIST_BESIDE = 30;
 const COLS = 120, ROWS = 40;
-const PANEL_COL = listCols(COLS) + 1;
+const PANEL_COL = LIST_BESIDE + 1;
 
 // ---- a terminal ---------------------------------------------------------------------------------
 let opened = 0, started = 0;
@@ -384,7 +391,7 @@ async function tui(term, { tmp = tmpFor() } = {}) {
     async ended(why) { await until(term, () => run.status() !== null, `oats tui in ${term.id} to end ${why}`); return run.status(); },
     /** The list pane's row of the agent, with the selection's mark and its state's mark; null when
      *  no list is drawn (a zoomed terminal). */
-    row() { return term.screen().map((text) => [...text].slice(0, listCols(COLS)).join("").trimEnd()).find((text) => ROW.test(text)) ?? null; },
+    row() { return term.screen().map((text) => [...text].slice(0, LIST_BESIDE).join("").trimEnd()).find((text) => ROW.test(text)) ?? null; },
     footer() { return term.screen().at(-1) ?? ""; },
     /** The panel's rows: each row of the screen from the panel's first column. */
     panel() { return term.screen().map((text) => [...text].slice(PANEL_COL).join("")); },
@@ -393,7 +400,14 @@ async function tui(term, { tmp = tmpFor() } = {}) {
     /** The agent's screen has the whole body: the marker at the first column, and no list. */
     zoomed(after = "") { return term.screen().some((text) => text.startsWith(`pane-ready:${after}`)) && run.row() === null; },
     /** Enter would open the agent now: its row is selected and running, and the footer says so. */
-    openable() { return RUNNING_ROW.test(run.row() ?? "") && run.footer().startsWith(` ${OPEN_HINT}`); },
+    openable() { return RUNNING_ROW.test(run.row() ?? "") && run.footer().startsWith(OPEN_HINT); },
+    /** The leader twice from the terminal: the first press read on its own (its hint stands in
+     *  the footer), then the second in a later read, which gives the focus to the list. */
+    async back(why) {
+      term.press("C-\\");
+      await until(term, () => run.footer().startsWith(LEADER_HINT), `the leader's hint, ${why}`);
+      term.press("C-\\");
+    },
     async ready(why) {
       await until(term, () => run.openable(), `the agent's row, selected and running, with "Enter open" leading the footer, ${why}`);
       assert.equal(run.status(), null, `oats tui still runs ${why}`);
@@ -438,13 +452,13 @@ async function tui(term, { tmp = tmpFor() } = {}) {
 // ---- on a terminal ------------------------------------------------------------------------------
 const TMUX_VERSION = REAL_TMUX ? execFileSync(REAL_TMUX, ["-V"], { encoding: "utf8", timeout: 10000 }).trim() : "none";
 
-test(`Enter on the running agent shows its terminal in the panel beside the list, the list still on screen and the footer naming the back key; c closes it, the detail comes back, and no viewer session and no viewer's own key table is left on the agents' server, the shared one holding only the mouse bindings (${TMUX_VERSION})`, { skip: NO_TMUX }, async (t) => {
+test(`Enter on the running agent shows its terminal in the panel beside the list, the list still on screen and the footer naming the leader; c closes it, the detail comes back, and no viewer session and no viewer's own key table is left on the agents' server, the shared one holding only the mouse bindings (${TMUX_VERSION})`, { skip: NO_TMUX }, async (t) => {
   await agentWindow();
   const term = await terminal(t);
   const run = await tui(term);
   assert.equal(run.dir(), null, "no run directory before the first open");
   await run.open("on the running agent");
-  assert.equal(run.footer(), BACK, `the footer names the back key alone:\n${term.shows()}`);
+  assert.equal(run.footer(), BACK, `the footer names the leader, and the leader twice:\n${term.shows()}`);
   assert.equal(run.panel()[3].trim(), NAME, "the panel's top row names the agent");
   const dir = run.dir();
   assert.ok(dir, "the run directory, made at the first open");
@@ -459,7 +473,7 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   assert.match(viewers[0], /\bsession attach\b/, "the pane's process is the viewer itself");
   assert.doesNotMatch(viewers[0], /^\S*sh -c /, "no shell between the pane and the viewer");
 
-  term.press("C-\\");
+  await run.back("from the terminal");
   await until(term, () => run.footer().startsWith(LIST_HINTS), "the list's focus, with the keys of the open terminal in the footer");
   term.press("c");
   await until(term, () => !run.beside() && (term.screen()[2] ?? "").includes("┬") && viewerSessions().length === 0,
@@ -474,7 +488,7 @@ test(`Enter on the running agent shows its terminal in the panel beside the list
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
 
-test("what is typed reaches the agent and shows in the panel; the back key gives the focus to the list and never reaches the agent; z gives the terminal the whole body, and the back key brings the list back with the panel", { skip: NO_TMUX }, async (t) => {
+test("what is typed reaches the agent and shows in the panel; the leader twice gives the focus to the list and never reaches the agent; z gives the terminal the whole body, and the leader twice brings the list back with the panel", { skip: NO_TMUX }, async (t) => {
   await agentWindow();
   const term = await terminal(t);
   const run = await tui(term);
@@ -483,18 +497,18 @@ test("what is typed reaches the agent and shows in the panel; the back key gives
   await until(term, () => typed() === "abc", `what was typed reached the agent (it read ${JSON.stringify(typed())})`);
   await until(term, () => run.beside("abc"), "the agent's screen, with what it read, in the panel");
 
-  term.press("C-\\");
-  await until(term, () => run.footer().startsWith(LIST_HINTS), "the list's focus after the back key");
-  assert.equal(typed(), "abc", "the back key was taken from the agent's input");
+  await run.back("after typing");
+  await until(term, () => run.footer().startsWith(LIST_HINTS), "the list's focus after the leader twice");
+  assert.equal(typed(), "abc", "the leader was taken from the agent's input, both times");
   // The terminal goes on being drawn while the list has the focus: a key typed from outside shows.
   tmuxOn(AGENTS, "send-keys", "-l", "-t", AGENT_TARGET, "d");
   await until(term, () => run.beside("abcd"), "the panel redrawn with the list focused");
 
   term.press("z");
-  await until(term, () => run.zoomed("abcd") && run.footer() === BACK, "the terminal zoomed: the agent's screen from the first column, no list, the back key in the footer");
+  await until(term, () => run.zoomed("abcd") && run.footer() === BACK, "the terminal zoomed: the agent's screen from the first column, no list, the leader in the footer");
   term.type("e");
   await until(term, () => typed() === "abcde", "typing reaches the agent while zoomed");
-  term.press("C-\\");
+  await run.back("while zoomed");
   await until(term, () => run.beside("abcde") && RUNNING_ROW.test(run.row() ?? "") && run.footer().startsWith(LIST_HINTS), "the list back, with the panel beside it");
   assert.equal(typed(), "abcde");
 
@@ -533,7 +547,8 @@ test("an idle open terminal draws no frame for the 2 s it is watched: a frame co
   t.diagnostic(`frames in each 2 s window with no read: ${JSON.stringify(watched)}`);
   assert.equal(watched.includes(0), true, `an idle open terminal drew a frame in every window it was watched: ${JSON.stringify(watched)}`);
   assert.equal(run.beside("x"), true, "the terminal is still drawn");
-  term.press("C-\\");
+  await run.back("before q");
+  await until(term, () => run.footer().startsWith(LIST_HINTS), "the list's focus before q");
   term.press("q");
   assert.equal(await run.ended("after q"), 0, term.shows());
 });
@@ -636,7 +651,7 @@ function viewerFaults(kept, before) {
 }
 
 for (const [how, end, expected] of [
-  ["q", (term) => { term.press("C-\\"); term.press("q"); }, 0],
+  ["q", async (term, run) => { await run.back("before q"); await until(term, () => run.footer().startsWith(LIST_HINTS), "the list's focus before q"); term.press("q"); }, 0],
   ["SIGTERM", (term, run) => process.kill(run.pid, "SIGTERM"), 143],
   ["kill -9", (term, run) => process.kill(run.pid, "SIGKILL"), 137],
 ]) {
@@ -649,7 +664,7 @@ for (const [how, end, expected] of [
     await until(term, () => typed() === "k", "the agent read a key");
     const dir = run.dir(), socket = panelSocket(dir);
     const kept = keepViewFiles(dir, how.replace(/\W/g, "")), before = viewerProcesses();
-    end(term, run);
+    await end(term, run);
     assert.equal(await run.ended(`after ${how}`), expected, term.shows());
     await until(term, () => !alive(run.pid), `the process ${run.pid} to be gone after ${how}`);
     await until(term, () => !answers(socket), `the private server's socket to refuse after ${how}`);
@@ -768,7 +783,7 @@ test("a run's sweep removes what a dead run left, its directory (its server SIGK
   await live.open("in the live run");
   const liveDir = live.dir();
   assert.equal(answers(panelSocket(liveDir)), true);
-  liveTerm.press("C-\\");
+  await live.back("in the live run");
   await until(liveTerm, () => live.footer().startsWith(LIST_HINTS), "the live run's list focused, its terminal open");
   // A dead run: opened, then killed with no way to clean up.
   const deadTerm = await terminal(t);

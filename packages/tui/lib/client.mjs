@@ -23,6 +23,7 @@ export { rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDe
 export { runtimeState, runtimeCounts, originLead } from "../../client/instance-presentation.mjs";
 export { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from "../../client/waiting-on-you.mjs";
 export { instanceActs, openAct } from "../../client/instance-acts.mjs";
+export { rowReason } from "../../client/remote-address.mjs";
 export { sessionAttachArgv, prepareRemoteTerm, detachKeySupported, hostDetachKeySupported, preflightFailure, DETACH_KEY_FEATURE } from "../../client/session-attach.mjs";
 export { attachExit } from "../../client/attach-exit.mjs";
 export { kernelLines } from "../../client/kernel-lines.mjs";

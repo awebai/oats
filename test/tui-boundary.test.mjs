@@ -84,6 +84,7 @@ const TAKEN = Object.freeze({
   "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingBelowText"],
   "instance-acts.mjs": ["instanceActs", "openAct"],
+  "remote-address.mjs": ["rowReason"],
   "session-attach.mjs": ["sessionAttachArgv", "prepareRemoteTerm", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
   "attach-exit.mjs": ["attachExit"],
   "kernel-lines.mjs": ["kernelLines"],
@@ -231,8 +232,8 @@ test("only term/screen.mjs and term/tty.mjs can produce an ESC byte: no other sh
 test("the views are pure: they import only the TUI's own text, style and action modules, and name no IO, clock or process", () => {
   const views = filesUnder("packages/tui/lib/views");
   assert.equal(views.length >= 2, true);
-  // The six views and the window they share; the switcher of workspaces and the confirmation of an act are held to the rule like the rest.
-  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "scroll.mjs", "switcher.mjs"]);
+  // The views and the window they share; the switcher of workspaces, the confirmation of an act and the palette are held to the rule like the rest.
+  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "switcher.mjs"]);
   for (const path of views) {
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);

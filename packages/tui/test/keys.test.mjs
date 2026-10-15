@@ -102,10 +102,11 @@ const TABLE = [
   ["DEL is Backspace", [0x7f], [key("backspace")]],
   ["BS is Backspace", [0x08], [key("backspace")]],
   ["NUL is dropped", [0x00], []],
-  ["0x1c is dropped", [0x1c], []],
-  ["0x1d is dropped", [0x1d], []],
-  ["0x1e is dropped", [0x1e], []],
-  ["0x1f is dropped", [0x1f], []],
+  ["0x1c is Ctrl+\\ (the leader's default)", [0x1c], [key("ctrl+\\")]],
+  ["0x1d is Ctrl+]", [0x1d], [key("ctrl+]")]],
+  ["0x1e is Ctrl+^", [0x1e], [key("ctrl+^")]],
+  ["0x1f is Ctrl+_", [0x1f], [key("ctrl+_")]],
+  ["ESC 0x1c is Ctrl+Alt+\\", [ESC, 0x1c], [key("ctrl+alt+\\")]],
   ["a dropped control byte between text leaves the text", ["a", 0x00, "b"], [text("a"), text("b")]],
 
   // CSI and SS3 details beyond the generated rows below.
@@ -259,7 +260,8 @@ test("the table has a row for every key in every form", () => {
   assert.equal(new Set(TABLE.map(([label]) => label)).size, TABLE.length, "every row says something different");
   const names = new Set(TABLE.flatMap(([, , events]) => events).filter((event) => event.name).map((event) => event.name));
   const all = ["enter", "tab", "backspace", "escape", "up", "down", "left", "right", "home", "end", "pageup", "pagedown", "insert", "delete",
-    ...Array.from({ length: 12 }, (_, i) => `f${i + 1}`), ..."abcdefgklnopqrstuvwxyz"]; // Ctrl+letter: all but h, i, j, m, which are Backspace, Tab and Enter
+    ...Array.from({ length: 12 }, (_, i) => `f${i + 1}`), ..."abcdefgklnopqrstuvwxyz", // Ctrl+letter: all but h, i, j, m, which are Backspace, Tab and Enter
+    ..."\\]^_"]; // Ctrl with \ ] ^ _, the bytes 0x1c..0x1f
   assert.deepEqual([...names].sort(), all.sort());
 });
 
@@ -592,7 +594,7 @@ test("random bytes never throw and never put a control character in a text event
     if (Object.hasOwn(event, "name")) {
       assert.deepEqual(Object.keys(event), ["name", "ctrl", "alt", "shift"], where);
       for (const mod of ["ctrl", "alt", "shift"]) assert.equal(typeof event[mod], "boolean", where);
-      assert.ok(names.has(event.name) || (/^[a-z]$/.test(event.name) && event.ctrl && !event.shift), `${where}: ${JSON.stringify(event)}`);
+      assert.ok(names.has(event.name) || (/^[a-z\\\]^_]$/.test(event.name) && event.ctrl && !event.shift), `${where}: ${JSON.stringify(event)}`);
       assert.deepEqual(key(keyId(event)), event, where);
       seen.named++;
       if (event.name === "escape") seen.escape++;
@@ -765,8 +767,10 @@ test("isKeyId is exact: of every name and every ASCII character under every modi
   }
   // 22 names take all 8 prefixes (the arrows, Home, End, Insert, Delete, PageUp, PageDown, F1..F12); Enter and Backspace are
   // bare or with alt+, Tab has 6 forms, Esc is bare, the space is `space` and `alt+space`; 22 letters are a key as ctrl+ and
-  // ctrl+alt+; the 94 printable characters are themselves, and all but the 7 that begin a sequence are a key with alt+.
-  assert.equal(accepted.length, 22 * 8 + 2 + 2 + 6 + 1 + 2 + 22 * 2 + 94 + (94 - 7));
+  // ctrl+alt+, and so are \ ] ^ _ (the C0 bytes 0x1c..0x1f); the 94 printable characters are themselves, and all but the 7
+  // that begin a sequence are a key with alt+.
+  assert.equal(accepted.length, 22 * 8 + 2 + 2 + 6 + 1 + 2 + 22 * 2 + 4 * 2 + 94 + (94 - 7));
+  for (const character of "\\]^_") for (const prefix of ["ctrl+", "ctrl+alt+"]) assert.equal(isKeyId(prefix + character), true, prefix + character);
   assert.deepEqual(accepted.filter((id) => id.endsWith("tab")), ["tab", "alt+tab", "shift+tab", "ctrl+shift+tab", "alt+shift+tab", "ctrl+alt+shift+tab"]);
   for (const letter of "hijm") for (const prefix of ["ctrl+", "ctrl+alt+"]) assert.equal(isKeyId(prefix + letter), false, `${prefix}${letter} arrives as Backspace, Tab or Enter`);
   for (const character of "[O]PX^_") {

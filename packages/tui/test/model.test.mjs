@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
   TERMS, panelData, rosterRows, livenessInput, livenessAnswers, panelInstances, observedEntry, instanceId, instanceVisibleInTree, waitingRollup, collapseKey,
   filterInstanceTree, heldHome, rosterSections, deploymentState, rowStale, primaryDeployment, runtimeState as sharedState, runtimeCounts,
-  waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs,
+  waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, remoteRosterState, observeIdentities, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath, isMultiDeployment,
   cliRemoteRoster, originLead, displayLine, DETAIL_WITHHELD,
 } from "../lib/client.mjs";
@@ -16,7 +16,7 @@ import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX
 import { initialState, reduce } from "../lib/store.mjs";
 import { shown, shownLines, textOf } from "../lib/term/text.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
-import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, observed, press, rosterOf, stateOf, took } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, leaderTwice, observed, press, rosterOf, stateOf, took } from "./helpers.mjs";
 
 const AT = new Date(NOW).toISOString();
 const OBSERVED_AT = "2026-10-11T10:00:00.000Z";
@@ -258,7 +258,7 @@ test("panelOf is the shared panelData over what the store holds, for a pending, 
 
 // --- A row the kernel answered as unknown ----------------------------------------------
 
-test("a row the kernel answered running null and unreachable keeps the kernel's three fields and its tmux, draws the unknown mark with the kernel's word, and offers exactly the shared acts", () => {
+test("a row the kernel answered running null and unreachable keeps the kernel's three fields and its tmux, draws the unknown mark with the shared label in the list and the kernel's word in the detail, and offers exactly the shared acts", () => {
   const kernel = { running: null, runtimeState: "unreachable", runtimeError: "tmux: the socket /run/user/1000/oats/agents.sock could not be read", tmux: { session: "oats-agents", window: "lost" } };
   const { input, entry } = cycle([instanceRow("dev", "fine"), instanceRow("dev", "lost", kernel)]);
   assert.equal(input.find((row) => row.instance === "lost").running, null, "the collector is told the kernel answered null");
@@ -267,7 +267,8 @@ test("a row the kernel answered running null and unreachable keeps the kernel's 
   assert.deepEqual({ running: row.running, runtimeState: row.runtimeState, runtimeError: row.runtimeError, tmux: row.tmux }, kernel);
   assert.equal(panelRow(state, "fine").row.tmux.windowId, "@7", "a probed row has the collector's tmux; the unknown one the kernel's, with no window id");
   const drawn = listRow(state, "lost");
-  assert.deepEqual({ mark: drawn.mark, word: drawn.word, waiting: drawn.waiting }, { mark: "unknown", word: "unreachable", waiting: false });
+  assert.equal(rowReason(row).key, "unknown");
+  assert.deepEqual({ mark: drawn.mark, word: drawn.word, waiting: drawn.waiting }, { mark: "unknown", word: rowReason(row).label, waiting: false });
   assert.deepEqual(listRow(state, "fine").mark, "running");
   // Its acts are the shared answer, and that answer has neither start nor restart.
   const acts = instanceActs(row);
@@ -291,7 +292,7 @@ test("when the collector fails as a whole every row reads unknown, with the shar
   for (const name of ["fine", "idle", "lost"]) {
     const drawn = listRow(state, name), detail = detailOf(state, name);
     assert.equal(drawn.mark, "unknown", name);
-    assert.equal(drawn.word, panelRow(state, name).row.runtimeState, name);
+    assert.equal(drawn.word, rowReason(panelRow(state, name).row).label, name);
     assert.equal(fact(detail, "state").value, panelRow(state, name).row.runtimeState, name);
     // Also for the row the kernel had answered with a reason of its own: the collector's failure is what is known of it now.
     assert.deepEqual(after(detail, "state"), { label: "", value: `oats tui's terminal check says: ${sentence}`, form: "wrap" }, name);
@@ -397,7 +398,7 @@ test("the header's facts of a live deployment: its workspace's name, the time of
 
 // --- Marks and words --------------------------------------------------------------------
 
-test("a row's mark is the shared word for its state, and its word is its harness when it runs, else the state the kernel named, else the shared word", () => {
+test("a row's mark is the shared word for its state; it has a word only where the mark can't say it, the shared label of its row reason; the detail says its state, with the kernel's word for it", () => {
   const rows = [
     instanceRow("dev", "runs", { harness: "codex" }),
     instanceRow("dev", "idle", STOPPED),
@@ -409,18 +410,22 @@ test("a row's mark is the shared word for its state, and its word is its harness
   ];
   const state = stateOf(observed(rows));
   const drawn = (name) => { const row = listRow(state, name); return [row.mark, row.word]; };
-  assert.deepEqual(drawn("runs"), ["running", "codex"], "a running row shows its harness, as the row names it");
-  assert.deepEqual(drawn("idle"), ["stopped", "stopped"]);
-  assert.deepEqual(drawn("shelly"), ["shell", "shell"], "stopped, with a shell left in its terminal");
-  assert.deepEqual(drawn("herdr"), ["unknown", "unsupported"]);
-  assert.deepEqual(drawn("lost"), ["unknown", "unreachable"]);
-  // A row that names no state: the shared word for what is known of it.
-  assert.deepEqual(drawn("old-idle"), ["stopped", sharedState(panelRow(state, "old-idle").row)]);
-  assert.deepEqual(drawn("old-lost"), ["unknown", sharedState(panelRow(state, "old-lost").row)]);
+  const label = (name) => rowReason(panelRow(state, name).row).label;
+  // Running, stopped and a shell left: the mark says it, and the harness is the detail's.
+  assert.deepEqual(drawn("runs"), ["running", null], "no harness on the row");
+  assert.deepEqual(drawn("idle"), ["stopped", null]);
+  assert.deepEqual(drawn("shelly"), ["shell", null], "stopped, with a shell left in its terminal");
+  assert.deepEqual(drawn("old-idle"), ["stopped", null]);
+  // A row the shared home gives a reason: its label, in the shared words.
+  assert.deepEqual([drawn("herdr"), rowReason(panelRow(state, "herdr").row).key], [["unknown", label("herdr")], "herdr"]);
+  assert.deepEqual([drawn("lost"), rowReason(panelRow(state, "lost").row).key], [["unknown", label("lost")], "unknown"]);
+  assert.deepEqual(drawn("old-lost"), ["unknown", label("old-lost")]);
   // Every mark but the two refinements is the shared word itself.
   for (const name of ["runs", "idle", "herdr", "lost", "old-idle", "old-lost"]) assert.equal(drawn(name)[0], sharedState(panelRow(state, name).row), name);
-  // The detail's state line says the same state, and for a running row "running", not its harness.
-  for (const [name, word] of [["runs", "running"], ["idle", "stopped"], ["shelly", "shell"], ["herdr", "unsupported"], ["lost", "unreachable"], ["old-idle", "stopped"], ["old-lost", "unknown"]]) {
+  // The detail's state line says the state, for a running row "running"; for a row the shared home
+  // can say why it can't be reached or opened, its label; for one whose state alone is not known,
+  // the kernel's word for it, else the shared word.
+  for (const [name, word] of [["runs", "running"], ["idle", "stopped"], ["shelly", "shell"], ["herdr", label("herdr")], ["lost", "unreachable"], ["old-idle", "stopped"], ["old-lost", "unknown"]]) {
     assert.equal(fact(detailOf(state, name), "state").value, word, name);
   }
   // The reason under the state, read from the row as a read makes it (the collector's answer taken
@@ -559,7 +564,7 @@ test("which retire a row is: the kernel's facts in the shared order, and a `reti
     ["m-state", null], ["m-since", null], ["m-code", "retiring"], ["m-list", null],
   ]);
   for (const name of ["m-state", "m-since", "m-code", "m-list"]) assert.equal(Object.hasOwn(panelRow(state, name).row, "retire"), false, `${name}: no retire on the row`);
-  for (const name of ["m-state", "m-since", "m-list"]) assert.deepEqual([listRow(state, name).mark, listRow(state, name).word, fact(detailOf(state, name), "held")], ["stopped", "stopped", null], `${name}: an ordinary row`);
+  for (const name of ["m-state", "m-since", "m-list"]) assert.deepEqual([listRow(state, name).mark, listRow(state, name).word, fact(detailOf(state, name), "state")?.value, fact(detailOf(state, name), "held")], ["stopped", null, "stopped", null], `${name}: an ordinary row: its mark says it, with no word, and the detail reads stopped`);
 });
 
 test("a retiring row offers Retire alone and out of the way: its key opens the confirmation, the footer does not name it, and Enter, stop, start and restart open nothing and say why", () => {
@@ -674,26 +679,33 @@ test("a hostile waiting message never reaches the detail: the row still waits, b
 
 // --- The roll-up ------------------------------------------------------------------------
 
-test("a collapsed row counts the rows that wait below it and names them in the shared words; expanded, it counts none and each child carries its own mark", () => {
+test("a collapsed row counts the instances it folds away and the rows that wait below it, and names those in the shared words; expanded, it counts none and each child carries its own mark", () => {
   const open = stateOf(observed(WAITERS));
-  assert.deepEqual(view(open).list.filter(Boolean).map((row) => [row.name, row.waiting, row.below]), [["lead", false, 0], ["child-a", true, 0], ["grandchild", true, 0], ["child-b", false, 0], ["solo", true, 0]]);
+  assert.deepEqual(view(open).list.filter(Boolean).map((row) => [row.name, row.waiting, row.folded, row.below]), [["lead", false, 0, 0], ["child-a", true, 0, 0], ["grandchild", true, 0, 0], ["child-b", false, 0, 0], ["solo", true, 0, 0]]);
   assert.equal(fact(detailOf(open, "lead"), "below"), null);
   const closed = press(open, ["h"]).state; // the first row, the selected one, is the cluster's root
   assert.equal(closed.collapsed.has(collapseKey(DEPLOYMENT, panelRow(open, "lead").id)), true);
   const under = waitingRollup(sharedPanel(closed).instances, closed.collapsed, DEPLOYMENT, { filtering: false, stale: () => false }).get(panelRow(closed, "lead").id);
   assert.deepEqual(under.map((row) => row.instance).sort(), ["child-a", "grandchild"]);
   const lead = listRow(closed, "lead");
-  assert.deepEqual({ below: lead.below, waiting: lead.waiting, disclosure: lead.disclosure }, { below: 2, waiting: false, disclosure: "closed" });
+  assert.deepEqual({ below: lead.below, waiting: lead.waiting, folded: lead.folded }, { below: 2, waiting: false, folded: 3 });
+  assert.equal(disclosure(closed, roster(closed), panelRow(closed, "lead")), "closed");
   assert.deepEqual(fact(detailOf(closed, "lead"), "below"), { label: "below", value: waitingBelowText(under), form: "wrap" });
   assert.equal(after(detailOf(closed, "lead"), "state").label, "below", "after the state, before the harness");
   // A row that waits itself and has one waiting below it: both are said.
   const mid = folded(open, "child-a"), child = listRow(mid, "child-a");
-  assert.deepEqual({ below: child.below, waiting: child.waiting }, { below: 1, waiting: true });
+  assert.deepEqual({ below: child.below, waiting: child.waiting, folded: child.folded }, { below: 1, waiting: true, folded: 1 });
   assert.equal(listRow(mid, "lead").below, 0, "the root is open: nothing is hidden right below it that it must answer for");
+  assert.equal(listRow(mid, "lead").folded, 0, "and it folds nothing away itself");
+  // A fold inside a fold: the outer row counts every instance under it, the inner fold's too.
+  const both = Object.freeze({ ...open, collapsed: new Set(["lead", "child-a"].map((name) => collapseKey(open.open, panelRow(open, name).id))) });
+  assert.deepEqual(listed(both).sort(), ["lead", "solo"]);
+  assert.deepEqual([listRow(both, "lead").folded, listRow(both, "lead").below], [3, 2]);
   assert.deepEqual(labels(detailOf(mid, "child-a")).slice(0, 5), ["soul", "state", "needs", "", "below"]);
   // Collapsed over rows that do not wait: no count and no line.
   const quiet = folded(stateOf(observed(TREE)), "lead");
   assert.equal(listRow(quiet, "lead").below, 0);
+  assert.equal(listRow(quiet, "lead").folded, roster(stateOf(observed(TREE))).rows.length - roster(quiet).rows.length, "the count is the rows the fold hides");
   assert.equal(fact(detailOf(quiet, "lead"), "below"), null);
   // The header counts every waiting row, drawn or not.
   assert.equal(view(closed).counts.find((count) => !count.shared).n, 3);
@@ -712,7 +724,7 @@ test("a filter that matches a row under a collapsed parent shows it with its anc
   assert.deepEqual([...filtering.collapsed], [collapseKey(DEPLOYMENT, lead.id)]);
   const r = roster(filtering);
   assert.deepEqual(r.rows.map((item) => disclosure(filtering, r, item)), ["open", "open", null]);
-  assert.deepEqual(view(filtering).list.filter(Boolean).map((row) => [row.name, row.disclosure, row.below]), [["lead", "open", 0], ["child-a", "open", 0], ["grandchild", null, 0]], "nothing is rolled up while every match is shown");
+  assert.deepEqual(view(filtering).list.filter(Boolean).map((row) => [row.name, row.folded, row.below]), [["lead", 0, 0], ["child-a", 0, 0], ["grandchild", 0, 0]], "nothing is folded away or rolled up while every match is shown");
   // While the field is still open it is the same.
   const typing = press(closed, ["/", "g", "r"]).state;
   assert.deepEqual(listed(typing), ["lead", "child-a", "grandchild"]);
@@ -879,19 +891,21 @@ test("only the rows in the pane are laid out, however many instances there are",
   assert.deepEqual(m.list.map((row) => row.id), roster(state).items.slice(m.above, m.above + 9).map((item) => item.id), "the rows of the window, in order");
 });
 
-test("the word column is as wide as the widest word among all the rows of the list, drawn or not, and never wider than its cap", () => {
+test("the word column is as wide as the widest word among all the rows of the list, drawn or not, and never wider than its cap; a list where every mark says it all has none", () => {
   const state = stateOf(observed(CROWD));
   const top = view(state, 10);
   assert.equal(top.list.some((row) => row.name === "zzz-last"), false, "the row with the widest word is far below the pane");
-  assert.equal(top.list.every((row) => row.word === "claude"), true);
-  assert.equal(top.wordWidth, "unreachable".length);
+  assert.equal(top.list.every((row) => row.word === null), true, "a row that runs has no word");
+  assert.equal(top.wordWidth, rowReason(panelRow(state, "zzz-last").row).label.length);
   assert.equal(view(on(state, "zzz-last"), 10).wordWidth, top.wordWidth, "the column does not move while the list scrolls");
   // After the filter: a row the filter hides lends no width.
-  assert.equal(view(press(state, ["/", "i", "n", "s", "t", "enter"]).state, 10).wordWidth, "claude".length);
+  assert.equal(view(press(state, ["/", "i", "n", "s", "t", "enter"]).state, 10).wordWidth, 0);
   assert.equal(WORD_MAX, 20);
-  const wide = stateOf(observed([...solos("a", "b"), instanceRow("dev", "wordy", { running: false, runtimeState: "a-state-with-a-name-far-too-long-for-a-column" })]));
+  const wide = stateOf(observed([...solos("a", "b"), instanceRow("dev", "wordy", { running: null, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: this backend is gone", tmux: null })]));
+  const label = rowReason(panelRow(wide, "wordy").row).label;
+  assert.equal(label.length > WORD_MAX, true, "the shared label is wider than the column");
   assert.equal(view(wide).wordWidth, WORD_MAX);
-  assert.equal(view(wide).list.find((row) => row.name === "wordy").word, "a-state-with-a-name-far-too-long-for-a-column", "the word is given whole: the view cuts it");
+  assert.equal(view(wide).list.find((row) => row.name === "wordy").word, label, "the word is given whole: the view cuts it");
   assert.equal(view(stateOf(observed([]))).wordWidth, 0);
 });
 
@@ -1167,11 +1181,38 @@ test("an answered roster puts the machine in this workspace's view: two sections
     assert.equal(m.workspace, "acme-platform");
     assert.equal(m.readAt, clockTime(OBSERVED_AT), "the header's time is this machine's read: the view's primary is its deployment");
     assert.deepEqual([m.notice, m.note, m.empty, m.observed], [null, null, null, true]);
-    // The machine's rows are drawn by the rules of this machine's rows.
-    assert.deepEqual(["garnet-a", "garnet-b"].map((name) => { const row = listRow(state, name); return [row.mark, row.word]; }), [["running", "claude"], ["stopped", "stopped"]]);
+    // The machine's rows are drawn by the rules of this machine's rows: one that can't be
+    // addressed has the shared label of its reason.
+    const unaddressable = rowReason(panelRow(state, "garnet-b").row);
+    assert.equal(unaddressable.key, "unaddressable");
+    assert.deepEqual(["garnet-a", "garnet-b"].map((name) => { const row = listRow(state, name); return [row.mark, row.word]; }), [["running", null], ["stopped", unaddressable.label]]);
     assert.deepEqual(m.counts.map((count) => [count.n, count.word]), [[3, "running"], [2, "stopped"]], "the counts are over all the rows of the view");
   }
   assert.deepEqual([clockTime(tick(1)), clockTime(tick(3))], ["10:01:16", "10:01:46"]);
+});
+
+test("a machine's heading is its name alone when its rows were read at the time the header shows: its time stands only when it differs from the header's, and a read that failed says so in the shared words instead", () => {
+  const near = stateOf(reporting(NEAR, { at: tick(0) }), { cli: READS });
+  const same = heard(near, answer(machine("garnet")), tick(0));
+  assert.equal(seen(same).readAt, clockTime(tick(0)), "this machine was read at the time the machine's rows were");
+  assert.deepEqual(headings(same), [
+    { label: TERMS.thisMachine, path: null, state: null, short: null, readAt: null },
+    { label: "garnet", path: null, state: null, short: null, readAt: null },
+  ]);
+  // The next roster read is at another time than this machine's: the machine's heading says it.
+  const later = heard(same, answer(machine("garnet")), tick(1));
+  assert.deepEqual([seen(later).readAt, headings(later)[1].readAt], [clockTime(tick(0)), clockTime(tick(1))]);
+  // Not reached: no time, the shared state and short reason in its place.
+  const lost = heard(later, { envelope: { ok: false, error: TIMED_OUT } }, tick(2));
+  const far = sharedPanel(lost).deployments.find((d) => !d.local), said = deploymentState(far);
+  assert.deepEqual(headings(lost)[1], { label: "garnet", path: null, state: said.text, short: far.short, readAt: null });
+  // In a view whose primary is the machine, the header's time is the roster read's: no heading repeats it.
+  const root = "/home/dev/Agents/garnet-two";
+  const two = heard(initialState({ deployment: null, cli: READS, home: "/home/u" }), answer(machine("garnet"), machine("garnet", { id: "garnet:acme-2", target: { workspace: root, sshHost: "garnet.example" }, agentsRoot: `${root}/agents`, instances: [remoteRow(root, "garnet-c")] })), tick(3));
+  const opened = press(two, ["enter"]).state, m = seen(opened);
+  assert.equal(sharedPanel(opened).deployments.length, 2);
+  assert.equal(m.readAt, clockTime(tick(3)));
+  assert.deepEqual(headings(opened).map((heading) => heading.readAt), [null, null]);
 });
 
 test("a machine that answered earlier in the run and does not now keeps its place: its heading says the shared state and short reason and no time, and its rows are kept as unknown, after an envelope that is not ok and after a later read that throws", () => {
@@ -1322,19 +1363,22 @@ test("held is built as the spec's store section says and its time is the time of
 
 // --- A row of a machine that was not reached --------------------------------------------
 
-test("a kept row of a machine that was not reached reads unknown: its list word and its detail's state are the shared word for unknown and its mark the unknown mark, never the word of its last report", () => {
+test("a kept row of a machine that was not reached reads `<machine> not reached`: its list word and its detail's state are the shared label of its reason and its mark the unknown mark, never the word of its last report", () => {
   const { answered, timedOut, thrown } = walk();
   for (const state of [timedOut, thrown]) for (const [name, last] of [["garnet-a", "running"], ["garnet-b", "stopped"]]) {
-    const { row } = panelRow(state, name), drawn = listRow(state, name);
+    const { row } = panelRow(state, name), drawn = listRow(state, name), reason = rowReason(row);
     assert.equal(row.running, null, name);
     assert.equal(row.runtimeState, last, "the row still carries the word of its last report");
     assert.equal(sharedState(row), "unknown");
-    assert.deepEqual([drawn.mark, drawn.word], ["unknown", sharedState(row)], name);
-    assert.equal(fact(detailOf(state, name), "state").value, sharedState(row), name);
-    for (const word of ["stopped", "running", "claude"]) assert.notEqual(drawn.word, word, name);
+    assert.deepEqual([reason.key, reason.label.includes("garnet")], ["unreached", true], name);
+    assert.deepEqual([drawn.mark, drawn.word], ["unknown", reason.label], name);
+    assert.equal(fact(detailOf(state, name), "state").value, reason.label, name);
+    for (const word of ["stopped", "running", "claude", "unknown"]) assert.notEqual(drawn.word, word, name);
   }
-  // Reached, the same rows say what the machine reported.
-  assert.deepEqual(["garnet-a", "garnet-b"].map((name) => [listRow(answered, name).word, fact(detailOf(answered, name), "state").value]), [["claude", "running"], ["stopped", "stopped"]]);
+  // Reached, the same rows say what the machine reported: the mark says a running row's state,
+  // and the row that can't be addressed has its reason's label.
+  const label = rowReason(panelRow(answered, "garnet-b").row).label;
+  assert.deepEqual(["garnet-a", "garnet-b"].map((name) => [listRow(answered, name).word, fact(detailOf(answered, name), "state").value]), [[null, "running"], [label, label]]);
   assert.deepEqual(seen(timedOut).counts.map((count) => [count.n, count.word]), Object.entries(runtimeCounts(sharedPanel(timedOut).instances)).filter(([, n]) => n > 0).map(([word, n]) => [n, word]));
   assert.equal(runtimeCounts(sharedPanel(timedOut).instances).unknown, 2);
 });
@@ -1393,6 +1437,45 @@ test("a remote row that cannot be addressed: when its server was not reached its
   assert.equal(fact(detailOf(answered, "garnet-a"), "held"), null);
 });
 
+test("a row gone from its machine (missingRemotely, a saved route) is drawn with the shared home's state: the unknown mark and `gone from <machine>`, in the list and on the detail's state line; under it the shared sentence with the command that removes it; and it can't be opened", () => {
+  const { answered } = walk();
+  // The kernel's row for an instance its machine no longer has: no state, its route saved, not addressable.
+  const gone = remoteRow("/home/dev/Agents/garnet", "garnet-gone", { running: null, runtimeState: undefined, harness: null, savedRoute: true, addressable: false, missingRemotely: true });
+  const state = heard(answered, answer(machine("garnet", { instances: [...machine("garnet").instances, gone] })), tick(2));
+  const { row } = panelRow(state, "garnet-gone"), reason = rowReason(row), acts = instanceActs(row);
+  assert.deepEqual([reason.key, reason.label, reason.origin], ["missing", "gone from garnet", undefined]);
+  const drawn = listRow(state, "garnet-gone");
+  assert.deepEqual([drawn.mark, drawn.word], ["unknown", reason.label]);
+  const detail = detailOf(state, "garnet-gone");
+  assert.equal(fact(detail, "state").value, reason.label, "not `unknown`");
+  assert.deepEqual(fact(detail, "held"), { label: "held", value: reason.sentence, form: "wrap" }, "the shared sentence, once");
+  assert.equal(reason.sentence, acts.blocked.sentence);
+  assert.equal(reason.sentence.includes("oats server forget garnet --instance garnet-gone"), true);
+  assert.equal(detail.facts.filter((f) => f.value.includes(reason.sentence)).length, 1);
+  // It can't be opened: nothing offers it, and Enter has nothing to name in the footer.
+  const m = view(on(state, "garnet-gone"));
+  assert.deepEqual([m.openable, m.actable], [false, []]);
+});
+
+test("every key of the shared row reason is drawn with its own label, and nothing else of the row stands in its place: herdr, unreached, missing, unaddressable, unknown", () => {
+  const { answered, timedOut } = walk();
+  const gone = remoteRow("/home/dev/Agents/garnet", "garnet-gone", { running: null, runtimeState: undefined, savedRoute: true, addressable: false, missingRemotely: true });
+  const local = stateOf(observed([instanceRow("dev", "herdr", { running: null, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: this backend is gone", tmux: null }), instanceRow("dev", "lost", { running: null, runtimeState: "unreachable" })]));
+  const cases = [
+    [local, "herdr", "herdr"],
+    [local, "lost", "unknown"],
+    [timedOut, "garnet-a", "unreached"],
+    [heard(answered, answer(machine("garnet", { instances: [...machine("garnet").instances, gone] })), tick(2)), "garnet-gone", "missing"],
+    [answered, "garnet-b", "unaddressable"],
+  ];
+  for (const [state, name, key] of cases) {
+    const reason = rowReason(panelRow(state, name).row);
+    assert.equal(reason.key, key, name);
+    assert.equal(listRow(state, name).word, reason.label, `${key}: the list's word`);
+  }
+  assert.deepEqual(new Set(cases.map(([, , key]) => key)).size, 5);
+});
+
 // --- Sections ---------------------------------------------------------------------------
 
 test("a collapse hides and rolls up only rows of its own section: a child in another deployment of the view, whose parent's name resolves across the two agents roots, stays shown under the collapsed parent and rolls up nowhere", () => {
@@ -1420,7 +1503,7 @@ test("a collapse hides and rolls up only rows of its own section: a child in ano
   assert.deepEqual(rolled(roster(closed).below), rolled(below));
   assert.equal(waitingRollup(panel.instances, closed.collapsed, closed.open, { filtering: false, stale: () => false }).get(lead.id).length, 2, "without a section the shared roll-up would count it under the parent");
   const drawn = listRow(closed, "lead");
-  assert.deepEqual({ below: drawn.below, disclosure: drawn.disclosure }, { below: 1, disclosure: "closed" });
+  assert.deepEqual({ below: drawn.below, folded: drawn.folded }, { below: 1, folded: 1 }, "the child of the other section is not folded away, and not counted");
   assert.deepEqual(fact(detailOf(closed, "lead"), "below"), { label: "below", value: waitingBelowText(below.get(lead.id)), form: "wrap" });
   const child = listRow(closed, "far-kid");
   assert.deepEqual({ waiting: child.waiting, below: child.below }, { waiting: true, below: 0 }, "it is drawn, and carries its own mark");
@@ -2272,7 +2355,7 @@ const TWO = () => stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("de
 /** A key, as the loop hands it to the store (the geometry is not read by these keys). */
 const key = (state, id) => reduce(state, { key: id, ...(id.length === 1 ? { text: id } : {}), page: 19, extent: 0, room: 19, cols: 38 });
 
-test("the open terminal in the store: Enter opens it with the focus; the back key gives the focus to the list and the terminal stays; Enter on its row focuses it unzoomed, z zoomed, and c closes it, the agent left running", () => {
+test("the open terminal in the store: Enter opens it with the focus; the leader twice gives the focus to the list and the terminal stays; Enter on its row focuses it unzoomed, z zoomed, and c closes it, the agent left running", () => {
   const state = on(TWO(), "dev-a"), id = instanceId(panelRow(state, "dev-a").row);
   const opened = key(state, "enter");
   assert.deepEqual(opened.state.terminal, { id, name: "dev-a", machine: null, routed: false, focus: "terminal", zoom: false, status: "starting" });
@@ -2281,16 +2364,18 @@ test("the open terminal in the store: Enter opens it with the focus; the back ke
   assert.equal(reduce(opened.state, { shown: { id: "elsewhere" } }).state, opened.state);
   const shown = reduce(opened.state, { shown: { id } }).state;
   assert.equal(shown.terminal.status, "open");
-  const back = reduce(shown, { back: true });
-  assert.deepEqual([back.state.terminal.focus, back.state.terminal.zoom, back.state.terminal.status, back.effect], ["list", false, "open", null]);
-  assert.equal(reduce(back.state, { back: true }).state, back.state, "a back key with the list focused is no key");
+  const once = reduce(shown, { back: true, read: 1, rest: false });
+  assert.deepEqual([once.state.terminal.focus, once.state.leader, once.effect], ["terminal", { read: 1, waiting: true }, null], "the leader once: it waits for the next key, the terminal keeps the focus");
+  const back = leaderTwice(shown);
+  assert.deepEqual([back.state.terminal.focus, back.state.terminal.zoom, back.state.terminal.status, back.state.leader.waiting, back.effect], ["list", false, "open", false, null]);
+  assert.equal(reduce(back.state, { back: true }).state, back.state, "a back event with the list focused is no key");
   // Enter on the open row goes to it: nothing is opened again.
   const again = key(back.state, "enter");
   assert.deepEqual([again.state.terminal.focus, again.state.terminal.zoom, again.effect], ["terminal", false, null]);
-  // z: the terminal, zoomed; the back key brings the list back with the panel, unzoomed.
+  // z: the terminal, zoomed; the leader twice brings the list back with the panel, unzoomed.
   const zoomed = key(back.state, "z");
   assert.deepEqual([zoomed.state.terminal.focus, zoomed.state.terminal.zoom, zoomed.effect], ["terminal", true, null]);
-  assert.deepEqual([reduce(zoomed.state, { back: true }).state.terminal.focus, reduce(zoomed.state, { back: true }).state.terminal.zoom], ["list", false]);
+  assert.deepEqual([leaderTwice(zoomed.state).state.terminal.focus, leaderTwice(zoomed.state).state.terminal.zoom], ["list", false]);
   // c: closed, as the person asked, so the end the panel reports later says nothing.
   const closed = key(back.state, "c");
   assert.deepEqual([closed.state.terminal, closed.effect], [null, { close: id }]);
@@ -2301,7 +2386,7 @@ test("the open terminal in the store: Enter opens it with the focus; the back ke
 
 test("Enter on another openable row while a terminal is open closes it and opens that one: one terminal at a time, the close before the open", () => {
   const state = on(TWO(), "dev-a"), a = instanceId(panelRow(state, "dev-a").row), b = instanceId(panelRow(state, "dev-b").row);
-  const open = reduce(reduce(key(state, "enter").state, { shown: { id: a } }).state, { back: true }).state;
+  const open = leaderTwice(reduce(key(state, "enter").state, { shown: { id: a } }).state).state;
   const other = key(on(open, "dev-b"), "enter");
   assert.deepEqual(Object.keys(other.effect), ["close", "open"]);
   assert.deepEqual([other.effect.close, other.effect.open.id], [a, b]);
@@ -2312,7 +2397,7 @@ test("Enter on another openable row while a terminal is open closes it and opens
 
 test("the model hands the views the terminal and whether the selected row is its own; the terminal is the store's beside the roster, never part of what the roster is made from (MADE_FROM)", () => {
   const state = on(TWO(), "dev-a");
-  const open = reduce(key(state, "enter").state, { back: true }).state;
+  const open = leaderTwice(key(state, "enter").state).state;
   assert.deepEqual([view(state).terminal, view(state).onTerminal], [null, false]);
   assert.equal(view(open).terminal, open.terminal);
   assert.equal(view(open).onTerminal, true);
@@ -2322,31 +2407,39 @@ test("the model hands the views the terminal and whether the selected row is its
 
 test("whatever shows another view than the instances gives the focus back to the list: the terminal stays open, unzoomed", () => {
   const state = on(TWO(), "dev-a");
-  const zoomed = key(reduce(key(state, "enter").state, { back: true }).state, "z").state;
+  const zoomed = key(leaderTwice(key(state, "enter").state).state, "z").state;
   assert.equal(zoomed.terminal.focus, "terminal");
   const switched = key(zoomed, "w").state;
   assert.equal(switched.view, "switcher");
   assert.deepEqual([switched.terminal.focus, switched.terminal.zoom, switched.terminal.id], ["list", false, zoomed.terminal.id]);
 });
 
-test("2 and 3 name the views that are not in this version: the line says what to run instead, and nothing else changes", () => {
+test("2 and 3 show the Souls and the Capabilities views, which say what to run for now; Esc and 1 go back to the instances, the selection and the terminal as they were", () => {
   const state = on(TWO(), "dev-a");
-  for (const [k, words] of [["2", "Souls are not in this version: `oats souls` lists them, and `oats spawn <soul>` makes an instance of one."], ["3", "Capabilities are not in this version: `oats capabilities` lists them."]]) {
+  for (const [k, shows, words] of [["2", "souls", "This view will list the souls this machine can make instances of. It is not in this version: `oats souls` lists them, and `oats spawn <soul>` makes an instance of one."], ["3", "capabilities", "This view will list the capabilities this machine has. It is not in this version: `oats capabilities` lists them."]]) {
     const after = key(state, k);
     assert.equal(after.effect, null, k);
-    assert.deepEqual(after.state.outcome.said, [{ own: words }], k);
-    assert.deepEqual([after.state.view, after.state.selected, after.state.terminal], [state.view, state.selected, null], k);
+    assert.deepEqual([after.state.view, after.state.outcome, after.state.selected], [shows, null, state.selected], k);
+    const body = view(after.state).body;
+    assert.deepEqual([body.said.map((part) => part.own).join(""), body.under], [words, []], `${k}: the view's body`);
+    assert.deepEqual(body.said.filter((part) => part.whole).map((part) => part.own), words.match(/`[^`]+`/g), `${k}: each command a whole part, never broken over two rows`);
+    for (const out of ["escape", "1"]) assert.deepEqual([key(after.state, out).state.view, key(after.state, out).state.selected], ["instances", state.selected], `${k} then ${out}`);
   }
+  // With no workspace open they show from the switcher too, and go back there.
+  const none = initialState({ deployment: null, cli: CLI, home: "/home/u" });
+  assert.equal(none.view, "switcher");
+  const souls = key(none, "2").state;
+  assert.deepEqual([souls.view, key(souls, "escape").state.view], ["souls", "switcher"]);
 });
 
-test("the back key always returns to the list with the panel, unzoomed: also when the terminal was opened or zoomed from the detail's focus (round 1 of the review)", () => {
+test("the leader twice always returns to the list with the panel, unzoomed: also when the terminal was opened or zoomed from the detail's focus (round 1 of the review)", () => {
   const state = on(TWO(), "dev-a");
-  const fromDetail = reduce(key(key(state, "tab").state, "enter").state, { back: true }).state;
+  const fromDetail = leaderTwice(key(key(state, "tab").state, "enter").state).state;
   assert.deepEqual([fromDetail.focus, fromDetail.terminal.focus, fromDetail.terminal.zoom], ["list", "list", false]);
   // The detail shown over an open terminal, then z or Enter, then back.
-  const open = reduce(key(state, "enter").state, { back: true }).state;
+  const open = leaderTwice(key(state, "enter").state).state;
   for (const k of ["z", "enter"]) {
-    const back = reduce(key(key(open, "tab").state, k).state, { back: true }).state;
+    const back = leaderTwice(key(key(open, "tab").state, k).state).state;
     assert.deepEqual([back.focus, back.terminal.focus, back.terminal.zoom], ["list", "list", false], k);
   }
   // While the terminal has the focus the list lies under it.

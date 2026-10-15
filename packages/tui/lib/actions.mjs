@@ -23,11 +23,13 @@ export const ACTIONS = Object.freeze([
   { id: "souls", keys: ["2"], label: "souls" },
   { id: "capabilities", keys: ["3"], label: "capabilities" },
   { id: "workspaces", keys: ["w"], label: "workspaces" },
+  // The palette (docs/tui.md, "The palette"): from every focus it is the leader and then `k`.
+  { id: "palette", keys: ["ctrl+k"], label: "palette" },
   { id: "open", keys: ["enter"], label: "open", views: [["instances", "open the selected agent's terminal beside the list, or go to it when it is the open one, in the list of instances"], ["switcher", "open the selected workspace, in the switcher"]] },
   // The open terminal, from the list (docs/tui.md, "Open an agent's terminal"). While the terminal
-  // has the focus the TUI takes no key but the back key (tui.json's open.detachKey), so neither of
-  // these is ever read there.
-  { id: "zoom", keys: ["z"], label: "zoom", views: [["instances", "go to the open terminal with the whole screen; the back key brings the list back"]] },
+  // has the focus the TUI takes no key but the leader (tui.json's open.detachKey), so neither of
+  // these is ever read there: the leader's table has its own (LEADER).
+  { id: "zoom", keys: ["z"], label: "zoom", views: [["instances", "go to the open terminal with the whole screen; the leader twice brings the list back"]] },
   { id: "close-terminal", keys: ["c"], label: "close terminal", views: [["instances", "close the open terminal; the agent keeps running"]] },
   // The four acts on an instance: each opens a confirmation, and nothing is done before a move and
   // a press in it. Capitals: a lower-case key is one slip away, a capital takes Shift.
@@ -41,6 +43,34 @@ export const ACTIONS = Object.freeze([
   { id: "suspend", keys: ["ctrl+z"], label: "suspend" },
   { id: "redraw", keys: ["ctrl+l"], label: "redraw" },
 ].map((action) => Object.freeze({ ...action, keys: Object.freeze([...action.keys]), ...(action.views ? { views: Object.freeze(action.views.map((view) => Object.freeze([...view]))) } : {}) })));
+
+/** THE LEADER'S TABLE (docs/tui.md, "The leader"): the keys read after the leader (tui.json's
+ *  open.detachKey) and what each does, from every focus. Fixed: tui.json's `keys` rebinds the plain
+ *  keys of ACTIONS only. `does` is an action id of ACTIONS, or one of the leader's own: `previous`
+ *  and `next` (the instance before or after the open terminal's, or the selection's, opened with
+ *  the focus in it) and `list` (the list's focus). The leader pressed again is `list` too: it is
+ *  the user's key, so it is not in this table. `terminal`: named in the hint only while a terminal
+ *  is open, and nothing without one. */
+export const LEADER = Object.freeze([
+  { keys: ["k", "space"], does: "palette", label: "palette" },
+  { keys: ["1"], does: "instances", label: "instances" },
+  { keys: ["2"], does: "souls", label: "souls" },
+  { keys: ["3"], does: "capabilities", label: "capabilities" },
+  { keys: ["up"], does: "previous", label: "previous instance" },
+  { keys: ["down"], does: "next", label: "next instance" },
+  { keys: ["z"], does: "zoom", label: "zoom", terminal: true },
+  { keys: ["w"], does: "close-terminal", label: "close terminal", terminal: true },
+  { keys: ["X"], does: "stop", label: "stop" },
+  { keys: ["R"], does: "restart", label: "restart" },
+  { keys: ["S"], does: "start", label: "start" },
+  { keys: ["D"], does: "retire", label: "retire" },
+  { keys: ["/"], does: "filter", label: "filter" },
+  { keys: ["o"], does: "workspaces", label: "workspaces" },
+  { keys: ["?"], does: "help", label: "help" },
+  { keys: ["escape"], does: "list", label: "the list" },
+].map((entry) => Object.freeze({ ...entry, keys: Object.freeze([...entry.keys]) })));
+/** key id -> what the leader then does (LEADER's `does`). */
+export const LEADER_KEYS = new Map(LEADER.flatMap((entry) => entry.keys.map((key) => [key, entry.does])));
 
 /** key id -> action id. A key bound twice is a defect of the table, refused when it is read. */
 export function bindings(actions = ACTIONS) {

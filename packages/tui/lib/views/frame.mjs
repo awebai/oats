@@ -4,13 +4,14 @@
 // the whole body, zoomed), the switcher of workspaces over the whole body, the help, and the
 // footer. The TUI's own words are lit(); everything else is shown(). Meaning never
 // rests on colour alone: what is dim or bold also says what it is in words or by a mark.
-import { keyLabel } from "../actions.mjs";
+import { LEADER, keyLabel } from "../actions.mjs";
 import { lit, ownEllipsis, shown, shownLines } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { act } from "./act.mjs";
 import { detail } from "./detail.mjs";
 import { help, keyText } from "./help.mjs";
 import { instances, measured } from "./instances.mjs";
+import { palette } from "./palette.mjs";
 import { switcher } from "./switcher.mjs";
 
 /** The frame is drawn from this size up (docs/tui.md); the design size is 80x24. */
@@ -18,16 +19,17 @@ export const MIN_SIZE = Object.freeze({ cols: 60, rows: 15 });
 /** From this width up the detail stands beside the list; under it, it is a page of its own. */
 export const WIDE = 80;
 /** The views, the header's second row: navigation, so no count and no digit stands against a name
- *  (the help and the footer name the digits). The open one is drawn in reverse; the two that
- *  cannot be opened yet are dim, and their key says what to run instead. */
-const VIEWS = Object.freeze([Object.freeze({ name: "Instances", open: true }), Object.freeze({ name: "Souls", open: false }), Object.freeze({ name: "Capabilities", open: false })]);
+ *  (the help, the leader's hint and the palette name the keys). The open one is drawn in reverse. */
+const VIEWS = Object.freeze([Object.freeze({ id: "instances", name: "Instances" }), Object.freeze({ id: "souls", name: "Souls" }), Object.freeze({ id: "capabilities", name: "Capabilities" })]);
 /** The cells between two views' names: each name has one cell on each side of it (the reverse bar
  *  of the open one), and one between. */
 const VIEW_GAP = 1;
 const GAP = 3;
 /** The least width of a terminal beside the list: under it the terminal has the whole body. */
 export const PANEL_MIN = 40;
-/** One cell of margin on each side of the header and the footer. */
+/** The most cells the list keeps beside an open terminal: the agent's screen has the rest. */
+export const LIST_BESIDE = 30;
+/** One cell of margin on each side of the header. The footer has none: its keys start at column 0. */
 const MARGIN = 1;
 /** The longest run one lit() holds with room to spare: the display filter bounds a line, and a
  *  terminal can be wider than that bound. */
@@ -73,8 +75,9 @@ function rule(cols, ascii, joint = null) {
 /** A sentence made of parts (lib/model.mjs OPEN_WORDS): the TUI's own words (`{ own }`) and text
  *  from outside (`{ shown }`, a name), each made safe on its own, so no word of the TUI's is ever
  *  filtered with a name and no name is ever taken for the TUI's. Set on at most `max` rows of at
- *  most `width` cells, broken at the spaces of the TUI's words; a name and what is written against
- *  it (a full stop) are never broken apart, and a name wider than a row is cut there. Answers rows
+ *  most `width` cells, broken at the spaces of the TUI's words but for those of a `{ own, whole }`
+ *  part (a command: cut in two, it cannot be typed); a name or a whole part and what is written
+ *  against it (a full stop) are never broken apart, and one wider than a row is cut there. Answers rows
  *  of spans from column 0; when more was left, the last row ends in the cut mark. */
 export function partRows(parts, width, max, { ascii = false } = {}) {
   if (width < 1 || max < 1) return [];
@@ -83,7 +86,8 @@ export function partRows(parts, width, max, { ascii = false } = {}) {
   let glue = false;
   const put = (piece) => { if (glue && units.length) units.at(-1).push(piece); else units.push([piece]); glue = true; };
   for (const part of parts) {
-    if (part.own !== undefined) ownEllipsis(part.own, ascii).split(" ").forEach((word, i) => { if (i > 0) glue = false; if (word) put({ text: lit(word), width: word.length }); });
+    if (part.own !== undefined && part.whole) { const own = ownEllipsis(part.own, ascii); put({ text: lit(own), width: own.length }); }
+    else if (part.own !== undefined) ownEllipsis(part.own, ascii).split(" ").forEach((word, i) => { if (i > 0) glue = false; if (word) put({ text: lit(word), width: word.length }); });
     else { const m = measured(part.shown); if (m.width > 0) put(m); }
   }
   const unitWidth = (unit) => unit.reduce((sum, piece) => sum + piece.width, 0);
@@ -118,11 +122,14 @@ export function partRows(parts, width, max, { ascii = false } = {}) {
  *  the layout first, because the model's window is as tall, and the sentences in its list as wide,
  *  as the list pane this gives. The answer's `note` is the note's rows and `outcome` the line's:
  *  its sentence and each text under it (what the viewer printed, what the kernel said) set as a
- *  reason is, on as many rows as a reason may take. */
-export function layout(notice, size, { observed = true, note = null, ascii = false, outcome = null } = {}) {
-  const body = { top: 3, rows: Math.max(0, size.rows - 5) };
+ *  reason is, on as many rows as a reason may take. While a terminal is open (`terminal`) the
+ *  list keeps LIST_BESIDE cells at most, whether the terminal or the detail stands beside it, so
+ *  the agent's screen keeps one size; a name longer than its row is cut there. */
+export function layout(notice, size, { observed = true, note = null, ascii = false, outcome = null, terminal = false } = {}) {
+  // The header's two rows and the rule under them, then the body down to the footer's one row.
+  const body = { top: 3, rows: Math.max(0, size.rows - 4) };
   const wide = size.cols >= WIDE;
-  const listCols = wide ? clamp(Math.floor(size.cols * 0.48), 36, 60) : size.cols;
+  const listCols = !wide ? size.cols : terminal ? LIST_BESIDE : clamp(Math.floor(size.cols * 0.48), 36, 60);
   const across = Math.max(1, size.cols - 2 * MARGIN);
   const reasonRows = clamp(Math.floor(body.rows / 4), 1, REASON_ROWS);
   const reason = notice ? shownLines(notice.reason, across, reasonRows, { ascii }) : [];
@@ -172,12 +179,16 @@ function nameSpans(m, col, room) {
   return [...(width ? [{ col, text: name.text, width }] : []), { col: after(width), text: lit(more), style: DIM, width: more.length }];
 }
 
-/** The header's counts, right aligned, each a number and a word. When they do not all fit, the
- *  ones from the shared count are given up from the end, never the two the TUI adds. */
+/** The cells of the header's first row the counts never take: the workspace's name keeps at
+ *  least NAME_KEPT of them (cut, with the cut mark), and the two after it. */
+const NAME_KEPT = 4;
+/** The header's counts, right aligned, each a number and a word. When they do not all fit beside
+ *  the least of the workspace's name (NAME_KEPT), the ones from the shared count are given up from
+ *  the end, never the two the TUI adds. */
 function countSpans(counts, cols) {
   const texts = counts.map((count) => ({ ...count, text: `${count.n} ${count.word}` }));
   const width = (list) => list.reduce((sum, c) => sum + c.text.length, 0) + Math.max(0, list.length - 1) * 2;
-  const room = cols - 2 * MARGIN - "oats".length - 2;
+  const room = cols - 2 * MARGIN - NAME_KEPT - 2;
   let kept = texts;
   while (width(kept) > room && kept.some((c) => c.shared)) kept = kept.filter((c, i) => i !== kept.findLastIndex((k) => k.shared));
   const spans = [];
@@ -186,24 +197,29 @@ function countSpans(counts, cols) {
   return { spans, start: cols - MARGIN - width(kept) };
 }
 
-/** The footer: the filter field while it is open; else the actions that apply now, read from the
- *  effective table, as many as fit, `help` and `quit` last and always: their room is set aside
- *  first, and a kept filter and the other hints take what is left. The hints stand in the order
+/** The footer, one row from column 0 (docs/tui.md, "The footer"). While the leader waits, its
+ *  hint (leaderHint). Else, in every focus, first the leader (`C-\ commands`), then: the filter
+ *  field while it is open; else the actions that apply now, read from the
+ *  effective table, as many as fit, `help` and `quit` last and always (unless the two do not fit
+ *  whole after the leader: then `help` goes, then `quit`): their room is set aside first, and a
+ *  kept filter and the other hints take what is left. The hints stand in the order
  *  given, and when they do not all fit they are given up in an order of their own (`keep`, the
  *  first kept longest), so a hint can stand first and still be given up before another: in the
- *  list of instances the acts go first (`restart`, `start`, `retire`, then `stop`), then the views
- *  (one hint for the three, `1-3 views`), then `workspaces`, `refresh`, the key that clears a
+ *  list of instances the acts go first (`restart`, `start`, `retire`, then `stop`), then
+ *  `workspaces`, `refresh`, the key that clears a
  *  kept filter, `detail`, the open terminal's `close-terminal` and `zoom`, `open` and last `filter`
  *  (`filter` before `open` while a filter is kept: its own `/` stands in the footer then). A row
- *  too narrow for the whole of a hint drops it.
+ *  too narrow for the whole of a hint drops it. The views have no hint: the header names them.
+ *  The palette's footer says how to work it: Enter, Up/Down and Esc.
  *  `open` stands first while Enter would open the selected agent's terminal, or (`focus terminal`)
  *  go to the one open on the selected row; while another machine is asked first, the key that
  *  gives the open up stands in its place. With a terminal open, `zoom` and `close-terminal` follow
  *  it; then the acts whose key opens a confirmation for the selected row now (the model's
  *  `actable`, which leaves out a secondary act: Retire while a retire runs). While the terminal
- *  has the focus the TUI reads no key but the back key, and the footer names that alone
- *  (tui.json's `open.detachKey`, text from outside). In a confirmation the buttons are on the
- *  screen, and the footer says how to work them: the close key with the close
+ *  has the focus the TUI reads no key but the leader, and the footer names it, and the leader
+ *  twice, which gives the focus back to the list (tui.json's `open.detachKey`, text from
+ *  outside). In a confirmation the buttons are on the screen, and the footer says how to work
+ *  them: the close key with the close
  *  button's label, the keys that move, Enter, and `quit`. The switcher has a filter of its own,
  *  drawn as the list's. A key's label is the user's (views/help.mjs keyText); everything is placed
  *  by cells. */
@@ -226,20 +242,35 @@ function footer(m, cols) {
   const span = (hints) => hints.reduce((sum, h) => sum + h.width, 0) + Math.max(0, hints.length - 1) * GAP;
   // A word is drawn as one span, unless it was made of spans already.
   const spansOf = (h) => ({ ...h, word: { ...h.word, spans: h.word.spans ?? [{ col: 0, text: h.word.text, width: h.word.width }] } });
+  /** A hint of keys that are no action's (a key name the TUI writes, like `Enter`). */
+  const own = (keys, word) => spansOf(made({ text: lit(keys), width: keys.length }, word));
 
-  // While what is typed goes to the agent the TUI takes one key, the back key, and the footer
-  // names it alone (tui.json's open.detachKey, text from outside), in every such frame: before
-  // anything else the footer could show.
-  const listing = m.view !== "help" && m.view !== "switcher";
-  if (listing && m.terminal?.focus === "terminal") {
-    const key = keyText(m.detachKey), word = "back to the list";
-    return [{ col: MARGIN, text: key.text, width: Math.max(0, Math.min(key.width, edge - MARGIN)) },
-      { col: MARGIN + key.width + 1, text: lit(word), width: Math.max(0, Math.min(word.length, edge - MARGIN - key.width - 1)) }].filter((s) => s.width > 0);
+  // While the leader waits for its key, the row is its hint (docs/tui.md, "The leader").
+  if (m.leader) return leaderHint(m, edge, put, own);
+  // The leader stands first in every focus (tui.json's open.detachKey, text from outside): from
+  // it, every action is reached.
+  const lead = spansOf(made(keyText(m.detachKey), "commands"));
+  const start = lead.width + GAP;
+  const led = (spans) => [...put(lead, FOOT), ...spans];
+  // While what is typed goes to the agent the TUI takes one key, the leader, and the footer names
+  // it and the leader twice, which takes the focus back to the list.
+  // The list of instances: what Enter opens, the open terminal's keys and the acts are its own
+  // (Souls and Capabilities have none of them, the help and the switcher neither).
+  const listing = !["help", "switcher", "souls", "capabilities"].includes(m.view);
+  if (listing && m.terminal?.focus === "terminal" && !m.palette) {
+    const twice = keyText(`${m.detachKey} ${m.detachKey}`);
+    return led(start + twice.width + 1 + "back to the list".length <= edge ? put(spansOf(made(twice, "back to the list")), start) : []);
+  }
+  if (m.palette) {
+    const hints = [own("Enter", "run"), own("Up/Down", "move"), own("Esc", "close")], spans = [];
+    let col = start;
+    for (const h of hints) { if (col + h.width > edge) break; spans.push(...put(h, col)); col += h.width + GAP; }
+    return led(spans);
   }
   if (m.view !== "help" && m.filter.editing) {
     const hints = [made({ text: lit("Enter"), width: "Enter".length }, "keep"), hint("close", "clear")].filter(Boolean).map(spansOf);
-    const spans = [{ col: MARGIN, text: lit("/"), style: BOLD, width: 1 }, { col: MARGIN + 1, text: shown(m.filter.query), width: Math.max(0, edge - span(hints) - GAP - MARGIN - 1) }];
-    let col = Math.max(MARGIN + 2, edge - span(hints));
+    const spans = [...put(lead, FOOT), { col: start, text: lit("/"), style: BOLD, width: 1 }, { col: start + 1, text: shown(m.filter.query), width: Math.max(0, edge - span(hints) - GAP - start - 1) }];
+    let col = Math.max(start + 2, edge - span(hints));
     for (const h of hints) { spans.push(...put(h, col, { style: DIM })); col += h.width + GAP; }
     return spans;
   }
@@ -254,9 +285,9 @@ function footer(m, cols) {
     const quit = hint("quit");
     const all = [...hints, ...(quit ? [spansOf(quit)] : [])];
     const spans = [];
-    let col = MARGIN;
+    let col = start;
     for (const h of all) { if (col + h.width > edge) break; spans.push(...put(h, col)); col += h.width + GAP; }
-    return spans;
+    return led(spans);
   }
   // While another machine is asked first, Esc gives the open up, and that is all it does: the
   // hint stands where `open` stood, is kept as long, and `close` is not listed beside it.
@@ -269,14 +300,10 @@ function footer(m, cols) {
   // The acts the selected row offers now stand after those, and are the first given up.
   const acts = listing && !asking ? (m.actable ?? []).map((verb) => [verb, hint(verb)]).filter(([, h]) => h) : [];
   const ACTS = ["stop", "retire", "start", "restart"];
-  // The three views are one hint, `views`, named by their keys: `1-3` while they are the digits
-  // in order, else each key (tui.json may rebind one), and a view with no key left out. The
-  // header shows which views there are; the help names each key.
-  const viewKeys = ["instances", "souls", "capabilities"].map((id) => action(id)).filter(Boolean).map((a) => keyLabel(a.keys[0]));
-  const views = viewKeys.length === 0 ? null : made(keyText(viewKeys.join("") === "123" ? "1-3" : viewKeys.join("/")), "views");
-  hintOf.views = views;
-  const VIEW_KEYS = ["views"];
+  // The views have no hint: the header names them, and the leader's hint and the help their keys.
+  const VIEW_KEYS = [];
   const [ids, keep] = m.view === "help" ? [["close"], ["close"]]
+    : m.view === "souls" || m.view === "capabilities" ? [["close", "workspaces"], ["close", "workspaces"]]
     // Esc closes the switcher only onto a view, and there is none before a workspace is opened.
     // A kept filter puts `close` before `refresh`, as in the list: the key that clears it is the hint to keep.
     : m.view === "switcher" ? [["open", "filter", ...(m.filter.query ? ["close", "refresh"] : ["refresh", ...(m.open ? ["close"] : [])])], null]
@@ -284,9 +311,13 @@ function footer(m, cols) {
     // A kept filter shows its own `/` beside the hints: then `open` outlives the `/ filter` hint.
     : [["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces", ...VIEW_KEYS], [...(m.filter.query ? ["open", "zoom", "close-terminal", "filter"] : ["filter", "open", "zoom", "close-terminal"]), "detail", "close", "refresh", "workspaces", ...VIEW_KEYS, ...ACTS]];
   const hints = [...first, ...terminal, ...acts, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, id in hintOf ? hintOf[id] : hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
-  const last = ["help", "quit"].map((id) => hint(id)).filter(Boolean).map(spansOf);
-  const spans = [];
-  let col = MARGIN;
+  // `help` and `quit` stand last, and always but in one case: when the two do not fit whole
+  // after the leader (keys tui.json made long), `help` is given up, then `quit`. The leader
+  // reaches the help too, and a hint is never cut.
+  let last = ["help", "quit"].map((id) => hint(id)).filter(Boolean).map(spansOf);
+  while (last.length && start + span(last) > edge) last = last.slice(1);
+  const spans = put(lead, FOOT);
+  let col = start;
   if (m.view !== "help" && m.filter.query) {
     // The kept filter has a place of its own width, so the hints stand where they always do;
     // it gives way, down to nothing, before `help` and `quit` do, and before the hint that
@@ -295,7 +326,7 @@ function footer(m, cols) {
     // cannot stand takes no room from the filter.
     const firstFits = first.length > 0 && col + first[0][1].width + GAP + span(last) <= edge;
     const held = firstFits ? first[0][1].width + GAP : 0;
-    const slot = Math.min(FILTER_COLS - GAP, edge - MARGIN - span(last) - (last.length ? GAP : 0) - held);
+    const slot = Math.min(FILTER_COLS - GAP, edge - col - span(last) - (last.length ? GAP : 0) - held);
     if (slot >= 2) {
       spans.push({ col, text: lit("/"), style: BOLD, width: 1 }, { col: col + 1, text: shown(m.filter.query), style: BOLD, width: slot - 1 });
       col += slot + GAP;
@@ -314,6 +345,34 @@ function footer(m, cols) {
   return spans;
 }
 
+/** The footer's first column. */
+const FOOT = 0;
+/** The leader's hint (docs/tui.md, "The leader"): the leader's key, then what each key after it
+ *  does, from actions.mjs LEADER, the views, the instances and the acts each one hint. The keys
+ *  that need a terminal are named only while one is open. Hints are given up from the end until
+ *  the rest fit, the last, the list's, never. */
+function leaderHint(m, edge, put, own) {
+  const by = (does) => LEADER.find((entry) => entry.does === does);
+  const one = (does) => { const entry = by(does); return own(keyLabel(entry.keys[0]), entry.label); };
+  const keysOf = (list) => list.map((does) => keyLabel(by(does).keys[0])).join("/");
+  const hints = [
+    own(keyLabel(by("palette").keys[0]), "palette"),
+    own(keysOf(["instances", "souls", "capabilities"]) === "1/2/3" ? "1-3" : keysOf(["instances", "souls", "capabilities"]), "views"),
+    own(keysOf(["previous", "next"]), "instance"),
+    ...(m.terminal ? [one("zoom"), one("close-terminal")] : []),
+    own(keysOf(["stop", "restart", "start", "retire"]), "acts"),
+    one("filter"), one("workspaces"), one("help"),
+  ];
+  const last = one("list"), key = keyText(m.detachKey);
+  const width = (list) => list.reduce((sum, h) => sum + h.width + GAP, 0);
+  let kept = hints;
+  while (kept.length && key.width + GAP + width(kept) + last.width > edge) kept = kept.slice(0, -1);
+  const spans = [{ col: FOOT, text: key.text, style: BOLD, width: Math.min(key.width, edge) }];
+  let col = key.width + GAP;
+  for (const h of [...kept, last]) { if (col + h.width > edge) break; spans.push(...put(h, col)); col += h.width + GAP; }
+  return spans;
+}
+
 /** Shift a pane's rows to its place on the screen. */
 const placed = (spans, col) => spans.map((span) => ({ ...span, col: span.col + col }));
 
@@ -324,35 +383,40 @@ const placed = (spans, col) => spans.map((span) => ({ ...span, col: span.col + c
 export function frame(m, size) {
   if (tooSmall(size)) return { rows: tooSmallRows(size), page: 1, extent: 0, room: 1 };
   const rows = Array.from({ length: size.rows }, () => []);
-  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome });
+  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: Boolean(m.terminal) });
   const { cols } = size;
   // The switcher is no view of the three: while it is shown, or is under the help, none is current.
   const listing = m.under === "switcher";
 
   const counts = countSpans(m.counts, cols);
-  const nameCol = MARGIN + "oats".length + 2;
-  rows[0] = [{ col: MARGIN, text: lit("oats"), style: BOLD }, ...nameSpans(m, nameCol, counts.start - 2 - nameCol), ...counts.spans];
+  // The header starts with the workspace's name: no title before it.
+  rows[0] = [...nameSpans(m, MARGIN, counts.start - 2 - MARGIN), ...counts.spans];
   let col = MARGIN;
   for (const view of VIEWS) {
-    // The Instances view is the open one but while the switcher is shown: then none is.
-    const look = !view.open ? DIM : listing ? null : REVERSE;
-    if (look === REVERSE) rows[1].push({ col, width: view.name.length + 2, style: REVERSE });
-    rows[1].push({ col: col + 1, text: lit(view.name), ...(look ? { style: look } : {}), width: view.name.length });
+    // The open view is in reverse; while the switcher is shown none is open.
+    const open = view.id === m.under;
+    if (open) rows[1].push({ col, width: view.name.length + 2, style: REVERSE });
+    rows[1].push({ col: col + 1, text: lit(view.name), ...(open ? { style: REVERSE } : {}), width: view.name.length });
     col += view.name.length + 2 + VIEW_GAP;
   }
   if (m.readAt) { const read = `read ${m.readAt}`; rows[1].push({ col: cols - MARGIN - read.length, text: lit(read), style: DIM, width: read.length }); }
   rows[size.rows - 1] = footer(m, cols);
 
+  // The palette over the whole body, whatever is under it.
+  if (m.palette) {
+    rows[2] = rule(cols, m.ascii);
+    const drawn = palette(m, { cols, rows: g.body.rows });
+    drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
+    return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1, cursor: { row: g.body.top, col: drawn.cursor } };
+  }
   if (m.view === "act" && m.act) {
     rows[2] = rule(cols, m.ascii);
-    rows[size.rows - 2] = rule(cols, m.ascii);
     const drawn = act(m, { cols, rows: g.body.rows });
     drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
     return { rows, page: Math.max(1, g.page), extent: drawn.extent, room: drawn.room };
   }
   if (m.view === "help") {
     rows[2] = rule(cols, m.ascii);
-    rows[size.rows - 2] = rule(cols, m.ascii);
     const drawn = help(m.actions, { cols, rows: g.body.rows }, { top: m.helpTop, ascii: m.ascii, detachKey: m.detachKey });
     drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
     return { rows, page: Math.max(1, g.page), extent: drawn.extent, room: g.body.rows };
@@ -362,8 +426,14 @@ export function frame(m, size) {
   // Nothing beside it scrolls on its own.
   if (listing) {
     rows[2] = rule(cols, m.ascii);
-    rows[size.rows - 2] = rule(cols, m.ascii);
     switcher(m, { cols, rows: g.body.rows }).forEach((spans, i) => { rows[g.body.top + i] = spans; });
+    return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1 };
+  }
+
+  // The views of this machine say what they will hold, and what to run until then.
+  if (m.view === "souls" || m.view === "capabilities") {
+    rows[2] = rule(cols, m.ascii);
+    partRows(m.body?.said ?? [], cols - 2 * MARGIN, g.body.rows, { ascii: m.ascii }).forEach((spans, i) => { rows[g.body.top + 1 + i] = placed(spans, MARGIN); });
     return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1 };
   }
 
@@ -389,8 +459,7 @@ export function frame(m, size) {
   // The rule that opens the panes: the one under the header, or the one under the reason and the note.
   const opening = m.observed && g.above > 0 ? g.panes.top - 1 : 2;
   rows[2] = rule(cols, m.ascii, opening === 2 ? joint : null);
-  if (opening !== 2 && opening < size.rows - 2) rows[opening] = rule(cols, m.ascii, joint);
-  rows[size.rows - 2] = rule(cols, m.ascii, joint && { ...joint, up: true });
+  if (opening !== 2 && opening < size.rows - 1) rows[opening] = rule(cols, m.ascii, joint);
 
   const pane = { cols: g.wide ? g.listCols : cols, rows: g.panes.rows };
   let extent = 0;
@@ -420,11 +489,11 @@ export function frame(m, size) {
  *  (`whole`); else it stands beside the list, edge to edge, in the detail's place. */
 export function terminalArea(m, size) {
   if (tooSmall(size)) return null;
-  return terminalAt(m, size, layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome }));
+  return terminalAt(m, size, layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: Boolean(m.terminal) }));
 }
 function terminalAt(m, size, g) {
   const t = m.terminal;
-  if (!t || m.view !== "instances" || m.under === "switcher" || g.panes.rows < 2) return null;
+  if (!t || m.view !== "instances" || m.under === "switcher" || m.palette || g.panes.rows < 2) return null;
   const side = size.cols - g.listCols - 1;
   const narrow = !g.wide || side < PANEL_MIN;
   const whole = t.focus === "terminal" && (t.zoom || narrow);

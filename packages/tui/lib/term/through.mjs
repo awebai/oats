@@ -8,7 +8,7 @@
 // back from a terminal and name in the footer. It began as the kernel's `--detach-key` grammar
 // (lib/session-viewer.mjs) and keeps its set and its spelling, so a tui.json written for PR 4 means
 // the same key; it is not tied to the kernel's, which never sees this key any more.
-import { ESC_TIMEOUT_MS, PASTE_LIMIT, PASTE_PAUSE_MS } from "./keys.mjs";
+import { ESC_TIMEOUT_MS, PASTE_LIMIT, PASTE_PAUSE_MS, createKeyParser, keyId } from "./keys.mjs";
 
 /** The keys that can be the back key: Control with a letter other than h, i and m (Backspace on
  *  some terminals, Tab, Enter), or one of \ ] ^ _; Meta with a lowercase letter or a digit; or F1
@@ -47,6 +47,17 @@ export function backKeySequences(key) {
   forms.push(m === null ? `[${TILDE[n]}~` : `[${TILDE[n]};${m}~`);
   if (m === null && n <= 5) forms.push(`[[${"ABCDE"[n - 1]}`);
   return forms.map(escaped);
+}
+
+/** The key id the key parser (term/keys.mjs) reads a back key's bytes as: what the leader is where
+ *  the TUI reads keys (docs/tui.md, "The leader"). `C-\\` is `ctrl+\\`, `M-x` is `alt+x`, `F5` is
+ *  `f5`; `C-j` is `enter`, the byte the parser reads as Enter. Every form of a back key reads as
+ *  the same id. A key that is no back key (tui.json refuses it) has none: null. */
+export function backKeyId(key) {
+  let sequences;
+  try { sequences = backKeySequences(key); } catch { return null; } // not a back key: none is read
+  const events = createKeyParser({ now: () => 0 }).feed(sequences[0]);
+  return events.length === 1 ? keyId(events[0]) : null;
 }
 
 const PASTE_START = escaped("[200~");

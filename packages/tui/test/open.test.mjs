@@ -53,14 +53,14 @@ const rowOf = (state) => roster(state).instances.find((row) => instanceId(row) =
  *  that opens the panes. */
 function above(state, sz = S80) {
   const r = roster(state, AT);
-  const g = layout(r.notice, sz, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: state.outcome });
+  const g = layout(r.notice, sz, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: state.outcome, terminal: state.terminal !== null });
   return draw(state, sz).lines.slice(3, 3 + g.above - (g.above && r.observed ? 1 : 0)).map((line) => line.trim());
 }
 const footerOf = (state, sz = S80) => draw(state, sz).lines[sz.rows - 1];
 
 test("Enter on a running instance of this machine opens it at once in the panel: the effect carries the decision with the shared target, and the store holds the terminal, starting, with the focus", () => {
   const state = on(here(), ALPHA);
-  assert.equal(footerOf(state), " Enter open   / filter   Tab detail   r refresh   ? help   q quit", "at 80 columns the acts and `w workspaces` are given up first");
+  assert.equal(footerOf(state), "C-\\ commands   Enter open   / filter   Tab detail   r refresh   ? help   q quit", "at 80 columns the acts and `w workspaces` are given up first");
   const { state: opening, effects } = press(state, ["enter"]);
   const row = rowOf(state);
   assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: ALPHA, machine: null, target: { home: row.home }, routed: false } }]);
@@ -194,17 +194,17 @@ test("a row of another machine is opened through the preflight whatever its mach
     assert.equal(entry?.group?.server, "garnet", "the row's tag names the deployment of its group");
     const decision = openDecision(state, row, instanceActs(row));
     assert.deepEqual([decision.open, decision.routed], [true, true], JSON.stringify(probe));
-    assert.match(footerOf(state), /^ Enter open {3}/, JSON.stringify(probe));
+    assert.match(footerOf(state), /^C-\\ commands {3}Enter open {3}/, JSON.stringify(probe));
   }
 });
 
 test("Enter on a running instance of another machine: the preflight first, the footer says so, Enter again does nothing, and Esc gives it up", () => {
   const state = on(both(), FAR_A), row = rowOf(state);
-  assert.match(footerOf(state), /^ Enter open {3}/);
+  assert.match(footerOf(state), /^C-\\ commands {3}Enter open {3}/);
   const { state: asking, effects } = press(state, ["enter"]);
   assert.deepEqual(effects, [{ open: { open: true, id: instanceId(row), name: FAR_A, machine: "garnet", target: { serverId: "garnet", instance: FAR_A, home: row.home }, routed: true } }]);
   assert.deepEqual([asking.opening, asking.terminal], [{ id: instanceId(row), phase: "preflight", name: FAR_A, machine: "garnet", routed: true }, null]);
-  assert.match(footerOf(asking), /^ Esc stop opening {3}\/ filter/);
+  assert.match(footerOf(asking), /^C-\\ commands {3}Esc stop opening {3}\/ filter/);
   assert.doesNotMatch(footerOf(asking), /Enter|Esc close/);
   assert.deepEqual(press(asking, ["enter"]).effects, [], "a second Enter does nothing");
   const given = press(asking, ["escape"]);
@@ -284,6 +284,21 @@ test("a row of another machine the kernel does not report addressable: the row's
   assert.equal(words(OPEN_WORDS.link("garnet")), "The connection to garnet ended.");
 });
 
+test("a row gone from its machine (a saved route to an instance its machine no longer has, as the kernel reports it): Enter opens nothing, and the line says why in the shared words, with the command that removes it from this computer", () => {
+  // The kernel's row for it: no state, its route saved, not addressable, missing remotely.
+  const GONE = "dev-far-gone";
+  const state = on(both([group({ instances: [farRow(FAR_A), farRow(GONE, { running: null, runtimeState: undefined, savedRoute: true, addressable: false, missingRemotely: true })] })]), GONE);
+  const row = rowOf(state), acts = instanceActs(row);
+  assert.deepEqual([acts.blocked.code, acts.blocked.key, acts.blocked.origin], ["unaddressable", "missing", undefined]);
+  assert.equal(openAct(row), null);
+  assert.deepEqual(openDecision(state, row, acts), { open: false, said: { said: [], under: [acts.blocked.sentence] } });
+  assert.equal(acts.blocked.sentence.includes(`oats server forget garnet --instance ${GONE}`), true, "the shared sentence names the command");
+  const { state: refused, effects } = press(state, ["enter"]);
+  assert.deepEqual(effects, [], "nothing is opened, and no machine is asked");
+  assert.equal(above(refused, S120).join(" "), acts.blocked.sentence, "the shared home's own sentence, as it is written, wrapped as a reason is");
+  assert.doesNotMatch(footerOf(state), /Enter/);
+});
+
 // ── The viewer's stderr ───────────────────────────────────────────────────────────────────────────
 
 /** The kernel's first row of #855 (comment 6138104215): a tmux command line with the agents'
@@ -344,9 +359,9 @@ test("opening, terminal, outcome and detachKey are kept by the store and read by
   const terminal = Object.freeze({ ...state, terminal: Object.freeze({ id: asking.opening.id, name: FAR_A, machine: "garnet", routed: true, focus: "terminal", zoom: false, status: "open" }) });
   assert.notDeepEqual(draw(terminal).lines, before);
   assert.equal(roster(terminal).instances, roster(state).instances, "the roster is the one already made");
-  // detachKey: the footer names it while the terminal has the focus, and the help names it.
+  // detachKey: the footer names it, and it twice, while the terminal has the focus, and the help names it.
   const f12 = Object.freeze({ ...terminal, detachKey: "F12" });
-  assert.equal(footerOf(f12), " F12 back to the list");
+  assert.equal(footerOf(f12), "F12 commands   F12 F12 back to the list");
   assert.notDeepEqual(draw(f12).lines, draw(terminal).lines);
   assert.match(draw(press(on(both([group()], { detachKey: "F12" }), FAR_A), ["?"]).state, size(140, 100)).lines.join("\n"), /F12 takes the focus from the terminal back to the list; the agent keeps running\./);
 });
@@ -376,12 +391,12 @@ test("a sentence from outside is wrapped as a reason is, on the reason's rows, n
   assert.equal(said.some((line) => line.endsWith("\u2026")), false, "nothing cut");
 });
 
-test("a preflight that ends while the filter field is open gives the terminal the focus and settles the field, its text kept: the footer names the back key alone, and no key goes to the field (round 1 of the review)", () => {
+test("a preflight that ends while the filter field is open gives the terminal the focus and settles the field, its text kept: the footer names the leader and the leader twice alone, and no key goes to the field (round 1 of the review)", () => {
   const state = on(both(), FAR_A), id = instanceId(rowOf(state));
   const typing = press(press(state, ["enter"]).state, ["/", "d", "e", "v"]).state;
   assert.deepEqual([typing.filter.editing, typing.opening?.phase], [true, "preflight"]);
   const started = reduce(typing, { prepared: { id } }).state;
   assert.deepEqual([started.terminal.focus, started.filter, started.focus], ["terminal", { editing: false, query: "dev" }, "list"]);
-  assert.equal(footerOf(started), " C-\\ back to the list");
-  assert.equal(footerOf(started, S120), " C-\\ back to the list");
+  assert.equal(footerOf(started), "C-\\ commands   C-\\ C-\\ back to the list");
+  assert.equal(footerOf(started, S120), "C-\\ commands   C-\\ C-\\ back to the list");
 });
