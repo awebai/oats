@@ -756,8 +756,8 @@ const STATES = () => [
 const markOf = (d, sz, name) => { const line = cellText(d, rowOf(d, sz, name)); return line.slice(0, line.indexOf(name)).trim().split(/\s+/).at(-1); };
 
 test("each state has a mark of its own shape, in UTF-8 and in ASCII: running, stopped, a shell left behind, unknown, and a home the kernel holds", () => {
-  assert.deepEqual({ ...MARKS.utf8 }, { running: "●", stopped: "○", shell: "◌", unknown: "?", held: "◆", open: "▾", closed: "▸", selected: ">", waiting: "!" });
-  assert.deepEqual({ ...MARKS.ascii }, { running: "*", stopped: "-", shell: "~", unknown: "?", held: "#", open: "v", closed: ">", selected: ">", waiting: "!" });
+  assert.deepEqual({ ...MARKS.utf8 }, { running: "●", stopped: "○", shell: "◌", unknown: "?", held: "◆", selected: ">", waiting: "!" });
+  assert.deepEqual({ ...MARKS.ascii }, { running: "*", stopped: "-", shell: "~", unknown: "?", held: "#", selected: ">", waiting: "!" });
   for (const ascii of [false, true]) {
     const sz = S120, d = draw(stateOf(observed(STATES().map(([, row]) => row)), { ascii }), sz);
     for (const [mark, row] of STATES()) assert.equal(markOf(d, sz, row.instance), marksOf(ascii)[mark], `${row.instance}${ascii ? " in ASCII" : ""}`);
@@ -1405,7 +1405,7 @@ test("the help lists the marks with their words, in UTF-8 and in ASCII: each mar
     assert.equal(said(marks.waiting, "needs input"), true);
     assert.equal(said(marks.selected, "selected"), true);
     assert.equal(section.some((line) => line.startsWith(`${marks.waiting}N`)), true, "and the roll-up of a collapsed row");
-    assert.equal(section.some((line) => line.startsWith(`${marks.open} ${marks.closed}`) || (line.split(" ")[0] === marks.open && section.some((other) => other.split(" ")[0] === marks.closed))), true, "the two disclosure marks");
+    assert.equal(said("+N", "folded away"), true, "a folded row's count: no fold mark");
     for (const [name, mark] of Object.entries(marks)) assert.equal(section.some((line) => line.split("  ")[0].split(" ").includes(mark) || line.startsWith(mark)), true, `${name}: ${mark}`);
   }
 });

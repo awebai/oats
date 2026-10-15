@@ -13,11 +13,10 @@ import { textWidth } from "../term/width.mjs";
 
 /** The marks, in UTF-8 and in ASCII (docs/tui.md lists them; the help view draws them from here).
  *  The state marks are keyed by the word the shared home gives a row's state, with `shell` and
- *  `held` beside them (lib/model.mjs says when). `open` and `closed` are no longer drawn in the
- *  list, which shows a fold as `+n` (instanceRow): they stay only while the help names them. */
+ *  `held` beside them (lib/model.mjs says when). A fold has no mark: a folded row shows `+n`. */
 export const MARKS = Object.freeze({
-  utf8: Object.freeze({ running: "●", stopped: "○", shell: "◌", unknown: "?", held: "◆", open: "▾", closed: "▸", selected: ">", waiting: "!" }),
-  ascii: Object.freeze({ running: "*", stopped: "-", shell: "~", unknown: "?", held: "#", open: "v", closed: ">", selected: ">", waiting: "!" }),
+  utf8: Object.freeze({ running: "●", stopped: "○", shell: "◌", unknown: "?", held: "◆", selected: ">", waiting: "!" }),
+  ascii: Object.freeze({ running: "*", stopped: "-", shell: "~", unknown: "?", held: "#", selected: ">", waiting: "!" }),
 });
 export const marksOf = (ascii) => (ascii ? MARKS.ascii : MARKS.utf8);
 
