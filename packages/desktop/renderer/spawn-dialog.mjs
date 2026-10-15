@@ -19,22 +19,23 @@
 import { retainedSpawnMessage, differedLines, flagIgnoredNotice } from '../../client/launch-prompt-outcome.mjs';
 import { launchDiffered, launchDifferedCSS } from './launch-differed.mjs';
 import { harnessOf } from '../../client/harness-names.mjs';
-import { displayLine } from '../../client/display-text.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX } from '../../client/spawn-preview-contract.mjs';
-import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason, SPAWN_APPLY_MS, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
-import { sameSpawnDecision } from '../../client/spawn-decision.mjs';
+import { spawnApplySupported, spawnPrepareInput, spawnApplyReason, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
+import { createSpawnTransaction } from '../../client/spawn-transaction.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
+import { spawnText, outcomeText } from './spawn-words.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
-import { RECOVER_POLL_MS, FOLLOW_MARGIN_MS } from './spawn-jobs.mjs';
+import { RECOVER_POLL_MS } from './spawn-jobs.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from '../../client/launch-view.mjs';
+import { previewFacts } from '../../client/spawn-preview-facts.mjs';
 import { createSpawnDeploymentField, spawnDeployments } from './spawn-deployment-field.mjs';
 import { openAddMachineDialog } from './add-machine-dialog.mjs';
 import { followBackfill, BACKFILL_POLL_MS } from '../../client/machine-contract.mjs';
@@ -384,77 +385,35 @@ export function soulOriginText(soul) {
   const from = soul?.origin || soul?.repoName;
   return from ? `from ${from}` : '';
 }
-/** The preview's work mode in words (board 6, "Works in"); an unknown mode verbatim. */
-const WORK_PHRASES = Object.freeze({ __proto__: null, worktree: 'own worktree', checkout: 'shared checkout', attached: "a parent's worktree", directory: 'own folder · free to work across repos', workspace: 'all member repos' });
-export const worksInText = work => WORK_PHRASES[work] ?? work;
-/** The preview's home, short enough to read: relative to the deployment (the preview's subject.dir)
- * when it lies inside it, else its last three segments behind "…/". The full path is the title. */
-export function homeText(home, dir) {
-  if (typeof home !== 'string' || !home) return null;
-  const base = typeof dir === 'string' && dir ? dir.replace(/\/+$/, '') : '';
-  if (base && home.startsWith(`${base}/`) && home.length > base.length + 1) return { text: home.slice(base.length + 1), title: home };
-  const parts = home.split('/').filter(Boolean);
-  return { text: parts.length > 3 ? `…/${parts.slice(-3).join('/')}` : home, title: home };
-}
-/** A worktree spawn's "Works in": the new branch (mono in the view) and the ref it starts from, when the preview says. */
-export function worktreeText(data) {
-  return { lead: 'worktree · branch ', branch: data.branch, tail: data.base?.ref ? ` from ${data.base.ref}` : '' };
-}
-/** The relation the preview binds, in words with its anchor ("child of api-2"); null when independent. */
-const RELATION_WORDS = Object.freeze({ __proto__: null, child: 'child of', sibling: 'sibling of', parent: 'parent of' });
-export function relationText(data) {
-  const kind = data?.relation;
-  if (typeof kind !== 'string' || !kind) return null;
-  const anchor = data.decision?.effective?.relation?.anchor?.instance;
-  if (!RELATION_WORDS[kind]) return kind;
-  return typeof anchor === 'string' && anchor ? `${RELATION_WORDS[kind]} ${anchor}` : RELATION_WORDS[kind];
-}
-/** A preview module's source, as the Capabilities tag says it: the package and version, the member
- * repository, or the kind verbatim. Never a reason: that is moduleWhyText's, beside it. */
-export function moduleSourceText(from) {
-  if (from?.kind === 'package') return `package ${from.package ?? ''}${from.version ? ` ${from.version}` : ''}`.trimEnd();
-  if (from?.kind === 'member') return `${String(from.repoKey ?? '').split('/').pop().replace(/\.git$/, '') || 'member'} · latest`;
-  return typeof from?.kind === 'string' ? from.kind : '';
-}
-/** Why a preview module is there, as the reason tag beside its source says it: the projection's
- * `composedFrom` (feature preview-composed-from) — "Soul" or "Workspace default" (a core row already
- * names its slot). '' (no tag) when the preview does not say: an older CLI, or a value the projection
- * dropped. Never guessed from the soul. */
-const CORE_LAYERS = ['knowledge', 'messaging', 'tasks'];
-export function moduleWhyText(m) {
-  if (m?.composedFrom === 'soul') return 'Soul';
-  if (m?.composedFrom === 'workspace') return 'Workspace default';
-  return '';
-}
 /** The preview column's Core capabilities and Capabilities sections (their children), from the
- * preview's `modules` rows [{name, layer, from, composedFrom?}]; null when the preview carries none
- * (no placeholder). Both are bordered boxes of one row grammar: the module in mono on its own line,
- * then its source and reason chips (.spawn-cap-tags). A module filling a core slot is Core's only: never in Capabilities or its count. */
+ * preview's `modules` rows [{name, layer, from, composedFrom?}] as previewFacts answers them
+ * (packages/client/spawn-preview-facts.mjs); null when the preview carries none (no placeholder). Both are
+ * bordered boxes of one row grammar: the module in mono on its own line, then its source and reason chips
+ * (.spawn-cap-tags). A module filling a core slot is Core's only: never in Capabilities or its count. */
 export function composePreviewModules(doc, modules) {
-  if (!Array.isArray(modules)) return null;
+  const sections = previewFacts({ modules }).modules;
+  if (!sections) return null;
   const el = (tag, text, cls) => node(doc, tag, text, cls);
-  const rows = modules.filter(m => m && typeof m === 'object' && typeof m.name === 'string' && m.name);
   // Line 1 the module, line 2 its chips (one group that wraps). The reason is plain text in the row:
   // part of what a screen reader reads for it.
   const describe = (row, into, m) => {
     row.dataset.module = m.name;
-    const tags = el('span', undefined, 'spawn-cap-tags'); tags.append(el('span', moduleSourceText(m.from), 'spawn-cap-source'));
-    const why = moduleWhyText(m); if (why) tags.append(el('span', why, 'spawn-cap-why'));
+    const tags = el('span', undefined, 'spawn-cap-tags'); tags.append(el('span', m.source, 'spawn-cap-source'));
+    if (m.why) tags.append(el('span', m.why, 'spawn-cap-why'));
     into.append(el('span', m.name, 'mono'), tags);
   };
   const coreBox = el('div', undefined, 'spawn-core-box');
-  for (const [layer, label] of [['knowledge', 'Knowledge'], ['messaging', 'Messaging'], ['tasks', 'Tasks']]) {
-    const row = el('span', undefined, 'spawn-core-row'), m = rows.find(x => x.layer === layer); row.dataset.layer = layer;
+  for (const { layer, label, module: m } of sections.core) {
+    const row = el('span', undefined, 'spawn-core-row'); row.dataset.layer = layer;
     row.append(el('span', label, 'spawn-core-layer'));
     if (m) { const module = el('span', undefined, 'spawn-core-module'); describe(row, module, m); row.append(module); }
     else row.append(el('span', 'None', 'muted')); // an empty slot, not a provider named "none"
     coreBox.append(row);
   }
-  const others = rows.filter(m => !CORE_LAYERS.includes(m.layer)).sort((a, b) => a.name.localeCompare(b.name));
   const capsList = el('div', undefined, 'spawn-cap-list');
-  for (const m of others) { const row = el('span', undefined, 'spawn-cap-row'); describe(row, row, m); capsList.append(row); }
-  if (!others.length) capsList.append(el('span', 'No other capabilities: only the core ones.', 'spawn-cap-row spawn-cap-none'));
-  return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${others.length}`, 'spawn-preview-title'), capsList] };
+  for (const m of sections.caps) { const row = el('span', undefined, 'spawn-cap-row'); describe(row, row, m); capsList.append(row); }
+  if (!sections.caps.length) capsList.append(el('span', 'No other capabilities: only the core ones.', 'spawn-cap-row spawn-cap-none'));
+  return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${sections.caps.length}`, 'spawn-preview-title'), capsList] };
 }
 
 /** A segmented group is one tab stop (spec F): Arrow keys move along it (in a radio group they
@@ -913,8 +872,11 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   let pressed = null;
   // Spec C: this dialog's one handoff (single-flight: the store refuses a token it has seen).
   const handoffToken = {}; let handedOff = false;
-  // followUntil (#802): until when a pending submitted spawn is followed (the broker's CLI deadline + 30 s, from the press).
-  let followUntil = 0;
+  // The spawn transaction without a store (packages/client/spawn-transaction.mjs), this dialog's own: its job
+  // (`spawnJob`) carries the submitted reference and its deadline (#802: the broker's CLI deadline + 30 s, from the press).
+  const transaction = createSpawnTransaction({ request: (body, job) => postJson(ctx, `/api/spawn?ws=${encodeURIComponent(job.address)}`, body),
+    now: () => Date.now(), pollMs: pollDelay });
+  let spawnJob = null;
   let flight = null, phase = 'idle', intent = null, submitted = false, delivered = false, modelsReq = 0, configsReq = 0, remoteBusy = false, modelsFor = null;
   let notice = null; // a refusal from the last Spawn stays visible until the operator edits
   const current = () => alive && owns() && mount === workspaceGeneration();
@@ -1080,7 +1042,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const nameRefusal = shown?.failure && shown.key === choiceKey(draftChoice.value) && ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'].includes(shown.failure.code) ? shown.failure : null;
     nameResult.classList.toggle('err', !!(draftChoice.error && draftChoice.field === 'name' || nameRefusal));
     if (draftChoice.error && draftChoice.field === 'name') nameResult.textContent = draftChoice.error;
-    else if (nameRefusal) nameResult.textContent = spawnProblem(nameRefusal).text;
+    else if (nameRefusal) nameResult.textContent = spawnText(spawnProblem(nameRefusal));
     else if (!local()) nameResult.textContent = `Named by ${remoteTarget()} when it spawns.`;
     else {
       nameResult.replaceChildren();
@@ -1162,7 +1124,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (answer.data) return { kind: 'data', data: answer.data, key: answer.key };
       // A name refusal is already said next to the Name field.
       if (NAME_REFUSALS.includes(answer.failure.code)) return { kind: 'empty', text: 'No preview until the name is accepted.' };
-      return { kind: 'failure', text: spawnProblem(answer.failure, 'preview').text };
+      return { kind: 'failure', text: spawnText(spawnProblem(answer.failure, 'preview'), 'preview') };
     };
     if (shown && shown.key === key && !readDue()) return said(shown);
     // A failure for the choices on screen stays while its retry reads; otherwise the last settled facts.
@@ -1198,51 +1160,35 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     } else if (state.kind === 'failure') factsBody.append(el('p', state.text, 'spawn-preview-failure'));
     else if (state.kind === 'empty') { if (state.text) factsBody.append(el('p', state.text, 'spawn-preview-empty')); }
     else {
-      const muted = (text, cls = '') => el('span', text, `muted${cls ? ` ${cls}` : ''}`);
-      const sub = text => muted(text, 'spawn-fact-sub'); // a value's second line: where it came from, what else
+      // The facts are previewFacts' (packages/client/spawn-preview-facts.mjs); the drawing is the dialog's.
+      const shownFacts = previewFacts(data, { name, runsOn, cli: cli() });
+      // A part: plain text, a branch in mono, muted, or a value's second line (where it came from, what else).
+      const part = p => p.sub ? el('span', p.text, 'muted spawn-fact-sub') : p.muted ? el('span', p.text, 'muted') : p.mono ? el('span', p.text, 'mono') : doc.createTextNode(p.text);
       // The instance first and largest, its home beneath: the terms are for assistive tech, the eye reads the shape.
       const identity = el('dl', undefined, 'spawn-preview-identity');
-      const said = (label, value) => { identity.append(el('dt', label, 'workspace-sr-only'), value); };
-      said('Name', name ? el('dd', name, 'spawn-preview-name') : el('dd', 'numbered by the kernel', 'spawn-preview-name muted'));
-      const home = homeText(data.home, data.subject?.dir);
-      if (home) { const dd = el('dd', home.text, 'spawn-preview-home'); dd.title = home.title; said('Home', dd); }
-      const worktree = data.work === 'worktree' && data.branch ? worktreeText(data) : null;
-      if (worktree) fact('Works in', doc.createTextNode(worktree.lead), el('span', worktree.branch, 'mono'), ...(worktree.tail ? [doc.createTextNode(worktree.tail)] : []));
-      else if (data.work) fact('Works in', worksInText(data.work));
-      if (data.harness) {
-        // Where the harness came from: the Launch's `from` in words (0.30), else the kernel's modelSource verbatim.
-        const launch = shownLaunch(data.launch, cli());
-        const from = launch ? launchFromText(launch.from) : data.modelSource;
-        const harness = el('span', undefined, 'spawn-preview-harness');
-        // The badge is decorative here: the term says Harness and the text names it.
-        const badge = createRuntimeBadge(doc, data.harness); badge.setAttribute('aria-hidden', 'true');
-        harness.append(badge, el('span', `${runtimeName(data.harness)} · ${data.model ?? 'default model'}`));
-        fact('Harness', harness, ...(from ? [sub(from)] : []));
+      for (const entry of shownFacts.identity) {
+        const dd = el('dd', entry.text, `${entry.label === 'Home' ? 'spawn-preview-home' : 'spawn-preview-name'}${entry.muted ? ' muted' : ''}`);
+        if (entry.title) dd.title = entry.title;
+        identity.append(el('dt', entry.label, 'workspace-sr-only'), dd);
       }
-      // Team model v2: the default the kernel resolved (or none), then the other teams it may join. A 0.29 kernel reports only `team`, the primary label.
-      const others = (data.teams || []).map(t => t.label).filter(label => label !== data.defaultTeam?.label);
-      const also = others.length ? [sub(`may also join ${others.join(', ')}`)] : [];
-      if (data.defaultTeam) fact('Team', doc.createTextNode(data.defaultTeam.label), muted(' · default'), ...also);
-      else if (data.defaultTeam === null && !(data.teams?.length)) fact('Team', muted('none'));
-      else if (data.defaultTeam === undefined && typeof data.team === 'string' && data.team) fact('Team', data.team);
-      const relation = relationText(data);
-      if (relation) fact('Relationship', relation);
-      // The capabilities whose `worktree` hook sets up ./work, in the order they run ([] or absent: none).
-      const hooks = (data.worktreeHooks ?? []).map(h => `${displayLine(h.capability) ?? ''}${h.required ? ' (required)' : ''}`);
-      if (hooks.length) fact('Setup', doc.createTextNode(hooks.join(', ')), sub('Runs after the worktree is made. Can take several minutes.'));
-      runsOnFact();
+      for (const { label, parts, harness: id } of shownFacts.facts) {
+        if (id) {
+          const harness = el('span', undefined, 'spawn-preview-harness');
+          // The badge is decorative here: the term says Harness and the text names it.
+          const badge = createRuntimeBadge(doc, id); badge.setAttribute('aria-hidden', 'true');
+          harness.append(badge, el('span', parts[0].text));
+          fact(label, harness, ...parts.slice(1).map(part));
+        } else fact(label, ...parts.map(part));
+      }
       factsBody.append(identity, facts);
-      if (data.launchPromptAnswers) {
+      if (shownFacts.prompts) {
         // The launch-prompt policy is a note, not a fact: its words stay the kernel contract's, verbatim.
-        const policy = data.launchPromptAnswers, note = el('dl', undefined, 'spawn-preview-prompts');
-        note.append(el('dt', 'Launch prompts'), el('dd', policy.awebDevelopmentChannel
-          ? 'The launcher will answer the aweb development-channel confirmation for this home. This policy does not confirm readiness. A harness update can block the launch until its prompt fixtures are refreshed; no fallback key is sent.'
-          : 'None. The launcher will not answer prompts for this home. This policy does not confirm readiness.'));
-        if (policy.consentSource) note.append(el('dt', 'Prompt consent source'), el('dd', policy.consentSource, 'mono'));
+        const note = el('dl', undefined, 'spawn-preview-prompts');
+        for (const entry of shownFacts.prompts) note.append(el('dt', entry.label), entry.mono ? el('dd', entry.text, 'mono') : el('dd', entry.text));
         factsBody.append(note);
       }
       // Capability warnings (0.49.0): the kernel's strings, each line as text (no Details, no Open capability); they block nothing.
-      const warnings = createWarningsList(doc, data.warnings, { lines: true });
+      const warnings = createWarningsList(doc, shownFacts.warnings.map(lines => lines.join('\n')), { lines: true });
       if (warnings) { const box = el('div', undefined, 'spawn-preview-warnings'); box.append(el('h4', WARNINGS_COPY.title, 'spawn-preview-title'), warnings); factsBody.append(box); }
     }
     // Core capabilities and Capabilities exist only when the preview carries `modules`; redrawn only when those change.
@@ -1304,7 +1250,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     }
     detailsToggle.hidden = !problem;
   }
-  const showProblem = (reason, stage) => { const problem = spawnProblem(reason, stage); setStatus(problem.text, true, problem); return problem; };
+  // The problem as the dialog said it: the shared answer with the Desktop's sentence (spawn-words.mjs) as `text`.
+  const showProblem = (reason, stage) => { const problem = spawnProblem(reason, stage), text = spawnText(problem, stage); setStatus(text, true, problem); return { ...problem, text }; };
   const NAME_REFUSALS = ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'];
 
   // ── background preview (latest intent wins)
@@ -1375,7 +1322,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (press) phase = 'idle';
     if (press && next.data && press.key === key && joinBound(next.data)) { render(); void run(); return; }
     if (next.data) {
-      if (phase === 'drifted') setStatus('These values changed since you last looked. Check them and press Spawn again.');
+      if (phase === 'drifted') setStatus(outcomeText('drifted', null, '', 'dialog'));
       else if (notice) setStatus(notice.text, true, notice);
       else if (press && press.key !== key) setStatus('Changed: press Spawn again');
       else setStatus('Preview ready', false, null, true);
@@ -1437,84 +1384,73 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         return;
       }
     }
-    const ws = address(), sel = selector, token = {}, connection = ctx.connectionGeneration?.() ?? 0, owner = mount;
+    const ws = address(), token = {}, connection = ctx.connectionGeneration?.() ?? 0, owner = mount;
     const valid = () => current() && owner === mount && flight === token && connection === (ctx.connectionGeneration?.() ?? 0);
     flight = token; phase = recovering ? 'checking' : 'preparing'; setStatus(recovering ? 'Checking the submitted spawn…' : 'Spawning…'); syncButton();
-    const request = async body => {
-      const raw = await postJson(ctx, `/api/spawn?ws=${encodeURIComponent(ws)}`, body);
-      if (!valid()) return null;
-      const view = spawnApplyView(raw, { workspace: ws, ref: body.spawnRef, selector: sel });
-      if (!view || view.preview && intent && body.action !== 'prepare' && !sameSpawnDecision(view.preview.decision, intent.preview.decision)) throw Object.assign(Error(), { code: 'E_CLI_PROTOCOL' });
-      return view;
-    };
+    // The shared transaction: prepare, apply only the decision on screen at the press, follow a pending apply
+    // (#802), and Check result on the same intent (an unknown result re-applies the SAME reference only).
+    const call = { alive: valid, progress: (event, job) => {
+      if (event === 'submitted') { intent = job.prepared; spawnJob = job; submitted = true; phase = 'submitting'; }
+      else if (event === 'pending') { phase = 'pending'; setStatus('Spawning…'); syncButton(); }
+    } };
     try {
-      let view;
-      if (recovering) {
-        view = await request({ action: 'result', spawnRef: intent.spawnRef });
-        if (!view) return;
-        // An unknown outcome is retried on the SAME intent (same key) only.
-        if (view.status === 'unknown') { submitted = true; view = await request({ action: 'apply', spawnRef: intent.spawnRef }); if (!view) return; }
-        if (view.status === 'prepared') { intent = null; submitted = false; phase = 'idle'; setStatus('That spawn was never submitted. Press Spawn to spawn with the values shown.'); schedule(0); return; }
-      } else {
-        const prepared = await request(prepareInput);
-        if (!prepared) return;
-        if (prepared.status !== 'prepared') {
-          phase = 'idle'; notice = showProblem(prepared.reason, 'spawn'); schedule(0); return;
-        }
-        // The confirmation is re-read by the server; apply only what is on screen.
-        if (!shown?.data || !sameSpawnDecision(prepared.preview.decision, shown.data.decision)) {
-          phase = 'drifted'; shown = settled = { key: shown?.key, value: shown?.value, data: prepared.preview }; render();
-          setStatus('These values changed since you last looked. Check them and press Spawn again.'); return;
-        }
-        intent = prepared; submitted = true; phase = 'submitting';
-        followUntil = Date.now() + (prepared.applyWithinMs ?? SPAWN_APPLY_MS) + FOLLOW_MARGIN_MS;
-        view = await request({ action: 'apply', spawnRef: intent.spawnRef });
-        if (!view) return;
+      const outcome = recovering
+        ? await transaction.check(spawnJob, call)
+        : await transaction.submit({ address: ws, selector, input: prepareInput, decision: structuredClone(shown.data.decision) }, call);
+      if (!outcome) return;
+      const { kind, view, reason } = outcome;
+      if (kind === 'refused' && !outcome.job.submitted) {
+        // Refused before anything was submitted: the prepare's own refusal, or the request failed.
+        phase = 'idle';
+        if (view) { notice = showProblem(reason, 'spawn'); schedule(0); } else showProblem(reason, 'spawn');
+        return;
       }
-      // #802: still running in the broker (a long spawn): read `result` until it settles or the deadline passes.
-      while (view.status === 'pending' && Date.now() < followUntil) {
-        phase = 'pending'; setStatus('Spawning…'); syncButton();
-        await new Promise(resolve => setTimeout(resolve, pollDelay));
-        if (!valid()) return;
-        view = await request({ action: 'result', spawnRef: intent.spawnRef });
-        if (!view) return;
+      if (kind === 'drifted' && !reason) {
+        // The confirmation is re-read by the server; only what is on screen is applied.
+        phase = 'drifted'; shown = settled = { key: shown?.key, value: shown?.value, data: view.preview }; render();
+        setStatus(outcomeText('drifted', null, '', 'dialog')); return;
       }
+      if (kind === 'never-submitted' && recovering) { intent = null; submitted = false; phase = 'idle'; setStatus(outcomeText('never-submitted', null, '', 'dialog')); schedule(0); return; }
       // Past the deadline and still pending: the outcome is unknown, with Check result (as the store does).
-      if (view.status === 'pending') { phase = 'unknown'; showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn'); return; }
-      phase = view.status;
+      if (kind === 'pending-expired') { phase = 'unknown'; showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn'); return; }
       const named = intent?.preview?.instance ?? shown?.data?.instance ?? '';
-      if (['complete', 'partial'].includes(phase)) {
-        setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
-        if (!delivered) {
-          delivered = true; deploymentField?.remember();
-          // The spawn worked while Claude Code ignored the channel option (the receipt's `flagIgnored`): a
-          // notice says so, once per completed apply, beside whatever the completion itself says. Only a
-          // dialog that runs its own apply gets here: with a store (the shipped shell) spawn-jobs.mjs says it.
-          const ignored = flagIgnoredNotice(view.receipt.instance, view.receipt.flagIgnored);
-          if (ignored) ctx.notify?.(ignored.headline, ignored.detail ? { detail: ignored.detail } : undefined);
-          await onCreated(view, () => current() && owner === mount);
+      if (kind === 'created') {
+        phase = view.status;
+        if (['complete', 'partial'].includes(phase)) {
+          setStatus(outcomeText('created', view, view.receipt.instance, 'dialog'), phase === 'partial');
+          if (!delivered) {
+            delivered = true; deploymentField?.remember();
+            // The spawn worked while Claude Code ignored the channel option (the receipt's `flagIgnored`): a
+            // notice says so, once per completed apply, beside whatever the completion itself says. Only a
+            // dialog that runs its own apply gets here: with a store (the shipped shell) spawn-jobs.mjs says it.
+            const ignored = flagIgnoredNotice(view.receipt.instance, view.receipt.flagIgnored);
+            if (ignored) ctx.notify?.(ignored.headline, ignored.detail ? { detail: ignored.detail } : undefined);
+            await onCreated(view, () => current() && owner === mount);
+          }
+        } else {
+          // Incomplete: what the screen differed in goes under the sentence; the nearest entry and the position are Details' data.
+          const problem = spawnProblem(view.reason, 'spawn'), differed = view.incomplete.launchPrompts?.differed ?? null, said = differedLines(differed);
+          setStatus(retainedSpawnMessage(view.incomplete), true, said ? { ...problem, detail: `${problem.detail} · ${said.detail}` } : problem, false, said ? differed : null);
         }
-      } else if (phase === 'incomplete') {
-        // What the screen differed in goes under the sentence; the nearest entry and the position are Details' data.
-        const problem = spawnProblem(view.reason, 'spawn'), differed = view.incomplete.launchPrompts?.differed ?? null, said = differedLines(differed);
-        setStatus(retainedSpawnMessage(view.incomplete), true, said ? { ...problem, detail: `${problem.detail} · ${said.detail}` } : problem, false, said ? differed : null);
-      } else if (phase === 'unknown' && ROLLED_BACK_CODES.includes(view.reason?.code)) {
+      } else if (kind === 'cleanup-owed') {
         // #802: rolled back, its cleanup owed: retiring the quarantined home completes it; a re-apply cannot.
         intent = null; submitted = false; phase = 'idle';
-        const problem = cleanupOwedProblem(view.reason, named);
-        notice = problem; setStatus(problem.text, true, problem);
-      } else if (phase === 'unknown') {
-        showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn');
-      } else if (ROLLED_BACK_CODES.includes(view.reason?.code)) {
+        const problem = cleanupOwedProblem(reason, named);
+        notice = { ...problem, text: spawnText(problem) }; setStatus(notice.text, true, notice);
+      } else if (kind === 'unknown') {
+        // Unknown, with Check result: E_OUTCOME_UNKNOWN's words, or E_INTENT_EXPIRED's own once the press was
+        // submitted (the record is gone, which proves nothing: never "Nothing was created").
+        phase = 'unknown'; showProblem(reason, 'spawn');
+      } else if (ROLLED_BACK_CODES.includes(reason?.code)) {
         // #802: the kernel rolled the spawn back: nothing was created.
         intent = null; submitted = false; phase = 'idle';
-        notice = rolledBackProblem(view.reason, named);
-        setStatus(notice.text, true, notice); schedule(0);
+        const problem = rolledBackProblem(reason, named);
+        notice = { ...problem, text: spawnText(problem) }; setStatus(notice.text, true, notice); schedule(0);
       } else {
-        // Refused or stale: nothing was created. Read the current values again.
+        // Refused, stale or drifted after the press: nothing was created. Read the current values again.
         intent = null; submitted = false; phase = 'idle';
-        const problem = spawnProblem(view.reason, 'spawn');
-        notice = /Nothing was created/.test(problem.text) ? problem : { ...problem, text: `${problem.text} Nothing was created.` };
+        const problem = spawnProblem(reason, 'spawn'), text = spawnText(problem, 'spawn');
+        notice = { ...problem, text: /Nothing was created/.test(text) ? text : `${text} Nothing was created.` };
         setStatus(notice.text, true, notice); schedule(0);
       }
     } catch (error) {

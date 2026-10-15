@@ -11,7 +11,8 @@ import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
 import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewData, previewComposedFrom } from '../../client/spawn-preview-contract.mjs';
-import { composePreviewModules, moduleWhyText, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { composePreviewModules, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { moduleWhyText } from '../../client/spawn-preview-facts.mjs';
 import { harnessList } from '../../client/harness-names.mjs';
 import { TEXT_PAIRS } from '../renderer/contrast-inventory.mjs';
 
