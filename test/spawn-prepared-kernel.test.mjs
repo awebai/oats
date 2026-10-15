@@ -32,10 +32,15 @@ const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const HEX40 = /^[0-9a-f]{40}$/;
 const EXPECTED_MODULES = ["nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"];
 
+/** Every base deployment() made, removed when the file has ended. */
+const bases = [];
+test.after(() => { for (const base of bases.splice(0)) rmSync(base, { recursive: true, force: true }); });
+
 /** Build the fixture + a deployment and run `oats sync` (child process, like an operator).
  *  Returns everything a spawn needs. */
 async function deployment() {
   const base = mkdtempSync(join(tmpdir(), "oats-prepared-kernel-"));
+  bases.push(base);
   if (/[\s@]/.test(base)) { rmSync(base, { recursive: true, force: true }); throw new Error(`tmpdir ${base} contains whitespace or @`); }
   const fx = await buildNorthwind(join(base, "fx"));
   const catalogFile = join(base, "catalog.json");

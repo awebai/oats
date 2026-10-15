@@ -27,7 +27,11 @@ const PKG_VERSION = JSON.parse(readFileSync(new URL("../package.json", import.me
 // The shipped oats.okf capability tree, byte-identical to the published
 // oats.okf payload the catalog pins (package-catalog.json → oats.okf).
 
-function temp() { return mkdtempSync(join(tmpdir(), "oats-json-contract-")); }
+/** Every directory temp() made. Each is removed when the file has ended: also one whose test has no
+ *  removal of its own, or failed before it. */
+const temps = [];
+function temp() { const dir = mkdtempSync(join(tmpdir(), "oats-json-contract-")); temps.push(dir); return dir; }
+test.after(() => { for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 function gitRepo(dir) {
   mkdirSync(dir, { recursive: true });

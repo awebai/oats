@@ -24,6 +24,7 @@ import { deploymentOf, ensureModuleTree, moduleRef, moduleStoreDir, resolveOpera
 import { MODULES_DIR } from "../lib/materialize.mjs";
 import { contentDigest } from "../lib/remote.mjs";
 import { materializeOkfGitPayload } from "../scripts/check-okf-mirror.mjs";
+import { privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -160,8 +161,12 @@ test("resolveOperatorDispatch: a --soul without a name refused; namespace matche
 
 /* ───────────────────── CLI: the real oats.okf package, end to end ─────────── */
 
-test("oats okf init --soul probe from the deployment (no home) provisions the base through the store copy; spawn then succeeds", { timeout: 120_000 }, async () => {
+test("oats okf init --soul probe from the deployment (no home) provisions the base through the store copy; spawn then succeeds", { timeout: 120_000 }, async (t) => {
   const room = realpathSync(mkdtempSync(join(tmpdir(), "opd-cli-")));
+  // The CLI asks tmux for its sessions (status, spawn): in a directory of this test, never at tmux's
+  // default place, where a host's live deployment has its server.
+  const tmuxTmpdir = privateTmuxTmpdir();
+  t.after(() => removeTmuxTmpdir(tmuxTmpdir));
   try {
     const sh = (cmd, a, opts = {}) => execFileSync(cmd, a, { encoding: "utf8", ...opts }).trim();
     const git = (dir, ...a) => sh("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...a]);
@@ -186,7 +191,7 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`); // no legacy host harvest setting in 5.0
     const catalog = join(room, "catalog.json"); writeFileSync(catalog, JSON.stringify({ packages: { "oats.okf": { url: pathToFileURL(official).href, ref: tag, path: "oats-package" } } }));
     const home = join(room, "home"); mkdirSync(home);
-    const env = { ...process.env, PATH: inertHarnessPath(room), OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, "cache"), OATS_TMUX_SESSION: `none-${process.pid}`, HOME: home };
+    const env = { ...process.env, PATH: inertHarnessPath(room), OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, "cache"), OATS_TMUX_SESSION: `none-${process.pid}`, HOME: home, TMUX_TMPDIR: tmuxTmpdir };
     delete env.PI_AGENT_HOME; delete env.OATS_HOME; delete env.OATS_INSTANCE_HOME; delete env.OATS_INSTANCE;
     const run = (a, cwd = dep) => { const r = spawnSync(process.execPath, [OATS, ...a], { env, cwd, encoding: "utf8" }); const last = r.stdout.trim().split("\n").pop() ?? ""; let json = null; try { json = JSON.parse(last); } catch { /* text */ } return { code: r.status, json, out: r.stdout, err: r.stderr }; };
 

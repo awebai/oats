@@ -79,7 +79,7 @@ and the rules its tests pin.
 | `souls/` | this repository's own souls (a workspace member) |
 | `docs/` | the reference pages, schemas, design records and release notes |
 | `packages/` | the pi adapter, the Desktop, the terminal client (`tui/`), the readers both clients share (`client/`), the turn-record package and experiments |
-| `scripts/` | the test runner (`run-tests.mjs`) and its reporter of unasserted warnings, the session-inheritance check (`test-session-inheritance.mjs`), validators, packaging checks, the release lane and the assembly of release-notes entries |
+| `scripts/` | the test runner (`run-tests.mjs`), its reporter of unasserted warnings and the preload that gives each test file a temporary directory of its own, the session-inheritance check (`test-session-inheritance.mjs`), validators, packaging checks, the release lane and the assembly of release-notes entries |
 | `test/` | the kernel and CLI suites, with their fixtures |
 
 ## Kernel modules
@@ -443,7 +443,7 @@ scaling by call count.
 
 | command | what it checks |
 |---|---|
-| `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs`, which also fails the run when an `oats: warning:` line is left in a test file's output |
+| `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs`, which also fails the run when an `oats: warning:` line is left in a test file's output, or a test file leaves something in its temporary directory |
 | `npm run test:session` | the suites that have followed a variable of the session that runs them, with every such variable set to a value that cannot work (`scripts/test-session-inheritance.mjs`) |
 | `npm run check` | syntax of every shipped file |
 | `npm run check:pi` | the pi adapter's TypeScript |
@@ -471,6 +471,65 @@ worker wrote and what a child wrote that has the worker's stderr or stdout as
 its own; a line a child wrote into a pipe the test reads is the test's, and
 does not count. `test/unasserted-warnings.test.mjs` pins the rule with nested
 runs.
+
+**A test file leaves nothing behind.** Where a test makes a directory, it
+registers the removal there (`t.after`, or a list the file empties when it has
+ended), so a test that fails or times out removes it too; and a fixture is
+ended, not only removed (`v2Deployment({ t })`, below). A file whose setup is
+shared by its tests does that setup in a `test.before` hook, not at its top
+level: a file that throws while it loads runs no hook, `test.after` included,
+so a step that failed would leave what the steps before it made
+(test/tui-acts.test.mjs). On a development host
+the leftovers of runs that passed once used up the inodes of the temporary
+file system, and every test that makes a directory then failed with "no
+space", whatever the change under test (awebai/oats#1025). The root run holds
+the rule:
+
+- `scripts/run-tests.mjs` makes one directory for the run, and each test
+  file's process is preloaded with `scripts/test-file-tmpdir.mjs`, which gives
+  the file a directory of its own inside it: as `TMPDIR`, and as
+  `TMUX_TMPDIR`, which is tmux's default place. A tmux client that runs with
+  no `TMUX_TMPDIR` of a fixture makes its socket directory there, where the
+  run sees it, instead of reaching the host's default server. `TMUX` is not
+  changed: a client that names no server (no `-L` or `-S`) and inherits
+  `TMUX`, as in a run from a session inside tmux, still uses that session's
+  server and makes nothing the run sees. The run names its directory to the
+  preload in `OATS_TEST_RUN_DIR`, and the preload takes that variable out of
+  the file's environment before any code of the file runs. No test sees it,
+  nor any process a test starts.
+- When the run has ended it reads each file's directory. If one is not empty
+  the run fails, even if every test passed, and names each file and what it
+  left.
+- One name is not counted, by its exact name: `node-compile-cache`. Node makes
+  it under the temporary directory when a tool a test starts asks for a
+  compile cache (npm does), so under the root run it is made in the file's
+  own directory and goes with the run's. It is Node's, not something the file
+  left. A developer's shared cache, the one in the platform's temporary
+  directory, is neither used nor removed by a root run; a file run alone uses
+  it as before, and no test deletes it. The run's processes do not inherit
+  `NODE_COMPILE_CACHE` either: with a developer's set, no process of the run
+  writes into that cache.
+- The run's directory is removed when the run has ended, whatever was left in
+  it. A run that is killed leaves that one directory: `ot-*` under the
+  temporary directory, or under `/tmp` when that path is longer than 20
+  characters.
+- A file's directory, `<parent>/ot-XXXXXX/<n>`, takes from a socket's path
+  what `/tmp` alone did not. ssh binds a control socket at
+  `<OATS_HOME_DIR>/ssh/<40 hex>` plus a 17-byte suffix, in 104 bytes: 86 for
+  the path. A fixture whose `OATS_HOME_DIR` holds it keeps it short: a
+  5-character prefix and `<base>/h` (`o-up-`) come to 85 bytes when the
+  run's parent resolves to at most 12 characters, as `/tmp` does on Linux
+  and on macOS (`/private/tmp`), with up to 999 files. Longer, the kernel
+  warns that the path is too long and runs ssh without connection reuse,
+  which fails the run as any unasserted warning does: run the suite with a
+  `TMPDIR` of `/tmp` then.
+- The run sees what is made under the file's temporary directory: by the
+  file's process, by a process it starts with that environment, and by the
+  fixture helpers (`fixtureBase` and `privateTmuxTmpdir`, below), in a
+  process the test started with `inheritedEnv()` too. It does not see what a
+  process makes when a test built its environment without `TMPDIR`.
+
+`test/left-behind.test.mjs` pins the rule with nested runs.
 
 Desktop's standalone tests (`cd packages/desktop && npm ci && npm test`) must
 load with only Desktop dependencies installed. The release builds Desktop that
@@ -534,6 +593,31 @@ which fails with `ENOTEMPTY` (awebai/oats#451). So:
   it runs there.
 
 Never paper over such a race with a retry around the cleanup.
+
+A process that a test kills can leave such a writer too. Killing a process
+that starts processes of its own ends that one alone: a child it had just
+started goes on by itself and writes where it was told to after its parent has
+gone, and it has not run a line yet, so it has announced itself nowhere. The
+Desktop server's tests are the case: the server runs the CLI, and a fake CLI
+writes its log in the test's directory. Such a test starts the process with
+`startGroup` and closes it with `closeGroup`
+(`test/helpers/process-group.mjs`):
+
+- `startGroup` starts it as `spawn` does, as the leader of a process group of
+  its own, which holds whatever it starts.
+- `closeGroup` kills that one process and waits until its group, that process
+  among it, is empty. The bound, 30 s, covers the whole close from its start:
+  a group that outlives it fails the test and names every process that is
+  left, the killed one too if it still runs. Only then does the test remove
+  what they worked in.
+- A group of its own is not in the terminal's foreground group, so an
+  interrupt of the test's process does not reach it. The helper passes it on:
+  on `SIGINT`, `SIGTERM` or `SIGHUP` it kills every group that process
+  started, whole, and then the signal ends the process as it would have. A
+  test process killed with `SIGKILL` passes nothing on: what it started stays,
+  as any child of a process killed that way does.
+
+`test/process-group.test.mjs` pins the three.
 
 A test never reaches the operator's tmux. The kernel creates sessions on the
 server named `oats` (`tmux -L oats`), which tmux resolves under `TMUX_TMPDIR`,
@@ -624,7 +708,12 @@ inherits it (awebai/oats#816):
 - **A short base.** `fixtureBase(prefix)` makes the fixture directory under
   the platform's temporary directory, or under `/tmp` when that is longer than
   20 characters (macOS's `/private/var/folders/…/T/` is about 49), as its
-  realpath, taken once.
+  realpath, taken once. Under the root run the temporary directory is the
+  test file's own (above), and is used whatever its length, so that nothing a
+  fixture makes is outside what the run reads; the run keeps it short. The
+  helper knows it by what the runner makes (`ot-XXXXXX/<n>`, with the file
+  `<n>.file` beside it) and by no variable, so a process a test starts with
+  `inheritedEnv()` uses it too.
 - **Names and paths sized from the base.** `nameOfLength(base, n)` (a file
   name or branch segment) and `pathOfLength(base, n)` (an absolute path under
   the base, `n` characters in all) are capped below NAME_MAX and PATH_MAX of
@@ -743,4 +832,10 @@ inherits it (awebai/oats#816):
   still removes its base (awebai/oats#830). `fx.cleanup` does its work once,
   and later calls return quietly, so an explicit `fx.cleanup()` or a test's own
   `t.after(fx.cleanup)` can stay beside it. A fixture that fails while it is
-  built removes its base itself.
+  built removes its base itself. Removing the base is not ending the fixture:
+  only `fx.cleanup` stops the fixture's tmux server, checks for leftover
+  processes and removes the fixture's private `TMUX_TMPDIR`
+  (`privateTmuxTmpdir()`), which is made beside the base and never inside it.
+  So a fixture that was made and never ended leaves that directory, and the
+  root run fails on it (awebai/oats#1025). A file that collects its fixtures
+  ends each of them in the hook that used to remove their bases.

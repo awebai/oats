@@ -1,13 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, symlinkSync, realpathSync } from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { request as httpRequest } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifiedLocalHome as localHomeIn } from "../packages/client/session-start.mjs";
+import { closeGroup, startGroup } from "./helpers/process-group.mjs";
+import { privateTmuxTmpdir } from "./helpers/host-fixture.mjs";
 
 // Inert server tests: the backend runs against a FAKE installed CLI that
 // replays JSON captured from a real `oats` run on the hand-built Northwind
@@ -30,11 +32,39 @@ async function freePort() {
   return port;
 }
 
+/** The servers this file has started, and the temporary directories it has made. */
+const servers = [], made = [];
+/** A new temporary directory, removed when the file has ended (below). */
+function tempDir(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  made.push(dir);
+  return dir;
+}
+/** A private TMUX_TMPDIR for a server, removed with the file's directories. The server asks tmux for
+ *  the panes it shows, and asks the default server when a home records no socket: here, in a
+ *  directory of this file, never at tmux's default place, where the host has its own server. A
+ *  TMUX inherited from a session inside tmux still names that session's server for such a call. */
+function tmuxTmpdir() {
+  const dir = privateTmuxTmpdir();
+  made.push(dir);
+  return dir;
+}
+// When the file has ended, its servers are closed first, and the removal waits until everything
+// they started has ended (closeGroup): a server that is killed leaves the fake CLI it had just
+// started to finish by itself, and that one writes its log in a directory after the server has
+// gone. So a server is started with startGroup. (Per file and not per test: a test here shares
+// its server with its subtests, and a hook after each test would run after each subtest as well.)
+// A test's own earlier removal may stay.
+test.after(async () => {
+  for (const proc of servers.splice(0)) await closeGroup(proc);
+  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 /** A scratch deployment directory holding the FILE CONTENT the brain/file
  * viewers read, at the paths the captured kernel status reports. The kernel
  * JSON (not this layout) is the data authority for every roster fact. */
 function northwindDeployment() {
-  const scope = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-northwind-")));
+  const scope = realpathSync(tempDir("oatsweb-northwind-"));
   writeFileSync(join(scope, "oats-local.yaml"), "workspace: fixture\n");
   const agent = join(scope, "agents", SOUL), soul = join(agent, "soul");
   mkdirSync(join(soul, "skills", "release-checklist"), { recursive: true });
@@ -54,15 +84,16 @@ function northwindDeployment() {
 
 /** Start the real backend with the fake CLI as its only discovery candidate. */
 async function startServer(dir, { env = {}, drop = [], observed = true } = {}) {
-  const tools = mkdtempSync(join(tmpdir(), "oatsweb-fake-cli-"));
+  const tools = tempDir("oatsweb-fake-cli-");
   const bin = join(tools, "oats"), log = join(tools, "calls.jsonl");
   writeFileSync(bin, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(FAKE)} "$@"\n`);
   chmodSync(bin, 0o755);
   const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", dir], {
+  const proc = startGroup(process.execPath, [SRV, "start", "--port", String(port), "--dir", dir], {
     stdio: "ignore",
-    env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin, FAKE_OATS_LOG: log, FAKE_OATS_DROP_FEATURES: drop.join(","), ...env },
+    env: { ...process.env, TMUX_TMPDIR: tmuxTmpdir(), OATS_DESKTOP_OATS_BIN: bin, FAKE_OATS_LOG: log, FAKE_OATS_DROP_FEATURES: drop.join(","), ...env },
   });
+  servers.push(proc);
   let panel = null;
   for (let i = 0; i < 100; i++) {
     await new Promise((r) => setTimeout(r, 100));
@@ -313,7 +344,7 @@ test("desktop server: /api/brain returns the contract shape for the kernel-repor
 
 test("desktop server: /api/brain never returns skills from symlinks escaping the soul or home", async () => {
   const { scope, soul, home } = northwindDeployment();
-  const outside = mkdtempSync(join(tmpdir(), "oatsweb-brainesc-"));
+  const outside = tempDir("oatsweb-brainesc-");
   writeFileSync(join(outside, "SKILL.md"), "---\nname: leaked-skill\ndescription: TOP-SECRET-SOUL-SKILL\n---\n");
   mkdirSync(join(soul, "skills", "sneaky")); symlinkSync(join(outside, "SKILL.md"), join(soul, "skills", "sneaky", "SKILL.md"));
   mkdirSync(join(home, ".agents", "skills", "evil")); symlinkSync(join(outside, "SKILL.md"), join(home, ".agents", "skills", "evil", "SKILL.md"));
@@ -329,7 +360,7 @@ test("desktop server: /api/brain never returns skills from symlinks escaping the
 test("desktop server: verifiedLocalHome admits only the exact kernel-reported home inside its deployment", () => {
   const src = extractBlock(SRV, "VERIFIEDLOCALHOME");
   const { scope, home } = northwindDeployment();
-  const outside = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-hh-outside-")));
+  const outside = realpathSync(tempDir("oatsweb-hh-outside-"));
   const evil = join(outside, "instances", "evil-1"); mkdirSync(evil, { recursive: true });
   const unreported = join(scope, "agents", SOUL, "instances", "other-1"); mkdirSync(unreported, { recursive: true });
   const escaping = join(scope, "agents", SOUL, "instances", "link-1"); symlinkSync(evil, escaping);
@@ -391,7 +422,7 @@ test("desktop server: POST /api/models serves harness-scoped catalogs, coalesces
   // Fake `pi` on PATH: a deterministic catalog that COUNTS its invocations
   // (append-per-run marker) — the coalescing assertion reads it back. node
   // must stay reachable for the server itself, so prepend to the REAL PATH.
-  const bindir = mkdtempSync(join(tmpdir(), "oats-models-"));
+  const bindir = tempDir("oats-models-");
   const fakePi = join(bindir, "pi");
   const countFile = join(bindir, "runs");
   writeFileSync(fakePi, `#!/bin/sh\necho x >> ${countFile}\nsleep 0.3\ncat <<'EOF'\nprovider        model                       context\nanthropic       claude-opus-4-5             200K\nanthropic       claude-sonnet-4-5           200K\nopenai          gpt-5.2                     400K\nEOF\n`);
@@ -451,7 +482,7 @@ test("desktop server: file guard: traversal, prefix-sneak, and symlink escapes f
   const src = extractBlock(SRV, "FILEGUARD");
   const resolveGuardedFile = new Function("realpathSync", "resolve", "sep",
     `${src}; return resolveGuardedFile;`)(realpathSync, resolve, sep);
-  const base = mkdtempSync(join(tmpdir(), "oatsweb-guard-"));
+  const base = tempDir("oatsweb-guard-");
   const root = join(base, "root"); mkdirSync(root);
   const evil = join(base, "root-evil"); mkdirSync(evil);
   writeFileSync(join(root, "ok.md"), "# hi");
@@ -481,8 +512,8 @@ test("desktop server: file guard never re-resolves roots — a dir→symlink swa
   // run the guard. Because the guard consults only the captured canonical
   // string, the request (which now resolves into the secret dir) falls
   // outside it and must 403.
-  const base = mkdtempSync(join(tmpdir(), "oatsweb-swap-"));
-  const secret = mkdtempSync(join(tmpdir(), "oatsweb-swap-secret-"));
+  const base = tempDir("oatsweb-swap-");
+  const secret = tempDir("oatsweb-swap-secret-");
   writeFileSync(join(secret, "secret.md"), "TOCTOU-SECRET");
   const la = join(base, "agents"); mkdirSync(la);
   writeFileSync(join(la, "real.md"), "legit");
@@ -515,7 +546,7 @@ test("desktop server: /api/file serves kernel-reported soul files; a symlinked s
   } finally { proc.kill(); }
   // Swap the soul pointer for a symlink to a secret directory outside the
   // deployment: neither the pointer path nor its target may serve.
-  const secret = mkdtempSync(join(tmpdir(), "oatsweb-secret-"));
+  const secret = tempDir("oatsweb-secret-");
   writeFileSync(join(secret, "AGENTS.md"), "# TOP-SECRET");
   rmSync(soul, { recursive: true, force: true }); symlinkSync(secret, join(agent, "soul"));
   const second = await startServer(scope);
@@ -527,7 +558,7 @@ test("desktop server: /api/file serves kernel-reported soul files; a symlinked s
   } finally { second.proc.kill(); }
   // Now the kernel-reported soul DIRECTORY itself (and so every instance home
   // under it) is a symlink out of the deployment: nothing it points at serves.
-  const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-soul-elsewhere-")));
+  const elsewhere = realpathSync(tempDir("oatsweb-soul-elsewhere-"));
   mkdirSync(join(elsewhere, "soul"), { recursive: true }); writeFileSync(join(elsewhere, "soul", "AGENTS.md"), "# TOP-SECRET-SOUL-DIR");
   mkdirSync(join(elsewhere, "instances", INSTANCE), { recursive: true }); writeFileSync(join(elsewhere, "instances", INSTANCE, "TASK.md"), "# TOP-SECRET-HOME");
   rmSync(agent, { recursive: true, force: true }); symlinkSync(elsewhere, agent);
@@ -560,15 +591,16 @@ test("desktop server: hostile Host header is rejected on GET file APIs (DNS rebi
 });
 
 test("desktop server: started with no --dir it serves no local deployment, never its cwd (#518)", async () => {
-  const tools = mkdtempSync(join(tmpdir(), "oatsweb-fake-cli-"));
+  const tools = tempDir("oatsweb-fake-cli-");
   const bin = join(tools, "oats");
   writeFileSync(bin, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(FAKE)} "$@"\n`);
   chmodSync(bin, 0o755);
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-not-a-deployment-")));
+  const cwd = realpathSync(tempDir("oatsweb-not-a-deployment-"));
   const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port)], {
-    cwd, stdio: "ignore", env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin },
+  const proc = startGroup(process.execPath, [SRV, "start", "--port", String(port)], {
+    cwd, stdio: "ignore", env: { ...process.env, TMUX_TMPDIR: tmuxTmpdir(), OATS_DESKTOP_OATS_BIN: bin },
   });
+  servers.push(proc);
   try {
     let panel = null;
     for (let i = 0; i < 100 && !panel; i++) {

@@ -10,12 +10,13 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind, moveMember } from "./fixtures/northwind/build.mjs";
+import { privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const REAL_GIT = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
 
-let base, fx, dep, env, home;
+let base, fx, dep, env, home, tmuxTmpdir;
 const cache = () => join(base, "cache");
 function oats(args, { extraEnv = {} } = {}) {
   return spawnSync(process.execPath, [CLI, ...args], { cwd: dep, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...env, ...extraEnv }, maxBuffer: 64 * 1024 * 1024 });
@@ -40,6 +41,9 @@ const VERBS = () => ({
 
 test.before(async () => {
   base = mkdtempSync(join(tmpdir(), "oats-read-cache-"));
+  // The CLI asks tmux for its sessions (status, spawn): in a directory of this file, never at tmux's
+  // default place, where a host's live deployment has its server.
+  tmuxTmpdir = privateTmuxTmpdir();
   if (/[\s@]/.test(base)) throw new Error(`tmpdir ${base} contains whitespace or @`);
   fx = await buildNorthwind(join(base, "fx"));
   // Team model 3: these tests edit this deployment's local teams, which the workspace must allow.
@@ -54,12 +58,15 @@ test.before(async () => {
   mkdirSync(join(dep, "agents"), { recursive: true });
   writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
   env = { ...process.env, PATH: inertHarnessPath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "", OATS_INSTANCE: "", OATS_INSTANCE_HOME: "",
-    OATS_REMOTE_CACHE: cache(), HOME: join(base, "home"), OATS_PACKAGE_CATALOG: catalogFile, OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}` };
+    OATS_REMOTE_CACHE: cache(), HOME: join(base, "home"), OATS_PACKAGE_CATALOG: catalogFile, OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR: tmuxTmpdir };
   json(oats(["sync", "--json"]));
   const spawned = json(oats(["spawn", "release-manager", "--purpose", "rc", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--json"]));
   home = spawned.result.home;
 });
-test.after(() => { if (base) { try { chmodSync(cache(), 0o755); } catch {} rmSync(base, { recursive: true, force: true }); } });
+test.after(() => {
+  try { if (tmuxTmpdir) removeTmuxTmpdir(tmuxTmpdir); }
+  finally { if (base) { try { chmodSync(cache(), 0o755); } catch {} rmSync(base, { recursive: true, force: true }); } }
+});
 
 test("the cache never changes an answer: cold, warm and warm --max-age 60 equal a run that cannot cache at all (unwritable cache root)", { timeout: 300_000 }, () => {
   clearStores();

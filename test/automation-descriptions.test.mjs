@@ -4,7 +4,7 @@
 // for people: a workspace header out of the rule is a warning (the entry still runs), never a stop.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
@@ -187,7 +187,7 @@ test("a package trigger template may carry definition.description: add --from co
     "oats-triggers/from-header.yaml": fromFile({ description: "The header wins" }),
     "oats-triggers/from-bad-header.yaml": fromFile({ description: "a\tb" }),
   } });
-  t.after(() => { fx.cleanup(); pkg.cleanup(); });
+  t.after(() => { try { fx.cleanup(); } finally { pkg.cleanup(); } });
   ok(fx.cli(["sync", "--json"]), "sync");
   const add = (extra) => ok(fx.cli(["trigger", "add", "--from", "acme.pkg:harvest-review", "--set", "repo=github.com/acme/knowledge", ...extra, "--json"]), `add --from ${extra}`).trigger;
   assert.equal(add([]).description, "Review each harvest PR (template)", "copied");
@@ -202,7 +202,7 @@ test("a package trigger template may carry definition.description: add --from co
   assert.equal(rows["ws/from-template"].runsHere, true);
 });
 
-test("the feature: oats version --json advertises automation-descriptions; a remote schedule --description needs it there", async () => {
+test("the feature: oats version --json advertises automation-descriptions; a remote schedule --description needs it there", async (t) => {
   const fx = fixture();
   try {
     const v = JSON.parse(fx.cli(["version", "--json"]).stdout);
@@ -214,9 +214,12 @@ test("the feature: oats version --json advertises automation-descriptions; a rem
       assert.match(help, new RegExp(`\\n  oats ${kind} update <id> --description=<text> `), `${kind} --help: update`);
     }
   } finally { fx.cleanup(); }
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-desc-remote-")));
+  // short, and its OATS_HOME_DIR is <base>/h: that holds ssh's control socket (ssh/<40 hex>), which ssh needs
+  // within 86 bytes, under the root run's directory of the file (docs/implementation.md, fixtures)
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "o-dr-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
   const saved = process.env.OATS_HOME_DIR;
-  process.env.OATS_HOME_DIR = join(base, "oats-home");
+  process.env.OATS_HOME_DIR = join(base, "h");
   try {
     const { scheduleRemote } = await import("../lib/servers.mjs");
     mkdirSync(process.env.OATS_HOME_DIR, { recursive: true });
