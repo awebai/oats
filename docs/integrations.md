@@ -40,7 +40,7 @@ arrives from.
 ```yaml
 # oats-workspace.yaml: one default per slot, for every soul
 packages:
-  oats.okf: v5.1.0
+  oats.okf: v5.2.0
   oats.aweb: v1.27.3
   oats.linear: v1.0.1
   oats.jira: v1.0.1
@@ -84,8 +84,10 @@ operations in full.
 | `tasks` | `oats.linear` | `LINEAR_API_KEY` in the environment (never in OATS config); `team` (and optionally `project`) in the soul's `tasks:` payload or `settings.oats.linear` | [awebai/oats-linear](https://github.com/awebai/oats-linear) |
 
 - **`oats.okf`** consults the soul's external OKF bases, keeps instance
-  knowledge, and briefs eligible working instances to propose durable claims
-  at checkpoints by directly spawning `oats.okf/knowledge-harvester`. The
+  knowledge, and teaches the harvest duty in its IMPORTANT inject block and
+  compulsory `okf-propose` skill, not the task briefing. Eligible instances
+  propose durable claims at finished tasks or PR hand-overs by directly
+  spawning `oats.okf/knowledge-harvester`. The
   soul-only `knowledge: { harvest: off }` forbids harvest while retaining
   consultation. No host switch or automatic transcript/retire capture remains;
   `knowledge-maintainer` reviews the resulting Git PRs.

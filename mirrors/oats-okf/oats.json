@@ -1,7 +1,7 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "compatibility": {
     "oats": ">=0.49.0"
   },
@@ -27,6 +27,7 @@
   ],
   "commands": {
     "harvest": "bin/oats-okf.mjs harvest",
+    "status": "bin/oats-okf.mjs status",
     "inspect": "bin/oats-okf.mjs inspect",
     "setup": "bin/oats-okf.mjs setup",
     "run-source": "bin/oats-okf.mjs run-source",
