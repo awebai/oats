@@ -105,7 +105,7 @@ decision recorded in the lock.
 $ oats sync
 workspace  acme  (github.com/acme/agents @ 3f2a9c1e)
 members    agents ✓↔ (@ 3f2a9c1e)   platform ✓↔ (@ 77c0a1b2)   billing ✗ (no-backlink)
-packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.okf 5.2.0 ✓ (@ <commit>)
+packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.okf 5.2.0 ✓ (@ 2ac86ccb)
 changed    acme.tools  — → 0.4.0 (@ 47f4b816)
 souls      9 discovered (6 members, 1 external, 2 package, 0 disabled here) · 0 private capabilities
 teams      platform (shared) · this deployment's: oats teams
@@ -161,7 +161,7 @@ same workspace commit hold identical locks.
       "url": "https://github.com/awebai/oats-okf.git",
       "path": "oats-package",
       "version": "5.2.0",
-      "commit": "<resolved-tag-commit>",
+      "commit": "2ac86ccba6ea3da19acf43274dd6d30ab2037653",
       "integrity": "sha256-…",
       "capabilities": ["oats.okf", "oats.okf-harvest", "oats.okf-maintenance"]
     },
