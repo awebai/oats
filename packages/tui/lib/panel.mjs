@@ -66,6 +66,17 @@
 // such an argument as `x\;`, which tmux reads back as `x;` (cmd-parse.y, the same since 3.0).
 // Every argument that is not a constant of this file goes through it.
 //
+// THE END OF A VIEWER. The viewer is its pane's own process (VIEW_SCRIPT execs it), so the pane's
+// hang-up reaches it at once as SIGHUP, and it cleans up after itself. A pane is never closed by
+// its process's end: `remain-on-exit` is on, so tmux keeps a dead pane with its exit status, and
+// the control client is subscribed (`refresh-client -B`, DEAD_SUBSCRIPTION) to every pane's
+// `#{pane_dead} #{pane_dead_status}`. tmux checks a subscription once a second, so a viewer's end
+// is heard within a second: `1 <status>` (no status when a signal ended it). The panel then kills
+// the dead pane, which closes its window. A pane-died hook cannot do it: tmux sends no
+// notification for a command a hook runs. A pane the panel kills (close(), an open given up) is
+// gone at once, with no status. Verified with tmux 3.4 and 3.7c; read in 3.2's source (control.c,
+// format.c, server-fn.c), the same.
+//
 // THE END OF A RUN. A normal end calls end(): `kill-server`, then the socket, owner.json, the FIFO
 // and the view files are removed (the run directory is the loop's to remove, after this). On a
 // crash or a `kill -9` of the TUI nothing here runs, and nothing needs to: the FIFO loses its
@@ -86,11 +97,23 @@ export const STDERR_KEPT = 4096;
 /** The frame tick, in milliseconds: a capture follows the output that asked for it by one tick, so
  *  a burst of output is drawn once, and there are at most 60 captures a second. */
 export const FRAME_MS = 16;
-/** The pane's command around the viewer, a CONSTANT: run the viewer (`"$0" "$@"`: its argv, which
- *  follows this script as arguments and is never part of it), its stderr to the file named by E,
- *  then its exit status to the file named by S. A viewer ended by a signal (a killed pane hangs up
- *  its terminal) ends this shell with it, and S stays empty. */
-export const VIEW_SCRIPT = '"$0" "$@" 2>"$E"; echo $? >"$S"';
+/** The pane's command around the viewer, a CONSTANT: its stderr to the file named by E, then the
+ *  viewer itself in the shell's place (`exec "$0" "$@"`: its argv, which follows this script as
+ *  arguments and is never part of it). The viewer is the pane's own process, the leader of its
+ *  terminal's session, so a pane that hangs up (killed, or its server gone) sends SIGHUP to the
+ *  viewer at once, and the viewer cleans up after itself (the kernel's attach removes its session
+ *  on the agents' server). With a shell between them, Linux sends that SIGHUP to the shell alone
+ *  and to the viewer only once the shell has died: on a busy machine the viewer's tmux client had
+ *  often ended by then (the agents' server drops a client whose terminal hung up), the attach had
+ *  put its signal handlers away to clean up, and the late SIGHUP killed it part way, its session
+ *  left (CI, tmux 3.4). Its exit status is the one tmux keeps for a dead pane (THE END OF A
+ *  VIEWER). */
+export const VIEW_SCRIPT = 'exec "$0" "$@" 2>"$E"';
+/** The control client's subscription to every pane's end (THE END OF A VIEWER): its name, and
+ *  the line tmux prints when a pane's value changes, `1 <status>` for a dead pane (no status when
+ *  a signal ended it), `0 ` for a live one. */
+const DEAD_SUBSCRIPTION = "oats-tui-dead";
+const DEAD_LINE = /^%subscription-changed oats-tui-dead \$\d+ (@\d+) \d+ %\d+ : ([01]) (\d{0,3})$/;
 /** The one session of the private server, and its keeper window's command. */
 export const SESSION = "oats-tui";
 /** The keeper's command (see THE KEEPER), a constant run as `sh -c KEEPER_SCRIPT oats-tui-keeper
@@ -118,7 +141,10 @@ export const startCommands = ({ alive }) => [
   ["set-option", "-g", "status", "off"],
   ["set-option", "-g", "prefix", "None"],
   ["set-option", "-g", "prefix2", "None"],
-  ["set-option", "-gw", "remain-on-exit", "off"],
+  ["set-option", "-gw", "remain-on-exit", "on"],
+  // Nothing drawn over a dead pane (tmux 3.3 and later; -q: 3.2 has no such option).
+  ["set-option", "-gwq", "remain-on-exit-format", ""],
+  ["refresh-client", "-B", `${DEAD_SUBSCRIPTION}:%*:#{pane_dead} #{pane_dead_status}`],
   ["unbind-key", "-a"],
   ["unbind-key", "-a", "-T", "root"],
   ["unbind-key", "-a", "-T", "copy-mode"],
@@ -220,9 +246,10 @@ function readPart(file, max, fromEnd) {
  *                 `capture-pane -p -e -N` printed (its lines joined by "\n") and the pane's size;
  *                 what it answers is handed on as `screen`.
  *    onScreen({ id, screen, cursor: { x, y, visible } })  a capture of the open viewer.
- *    onClosed({ id, status, stderr, asked })  a viewer ended: `status` the integer its status
- *                 file holds (null when it holds none: a signal ended the viewer, or its server
- *                 went away), `stderr` the last STDERR_KEPT bytes it wrote there, as text, `asked`
+ *    onClosed({ id, status, stderr, asked })  a viewer ended: `status` its exit status as tmux
+ *                 kept it for its dead pane (null when there is none: a signal ended the viewer,
+ *                 its pane was killed, or its server went away), `stderr` the last STDERR_KEPT
+ *                 bytes it wrote to its file, as text, `asked`
  *                 true when close() ended it. Called once per viewer, never for one still open
  *                 at end(), and never before its open() has resolved.
  *    env          the environment tmux is given (TMUX and TMUX_PANE removed); default process.env.
@@ -282,9 +309,10 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
    *  given-up ones included, is in `openings`.
    *  `closedSeen`: the window ids whose end was heard while an open was under way. A viewer that
    *  exits at once can end before new-window has answered with its id; ids are never reused by a
-   *  server, and the set is emptied when no open is under way, and at every new server. */
+   *  server, and the set is emptied when no open is under way, and at every new server.
+   *  `diedSeen`: the same for a pane heard dead (window id -> its status, or null). */
   let viewer = null, opening = null;
-  const closing = new Map(), openings = new Set(), closedSeen = new Set();
+  const closing = new Map(), openings = new Set(), closedSeen = new Set(), diedSeen = new Map();
   /** The frames: the screen is stale (`dirty`), a tick is armed (`tick`), a capture is in flight. */
   let dirty = false, tick = null, capturing = false, visible = true, paused = false;
   let ended = false, files = 0;
@@ -354,6 +382,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     else if (kind === "%layout-change") { if (viewer && first === viewer.id) stale(); }
     else if (kind === "%window-close" || kind === "%unlinked-window-close") windowClosed(first);
     else if (kind === "%exit") lost(s);
+    else if (kind === "%subscription-changed") { const dead = DEAD_LINE.exec(line); if (dead && dead[2] === "1") paneDied(dead[1], dead[3] === "" ? null : Number(dead[3])); }
   }
 
   /** The start's blocks are over, or one failed: the start waits for this (see `ensureServer`). */
@@ -461,6 +490,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         }
         everStarted = true;
         closedSeen.clear();
+        diedSeen.clear();
         // A start that fails part way (a command of the list answered with an error, the client
         // gone) may leave a server whose options are not all set: its client is ended and the
         // server killed, not left to linger.
@@ -540,24 +570,31 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
 
   // VIEWERS --------------------------------------------------------------------------------------
 
+  /** A viewer's pane is dead (THE END OF A VIEWER): the viewer is over with the status tmux kept,
+   *  and its pane is killed, which closes its window. A pane not yet known (an open under way) is
+   *  remembered with its status; any other is not a viewer's (the keeper's, one already over). */
+  function paneDied(id, status) {
+    const v = viewer?.id === id ? viewer : closing.get(id);
+    if (v) { ask(`kill-pane -t ${v.pane}`); return finish(v, { status }); }
+    if (openings.size > 0) diedSeen.set(id, status);
+  }
   /** A window ended: the open viewer's, one closing, or (an open under way) one to remember. */
   function windowClosed(id) {
     if (viewer && viewer.id === id) return finish(viewer, {});
     if (closing.has(id)) return finish(closing.get(id), {});
     if (openings.size > 0) closedSeen.add(id);
   }
-  /** A viewer is over: read what it left, remove its files, and say so. `lost`: its server went
-   *  away, and whatever the status file holds says nothing of how it ended. */
-  function finish(v, { lost: gone = false }) {
+  /** A viewer is over: read what it left, remove its file, and say so. `status`: what tmux kept of
+   *  its dead pane, null when it has none (a signal ended it, its window was closed, or `lost`:
+   *  its server went away). */
+  function finish(v, { lost: gone = false, status = null }) {
     if (v.over) return;
     v.over = true;
     closing.delete(v.id);
     if (viewer === v) free();
-    const held = gone ? "" : quietly(() => fs.head(v.files.status, 32)) ?? "";
-    const number = /^\s*(\d{1,3})\s*$/.exec(held);
     const stderr = quietly(() => fs.tail(v.files.err, STDERR_KEPT)) ?? "";
     forget(v.files);
-    if (!ended) tell(() => onClosed({ id: v.id, status: number ? Number(number[1]) : null, stderr, asked: v.asked }));
+    if (!ended) tell(() => onClosed({ id: v.id, status: gone ? null : status, stderr, asked: v.asked }));
   }
   /** The slot is free: no viewer, no frame to come. */
   function free() { viewer = null; stopFrames(); dirty = false; }
@@ -583,20 +620,20 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     const settle = () => {
       openings.delete(mine);
       if (opening === mine) opening = null;
-      if (openings.size === 0) closedSeen.clear();
+      if (openings.size === 0) { closedSeen.clear(); diedSeen.clear(); }
     };
     return (async () => {
       try {
         const s = await ensureServer();
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
-        // The two files exist, 0600, BEFORE the window: the pane's shell only truncates them.
-        const n = ++files, made = { err: join(runDir, `${n}.view.err`), status: join(runDir, `${n}.view.status`) };
-        try { fs.make(made.err); mine.files = { err: made.err }; fs.make(made.status); mine.files = made; } catch (error) { throw refusal("E_PANEL_OPEN", "the panel could not make the viewer's files", { detail: detail(error) }); }
+        // The stderr file exists, 0600, BEFORE the window: the pane's shell only truncates it.
+        const n = ++files, made = { err: join(runDir, `${n}.view.err`) };
+        try { fs.make(made.err); mine.files = made; } catch (error) { throw refusal("E_PANEL_OPEN", "the panel could not make the viewer's file", { detail: detail(error) }); }
         let answer;
         try {
           answer = await call(["set-option", "-t", SESSION, "default-size", `${size.cols}x${size.rows}`,
             ";", "new-window", "-d", "-P", "-F", "#{window_id} #{pane_id}", "-t", `${SESSION}:`,
-            "-e", tmuxArgument(`E=${made.err}`), "-e", tmuxArgument(`S=${made.status}`),
+            "-e", tmuxArgument(`E=${made.err}`),
             "/bin/sh", "-c", VIEW_SCRIPT, ...argv.map(tmuxArgument)]);
         } catch (error) { throw refusal("E_PANEL_OPEN", "the panel could not open a window", { detail: detail(error) }); }
         const ids = /^(@\d+) (%\d+)\s*$/.exec(answer.stdout);
@@ -604,15 +641,18 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
         const v = { id: ids[1], pane: ids[2], ...size, files: made, asked: false, over: false };
         mine.files = null; // the viewer's now: finish() removes them
-        const already = closedSeen.has(v.id), gone = server !== s;
+        const died = diedSeen.has(v.id), status = diedSeen.get(v.id) ?? null;
+        const already = closedSeen.has(v.id) || died, gone = server !== s;
         settle();
         if (already || gone) {
           // Over before its id was known (it exited at once, or the server went away meanwhile):
-          // said after open() has answered, so the caller knows the id onClosed names.
+          // said after open() has answered, so the caller knows the id onClosed names. A pane that
+          // died is killed, as paneDied does.
           v.asked = mine.closeAsked;
           if (!mine.closeAsked) viewer = v;
           else closing.set(v.id, v);
-          setImmediate(() => finish(v, { lost: gone && !already }));
+          if (died && !gone) ask(`kill-pane -t ${v.pane}`);
+          setImmediate(() => finish(v, { lost: gone && !already, status }));
         } else if (mine.closeAsked) kill(v); // given up while it opened: killed at once
         else {
           viewer = v;
