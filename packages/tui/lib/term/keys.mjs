@@ -35,11 +35,16 @@ const GRAPHEMES = new Intl.Segmenter("en", { granularity: "grapheme" });
 
 const named = (name, ctrl = false, alt = false, shift = false) => ({ name, ctrl, alt, shift });
 
-/** The key of a C0 byte or DEL, or null for a byte that is no key (NUL, 0x1c..0x1f). */
+/** Control with one of \ ] ^ _: the C0 bytes 0x1c..0x1f, in that order. */
+const CTRL_PUNCTUATION = "\\]^_";
+
+/** The key of a C0 byte or DEL, or null for a byte that is no key (NUL). 0x1c..0x1f are Control
+ *  with \ ] ^ _ (the leader, `C-\` by default, is one of them: docs/tui.md, "The leader"). */
 function c0Key(b) {
   if (b === 0x0d || b === 0x0a) return named("enter");
   if (b === 0x09) return named("tab");
   if (b === 0x7f || b === 0x08) return named("backspace");
+  if (b >= 0x1c && b <= 0x1f) return named(CTRL_PUNCTUATION[b - 0x1c], true);
   return b >= 0x01 && b <= 0x1a ? named(String.fromCharCode(b + 0x60), true) : null;
 }
 
@@ -325,6 +330,7 @@ export function keyId(event) {
 /** The names that take every modifier: the keys read by `modified` from a CSI or an SS3. */
 const MODIFIED_NAMES = new Set([...Object.values(LETTER_KEYS), ...Object.values(TILDE_KEYS)]);
 const NAMED_ID = /^(ctrl\+)?(alt\+)?(shift\+)?([a-z][a-z0-9]*)$/;
+const CTRL_PUNCTUATION_ID = /^ctrl\+(?:alt\+)?[\\\]^_]$/;
 /** What no text event holds: a control character (C0, DEL, C1) or half a surrogate pair. */
 const NOT_TEXT = /[\p{Cc}\p{Cs}]/u;
 /** The characters that, after an ESC, begin a sequence (CSI, SS3, OSC, DCS, SOS, PM, APC): Alt
@@ -349,13 +355,14 @@ const oneCodePoint = (text) => text.length === (text.codePointAt(0) > 0xffff ? 2
  *              enter, backspace: bare or `alt+`.  escape: bare
  *              tab: bare, `alt+tab`, and `shift+tab` with any of `ctrl+`, `alt+` before it
  *   ctrl       `ctrl+` or `ctrl+alt+` and a letter a..z whose C0 byte is a key of its own:
- *              not h, i, j or m, which arrive as Backspace, Tab and Enter */
+ *              not h, i, j or m, which arrive as Backspace, Tab and Enter; or one of \ ] ^ _ */
 export function isKeyId(id) {
   if (typeof id !== "string" || id === "" || NOT_TEXT.test(id)) return false;
   if (id === "space" || id === "alt+space") return true;
   if (id === " " || id === "alt+ ") return false;
   if (oneGrapheme(id)) return true;
   if (id.startsWith("alt+") && id.length > 4 && oneCodePoint(id.slice(4))) return !INTRODUCERS.includes(id.slice(4));
+  if (CTRL_PUNCTUATION_ID.test(id)) return true;
   const match = NAMED_ID.exec(id);
   if (!match) return false;
   const [, ctrl, alt, shift, name] = match;
