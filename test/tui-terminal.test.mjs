@@ -228,8 +228,8 @@ const HELP_KEYS = [
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
 const tooSmallLine = (cols, rows) => `Terminal too small: ${cols}x${rows}, oats tui needs 60x15.`;
-const UTF8 = { locale: "C.UTF-8", rule: "─", down: "┬", up: "┴", open: "▾", closed: "▸", stopped: "○" };
-const ASCII = { locale: "C", rule: "-", down: "+", up: "+", open: "v", closed: ">", stopped: "-" };
+const UTF8 = { locale: "C.UTF-8", rule: "─", down: "┬", up: "┴", stopped: "○" };
+const ASCII = { locale: "C", rule: "-", down: "+", up: "+", stopped: "-" };
 /** The columns of the list pane where the terminal is wide enough for two panes (docs/tui.md). */
 const listCols = (cols) => Math.min(60, Math.max(36, Math.floor(cols * 0.48)));
 const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -268,8 +268,10 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alp
   const split = cols >= 80;
   const faults = chromeFaults(screen, { cols, rows, look, split, footer, count });
   const hidden = new Set([...gone, ...(folded ? ["beta"] : [])]);
-  const row = (name, depth, fold = " ") => new RegExp(`^${name === selected ? ">" : " "}${"  ".repeat(depth)}${literal(fold)} ${literal(look.stopped)} ${name} +stopped$`);
-  const wanted = [["alpha", 0, folded ? look.closed : look.open], ["beta", 1], ["gamma", 0], ...extra.map((name) => [name, 0])].filter(([name]) => !hidden.has(name));
+  // A row is its mark and its name, indented by its level: no disclosure mark and no word (every
+  // row here is stopped, which the mark says). A folded row says how many it folds away.
+  const row = (name, depth, fold = "") => new RegExp(`^${name === selected ? ">" : " "} ${"  ".repeat(depth)}${literal(look.stopped)} ${name}${fold ? literal(` ${fold}`) : ""}$`);
+  const wanted = [["alpha", 0, folded ? "+1" : ""], ["beta", 1], ["gamma", 0], ...extra.map((name) => [name, 0])].filter(([name]) => !hidden.has(name));
   const list = screen.slice(3, rows - 2).map((text) => (split ? [...text].slice(0, listCols(cols)).join("").trimEnd() : text));
   const NO_MATCH = "   No instance matches the filter.";
   const drawn = list.filter((text) => text !== "" && text !== NO_MATCH);
@@ -609,10 +611,10 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
     " oats  fixture                                                        3 stopped",
     "  Instances   Souls   Capabilities                                read HH:MM:SS",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
-    two(">▾ ○ alpha                stopped", "   alpha"),
-    two("     ○ beta               stopped", "   soul     dev"),
+    two("> ○ alpha", "   alpha"),
+    two("    ○ beta", "   soul     dev"),
     two("", "   state    stopped"),
-    two("   ○ gamma                stopped", "   harness  claude"),
+    two("  ○ gamma", "   harness  claude"),
     two("", "   work     directory"),
     two("", "   home     …/agents/dev/instances/alpha"),
     ...Array(13).fill(two("", "")),
@@ -782,17 +784,18 @@ function serverNotRead(world, home, said) {
   writeFileSync(front, readFileSync(front, "utf8").replace("\n", `\ncase " $* " in *" -S "${shq(socket)}" "*) echo ${shq(said)} >&2; exit 1 ;; esac\n`));
 }
 
-test("the reason the kernel gives for an instance it could not observe stands in the detail under the state, after `OATS says:` and with no quotation mark: with a tmux that fails for the socket one instance is recorded on, that instance is `unreachable` in the list and counted as unknown, its detail has the kernel's text wrapped under `state`, and the others are stopped as before; after q the terminal is intact", { skip: NO_TMUX }, async (t) => {
+test("the reason the kernel gives for an instance it could not observe stands in the detail under the state, after `OATS says:` and with no quotation mark: with a tmux that fails for the socket one instance is recorded on, that instance reads the shared `state unknown` in the list, `unreachable` on its detail's state line, and is counted as unknown, its detail has the kernel's text wrapped under `state`, and the others are stopped as before; after q the terminal is intact", { skip: NO_TMUX }, async (t) => {
   const world = await deployment(t); // its own: this test changes a home's record and the fixture's tmux
   serverNotRead(world, join(world.fx.root, "reviewer", "instances", "gamma"), NOT_READ);
 
   const two = (left, right) => `${left.padEnd(38)}│${right}`.trimEnd();
-  // The state column is as wide as its widest word, which is `unreachable` here: it starts at cell 22.
-  const listed = (row, word) => `${row.padEnd(22)}${word}`;
+  // Only the row whose state is not known has a word, the shared label `state unknown`: the word
+  // column is as wide as it, and starts at cell 20.
+  const listed = (row, word) => `${row.padEnd(20)}${word}`;
   /** The whole screen with `selected` selected and `detail` as the rows of its detail. */
   const screenOf = (selected, detail) => {
     const at = (name) => (name === selected ? ">" : " ");
-    const list = [listed(`${at("alpha")}▾ ○ alpha`, "stopped"), listed(`${at("beta")}    ○ beta`, "stopped"), "", listed(`${at("gamma")}  ? gamma`, "unreachable")];
+    const list = [`${at("alpha")} ○ alpha`, `${at("beta")}   ○ beta`, "", listed(`${at("gamma")} ? gamma`, "state unknown")];
     return [
       `${" oats  fixture".padEnd(59)}2 stopped  1 unknown`,
       `${"  Instances   Souls   Capabilities".padEnd(66)}read HH:MM:SS`,
@@ -1287,7 +1290,7 @@ test("in a locale that is not UTF-8 the view's rules and marks are ASCII, and th
   const screen = term.screen();
   assert.equal(screen[2], `${"-".repeat(38)}+${"-".repeat(41)}`);
   assert.equal(screen[22], `${"-".repeat(38)}+${"-".repeat(41)}`);
-  assert.equal(screen[3].slice(0, 38).trimEnd(), ">v - alpha                stopped");
+  assert.equal(screen[3].slice(0, 38).trimEnd(), "> - alpha");
   assert.equal(screen.some((row) => /[^\x20-\x7e]/.test(row)), false, `every character on the screen is printable ASCII:\n${term.shows()}`);
   term.press("h");
   await run.view("after h in an ASCII locale: collapsed", { folded: true });

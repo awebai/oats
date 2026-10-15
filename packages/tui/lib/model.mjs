@@ -8,7 +8,7 @@
 import {
   TERMS, panelData, displayLine, DETAIL_WITHHELD, originLead, instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree,
   hasInstanceChildren, heldHome, rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment, runtimeState, runtimeCounts,
-  waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs,
+  waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText, instanceActs, rowReason,
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage,
@@ -17,7 +17,7 @@ import { shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
-/** The widest the state column of the list may be, in cells. */
+/** The widest the word column of the list may be, in cells. */
 export const WORD_MAX = 20;
 /** The most rows one sentence takes inside the list (a deployment's note, a reason). */
 const SENTENCE_ROWS = 4;
@@ -62,12 +62,24 @@ export function clockTime(iso) {
  *  which is not its state now: it gets the shared word, so nothing reads as stopped, or as
  *  running, that is only not reached. */
 const stateWord = (row) => (text(row.runtimeState) && row.serverUnreached !== true ? row.runtimeState : runtimeState(row));
-/** What a list row shows at its right edge: a held home's state, the harness of a running
- *  instance, else its state. */
+/** The word a list row shows beside its name, or null: only what its mark cannot say. That is a
+ *  held home's state, else the shared label of the reason the row can't be reached or opened
+ *  (remote-address.mjs rowReason: `gone from <machine>`, `<machine> not reached`, `state
+ *  unknown`, …). A row that runs, is stopped, or keeps a shell has no word: its mark says it, and
+ *  its harness is in the detail. */
 function wordOf(row) {
+  return heldHome(row)?.state ?? rowReason(row)?.label ?? null;
+}
+/** The detail's state: the list's word when it is a held home's state or the label of a reason
+ *  the row can't be reached (a row gone from its machine reads `gone from <machine>`, not
+ *  `unknown`); else the word the kernel or the collector reported, else the shared word. The
+ *  reason that says only that the state is not known gives way to the kernel's own word for it
+ *  (`unreachable`), which says more. */
+function detailState(row) {
   const held = heldHome(row);
   if (held) return held.state;
-  return row.running === true && text(row.harness) ? row.harness : stateWord(row);
+  const reason = rowReason(row);
+  return reason && reason.key !== "unknown" ? reason.label : stateWord(row);
 }
 /** Which mark a row carries: the shared word, `held` for a home the kernel holds, and `shell`
  *  for a stopped instance whose terminal still has a shell in it. */
@@ -99,7 +111,24 @@ function build(state, at) {
   const matched = filterInstanceTree(instances, query);
   const visible = matched.filter((i) => instanceVisibleInTree(i, instances, state.collapsed, state.open, filtering, { section }));
   const sections = rosterSections(instances, visible, deployments, TERMS);
+  // How many instances each collapse folds away under its row: every descendant of the row in its
+  // own section, as the shared walk finds them when it is asked with that collapse alone (so a
+  // fold further down hides none of them from the count). A filter folds nothing away.
+  const folded = new Map();
+  if (!filtering) for (const row of visible) {
+    const key = collapseKey(state.open, instanceId(row));
+    if (!state.collapsed.has(key)) continue;
+    const alone = new Set([key]);
+    folded.set(instanceId(row), instances.filter((other) => !instanceVisibleInTree(other, instances, alone, state.open, false, { section })).length);
+  }
   const stale = (row) => rowStale(row, deployments);
+  const primary = primaryDeployment(deployments), said = deploymentState(primary);
+  const live = primary !== null && said.key === "live";
+  // The time of the read the screen shows: the cycle's own (`generatedAt`), never
+  // `observedAt`, which is when the kernel last looked at the workspace's remotes and is up
+  // to a minute older on a read in the background. Nothing drawn here comes from the remotes.
+  // In a view whose primary is a machine it is the time of the last roster read (heldOf).
+  const readAt = live ? clockTime(panel.generatedAt) : null;
 
   // The list, top to bottom, before any width. A section that has a label (a view of two or more
   // deployments) starts with its heading and the deployment's note; then the groups in the order
@@ -107,11 +136,15 @@ function build(state, at) {
   // when rows of the section came before it.
   const parts = [], rows = [];
   const heading = (deployment, label, path = null) => {
-    const said = deploymentState(deployment), live = said.key === "live";
+    const its = deploymentState(deployment), up = its.key === "live";
+    // A machine's rows are what it reported at the last roster read: that time stands on its
+    // heading only when the header's time is another, so the heading of a machine read with
+    // this one is its name alone. A deployment that is not live has its state and short reason
+    // in the shared words instead, and no time.
+    const read = up && deployment.local === false ? clockTime(state.rosterAt) : null;
     return {
-      kind: "heading", label, path, state: live ? null : said.text, short: live || !text(deployment.short) ? null : deployment.short,
-      // A machine's rows are what it reported at the last roster read.
-      readAt: live && deployment.local === false ? clockTime(state.rosterAt) : null,
+      kind: "heading", label, path, state: up ? null : its.text, short: up || !text(deployment.short) ? null : deployment.short,
+      readAt: read !== readAt ? read : null,
     };
   };
   for (const part of sections) {
@@ -131,22 +164,20 @@ function build(state, at) {
   // A deployment of the view that is not live and has no row is in no section: it is named
   // after them, with its state, and its reason on rows of its own.
   if (multi) for (const deployment of deployments) {
-    const said = deploymentState(deployment);
-    if (said.key === "live" || sections.some((part) => part.deployment?.id === deployment.id)) continue;
+    const its = deploymentState(deployment);
+    if (its.key === "live" || sections.some((part) => part.deployment?.id === deployment.id)) continue;
     parts.push(heading(deployment, deployment.machine, deployment.label));
-    if (text(said.detail)) parts.push({ kind: "sentence", value: said.detail });
+    if (text(its.detail)) parts.push({ kind: "sentence", value: its.detail });
     if (text(deployment.note)) parts.push({ kind: "sentence", value: deployment.note });
   }
   // The roster read failed and no answer has arrived yet: there is no machine to say it.
   // It is about no row above it: an empty row sets it apart when something stands there.
   if (state.remote.rosterFailure !== null) parts.push(...(parts.length ? [{ kind: "gap" }] : []), { kind: "own", words: ROSTER_FAILED }, { kind: "sentence", value: state.remote.rosterFailure });
 
-  const primary = primaryDeployment(deployments), said = deploymentState(primary);
   // The entry of this machine's deployment, when the view's primary is one: only it is ever
   // pending, withholds homes, or holds nothing after a failed read. A machine's panel has none.
   const status = panel?.deployment?.status ?? null;
   const local = panel !== null && !!panel.deployment;
-  const live = primary !== null && said.key === "live";
   const counted = runtimeCounts(instances);
   const waiting = instances.filter((row) => waitingClaim(row, { stale: stale(row) })).length;
   const withheld = Array.isArray(panel?.deployment?.withheld) ? panel.deployment.withheld.length : 0;
@@ -158,7 +189,7 @@ function build(state, at) {
   // observed, nor for a machine that is not live and has no row kept. Each has only its reason.
   const observed = panel !== null && !gone && (local ? status === "observed" : live || instances.length > 0);
   return {
-    panel, gone, instances, deployments, multi, parts, rows, filtering, stale, section, live, observed,
+    panel, gone, instances, deployments, multi, parts, rows, filtering, stale, section, live, observed, folded,
     below: waitingRollup(instances, state.collapsed, state.open, { filtering, stale, section }),
     status,
     workspace: text(panel?.workspace?.name) ? panel.workspace.name : "",
@@ -173,11 +204,7 @@ function build(state, at) {
       ...Object.entries(counted).slice(1).map(([word, n]) => ({ n, word, shared: true })),
       { n: withheld, word: "withheld", shared: false },
     ].filter((count) => count.n > 0),
-    // The time of the read the screen shows: the cycle's own (`generatedAt`), never
-    // `observedAt`, which is when the kernel last looked at the workspace's remotes and is up
-    // to a minute older on a read in the background. Nothing drawn here comes from the remotes.
-    // In a view whose primary is a machine it is the time of the last roster read (heldOf).
-    readAt: live ? clockTime(panel.generatedAt) : null,
+    readAt,
     // A deployment that is not live says so above the list, with why. Before the first answer
     // the list holds the TUI's own line instead: the shared sentence for that moment names an
     // installed CLI, and the TUI runs its own kernel.
@@ -244,13 +271,18 @@ export function disclosure(state, r, item) {
   return !r.filtering && state.collapsed.has(collapseKey(state.open, item.id)) ? "closed" : "open";
 }
 
+/** One row of the list: its mark, its name, the word its mark cannot say (or null), whether it
+ *  waits, and on a folded row only, how many instances are folded away under it (`folded`) and how
+ *  many of those wait (`below`). A row that is not folded says nothing of its children: they
+ *  stand under it, indented. */
 function listRow(state, r, item) {
-  const fold = disclosure(state, r, item);
+  const closed = disclosure(state, r, item) === "closed";
   return {
     id: item.id, name: item.row.instance, depth: item.depth, selected: item.id === state.selected,
-    disclosure: fold, mark: markOf(item.row), word: wordOf(item.row),
+    mark: markOf(item.row), word: wordOf(item.row),
     waiting: waitingClaim(item.row, { stale: r.stale(item.row) }) !== null,
-    below: fold === "closed" ? r.below.get(item.id)?.length ?? 0 : 0,
+    folded: closed ? r.folded.get(item.id) ?? 0 : 0,
+    below: closed ? r.below.get(item.id)?.length ?? 0 : 0,
   };
 }
 
@@ -384,7 +416,7 @@ function detailOf(state, r, item, now, acts) {
     const said = of ? deploymentState(of) : null;
     if (said && said.key !== "live") add("", said.detail, "wrap");
   }
-  add("state", heldHome(row)?.state ?? stateWord(row)); // the word of its list row, harness apart
+  add("state", detailState(row));
   const held = acts.blocked ?? acts.limited;
   // The row's own text stands under its state, in the form that says who made it. Who made it is
   // the shared home's to say, in two ways, and the TUI writes no word and no sentence of its own

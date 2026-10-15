@@ -204,8 +204,9 @@ const OPEN_HINT = "Enter open   ";
 const BACK = " C-\\ back to the list";
 const LIST_HINTS = " Enter focus terminal   z zoom   c close terminal";
 const FAILED = `${NAME} could not be opened.`;
-/** The agent's row in the list, selected and running (the green mark, then its harness). */
-const RUNNING_ROW = new RegExp(`^> +● ${NAME} +claude$`);
+/** The agent's row in the list, selected and running: the green mark and its name, and nothing
+ *  after it (the harness is the detail's). */
+const RUNNING_ROW = new RegExp(`^> +● ${NAME}$`);
 const ROW = new RegExp(`^[> ] +[●○◌?◆] ${NAME}\\b`);
 /** The columns of the list pane where the terminal is wide enough for two panes (docs/tui.md);
  *  the panel starts after the list and its bar. */

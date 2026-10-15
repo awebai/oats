@@ -284,6 +284,21 @@ test("a row of another machine the kernel does not report addressable: the row's
   assert.equal(words(OPEN_WORDS.link("garnet")), "The connection to garnet ended.");
 });
 
+test("a row gone from its machine (a saved route to an instance its machine no longer has, as the kernel reports it): Enter opens nothing, and the line says why in the shared words, with the command that removes it from this computer", () => {
+  // The kernel's row for it: no state, its route saved, not addressable, missing remotely.
+  const GONE = "dev-far-gone";
+  const state = on(both([group({ instances: [farRow(FAR_A), farRow(GONE, { running: null, runtimeState: undefined, savedRoute: true, addressable: false, missingRemotely: true })] })]), GONE);
+  const row = rowOf(state), acts = instanceActs(row);
+  assert.deepEqual([acts.blocked.code, acts.blocked.key, acts.blocked.origin], ["unaddressable", "missing", undefined]);
+  assert.equal(openAct(row), null);
+  assert.deepEqual(openDecision(state, row, acts), { open: false, said: { said: [], under: [acts.blocked.sentence] } });
+  assert.equal(acts.blocked.sentence.includes(`oats server forget garnet --instance ${GONE}`), true, "the shared sentence names the command");
+  const { state: refused, effects } = press(state, ["enter"]);
+  assert.deepEqual(effects, [], "nothing is opened, and no machine is asked");
+  assert.equal(above(refused, S120).join(" "), acts.blocked.sentence, "the shared home's own sentence, as it is written, wrapped as a reason is");
+  assert.doesNotMatch(footerOf(state), /Enter/);
+});
+
 // ── The viewer's stderr ───────────────────────────────────────────────────────────────────────────
 
 /** The kernel's first row of #855 (comment 6138104215): a tmux command line with the agents'
