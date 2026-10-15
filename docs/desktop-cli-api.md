@@ -45,7 +45,8 @@ see the [official catalog](official-catalog.md) for current pins.
              "automation-descriptions","souls-capabilities","soul-composed-instructions","teams-conditional-default",
              "server-probe-features","worktree-event","trigger-sources","session-attach-detach-key",
              "lifecycle-kernel-codes","schedule-run-warnings","lifecycle-claim-stop","launch-prompt-dev-channel",
-             "soul-launch","retire-plan-own-worktree","spawn-kernel-codes","soul-skills","roster-workspace-key","spawn-apply-max-age"],
+             "soul-launch","retire-plan-own-worktree","spawn-kernel-codes","soul-skills","roster-workspace-key","spawn-apply-max-age",
+             "status-retire-state"],
  "automationsApi":1,"workspaceApi":2,"instanceGitApi":1,"spawnApplyApi":1,"soulsApi":2,"lifecycleApi":1,
  "readinessApi":2,"spawnPreviewApi":2,"eventsApi":2,"scheduleHistoryApi":3,"scheduleApi":2,"operationsApi":2,
  "capabilityShowApi":1}
@@ -132,6 +133,7 @@ see the [official catalog](official-catalog.md) for current pins.
 | `spawn-kernel-codes` | `oats spawn`, apply and `--preview`, answers the kernel's own code, as raised, whatever stage of the spawn raised it; `E_SPAWN_FAILED` is for an error with no kernel code (with `details.cause`, as the lifecycle commands' general codes have it). A code says nothing about how far the spawn got: `details.unconfirmed` does. Details are those each code had before; OATS 0.56.0 ([spawn errors](#spawn-errors)). A kernel without it answers `E_SPAWN_FAILED` for most kernel codes its kernel stage raised: there, that code may hide one | |
 | `roster-workspace-key` | `oats server roster --workspace-key <key>`, repeatable: only the groups that can belong to one of the given workspaces are probed and returned (registered for one of them, registered with no known `workspaceKey`, or saved routes only); the answer's shape is unchanged, OATS 0.56.0 ([The remote roster](#roster-workspace-key)). Gate on the probe: a kernel without it ignores the flag and probes and answers every group | |
 | `spawn-apply-max-age` | `--max-age <s>` on a spawn apply bound by `--expect-decision <revision>`: the apply reuses member heads as the preview does, its decision fence unchanged, and its answer carries no `observation` block, OATS 0.58.0 ([Apply](#apply)). Gate on the probe: a kernel without it refuses the flag on an apply (`E_BAD_ARGS`) | |
+| `status-retire-state` | `retire` on `oats status --json` instance rows and on remote roster rows: whether a retire of the home is running, cannot be told, failed or was interrupted, read only from the files beside the home, OATS 0.58.0 ([`retire`](#row-retire)). `retirePending` is unchanged. Gate on the probe: a kernel without it never carries the field, so its absence there says nothing | |
 
 Payload-only integers, never in the probe: `onboardApi: 2`, `syncApi: 1`,
 `workspaceStatusApi: 1`, `capabilitiesApi: 1`, the `oats souls` document's
@@ -2806,8 +2808,9 @@ its absence.
   Herdr-era kernel recorded, with `runtimeState: "unsupported"` and
   `runtimeError: "E_HERDR_REMOVED: …"`, the recorded `sessionTarget` staying
   in the row),
-  `identity` when a provider recorded one, `rollbackIncomplete` and
-  `retirePending` when present, and the Desktop facts below.
+  `identity` when a provider recorded one, `rollbackIncomplete`,
+  `retirePending` and [`retire`](#row-retire) when present, and the Desktop
+  facts below.
 - <a id="unreadable-record-row"></a>**A home whose `instance.json` cannot be
   read** (OATS 0.52.0) is listed like every other, and one such home never
   fails the listing. Its row has the fields of a home with no `instance.json`
@@ -2866,6 +2869,39 @@ its absence.
   shell or a retained dead pane keeps, so a row with a claim is checked
   against its session (as `oats session inspect` observes it) and reads
   `null` unless a harness runs there.
+- <a id="row-retire"></a>**`retire`** (feature `status-retire-state`, OATS
+  0.58.0): `{state, since, self, code?, message?}` while a retire of the home
+  is running, scheduled or owed; absent otherwise, and from older kernels.
+  `retirePending` keeps its meaning (the self-retire marker is there) and is
+  not replaced. Status only reads: it takes no claim, removes no file and
+  signals no process. `self` is `true` when the self-retire marker
+  (`.oats-retire-pending-<instance>.json`, [souls-and-instances.md](souls-and-instances.md#self-retire-not-completed))
+  is beside the home, whatever the claim says, and `false` for a retire
+  another process runs (an `oats retire` holding the home's claim). The
+  marker is read first:
+
+  | Beside the home | `state` | `self` | `since` |
+  |---|---|---|---|
+  | the marker, and the result file `.oats-retired-<instance>.json` with `ok: false` | `failed`, with `code` and `message` | `true` | the result's `completedAt`, else the marker's `requestedAt` |
+  | the marker, no failed result, its completion process alive | `running` | `true` | the marker's `requestedAt` |
+  | the marker, no failed result, the completion's liveness cannot be read, or the marker names no completion process | `unknown` | `true` | the marker's `requestedAt` |
+  | the marker, no failed result, its completion process gone | `interrupted` | `true` | the marker's `requestedAt` |
+  | a marker that cannot be read as an object | `unknown` | `true` | the marker file's modification time |
+  | no marker; the home's claim held by a retire whose holder is alive | `running` | `false` | the claim's `since` |
+  | no marker; the same, the holder's liveness cannot be read | `unknown` | `false` | the claim's `since` |
+  | no marker; the claim's holder gone, a stop's claim, or no claim | absent | | |
+
+  A result with `ok: true` beside a marker still there reads as no result.
+  `code` is the result's `error.code` when it matches `^E_[A-Z0-9_]+$`, and
+  is left out otherwise (the state stays `failed`); `message` is its
+  `error.message` on one line and cut to a retire's one-line reason (at most
+  2048 UTF-16 code units, a cut ending in `…`), left out when empty. `since`
+  is an instant as `toISOString()` writes it, never `null`: it is left out
+  when no time can be read. `code` and `message` are only on `failed`. A
+  failed retire that owes the home nothing leaves no marker: its row carries
+  no `retire`, and its agent row's `retireFailures[]` holds the outcome, as
+  before. A retire that was killed while it held the claim leaves a claim
+  whose holder is gone, which reads absent.
 - **`modules`** becomes drift rows `{name, from, commit, current, status,
   reason?}` when the workspace was read. `status` is `current`, `moved` or
   `missing` (`reason`: `capability-absent`, `package-absent`, or the member's
@@ -3034,6 +3070,17 @@ route target:
   `producer`) is `null`, and an unknown `reason` or an invalid `message` is
   `null` inside a claim that still counts. As on a local row, the host
   reports a claim only for a running instance.
+- **`retire`** (feature `status-retire-state`, OATS 0.58.0) is on a row only
+  when the host's row has the key: a host whose kernel predates the feature,
+  and a saved route the host did not list, carry none. When present it is
+  passed through the [local row's](#row-retire) rule again on this side: a
+  `state` that is not one of `running`, `unknown`, `failed`, `interrupted`, a
+  `self` that is not a boolean, or a value that is not an object drops the
+  key; a `since` that is not a `toISOString()` instant, a `code` that is not
+  a kernel code, and a `code` or `message` on a state other than `failed` are
+  left out, and `message` is cut to the same bound. `oats status --server
+  <id> --json` relays the host's answer verbatim, `retire` included, as it
+  does every other field.
 - **`addressable`** (0.31): `true` for every row the host reports. Routed
   session and lifecycle commands reach it by `--home`, or by name when the
   name is unique on the host ([addressing](servers.md#run-there); a shared

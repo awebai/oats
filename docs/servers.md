@@ -360,7 +360,10 @@ the host's own facts from its `status --json`: `identity`,
 `repo` a path on the host. A fact the host does not supply is `null`
 (an older host, or a saved route the host no longer lists). A row also
 carries `waitingOnYou` (needs input) when the host's kernel reports it, and
-only then: an older host's row has no such key. A removed or edited registration keeps
+only then: an older host's row has no such key. `retire` (0.58.0, a retire
+of the home running, unknown, failed or interrupted) is relayed the same
+way, through the kernel's own read of it, and a value that read refuses is
+dropped ([`retire`](desktop-cli-api.md#row-retire)). A removed or edited registration keeps
 its group from the saved routes. State is pulled on every call, from every
 group at once: each probe has its own deadline, `--per-target` (default 20 s)
 capped by `--budget` (default 45 s, the deadline of the whole answer), and a
