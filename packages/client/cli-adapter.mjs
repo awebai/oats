@@ -643,7 +643,7 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   if (!validMaxAge(maxAge)) bad('Invalid observation age');
   // --instructions (feature soul-composed-instructions) composes a soul's AGENTS.md: inspect --soul only; a CLI that
   // does not advertise it gets the flagless argv. Routed with --server, the caller asks only for a host whose roster
-  // row names the feature (packages/desktop: server/capabilities.mjs, renderer/composed-gate.mjs): a host without it refuses the flag.
+  // row names the feature (inspect-boundary.mjs, composed-gate.mjs): a host without it refuses the flag.
   if (instructions && (action !== 'inspect' || !soul || home)) bad('Composed instructions belong to a soul inspection');
   const composed = instructions && Array.isArray(features) && features.includes('soul-composed-instructions') ? ['--instructions'] : [];
   // --skills (feature soul-skills) adds the soul's own skills (souls[0].skills): inspect --soul only, gated the same

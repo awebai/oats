@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { compositionEntries, coreEntries, coreNote, whyTag, whyFact, desktopFacts, renderSoulCapabilities, renderSoulCore, renderCapabilityPage } from '../renderer/capability-page.mjs';
+import { compositionEntries, coreEntries, coreNote, whyTag, whyFact, renderSoulCapabilities, renderSoulCore, renderCapabilityPage } from '../renderer/capability-page.mjs';
+import { desktopFacts } from '../../client/soul-facts.mjs';
 import { capabilityRow } from '../renderer/workspace-catalog.mjs';
 
 // Kernel #217 (feature desktop-facts): the soul page says why each capability is there from

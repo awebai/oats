@@ -12,7 +12,7 @@ import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { defaultTeamOf } from '../../client/team-rows.mjs';
 import { cliTeams, cliSoulTeams } from '../../client/cli-adapter.mjs';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { soulRows } from '../../client/soul-rows.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
 const read = path => JSON.parse(readFileSync(new URL(`./fixtures/${path}.json`, import.meta.url), 'utf8'));
@@ -64,11 +64,11 @@ test('souls rows and /api/agents (real): teams and defaultTeam pass through; 0.2
   // /api/agents carries them (the real v2 status + souls).
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('function agentsData('), end = source.indexOf('/* ── Model catalog', start);
-  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
+  const agentsData = new Function('deploymentFor', 'deployments', 'snapshot', 'remote', 'dirname', 'resolve', 'soulRows', `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const roster = deploymentStatusData(v2('status'), DEPLOYMENT);
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: 'observed', root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s), catalog: { souls, ambiguous: [], reason: null } } }]]) };
   const ws = { id: DEPLOYMENT, name: 'northwind', roots: [roster.root] };
-  const agent = agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents.find(a => a.name === 'release-manager');
+  const agent = agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, soulRows)().agents.find(a => a.name === 'release-manager');
   assert.deepEqual([agent.teams.length, agent.teams[0].default, agent.defaultTeam.label], [3, true, 'engineering']);
 });
 

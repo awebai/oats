@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInspectCache, inspectKey, INSPECT_CACHE_LIMIT } from '../server/inspect-cache.mjs';
+import { createInspectCache, inspectKey, INSPECT_CACHE_LIMIT } from '../../client/inspect-cache.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 
 const ok = (result = {}) => ({ schemaVersion: 1, ok: true, result });

@@ -2,7 +2,17 @@
  * from launch-contract.mjs). One vocabulary for the soul page, the soul side panel, the spawn
  * grid and the spawn dialog: the EFFECTIVE harness and model, where that choice came from, where
  * to change it, and the soul's own preference only when this computer runs something else. */
-import { declaredIn } from './readiness-view.mjs';
+
+/** A kernel `at` in words: `[<repoKey>:]<file>#/<json pointer>` → "oats-workspace.yaml ›
+ * teams › engineering, in <repoKey>"; a file with no repo is this computer's; `package:<id>:` is
+ * that package's. Pointer segments are unescaped (`~1` is `/`, `~0` is `~`). Unrecognised: as sent. */
+export function declaredIn(at) {
+  const m = /^(?:(.+):)?([^:#/][^:#]*)#\/(.+)$/.exec(at);
+  if (!m) return at;
+  const where = `${m[2]} › ${m[3].split('/').map(p => p.replace(/~1/g, '/').replace(/~0/g, '~')).join(' › ')}`;
+  const pkg = /^package:(.+)$/.exec(m[1] ?? '');
+  return pkg ? `${where}, in the ${pkg[1]} package` : m[1] ? `${where}, in ${m[1]}` : `${where}, on this computer`;
+}
 
 const NAMES = Object.freeze({ pi: 'Pi', claude: 'Claude Code', codex: 'Codex' });
 export const launchHarnessName = value => Object.hasOwn(NAMES, value) ? NAMES[value] : value;

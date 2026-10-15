@@ -496,8 +496,6 @@ export function whyFact(entry, soul) {
   if (entry?.why === 'soul') return slot ? [`Chosen by the soul${at}`, `${who} chooses its ${slot} capability.`] : ['Declared by the soul', `${who} declares it.`];
   return null;
 }
-/** Kernel #217's Desktop facts are read only from a CLI that reports the feature. */
-export const desktopFacts = cli => Array.isArray(cli?.features) && cli.features.includes('desktop-facts');
 /** A soul's (or an instance's as-spawned) non-core capabilities with why each is there.
  * With `facts` (the CLI reports `desktop-facts`, kernel #217) the kernel says why:
  * `capabilities[].composedFrom` (workspace / team:<label> / soul) and `capabilitiesOff[]`.
