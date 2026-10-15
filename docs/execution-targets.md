@@ -1076,7 +1076,12 @@ oats session attach --home /abs/home --detach-key 'C-\'
   acceptance evidence remain separate contracts.
 - **attach** is interactive and takes no `--json`. It opens a temporary tmux
   session linked to the agent's window alone.
-  Closing the viewer leaves the agent running.
+  Closing the viewer leaves the agent running. When the agent's window ends
+  (for example, the instance is stopped or retired), the viewer ends too: it
+  sets tmux's `detach-on-destroy on` for its own session, so a server
+  configured with `detach-on-destroy off` never moves the viewer's client to
+  another session, another agent's terminal. Your own sessions keep your
+  setting.
 
   On tmux 3.2 and later the viewer's tmux client asks for synchronized
   output (`tmux -T sync`, for that client alone): tmux wraps each redraw in

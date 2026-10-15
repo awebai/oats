@@ -32,6 +32,16 @@ test("tmux attach isolates one exact window and cleanup kills only the viewer", 
   assert.match(io.calls.at(-1)[2], /^=oatsview-/);
   assert.deepEqual(viewer.args.slice(0, 4), ["-u", "-S", target.socket, "attach-session"]);
 });
+test("the viewer's client leaves when the agent's window ends, never moved to another session (#1237)", () => {
+  // Under an operator's `set -g detach-on-destroy off`, a destroyed viewer would hand its client to
+  // another session: another agent's terminal under this viewer. The viewer sets `on` for itself.
+  const io = fixture();
+  prepareSessionViewer(target, io);
+  const name = io.calls.find((c) => c[0] === "new-session")[3];
+  const set = io.calls.filter((c) => c[0] === "set-option" && c.includes("detach-on-destroy"));
+  assert.deepEqual(set, [["set-option", "-t", name, "detach-on-destroy", "on"]], "on the viewer session only, never -g");
+  assert.ok(io.calls.findIndex((c) => c.includes("detach-on-destroy")) > io.calls.findIndex((c) => c[0] === "kill-window"), "set once the viewer holds the agent's window alone");
+});
 test("failed viewer allocation cleans its placeholder without touching source", () => {
   const io = fixture(true);
   assert.throws(() => prepareSessionViewer(target, io), /disappeared/);
@@ -63,6 +73,7 @@ test("without a detach key the viewer's tmux calls are exactly these, in this or
     ["set-option", "-t", name, "prefix2", "None"],
     ["set-option", "-t", name, "key-table", "oatsview-locked"],
     ["set-option", "-t", name, "status", "off"],
+    ["set-option", "-t", name, "detach-on-destroy", "on"],
     ["unbind-key", "-a", "-q", "-T", "oatsview-locked"],
     ["bind-key", "-T", "oatsview-locked", "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
     ["bind-key", "-T", "oatsview-locked", "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
@@ -96,6 +107,7 @@ test("with a detach key the viewer reads a table of its own, named as its sessio
       ["set-option", "-t", name, "prefix2", "None"],
       ["set-option", "-t", name, "key-table", name],
       ["set-option", "-t", name, "status", "off"],
+      ["set-option", "-t", name, "detach-on-destroy", "on"],
       ["unbind-key", "-a", "-q", "-T", name],
       ["bind-key", "-T", name, "WheelUpPane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -e; send-keys -M"],
       ["bind-key", "-T", name, "MouseDrag1Pane", "if-shell", "-F", MOUSE, "send-keys -M", "copy-mode -M"],
