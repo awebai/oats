@@ -135,8 +135,8 @@ With channel delivery, pi uses its `@awebai/pi` extension and Codex always
 uses the host broker. The broker (`aw wake run`, one per host user) also wakes
 every joined team and every `delivery: session` home. Without it, joined teams
 are poll-only. It runs as a per-user launchd or systemd service that the
-operator installs, with `AW_WAKE_OATS_BIN` and a `PATH` that reaches `oats` and
-`node`. That procedure is Choice 2 of `/oats-host-delivery`.
+operator installs, with `AW_WAKE_OATS_BIN` and a `PATH` that reaches `oats`,
+`node` and `tmux`. That procedure is Choice 2 of `/oats-host-delivery`.
 
 **The plugin.** `aweb-channel` must be installed from the marketplace named
 `awebai-marketplace` (GitHub `awebai/claude-plugins`) and enabled, in the

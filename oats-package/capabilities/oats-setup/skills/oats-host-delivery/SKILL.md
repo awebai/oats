@@ -288,14 +288,20 @@ afterwards. It never runs them itself.
 command -v aw oats node tmux   # in the operator's terminal: the absolute paths for the unit
 aw version                     # at least the provider's floor (1.36.33 from oats.aweb 1.26.0)
 aw wake status --json          # daemon_running must be false before the service takes over
-grep -l "wake run" ~/.config/systemd/user/*.service ~/Library/LaunchAgents/*.plist 2>/dev/null
+```
+
+Look for a unit that already runs the broker, with the line for this OS:
+
+```bash
+grep -l "wake run" ~/.config/systemd/user/*.service                              # Linux
+grep -rlE 'ai\.aweb\.wake|<string>wake</string>' ~/Library/LaunchAgents        # macOS
 ```
 
 - **A broker already running** (`daemon_running: true`) with no unit was
   started by hand. Stop it (`kill <daemon_pid>` from the status) and read
   the status again. Otherwise the service's own start exits at once, because
   a second `aw wake run` exits 0 when one is already running.
-- **A unit the `grep` finds** already supervises the broker. Keep it:
+- **A unit that search finds** already supervises the broker. Keep it:
   compare it with the unit below (its PATH especially), then use the restart
   and check steps. Replacing it is the operator's decision, made explicitly:
   stop and remove the old unit first.
@@ -444,7 +450,8 @@ needs the broker, even while the broker runs and delivers
 
 ## Never
 
-- Leave `claudeChannelMode` unset.
+- Leave `claudeChannelMode` unset, unless the host's Claude seats use
+  `delivery: session`.
 - Write Claude's managed-settings file, or install, restart or remove the
   broker's service, from an agent's shell. Hand the steps to the admin or
   the operator, and check the result afterwards.
