@@ -14,21 +14,13 @@
 import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { keysetRows } from "./sqlite-rows.mjs";
+import { INDEX_SCHEMA_VERSION as SCHEMA_VERSION, TEXT_SCHEMA, resetIndexTables } from "./index-reset.mjs";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-
-// Bump whenever the derived schema changes shape. The index is cache:
-// a version mismatch self-heals by deleting the database and rebuilding
-// from the record — never by in-place migration.
-const SCHEMA_VERSION = 1;
 
 import { extractCcText, extractSessionTextFor } from "./formats.mjs";
 import { parseOutfit, parseTag } from "./tags.mjs";
 import { parseSegment, parseSpawn } from "./segments.mjs";
-
-const TEXT_SCHEMA = `CREATE VIRTUAL TABLE IF NOT EXISTS turn_text USING fts5(
-  turn_id UNINDEXED, loc UNINDEXED, role UNINDEXED, text
-);`;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS turns (
@@ -224,21 +216,7 @@ export class RecordIndex {
   reset() {
     this.db.exec("BEGIN");
     try {
-      this.db.exec("DELETE FROM turns");
-      // Ordinary tables have no triggers and use SQLite's truncate path.
-      // FTS5 DELETE instead visits every text row. Recreate that derived
-      // table using the same definition, inside the SAME transaction: even
-      // already-open readers see either the previous union or an empty one.
-      this.db.exec("DROP TABLE turn_text");
-      this.db.exec(TEXT_SCHEMA);
-      this.db.exec("DELETE FROM tombstones");
-      this.db.exec("DELETE FROM tags");
-      this.db.exec("DELETE FROM outfits");
-      this.db.exec("DELETE FROM segments");
-      this.db.exec("DELETE FROM spawns");
-      this.db.exec("DELETE FROM index_state");
-      this.db.exec("DELETE FROM index_bytes");
-      this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+      resetIndexTables(this.db);
       this.db.exec("COMMIT");
     } catch (err) {
       this.db.exec("ROLLBACK");

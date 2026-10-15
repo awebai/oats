@@ -160,6 +160,20 @@ export class CaptureIndexInventory {
     }
   }
 
+  // Publish a fresh pending sweep in the reset's capture-state commit. Do not
+  // change this object's id: rollback must leave its in-memory identity valid,
+  // and success requires callers to reopen against the newly published scope.
+  restart(id) {
+    if (!this.state.depth || typeof id !== "string" || !id || id === this.id)
+      throw new Error("capture index restart requires a new transactional identity");
+    this.current();
+    if (this.state.get("index-inventory-garbage", id) !== null ||
+        this.state.db.prepare("SELECT 1 AS found FROM capture_index_inventory WHERE scope=? LIMIT 1").get(id)?.found)
+      throw new Error("capture index restart identity was already used");
+    this.state.set("index-inventory-garbage", this.id, true);
+    this.state.set("index-inventory", "current", { id, phase: "index", indexAfter: "", liveAfter: "", directory: null });
+  }
+
   cleanup() {
     if (!this.state.depth) throw new Error("capture index inventory cleanup requires a transaction");
     this.current();

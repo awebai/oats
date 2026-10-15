@@ -22,6 +22,7 @@ export function validWorkerResult(value) {
     (value.outcome !== "complete" || value.reason === null) &&
     (value.outcome !== "failed" || value.reason !== null) &&
     (value.continuation === undefined || typeof value.continuation === "boolean") &&
+    (value.resetRequired === undefined || value.resetRequired === true && value.outcome === "partial" && value.continuation === true) &&
     !(value.outcome === "complete" && value.continuation);
 }
 

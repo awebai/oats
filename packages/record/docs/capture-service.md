@@ -616,6 +616,43 @@ new captures, retries, reset and other stages, and recheck after writes before
 finalizing a pass. These outcome/source connections do not yet implement that
 final mixed-stage decision or the ordinary command/service entry.
 
+The private `CaptureIndexReset` bridge persists a union-reset request only
+after an inventory outcome requires reset. The detecting worker publishes the
+request and yields; a transient `resetRequired` continuation asks the pass
+transport for a fresh normal worker allowance. Finalization never receives
+that allowance. The reset bridge refuses the detecting worker, a normal worker
+without reset admission, or an unreconciled stream admission. The owning entry
+must dispatch reset before ordinary processing in that fresh worker. A restart
+that lost the transient continuation can request another fresh worker from the
+durable request; it cannot silently reset during ordinary processing.
+
+Union-reset admission is separate from stream admissions. The reset transaction
+uses the same atomic table mutations as public reset and commits a private token
+in the existing index metadata table. It does not change schema version, owner,
+journals, stream retry/failure rows or reader visibility. Only after that index
+commit does a capture-state transaction publish a new, empty, pending inventory
+scope, retire the old scope for bounded cleanup, record progress and remove the
+request. These two commits are not a cross-database atomic transaction.
+
+If sweep publication fails after the reset commits, a replacement worker uses
+the index token to finish the bounded metadata publication without resetting
+again. Index writes performed after the completed reset survive that recovery;
+their counts are not reconstructed into the run receipt. If the reset itself
+rolls back, the old index and request remain. The next registered worker, after
+the predecessor has ended, reconciles the private admission into a pass-bound
+failure and the fixed 30/60/120/240-minute retry delay. An attempted reset cannot
+repeat in the same pass. A union failure does not identify a failing stream or
+frame, so it creates no guessed stream-failure row and erases no stream retry.
+The run writer must carry that returned failure into its actual pass receipt.
+Completed-token recovery may finish metadata in a finalization worker; that
+does not grant permission to execute another index reset there.
+
+Reset completion starts index discovery/processing again; it is never indexing
+completion or pass success. These reset and transport helpers still require
+the owning mixed-stage entry to route reconciliation, healthy independent work,
+deferred resets and final receipts. Transaction/reopen fixtures model this
+handoff separately from actual worker-death and hosted manager qualification.
+
 ## First-upgrade cost
 
 The first capture after upgrade must reconcile existing journals and rebuild the

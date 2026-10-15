@@ -32,7 +32,7 @@ export async function superviseCapturePass(root, options, {
       ? { drainAt: Math.min(drainAt, launch + finalDrainMs), finalizeAt: Math.min(deadline, launch + finalDrainMs), hardAt: Math.min(deadline, launch + finalReserveMs) }
       : { drainAt: Math.min(drainAt, launch + workMs), finalizeAt: Math.min(deadline, launch + finalizeMs), hardAt: Math.min(deadline, launch + hardMs) };
     const response = await superviseCapture(root, options, { ...transport, policy, clock, window,
-      pass: { runId, attempt: starts, finalize, started, deadline, drainAt,
+      pass: { runId, attempt: starts, finalize, reset: !finalize && previous?.resetRequired === true, started, deadline, drainAt,
         failure: firstFailure,
         // Only observed process outcome, never an asserted failed member/frame.
         previous: previous && { outcome: previous.outcome, reason: previous.reason } },

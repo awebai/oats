@@ -75,6 +75,22 @@ test("insufficient remaining time admits only finalization, never a shortened no
   assert.equal(JSON.parse(fs.readFileSync(join(f.root, "observed"))).finalize, true);
 });
 
+test("reset requests hand off a full normal allowance to a fresh worker and never to finalization", async t => {
+  const f = fixture(t, `await runCaptureWorker(({root,pass,drainAt,hardAt})=>{
+    fs.appendFileSync(join(root,'reset-attempts'),JSON.stringify({pass,pid:process.pid,drainAt,hardAt})+'\\n');
+    if(pass.finalize)return {outcome:'partial',reason:'deadline',continuation:false};
+    return {outcome:'partial',reason:'deadline',continuation:true,resetRequired:true};
+  });`);
+  const result = await superviseCapturePass(f.root, {}, { ...seams, allowances: { ...allowances, maxStarts: 3 }, workerPath: f.workerPath });
+  assert.equal(result.starts, 3); assert.equal(result.outcome, 'partial');
+  const rows = fs.readFileSync(join(f.root, 'reset-attempts'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(rows.map(row => row.pass.reset), [false, true, false]);
+  assert.deepEqual(rows.map(row => row.pass.finalize), [false, false, true]);
+  assert.notEqual(rows[0].pid, rows[1].pid);
+  assert.equal(rows[1].hardAt - rows[1].drainAt, allowances.hardMs - allowances.workMs);
+  assert.equal(new Set(rows.map(row => row.pass.deadline)).size, 1);
+});
+
 test("continued startup and failed finalization cannot renew the absolute deadline or fabricate success", async t => {
   const f = fixture(t, `await new Promise(resolve=>setTimeout(resolve,150));
     await runCaptureWorker(({root,pass})=>{
