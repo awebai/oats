@@ -108,6 +108,24 @@ test('only a kernel decision drift (E_DECISION_STALE) reads “These values chan
   }
 });
 
+test('#1246 D1: a press 90 s after its preview prepares from the held answer, with no second kernel preview; a drift the kernel finds at apply reads as drifted, never refused or unknown', async t => {
+  let time = 0, atApply = null, u;
+  u = await mountSpawn(t, { jobs: true, previewNow: () => time, spawnGate: body => { if (body.action === 'apply') atApply = u.kernelPreviews(); },
+    apply: () => failure('E_DECISION_STALE', true) });
+  await u.open(); await u.type('.fpurpose', 'api-v2'); await settle(10);
+  const reads = u.kernelPreviews();
+  time += 90_000; // past the dialog's 60 s, within PREPARE_REUSE_MS
+  u.q('.fspawn').click(); await settle(20);
+  assert.deepEqual(u.spawns().map(b => b.action), ['prepare', 'apply']);
+  assert.equal(atApply, reads, 'prepare took the held preview: no kernel preview between the press and the apply');
+  assert.equal(u.applied.length, 1, 'the apply ran, bound to the held decision');
+  assert.deepEqual(u.jobs.rows('northwind'), [], 'nothing was created: the row goes');
+  assert.equal(u.notices.length, 1);
+  assert.equal(u.notices[0].message, DRIFT_TEXT, 'the drifted reading, with its own words');
+  assert.match(u.notices[0].options.detail, /^E_DECISION_STALE/);
+  assert.ok(reopenButton(u.notices[0]), 'Reopen spawn reads the values again');
+});
+
 test('a decision that moved between the press and prepare is never applied: drift wording, Reopen', async t => {
   let drift = false;
   const u = await mountSpawn(t, { jobs: true, previewName: () => drift ? 'preview-after-apply' : 'preview-worktree-purpose' });
