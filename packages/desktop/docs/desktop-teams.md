@@ -93,8 +93,10 @@ known, and for a team with no provider id; a board without `onOpenTeam` leaves a
 
 **How a card opens.** With `onOpenTeam`, the label is a `button.ct-open` inside the card's `h4`, named by
 the label and described as "Opens the team's page with your instances on it". Its `::after` covers the
-card (the card is `position: relative`), so a click anywhere on the card opens the page. The card's other
-controls (the actions, the confirmation, the row error, links) sit above it. A card is therefore one Tab
+card (the card is `position: relative`), so a click on the card opens the page. The card's other
+controls (the actions, the confirmation, the row error, links) sit above it, and so do its problem boxes
+(blocking and warnings), so their text, a fix to copy, can be selected, and a click on them opens nothing.
+A card is therefore one Tab
 stop, and the focus ring is the shell's own, on that button. Hover frames the card in `--tree-line` and
 underlines the label.
 
@@ -128,7 +130,10 @@ The page, top to bottom:
   and confirmation flows, with the label as the page's `h2` at 24px. It has no foot and opens nothing.
   The Workspace header is hidden with its scope line, so in a view of two or more deployments the card
   says which one its actions edit under the label ("On This Mac · ~/Agents/oats"), from its own
-  `createDeploymentScopeLine`, which lives as long as the page.
+  `createDeploymentScopeLine`, which lives as long as the page. A failed read of the document ("The teams
+  on this computer could not be read.", or the kernel's refusal) shows in the card after its
+  confirmation, as the board says it, so the page never shows stale facts silently; the add form's
+  errors stay on the board.
 - **Your instances on this team**, a section headed as the board's are, with the line "On this computer
   and the machines you added to this workspace. Instances other people run on <label> are not listed
   here." That is what `/api/team-members` answers: the view's deployments only ([Team
@@ -164,7 +169,7 @@ The page, top to bottom:
 
 **Repaint.** The page follows the pages' rule, not the board's redraw barrier. At each render and each
 roster poll it computes a signature: the team's document entry with its problems, audience and why Remove
-is off, the default, the card's own state (a mutation in flight, its confirmation, its row error), and its
+is off, the default, the card's own state (a mutation in flight, its confirmation, its row error, a failed read), and its
 members and machine groups. It repaints only when that changes, and puts focus back by `data-focus-key`
 (a member's controls are keyed by its deployment and instance name), else on Back. The Created ages are
 updated in place at each poll, without a repaint.
@@ -172,7 +177,9 @@ updated in place at each poll, without a repaint.
 **Closing.** Back and Esc (not from a text field) return to the board at its scroll offset and focus that
 card's `.ct-open`. A tab change closes the page. A team that leaves the document closes it: removed (here,
 from its own page once the document answers, or elsewhere), or the workspace changed or switched. There is
-no card to return to then, so the Teams tab takes the focus when the page held it.
+no card to return to then, so the Teams tab takes the focus when the page held it. However the page closes,
+a Make default confirmation open on it closes with it (`hideTeam`), which releases the board's redraw
+barrier and takes the confirmation off the board's card.
 
 ## Routes
 

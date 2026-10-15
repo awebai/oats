@@ -20,8 +20,8 @@
   what they are. A team's card no longer lists its instances: it shows the
   team's facts in labelled rows (Default for, May join, Address), any
   warning with its fix, and a summary line at the bottom ("3 of your
-  instances, 1 on other machines"). A click anywhere on the card opens the
-  team's page, and each card is one Tab stop. Which teams each soul may join
-  is now a table: the pattern, its default team, and the other teams it may
-  also join. The type is calmer: fewer sizes and styles, no uppercase labels,
+  instances, 1 on other machines"). A click on the card opens the team's
+  page (a warning's text can still be selected and copied), and each card is
+  one Tab stop. Which teams each soul may join is now a table: the pattern,
+  its default team, and the other teams it may also join. The type is calmer: fewer sizes and styles, no uppercase labels,
   and the facts that matter stand out by size and weight, not by new colours.

@@ -537,6 +537,33 @@ test('Teams: a card opens its team\'s page in place of the tabs; Esc and Back re
   assert.equal(page.hidden, true); assert.equal(header.hidden, false); assert.equal(u.doc.querySelector('.workspace-discovery').dataset.tab, 'sources');
 });
 
+// A Make default confirmation opened on a team's page ends with the page: Esc leaves no confirmation behind on
+// the board's card, and the board's redraw barrier is released, so a roster change repaints it.
+test('Teams: Esc on a team\'s page with its Make default confirmation open closes both, and the board redraws again', async t => {
+  const doc = () => { const d = K1_TEAMS(); d.teams.push({ label: 'spare', team: 'spare:juan.aweb.ai', from: 'local', default: false, description: null }); return d; };
+  const rm = (instance, team) => ({ workspace: '/team', server: null, serverLabel: null, instance, agent: 'release-manager', agentsRoot: dir, home: `${dir}/agents/release-manager/instances/${instance}`,
+    team, running: true, addressable: true, missingRemotely: false, reason: null, reasonLabel: null, createdAt: null });
+  let members = [rm('rm-1', 'spare:juan.aweb.ai')];
+  const u = await setup(t, { cli: { ...CLI, features: [...CLI.features, 'team-model-2'] }, teams: () => ({ status: 'ok', teams: doc() }),
+    members: () => ({ members, servers: [], notReached: [] }) });
+  await u.tab('teams');
+  const sum = () => u.doc.querySelector('.ct-card[data-team="spare"] .ct-sum').textContent;
+  assert.equal(sum(), '1 of your instances');
+  u.doc.querySelector('.ct-card[data-team="spare"] .ct-open').click(); await settle();
+  const page = u.doc.querySelector('.workspace-team-page');
+  [...page.querySelectorAll('.ct-page-card .ct-head .ct-act')].find(b => b.textContent === 'Make default').click(); await settle();
+  assert.ok(page.querySelector('.ct-confirm')); assert.equal(u.doc.activeElement, page.querySelector('.ct-confirm .primary'));
+  u.doc.activeElement.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await settle();
+  assert.equal(page.hidden, true);
+  assert.equal(u.doc.querySelector('.workspace-discovery .ct-confirm'), null, 'no confirmation left on the board\'s card');
+  assert.equal(u.doc.activeElement, u.doc.querySelector('.ct-card[data-team="spare"] .ct-open'), 'back on the team\'s name');
+  u.doc.activeElement.blur();
+  members = [rm('rm-1', 'spare:juan.aweb.ai'), rm('rm-2', 'spare:juan.aweb.ai')];
+  await u.poll('2026-09-30T07:28:04.414Z');
+  assert.equal(sum(), '2 of your instances', 'the roster change repaints the board');
+  assert.deepEqual(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).map(c => c.body), [{ action: 'list' }], 'nothing sent');
+});
+
 test('Teams: removing the team from its page closes the page once the document answers, and focus goes to the Teams tab', async t => {
   const doc = () => { const d = K1_TEAMS(); d.teams.push({ label: 'spare', team: 'spare:juan.aweb.ai', from: 'local', default: false, description: null }); return d; };
   let removed = false;
