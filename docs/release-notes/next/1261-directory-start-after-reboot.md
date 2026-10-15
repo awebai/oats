@@ -11,5 +11,7 @@
   time; homes spawned earlier, whose baselines hold none, start with no edit.
   A real exchange, another directory renamed into the home's or `work/`'s
   place, is still refused with the same error, and Linux keeps comparing
-  device and inode
+  device and inode. Captured Pi sessions on macOS had the same problem at the
+  next start after a reboot ("original Pi session directory was replaced");
+  the same rule now applies to their session directory
   ([`directory` — independent execution](../souls-and-instances.md#directory--independent-execution)).
