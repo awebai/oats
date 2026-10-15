@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { mountSpawn, settle, deferred, kernel, checkoutSoul, catalogAgents, ROOT, DEPLOYMENT } from './helpers/spawn-dialog-host.mjs';
 import { cli as CLI } from './helpers/spawn-preview-fixture.mjs';
 import { creation } from './helpers/spawn-apply-fixture.mjs';
+import { defaultSpawnChoices } from '../../client/spawn-preview-contract.mjs';
 
 const last = u => u.previews().at(-1)?.choices;
 const created = (name = 'preview-worktree-purpose') => kernel(name).result;
@@ -28,6 +29,16 @@ test('the session backend select offers tmux only: from the older-kernel f3 capt
     assert.equal(select.options[0].textContent, 'Default · tmux');
     assert.doesNotMatch(u.q('.spawn-advanced').textContent, /herdr/i);
   }
+});
+
+test('defaultSpawnChoices (#855, 6b-2): what the dialog previews with no field touched, a fresh object each call', async t => {
+  const u = await mountSpawn(t);
+  await u.open();
+  assert.ok(u.previews().length > 0, 'the dialog read a preview as it opened');
+  assert.deepEqual(last(u), defaultSpawnChoices());
+  const one = defaultSpawnChoices(), two = defaultSpawnChoices();
+  assert.notEqual(one, two); one.model.kind = 'changed'; one.relation.kind = 'changed';
+  assert.deepEqual(two, { model: { kind: 'inherit' }, relation: { kind: 'unrelated' } }, 'changing one changes no other');
 });
 
 test('the dialog shows what the kernel decided: name, harness, model and work — no toggles, placeholders or preview button', async t => {
