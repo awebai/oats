@@ -81,8 +81,12 @@ const sharedRows = (state) => sharedGroups(state).flatMap((group) => group.clust
 function sharedOrder(state) {
   assert.equal(state.collapsed.size === 0 && state.filter.query.trim() === "", true, "sharedOrder is for a state that hides nothing");
   const out = [];
+  let previous = null; // whether the group before was a run of single instances
   for (const group of sharedGroups(state)) {
-    if (group.clusters.every((cluster) => cluster.instances.length === 1) && out.length) out.push(null);
+    // The empty item at every boundary between a run of single instances and a cluster, both ways (#1262).
+    const singles = group.clusters.every((cluster) => cluster.instances.length === 1);
+    if (previous !== null && singles !== previous) out.push(null);
+    previous = singles;
     for (const cluster of group.clusters) for (const row of cluster.instances) out.push([instanceId(row), row.depth]);
   }
   return out;
@@ -158,7 +162,7 @@ test("the roster is the Desktop's: the rows of its palette test come out in the 
   assert.deepEqual(roster(press(state, ["/", "c", "h", "i", "l", "d", "enter"]).state).rows.map((item) => item.row.instance), ["lead", "child-a", "grandchild", "child-b"]);
 });
 
-test("the roster is the Desktop's: the rows of its instance-tree test keep parent-first order, running first among siblings, and sibling-linked peers at depth 0", () => {
+test("the roster is the Desktop's: the rows of its instance-tree test keep parent-first order, siblings by name, and sibling-linked peers at depth 0", () => {
   // packages/desktop/test/instance-tree.test.mjs, "clusterInstances: connected components over
   // parent + sibling links; unrelated are single-node clusters".
   const rows = [
@@ -169,11 +173,20 @@ test("the roster is the Desktop's: the rows of its instance-tree test keep paren
   ].map(([name, extra]) => instanceRow("dev", name, extra.running ? extra : { ...extra, runtimeState: "stopped" }));
   const state = stateOf(observed(rows));
   const items = roster(state).items.map((item) => item && [item.row.instance, item.depth]);
-  assert.deepEqual(items.slice(0, 4), [["coord-1", 0], ["dev-a", 1], ["reviewer-1", 2], ["dev-b", 1]], "parent first, and the running sibling before the stopped one");
-  assert.deepEqual(new Set(items.slice(4, 6).map((item) => item[0])), new Set(["peer-1", "peer-2"]), "a sibling link alone joins a cluster");
-  assert.deepEqual(items.slice(4, 6).map((item) => item[1]), [0, 0]);
-  assert.deepEqual(items.slice(6), [null, ["loner", 0]], "the unrelated instance stands alone, after the clusters");
+  assert.deepEqual(items.slice(0, 4), [["coord-1", 0], ["dev-a", 1], ["reviewer-1", 2], ["dev-b", 1]], "parent first, and siblings by name");
+  assert.deepEqual(items.slice(4, 7), [null, ["loner", 0], null], "the unrelated instance stands alone, in its place by name, an empty row on each side");
+  assert.deepEqual(new Set(items.slice(7).map((item) => item[0])), new Set(["peer-1", "peer-2"]), "a sibling link alone joins a cluster");
+  assert.deepEqual(items.slice(7).map((item) => item[1]), [0, 0]);
+  assert.equal(items.length, 9);
   assert.deepEqual(drawnOrder(state), sharedOrder(state));
+});
+
+test("a cluster whose root is named `independent` is a cluster: the gaps stand around it, expanded and collapsed (#1262)", () => {
+  const state = stateOf(observed([instanceRow("dev", "alpha"), instanceRow("dev", "independent"), instanceRow("dev", "kid", { parentInstance: "independent" }), instanceRow("dev", "zulu")]));
+  const named = (s) => roster(s).items.map((item) => item && item.row.instance);
+  assert.deepEqual(named(state), ["alpha", null, "independent", "kid", null, "zulu"]);
+  assert.deepEqual(drawnOrder(state), sharedOrder(state));
+  assert.deepEqual(named(folded(state, "independent")), ["alpha", null, "independent", null, "zulu"]);
 });
 
 test("the drawn order is what the shared grouping gives when it is called directly: plain, collapsed, filtered, and after a row stops", () => {

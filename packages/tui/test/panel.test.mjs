@@ -11,7 +11,7 @@ import os from "node:os";
 import { PassThrough } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEAD_WAIT_MS, FRAME_MS, STATUS_WAIT_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
+import { DEAD_WAIT_MS, FRAME_MS, REAP_ASK_MS, STATUS_WAIT_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/panel/tmux.mjs", import.meta.url));
 const ROOT = realpathSync(mkdtempSync(path.join(os.tmpdir(), "panel-test-")));
@@ -64,7 +64,8 @@ function makeWorld(plan = {}) {
   worlds.push(world);
   return world;
 }
-/** Timers that fire when the test says so: the panel's frame tick is its only timer. */
+/** Timers that fire when the test says so: the panel's frame tick, and a dead viewer's wait for its
+ *  status and its asks to reap. fire(ms) fires those of that delay only; fire() all. */
 function frameTimers() {
   const pending = new Map();
   let next = 1;
@@ -73,7 +74,11 @@ function frameTimers() {
     clearTimeout(id) { pending.delete(id); },
     get count() { return pending.size; },
     delays() { return [...pending.values()].map((t) => t.ms); },
-    fire() { const all = [...pending.values()]; pending.clear(); for (const t of all) t.fn(); },
+    fire(ms) {
+      const all = [...pending].filter(([, t]) => ms === undefined || t.ms === ms);
+      for (const [id] of all) pending.delete(id);
+      for (const [, t] of all) t.fn();
+    },
   };
 }
 /** A panel over a world, recording what it says, and what its control clients printed as the
@@ -586,14 +591,54 @@ describe("the panel", { concurrency: 8 }, () => {
     }
   });
 
+  test("a viewer heard dead with no status makes the server reap its children, `run-shell true` at once and every REAP_ASK_MS while it waits, and no more once it is over: a tmux built with libutempter loses the SIGCHLD of a viewer that exits as its pane is destroyed (awebai/oats#1277)", async () => {
+    const reaps = (world) => world.control().filter((line) => line.startsWith("run-shell"));
+    const asking = (timers) => timers.delays().filter((ms) => ms === REAP_ASK_MS);
+    for (const version of ["tmux 3.2", "tmux 3.4"]) {
+      // A first dead line with its status asks nothing.
+      const at = await opened({ version });
+      at.world.emit(dead(at.id, 3));
+      await waitFor("the end", () => at.closed.length === 1);
+      assert.deepEqual([at.closed[0].status, reaps(at.world), asking(at.timers)], [3, [], []], `${version}: nothing to reap`);
+      at.panel.end();
+      // The status comes after two asks: the asks end with the viewer.
+      const { world, panel, closed, id, heard, timers } = await opened({ version });
+      world.emit(dead(id));
+      await waitFor("the first ask", () => reaps(world).length === 1);
+      assert.deepEqual(reaps(world), ["run-shell true"], version);
+      assert.deepEqual(asking(timers), [REAP_ASK_MS], `${version}: the next ask armed`);
+      world.emit(dead(id));
+      await waitFor("the panel to hear it again", () => heard().split(`${dead(id)}\n`).length === 3);
+      assert.deepEqual([reaps(world).length, asking(timers)], [1, [REAP_ASK_MS]], `${version}: heard again, no second round`);
+      timers.fire(REAP_ASK_MS);
+      await waitFor("the second ask", () => reaps(world).length === 2);
+      assert.deepEqual([asking(timers), closed], [[REAP_ASK_MS], []], `${version}: armed again, still open`);
+      world.emit(dead(id, 1));
+      await waitFor("the end", () => closed.length === 1);
+      assert.deepEqual(closed[0], { id, status: 1, stderr: "", asked: false }, version);
+      assert.deepEqual(asking(timers), [], `${version}: no more asks`);
+      panel.end();
+      // No status comes: the asks end with the wait.
+      const never = await opened({ version });
+      never.world.emit(dead(never.id));
+      await waitFor("the first ask", () => reaps(never.world).length === 1);
+      never.timers.fire();
+      assert.deepEqual(never.closed, [{ id: never.id, status: null, stderr: "", asked: false }], version);
+      assert.deepEqual(asking(never.timers), [], `${version}: no more asks`);
+      never.panel.end();
+    }
+  });
+
   test("end() while a viewer waits for its status: the wait is put away, and nothing more is said (tmux 3.2 and 3.4)", async () => {
     for (const [version, ms] of [["tmux 3.2", DEAD_WAIT_MS], ["tmux 3.4", STATUS_WAIT_MS]]) {
       const { world, panel, closed, id, heard, timers } = await opened({ version });
       world.emit(dead(id));
       await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
       assert.equal(timers.delays().includes(ms), true, version);
+      assert.equal(timers.delays().includes(REAP_ASK_MS), true, `${version}: an ask to reap armed`);
       panel.end();
       assert.equal(timers.delays().includes(ms), false, `${version}: cleared`);
+      assert.equal(timers.delays().includes(REAP_ASK_MS), false, `${version}: the asks to reap cleared`);
       assert.deepEqual(closed, [], version);
     }
   });

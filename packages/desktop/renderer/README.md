@@ -420,6 +420,13 @@ split into sections) is `packages/client/roster-sections.mjs`.
   roster (`rosterSections`, a heading per deployment named by `machineLabels` in the
   cluster-label type, a status mark when not live, none for a deployment without rows) and
   the Deployments page (below). With one deployment both render exactly as before.
+- **Agent groups and their order** (`rosterGroups`, `packages/client/instance-tree.mjs`, shared with the
+  palette and the TUI): one sequence by each cluster's first root, in name order (`rosterOrder`: by name,
+  ties by `instanceId`; Pepe's decision on #1262, which replaces #1083's running-first order here). A
+  multi-member cluster is a group under its name; each run of consecutive single instances is one
+  "independent" group, in place. So a bundle keeps its place when its instance gains or loses children, and
+  a start or a stop moves no row. Keys: `cluster:<n>:<name>`, `independent:<first member's instanceId>`,
+  decided on the full roster (a filter or a collapse moves no row, #971).
 - **The Deployments page** (the former Active overview, stage `hierarchy`): tabs from
   `deployment-tabs.mjs` (All, then one per deployment; one deployment has only its own tab;
   the choice remembered per view); All stacks one section per deployment, a deployment's tab

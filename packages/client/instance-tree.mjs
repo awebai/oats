@@ -56,6 +56,15 @@ export function resolveLinkId(fromInstance, name, byName) {
   return sameRoot.length === 1 ? instanceId(sameRoot[0]) : null;
 }
 
+/** The roster's order, a comparator for `sort`: by instance name, ties broken by `instanceId`, so it is total and
+ * deterministic. It ranks roots, siblings under one parent, and so clusters (by their first root). A start or a
+ * stop moves no row; only adding or removing one does (Pepe's decision on #1262, comment 6196531154, which
+ * replaces #1083's running-first order for the roster). The one place the roster's order is decided. */
+function rosterOrder(a, b) {
+  const ia = instanceId(a), ib = instanceId(b);
+  return String(a.instance).localeCompare(String(b.instance)) || (ia < ib ? -1 : ia > ib ? 1 : 0);
+}
+
 /** Group instances into agent CLUSTERS — connected components of the
  * undirected relation graph (parent/child spawn edges + sibling links).
  * Unrelated instances are single-node clusters. Within a cluster the
@@ -64,7 +73,9 @@ export function resolveLinkId(fromInstance, name, byName) {
  * Nodes are keyed by instanceId (composite identity), never bare name —
  * duplicate names across repos render as distinct nodes.
  * Returns [{ key, instances: [{...instance, depth}] }] with clusters ranked by
- * their first member in the roster's order (`byRuntimeState`), as the panel is. */
+ * their first ROOT in the roster's order (`rosterOrder`), never by another member (#1262): a bundle sits where
+ * its root sits, and gaining or losing a child, or a start or a stop, moves nothing. A cluster without a root
+ * (a malformed cycle) ranks by its first member in that order. */
 export function clusterInstances(instances, { links = instanceLinks } = {}) {
   const byId = new Map(instances.map((i) => [instanceId(i), i]));
   const byName = new Map();
@@ -88,7 +99,7 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
       adj.get(oid).add(id);
     }
   }
-  const rank = byRuntimeState;
+  const rank = rosterOrder;
   const seen = new Set();
   const clusters = [];
   for (const start of [...instances].sort(rank)) {
@@ -124,11 +135,12 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
     // Deterministic cluster label: the lexically-smallest ROOT name —
     // independent of liveness, so the visible cluster name does not flip
     // when a different member starts/stops running (review f921f7d nit).
-    // `rank` (running, unknown, stopped) still governs display ORDER within the cluster.
+    // `rank` (rosterOrder: by name) governs display ORDER within the cluster.
     const rootNames = (roots.length ? roots : members).map((i) => i.instance).sort();
-    clusters.push({ key: rootNames[0], instances: ordered });
+    clusters.push({ key: rootNames[0], instances: ordered, head: roots[0] ?? [...members].sort(rank)[0] });
   }
-  return clusters;
+  // Stable: clusters whose heads rank equal keep the order they were found in (the roster's order of members).
+  return clusters.sort((a, b) => rank(a.head, b.head)).map(({ head: _head, ...c }) => c);
 }
 
 /** Find the roster instance a UI reference means. References carry the
@@ -271,9 +283,8 @@ export const ROSTER_SORTS = Object.freeze([
   Object.freeze({ id: "name", label: "Name" }),
 ]);
 
-/** Comparator for one sibling level. "status" is the roster's one order
- * (`byRuntimeState`: running, unknown, stopped, then by name); "name" is purely
- * alphabetical. Unknown ids fall back to "status" so a stale persisted choice
+/** Comparator for one sibling level. "status" is `byRuntimeState` (running, unknown, stopped, then by name:
+ * #1083's order, which the roster no longer uses, #1262); "name" is purely alphabetical. No client calls it. Unknown ids fall back to "status" so a stale persisted choice
  * can never break rendering. */
 export function rosterRank(sortBy) {
   const byName = (a, b) => String(a.instance).localeCompare(String(b.instance));
@@ -387,30 +398,32 @@ export function visibleClusters(allInstances, visibleInstances, { links = instan
     .filter((c) => c.instances.length);
 }
 
-/** The sidebar roster's groups (Redesign v3), shared with the command palette:
- * each multi-member relation cluster under its deterministic name, then every
- * unrelated instance under "independent". A cluster's group is decided on the
- * FULL roster: more than one member there is a group under the cluster's name,
- * exactly one goes under "independent". A filter or a collapse decides which
- * rows are listed and never moves a row to another group; a group with no
- * visible row is left out. Returns [{ key, label, clusters: [{ key, instances }] }]
- * in the full roster's cluster order, each cluster projected to its visible
- * members, which carry their tree depth. A group's key is unique even when two
- * roots share a name (other agents roots or hosts), and does not depend on what
- * is visible: the label is the name, the key adds the cluster's place among the
- * multi-member clusters of the full roster. */
+/** The sidebar roster's groups (Redesign v3), shared with the command palette and the TUI: the full roster's
+ * clusters in their one order (#1262), each multi-member relation cluster a group under its deterministic name,
+ * and each RUN of consecutive single-instance clusters one "independent" group, in place. So an instance that
+ * gains its first child stays where it was and becomes a group there; losing its last child, it rejoins the run
+ * at the same place. A cluster's group is decided on the FULL roster: a filter or a collapse decides which rows
+ * are listed and never moves a row to another group; a group with no visible row is left out. Returns
+ * [{ key, label, clusters: [{ key, instances }] }], each cluster projected to its visible members, which carry
+ * their tree depth. A group's key is unique even when two roots share a name (other agents roots or hosts), and
+ * does not depend on what is visible: a cluster's is `cluster:<its place among the full roster's multi-member
+ * clusters>:<name>`, a run's `independent:<instanceId of its first member in the full roster>`. */
 export function rosterGroups(allInstances, visibleInstances, { links = instanceLinks } = {}) {
   const visibleIds = new Set(visibleInstances.map((i) => instanceId(i)));
-  const named = [], independent = [];
-  let place = 0;
+  const groups = [];
+  let place = 0, run = null;
   for (const c of clusterInstances(allInstances, { links })) {
-    const at = c.instances.length > 1 ? place++ : -1;
     const shown = { ...c, instances: c.instances.filter((i) => visibleIds.has(instanceId(i))) };
-    if (!shown.instances.length) continue;
-    if (at < 0) independent.push(shown);
-    else named.push({ key: `cluster:${at}:${c.key}`, label: c.key, clusters: [shown] });
+    if (c.instances.length > 1) {
+      run = null;
+      const at = place++;
+      if (shown.instances.length) groups.push({ key: `cluster:${at}:${c.key}`, label: c.key, clusters: [shown] });
+      continue;
+    }
+    if (!run) { run = { key: `independent:${instanceId(c.instances[0])}`, label: "independent", clusters: [] }; groups.push(run); }
+    if (shown.instances.length) run.clusters.push(shown);
   }
-  return [...named, ...(independent.length ? [{ key: "independent", label: "independent", clusters: independent }] : [])];
+  return groups.filter((g) => g.clusters.length);
 }
 
 /** Whether an item remains visible under VS Code-style collapsed ancestors.

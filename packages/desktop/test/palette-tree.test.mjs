@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { paletteRows, createPalette, PALETTE_COMMAND_CAP } from "../renderer/palette.mjs";
-import { rosterGroups } from "../../client/instance-tree.mjs";
+import { rosterGroups, instanceId } from "../../client/instance-tree.mjs";
 import { rosterSections } from "../../client/roster-sections.mjs";
 import { pickerCycleDirection, setBinding, resetBinding, DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
@@ -213,10 +213,11 @@ test("filterInstanceTree takes the palette's matcher and keeps the sidebar's def
   assert.ok(ROSTER.filter(i => instanceMatchesFilter(i, "kid")).every(i => i.instance === "alpha-kid"));
   // A predicate decides the matches; the identity-aware ancestor walk is the same.
   assert.deepEqual(names(filterInstanceTree(ROSTER, "x", i => i.instance === "alpha-kid")), ["alpha", "alpha-kid"]);
-  // Groups: multi-member clusters by name, then "independent", decided on the full roster and projected to what is visible.
+  // Groups: one sequence by root name (#1262), each multi-member cluster under its name, each run of single instances
+  // an "independent" group keyed by its first member; decided on the full roster and projected to what is visible.
   const visible = ROSTER.filter(i => ["solo-x", "alpha-kid"].includes(i.instance));
   assert.deepEqual(rosterGroups(ROSTER, visible).map(g => [g.key, g.label, g.clusters.flatMap(c => names(c.instances))]),
-    [["cluster:0:alpha", "alpha", ["alpha-kid"]], ["independent", "independent", ["solo-x"]]], "a cluster with one visible member keeps its group and its name, as in the sidebar (#971)");
+    [["cluster:0:alpha", "alpha", ["alpha-kid"]], [`independent:${instanceId(ROSTER.find(i => i.instance === "solo-x"))}`, "independent", ["solo-x"]]], "a cluster with one visible member keeps its group and its name, as in the sidebar (#971)");
   assert.deepEqual(rosterGroups([], []), []);
 });
 

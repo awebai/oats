@@ -70,6 +70,12 @@ function rowAt(state, sz, name) {
   assert.equal(found.length, 1, `one list row draws ${name}`);
   return found[0];
 }
+/** The state with the instance `name` on the screen at size `sz`: as it is, or, where the list is
+ *  cut off at that size (60x15 holds ten rows of the eleven), with the selection moved to it. */
+function onScreen(state, sz, name) {
+  const reference = draw(state, size(79, sz.rows));
+  return bodyRows(sz).some((r) => cellText(reference, r).includes(` ${name} `)) ? state : selecting(state, name, sz);
+}
 /** Move the selection to the instance called `name`, with the keys a person has. */
 function selecting(state, name, sz = S80) {
   let next = press(state, ["g"], sz).state;
@@ -183,14 +189,14 @@ test("the Instances view at 80x24 in UTF-8, cell for cell: the header, the view 
     " ▾ ● acme-console-e…  claude          │   acme-ledger-developer-note-target",
     "     ● acme-console…  claude         !│   soul     acme-ledger-developer",
     "     ● acme-console…  claude         !│   state    running",
-    ` ▾ ● acme-ledger-ex…  claude          │   needs    ${NEEDS}`,
-    ">  ▾ ● acme-ledger-…  claude         !│            the agent: \"Which base",
-    "       ○ peer-revie…  stopped         │            should it use?\"",
-    "                                      │   harness  claude, claude-opus-5-5 (so…",
-    "   ● acme-maintaine…  claude          │   work     worktree, agents/acme-ledge…",
-    "   ? acme-expert-tui  unreachable     │   team     eng",
+    `                                      │   needs    ${NEEDS}`,
+    "   ? acme-expert-tui  unreachable     │            the agent: \"Which base",
+    "                                      │            should it use?\"",
+    " ▾ ● acme-ledger-ex…  claude          │   harness  claude, claude-opus-5-5 (so…",
+    ">  ▾ ● acme-ledger-…  claude         !│   work     worktree, agents/acme-ledge…",
+    "       ○ peer-revie…  stopped         │   team     eng",
     "                                      │   parent   acme-ledger-expert-retire",
-    `                                      │   started  ${STARTED}`,
+    `   ● acme-maintaine…  claude          │   started  ${STARTED}`,
     "                                      │   home     …edger-developer-note-target",
     blank, blank, blank, blank, blank, blank, blank,
     `${"─".repeat(38)}┴${"─".repeat(41)}`,
@@ -207,14 +213,14 @@ test("the Instances view at 80x24 in ASCII, cell for cell: the same screen with 
     " v * acme-console...  claude          |   acme-ledger-developer-note-target",
     "     * acme-conso...  claude         !|   soul     acme-ledger-developer",
     "     * acme-conso...  claude         !|   state    running",
-    ` v * acme-ledger-...  claude          |   needs    ${NEEDS}`,
-    ">  v * acme-ledge...  claude         !|            the agent: \"Which base",
-    "       - peer-rev...  stopped         |            should it use?\"",
-    "                                      |   harness  claude, claude-opus-5-5 (...",
-    "   * acme-maintai...  claude          |   work     worktree, agents/acme-led...",
-    "   ? acme-expert-tui  unreachable     |   team     eng",
+    `                                      |   needs    ${NEEDS}`,
+    "   ? acme-expert-tui  unreachable     |            the agent: \"Which base",
+    "                                      |            should it use?\"",
+    " v * acme-ledger-...  claude          |   harness  claude, claude-opus-5-5 (...",
+    ">  v * acme-ledge...  claude         !|   work     worktree, agents/acme-led...",
+    "       - peer-rev...  stopped         |   team     eng",
     "                                      |   parent   acme-ledger-expert-retire",
-    `                                      |   started  ${STARTED}`,
+    `   * acme-maintai...  claude          |   started  ${STARTED}`,
     "                                      |   home     ...ger-developer-note-target",
     blank, blank, blank, blank, blank, blank, blank,
     `${"-".repeat(38)}+${"-".repeat(41)}`,
@@ -271,14 +277,14 @@ test("at 120x40 the names have room: the same roster with the longer names whole
   assert.equal(d.lines[3], row(" ▾ ● acme-console-expert-tui-read        claude", "   acme-ledger-developer-note-target"));
   assert.equal(d.lines[4], row("     ● acme-console-developer-panel      claude         !", "   soul     acme-ledger-developer"));
   assert.equal(d.lines[5], row("     ● acme-console-developer-terms      claude         !", "   state    running"));
-  assert.equal(d.lines[6], row(" ▾ ● acme-ledger-expert-retire           claude", `   needs    ${NEEDS}`));
-  assert.equal(d.lines[7], row(">  ▾ ● acme-ledger-developer-note-targ…  claude         !", "            the agent: \"Which base should it use?\""));
-  assert.equal(d.lines[8], row("       ○ peer-reviewer-note              stopped", "   harness  claude, claude-opus-5-5 (soul)"));
-  assert.equal(d.lines[9], row("", "   work     worktree, agents/acme-ledger-developer-note-targ…"));
-  assert.equal(d.lines[10], row("   ● acme-maintainer-ops                 claude", "   team     eng"));
-  assert.equal(d.lines[11], row("   ? acme-expert-tui                     unreachable", `   parent   ${KERNEL_EXPERT}`));
+  assert.equal(d.lines[6], row("", `   needs    ${NEEDS}`));
+  assert.equal(d.lines[7], row("   ? acme-expert-tui                     unreachable", "            the agent: \"Which base should it use?\""));
+  assert.equal(d.lines[8], row("", "   harness  claude, claude-opus-5-5 (soul)"));
+  assert.equal(d.lines[9], row(" ▾ ● acme-ledger-expert-retire           claude", "   work     worktree, agents/acme-ledger-developer-note-targ…"));
+  assert.equal(d.lines[10], row(">  ▾ ● acme-ledger-developer-note-targ…  claude         !", "   team     eng"));
+  assert.equal(d.lines[11], row("       ○ peer-reviewer-note              stopped", `   parent   ${KERNEL_EXPERT}`));
   assert.equal(d.lines[12], row("", `   started  ${STARTED}`));
-  assert.equal(d.lines[13], row("", "   home     …oper/instances/acme-ledger-developer-note-target"));
+  assert.equal(d.lines[13], row("   ● acme-maintainer-ops                 claude", "   home     …oper/instances/acme-ledger-developer-note-target"));
   for (let r = 14; r < 38; r++) assert.equal(d.lines[r], row("", ""), `row ${r}`);
   assert.equal(d.lines[39], FOOTER_120);
 });
@@ -287,22 +293,24 @@ test("at 79x24 the list takes the whole width: no rule column, no detail beside 
   const d = draw(golden(), S79);
   assert.equal(d.lines[0], ` oats  acme-platfo…  ${COUNTS}`);
   assert.equal(d.lines[2], "─".repeat(79));
-  assert.deepEqual(d.lines.slice(3, 12), [
+  assert.deepEqual(d.lines.slice(3, 14), [
     " ▾ ● acme-console-expert-tui-read                              claude",
     "     ● acme-console-developer-panel                            claude         !",
     "     ● acme-console-developer-terms                            claude         !",
+    "",
+    "   ? acme-expert-tui                                           unreachable",
+    "",
     " ▾ ● acme-ledger-expert-retire                                 claude",
     ">  ▾ ● acme-ledger-developer-note-target                       claude         !",
     "       ○ peer-reviewer-note                                    stopped",
     "",
     "   ● acme-maintainer-ops                                       claude",
-    "   ? acme-expert-tui                                           unreachable",
   ]);
-  assert.deepEqual(d.lines.slice(12, 22), Array.from({ length: 10 }, () => ""));
+  assert.deepEqual(d.lines.slice(14, 22), Array.from({ length: 8 }, () => ""));
   assert.equal(d.lines[22], "─".repeat(79));
   assert.equal(d.lines[23], FOOTER);
-  assert.deepEqual(d.cells[7].map((cell) => cell.style.reverse), Array.from({ length: 79 }, () => true), "the selected row's bar is the whole width");
-  assert.deepEqual([d.cells[4][78].text, d.cells[7][78].text], ["!", "!"], "a waiting mark stands in the last column");
+  assert.deepEqual(d.cells[10].map((cell) => cell.style.reverse), Array.from({ length: 79 }, () => true), "the selected row's bar is the whole width");
+  assert.deepEqual([d.cells[4][78].text, d.cells[10][78].text], ["!", "!"], "a waiting mark stands in the last column");
   for (const line of d.lines) assert.equal(line.includes("soul "), false, "no detail is drawn beside the list");
 });
 
@@ -317,13 +325,13 @@ test("at 60x15, the smallest size drawn, the frame keeps its shape and the roste
     " ▾ ● acme-console-expert-tui-read           claude",
     "     ● acme-console-developer-panel         claude         !",
     "     ● acme-console-developer-terms         claude         !",
+    "",
+    "   ? acme-expert-tui                        unreachable",
+    "",
     " ▾ ● acme-ledger-expert-retire              claude",
     ">  ▾ ● acme-ledger-developer-note-target    claude         !",
     "       ○ peer-reviewer-note                 stopped",
-    "",
-    "   ● acme-maintainer-ops                    claude",
-    "   ? acme-expert-tui                        unreachable",
-    "",
+    "   2 more below",
   ]);
   assert.equal(d.lines[13], "─".repeat(60));
   assert.equal(d.lines[14], FOOTER_60);
@@ -743,9 +751,9 @@ test("a list row is indented two cells per level, and a row deeper than the sixt
 
 test("the disclosure mark stands only on a row with instances below it: open on an expanded row, closed on a collapsed one, and none on a leaf or a single instance", () => {
   for (const ascii of [false, true]) for (const sz of SIZES) {
-    const marks = marksOf(ascii), state = fresh({ ascii }), d = draw(state, sz);
+    const marks = marksOf(ascii), state = fresh({ ascii });
     /** The cell two before the state mark: where a row says whether it has instances below it. */
-    const disclosure = (name, mark) => { const cells = d.cells[rowAt(state, sz, name)]; return cells[cells.findIndex((cell, x) => x > 0 && cell.text === mark) - 2].text; };
+    const disclosure = (name, mark) => { const shown = onScreen(state, sz, name), cells = draw(shown, sz).cells[rowAt(shown, sz, name)]; return cells[cells.findIndex((cell, x) => x > 0 && cell.text === mark) - 2].text; };
     assert.equal(disclosure(KERNEL_EXPERT, marks.running), marks.open);
     assert.equal(disclosure(KERNEL_DEV, marks.running), marks.open);
     assert.equal(disclosure(DESKTOP_EXPERT, marks.running), marks.open);
@@ -834,7 +842,7 @@ test("a waiting row carries `!` at the right edge of its pane, and an expanded r
   for (const ascii of [false, true]) for (const sz of SIZES) {
     const pane = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols, state = fresh({ ascii }), d = draw(state, sz);
     /** What stands after the word of a row, up to the pane's edge. */
-    const after = (name, word) => { const line = cellText(d, rowAt(state, sz, name), 0, pane); return line.slice(line.lastIndexOf(word) + word.length).trim(); };
+    const after = (name, word) => { const shown = onScreen(state, sz, name), line = cellText(draw(shown, sz), rowAt(shown, sz, name), 0, pane); return line.slice(line.lastIndexOf(word) + word.length).trim(); };
     for (const name of [KERNEL_DEV, DESKTOP_A, DESKTOP_B]) {
       assert.equal(after(name, "claude"), "!", `${name} at ${sz.cols}x${sz.rows}`);
       assert.equal(d.cells[rowAt(state, sz, name)][pane - 1].text, "!", `${name}: the mark is inside the pane, at its edge`);
@@ -2140,12 +2148,14 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
       " ▾ ● acme-console-e…  claude",
       "     ● acme-console…  claude         !",
       "     ● acme-console…  claude         !",
+      "",
+      ">  ? acme-expert-tui  unreachable",
+      "",
       " ▾ ● acme-ledger-ex…  claude",
       "   ▾ ● acme-ledger-…  claude         !",
       "       ○ peer-revie…  stopped",
       "",
       "   ● acme-maintaine…  claude",
-      ">  ? acme-expert-tui  unreachable",
     ], [
       "   acme-expert-tui",
       "   soul     acme-expert",
@@ -2169,12 +2179,14 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
       " v * acme-console...  claude",
       "     * acme-conso...  claude         !",
       "     * acme-conso...  claude         !",
+      "",
+      ">  ? acme-expert-tui  unreachable",
+      "",
       " v * acme-ledger-...  claude",
       "   v * acme-ledge...  claude         !",
       "       - peer-rev...  stopped",
       "",
       "   * acme-maintai...  claude",
-      ">  ? acme-expert-tui  unreachable",
     ], [
       "   acme-expert-tui",
       "   soul     acme-expert",

@@ -85,8 +85,10 @@ function markOf(row) {
   return word === "stopped" && row.runtimeState === "shell" ? "shell" : word;
 }
 
-/** The group of instances that are related to no other, as the shared grouping names it. */
-const SINGLES = "independent";
+/** The key prefix of each run of instances related to no other, as the shared grouping names it
+ *  (`independent:<id>`). Read by key, not by label: a cluster whose root is named `independent` has that
+ *  label too, and its key is `cluster:<n>:independent`. */
+const SINGLES = "independent:";
 
 /** Everything of a state that does not depend on a width: the panel, the rows as the shared
  *  grouping orders them, the headings, and what stands after the sections. */
@@ -113,8 +115,8 @@ function build(state, at) {
 
   // The list, top to bottom, before any width. A section that has a label (a view of two or more
   // deployments) starts with its heading and the deployment's note; then the groups in the order
-  // given, every cluster's members in order, with one gap before the group of single instances
-  // when rows of the section came before it.
+  // given, every cluster's members in order, with one gap at every boundary between a run of single
+  // instances and a cluster, both ways (#1262).
   const parts = [], rows = [];
   const heading = (deployment, label, path = null) => {
     const said = deploymentState(deployment), live = said.key === "live";
@@ -129,12 +131,15 @@ function build(state, at) {
       parts.push(heading(part.deployment, part.label));
       if (text(part.deployment.note)) parts.push({ kind: "sentence", value: part.deployment.note });
     }
-    let drawn = 0;
+    let previous = null; // whether the group drawn last was a run of single instances
     for (const group of part.groups) {
-      if (group.key === SINGLES && drawn) parts.push({ kind: "gap" });
+      // A gap at every boundary between a run of single instances and a cluster, both ways (#1262).
+      const singles = group.key.startsWith(SINGLES);
+      if (previous !== null && singles !== previous) parts.push({ kind: "gap" });
+      previous = singles;
       for (const cluster of group.clusters) for (const row of cluster.instances) {
         const item = { kind: "row", row, id: instanceId(row), depth: Number.isInteger(row.depth) ? row.depth : 0 };
-        parts.push(item); rows.push(item); drawn++;
+        parts.push(item); rows.push(item);
       }
     }
   }

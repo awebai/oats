@@ -99,6 +99,17 @@
 // follows at the next check, and the panel waits for it, a bounded time: a viewer heard so is over
 // without a status once STATUS_WAIT_MS have passed with no other line, its pane killed, so a
 // status that never comes never leaves a terminal open that nothing will close (CI, tmux 3.4).
+// THE STATUS TMUX LOSES. A tmux built with libutempter (Ubuntu's, Debian's) can lose a viewer's
+// status for good: at the hang-up server_destroy_pane calls utempter_remove_record (3.4,
+// server-fn.c), and libutempter sets SIGCHLD to its default while it forks and waits for its
+// helper, so a viewer that exits in that moment has its SIGCHLD discarded. tmux reaps only on a
+// SIGCHLD (waitpid for any child), so the viewer stays a zombie, and its status unknown, until
+// another child of the server exits (awebai/oats#1277; spawn.c guards the same call on a pane's
+// creation by signalling itself). So a viewer heard dead with no status makes the server run a
+// child that exits at once, `run-shell true` through the control client, at once and every
+// REAP_ASK_MS while it waits: that child's SIGCHLD makes tmux reap every child that has exited,
+// the viewer included, and the line with its status follows at the next check. No process is
+// signalled by pid. Without the lost SIGCHLD the child changes nothing.
 // tmux 3.2 has no `pane_dead_signal` (3.3 added it), so there a signal's end reads `1  ` for good,
 // and the wait is the shorter DEAD_WAIT_MS. A pane-died hook cannot do it: tmux sends no
 // notification for a command a hook runs. A pane the panel kills (close(), an open given up) is
@@ -153,6 +164,11 @@ export const DEAD_WAIT_MS = 2500;
  *  moment after the hang-up; a viewer that closed its terminal and lives on keeps it longer, and
  *  one whose status never comes is over without one when this has passed. */
 export const STATUS_WAIT_MS = 10000;
+/** While a viewer waits for its status, how often the server is made to reap its children (THE
+ *  STATUS TMUX LOSES), in milliseconds: once a check of the subscription. */
+export const REAP_ASK_MS = 1000;
+/** The child the server runs for that, which exits at once and prints nothing. */
+const REAP_COMMAND = "run-shell true";
 /** The first tmux whose `pane_dead_signal` says which signal ended a pane. */
 const DEAD_SIGNAL_TMUX = Object.freeze([3, 3]);
 /** What a dead line with no status and no signal says of a viewer: its status is still to come. */
@@ -707,11 +723,13 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   /** A viewer heard dead with no status: it stays open until the line with its status or its
    *  signal, a close, or its server's end, and at most STATUS_WAIT_MS (DEAD_WAIT_MS on tmux 3.2,
    *  which says a signal's end no other way): then it is over without a status, and its pane is
-   *  killed. Armed once. */
+   *  killed. Armed once. Meanwhile the server reaps its children, at once and every REAP_ASK_MS
+   *  (`reap`). */
   function waitStatus(v) {
     if (v.over || v.waiting !== null) return;
     const ms = signals ? STATUS_WAIT_MS : DEAD_WAIT_MS;
     traced(`${v.id} dead, waiting ${ms} ms for its status`);
+    reap(v);
     v.waiting = timers.setTimeout(() => {
       v.waiting = null;
       if (ended || v.over) return;
@@ -720,6 +738,14 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
       if (server && !server.gone) ask(`kill-pane -t ${v.pane}`);
       finish(v, {});
     }, ms);
+  }
+  /** The server runs a child that exits at once, so that it reaps a viewer whose SIGCHLD it lost
+   *  (THE STATUS TMUX LOSES); again in REAP_ASK_MS, until the viewer is over. */
+  function reap(v) {
+    v.reaping = null;
+    if (v.over || ended || !server || server.gone) return;
+    ask(REAP_COMMAND);
+    v.reaping = timers.setTimeout(() => reap(v), REAP_ASK_MS);
   }
   /** A window ended: the open viewer's, one closing, or (an open under way) one to remember. */
   function windowClosed(id) {
@@ -743,8 +769,11 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     forget(v.files);
     if (!ended) tell(() => onClosed({ id: v.id, status: gone ? null : status, stderr, asked: v.asked }));
   }
-  /** A viewer's wait for its status (waitStatus), put away. */
-  function unwait(v) { if (v.waiting !== null) { quietly(() => timers.clearTimeout(v.waiting)); v.waiting = null; } }
+  /** A viewer's wait for its status (waitStatus), and its asks to reap, put away. */
+  function unwait(v) {
+    if (v.waiting !== null) { quietly(() => timers.clearTimeout(v.waiting)); v.waiting = null; }
+    if (v.reaping !== null) { quietly(() => timers.clearTimeout(v.reaping)); v.reaping = null; }
+  }
   /** The slot is free: no viewer, no frame to come. */
   function free() { viewer = null; stopFrames(); dirty = false; }
   const forget = (made) => { for (const path of [made?.err, made?.status]) if (path) quietly(() => fs.unlink(path)); };
@@ -794,7 +823,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
           throw refusal("E_PANEL_OPEN", "tmux did not name the window it opened");
         }
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
-        const v = { id: ids[1], pane: ids[2], ...size, files: made, asked: false, over: false, status: null, waiting: null };
+        const v = { id: ids[1], pane: ids[2], ...size, files: made, asked: false, over: false, status: null, waiting: null, reaping: null };
         mine.files = null; // the viewer's now: finish() removes them
         // Heard dead with no status yet: opened as any other, and waiting for the line with it.
         const pending = diedSeen.get(v.id) === PENDING;

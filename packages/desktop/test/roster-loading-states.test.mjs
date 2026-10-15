@@ -274,7 +274,7 @@ test('refreshing keeps rows and focus; "Refreshing…" appears in the head only 
   assert.deepEqual(s.rows(), before, 'identical data: the very same nodes'); assert.equal(s.doc.activeElement, focused);
   // Changed data repaints and restores the logical focus.
   s.refreshContextRoster(); await s.reply(2, panelOf('A', [...roster, row('delta')]));
-  assert.notEqual(s.rows()[1], before[1]); assert.deepEqual(s.names(), ['alpha', 'gamma', 'delta', 'beta'], 'clusters first, then the independent rows');
+  assert.notEqual(s.rows()[1], before[1]); assert.deepEqual(s.names(), ['alpha', 'gamma', 'beta', 'delta'], 'by name: the cluster, then its run of independent rows (#1262)');
   assert.equal(s.doc.activeElement.dataset.treeInstance, focused.dataset.treeInstance);
 });
 
