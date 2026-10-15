@@ -3,15 +3,16 @@
 //   calls.jsonl   one JSON line per invocation ({ pid, pgid, argv, env, commands }) and per
 //                 command a control client was sent ({ pid, control })
 //   plan.json     what to do (optional): { version, newSession: { fail }, start: { failAt, hold },
-//                 startDelayMs, holdCapture, screen: [lines], cursor, paneGone, captureFile,
+//                 startDelayMs, startSays: [lines] (the first start block's, as a faulty tmux
+//                 would print), holdCapture, screen: [lines], cursor, paneGone, captureFile,
 //                 answers: { <command>: [lines] },
 //                 window: { status, stderr, closeAtOnce, print }, killPaneSilent }
 //                 (window.print: what new-window prints instead of `@n %n`, `{n}` its number;
 //                 screen: the pane's lines, where `{end}` and `{begin}` are the exact end and
 //                 begin of the capture's own block, as a pane that guessed them would print;
 //                 paneGone: the pane is gone when a capture runs, which fails, and then its
-//                 window's end is said; captureFile: "missing" (save-buffer writes no file) or
-//                 "huge" (more than the panel reads); answers: the lines a command's block that
+//                 window's end is said; captureFile: "missing" (save-buffer writes no file),
+//                 "fifo" (it leaves a FIFO there) or "huge" (more than the panel reads); answers: the lines a command's block that
 //                 succeeds holds, by the command's name, as a faulty tmux would print;
 //                 window.closeAtOnce: the viewer ends before new-window answers, heard as its
 //                 pane dead with window.status, as tmux's subscription says it; a test makes a
@@ -24,6 +25,7 @@
 // `;` ends a command (a trailing `\;` is an escaped `;`), so a test can see that a hostile argument
 // reaches new-window's command intact. It never runs a real tmux.
 import { appendFileSync, closeSync, constants, existsSync, fstatSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 
@@ -161,7 +163,8 @@ async function controlMode() {
         if (socket && !existsSync(socket)) await new Promise((resolve) => { const server = createServer(); server.on("error", resolve); server.listen(socket, resolve); server.unref(); });
         writeState({ ...readState(), server: true });
       }
-      out(`%begin ${t} ${n} 0\n%end ${t} ${n} 0\n`);
+      const says = i === 0 && plan.startSays ? plan.startSays.map((l) => `${l}\n`).join("") : "";
+      out(`%begin ${t} ${n} 0\n${says}%end ${t} ${n} 0\n`);
     }
     note({ started: true });
     out("%session-changed $0 oats-tui\n");
@@ -187,8 +190,11 @@ async function controlMode() {
       const [, into, word] = /^save-buffer -b (\S+) (.*)$/.exec(line) ?? [];
       const path = unquote(word ?? "");
       if (!buffers.has(into)) failed = `no buffer ${into}`;
-      else if (step.captureFile === "missing") rmSync(path, { force: true });
-      else writeFileSync(path, step.captureFile === "huge" ? "x".repeat(8 * 1024 * 1024 + 1) : buffers.get(into).map((l) => `${l}\n`).join(""));
+      else {
+        rmSync(path, { force: true });
+        if (step.captureFile === "fifo") execFileSync("mkfifo", ["-m", "600", path]);
+        else if (step.captureFile !== "missing") writeFileSync(path, step.captureFile === "huge" ? "x".repeat(8 * 1024 * 1024 + 1) : buffers.get(into).map((l) => `${l}\n`).join(""));
+      }
     } else if (name === "delete-buffer") {
       const into = /-b (\S+)/.exec(line)?.[1];
       if (!buffers.delete(into)) failed = `unknown buffer: ${into}`;

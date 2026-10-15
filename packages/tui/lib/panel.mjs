@@ -246,7 +246,7 @@ function tooOld(answer) {
  *  bytes from its start or its end, as text (a tail that begins inside a UTF-8 character drops the
  *  bytes of that character); `whole(path, max)` reads a regular file of at most `max` bytes, as
  *  text, and answers null for a larger one or one that is not a regular file (a link is not
- *  followed); `lstat`, `list` (names in a directory), `unlink`, `rmdir`. */
+ *  followed, and a FIFO is not waited on); `lstat`, `list` (names in a directory), `unlink`, `rmdir`. */
 export const PANEL_FS = Object.freeze({
   make: (path) => closeSync(openSync(path, "wx", 0o600)),
   write: (path, text) => {
@@ -266,7 +266,8 @@ export const PANEL_FS = Object.freeze({
   head: (path, max) => readPart(path, max, false),
   tail: (path, max) => readPart(path, max, true),
   whole: (path, max) => {
-    const fd = openSync(path, FS.O_RDONLY | FS.O_NOFOLLOW);
+    // O_NONBLOCK: a FIFO put there must not hold the TUI in its open; it is then no file, below.
+    const fd = openSync(path, FS.O_RDONLY | FS.O_NOFOLLOW | FS.O_NONBLOCK);
     try {
       const stat = fstatSync(fd);
       if (!stat.isFile() || stat.size > max) return null;
@@ -429,6 +430,12 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         // A command of the list that fails ends the list there: tmux runs none after it, so the
         // start is answered at once.
         if (start && !ok) s.startError = lines.join("\n").slice(0, DETAIL_KEPT);
+        // Fail closed here too: no command of the start list says anything when it succeeds.
+        if (start && ok && !SAYS_NOTHING(lines)) {
+          s.startError = "tmux answered the start with words its commands never say";
+          s.startLeft = 0;
+          return attached(s, false);
+        }
         if (start) return ok && s.startLeft > 0 ? undefined : attached(s, ok);
         const waiting = s.replies.shift();
         // Fail closed: no pane's text is ever in a block (THE CAPTURE), so a block that answers a

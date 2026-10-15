@@ -275,10 +275,10 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("a capture's file missing or larger than the panel reads: no frame and no throw; the next change draws", async () => {
+  test("a capture's file missing, larger than the panel reads, or a FIFO: no frame, no throw and no wait; the next change draws", async () => {
     const { world, panel, timers, screens, heard } = await opened();
     const blocks = () => (heard().match(/^%(end|error) /gm) ?? []).length;
-    for (const captureFile of ["missing", "huge"]) {
+    for (const captureFile of ["missing", "huge", "fifo"]) {
       world.plan({ captureFile });
       const before = blocks();
       world.emit(`%output %1 ${captureFile}`);
@@ -296,6 +296,25 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
+  test("PANEL_FS.whole, in a child given 5 s: a regular file within its bound as text; null for one too large, a directory, a FIFO (never waited on), and a link (never followed); a missing path throws", async () => {
+    const dir = mkdtempSync(path.join(ROOT, "whole-"));
+    writeFileSync(path.join(dir, "file"), "a\nb\n");
+    writeFileSync(path.join(dir, "large"), "x".repeat(11));
+    mkdirSync(path.join(dir, "dir"));
+    execFileSync("mkfifo", ["-m", "600", path.join(dir, "fifo")]);
+    symlinkSync(path.join(dir, "file"), path.join(dir, "link"));
+    // A module of its own, importing the panel statically (the package uses no dynamic import).
+    const child = path.join(dir, "child.mjs");
+    writeFileSync(child, [`import { PANEL_FS } from ${JSON.stringify(new URL("../lib/panel.mjs", import.meta.url).href)};`, "const out = {};",
+      `for (const name of ["file", "large", "dir", "fifo", "link", "missing"]) { try { out[name] = PANEL_FS.whole(${JSON.stringify(dir)} + "/" + name, 10); } catch (error) { out[name] = error.code; } }`,
+      "console.log(JSON.stringify(out));"].join("\n"));
+    const answer = JSON.parse(execFileSync(process.execPath, [child], { encoding: "utf8", timeout: 5000 }));
+    assert.equal(answer.file, "a\nb\n");
+    assert.deepEqual([answer.large, answer.dir, answer.fifo], [null, null, null]);
+    assert.ok(answer.link === null || answer.link === "ELOOP", `a link is not followed: ${answer.link}`);
+    assert.equal(answer.missing, "ENOENT");
+  });
+
   test("fail closed: a block that answers with words its command does not say ends the control client; the viewer is closed with no status, and the next open starts a new server", async () => {
     for (const command of ["save-buffer", "resize-window"]) {
       const { world, panel, timers, closed, id } = await opened();
@@ -310,6 +329,13 @@ describe("the panel", { concurrency: 8 }, () => {
       assert.equal(world.invocations().filter((call) => call.flags.includes("-C")).length, 2, `${command}: a new control client`);
       panel.end();
     }
+  });
+
+  test("fail closed at the start: a start block that succeeds with words fails the start (E_PANEL_START), and no viewer is opened", async () => {
+    const world = makeWorld({ startSays: ["words tmux never says here"] }), { panel } = panelOf(world);
+    await assert.rejects(panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { code: "E_PANEL_START", detail: "tmux answered the start with words its commands never say" });
+    assert.deepEqual(world.windows(), []);
+    panel.end();
   });
 
   test("controlWord: a path as one word of a control line, in single quotes, `'` as '\"'\"', every # doubled; a control character makes it no word; a run directory whose path holds one is refused at the start (E_PANEL_START), with no tmux run", async () => {
