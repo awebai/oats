@@ -40,6 +40,12 @@ export const ACTIONS = Object.freeze([
   { id: "retire", keys: ["D"], label: "retire", views: [["instances", "retire the selected agent, after a confirmation"]] },
   { id: "start", keys: ["S"], label: "start", views: [["instances", "start the selected agent as it was last launched, after a confirmation"]] },
   { id: "restart", keys: ["R"], label: "restart", views: [["instances", "restart the selected agent as it was last launched, after a confirmation"]] },
+  // A spawn (docs/tui.md, "Spawning an agent"): a prompt over the list, the soul picked, the
+  // shared preview, and one Enter. Only on this machine's workspace, one spawn at a time.
+  { id: "spawn", keys: ["n"], label: "spawn", views: [["instances", "spawn an agent: pick its soul, then the preview, and Enter spawns it"], ["souls", "spawn an agent of the selected soul: the preview, and Enter spawns it"]] },
+  { id: "spawn-another", keys: ["N"], label: "spawn another", views: [["instances", "spawn another agent of the selected agent's soul: the preview, and Enter spawns it"], ["souls", "the same as n"]] },
+  // Offered only while a spawn's outcome is not known: it asks the kernel once, never spawns again.
+  { id: "spawn-check", keys: ["C"], label: "check spawn", views: [["instances", "check the result of a spawn whose outcome is not known, while one is"]] },
   { id: "help", keys: ["?"], label: "help" },
   { id: "close", keys: ["escape"], label: "close" },
   { id: "quit", keys: ["q", "ctrl+c"], label: "quit" },
@@ -67,6 +73,8 @@ export const LEADER = Object.freeze([
   { keys: ["R"], does: "restart", label: "restart" },
   { keys: ["S"], does: "start", label: "start" },
   { keys: ["D"], does: "retire", label: "retire" },
+  { keys: ["n"], does: "spawn", label: "spawn" },
+  { keys: ["N"], does: "spawn-another", label: "spawn another" },
   { keys: ["/"], does: "filter", label: "filter" },
   { keys: ["o"], does: "workspaces", label: "workspaces" },
   { keys: ["?"], does: "help", label: "help" },

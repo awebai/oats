@@ -6,8 +6,8 @@ inside `@awebai/oats` and is never published on its own.
 
 **It is a preview.** This version shows a workspace's instances, on this
 machine and on the other machines registered on it, in one list, follows
-them, opens an agent's terminal in a panel beside the list, and stops, starts, restarts and retires an
-agent after a confirmation. While it is a preview its screens and its
+them, opens an agent's terminal in a panel beside the list, stops, starts, restarts and retires an
+agent after a confirmation, and spawns an agent on this machine. While it is a preview its screens and its
 configuration file may change without notice.
 
 [`docs/tui.md`](../../docs/tui.md) is the reference: how to start it, what the
@@ -36,7 +36,7 @@ never does.
 | `lib/term/through.mjs` | the bytes typed while a terminal has the focus: the back key's grammar and bytes, and the scanner that takes the back key and a bracketed paste out of them |
 | `lib/term/screen.mjs` | the cell buffer and the bytes of a frame |
 | `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame |
-| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the switcher, the help, the confirmation of an act (`act.mjs`) |
+| `lib/views/` | pure functions from the model and a size to rows of spans: the frame, the list, the detail, the switcher, the help, the confirmation of an act (`act.mjs`), the spawn prompt (`spawn.mjs`) |
 
 Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
 
@@ -72,8 +72,10 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   a block that says what its command never says ends that client (THE
   CAPTURE in `lib/panel.mjs`). A
   change (`lib/read.mjs` `changeExec`: the apply of a stop or a retire, a
-  start, a restart) is never signalled: on the way out it is let go, and its
-  output goes to files, so it never meets a closed pipe.
+  start, a restart, a spawn's apply) is never signalled on the way out: it
+  is let go, and its output goes to files, so it never meets a closed pipe.
+  Only a spawn's apply has a deadline, the shared apply's, at which it is
+  sent its signal (`timeout`, `killSignal`).
 - The acts decide nothing the shared home decides: which act a row offers is
   `instanceActs`, a stop or a retire is the shared confirmation over the
   run's one lifecycle boundary, a start or a restart is `startInstance`, and

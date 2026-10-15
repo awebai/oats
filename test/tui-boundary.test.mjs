@@ -78,7 +78,7 @@ const TAKEN = Object.freeze({
   "remote-roster.mjs": ["remoteRosterState"],
   "remote-identity-memory.mjs": ["observeIdentities", "identityMemory"],
   "workspace-choices.mjs": ["workspaceChoiceRows", "choiceMatches", "UNMATCHED_SECTION"],
-  "deployment-label.mjs": ["shortPath"],
+  "deployment-label.mjs": ["shortPath", "deploymentLabel"],
   "instance-tree.mjs": ["instanceId", "instanceVisibleInTree", "waitingRollup", "collapseKey", "filterInstanceTree", "hasInstanceChildren", "heldHome"],
   "roster-sections.mjs": ["rosterSections", "deploymentState", "rowStale", "primaryDeployment", "isMultiDeployment"],
   "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead"],
@@ -98,6 +98,13 @@ const TAKEN = Object.freeze({
   "soul-catalog.mjs": ["createSoulCatalog", "soulCatalogKey"],
   "soul-rows.mjs": ["soulRows"],
   "soul-facts.mjs": ["soulFacts", "spawnRefusal"],
+  // The spawn (Spec 6-spawn): the shared preview, apply boundary and transaction, and their words.
+  "spawn-preview.mjs": ["createSpawnPreview"],
+  "spawn-preview-contract.mjs": ["defaultSpawnChoices"],
+  "spawn-apply.mjs": ["createSpawnApplyBoundary"],
+  "spawn-transaction.mjs": ["createSpawnTransaction"],
+  "spawn-messages.mjs": ["spawnProblem", "outcomeWords", "SPAWN_NEXT"],
+  "spawn-preview-facts.mjs": ["previewFacts"],
 });
 /** Every clause of a source that takes names from a module of the shared home: [[module, names], …].
  *  A name taken under another name is read as the name the home gives it. */
@@ -236,7 +243,7 @@ test("the views are pure: they import only the TUI's own text, style and action 
   const views = filesUnder("packages/tui/lib/views");
   assert.equal(views.length >= 2, true);
   // The views and the window they share; the switcher of workspaces, the confirmation of an act and the palette are held to the rule like the rest.
-  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "souls.mjs", "switcher.mjs"]);
+  assert.deepEqual(views.map((path) => path.slice("packages/tui/lib/views/".length)), ["act.mjs", "detail.mjs", "frame.mjs", "help.mjs", "instances.mjs", "palette.mjs", "scroll.mjs", "souls.mjs", "spawn.mjs", "switcher.mjs"]);
   for (const path of views) {
     for (const name of staticImports(read(path))) assert.match(name, /^(\.\.\/actions\.mjs|\.\.\/term\/(text|style|width)\.mjs|\.\/[a-z-]+\.mjs)$/, `${path} imports ${name}`);
     assert.doesNotMatch(code(read(path)), /\b(process|Date|setTimeout|setInterval|performance|console|fetch|require)\b/, path);
@@ -346,9 +353,12 @@ test("opening an agent: no module of the TUI holds an attach argument, the featu
     // The codes a module of the TUI names: the shared terminal table's own for an open the person gave up (preflightFailure).
     // And the start rule's one code a client words itself, the end of the wait for a start that goes on (session-start.mjs).
     // And the panel's own refusals, each its own E_PANEL_ code, which the loop reads (lib/main.mjs, E_PANEL_TMUX).
+    // And the shared preview's one code whose words say it is read again ("Reading it again…"), which the store does (E_TARGET_CHANGED).
+    // And the shared transaction's reason for an outcome not known, which the loop gives a spawn call that threw
+    // instead of answering, as the transaction does itself (lib/main.mjs; spawn-transaction.mjs `failed`).
     const codes = literals(read(path)).filter((text) => /^E_[A-Z_]+$/.test(text));
     if (path === "packages/tui/lib/panel.mjs") assert.deepEqual([...new Set(codes)].filter((c) => !c.startsWith("E_PANEL_")), [], path);
-    else assert.deepEqual(codes, path === "packages/tui/lib/model.mjs" ? ["E_TERM_CONTEXT_CHANGED", "E_START_UNCONFIRMED"] : path === "packages/tui/lib/main.mjs" ? ["E_PANEL_TMUX"] : [], path);
+    else assert.deepEqual(codes, path === "packages/tui/lib/model.mjs" ? ["E_TERM_CONTEXT_CHANGED", "E_START_UNCONFIRMED"] : path === "packages/tui/lib/main.mjs" ? ["E_OUTCOME_UNKNOWN", "E_PANEL_TMUX"] : path === "packages/tui/lib/store.mjs" ? ["E_TARGET_CHANGED"] : [], path);
   }
   // The viewer is started where it is built from the shared answer: lib/main.mjs hands lib/panel.mjs
   // what sessionAttachArgv or prepareRemoteTerm answered, with no key, and nothing else.

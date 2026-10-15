@@ -2,10 +2,11 @@
 // call, the observer of every served deployment, the roster of other machines, the refresh loop,
 // the liveness collector, and the two looks at the file system the switcher needs.
 // Every child of this module is a read, except the changes (a stop or retire apply, a start or a
-// restart) that the shared callers start through `changeExec`: those are never ended by the TUI,
-// and their output goes to two files of the run's own private directory, the only files this
-// module writes. (Opening an agent's terminal starts the kernel's viewer, which is not a read and
-// is not started here: it runs in a pane of the panel's private tmux server, lib/panel.mjs.)
+// restart, a spawn apply) that the shared callers start through `changeExec`: those are never
+// ended by the TUI of its own accord (only at a deadline their caller gives), and their output goes
+// to two files of the run's own private directory, the only files this module writes. (Opening an
+// agent's terminal starts the kernel's viewer, which is not a read and is not started here: it runs
+// in a pane of the panel's private tmux server, lib/panel.mjs.)
 // No function of this module decodes a kernel answer. Each one passes values between the shared
 // functions (client.mjs), which decide what a roster, a row and a failed read are, once, for both
 // clients: the TUI never writes "stopped" for a row and never builds the collector's input by hand.
@@ -232,15 +233,16 @@ const said = (error) => String(error?.message ?? error);
  *  list of options, `detached` is not one of them, and a child it starts stays in the TUI's group
  *  whatever it is asked. `run` below is the part of execFile's contract the shared readers use.
  *
- *  ENDING A CHILD: only a read is ever ended. The viewer of an opened agent runs in the panel's
+ *  ENDING A CHILD: only a read is ever ended by the reader. The viewer of an opened agent runs in the panel's
  *  private tmux server (lib/panel.mjs), and is no child of the reader. A KERNEL CALL THAT CHANGES SOMETHING (kind "change", `changeExec`) IS
- *  NEVER SIGNALLED BY THE TUI: a stop killed while it waits leaves a marker that refuses every
+ *  NEVER SIGNALLED BY THE READER: a stop killed while it waits leaves a marker that refuses every
  *  later stop, and a killed start leaves its lock (#889, #890). So every child is remembered with
- *  its kind, and only kind "read" is ever signalled.
+ *  its kind, and only kind "read" is ever ended by the reader's own decisions. A change is
+ *  signalled only at a positive `timeout` its caller gives (see changeExec), never on the way out.
  *
- *  `timers` are the loop's, the idle timer's and the children's time limits (for tests). `files`
- *  is where a change's output is written (for tests): `files.dir()` makes the run's private
- *  directory. */
+ *  `timers` are the loop's, the idle timer's, the reads' time limits and a change's deadline (for
+ *  tests). `files` is where a change's output is written (for tests): `files.dir()` makes the run's
+ *  private directory. */
 export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onRoster, env = process.env, clock = () => new Date().toISOString(), now = Date.now, spawn = nodeSpawn, timers = { setTimeout, clearTimeout }, collector = COLLECTOR, idleMs = 600_000, focusedMs = 5000, blurredMs = 30_000, rosterMs = 15_000, files = CHANGE_FILES }) {
   /** child -> { kind, exited, giveUp, asked } for a read, { kind: "change", label, letGo } for a
    *  change: every child that has not ended and was not ended (a read) or let go (a change).
@@ -371,11 +373,20 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
     return child;
   }
   /** THE EXEC OF A CHANGE: a stop or retire apply (the boundary's call with `detached: true`), a
-   *  start or a restart (the shared cliStart's). execFile's signature for `node <bin> <argv…>`, in
-   *  a session of its own, outside every cycle: it is never made void by voidInFlight() and never
-   *  signalled, not by `sever`, not by stop(), not at a time limit (a `timeout` given is not
-   *  armed: the shared callers end their wait, never the child). `options.label` is the caller's
-   *  `{ verb, name }`, kept for the line after leaving (`changes()`), and is not passed on.
+   *  start or a restart (the shared cliStart's), a spawn apply (the shared spawn-apply's). execFile's
+   *  signature for `node <bin> <argv…>`, in a session of its own, outside every cycle: it is never
+   *  made void by voidInFlight() and never signalled by the reader, not by `sever`, not by stop(),
+   *  not by voidInFlight(). A positive `timeout` its caller gives (the shared spawn apply on a
+   *  kernel without worktree-event: its only deadline) is honoured as execFileInSession honours it
+   *  (packages/client/cli-adapter.mjs): one timer of `timers`, and when it fires the child alone is
+   *  sent `killSignal` (SIGTERM; `child.kill`, not its group), and the callback's error has
+   *  `killed: true` even when the child then exits 0: never a clean answer after the timer fired.
+   *  The timer is cleared when the child exits or does not start, and on the let-go: a TUI that has
+   *  gone never kills a change. A zero, negative, missing or non-finite `timeout` arms nothing, as
+   *  a stop, retire or start gives (the shared callers end their wait, never the child). On a
+   *  worktree-event kernel the shared spawn-apply boundary gives no `timeout` and itself signals the
+   *  child this returns at its deadline. `options.label` is the caller's `{ verb, name }`, kept for
+   *  the line after leaving (`changes()`); neither it nor `timeout` nor `killSignal` is passed on.
    *  ITS OUTPUT GOES TO FILES, NEVER TO A PIPE. Before the spawn two files are opened in the run's
    *  private directory (made once, mode 0700, under the OS temp dir) and given to the child as its
    *  stdout and stderr; stdin is `ignore`. The TUI's own copies are closed after the spawn. So
@@ -384,7 +395,7 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
    *  each bounded by `maxBuffer` (over it: ERR_CHILD_PROCESS_STDIO_MAXBUFFER, as a read answers),
    *  deleted, and the callback is called as execFile calls it, with text (UTF-8).
    *  It throws after stop(): nothing new starts on the way out. Returns the child. */
-  function changeExec(bin, argv, { label = null, timeout: _never, maxBuffer = Infinity, encoding: _utf8, ...options }, callback) {
+  function changeExec(bin, argv, { label = null, timeout = 0, killSignal = "SIGTERM", maxBuffer = Infinity, encoding: _utf8, ...options }, callback) {
     if (stopped) throw new Error("the reader has stopped");
     if (changeDir === null) changeDir = files.dir();
     const number = ++changeCount, paths = { stdout: join(changeDir, `${number}.out`), stderr: join(changeDir, `${number}.err`) };
@@ -402,11 +413,13 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
       for (const name of ["stdout", "stderr"]) quietly(() => files.close(fds[name]));
     }
     const record = { kind: "change", label, letGo: false };
-    let over = false;
+    let over = false, timer = null, killed = false;
     const forget = () => { for (const name of ["stdout", "stderr"]) quietly(() => files.unlink(paths[name])); };
+    const disarm = () => { if (timer !== null) { timers.clearTimeout(timer); timer = null; } };
     function finish(error) {
       if (over) return;
       over = true;
+      disarm();
       remembered.delete(child);
       if (record.letGo) return; // stop() let it go: nobody waits for its answer any more
       const read = {};
@@ -419,12 +432,17 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
       forget();
       callback(verdict ?? null, read.stdout, read.stderr);
     }
-    child.once("exit", () => { running.delete(child); });
-    child.once("close", (code, signal) => finish(code === 0 && signal === null ? null : failure({ code, signal, killed: false })));
+    // Disarmed at `exit`, not only at `close`: after `exit` the pid is free to name another process.
+    child.once("exit", () => { disarm(); running.delete(child); });
+    child.once("close", (code, signal) => finish(!killed && code === 0 && signal === null ? null : failure({ code, signal, killed })));
     child.on("error", (error) => { if (!child.pid) { running.delete(child); finish(error); } });
-    record.letItGo = () => { record.letGo = true; quietly(() => child.unref()); forget(); remembered.delete(child); };
+    record.letItGo = () => { record.letGo = true; disarm(); quietly(() => child.unref()); forget(); remembered.delete(child); };
     remembered.set(child, record);
     if (Number.isInteger(child.pid)) running.set(child, label);
+    if (Number.isFinite(timeout) && timeout > 0 && Number.isInteger(child.pid)) {
+      timer = timers.setTimeout(() => { timer = null; killed = true; quietly(() => child.kill(killSignal)); }, timeout);
+      timer?.unref?.();
+    }
     return child;
   }
 
@@ -614,9 +632,10 @@ export function createReader({ cli, getServed, getEntry, getRoster, onEntry, onR
       observer.dispose();
       clearIdle();
       endReads();
-      // Every change is LET GO, never signalled: its handle no longer holds the process, and its two
-      // files are unlinked (the child goes on writing to them, and nothing is left behind). The
-      // private directory goes when it is empty.
+      // Every change is LET GO, never signalled: its timer, if its caller gave it a deadline, is
+      // cleared, its handle no longer holds the process, and its two files are unlinked (the child
+      // goes on writing to them, and nothing is left behind). The private directory goes when it is
+      // empty.
       for (const record of [...remembered.values()]) if (record.kind === "change") record.letItGo();
       if (changeDir !== null) quietly(() => files.remove(changeDir));
     },

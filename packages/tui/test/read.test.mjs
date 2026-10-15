@@ -5,7 +5,7 @@
 // A test signals only a pid a fake wrote down, and only after it has seen that the pid is its fake.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFile as nodeExecFile, execFileSync, spawn as nodeSpawn } from "node:child_process";
+import { ChildProcess, execFile as nodeExecFile, execFileSync, spawn as nodeSpawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1544,11 +1544,12 @@ test("only reads are ever ended: a process the reader did not start (the panel's
 
 /** A kernel call that changes something, faked: it prints `{ out }` on stdout and `{ err }` on stderr,
  *  says it is under way (`ready`), and with a `gate` waits for that file before it writes once more
- *  on both and then `done`. A signal it receives is written down (`<done>.signal`) and does not end it. */
+ *  on both and then `done`. A signal it receives is written down (`<done>.signal`) and does not end it,
+ *  unless it is given `--die`: then it keeps no handler, and a signal ends it as it ends any node. */
 const CHANGE = `
 import { existsSync, writeFileSync } from "node:fs";
 const [ready, gate, done, size] = process.argv.slice(2);
-for (const name of ["SIGTERM", "SIGHUP", "SIGINT", "SIGPIPE"]) process.on(name, () => writeFileSync(done + ".signal", name));
+if (!process.argv.includes("--die")) for (const name of ["SIGTERM", "SIGHUP", "SIGINT", "SIGPIPE"]) process.on(name, () => writeFileSync(done + ".signal", name));
 process.stdout.write(size ? "x".repeat(Number(size)) : '{"schemaVersion":1,"ok":true,"result":{"stopped":true}}');
 process.stderr.write("the kernel's stderr\\n");
 writeFileSync(ready, String(process.pid));
@@ -1560,14 +1561,15 @@ const wait = () => {
 };
 wait();
 `;
-/** A world for a change: its script, its files, and a reader whose private directory the test can find. */
-function changing(t) {
+/** A world for a change: its script, its files, and a reader whose private directory the test can find.
+ *  `options` go to the reader (`timers`, for one). */
+function changing(t, options = {}) {
   const dir = mkdtempSync(path.join(ROOT, "change-")), script = path.join(dir, "change.mjs");
   writeFileSync(script, CHANGE);
   const made = [];
   const files = { ...CHANGE_FILES, dir: () => { const at = CHANGE_FILES.dir(); made.push(at); return at; } };
   const world = makeWorld();
-  const r = reading(t, world, { files });
+  const r = reading(t, world, { files, ...options });
   const pids = [];
   t.after(() => { for (const pid of pids) if (alive(pid)) quietly(() => process.kill(pid, "SIGKILL")); });
   const paths = { ready: path.join(dir, "ready"), gate: path.join(dir, "gate"), done: path.join(dir, "done") };
@@ -1599,13 +1601,13 @@ test("a change never holds the panel's FIFO: the write end the TUI keeps for its
 
 test("a change's output goes to two files of the run's private directory, never a pipe: stdin is ignore, the TUI's copies are closed, and at the close both are read back, deleted, and handed to the callback as execFile hands them", async (t) => {
   const c = changing(t);
-  const run = change(c, [c.paths.ready, "", c.paths.done], { timeout: 1, maxBuffer: 1024 * 1024, cwd: ROOT, encoding: "utf8" });
+  const run = change(c, [c.paths.ready, "", c.paths.done], { timeout: 0, maxBuffer: 1024 * 1024, cwd: ROOT, encoding: "utf8" });
   const [spawned] = c.spawned;
   assert.deepEqual([spawned.file, spawned.args[0], spawned.options.detached, spawned.options.stdio[0]], [process.execPath, c.script, true, "ignore"]);
   assert.equal(typeof spawned.options.stdio[1], "number", "a file, not a pipe");
   assert.equal(typeof spawned.options.stdio[2], "number");
   assert.equal(spawned.options.label, undefined, "the label is the TUI's, and not passed on");
-  assert.equal(spawned.options.timeout, undefined, "no time limit is armed");
+  assert.equal(spawned.options.timeout, undefined, "a timeout is the reader's to arm, and not passed to spawn");
   assert.equal(spawned.options.env, CLEAN_ENV, "the reader's environment");
   // Our copies are closed after the spawn (where /proc lists this process's descriptors).
   if (existsSync("/proc/self/fd")) for (const fd of spawned.options.stdio.slice(1)) assert.equal(existsSync(`/proc/self/fd/${fd}`), false, `descriptor ${fd} is closed`);
@@ -1647,4 +1649,98 @@ test("stop() lets a running change go and never signals it: its files are unlink
   await gone([run.child.pid]);
   assert.equal(existsSync(`${c.paths.done}.signal`), false, "no signal reached it");
   assert.equal(run.answer(), null, "nobody waits for its answer any more");
+});
+
+// ── A change's deadline: a positive `timeout` its caller gives (the shared spawn apply on a kernel without worktree-event) ──
+
+test("a change given a positive timeout: when it passes the child is sent its killSignal (SIGTERM unless named), and the callback's error has killed: true; neither option reaches spawn", async (t) => {
+  const c = changing(t);
+  const began = Date.now();
+  const run = change(c, [c.paths.ready, c.paths.gate, c.paths.done, "", "--die"], { timeout: 150 });
+  const [error, , stderr] = await waitFor("the callback", run.answer);
+  assert.ok(Date.now() - began >= 140, "not before the timeout");
+  assert.deepEqual([error.code, error.signal, error.killed], [null, "SIGTERM", true]);
+  assert.equal(existsSync(c.paths.done), false, "it was ended before it finished");
+  assert.equal(typeof stderr, "string", "its output is still read");
+  await gone([run.child.pid]);
+  const dir = path.dirname(c.paths.ready);
+  const named = change(c, [path.join(dir, "ready-2"), c.paths.gate, path.join(dir, "done-2"), "", "--die"], { timeout: 100, killSignal: "SIGINT" });
+  const [other] = await waitFor("the callback", named.answer);
+  assert.deepEqual([other.code, other.signal, other.killed], [null, "SIGINT", true]);
+  for (const spawned of c.spawned) assert.deepEqual([spawned.options.timeout, spawned.options.killSignal], [undefined, undefined]);
+  assert.deepEqual(readdirSync(c.made[0]), [], "both files of both deleted");
+});
+
+test("a change that exits 0 after its timeout fired still answers killed: true, never a clean answer, with its output read", async (t) => {
+  const timers = fakeTimers();
+  const c = changing(t, { timers });
+  const run = change(c, [c.paths.ready, c.paths.gate, c.paths.done], { timeout: 250 });
+  assert.deepEqual(timers.delays(), [250], "one timer, of the timeout");
+  await waitFor("the change to be under way", () => existsSync(c.paths.ready));
+  timers.fire((ms) => ms === 250);
+  assert.equal(await waitFor("SIGTERM to reach it", () => existsSync(`${c.paths.done}.signal`) && readFileSync(`${c.paths.done}.signal`, "utf8")), "SIGTERM");
+  writeFileSync(c.paths.gate, "");
+  const [error, stdout, stderr] = await waitFor("the callback", run.answer);
+  assert.deepEqual([error.code, error.signal, error.killed], [0, null, true], "it exited 0, and the answer is still a kill");
+  assert.equal(stdout, '{"schemaVersion":1,"ok":true,"result":{"stopped":true}}written after the TUI let it go');
+  assert.equal(stderr, "the kernel's stderr\nand on stderr");
+});
+
+test("a zero, negative, missing or non-finite timeout arms nothing: no timer, no signal, and each change ends on its own with a clean answer", async (t) => {
+  const timers = fakeTimers();
+  const c = changing(t, { timers });
+  const dir = path.dirname(c.paths.ready);
+  const runs = [{ timeout: 0 }, { timeout: -5 }, { timeout: Infinity }, { timeout: Number.NaN }, {}].map((options, i) => ({
+    done: path.join(dir, `done-${i}`),
+    run: change(c, [path.join(dir, `ready-${i}`), c.paths.gate, path.join(dir, `done-${i}`)], options),
+  }));
+  assert.deepEqual(timers.delays(), [], "nothing is armed");
+  await waitFor("every change to be under way", () => runs.every((_, i) => existsSync(path.join(dir, `ready-${i}`))));
+  writeFileSync(c.paths.gate, "");
+  for (const { run, done } of runs) {
+    const [error] = await waitFor("the callback", run.answer);
+    assert.equal(error, null);
+    assert.equal(existsSync(`${done}.signal`), false, "no signal reached it");
+  }
+});
+
+test("a positive timeout arms one timer, and a change that ends before it passes clears it: its answer is clean", async (t) => {
+  const timers = fakeTimers();
+  const c = changing(t, { timers });
+  const run = change(c, [c.paths.ready, "", c.paths.done], { timeout: 60_000 });
+  assert.deepEqual(timers.delays(), [60_000]);
+  const [error] = await waitFor("the callback", run.answer);
+  assert.equal(error, null);
+  assert.deepEqual(timers.delays(), [], "cleared when the child ended");
+});
+
+test("the let-go clears a change's timer: after stop() the timeout passes and the child is neither signalled nor ended", async (t) => {
+  const c = changing(t);
+  const run = change(c, [c.paths.ready, c.paths.gate, c.paths.done], { timeout: 200 });
+  const pid = run.child.pid;
+  t.after(() => { if (alive(pid)) quietly(() => process.kill(pid, "SIGKILL")); });
+  c.reader.stop();
+  await waitFor("the change to be under way", () => existsSync(c.paths.ready));
+  await sleep(400);
+  assert.equal(alive(pid), true, "the TUI has gone, and the change goes on");
+  assert.equal(existsSync(`${c.paths.done}.signal`), false, "no signal reached it");
+  assert.equal(run.answer(), null, "nobody waits for its answer any more");
+  process.kill(pid, "SIGKILL");
+  await gone([pid]);
+});
+
+test("changeExec returns the real child, an armed timeout or not: it has the pid changes() names, and its own kill() ends it and clears the timer", async (t) => {
+  const timers = fakeTimers();
+  const c = changing(t, { timers });
+  const run = change(c, [c.paths.ready, c.paths.gate, c.paths.done], { timeout: 60_000 });
+  assert.ok(run.child instanceof ChildProcess);
+  assert.ok(Number.isInteger(run.child.pid) && run.child.pid > 1);
+  assert.deepEqual(c.reader.changes().map((change) => change.pid), [run.child.pid]);
+  await waitFor("the change to be under way", () => existsSync(c.paths.ready));
+  assert.equal(Number(readFileSync(c.paths.ready, "utf8")), run.child.pid, "the process that runs is the one returned");
+  assert.equal(run.child.kill("SIGKILL"), true);
+  const [error] = await waitFor("the callback", run.answer);
+  assert.deepEqual([error.code, error.signal], [null, "SIGKILL"]);
+  assert.deepEqual(timers.delays(), [], "cleared when the child ended");
+  await gone([run.child.pid]);
 });

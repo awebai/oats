@@ -90,7 +90,10 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
   // does); `preflights`: every preflight it began, each with what it was handed and a way to answer it.
   // `soulReads`: every `oats souls` the run's catalog asked for, with a way to answer it; `soulExec`
   // the exec the loop made the catalog with.
-  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, tick(ms) { clock += ms; } };
+  // `spawn`: what the run made of the three shared spawn factories, faked: the preview's reads and
+  // the transaction's submits and checks, each with a way to answer; what the boundary was made with.
+  const r = { stdin, stdout, proc, timers, errors, log, offered, reader: null, panel: null, preflights: [], confirmations: [], starts: [], soulReads: [], soulExec: null, tick(ms) { clock += ms; },
+    spawn: { preview: null, previewExec: null, reads: [], applyRead: null, applyExec: null, applyCalls: [], request: null, submits: [], checks: [] } };
   let up;
   r.up = new Promise((resolve) => { up = resolve; });
   const effects = {
@@ -118,6 +121,28 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
     createSoulCatalog(options) {
       r.soulExec = options.exec;
       return createSoulCatalog({ ...options, invoke: (cli, asked) => new Promise((resolve) => { log.push(["souls", asked.action]); r.soulReads.push({ asked, answer: resolve }); }) });
+    },
+    // The spawn: the shared preview, apply boundary and transaction, faked.
+    createSpawnPreview(options) {
+      r.spawn.previewExec = options.exec;
+      r.spawn.preview = {
+        read: (request, getContext) => new Promise((resolve) => { log.push(["spawn", "preview"]); r.spawn.reads.push({ request, context: getContext(), answer: resolve }); }),
+        prepareRead() { throw new Error("the fake preview prepares nothing"); },
+        cache: { invalidate(id) { log.push(["spawn", "invalidate", id]); }, size: () => 0 },
+      };
+      return r.spawn.preview;
+    },
+    createSpawnApplyBoundary(options) {
+      r.spawn.applyRead = options.read; r.spawn.applyExec = options.exec;
+      return (body, getContext, extra) => { r.spawn.applyCalls.push({ body, context: getContext(), settled: extra?.settled }); return Promise.resolve(null); };
+    },
+    createSpawnTransaction(options) {
+      r.spawn.request = options.request;
+      return {
+        submit: (intent, call) => new Promise((resolve) => { log.push(["spawn", "submit"]); r.spawn.submits.push({ intent, call, answer: resolve }); }),
+        check: (job, call) => new Promise((resolve) => { log.push(["spawn", "check"]); r.spawn.checks.push({ job, call, answer: resolve }); }),
+        recover() { throw new Error("the TUI recovers nothing"); },
+      };
     },
   };
   r.status = main({ argv, stdin, stdout, stderr, env, proc, now: () => clock, setTimer: timers.setTimer, clearTimer: timers.clearTimer, cwd: () => cwd, home: "/home/u", effects });
@@ -187,17 +212,18 @@ test("the action table binds each key to one action, and a key bound twice is re
   assert.deepEqual(Object.fromEntries(bindings(ACTIONS)), {
     up: "up", k: "up", down: "down", j: "down", g: "top", home: "top", G: "bottom", end: "bottom", pageup: "page-up", pagedown: "page-down",
     left: "collapse", h: "collapse", right: "expand", l: "expand", tab: "detail", "/": "filter", r: "refresh", 1: "instances", 2: "souls", 3: "capabilities",
-    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", X: "stop", D: "retire", S: "start", R: "restart",
+    w: "workspaces", enter: "open", i: "soul-instances", z: "zoom", c: "close-terminal", X: "stop", D: "retire", S: "start", R: "restart", n: "spawn", N: "spawn-another", C: "spawn-check",
     "?": "help", escape: "close", q: "quit", "ctrl+c": "quit", "ctrl+z": "suspend", "ctrl+l": "redraw", "ctrl+k": "palette",
   });
   assert.throws(() => bindings([{ id: "a", keys: ["x"], label: "a" }, { id: "b", keys: ["x"], label: "b" }]), /key x is bound to a and to b/);
   assert.equal(Object.isFrozen(ACTIONS) && ACTIONS.every((a) => Object.isFrozen(a) && Object.isFrozen(a.keys)), true);
   assert.deepEqual(["?", "q", "escape", "ctrl+c", "shift+tab", "f5", "ctrl+alt+up", "space", "alt+x"].map(keyLabel), ["?", "q", "Esc", "Ctrl+C", "Shift+Tab", "F5", "Ctrl+Alt+Up", "Space", "Alt+X"]);
   // Enter opens the selected agent's terminal in the list and the selected workspace in the
-  // switcher: one action. The capitals are the acts on an instance, and G: no act is a lower-case
-  // key (Enter is cheap, a capital takes Shift).
+  // switcher: one action. The capitals are the acts on an instance, G, another of the selected
+  // instance's soul (N) and the check of a spawn's result (C): no act is a lower-case key (Enter is
+  // cheap, a capital takes Shift). A spawn's own key is n: it opens a prompt, and spawns nothing.
   assert.equal(bindings(ACTIONS).get("enter"), "open");
-  assert.deepEqual([...bindings(ACTIONS).keys()].filter((key) => /^[A-Z]$/.test(key)), ["G", "X", "D", "S", "R"]);
+  assert.deepEqual([...bindings(ACTIONS).keys()].filter((key) => /^[A-Z]$/.test(key)), ["G", "X", "D", "S", "R", "N", "C"]);
   for (const id of ["stop", "retire", "start", "restart"]) assert.equal(ACTIONS.find((action) => action.id === id).keys.every((key) => /^[A-Z]$/.test(key)), true, id);
 });
 
@@ -1601,4 +1627,111 @@ test("an answered retire of another machine's row is let go only by a roster rea
   assert.equal(retiringShown(r), false, "read after the answer, garnet reached: the row as garnet reports it");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
+});
+
+// ── Spawning an agent (docs/tui.md, "Spawning an agent"; Spec 6-spawn) ─────────────────────────────
+
+const SPAWN_DATA = Object.freeze({ instance: "acme-expert-2", home: `${DEPLOYMENT}/agents/acme-expert/instances/acme-expert-2`, work: "worktree", harness: "claude", model: "claude-opus-5-5", modelSource: "soul",
+  warnings: [], decision: Object.freeze({ spawnDecisionApi: 1, digest: "d".repeat(64) }) });
+const SPAWN_SELECTOR = Object.freeze({ soul: "acme-expert", agentsRoot: `${DEPLOYMENT}/agents` });
+/** A run with the workspace read and its catalog held, the spawn picker opened with n, the soul's
+ *  name typed and picked, and its preview answered: each key a read of its own. */
+async function previewing() {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("n"); await settle();
+  r.soulReads[0].answer(soulsDocument(["acme-expert", "acme-maintainer"])); await settle();
+  for (const ch of "expert") r.stdin.type(ch);
+  r.stdin.type("\r"); await settle();
+  r.spawn.reads.at(-1).answer({ spawnPreviewViewApi: 1, status: "available", target: null, data: SPAWN_DATA, reason: null }); await settle();
+  return r;
+}
+
+test("a spawn through the loop: n reads the catalog, the preview is read once per choice over the shared preview made with the reader's exec, Enter submits the decision on screen, and the new row's terminal opens with the focus", async () => {
+  const r = await previewing();
+  assert.equal(r.spawn.previewExec, r.reader.exec, "the preview's kernel reads are reads");
+  assert.equal(r.spawn.applyRead, r.spawn.preview.prepareRead, "the apply prepares through the same preview");
+  const [read] = r.spawn.reads;
+  assert.deepEqual(read.request, { action: "preview", selector: SPAWN_SELECTOR, choices: { model: { kind: "inherit" }, relation: { kind: "unrelated" } } });
+  assert.deepEqual([read.context.workspace.id, read.context.cli, read.context.agents.map((a) => a.name), read.context.instances.length], [DEPLOYMENT, CLI, ["acme-expert", "acme-maintainer"], 2]);
+  r.stdin.type("\r"); await settle();
+  const [submit] = r.spawn.submits;
+  assert.deepEqual(submit.intent, { address: DEPLOYMENT, selector: SPAWN_SELECTOR, input: { action: "prepare", selector: SPAWN_SELECTOR, choices: read.request.choices, task: "" }, decision: SPAWN_DATA.decision });
+  assert.equal(submit.call.alive(), true);
+  submit.call.progress("submitted", { address: DEPLOYMENT, spawnRef: "a".repeat(64) }); await settle();
+  assert.match(screenOf(r), /Spawning acme-expert-2…/);
+  const asked = readerDid(r).filter(([what]) => what === "request").length;
+  submit.answer({ kind: "created", view: { status: "complete", receipt: { instance: "acme-expert-2", agent: "acme-expert", home: SPAWN_DATA.home, launched: true } }, reason: null, job: {} }); await settle();
+  assert.equal(readerDid(r).filter(([what]) => what === "request").length, asked + 1, "the instances read at once");
+  assert.doesNotMatch(screenOf(r), /Spawning/);
+  r.reader.answer(observed([instanceRow("acme-expert", "acme-expert-tui"), instanceRow("acme-maintainer", "acme-maintainer-ops", { running: false, runtimeState: "stopped" }), instanceRow("acme-expert", "acme-expert-2")])); await settle();
+  assert.equal(r.panel.opens.length, 1, "its terminal, in the panel");
+  assert.equal(r.panel.opens[0].argv.some((arg) => String(arg).endsWith("/acme-expert-2")), true);
+  r.stdin.type("q"); await settle();
+  assert.equal(r.log.some(([what, bytes]) => what === "panel" && bytes === "input"), true, "the q went to the agent: the terminal has the focus");
+});
+
+test("a paste of n, a soul's name and two Enters in one read opens the picker and spawns nothing: no preview is read, nothing submitted", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("nexpert\r\r"); await settle();
+  assert.deepEqual([r.spawn.reads.length, r.spawn.submits.length], [0, 0]);
+  r.soulReads[0].answer(soulsDocument(["acme-expert"])); await settle();
+  assert.deepEqual([r.spawn.reads.length, r.spawn.submits.length], [0, 0]);
+});
+
+test("the apply is a change of the run, labelled for the line after leaving; its deadline goes to changeExec as given; held previews go before an apply and when a pending one settles, which reads the rows again", async () => {
+  const r = await previewing();
+  r.stdin.type("\r"); await settle();
+  const child = r.spawn.applyExec("/opt/oats/bin/oats.mjs", ["spawn", "--apply"], { detached: true, timeout: 70000, cwd: "/srv/deploy" }, () => {});
+  const [change] = r.reader.changed;
+  assert.deepEqual([change.options.label, change.options.timeout, change.options.detached, child.pid], [{ verb: "spawn", name: "acme-expert-2" }, 70000, undefined, 4001]);
+  assert.throws(() => r.spawn.applyExec("/opt/oats/bin/oats.mjs", ["spawn", "--result"], { cwd: "/srv/deploy" }, () => {}), /starts nothing/, "anything else is a read");
+  const before = r.log.length;
+  await r.spawn.request({ action: "prepare" }, { address: DEPLOYMENT });
+  assert.deepEqual(r.log.slice(before).filter(([what]) => what === "spawn"), [], "a prepare forgets nothing");
+  await r.spawn.request({ action: "apply", spawnRef: "a".repeat(64) }, { address: DEPLOYMENT });
+  assert.deepEqual(r.log.slice(before).filter(([what]) => what === "spawn"), [["spawn", "invalidate", DEPLOYMENT]]);
+  const apply = r.spawn.applyCalls.at(-1);
+  assert.equal(apply.context.workspace.id, DEPLOYMENT, "admitted against the job's workspace as it is now");
+  const asked = readerDid(r).filter(([what]) => what === "request").length;
+  apply.settled();
+  assert.deepEqual(r.log.filter(([what]) => what === "spawn").at(-1), ["spawn", "invalidate", DEPLOYMENT]);
+  assert.equal(readerDid(r).filter(([what]) => what === "request").length, asked + 1);
+});
+
+test("a workspace whose catalog key moved forgets the previews held for it", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("n"); await settle();
+  r.reader.answer(ENTRY); await settle();
+  assert.equal(r.log.some(([what, how]) => what === "spawn" && how === "invalidate"), false, "the workspace as it was");
+  r.reader.answer(atCommit(ENTRY, "b2")); await settle();
+  assert.deepEqual(r.log.filter(([what]) => what === "spawn"), [["spawn", "invalidate", DEPLOYMENT]]);
+});
+
+test("an outcome not known offers C, which checks the submitted job once; quitting with a spawn under way lets it go, its call's owner gone, and the line after leaving names it with `oats status`", async () => {
+  const r = await previewing();
+  r.stdin.type("\r"); await settle();
+  const [submit] = r.spawn.submits, job = { address: DEPLOYMENT, spawnRef: "b".repeat(64) };
+  submit.call.progress("submitted", job);
+  submit.answer({ kind: "unknown", view: null, reason: { code: "E_OUTCOME_UNKNOWN" }, job }); await settle();
+  // What was written: screenOf's Ctrl+L is a key bound to an action, which puts the line away.
+  assert.match(textOf(written(r)), /Press C to check before spawning again\./);
+  r.stdin.type("C"); await settle();
+  assert.deepEqual([r.spawn.checks.length, r.spawn.checks[0].job], [1, job]);
+  assert.match(screenOf(r), /Checking the spawn of acme-expert-2…/);
+  r.reader.running = [{ label: { verb: "spawn", name: "acme-expert-2" } }];
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  assert.equal(r.spawn.checks[0].call.alive(), false, "nothing is reported to a TUI that has gone");
+});
+
+test("the line after leaving names a spawn still running", async () => {
+  const r = await started({ tellable: () => true });
+  r.reader.answer(ENTRY);
+  r.reader.running = [{ label: { verb: "spawn", name: "acme-expert-2" } }];
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  assert.deepEqual(r.errors, ["oats: the spawn of acme-expert-2 is still running; `oats status` shows its result.\n"]);
 });

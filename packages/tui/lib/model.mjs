@@ -12,7 +12,9 @@ import {
   identityMemory, viewModel, workspaceChoices, workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION, shortPath,
   openAct, deployments as heldDeployments, attachExit, preflightFailure, kernelLines,
   startGate, launchFlagIgnored, flagIgnoredNotice, retainedStartMessage, retiringRows, soulRows, soulFacts, spawnRefusal,
+  defaultSpawnChoices, spawnProblem, outcomeWords, previewFacts, deploymentLabel,
 } from "./client.mjs";
+import { keyLabel } from "./actions.mjs";
 import { ownEllipsis, shownLines } from "./term/text.mjs";
 import { textWidth } from "./term/width.mjs";
 import { windowOf } from "./views/scroll.mjs";
@@ -531,14 +533,15 @@ export function subsequenceScore(text, query) {
 
 /** The palette's views and commands, each a row's label and the action it runs. */
 const PALETTE_VIEWS = Object.freeze([["instances", "Instances"], ["souls", "Souls"], ["capabilities", "Capabilities"]]);
-const PALETTE_COMMANDS = Object.freeze([["workspaces", "Workspaces"], ["refresh", "Refresh"], ["help", "Help"]]);
+const PALETTE_COMMANDS = Object.freeze([["spawn", "Spawn an agent"], ["workspaces", "Workspaces"], ["refresh", "Refresh"], ["help", "Help"]]);
 const PALETTE_ACTS = Object.freeze({ stop: "Stop", restart: "Restart", retire: "Retire", start: "Start" });
 
 /** THE PALETTE'S ROWS (docs/tui.md, "The palette"), in this order: the instances that can be
  *  opened (the most recently opened in this run first, then the shared order), the souls of the
  *  open workspace once its catalog was read, the views, the acts
  *  the palette's instance offers (the open terminal's, when the palette came from its focus; else
- *  the selected one), then workspaces, refresh and help. With a query, each group keeps the rows the
+ *  the selected one) and, once the catalog lists its soul, another of that soul, then spawning an
+ *  agent, workspaces, refresh and help. With a query, each group keeps the rows the
  *  Desktop's subsequence score matches, the best first (a prefix first); a tie keeps that order.
  *  A row: `{ key, kind, label, does?, id?, name?, machine?, mark? }`; `selected` is the key the
  *  selection stands on (the first row when the palette's own is not listed). */
@@ -564,8 +567,13 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
   const row = id === null || state.open === null ? null : roster(state, at).instances.find((each) => instanceId(each) === id) ?? null;
   if (row !== null && state.opening === null) {
     const acts = instanceActs(row);
-    groups.push(ACT_VERBS.filter((verb) => actDecision(state, row, acts, verb).open)
-      .map((verb) => ({ key: `act\u0000${verb}`, kind: "act", label: PALETTE_ACTS[verb], does: verb, id: instanceId(row), name: row.instance, text: `${PALETTE_ACTS[verb]} ${row.instance}` })));
+    const another = !elsewhere(row) && state.ctxs.includes(state.open) ? soulOfAgent(state, state.open, row.agent) : null;
+    groups.push([
+      ...ACT_VERBS.filter((verb) => actDecision(state, row, acts, verb).open)
+        .map((verb) => ({ key: `act\u0000${verb}`, kind: "act", label: PALETTE_ACTS[verb], does: verb, id: instanceId(row), name: row.instance, text: `${PALETTE_ACTS[verb]} ${row.instance}` })),
+      // Another of its soul (N), once the catalog lists that soul: the row names the soul.
+      ...(another ? [{ key: "act\u0000spawn-another", kind: "act", label: "Spawn another", does: "spawn-another", id: instanceId(row), name: another.name, text: `Spawn another ${another.name}` }] : []),
+    ]);
   }
   groups.push(PALETTE_COMMANDS.map(([does, label]) => ({ key: `command\u0000${does}`, kind: "command", label, does, text: label })));
   const query = p.query.trim();
@@ -600,13 +608,16 @@ export function model(state, { page, now, at, cols }) {
     filter: state.view === "souls" ? state.souls.filter : state.filter,
     workspace: r.workspace, machines: r.machines, here: r.here, machine: r.machine, counts: r.counts, readAt: r.readAt, notice: r.notice, note: r.note, empty: r.empty, observed: r.observed,
     detailTop: state.detailTop, helpTop: state.helpTop, open: state.open !== null,
-    detachKey: state.detachKey, opening: state.opening, outcome: state.outcome, openable: false, actable: [],
+    detachKey: state.detachKey, opening: state.opening, openable: false, actable: [],
     terminal: state.terminal, onTerminal: false,
     act: state.view === "act" && state.act ? actView(state) : null,
     // The leader waits for its key (the footer is its hint), and the palette, while it is open.
     leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, page, at),
     body: state.view === "capabilities" ? NOT_BUILT.capabilities : null,
     souls: state.view === "souls" ? soulsView(state, page, at) : null,
+    spawn: state.spawn === null ? null : spawnView(state, page, at),
+    // The line above the panes: the last outcome, else a spawn under way (outcomeOf).
+    outcome: outcomeOf(state),
   };
   // The view under the help, or under a confirmation, decides what the header says.
   const under = state.view === "help" || state.view === "act" ? state.back : state.view;
@@ -860,15 +871,22 @@ const soulMatches = (row, needle) => [row.name, row.description, row.repoName].s
  *  holds of its catalog (`{ entry, reading }`), `rows` the rows the filter keeps, `selected` the
  *  row the selection stands on: the store's, while it is listed, else the first. */
 export function soulsOf(state) {
-  const id = state.open, local = id !== null && state.ctxs.includes(id);
-  const entry = local ? state.entries.get(id) ?? null : null;
-  const deployment = entry?.deployment?.status === "observed" ? entry.deployment : null;
-  const held = local ? state.souls.held.get(id) ?? null : null;
-  const all = deployment && Array.isArray(held?.entry?.souls) ? soulRows(deployment, held.entry.souls) : [];
+  const { local, deployment, held, all } = catalogOf(state, state.open);
   const needle = state.souls.filter.query.trim().toLowerCase();
   const rows = needle ? all.filter((row) => soulMatches(row, needle)) : all;
   const selected = rows.find((row) => row.name === state.souls.selected) ?? rows[0] ?? null;
   return { local, deployment, held, all, rows, selected };
+}
+
+/** The souls of workspace `id` (one of this machine's, or nothing): its observed deployment, what
+ *  the loop holds of its catalog, and the shared rows of that catalog. */
+function catalogOf(state, id) {
+  const local = id !== null && state.ctxs.includes(id);
+  const entry = local ? state.entries.get(id) ?? null : null;
+  const deployment = entry?.deployment?.status === "observed" ? entry.deployment : null;
+  const held = local ? state.souls.held.get(id) ?? null : null;
+  const all = deployment && Array.isArray(held?.entry?.souls) ? soulRows(deployment, held.entry.souls) : [];
+  return { local, deployment, held, all };
 }
 
 /** The most instances the detail names; the rest are counted, `+n`. */
@@ -933,5 +951,173 @@ function soulsView(state, page, at) {
     // The heading has room for little of a failed re-read's sentence: the detail holds it whole,
     // as a machine's full reason stands in the detail of each of its rows.
     detail: s.selected ? { ...soulDetail(state, at, s.selected), failure: heading ? heading.short : null } : null,
+  };
+}
+
+// ── SPAWNING (docs/tui.md, "Spawning an agent"; Spec 6-spawn) ───────────────────────────────────
+
+/** A shared sentence as parts the outcome line wraps (views/frame.mjs partRows): each word is
+ *  text from outside, and the gaps between them are the TUI's. */
+const sentenceParts = (text) => String(text ?? "").split(/ +/).filter(Boolean).flatMap((word, i) => (i ? [{ own: " " }, { shown: word }] : [{ shown: word }]));
+/** The label of the first key the effective table gives action `id`, or the action's id. */
+const keyOf = (actions, id) => { const a = actions.find((each) => each.id === id && each.keys.length); return a ? keyLabel(a.keys[0]) : id; };
+
+/** The TUI's own words around a spawn, as parts the way ACT_WORDS are. Every fact of a spawn (what
+ *  happened, what the preview holds, why a soul can't be spawned) is the shared home's
+ *  (spawn-messages.mjs, spawn-preview-facts.mjs, soul-facts.mjs): the TUI words only what follows a
+ *  fact (`next`, naming its own keys), and the prompt around them. */
+export const SPAWN_WORDS = Object.freeze({
+  /** From the press of Enter until the outcome. */
+  spawning: (name) => [{ own: "Spawning " }, { shown: name }, { own: "\u2026" }],
+  checking: (name) => [{ own: "Checking the spawn of " }, { shown: name }, { own: "\u2026" }],
+  /** n or N while a spawn is under way: one at a time. */
+  busy: (name) => [{ own: "The spawn of " }, { shown: name }, { own: " is still under way: one spawn at a time." }],
+  /** n or N on another machine's row or workspace (#855: remote spawn is out of scope here). */
+  remote: () => [{ own: "Spawning on another machine is not offered here;" }, { own: " " }, command("oats spawn"), { own: " there makes one." }],
+  /** N on a row whose soul the workspace's catalog does not list. */
+  noSoul: (soul) => [{ own: "The soul " }, { shown: soul }, { own: " isn't in this workspace's catalog: there is nothing to spawn." }],
+});
+
+/** THE TUI'S WORDS FOR WHAT FOLLOWS A SPAWN'S FACT, one entry per SPAWN_NEXT code
+ *  (spawn-messages.mjs): each names a key of the effective table, or an `oats` command
+ *  (test/tui-... pins that every code has one). `(instance, actions)` -> parts. */
+export const SPAWN_NEXT_WORDS = Object.freeze({
+  "change-options": () => [{ own: "Change the choices with Tab and Enter." }],
+  "review-again": () => [{ own: "Check the preview and press Enter again." }],
+  "check-result": (_, actions) => [{ own: `Press ${keyOf(actions, "spawn-check")} to check before spawning again.` }],
+  "update-oats": () => [{ own: "Update OATS with" }, { own: " " }, command("oats update"), { own: ", then try again." }],
+  "choose-workspace": (_, actions) => [{ own: `Choose it again with ${keyOf(actions, "workspaces")}.` }],
+  "sync-workspace": () => [{ own: "Run" }, { own: " " }, command("oats sync"), { own: " in the workspace, then try again." }],
+  details: () => [{ own: "The details below say more." }],
+  retire: (instance, actions) => [{ own: "Retire " }, { shown: instance ?? "it" }, { own: ` with ${keyOf(actions, "retire")} to finish its cleanup.` }],
+  "view-schedules": () => [command("oats schedule list"), { own: " shows its schedules." }],
+  "open-from-list": (_, actions) => [{ own: `Open it from the list with ${keyOf(actions, "open")}.` }],
+});
+
+/** A spawn's words as the outcome line (or the prompt's) says them, `{ said, under }`: the shared
+ *  fact, then the TUI's words for its `next`; under them the shared `detail` (the code and the
+ *  kernel's message) where the next act is to read it. `words`: spawnProblem's or outcomeWords'. */
+export function spawnLine(words, instance, actions) {
+  if (!words) return null;
+  const next = words.next && Object.hasOwn(SPAWN_NEXT_WORDS, words.next) ? SPAWN_NEXT_WORDS[words.next](words.instance ?? instance, actions) : [];
+  return { said: [...sentenceParts(words.fact), ...(next.length ? [{ own: " " }, ...next] : [])], under: words.next === "details" && words.detail ? [words.detail] : [] };
+}
+
+/** The line above the panes: the last outcome; else, while a spawn is under way, what it does. */
+export function outcomeOf(state) {
+  if (state.outcome !== null) return state.outcome;
+  const s = state.spawning;
+  return s ? { said: (s.phase === "checking" ? SPAWN_WORDS.checking : SPAWN_WORDS.spawning)(s.name), under: [] } : null;
+}
+
+/** The choices a prompt asks the preview for: the shared defaults, the name typed (`--purpose`),
+ *  and the parent when "child of" is on. Nothing else is offered here (out of scope: harness,
+ *  model, work mode, teams). */
+export function spawnChoices(p) {
+  return {
+    ...defaultSpawnChoices(),
+    ...(p.name ? { purpose: p.name } : {}),
+    ...(p.child && p.anchor ? { relation: { kind: "child", anchor: { instance: p.anchor.instance, agent: p.anchor.agent, agentsRoot: p.anchor.agentsRoot, server: null } } } : {}),
+  };
+}
+/** The choices as one value, to tell whether the preview on screen was read for them. */
+export const spawnChoicesKey = (p) => JSON.stringify(spawnChoices(p));
+/** The soul a preview is read for, as the shared preview selects it. */
+export const spawnSelector = (p) => ({ soul: p.soul.name, agentsRoot: p.soul.agentsRoot });
+
+/** What the spawn boundaries admit a request of workspace `id` against (their `getContext()`),
+ *  asked at every admission: the deployment as the shared `deployments` lists it, the kernel
+ *  record, its souls (the catalog's shared rows) and its rows now. */
+export function spawnContext(state, id, at) {
+  const held = heldOf(state, at);
+  const workspace = heldDeployments(held).find((w) => w.id === id) ?? null;
+  return { workspace, cli: state.cli, agents: catalogOf(state, id).all, instances: workspace ? rowsOf(held, id) : [] };
+}
+
+/** The soul row of workspace `id` an instance's soul (its row's `agent`) names, or null. */
+export function soulOfAgent(state, id, agent) {
+  return catalogOf(state, id).all.find((row) => soulNames(row).includes(agent)) ?? null;
+}
+
+/** The picker's rows: the souls of the prompt's workspace, filtered by the query with the palette's
+ *  subsequence score (the best first, a tie in the catalog's order). `selected` is the soul the
+ *  selection stands on: the prompt's, while it is listed, else the first. */
+export function spawnPickerItems(state) {
+  const p = state.spawn, c = catalogOf(state, p.workspace), query = p.query.trim();
+  const items = (query === "" ? c.all : c.all.map((row, i) => ({ row, i, score: subsequenceScore(row.name, query) })).filter((each) => each.score !== null).sort((a, b) => a.score - b.score || a.i - b.i).map(({ row }) => row))
+    .map((row) => ({ name: row.name, row, refused: spawnRefusal(row, state.cli) !== null }));
+  return { catalog: c, items, selected: items.some((item) => item.name === p.selected) ? p.selected : items[0]?.name ?? null };
+}
+
+/** The folded parts a preview's data has, in order: the launch-prompt policy, the capabilities'
+ *  warnings and the modules, where it carries them (previewFacts makes `prompts`, `warnings` and
+ *  `modules` of exactly these). */
+const foldKeys = (data) => (data ? [
+  ...(data.launchPromptAnswers ? ["prompts"] : []),
+  ...(Array.isArray(data.warnings) && data.warnings.length ? ["warnings"] : []),
+  ...(Array.isArray(data.modules) ? ["modules"] : []),
+] : []);
+/** Each fold of a preview, one row until opened: the labels and the one-line summaries are the
+ *  TUI's; what they fold is the shared facts'. */
+function spawnFolds(data, facts) {
+  const caps = facts?.modules?.caps.length ?? 0, core = facts?.modules?.core.filter((slot) => slot.module).length ?? 0;
+  const made = {
+    prompts: { label: "Launch prompts", summary: "what the launcher answers for this home" },
+    warnings: { label: "Warnings", summary: `${facts?.warnings.length ?? 0} from its capabilities; they block nothing` },
+    modules: { label: "Modules", summary: `${core} core, ${caps} other capabilit${caps === 1 ? "y" : "ies"}` },
+  };
+  return foldKeys(data).map((key) => ({ key, ...made[key] }));
+}
+/** The preview's focus ring, in Tab's order: Spawn, the name, child of (when offered), each fold. */
+export const spawnRing = (p) => ["spawn", "name", ...(p.anchor ? ["child"] : []), ...foldKeys(p.data).map((key) => `fold:${key}`)];
+
+/** The row of the instance a spawn created (`arriving`), as the Desktop's spawn jobs find it
+ *  (spawn-jobs.mjs `observe`): its workspace's rows holding exactly one of that instance, home,
+ *  root and soul, on this machine. Null while there is none. */
+export function spawnedRow(state, a, at = new Date(0).toISOString()) {
+  const same = rowsOf(heldOf(state, at), a.workspace).filter((row) => row.instance === a.instance && row.home === a.home && row.agentsRoot === a.agentsRoot
+    && (a.agent === null || a.agent === undefined || row.agent === a.agent) && !row.server);
+  return same.length === 1 ? same[0] : null;
+}
+
+/** The preview's facts as the shared home words them: the name typed, else the kernel's; where
+ *  it runs in the Desktop's words for the deployment (deployment-label.mjs). Null before an answer. */
+function spawnFacts(state, p, at) {
+  if (!p.data) return null;
+  const workspace = heldDeployments(heldOf(state, at)).find((w) => w.id === p.workspace) ?? null;
+  return previewFacts(p.data, { name: p.name || p.data.instance || null, runsOn: workspace ? deploymentLabel(workspace, TERMS) : null, cli: state.cli });
+}
+/** Whether the preview on screen is the one Enter on Spawn would spawn: read, and for the choices shown. */
+export const spawnReady = (p) => p.step === "preview" && p.status === "shown" && p.data !== null && p.readKey === spawnChoicesKey(p);
+
+/** The prompt as views/spawn.mjs draws it (that file has the shape), in a body `page` rows tall. */
+function spawnView(state, page, at) {
+  const p = state.spawn;
+  if (p.step === "picker") {
+    const list = spawnPickerItems(state), c = list.catalog, entry = c.held?.entry ?? null;
+    const height = Math.max(1, page - 2), at_ = list.items.findIndex((item) => item.name === list.selected);
+    const win = windowOf({ top: 0, count: list.items.length, height, keep: at_ });
+    const reading = !Array.isArray(entry?.souls), failed = reading && entry?.reason && !c.held?.reading;
+    return {
+      step: "picker", query: p.query,
+      rows: list.items.slice(win.top, win.top + win.size).map((item) => ({ name: item.name, refused: item.refused, refusal: item.refused ? soulFacts(item.row, null, state.cli, TERMS).refusalLine : null, selected: item.name === list.selected })),
+      above: win.above, below: win.below,
+      state: failed ? "failed" : reading ? "reading" : !c.all.length ? "none" : !list.items.length ? "nomatch" : "rows",
+      failure: failed ? catalogFailure(entry.reason) : null,
+    };
+  }
+  const facts = spawnFacts(state, p, at), ring = spawnRing(p);
+  const focus = ring.includes(p.focus) ? p.focus : "spawn";
+  const folds = spawnFolds(p.data, facts).map((fold) => ({ ...fold, open: p.folds.includes(fold.key), focused: focus === `fold:${fold.key}` }));
+  const problem = p.problem ?? (p.status === "failed" ? spawnLine(spawnProblem(p.reason, "preview"), p.name || null, state.actions) : null);
+  const ready = spawnReady(p);
+  const enter = focus === "spawn" ? (ready ? "spawn" : p.status === "failed" && p.soul !== null ? "read again" : null)
+    : focus === "name" ? "keep the name"
+    : focus === "child" ? (p.child ? "no parent" : "child of")
+    : folds.find((fold) => fold.focused)?.open ? "close" : "open";
+  return {
+    step: "preview", soul: p.soul?.name ?? null, status: p.status, facts, problem,
+    fields: { name: { text: p.name, focused: focus === "name" }, child: { offered: p.anchor !== null, on: p.child, label: p.anchor?.instance ?? null, focused: focus === "child" } },
+    focus, folds, enter, ready, top: p.top,
   };
 }

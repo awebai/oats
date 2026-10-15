@@ -2,9 +2,10 @@
 // byte. It places the views: the header, the list of instances and the detail beside it (or as a
 // page of its own on a narrow terminal), an agent's open terminal in the detail's place (or over
 // the whole body, zoomed), the souls of the open workspace and a soul's detail in the same places,
-// the switcher of workspaces over the whole body, the help, and the
-// footer. The TUI's own words are lit(); everything else is shown(). Meaning never
-// rests on colour alone: what is dim or bold also says what it is in words or by a mark.
+// the switcher of workspaces over the whole body, the palette and the spawn prompt over the whole
+// body too, the help, and the footer. The TUI's own words are lit(); everything else is shown().
+// Meaning never rests on colour alone: what is dim or bold also says what it is in words or by a
+// mark.
 import { LEADER, keyLabel } from "../actions.mjs";
 import { lit, ownEllipsis, shown, shownLines } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
@@ -14,6 +15,7 @@ import { help, keyText } from "./help.mjs";
 import { instances, measured } from "./instances.mjs";
 import { palette } from "./palette.mjs";
 import { soulDetail, soulsList, soulsListed } from "./souls.mjs";
+import { spawn } from "./spawn.mjs";
 import { switcher } from "./switcher.mjs";
 
 /** The frame is drawn from this size up (docs/tui.md); the design size is 80x24. */
@@ -215,7 +217,8 @@ function countSpans(counts, cols) {
  *  (`filter` before `open` while a filter is kept: its own `/` stands in the footer then); in the
  *  Souls view `workspaces`, `refresh`, `filter`, `close`, then `i` and last Enter. A row
  *  too narrow for the whole of a hint drops it. The views have no hint: the header names them.
- *  The palette's footer says how to work it: Enter, Up/Down and Esc.
+ *  The palette's footer says how to work it: Enter, Up/Down and Esc; the spawn prompt's, how to
+ *  work its step (spawnHints).
  *  `open` stands first while Enter would open the selected agent's terminal, or (`focus terminal`)
  *  go to the one open on the selected row; while another machine is asked first, the key that
  *  gives the open up stands in its place. With a terminal open, `zoom` and `close-terminal` follow
@@ -272,7 +275,7 @@ function footer(m, cols) {
   // (Souls and Capabilities have none of them, the help and the switcher neither: the Souls view's
   // Enter is its own, below).
   const listing = !["help", "switcher", "souls", "capabilities"].includes(m.view);
-  if (listing && m.terminal?.focus === "terminal" && !m.palette) {
+  if (listing && m.terminal?.focus === "terminal" && !m.palette && !m.spawn) {
     const twice = keyText(`${m.detachKey} ${m.detachKey}`);
     return led(start + twice.width + 1 + "back to the list".length <= edge ? put(spansOf(made(twice, "back to the list")), start) : []);
   }
@@ -282,6 +285,7 @@ function footer(m, cols) {
     for (const h of hints) { if (col + h.width > edge) break; spans.push(...put(h, col)); col += h.width + GAP; }
     return led(spans);
   }
+  if (m.spawn) return led(spawnHints(m.spawn, start, edge, put, own, m.ascii));
   if (m.view !== "help" && filter.editing) {
     const hints = [made({ text: lit("Enter"), width: "Enter".length }, "keep"), hint("close", "clear")].filter(Boolean).map(spansOf);
     const spans = [...put(lead, FOOT), { col: start, text: lit("/"), style: BOLD, width: 1 }, { col: start + 1, text: shown(filter.query), width: Math.max(0, edge - span(hints) - GAP - start - 1) }];
@@ -322,7 +326,8 @@ function footer(m, cols) {
     // The Souls view: after Enter, `i` shows the selected soul's instances, then the filter, a
     // read again, Esc and the workspaces. They are given up from the end of `keep`: the workspaces
     // first, then `refresh`, `filter` and `close`; `i` and Enter last. With no workspace of this
-    // machine there is nothing to filter or read: Esc and the workspaces only. No spawn key yet.
+    // machine there is nothing to filter or read: Esc and the workspaces only. No spawn hint: the
+    // help names n and N.
     : soul ? (soul.local === false ? [["close", "workspaces"], ["close", "workspaces"]]
       : [[...(soul.detail ? ["soul-instances"] : []), "filter", "refresh", "close", "workspaces"], ["open", "soul-instances", "close", "filter", "refresh", "workspaces"]])
     : m.view === "capabilities" ? [["close", "workspaces"], ["close", "workspaces"]]
@@ -372,6 +377,25 @@ function footer(m, cols) {
 
 /** The footer's first column. */
 const FOOT = 0;
+/** The spawn prompt's hints after the leader (docs/tui.md, "Spawning an agent"): the keys the
+ *  prompt reads are its own, as the palette's are, so they are the TUI's words. The picker: Enter
+ *  picks, Up/Down move, Esc closes. The preview: Enter and what it does at the focus (the model's
+ *  `enter`; none while Enter does nothing), Tab and Shift+Tab move the focus, Esc goes back. A hint
+ *  that does not fit whole is given up, in an order of its own: in the preview Shift+Tab first,
+ *  then Tab, then Esc, Enter last; in the picker from the end, as the palette's. */
+function spawnHints(s, start, edge, put, own, ascii) {
+  const hints = s.step === "picker" ? [own("Enter", "pick"), own("Up/Down", "move"), own("Esc", "close")]
+    : [...(s.enter ? [own("Enter", ownEllipsis(s.enter, ascii))] : []), own("Tab", "next"), own("Shift+Tab", "back"), own("Esc", "back")];
+  // The least kept first: Shift+Tab, Tab, Esc, then Enter.
+  const order = s.step === "picker" ? [...hints].reverse() : [hints.at(-2), hints.at(-3), hints.at(-1), ...(s.enter ? [hints[0]] : [])];
+  let kept = hints;
+  const width = (list) => list.reduce((sum, h) => sum + h.width, 0) + Math.max(0, list.length - 1) * GAP;
+  for (const least of order) { if (start + width(kept) <= edge) break; kept = kept.filter((h) => h !== least); }
+  const spans = [];
+  let col = start;
+  for (const h of kept) { spans.push(...put(h, col)); col += h.width + GAP; }
+  return spans;
+}
 /** The leader's hint (docs/tui.md, "The leader"): the leader's key, then what each key after it
  *  does, from actions.mjs LEADER, the views, the instances and the acts each one hint. The keys
  *  that need a terminal are named only while one is open. Hints are given up from the end until
@@ -433,6 +457,14 @@ export function frame(m, size) {
     const drawn = palette(m, { cols, rows: g.body.rows });
     drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
     return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1, cursor: { row: g.body.top, col: drawn.cursor } };
+  }
+  // The spawn prompt in the same place (the palette wins if both are ever set). `extent` and `room`
+  // are its preview's, which the store scrolls as it scrolls a confirmation.
+  if (m.spawn) {
+    rows[2] = rule(cols, m.ascii);
+    const drawn = spawn(m, { cols, rows: g.body.rows });
+    drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
+    return { rows, page: Math.max(1, g.body.rows), extent: drawn.extent, room: drawn.room, cursor: drawn.cursor ? { row: g.body.top + drawn.cursor.row, col: drawn.cursor.col } : null };
   }
   if (m.view === "act" && m.act) {
     rows[2] = rule(cols, m.ascii);
@@ -545,7 +577,7 @@ export function terminalArea(m, size) {
 }
 function terminalAt(m, size, g) {
   const t = m.terminal;
-  if (!t || m.view !== "instances" || m.under === "switcher" || m.palette || g.panes.rows < 2) return null;
+  if (!t || m.view !== "instances" || m.under === "switcher" || m.palette || m.spawn || g.panes.rows < 2) return null;
   const side = size.cols - g.listCols - 1;
   const narrow = !g.wide || side < PANEL_MIN;
   const whole = t.focus === "terminal" && (t.zoom || narrow);

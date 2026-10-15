@@ -735,8 +735,8 @@ test("the help key opens and closes the help, the instances key returns to the i
 
 // --- A changed table -------------------------------------------------------------------
 
-test("the reducer acts on the table it is given: with quit on x and down on n, x quits, q does nothing, n moves down and j does not", () => {
-  const config = effectiveConfig({ keys: { quit: ["x"], down: ["n"] } });
+test("the reducer acts on the table it is given: with quit on x and down on m, x quits, q does nothing, m moves down and j does not", () => {
+  const config = effectiveConfig({ keys: { quit: ["x"], down: ["m"] } });
   assert.equal(config.ok, true);
   const state = stateOf(observed(TREE), { actions: config.actions });
   assert.equal(state.actions, config.actions);
@@ -746,10 +746,10 @@ test("the reducer acts on the table it is given: with quit on x and down on n, x
     assert.equal(result.state, state, `${key} is bound to nothing now`);
     assert.deepEqual(result.effects, []);
   }
-  assert.equal(selectedName(press(state, ["n"]).state), "alpha-kid");
-  assert.equal(selectedName(press(state, ["n", "n", "k"]).state), "alpha-kid", "the keys the file left alone keep their actions");
+  assert.equal(selectedName(press(state, ["m"]).state), "alpha-kid");
+  assert.equal(selectedName(press(state, ["m", "m", "k"]).state), "alpha-kid", "the keys the file left alone keep their actions");
   // In the filter field the freed letters are text like any other, and so are the new ones.
-  assert.equal(press(state, ["/", "x", "n", "q", "j"]).state.filter.query, "xnqj");
+  assert.equal(press(state, ["/", "x", "m", "q", "j"]).state.filter.query, "xmqj");
   // The default table is untouched by it.
   assert.deepEqual(press(stateOf(observed(TREE)), ["q"]).effects, ["quit"]);
 });

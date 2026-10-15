@@ -2,15 +2,16 @@
 // pure reduce(state, event); what only the loop can do comes back as an effect; the frame is
 // drawn from the state. This version shows a workspace's instances, on this machine and on the
 // machines registered here, follows them, opens an agent's terminal in a panel beside the list
-// (the kernel's own viewer, in a pane of the run's private tmux server: lib/panel.mjs), and
-// stops, starts, restarts and retires an instance after a confirmation, through the shared
-// lifecycle boundary and start rule (docs/tui.md).
+// (the kernel's own viewer, in a pane of the run's private tmux server: lib/panel.mjs), stops,
+// starts, restarts and retires an instance after a confirmation, through the shared lifecycle
+// boundary and start rule, and spawns an agent on this machine from the shared preview and apply
+// (docs/tui.md).
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
-import { ACT_WORDS, actContext, actCwd, localDeployments, model, reachedMachines, roster } from "./model.mjs";
+import { ACT_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
 import { CHANGE_FILES, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel, realpath, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
@@ -28,8 +29,9 @@ const HELP = `Usage:
 
 The OATS terminal client (preview): a full-screen view of a workspace's instances,
 on this machine and on the machines registered here. It follows them, opens an
-agent's terminal beside the list with Enter, and stops, retires, starts or
-restarts an instance (X, D, S, R) after a confirmation.
+agent's terminal beside the list with Enter, stops, retires, starts or
+restarts an instance (X, D, S, R) after a confirmation, and spawns an agent
+on this machine (n, or N for another of the selected one's soul).
 Keys: ? help, Enter open, w workspaces, q quit.
 docs/tui.md has the rest.
 
@@ -72,9 +74,12 @@ function errorLines(error) {
  *  run's private directory (the reader's change output and the panel's tmux server share it), and
  *  `removeDir` removes it on the way out once both have removed their files; `sweep` removes what
  *  runs that are gone left of theirs (lib/panel.mjs). `createSoulCatalog` is the shared home's
- *  catalog of a workspace's souls, replaceable so a test can count its reads. */
+ *  catalog of a workspace's souls, replaceable so a test can count its reads; the three spawn
+ *  factories are the shared home's preview, apply boundary and transaction, replaceable so a test
+ *  can answer them. */
 const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, offeredDeployments, admitDeployment, prepareRemoteTerm, createPanel, sweep,
-  runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog });
+  runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
+  createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
 
 /** Run. Resolves with the exit status; never calls process.exit, so what was written drains.
  *  Before the alternate screen, in this order, each failure one line on stderr and status 1:
@@ -200,6 +205,10 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   function settleSouls(id) {
     const deployment = state.entries.get(id)?.deployment;
     if (ended || deployment?.status !== "observed") return;
+    // The workspace moved (its catalog's key): what the spawn preview holds of it goes too (Settled 7).
+    const key = soulsKeyNow(id);
+    if (catalogKeys.has(id) && catalogKeys.get(id) !== key) { try { preview.cache.invalidate(id); } catch { /* never blocks a read */ } }
+    catalogKeys.set(id, key);
     let settled;
     try { settled = souls.settle(id, probe.cli, deployment.workspaceStatus); } catch { return; } // the reader has stopped
     const { entry, pending } = settled;
@@ -219,6 +228,63 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (souls.refreshing(id)) return;
     souls.forget(id);
     settleSouls(id);
+  }
+
+  // THE SPAWN (docs/tui.md, "Spawning an agent"; Spec 6-spawn). One preview, one apply boundary and
+  // one transaction per run, the shared home's. The preview's kernel reads are reads (the reader's
+  // exec, ended on every way out). The apply is a change (`detached: true`, the shared apply's
+  // mark), which the reader never ends on its own: on a kernel without worktree-event it honours
+  // the deadline the shared apply gives it (lib/read.mjs changeExec); on one with it, the shared
+  // boundary ends it at its deadline through the child returned. `spawnLabel` names the spawn for
+  // the line after leaving (one at a time); `job` is the transaction's record of the last spawn,
+  // kept for a check (C) in this run only: the TUI keeps nothing on disk. `catalogKeys`: the key
+  // each workspace's catalog was last settled at, to tell when the workspace moved.
+  const preview = effects.createSpawnPreview({ exec: reader.exec });
+  let spawnLabel = null, job = null;
+  const catalogKeys = new Map();
+  const spawnApply = effects.createSpawnApplyBoundary({ read: preview.prepareRead, exec: (bin, argv, { detached, ...options }, callback) => (detached
+    ? reader.changeExec(bin, argv, { ...options, label: spawnLabel }, callback)
+    : reader.exec(bin, argv, options, callback)) });
+  /** As the Desktop's (server/oats-web.mjs): a spawn in the air changes what a preview answers, so
+   *  held previews go when it is applied, and again when a pending apply settles, with a read. */
+  const forgetPreviews = (id) => { try { preview.cache.invalidate(id); } catch { /* never blocks a spawn */ } };
+  const transaction = effects.createSpawnTransaction({ request: (body, tx) => {
+    if (body?.action === "apply") forgetPreviews(tx.address);
+    return spawnApply(body, () => spawnContext(state, tx.address, clock()), { settled: () => { forgetPreviews(tx.address); refresh({ live: true }); } });
+  } });
+  /** What a spawn's call is told: its owner is gone once the TUI leaves (`alive`), and the job is
+   *  kept once it is submitted, for a check. */
+  const spawnCall = { alive: () => !ended, progress: (event, made) => { if (event === "submitted") { job = made; heard({ spawnProgress: { event } }); } } };
+  /** A transaction's outcome as the store takes it: the shared one, with the instance it names. */
+  const spawnTold = (outcome) => {
+    const receipt = outcome.view?.receipt ?? null, prepared = outcome.view?.preview ?? null;
+    return { kind: outcome.kind, view: outcome.view, reason: outcome.reason, instance: receipt?.instance ?? prepared?.instance ?? null, home: receipt?.home ?? prepared?.home ?? null };
+  };
+  /** A call that threw instead of answering: what it did is not known. */
+  const UNKNOWN = Object.freeze({ kind: "unknown", reason: Object.freeze({ code: "E_OUTCOME_UNKNOWN" }) });
+  /** The preview the store asked for (`{ n, workspace, request }`), read against the workspace as
+   *  it is at that moment; its answer goes to the store with the last read of input before it
+   *  landed, which the paste guard reads. */
+  function previewRead({ n, workspace, request }) {
+    Promise.resolve()
+      .then(() => preview.read(request, () => spawnContext(state, workspace, clock())))
+      .then((answer) => heard({ spawnRead: { n, answer, read: reads } }), () => heard({ spawnRead: { n, answer: null, read: reads } }));
+  }
+  /** The spawn the store decided on: submitted once; its outcome goes to the store. */
+  function spawnNow({ workspace, selector, input, decision, name }) {
+    spawnLabel = { verb: "spawn", name };
+    job = null;
+    Promise.resolve()
+      .then(() => transaction.submit({ address: workspace, selector, input, decision }, spawnCall))
+      .then((outcome) => { if (outcome) heard({ spawnDone: spawnTold(outcome) }); }, () => heard({ spawnDone: UNKNOWN }));
+  }
+  /** C: the last spawn's result read once (an unknown one applies the same reference again). */
+  function checkSpawn() {
+    const mine = job;
+    if (mine === null) return void heard({ spawnDone: UNKNOWN });
+    Promise.resolve()
+      .then(() => transaction.check(mine, spawnCall))
+      .then((outcome) => { if (outcome) heard({ spawnDone: spawnTold(outcome) }); }, () => heard({ spawnDone: UNKNOWN }));
   }
 
   /** What the reader gave, into the state, and the screen after it. A read of the open workspace,
@@ -261,6 +327,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     if (effect.refresh) refresh(effect.refresh);
     if (effect.souls === "settle" && state.open !== null) settleSouls(state.open);
     if (effect.souls === "reread" && state.open !== null) rereadSouls(state.open);
+    if (effect.spawnPreview) previewRead(effect.spawnPreview);
+    if (effect.spawn) spawnNow(effect.spawn);
+    if (effect.spawnCheck) checkSpawn();
     return false;
   }
 
@@ -384,13 +453,13 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     const size = guard.size(), at = clock();
     const listing = (state.view === "help" ? state.back : state.view) === "switcher";
     const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
-    const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : state.outcome, terminal: state.terminal !== null });
+    const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.terminal !== null });
     const m = { ...model(state, { page: g.page, now: now(), at, cols: g.listCols }), screen: screenNow };
     return { size, g, made: frame(m, size) };
   }
   /** Whether what is typed goes to the agent: the open terminal has the focus, and the leader
    *  does not wait for its key (docs/tui.md, "The leader"). */
-  const typing = () => state.terminal?.focus === "terminal" && state.view === "instances" && state.leader?.waiting !== true && state.palette === null;
+  const typing = () => state.terminal?.focus === "terminal" && state.view === "instances" && state.leader?.waiting !== true && state.palette === null && state.spawn === null;
   /** Bytes typed while the terminal has the focus: to the agent as they came, a paste as a paste,
    *  and the leader to the store, which waits for the key after it: from the next read on, the
    *  bytes are read as keys, by a parser that starts afresh. What came after the leader in its own
