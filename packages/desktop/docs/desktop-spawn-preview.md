@@ -596,7 +596,9 @@ they are when, at the moment it runs:
 The open resolves the instance against the roster read that showed it ready,
 without reading `/api/panel` again, while no later roster read has started and
 the workspace is the same (`shownRoster`, #1246); otherwise, and for every
-other open, it reads the roster first. The open itself is asynchronous (that
+other open, it reads the roster first. The reused answer keeps the read order of
+the read that brought it, so a newer roster answer that shows the instance
+retired still stops the open (#1237). The open itself is asynchronous (that
 read, the terminal's key and readiness), so the same holds all through it: every step of the open, and the
 terminal's readiness focus, goes on only while the operator still has not acted,
 on the same connection and workspace. Any input during the open stops it,

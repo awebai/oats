@@ -417,3 +417,41 @@ test('follow: a spawn created while a read is in flight is read at once when tha
   f.reads[0].resolve(); await f.settle();
   assert.equal(f.reads.length, 2, 'the new spawn reads at once after it'); assert.equal(f.armed().length, 0);
 });
+
+// #1246 × #1237: the post-spawn open reuses the shown answer with the stamp of the read that brought it, so a newer
+// roster answer (its own fire-and-forget repaint, landing while the terminal key is held) still vetoes a retired row.
+// The shipped flow and the inner open's admission checks; tab creation is replaced by a marker.
+const innerChecks = shellSource.match(/async function openTerminalTabInner\([^]*?\n\}/)[0].split('  const wrap = document.createElement("div");')[0] + '  opened.push({ name, read });\n}';
+async function followedOpen({ retiredByRepaint }) {
+  const { retiredTabs } = await import('../renderer/retired-tabs.mjs');
+  const { resolveTerminalOpen } = await import('../renderer/instance-tree-view.mjs');
+  const live = { ...row, createdAt: '2026-10-15T00:00:00Z', deployment: { id: '/d' }, tmux: { session: 's', window: 'w' } };
+  const panel = instances => ({ workspace: { id: 'A' }, instances, deployments: [{ id: '/d', local: true, reachable: true, primary: true }] });
+  const key = deferred();
+  const c = {
+    contextRosterGen: 7, panelReads: 10, shownRoster: { gen: 7, read: 10, ws: 'A', instances: [live] },
+    judgedAnswer: { read: 10, workspace: 'A', panel: panel([live]) },
+    currentWorkspace: () => 'A', setSidebarMode() {}, setNavActive() {},
+    refreshContextRoster() { c.contextRosterGen++; c.repaintRead = ++c.panelReads; },
+    tabOpenIntents: { begin: () => () => true }, connectionGeneration: 0,
+    api: () => assert.fail('the followed open reads no /api/panel'),
+    resolveTerminalOpen, terminalKey, whenKeyFree: () => key.promise, sameInstanceActionTarget,
+    tabs: new Map(), pendingTerms: new Set(), terminalOrigin, otherIncarnation, retiredTabs,
+    canAddressRemote: () => true, opened: [], notices: [],
+  };
+  const flow = runInNewContext(`${flowSource}\n${innerChecks}\nopenTerminalTabFlow`, c);
+  const open = flow(live, message => c.notices.push(message), { followed: true });
+  c.judgedAnswer = { read: c.repaintRead, workspace: 'A', panel: panel(retiredByRepaint ? [] : [live]) }; // the repaint lands
+  key.resolve(); await open;
+  return c;
+}
+test('shell: a followed open whose own repaint shows the instance retired while the key was held makes no terminal (#1237)', async () => {
+  const c = await followedOpen({ retiredByRepaint: true });
+  assert.equal(c.repaintRead, 11, 'the repaint is the newer read');
+  assert.equal(c.panelReads, 11, 'the open itself took no read stamp');
+  assert.deepEqual(c.opened, []); assert.deepEqual(c.notices, ['unknown instance "dev-x"']);
+});
+test('shell: a followed open whose repaint still shows the instance opens it, with the shown read\'s stamp', async () => {
+  const c = await followedOpen({ retiredByRepaint: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(c.opened)), [{ name: 'dev-x', read: 10 }]); assert.deepEqual(c.notices, []);
+});

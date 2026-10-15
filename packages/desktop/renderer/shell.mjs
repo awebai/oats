@@ -436,7 +436,8 @@ function updateContextTabs() {
 let sidebarMode = "overview";
 let contextRosterGen = 0;
 // The roster read that last handed its rows to the spawn store (#1246): the post-spawn open resolves against it
-// instead of reading again, while no later read has started and the workspace is the same.
+// instead of reading again, while no later read has started and the workspace is the same. `read` is that read's
+// panelReads stamp, which the open keeps (#1237: a newer roster answer still vetoes a retired row).
 let shownRoster = null;
 let contextRosterEl = null;
 let contextFilter = "";
@@ -754,7 +755,7 @@ async function refreshContextRoster({ user = false } = {}) {
   // Background spawns: a created instance the roster now reports becomes its real row; outcomes held
   // for this workspace are posted. Only an observed roster counts (never a failed read's last rows).
   if (!reportedFailure && !panel.workspace?.remote) {
-    shownRoster = { gen: myGen, ws: resolvedWs, instances: contextInstances };
+    shownRoster = { gen: myGen, read, ws: resolvedWs, instances: contextInstances };
     spawnJobs.observe(resolvedWs, contextInstances);
   }
   void rosterPrs.refresh(panel.workspace?.remote ? null : resolvedWs);
@@ -2029,9 +2030,11 @@ async function openTerminalTabFlow(ref, notify, options = {}) {
     split = planned.split; return true;
   };
   let panel;
-  const read = ++panelReads;
+  // The shown answer keeps the stamp of the read that brought it; only a request of this open's own takes a new one.
+  const reuse = shown && shown.ws === ws ? shown : null;
+  const read = reuse ? reuse.read : ++panelReads;
   try {
-    panel = shown && shown.ws === ws ? { instances: shown.instances } : await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
+    panel = reuse ? { instances: reuse.instances } : await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   } catch (e) {
     if (!owns()) return; // stale rejection belongs to the old workspace
     throw e;
