@@ -302,7 +302,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
    *  block being read), startLeft (the blocks of the start list still to come), attached, gone,
    *  onAttach, stderr }, or null. A start under way is `starting` (its promise). */
   let server = null, starting = null;
-  /** THE SLOT: the viewer open now ({ id, pane, cols, rows, files, asked, over }), or the open
+  /** THE SLOT: the viewer open now ({ id, pane, cols, rows, files, asked, over, status }), or the open
    *  under way that will be it (`opening`: { closeAsked, files }), or neither. close() frees it at
    *  once: the viewer it closed waits in `closing` (window id -> viewer) for its window's end, and
    *  an open it gave up goes on to kill its window as soon as it exists. Every open under way, the
@@ -575,7 +575,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
    *  remembered with its status; any other is not a viewer's (the keeper's, one already over). */
   function paneDied(id, status) {
     const v = viewer?.id === id ? viewer : closing.get(id);
-    if (v) { ask(`kill-pane -t ${v.pane}`); return finish(v, { status }); }
+    if (v) { v.status = status; ask(`kill-pane -t ${v.pane}`); return finish(v, {}); }
     if (openings.size > 0) diedSeen.set(id, status);
   }
   /** A window ended: the open viewer's, one closing, or (an open under way) one to remember. */
@@ -584,10 +584,12 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     if (closing.has(id)) return finish(closing.get(id), {});
     if (openings.size > 0) closedSeen.add(id);
   }
-  /** A viewer is over: read what it left, remove its file, and say so. `status`: what tmux kept of
-   *  its dead pane, null when it has none (a signal ended it, its window was closed, or `lost`:
-   *  its server went away). */
-  function finish(v, { lost: gone = false, status = null }) {
+  /** A viewer is over: read what it left, remove its file, and say so. Its status is what tmux kept
+   *  of its dead pane (`v.status`, set when that was heard: whichever way it is finished then, the
+   *  status stands), null when it has none (a signal ended it, its pane was killed first, or
+   *  `lost`: its server went away). */
+  function finish(v, { lost: gone = false }) {
+    const status = v.status;
     if (v.over) return;
     v.over = true;
     closing.delete(v.id);
@@ -639,7 +641,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         const ids = /^(@\d+) (%\d+)\s*$/.exec(answer.stdout);
         if (!ids) throw refusal("E_PANEL_OPEN", "tmux did not name the window it opened");
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
-        const v = { id: ids[1], pane: ids[2], ...size, files: made, asked: false, over: false };
+        const v = { id: ids[1], pane: ids[2], ...size, files: made, asked: false, over: false, status: null };
         mine.files = null; // the viewer's now: finish() removes them
         const died = diedSeen.has(v.id), status = diedSeen.get(v.id) ?? null;
         const already = closedSeen.has(v.id) || died, gone = server !== s;
@@ -651,8 +653,11 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
           v.asked = mine.closeAsked;
           if (!mine.closeAsked) viewer = v;
           else closing.set(v.id, v);
+          // The status is the viewer's from here: the window's end that answers this kill-pane can
+          // come before the finish below, and finishes it with this status (CI, under load).
+          v.status = status;
           if (died && !gone) ask(`kill-pane -t ${v.pane}`);
-          setImmediate(() => finish(v, { lost: gone && !already, status }));
+          setImmediate(() => finish(v, { lost: gone && !already }));
         } else if (mine.closeAsked) kill(v); // given up while it opened: killed at once
         else {
           viewer = v;
