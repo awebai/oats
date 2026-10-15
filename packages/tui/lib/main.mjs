@@ -507,7 +507,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     }
     const wanted = regions.map((r) => ({ r, v: r.id === null ? null : viewers.get(r.id) ?? null })).filter(({ v }) => v !== null && v.panel !== null);
     const pids = new Set(wanted.map(({ v }) => v.panel));
-    for (const pid of [...displayed]) if (!pids.has(pid)) { panel.hide(pid); displayed.delete(pid); const v = viewerOf(pid); if (v) screens.delete(v.id); }
+    // The shown tab hidden: the panel shows the other displayed one, or none (lib/panel.mjs hide).
+    for (const pid of [...displayed]) if (!pids.has(pid)) { panel.hide(pid); displayed.delete(pid); if (keysTo === pid) keysTo = [...displayed][0] ?? null; const v = viewerOf(pid); if (v) screens.delete(v.id); }
     for (const { v } of wanted) if (!displayed.has(v.panel)) { panel.show(v.panel, { instead: null }); displayed.add(v.panel); keysTo = v.panel; }
     const keys = wanted.find(({ r }) => r.focused)?.v.panel ?? null;
     if (keys !== null && keys !== keysTo) { panel.focus(keys); keysTo = keys; }
@@ -562,8 +563,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   function keysReady() {
     const v = state.terminal === null ? undefined : viewers.get(state.terminal.id);
     if (v === undefined || v.panel === null) return false;
-    if (keysTo !== v.panel) fitPanel(composed().made);
-    return keysTo === v.panel;
+    const ready = () => keysTo === v.panel && displayed.has(v.panel);
+    if (!ready()) fitPanel(composed().made);
+    return ready();
   }
   /** A beginning of the back key that nothing has followed for the parser's timeout is the agent's. */
   function watchThrough() {

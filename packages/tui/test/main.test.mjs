@@ -1148,6 +1148,24 @@ test("keys typed after a switch of group or tab reach the agent switched to, als
   leaderTwice(r);
   r.stdin.type("q");
   assert.equal(await r.status, 0);
+  // A tab hidden by a resize is no destination: the empty group focused and drawn alone at 80
+  // columns hides @2; the leader then Tab back to it, blocked, shows it before the keys go.
+  const h = await viewingTwoTabs({ columns: 120, rows: 40 });
+  h.stdin.type("\x1c"); h.stdin.type("|"); await settle();
+  h.stdout.resize(80, 24); await settle();
+  assert.deepEqual(panelDid(h).filter(([what]) => what === "hide"), [["hide", "@2"]], "the focused empty group alone");
+  h.log.length = 0;
+  h.stdout.accepts = false;
+  h.stdin.type("\x1c");
+  h.stdout.accepts = true;
+  h.stdin.type("\t");
+  await settle();
+  h.stdin.type("keep-these-bytes");
+  assert.deepEqual(panelDid(h).filter(([what]) => what !== "refresh"), [["resize", 49, 19, ["@1", "@2"]], ["show", "@2"], ["input", "keep-these-bytes"]], "its group drawn alone, at its size, and shown before the keys");
+  h.stdout.emit("drain"); await settle();
+  leaderTwice(h);
+  h.stdin.type("q");
+  assert.equal(await h.status, 0);
   // A tab switched within one group, blocked the same way: the tab before shown first, then the keys.
   const t = await viewingTwoTabs();
   t.stdout.accepts = false;
