@@ -580,6 +580,42 @@ deletes at most 128 obsolete rows per unit and refuses the active scope. Losing
 this private table restarts enumeration without clearing retries, journal
 checkpoints or the index. These primitives are not yet the full command runner.
 
+`CaptureIndexOutcomes` records processing phases separately from membership in
+that private inventory. The index-work bridge publishes outcomes inside the
+admitted stream group's capture-state transaction, after the index commit and
+run accounting. A failure in outcome publication rolls back its marks and run
+counters together, leaving the admission for reconciliation even when index
+rows survived. A later no-op can qualify those existing rows without guessing
+the lost earlier run count.
+
+A stored complete phase is only cached evidence. Before skipping that stream,
+the outcome reader compares the current journal file version, completed
+validation epoch/byte/count checkpoint and index count/byte/epoch cursors with
+the recorded evidence. Growth, replacement, validation loss, outgoing count
+writes or an index reset revoke mismatching evidence. This is metadata
+requalification, not a historical content scan or new integrity mechanism;
+locked validation/index work still owns processing authority. Outstanding
+retries keep the stream pending. Ordinary inventory enumeration retains all
+names, while outcome-aware selection skips only still-qualified completions.
+
+The source-work bridge can join an active index inventory to its processing
+commit. It inserts every processed stream, including replay with no new append,
+so streams created after directory discovery are not omitted. Duplicate
+membership does not alter a prior outcome; subsequent outcome reads requalify
+that evidence against the changed journal. A failed source transaction rolls
+back membership with its source checkpoint and counters, while the durable
+admission remains available to reconcile surviving journal bytes.
+
+Reset-required outcomes remain durable and block further outcome-aware index
+work in that sweep. Neither detection nor the outcome scheduler executes reset.
+The owning scheduler must admit the separate atomic operation and replace the
+inventory sweep afterward. Outcome audit pages inspect at most 128 names and
+report how many still need work; their end-of-page `complete` flag is only audit
+enumeration completion. The caller must also account for unfinished discovery,
+new captures, retries, reset and other stages, and recheck after writes before
+finalizing a pass. These outcome/source connections do not yet implement that
+final mixed-stage decision or the ordinary command/service entry.
+
 ## First-upgrade cost
 
 The first capture after upgrade must reconcile existing journals and rebuild the

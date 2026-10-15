@@ -19,10 +19,18 @@ export class CaptureIndexInventory {
     const present = state.db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type='table' AND name='capture_index_inventory'").get()?.found;
     if (!present) state.transaction(() => {
       state.db.exec(`CREATE TABLE IF NOT EXISTS capture_index_inventory (
-        scope TEXT NOT NULL, stream TEXT NOT NULL, PRIMARY KEY(scope,stream)
+        scope TEXT NOT NULL, stream TEXT NOT NULL, phase TEXT NOT NULL DEFAULT 'ready',
+        proof TEXT, PRIMARY KEY(scope,stream)
       )`);
       // A missing derived inventory cannot inherit an enumeration checkpoint.
       state.db.exec("DELETE FROM state WHERE kind IN ('index-inventory','index-inventory-garbage')");
+    });
+    const columns = new Set(state.db.prepare("PRAGMA table_info(capture_index_inventory)").all().map(column => column.name));
+    const indexed = state.db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type='index' AND name='capture_index_inventory_phase'").get()?.found;
+    if (!columns.has("phase") || !columns.has("proof") || !indexed) state.transaction(() => {
+      if (!columns.has("phase")) state.db.exec("ALTER TABLE capture_index_inventory ADD COLUMN phase TEXT NOT NULL DEFAULT 'ready'");
+      if (!columns.has("proof")) state.db.exec("ALTER TABLE capture_index_inventory ADD COLUMN proof TEXT");
+      state.db.exec("CREATE INDEX IF NOT EXISTS capture_index_inventory_phase ON capture_index_inventory(scope,phase,stream)");
     });
     const prior = state.get("index-inventory", "current");
     if (prior && (typeof prior.id !== "string" || !prior.id || !["index", "live", "complete"].includes(prior.phase) ||
@@ -110,12 +118,22 @@ export class CaptureIndexInventory {
     if (work) work.entriesVisited = (work.entriesVisited ?? 0) + scanned;
     this.state.transaction(() => {
       if (JSON.stringify(this.current()) !== JSON.stringify(before)) throw new Error("capture index inventory checkpoint changed");
-      const insert = this.state.db.prepare("INSERT OR IGNORE INTO capture_index_inventory VALUES (?,?)");
-      for (const stream of streams) insert.run(this.id, stream);
+      this.include(streams);
       this.state.set("index-inventory", "current", next);
     });
     if (next.phase === "complete") this.directory = null;
     return { scanned, complete: next.phase === "complete" };
+  }
+
+  // Source work joins new stream membership to its checkpoint/accounting
+  // commit, even after directory enumeration ended. Existing evidence is not
+  // promoted or cleared: outcome readers requalify it against current state.
+  include(streams) {
+    if (!this.state.depth || !Array.isArray(streams) || streams.length > pageSize || streams.some(stream => !validStreamId(stream)))
+      throw new Error("capture index membership requires a bounded processing transaction");
+    this.current();
+    const insert = this.state.db.prepare("INSERT OR IGNORE INTO capture_index_inventory(scope,stream) VALUES (?,?)");
+    for (const stream of streams) insert.run(this.id, stream);
   }
 
   // One finite rotation of discovered names; admission owns the durable next

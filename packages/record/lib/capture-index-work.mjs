@@ -26,13 +26,15 @@ function unitStart(index, state, stream, generation) {
 }
 
 export function captureIndexWork(index, state, streams, run, start, {
-  limit = 128, maxRecords = 2000, maxBytes = 8388608, now = Date.now(),
+  limit = 128, maxRecords = 2000, maxBytes = 8388608, now = Date.now(), outcomes = null,
 } = {}) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 128 ||
       !Number.isSafeInteger(maxRecords) || maxRecords < limit || maxRecords > 2000 ||
       !Number.isSafeInteger(maxBytes) || maxBytes < limit || maxBytes > 8388608)
     throw new Error("invalid capture index work allowance");
   const store = index.store, budget = start.budget, stopped = () => budget.sample() !== null;
+  if (outcomes !== null && (outcomes.index !== index || outcomes.state !== state || typeof outcomes.record !== "function"))
+    throw new Error("capture index outcomes must belong to the current index and state");
   if (stopped()) return { stopped: true, selected: 0 };
   function* candidates() {
     for (const stream of streams) {
@@ -69,6 +71,7 @@ export function captureIndexWork(index, state, streams, run, start, {
     // Failure between commits leaves admission for reconciliation; a later
     // no-op must not reconstruct the missing count from existing index rows.
     run.record({ turnsIndexed: result.turnsIndexed }, { progress: progressed, peakRssBytes: budget.peakRssBytes });
+    if (outcomes) outcomes.record(result);
     return { selected: selection.members.length, ...result };
   }, { state, admission: selection, admissionNow: now, batchBytes: maxBytes, check: () => budget.check() });
 }

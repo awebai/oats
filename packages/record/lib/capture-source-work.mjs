@@ -11,12 +11,14 @@ import { loadIgnore } from "./ignore.mjs";
 
 export function captureSourceWork(store, state, queue, run, start, {
   limit = 128, maxRecords = 2000, maxBytes = 8388608, ignore = loadIgnore(store.root),
-  now = Date.now(), work,
+  now = Date.now(), work, indexInventory = null,
 } = {}) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 128 ||
       !Number.isSafeInteger(maxRecords) || maxRecords < limit || maxRecords > 2000 ||
       !Number.isSafeInteger(maxBytes) || maxBytes < limit || maxBytes > 8388608)
     throw new Error("invalid capture source work allowance");
+  if (indexInventory !== null && (indexInventory.state !== state || typeof indexInventory.include !== "function"))
+    throw new Error("capture source index inventory must belong to the current state");
   const budget = start.budget, stopped = () => budget.sample() !== null;
   if (stopped()) return { stopped: true, selected: 0, cleanup: [] };
   const inputs = new Map();
@@ -72,6 +74,9 @@ export function captureSourceWork(store, state, queue, run, start, {
       if (result.cleanup) cleanup.push({ stream: member.stream, key: result.key });
       results.push({ position: input.position, ...result });
     }
+    // Include every committed input, including replay with no new append.
+    // Journal bytes may survive an earlier rolled-back source transaction.
+    if (indexInventory) indexInventory.include(results.map(result => result.stream));
     return { selected: selection.members.length, results, cleanup };
   }, { state, admission: selection, admissionNow: now, batchBytes: maxBytes, check: () => budget.check() });
 }
