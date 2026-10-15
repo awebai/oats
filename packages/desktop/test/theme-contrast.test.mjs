@@ -531,7 +531,9 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     disabledSouls: ['campaign-writer'], lock: { path: `${dir}/oats-lock.json`, lockfileVersion: 3 },
     defaults: { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [{ name: 'house-style', from: 'here', off: false }],
       byTeam: Object.fromEntries((status.workspace.teams || []).map(label => [label, { capabilities: [{ name: 'deploy', from: 'package', off: false }, { name: 'house-style', from: null, off: true }] }])) } };
-  renderSetup(doc.querySelector('.sources'), { status: facts, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' }, openExternal() {} });
+  // The list view also with a package not locked yet (the lock out of date, the Sync cell) and a newer catalog version.
+  const listed = { ...facts, unsynced: ['x.pkg'], packages: facts.packages.map((p, i) => i ? p : { ...p, latest: { version: '9.9.9', ref: null } }) };
+  renderSetup(doc.querySelector('.sources'), { status: listed, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' }, openExternal() {} });
   // The Workspace's Teams tab (0.29 box; first tab since 2026-09-28), beside Setup.
   doc.querySelector('.sources').append(teamsBox(doc, { status: facts, souls: [{ team: 'marketing' }] }));
   renderSetup(doc.querySelector('.graph'), { status: { ...facts, unsynced: ['x.pkg'] }, view: 'graph', selected: unconfirmed.key, openExternal() {} });
@@ -559,18 +561,33 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.capability-section-title', '.oats-view', 'fg', 'bg'], ['.capability-section-lead', '.oats-view', 'muted', 'bg'],
     // A repository group's heading (the Souls tab's, group-heading.mjs): the name --fg, its qualifier --muted.
     ['.catalog-group .souls-group-name', '.oats-view', 'fg', 'bg'], ['.catalog-group .souls-group-note', '.oats-view', 'muted', 'bg'],
-    // Workspace v4 Setup (W1/W2) — replaces the old setup-card/node/sources inventory.
-    ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-lede-where', '.oats-view', 'muted', 'bg'],
-    ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
-    ['.setup-box .setup-scope', '.setup-box .setup-scope', 'muted', 'tag-bg'],
-    ['.setup-name', '.setup-box', 'fg', 'surface'], ['.setup-version', '.setup-box', 'muted', 'surface'],
-    ['.setup-state:not(.warn)', '.setup-state:not(.warn)', 'muted', 'tag-bg'], ['.setup-state.warn', '.setup-state.warn', 'warn', 'attn-bg'],
+    // Workspace v4 Setup (W1/W2), the 2026-10-14 redesign: the lede and its summary on the page, the overview card
+    // (the drawing's boxes on --surface-2), Shared through Git's boxes, the This computer zone (--surface-2).
+    ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-summary', '.oats-view', 'muted', 'bg'],
+    ['.setup-summary b:not(.warn)', '.oats-view', 'fg', 'bg'], ['.setup-summary b.warn', '.oats-view', 'warn', 'bg'],
+    ['.setup-lede-where', '.oats-view', 'muted', 'bg'], ['.setup-lede-where span.mono', '.oats-view', 'fg', 'bg'],
+    ['.setup-lede-where button.setup-file', '.oats-view', 'accent', 'bg'],
+    ['.setup-explain h3', '.setup-explain', 'fg', 'surface'], ['.setup-explain-ov', '.setup-explain', 'fg', 'surface'],
+    ['.setup-explain-dev > summary', '.setup-explain', 'muted', 'surface'], ['.setup-explain-body > p', '.setup-explain', 'fg', 'surface'],
+    ['.setup-hs-role', '.setup-hs-repo', 'muted', 'surface-2'], ['.setup-hs-name', '.setup-hs-repo', 'fg', 'surface-2'],
+    ['.setup-hs-line', '.setup-hs-repo', 'muted', 'surface-2'], ['.setup-hs-line span', '.setup-hs-repo', 'fg', 'surface-2'],
+    ['.setup-hs-links', '.setup-explain', 'muted', 'surface'], ['.setup-hs-arrow .shell-icon', '.setup-explain', 'accent', 'surface'],
+    ['.setup-explain-states .setup-state.warn', '.setup-explain-states .setup-state.warn', 'warn', 'attn-bg'], ['.setup-explain-states dd', '.setup-explain', 'muted', 'surface'],
+    ['.setup-sec-title', '.oats-view', 'fg', 'bg'], ['.setup-sec-lead', '.oats-view', 'muted', 'bg'],
+    ['.setup-box-head h4', '.setup-box', 'fg', 'surface'], ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
+    ['.setup-name-text', '.setup-box', 'fg', 'surface'], ['.setup-version', '.setup-box', 'muted', 'surface'],
+    ['.setup-row .setup-state:not(.warn)', '.setup-box', 'muted', 'surface'], ['.setup-row .setup-state:not(.warn) .shell-icon', '.setup-box', 'ok', 'surface'],
+    ['.setup-row .setup-state.warn', '.setup-row .setup-state.warn', 'warn', 'attn-bg'],
+    ['.setup-sub', '.setup-box', 'muted', 'surface'], ['.setup-sub h5', '.setup-box', 'fg', 'surface'],
     ['.setup-cell:not(.muted)', '.setup-box', 'fg', 'surface'], ['.setup-cell.muted', '.setup-box', 'muted', 'surface'],
+    ['.setup-end:not(.newer):not(.warn)', '.setup-box', 'muted', 'surface'], ['.setup-end.newer', '.setup-box', 'fg', 'surface'], ['.setup-end.warn', '.setup-box', 'warn', 'surface'],
     ['.setup-link-act', '.setup-box', 'accent', 'surface'],
     ['.setup-team-label', '.setup-team-label', 'fg', 'tag-bg'], ['.setup-team-meta', '.setup-box', 'muted', 'surface'], ['.setup-team-note', '.setup-box', 'muted', 'surface'],
-    ['.setup-kv dt', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd', '.setup-local', 'fg', 'surface-2'],
-    ['.setup-lede-where button.setup-file', '.oats-view', 'accent', 'bg'], ['.setup-local-sub', '.setup-local', 'muted', 'surface-2'],
-    ['.setup-kv dd.muted', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd.warn', '.setup-local', 'warn', 'surface-2'],
+    ['.setup-zone .setup-sec-title', '.setup-zone', 'fg', 'surface-2'], ['.setup-zone .setup-sec-lead', '.setup-zone', 'muted', 'surface-2'],
+    ['.setup-fact dt', '.setup-zone', 'muted', 'surface-2'], ['.setup-fact dd.mono', '.setup-zone', 'fg', 'surface-2'],
+    ['.setup-fact dd.prim:not(.warn)', '.setup-zone', 'fg', 'surface-2'], ['.setup-fact dd.warn', '.setup-zone', 'warn', 'surface-2'],
+    ['.setup-here-clones > h4', '.setup-zone', 'fg', 'surface-2'], ['.setup-clone dt', '.setup-zone', 'muted', 'surface-2'],
+    ['.setup-clone dd:not(.warn):not(.muted)', '.setup-zone', 'fg', 'surface-2'], ['.setup-clone dd.warn', '.setup-zone', 'warn', 'surface-2'], ['.setup-clone dd.muted', '.setup-zone', 'muted', 'surface-2'],
     ['.setup-def dt', '.setup-box', 'muted', 'surface'], ['.setup-def dd.muted', '.setup-box', 'muted', 'surface'],
     ['.setup-def-cap:not(.off) .setup-def-name', '.setup-box', 'fg', 'surface'], ['.setup-def-from', '.setup-box', 'muted', 'surface'],
     ['.setup-team-adds', '.setup-box', 'muted', 'surface'], ['.setup-def-cap.off .setup-def-name', '.setup-box', 'muted', 'surface'],
@@ -584,10 +601,8 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.setup-hand-title', '.setup-panel', 'fg', 'surface'], ['.setup-hand-sub', '.setup-panel', 'muted', 'surface'], ['.setup-hand-mark.warn', '.setup-panel', 'warn', 'surface'],
     ['.setup-panel p:not(.muted):not(.warn)', '.setup-panel', 'fg', 'surface'], ['.setup-panel p.warn', '.setup-panel', 'warn', 'surface'], ['.setup-panel p.muted', '.setup-panel', 'muted', 'surface'],
     ['.setup-detail', '.setup-detail', 'fg', 'surface-2'],
-    // Spec A: the list view's legend under the lede, and each member's roles (Host names its file, Member on every row).
-    ['.setup-legend', '.oats-view', 'muted', 'bg'], ['.setup-legend .setup-badge.host', '.setup-legend .setup-badge.host', 'accent', 'sel'],
+    // The host's row carries Host and its file (a link on --sel when the file has a web address).
     ['.setup-row .setup-badge.host', '.setup-row .setup-badge.host', 'accent', 'sel'], ['.setup-row .setup-badge.host button.setup-file', '.setup-row .setup-badge.host', 'accent', 'sel'],
-    ['.setup-row .setup-badge.member', '.setup-row .setup-badge.member', 'muted', 'tag-bg'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
     ['.ws-sync-details', '.ws-sync-dialog', 'muted', 'surface'], ['.ws-sync-detail', '.ws-sync-detail', 'muted', 'surface-2'],
@@ -1657,10 +1672,13 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
     ['.machine-step-code', '.machine-phase', 'muted', 'surface-2'], ['.machine-command code', '.machine-command code', 'fg', 'surface'],
     ['.machine-status', '.machine-dialog', 'muted', 'surface'], ['.machine-copy', '.machine-copy', 'fg', 'surface'],
     ['.machine-primary', '.machine-primary', 'primary-fg', 'primary-bg'], ['.machine-cancel', '.machine-cancel', 'fg', 'surface'],
-    ['[data-machine="up"] .machine-cell.name', '.setup-machines', 'fg', 'surface-2'], ['[data-machine="up"] .machine-cell.muted', '.setup-machines', 'muted', 'surface-2'],
-    ['[data-machine="up"] .machine-state', '[data-machine="up"] .machine-state', 'muted', 'tag-bg'],
+    // The Machines box: a solid --surface card (in Setup's This computer zone), Setup's members grammar.
+    ['.setup-machines .setup-box-head h4', '.setup-machines', 'fg', 'surface'], ['.setup-machines .setup-box-lead', '.setup-machines', 'muted', 'surface'],
+    ['[data-machine="up"] .machine-cell.name', '.setup-machines', 'fg', 'surface'], ['[data-machine="up"] .machine-cell.ssh', '.setup-machines', 'fg', 'surface'],
+    ['[data-machine="up"] .machine-cell.folder', '.setup-machines', 'muted', 'surface'], ['[data-machine="up"] .machine-cell.version', '.setup-machines', 'muted', 'surface'],
+    ['[data-machine="up"] .machine-state', '.setup-machines', 'muted', 'surface'], ['[data-machine="up"] .machine-state .shell-icon', '.setup-machines', 'ok', 'surface'],
     ['[data-machine="down"] .machine-state', '[data-machine="down"] .machine-state', 'warn', 'attn-bg'],
-    ['[data-machine="up"] .machine-check', '.setup-machines', 'accent', 'surface-2'], ['.machines-add', '.setup-machines', 'accent', 'surface-2'],
+    ['[data-machine="up"] .machine-check', '.setup-machines', 'accent', 'surface'], ['.machines-add', '.setup-machines', 'accent', 'surface'],
     ['.machine-confirm p', '.machine-confirm', 'fg', 'surface-2'], ['.machine-confirm-cancel', '.machine-confirm-cancel', 'fg', 'surface'],
     ['.machine-confirm-remove', '.machine-confirm-remove', 'primary-fg', 'danger'],
   ]) {

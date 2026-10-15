@@ -90,6 +90,8 @@ ${tabBarCSS('.workspace-tabs')}
 .workspace-discovery[data-tab=capabilities] { --ws-pad-top:16px; padding:var(--ws-pad-top) 28px 20px; }
 .workspace-discovery[data-tab=capabilities] > * { max-width:1000px; margin-inline:auto; }
 .workspace-discovery[data-tab=sources] { --ws-pad-top:20px; padding:var(--ws-pad-top) 24px 20px; }
+/* Setup's list view reads as one centred column; the graph keeps the tab's width. */
+.workspace-discovery[data-tab=sources]:has(.setup[data-view=list]) > * { max-width:1080px; margin-inline:auto; }
 /* Teams reads as one centred column: the teams card is a list, not a dashboard. */
 .workspace-discovery[data-tab=teams] { --ws-pad-top:20px; padding:var(--ws-pad-top) 24px 20px; }
 .workspace-discovery[data-tab=teams] > * { max-width:760px; margin-inline:auto; }
