@@ -1,11 +1,12 @@
 // The dialog's settled-answer cache in front of the spawn preview (Spec B, seamless spawn form):
-// keyed by the admission identity, 60 s, answers and name refusals only, re-admitted against the
-// current context, dropped per workspace on invalidation, never refilled by a flight that was in
-// the air across one; prepare reads through the same cache (Spec C: apply's --expect-decision guards drift).
+// keyed by the admission identity, 60 s for the dialog, answers and name refusals only, re-admitted against
+// the current context, dropped per workspace on invalidation, never refilled by a flight that was in the air
+// across one; prepare reads through the same cache, up to PREPARE_REUSE_MS (Spec C, #1246: apply's
+// --expect-decision guards drift).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewCache, createSpawnPreviewFlights, PREVIEW_CACHE_TTL_MS } from '../../client/spawn-preview.mjs';
+import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewCache, createSpawnPreviewFlights, PREVIEW_CACHE_TTL_MS, PREPARE_REUSE_MS } from '../../client/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { selector, context, request, data, envelope, deferred, tick } from './helpers/spawn-preview-fixture.mjs';
 
@@ -13,9 +14,10 @@ function fixture({ reply = () => envelope(data()), ttlMs, limit } = {}) {
   let time = 0; const calls = [];
   const invoke = async (cli, opts) => { calls.push(opts); return reply(opts); };
   // Prepare's read of one preview: through its cache, never with --max-age.
-  const { prepareRead, cache } = createSpawnPreview({ invoke, now: () => time, ...(ttlMs ? { ttlMs } : {}), ...(limit ? { limit } : {}) });
+  const { read: dialog, prepareRead, cache } = createSpawnPreview({ invoke, now: () => time, ...(ttlMs ? { ttlMs } : {}), ...(limit ? { limit } : {}) });
   const c = context();
-  return { c, calls, cache, invoke, read: prepareRead, send(choices, ctx = c) { return this.read(request(choices), () => ctx); }, advance: ms => { time += ms; } };
+  return { c, calls, cache, invoke, read: prepareRead, dialog, send(choices, ctx = c) { return this.read(request(choices), () => ctx); },
+    look(choices, ctx = c) { return dialog(request(choices), () => ctx); }, advance: ms => { time += ms; } };
 }
 const refusal = code => () => ({ schemaVersion: 1, ok: false, error: { code, message: `refused: ${code}` } });
 
@@ -28,10 +30,28 @@ test('a hit within the TTL runs no second kernel process and answers an equal, i
   assert.notEqual((await f.send()).data.instance, 'changed-by-caller', 'the held answer is not the caller\'s object');
   assert.equal(f.cache.size(), 1);
 });
-test('at the TTL the answer is a miss and the kernel is asked again', async () => {
+test('the dialog\'s read misses at the TTL and asks the kernel again; prepare takes the same answer up to PREPARE_REUSE_MS (#1246)', async () => {
   const f = fixture();
-  await f.send(); f.advance(PREVIEW_CACHE_TTL_MS); await f.send(); assert.equal(f.calls.length, 2);
-  await f.send(); assert.equal(f.calls.length, 2, 'the re-read is held again');
+  await f.look(); f.advance(PREVIEW_CACHE_TTL_MS); await f.look(); assert.equal(f.calls.length, 2, 'the dialog reads again at 60 s');
+  await f.look(); assert.equal(f.calls.length, 2, 'the re-read is held again');
+  // The same answer, older than the dialog takes: prepare still takes it, until PREPARE_REUSE_MS.
+  f.advance(PREPARE_REUSE_MS - 1); assert.equal((await f.send()).status, 'available'); assert.equal(f.calls.length, 2, 'prepare: held, no kernel process');
+  f.advance(1); await f.send(); assert.equal(f.calls.length, 3, 'prepare reads live at PREPARE_REUSE_MS');
+  assert.equal(PREPARE_REUSE_MS, 300000);
+});
+test('the cache\'s two ages: kept for the longer, answered to each reader by its own (#1246)', () => {
+  let time = 0; const flights = createSpawnPreviewFlights();
+  const cache = createSpawnPreviewCache({ ttlMs: 60, keepMs: 300, now: () => time, clock: flights.clock });
+  const answer = { status: 'available', data: { instance: 'x' } };
+  cache.set('id', 'northwind', answer, flights.clock());
+  time = 59; assert.deepEqual(cache.get('id'), answer, 'default: the TTL'); assert.deepEqual(cache.get('id', 300), answer);
+  time = 60; assert.equal(cache.get('id'), null, 'too old for the TTL reader'); assert.equal(cache.size(), 1, 'but kept');
+  time = 299; assert.deepEqual(cache.get('id', 300), answer, 'the longer reader still takes it');
+  time = 300; assert.equal(cache.get('id', 300), null); assert.equal(cache.size(), 0, 'gone at keepMs');
+  // keepMs below the TTL keeps it for the TTL; an invalidation drops it for every reader.
+  const short = createSpawnPreviewCache({ ttlMs: 60, keepMs: 10, now: () => time, clock: flights.clock });
+  short.set('id', 'northwind', answer, flights.clock()); time += 59; assert.deepEqual(short.get('id'), answer);
+  cache.set('id', 'northwind', answer, flights.clock()); cache.invalidate('northwind'); assert.equal(cache.get('id', 300), null);
 });
 test('a name refusal is held; other refusals are not', async () => {
   for (const code of ['E_INSTANCE_NAME_TAKEN', 'E_INSTANCE_NAME_INVALID']) {
@@ -82,7 +102,7 @@ test('a request that joins a flight started before the invalidation does not fil
   gate.resolve(envelope(data())); await early; await joined;
   assert.equal(f.cache.size(), 0);
 });
-test('Spec C: prepare takes a fresh held answer for exactly these choices without a CLI call; after invalidation, the TTL or for other choices it reads fresh', async () => {
+test('Spec C: prepare takes a held answer for exactly these choices without a CLI call; after invalidation, PREPARE_REUSE_MS or for other choices it reads fresh', async () => {
   const f = fixture();
   const broker = createSpawnApplyBoundary({ read: f.read, invoke: assert.fail });
   const prepare = choices => broker({ action: 'prepare', selector, choices: choices ?? {} }, () => f.c);
@@ -92,7 +112,9 @@ test('Spec C: prepare takes a fresh held answer for exactly these choices withou
   f.cache.invalidate(f.c.workspace.id);
   assert.equal((await prepare()).status, 'prepared'); assert.equal(f.calls.length, 3, 'after an invalidation it reads fresh');
   f.advance(PREVIEW_CACHE_TTL_MS);
-  assert.equal((await prepare()).status, 'prepared'); assert.equal(f.calls.length, 4, 'past the TTL it reads fresh');
+  assert.equal((await prepare()).status, 'prepared'); assert.equal(f.calls.length, 3, 'past the dialog\'s TTL it is still held (#1246)');
+  f.advance(PREPARE_REUSE_MS - PREVIEW_CACHE_TTL_MS);
+  assert.equal((await prepare()).status, 'prepared'); assert.equal(f.calls.length, 4, 'at PREPARE_REUSE_MS it reads fresh');
   // An uncached boundary (no cache) is what every read was before: always the kernel.
   const fresh = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: f.invoke });
   await fresh(request(), () => f.c); assert.equal(f.calls.length, 5);
@@ -128,7 +150,9 @@ test('the shipped wiring: the dialog route and prepare both read through the Des
   assert.match(route, /await spawnPreview\.read\(request, getContext\)/);
   assert.match(web, /\nconst spawnPreview = createSpawnPreview\(\);\nconst spawnApplyRequest = createSpawnApplyBoundary\(\{ read: spawnPreview\.prepareRead \}\);\n/);
   const preview = readFileSync(new URL('../../client/spawn-preview.mjs', import.meta.url), 'utf8');
-  assert.match(preview, /read: createSpawnPreviewBoundary\(\{ invoke, cache, maxAge, flights, exec \}\),\n\s*prepareRead: createSpawnPreviewBoundary\(\{ invoke, cache, flights, exec \}\),/);
+  assert.match(preview, /read: createSpawnPreviewBoundary\(\{ invoke, cache, maxAge, heldMs: ttlMs, flights, exec \}\),\n\s*prepareRead: createSpawnPreviewBoundary\(\{ invoke, cache, heldMs: prepareReuseMs, flights, exec \}\),/);
+  assert.match(preview, /export const PREPARE_REUSE_MS = 300000;/);
+  assert.match(preview, /createSpawnPreviewCache\(\{ ttlMs, keepMs: prepareReuseMs, limit, now, clock: flights\.clock \}\)/);
   assert.match(preview, /maxAge = PREVIEW_MAX_AGE_S \}/);
   assert.match(preview, /export const PREVIEW_MAX_AGE_S = 60;/);
 });
