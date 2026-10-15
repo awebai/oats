@@ -188,14 +188,12 @@ current pass prevents that pass from succeeding after healthy work. Partial
 work preserves previous success and failure history. These are private
 accounting mechanics, not evidence that command integration has run a pass.
 
-Source-stage fixtures must finish retained recovery cleanup through the same
-ownership checks as the native unit: commit the deleting claim, remove that
-exact allocation outside a database transaction, then finalize its reference
-and bounded derived metadata cleanup under the stream lock. A due retry may
-need this even for a tiny source after an interrupted append. Cleanup failure
-is a failure in the current pass and preserves confirmed work; it cannot be
-ignored to make a later receipt successful. These fixtures do not qualify the
-unfinished production scheduler's cleanup routing.
+Source-stage fixtures use the private retained recovery cleanup unit described
+below. A due retry may need it even for a tiny source after an interrupted
+append. Cleanup failure is a failure in the current pass and preserves
+confirmed work; it cannot be ignored to make a later receipt successful.
+These fixtures do not qualify the unfinished production scheduler's cleanup
+routing.
 
 ## Resource model
 
@@ -298,6 +296,26 @@ Lost references, unknown owners and unpublished allocations cannot become proof
 or cleanup authority by pathname. They retain the conservative orphan procedure
 above. A committed deletion mark precedes allocation-specific removal; reference
 finalization can be batched after removal, and interruption is repeatable.
+
+`capture-cleanup-work.mjs` supplies that lifecycle as a private work unit.
+`captureCleanupPage` reads at most 128 allocation references by key, including
+active jobs, and returns only deleting jobs. It never scans indefinitely to
+find a match. The caller saves its returned key and resumes another page;
+reaching the end of a page sequence is enumeration evidence, not a completed
+capture pass. Selection does not depend on a source remaining ready, so a
+finished or refused source's deleting reference is still discoverable after
+a worker dies. Active allocations are not selected for deletion.
+
+`cleanupCaptureRecovery` binds a selected job to its allocation nonce and
+stream, commits verified adoption, removes the allocation outside a database
+transaction, then divides one bounded hash-row allowance between recovery
+chunks and transcript prefix rows under the stream lock. Both tables must be
+finished before it removes the allocation and staging references. A partial
+unit, cooperative stop after removal, or failed final metadata commit retains
+the deleting reference; the next registered worker revalidates it and resumes.
+The source's committed cursor and journal bytes are not rewritten or recounted.
+The caller still owns fair selection, operational failure handling, budgeting
+and final receipt publication; this unit adds no separate retry policy.
 
 `capture-recovery-snapshot.mjs` copies the fixed source end in 64 KiB chunks under
 the stream group. Payload fsync precedes committed copy offsets and chunk hashes.

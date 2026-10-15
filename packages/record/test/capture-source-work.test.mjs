@@ -34,10 +34,7 @@ function fixture(t, specs) {
     import {CaptureSourceQueue} from ${JSON.stringify(url('capture-source-queue'))};
     import {captureSourceWork} from ${JSON.stringify(url('capture-source-work'))};
     import {reconcileCaptureInterruption} from ${JSON.stringify(url('capture-retry'))};
-    import {withCaptureGroup} from ${JSON.stringify(url('capture-context'))};
-    import {removeRetainedCaptureScratch} from ${JSON.stringify(url('capture-retained-scratch'))};
-    import {discardRecoveryChunks} from ${JSON.stringify(url('capture-recovery-snapshot'))};
-    import {discardTranscriptPrefix} from ${JSON.stringify(url('transcript-prefix'))};
+    import {cleanupCaptureRecovery} from ${JSON.stringify(url('capture-cleanup-work'))};
     await runCaptureWorker(start=>{
       // No store, admission or status publication exists for this attempt.
       if(start.options.failBeforeReceipt && start.pass.attempt===1)throw Error('injected pre-receipt failure');
@@ -66,15 +63,10 @@ function fixture(t, specs) {
           for(const {stream,key} of r.cleanup){
             if(start.options.failCleanup)throw Error('injected retained cleanup failure');
             const claim=state.get('recovery-allocation',key);
-            removeRetainedCaptureScratch(start.root,state,key,start);
-            withCaptureGroup(store,[stream],()=>{
-              state.set('recovery-garbage',claim.id,true);
-              // These one-record fixtures fit one bounded cleanup unit. Do
-              // not silently drop unfinished cleanup from a larger fixture.
-              if(!discardRecoveryChunks(state,claim.id) || !discardTranscriptPrefix(store,stream,key))
-                throw Error('fixture cleanup exceeded one bounded unit');
-              state.delete('recovery-allocation',key);state.delete('recovery-stage',key);
-            },{state});
+            // These one-record fixtures fit one bounded cleanup unit. Do
+            // not silently drop unfinished cleanup from a larger fixture.
+            if(!cleanupCaptureRecovery(store,state,start,{stream,key,allocation:claim.id}).complete)
+              throw Error('fixture cleanup exceeded one bounded unit');
           }
           if(!r.selected){
             const pending=!!q.ready().next().value;
