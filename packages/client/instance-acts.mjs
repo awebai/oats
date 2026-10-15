@@ -2,10 +2,11 @@
  * keys or its buttons from this answer: verbs and reasons, never a label, an icon or a key.
  *
  *   instanceActs(instance) -> { blocked: Reason | null, limited: Reason | null, acts: Act[] }
- *   Act    = { verb, enabled, reason: Reason | null }
+ *   Act    = { verb, enabled, reason: Reason | null, secondary? }
  *   Reason = { code, sentence } and, by code:
  *     { code: 'unaddressable', key, sentence, origin? }   key: the row reason's own (remote-address.mjs rowReason)
- *     { code: 'held', kind, sentence }                    kind: 'spawning' | 'spawn-incomplete' | 'retire-incomplete'
+ *     { code: 'held', kind, sentence, origin? }           kind: instance-tree.mjs HELD_HOMES's: 'spawning' |
+ *                                                         'spawn-incomplete' | 'retiring' | 'retire-failed' | 'retire-incomplete'
  *     { code: 'unsupported-session', sentence, origin? }
  *     { code: 'not-running', sentence }                   an `open` act's only (`openAct`)
  *     { code: 'state-unknown', sentence }                 an `open` act's only
@@ -19,7 +20,8 @@
  * answer's `origin` is passed on as it is, never decided again here): "kernel", "terminal-probe" or
  * "roster-read" when the row names the speaker of its `runtimeError`, "unattributed" when the row's text
  * stands beside no speaker. It is absent on a sentence this home wrote and on the stand-in for an older
- * kernel's Herdr row, and a `held` reason never has one. A client shows a sentence with an `origin`
+ * kernel's Herdr row. A `held` reason has one ("kernel") only for a failed retire whose row carries the
+ * kernel's message (#1247, instance-tree.mjs heldHome `said`). A client shows a sentence with an `origin`
  * through its display filter, after instance-presentation.mjs `originLead`'s words when the value names
  * a speaker, and a sentence with none as written, as this home's own.
  *
@@ -29,10 +31,20 @@
  * `blocked` and `limited` are never both set. An act's own `reason` says why that one act is listed
  * and not enabled; the others stay as they are.
  *
+ * `secondary: true` (#1247; absent otherwise): the act stays listed and enabled, behind its usual
+ * confirmation, but it is not the row's default or primary affordance. A client keeps it where the row's
+ * acts are listed (the Desktop's row menu, the TUI's key) and draws no inline primary control for it,
+ * never makes it the default act (the menu's first focus, a key's default) and does not advertise it
+ * (the TUI's footer). Only Retire on a retiring row is secondary: a second retire is safe (the kernel
+ * refuses it while one runs: E_INSTANCE_RETIRING, E_LIFECYCLE_BUSY) and, while the holder can't be read,
+ * may be the only way on.
+ *
  * In order, the first that applies:
  *   a remote row the kernel does not report addressable   blocked (unaddressable); no acts
  *   a home the kernel holds, spawning                     blocked (held); no acts
- *   a home the kernel holds, spawn or retire incomplete   limited (held); retire
+ *   a home the kernel holds, retiring                     limited (held); retire (secondary)
+ *   a home the kernel holds, spawn incomplete,            limited (held); retire
+ *     retire failed or incomplete
  *   a session backend OATS no longer has                  inspect, start (not enabled, unsupported-session), stop, retire
  *   running === true                                      inspect, restart, stop, retire
  *   running === false                                     inspect, start, stop, retire
@@ -54,7 +66,7 @@ import { heldHome } from './instance-tree.mjs';
 import { unsupportedSession } from './instance-presentation.mjs';
 import { canAddressRemote, rowReason } from './remote-address.mjs';
 
-const act = (verb, reason = null) => ({ verb, enabled: !reason, reason });
+const act = (verb, reason = null, secondary = false) => ({ verb, enabled: !reason, reason, ...(secondary ? { secondary: true } : {}) });
 // An `open` act's own two codes, and the one sentence both carry.
 const NOT_RUNNING = 'not-running', STATE_UNKNOWN = 'state-unknown';
 const NO_LIVE_TERMINAL = 'No live terminal is reported.';
@@ -65,11 +77,14 @@ export function instanceActs(instance) {
     return { blocked: { code: 'unaddressable', key, sentence, ...(origin !== undefined ? { origin } : {}) }, limited: null, acts: [] };
   }
   // #802: a home the kernel holds starts, stops and opens nothing. Retire only when a spawn or a retire left it
-  // half cleaned (the kernel's retire completes it), nothing while its spawn sets up the worktree.
+  // half cleaned (the kernel's retire completes it), nothing while its spawn sets up the worktree; while a
+  // retire runs (#1247), Retire stays reachable but secondary.
   const held = heldHome(instance);
   if (held) {
-    const reason = { code: 'held', kind: held.kind, sentence: held.sentence(instance.instance) };
-    return held.retire ? { blocked: null, limited: reason, acts: [act('retire')] } : { blocked: reason, limited: null, acts: [] };
+    const { sentence, origin } = held.said;
+    const reason = { code: 'held', kind: held.kind, sentence, ...(origin !== undefined ? { origin } : {}) };
+    return held.retire ? { blocked: null, limited: reason, acts: [act('retire', null, held.retire === 'secondary')] }
+      : { blocked: reason, limited: null, acts: [] };
   }
   // A Herdr-recorded row cannot start or restart: Start stays listed, not enabled, with the kernel's reason.
   // Its sentence and its `origin` are the row reason's own (rowReason answers this reason first for such a row).
