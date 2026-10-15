@@ -7,7 +7,8 @@
   from STATE.md's Next section". It held the nudge back only while `STATE.md`
   still held template text that no package writes any more, so every fresh
   home got it, ahead of its opening task. A startup now gets the nudge only
-  when pi kept an earlier session of the home, one that ran a turn, and
+  when pi kept an earlier session of the home (pi keeps one once it holds a
+  message) and
   `STATE.md` exists, whatever a knowledge capability seeded into it. Sessions
   of an earlier instance with the same name, at the same path, don't count.
   The bridge writes nothing in the home to tell. Run `oats update` to move

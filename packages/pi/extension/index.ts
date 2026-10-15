@@ -61,13 +61,15 @@ export default function (pi: ExtensionAPI) {
 
 /**
  * Whether pi kept an earlier session of this home. pi files a session only
- * once it holds an assistant message (pi 0.80.3
- * core/session-manager.js:641-665), groups sessions by working directory, and
- * starts each file with a header naming its cwd and start time
+ * once it holds a message (an assistant one in pi 0.80.3,
+ * core/session-manager.js:641-665; any in pi 1.x), groups sessions by working
+ * directory, and starts each file with a header naming its cwd and start time
  * (docs/session-format.md). A session that started before the home was
- * created belongs to an earlier instance of the same name; where the
- * filesystem keeps no birth time (0) none is told apart. Unreadable history
- * reads as none: memory automation must never break a session.
+ * created belongs to an earlier instance of the same name. Where the birth
+ * time is unknown (0, or ctime, which libuv reports without statx) none is
+ * told apart. A file last written before the home was created is skipped
+ * unread. Unreadable history reads as none: memory automation must never
+ * break a session.
  */
 function hasWorkedBefore(home: string, ctx: ExtensionContext): boolean {
   try {
@@ -75,11 +77,14 @@ function hasWorkedBefore(home: string, ctx: ExtensionContext): boolean {
     const dir = sessions.getSessionDir();
     const current = sessions.getSessionFile();
     const cwd = sessions.getCwd();
-    const born = statSync(home).birthtimeMs;
+    const { birthtimeMs, ctimeMs } = statSync(home);
+    const born = birthtimeMs !== ctimeMs ? birthtimeMs : 0;
+    const head = Buffer.alloc(16 * 1024);
     for (const name of readdirSync(dir)) {
       const file = join(dir, name);
       if (!name.endsWith(".jsonl") || file === current) continue;
-      const header = sessionHeader(file);
+      if (statSync(file).mtimeMs < born) continue;
+      const header = sessionHeader(file, head);
       if (header?.type === "session" && header.cwd === cwd && typeof header.timestamp === "string" && Date.parse(header.timestamp) >= born) return true;
     }
   } catch { /* no history read */ }
@@ -87,8 +92,7 @@ function hasWorkedBefore(home: string, ctx: ExtensionContext): boolean {
 }
 
 /** A session file's first line, parsed, or undefined. Only its head is read. */
-function sessionHeader(file: string): { type?: unknown; cwd?: unknown; timestamp?: unknown } | undefined {
-  const head = Buffer.alloc(16 * 1024);
+function sessionHeader(file: string, head: Buffer): { type?: unknown; cwd?: unknown; timestamp?: unknown } | undefined {
   let fd: number | undefined;
   try {
     fd = openSync(file, "r");

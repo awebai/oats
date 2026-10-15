@@ -21,7 +21,7 @@ from the same release tag). This bridge registers no operational tools. It only:
 - journals compaction summaries and sends resume nudges when the active
   knowledge capability created `STATE.md`/`log.md`. A startup gets the nudge
   only when pi kept an earlier session of the home (pi files a session once
-  it has a turn), so a fresh home's first turn is its opening task. What
+  it holds a message), so a fresh home's first turn is its opening task. What
   `STATE.md` says decides nothing, and the bridge writes nothing to tell.
   Knowledge ownership, read/capture instructions, judgment and delivery
   remain capability-owned.

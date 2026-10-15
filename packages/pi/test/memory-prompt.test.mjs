@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,11 +23,18 @@ function home(t, state) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const dir = join(root, "home");
   mkdirSync(dir);
+  // Entries come after the home's creation, as at spawn, so its ctime moves
+  // past its birth time (equal, the bridge takes the birth time as unknown).
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
   writeFileSync(join(dir, "instance.json"), "{}\n");
   if (state !== undefined) writeFileSync(join(dir, "STATE.md"), state);
   const sessions = join(root, "sessions");
   mkdirSync(sessions);
   return { dir, sessions };
+}
+function knownBirth(dir) {
+  const { birthtimeMs, ctimeMs } = statSync(dir);
+  return birthtimeMs !== 0 && birthtimeMs !== ctimeMs;
 }
 /** A session pi filed: its header (docs/session-format.md, SessionHeader), then a turn. */
 function session(h, { cwd = h.dir, timestamp = new Date().toISOString(), name } = {}) {
@@ -85,10 +92,32 @@ test("sessions of another working directory in a shared sessions directory are n
 
 test("an earlier instance's sessions at the same home path are not this home's", (t) => {
   const h = home(t, OKF_SEED);
-  if (!statSync(h.dir).birthtimeMs) return t.skip("this filesystem keeps no birth time");
+  if (!knownBirth(h.dir)) return t.skip("this filesystem keeps no birth time");
   session(h, { timestamp: new Date(statSync(h.dir).birthtimeMs - 60000).toISOString() });
   assert.deepEqual(start(h), []);
   session(h);
+  assertNudge(start(h), h);
+});
+
+test("a file last written before the home was created is skipped unread", (t) => {
+  const h = home(t, OKF_SEED);
+  if (!knownBirth(h.dir)) return t.skip("this filesystem keeps no birth time");
+  const old = new Date(statSync(h.dir).birthtimeMs - 60000);
+  utimesSync(session(h), old, old);
+  assert.deepEqual(start(h), []);
+});
+
+test("pi's own SessionManager: a session holding nothing is not filed, one with a turn counts on restart", async (t) => {
+  let SessionManager;
+  try { ({ SessionManager } = await import("@earendil-works/pi-coding-agent")); }
+  catch { return t.skip("pi SDK not installed (npm ci installs it as a peer of @awebai/pi)"); }
+  const h = home(t, OKF_SEED);
+  const sm = SessionManager.create(h.dir, h.sessions);
+  assert.deepEqual(start(h, { current: sm.getSessionFile() }), []);
+  assert.deepEqual(start(h), []);
+  sm.appendMessage({ role: "user", content: "THE TASK", timestamp: Date.now() });
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  sm.appendMessage({ role: "assistant", content: [{ type: "text", text: "on it" }], api: "faux", provider: "faux", model: "faux", usage, stopReason: "stop", timestamp: Date.now() });
   assertNudge(start(h), h);
 });
 
