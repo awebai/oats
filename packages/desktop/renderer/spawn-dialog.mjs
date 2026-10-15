@@ -19,7 +19,6 @@
 import { retainedSpawnMessage, differedLines, flagIgnoredNotice } from '../../client/launch-prompt-outcome.mjs';
 import { launchDiffered, launchDifferedCSS } from './launch-differed.mjs';
 import { harnessOf } from '../../client/harness-names.mjs';
-import { displayLine } from '../../client/display-text.mjs';
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from '../../client/instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
@@ -36,6 +35,7 @@ import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
 import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from '../../client/launch-view.mjs';
+import { previewFacts } from '../../client/spawn-preview-facts.mjs';
 import { createSpawnDeploymentField, spawnDeployments } from './spawn-deployment-field.mjs';
 import { openAddMachineDialog } from './add-machine-dialog.mjs';
 import { followBackfill, BACKFILL_POLL_MS } from '../../client/machine-contract.mjs';
@@ -385,77 +385,35 @@ export function soulOriginText(soul) {
   const from = soul?.origin || soul?.repoName;
   return from ? `from ${from}` : '';
 }
-/** The preview's work mode in words (board 6, "Works in"); an unknown mode verbatim. */
-const WORK_PHRASES = Object.freeze({ __proto__: null, worktree: 'own worktree', checkout: 'shared checkout', attached: "a parent's worktree", directory: 'own folder · free to work across repos', workspace: 'all member repos' });
-export const worksInText = work => WORK_PHRASES[work] ?? work;
-/** The preview's home, short enough to read: relative to the deployment (the preview's subject.dir)
- * when it lies inside it, else its last three segments behind "…/". The full path is the title. */
-export function homeText(home, dir) {
-  if (typeof home !== 'string' || !home) return null;
-  const base = typeof dir === 'string' && dir ? dir.replace(/\/+$/, '') : '';
-  if (base && home.startsWith(`${base}/`) && home.length > base.length + 1) return { text: home.slice(base.length + 1), title: home };
-  const parts = home.split('/').filter(Boolean);
-  return { text: parts.length > 3 ? `…/${parts.slice(-3).join('/')}` : home, title: home };
-}
-/** A worktree spawn's "Works in": the new branch (mono in the view) and the ref it starts from, when the preview says. */
-export function worktreeText(data) {
-  return { lead: 'worktree · branch ', branch: data.branch, tail: data.base?.ref ? ` from ${data.base.ref}` : '' };
-}
-/** The relation the preview binds, in words with its anchor ("child of api-2"); null when independent. */
-const RELATION_WORDS = Object.freeze({ __proto__: null, child: 'child of', sibling: 'sibling of', parent: 'parent of' });
-export function relationText(data) {
-  const kind = data?.relation;
-  if (typeof kind !== 'string' || !kind) return null;
-  const anchor = data.decision?.effective?.relation?.anchor?.instance;
-  if (!RELATION_WORDS[kind]) return kind;
-  return typeof anchor === 'string' && anchor ? `${RELATION_WORDS[kind]} ${anchor}` : RELATION_WORDS[kind];
-}
-/** A preview module's source, as the Capabilities tag says it: the package and version, the member
- * repository, or the kind verbatim. Never a reason: that is moduleWhyText's, beside it. */
-export function moduleSourceText(from) {
-  if (from?.kind === 'package') return `package ${from.package ?? ''}${from.version ? ` ${from.version}` : ''}`.trimEnd();
-  if (from?.kind === 'member') return `${String(from.repoKey ?? '').split('/').pop().replace(/\.git$/, '') || 'member'} · latest`;
-  return typeof from?.kind === 'string' ? from.kind : '';
-}
-/** Why a preview module is there, as the reason tag beside its source says it: the projection's
- * `composedFrom` (feature preview-composed-from) — "Soul" or "Workspace default" (a core row already
- * names its slot). '' (no tag) when the preview does not say: an older CLI, or a value the projection
- * dropped. Never guessed from the soul. */
-const CORE_LAYERS = ['knowledge', 'messaging', 'tasks'];
-export function moduleWhyText(m) {
-  if (m?.composedFrom === 'soul') return 'Soul';
-  if (m?.composedFrom === 'workspace') return 'Workspace default';
-  return '';
-}
 /** The preview column's Core capabilities and Capabilities sections (their children), from the
- * preview's `modules` rows [{name, layer, from, composedFrom?}]; null when the preview carries none
- * (no placeholder). Both are bordered boxes of one row grammar: the module in mono on its own line,
- * then its source and reason chips (.spawn-cap-tags). A module filling a core slot is Core's only: never in Capabilities or its count. */
+ * preview's `modules` rows [{name, layer, from, composedFrom?}] as previewFacts answers them
+ * (packages/client/spawn-preview-facts.mjs); null when the preview carries none (no placeholder). Both are
+ * bordered boxes of one row grammar: the module in mono on its own line, then its source and reason chips
+ * (.spawn-cap-tags). A module filling a core slot is Core's only: never in Capabilities or its count. */
 export function composePreviewModules(doc, modules) {
-  if (!Array.isArray(modules)) return null;
+  const sections = previewFacts({ modules }).modules;
+  if (!sections) return null;
   const el = (tag, text, cls) => node(doc, tag, text, cls);
-  const rows = modules.filter(m => m && typeof m === 'object' && typeof m.name === 'string' && m.name);
   // Line 1 the module, line 2 its chips (one group that wraps). The reason is plain text in the row:
   // part of what a screen reader reads for it.
   const describe = (row, into, m) => {
     row.dataset.module = m.name;
-    const tags = el('span', undefined, 'spawn-cap-tags'); tags.append(el('span', moduleSourceText(m.from), 'spawn-cap-source'));
-    const why = moduleWhyText(m); if (why) tags.append(el('span', why, 'spawn-cap-why'));
+    const tags = el('span', undefined, 'spawn-cap-tags'); tags.append(el('span', m.source, 'spawn-cap-source'));
+    if (m.why) tags.append(el('span', m.why, 'spawn-cap-why'));
     into.append(el('span', m.name, 'mono'), tags);
   };
   const coreBox = el('div', undefined, 'spawn-core-box');
-  for (const [layer, label] of [['knowledge', 'Knowledge'], ['messaging', 'Messaging'], ['tasks', 'Tasks']]) {
-    const row = el('span', undefined, 'spawn-core-row'), m = rows.find(x => x.layer === layer); row.dataset.layer = layer;
+  for (const { layer, label, module: m } of sections.core) {
+    const row = el('span', undefined, 'spawn-core-row'); row.dataset.layer = layer;
     row.append(el('span', label, 'spawn-core-layer'));
     if (m) { const module = el('span', undefined, 'spawn-core-module'); describe(row, module, m); row.append(module); }
     else row.append(el('span', 'None', 'muted')); // an empty slot, not a provider named "none"
     coreBox.append(row);
   }
-  const others = rows.filter(m => !CORE_LAYERS.includes(m.layer)).sort((a, b) => a.name.localeCompare(b.name));
   const capsList = el('div', undefined, 'spawn-cap-list');
-  for (const m of others) { const row = el('span', undefined, 'spawn-cap-row'); describe(row, row, m); capsList.append(row); }
-  if (!others.length) capsList.append(el('span', 'No other capabilities: only the core ones.', 'spawn-cap-row spawn-cap-none'));
-  return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${others.length}`, 'spawn-preview-title'), capsList] };
+  for (const m of sections.caps) { const row = el('span', undefined, 'spawn-cap-row'); describe(row, row, m); capsList.append(row); }
+  if (!sections.caps.length) capsList.append(el('span', 'No other capabilities: only the core ones.', 'spawn-cap-row spawn-cap-none'));
+  return { core: [el('h3', 'Core capabilities', 'spawn-preview-title'), coreBox], caps: [el('h3', `Capabilities · ${sections.caps.length}`, 'spawn-preview-title'), capsList] };
 }
 
 /** A segmented group is one tab stop (spec F): Arrow keys move along it (in a radio group they
@@ -1202,51 +1160,35 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     } else if (state.kind === 'failure') factsBody.append(el('p', state.text, 'spawn-preview-failure'));
     else if (state.kind === 'empty') { if (state.text) factsBody.append(el('p', state.text, 'spawn-preview-empty')); }
     else {
-      const muted = (text, cls = '') => el('span', text, `muted${cls ? ` ${cls}` : ''}`);
-      const sub = text => muted(text, 'spawn-fact-sub'); // a value's second line: where it came from, what else
+      // The facts are previewFacts' (packages/client/spawn-preview-facts.mjs); the drawing is the dialog's.
+      const shownFacts = previewFacts(data, { name, runsOn, cli: cli() });
+      // A part: plain text, a branch in mono, muted, or a value's second line (where it came from, what else).
+      const part = p => p.sub ? el('span', p.text, 'muted spawn-fact-sub') : p.muted ? el('span', p.text, 'muted') : p.mono ? el('span', p.text, 'mono') : doc.createTextNode(p.text);
       // The instance first and largest, its home beneath: the terms are for assistive tech, the eye reads the shape.
       const identity = el('dl', undefined, 'spawn-preview-identity');
-      const said = (label, value) => { identity.append(el('dt', label, 'workspace-sr-only'), value); };
-      said('Name', name ? el('dd', name, 'spawn-preview-name') : el('dd', 'numbered by the kernel', 'spawn-preview-name muted'));
-      const home = homeText(data.home, data.subject?.dir);
-      if (home) { const dd = el('dd', home.text, 'spawn-preview-home'); dd.title = home.title; said('Home', dd); }
-      const worktree = data.work === 'worktree' && data.branch ? worktreeText(data) : null;
-      if (worktree) fact('Works in', doc.createTextNode(worktree.lead), el('span', worktree.branch, 'mono'), ...(worktree.tail ? [doc.createTextNode(worktree.tail)] : []));
-      else if (data.work) fact('Works in', worksInText(data.work));
-      if (data.harness) {
-        // Where the harness came from: the Launch's `from` in words (0.30), else the kernel's modelSource verbatim.
-        const launch = shownLaunch(data.launch, cli());
-        const from = launch ? launchFromText(launch.from) : data.modelSource;
-        const harness = el('span', undefined, 'spawn-preview-harness');
-        // The badge is decorative here: the term says Harness and the text names it.
-        const badge = createRuntimeBadge(doc, data.harness); badge.setAttribute('aria-hidden', 'true');
-        harness.append(badge, el('span', `${runtimeName(data.harness)} · ${data.model ?? 'default model'}`));
-        fact('Harness', harness, ...(from ? [sub(from)] : []));
+      for (const entry of shownFacts.identity) {
+        const dd = el('dd', entry.text, `${entry.label === 'Home' ? 'spawn-preview-home' : 'spawn-preview-name'}${entry.muted ? ' muted' : ''}`);
+        if (entry.title) dd.title = entry.title;
+        identity.append(el('dt', entry.label, 'workspace-sr-only'), dd);
       }
-      // Team model v2: the default the kernel resolved (or none), then the other teams it may join. A 0.29 kernel reports only `team`, the primary label.
-      const others = (data.teams || []).map(t => t.label).filter(label => label !== data.defaultTeam?.label);
-      const also = others.length ? [sub(`may also join ${others.join(', ')}`)] : [];
-      if (data.defaultTeam) fact('Team', doc.createTextNode(data.defaultTeam.label), muted(' · default'), ...also);
-      else if (data.defaultTeam === null && !(data.teams?.length)) fact('Team', muted('none'));
-      else if (data.defaultTeam === undefined && typeof data.team === 'string' && data.team) fact('Team', data.team);
-      const relation = relationText(data);
-      if (relation) fact('Relationship', relation);
-      // The capabilities whose `worktree` hook sets up ./work, in the order they run ([] or absent: none).
-      const hooks = (data.worktreeHooks ?? []).map(h => `${displayLine(h.capability) ?? ''}${h.required ? ' (required)' : ''}`);
-      if (hooks.length) fact('Setup', doc.createTextNode(hooks.join(', ')), sub('Runs after the worktree is made. Can take several minutes.'));
-      runsOnFact();
+      for (const { label, parts, harness: id } of shownFacts.facts) {
+        if (id) {
+          const harness = el('span', undefined, 'spawn-preview-harness');
+          // The badge is decorative here: the term says Harness and the text names it.
+          const badge = createRuntimeBadge(doc, id); badge.setAttribute('aria-hidden', 'true');
+          harness.append(badge, el('span', parts[0].text));
+          fact(label, harness, ...parts.slice(1).map(part));
+        } else fact(label, ...parts.map(part));
+      }
       factsBody.append(identity, facts);
-      if (data.launchPromptAnswers) {
+      if (shownFacts.prompts) {
         // The launch-prompt policy is a note, not a fact: its words stay the kernel contract's, verbatim.
-        const policy = data.launchPromptAnswers, note = el('dl', undefined, 'spawn-preview-prompts');
-        note.append(el('dt', 'Launch prompts'), el('dd', policy.awebDevelopmentChannel
-          ? 'The launcher will answer the aweb development-channel confirmation for this home. This policy does not confirm readiness. A harness update can block the launch until its prompt fixtures are refreshed; no fallback key is sent.'
-          : 'None. The launcher will not answer prompts for this home. This policy does not confirm readiness.'));
-        if (policy.consentSource) note.append(el('dt', 'Prompt consent source'), el('dd', policy.consentSource, 'mono'));
+        const note = el('dl', undefined, 'spawn-preview-prompts');
+        for (const entry of shownFacts.prompts) note.append(el('dt', entry.label), entry.mono ? el('dd', entry.text, 'mono') : el('dd', entry.text));
         factsBody.append(note);
       }
       // Capability warnings (0.49.0): the kernel's strings, each line as text (no Details, no Open capability); they block nothing.
-      const warnings = createWarningsList(doc, data.warnings, { lines: true });
+      const warnings = createWarningsList(doc, shownFacts.warnings.map(lines => lines.join('\n')), { lines: true });
       if (warnings) { const box = el('div', undefined, 'spawn-preview-warnings'); box.append(el('h4', WARNINGS_COPY.title, 'spawn-preview-title'), warnings); factsBody.append(box); }
     }
     // Core capabilities and Capabilities exist only when the preview carries `modules`; redrawn only when those change.

@@ -515,7 +515,9 @@ and shows the preview column (*What will be created*: name, works in, harness
 and where it came from, default team; *Core capabilities* and *Capabilities*
 from the preview's projected `modules`, each with its source and, when the
 preview reports it, its reason; a skeleton while it reads, the footer's
-refusal sentence when it fails). **Change soul** switches the same dialog to
+refusal sentence when it fails). The facts are data from the shared home's
+`previewFacts` (`packages/client/spawn-preview-facts.mjs`), which any client
+draws its own way; the dialog draws them. **Change soul** switches the same dialog to
 the **picker** (the soul chooser, grouped by source, alphabetical, externals
 last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
 name and instruction, and a soul chosen there reopens in the picker. Quick
