@@ -75,8 +75,9 @@ function rule(cols, ascii, joint = null) {
 /** A sentence made of parts (lib/model.mjs OPEN_WORDS): the TUI's own words (`{ own }`) and text
  *  from outside (`{ shown }`, a name), each made safe on its own, so no word of the TUI's is ever
  *  filtered with a name and no name is ever taken for the TUI's. Set on at most `max` rows of at
- *  most `width` cells, broken at the spaces of the TUI's words; a name and what is written against
- *  it (a full stop) are never broken apart, and a name wider than a row is cut there. Answers rows
+ *  most `width` cells, broken at the spaces of the TUI's words but for those of a `{ own, whole }`
+ *  part (a command: cut in two, it cannot be typed); a name or a whole part and what is written
+ *  against it (a full stop) are never broken apart, and one wider than a row is cut there. Answers rows
  *  of spans from column 0; when more was left, the last row ends in the cut mark. */
 export function partRows(parts, width, max, { ascii = false } = {}) {
   if (width < 1 || max < 1) return [];
@@ -85,7 +86,8 @@ export function partRows(parts, width, max, { ascii = false } = {}) {
   let glue = false;
   const put = (piece) => { if (glue && units.length) units.at(-1).push(piece); else units.push([piece]); glue = true; };
   for (const part of parts) {
-    if (part.own !== undefined) part.own.split(" ").forEach((word, i) => { if (i > 0) glue = false; if (word) put({ text: lit(word), width: word.length }); });
+    if (part.own !== undefined && part.whole) put({ text: lit(part.own), width: part.own.length });
+    else if (part.own !== undefined) part.own.split(" ").forEach((word, i) => { if (i > 0) glue = false; if (word) put({ text: lit(word), width: word.length }); });
     else { const m = measured(part.shown); if (m.width > 0) put(m); }
   }
   const unitWidth = (unit) => unit.reduce((sum, piece) => sum + piece.width, 0);
@@ -251,7 +253,9 @@ function footer(m, cols) {
   const led = (spans) => [...put(lead, FOOT), ...spans];
   // While what is typed goes to the agent the TUI takes one key, the leader, and the footer names
   // it and the leader twice, which takes the focus back to the list.
-  const listing = m.view !== "help" && m.view !== "switcher";
+  // The list of instances: what Enter opens, the open terminal's keys and the acts are its own
+  // (Souls and Capabilities have none of them, the help and the switcher neither).
+  const listing = !["help", "switcher", "souls", "capabilities"].includes(m.view);
   if (listing && m.terminal?.focus === "terminal" && !m.palette) {
     const twice = keyText(`${m.detachKey} ${m.detachKey}`);
     return led(start + twice.width + 1 + "back to the list".length <= edge ? put(spansOf(made(twice, "back to the list")), start) : []);

@@ -2265,7 +2265,9 @@ test("2 and 3 show the Souls and the Capabilities views, which say what to run f
     const after = key(state, k);
     assert.equal(after.effect, null, k);
     assert.deepEqual([after.state.view, after.state.outcome, after.state.selected], [shows, null, state.selected], k);
-    assert.deepEqual(view(after.state).body, { said: [{ own: words }], under: [] }, `${k}: the view's body`);
+    const body = view(after.state).body;
+    assert.deepEqual([body.said.map((part) => part.own).join(""), body.under], [words, []], `${k}: the view's body`);
+    assert.deepEqual(body.said.filter((part) => part.whole).map((part) => part.own), words.match(/`[^`]+`/g), `${k}: each command a whole part, never broken over two rows`);
     for (const out of ["escape", "1"]) assert.deepEqual([key(after.state, out).state.view, key(after.state, out).state.selected], ["instances", state.selected], `${k} then ${out}`);
   }
   // With no workspace open they show from the switcher too, and go back there.

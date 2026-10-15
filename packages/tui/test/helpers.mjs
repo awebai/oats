@@ -183,7 +183,8 @@ export function press(state, keys, size = { cols: 80, rows: 24 }) {
 let reads = 1000;
 /** The leader typed in the terminal (`{ back }`, term/through.mjs), then pressed again in a later
  *  read, now read as the TUI's own key: the focus goes to the list (docs/tui.md, "The leader").
- *  -> the store's step after the second press. */
+ *  From the terminal's focus only: elsewhere `{ back }` is nothing, and the second press leaves
+ *  the leader waiting. -> the store's step after the second press. */
 export function leaderTwice(state) {
   const first = reduce(state, { back: true, read: ++reads, rest: false });
   return reduce(first.state, { key: first.state.leaderKey, read: ++reads });

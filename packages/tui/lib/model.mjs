@@ -323,10 +323,11 @@ export const OPEN_WORDS = Object.freeze({
 });
 /** The body of a view of this machine that is not in this version (Souls, Capabilities): what it
  *  will hold, and what to run until then, the help's commands (views/help.mjs VIEWS), in the TUI's
- *  own words. */
+ *  own words; each command is whole, never broken over two rows. */
+const command = (text) => Object.freeze({ own: `\`${text}\``, whole: true });
 export const NOT_BUILT = Object.freeze({
-  souls: Object.freeze({ said: Object.freeze([{ own: "This view will list the souls this machine can make instances of. It is not in this version: `oats souls` lists them, and `oats spawn <soul>` makes an instance of one." }]), under: Object.freeze([]) }),
-  capabilities: Object.freeze({ said: Object.freeze([{ own: "This view will list the capabilities this machine has. It is not in this version: `oats capabilities` lists them." }]), under: Object.freeze([]) }),
+  souls: Object.freeze({ said: Object.freeze([{ own: "This view will list the souls this machine can make instances of. It is not in this version: " }, command("oats souls"), { own: " lists them, and " }, command("oats spawn <soul>"), { own: " makes an instance of one." }]), under: Object.freeze([]) }),
+  capabilities: Object.freeze({ said: Object.freeze([{ own: "This view will list the capabilities this machine has. It is not in this version: " }, command("oats capabilities"), { own: " lists them." }]), under: Object.freeze([]) }),
 });
 /** A sentence from outside (a reason of the shared home's, the preflight table's), as a text
  *  under the line: drawn as the detail draws a reason, wrapped on the reason's rows, never as one
@@ -549,10 +550,11 @@ export function paletteItems(state, at = new Date(0).toISOString()) {
     : group.map((item, i) => ({ item, i, score: subsequenceScore(item.text, query) })).filter((each) => each.score !== null).sort((a, b) => a.score - b.score || a.i - b.i).map(({ item }) => item)));
   return { items, selected: items.some((item) => item.key === p.selected) ? p.selected : items[0]?.key ?? null };
 }
-/** The palette as the view draws it, in a body `page` rows tall: its query, and the window of its
- *  rows (one row is the query's, one the line under it) that holds the selection. */
+/** The palette as the view draws it, in a body `page` rows tall: its query on the first row, and
+ *  under it the window of its rows that holds the selection (whose last row says what is cut off,
+ *  when something is: scroll.mjs windowOf keeps it). */
 function paletteView(state, page, at) {
-  const list = paletteItems(state, at), height = Math.max(1, page - 2);
+  const list = paletteItems(state, at), height = Math.max(1, page - 1);
   const selected = list.items.findIndex((item) => item.key === list.selected);
   const win = windowOf({ top: 0, count: list.items.length, height, keep: selected });
   return {

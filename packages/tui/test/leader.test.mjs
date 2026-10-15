@@ -45,6 +45,9 @@ function keys(state, ...ids) {
 const leader = (state, read = ++reads, rest = false) => (state.terminal?.focus === "terminal" && state.view === "instances" && state.palette === null
   ? reduce(state, { back: true, read, rest, ...AT })
   : reduce(state, { key: state.leaderKey, read, ...AT }));
+/** The leader twice, each in a read of its own, from any focus (helpers.mjs leaderTwice is the
+ *  terminal's: from the list its `{ back }` is no key). */
+const twice = (state) => key(leader(state).state, state.leaderKey);
 /** The instance's id and its row, by name. */
 const idOf = (state, name) => instanceId(rowOf(state, name));
 const rowOf = (state, name) => roster(state).instances.find((row) => row.instance === name);
@@ -155,7 +158,7 @@ test("the leader twice, or the leader then Esc, from the terminal gives the list
 test("the leader twice, or the leader then Esc, from the list's focus only closes the hint: nothing else changes, also with a terminal open (Settled 5)", () => {
   const plain = THREE(), withTerminal = leaderTwice(opened(THREE(), "dev-a")).state;
   for (const state of [plain, withTerminal]) {
-    for (const step of [leaderTwice(state), leaderThen(state, "escape", AT)]) {
+    for (const step of [twice(state), leaderThen(state, "escape", AT)]) {
       assert.deepEqual([step.state.leader.waiting, step.effect], [false, null]);
       assert.deepEqual(butLeader(step.state), butLeader(state));
     }
@@ -164,7 +167,7 @@ test("the leader twice, or the leader then Esc, from the list's focus only close
   const detail = key(plain, "tab").state;
   assert.equal(detail.focus, "detail");
   assert.deepEqual(butLeader(leaderThen(detail, "escape", AT).state), butLeader(plain));
-  assert.deepEqual(butLeader(leaderTwice(key(plain, "?").state).state), butLeader(plain));
+  assert.deepEqual(butLeader(twice(key(plain, "?").state).state), butLeader(plain));
   const field = leaderThen(keys(plain, "/", "d").state, "escape", AT).state;
   assert.deepEqual([field.filter, field.view], [{ editing: false, query: "d" }, "instances"]);
 });

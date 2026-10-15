@@ -176,29 +176,33 @@ test.after(() => {
 const TUI = `${shq(process.execPath)} ${shq(CLI)} tui`;
 const PROMPT = "tui-test$";
 const USAGE = "oats tui [--dir <path>] [--ascii]";
-/** The Instances footer with no instance selected, and with one of the fixture's selected: every
- *  instance here is stopped or unknown, and offers to be stopped and retired (and a stopped one to
- *  be started), but at 80 columns those hints are given up first: the views' one hint, `1-3 views`,
- *  outlives them. */
-const PLAIN_FOOTER = " / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit";
-const FOOTER = PLAIN_FOOTER;
+/** The leader, which the footer names first in every focus (docs/tui.md, "The footer"). */
+const LEAD = "C-\\ commands   ";
+/** The Instances footer with every hint that applies with no instance selected, and with one of
+ *  the fixture's selected: every instance here is stopped or unknown, and offers to be stopped and
+ *  retired (and a stopped one to be started), but those hints are given up first. */
+const WHOLE_FOOTER = `${LEAD}/ filter   Tab detail   r refresh   w workspaces   ? help   q quit`;
 /** The Instances footer at a width: `help` and `quit` always stand, and a hint that would reach
- *  the last cell ends the row's hints. The acts are given up first, then `1-3 views`, then
- *  `w workspaces`, so a terminal too narrow for the whole row draws it without them
- *  (views/frame.mjs `footer`). */
+ *  the last cell ends the row's hints. The acts are given up first, then `w workspaces`, then
+ *  `r refresh`, so a terminal too narrow for the whole row draws it without them (views/frame.mjs
+ *  `footer`). */
 const footerAt = (cols) => {
-  const unviewed = PLAIN_FOOTER.replace("   1-3 views", "");
-  return PLAIN_FOOTER.length <= cols - 1 ? PLAIN_FOOTER : unviewed.length <= cols - 1 ? unviewed : unviewed.replace("   w workspaces", "");
+  let footer = WHOLE_FOOTER;
+  for (const hint of ["   w workspaces", "   r refresh"]) { if (footer.length <= cols - 1) return footer; footer = footer.replace(hint, ""); }
+  return footer;
 };
+/** At 80 columns, the leader takes the room of `w workspaces`. */
+const PLAIN_FOOTER = footerAt(80);
+const FOOTER = PLAIN_FOOTER;
 /** With the detail focused: the selected instance's acts first, as room allows (stop and retire
  *  at 79 and 80 columns), then the detail's own keys. */
-const DETAIL_FOOTER = " X stop   D retire   Tab detail   Esc close   r refresh   ? help   q quit";
-const HELP_FOOTER = " Esc close   ? help   q quit";
+const DETAIL_FOOTER = `${LEAD}X stop   Tab detail   Esc close   r refresh   ? help   q quit`;
+const HELP_FOOTER = `${LEAD}Esc close   ? help   q quit`;
 /** The switcher: its header, its footer with a workspace open, its two headings (the first is
  *  the shared home's, the second the TUI's own), and the TUI's row for a roster read that failed
  *  before any answer. */
-const SWITCHER_TITLE = " oats  workspaces";
-const SWITCHER_FOOTER = " Enter open   / filter   r refresh   Esc close   ? help   q quit";
+const SWITCHER_TITLE = " workspaces";
+const SWITCHER_FOOTER = `${LEAD}Enter open   / filter   r refresh   Esc close   ? help   q quit`;
 const UNMATCHED = "  Not matched to a workspace";
 const OFFERED = "  On this machine, not opened";
 const ROSTER_FAILED = "Other machines were not read.";
@@ -208,14 +212,14 @@ const ROSTER_FAILED = "Other machines were not read.";
 const HELP_KEYS = [
   /^ *Up, k {2,}up$/, /^ *Down, j {2,}down$/, /^ *g, Home {2,}first$/, /^ *G, End {2,}last$/, /^ *PageUp {2,}page up$/, /^ *PageDown {2,}page down$/,
   /^ *Left, h {2,}collapse, or go to the parent$/, /^ *Right, l {2,}expand, or go to the first child$/, /^ *Tab {2,}detail$/, /^ *\/ {2,}filter$/,
-  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *2 {2,}souls$/, /^ *3 {2,}capabilities$/, /^ *w {2,}workspaces$/,
+  /^ *r {2,}refresh$/, /^ *1 {2,}instances$/, /^ *2 {2,}souls$/, /^ *3 {2,}capabilities$/, /^ *w {2,}workspaces$/, /^ *Ctrl\+K {2,}palette$/,
   /^ *Enter {2,}open the selected agent's terminal beside the list, or go to it$/, /^ {2,}when it is the open one, in the list of instances$/,
-  /^ {2,}C-\\ takes the focus from the terminal back to the list; the agent$/, /^ {2,}keeps running\.$/,
+  /^ {2,}C-\\ C-\\ takes the focus from the terminal back to the list; the$/, /^ {2,}agent keeps running\.$/,
   /^ {2,}While the terminal has the focus every other key goes to the$/, /^ {2,}agent, Ctrl\+C and Ctrl\+Z too\.$/,
   /^ {2,}One terminal is open at a time\. It has no scrollback but the$/, /^ {2,}viewer's own, and no mouse\.$/,
-  /^ {2,}docs\/tui\.md has the keys that can be the back key\.$/,
+  /^ {2,}docs\/tui\.md has the keys that can be the leader\.$/,
   /^ *Enter {2,}open the selected workspace, in the switcher$/,
-  /^ *z {2,}go to the open terminal with the whole screen; the back key brings$/, /^ {2,}the list back$/,
+  /^ *z {2,}go to the open terminal with the whole screen; the leader twice$/, /^ {2,}brings the list back$/,
   /^ *c {2,}close the open terminal; the agent keeps running$/,
   // The acts, and under the last of them the rules of a confirmation (views/help.mjs ACT_RULES).
   /^ *X {2,}stop the selected agent, after a confirmation$/, /^ *D {2,}retire the selected agent, after a confirmation$/,
@@ -228,8 +232,8 @@ const HELP_KEYS = [
 const NO_TERMINAL = "oats: `oats tui` needs a terminal on stdin and stdout (E_NO_TERMINAL); `oats status` prints the instances once";
 const noDeployment = (dir) => `oats: no OATS deployment at or above ${dir} (E_NO_DEPLOYMENT); name one with \`oats tui --dir <path>\``;
 const tooSmallLine = (cols, rows) => `Terminal too small: ${cols}x${rows}, oats tui needs 60x15.`;
-const UTF8 = { locale: "C.UTF-8", rule: "─", down: "┬", up: "┴", stopped: "○" };
-const ASCII = { locale: "C", rule: "-", down: "+", up: "+", stopped: "-" };
+const UTF8 = { locale: "C.UTF-8", rule: "─", down: "┬", stopped: "○" };
+const ASCII = { locale: "C", rule: "-", down: "+", stopped: "-" };
 /** The columns of the list pane where the terminal is wide enough for two panes (docs/tui.md). */
 const listCols = (cols) => Math.min(60, Math.max(36, Math.floor(cols * 0.48)));
 const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -239,7 +243,7 @@ const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  *  the last row, or what it matches. `title` and `views` are the two rows of the header, or what
  *  they match: the fixture's name with its count and the time of a read, unless a view says
  *  otherwise. */
-function chromeFaults(screen, { cols, rows, look, split, footer, count, title = new RegExp(`^ oats {2}fixture +${count} stopped$`), views = /^ {2}Instances {3}Souls {3}Capabilities +read \d\d:\d\d:\d\d$/ }) {
+function chromeFaults(screen, { cols, rows, look, split, footer, count, title = new RegExp(`^ fixture +${count} stopped$`), views = /^ {2}Instances {3}Souls {3}Capabilities +read \d\d:\d\d:\d\d$/ }) {
   const faults = [];
   const expect = (row, want, what) => {
     const got = screen[row] ?? "";
@@ -250,7 +254,8 @@ function chromeFaults(screen, { cols, rows, look, split, footer, count, title = 
   expect(0, title, "the title row");
   expect(1, views, "the views row");
   expect(2, rule(look.down), "the rule under the views");
-  expect(rows - 2, rule(look.up), "the rule over the footer");
+  // No rule over the footer: the panes reach down to it.
+  if (screen[rows - 2] !== undefined && /^[─+-]+$/.test(screen[rows - 2])) faults.push(`row ${rows - 1}, over the footer, is a rule: ${JSON.stringify(screen[rows - 2])}`);
   expect(rows - 1, footer, "the footer");
   if (screen.some((row) => [...row].length > cols)) faults.push(`a row is longer than ${cols} cells`);
   return faults;
@@ -272,7 +277,7 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alp
   // row here is stopped, which the mark says). A folded row says how many it folds away.
   const row = (name, depth, fold = "") => new RegExp(`^${name === selected ? ">" : " "} ${"  ".repeat(depth)}${literal(look.stopped)} ${name}${fold ? literal(` ${fold}`) : ""}$`);
   const wanted = [["alpha", 0, folded ? "+1" : ""], ["beta", 1], ["gamma", 0], ...extra.map((name) => [name, 0])].filter(([name]) => !hidden.has(name));
-  const list = screen.slice(3, rows - 2).map((text) => (split ? [...text].slice(0, listCols(cols)).join("").trimEnd() : text));
+  const list = screen.slice(3, rows - 1).map((text) => (split ? [...text].slice(0, listCols(cols)).join("").trimEnd() : text));
   const NO_MATCH = "   No instance matches the filter.";
   const drawn = list.filter((text) => text !== "" && text !== NO_MATCH);
   if (wanted.length === 0 && list[0] !== NO_MATCH) faults.push(`the list's first row is ${JSON.stringify(list[0])}, not ${JSON.stringify(NO_MATCH)}`);
@@ -287,7 +292,7 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alp
     for (const name of hidden) if (drawn.some((text) => new RegExp(`\\b${name}\\b`).test(text))) faults.push(`a row still shows ${name}`);
   }
   if (split) {
-    const pane = screen.slice(3, rows - 2).map((text) => [...text].slice(listCols(cols) + 1).join(""));
+    const pane = screen.slice(3, rows - 1).map((text) => [...text].slice(listCols(cols) + 1).join(""));
     const title = wanted.length ? `${detail ? " >" : "  "} ${selected}` : "";
     if (pane[0] !== title) faults.push(`the detail's first row is ${JSON.stringify(pane[0])}, not ${JSON.stringify(title)}`);
     if (wanted.length && !pane.some((text) => /^ {3}soul {5}(dev|reviewer)$/.test(text))) faults.push("the detail names no soul");
@@ -298,7 +303,7 @@ function viewFaults(screen, { cols = 80, rows = 24, look = UTF8, selected = "alp
  *  table's order, as many as the pane holds over its last row, and no row of the list. */
 function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, count = 3 } = {}) {
   const faults = chromeFaults(screen, { cols, rows, look, split: false, footer: HELP_FOOTER, count });
-  const area = screen.slice(3, rows - 2);
+  const area = screen.slice(3, rows - 1);
   const title = area.findIndex((text) => text.trim() === "Keys");
   if (title < 0) faults.push("no row is the title `Keys`");
   const start = area.findIndex((text) => HELP_KEYS[0].test(text));
@@ -314,15 +319,15 @@ function helpFaults(screen, { cols = 80, rows = 24, look = UTF8, count = 3 } = {
  *  drawn for a deployment that was not read, and that the one pane has no line down its middle.
  *  `title` is what the title row matches; `reason`: the most rows the reason takes (the frame
  *  gives a long one up to four), each started at the margin, with nothing under the last. */
-function notReadFaults(screen, { title = /^ oats {2}\S+$/, reason = 1 } = {}) {
+function notReadFaults(screen, { title = /^ \S+$/, reason = 1 } = {}) {
   const why = screen.slice(4, 4 + reason), said = why.findIndex((row) => row === "");
   return [
     ...(title.test(screen[0] ?? "") ? [] : [`the title row counts instances, or names another deployment: ${JSON.stringify(screen[0])}`]),
     ...(screen[1] === "  Instances   Souls   Capabilities" ? [] : [`the views row is ${JSON.stringify(screen[1])}`]),
-    ...(screen[2] === UTF8.rule.repeat(80) && screen[22] === UTF8.rule.repeat(80) ? [] : ["a rule has a joint, or is not there"]),
+    ...(screen[2] === UTF8.rule.repeat(80) && screen[22] !== UTF8.rule.repeat(80) ? [] : ["the rule under the views has a joint or is not there, or a rule is over the footer"]),
     ...(/^ \S/.test(screen[3] ?? "") && /^ \S/.test(screen[4] ?? "") ? [] : [`rows 4 and 5 do not say what state the deployment is in and why: ${JSON.stringify(screen.slice(3, 5))}`]),
     ...(why.slice(0, said < 0 ? reason : said).every((row) => /^ \S/.test(row)) ? [] : [`a row of the reason does not start at the margin: ${JSON.stringify(why)}`]),
-    ...(screen.slice(said < 0 ? 4 + reason : 4 + said, 22).every((row) => row === "") ? [] : ["something is drawn under the reason"]),
+    ...(screen.slice(said < 0 ? 4 + reason : 4 + said, 23).every((row) => row === "") ? [] : ["something is drawn under the reason"]),
     ...(screen[23] === PLAIN_FOOTER ? [] : [`the footer is ${JSON.stringify(screen[23])}`]),
   ];
 }
@@ -334,7 +339,7 @@ function notReadFaults(screen, { title = /^ oats {2}\S+$/, reason = 1 } = {}) {
  *  footer offers it. */
 function switcherFaults(screen, { cols = 80, rows = 24, look = UTF8, body, open = true }) {
   const faults = chromeFaults(screen, { cols, rows, look, split: false, footer: open ? SWITCHER_FOOTER : SWITCHER_FOOTER.replace("   Esc close", ""), title: SWITCHER_TITLE, views: "  Instances   Souls   Capabilities" });
-  const area = screen.slice(3, rows - 2);
+  const area = screen.slice(3, rows - 1);
   body.forEach((want, i) => { if (want instanceof RegExp ? !want.test(area[i] ?? "") : area[i] !== want) faults.push(`row ${i + 4} is ${JSON.stringify(area[i])}, not ${want instanceof RegExp ? want : JSON.stringify(want)}`); });
   if (!area.slice(body.length).every((text) => text === "")) faults.push(`something is drawn under the ${body.length} rows of the switcher`);
   return faults;
@@ -608,7 +613,7 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   const run = await tui(term, {}, { world });
   const two = (left, right) => `${left.padEnd(38)}│${right}`.trimEnd();
   assert.deepEqual(term.screen().map((row) => row.replace(/read \d\d:\d\d:\d\d$/, "read HH:MM:SS")), [
-    " oats  fixture                                                        3 stopped",
+    `${" fixture".padEnd(70)}3 stopped`,
     "  Instances   Souls   Capabilities                                read HH:MM:SS",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
     two("> ○ alpha", "   alpha"),
@@ -617,8 +622,7 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
     two("  ○ gamma", "   harness  claude"),
     two("", "   work     directory"),
     two("", "   home     …/agents/dev/instances/alpha"),
-    ...Array(13).fill(two("", "")),
-    `${"─".repeat(38)}┴${"─".repeat(41)}`,
+    ...Array(14).fill(two("", "")),
     FOOTER,
   ], "the Instances view, row for row");
 
@@ -634,13 +638,13 @@ test("on a terminal of 80x24 `oats tui --dir` shows the fixture's instances, gro
   await run.view("after l on an open row: its first child", { selected: "beta" });
 
   term.press("/");
-  await run.view("after /: the filter field takes the footer", { selected: "beta", footer: /^ \/ +Enter keep {3}Esc clear$/ });
+  await run.view("after /: the filter field takes the footer", { selected: "beta", footer: /^C-\\ commands {3}\/ +Enter keep {3}Esc clear$/ });
   tmuxOn("send-keys", "-l", "-t", term.pane, "gamq");
-  await run.view("after text: q is text in the field, and nothing matches", { gone: ["alpha", "beta", "gamma"], footer: /^ \/gamq +Enter keep {3}Esc clear$/ });
+  await run.view("after text: q is text in the field, and nothing matches", { gone: ["alpha", "beta", "gamma"], footer: /^C-\\ commands {3}\/gamq +Enter keep {3}Esc clear$/ });
   term.press("BSpace");
-  await run.view("after Backspace: the one match, selected", { selected: "gamma", gone: ["alpha", "beta"], footer: /^ \/gam +Enter keep {3}Esc clear$/ });
+  await run.view("after Backspace: the one match, selected", { selected: "gamma", gone: ["alpha", "beta"], footer: /^C-\\ commands {3}\/gam +Enter keep {3}Esc clear$/ });
   term.press("Enter");
-  await run.view("after Enter: the filter is kept and the keys are keys again", { selected: "gamma", gone: ["alpha", "beta"], footer: /^ \/gam +\/ filter {3}Tab detail {3}Esc close {3}\? help {3}q quit$/ });
+  await run.view("after Enter: the filter is kept and the keys are keys again", { selected: "gamma", gone: ["alpha", "beta"], footer: /^C-\\ commands {3}\/gam +\/ filter {3}Tab detail {3}\? help {3}q quit$/ });
   term.press("Escape");
   await run.view("after Esc: the filter is cleared, the selection stays on its instance", { selected: "gamma" });
 
@@ -797,11 +801,10 @@ test("the reason the kernel gives for an instance it could not observe stands in
     const at = (name) => (name === selected ? ">" : " ");
     const list = [`${at("alpha")} ○ alpha`, `${at("beta")}   ○ beta`, "", listed(`${at("gamma")} ? gamma`, "state unknown")];
     return [
-      `${" oats  fixture".padEnd(59)}2 stopped  1 unknown`,
+      `${" fixture".padEnd(59)}2 stopped  1 unknown`,
       `${"  Instances   Souls   Capabilities".padEnd(66)}read HH:MM:SS`,
       `${"─".repeat(38)}┬${"─".repeat(41)}`,
-      ...Array.from({ length: 19 }, (_, i) => two(list[i] ?? "", detail[i] ?? "")),
-      `${"─".repeat(38)}┴${"─".repeat(41)}`,
+      ...Array.from({ length: 20 }, (_, i) => two(list[i] ?? "", detail[i] ?? "")),
       FOOTER,
     ];
   };
@@ -829,7 +832,7 @@ test("the reason the kernel gives for an instance it could not observe stands in
       assert.equal(run.status(), null, "oats tui still runs with that detail drawn");
       // However the reason wraps, the rows under the state are the speaker's words and the
       // kernel's text, and nothing around them.
-      const pane = term.screen().slice(3, 22).map((row) => [...row].slice(listCols(80) + 1).join(""));
+      const pane = term.screen().slice(3, 23).map((row) => [...row].slice(listCols(80) + 1).join(""));
       const state = pane.indexOf("   state    unreachable"), under = [];
       for (let i = state + 1; /^ {12}\S/.test(pane[i] ?? ""); i++) under.push(pane[i].trim());
       assert.equal(under.join(" "), `OATS says: ${NOT_READ}`, `the rows under the state:\n${term.shows()}`);
@@ -1112,7 +1115,7 @@ test("started outside a deployment and with no --dir, it opens on the switcher w
       term.press("Enter");
       // The view of that deployment: its folder's name in the header, and the state and the
       // reason of a deployment that was not read, which are the shared home's words.
-      await untilScreen(term, (screen) => notReadFaults(screen, { title: /^ oats {2}acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
+      await untilScreen(term, (screen) => notReadFaults(screen, { title: /^ acme-ledger$/, reason: 4 }), "the Instances view of the folder's deployment after Enter");
       assert.equal(run.status(), null, "oats tui still runs after Enter");
       term.press("w");
       // It is served now, so it is no folder to open: it is this run's one workspace, which the
@@ -1246,12 +1249,12 @@ test("a bracketed paste outside the filter field is dropped whole: a pasted q do
   assertRunningModes(term, "after the pastes");
 
   term.press("/");
-  await run.view("after /", { footer: /^ \/ +Enter keep {3}Esc clear$/ });
+  await run.view("after /", { footer: /^C-\\ commands {3}\/ +Enter keep {3}Esc clear$/ });
   paste("gam\nq\n");
-  await run.view("after a paste into the field: its first line", { selected: "gamma", gone: ["alpha", "beta"], footer: /^ \/gam +Enter keep {3}Esc clear$/ });
+  await run.view("after a paste into the field: its first line", { selected: "gamma", gone: ["alpha", "beta"], footer: /^C-\\ commands {3}\/gam +Enter keep {3}Esc clear$/ });
   paste("\u202Ema"); // a bidi override: the display filter replaces it
   term.press("Enter"); // read after the paste: the footer shows what the field held then
-  await run.view("after a paste the display filter would change, then Enter: nothing was added", { selected: "gamma", gone: ["alpha", "beta"], footer: /^ \/gam +\/ filter {3}Tab detail {3}Esc close {3}\? help {3}q quit$/ });
+  await run.view("after a paste the display filter would change, then Enter: nothing was added", { selected: "gamma", gone: ["alpha", "beta"], footer: /^C-\\ commands {3}\/gam +\/ filter {3}Tab detail {3}\? help {3}q quit$/ });
   term.press("Escape");
   await run.view("after Esc cleared the filter", { selected: "gamma" });
 
@@ -1289,7 +1292,7 @@ test("in a locale that is not UTF-8 the view's rules and marks are ASCII, and th
   const run = await tui(term, { look: ASCII });
   const screen = term.screen();
   assert.equal(screen[2], `${"-".repeat(38)}+${"-".repeat(41)}`);
-  assert.equal(screen[22], `${"-".repeat(38)}+${"-".repeat(41)}`);
+  assert.equal(screen[22], `${"".padEnd(38)}|`, "no rule over the footer: the line between the panes reaches it");
   assert.equal(screen[3].slice(0, 38).trimEnd(), "> - alpha");
   assert.equal(screen.some((row) => /[^\x20-\x7e]/.test(row)), false, `every character on the screen is printable ASCII:\n${term.shows()}`);
   term.press("h");
