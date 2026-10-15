@@ -92,7 +92,7 @@ test("sessions of another working directory in a shared sessions directory are n
 
 test("an earlier instance's sessions at the same home path are not this home's", (t) => {
   const h = home(t, OKF_SEED);
-  if (!knownBirth(h.dir)) return t.skip("this filesystem keeps no birth time");
+  if (!knownBirth(h.dir)) return t.skip("the home's birth time is unknown on this filesystem");
   session(h, { timestamp: new Date(statSync(h.dir).birthtimeMs - 60000).toISOString() });
   assert.deepEqual(start(h), []);
   session(h);
@@ -101,7 +101,7 @@ test("an earlier instance's sessions at the same home path are not this home's",
 
 test("a file last written before the home was created is skipped unread", (t) => {
   const h = home(t, OKF_SEED);
-  if (!knownBirth(h.dir)) return t.skip("this filesystem keeps no birth time");
+  if (!knownBirth(h.dir)) return t.skip("the home's birth time is unknown on this filesystem");
   const old = new Date(statSync(h.dir).birthtimeMs - 60000);
   utimesSync(session(h), old, old);
   assert.deepEqual(start(h), []);
