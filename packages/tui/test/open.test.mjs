@@ -53,7 +53,7 @@ const rowOf = (state) => roster(state).instances.find((row) => instanceId(row) =
  *  that opens the panes. */
 function above(state, sz = S80) {
   const r = roster(state, AT);
-  const g = layout(r.notice, sz, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: state.outcome });
+  const g = layout(r.notice, sz, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: state.outcome, terminal: state.terminal !== null });
   return draw(state, sz).lines.slice(3, 3 + g.above - (g.above && r.observed ? 1 : 0)).map((line) => line.trim());
 }
 const footerOf = (state, sz = S80) => draw(state, sz).lines[sz.rows - 1];
@@ -282,6 +282,21 @@ test("a row of another machine the kernel does not report addressable: the row's
   const link = reduce(started, { returned: { id: started.terminal.id, status: 255, stderr: "Connection to garnet.example closed by remote host.\n" } }).state;
   assert.deepEqual(above(link, S120), [words(OPEN_WORDS.link("garnet")), '"Connection to garnet.example closed by remote host."']);
   assert.equal(words(OPEN_WORDS.link("garnet")), "The connection to garnet ended.");
+});
+
+test("a row gone from its machine (a saved route to an instance its machine no longer has, as the kernel reports it): Enter opens nothing, and the line says why in the shared words, with the command that removes it from this computer", () => {
+  // The kernel's row for it: no state, its route saved, not addressable, missing remotely.
+  const GONE = "dev-far-gone";
+  const state = on(both([group({ instances: [farRow(FAR_A), farRow(GONE, { running: null, runtimeState: undefined, savedRoute: true, addressable: false, missingRemotely: true })] })]), GONE);
+  const row = rowOf(state), acts = instanceActs(row);
+  assert.deepEqual([acts.blocked.code, acts.blocked.key, acts.blocked.origin], ["unaddressable", "missing", undefined]);
+  assert.equal(openAct(row), null);
+  assert.deepEqual(openDecision(state, row, acts), { open: false, said: { said: [], under: [acts.blocked.sentence] } });
+  assert.equal(acts.blocked.sentence.includes(`oats server forget garnet --instance ${GONE}`), true, "the shared sentence names the command");
+  const { state: refused, effects } = press(state, ["enter"]);
+  assert.deepEqual(effects, [], "nothing is opened, and no machine is asked");
+  assert.equal(above(refused, S120).join(" "), acts.blocked.sentence, "the shared home's own sentence, as it is written, wrapped as a reason is");
+  assert.doesNotMatch(footerOf(state), /Enter/);
 });
 
 // ── The viewer's stderr ───────────────────────────────────────────────────────────────────────────

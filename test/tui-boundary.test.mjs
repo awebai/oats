@@ -84,6 +84,7 @@ const TAKEN = Object.freeze({
   "instance-presentation.mjs": ["runtimeState", "runtimeCounts", "originLead"],
   "waiting-on-you.mjs": ["waitingClaim", "waitingLabel", "waitedText", "waitingClock", "waitingBelowText"],
   "instance-acts.mjs": ["instanceActs", "openAct"],
+  "remote-address.mjs": ["rowReason"],
   "session-attach.mjs": ["sessionAttachArgv", "prepareRemoteTerm", "detachKeySupported", "hostDetachKeySupported", "preflightFailure", "DETACH_KEY_FEATURE"],
   "attach-exit.mjs": ["attachExit"],
   "kernel-lines.mjs": ["kernelLines"],

@@ -1613,7 +1613,7 @@ test("while this machine's deployment is not read, an answer of the roster forge
       assert.deepEqual(drawn(back).slice(0, 3), ["alpha", null, "z-last"], `${what}, ${which}: alpha is still collapsed`);
       const { lines } = framed(back);
       assert.equal(marked(lines).includes("z-last"), true, `${what}, ${which}: z-last is drawn selected`);
-      assert.equal(lines.some((line) => line.includes(marksOf(false).closed) && line.includes("alpha")), true, `${what}, ${which}: alpha is drawn collapsed`);
+      assert.equal(lines.some((line) => line.includes(`${marksOf(false).running} alpha +1 `)), true, `${what}, ${which}: alpha is drawn collapsed, its one child folded away`);
       assert.equal(lines.some((line) => line.includes("alpha-child")), false);
     }
     // The answer that listed a machine: while the local read is unavailable the deployment reports

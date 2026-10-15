@@ -77,19 +77,19 @@ runs.
 ## What it shows
 
 ```
- oats  acme-platform  +1 machine                            4 running  1 needs input  2 stopped
+ oats  acme-platform  +1 machine                 4 running  1 needs input  2 stopped  1 unknown
   Instances   Souls   Capabilities                                                read 14:03:27
 ──────────────────────────────────────────────┬─────────────────────────────────────────────────
  This machine                                 │   api-lead
- ▾ ● backend-lead                 claude      │   soul     tech-lead
-     ● backend-dev-auth           claude     !│   machine  garnet
+  ● backend-lead                              │   soul     tech-lead
+    ● backend-dev-auth                       !│   machine  garnet
                                               │   state    running
-   ○ docs-writer                  stopped     │   harness  claude, claude-opus-5-5 (soul)
+  ○ docs-writer                               │   harness  claude, claude-opus-5-5 (soul)
  garnet                         read 14:03:21 │   work     worktree, agents/api-lead
->▾ ● api-lead                     claude      │   home     …agents/tech-lead/instances/api-lead
-     ● api-dev-export             claude      │
+> ● api-lead +1                               │   home     …agents/tech-lead/instances/api-lead
                                               │
-   ○ reviewer-api                 stopped     │
+  ? old-api-lead         gone from garnet     │
+  ○ reviewer-api                              │
 ──────────────────────────────────────────────┴─────────────────────────────────────────────────
  / filter   Tab detail   r refresh   w workspaces   1-3 views   ? help   q quit
 ```
@@ -113,9 +113,16 @@ runs.
 - **The list** is the roster the Desktop draws: the same groups in the same
   order, from the same code. An instance that others were spawned from
   comes first, and the ones below it are indented under it; instances
-  related to no other follow, after an empty row.
-- **Each row** has a mark for its state, the name, then the harness when it
-  runs, else its state in a word, then `!` when it needs input.
+  related to no other follow, after an empty row. The indent alone says
+  which instance is under which: no mark is drawn for it. A row whose
+  instances are folded away (`h`) says how many after its name: `+1`.
+- **Each row** is the mark of its state and the name, then `!` at the
+  right when it needs input. The harness and the state in words are in
+  the detail. A row has a word, dim, only where its mark cannot say it: the
+  state of a home a spawn or a retire holds (`Retire didn't finish`), or
+  the shared words for why an instance cannot be reached or opened:
+  `gone from garnet`, `garnet not reached`, `not reachable on garnet`,
+  `Herdr no longer supported`, `state unknown`.
 - **The detail** shows the selected instance: its soul, its state, and
   under it the reason when there is one, after the words that say who gave
   it: `OATS says:` for a kernel (this machine's, or the instance's
@@ -143,14 +150,22 @@ deployments on one machine) is one list, grouped as the Desktop groups it:
   with the end of the deployment's path when one machine holds two of the
   view. A heading cannot be selected or folded: the movement keys pass over
   it. A view of one deployment has no heading.
-- **A machine that answered carries the time its rows were read** on its
-  heading, at the right: `read 14:03:21`. A row of another machine shows
-  what its host reported at that time.
+- **A machine's heading is its name.** When its rows were read at another
+  time than the one in the header, that time stands at the right of the
+  heading: `read 14:03:21`. A row of another machine shows what its host
+  reported at that time.
 - **A deployment that is not live carries its state and a short reason**
   on its heading, and no time: `garnet  remembered  Not reached`. The rows
   a machine last reported are kept when it is not reached, and each of them
-  reads `unknown`, with the `?` mark, in the list and in the detail:
-  nothing reads as stopped, or as running, that is only not reached.
+  reads `garnet not reached`, with the `?` mark, in the list and in the
+  detail: nothing reads as stopped, or as running, that is only not
+  reached.
+- **An instance gone from its machine** is one this computer keeps a route
+  to, which its machine no longer has. It reads `gone from garnet`, with
+  the `?` mark, in the list and in the detail. The detail says so in a
+  sentence, with the command that removes it from this computer:
+  `oats server forget <id> --instance <name>`. It cannot be opened,
+  and `Enter` says why in the same sentence.
 - **A deployment that is not live and has no rows** is named after the
   others: the machine, the deployment's path, its state and the short
   reason on one row, and the whole reason on the rows under it.
@@ -186,7 +201,7 @@ in its workspace for the rest of the run, also while it is not reached.
 | `◌` | `~` | stopped, with a shell left in its terminal |
 | `?` | `?` | state unknown: the kernel or the terminal probe could not tell, or the instance's machine was not reached |
 | `◆` | `#` | held by a spawn or a retire that is not finished |
-| `▾` `▸` | `v` `>` | has instances below it: shown, folded away |
+| `+n` | `+n` | after a name: n instances folded away below it |
 | `!` | `!` | needs input |
 | `!N` | `!N` | N instances folded away below it need input |
 | `>` | `>` | the selected row (also drawn in reverse video), and the pane the movement keys act on |
@@ -215,7 +230,7 @@ on whether that read has succeeded before in this run:
 | The read failed | The view shows |
 |---|---|
 | before it ever succeeded in this run | after the list and an empty row, the row `Other machines were not read.` and under it the failure: `Remote roster unavailable: <message>`, or the kernel's own message when it answered with an error |
-| after it succeeded once | each machine keeps its place and its heading, with its state and a short reason in place of the time; its rows are kept and read `unknown` |
+| after it succeeded once | each machine keeps its place and its heading, with its state and a short reason in place of the time; its rows are kept and read `<machine> not reached` |
 
 The next read that succeeds shows the machines as they then report.
 
@@ -227,19 +242,22 @@ fit; the detail shows them whole.
 ```
  oats  acme-platform                                                  2 running
   Instances   Souls   Capabilities                                read 14:03:27
-──────────────────────────────────────┬─────────────────────────────────────────
->  ● backend-lead          claude     │ backend-lead
-   ● docs-writer           claude     │$ make docs
-                                      │Building the reference...
-                                      │
-──────────────────────────────────────┴─────────────────────────────────────────
+──────────────────────────────┬─────────────────────────────────────────────────
+> ● backend-lead              │ backend-lead
+  ● docs-writer               │$ make docs
+                              │Building the reference...
+                              │
+──────────────────────────────┴─────────────────────────────────────────────────
  C-\ back to the list
 ```
 
 - **`Enter` on an instance that runs** opens its terminal on the right of
   the body, where the detail was, with the list on the left. Its top row
   names the agent (and `on <machine>` for one of another machine); under it
-  is the agent's screen, as the agent draws it, in its own colours.
+  is the agent's screen, as the agent draws it, in its own colours. While a
+  terminal is open the list keeps 30 columns at most, also while the
+  detail stands in the terminal's place, and a name longer than its row is
+  cut with `…` (`...` in ASCII).
 - **The terminal has the focus.** What you type, what you paste and every
   key go to the agent exactly as typed, `Ctrl+C`, `Ctrl+Z`, `Esc` and `q`
   among them, but for **the back key** (`Ctrl+\` unless
@@ -278,7 +296,7 @@ fit; the detail shows them whole.
   `Enter` opens it.
 - **`Enter` on an instance that cannot be opened** opens nothing and says
   why: it does not run, whether it runs is not known, or the detail's
-  reason holds it. An agent on another machine is asked first whether it
+  reason holds it (an instance gone from its machine, say). An agent on another machine is asked first whether it
   can be opened (`Esc` gives that up); a machine whose OATS cannot open its
   sessions is said then.
 - **No scrollback but the viewer's own, and no mouse.** The panel shows
@@ -702,8 +720,9 @@ version:
   opened with `oats tui --dir <path>`.
 - **A row of another machine shows what its host reported at the last
   read,** not what is true at this moment. The time of that read is on the
-  machine's heading. A view of one machine has no heading: there the header
-  names the machine (`on garnet`) and carries the time.
+  machine's heading when it is not the header's time. A view of one machine
+  has no heading: there the header names the machine (`on garnet`) and
+  carries the time.
 - Souls and Capabilities, when they come, are this machine's.
 - There is no sorting and no mouse, and a deployment's heading cannot be
   folded. An open terminal has no scrollback but the viewer's own.

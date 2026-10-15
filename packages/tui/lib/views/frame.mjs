@@ -27,6 +27,8 @@ const VIEW_GAP = 1;
 const GAP = 3;
 /** The least width of a terminal beside the list: under it the terminal has the whole body. */
 export const PANEL_MIN = 40;
+/** The most cells the list keeps beside an open terminal: the agent's screen has the rest. */
+export const LIST_BESIDE = 30;
 /** One cell of margin on each side of the header. The footer has none: its keys start at column 0. */
 const MARGIN = 1;
 /** The longest run one lit() holds with room to spare: the display filter bounds a line, and a
@@ -118,12 +120,14 @@ export function partRows(parts, width, max, { ascii = false } = {}) {
  *  the layout first, because the model's window is as tall, and the sentences in its list as wide,
  *  as the list pane this gives. The answer's `note` is the note's rows and `outcome` the line's:
  *  its sentence and each text under it (what the viewer printed, what the kernel said) set as a
- *  reason is, on as many rows as a reason may take. */
-export function layout(notice, size, { observed = true, note = null, ascii = false, outcome = null } = {}) {
+ *  reason is, on as many rows as a reason may take. While a terminal is open (`terminal`) the
+ *  list keeps LIST_BESIDE cells at most, whether the terminal or the detail stands beside it, so
+ *  the agent's screen keeps one size; a name longer than its row is cut there. */
+export function layout(notice, size, { observed = true, note = null, ascii = false, outcome = null, terminal = false } = {}) {
   // The header's two rows and the rule under them, then the body down to the footer's one row.
   const body = { top: 3, rows: Math.max(0, size.rows - 4) };
   const wide = size.cols >= WIDE;
-  const listCols = wide ? clamp(Math.floor(size.cols * 0.48), 36, 60) : size.cols;
+  const listCols = !wide ? size.cols : terminal ? LIST_BESIDE : clamp(Math.floor(size.cols * 0.48), 36, 60);
   const across = Math.max(1, size.cols - 2 * MARGIN);
   const reasonRows = clamp(Math.floor(body.rows / 4), 1, REASON_ROWS);
   const reason = notice ? shownLines(notice.reason, across, reasonRows, { ascii }) : [];
@@ -365,7 +369,7 @@ const placed = (spans, col) => spans.map((span) => ({ ...span, col: span.col + c
 export function frame(m, size) {
   if (tooSmall(size)) return { rows: tooSmallRows(size), page: 1, extent: 0, room: 1 };
   const rows = Array.from({ length: size.rows }, () => []);
-  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome });
+  const g = layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: Boolean(m.terminal) });
   const { cols } = size;
   // The switcher is no view of the three: while it is shown, or is under the help, none is current.
   const listing = m.under === "switcher";
@@ -471,7 +475,7 @@ export function frame(m, size) {
  *  (`whole`); else it stands beside the list, edge to edge, in the detail's place. */
 export function terminalArea(m, size) {
   if (tooSmall(size)) return null;
-  return terminalAt(m, size, layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome }));
+  return terminalAt(m, size, layout(m.notice, size, { observed: m.observed, note: m.note, ascii: m.ascii, outcome: m.outcome, terminal: Boolean(m.terminal) }));
 }
 function terminalAt(m, size, g) {
   const t = m.terminal;

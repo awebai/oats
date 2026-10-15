@@ -2,15 +2,19 @@
 // Every name, word and reason in it is text the TUI did not write and goes through shown(); the
 // marks and the few words around them are the TUI's own. Nothing is told by colour alone: each
 // state has a mark of its own shape, the selected row carries `>` as well as reverse video, and a
-// waiting row carries `!`. In a view of two or more deployments the list also holds a heading per
-// deployment and the sentences the model sets under one: a heading says in words what it is of.
+// waiting row carries `!`. A row is quiet: its mark and its name, and a word only where the mark
+// can't say it. Children stand under their parent by indentation alone; a folded row says how
+// many it folds away, `+n`. In a view of two or more deployments the list also holds a heading
+// per deployment and the sentences the model sets under one: a heading says in words what it is
+// of.
 import { lit, shown, shownEnd, textOf } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { textWidth } from "../term/width.mjs";
 
 /** The marks, in UTF-8 and in ASCII (docs/tui.md lists them; the help view draws them from here).
  *  The state marks are keyed by the word the shared home gives a row's state, with `shell` and
- *  `held` beside them (lib/model.mjs says when). */
+ *  `held` beside them (lib/model.mjs says when). `open` and `closed` are no longer drawn in the
+ *  list, which shows a fold as `+n` (instanceRow): they stay only while the help names them. */
 export const MARKS = Object.freeze({
   utf8: Object.freeze({ running: "●", stopped: "○", shell: "◌", unknown: "?", held: "◆", open: "▾", closed: "▸", selected: ">", waiting: "!" }),
   ascii: Object.freeze({ running: "*", stopped: "-", shell: "~", unknown: "?", held: "#", open: "v", closed: ">", selected: ">", waiting: "!" }),
@@ -21,9 +25,10 @@ export const marksOf = (ascii) => (ascii ? MARKS.ascii : MARKS.utf8);
 const INDENT = 2, LEVELS = 6;
 /** The cells kept at the right edge for the waiting mark: `!`, `!N`, `!NN`, `!99+`. */
 const WAITING = 4;
-/** A row's cells before its name: the selection mark, a gap, the disclosure mark, a gap, the
- *  state mark, a gap. */
-const LEAD = 5;
+/** A row's cells before its name: the selection mark, a gap, the state mark, a gap. */
+const LEAD = 4;
+/** The column of the state mark, before a row's indent. */
+const MARK = 2;
 
 /** A heading starts here: at the margin the header and the footer keep, not at a row's indent. */
 const HEAD = 1;
@@ -32,8 +37,9 @@ const GAP = 2;
 /** The fewest cells a heading's short reason or its path is drawn in when it is cut: under them
  *  it is left out, since a few cells of either say nothing. */
 const PART_MIN = 8;
-/** Where a sentence inside the list starts. The model wraps a sentence for a pane less this
- *  indent and one cell (lib/model.mjs SENTENCE_INDENT, which a view cannot import): the same value. */
+/** Where a sentence inside the list starts, and the line that says why no instance is listed or
+ *  what is cut off. The model wraps a sentence for a pane less this indent and one cell
+ *  (lib/model.mjs SENTENCE_INDENT, which a view cannot import): the same value. */
 const SENTENCE_INDENT = 3;
 
 const PLAIN = style();
@@ -59,20 +65,30 @@ export function measured(value) {
 
 const waitingText = (row) => (row.below > 99 ? "!99+" : row.below > 0 ? `!${row.below}` : row.waiting ? "!" : null);
 
-/** One instance's row in a pane `cols` wide: the marks, the name cut to what is left, the state
- *  word in its column and the waiting mark at the edge. Every span has its width, so no text can
- *  pass its column whatever the terminal thinks a character takes. */
+/** One instance's row in a pane `cols` wide: the state mark, the name cut to what is left, on a
+ *  folded row `+n` after the name, the row's word (when it has one) in the word column, and the
+ *  waiting mark at the edge. A row with no word gives its name the word column's cells too. The
+ *  name is cut before `+n` is: the count stays whole beside what is left of the name. Every span
+ *  has its width, so no text can pass its column whatever the terminal thinks a character takes. */
 function instanceRow(row, cols, wordWidth, marks) {
   const look = (own) => (row.selected ? SELECTED : own);
   const at = Math.min(row.depth, LEVELS - 1) * INDENT;
+  const worded = wordWidth > 0 && row.word !== null && row.word !== undefined;
   const wordCol = Math.max(0, cols - WAITING - 1 - wordWidth);
-  const nameCol = LEAD + at;
+  const nameCol = LEAD + at, nameEnd = worded ? wordCol - 2 : cols - WAITING - 1;
+  const fold = row.folded > 0 ? `+${row.folded}` : null;
   const spans = [];
   if (row.selected) spans.push({ col: 0, width: cols, style: SELECTED }, { col: 0, text: lit(marks.selected), style: SELECTED, width: 1 });
-  if (row.disclosure) spans.push({ col: 1 + at, text: lit(marks[row.disclosure]), style: look(PLAIN), width: 1 });
-  spans.push({ col: 3 + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(LOOK[row.mark] ?? LOOK.unknown), width: 1 });
-  if (wordCol - 2 > nameCol) spans.push({ col: nameCol, text: shown(row.name), style: look(PLAIN), width: wordCol - 2 - nameCol });
-  if (wordWidth > 0) spans.push({ col: wordCol, text: shown(row.word), style: look(DIM), width: wordWidth });
+  spans.push({ col: MARK + at, text: lit(marks[row.mark] ?? marks.unknown), style: look(LOOK[row.mark] ?? LOOK.unknown), width: 1 });
+  if (nameEnd > nameCol) {
+    const name = measured(row.name);
+    // The count and the gap before it, when there is room for them and for a cell of the name.
+    const after = fold && nameEnd - nameCol > fold.length + 1 ? fold.length + 1 : 0;
+    const nameWidth = Math.min(name.width, nameEnd - nameCol - after);
+    spans.push({ col: nameCol, text: name.text, style: look(PLAIN), width: after ? nameWidth : nameEnd - nameCol });
+    if (after) spans.push({ col: nameCol + nameWidth + 1, text: lit(fold), style: look(DIM), width: fold.length });
+  }
+  if (worded) spans.push({ col: wordCol, text: shown(row.word), style: look(DIM), width: wordWidth });
   const waits = waitingText(row);
   if (waits) spans.push({ col: cols - waits.length, text: lit(waits), style: row.selected ? WAITS_SELECTED : WAITS, width: waits.length });
   return spans;
@@ -122,16 +138,16 @@ export function instances(m, size) {
   const rows = Array.from({ length: size.rows }, () => []);
   if (size.rows < 1) return rows;
   const marks = marksOf(m.ascii);
-  const aside = Math.max(0, size.cols - LEAD + 2), sentence = Math.max(0, size.cols - SENTENCE_INDENT - 1);
+  const aside = Math.max(0, size.cols - SENTENCE_INDENT), sentence = Math.max(0, size.cols - SENTENCE_INDENT - 1);
   m.list.forEach((item, i) => {
     if (!item || i >= size.rows) return;
     if (item.heading) rows[i] = headingRow(item.heading, size.cols, m.ascii);
     else if (item.line) rows[i] = [{ col: SENTENCE_INDENT, text: item.line, width: sentence }];
     else if (item.own) rows[i] = [{ col: SENTENCE_INDENT, text: lit(item.own), style: DIM, width: sentence }];
-    else if (item.empty) rows[i] = [{ col: LEAD - 2, text: lit(EMPTY_TEXT[item.empty]), style: DIM, width: aside }];
+    else if (item.empty) rows[i] = [{ col: SENTENCE_INDENT, text: lit(EMPTY_TEXT[item.empty]), style: DIM, width: aside }];
     else rows[i] = instanceRow(item, size.cols, m.wordWidth, marks);
   });
   const note = cutNote(m.above, m.below);
-  if (note) rows[size.rows - 1] = [{ col: LEAD - 2, text: lit(note), style: DIM, width: aside }];
+  if (note) rows[size.rows - 1] = [{ col: SENTENCE_INDENT, text: lit(note), style: DIM, width: aside }];
   return rows;
 }

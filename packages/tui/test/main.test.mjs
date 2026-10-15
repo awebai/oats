@@ -300,7 +300,7 @@ test("a run says it is reading, draws the instances when the reader answers, ope
   assert.equal(r.reader.options.getEntry(DEPLOYMENT).deployment.status, "pending", "and is told the entry the store holds");
   assert.match(textOf(r.stdout.take()), /oats.*Instances   Souls   Capabilities.*Reading the deployment\..*\? help.*q quit/s);
   r.reader.answer(ENTRY);
-  assert.match(textOf(r.stdout.take()), /acme-platform.*1 running.*1 stopped.*acme-expert-tui.*claude.*acme-maintainer-ops.*stopped/s);
+  assert.match(textOf(r.stdout.take()), /acme-platform.*1 running.*1 stopped.*● acme-expert-tui.*○ acme-maintainer-ops/s);
   assert.equal(r.reader.options.getEntry(DEPLOYMENT), ENTRY);
   r.stdin.type("?");
   // Enter has a line per view, and rows of its own under the first: at 24 rows its first page ends before Esc.
@@ -757,17 +757,18 @@ test("the roster of other machines: a read that began changes nothing on the scr
   const held = r.reader.options.getRoster();
   r.reader.roster({ envelope: rosterAnswer([garnet()]) });
   assert.notEqual(r.stdout.take(), "", "the answer is drawn when it arrives");
-  assert.match(screenOf(r), /oats\s+acme-platform\s+\+1 machine\s+2 running\s+2 stopped.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*dev-far.*dev-held/s);
+  assert.match(screenOf(r), /oats\s+acme-platform\s+\+1 machine\s+2 running\s+2 stopped.*This machine.*acme-expert-tui.*acme-maintainer-ops.*garnet\s+read 10:00:45.*● dev-far.*○ dev-he…/s);
   // What the loop holds is what the shared rule made of the answer, and the reader is told it.
   const now = r.reader.options.getRoster(), made = rosterEvent(held, { envelope: rosterAnswer([garnet()]) }, "2026-10-11T10:00:45.000Z").roster;
   assert.deepEqual(now, { remote: made.remote, memory: made.memory, notes: made.notes });
   assert.deepEqual([now.remote.rosterAnswered, now.remote.remoteGroups.map((g) => g.id), [...now.memory.keys()]], [true, ["garnet:t1"], ["garnet:t1"]], "the fixture has the kernel's forms: the machine is remembered");
 
-  // The next read throws: the machine keeps its heading, says it was not reached, and nothing of it reads as stopped.
+  // The next read throws: the machine keeps its heading, says it was not reached, and nothing of it
+  // reads as stopped: each of its rows has the unknown mark and the shared label of its reason.
   r.reader.collecting();
   r.reader.roster({ thrown: "spawn EMFILE" });
   const lost = screenOf(r);
-  assert.match(lost, /\+1 machine.*1 running\s+1 stopped\s+2 unknown.*This machine.*garnet\s+remembered\s+Not reached.*dev-far\s+unknown.*dev-held\s+unknown/s);
+  assert.match(lost, /\+1 machine.*1 running\s+1 stopped\s+2 unknown.*This machine.*garnet\s+remembered\s+Not reached.*\? dev-far\s+garnet not reached.*\? dev-held\s+garnet not reached/s);
   assert.doesNotMatch(lost, /garnet\s+read /, "a heading that is not live carries no time");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
@@ -900,12 +901,12 @@ test("Enter on a running agent of this machine: the kernel's viewer starts in th
   const [asked] = r.panel.opens;
   assert.deepEqual(asked.argv, [process.execPath, KEYED.bin, ...sessionAttachArgv(KEYED, { home: HOME })], "node, the kernel's own binary, the shared home's arguments");
   assert.equal(asked.argv.includes("--detach-key"), false);
-  assert.deepEqual([asked.cols, asked.rows], [41, 18], "80 columns: a list of 38, its bar, and 41 to the right edge; the body's rows but the title");
+  assert.deepEqual([asked.cols, asked.rows], [49, 18], "80 columns: the 30 columns the list keeps beside a terminal, its bar, and 49 to the right edge; the body's rows but the title");
   assert.deepEqual(r.log.filter(([what, which]) => (what === "write" && (which === LEAVE || which === ENTER)) || what === "raw" || (what === "reader" && ["void", "hold"].includes(which))), [], "nothing is lent: no leave, no cooked mode, no read made void");
   assert.equal(r.stdin.paused, false);
   asked.made("@1");
   await settle();
-  r.panel.screen("@1", "$ marker-of-the-agent", { x: 2, y: 0, visible: true }, { cols: 41, rows: 18 });
+  r.panel.screen("@1", "$ marker-of-the-agent", { x: 2, y: 0, visible: true }, { cols: 49, rows: 18 });
   const screen = wholeScreen(r);
   assert.match(screen, /acme-expert-tui[\s\S]*marker-of-the-agent/, "the list and the agent's screen");
   assert.match(screen, /C-\\ back to the list/);
@@ -1010,7 +1011,7 @@ test("the panel is told what the frame gives the terminal: zoom and back resize 
   assert.deepEqual(panelDid(r), [["resize", 80, 18]], "zoomed: the whole body");
   r.log.length = 0;
   r.stdin.type("\x1c");
-  assert.deepEqual(panelDid(r), [["resize", 41, 18]]);
+  assert.deepEqual(panelDid(r), [["resize", 49, 18]]);
   r.log.length = 0;
   r.stdin.type("\t");
   assert.deepEqual(panelDid(r), [["visible", false]], "the detail in the terminal's place: no capture runs");
@@ -1019,7 +1020,7 @@ test("the panel is told what the frame gives the terminal: zoom and back resize 
   assert.deepEqual(panelDid(r), [["visible", true]], "shown again: one fresh capture (the panel's)");
   r.log.length = 0;
   r.stdout.resize(120, 40);
-  assert.deepEqual(panelDid(r), [["resize", 62, 34]]);
+  assert.deepEqual(panelDid(r), [["resize", 89, 34]], "120 columns: the list keeps 30 beside the terminal");
   r.log.length = 0;
   r.stdout.resize(70, 30);
   assert.deepEqual(panelDid(r), [["visible", false]], "under 80 columns, the list alone");
@@ -1038,7 +1039,7 @@ test("the panel is told the size and the sight its new window needs: a resize wh
   r.log.length = 0;
   r.panel.opens[0].made("@1");
   await settle();
-  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 62, 34]], "the size the frame gives now, once the window exists");
+  assert.deepEqual(panelDid(r).filter(([what]) => what === "resize"), [["resize", 89, 34]], "the size the frame gives now, once the window exists");
   // Closed behind the detail: the next open shows its window again.
   r.stdin.type("\x1c");
   r.stdin.type("\t");

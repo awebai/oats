@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { ACTIONS } from "../lib/actions.mjs";
 import {
   DETAIL_WITHHELD, TERMS, UNMATCHED_SECTION, cliRemoteRoster, deploymentState, displayLine, heldHome, instanceActs, livenessAnswers, livenessInput, observeIdentities, observedEntry,
-  originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
+  originLead, panelInstances, primaryDeployment, remoteRosterState, rosterRows, rowReason, runtimeState, waitedText, waitingBelowText, waitingClock, waitingLabel, workspaceChoiceRows, workspaceChoices,
 } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, heldOf, model, panelOf, roster } from "../lib/model.mjs";
@@ -21,7 +21,7 @@ import { createScreen } from "../lib/term/screen.mjs";
 import { PLAIN, isStyle, style } from "../lib/term/style.mjs";
 import { isSafeText, shown, textOf } from "../lib/term/text.mjs";
 import { textWidth } from "../lib/term/width.mjs";
-import { MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
+import { LIST_BESIDE, MIN_SIZE, PANEL_MIN, WIDE, frame } from "../lib/views/frame.mjs";
 import { ACT_RULES, MACHINES, NOT_YET, VIEWS, keysLabel } from "../lib/views/help.mjs";
 import { EMPTY_TEXT, MARKS, cutNote, marksOf } from "../lib/views/instances.mjs";
 import { OPEN_MARK, SWITCHER_TEXT } from "../lib/views/switcher.mjs";
@@ -66,7 +66,7 @@ function rowOf(d, sz, name) {
  *  columns the list has the whole width, and the rows are in the same order at every width. */
 function rowAt(state, sz, name) {
   const reference = draw(state, size(79, sz.rows));
-  const found = bodyRows(sz).filter((r) => cellText(reference, r).includes(` ${name} `));
+  const found = bodyRows(sz).filter((r) => `${cellText(reference, r)} `.includes(` ${name} `));
   assert.equal(found.length, 1, `one list row draws ${name}`);
   return found[0];
 }
@@ -180,15 +180,15 @@ test("the Instances view at 80x24 in UTF-8, cell for cell: the header, the view 
     ` oats  acme-platform  ${COUNTS}`,
     "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
-    " ▾ ● acme-console-e…  claude          │   acme-ledger-developer-note-target",
-    "     ● acme-console…  claude         !│   soul     acme-ledger-developer",
-    "     ● acme-console…  claude         !│   state    running",
-    ` ▾ ● acme-ledger-ex…  claude          │   needs    ${NEEDS}`,
-    ">  ▾ ● acme-ledger-…  claude         !│            the agent: \"Which base",
-    "       ○ peer-revie…  stopped         │            should it use?\"",
+    "  ● acme-console-expert-tui-read      │   acme-ledger-developer-note-target",
+    "    ● acme-console-developer-pan…    !│   soul     acme-ledger-developer",
+    "    ● acme-console-developer-ter…    !│   state    running",
+    `  ● acme-ledger-expert-retire         │   needs    ${NEEDS}`,
+    ">   ● acme-ledger-developer-note…    !│            the agent: \"Which base",
+    "      ○ peer-reviewer-note            │            should it use?\"",
     "                                      │   harness  claude, claude-opus-5-5 (so…",
-    "   ● acme-maintaine…  claude          │   work     worktree, agents/acme-ledge…",
-    "   ? acme-expert-tui  unreachable     │   team     eng",
+    "  ● acme-maintainer-ops               │   work     worktree, agents/acme-ledge…",
+    "  ? acme-expert-t…  state unknown     │   team     eng",
     "                                      │   parent   acme-ledger-expert-retire",
     `                                      │   started  ${STARTED}`,
     "                                      │   home     …edger-developer-note-target",
@@ -204,15 +204,15 @@ test("the Instances view at 80x24 in ASCII, cell for cell: the same screen with 
     ` oats  acme-platform  ${COUNTS}`,
     "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"-".repeat(38)}+${"-".repeat(41)}`,
-    " v * acme-console...  claude          |   acme-ledger-developer-note-target",
-    "     * acme-conso...  claude         !|   soul     acme-ledger-developer",
-    "     * acme-conso...  claude         !|   state    running",
-    ` v * acme-ledger-...  claude          |   needs    ${NEEDS}`,
-    ">  v * acme-ledge...  claude         !|            the agent: \"Which base",
-    "       - peer-rev...  stopped         |            should it use?\"",
+    "  * acme-console-expert-tui-read      |   acme-ledger-developer-note-target",
+    "    * acme-console-developer-p...    !|   soul     acme-ledger-developer",
+    "    * acme-console-developer-t...    !|   state    running",
+    `  * acme-ledger-expert-retire         |   needs    ${NEEDS}`,
+    ">   * acme-ledger-developer-no...    !|            the agent: \"Which base",
+    "      - peer-reviewer-note            |            should it use?\"",
     "                                      |   harness  claude, claude-opus-5-5 (...",
-    "   * acme-maintai...  claude          |   work     worktree, agents/acme-led...",
-    "   ? acme-expert-tui  unreachable     |   team     eng",
+    "  * acme-maintainer-ops               |   work     worktree, agents/acme-led...",
+    "  ? acme-expert...  state unknown     |   team     eng",
     "                                      |   parent   acme-ledger-expert-retire",
     `                                      |   started  ${STARTED}`,
     "                                      |   home     ...ger-developer-note-target",
@@ -264,19 +264,19 @@ test("from 80 columns up the list takes clamp(floor(cols x 0.48), 36, 60) cells,
   }
 });
 
-test("at 120x40 the names have room: the same roster with the longer names whole and the detail's lines uncut", () => {
+test("at 120x40 the names have room: the same roster with the names whole and the detail's lines uncut", () => {
   const d = draw(golden(), S120), row = (list, detail) => `${list.padEnd(57)}│${detail}`;
   assert.equal(d.lines[0], ` oats  acme-platform${" ".repeat(42)}${COUNTS}`);
   assert.equal(d.lines[1], `  Instances   Souls   Capabilities     ${" ".repeat(67)}read 10:00:00`);
-  assert.equal(d.lines[3], row(" ▾ ● acme-console-expert-tui-read        claude", "   acme-ledger-developer-note-target"));
-  assert.equal(d.lines[4], row("     ● acme-console-developer-panel      claude         !", "   soul     acme-ledger-developer"));
-  assert.equal(d.lines[5], row("     ● acme-console-developer-terms      claude         !", "   state    running"));
-  assert.equal(d.lines[6], row(" ▾ ● acme-ledger-expert-retire           claude", `   needs    ${NEEDS}`));
-  assert.equal(d.lines[7], row(">  ▾ ● acme-ledger-developer-note-targ…  claude         !", "            the agent: \"Which base should it use?\""));
-  assert.equal(d.lines[8], row("       ○ peer-reviewer-note              stopped", "   harness  claude, claude-opus-5-5 (soul)"));
+  assert.equal(d.lines[3], row("  ● acme-console-expert-tui-read", "   acme-ledger-developer-note-target"));
+  assert.equal(d.lines[4], row("    ● acme-console-developer-panel                      !", "   soul     acme-ledger-developer"));
+  assert.equal(d.lines[5], row("    ● acme-console-developer-terms                      !", "   state    running"));
+  assert.equal(d.lines[6], row("  ● acme-ledger-expert-retire", `   needs    ${NEEDS}`));
+  assert.equal(d.lines[7], row(">   ● acme-ledger-developer-note-target                 !", "            the agent: \"Which base should it use?\""));
+  assert.equal(d.lines[8], row("      ○ peer-reviewer-note", "   harness  claude, claude-opus-5-5 (soul)"));
   assert.equal(d.lines[9], row("", "   work     worktree, agents/acme-ledger-developer-note-targ…"));
-  assert.equal(d.lines[10], row("   ● acme-maintainer-ops                 claude", "   team     eng"));
-  assert.equal(d.lines[11], row("   ? acme-expert-tui                     unreachable", `   parent   ${KERNEL_EXPERT}`));
+  assert.equal(d.lines[10], row("  ● acme-maintainer-ops", "   team     eng"));
+  assert.equal(d.lines[11], row("  ? acme-expert-tui                    state unknown", `   parent   ${KERNEL_EXPERT}`));
   assert.equal(d.lines[12], row("", `   started  ${STARTED}`));
   assert.equal(d.lines[13], row("", "   home     …oper/instances/acme-ledger-developer-note-target"));
   for (let r = 14; r < 38; r++) assert.equal(d.lines[r], row("", ""), `row ${r}`);
@@ -288,15 +288,15 @@ test("at 79x24 the list takes the whole width: no rule column, no detail beside 
   assert.equal(d.lines[0], ` oats  acme-platfo…  ${COUNTS}`);
   assert.equal(d.lines[2], "─".repeat(79));
   assert.deepEqual(d.lines.slice(3, 12), [
-    " ▾ ● acme-console-expert-tui-read                              claude",
-    "     ● acme-console-developer-panel                            claude         !",
-    "     ● acme-console-developer-terms                            claude         !",
-    " ▾ ● acme-ledger-expert-retire                                 claude",
-    ">  ▾ ● acme-ledger-developer-note-target                       claude         !",
-    "       ○ peer-reviewer-note                                    stopped",
+    "  ● acme-console-expert-tui-read",
+    "    ● acme-console-developer-panel                                            !",
+    "    ● acme-console-developer-terms                                            !",
+    "  ● acme-ledger-expert-retire",
+    ">   ● acme-ledger-developer-note-target                                       !",
+    "      ○ peer-reviewer-note",
     "",
-    "   ● acme-maintainer-ops                                       claude",
-    "   ? acme-expert-tui                                           unreachable",
+    "  ● acme-maintainer-ops",
+    "  ? acme-expert-tui                                          state unknown",
   ]);
   assert.deepEqual(d.lines.slice(12, 22), Array.from({ length: 10 }, () => ""));
   assert.equal(d.lines[22], "─".repeat(79));
@@ -314,15 +314,15 @@ test("at 60x15, the smallest size drawn, the frame keeps its shape and the roste
   assert.equal(d.lines[1], "  Instances   Souls   Capabilities            read 10:00:00");
   assert.equal(d.lines[2], "─".repeat(60));
   assert.deepEqual(d.lines.slice(3, 13), [
-    " ▾ ● acme-console-expert-tui-read           claude",
-    "     ● acme-console-developer-panel         claude         !",
-    "     ● acme-console-developer-terms         claude         !",
-    " ▾ ● acme-ledger-expert-retire              claude",
-    ">  ▾ ● acme-ledger-developer-note-target    claude         !",
-    "       ○ peer-reviewer-note                 stopped",
+    "  ● acme-console-expert-tui-read",
+    "    ● acme-console-developer-panel                         !",
+    "    ● acme-console-developer-terms                         !",
+    "  ● acme-ledger-expert-retire",
+    ">   ● acme-ledger-developer-note-target                    !",
+    "      ○ peer-reviewer-note",
     "",
-    "   ● acme-maintainer-ops                    claude",
-    "   ? acme-expert-tui                        unreachable",
+    "  ● acme-maintainer-ops",
+    "  ? acme-expert-tui                       state unknown",
     "",
   ]);
   assert.equal(d.lines[13], "─".repeat(60));
@@ -722,21 +722,23 @@ test("a list row is indented two cells per level, and a row deeper than the sixt
   }
 });
 
-test("the disclosure mark stands only on a row with instances below it: open on an expanded row, closed on a collapsed one, and none on a leaf or a single instance", () => {
+test("no row carries a disclosure mark: a child stands under its parent by indentation alone, two cells a level, and only a folded row says so, with `+n` after its name for the n instances it folds away", () => {
   for (const ascii of [false, true]) for (const sz of SIZES) {
     const marks = marksOf(ascii), state = fresh({ ascii }), d = draw(state, sz);
-    /** The cell two before the state mark: where a row says whether it has instances below it. */
-    const disclosure = (name, mark) => { const cells = d.cells[rowAt(state, sz, name)]; return cells[cells.findIndex((cell, x) => x > 0 && cell.text === mark) - 2].text; };
-    assert.equal(disclosure(KERNEL_EXPERT, marks.running), marks.open);
-    assert.equal(disclosure(KERNEL_DEV, marks.running), marks.open);
-    assert.equal(disclosure(DESKTOP_EXPERT, marks.running), marks.open);
-    for (const [name, mark] of [[REVIEWER, marks.stopped], [DESKTOP_A, marks.running], [DESKTOP_B, marks.running], [MAINTAINER, marks.running], [EXPERT_TUI, marks.unknown]]) assert.equal(disclosure(name, mark), " ", name);
-    const shut = draw(folded({ ascii }), sz);
-    assert.equal(shut.cells[3][shut.cells[3].findIndex((cell, x) => x > 1 && cell.text === marks.running) - 2].text, marks.closed, "a collapsed row");
+    for (const [name, mark, depth] of [[KERNEL_EXPERT, marks.running, 0], [KERNEL_DEV, marks.running, 1], [REVIEWER, marks.stopped, 2], [DESKTOP_EXPERT, marks.running, 0], [DESKTOP_A, marks.running, 1], [DESKTOP_B, marks.running, 1], [MAINTAINER, marks.running, 0], [EXPERT_TUI, marks.unknown, 0]]) {
+      const cells = d.cells[rowAt(state, sz, name)], at = `${name} at ${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
+      assert.equal(cells[2 + 2 * depth].text, mark, `${at}: the state mark stands at its level`);
+      // Before the mark: the selection mark on the selected row, and nothing else.
+      assert.deepEqual(cells.slice(1, 2 + 2 * depth).map((cell) => cell.text).join("").trim(), "", at);
+      assert.equal(cells[3 + 2 * depth].text, " ", at);
+      assert.equal(cellText(d, rowAt(state, sz, name)).includes("+"), false, `${at}: an open row says nothing of its children`);
+    }
+    // Folded: the root of the one cluster folds its two children away.
+    const shut = draw(folded({ ascii }), sz), row = cellText(shut, 3);
+    assert.equal(row.slice(0, 4), `> ${marks.running} `, "the folded row's own cells are its marks, as any row's");
+    assert.match(row, /^> . \S+ \+2 /, `${sz.cols}: \`+2\` after the name`);
   }
-  const lines = listLines(draw(fresh(), S120), S120);
-  assert.equal(lines.filter((line) => line.includes("▾")).length, 3);
-  assert.equal(lines.filter((line) => line.includes("▸")).length, 0);
+  for (const line of listLines(draw(fresh(), S120), S120)) assert.equal(/[▾▸]/.test(line), false, line);
 });
 
 /** Six instances, one per state a row can be in, and what each row is to show. */
@@ -762,34 +764,46 @@ test("each state has a mark of its own shape, in UTF-8 and in ASCII: running, st
   }
 });
 
-test("the word at a row's right edge is the harness of a running instance, the kernel's own name for the state otherwise, and the held home's state for a home the kernel holds", () => {
+test("a row has a word only where its mark can't say it: none for running, stopped or a shell left, the held home's state for a home the kernel holds, and the shared label of the row's reason, dim, in one column", () => {
   const rows = STATES().map(([, row]) => row), state = stateOf(observed(rows)), sz = S120, d = draw(state, sz);
   const held = (name) => heldHome(panelRow(state, name)).state;
-  const expected = { "a-running": "claude", "b-stopped": "stopped", "c-shell": "shell", "d-unreachable": "unreachable", "e-unsupported": "unsupported", "f-spawning": held("f-spawning"), "g-half-spawned": held("g-half-spawned"), "h-half-retired": held("h-half-retired") };
-  const widest = Math.max(...Object.values(expected).map((word) => textWidth(word)));
-  assert.equal(widest, 20, "a held home's state is the long one, and it is as wide as the column may be");
+  const reason = (name) => rowReason(panelRow(state, name)).label;
+  const expected = { "d-unreachable": reason("d-unreachable"), "e-unsupported": `${reason("e-unsupported").slice(0, 19)}…`, "f-spawning": held("f-spawning"), "g-half-spawned": held("g-half-spawned"), "h-half-retired": held("h-half-retired") };
+  assert.equal(textWidth(reason("e-unsupported")) > 20, true, "the shared label of a removed session backend is wider than the column");
   const list = listWidth(sz.cols);
+  for (const name of ["a-running", "b-stopped", "c-shell"]) assert.equal(cellText(d, rowOf(d, sz, name), 0, list).endsWith(name), true, `${name}: its name and nothing after it`);
   const starts = Object.entries(expected).map(([name, word]) => { const line = cellText(d, rowOf(d, sz, name), 0, list); assert.equal(line.endsWith(word), true, `${name} shows ${word}`); return line.length - word.length; });
   assert.equal(new Set(starts).size, 1, "every word starts at the same column");
-  assert.equal(starts[0] + widest <= list, true, "and the widest ends inside the pane");
-  assert.equal(d.cells[rowOf(d, sz, "a-running")][starts[0] - 1].text, " ", "a gap stands before the column");
+  assert.equal(starts[0] + 20 <= list, true, "and the widest ends inside the pane");
+  for (const name of Object.keys(expected)) {
+    const cells = d.cells[rowOf(d, sz, name)];
+    assert.equal(cells[starts[0] - 1].text, " ", "a gap stands before the column");
+    assert.equal(cells.slice(starts[0], starts[0] + 3).every((cell) => cell.style.dim), true, `${name}: the word is dim`);
+  }
 });
 
-test("the word column is as wide as the widest word among all the rows, and never wider than 20 cells: a longer word is cut with the mark", () => {
-  for (const [words, width] of [[["claude"], 6], [["claude", "pi"], 6], [["claude", "a-harness-of-16ch"], 17], [["claude", "h".repeat(30)], 20]]) {
-    const rows = words.map((harness, i) => instanceRow("soul", `row-${i}`, { harness }));
-    for (const sz of [S80, S120, S79]) {
-      const d = draw(stateOf(observed(rows)), sz), list = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols;
-      const first = cellText(d, rowOf(d, sz, "row-0"), 0, list), column = first.length - "claude".length;
-      words.forEach((harness, i) => {
-        const drawn = d.cells[rowOf(d, sz, `row-${i}`)].slice(column, list).map((cell) => cell.text).join("").trimEnd();
-        assert.equal(drawn, harness.length > 20 ? `${harness.slice(0, 19)}…` : harness, `${harness} at ${sz.cols}`);
-        assert.equal(d.cells[rowOf(d, sz, `row-${i}`)][column - 1].text, " ", "the name never runs into the word");
-      });
-      assert.equal(list - column >= width, true, `${sz.cols}: the column holds ${width} cells`);
-      // The column is the same whichever row is the widest: one row narrower would start further right.
-      const narrow = draw(stateOf(observed([instanceRow("soul", "row-0")])), sz), alone = cellText(narrow, rowOf(narrow, sz, "row-0"), 0, list);
-      assert.equal(alone.length - "claude".length - column, width - 6, `${sz.cols}: ${width} cells against 6`);
+test("the word column is as wide as the widest word among all the rows, and never wider than 20 cells: a longer word is cut with the mark; a row without a word gives its name the column's cells, and a list with no word has no column", () => {
+  const LONG = "n".repeat(130);
+  const HELD = { running: false, runtimeState: "stopped", spawnInProgress: true };
+  const HERDR = { running: false, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: the session backend is gone" };
+  for (const sz of [S80, S120, S79]) {
+    const list = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols;
+    // No word anywhere: a long name runs to the cells kept for the waiting mark and a gap, and is
+    // cut there; from its mark on, the row is the same in a list that has a word column.
+    const cut = `● ${"n".repeat(list - 10)}…`;
+    const quiet = draw(stateOf(observed([instanceRow("soul", LONG)])), sz);
+    assert.equal(cellText(quiet, 3, 2, list), cut, `${sz.cols}: the name has every cell but the waiting mark's and a gap`);
+    for (const extra of [HELD, HERDR]) {
+      const state = stateOf(observed([instanceRow("soul", "row-0"), instanceRow("soul", LONG), instanceRow("soul", "worded", extra)]));
+      const d = draw(state, sz), row = panelRow(state, "worded");
+      const full = heldHome(row)?.state ?? rowReason(row).label;
+      const shown = textWidth(full) > 20 ? `${full.slice(0, 19)}…` : full;
+      const worded = cellText(d, rowOf(d, sz, "worded"), 0, list), column = worded.length - shown.length;
+      assert.equal(worded.endsWith(shown), true, `${full} at ${sz.cols}`);
+      assert.equal(list - 5 - column, Math.min(20, textWidth(full)), `${sz.cols}: the column is as wide as its widest word, at most 20`);
+      assert.equal(d.cells[rowOf(d, sz, "worded")][column - 1].text, " ", "the name never runs into the word");
+      // The long name of a row without a word is not cut by the column.
+      assert.equal(cellText(d, rowOf(d, sz, LONG.slice(0, 20)), 2, list), cut, `${sz.cols}: a row without a word keeps the column's cells`);
     }
   }
 });
@@ -812,24 +826,27 @@ test("the selected row is drawn in reverse video over the whole width of its pan
 test("a waiting row carries `!` at the right edge of its pane, and an expanded row carries nothing for the rows that wait below it", () => {
   for (const ascii of [false, true]) for (const sz of SIZES) {
     const pane = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols, state = fresh({ ascii }), d = draw(state, sz);
-    /** What stands after the word of a row, up to the pane's edge. */
-    const after = (name, word) => { const line = cellText(d, rowAt(state, sz, name), 0, pane); return line.slice(line.lastIndexOf(word) + word.length).trim(); };
+    /** The cells of a row from its last name or word to the pane's edge, and its last cell. */
+    const edge = (name) => { const cells = d.cells[rowAt(state, sz, name)].slice(0, pane); return [cells.slice(pane - 2).map((cell) => cell.text).join(""), cells.filter((cell) => cell.text === "!").length]; };
     for (const name of [KERNEL_DEV, DESKTOP_A, DESKTOP_B]) {
-      assert.equal(after(name, "claude"), "!", `${name} at ${sz.cols}x${sz.rows}`);
-      assert.equal(d.cells[rowAt(state, sz, name)][pane - 1].text, "!", `${name}: the mark is inside the pane, at its edge`);
+      assert.deepEqual(edge(name), [" !", 1], `${name} at ${sz.cols}x${sz.rows}: the mark is inside the pane, at its edge, after a gap`);
     }
-    for (const [name, word] of [[KERNEL_EXPERT, "claude"], [DESKTOP_EXPERT, "claude"], [MAINTAINER, "claude"], [REVIEWER, "stopped"], [EXPERT_TUI, "unreachable"]]) assert.equal(after(name, word), "", `${name} at ${sz.cols}x${sz.rows}`);
+    for (const name of [KERNEL_EXPERT, DESKTOP_EXPERT, MAINTAINER, REVIEWER, EXPERT_TUI]) assert.deepEqual(edge(name), ["  ", 0], `${name} at ${sz.cols}x${sz.rows}`);
   }
 });
 
-test("a collapsed row carries `!N` for the N rows waiting below it, the closed disclosure mark, and the rows below it are not drawn: one cluster and no single instance, cell for cell", () => {
+test("a collapsed row carries `+n` after its name for the n instances it folds away and `!N` for the N rows waiting below it, and the rows below it are not drawn: one cluster and no single instance, cell for cell", () => {
   const header = (cols) => ` oats  acme-platform${" ".repeat(cols - 44)}3 running  2 need input`;
+  const shut = model(folded(), { page: 19, now: NOW, at: AT }).list.find((row) => row?.selected);
+  assert.deepEqual([shut.name, shut.folded, shut.below], [DESKTOP_EXPERT, 2, 2], "two folded away, both waiting");
   const d80 = draw(folded(), S80), a80 = draw(folded({ ascii: true }), S80), d60 = draw(folded(), S60), d120 = draw(folded(), S120);
   assert.equal(d80.lines[0], header(80));
-  assert.equal(cellText(d80, 3, 0, 39), ">▸ ● acme-console-expert…  claude   !2│");
-  assert.equal(cellText(a80, 3, 0, 39), ">> * acme-console-expe...  claude   !2|");
-  assert.equal(d60.lines[3], ">▸ ● acme-console-expert-tui-read                claude   !2");
-  assert.equal(cellText(d120, 3, 0, 58), `>▸ ● ${DESKTOP_EXPERT.padEnd(41)}claude   !2│`);
+  // The name is cut before the count is: `+2` stays whole after what is left of it.
+  assert.equal(cellText(d80, 3, 0, 39), "> ● acme-console-expert-tui-r… +2   !2│");
+  assert.equal(cellText(a80, 3, 0, 39), "> * acme-console-expert-tui... +2   !2|");
+  assert.equal(d60.lines[3], `${`> ● ${DESKTOP_EXPERT} +2`.padEnd(58)}!2`);
+  assert.equal(cellText(d120, 3, 0, 58), `${`> ● ${DESKTOP_EXPERT} +2`.padEnd(55)}!2│`);
+  assert.deepEqual(d80.cells[3].slice(31, 33).map((cell) => [cell.text, cell.style.reverse]), [["+", true], ["2", true]], "the count stands in the selection's bar");
   for (const [d, sz] of [[d80, S80], [a80, S80], [d60, S60], [d120, S120]]) {
     assert.deepEqual(listLines(d, sz).slice(1).filter((line) => line.trim()), [], "the rows below a collapsed row are not drawn, and no other row is");
     const pane = sz.cols >= WIDE ? listWidth(sz.cols) : sz.cols;
@@ -839,13 +856,13 @@ test("a collapsed row carries `!N` for the N rows waiting below it, the closed d
   // Expanded again, the three rows are back and the roll-up is gone.
   const open = press(folded(), ["l"]).state, lines = listLines(draw(open, S79), S79).filter((line) => line.trim());
   assert.deepEqual(lines, [
-    `>▾ ● ${DESKTOP_EXPERT.padEnd(63)}claude`,
-    `     ● ${DESKTOP_A.padEnd(61)}claude    !`,
-    `     ● ${DESKTOP_B.padEnd(61)}claude    !`,
+    `> ● ${DESKTOP_EXPERT}`,
+    `${`    ● ${DESKTOP_A}`.padEnd(78)}!`,
+    `${`    ● ${DESKTOP_B}`.padEnd(78)}!`,
   ]);
 });
 
-test("collapsing a root in a roster of several clusters hides the rows below it, keeps the selection on it and gives it the roll-up and the closed mark, wherever the shared grouping then puts the row", () => {
+test("collapsing a root in a roster of several clusters hides the rows below it, keeps the selection on it and gives it the roll-up and the count of what it folds away, wherever the shared grouping then puts the row", () => {
   const before = selecting(fresh(), DESKTOP_EXPERT), state = press(before, ["h"]).state;
   assert.equal(state.selected, before.selected, "the selection is the same instance");
   for (const sz of [S79, S60]) {
@@ -854,8 +871,8 @@ test("collapsing a root in a roster of several clusters hides the rows below it,
     for (const name of [KERNEL_EXPERT, KERNEL_DEV, REVIEWER, MAINTAINER, EXPERT_TUI]) assert.equal(drawn(name).length, 1, `${name} is still drawn`);
     const root = drawn(DESKTOP_EXPERT);
     assert.equal(root.length, 1);
-    assert.equal(root[0].startsWith(">▸ ● "), true, "selected, closed");
-    assert.equal(root[0].endsWith("claude        !2"), true, "two rows wait below it");
+    assert.equal(root[0].startsWith(`> ● ${DESKTOP_EXPERT} +2 `), true, "selected, two instances folded away");
+    assert.equal(root[0].endsWith("  !2"), true, "two rows wait below it");
     assert.equal(lines.filter((line) => line.startsWith(">")).length, 1);
   }
   // A filter draws every match whatever is collapsed, and leaves the collapse as it is.
@@ -864,7 +881,8 @@ test("collapsing a root in a roster of several clusters hides the rows below it,
   assert.equal(matched.some((line) => line.includes(KERNEL_EXPERT) || line.includes(MAINTAINER) || line.includes(DESKTOP_B)), false, "and what does not match is not");
   const cleared = listLines(draw(press(filtered, ["escape"]).state, S79), S79);
   assert.equal(cleared.some((line) => line.includes(DESKTOP_A)), false, "with the filter cleared the row is collapsed as before");
-  assert.equal(cleared.some((line) => line.includes(`▸ ● ${DESKTOP_EXPERT}`)), true);
+  assert.equal(cleared.some((line) => line.includes(`● ${DESKTOP_EXPERT} +2`)), true);
+  assert.equal(matched.some((line) => line.includes("+2")), false, "a filter folds nothing away");
 });
 
 test("a waiting claim on a stale deployment is not drawn: no mark on the row, no count in the header, no `needs` line", () => {
@@ -902,7 +920,9 @@ const SLOW = "10 000 characters";
 const sizesFor = (kind, sizes) => (kind === SLOW ? sizes.slice(0, 1) : sizes);
 
 test("a row whose name is wide graphemes, emoji sequences, combining marks or 10 000 characters never passes its pane: the panes' rule and the detail's cells are untouched", () => {
-  const rows = (second) => [instanceRow("soul", "aaa-anchor"), instanceRow("soul", second, { home: `${HOME}/zzz` })];
+  // The row holds a word (a held home's state), so its name is cut before the word column.
+  const rows = (second) => [instanceRow("soul", "aaa-anchor"), instanceRow("soul", second, { home: `${HOME}/zzz`, retirePending: true })];
+  const WORD = heldHome({ retirePending: true }).state;
   for (const ascii of [false, true]) {
     /** The anchor selected: its detail is what stands beside the list in both frames. */
     const anchored = (state) => (String(state.selected).endsWith("/aaa-anchor") ? state : selecting(state, "aaa-anchor"));
@@ -918,9 +938,10 @@ test("a row whose name is wide graphemes, emoji sequences, combining marks or 10
         // The row is drawn, cut, and ends in the cut mark before its word.
         const r = bodyRows(sz).find((row) => subject.lines[row] !== control.lines[row]);
         assert.notEqual(r, undefined, `${at}: the row is drawn`);
-        const cells = subject.cells[r], word = cellIndexOf(cells.slice(0, list), "claude");
+        const cells = subject.cells[r], word = cellIndexOf(cells.slice(0, list), WORD);
         assert.equal(word > 0, true, `${at}: the word is still drawn in its column`);
-        assert.equal(word, cellIndexOf(control.cells[r].slice(0, list), "claude"), `${at}: and the column did not move`);
+        const c = bodyRows(sz).find((row) => control.lines[row].includes("zzz"));
+        assert.equal(word, cellIndexOf(control.cells[c].slice(0, list), WORD), `${at}: and the column did not move`);
         assert.equal(cells[word - 1].text, " ", `${at}: the name stops before the word`);
         const drawn = cells.slice(0, word).filter((cell) => cell.text !== " " && cell.text !== "");
         assert.equal(drawn.slice(-g.cut.length).map((cell) => cell.text).join(""), g.cut, `${at}: the cut name ends in the cut mark`);
@@ -1005,12 +1026,15 @@ test("a roster of 200 scrolled with the keys: the selected row is always on the 
 });
 
 test("the word column does not move while the list scrolls: it is as wide as the widest word of the whole roster, not of the rows on the screen", () => {
-  const rows = [...Array.from({ length: 199 }, (_, i) => instanceRow("soul", `inst-${String(i).padStart(3, "0")}`)), instanceRow("soul", "inst-199", { running: false, runtimeState: "unsupported" })];
+  // The widest word, a held home's state, is on the first row; the last row's word is narrower.
+  const rows = [instanceRow("soul", "inst-000", { retirePending: true }), ...Array.from({ length: 198 }, (_, i) => instanceRow("soul", `inst-${String(i + 1).padStart(3, "0")}`)), instanceRow("soul", "inst-199", { running: null, runtimeState: "unreachable" })];
   const top = stateOf(observed(rows)), end = press(top, ["G"]).state;
+  const held = heldHome(rows[0]).state, unknown = rowReason(panelRow(top, "inst-199")).label;
+  assert.equal(textWidth(held) > textWidth(unknown), true);
   const column = (d, word) => cellText(d, bodyRows(S80).find((r) => cellText(d, r, 0, 38).endsWith(word)), 0, 38).length - word.length;
   assert.equal(draw(end).lines.some((line) => line.includes("inst-199")), true);
-  assert.equal(column(draw(top), "claude"), column(draw(end), "unsupported"));
-  assert.equal(column(draw(top), "claude"), column(draw(end), "claude"));
+  assert.equal(draw(end).lines.some((line) => line.includes("inst-000")), false, "the widest word is not on the screen");
+  assert.equal(column(draw(top), held), column(draw(end), unknown));
 });
 
 // ── The detail ───────────────────────────────────────────────────────────────────────────────────
@@ -1065,7 +1089,7 @@ test("the detail's parent line holds the parent, and `sibling of <name>` for an 
   assert.equal(both.startsWith("root-a") && both.endsWith("sibling of child"), true);
 });
 
-test("the detail's state line holds the kernel's own name for the state, and the kernel's runtimeError on the rows under it, after `OATS says:`", () => {
+test("the detail's state line holds the kernel's own name for the state, or the shared label of the row's reason when the shared home gives one, and the kernel's runtimeError on the rows under it, after `OATS says:`", () => {
   // The roster as a read cycle makes it: the kernel answered `running: null` for this row, with
   // its text, so the collector did not probe it and the text is the kernel's.
   const state = selecting(stateOf(readCycle(ROSTER(), { withheld: WITHHELD })), EXPERT_TUI);
@@ -1081,7 +1105,7 @@ test("the detail's state line holds the kernel's own name for the state, and the
   assert.deepEqual(fact(detailOf(shell), "state").rows, ["shell"]);
   // A session backend OATS no longer has, reported by a kernel that gives its own reason.
   const unsupported = stateOf(readCycle([instanceRow("soul", "old", { running: false, runtimeState: "unsupported", runtimeError: "E_HERDR_REMOVED: gone" })]));
-  assert.deepEqual(fact(detailOf(unsupported), "state").rows, ["unsupported", "OATS says: E_HERDR_REMOVED: gone"]);
+  assert.deepEqual(fact(detailOf(unsupported), "state").rows, [rowReason(panelRow(unsupported, "old")).label, "OATS says: E_HERDR_REMOVED: gone"]);
 });
 
 test("the detail's held line is the sentence the shared home gives for a home the kernel holds, wrapped under its label", () => {
@@ -1579,6 +1603,12 @@ function choosing(options) {
 /** A deployment of the open view, as the shared home lists it, and the shared words for it. */
 const deploymentOf = (state, id = GARNET) => panelOf(state, AT).deployments.find((d) => d.id === id);
 const UNKNOWN = runtimeState({ running: null });
+/** The shared label of the reached machine's row that can't be addressed, and of a row of a
+ *  machine that was not reached: the word each of those rows has in the list. */
+const AWAY = () => rowReason(panelRow(reached(), FAR_B)).label;
+const NOT_REACHED = () => rowReason(panelRow(lost(), FAR_A)).label;
+/** `text` cut to `cells` with the cut mark, as the screen cuts a span. */
+const cutTo = (text, cells, ascii = false) => (text.length <= cells ? text : `${text.slice(0, cells - glyphsOf(ascii).cut.length)}${glyphsOf(ascii).cut}`);
 /** The switcher's rows as the shared home words them. */
 const choicesOf = (state) => workspaceChoiceRows(workspaceChoices(heldOf(state, AT), TERMS));
 /** A row of the screen with each text at its column: a frame pins the columns, and takes a word of
@@ -1618,13 +1648,13 @@ test("this machine and a reached machine in one view at 80x24 in UTF-8, cell for
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
     ...beside([
       " This machine",
-      ">▾ ● acme-ledger-expert…  claude",
-      "     ● acme-ledger-deve…  claude",
+      "> ● acme-ledger-expert-retire",
+      "    ● acme-ledger-developer-note…",
       "",
-      "   ○ acme-maintainer-ops  stopped",
+      "  ○ acme-maintainer-ops",
       " garnet                 read 10:00:10",
-      "   ● acme-ledger-far-a    claude",
-      "   ○ acme-ledger-far-b    stopped",
+      "  ● acme-ledger-far-a",
+      `  ○ acme-l…  ${cutTo(AWAY(), 20)}`,
     ], [
       "   acme-ledger-expert-retire",
       "   soul     acme-ledger-expert",
@@ -1657,13 +1687,13 @@ test("this machine and a reached machine at 80x24 in ASCII, cell for cell: the s
     `${"-".repeat(38)}+${"-".repeat(41)}`,
     ...beside([
       " This machine",
-      ">v * acme-ledger-expe...  claude",
-      "     * acme-ledger-de...  claude",
+      "> * acme-ledger-expert-retire",
+      "    * acme-ledger-developer-no...",
       "",
-      "   - acme-maintainer-ops  stopped",
+      "  - acme-maintainer-ops",
       " garnet                 read 10:00:10",
-      "   * acme-ledger-far-a    claude",
-      "   - acme-ledger-far-b    stopped",
+      "  * acme-ledger-far-a",
+      `  - acme...  ${cutTo(AWAY(), 20, true)}`,
     ], [
       "   acme-ledger-expert-retire",
       "   soul     acme-ledger-expert",
@@ -1680,7 +1710,7 @@ test("this machine and a reached machine at 80x24 in ASCII, cell for cell: the s
   ]);
 });
 
-test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII, cell for cell: its heading holds the shared state and short reason and no time, its rows carry the unknown mark and the shared word for unknown, and the detail of one says why under `machine`", () => {
+test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII, cell for cell: its heading holds the shared state and short reason and no time, its rows carry the unknown mark and the shared label `<machine> not reached`, and the detail of one says why under `machine`", () => {
   for (const ascii of [false, true]) {
     const state = press(lost({ ascii }), ["G"]).state, garnet = deploymentOf(state), said = deploymentState(garnet), g = glyphsOf(ascii), marks = marksOf(ascii);
     assert.equal(said.key, "remembered", "the machine answered earlier in the run, and is kept in its workspace");
@@ -1691,19 +1721,19 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
       `${g.rule.repeat(38)}${g.down}${g.rule.repeat(41)}`,
       ...beside([
         " This machine",
-        ` ${marks.open} ${marks.running} ${cut(KERNEL_EXPERT, 19)}  claude`,
-        `     ${marks.running} ${cut(KERNEL_DEV, 17)}  claude`,
+        `  ${marks.running} ${KERNEL_EXPERT}`,
+        `    ${marks.running} ${cut(KERNEL_DEV, 27)}`,
         "",
-        `   ${marks.stopped} acme-maintainer-ops  stopped`,
+        `  ${marks.stopped} acme-maintainer-ops`,
         ` garnet  ${said.text}  ${garnet.short}`,
-        `   ${marks.unknown} acme-ledger-far-a    ${UNKNOWN}`,
-        `>  ${marks.unknown} acme-ledger-far-b    ${UNKNOWN}`,
+        `  ${marks.unknown} ${cut(FAR_A, 9)}  ${NOT_REACHED()}`,
+        `> ${marks.unknown} ${cut(FAR_B, 9)}  ${NOT_REACHED()}`,
       ], [
         "   acme-ledger-far-b",
         "   soul     acme-ledger-developer",
         "   machine  garnet",
         ...wrap(textOf(shown(said.detail)), 28).map((row) => `            ${row}`),
-        `   state    ${UNKNOWN}`,
+        `   state    ${NOT_REACHED()}`,
         "            oats tui's read of other",
         "            machines says: garnet did",
         "            not answer",
@@ -1718,9 +1748,10 @@ test("the same view with the machine not reached, at 80x24 in UTF-8 and in ASCII
   }
   // Nothing of the machine reads as stopped, or as running, that is only not reached.
   const d = draw(lost(), S120);
+  assert.equal(NOT_REACHED().includes("garnet"), true, "the label names the machine");
   for (const name of [FAR_A, FAR_B]) {
     const line = cellText(d, rowOf(d, S120, name), 0, 57);
-    assert.equal(line.endsWith(UNKNOWN) && line.trim().startsWith(MARKS.utf8.unknown), true, `${name}: ${line}`);
+    assert.equal(line.endsWith(NOT_REACHED()) && line.trim().startsWith(MARKS.utf8.unknown), true, `${name}: ${line}`);
   }
   assert.equal(listLines(d, S120).some((line) => line.includes("read 10:00")), false, "a heading that is not live carries no time");
   // The state is plain and the short reason dim: neither is told by the attribute alone.
@@ -1735,17 +1766,18 @@ test("the view of two deployments at 120x40, 79x24 and 60x15: the same headings 
     const d = draw(reached({ ascii }), sz), pane = paneOf(sz), marks = marksOf(ascii), g = glyphsOf(ascii), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     fits(d, sz, at);
     // The word column ends five cells before the pane's edge (four for a waiting mark, one gap) and
-    // is as wide as the widest word, `stopped`; a time ends one cell before the edge.
-    const word = pane - 5 - "stopped".length, time = pane - 1 - "read 10:00:10".length;
+    // is as wide as the widest word, the one row's that can't be addressed, cut to 20 cells; a time
+    // ends one cell before the edge. The rows the marks say all of have no word.
+    const word = pane - 5 - Math.min(20, AWAY().length), time = pane - 1 - "read 10:00:10".length;
     assert.deepEqual(listLines(d, sz).slice(0, 9), [
       " This machine",
-      placed([0, `>${marks.open} ${marks.running} ${KERNEL_EXPERT}`], [word, "claude"]),
-      placed([5, `${marks.running} ${KERNEL_DEV}`], [word, "claude"]),
+      placed([0, `> ${marks.running} ${KERNEL_EXPERT}`]),
+      placed([4, `${marks.running} ${KERNEL_DEV}`]),
       "",
-      placed([3, `${marks.stopped} ${MAINTAINER}`], [word, "stopped"]),
+      placed([2, `${marks.stopped} ${MAINTAINER}`]),
       placed([1, "garnet"], [time, "read 10:00:10"]),
-      placed([3, `${marks.running} ${FAR_A}`], [word, "claude"]),
-      placed([3, `${marks.stopped} ${FAR_B}`], [word, "stopped"]),
+      placed([2, `${marks.running} ${FAR_A}`]),
+      placed([2, `${marks.stopped} ${FAR_B}`], [word, cutTo(AWAY(), 20, ascii)]),
       "",
     ], at);
     assert.equal(cellText(d, 0).startsWith(" oats  acme-platform  +1 machine  "), true, `${at}: ${cellText(d, 0)}`);
@@ -1823,17 +1855,19 @@ test("a deployment's note stands under its heading in a view of several deployme
   assert.equal(state.open, GARNET, "the view of the other workspace is open, on its first machine");
   const note = deploymentOf(state).note;
   assert.equal(typeof note === "string" && note.length > 0, true, "the shared home gives the moved machine a note");
-  const line = textOf(shown(note));
+  const line = textOf(shown(note)), away = rowReason(panelRow(state, FAR_B)).label;
   for (const [sz, room] of [[S80, 34], [S60, 56], [S120, 53]]) {
-    const d = draw(state, sz), pane = paneOf(sz), word = pane - 5 - "stopped".length, time = pane - 14, at = `${sz.cols}x${sz.rows}`;
+    const d = draw(state, sz), pane = paneOf(sz), word = pane - 5 - Math.min(20, away.length), at = `${sz.cols}x${sz.rows}`;
     const rows = wrap(line, room);
+    // Both machines were read at the time the header shows: each heading is its name alone.
     assert.deepEqual(listLines(d, sz).slice(0, rows.length + 5), [
-      placed([1, "garnet"], [time, "read 10:00:25"]),
+      " garnet",
       ...rows.map((row) => `   ${row}`),
-      placed([0, `>  ● ${FAR_A}`], [word, "claude"]),
-      placed([3, `○ ${FAR_B}`], [word, "stopped"]),
-      placed([1, "quartz"], [time, "read 10:00:25"]),
-      placed([3, `● ${FAR_Q}`], [word, "claude"]),
+      placed([0, `> ● ${FAR_A}`]),
+      // The row with a word has its name cut before the word's column.
+      placed([2, `○ ${cutTo(FAR_B, word - 2 - 4)}`], [word, cutTo(away, 20)]),
+      " quartz",
+      placed([2, `● ${FAR_Q}`]),
     ], at);
     if (sz === S80) assert.equal(rows.length, 2, "at 80 columns the note wraps");
     assert.equal(cellText(d, 0).startsWith(" oats  billing  2 machines  "), true, `${at}: ${cellText(d, 0)}`);
@@ -1855,7 +1889,7 @@ test("a deployment's note stands above the list in a view of one deployment, aft
     assert.equal(d.lines[2], g.rule.repeat(sz.cols), `${at}: the rule under the header has no joint: the panes open under the note`);
     assert.equal(d.lines[3], ` ${note}`, `${at}: the note, alone on its row, from the margin`);
     assert.equal(d.lines[4], wide ? `${g.rule.repeat(pane)}${g.down}${g.rule.repeat(sz.cols - pane - 1)}` : g.rule.repeat(sz.cols), `${at}: a rule closes it`);
-    assert.equal(cellText(d, 5, 0, pane).startsWith(`>  ${marksOf(ascii).running} ${FAR_A}`), true, `${at}: then the list, with no heading: ${d.lines[5]}`);
+    assert.equal(cellText(d, 5, 0, pane).startsWith(`> ${marksOf(ascii).running} ${FAR_A}`), true, `${at}: then the list, with no heading: ${d.lines[5]}`);
     assert.equal(d.cells.slice(5, sz.rows - 2).some((line) => line.slice(0, pane).some((cell) => cell.style.bold)), false, `${at}: and no heading anywhere in it`);
     assert.equal(d.page, sz.rows - 7, `${at}: the note and its rule take two rows of the body`);
     fits(d, sz, at);
@@ -1869,7 +1903,9 @@ test("a deployment's note stands above the list in a view of one deployment, aft
     assert.equal(reason.whole && reason.rows[0] === 4, true, `${at}: its reason on the rows under it`);
     assert.equal(d.lines[reason.rows.at(-1) + 1], ` ${note}`, `${at}: the note after the notice`);
     assert.equal(d.cells[reason.rows.at(-1) + 2][0].text, "─", `${at}: and the rule after the note`);
-    assert.equal(cellText(d, reason.rows.at(-1) + 3, 0, paneOf(sz)).trim().startsWith(`? ${FAR_A}`) || cellText(d, reason.rows.at(-1) + 3, 0, paneOf(sz)).startsWith(`>  ? ${FAR_A}`), true, `${at}: the kept rows follow, unknown`);
+    const kept = cellText(d, reason.rows.at(-1) + 3, 0, paneOf(sz));
+    assert.match(kept, /^[> ] \? /, `${at}: the kept rows follow, unknown`);
+    assert.equal(kept.slice(4).startsWith(FAR_A.slice(0, 6)) && kept.endsWith(rowReason(panelRow(failing, FAR_A)).label), true, `${at}: with the shared label of a machine not reached: ${kept}`);
   }
   // This machine's own deployment has one too: a standalone deployment's teams are its own.
   const standalone = stateOf(reporting(NEAR(), { identity: STANDALONE }), { cli: REMOTE_CLI }), own = primaryDeployment(panelOf(standalone, AT).deployments).note;
@@ -2001,7 +2037,7 @@ test("the reason of a row that cannot be addressed on a machine that was not rea
     const d = draw(state, sz), detail = factsOf(detailLines(d, sz)), said = `oats tui's read of other machines says: ${textOf(shown(row.runtimeError))}`;
     assert.equal(originLead(row.runtimeErrorOrigin, TERMS), "oats tui's read of other machines says:", `${at}: the words are the shared home's for the row`);
     assert.equal(fact(detail, "held"), null, `${at}: no held line`);
-    assert.deepEqual([fact(detail, "state").rows[0], fact(detail, "state").rows.slice(1).join(" ")], [UNKNOWN, said], `${at}: the reason stands under the state, after who gave it, with no quotation mark`);
+    assert.deepEqual([fact(detail, "state").rows[0], fact(detail, "state").rows.slice(1).join(" ")], [rowReason(row).label, said], `${at}: the state is the shared label of its reason, and the reason stands under it, after who gave it, with no quotation mark`);
     const whole = detailLines(d, sz).map((line) => line.trim()).filter(Boolean).join(" ");
     assert.equal(whole.split(said).length - 1, 1, `${at}: once`);
     assert.deepEqual(labels(detail), ["soul", "machine", "state", "harness", "work", "home"], at);
@@ -2014,7 +2050,7 @@ test("the reason of a row that cannot be addressed on a machine that was not rea
     const state = selecting(reached(), FAR_B, sz), acts = instanceActs(panelRow(state, FAR_B)), detail = factsOf(detailLines(draw(state, sz), sz));
     assert.equal(acts.blocked !== null && typeof acts.blocked.sentence === "string", true);
     assert.equal(fact(detail, "held").rows.join(" "), textOf(shown(acts.blocked.sentence)), `${sz.cols}: the held line is the shared sentence`);
-    assert.deepEqual(fact(detail, "state").rows, ["stopped"], `${sz.cols}: and the state is the row's own, with no text under it`);
+    assert.deepEqual(fact(detail, "state").rows, [AWAY()], `${sz.cols}: and the state is the shared label of its reason, with no text under it`);
     assert.equal(fact(factsOf(detailLines(draw(selecting(reached(), FAR_A, sz), sz), sz)), "held"), null, `${sz.cols}: a row that can be addressed is not held`);
   }
 });
@@ -2115,15 +2151,15 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
     "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"─".repeat(38)}┬${"─".repeat(41)}`,
     ...beside([
-      " ▾ ● acme-console-e…  claude",
-      "     ● acme-console…  claude         !",
-      "     ● acme-console…  claude         !",
-      " ▾ ● acme-ledger-ex…  claude",
-      "   ▾ ● acme-ledger-…  claude         !",
-      "       ○ peer-revie…  stopped",
+      "  ● acme-console-expert-tui-read",
+      "    ● acme-console-developer-pan…    !",
+      "    ● acme-console-developer-ter…    !",
+      "  ● acme-ledger-expert-retire",
+      "    ● acme-ledger-developer-note…    !",
+      "      ○ peer-reviewer-note",
       "",
-      "   ● acme-maintaine…  claude",
-      ">  ? acme-expert-tui  unreachable",
+      "  ● acme-maintainer-ops",
+      "> ? acme-expert-t…  state unknown",
     ], [
       "   acme-expert-tui",
       "   soul     acme-expert",
@@ -2144,15 +2180,15 @@ test("the detail at 80x24 of a row whose kernel gave a text that wraps, in UTF-8
     "  Instances   Souls   Capabilities                                read 10:00:00",
     `${"-".repeat(38)}+${"-".repeat(41)}`,
     ...beside([
-      " v * acme-console...  claude",
-      "     * acme-conso...  claude         !",
-      "     * acme-conso...  claude         !",
-      " v * acme-ledger-...  claude",
-      "   v * acme-ledge...  claude         !",
-      "       - peer-rev...  stopped",
+      "  * acme-console-expert-tui-read",
+      "    * acme-console-developer-p...    !",
+      "    * acme-console-developer-t...    !",
+      "  * acme-ledger-expert-retire",
+      "    * acme-ledger-developer-no...    !",
+      "      - peer-reviewer-note",
       "",
-      "   * acme-maintai...  claude",
-      ">  ? acme-expert-tui  unreachable",
+      "  * acme-maintainer-ops",
+      "> ? acme-expert...  state unknown",
     ], [
       "   acme-expert-tui",
       "   soul     acme-expert",
@@ -2800,6 +2836,31 @@ test("beside the list the panel is never narrower than PANEL_MIN (40): at 80 col
     assert.equal(t.cols >= PANEL_MIN + 1, true, `${cols}: ${t.cols}`);
   }
   assert.equal(drawPanel(panelIn("focus"), size(WIDE - 1, 24)).terminal.whole, true);
+});
+
+test("with a terminal open the list keeps 30 columns at most, beside the terminal or the detail in its place, and a name longer than its row is cut there with the cut mark; closed, the list has its width again", () => {
+  assert.equal(LIST_BESIDE, 30);
+  for (const sz of PANEL_WIDE) for (const how of ["focus", "list", "detail"]) {
+    const d = drawPanel(panelIn(how), sz), at = `${sz.cols}x${sz.rows} ${how}`;
+    assert.equal(d.cols, LIST_BESIDE, at);
+    for (const r of bodyRows(sz)) assert.equal(d.cells[r][LIST_BESIDE].text, "│", `${at}: row ${r} has the panes' rule at column 30`);
+    if (how === "detail") assert.equal(d.terminal, null, at);
+    else assert.deepEqual([d.terminal.col, d.terminal.cols], [LIST_BESIDE + 1, sz.cols - LIST_BESIDE - 1], `${at}: the agent's screen has the rest`);
+  }
+  const LONG = "dev-z-with-a-name-far-longer-than-the-list-beside-a-terminal";
+  for (const ascii of [false, true]) {
+    const two = stateOf(observed([instanceRow("dev", "dev-a"), instanceRow("dev", LONG)]), { ascii });
+    let s = keyed(Object.freeze({ ...two, selected: roster(two).rows.find(({ row }) => row.instance === "dev-a").id }), "enter");
+    s = reduce(reduce(s, { shown: { id: s.terminal.id } }).state, { back: true }).state;
+    for (const sz of PANEL_WIDE) {
+      const d = drawPanel(s, sz), r = bodyRows(sz).find((row) => cellText(d, row, 0, LIST_BESIDE).includes(LONG.slice(0, 12)));
+      const cut = glyphsOf(ascii).cut, room = LIST_BESIDE - 4 - 5;
+      assert.equal(cellText(d, r, 0, LIST_BESIDE), `  ${marksOf(ascii).running} ${LONG.slice(0, room - cut.length)}${cut}`, `${sz.cols}${ascii ? " ascii" : ""}: cut inside the 30 columns`);
+      // Closed, the list has its own width again, and the name more of its cells.
+      const closed = draw(keyed(s, "c"), sz);
+      assert.deepEqual([closed.terminal ?? null, closed.cols], [null, listWidth(sz.cols)], `${sz.cols}: closed`);
+    }
+  }
 });
 
 test("Tab from the list with a terminal open shows the detail in the panel's place, until Tab or Esc again", () => {

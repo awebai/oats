@@ -204,14 +204,16 @@ const OPEN_HINT = "Enter open   ";
 const BACK = " C-\\ back to the list";
 const LIST_HINTS = " Enter focus terminal   z zoom   c close terminal";
 const FAILED = `${NAME} could not be opened.`;
-/** The agent's row in the list, selected and running (the green mark, then its harness). */
-const RUNNING_ROW = new RegExp(`^> +● ${NAME} +claude$`);
+/** The agent's row in the list, selected and running: the green mark and its name, and nothing
+ *  after it (the harness is the detail's). */
+const RUNNING_ROW = new RegExp(`^> +● ${NAME}$`);
 const ROW = new RegExp(`^[> ] +[●○◌?◆] ${NAME}\\b`);
-/** The columns of the list pane where the terminal is wide enough for two panes (docs/tui.md);
- *  the panel starts after the list and its bar. */
-const listCols = (cols) => Math.min(60, Math.max(36, Math.floor(cols * 0.48)));
+/** The columns the list keeps beside an open terminal (docs/tui.md); the panel starts after the
+ *  list and its bar. The agent's row is read from as many columns of the list: its name is short,
+ *  and the row has no word, so it is whole there with the detail beside the list too. */
+const LIST_BESIDE = 30;
 const COLS = 120, ROWS = 40;
-const PANEL_COL = listCols(COLS) + 1;
+const PANEL_COL = LIST_BESIDE + 1;
 
 // ---- a terminal ---------------------------------------------------------------------------------
 let opened = 0, started = 0;
@@ -281,7 +283,7 @@ async function tui(term, { tmp = tmpFor() } = {}) {
     async ended(why) { await until(term, () => run.status() !== null, `oats tui in ${term.id} to end ${why}`); return run.status(); },
     /** The list pane's row of the agent, with the selection's mark and its state's mark; null when
      *  no list is drawn (a zoomed terminal). */
-    row() { return term.screen().map((text) => [...text].slice(0, listCols(COLS)).join("").trimEnd()).find((text) => ROW.test(text)) ?? null; },
+    row() { return term.screen().map((text) => [...text].slice(0, LIST_BESIDE).join("").trimEnd()).find((text) => ROW.test(text)) ?? null; },
     footer() { return term.screen().at(-1) ?? ""; },
     /** The panel's rows: each row of the screen from the panel's first column. */
     panel() { return term.screen().map((text) => [...text].slice(PANEL_COL).join("")); },
