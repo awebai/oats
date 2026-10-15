@@ -177,12 +177,16 @@ function nameSpans(m, col, room) {
   return [...(width ? [{ col, text: name.text, width }] : []), { col: after(width), text: lit(more), style: DIM, width: more.length }];
 }
 
-/** The header's counts, right aligned, each a number and a word. When they do not all fit, the
- *  ones from the shared count are given up from the end, never the two the TUI adds. */
+/** The cells of the header's first row the counts never take: the workspace's name keeps at
+ *  least NAME_KEPT of them (cut, with the cut mark), and the two after it. */
+const NAME_KEPT = 4;
+/** The header's counts, right aligned, each a number and a word. When they do not all fit beside
+ *  the least of the workspace's name (NAME_KEPT), the ones from the shared count are given up from
+ *  the end, never the two the TUI adds. */
 function countSpans(counts, cols) {
   const texts = counts.map((count) => ({ ...count, text: `${count.n} ${count.word}` }));
   const width = (list) => list.reduce((sum, c) => sum + c.text.length, 0) + Math.max(0, list.length - 1) * 2;
-  const room = cols - 2 * MARGIN;
+  const room = cols - 2 * MARGIN - NAME_KEPT - 2;
   let kept = texts;
   while (width(kept) > room && kept.some((c) => c.shared)) kept = kept.filter((c, i) => i !== kept.findLastIndex((k) => k.shared));
   const spans = [];
@@ -194,8 +198,9 @@ function countSpans(counts, cols) {
 /** The footer, one row from column 0 (docs/tui.md, "The footer"). While the leader waits, its
  *  hint (leaderHint). Else, in every focus, first the leader (`C-\ commands`), then: the filter
  *  field while it is open; else the actions that apply now, read from the
- *  effective table, as many as fit, `help` and `quit` last and always: their room is set aside
- *  first, and a kept filter and the other hints take what is left. The hints stand in the order
+ *  effective table, as many as fit, `help` and `quit` last and always (unless the two do not fit
+ *  whole after the leader: then `help` goes, then `quit`): their room is set aside first, and a
+ *  kept filter and the other hints take what is left. The hints stand in the order
  *  given, and when they do not all fit they are given up in an order of their own (`keep`, the
  *  first kept longest), so a hint can stand first and still be given up before another: in the
  *  list of instances the acts go first (`restart`, `start`, `retire`, then `stop`), then
@@ -301,7 +306,11 @@ function footer(m, cols) {
     // A kept filter shows its own `/` beside the hints: then `open` outlives the `/ filter` hint.
     : [["filter", "detail", ...(m.filter.query ? ["close"] : []), "refresh", "workspaces", ...VIEW_KEYS], [...(m.filter.query ? ["open", "zoom", "close-terminal", "filter"] : ["filter", "open", "zoom", "close-terminal"]), "detail", "close", "refresh", "workspaces", ...VIEW_KEYS, ...ACTS]];
   const hints = [...first, ...terminal, ...acts, ...ids.filter((id) => !(asking && id === "close")).map((id) => [id, id in hintOf ? hintOf[id] : hint(id)])].filter(([, h]) => h).map(([id, h]) => [id, spansOf(h)]);
-  const last = ["help", "quit"].map((id) => hint(id)).filter(Boolean).map(spansOf);
+  // `help` and `quit` stand last, and always but in one case: when the two do not fit whole
+  // after the leader (keys tui.json made long), `help` is given up, then `quit`. The leader
+  // reaches the help too, and a hint is never cut.
+  let last = ["help", "quit"].map((id) => hint(id)).filter(Boolean).map(spansOf);
+  while (last.length && start + span(last) > edge) last = last.slice(1);
   const spans = put(lead, FOOT);
   let col = start;
   if (m.view !== "help" && m.filter.query) {

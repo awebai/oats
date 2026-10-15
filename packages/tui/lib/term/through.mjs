@@ -52,9 +52,11 @@ export function backKeySequences(key) {
 /** The key id the key parser (term/keys.mjs) reads a back key's bytes as: what the leader is where
  *  the TUI reads keys (docs/tui.md, "The leader"). `C-\\` is `ctrl+\\`, `M-x` is `alt+x`, `F5` is
  *  `f5`; `C-j` is `enter`, the byte the parser reads as Enter. Every form of a back key reads as
- *  the same id. */
+ *  the same id. A key that is no back key (tui.json refuses it) has none: null. */
 export function backKeyId(key) {
-  const events = createKeyParser({ now: () => 0 }).feed(backKeySequences(key)[0]);
+  let sequences;
+  try { sequences = backKeySequences(key); } catch { return null; } // not a back key: none is read
+  const events = createKeyParser({ now: () => 0 }).feed(sequences[0]);
   return events.length === 1 ? keyId(events[0]) : null;
 }
 

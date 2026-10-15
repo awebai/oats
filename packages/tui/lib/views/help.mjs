@@ -120,11 +120,14 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
  *  it does (actions.mjs LEADER), from every focus. */
 function leaderRows(detachKey, cols) {
   const key = keyText(detachKey);
-  const lead = "then one of these keys, from every focus; a terminal too:";
+  // The sentence after the key on as many rows as it needs, its later rows under its first.
+  const at = INDENT + key.width + 1;
+  const lead = flow(words("then one of these keys, from every focus; a terminal too:"), Math.max(1, cols - INDENT - at));
   return [
     [{ col: INDENT, text: lit("The leader"), style: TITLE }],
     [],
-    [{ col: INDENT, text: key.text, width: key.width, style: KEYS }, { col: INDENT + key.width + 1, text: lit(lead) }],
+    [{ col: INDENT, text: key.text, width: key.width, style: KEYS }, { col: at, text: lit(lead[0]) }],
+    ...lead.slice(1).map((text) => [{ col: at, text: lit(text) }]),
     ...table(LEADER.map((entry) => [entry.keys.map(keyLabel).join(", "),
       words(entry.does === "list" ? `${entry.label}; the leader again does the same` : entry.terminal ? `${entry.label}, while a terminal is open` : entry.label)]), cols, KEYS),
   ];

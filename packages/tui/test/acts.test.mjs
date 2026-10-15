@@ -109,10 +109,10 @@ test("a start or restart the shared start gate refuses opens nothing, and its se
 test("the footer names the act keys the selected row opens now, in the order stop, retire, start, restart, after open; a key it leaves out still answers (Done 1)", () => {
   const footer = (state, sz = S120) => draw(state, sz).lines[sz.rows - 1];
   // At 140 columns every hint has room: at 120 `R restart` is given up first (the acts go before the views).
-  assert.match(footer(on(here(), RUN), size(140, 40)), /^ Enter open {3}X stop {3}D retire {3}R restart {3}\/ filter/);
-  assert.match(footer(on(here(), STOPPED)), /^ X stop {3}D retire {3}S start {3}\/ filter/);
-  assert.match(footer(on(here(), HALF)), /^ D retire {3}\/ filter/);
-  assert.match(footer(on(here(), SPAWNING)), /^ \/ filter/);
+  assert.match(footer(on(here(), RUN), size(140, 40)), /^C-\\ commands {3}Enter open {3}X stop {3}D retire {3}R restart {3}\/ filter/);
+  assert.match(footer(on(here(), STOPPED)), /^C-\\ commands {3}X stop {3}D retire {3}S start {3}\/ filter/);
+  assert.match(footer(on(here(), HALF)), /^C-\\ commands {3}D retire {3}\/ filter/);
+  assert.match(footer(on(here(), SPAWNING)), /^C-\\ commands {3}\/ filter/);
   // From the same reading of instanceActs as the key: the model's `actable`.
   for (const name of [RUN, STOPPED, UNKNOWN, HALF, SPAWNING, HERDR]) {
     const state = on(here(), name), m = model(state, { page: 19, now: 0, at: new Date(0).toISOString(), cols: 57 });
@@ -131,11 +131,11 @@ test("a tui.json that rebinds the acts: the keys it gives open them, and the cap
   assert.equal(press(state, ["f8"]).state.act.verb, "stop");
   assert.equal(press(state, ["ctrl+s"]).state.act.verb, "start");
   for (const key of ["X", "D", "S", "R"]) assert.deepEqual([press(state, [key]).state.view, press(state, [key]).effects], ["instances", []], key);
-  assert.match(draw(state, S120).lines[39], /^ F8 stop {3}Ctrl\+S start {3}\/ filter/, "the footer names the keys given, and no hint for an unbound act");
+  assert.match(draw(state, S120).lines[39], /^C-\\ commands {3}F8 stop {3}Ctrl\+S start {3}\/ filter/, "the footer names the keys given, and no hint for an unbound act");
 });
 
 test("the help lists the four acts with their keys, in the instances view, and the rules of a confirmation under them", () => {
-  const lines = draw(press(here(), ["?"]).state, size(100, 90)).lines.map((line) => line.trim());
+  const lines = draw(press(here(), ["?"]).state, size(100, 130)).lines.map((line) => line.trim());
   for (const [key, said] of [["X", "stop the selected agent, after a confirmation"], ["D", "retire the selected agent, after a confirmation"], ["S", "start the selected agent as it was last launched, after a confirmation"], ["R", "restart the selected agent as it was last launched, after a confirmation"]]) {
     assert.equal(lines.some((line) => line.startsWith(`${key} `) && line.endsWith(said)), true, `${key} ${said}`);
   }
@@ -278,7 +278,7 @@ test("the act view draws the plan as the shared planView gives it: the question,
   let lines = draw(t.state, S120).lines.join("\n");
   assert.equal(lines.includes(displayLine(t.made.view().message)), true, "the reading line");
   assert.equal(lines.includes("Esc stops waiting."), true);
-  assert.match(draw(t.state, S120).lines[39], /^ Esc Cancel {3}Enter press {3}q quit$/, "one button: no move hint");
+  assert.match(draw(t.state, S120).lines[39], /^C-\\ commands {3}Esc Cancel {3}Enter press {3}q quit$/, "one button: no move hint");
   await tick(); await tick();
   const view = t.made.view();
   lines = draw(t.state, S120).lines.join("\n");
@@ -286,7 +286,7 @@ test("the act view draws the plan as the shared planView gives it: the question,
   const choice = view.choices.find((c) => c.offered);
   assert.equal(lines.includes(`[x] ${choice.sentence}`), true, "the choice, set");
   assert.match(lines, /> Cancel < {3}\[ Review again \] {3}\[ Stop \]/);
-  assert.match(draw(t.state, S120).lines[39], /^ Esc Cancel {3}Left\/Right move {3}Enter press {3}q quit$/);
+  assert.match(draw(t.state, S120).lines[39], /^C-\\ commands {3}Esc Cancel {3}Left\/Right move {3}Enter press {3}q quit$/);
 });
 
 test("the focus moves with Left/Right and Tab/Shift+Tab only; h, l and every other printable key move nothing; Enter on Cancel closes; the act's own button takes a move and a press (Done 2)", async () => {

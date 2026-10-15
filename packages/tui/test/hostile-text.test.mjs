@@ -202,7 +202,7 @@ function census(rows, size, look, at, cells = null) {
   const held = (cells ?? screen.cells(rows, size)).flatMap((line, r) => line.flatMap((cell, x) => (REFUSED.test(cell.text) || /[\u0080-\u009F]/.test(cell.text) ? [`row ${r}, column ${x}`] : [])));
   assert.deepEqual(held, [], `${at}: no cell holds a character the terminal acts on`);
   assert.doesNotMatch(text, /owned|EVIL|hunter2|ghp_|evil\.example/, `${at}: nothing of a withheld text is shown`);
-  assert.equal(text.includes("oats") && text.includes("Instances   Souls   Capabilities"), true, `${at}: the frame is drawn`);
+  assert.equal(text.includes("Instances   Souls   Capabilities") && text.includes((look.ascii ? "-" : "─").repeat(20)), true, `${at}: the frame is drawn: the header's views and the rule under them`);
   return text;
 }
 
@@ -393,9 +393,9 @@ test("a hostile machine name in the header's `on <machine>` leaves no control by
     assert.deepEqual([m.here, m.machines, m.machine], [false, 1, value], `${at}: the model hands the frame the machine's name as the shared entry has it`);
     const text = census(drawn.rows, size, look, at, drawn.cells), header = drawn.lines[0];
     within(drawn, size, at);
-    assert.equal(header.startsWith(" oats  billing  on "), true, `${at}: the workspace's name and the TUI's own word stand whole: ${header}`);
+    assert.equal(header.startsWith(" billing  on "), true, `${at}: the workspace's name and the TUI's own word stand whole: ${header}`);
     assert.equal(header.endsWith("  1 running") && drawn.cells[0][size.cols - 1].text === " ", true, `${at}: the count keeps its place at the right edge: ${header}`);
-    const shownName = header.slice(" oats  billing  on ".length, header.length - "  1 running".length).trim();
+    const shownName = header.slice(" billing  on ".length, header.length - "  1 running".length).trim();
     if (name === "an escape sequence") assert.equal(shownName, "[withheld]", `${at}: a name with a control character is withheld whole`);
     if (name === "a bidi override") assert.equal(shownName, look.utf8 ? "gar\uFFFDnet" : "gar?net", `${at}: a bidi override is replaced, never written`);
     if (name === "wide characters") {
@@ -436,7 +436,7 @@ test("200 machines are drawn in bounded work: the shared home reads each machine
     assert.equal(drawn.rows.length, S80.rows, at);
     assert.equal(m.list.length, drawn.page - 1, `${at}: the model works out the rows of the pane and no other`);
     assert.deepEqual([m.above, m.below], [0, items - (drawn.page - 1)], `${at}: and counts the rest`);
-    assert.equal(drawn.lines[21].slice(0, 38).trim(), cutNote(0, items - (drawn.page - 1)), `${at}: the pane's last row says so`);
+    assert.equal(drawn.lines[22].slice(0, 38).trim(), cutNote(0, items - (drawn.page - 1)), `${at}: the pane's last row, the one above the footer, says so`);
     assert.equal(draw(walked, S80).lines[0].includes(`+${count} machines`), true, `${at}: the header counts them`);
     census(drawn.rows, S80, UTF8, at, drawn.cells);
     within(drawn, S80, at);
@@ -452,7 +452,7 @@ test("200 machines are drawn in bounded work: the shared home reads each machine
   // 200 machines matched to no workspace, in the switcher: one screen of them, and the rest counted.
   const never = Array.from({ length: 200 }, (_, i) => group({ id: `quartz-${i}:acme-1`, server: `quartz-${i}`, label: `quartz-${i}`, probe: { ok: false, error: { code: "E_SSH", message: "Permission denied (publickey)." } }, workspace: null, instances: [] }));
   const unmatched = draw(key(heard(reporting(), answered(...never), T1), "w"), S80);
-  assert.equal(unmatched.lines.slice(3, 21).filter((line) => line.includes("quartz-")).length, 16, "the pane holds the open workspace, the heading and sixteen machines");
-  assert.equal(unmatched.lines[21].trim(), cutNote(0, 202 - 18));
+  assert.equal(unmatched.lines.slice(3, 22).filter((line) => line.includes("quartz-")).length, 17, "the pane holds the open workspace, the heading and seventeen machines");
+  assert.equal(unmatched.lines[22].trim(), cutNote(0, 202 - 19), "the pane's last row, the one above the footer, says what is cut off");
   within(unmatched, S80, "200 unmatched machines");
 });
