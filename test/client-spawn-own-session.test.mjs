@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cliSpawnApply } from '../packages/client/spawn-apply-cli.mjs';
@@ -67,9 +67,11 @@ setInterval(() => {}, 1000);
 `);
   const record = () => existsSync(at('json')) ? JSON.parse(readFileSync(at('json'), 'utf8')) : null;
   const signals = () => existsSync(at('signals')) ? readFileSync(at('signals'), 'utf8').trim().split('\n') : [];
-  /** The caller, as the leader of a process group of its own: the group a terminal signals. */
+  /** The caller, as the leader of a process group of its own: the group a terminal signals. Its temporary directory
+   * is this test's: a caller the test kills never runs cliSpawnApply's cleanup of the task file it wrote, so the
+   * file goes with `dir` (t.after above). */
   function start() {
-    const child = spawn(process.execPath, [caller, JSON.stringify({ cli, options })], { detached: true, stdio: ['ignore', 'ignore', 'inherit'] });
+    const child = spawn(process.execPath, [caller, JSON.stringify({ cli, options })], { detached: true, stdio: ['ignore', 'ignore', 'inherit'], env: { ...process.env, TMPDIR: dir } });
     pids.add(child.pid);
     const exited = new Promise(ok => child.on('exit', ok));
     return { pid: child.pid, exited };
@@ -79,13 +81,15 @@ setInterval(() => {}, 1000);
     pids.add(record().pid);
     return record();
   }
-  return { cli, options, start, running, signals, ready: () => record() !== null };
+  const taskFiles = () => readdirSync(dir).filter(name => name.startsWith('oats-desktop-task-'));
+  return { cli, options, start, running, signals, taskFiles, ready: () => record() !== null };
 }
 
 for (const signal of ['SIGINT', 'SIGHUP']) test(`a spawn apply runs in a session of its own: a ${signal} to the client's group does not reach it`, { skip: process.platform === 'win32' }, async t => {
   const s = setup(t), caller = s.start();
   const { pid, pgid } = await s.running();
   assert.equal(pgid, pid, 'the leader of its own group'); assert.notEqual(pgid, caller.pid, 'not in the caller\'s group');
+  assert.equal(s.taskFiles().length, 1, 'premise: the caller wrote its task file in this test\'s directory');
   process.kill(-caller.pid, signal); // the caller's group is live: the send must succeed
   await caller.exited;
   await new Promise(ok => setTimeout(ok, 300));
