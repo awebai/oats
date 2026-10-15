@@ -1125,7 +1125,8 @@ const server = createServer(async (req, res) => {
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
-        // Settled answers are reused for a short window (packages/client/spawn-preview.mjs); prepare never reads them.
+        // Settled answers are reused for 60 s here, and prepare takes them up to PREPARE_REUSE_MS old, the drift
+        // fenced by apply's --expect-decision (packages/client/spawn-preview.mjs).
         return send(res, 200, await spawnPreview.read(request, getContext));
       } catch { return send(res, 400, previewFailure('E_BAD_ARGS')); }
     }

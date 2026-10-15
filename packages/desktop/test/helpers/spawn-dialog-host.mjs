@@ -9,7 +9,7 @@ import * as spawn from '../../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace, postJson } from '../../renderer/views/common.mjs';
 import { createSpawnJobs } from '../../renderer/spawn-jobs.mjs';
 import { refreshCli } from '../../renderer/views/cli-status.mjs';
-import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../../client/spawn-preview.mjs';
+import { createSpawnPreview, createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../../client/spawn-preview.mjs';
 import { createSpawnApplyBoundary } from '../../../client/spawn-apply.mjs';
 import { soulsData, workspaceStatusData } from '../../../client/deployment-data.mjs';
 import { cli as CLI, kernel, DEPLOYMENT, ROOT, anchor, anchorHome, deferred } from './spawn-preview-fixture.mjs';
@@ -62,9 +62,15 @@ export async function mountSpawn(t, options = {}) {
   const wsOf = path => { const m = /[?&]ws=([^&]*)/.exec(path); return m ? decodeURIComponent(m[1]) : null; };
   const context = (ws = null) => ({ workspace: { id: options.deployments && ws ? ws : 'northwind', scope: DEPLOYMENT }, cli, agents, instances });
   const kernelInvoke = options.kernel ?? ((_cli, { target, choices }) => kernel(options.previewName?.(target.selector.soul, choices) ?? kernelPreviewName(target.selector.soul, choices)));
-  const previewBoundary = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: async (c, args) => kernelInvoke(c, args) });
+  // options.previewNow: the Desktop's own preview (its settled-answer cache, 60 s for the dialog and PREPARE_REUSE_MS
+  // for prepare, #1246) on that clock; without it, an uncached boundary for both. kernelPreviews counts the kernel's reads.
+  let kernelPreviews = 0;
+  const invokePreview = async (c, args) => { kernelPreviews++; return kernelInvoke(c, args); };
+  const desktopPreview = options.previewNow ? createSpawnPreview({ invoke: invokePreview, now: options.previewNow }) : null;
+  const previewBoundary = desktopPreview ? desktopPreview.read : createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: invokePreview });
+  const prepareRead = desktopPreview ? desktopPreview.prepareRead : previewBoundary;
   let ids = 0;
-  const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read: previewBoundary,
+  const broker = createSpawnApplyBoundary({ mint: () => (++ids).toString(16).padStart(64, '0'), read: prepareRead,
     ...(options.brokerTimer ? { timer: options.brokerTimer } : {}), // #802: the apply's answer-within timer
     invoke: async (c, args) => {
       applied.push(structuredClone(args));
@@ -126,6 +132,7 @@ export async function mountSpawn(t, options = {}) {
   const doc = dom.window.document;
   const u = {
     doc, dom, calls, opens, notified, applied, polls, ctx, notices, reopened, schedules, shownRows, followed, jobs: ctx.spawnJobs,
+    kernelPreviews: () => kernelPreviews,
     dialog: () => doc.querySelector('.spawn-dialog'),
     q: selector => doc.querySelector(`.spawn-dialog ${selector}`),
     text: selector => (doc.querySelector(`.spawn-dialog ${selector}`)?.textContent || '').trim(),

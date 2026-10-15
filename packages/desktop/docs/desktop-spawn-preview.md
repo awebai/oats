@@ -90,7 +90,7 @@ and owns: the backend makes one preview (`createSpawnPreview`) and one broker
 nothing in either module is shared between clients. The preview's two reads, this
 route's and prepare's, share its two flight slots. This route and `/api/spawn`
 prepare (below) answer from the preview's one bounded settled-answer cache:
-64 entries, **60 s**, keyed by the admission identity (workspace id and scope,
+64 entries, **60 s** for this route and **300 s** for prepare, keyed by the admission identity (workspace id and scope,
 subject, soul work/repo/capability, anchor incarnation, choices and every CLI
 field the admission reads). It holds `available` answers and the name refusals
 `E_INSTANCE_NAME_TAKEN`/`E_INSTANCE_NAME_INVALID`, nothing else. A held answer is
@@ -110,18 +110,23 @@ a workspace replaces the backend, and its cache with it. A flight that started
 before an invalidation never fills the cache, even when a later request joined
 it (a monotonic clock stamps flight starts and invalidations). What Desktop does
 not observe (a spawn by another window's backend or by the CLI, an on-disk edit)
-may show an older answer for up to 60 s. That is safe: the apply passes the
+may show an older answer for up to 60 s, and prepare may bind one up to 300 s old. That is safe: the apply passes the
 decision's revision as `--expect-decision`, and the kernel refuses a decision
 that no longer holds (`E_DECISION_STALE`) before it creates anything.
 
 **Prepare reuses the dialog's answer** (Spec C). `/api/spawn` prepare reads
 through the preview's `prepareRead`, the same cache: when the dialog already
-holds a fresh settled answer for exactly this admission identity (not
-invalidated, younger than 60 s), prepare binds it without a CLI call (well under
-50 ms); otherwise it reads fresh as before, and may coalesce onto an identical
-read in the air. `--expect-decision` at apply is the drift guard that makes this
-safe; the apply-start invalidation keeps a spawn's own decision from being
-reused by the next one.
+holds a settled answer for exactly this admission identity (not invalidated,
+younger than `PREPARE_REUSE_MS`, **300 s**: the prepared intent's own lifetime),
+prepare binds it without a CLI call (well under 50 ms); otherwise it reads fresh
+as before, and may coalesce onto an identical read in the air. The cache keeps
+an answer for the longer of its two ages and answers each reader by its own, so
+an operator who lingers over the form (a task typed for a minute or two) presses
+Spawn without a second kernel preview (#1246, which measured 1.4–2.4 s for it).
+`--expect-decision` at apply is the drift guard that makes this safe: a decision
+the kernel no longer makes is refused there (`E_DECISION_STALE`), which reads as
+drifted, with nothing created and the values read again. The apply-start
+invalidation keeps a spawn's own decision from being reused by the next one.
 
 **Member-head reuse (`--max-age`).** When the admitted CLI advertises the feature
 `spawn-preview-max-age`, the dialog's reads pass `--max-age 60`, letting the

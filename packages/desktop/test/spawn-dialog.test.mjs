@@ -179,6 +179,22 @@ test('a stale apply (kernel E_DECISION_STALE) creates nothing, says so and reads
   assert.ok(u.previews().length > before, 're-read after a stale refusal'); assert.equal(u.q('.fspawn').textContent, 'Spawn');
 });
 
+test('#1246 D1: a press 90 s after its preview prepares from the held answer; a drift the kernel finds at apply reads as drifted and the values are read again', async t => {
+  let time = 0, atApply = null, u;
+  u = await mountSpawn(t, { previewNow: () => time, spawnGate: body => { if (body.action === 'apply') atApply = u.kernelPreviews(); },
+    apply: () => ({ started: true, envelope: kernel('apply-stale') }) });
+  await u.open(); await u.type('.fpurpose', 'api-v2'); await settle(10);
+  const reads = u.kernelPreviews(), shown = u.previews().length;
+  time += 90_000; // past the dialog's 60 s, within PREPARE_REUSE_MS
+  await u.spawn();
+  assert.deepEqual(u.spawns().map(b => b.action), ['prepare', 'apply']);
+  assert.equal(atApply, reads, 'prepare took the held preview: no kernel preview between the press and the apply');
+  assert.equal(u.q('.fstatus').dataset.code, 'E_DECISION_STALE');
+  assert.equal(u.text('.fstatus'), 'Something changed before the spawn went through. Nothing was created — check the updated values and press Spawn again.');
+  assert.ok(u.previews().length > shown, 'the values are read again'); assert.equal(u.q('.fspawn').textContent, 'Spawn');
+  assert.equal(u.opens.length, 0);
+});
+
 test('an unknown outcome offers Check result on the SAME intent; the retry reuses the key and the kernel replays', async t => {
   let n = 0, u;
   u = await mountSpawn(t, { apply: args => ++n === 1 ? { started: true, envelope: { schemaVersion: 1, ok: false, error: { code: 'E_CLI_TIMEOUT', message: 'x' } } }
