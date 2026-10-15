@@ -13,7 +13,7 @@ import { dirname, resolve } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { soulsData, capabilitiesData, soulCapabilitiesOf } from '../../client/deployment-data.mjs';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { normalizeSoulColor } from '../../client/soul-colors.mjs';
 import { catalogCSS, renderCapabilities, renderCapabilitySections, capabilitySections, composes, soulsUsing, rosterAgentName, soulsComposition, SOULS_CAPABILITIES_FEATURE } from '../renderer/workspace-catalog.mjs';
 import { renderCapabilityPage } from '../renderer/capability-page.mjs';
 import { SOULS_STALE_TITLE, ROSTER_STALE_TITLE } from '../renderer/loading.mjs';

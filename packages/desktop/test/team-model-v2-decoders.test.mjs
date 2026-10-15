@@ -12,7 +12,7 @@ import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { defaultTeamOf } from '../../client/team-rows.mjs';
 import { cliTeams, cliSoulTeams } from '../../client/cli-adapter.mjs';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { normalizeSoulColor } from '../../client/soul-colors.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
 const read = path => JSON.parse(readFileSync(new URL(`./fixtures/${path}.json`, import.meta.url), 'utf8'));

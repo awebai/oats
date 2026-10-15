@@ -14,7 +14,7 @@ import { soulsData, deploymentStatusData } from '../../client/deployment-data.mj
 import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { inspectData } from '../../client/inspect-contract.mjs';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { normalizeSoulColor } from '../../client/soul-colors.mjs';
 import { target } from './helpers/spawn-preview-fixture.mjs';
 
 const v2 = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/${name}.json`, import.meta.url), 'utf8'));

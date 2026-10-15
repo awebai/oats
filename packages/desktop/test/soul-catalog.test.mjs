@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { soulsData } from '../../client/deployment-data.mjs';
 import { createSoulCatalog, soulCatalogKey, SOUL_CATALOG_RETRY_MS } from '../server/soul-catalog.mjs';
-import { HELD_TTL_MS } from '../server/keyed-catalog.mjs';
+import { HELD_TTL_MS } from '../../client/keyed-catalog.mjs';
 
 // Kernel-produced `oats souls --json` (see fixtures/workspace-v2/f3/provenance.json).
 const SOULS = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f3/souls.json', import.meta.url), 'utf8'));

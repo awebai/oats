@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { workspaceStatusData, capabilitiesData } from '../../client/deployment-data.mjs';
 import { createCapabilityCatalog, capabilityCatalogKey, CAPABILITY_CATALOG_RETRY_MS } from '../server/capability-catalog.mjs';
 import { soulCatalogKey } from '../server/soul-catalog.mjs';
-import { HELD_TTL_MS } from '../server/keyed-catalog.mjs';
+import { HELD_TTL_MS } from '../../client/keyed-catalog.mjs';
 import { createWorkspaceSyncBoundary, syncFailure } from '../server/workspace-sync.mjs';
 
 const facts = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/desktop-facts/${name}.json`, import.meta.url), 'utf8'));

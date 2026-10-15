@@ -56,7 +56,7 @@ export const SOUL_INSTRUCTIONS_COPY = Object.freeze({
   omitted: 'Not shown: past the size limit of this answer.',
 });
 /** When the page asks for the composed AGENTS.md: composed-gate.mjs (shared with the server). */
-export { COMPOSED_FEATURE, composedSupported } from './composed-gate.mjs';
+export { COMPOSED_FEATURE, composedSupported } from '../../client/composed-gate.mjs';
 
 export const soulInstructionsCSS = `
 /* A part's file and nav labels: the soul's parts are prose labels, a capability's its id (monospace). */

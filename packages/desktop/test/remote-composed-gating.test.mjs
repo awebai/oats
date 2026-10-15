@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cliCapability } from '../../client/cli-adapter.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
-import { createInspectCache } from '../server/inspect-cache.mjs';
+import { createInspectCache } from '../../client/inspect-cache.mjs';
 import { remoteWorkspace, remoteAgents } from '../../client/remote-roster.mjs';
-import { composedSupported, routedComposedSupported, hostComposes, COMPOSED_FEATURE, PROBE_FEATURES_FEATURE } from '../renderer/composed-gate.mjs';
+import { composedSupported, routedComposedSupported, hostComposes, COMPOSED_FEATURE, PROBE_FEATURES_FEATURE } from '../../client/composed-gate.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/remote-composed/${name}`, import.meta.url), 'utf8'));
 const roster = fixture('roster.json').result.groups;

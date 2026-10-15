@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { SOUL_COLORS, normalizeSoulColor, colorForIdentity, soulColor } from '../renderer/soul-colors.mjs';
+import { SOUL_COLORS, normalizeSoulColor, colorForIdentity, soulColor } from '../../client/soul-colors.mjs';
 import { createSoulMark, createCapabilityMark, createRuntimeBadge, harnessName, identityCSS, markText } from '../renderer/identity-marks.mjs';
 
 const soul = { agentsRoot: '/team/one/shared/agents', name: 'dev', server: 'host-one' };

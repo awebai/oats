@@ -36,7 +36,7 @@ import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launch
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { createSoulInstructions } from './soul-instructions.mjs';
-import { composedSupported, routedComposedSupported, skillsSupported, routedSkillsSupported } from './composed-gate.mjs';
+import { composedSupported, routedComposedSupported, skillsSupported, routedSkillsSupported } from '../../client/composed-gate.mjs';
 import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, WARNINGS_COPY } from './capability-warnings.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';

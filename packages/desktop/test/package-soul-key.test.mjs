@@ -9,7 +9,7 @@ import { dirname, resolve } from 'node:path';
 import { soulsData, deploymentStatusData } from '../../client/deployment-data.mjs';
 import { cliSoulTeams } from '../../client/cli-adapter.mjs';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { normalizeSoulColor } from '../../client/soul-colors.mjs';
 
 const read = name => JSON.parse(readFileSync(new URL(`./fixtures/team-model-v2/package-souls/${name}.json`, import.meta.url), 'utf8'));
 const DEPLOYMENT = '/fixture/base/deployment';

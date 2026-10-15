@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import * as remote from '../../client/remote-roster.mjs';
-import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { normalizeSoulColor } from '../../client/soul-colors.mjs';
 import { deploymentStatusData, soulsData } from '../../client/deployment-data.mjs';
 
 // Exercise the actual response projection without starting the backend, CLI or

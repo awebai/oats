@@ -10,7 +10,7 @@
 import { cliWorkspace } from '../../client/workspace-cli.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { soulsData, observationData } from '../../client/deployment-data.mjs';
-import { createKeyedCatalog } from './keyed-catalog.mjs';
+import { createKeyedCatalog } from '../../client/keyed-catalog.mjs';
 
 export const SOUL_CATALOG_RETRY_MS = 60_000;
 

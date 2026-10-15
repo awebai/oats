@@ -1,4 +1,4 @@
-import { colorForIdentity, soulColor } from './soul-colors.mjs';
+import { colorForIdentity, soulColor } from '../../client/soul-colors.mjs';
 
 // Theme branches own all colors, including AA foreground/background pairs.
 // No data is ever interpolated into styles, SVG, HTML, or resource URLs.

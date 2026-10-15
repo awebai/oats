@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { JSDOM } from "jsdom";
 import * as remote from "../../client/remote-roster.mjs";
-import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
+import { normalizeSoulColor } from "../../client/soul-colors.mjs";
 import { soulsData, deploymentStatusData } from "../../client/deployment-data.mjs";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
