@@ -96,10 +96,11 @@
 // process's files closed as it exits) and takes the status only when it reaps the process, a
 // moment later (server_destroy_pane, then server_child_exited; 3.2 to 3.4 at least, and CI on 3.4
 // heard the dead pane between the two). That line, `1  `, is not the end: the line with the status
-// follows at the next check, and the panel waits for it, for as long as it takes. tmux 3.2 has no
-// `pane_dead_signal` (3.3 added it), so there a signal's end reads `1  ` for good: on tmux 3.2
-// alone a viewer heard so is over without a status once DEAD_WAIT_MS have passed with no other
-// line. A pane-died hook cannot do it: tmux sends no
+// follows at the next check, and the panel waits for it, a bounded time: a viewer heard so is over
+// without a status once STATUS_WAIT_MS have passed with no other line, its pane killed, so a
+// status that never comes never leaves a terminal open that nothing will close (CI, tmux 3.4).
+// tmux 3.2 has no `pane_dead_signal` (3.3 added it), so there a signal's end reads `1  ` for good,
+// and the wait is the shorter DEAD_WAIT_MS. A pane-died hook cannot do it: tmux sends no
 // notification for a command a hook runs. A pane the panel kills (close(), an open given up) is
 // gone at once, with no status. Verified with tmux 3.4 and 3.7c; read in 3.2's source (control.c,
 // format.c, server-fn.c), the same.
@@ -146,8 +147,12 @@ const DEAD_SUBSCRIPTION = "oats-tui-dead";
 const DEAD_LINE = /^%subscription-changed oats-tui-dead \$\d+ (@\d+) \d+ %\d+ : ([01]) (\d{0,3}) ([A-Z0-9]{0,12})$/;
 /** On tmux 3.2 (no `pane_dead_signal`), how long a viewer heard dead with no status and no signal
  *  (`1  `) waits for the line that has one, in milliseconds: two checks of the subscription past
- *  the one that heard it. On a later tmux it waits for that line however long it takes. */
+ *  the one that heard it. */
 export const DEAD_WAIT_MS = 2500;
+/** On tmux 3.3 and later, the same wait: ten checks of the subscription. tmux has the status a
+ *  moment after the hang-up; a viewer that closed its terminal and lives on keeps it longer, and
+ *  one whose status never comes is over without one when this has passed. */
+export const STATUS_WAIT_MS = 10000;
 /** The first tmux whose `pane_dead_signal` says which signal ended a pane. */
 const DEAD_SIGNAL_TMUX = Object.freeze([3, 3]);
 /** What a dead line with no status and no signal says of a viewer: its status is still to come. */
@@ -332,9 +337,13 @@ function readPart(file, max, fromEnd) {
  *    env          the environment tmux is given (TMUX and TMUX_PANE removed); default process.env.
  *    tmux         the program; default "tmux" on PATH.
  *    spawn, execFile, execFileSync, fs (see PANEL_FS), timers ({ setTimeout, clearTimeout }: the
- *                 frame tick and a dead viewer's wait for its status, DEAD_WAIT_MS, the only
- *                 timers of this module), clock (an ISO time, for
+ *                 frame tick and a dead viewer's wait for its status, STATUS_WAIT_MS or
+ *                 DEAD_WAIT_MS, the only timers of this module), clock (an ISO time, for
  *                 owner.json), pid (the TUI's, for owner.json): for tests.
+ *    trace(text)  told, when given, each notification of a viewer's end the control client printed
+ *                 (the dead-pane subscription's lines, a window's end, the client's own end) and
+ *                 what the panel made of it: tmux's ids and numbers and this module's words only,
+ *                 never a pane's text. For diagnosing an end in a test; default none.
  *  A callback that throws does not break the panel: what it threw is thrown again in a microtask,
  *  where the run hears it as any uncaught error.
  *
@@ -366,7 +375,7 @@ function readPart(file, max, fromEnd) {
  *  No method but open() throws or rejects: a server that went away makes each of them do nothing. */
 export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () => {}, env = process.env, tmux = "tmux",
   spawn = nodeSpawn, execFile = nodeExecFile, execFileSync = nodeExecFileSync, fs: givenFs = {}, timers = { setTimeout, clearTimeout },
-  clock = () => new Date().toISOString(), pid = process.pid } = {}) {
+  clock = () => new Date().toISOString(), pid = process.pid, trace = null } = {}) {
   if (typeof dir !== "function") throw new TypeError("createPanel needs dir(): the run's private directory");
   if (typeof capture !== "function") throw new TypeError("createPanel needs capture(text, { cols, rows }): the cell builder");
   const fs = { ...PANEL_FS, ...givenFs };
@@ -403,6 +412,8 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   function tell(act) {
     try { act(); } catch (error) { queueMicrotask(() => { throw error; }); }
   }
+  /** One line of the trace, when the caller asked for one. */
+  const traced = (text) => { if (trace) tell(() => trace(text)); };
   /** The flags every call starts with. */
   const base = () => ["-u", "-f", "/dev/null", "-S", socket];
 
@@ -474,10 +485,11 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     const [kind, first] = line.split(" ", 2);
     if (kind === "%output" || kind === "%extended-output") { if (viewer && first === viewer.pane) stale(); }
     else if (kind === "%layout-change") { if (viewer && first === viewer.id) stale(); }
-    else if (kind === "%window-close" || kind === "%unlinked-window-close") windowClosed(first);
-    else if (kind === "%exit") lost(s);
+    else if (kind === "%window-close" || kind === "%unlinked-window-close") { traced(line); windowClosed(first); }
+    else if (kind === "%exit") { traced(line); lost(s); }
     else if (kind === "%subscription-changed") {
       const dead = DEAD_LINE.exec(line);
+      if (first === DEAD_SUBSCRIPTION) traced(dead ? line : `${DEAD_SUBSCRIPTION}: a line not of its shape`);
       if (dead && dead[2] === "1") paneDied(dead[1], dead[3] !== "" ? Number(dead[3]) : dead[4] !== "" ? null : PENDING);
     }
   }
@@ -693,17 +705,21 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     if (openings.size > 0 && !(status === PENDING && diedSeen.has(id))) diedSeen.set(id, status);
   }
   /** A viewer heard dead with no status: it stays open until the line with its status or its
-   *  signal, a close, or its server's end. On tmux 3.2, which says a signal's end no other way, it
-   *  is over without a status after DEAD_WAIT_MS unless that line has come by then. Armed once. */
+   *  signal, a close, or its server's end, and at most STATUS_WAIT_MS (DEAD_WAIT_MS on tmux 3.2,
+   *  which says a signal's end no other way): then it is over without a status, and its pane is
+   *  killed. Armed once. */
   function waitStatus(v) {
-    if (signals || v.over || v.waiting !== null) return;
+    if (v.over || v.waiting !== null) return;
+    const ms = signals ? STATUS_WAIT_MS : DEAD_WAIT_MS;
+    traced(`${v.id} dead, waiting ${ms} ms for its status`);
     v.waiting = timers.setTimeout(() => {
       v.waiting = null;
       if (ended || v.over) return;
+      traced(`${v.id} no status after ${ms} ms`);
       v.status = null;
       if (server && !server.gone) ask(`kill-pane -t ${v.pane}`);
       finish(v, {});
-    }, DEAD_WAIT_MS);
+    }, ms);
   }
   /** A window ended: the open viewer's, one closing, or (an open under way) one to remember. */
   function windowClosed(id) {
@@ -723,6 +739,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     closing.delete(v.id);
     if (viewer === v) free();
     const stderr = quietly(() => fs.tail(v.files.err, STDERR_KEPT)) ?? "";
+    traced(`${v.id} over, status ${gone ? null : status}${gone ? ", its server gone" : ""}${v.asked ? ", closed" : ""}`);
     forget(v.files);
     if (!ended) tell(() => onClosed({ id: v.id, status: gone ? null : status, stderr, asked: v.asked }));
   }
@@ -783,6 +800,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         const pending = diedSeen.get(v.id) === PENDING;
         const died = diedSeen.has(v.id) && !pending, status = died ? diedSeen.get(v.id) : null;
         const already = closedSeen.has(v.id) || died, gone = server !== s;
+        traced(`${v.id} ${v.pane} opened${closedSeen.has(v.id) ? ", its window already closed" : died ? `, already dead with status ${status}` : pending ? ", already dead with no status yet" : ""}${gone ? ", its server gone" : ""}`);
         settle();
         if (already || gone) {
           // Over before its id was known (it exited at once, or the server went away meanwhile):

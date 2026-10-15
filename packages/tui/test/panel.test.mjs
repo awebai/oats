@@ -11,7 +11,7 @@ import os from "node:os";
 import { PassThrough } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEAD_WAIT_MS, FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
+import { DEAD_WAIT_MS, FRAME_MS, STATUS_WAIT_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/panel/tmux.mjs", import.meta.url));
 const ROOT = realpathSync(mkdtempSync(path.join(os.tmpdir(), "panel-test-")));
@@ -556,30 +556,69 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("on tmux 3.3 and later a pane heard dead with no status and no signal waits for its status however long it takes: no time limit", async () => {
+  test("on tmux 3.3 and later a pane heard dead with no status and no signal waits for its status STATUS_WAIT_MS at most: the line with its status ends it before then, and with none it is over with no status, its pane killed (CI, tmux 3.4: a status that never came left the terminal open)", async () => {
+    assert.equal(STATUS_WAIT_MS > DEAD_WAIT_MS, true);
     for (const version of ["tmux 3.3", "tmux 3.4", "tmux 3.7c", "tmux next-3.8"]) {
-      const { world, panel, closed, id, heard, timers } = await opened({ version });
-      world.emit(dead(id));
-      await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
-      assert.equal(timers.delays().includes(DEAD_WAIT_MS), false, `${version}: no wait armed`);
-      timers.fire();
-      await sleep(100);
-      assert.deepEqual([closed, panel.current, count(world.control(), "kill-pane")], [[], id, 0], `${version}: still open`);
-      world.emit(dead(id, 3));
-      await waitFor("the end", () => closed.length === 1);
-      assert.deepEqual(closed[0], { id, status: 3, stderr: "", asked: false }, version);
-      panel.end();
+      // The status comes in time: its line ends the viewer, and the wait is put away.
+      const early = await opened({ version });
+      early.world.emit(dead(early.id));
+      await waitFor("the panel to hear it", () => early.heard().includes(`${dead(early.id)}\n`));
+      assert.deepEqual(early.timers.delays().filter((ms) => ms === STATUS_WAIT_MS || ms === DEAD_WAIT_MS), [STATUS_WAIT_MS], `${version}: one wait, of STATUS_WAIT_MS`);
+      assert.deepEqual([early.closed, early.panel.current, count(early.world.control(), "kill-pane")], [[], early.id, 0], `${version}: still open`);
+      early.world.emit(dead(early.id, 3));
+      await waitFor("the end", () => early.closed.length === 1);
+      assert.deepEqual(early.closed[0], { id: early.id, status: 3, stderr: "", asked: false }, version);
+      assert.equal(early.timers.delays().includes(STATUS_WAIT_MS), false, `${version}: the wait put away`);
+      early.panel.end();
+      // It never comes: once the wait has passed the viewer is over with no status, and its pane
+      // is killed, which closes its window. A line heard again meanwhile arms no second wait.
+      const never = await opened({ version, window: { stderr: "oats: session no longer exists" } });
+      never.world.emit(dead(never.id));
+      await waitFor("the panel to hear it", () => never.heard().includes(`${dead(never.id)}\n`));
+      never.world.emit(dead(never.id));
+      await waitFor("the panel to hear it again", () => never.heard().split(`${dead(never.id)}\n`).length === 3);
+      assert.deepEqual(never.timers.delays().filter((ms) => ms === STATUS_WAIT_MS), [STATUS_WAIT_MS], `${version}: armed once`);
+      assert.deepEqual(never.closed, [], `${version}: not over before the wait`);
+      never.timers.fire();
+      assert.deepEqual(never.closed, [{ id: never.id, status: null, stderr: "oats: session no longer exists", asked: false }], version);
+      await waitFor("the dead pane killed", () => never.world.control().includes("kill-pane -t %1"));
+      never.panel.end();
     }
   });
 
-  test("end() while a viewer waits for its status on tmux 3.2: the wait is put away, and nothing more is said", async () => {
-    const { world, panel, closed, id, heard, timers } = await opened({ version: "tmux 3.2" });
+  test("end() while a viewer waits for its status: the wait is put away, and nothing more is said (tmux 3.2 and 3.4)", async () => {
+    for (const [version, ms] of [["tmux 3.2", DEAD_WAIT_MS], ["tmux 3.4", STATUS_WAIT_MS]]) {
+      const { world, panel, closed, id, heard, timers } = await opened({ version });
+      world.emit(dead(id));
+      await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
+      assert.equal(timers.delays().includes(ms), true, version);
+      panel.end();
+      assert.equal(timers.delays().includes(ms), false, `${version}: cleared`);
+      assert.deepEqual(closed, [], version);
+    }
+  });
+
+  test("the trace: each line of a viewer's end the control client printed, as printed, and what the panel made of it, in order; nothing of a pane's text", async () => {
+    const lines = [];
+    const { world, panel, closed, id, heard } = await opened({ window: { stderr: "secret words of the pane" } }, { trace: (text) => lines.push(text) });
+    world.emit("%output %1 secret\\040words");
     world.emit(dead(id));
     await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
-    assert.equal(timers.delays().includes(DEAD_WAIT_MS), true);
+    world.emit("%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 x ");
+    world.emit(dead(id, 1));
+    await waitFor("the end", () => closed.length === 1);
+    await waitFor("its window's end, after the kill", () => heard().includes(`%unlinked-window-close ${id}\n`));
+    assert.deepEqual(lines, [
+      `${id} %1 opened`,
+      dead(id),
+      `${id} dead, waiting ${STATUS_WAIT_MS} ms for its status`,
+      "oats-tui-dead: a line not of its shape",
+      dead(id, 1),
+      `${id} over, status 1`,
+      `%unlinked-window-close ${id}`,
+    ]);
+    assert.equal(lines.some((line) => line.includes("secret")), false);
     panel.end();
-    assert.equal(timers.delays().includes(DEAD_WAIT_MS), false, "cleared");
-    assert.deepEqual(closed, []);
   });
 
   test("a new-window that does not name its window as asked: the open refuses (E_PANEL_OPEN); a window it names at all is killed at once, not left until end()", async () => {
