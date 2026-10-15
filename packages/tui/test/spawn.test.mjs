@@ -7,7 +7,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { SPAWN_NEXT, defaultSpawnChoices, instanceId, observeIdentities, observedEntry, panelInstances, remoteRosterState, rosterRows } from "../lib/client.mjs";
-import { SPAWN_NEXT_WORDS, SPAWN_WORDS, model, outcomeOf, paletteItems, roster, spawnContext, spawnLine } from "../lib/model.mjs";
+import { SPAWN_NEXT_WORDS, SPAWN_WORDS, model, outcomeOf, paletteItems, roster, soulsOf, spawnContext, spawnLine } from "../lib/model.mjs";
 import { keyLabel } from "../lib/actions.mjs";
 import { reduce } from "../lib/store.mjs";
 import { CLI, DEPLOYMENT, catalogEntry, catalogSoul, instanceRow, observed, rosterOf, soulsTold, stateOf, took } from "./helpers.mjs";
@@ -46,8 +46,14 @@ const previewData = (extra = {}) => ({
   launchPromptAnswers: { awebDevelopmentChannel: false }, decision: DECISION, ...extra,
 });
 const available = (data = previewData()) => ({ spawnPreviewViewApi: 1, status: "available", target: null, data, reason: null });
-/** The loop's answer to the preview read the prompt asked last, landing after read `read`. */
-const answered = (state, answer = available(), read = reads) => reduce(state, { spawnRead: { n: state.spawn.n, answer, read } }).state;
+/** The loop's answer to the preview read the prompt asked last, without a frame written since. */
+const landed = (state, answer = available()) => reduce(state, { spawnRead: { n: state.spawn.n, answer } }).state;
+/** The same answer, and a frame that shows it written after read `read` (the loop's `spawnDrawn`,
+ *  told only when the frame drew the ready Spawn button). */
+const answered = (state, answer = available(), read = reads) => {
+  const after = landed(state, answer);
+  return after.spawn?.status === "shown" ? reduce(after, { spawnDrawn: { n: after.spawn.n, read } }).state : after;
+};
 /** n, the soul's name typed, Enter, and the preview answered: each in a read of its own. */
 function previewOf(state = base(), soul = "dev") {
   const step = keys(state, ["n", ...typing(soul), "enter"]);
@@ -87,12 +93,20 @@ test("the paste guard: n, a soul's name, Enter and Enter in one read open the pi
   const picked = keys(base(), ["n", ...typing("dev"), "enter"]);
   const early = key(picked.state, "enter");
   assert.deepEqual([early.effect, early.state.spawn.status], [null, "reading"], "an Enter while it is read");
-  // The answer lands after read R; an Enter in R itself (the read it was first drawn in) is ignored.
-  const landed = answered(picked.state, available(), reads);
-  assert.equal(key(landed, "enter", reads).effect, null, "an Enter of the read the preview landed in");
-  assert.deepEqual(Object.keys(key(landed, "enter").effect), ["spawn"], "an Enter of a later read spawns");
+  // The answer landed, and no frame showing it was written (the output was blocked): Spawn is not
+  // armed, in any later read.
+  const unseen = landed(picked.state);
+  assert.deepEqual([unseen.spawn.status, key(unseen, "enter").effect], ["shown", null], "an answer not yet drawn arms nothing");
+  // The frame that shows it is written after read R; an Enter in R itself is ignored.
+  const shown = reduce(unseen, { spawnDrawn: { n: unseen.spawn.n, read: reads } }).state;
+  assert.equal(key(shown, "enter", reads).effect, null, "an Enter of the read the preview was drawn in");
+  assert.deepEqual(Object.keys(key(shown, "enter").effect), ["spawn"], "an Enter of a later read spawns");
+  assert.equal(reduce(shown, { key: "enter", ...AT }).effect, null, "an Enter of no numbered read spawns nothing");
+  // A frame of another read's preview, or of a preview that is not ready, arms nothing.
+  assert.equal(reduce(unseen, { spawnDrawn: { n: unseen.spawn.n - 1, read: reads } }).state.spawn.shownIn, null);
+  assert.equal(reduce(picked.state, { spawnDrawn: { n: picked.state.spawn.n, read: reads } }).state.spawn.shownIn, null, "still read");
   // A paste is never an Enter, and goes nowhere but a field.
-  assert.equal(reduce(landed, { paste: "\n\n", read: ++reads }).effect, null);
+  assert.equal(reduce(shown, { paste: "\n\n", read: ++reads }).effect, null);
 });
 
 test("Enter on Spawn closes the prompt and asks the loop to spawn the decision on screen, with the prepare body the TUI builds; the line says Spawning <name>… until the outcome", () => {
@@ -137,6 +151,42 @@ test("N on a selected instance opens the preview of its soul, with Esc back to t
   // And N from there: another of the open terminal's soul.
   const ledN = key(reduce(opened, { back: true, read: ++reads, rest: false }).state, "N");
   assert.equal(ledN.state.spawn.soul.name, "dev");
+});
+
+test("the leader's n and N from the Souls view start from its selected soul, not the list's selection: from its list, its filter and its detail", () => {
+  // dev-a selected in the list; reviewer in the Souls view.
+  const souls = keys(on(base(), "dev-a"), ["2", "j", "j"]).state;
+  assert.equal(soulsOf(souls).selected.name, "reviewer");
+  const led = (state, id) => key(key(state, state.leaderKey).state, id);
+  const from = {
+    list: souls,
+    filter: keys(souls, ["/", ...typing("rev")]).state,
+    detail: keys(souls, ["tab"]).state,
+  };
+  for (const [where, state] of Object.entries(from)) {
+    for (const id of ["n", "N"]) {
+      const step = led(state, id);
+      assert.deepEqual([step.state.spawn?.step, step.state.spawn?.soul?.name, step.state.spawn?.back], ["preview", "reviewer", "list"], `${where}, the leader then ${id}`);
+      assert.deepEqual(step.effect.spawnPreview.request.selector, { soul: "reviewer", agentsRoot: `${DEPLOYMENT}/agents` }, `${where}, ${id}`);
+    }
+  }
+});
+
+test("an answer to a prompt closed since is never taken by the next one: preview reads are numbered in the run", () => {
+  // N of reviewer-a, closed with Esc while its preview is read; then n, dev picked.
+  const first = key(on(base(), "reviewer-a"), "N");
+  const asked = first.effect.spawnPreview.n;
+  const closed = key(first.state, "escape").state;
+  assert.equal(closed.spawn, null);
+  const second = keys(closed, ["n", ...typing("dev"), "enter"]);
+  const now = second.state.spawn;
+  assert.deepEqual([now.soul.name, now.status], ["dev", "reading"]);
+  assert.notEqual(now.n, asked, "a number of its own");
+  // The first prompt's answer lands: the dev prompt does not take it, and Spawn stays off.
+  const late = reduce(second.state, { spawnRead: { n: asked, answer: available(previewData({ instance: "reviewer-2", home: `${DEPLOYMENT}/agents/reviewer/instances/reviewer-2` })) } }).state;
+  assert.deepEqual([late.spawn.status, late.spawn.data, view(late).spawn.ready], ["reading", null, false]);
+  // Its own answer is taken.
+  assert.equal(answered(late).spawn.data.instance, "dev-2");
 });
 
 test("N of an instance whose soul the catalog has not been read for waits for it, then reads its preview; a catalog without it says the shared words", () => {
@@ -311,6 +361,15 @@ test("on another machine: n with its workspace open, and N on its row, say spawn
   const far = reached(), row = roster(far).instances.find((each) => each.instance === "acme-far-a");
   const N = key({ ...far, selected: instanceId(row) }, "N");
   assert.deepEqual([N.state.spawn, N.state.outcome.said], [null, SPAWN_WORDS.remote()]);
+  // n on that row too (Settled 9: a remote row or workspace), from its key, the leader and the
+  // palette's Spawn an agent: no local catalog is read, no picker opens.
+  const onFar = { ...far, selected: instanceId(row) };
+  const viaLeader = key(key(onFar, onFar.leaderKey).state, "n");
+  let typed = key(onFar, "ctrl+k").state;
+  for (const ch of "spawn an agent") typed = key(typed, ch === " " ? "space" : ch).state;
+  for (const [how, step] of [["n", key(onFar, "n")], ["the leader's n", viaLeader], ["the palette", key(typed, "enter")]]) {
+    assert.deepEqual([step.state.spawn, step.state.outcome?.said, step.effect?.souls], [null, SPAWN_WORDS.remote(), undefined], how);
+  }
 });
 
 test("the palette lists Spawn an agent, and Spawn another <soul> for its instance once the catalog lists that soul; each opens the prompt as its key does", () => {

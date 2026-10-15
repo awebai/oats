@@ -459,12 +459,13 @@ export function frame(m, size) {
     return { rows, page: Math.max(1, g.body.rows), extent: 0, room: 1, cursor: { row: g.body.top, col: drawn.cursor } };
   }
   // The spawn prompt in the same place (the palette wins if both are ever set). `extent` and `room`
-  // are its preview's, which the store scrolls as it scrolls a confirmation.
+  // are its preview's, which the store scrolls as it scrolls a confirmation; `armed` says the ready
+  // Spawn button is drawn, which the loop tells the store once the frame is written.
   if (m.spawn) {
     rows[2] = rule(cols, m.ascii);
     const drawn = spawn(m, { cols, rows: g.body.rows });
     drawn.rows.forEach((spans, i) => { rows[g.body.top + i] = spans; });
-    return { rows, page: Math.max(1, g.body.rows), extent: drawn.extent, room: drawn.room, cursor: drawn.cursor ? { row: g.body.top + drawn.cursor.row, col: drawn.cursor.col } : null };
+    return { rows, page: Math.max(1, g.body.rows), extent: drawn.extent, room: drawn.room, cursor: drawn.cursor ? { row: g.body.top + drawn.cursor.row, col: drawn.cursor.col } : null, ...(drawn.armed ? { armed: true } : {}) };
   }
   if (m.view === "act" && m.act) {
     rows[2] = rule(cols, m.ascii);

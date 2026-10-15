@@ -102,6 +102,7 @@ const TAKEN = Object.freeze({
   "spawn-preview.mjs": ["createSpawnPreview"],
   "spawn-preview-contract.mjs": ["defaultSpawnChoices"],
   "spawn-apply.mjs": ["createSpawnApplyBoundary"],
+  "spawn-apply-cli.mjs": ["cliSpawnApply"],
   "spawn-transaction.mjs": ["createSpawnTransaction"],
   "spawn-messages.mjs": ["spawnProblem", "outcomeWords", "SPAWN_NEXT"],
   "spawn-preview-facts.mjs": ["previewFacts"],

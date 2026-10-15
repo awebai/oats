@@ -75,7 +75,9 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   start, a restart, a spawn's apply) is never signalled on the way out: it
   is let go, and its output goes to files, so it never meets a closed pipe.
   Only a spawn's apply has a deadline, the shared apply's, at which it is
-  sent its signal (`timeout`, `killSignal`).
+  sent its signal (`timeout`, `killSignal`), and only while the run lasts:
+  every timer the shared spawn arms is the run's (`lib/main.mjs`
+  `createRunTimers`), cleared as the run ends.
 - The acts decide nothing the shared home decides: which act a row offers is
   `instanceActs`, a stop or a retire is the shared confirmation over the
   run's one lifecycle boundary, a start or a restart is `startInstance`, and

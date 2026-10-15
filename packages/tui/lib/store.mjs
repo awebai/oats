@@ -75,7 +75,9 @@ const NO_SOULS = Object.freeze({ wanted: false, held: new Map(), selected: null,
  *  (`phase` "submitting", "spawning" or "checking"; `prompt` the prompt as it was pressed, to come
  *  back to), or null; `spawnCheck` `{ name }` while a check of an outcome not known is offered
  *  (`C`), or null; `arriving` the instance a spawn created, `{ workspace, instance, home,
- *  agentsRoot, agent, reads, words }`, until its row is opened or two reads did not show it. */
+ *  agentsRoot, agent, reads, words }`, until its row is opened or two reads did not show it;
+ *  `previews` the number of the last preview read asked in the run, so that an answer to a prompt
+ *  already closed is never taken by the next one. */
 export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, detachKey = DETACH_KEY }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
@@ -88,7 +90,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
     helpTop: 0, actions, ascii, detachKey, opening: null, terminal: null, outcome: null, act: null, acted: 0, starting: new Map(), retiring: new Set(),
     leaderKey: backKeyId(detachKey), leader: null, palette: null, recent: Object.freeze([]), souls: NO_SOULS,
-    spawn: null, spawning: null, spawnCheck: null, arriving: null,
+    spawn: null, spawning: null, spawnCheck: null, arriving: null, previews: 0,
   });
 }
 
@@ -667,9 +669,11 @@ function led(state, does, event, keymap) {
   }
   if (does === "previous" || does === "next") return stepped(state, does === "previous" ? -1 : 1, event);
   // Another of the open terminal's soul, from its focus; from anywhere else, of the selection's.
-  if (does === "spawn-another") {
+  // The Souls view's selected soul is named before the list is shown, which leaves that view.
+  if (does === "spawn" || does === "spawn-another") {
+    const target = spawnTarget(state, inTerminal ? t.id : state.selected);
     const settledState = toList(state);
-    const step = spawnAsked(settledState.state, event, does, inTerminal ? t.id : state.selected);
+    const step = spawnAsked(settledState.state, event, does, target);
     return { state: step.state, effect: both(settledState.effect, step.effect) };
   }
   if (does === "stop" || does === "retire" || does === "start" || does === "restart") {
@@ -773,7 +777,7 @@ function ranFromPalette(state, item, event, keymap) {
   if (item.kind === "instance" || item.kind === "act") {
     const row = shut.view === "instances" ? roster(shut).instances.find((each) => instanceId(each) === item.id) : undefined;
     if (!row) return settled;
-    if (item.does === "spawn-another") return then(spawnAsked(shut, event, item.does, item.id));
+    if (item.does === "spawn-another") return then(spawnAsked(shut, event, item.does, { id: item.id }));
     if (item.kind === "act") return then(actOn(shut, row, item.does, from === "terminal" ? "terminal" : null));
     const r = roster(shut, undefined, Number.isInteger(event.cols) ? event.cols : undefined);
     const page = Math.max(1, Number.isInteger(event.page) ? event.page : 1);
@@ -804,6 +808,7 @@ function reduced(state, event, keymap) {
   if (event.refused !== undefined) return { state: next(state, { switcher: Object.freeze({ ...state.switcher, refused: event.refused }) }), effect: null };
   if (event.souls !== undefined) return soulsHeard(state, event.souls);
   if (event.spawnRead !== undefined) return spawnRead(state, event.spawnRead);
+  if (event.spawnDrawn !== undefined) return spawnDrawn(state, event.spawnDrawn);
   if (event.spawnProgress !== undefined) return { state: state.spawning?.phase === "submitting" ? next(state, { spawning: Object.freeze({ ...state.spawning, phase: "spawning" }) }) : state, effect: null };
   if (event.spawnDone !== undefined) return spawnDone(state, event.spawnDone);
   // An action the leader or the palette runs comes as `{ action }`, with no key: whatever field or
@@ -839,7 +844,7 @@ function reduced(state, event, keymap) {
     case "souls": return soulsShown(state);
     case "capabilities": return { state: state.view === action ? state : next(state, { view: action, back: action }), effect: null };
     // A spawn starts from the list of instances or the Souls view (the leader reaches them from anywhere).
-    case "spawn": case "spawn-another": return state.view === "instances" || state.view === "souls" ? spawnAsked(state, event, action) : stay;
+    case "spawn": case "spawn-another": return state.view === "instances" || state.view === "souls" ? spawnAsked(state, event, action, spawnTarget(state)) : stay;
     case "spawn-check": return spawnChecked(state);
     default:
   }
@@ -918,32 +923,41 @@ const remoteRow = (row) => typeof row?.server === "string" && row.server !== "";
  *  opened, as the shared relation anchors it. */
 const anchorOf = (row) => (row && !remoteRow(row) ? Object.freeze({ id: instanceId(row), instance: row.instance, agent: row.agent, agentsRoot: row.agentsRoot }) : null);
 
+/** What n and N are of, named in the view they were pressed in: the Souls view's selected soul
+ *  (`{ souls: row|null }`), else instance `id` (the selection's, or the open terminal's). */
+function spawnTarget(state, id = state.selected) {
+  if ((state.view === "help" ? state.back : state.view) === "souls") return { souls: soulsOf(state).selected };
+  return { id };
+}
+
 /** n, N, the leader's n and N, and the palette's two rows (docs/tui.md, "Spawning an agent").
  *  One spawn at a time: while one is under way the line says so and nothing opens. Only this
  *  machine's workspace is offered: on another machine's workspace or row the line says so.
- *  n opens the soul picker, and N the preview of the selected instance's soul (`id`: the open
- *  terminal's, from its focus); in the Souls view both start from the selected soul, at the
- *  preview. The catalog is wanted from now on (settled for the open workspace, as the Souls view
- *  settles it). `read`: the read of input the prompt opened in, whose Enter does nothing. */
-function spawnAsked(state, event, verb, id = state.selected) {
+ *  n opens the soul picker, and N the preview of the soul of instance `target.id` (the selection's,
+ *  or the open terminal's from its focus); from the Souls view (`target.souls`) both start from
+ *  its selected soul, at the preview. The catalog is wanted from now on (settled for the open
+ *  workspace, as the Souls view settles it). `read`: the read of input the prompt opened in, whose
+ *  Enter does nothing. */
+function spawnAsked(state, event, verb, target) {
   const stay = { state, effect: null };
   if (state.open === null) return stay;
   if (state.spawning !== null) return said(state, SPAWN_WORDS.busy(state.spawning.name));
   if (!state.ctxs.includes(state.open)) return said(state, SPAWN_WORDS.remote());
+  const fromSouls = Object.hasOwn(target, "souls"), id = fromSouls ? null : target.id;
   const row = state.view === "instances" && id !== null ? roster(state).instances.find((each) => instanceId(each) === id) ?? null : null;
+  // Settled 9: on another machine's row, neither n nor N opens anything of this one.
+  if (row !== null && remoteRow(row)) return said(state, SPAWN_WORDS.remote());
   let soul = null, wanted = null;
-  if (state.view === "souls") {
-    const chosen = soulsOf(state).selected;
-    if (chosen) soul = Object.freeze({ name: chosen.name, agentsRoot: chosen.agentsRoot });
+  if (fromSouls) {
+    if (target.souls) soul = Object.freeze({ name: target.souls.name, agentsRoot: target.souls.agentsRoot });
   } else if (verb === "spawn-another") {
     if (row === null) return stay;
-    if (remoteRow(row)) return said(state, SPAWN_WORDS.remote());
     wanted = row.agent;
   }
   const preview = soul !== null || wanted !== null;
   const prompt = Object.freeze({
     workspace: state.open, step: preview ? "preview" : "picker", read: Number.isInteger(event.read) ? event.read : null,
-    back: preview && (verb === "spawn-another" || state.view === "souls") ? "list" : "picker",
+    back: preview && (verb === "spawn-another" || fromSouls) ? "list" : "picker",
     query: "", selected: null, soul, wanted, anchor: anchorOf(row),
     name: "", nameRead: "", child: false, focus: "spawn", folds: Object.freeze([]), top: 0,
     n: 0, asked: null, status: preview ? "souls" : null, data: null, reason: null, shownIn: null, readKey: null, problem: null,
@@ -953,12 +967,14 @@ function spawnAsked(state, event, verb, id = state.selected) {
   return { state: step.state, effect: both({ souls: "settle" }, step.effect) };
 }
 
-/** A preview read asked of the loop (`spawnPreview`), numbered: only the answer to the last one is
- *  taken. What was on screen stays while it is read, as stale. */
+/** A preview read asked of the loop (`spawnPreview`), numbered in the run (`previews`), not in the
+ *  prompt: only the answer to the last one is taken, and never one asked by a prompt closed since.
+ *  What was on screen stays while it is read, as stale, and Spawn is not armed until the answer
+ *  is drawn (`spawnDrawn`). */
 function previewAsked(state) {
-  const p = state.spawn, n = p.n + 1;
+  const p = state.spawn, n = state.previews + 1;
   const request = { action: "preview", selector: spawnSelector(p), choices: spawnChoices(p) };
-  return { state: spawnWith(state, { n, asked: spawnChoicesKey(p), nameRead: p.name, status: "reading" }), effect: { spawnPreview: { n, workspace: p.workspace, request } } };
+  return { state: spawnWith(next(state, { previews: n }), { n, asked: spawnChoicesKey(p), nameRead: p.name, status: "reading", shownIn: null }), effect: { spawnPreview: { n, workspace: p.workspace, request } } };
 }
 
 /** N's soul, found in the workspace's catalog once it is held: the preview is read for it. A
@@ -971,15 +987,24 @@ function soulFound(state) {
   return { state: spawnWith(state, { status: "failed", reason: null, problem: { said: SPAWN_WORDS.noSoul(p.wanted), under: [] } }), effect: null };
 }
 
-/** The preview's answer (`{ n, answer, read }`, `read` the last read of input before it landed):
- *  taken only for the last read asked. One the workspace moved under is read again at once, as its
- *  shared words say. `shownIn` is what the paste guard reads (inSpawn). */
-function spawnRead(state, { n, answer, read }) {
+/** The preview's answer (`{ n, answer }`): taken only for the last read asked. One the workspace
+ *  moved under is read again at once, as its shared words say. An answer taken is not yet seen:
+ *  Spawn is armed only once a frame that shows it ready is written (`spawnDrawn`). */
+function spawnRead(state, { n, answer }) {
   const p = state.spawn;
   if (p === null || p.step !== "preview" || p.n !== n) return { state, effect: null };
-  if (answer?.status === "available") return { state: spawnWith(state, { status: "shown", data: answer.data, reason: null, readKey: p.asked, shownIn: Number.isInteger(read) ? read : null }), effect: null };
+  if (answer?.status === "available") return { state: spawnWith(state, { status: "shown", data: answer.data, reason: null, readKey: p.asked, shownIn: null }), effect: null };
   if (answer?.reason?.code === "E_TARGET_CHANGED") return previewAsked(state);
   return { state: spawnWith(state, { status: "failed", reason: answer?.reason ?? null, readKey: null }), effect: null };
+}
+
+/** A frame was written that shows preview `n` ready, its Spawn button on the screen
+ *  (`{ n, read }`, `read` the number of the last read of input before that frame): the paste guard
+ *  (inSpawn) takes Enter on Spawn only from a later read. Kept from the first such frame. */
+function spawnDrawn(state, { n, read }) {
+  const p = state.spawn;
+  if (p === null || p.step !== "preview" || p.n !== n || p.shownIn !== null || !spawnReady(p) || !Number.isInteger(read)) return { state, effect: null };
+  return { state: spawnWith(state, { shownIn: read }), effect: null };
 }
 
 /** The name field's text left as it is now: when it is not what the preview was read with, the
@@ -1061,7 +1086,7 @@ function inSpawn(state, event, keymap) {
     return { state: spawnWith(state, { folds: Object.freeze(p.folds.includes(key) ? p.folds.filter((each) => each !== key) : [...p.folds, key]) }), effect: null };
   }
   if (p.status === "failed") return p.soul === null ? stay : previewAsked(state);
-  if (!spawnReady(p) || (p.shownIn !== null && Number.isInteger(event.read) && event.read <= p.shownIn)) return stay;
+  if (!spawnReady(p) || p.shownIn === null || !Number.isInteger(event.read) || event.read <= p.shownIn) return stay;
   return spawnPressed(state);
 }
 

@@ -21,8 +21,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { constants } from "node:os";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -34,6 +34,10 @@ const hostTool = (name) => { try { return systemExecutable(name); } catch { retu
 // The host's own tools and the default server's sessions, read before the environment is isolated.
 const REAL_TMUX = hostTool("tmux");
 const SLEEP = hostTool("sleep");
+/** Test 5 opens the new agent's terminal: the panel makes its keeper's FIFO with the base system's
+ *  `mkfifo` (packages/tui/lib/panel.mjs, THE KEEPER), which the fixture's PATH does not link: the
+ *  host's is linked there for this file, as test/tui-panel.test.mjs does. */
+const HOST_MKFIFO = hostTool("mkfifo");
 const NO_TMUX = REAL_TMUX ? false : "tmux is not on PATH: these tests drive `oats tui` in a real tmux (test/tmux-in-ci.test.mjs fails for this in CI)";
 const ORIGINAL_ENV = { ...process.env };
 /** The sessions of the default tmux server (the one a plain `tmux` reaches from the environment this
@@ -108,6 +112,8 @@ wait();
 test.before(async () => {
   if (!REAL_TMUX) return;
   restoreEnvironment = isolateSessionEnvironment(base);
+  assert.ok(HOST_MKFIFO, "mkfifo is on the host's PATH");
+  symlinkSync(HOST_MKFIFO, join(process.env.PATH.split(delimiter)[0], "mkfifo"));
   writeFileSync(STANDIN, `#!/bin/sh\nexec ${shq(SLEEP)} 86400\n`);
   chmodSync(STANDIN, 0o755);
   // A second soul, scribe, for test 5's spawn from the TUI: this machine launches it on the stand-in

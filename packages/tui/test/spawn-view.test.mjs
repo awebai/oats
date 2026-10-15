@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { ACTIONS } from "../lib/actions.mjs";
 import { previewFacts } from "../lib/client.mjs";
 import { model } from "../lib/model.mjs";
+import { reduce } from "../lib/store.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
 import { textWidth } from "../lib/term/width.mjs";
 import { frame, terminalArea } from "../lib/views/frame.mjs";
@@ -445,4 +446,13 @@ test("the help names the spawn keys from the action table (n, N and C, each in i
   assert.equal(lines.some((line) => /spawning is not|not offered/.test(line)), false);
   // At 60 columns nothing of the section is cut.
   for (const line of rowStrings(helpRows(ACTIONS, false, 60, "C-\\"), 60)) assert.equal(line.endsWith("…"), false, line);
+});
+
+test("the frame says it drew a ready Spawn button (`armed`), which the loop tells the store once the frame is written: never for the picker, a preview not ready, or a screen too small for the button", () => {
+  assert.equal(drawSpawn(previewOf({ ready: true }), S80).armed, true);
+  assert.equal(drawSpawn(previewOf({ ready: false }), S80).armed, undefined, "not ready: dim, not armed");
+  assert.equal(drawSpawn(pickerOf(), S80).armed, undefined, "the picker");
+  const palette = model(reduce(stateOf(observed([instanceRow("dev", "dev-a")])), { key: "ctrl+k", read: 1 }).state, { page: 19, now: NOW, at: AT, cols: 38 }).palette;
+  assert.equal(drawModel({ ...baseModel(), spawn: previewOf({ ready: true }), palette }, S80).armed, undefined, "under the palette");
+  assert.equal(drawSpawn(previewOf({ ready: true }), size(80, 3)).armed, undefined, "too small to draw the prompt");
 });

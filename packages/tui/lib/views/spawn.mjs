@@ -194,7 +194,8 @@ function focusedRow(spans) {
  *    pinned  the rows that keep the area's bottom, as a confirmation's buttons do: the two fields,
  *            the Spawn button and a problem (cut to `problemRows` rows, the last one the cut mark);
  *    cursor  where the name field's cursor stands in `pinned` (`{ row, col }`), or null while the
- *            field has no focus. */
+ *            field has no focus;
+ *    button  the Spawn button's row in `pinned`. */
 export function previewRows(s, cols, ascii, { problemRows = Infinity } = {}) {
   const width = Math.max(1, cols - EDGE);
   const rows = [];
@@ -251,6 +252,7 @@ export function previewRows(s, cols, ascii, { problemRows = Infinity } = {}) {
   const focused = s.focus === "spawn";
   const label = focused ? `> ${SPAWN_TEXT.button} <` : `[ ${SPAWN_TEXT.button} ]`;
   pinned.push([], ownSpan(label, LEFT, width, ascii, s.ready ? (focused ? FOCUSED : PLAIN) : (focused ? FOCUSED_DIM : DIM)));
+  const button = pinned.length - 1;
   // A failed read, or a spawn's outcome that brought the prompt back, after an empty row: its
   // sentence bold, then the lines under it as they came. Cut to the rows it is given, the last of
   // them the cut mark then.
@@ -260,7 +262,7 @@ export function previewRows(s, cols, ascii, { problemRows = Infinity } = {}) {
     for (const line of s.problem.under ?? []) problem.push(...outsideRows(line, LEFT, width, WRAP_ROWS, ascii));
     pinned.push(...(problem.length <= problemRows ? problem : [...problem.slice(0, problemRows - 1), ownSpan("\u2026", LEFT, width, ascii, DIM)]));
   }
-  return { scroll: rows, keep, pinned, cursor };
+  return { scroll: rows, keep, pinned, cursor, button };
 }
 
 /** The rows the scrolling part keeps at least, above what is pinned under it. */
@@ -270,7 +272,7 @@ const SCROLL_MIN = 3;
  *  above them the rest scrolled to the model's `top`, or to the window that holds the fold with
  *  the focus (the store scrolls only with the movement keys; Tab can land on a fold out of sight).
  *  The scrolling part's last row says what is cut off. `extent` and `room` are the scrolling
- *  part's, for the store's scroll. */
+ *  part's, for the store's scroll; `armed` is whether the ready Spawn button is on the screen. */
 function preview(s, size, ascii) {
   const rows = Array.from({ length: size.rows }, () => []);
   const fixed = previewRows(s, size.cols, ascii, { problemRows: 0 }).pinned.length;
@@ -284,10 +286,10 @@ function preview(s, size, ascii) {
   pinned.forEach((spans, i) => { rows[room + i] = spans; });
   const cut = all.pinned.length - pinned.length;
   const cursor = all.cursor && all.cursor.row >= cut ? { row: room + all.cursor.row - cut, col: all.cursor.col } : null;
-  return { rows, cursor, extent: all.scroll.length, room: Math.max(1, room) };
+  return { rows, cursor, extent: all.scroll.length, room: Math.max(1, room), armed: s.ready === true && all.button >= cut };
 }
 
-/** `{ rows, cursor, extent, room }`: `size.rows` rows for an area `size.cols` wide, the step of the
+/** `{ rows, cursor, extent, room, armed? }`: `size.rows` rows for an area `size.cols` wide, the step of the
  *  prompt the model is at. `cursor` is `{ row, col }` in the area (the query's end, or the name
  *  field's while it has the focus), or null; `extent` and `room` are the preview's scrolling
  *  part's, for the store's scroll (0 and 1 for the picker, which the model windows itself). */

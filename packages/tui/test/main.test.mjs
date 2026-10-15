@@ -1,8 +1,11 @@
 process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, cliSpawnApply, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
@@ -133,11 +136,13 @@ function run({ argv = [], env = { TERM: "xterm-256color", LANG: "en_US.UTF-8" },
       return r.spawn.preview;
     },
     createSpawnApplyBoundary(options) {
-      r.spawn.applyRead = options.read; r.spawn.applyExec = options.exec;
+      r.spawn.applyRead = options.read; r.spawn.applyExec = options.exec; r.spawn.applyInvoke = options.invoke; r.spawn.applyTimer = options.timer;
       return (body, getContext, extra) => { r.spawn.applyCalls.push({ body, context: getContext(), settled: extra?.settled }); return Promise.resolve(null); };
     },
+    // The shared apply's own transport, real, its task file in the test's directory.
+    cliSpawnApply: (cli, options, io) => cliSpawnApply(cli, options, { ...io, tmpdir: () => r.spawn.tmp }),
     createSpawnTransaction(options) {
-      r.spawn.request = options.request;
+      r.spawn.request = options.request; r.spawn.sleep = options.sleep;
       return {
         submit: (intent, call) => new Promise((resolve) => { log.push(["spawn", "submit"]); r.spawn.submits.push({ intent, call, answer: resolve }); }),
         check: (job, call) => new Promise((resolve) => { log.push(["spawn", "check"]); r.spawn.checks.push({ job, call, answer: resolve }); }),
@@ -1698,6 +1703,83 @@ test("the apply is a change of the run, labelled for the line after leaving; its
   apply.settled();
   assert.deepEqual(r.log.filter(([what]) => what === "spawn").at(-1), ["spawn", "invalidate", DEPLOYMENT]);
   assert.equal(readerDid(r).filter(([what]) => what === "request").length, asked + 1);
+});
+
+test("Spawn is armed by the frame that shows the ready preview, not by the answer: while the output is blocked an answer that landed spawns nothing, and once it is drawn an Enter of a later read does", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY);
+  r.stdin.type("n"); await settle();
+  r.soulReads[0].answer(soulsDocument(["acme-expert"])); await settle();
+  for (const ch of "expert") r.stdin.type(ch);
+  // The terminal stops taking frames: the one that says the preview is read blocks the next. The
+  // answer lands meanwhile, and no frame shows it.
+  r.stdout.accepts = false;
+  r.stdin.type("\r"); await settle();
+  assert.match(textOf(r.stdout.take()), /Reading the preview/);
+  r.stdout.accepts = true;
+  r.spawn.reads.at(-1).answer({ spawnPreviewViewApi: 1, status: "available", target: null, data: SPAWN_DATA, reason: null }); await settle();
+  assert.equal(r.stdout.take(), "", "no frame was written: the output is blocked");
+  r.stdin.type("\r"); await settle();
+  assert.equal(r.spawn.submits.length, 0, "an Enter on a preview not drawn spawns nothing");
+  // It drains: the frame shows the preview ready, and an Enter of a later read spawns.
+  r.stdout.emit("drain"); await settle();
+  assert.match(textOf(r.stdout.take()), /\[ Spawn \]|> Spawn </);
+  r.stdin.type("\r"); await settle();
+  assert.equal(r.spawn.submits.length, 1);
+});
+
+test("quitting with a spawn under way clears every timer the shared apply armed for it: on a worktree-event kernel neither its deadline nor its grace signals the spawn let go, and no timer outlives the run", async () => {
+  const cli = { ok: true, bin: "/opt/oats/bin/oats.mjs", spawnPreviewApi: 2, spawnApplyApi: 1, harnesses: ["claude"], features: ["spawn-preview-2", "spawn-apply-2", "spawn-idempotency-2", "worktree-event"] };
+  const decision = { instance: "dev-2", home: "/team/agents/dev/instances/dev-2", branch: null, base: null, revision: "a".repeat(24),
+    effective: { repo: "/team/repo", work: "directory", harness: "claude", model: null, launchConfig: null, yolo: null, backend: "tmux", childSpawns: false, relation: null } };
+  const options = { target: { workspace: "team", context: "/team", selector: { soul: "dev", agentsRoot: "/team/agents" } }, choices: {}, decision, key: "a".repeat(64), task: "" };
+  /** A run whose spawn apply is the real transport over the run's changeExec, its child's signals recorded. */
+  async function applying() {
+    const r = await started();
+    r.reader.answer(ENTRY); await settle();
+    r.spawn.tmp = mkdtempSync(join(tmpdir(), "tui-spawn-quit-"));
+    const signals = [], changeExec = r.reader.changeExec;
+    r.reader.changeExec = function (...args) { return { ...changeExec.apply(this, args), kill: (signal) => { signals.push(signal); return true; } }; };
+    void r.spawn.applyInvoke(cli, options, { exec: r.spawn.applyExec });
+    assert.equal(r.reader.changed.length, 1, "the apply is a change of the run");
+    assert.equal(r.timers.delays().includes(60000), true, "its deadline is armed, on the run's timers");
+    return { r, signals, done: () => rmSync(r.spawn.tmp, { recursive: true, force: true }) };
+  }
+  // Quit before the deadline: it is cleared with the run.
+  const a = await applying();
+  try {
+    a.r.stdin.type("q");
+    assert.equal(await a.r.status, 0);
+    assert.equal(a.r.timers.delays().includes(60000), false, "the deadline went with the run");
+    a.r.timers.fire();
+    assert.deepEqual(a.signals, [], "a TUI that has gone signals no spawn");
+  } finally { a.done(); }
+  // The deadline passes while the run goes on: SIGTERM, as the shared apply says; quit then, and
+  // its grace never sends SIGKILL.
+  const b = await applying();
+  try {
+    b.r.timers.fire();
+    assert.deepEqual(b.signals, ["SIGTERM"]);
+    assert.equal(b.r.timers.delays().includes(20000), true, "its grace is armed");
+    b.r.stdin.type("q");
+    assert.equal(await b.r.status, 0);
+    b.r.timers.fire();
+    assert.deepEqual(b.signals, ["SIGTERM"], "no SIGKILL after the TUI has gone");
+    assert.equal(b.r.timers.count, 0, "no timer outlives the run");
+  } finally { b.done(); }
+});
+
+test("the transaction's polls and the boundary's wait for an answer are on the run's timers too, and end with it", async () => {
+  const r = await started();
+  r.reader.answer(ENTRY); await settle();
+  let slept = false, waited = false;
+  void r.spawn.sleep(5000).then(() => { slept = true; });
+  r.spawn.applyTimer(() => { waited = true; }, 50000);
+  assert.deepEqual([r.timers.delays().includes(5000), r.timers.delays().includes(50000)], [true, true]);
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+  r.timers.fire(); await settle();
+  assert.deepEqual([slept, waited, r.timers.count], [false, false, 0]);
 });
 
 test("a workspace whose catalog key moved forgets the previews held for it", async () => {

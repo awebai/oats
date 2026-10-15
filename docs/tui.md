@@ -610,15 +610,20 @@ one screen to read and one `Enter` to press.
   in its terminal.
 - **A paste cannot spawn.** An `Enter` in the same read of input as the
   key that opened the prompt does nothing; `Enter` on `Spawn` spawns only
-  once the preview on screen was read for exactly the choices shown, and
-  only from a read of input later than the one in which it was drawn. A
-  pasted `n`, a soul's name and two `Enter`s stop at the preview.
+  once the preview was read for exactly the choices shown, a frame that
+  shows it ready with its `Spawn` button was written to the terminal, and
+  only from a read of input later than that frame. A pasted `n`, a soul's
+  name and two `Enter`s stop at the preview.
+- **`n` and `N` are of the view they are pressed in**: the leader's too.
+  From the Souls view (its list, its filter or its detail) both are of its
+  selected soul, whatever the list of instances has selected.
 - **One spawn at a time.** While one is under way the line above the
   panes says `Spawning <name>…`, and the TUI goes on working: `n` and `N`
   say a spawn is under way and open nothing.
 - **Only on this machine.** On another machine's row or workspace `n` and
-  `N` say that spawning on another machine is not offered here, and that
-  `oats spawn` there makes one.
+  `N` (from their keys, the leader or the palette) say that spawning on
+  another machine is not offered here, and that `oats spawn` there makes
+  one.
 
 **What follows the spawn** is said in the shared words, the Desktop's, and
 the TUI adds only what to do next, naming its keys or an `oats` command:
@@ -976,7 +981,9 @@ with the Desktop (`packages/client/`).
   more for each worktree setup a capability runs. Past it, the spawn is
   sent SIGTERM (by `oats tui`, through the shared apply), and on an OATS
   that rolls a spawn back on it, SIGKILL 20 seconds later if it still
-  runs: the outcome is then not known, and `C` checks it. The shared apply
+  runs: the outcome is then not known, and `C` checks it. Those timers are
+  the run's: once `oats tui` has gone, no deadline of a spawn it let go
+  signals it, and none keeps the process waiting. The shared apply
   writes the task file `oats spawn --task-file` reads, empty, under the
   system's temporary directory (`oats-desktop-task-*`, mode 0600), and
   removes it when the spawn answers; a spawn let go on the way out leaves
@@ -1151,8 +1158,9 @@ alone. The next run removes the directory that is left, with its `tmux`,
   outlives it on every way out a process can handle; after SIGKILL a read
   in flight runs to its own end, and the private server and its viewer end
   by themselves. An act you confirmed is never ended by `oats tui`: it runs
-  to its own end. A spawn is ended only at its deadline
-  ([above](#what-it-reads-and-what-it-runs)), never on the way out.
+  to its own end. A spawn is ended only at its deadline, while `oats tui`
+  runs ([above](#what-it-reads-and-what-it-runs)): never on the way out,
+  and never after it.
 
 ## Errors
 

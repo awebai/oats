@@ -9,7 +9,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, cliSpawnApply, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
 import { ACT_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
@@ -76,10 +76,32 @@ function errorLines(error) {
  *  runs that are gone left of theirs (lib/panel.mjs). `createSoulCatalog` is the shared home's
  *  catalog of a workspace's souls, replaceable so a test can count its reads; the three spawn
  *  factories are the shared home's preview, apply boundary and transaction, replaceable so a test
- *  can answer them. */
+ *  can answer them, and `cliSpawnApply` the shared apply's own transport, which the boundary is
+ *  given wrapped (createRunTimers). */
 const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, offeredDeployments, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
-  createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
+  createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction, cliSpawnApply });
+
+/** The timers a run lends the shared spawn: the apply's deadline and its grace (cliSpawnApply's
+ *  `timer`), the boundary's wait for an answer and the transaction's polls (`sleep`). They are
+ *  the run's: `end()`, as the run ends, clears every one still armed, so a TUI that has gone
+ *  neither signals a spawn it let go nor is kept alive by one (Spec 6-spawn, Settled 4).
+ *  `timer(fn, ms)` returns its cancel, as the shared home's timers do. */
+export function createRunTimers({ setTimer, clearTimer }) {
+  const armed = new Set();
+  let over = false;
+  function timer(fn, ms) {
+    if (over) return () => {};
+    const handle = setTimer(() => { armed.delete(handle); if (!over) fn(); }, ms);
+    armed.add(handle);
+    return () => { if (armed.delete(handle)) clearTimer(handle); };
+  }
+  return {
+    timer,
+    sleep: (ms) => new Promise((resolve) => { timer(resolve, ms); }),
+    end() { over = true; for (const handle of armed) clearTimer(handle); armed.clear(); },
+  };
+}
 
 /** Run. Resolves with the exit status; never calls process.exit, so what was written drains.
  *  Before the alternate screen, in this order, each failure one line on stderr and status 1:
@@ -238,20 +260,24 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   // boundary ends it at its deadline through the child returned. `spawnLabel` names the spawn for
   // the line after leaving (one at a time); `job` is the transaction's record of the last spawn,
   // kept for a check (C) in this run only: the TUI keeps nothing on disk. `catalogKeys`: the key
-  // each workspace's catalog was last settled at, to tell when the workspace moved.
+  // each workspace's catalog was last settled at, to tell when the workspace moved. Every timer
+  // the shared spawn arms is the run's (`spawnTimers`), cleared as the run ends: a spawn let go is
+  // never signalled after the TUI has gone, on any kernel.
+  const spawnTimers = createRunTimers({ setTimer, clearTimer });
   const preview = effects.createSpawnPreview({ exec: reader.exec });
   let spawnLabel = null, job = null;
   const catalogKeys = new Map();
   const spawnApply = effects.createSpawnApplyBoundary({ read: preview.prepareRead, exec: (bin, argv, { detached, ...options }, callback) => (detached
     ? reader.changeExec(bin, argv, { ...options, label: spawnLabel }, callback)
-    : reader.exec(bin, argv, options, callback)) });
+    : reader.exec(bin, argv, options, callback)),
+  timer: spawnTimers.timer, invoke: (cli, options, io) => effects.cliSpawnApply(cli, options, { ...(io ?? {}), timer: spawnTimers.timer }) });
   /** As the Desktop's (server/oats-web.mjs): a spawn in the air changes what a preview answers, so
    *  held previews go when it is applied, and again when a pending apply settles, with a read. */
   const forgetPreviews = (id) => { try { preview.cache.invalidate(id); } catch { /* never blocks a spawn */ } };
   const transaction = effects.createSpawnTransaction({ request: (body, tx) => {
     if (body?.action === "apply") forgetPreviews(tx.address);
     return spawnApply(body, () => spawnContext(state, tx.address, clock()), { settled: () => { forgetPreviews(tx.address); refresh({ live: true }); } });
-  } });
+  }, sleep: spawnTimers.sleep });
   /** What a spawn's call is told: its owner is gone once the TUI leaves (`alive`), and the job is
    *  kept once it is submitted, for a check. */
   const spawnCall = { alive: () => !ended, progress: (event, made) => { if (event === "submitted") { job = made; heard({ spawnProgress: { event } }); } } };
@@ -263,12 +289,12 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   /** A call that threw instead of answering: what it did is not known. */
   const UNKNOWN = Object.freeze({ kind: "unknown", reason: Object.freeze({ code: "E_OUTCOME_UNKNOWN" }) });
   /** The preview the store asked for (`{ n, workspace, request }`), read against the workspace as
-   *  it is at that moment; its answer goes to the store with the last read of input before it
-   *  landed, which the paste guard reads. */
+   *  it is at that moment; its answer goes to the store. It arms Spawn only once a frame that
+   *  shows it is written (the guard's `frame`). */
   function previewRead({ n, workspace, request }) {
     Promise.resolve()
       .then(() => preview.read(request, () => spawnContext(state, workspace, clock())))
-      .then((answer) => heard({ spawnRead: { n, answer, read: reads } }), () => heard({ spawnRead: { n, answer: null, read: reads } }));
+      .then((answer) => heard({ spawnRead: { n, answer } }), () => heard({ spawnRead: { n, answer: null } }));
   }
   /** The spawn the store decided on: submitted once; its outcome goes to the store. */
   function spawnNow({ workspace, selector, input, decision, name }) {
@@ -490,6 +516,9 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
       fitPanel(made.terminal);
       const bytes = screen.render(made.rows, size, { full, cursor: made.cursor });
       full = false;
+      // This frame is written (the guard makes one only to write it): a ready preview on it is
+      // seen, and Enter on Spawn is taken from the next read of input on (the paste guard).
+      if (made.armed && state.spawn !== null) state = reduce(state, { spawnDrawn: { n: state.spawn.n, read: reads } }, keymap).state;
       return bytes;
     },
     onInput(bytes) {
@@ -515,7 +544,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     // The run's directory goes last, made for whichever of the two needed it first: the reader
     // removes it only when it wrote a change there, and one it cannot remove (a change still
     // writing) stays.
-    onEnd() { ended = true; dismiss(confirmation?.n); panel.end(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
+    onEnd() { ended = true; spawnTimers.end(); dismiss(confirmation?.n); panel.end(); reader.stop(); if (dir !== null) { try { effects.removeDir(dir); } catch { /* not empty, or gone */ } } },
   });
   function refresh(how) { Promise.resolve(reader.request(how)).catch(() => {}); }
   /** A preflight under way when the process stops: given up, and the store told. */
