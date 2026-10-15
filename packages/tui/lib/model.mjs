@@ -93,8 +93,9 @@ function build(state, at) {
   // The section (deployment) each row is drawn in, read from the shared split itself: the
   // sections of all rows. A collapse hides, and rolls up, only rows of its own section, as in the
   // Desktop: a parent's name can resolve to a row of another deployment of the view.
-  const sectionOf = new Map();
-  for (const part of rosterSections(instances, instances, deployments, TERMS)) for (const group of part.groups) for (const cluster of group.clusters) for (const row of cluster.instances) sectionOf.set(instanceId(row), part.deployment?.id ?? null);
+  // `ordered`: every row in that order, whatever is filtered or folded (the palette's).
+  const sectionOf = new Map(), ordered = [];
+  for (const part of rosterSections(instances, instances, deployments, TERMS)) for (const group of part.groups) for (const cluster of group.clusters) for (const row of cluster.instances) { sectionOf.set(instanceId(row), part.deployment?.id ?? null); ordered.push(row); }
   const section = (row) => sectionOf.get(instanceId(row)) ?? null;
   const matched = filterInstanceTree(instances, query);
   const visible = matched.filter((i) => instanceVisibleInTree(i, instances, state.collapsed, state.open, filtering, { section }));
@@ -158,7 +159,7 @@ function build(state, at) {
   // observed, nor for a machine that is not live and has no row kept. Each has only its reason.
   const observed = panel !== null && !gone && (local ? status === "observed" : live || instances.length > 0);
   return {
-    panel, gone, instances, deployments, multi, parts, rows, filtering, stale, section, live, observed,
+    panel, gone, instances, ordered, deployments, multi, parts, rows, filtering, stale, section, live, observed,
     below: waitingRollup(instances, state.collapsed, state.open, { filtering, stale, section }),
     status,
     workspace: text(panel?.workspace?.name) ? panel.workspace.name : "",
@@ -288,11 +289,12 @@ export const OPEN_WORDS = Object.freeze({
   notRunning: (name) => [{ shown: name }, { own: " is not running, so it has no terminal to open." }],
   stateUnknown: (name) => [{ own: "Whether " }, { shown: name }, { own: " runs is not known, so it is not opened." }],
 });
-/** The line of a view that is not in this version (its key: 2, 3), with what to run instead: the
- *  help's commands (views/help.mjs VIEWS), in the TUI's own words. */
+/** The body of a view of this machine that is not in this version (Souls, Capabilities): what it
+ *  will hold, and what to run until then, the help's commands (views/help.mjs VIEWS), in the TUI's
+ *  own words. */
 export const NOT_BUILT = Object.freeze({
-  souls: Object.freeze({ said: Object.freeze([{ own: "Souls are not in this version: `oats souls` lists them, and `oats spawn <soul>` makes an instance of one." }]), under: Object.freeze([]) }),
-  capabilities: Object.freeze({ said: Object.freeze([{ own: "Capabilities are not in this version: `oats capabilities` lists them." }]), under: Object.freeze([]) }),
+  souls: Object.freeze({ said: Object.freeze([{ own: "This view will list the souls this machine can make instances of. It is not in this version: `oats souls` lists them, and `oats spawn <soul>` makes an instance of one." }]), under: Object.freeze([]) }),
+  capabilities: Object.freeze({ said: Object.freeze([{ own: "This view will list the capabilities this machine has. It is not in this version: `oats capabilities` lists them." }]), under: Object.freeze([]) }),
 });
 /** A sentence from outside (a reason of the shared home's, the preflight table's), as a text
  *  under the line: drawn as the detail draws a reason, wrapped on the reason's rows, never as one
@@ -458,6 +460,76 @@ export function switcher(state, at = new Date(0).toISOString()) {
   };
 }
 
+/** The house fuzzy matcher of the Desktop's palette, the same function
+ *  (packages/desktop/renderer/overlay-picker.mjs subsequenceScore): the TUI cannot import the
+ *  Desktop's renderer, and test/tui-palette.test.mjs holds the two to the same answers. Lower is
+ *  better, null is no match, and a prefix match gets a strong (negative) bonus. */
+export function subsequenceScore(text, query) {
+  const t = String(text).toLowerCase();
+  const s = String(query).toLowerCase();
+  let ti = 0, gaps = 0;
+  for (const ch of s) {
+    const found = t.indexOf(ch, ti);
+    if (found < 0) return null;
+    gaps += found - ti; ti = found + 1;
+  }
+  return gaps + (t.startsWith(s) ? -100 : 0);
+}
+
+/** The palette's views and commands, each a row's label and the action it runs. */
+const PALETTE_VIEWS = Object.freeze([["instances", "Instances"], ["souls", "Souls"], ["capabilities", "Capabilities"]]);
+const PALETTE_COMMANDS = Object.freeze([["workspaces", "Workspaces"], ["refresh", "Refresh"], ["help", "Help"]]);
+const PALETTE_ACTS = Object.freeze({ stop: "Stop", restart: "Restart", retire: "Retire", start: "Start" });
+
+/** THE PALETTE'S ROWS (docs/tui.md, "The palette"), in this order: the instances that can be
+ *  opened (the most recently opened in this run first, then the shared order), the views, the acts
+ *  the palette's instance offers (the open terminal's, when the palette came from its focus; else
+ *  the selected one), then workspaces, refresh and help. With a query, each group keeps the rows the
+ *  Desktop's subsequence score matches, the best first (a prefix first); a tie keeps that order.
+ *  A row: `{ key, kind, label, does?, id?, name?, machine?, mark? }`; `selected` is the key the
+ *  selection stands on (the first row when the palette's own is not listed). */
+export function paletteItems(state, at = new Date(0).toISOString()) {
+  const p = state.palette;
+  if (p === null) return { items: [], selected: null };
+  const groups = [];
+  if (state.open !== null) {
+    const r = roster(state, at);
+    const recent = new Map(state.recent.map((id, i) => [id, i]));
+    const rank = (row) => recent.get(instanceId(row)) ?? Infinity;
+    const openable = r.ordered.filter((row) => openDecision(state, row, instanceActs(row)).open);
+    groups.push(openable.map((row, i) => ({ row, i })).sort((a, b) => rank(a.row) - rank(b.row) || a.i - b.i).map(({ row }) => {
+      const machine = elsewhere(row) ? row.deployment?.machine ?? row.server : null;
+      return { key: `instance\u0000${instanceId(row)}`, kind: "instance", label: row.instance, id: instanceId(row), name: row.instance, machine, mark: markOf(row), text: `${row.instance} ${machine ?? ""}` };
+    }));
+  }
+  groups.push(PALETTE_VIEWS.map(([does, label]) => ({ key: `view\u0000${does}`, kind: "view", label, does, text: label })));
+  const id = p.from === "terminal" && state.terminal !== null ? state.terminal.id : state.selected;
+  const row = id === null || state.open === null ? null : roster(state, at).instances.find((each) => instanceId(each) === id) ?? null;
+  if (row !== null && state.opening === null) {
+    const acts = instanceActs(row);
+    groups.push(ACT_VERBS.filter((verb) => actDecision(state, row, acts, verb).open)
+      .map((verb) => ({ key: `act\u0000${verb}`, kind: "act", label: PALETTE_ACTS[verb], does: verb, id: instanceId(row), name: row.instance, text: `${PALETTE_ACTS[verb]} ${row.instance}` })));
+  }
+  groups.push(PALETTE_COMMANDS.map(([does, label]) => ({ key: `command\u0000${does}`, kind: "command", label, does, text: label })));
+  const query = p.query.trim();
+  const items = groups.flatMap((group) => (query === ""
+    ? group
+    : group.map((item, i) => ({ item, i, score: subsequenceScore(item.text, query) })).filter((each) => each.score !== null).sort((a, b) => a.score - b.score || a.i - b.i).map(({ item }) => item)));
+  return { items, selected: items.some((item) => item.key === p.selected) ? p.selected : items[0]?.key ?? null };
+}
+/** The palette as the view draws it, in a body `page` rows tall: its query, and the window of its
+ *  rows (one row is the query's, one the line under it) that holds the selection. */
+function paletteView(state, page, at) {
+  const list = paletteItems(state, at), height = Math.max(1, page - 2);
+  const selected = list.items.findIndex((item) => item.key === list.selected);
+  const win = windowOf({ top: 0, count: list.items.length, height, keep: selected });
+  return {
+    query: state.palette.query, from: state.palette.from,
+    rows: list.items.slice(win.top, win.top + win.size).map((item) => ({ ...item, selected: item.key === list.selected })),
+    above: win.above, below: win.below, empty: list.items.length === 0,
+  };
+}
+
 /** What the views draw for a state. For the Instances view, in a list pane `page` rows tall and
  *  `cols` wide: the header's facts, the rows of the window with their marks, and the selected
  *  instance's detail. For the switcher, in a pane `page` rows tall: the window of its rows. Only
@@ -471,6 +543,9 @@ export function model(state, { page, now, at, cols }) {
     detachKey: state.detachKey, opening: state.opening, outcome: state.outcome, openable: false, actable: [],
     terminal: state.terminal, onTerminal: false,
     act: state.view === "act" && state.act ? actView(state) : null,
+    // The leader waits for its key (the footer is its hint), and the palette, while it is open.
+    leader: state.leader?.waiting === true, palette: state.palette === null ? null : paletteView(state, page, at),
+    body: state.view === "souls" || state.view === "capabilities" ? NOT_BUILT[state.view] : null,
   };
   // The view under the help, or under a confirmation, decides what the header says.
   const under = state.view === "help" || state.view === "act" ? state.back : state.view;

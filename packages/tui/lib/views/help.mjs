@@ -2,7 +2,7 @@
 // text. Pure: no IO, no clock, no escape byte. The keys are generated from the table the reducer
 // acts on, so the help names every key that does something and no key that does not; the marks
 // are the ones the list and the switcher draw (views/instances.mjs, views/switcher.mjs).
-import { keyLabel } from "../actions.mjs";
+import { LEADER, keyLabel } from "../actions.mjs";
 import { lit } from "../term/text.mjs";
 import { style } from "../term/style.mjs";
 import { cutNote, marksOf, measured } from "./instances.mjs";
@@ -87,13 +87,13 @@ function table(pairs, cols, look) {
 export const OPEN_RULES = Object.freeze([
   "While the terminal has the focus every other key goes to the agent, Ctrl+C and Ctrl+Z too.",
   "One terminal is open at a time. It has no scrollback but the viewer's own, and no mouse.",
-  "docs/tui.md has the keys that can be the back key.",
+  "docs/tui.md has the keys that can be the leader.",
 ]);
-/** The rows under the line of `open`, in `room` cells: the back key, which takes the focus from the
- *  open terminal (tui.json's open.detachKey, text from outside), then OPEN_RULES, each sentence on
- *  as many rows as it needs. */
+/** The rows under the line of `open`, in `room` cells: the leader pressed twice, which takes the
+ *  focus from the open terminal (tui.json's open.detachKey, text from outside), then OPEN_RULES,
+ *  each sentence on as many rows as it needs. */
 function openRows(detachKey, room) {
-  const key = keyText(detachKey), said = "takes the focus from the terminal back to the list; the agent keeps running.";
+  const key = keyText(`${detachKey} ${detachKey}`), said = "takes the focus from the terminal back to the list; the agent keeps running.";
   const first = flow(words(said), Math.max(1, room - key.width - 1));
   return [
     [{ col: 0, text: key.text, width: key.width }, { col: key.width + 1, text: lit(first[0]) }],
@@ -116,6 +116,20 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
   return [first, ...flow(rest.flatMap(words), cols - 2 * INDENT - 2)].map((text, i) => [{ col: INDENT + (i ? 2 : 0), text: lit(text) }]);
 });
 
+/** The leader's rows (docs/tui.md, "The leader"): its key, then the table of what each key after
+ *  it does (actions.mjs LEADER), from every focus. */
+function leaderRows(detachKey, cols) {
+  const key = keyText(detachKey);
+  const lead = "then one of these keys, from every focus; a terminal too:";
+  return [
+    [{ col: INDENT, text: lit("The leader"), style: TITLE }],
+    [],
+    [{ col: INDENT, text: key.text, width: key.width, style: KEYS }, { col: INDENT + key.width + 1, text: lit(lead) }],
+    ...table(LEADER.map((entry) => [entry.keys.map(keyLabel).join(", "),
+      words(entry.does === "list" ? `${entry.label}; the leader again does the same` : entry.terminal ? `${entry.label}, while a terminal is open` : entry.label)]), cols, KEYS),
+  ];
+}
+
 /** Every row of the help for an area `cols` wide, before it is scrolled. Unbound actions are
  *  listed as such: the table can be changed by the user's tui.json, and the help says what is so
  *  now. An action that does one thing in each view has a line per view, its key on each; under
@@ -133,6 +147,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
       return action.views.map(([view, said]) => [left, words(said), action.id === "open" && view === "instances" && detachKey !== null ? (room) => openRows(detachKey, room)
         : action.id === "restart" ? actRows : undefined]);
     }), cols, KEYS),
+    ...(detachKey !== null ? [[], ...leaderRows(detachKey, cols)] : []),
     [],
     heading("Marks"),
     [],

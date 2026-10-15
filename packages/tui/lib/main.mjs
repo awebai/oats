@@ -319,20 +319,21 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     const m = { ...model(state, { page: g.page, now: now(), at, cols: g.listCols }), screen: screenNow };
     return { size, g, made: frame(m, size) };
   }
-  /** Whether what is typed goes to the agent: the open terminal has the focus. */
-  const typing = () => state.terminal?.focus === "terminal" && state.view === "instances";
+  /** Whether what is typed goes to the agent: the open terminal has the focus, and the leader
+   *  does not wait for its key (docs/tui.md, "The leader"). */
+  const typing = () => state.terminal?.focus === "terminal" && state.view === "instances" && state.leader?.waiting !== true && state.palette === null;
   /** Bytes typed while the terminal has the focus: to the agent as they came, a paste as a paste,
-   *  and the back key to the store, which gives the focus to the list; what came after the back key
-   *  in the same read is read as keys, by a parser that starts afresh. */
+   *  and the leader to the store, which waits for the key after it: from the next read on, the
+   *  bytes are read as keys, by a parser that starts afresh. What came after the leader in its own
+   *  read is dropped: it cancels the leader (a paste), and it is not the agent's either. */
   function typed(events) {
     for (const event of events) {
       if (event.input) panel.input(event.input);
       else if (event.paste !== undefined) panel.paste(event.paste);
       else if (event.back) {
         parser = createKeyParser({ now });
-        if (took(reduce(state, { back: true }, keymap))) return;
-        if (event.rest.length) act(parser.feed(event.rest)); else guard.draw();
-        watchEscape();
+        if (took(reduce(state, { back: true, read: ++reads, rest: event.rest.length > 0 }, keymap))) return;
+        guard.draw();
       }
     }
     watchThrough();
@@ -396,7 +397,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   function act(events) {
     const read = ++reads;
     for (const event of events) {
-      if (took(reduce(state, "paste" in event ? { paste: event.paste } : { key: keyId(event), ...(typeof event.text === "string" && !event.alt ? { text: event.text } : {}), read, ...drawn }, keymap))) return;
+      if (took(reduce(state, "paste" in event ? { paste: event.paste, read } : { key: keyId(event), ...(typeof event.text === "string" && !event.alt ? { text: event.text } : {}), read, ...drawn }, keymap))) return;
       if (typing()) {
         if (escTimer !== null) { clearTimer(escTimer); escTimer = null; }
         through = createThrough({ sequences: backKey, now });

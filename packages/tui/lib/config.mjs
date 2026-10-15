@@ -11,7 +11,7 @@ import { isAbsolute, join } from "node:path";
 import { ACTIONS, bindings, keyLabel } from "./actions.mjs";
 import { displayLine } from "./client.mjs";
 import { isKeyId } from "./term/keys.mjs";
-import { BACK_KEY_RULE, isBackKey } from "./term/through.mjs";
+import { BACK_KEY_RULE, backKeyId, isBackKey } from "./term/through.mjs";
 
 /** The largest tui.json that is read, in bytes. A larger file is refused by its size, unread. */
 export const CONFIG_LIMIT = 64 * 1024;
@@ -104,11 +104,16 @@ export function effectiveConfig(value, defaults = ACTIONS) {
       if (id === "quit" && list.length === 0) problems.push("quit has no key; give it one");
     }
   }
+  // The leader is read as a key wherever the TUI reads keys (docs/tui.md, "The leader"), so no
+  // action may hold the key it reads as: `C-l` would be redraw's Ctrl+L, `C-j` open's Enter.
+  const detachKey = value.open?.detachKey ?? DETACH_KEY, leader = backKeyId(detachKey);
+  const taken = defaults.find((action) => (named.get(action.id) ?? action.keys).includes(leader));
+  if (taken) problems.push(`open.detachKey ${detachKey} is read as ${keyLabel(leader)}, the key of ${say(taken.id)}; give the leader a key no action has, or give ${say(taken.id)} another`);
   if (problems.length > 0) return { ok: false, problems };
 
   const actions = Object.freeze(defaults.map((action) => Object.freeze({ ...action, keys: Object.freeze([...(named.get(action.id) ?? action.keys)]) })));
   try { bindings(actions); } catch { return { ok: false, problems: ["a key is given to two actions; a key does one thing"] }; }
-  return { ok: true, actions, ascii: value.ascii === true, detachKey: value.open?.detachKey ?? DETACH_KEY };
+  return { ok: true, actions, ascii: value.ascii === true, detachKey };
 }
 
 /** What is wrong with the `open` setting, or null. It holds one member, `detachKey`: the back key,
