@@ -287,12 +287,12 @@ function applyCapability(s) {
   openCapability(s, matches[0], null);
 }
 
-/** A page (a soul's or a capability's) replaces the list it was opened from
- * while it is open: mode null | "soul" | "capability". */
+/** A page (a soul's, a capability's or a team's) replaces the list it was opened from
+ * while it is open: mode null | "soul" | "capability" | "team". */
 function showPage(s, mode) {
-  const soulPage = s.q("workspace-soul-page"), capPage = s.q("workspace-cap-page");
-  if (!soulPage || !capPage) return;
-  soulPage.hidden = mode !== "soul"; capPage.hidden = mode !== "capability";
+  const soulPage = s.q("workspace-soul-page"), capPage = s.q("workspace-cap-page"), teamPage = s.q("workspace-team-page");
+  if (!soulPage || !capPage || !teamPage) return;
+  soulPage.hidden = mode !== "soul"; capPage.hidden = mode !== "capability"; teamPage.hidden = mode !== "team";
   // Workspace v4: a page's own bar replaces the Workspace header while it is open.
   s.q("workspace-header").hidden = !!mode;
   const souls = (s.discovery?.tab ?? "souls") === "souls";
@@ -300,6 +300,41 @@ function showPage(s, mode) {
   s.q("souls-bar").hidden = !!mode || !souls;
   s.q("souls-notice").hidden = !!mode || !souls; // the grid's stale line belongs to the grid
   s.q("workspace-discovery").hidden = !!mode || souls;
+}
+/** A team's page, from its card on the Teams board (packages/desktop/docs/desktop-teams.md "A team's page"). The
+ * Teams page paints it (computer-teams.mjs showTeam) and keeps it current; Back and Esc return to the board, at its
+ * scroll offset, on that team's card. A team that leaves the document (removed, or another workspace) closes it. */
+function openTeam(s, label) {
+  if (!s.alive) return;
+  // An explicit choice: it supersedes any older selection still waiting (a shell handoff on its import, a preselect).
+  nextSelectionIntent();
+  // The board is hidden (display:none) while the page is open, which drops its scroll offset: keep it for Back.
+  const list = s.q("workspace-discovery"), host = s.q("workspace-team-page");
+  const scrollTop = list?.scrollTop ?? null;
+  const opened = s.discovery.openTeam(host, label, {
+    onBack: () => closeTeam(s, { restoreFocus: true }),
+    onGone: () => { if (s.alive && s.teamOpen?.label === label) closeTeam(s, { gone: true }); },
+  });
+  if (!opened) return;
+  s.teamOpen = { label, scrollTop };
+  showPage(s, "team");
+  host.querySelector(".page-back")?.focus({ preventScroll: true });
+}
+function closeTeam(s, { restoreFocus = false, gone = false } = {}) {
+  const open = s.teamOpen; s.teamOpen = null;
+  if (!open) return;
+  s.discovery?.closeTeam();
+  const host = s.q("workspace-team-page"), doc = s.el.ownerDocument;
+  const focused = !!host && (host.contains(doc.activeElement) || doc.activeElement === doc.body);
+  host?.replaceChildren();
+  showPage(s, null);
+  const list = s.q("workspace-discovery");
+  if (list && Number.isFinite(open.scrollTop)) list.scrollTop = open.scrollTop;
+  // Its team is gone: there is no card to return to, so the Teams tab takes the focus the page held.
+  if (gone) { if (focused) s.el.querySelector("#workspace-tab-teams")?.focus(); return; }
+  if (!restoreFocus) return;
+  // The card is already in view at the restored offset: focus its name without scrolling again.
+  [...(list?.querySelectorAll(".ct-card[data-team] .ct-open") || [])].find(b => b.closest(".ct-card").dataset.team === open.label)?.focus({ preventScroll: true });
 }
 /** A capability's page, from the Capabilities table (from = null) or a soul page (from = the soul; `why`:
  * the soul page's entry for it, which the page's "Why" row says). */
@@ -458,6 +493,7 @@ ${spawnDialogCSS}</style>
             <section class="workspace-discovery" hidden></section>
             <section id="workspace-soul-page" class="workspace-page workspace-soul-page" aria-label="Soul details" hidden></section>
             <section class="workspace-page workspace-cap-page" aria-label="Capability details" hidden></section>
+            <section class="workspace-page workspace-team-page" aria-label="Team details" hidden></section>
           </section>
           <aside id="workspace-inspector" class="soul-inspector" aria-label="Instance details" hidden></aside>
         </div>
@@ -535,8 +571,9 @@ ${spawnDialogCSS}</style>
     rosterState: () => rosterSettledState(s), // "Used by" claims are roster-derived: none while the roster is not settled-good
     onOpenCapability: row => openCapability(s, row, null),
     onTeamMember: (action, member) => void teamMemberAction(s, action, member),
+    onOpenTeam: label => openTeam(s, label),
     onTab: tab => {
-      s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); s.page.close();
+      s.spawnOp++; closeSpawnModal(s); s.inspector.close(); closeCapability(s); closeTeam(s); s.page.close();
       s.q("souls-bar").hidden = tab !== "souls"; s.q("souls-notice").hidden = tab !== "souls";
     },
   });
@@ -570,6 +607,7 @@ ${spawnDialogCSS}</style>
   };
   s.q("workspace-soul-page").addEventListener("keydown", e => pageEscape(e, () => s.page.close({ restoreFocus: true })));
   s.q("workspace-cap-page").addEventListener("keydown", e => pageEscape(e, () => closeCapability(s, { restoreFocus: true })));
+  s.q("workspace-team-page").addEventListener("keydown", e => pageEscape(e, () => closeTeam(s, { restoreFocus: true })));
   // Keyboard operability (task: keybindings wiring): `/` focuses the filter,
   // arrows rove the card grid, Enter inspects the focused soul,
   // b opens its brain, Esc cancels an open form. spawn.filter/spawn.brain
@@ -625,7 +663,7 @@ ${spawnDialogCSS}</style>
     s.spawnOp++;
     s.rosterReq++; s.rosterGen = null; s.souls = { agents: [] }; s.panelInstances = []; s.spawnDeployments = []; s.spawnViews = [];
     s.discovery.reset();
-    s.inspector.close(); closeCapability(s); s.page.close();
+    s.inspector.close(); closeCapability(s); closeTeam(s, { gone: true }); s.page.close();
     closeSpawnModal(s, { repaint: false }); // the switch replaces the grid below
     // Another workspace's cards leave at once; the new one is pending (a skeleton after 150ms, never a text block nor an empty message).
     s.gridState.reset(); s.gridSignature = null; s.q("souls-grid").replaceChildren();

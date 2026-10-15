@@ -42,9 +42,13 @@ test('closed (the default): no Add anywhere, no Make default; the workspace defa
   const u = await mount(t, () => teams('teams-closed'));
   assert.equal(u.addShown(), false, 'no Add in the head');
   for (const label of ['global', 'engineering', 'marketing']) assert.deepEqual(u.acts(label), [], `${label}: no actions`);
-  assert.equal(u.row('global').querySelector('.ct-pill').textContent, "Default · the workspace's");
+  assert.equal(u.row('global').querySelector('.ct-tag').textContent, 'Default team');
+  assert.equal(u.row('global').querySelector('.ct-from').textContent, 'set by the workspace');
   const local = u.q('[data-section=local]');
   assert.match(local.textContent, /oats-workspace\.yaml does not allow local teams \(localTeams: true\)/);
+  // Said as a sentence in the section's place, not as an empty card.
+  assert.equal(local.querySelector('p.ct-dashed').textContent, `No local teams: ${LOCAL_TEAMS_CLOSED}.`);
+  assert.equal(local.querySelector('.ct-empty'), null);
   assert.equal(local.querySelector('button'), null, 'no Add a local team link');
 });
 
@@ -83,7 +87,8 @@ test('closed but present: Remove runs the kernel\'s remove', async (t) => {
 test('allowed (localTeams: true): Add, Make default and Remove; this deployment\'s own default says so', async (t) => {
   const u = await mount(t, () => teams('teams-after'));
   assert.equal(u.addShown(), true);
-  assert.equal(u.row('mine').querySelector('.ct-pill').textContent, 'Default · this deployment');
+  assert.equal(u.row('mine').querySelector('.ct-tag').textContent, 'Default team');
+  assert.equal(u.row('mine').querySelector('.ct-from').textContent, 'set on this deployment');
   assert.deepEqual(u.acts('global'), ['Make default']);
   assert.ok(u.acts('mine').includes('Remove'));
   assert.match(u.row('mine').querySelector('.ct-why').textContent, /it is the default team/, 'the local default is in use');
@@ -98,17 +103,19 @@ test('standalone (no workspace file read): local teams are the deployment\'s own
 test('souls: as committed, read only, with where to change it in the kernel\'s words', async (t) => {
   const u = await mount(t, () => teams('teams-closed'));
   const souls = u.q('[data-section=souls]');
-  const rows = [...souls.querySelectorAll('.ct-soul-rule')].map((r) => [r.querySelector('.ct-soul-key').textContent, r.querySelector('.ct-soul-teams').textContent]);
-  assert.deepEqual(rows, [['*', 'no other team'], ['agents/*', 'may join engineering'], ['agents/release-manager', 'default engineering · may also join marketing'], ['agents/no-such-soul', 'may join global']]);
+  // One table row per key: the pattern ("*" reads "every soul"), its default team, and the other teams it may join.
+  const rows = [...souls.querySelectorAll('tr[data-soul-key]')].map((r) => [r.dataset.soulKey, ...[...r.cells].map((c) => c.textContent)]);
+  assert.deepEqual(rows, [['*', '* every soul', 'none', 'none'], ['agents/*', 'agents/*', 'none', 'engineering'],
+    ['agents/release-manager', 'agents/release-manager', 'engineering', 'marketing'], ['agents/no-such-soul', 'agents/no-such-soul', 'none', 'global']]);
   assert.match(souls.textContent, /souls: in oats-workspace\.yaml \(a PR to the workspace file\)/);
   assert.equal(souls.querySelector('button'), null, 'nothing to edit here');
   // Spec A: each card says whose default it is and who else may join, from the patterns (teamAudience).
-  const fact = (label, row) => u.row(label).querySelector(`[data-audience=${row}] dd`)?.textContent ?? null;
+  const fact = (label, row) => u.row(label).querySelector(`[data-fact=${row}] dd`)?.textContent ?? null;
   assert.equal(fact('engineering', 'default'), 'release-manager (agents)');
   assert.equal(fact('engineering', 'join'), 'souls of agents except no-such-soul and release-manager', 'release-manager has it as its default: said once, under Default for');
   assert.equal(fact('global', 'default'), 'every soul without its own default');
   assert.equal(fact('global', 'join'), 'no-such-soul (agents)');
-  assert.equal(u.row('engineering').querySelector('.ct-join'), null, 'no team model 2 line');
+  assert.equal(u.row('engineering').querySelector('[data-fact=who]'), null, 'no team model 2 line');
 });
 
 test('the closed-state wording is the kernel\'s own clause', () => {
