@@ -269,8 +269,9 @@ fit; the detail shows them whole.
   window ended, its session went away, or the link to its machine dropped.
   It closes within a second of that (tmux tells `oats tui` of a viewer's
   end once a second), or a second more when tmux took a moment more to
-  have the viewer's exit status, and never more than ten seconds after its
-  terminal hung up, even when tmux never has that status. The instances are then read again at once, and one line above the panes
+  have the viewer's exit status: once tmux has reported the viewer ended,
+  `oats tui` waits ten seconds at most for that status, and closes the
+  terminal without it when it has not come. The instances are then read again at once, and one line above the panes
   says what happened: that it could not be opened, that the connection to
   its machine ended, or that the viewer ended without saying why. What the
   viewer printed on its error output stands under that line in quotation
