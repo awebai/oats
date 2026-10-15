@@ -403,7 +403,7 @@ test("in ASCII nothing on the screen is outside printable ASCII: the list, the d
 
 test("in ASCII a held row's own words end in three full stops, never an ellipsis: the list's word, the detail's state, the help and a start's line (#1247)", () => {
   const rows = [instanceRow("dev", "dev-retiring", { retirePending: true }), instanceRow("dev", "dev-spawning", { spawnInProgress: true, running: false, runtimeState: "stopped" })];
-  const sz = size(200, 80); // tall enough for the help's marks, under the leader's table
+  const sz = size(200, 100); // tall enough for the help's marks, under the leader's table and the spawn prompt's
   for (const ascii of [true, false]) {
     const at = `ascii ${ascii}`, list = stateOf(observed(rows), { ascii });
     const screens = { list, detail: press(list, ["tab"]).state, help: press(list, ["?"]).state };
@@ -1389,7 +1389,7 @@ test("a query of 200 characters is cut inside its cells, open and kept: the rest
 
 test("at 60 columns, the smallest width the frame is drawn at, the help still names every command whole: what this version does not do is said with the oats command that does it", () => {
   for (const ascii of [false, true]) {
-    const lines = helpLines(golden({ ascii }), size(60, 160)), cut = glyphsOf(ascii).cut;
+    const lines = helpLines(golden({ ascii }), size(60, 200)), cut = glyphsOf(ascii).cut;
     for (const command of [...NOT_YET.map((entry_) => entry_.command), ...VIEWS.flatMap((view) => view.commands)]) {
       assert.equal(lines.some((line) => line.includes(command)), true, `${command} is whole at 60 columns${ascii ? ", in ASCII" : ""}`);
     }
@@ -1434,8 +1434,8 @@ test("the help is generated from the table: another key and another action appea
   const keys = lines.slice(lines.findIndex((line) => line.trim() === "Keys") + 1, lines.findIndex((line) => line.trim() === "The leader")).filter((line) => line.trim());
   // One row per action and view; under the line of opening an agent, four rows of its own (the leader twice, what the terminal takes, its
   // limits, the pointer); under the line of the last act, the rows of ACT_RULES. Then the leader's section: the leader, and a row per
-  // key of its table, whatever the action table.
-  const leader = lines.slice(lines.findIndex((line) => line.trim() === "The leader") + 1, lines.findIndex((line) => line.trim() === "Marks")).filter((line) => line.trim());
+  // key of its table, whatever the action table. The spawn prompt's section follows it, with keys of its own.
+  const leader = lines.slice(lines.findIndex((line) => line.trim() === "The leader") + 1, lines.findIndex((line) => line.trim() === "The spawn prompt")).filter((line) => line.trim());
   assert.equal(leader.length, 1 + LEADER.length, "the leader, and one row per key of its table");
   const rules = keys.filter((line) => ACT_RULES.some((sentence) => sentence.includes(line.trim())));
   assert.equal(rules.length >= ACT_RULES.length, true, "the rules of the acts stand under them");
@@ -1462,10 +1462,11 @@ test("the help lists the marks with their words, in UTF-8 and in ASCII: each mar
   }
 });
 
-test("the help says what each view holds, and what to run for what it does not do yet: spawning from Souls, and the Capabilities view", () => {
+test("the help says what each view holds, and what to run for what it does not do yet: the Capabilities view; the Souls view spawns now (n), so it names no command", () => {
   const lines = helpLines(golden());
   const line = (name) => lines.find((text) => text.trim().startsWith(name));
-  assert.equal(line("2 Souls").includes("the souls of the open workspace") && line("2 Souls").includes("oats spawn <soul>"), true);
+  assert.equal(line("2 Souls").includes("the souls of the open workspace") && line("2 Souls").includes("n an agent of the selected soul"), true);
+  assert.equal(line("2 Souls").includes("oats spawn") || line("2 Souls").includes("not in this version"), false, "spawning is in this version: the Souls view names no command for it");
   assert.equal(line("3 Capabilities").includes("oats capabilities"), true);
   assert.equal(typeof line("1 Instances"), "string");
   for (const view of VIEWS) for (const command of view.commands) assert.equal(line(view.name).includes(command), true, `${view.name}: ${command}`);
@@ -1473,7 +1474,7 @@ test("the help says what each view holds, and what to run for what it does not d
 });
 
 test("the help's last section, `Not in this version`, names every act this version does not have with the oats command that does it", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 160), size(79, 150), size(200, 130)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 200), size(79, 150), size(200, 130)]) {
     const lines = helpLines(golden({ ascii }), sz), text = lines.map((line) => line.trim());
     const at = text.indexOf("Not in this version");
     assert.equal(at > 0, true);
@@ -1486,7 +1487,8 @@ test("the help's last section, `Not in this version`, names every act this versi
       assert.equal(pair([section[row]], what, command) || section[row + 1] === command, true, `${what}: ${command}`);
     }
     // Stop, start, restart and retire are acts of this version: only another launch is left to the kernel's command.
-    for (const command of ["oats session attach --home <home>", "oats session start --home <home>", "oats server connect", "oats server check", "oats server remove", "oats tui --dir <path>"]) {
+    // A spawn on another machine, or with a harness, a model or a task, is the kernel's: the spawn prompt offers none of them.
+    for (const command of ["oats session attach --home <home>", "oats session start --home <home>", "oats server connect", "oats server check", "oats server remove", "oats tui --dir <path>", "oats spawn <soul>"]) {
       assert.equal(section.some((line) => line.includes(command)), true, `the spec's ${command}`);
     }
     for (const command of ["oats instance stop", "oats retire"]) {
@@ -1513,7 +1515,7 @@ test("the help scrolls: at 60x15 it does not fit, its last row says what is cut 
   assert.deepEqual(draw(press(ended, ["g"], sz).state, sz).lines, d.lines, "and goes back to its start");
   assert.deepEqual(draw(press(ended, ["k"], sz).state, sz).lines[sz.rows - 2].trim(), cutNote(d.extent - visible - 1, 1));
   // Every row of the help is reached by scrolling: nothing is lost behind the note.
-  const whole = helpLines(golden(), size(60, 160)).map((line) => line.trim()).filter(Boolean), seen = new Set();
+  const whole = helpLines(golden(), size(60, 200)).map((line) => line.trim()).filter(Boolean), seen = new Set();
   let state = open;
   for (let i = 0; i < d.extent; i++) { for (const line of draw(state, sz).lines.slice(3, sz.rows - 2)) seen.add(line.trim()); state = press(state, ["j"], sz).state; }
   for (const line of whole) assert.equal(seen.has(line), true, line);
@@ -1540,7 +1542,7 @@ test("every key a tui.json may give an action is drawn: the footer and the help 
     // The wide key takes two cells: the word after it stands one cell past them.
     const d = draw(state, sz), last = d.cells[sz.rows - 1], at = last.findIndex((cell) => cell.text === "日");
     assert.equal(last.slice(at + 2, at + 7).map((cell) => cell.text).join(""), " help");
-    const big = size(100, 115), lines = draw(press(state, ["日"], big).state, big).lines.slice(3, big.rows - 1);
+    const big = size(100, 140), lines = draw(press(state, ["日"], big).state, big).lines.slice(3, big.rows - 1);
     for (const id of Object.keys(keys)) assert.ok(lines.some((line) => line.trim().startsWith(`${labelOf(id)}  `)), `the help lists ${id} under ${labelOf(id)}`);
     assert.ok(lines.some((line) => line.trim() === `${labelOf("close").split(", ")[0]} or 日 closes this help`), "the closing line names the two keys");
     // The meanings stand in one column, whatever cells the keys take.
@@ -2514,7 +2516,7 @@ test("a folder that turned out not to be a deployment says so in its row, where 
 // ── The help, with machines and the switcher ─────────────────────────────────────────────────────
 
 test("the help says every limit of this version: adding, checking and removing a machine and opening a deployment elsewhere with the oats command that does it, and what no command lifts in sentences of its own", () => {
-  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 160), size(79, 150), size(200, 130)]) {
+  for (const ascii of [false, true]) for (const sz of [HELP_SIZE, size(60, 200), size(79, 150), size(200, 130)]) {
     const text = helpLines(reached({ ascii }), sz).map((line) => line.trim()), at = `${sz.cols}x${sz.rows}${ascii ? " ascii" : ""}`;
     const machines = text.indexOf("Machines"), last = text.indexOf("Not in this version");
     assert.equal(machines > text.indexOf("Views") && last > machines, true, `${at}: Machines stands between Views and what is not in this version`);
@@ -2783,18 +2785,21 @@ test("the help lists Enter once per view with what it does there, the keys of th
   assert.equal(text.includes("c close the open terminal; the agent keeps running"), true);
   assert.equal(pair(lines, "Enter", "open the selected workspace, in the switcher"), true);
   assert.equal(pair(lines, "Enter", "show the selected soul's detail, and from the detail its instances, in the Souls view"), true);
-  assert.equal(lines.filter((line) => line.startsWith("Enter ")).length, 3, "Enter three times, once per view");
+  // The keys' table names Enter once per view; the spawn prompt's section has its own Enter, once per step.
+  const keys = lines.slice(0, lines.indexOf("The leader"));
+  assert.equal(keys.filter((line) => line.startsWith("Enter ")).length, 3, "Enter three times, once per view");
   for (const [key, label] of [["1", "instances"], ["2", "souls"], ["3", "capabilities"]]) assert.equal(pair(lines, key, label), true, key);
   assert.equal(lines.some((line) => line.includes("open an agent in its own tmux window") && line.includes("oats session attach --home <home>")), true);
-  // The leader's section, after the keys and before the marks: the leader, then each key of its
-  // table (actions.mjs LEADER) and what it does, from every focus.
-  const leader = lines.slice(lines.indexOf("The leader") + 1, lines.indexOf("Marks")).filter(Boolean);
+  // The leader's section, after the keys and before the marks (the spawn prompt's section stands
+  // between it and them): the leader, then each key of its table (actions.mjs LEADER) and what it
+  // does, from every focus.
+  const leader = lines.slice(lines.indexOf("The leader") + 1, lines.indexOf("The spawn prompt")).filter(Boolean);
   assert.equal(lines.indexOf("The leader") > lines.indexOf("Keys") && lines.indexOf("The leader") < lines.indexOf("Marks"), true, "between the keys and the marks");
   assert.deepEqual(leader.map((line) => line.replace(/ {2,}/g, "  ")), [
     "C-\\ then one of these keys, from every focus; a terminal too:",
     "k, Space  palette", "1  instances", "2  souls", "3  capabilities", "Up  previous instance", "Down  next instance",
     "z  zoom, while a terminal is open", "w  close terminal, while a terminal is open",
-    "X  stop", "R  restart", "S  start", "D  retire", "/  filter", "o  workspaces", "?  help",
+    "X  stop", "R  restart", "S  start", "D  retire", "n  spawn", "N  spawn another", "/  filter", "o  workspaces", "?  help",
     "Esc  the list; the leader again does the same",
   ]);
   // The leader is tui.json's, text from outside: the help names it, and twice under the agent's line.
@@ -3087,10 +3092,11 @@ test("the palette at 80x24 in UTF-8 and in ASCII, cell for cell: over the whole 
       edged("    Capabilities", "view"),
       edged(`    Stop ${KERNEL_DEV}`, "act"),
       edged(`    Retire ${KERNEL_DEV}`, "act"),
+      edged("    Spawn an agent", "command"),
       edged("    Workspaces", "command"),
       edged("    Refresh", "command"),
       edged("    Help", "command"),
-      "", "", "", "", "",
+      "", "", "", "",
       `${LEAD}Enter run   Up/Down move   Esc close`,
     ], ascii ? "ASCII" : "UTF-8");
     assert.deepEqual(d.cursor, { row: 3, col: 2 }, "the cursor after the empty query");
@@ -3173,12 +3179,12 @@ test("while the palette is open no terminal is drawn, even with one open, and th
     assert.equal(d.lines.some((line) => line.includes("$ hello") || line.includes("│")), false, `${sz.cols}: nothing of the agent's screen, and no panes`);
     assert.equal(footer(d, sz), `${LEAD}Enter run   Up/Down move   Esc close`, `${sz.cols}`);
   }
-  assert.deepEqual(draw(opened, S80).lines.slice(2, 14), [
+  assert.deepEqual(draw(opened, S80).lines.slice(2, 15), [
     "─".repeat(80), ">",
     edged("> ● dev-a", "instance"), edged("  ● dev-b", "instance"),
     edged("    Instances", "view"), edged("    Souls", "view"), edged("    Capabilities", "view"),
     edged("    Stop dev-a", "act"), edged("    Retire dev-a", "act"),
-    edged("    Workspaces", "command"), edged("    Refresh", "command"), edged("    Help", "command"),
+    edged("    Spawn an agent", "command"), edged("    Workspaces", "command"), edged("    Refresh", "command"), edged("    Help", "command"),
   ]);
   const closed = drawPanel(press(opened, ["escape"]).state, S80);
   assert.equal(closed.terminal.whole, false);
@@ -3256,8 +3262,9 @@ test("the Capabilities view names each command whole on one row at every width f
 
 test("at 60 columns the help's `The leader` section has every row whole: the sentence after the leader's key wrapped under its first row, the table's rows uncut, none past the edge", () => {
   for (const [detachKey, lead] of [[undefined, ["  C-\\ then one of these keys, from every focus; a terminal", "      too:"]], ["C-F5", ["  C-F5 then one of these keys, from every focus; a", "       terminal too:"]]]) {
-    const lines = helpLines(golden(detachKey ? { detachKey } : {}), size(60, 160));
-    const from = lines.indexOf("  The leader"), to = lines.indexOf("  Marks");
+    const lines = helpLines(golden(detachKey ? { detachKey } : {}), size(60, 200));
+    // The section ends where the spawn prompt's begins (spawn-view.test.mjs holds that one).
+    const from = lines.indexOf("  The leader"), to = lines.indexOf("  The spawn prompt");
     assert.equal(from > 0 && to > from, true);
     assert.deepEqual(lines.slice(from, to - 1), [
       "  The leader",
@@ -3275,6 +3282,8 @@ test("at 60 columns the help's `The leader` section has every row whole: the sen
       "  R          restart",
       "  S          start",
       "  D          retire",
+      "  n          spawn",
+      "  N          spawn another",
       "  /          filter",
       "  o          workspaces",
       "  ?          help",

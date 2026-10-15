@@ -17,7 +17,7 @@ export { panelData, cliReadsRemotes, workspaceChoices, viewModel, deployments } 
 export { remoteRosterState } from "../../client/remote-roster.mjs";
 export { observeIdentities, identityMemory } from "../../client/remote-identity-memory.mjs";
 export { workspaceChoiceRows, choiceMatches, UNMATCHED_SECTION } from "../../client/workspace-choices.mjs";
-export { shortPath } from "../../client/deployment-label.mjs";
+export { shortPath, deploymentLabel } from "../../client/deployment-label.mjs";
 export { instanceId, instanceVisibleInTree, waitingRollup, collapseKey, filterInstanceTree, hasInstanceChildren, heldHome } from "../../client/instance-tree.mjs";
 export { rosterSections, deploymentState, rowStale, primaryDeployment, isMultiDeployment } from "../../client/roster-sections.mjs";
 export { runtimeState, runtimeCounts, originLead } from "../../client/instance-presentation.mjs";
@@ -37,6 +37,12 @@ export { validateWorkspace, deploymentsInside } from "../../client/workspace-adm
 export { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
 export { soulRows } from "../../client/soul-rows.mjs";
 export { soulFacts, spawnRefusal } from "../../client/soul-facts.mjs";
+export { createSpawnPreview } from "../../client/spawn-preview.mjs";
+export { defaultSpawnChoices } from "../../client/spawn-preview-contract.mjs";
+export { createSpawnApplyBoundary } from "../../client/spawn-apply.mjs";
+export { createSpawnTransaction } from "../../client/spawn-transaction.mjs";
+export { spawnProblem, outcomeWords, SPAWN_NEXT } from "../../client/spawn-messages.mjs";
+export { previewFacts } from "../../client/spawn-preview-facts.mjs";
 
 /** The words a shared sentence uses where it names the client that shows it (client-terms.mjs).
  *  Made once, here: every shared function that takes `terms` is passed this constant, and refuses

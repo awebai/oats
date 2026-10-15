@@ -13,11 +13,12 @@ install.
 
 - **This version shows a workspace's instances, on this machine and on the
   other machines registered on this machine, in one list, opens an agent's
-  terminal, and stops, starts, restarts and retires an agent after a
-  confirmation.** The registered machines are the ones `oats server list`
-  names. It follows the instances as they start, stop and wait for you. It
-  cannot spawn an agent, start one with another harness or model, or add,
-  check or remove a machine: [what it does not do
+  terminal, spawns an agent on this machine, and stops, starts, restarts
+  and retires an agent after a confirmation.** The registered machines are
+  the ones `oats server list` names. It follows the instances as they
+  start, stop and wait for you. It cannot spawn an agent on another machine
+  or with another harness, model or task, start one with another harness or
+  model, or add, check or remove a machine: [what it does not do
   yet](#what-this-version-does-not-do) names the `oats` command for each.
 - **Its screens and its configuration file may change without notice** while
   it is a preview.
@@ -400,8 +401,8 @@ them, from the same code.
 - **Only this machine's:** the view lists the souls of a workspace of this
   machine. With none open it says so.
 
-There is no spawn from this view yet: `oats spawn <soul>` makes an
-instance.
+`n` or `N` spawns an agent of the selected soul: [Spawning an
+agent](#spawning-an-agent).
 
 ## The switcher
 
@@ -563,6 +564,82 @@ The exit status never depends on it.
   there can leave `.oats-stop-pending.json` in the agent's home, and then
   the agent can be started but not stopped while that file exists.
 
+## Spawning an agent
+
+`n` spawns an agent of a soul of the open workspace, on this machine, with
+one screen to read and one `Enter` to press.
+
+- **`n`** in the list of instances (or the leader then `n`, from any focus,
+  a terminal's too) opens the soul picker over the list: the souls of
+  [the Souls view](#the-souls-view), read with `oats souls` if they were
+  not read yet (`Reading souls…` until then). Typing filters them with the
+  palette's subsequence match; `Up`/`Down` move, `Enter` picks the selected
+  soul, `Esc` closes. A soul a spawn here would refuse is listed with `!`
+  and why, and cannot be picked.
+- **`N`** (or the leader then `N`) spawns another of the selected instance's
+  soul (from a terminal's focus, that terminal's instance): it opens the
+  preview at once. In the Souls view `n` and `N` both open the preview of
+  the selected soul. The palette lists `Spawn an agent` and, with an
+  instance selected whose soul the catalog lists, `Spawn another <soul>`.
+- **The preview** is the OATS Desktop's, read with the kernel's
+  `oats spawn <soul> --preview --json` and worded by the same shared
+  readers: the name the agent will have, its home, where it works, its
+  harness and model and where that choice was made, its team, its
+  relationship, its worktree setup, where it runs; then the launch-prompt
+  policy, the capabilities' warnings and the modules, each folded to one
+  row.
+- **One focus ring:** `Spawn` (where the focus starts), `name`, `child of`
+  (when an instance of this machine was selected), then each folded part.
+  `Tab` moves along it, `Shift+Tab` back. `Enter` does what the focus says,
+  and the footer names it:
+  - on `Spawn`, spawns what the preview shows;
+  - on `name`, keeps the name typed and reads the preview again with it:
+    the instance is named `<soul>-<name>` (`--purpose`). Only the letters,
+    digits and dashes of a name are typed; `Esc` puts back the name the
+    preview was read with;
+  - on `child of`, switches between no parent and the instance that was
+    selected when the prompt opened, and reads the preview again;
+  - on a folded part, opens or closes it.
+
+  `Esc` on any other focus gives it to `Spawn`; on `Spawn` it goes back to
+  the picker (to the list for `N` and from the Souls view). The movement
+  keys scroll a preview taller than the screen.
+- **Nothing else is chosen here:** the harness and the model are the
+  soul's and this machine's launch preferences (`oats soul launch set`),
+  and there is no task: the new agent starts with none, and you type to it
+  in its terminal.
+- **A paste cannot spawn.** An `Enter` in the same read of input as the
+  key that opened the prompt does nothing; `Enter` on `Spawn` spawns only
+  once the preview was read for exactly the choices shown, a frame that
+  shows it ready with its `Spawn` button was written to the terminal, and
+  only from a read of input later than that frame. A pasted `n`, a soul's
+  name and two `Enter`s stop at the preview.
+- **`n` and `N` are of the view they are pressed in**: the leader's too.
+  From the Souls view (its list, its filter or its detail) both are of its
+  selected soul, whatever the list of instances has selected.
+- **One spawn at a time.** While one is under way the line above the
+  panes says `Spawning <name>…`, and the TUI goes on working: `n` and `N`
+  say a spawn is under way and open nothing.
+- **Only on this machine.** On another machine's row or workspace `n` and
+  `N` (from their keys, the leader or the palette) say that spawning on
+  another machine is not offered here, and that `oats spawn` there makes
+  one.
+
+**What follows the spawn** is said in the shared words, the Desktop's, and
+the TUI adds only what to do next, naming its keys or an `oats` command:
+
+| Outcome | What follows |
+|---|---|
+| created and started | the instances are read at once; when the new row appears it is selected and its terminal opens beside the list with the focus in it. Not running after two reads: the line says it is not visible yet, and nothing opens later by itself |
+| created, but not started, or its wake not saved, or not finished | the line says so; nothing opens. A home the spawn left reads as [held](#held-rows) |
+| not known (the answer was lost, or still running at the deadline) | the line says so, and `C` checks its result once, without spawning again: it is offered only then |
+| its cleanup is owed | the line says so and names the retire |
+| refused, rolled back, never submitted, or changed since you looked | the preview again, read anew, with the line in it: change the choices or press `Enter` again |
+
+**Quitting with a spawn under way** lets it go: the spawn finishes, or the
+kernel's own limits bound it; `oats tui` neither waits for it nor ends it.
+The line after leaving says so and names `oats status` to see it.
+
 ## Keys
 
 | Key | Does |
@@ -585,6 +662,9 @@ The exit status never depends on it.
 | `Ctrl+\` | [the leader](#the-leader), from every focus ([`tui.json`](#change-the-keys-tuijson) can name another key) |
 | `Ctrl+K` | opens [the palette](#the-palette); `Ctrl+K` again closes it |
 | `X`, `D`, `S`, `R` | stop, retire, start, restart the selected agent, [after a confirmation](#stopping-starting-restarting-and-retiring) |
+| `n` | [spawns an agent](#spawning-an-agent): the soul picker, then the preview |
+| `N` | spawns another of the selected instance's soul: its preview |
+| `C` | checks the result of a spawn whose outcome is not known, while one is |
 | `Left`/`Right`, `Tab`/`Shift+Tab` | in a confirmation, move between its buttons |
 | `Space` | in a confirmation, switches the plan's choice |
 | `?` | opens the help; `?` again closes it |
@@ -620,6 +700,7 @@ leader, `Ctrl+\` (tui.json's `open.detachKey`), then one plain key.
 | `z` | zooms the open terminal in or out; with the list focused, gives it the focus and the whole body |
 | `w` | closes the open terminal; the agent keeps running |
 | `X`, `R`, `S`, `D` | stop, restart, start, retire, [after a confirmation](#stopping-starting-restarting-and-retiring): from a terminal's focus on that terminal's instance, which has the focus again when the confirmation closes |
+| `n`, `N` | [spawns an agent](#spawning-an-agent); `N` of the open terminal's soul from its focus |
 | `/` | the filter |
 | `o` | [the switcher](#the-switcher) |
 | `?` | the help |
@@ -657,7 +738,8 @@ is open no terminal is drawn and the TUI reads the keys.
   them (choosing one shows that view with it selected; the palette never
   reads them); the views, Instances, Souls and Capabilities; the acts the
   instance offers now (the open terminal's when the palette was opened from
-  its focus, else the selected one's); then Workspaces, Refresh and Help.
+  its focus, else the selected one's), with `Spawn another <soul>` once the
+  catalog lists its soul; then Spawn an agent, Workspaces, Refresh and Help.
   Each row says at its right edge what kind it is: `instance`, `soul`,
   `view`, `act` or `command`.
 - **Typing filters it** with the Desktop's subsequence match, a prefix
@@ -707,8 +789,8 @@ never writes it. With no file the keys are the ones above.
 - The actions are `up`, `down`, `top`, `bottom`, `page-up`, `page-down`,
   `collapse`, `expand`, `detail`, `filter`, `refresh`, `instances`,
   `souls`, `capabilities`, `workspaces`, `palette`, `open`, `soul-instances`, `zoom`, `close-terminal`,
-  `stop`, `retire`, `start`, `restart`, `help`, `close`, `quit`, `suspend`
-  and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
+  `stop`, `retire`, `start`, `restart`, `spawn`, `spawn-another`,
+  `spawn-check`, `help`, `close`, `quit`, `suspend` and `redraw`. `workspaces` (`w`) opens the switcher and `open` (`enter`)
   opens the selected agent's terminal in the list of instances, the
   selected row in the switcher and the detail in the Souls view;
   `soul-instances` (`i`) shows the selected soul's instances. `zoom` (`z`) and `close-terminal` (`c`) act
@@ -785,6 +867,11 @@ with the Desktop (`packages/client/`).
   workspace, by the same kernel, with 60 seconds and 4 MiB: only once [the
   Souls view](#the-souls-view) was shown, then only when the workspace
   changed, and on `r` there.
+- **A spawn's preview is one more read**, `oats spawn <soul> --preview
+  --json` with the choices shown, by the same kernel, with 30 seconds: only
+  while [the spawn prompt](#spawning-an-agent) is open, and again when a
+  choice changes. An answer is reused for a minute, as the Desktop reuses
+  it, until a spawn is applied or the workspace changes.
 - **The other machines are one more read**, `oats server roster --json`,
   by the same kernel: one answer for every machine registered on this
   machine. It has 60 seconds and 4 MiB.
@@ -887,6 +974,21 @@ with the Desktop (`packages/client/`).
   writing to them), and the directory is removed. `oats tui` waits for an
   apply's answer for 10 minutes and for a start's for 60 seconds; then it
   says so, and the change goes on.
+- **A spawn runs the kernel's own `oats spawn`**, as the Desktop does: the
+  prepare (a read, with the choices on screen) and then the apply of the
+  decision on screen (`--expect-decision`, `--idempotency-key`), a change
+  like the acts', with its output in the same directory. It has the
+  deadline the shared apply gives it, as the Desktop's has: 60 seconds,
+  more for each worktree setup a capability runs. Past it, the spawn is
+  sent SIGTERM (by `oats tui`, through the shared apply), and on an OATS
+  that rolls a spawn back on it, SIGKILL 20 seconds later if it still
+  runs: the outcome is then not known, and `C` checks it. Those timers are
+  the run's: once `oats tui` has gone, no deadline of a spawn it let go
+  signals it, and none keeps the process waiting. The shared apply
+  writes the task file `oats spawn --task-file` reads, empty, under the
+  system's temporary directory (`oats-desktop-task-*`, mode 0600), and
+  removes it when the spawn answers; a spawn let go on the way out leaves
+  it.
 - It runs no other command that changes a deployment or a registration, and
   it writes no other file but the private server's: its socket `tmux`, the
   keeper's FIFO `alive`, `capture` (the open terminal's screen, which the
@@ -902,7 +1004,8 @@ with the Desktop (`packages/client/`).
 | To | Run |
 |---|---|
 | start an agent with another harness or model | `oats session start --home <home>` with its options |
-| spawn an agent | `oats spawn <soul>` |
+| spawn an agent on another machine | `oats spawn <soul> --server <id>` |
+| spawn an agent with another harness, model or task | `oats spawn <soul>` with its options |
 | see capabilities | `oats capabilities` |
 | add a machine to this workspace | `oats server connect <id> --ssh <alias>` |
 | check a machine | `oats server check <id>` |
@@ -1049,13 +1152,16 @@ alone. The next run removes the directory that is left, with its `tmux`,
   socket but to ask whether a dead run's still answers.
 - It starts no daemon, and writes no file but the output of a change and
   its private server's own, in its own directory
+  ([above](#what-it-reads-and-what-it-runs)), and a spawn's empty task file
   ([above](#what-it-reads-and-what-it-runs)). The processes it starts are
   the reads above, when you open an agent its private tmux server and the
   viewer in it, and the acts you confirm. No read, server or viewer
   outlives it on every way out a process can handle; after SIGKILL a read
   in flight runs to its own end, and the private server and its viewer end
   by themselves. An act you confirmed is never ended by `oats tui`: it runs
-  to its own end.
+  to its own end. A spawn is ended only at its deadline, while `oats tui`
+  runs ([above](#what-it-reads-and-what-it-runs)): never on the way out,
+  and never after it.
 
 ## Errors
 

@@ -27,22 +27,31 @@ const scopeKey = c => JSON.stringify([c?.workspace?.id, c?.workspace?.scope, c?.
  * reads through the dialog's cache: a fresh held answer for exactly these choices is the decision (no second
  * CLI read); apply's --expect-decision is the drift guard. No held answer: a fresh read.
  *   exec  optional: the client's own execFile, passed to `invoke` as `invoke(cli, options, { exec })` for every
- *         apply (cli-adapter.mjs `runJson` has the rule); without it `invoke` is given no third argument and
- *         cliSpawnApply's own default runs. An apply is a change: its options carry `detached: true`
+ *         apply (cli-adapter.mjs `runJson` has the rule); without it (and without `applyTimer`) `invoke` is
+ *         given no third argument and cliSpawnApply's own default runs. An apply is a change: its options carry `detached: true`
  *         whatever exec is given, which runs it in a session of its own (as execFileInSession does). On a
  *         worktree-event kernel cliSpawnApply ends the child at the deadline through what exec returns
  *         (`child.kill`): a given exec must return the child. One that returns nothing leaves that apply
  *         unended at its deadline; there is no fallback here. On a kernel without worktree-event the options'
  *         `timeout` is the apply's only deadline: exec must honour it as execFileInSession does, killing the
  *         child when it passes and reporting `killed` even if the child then exits cleanly.
+ *   applyTimer  optional: the timer the apply's own deadline and its SIGTERM grace are armed on, passed to
+ *         `invoke` as `io.timer` beside `exec` (cliSpawnApply's `timer(fn, ms)`, which returns its cancel).
+ *         Without it `invoke` is given none, and cliSpawnApply arms them on setTimeout, as before. It is for
+ *         a client that lets go of an apply when it ends (the TUI on quit): it gives its own timer and clears
+ *         it then, so its process neither signals the apply nor is kept alive by its deadline, and the apply
+ *         runs to its own end, unsupervised (the kernel's own limits bound it). `timer` is the boundary's own
+ *         wait for an answer (answerWithinMs), which it does not pass on.
  *   maxAge  seconds the kernel may reuse its deployment observations for the apply (#1246 K1: the member heads'
  *         ls-remote wave at the press). Passed to `invoke` only where the apply's CLI lists spawn-apply-max-age;
  *         null never. The fence is unchanged: apply's --expect-decision refuses a drifted decision (E_DECISION_STALE). */
-export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply, exec, maxAge = PREVIEW_MAX_AGE_S,
+export function createSpawnApplyBoundary({ read, invoke = cliSpawnApply, exec, applyTimer, maxAge = PREVIEW_MAX_AGE_S,
   now = () => performance.now(), mint = () => randomBytes(32).toString('hex'), answerWithinMs = ANSWER_WITHIN_MS,
   timer = (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); } } = {}) {
   if (typeof read !== 'function') throw new TypeError('createSpawnApplyBoundary: read (the client\'s prepareRead) is required');
-  const prepared = new Map(), submitted = new Map(), active = new Set(), io = exec ? [{ exec }] : [];
+  if (applyTimer !== undefined && typeof applyTimer !== 'function') throw new TypeError('createSpawnApplyBoundary: applyTimer, when given, is a timer(fn, ms) that returns its cancel');
+  const given = { ...(exec ? { exec } : {}), ...(applyTimer ? { timer: applyTimer } : {}) };
+  const prepared = new Map(), submitted = new Map(), active = new Set(), io = Object.keys(given).length ? [given] : [];
   let preparing = 0, reservedBytes = 0;
   const denied = (code, entry = null, status = 'unavailable', message) => spawnApplyFailure(code, { target: entry?.target, spawnRef: entry?.ref, status, message });
   const sweep = () => { for (const map of [prepared, submitted]) for (const [ref, entry] of map) if (!entry.pending && entry.expires <= now()) map.delete(ref); };

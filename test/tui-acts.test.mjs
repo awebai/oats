@@ -1,6 +1,7 @@
 // `oats tui` stops, starts, restarts and retires an agent (awebai/oats#855, PR 5; docs/tui.md,
 // "Stopping, starting, restarting and retiring"), with real processes: an act it sent is a change,
-// and the TUI never ends a change. Spec 5, "Tests", real processes 1 to 4.
+// and the TUI never ends a change. Spec 5, "Tests", real processes 1 to 4; and (test 5) spawns one
+// (Spec 6-spawn, "Tests", tui-terminal), with the real kernel.
 //
 // RUN ON CI ONLY, never on a shared host. Real tmux throughout, never the operator's: the terminal
 // is a pane of a private server on a socket in this file's own temp dir (`-S`), the kernel's tmux is
@@ -20,8 +21,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { constants } from "node:os";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { assertNoFixtureProcesses, fixtureBase, isolateSessionEnvironment, systemExecutable, waitUntil } from "./helpers/host-fixture.mjs";
 import { v2Deployment } from "./helpers/v2-deployment.mjs";
 
@@ -33,6 +34,10 @@ const hostTool = (name) => { try { return systemExecutable(name); } catch { retu
 // The host's own tools and the default server's sessions, read before the environment is isolated.
 const REAL_TMUX = hostTool("tmux");
 const SLEEP = hostTool("sleep");
+/** Test 5 opens the new agent's terminal: the panel makes its keeper's FIFO with the base system's
+ *  `mkfifo` (packages/tui/lib/panel.mjs, THE KEEPER), which the fixture's PATH does not link: the
+ *  host's is linked there for this file, as test/tui-panel.test.mjs does. */
+const HOST_MKFIFO = hostTool("mkfifo");
 const NO_TMUX = REAL_TMUX ? false : "tmux is not on PATH: these tests drive `oats tui` in a real tmux (test/tmux-in-ci.test.mjs fails for this in CI)";
 const ORIGINAL_ENV = { ...process.env };
 /** The sessions of the default tmux server (the one a plain `tmux` reaches from the environment this
@@ -107,9 +112,13 @@ wait();
 test.before(async () => {
   if (!REAL_TMUX) return;
   restoreEnvironment = isolateSessionEnvironment(base);
+  assert.ok(HOST_MKFIFO, "mkfifo is on the host's PATH");
+  symlinkSync(HOST_MKFIFO, join(process.env.PATH.split(delimiter)[0], "mkfifo"));
   writeFileSync(STANDIN, `#!/bin/sh\nexec ${shq(SLEEP)} 86400\n`);
   chmodSync(STANDIN, 0o755);
-  fx = v2Deployment({ local: { "launch-configs": { standin: { harness: "pi", executable: STANDIN } } } });
+  // A second soul, scribe, for test 5's spawn from the TUI: this machine launches it on the stand-in
+  // (souls.launch), since the prompt offers no harness, and an inert one leaves no running session.
+  fx = v2Deployment({ souls: { dev: {}, scribe: {} }, local: { "launch-configs": { standin: { harness: "pi", executable: STANDIN } }, souls: { launch: { scribe: "standin" } } } });
   // The TUI and the readers it shares, as the install holds them, under the fake kernel.
   for (const dir of ["tui", "client"]) cpSync(join(REPOSITORY, "packages", dir), join(SHADOW, "packages", dir), { recursive: true, filter: (from) => !from.includes(`${join("packages", dir, "test")}`) });
   mkdirSync(join(SHADOW, "bin"), { recursive: true });
@@ -392,6 +401,39 @@ test("4. with standard error closed at the start, a change in flight at q writes
   await until(term, () => r.done(), "the fake's completion marker", 30000);
   await until(term, () => !alive(pid), "the change to end on its own");
   assert.deepEqual(r.signals(), []);
+});
+
+// ---- 5: a spawn from the TUI, end to end ----------------------------------------------------------
+test("5. a spawn from the TUI with the real kernel: a pasted n, a soul's name and two Enters spawn nothing; n, the name, Enter and Enter spawn one, and its terminal opens with the focus", { skip: NO_TMUX }, async (t) => {
+  const term = await terminal(t);
+  const run = await tui(term);
+  const scribes = () => (JSON.parse(fx.cli(["status", "--json"]).stdout).agents.find((agent) => agent.name === "scribe")?.instances ?? []).map((row) => row.instance);
+  assert.deepEqual(scribes(), [], "premise: no scribe yet");
+  const prompt = () => term.has("Spawn: pick a soul") || term.has("Spawn scribe");
+  // One write, so one read of input: the Enters come in the read that opened the prompt, or before
+  // its preview was read. Either way nothing is spawned.
+  tmuxOn("send-keys", "-l", "-t", term.pane, "nscribe\r\r");
+  await until(term, prompt, "the prompt, after the paste", 60000);
+  // The picker as the paste left it: once the souls are read (its row, under the query's line,
+  // which says `> scribe` from the paste on), Enter picks scribe, in a read of its own.
+  if (term.has("Spawn: pick a soul")) {
+    await until(term, () => term.screen().filter((line) => /^>\s+scribe\b/.test(line)).length === 2, "scribe's row in the picker", 60000);
+    term.press("Enter");
+  }
+  // The preview read: its facts drawn, and no read under way.
+  await until(term, () => term.has("Spawn scribe") && term.has("Harness") && !term.has("Reading the preview"), "scribe's preview", 90000);
+  assert.equal(term.has("Spawning"), false, `the paste spawned nothing:\n${term.shows()}`);
+  term.press("Enter");
+  await until(term, () => term.has("back to the list"), "the new agent's terminal, with the focus", 180000);
+  const made = scribes();
+  assert.equal(made.length, 1, `one scribe: ${made.join(", ")}`);
+  assert.equal(run.row(made[0])?.selected, true, "its row is selected");
+  // The leader twice gives the focus back to the list; q there quits.
+  term.press("C-\\"); term.press("C-\\");
+  await until(term, () => run.listed(), "the list again, after the leader twice");
+  term.press("q");
+  assert.equal(await run.ended("after q"), 0, term.shows());
+  assert.deepEqual(scribes(), made, "and no second spawn on the way out");
 });
 
 // ---- last: nothing of the operator's tmux was touched ---------------------------------------------

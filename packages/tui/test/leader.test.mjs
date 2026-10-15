@@ -259,13 +259,13 @@ test("the leader then Up or Down moves from the open terminal's instance, not fr
 
 // ── The palette ──────────────────────────────────────────────────────────────────────────────────
 
-test("the palette lists the instances that can be opened, the views, the acts the selected instance offers, then Workspaces, Refresh and Help; an instance's row carries its mark, name and machine", () => {
+test("the palette lists the instances that can be opened, the views, the acts the selected instance offers, then Spawn an agent, Workspaces, Refresh and Help; an instance's row carries its mark, name and machine", () => {
   const state = key(THREE(), "ctrl+k").state;
   assert.deepEqual(rows(state), [
     "instance dev-a", "instance dev-c",
     "view Instances", "view Souls", "view Capabilities",
     "act Stop", "act Retire", "act Restart",
-    "command Workspaces", "command Refresh", "command Help",
+    "command Spawn an agent", "command Workspaces", "command Refresh", "command Help",
   ]);
   const a = idOf(state, "dev-a");
   assert.deepEqual(paletteItems(state).items[0], { key: `instance\u0000${a}`, kind: "instance", label: "dev-a", id: a, name: "dev-a", machine: null, mark: "running", text: "dev-a " });

@@ -108,7 +108,7 @@ export function rowStrings(rows, cols) {
 // Everything below goes through the same calls the program makes (lib/client.mjs re-exports them):
 // a test that built an entry or a panel by hand would test its own idea of them.
 import { failedEntry, observedEntry, panelInstances, pendingEntry, rosterRows } from "../lib/client.mjs";
-import { model, roster } from "../lib/model.mjs";
+import { model, outcomeOf, roster } from "../lib/model.mjs";
 import { initialState, reduce } from "../lib/store.mjs";
 import { createScreen } from "../lib/term/screen.mjs";
 import { frame, layout } from "../lib/views/frame.mjs";
@@ -160,7 +160,7 @@ export function draw(state, size = { cols: 80, rows: 24 }, { now = NOW, utf8 = t
   const at = new Date(now).toISOString();
   const listing = (state.view === "help" ? state.back : state.view) === "switcher";
   const r = listing ? { notice: null, note: null, observed: true } : roster(state, at);
-  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : state.outcome, terminal: state.terminal !== null });
+  const g = layout(r.notice, size, { observed: r.observed, note: r.note, ascii: state.ascii, outcome: listing ? null : outcomeOf(state), terminal: state.terminal !== null });
   const made = { ...frame({ ...model(state, { page: g.page, now, at, cols: g.listCols }), screen }, size), cols: g.listCols };
   const cells = createScreen({ utf8, ascii: state.ascii }).cells(made.rows, size);
   return { ...made, cells, lines: cells.map((line) => line.map((cell) => cell.text).join("").trimEnd()) };

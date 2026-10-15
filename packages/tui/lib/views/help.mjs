@@ -29,6 +29,10 @@ export function keyText(label) {
  *  kernel's own usage, so the help cannot name a command that does not exist. A later version
  *  removes a line when it adds the act. */
 export const NOT_YET = Object.freeze([
+  // The spawn prompt (n, N) spawns on this machine, with the launch the soul and this machine
+  // choose, and no task: the rest is the kernel's command's (run on that machine for another).
+  Object.freeze({ what: "spawn on another machine", command: "oats spawn <soul>" }),
+  Object.freeze({ what: "spawn with a harness, model or task", command: "oats spawn <soul>" }),
   Object.freeze({ what: "open an agent in its own tmux window", command: "oats session attach --home <home>" }),
   Object.freeze({ what: "start with another harness or model", command: "oats session start --home <home>" }),
   Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias>" }),
@@ -45,10 +49,10 @@ export const MACHINES = Object.freeze([
   "Souls and Capabilities, when they come, are this machine's.",
 ]);
 /** The views the frame names, what each holds, and what to run for what a view does not do yet:
- *  the Souls view shows the souls and makes no instance of one, and Capabilities is not built. */
+ *  Capabilities is not built. The Souls view spawns an agent of the selected soul (n, N). */
 export const VIEWS = Object.freeze([
   Object.freeze({ name: "1 Instances", what: "the instances of the open workspace", commands: Object.freeze([]) }),
-  Object.freeze({ name: "2 Souls", what: "the souls of the open workspace and their detail, i their instances; spawning is not in this version", commands: Object.freeze(["oats spawn <soul>"]) }),
+  Object.freeze({ name: "2 Souls", what: "the souls of the open workspace and their detail, i their instances, n an agent of the selected soul", commands: Object.freeze([]) }),
   Object.freeze({ name: "3 Capabilities", what: "not in this version", commands: Object.freeze(["oats capabilities"]) }),
 ]);
 
@@ -134,11 +138,27 @@ function leaderRows(detachKey, cols) {
   ];
 }
 
+/** The spawn prompt's keys (docs/tui.md, "Spawning an agent"): the prompt reads its keys itself, as
+ *  the palette does, so they are fixed and the TUI's words. Each step's keys, then the paste guard. */
+export const SPAWN_KEYS = Object.freeze([
+  Object.freeze(["Up, Down", "move in the soul picker; typing narrows it"]),
+  Object.freeze(["Enter", "pick the selected soul; a soul marked ! would be refused here and cannot be picked"]),
+  Object.freeze(["Esc", "close the soul picker"]),
+  Object.freeze(["Tab, Shift+Tab", "move the focus in the preview: Spawn, name, child of, then each fold"]),
+  Object.freeze(["Enter", "do what the footer names: on Spawn spawn, on name keep the name and read the preview again, on child of switch it, on a fold open or close it"]),
+  Object.freeze(["Esc", "from a field back to Spawn; from Spawn back to the picker, or to the list"]),
+]);
+export const SPAWN_RULES = Object.freeze([
+  "Enter spawns only once the preview on the screen is the one for the choices shown, read after it was first drawn: a paste cannot spawn.",
+]);
+const spawnRows = (cols) => [heading("The spawn prompt"), [], ...table(SPAWN_KEYS.map(([keys, said]) => [keys, words(said)]), cols, KEYS), ...sentences(SPAWN_RULES, cols)];
+
 /** Every row of the help for an area `cols` wide, before it is scrolled. Unbound actions are
  *  listed as such: the table can be changed by the user's tui.json, and the help says what is so
  *  now. An action that does one thing in each view has a line per view, its key on each; under
  *  the line of opening an agent stand the back key (`detachKey`, tui.json's `open.detachKey`) and
- *  the rules of OPEN_RULES; under the line of the last act, ACT_RULES. */
+ *  the rules of OPEN_RULES; under the line of the last act, ACT_RULES. After the leader's table,
+ *  the spawn prompt's keys (SPAWN_KEYS, SPAWN_RULES). */
 export function helpRows(actions, ascii, cols = 100, detachKey = null) {
   const marks = marksOf(ascii);
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
@@ -152,6 +172,8 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
         : action.id === "restart" ? actRows : undefined]);
     }), cols, KEYS),
     ...(detachKey !== null ? [[], ...leaderRows(detachKey, cols)] : []),
+    [],
+    ...spawnRows(cols),
     [],
     heading("Marks"),
     [],
