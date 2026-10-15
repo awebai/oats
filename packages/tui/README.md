@@ -32,7 +32,7 @@ never does.
 | `lib/term/width.mjs` | the cells a grapheme takes |
 | `lib/term/text.mjs` | safe text, the only thing the screen draws: `lit()` and `shown()` |
 | `lib/term/style.mjs` | style values: the TUI's own (the sixteen ANSI colours and four attributes) and an agent's (its colours, 256 and RGB included, and attributes, from a capture) |
-| `lib/term/capture.mjs` | a pane's capture (`capture-pane -p -e -N`) to rows of cells: characters and an allowlist of SGR, every other sequence and control dropped |
+| `lib/term/capture.mjs` | a pane's capture (`capture-pane -e -N`) to rows of cells: characters and an allowlist of SGR, every other sequence and control dropped |
 | `lib/term/through.mjs` | the bytes typed while a terminal has the focus: the back key's grammar and bytes, and the scanner that takes the back key and a bracketed paste out of them |
 | `lib/term/screen.mjs` | the cell buffer and the bytes of a frame |
 | `lib/term/tty.mjs` | the guard: enter, leave, signals, suspend, resize, one write per frame |
@@ -63,9 +63,14 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   FIFO `alive`, whose write end the TUI holds, until no writer is left (see
   THE KEEPER in `lib/panel.mjs`, which says why the control client's stdin
   EOF is not enough). The next run's sweep removes the directory. The panel
-  runs a process only to make that FIFO, to start the server and to make a
-  window; every frame, key, resize and close goes through its one
-  control client, and a capture runs only after tmux said the pane changed. A
+  runs a process to make that FIFO, to ask tmux's version, to start the
+  server, to make a window and to end the server, and the sweep one to ask
+  whether a socket answers; every frame, key, resize and close goes through
+  its one control client, and a capture runs only after tmux said the pane
+  changed. A capture goes out of band: tmux saves it to the run's file
+  `capture`, so no pane's text is ever in the control client's stream, and
+  a block that says what its command never says ends that client (THE
+  CAPTURE in `lib/panel.mjs`). A
   change (`lib/read.mjs` `changeExec`: the apply of a stop or a retire, a
   start, a restart) is never signalled: on the way out it is let go, and its
   output goes to files, so it never meets a closed pipe.

@@ -26,6 +26,7 @@ import { displayLine } from "../packages/client/display-text.mjs";
 import { cliSpawnPreview } from "../packages/client/spawn-preview-cli.mjs";
 import { spawnApplyReason } from "../packages/client/spawn-apply-contract.mjs";
 import { spawnProblem } from "../packages/client/spawn-messages.mjs";
+import { spawnText } from "../packages/desktop/renderer/spawn-words.mjs";
 import { eventsData } from "../packages/desktop/renderer/instance-events-data.mjs";
 
 const ENTRY = DEV_CHANNEL_ENTRIES[0].id, NOTICE = FLAG_IGNORED_ENTRIES[0].id;
@@ -240,11 +241,11 @@ test("the kernel's own E_LAUNCH_CONFIG_AMBIGUOUS reads as the Desktop's sentence
     assert.ok(error.message.length <= 1024, String(error.message.length));
     for (const stage of ["preview", "spawn"]) {
       const problem = spawnProblem(reason, stage);
-      assert.equal(problem.text, SENTENCE);
+      assert.equal(spawnText(problem, stage), SENTENCE);
       assert.equal(problem.detail, `E_LAUNCH_CONFIG_AMBIGUOUS · ${error.message}`);
     }
     // The apply's re-read keeps the code with the Desktop's fixed message.
-    assert.equal(spawnProblem(spawnApplyReason(error.code, error.message), "spawn").text, SENTENCE);
+    assert.equal(spawnText(spawnProblem(spawnApplyReason(error.code, error.message), "spawn"), "spawn"), SENTENCE);
   }
   // A choice of the bare harness, or one configuration, is not this refusal.
   assert.equal(launchConfigAmbiguous({ launchConfigs: several(1), harness: "claude", config: null, choice }), null);

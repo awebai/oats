@@ -499,7 +499,8 @@ surface, not final K7 or native/rendered acceptance.
 `spawn-dialog.mjs` owns the form; `views/spawn.mjs` is a thin host (modal,
 focus trap, Esc/backdrop close, the `spawn.submit` binding and the handoff). In
 the shell a confirmed local press is handed to `spawn-jobs.mjs` (`ctx.spawnJobs`)
-and the dialog closes at once; the store runs the transaction, owns the roster's
+and the dialog closes at once; the store runs the shared transaction
+(`packages/client/spawn-transaction.mjs` `createSpawnTransaction`), owns the roster's
 pending row (`shell.mjs` `pendingSpawnRow`), the outcome notifications and the
 **New** marks, and keeps the draft for **Reopen spawn** (`preselectSpawn({…, draft})`).
 After the press the shell reveals the pending row without focus (`ctx.followSpawn`)
@@ -514,7 +515,9 @@ and shows the preview column (*What will be created*: name, works in, harness
 and where it came from, default team; *Core capabilities* and *Capabilities*
 from the preview's projected `modules`, each with its source and, when the
 preview reports it, its reason; a skeleton while it reads, the footer's
-refusal sentence when it fails). **Change soul** switches the same dialog to
+refusal sentence when it fails). The facts are data from the shared home's
+`previewFacts` (`packages/client/spawn-preview-facts.mjs`), which any client
+draws its own way; the dialog draws them. **Change soul** switches the same dialog to
 the **picker** (the soul chooser, grouped by source, alphabetical, externals
 last, keyed by `agentsRoot + name + server`); switching soul keeps the typed
 name and instruction, and a soul chosen there reopens in the picker. Quick
@@ -620,8 +623,12 @@ come from every view holding a remote deployment (`serverFacts`, since
 `/api/team-members` is view-scoped). A chosen group's relation rows are that
 group's deployment only (`serverRows`).
 
-Problems read as one plain sentence about what happened and what to do
-(`packages/client/spawn-messages.mjs`, keyed by the contract's stable code). The code and the
+Problems read as one plain sentence about what happened and what to do, keyed
+by the contract's stable code: the shared home says what happened (`fact`) and
+names the act that follows as a `next` code (`packages/client/spawn-messages.mjs`,
+`SPAWN_NEXT`), and `spawn-words.mjs` composes the Desktop's sentence from them
+with its own words for that act, which name its controls (`spawnText`, and
+`outcomeText` for the store's and the dialog's outcome notices). The code and the
 technical or kernel text — paths, hashes, the `git clone` remedy — stay
 behind a **Details** toggle and in `data-code`; no decision depends on wording.
 For an unmatched launch preference (`E_LAUNCH_PREFERENCE_UNMATCHED`) Details
