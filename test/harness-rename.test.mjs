@@ -160,7 +160,7 @@ test("a requires[] row naming both `harness` and `runtime` fails the spawn befor
   });
   t.after(fx.cleanup);
   const e = fail(fx.cli(["spawn", "dev", "--harness", "pi", "--no-launch", "--json"]));
-  assert.equal(e.code, "E_SPAWN_FAILED", JSON.stringify(e)); // the CLI's wrapping of E_HARNESS_RESOURCE_MISSING
+  assert.equal(e.code, "E_HARNESS_RESOURCE_MISSING", JSON.stringify(e)); // the gate's own code (E_SPAWN_FAILED before #1047)
   assert.match(e.message, /acme\.both: a requirement declares both `harness` and `runtime` \(its pre-0\.27 name\); keep one/);
 });
 
@@ -253,9 +253,11 @@ test("schedules: a definition's `runtime` is its harness at add and when stored,
 });
 
 test("remote schedules and probes: a spec is sent in the host's names; a pre-0.27 host's `runtimes` is its harness list", async () => {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-harness-remote-")));
+  // short, and its OATS_HOME_DIR is <base>/h: that holds ssh's control socket (ssh/<40 hex>), which ssh needs
+  // within 86 bytes, under the root run's directory of the file (docs/implementation.md, fixtures)
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "o-hr-")));
   const saved = { ...process.env };
-  process.env.OATS_HOME_DIR = join(base, "oats-home");
+  process.env.OATS_HOME_DIR = join(base, "h");
   try {
     const { scheduleRemote } = await import("../lib/servers.mjs");
     mkdirSync(process.env.OATS_HOME_DIR, { recursive: true });

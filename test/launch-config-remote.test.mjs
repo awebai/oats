@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { resetRuntimeNames, runtimeNameWarning } from "../lib/deprecation.mjs";
 import { checkRemoteSupport, launchConfigRemote, remoteQuote, restartRemote, snapshotPath, startRemote, writeServers, writeSnapshot } from "../lib/servers.mjs";
 
-const base = mkdtempSync(join(tmpdir(), "oats-launch-remote-"));
+// short: it is OATS_HOME_DIR, which holds ssh's control socket (ssh/<40 hex>), which ssh needs within 86 bytes,
+// under the root run's directory of the file (docs/implementation.md, fixtures)
+const base = mkdtempSync(join(tmpdir(), "o-lr-"));
 const oldHome = process.env.OATS_HOME_DIR;
 process.env.OATS_HOME_DIR = base;
 test.after(() => { if (oldHome === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = oldHome; rmSync(base, { recursive: true, force: true }); });

@@ -35,11 +35,20 @@ export function linkExecutables(bin, names) {
  *  little of a socket path's ~104 bytes, and of NAME_MAX/PATH_MAX for long names: the base goes
  *  under /tmp instead. */
 const SHORT_TMPDIR = 20;
+/** Where a fixture makes a directory of its own: tmpdir(), or /tmp when tmpdir() is long. Under the
+ *  root run every test file has a temporary directory of its own, which the run reads when the
+ *  file has ended (scripts/test-file-tmpdir.mjs, awebai/oats#1025): that one is used whatever its
+ *  length, so nothing a fixture makes is outside it. The run keeps it short. It is known by what the
+ *  runner makes, `<run>/ot-XXXXXX/<n>` with the file `<n>.file` beside it, and by no variable: a
+ *  process a test starts with inheritedEnv() has the file's TMPDIR and none of the run's OATS_ names. */
+function fixtureParent() {
+  const dir = tmpdir();
+  return dir.length <= SHORT_TMPDIR || (/[/\\]ot-[^/\\]+[/\\]\d+$/.test(dir) && existsSync(`${dir}.file`)) ? dir : "/tmp";
+}
 /** A new fixture base: a fresh directory under tmpdir(), or under /tmp when tmpdir() is long, as its
  *  realpath (taken once: /private/tmp and /private/var on macOS). */
 export function fixtureBase(prefix = "oats-") {
-  const parent = tmpdir().length > SHORT_TMPDIR ? "/tmp" : tmpdir();
-  return realpathSync(mkdtempSync(join(parent, prefix)));
+  return realpathSync(mkdtempSync(join(fixtureParent(), prefix)));
 }
 
 /** NAME_MAX and PATH_MAX of the platform's usual filesystems, from a table, not a native call. */
@@ -200,9 +209,11 @@ export function assertNoFixtureProcesses(base, { settleMs = 2000 } = {}) {
 // at $TMUX_TMPDIR/tmux-<uid>/oats. A fixture therefore owns a private TMUX_TMPDIR: the kernel under
 // test then reaches the fixture's own `oats` server and never the operator's.
 
-/** A new private TMUX_TMPDIR. Short on purpose: a socket path is limited to about 104 bytes, and the
- *  platform's temporary directory can be long. */
-export function privateTmuxTmpdir() { return realpathSync(mkdtempSync("/tmp/oats-tmux-")); }
+/** A new private TMUX_TMPDIR, made where a fixture base is. Short on purpose: a socket path is
+ *  limited to about 104 bytes, and the platform's temporary directory can be long. It is never
+ *  inside a fixture's base: only ending the fixture removes it (v2Deployment's fx.cleanup), so a
+ *  fixture that was made and never ended leaves it, and the root run fails on what is left. */
+export function privateTmuxTmpdir() { return realpathSync(mkdtempSync(join(fixtureParent(), "oats-tmux-"))); }
 /** The socket of the server named `oats` under a TMUX_TMPDIR: tmux's own layout. */
 export function oatsSocket(tmuxTmpdir = process.env.TMUX_TMPDIR) { return join(tmuxTmpdir, `tmux-${process.getuid()}`, "oats"); }
 /** tmux creates its per-user socket directory when a server is selected by name (-L). A test that

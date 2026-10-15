@@ -11,8 +11,9 @@
 // F6, Ctrl+letters) belongs to the attached program. On Linux/Windows the Ctrl key
 // IS the terminal's control key, so only an explicit allowlist of action ids may
 // fire inside the terminal; every other chord passes through. Their defaults
-// there are Ctrl+Shift+key (the GNOME Terminal / Alacritty / Ghostty / kitty
-// convention), so plain Ctrl+letter (Ctrl+W, Ctrl+K, Ctrl+P, Ctrl+B, Ctrl+\),
+// there are chords xterm sends nothing for, mostly Ctrl+Shift+key (the GNOME
+// Terminal / Alacritty / Ghostty / kitty convention; TERMINAL_ALLOWLIST has the
+// rule), so plain Ctrl+letter (Ctrl+W, Ctrl+K, Ctrl+P, Ctrl+B, Ctrl+\),
 // F6, Alt+digit and Ctrl+PgUp/PgDn stay the program's. app-menu.mjs follows the
 // same policy for the menu accelerators.
 // docs/desktop-keyboard.md is the keymap's reference.
@@ -73,24 +74,29 @@ function keyLabel(key) {
   return KEY_LABELS.get(key) || (key.length === 1 ? key.toUpperCase() : key[0].toUpperCase() + key.slice(1));
 }
 
+/** The keys of a chord (object or string) as shown, one label per key, in the order
+ * they are written: ["⇧", "⌘", "B"] on mac, ["Ctrl", "Shift", "B"] elsewhere. */
+export function chordKeys(chord, isMac = defaultIsMac()) {
+  const c = typeof chord === "string" ? parseChord(chord) : chord;
+  if (!c) return [];
+  const keys = [];
+  if (isMac) {
+    if (c.ctrl) keys.push("⌃");
+    if (c.alt) keys.push("⌥");
+    if (c.shift) keys.push("⇧");
+    if (c.mod) keys.push("⌘");
+  } else {
+    if (c.mod || c.ctrl) keys.push("Ctrl");
+    if (c.alt) keys.push("Alt");
+    if (c.shift) keys.push("Shift");
+  }
+  keys.push(keyLabel(c.key));
+  return keys;
+}
+
 /** Human label for a chord (object or string). Mod = ⌘ on mac, Ctrl elsewhere. */
 export function formatChord(chord, isMac = defaultIsMac()) {
-  const c = typeof chord === "string" ? parseChord(chord) : chord;
-  if (!c) return "";
-  if (isMac) {
-    let s = "";
-    if (c.ctrl) s += "⌃";
-    if (c.alt) s += "⌥";
-    if (c.shift) s += "⇧";
-    if (c.mod) s += "⌘";
-    return s + keyLabel(c.key);
-  }
-  const parts = [];
-  if (c.mod || c.ctrl) parts.push("Ctrl");
-  if (c.alt) parts.push("Alt");
-  if (c.shift) parts.push("Shift");
-  parts.push(keyLabel(c.key));
-  return parts.join("+");
+  return chordKeys(chord, isMac).join(isMac ? "" : "+");
 }
 
 /** Canonical storage/comparison string for a chord object. */
@@ -151,9 +157,9 @@ function isEditableTarget(target) {
 // macOS and Ctrl elsewhere) or `{ mac, other }` when the platforms differ (null =
 // no default there). Principles (docs/desktop-keyboard.md): Super/Meta belongs to
 // the window manager on Linux, so `Mod` is Ctrl there and nothing binds Super;
-// a chord that must work while a terminal has focus is Ctrl+Shift+key on
-// Linux/Windows, because plain Ctrl+letter belongs to the program; macOS keeps ⌘,
-// which never reaches the pty. Every default passed the collision review in the
+// a chord that must work while a terminal has focus is one xterm.js sends no byte
+// for on Linux/Windows (Ctrl+Shift+key, mostly), because plain Ctrl+letter belongs
+// to the program; macOS keeps ⌘, which never reaches the pty. Every default passed the collision review in the
 // keyboard lesson, shifted punctuation included (KEY_ALIASES, tested with the
 // real shifted event). Action ids never change, so stored overrides survive.
 export const DEFAULT_KEYMAP = Object.freeze({
@@ -184,15 +190,17 @@ export const DEFAULT_KEYMAP = Object.freeze({
   "focus.nextRegion": "F6",
   "focus.prevRegion": "Shift+F6",
   "focus.leaveTerminal": "Mod+Shift+F6",
-  "sidebar.focusFilter": "Mod+F",
-  "sidebar.toggle": "Mod+B",
+  // Ctrl+Shift+F / Ctrl+Shift+B on Linux/Windows: plain Ctrl+F and Ctrl+B are bytes a program
+  // reads (readline's forward-char, the tmux prefix); the shifted chords are none.
+  "sidebar.focusFilter": { mac: "Mod+F", other: "Ctrl+Shift+F" },
+  "sidebar.toggle": { mac: "Mod+B", other: "Ctrl+Shift+B" },
   // Terminator / Tilix: Ctrl+Shift+E splits right, Ctrl+Shift+O splits down.
   "split.vertical": { mac: "Mod+\\", other: "Ctrl+Shift+E" },
   "split.horizontal": { mac: "Mod+Shift+\\", other: "Ctrl+Shift+O" },
   "split.close": { mac: "Mod+Alt+W", other: "Ctrl+Shift+Alt+W" },
-  // The instance panel (the right-hand panel). Not terminal-allowlisted: on Linux/Windows
-  // Ctrl+I (the Tab byte) stays with the program in the terminal (macOS ⌘I fires there).
-  "panel.toggle": "Mod+I",
+  // The instance panel (the right-hand panel). Ctrl+Shift+I on Linux/Windows: plain Ctrl+I is
+  // the Tab byte, which stays with the program.
+  "panel.toggle": { mac: "Mod+I", other: "Ctrl+Shift+I" },
   // Copy the terminal's selection (#672): Ctrl+Shift+C, the Linux terminals' copy (Ctrl+C is the
   // interrupt). No macOS default: ⌘C is Edit › Copy, the menu role. xterm.js sends nothing for
   // Ctrl+Shift+C (its Ctrl+letter control bytes need Shift up), so claiming it takes nothing.
@@ -213,26 +221,30 @@ export function defaultBinding(actionId, isMac = defaultIsMac()) {
 // Action ids allowed to fire inside .xterm on Linux/Windows, where their
 // chords would otherwise belong to the attached program. Allowlisting by
 // action id (not chord) keeps the policy stable across user rebinds.
-// Their defaults there are Ctrl+Shift+key or Ctrl+Tab: none is a key a program
-// reads. Deliberately absent, so they reach the program: focus.next/prevRegion
-// (F6: mc, htop, nano), tabs.goto1–9 (Alt+digit: readline's numeric argument,
-// irssi/weechat, tmux window bindings) and tabs.next/prevPage (Ctrl+PgUp/PgDn:
-// vim, weechat). From a terminal, Ctrl+Tab switches tabs and Mod+Shift+F6 leaves.
-// sidebar.toggle is deliberately NOT allowlisted: its default Mod+B would
-// intercept Ctrl+B — the tmux prefix — inside the terminal on non-mac
-// (macOS ⌘B still fires in xterm via the ⌘-chord rule).
-// app.quickOpenSouls is deliberately ABSENT too: Ctrl+P inside a terminal
-// is shell history navigation — it must reach the pty (⌘P on macOS still
-// fires inside xterm via the ⌘-chord policy above).
-// app.themePicker is safe: xterm.js 5.5.0 sends no byte for Ctrl+Shift+Space (its
-// Ctrl+Space → NUL needs Shift up), so claiming it takes nothing from a program, and
-// plain Ctrl+Space stays the program's. terminal.copySelection is the same: Ctrl+Shift+C is no
-// byte, and with nothing selected the action does nothing.
+// The rule (docs/desktop-keyboard.md, principle 2): a chord fires in a terminal
+// on Linux/Windows only when xterm sends nothing for it, or when what it sends is
+// a byte the program still gets from a plainer key. Nothing: the Ctrl+Shift+letter
+// defaults and Ctrl+Shift+Space (xterm's Ctrl+letter and Ctrl+Space bytes need
+// Shift up), Ctrl+1, Ctrl+2, Ctrl+, and the zoom chords Ctrl+= Ctrl+- Ctrl+0.
+// A byte the program still gets: Ctrl+3 (ESC: Esc), Ctrl+Tab (Tab), Ctrl+Shift+Tab
+// (back-tab: Shift+Tab), Ctrl+Shift+Alt+W (ESC Ctrl+W: Ctrl+Alt+W). One deliberate
+// exception: Ctrl+Shift+F6 sends a sequence no plainer key does, kept because
+// without it F6 cannot get out of a terminal. test/terminal-xterm-bytes.test.mjs
+// runs each allowlisted default through xterm's own keydown and pins exactly
+// what it sends.
+// Every plain Ctrl+letter, Alt+key, F-key and Ctrl+PgUp/PgDn stays the program's,
+// so these stay out: app.quickOpenSouls (Ctrl+P, shell history),
+// app.openFile (Ctrl+O), tabs.goto1–9 (Alt+digit: readline's numeric argument,
+// irssi/weechat, tmux window bindings), focus.next/prevRegion (F6: mc, htop,
+// nano) and tabs.next/prevPage (Ctrl+PgUp/PgDn: vim, weechat).
 export const TERMINAL_ALLOWLIST = Object.freeze([
-  "app.palette", "app.chooseSoul", "app.themePicker", "terminal.copySelection",
+  "app.palette", "app.chooseSoul", "app.themePicker", "app.shortcuts", "terminal.copySelection",
   "tabs.next", "tabs.prev", "tabs.close",
   "split.vertical", "split.horizontal", "split.close",
   "focus.leaveTerminal",
+  "sidebar.toggle", "sidebar.focusFilter", "panel.toggle",
+  "stage.hierarchy", "stage.spawn", "stage.automations",
+  "terminal.fontBigger", "terminal.fontSmaller", "terminal.fontReset",
 ]);
 
 export const CONTEXTS = Object.freeze([
@@ -443,6 +455,17 @@ function macStructuralChord(id, c) {
   return false;
 }
 
+/** Whether an action bound to `chord` may fire while a terminal has focus: on
+ * Linux/Windows when its id is in TERMINAL_ALLOWLIST, whatever the chord; on macOS
+ * when the chord holds ⌘ and not ⌃ (⌘ never reaches the pty), or is the Ctrl+Tab
+ * shape of tabs.next/prev. matchEvent applies it; the shortcuts editor shows it. */
+export function terminalAllows(actionId, chord, isMac = defaultIsMac()) {
+  const c = typeof chord === "string" ? parseChord(chord) : chord;
+  if (!c) return false;
+  if (!isMac) return TERMINAL_ALLOWLIST.includes(actionId);
+  return macStructuralChord(actionId, c) || (c.mod && !c.ctrl);
+}
+
 /** Match a keydown to an eligible action id, or null. Honors context scoping
  * and the terminal policy. `opts` is for tests: { isMac, insideTerminal,
  * editableTarget } — each defaults from the environment/event. */
@@ -467,15 +490,9 @@ export function matchEvent(e, opts = {}) {
     if (!contextEligible(action.context)) continue;
     const bound = parseChord(getBinding(action.id, isMac) || "");
     if (!bound || !chordMatches(bound, evChord, isMac)) continue;
-    if (insideTerminal) {
-      if (isMac) {
-        // ⌘ chords fire; other chords stay with the attached program, even
-        // after a custom rebind — except Ctrl+Tab / Ctrl+Shift+Tab (macStructuralChord).
-        if (!macStructuralChord(action.id, evChord) && (!(bound.mod && evChord.mod) || evChord.ctrl)) continue;
-      } else if (!TERMINAL_ALLOWLIST.includes(action.id)) {
-        continue; // Ctrl chords belong to the attached program
-      }
-    }
+    // Inside a terminal, every other chord stays with the attached program, even after
+    // a custom rebind (on macOS the event's chord equals the bound one here).
+    if (insideTerminal && !terminalAllows(action.id, evChord, isMac)) continue;
     if (action.context === "global") globalHit = globalHit || action;
     else contextHit = contextHit || action;
   }

@@ -5,7 +5,7 @@ import { LUCIDE_ICONS } from "./lucide-icons.mjs";
 
 /** App icon name → Lucide icon. The shell's semantic names stay stable. */
 export const ICONS = Object.freeze({
-  overview: "circle-dot", workspace: "house", schedules: "clock", plus: "plus", sidebar: "panel-left",
+  overview: "circle-dot", workspace: "house", schedules: "clock", plus: "plus", sidebar: "panel-left", panel: "panel-right",
   theme: "contrast", shortcuts: "keyboard", palette: "terminal", settings: "sliders-horizontal",
   chevron: "chevron-down", chevronDown: "chevron-down", chevronRight: "chevron-right", chevronLeft: "chevron-left",
   splitRight: "columns-2", splitDown: "rows-2",
@@ -17,6 +17,8 @@ export const ICONS = Object.freeze({
   triggers: "zap", test: "flask-conical", automations: "workflow", users: "users",
   // v4.1 instance panel: work-mode tiles (folder, link, layers; git-branch is `branch`), the Folder row's Copy, the eligible-team circle.
   folder: "folder", link: "link", layers: "layers", copy: "copy", circle: "circle",
+  // Setup's "For developers" drawing: the host lists a member, the member names the workspace back.
+  arrowRight: "arrow-right", arrowLeft: "arrow-left",
 });
 const ATTR = /^[-0-9a-zA-Z .,]*$/;
 function iconNodes(name) {

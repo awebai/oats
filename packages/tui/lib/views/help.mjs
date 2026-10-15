@@ -29,10 +29,8 @@ export function keyText(label) {
  *  kernel's own usage, so the help cannot name a command that does not exist. A later version
  *  removes a line when it adds the act. */
 export const NOT_YET = Object.freeze([
-  Object.freeze({ what: "open an agent's terminal", command: "oats session attach --home <home>" }),
-  Object.freeze({ what: "stop an agent", command: "oats instance stop <instance>" }),
-  Object.freeze({ what: "start or restart an agent", command: "oats session start --home <home>" }),
-  Object.freeze({ what: "retire an agent", command: "oats retire <instance>" }),
+  Object.freeze({ what: "open an agent in its own tmux window", command: "oats session attach --home <home>" }),
+  Object.freeze({ what: "start with another harness or model", command: "oats session start --home <home>" }),
   Object.freeze({ what: "add a machine to this workspace", command: "oats server connect <id> --ssh <alias>" }),
   Object.freeze({ what: "check a machine", command: "oats server check <id>" }),
   Object.freeze({ what: "remove a machine", command: "oats server remove <id>" }),
@@ -67,7 +65,10 @@ const flow = (pieces, room) => pieces.reduce((lines, piece) => {
  *  piece wider than that column puts every meaning under its entry instead, so no row is cut at
  *  the smallest width the frame draws at. */
 function table(pairs, cols, look) {
-  // An entry is the TUI's own word, or text made elsewhere with its width (a key's label).
+  // An entry is the TUI's own word, or text made elsewhere with its width (a key's label). A
+  // third member makes rows of its own under the entry's meaning: given the meaning's column and
+  // the cells it has, it answers rows of spans placed from column 0.
+  const under = new Map(pairs.map(([, pieces, more]) => [pieces, more]));
   pairs = pairs.map(([left, pieces]) => [typeof left === "string" ? { text: lit(left), width: left.length } : left, pieces]);
   const entry = (left) => ({ col: INDENT, text: left.text, width: left.width, ...(look ? { style: look } : {}) });
   const column = INDENT + Math.max(...pairs.map(([left]) => left.width)) + GAP;
@@ -75,9 +76,36 @@ function table(pairs, cols, look) {
   const at = stacked ? INDENT + 2 : column;
   return pairs.flatMap(([left, pieces]) => {
     const lines = flow(pieces, cols - at).map((text) => ({ col: at, text: lit(text) }));
-    return stacked ? [[entry(left)], ...lines.map((line) => [line])] : lines.map((line, i) => (i === 0 ? [entry(left), line] : [line]));
+    const more = (under.get(pieces)?.(cols - at) ?? []).map((spans) => spans.map((span) => ({ ...span, col: span.col + at })));
+    return [...(stacked ? [[entry(left)], ...lines.map((line) => [line])] : lines.map((line, i) => (i === 0 ? [entry(left), line] : [line]))), ...more];
   });
 }
+
+/** The TUI's own sentences under the line of `open` in the list of instances: the kernel's rule
+ *  about tmux's copy mode, and where the keys that can be chosen are listed (the help does not
+ *  restate the grammar). */
+export const OPEN_RULES = Object.freeze([
+  "A key that tmux's copy mode binds leaves the viewer once the mode is left.",
+  "docs/execution-targets.md has the keys that can be chosen.",
+]);
+/** The rows under the line of `open`, in `room` cells: the key that leaves an agent's terminal
+ *  (tui.json's, text from outside), then OPEN_RULES, each sentence on as many rows as it needs. */
+function openRows(detachKey, room) {
+  const key = keyText(detachKey), said = "brings oats tui back; the agent keeps running.";
+  const first = flow(words(said), Math.max(1, room - key.width - 1));
+  return [
+    [{ col: 0, text: key.text, width: key.width }, { col: key.width + 1, text: lit(first[0]) }],
+    ...first.slice(1).map((text) => [{ col: key.width + 1, text: lit(text) }]),
+    ...OPEN_RULES.flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }])),
+  ];
+}
+/** The TUI's own sentences under the line of the last act: how a confirmation is worked, and that
+ *  what it sent is never ended by the TUI. */
+export const ACT_RULES = Object.freeze([
+  "Each act opens a confirmation with Cancel chosen: move to the act with Left/Right or Tab, then press Enter.",
+  "Esc closes a confirmation; an act it sent goes on, also after oats tui quits.",
+]);
+const actRows = (room) => ACT_RULES.flatMap((sentence) => flow(words(sentence), room).map((text) => [{ col: 0, text: lit(text) }]));
 const heading = (text) => [{ col: INDENT, text: lit(text), style: TITLE }];
 /** Sentences, each from the left margin on as many rows as it needs, with that margin kept at
  *  the right too: its later rows are set in, so the next sentence is seen to start. */
@@ -88,14 +116,21 @@ const sentences = (list, cols) => list.flatMap((sentence) => {
 
 /** Every row of the help for an area `cols` wide, before it is scrolled. Unbound actions are
  *  listed as such: the table can be changed by the user's tui.json, and the help says what is so
- *  now. */
-export function helpRows(actions, ascii, cols = 100) {
+ *  now. An action that does one thing in each view has a line per view, its key on each; under
+ *  the line of opening an agent stand the key that leaves its terminal (`detachKey`, tui.json's
+ *  `open.detachKey`) and the rules of OPEN_RULES; under the line of the last act, ACT_RULES. */
+export function helpRows(actions, ascii, cols = 100, detachKey = null) {
   const marks = marksOf(ascii);
   const closing = keyText(["close", "help"].map((id) => actions.find((action) => action.id === id)).filter((action) => action?.keys.length).map((action) => keyLabel(action.keys[0])).join(" or "));
   return [
     heading("Keys"),
     [],
-    ...table(actions.map((action) => [action.keys.length ? keyText(keysLabel(action)) : "(no key)", words(action.label)]), cols, KEYS),
+    ...table(actions.flatMap((action) => {
+      const left = action.keys.length ? keyText(keysLabel(action)) : "(no key)";
+      if (!action.views) return [[left, words(action.label)]];
+      return action.views.map(([view, said]) => [left, words(said), action.id === "open" && view === "instances" && detachKey !== null ? (room) => openRows(detachKey, room)
+        : action.id === "restart" ? actRows : undefined]);
+    }), cols, KEYS),
     [],
     heading("Marks"),
     [],
@@ -129,8 +164,8 @@ export function helpRows(actions, ascii, cols = 100) {
 
 /** `{ rows, extent }`: `size.rows` rows for an area `size.cols` wide, scrolled to `top`, and how
  *  many rows the whole help has. The movement keys scroll it. */
-export function help(actions, size, { top = 0, ascii = false } = {}) {
-  const all = helpRows(actions, ascii, size.cols);
+export function help(actions, size, { top = 0, ascii = false, detachKey = null } = {}) {
+  const all = helpRows(actions, ascii, size.cols, detachKey);
   const rows = Array.from({ length: size.rows }, () => []);
   const win = windowOf({ top, count: all.length, height: size.rows });
   all.slice(win.top, win.top + win.size).forEach((spans, i) => { rows[i] = spans; });

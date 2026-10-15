@@ -13,7 +13,9 @@ function present(win) {
   win.focus();
 }
 
-export function createWindowSet({ create }) {
+/** `onChange()` is called after every change of which window holds which key (a window bound, rebound,
+ * unbound or removed), so main can tell the backend the views its windows show (#1124). */
+export function createWindowSet({ create, onChange = () => {} }) {
   const keys = new Map();   // window -> key | null, for every registered window
   const holders = new Map(); // key -> window
   let order = [];           // windows by last focus, the most recent last
@@ -24,6 +26,7 @@ export function createWindowSet({ create }) {
     if (old != null && holders.get(old) === win) holders.delete(old);
     keys.set(win, key);
     if (key != null) holders.set(key, win);
+    onChange();
   };
   const add = (win, key) => { bind(win, key); order.push(win); return win; };
   const mostRecent = () => {
@@ -66,6 +69,7 @@ export function createWindowSet({ create }) {
       bind(win, null);
       keys.delete(win);
       order = order.filter((w) => w !== win);
+      onChange();
     },
     focused(win) {
       if (!keys.has(win)) return;

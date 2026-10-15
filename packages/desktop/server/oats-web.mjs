@@ -21,6 +21,8 @@
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried, probePath/pathSource/pathError)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/window-state          { focused } → the refresh cadence backs off while the window is blurred/hidden
+ *   POST /api/windows               { views: [viewId|null, …] } → the views the open windows show: the remote roster
+ *                                   reads their workspaces' machines (#1124)
  *   POST /api/remote-roster/refresh → the remote roster read now (or the one in flight), answered once it has landed
  *   GET  /api/brain/<agent>?ws=<id> agent "brain" JSON: soul (AGENTS.md, skills,
  *                                   knowledge tree) + per-instance artifacts (abs paths)
@@ -51,6 +53,7 @@ import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } from "../../client/deployment-observer.mjs";
 import { createMachines } from "./machines.mjs";
+import { createServerForget, forgetNotRun } from "./server-forget.mjs";
 import { machinesGated } from "../../client/machine-contract.mjs";
 import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
@@ -59,7 +62,7 @@ import { createInspectCache } from "./inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "../../client/refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
-import { lifecycleRequest } from "./instance-lifecycle.mjs";
+import { createLifecycleBoundary } from "../../client/instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
 import { spawnPreviewCachedRequest, spawnPreviewCache } from './spawn-preview.mjs';
@@ -75,15 +78,17 @@ import { launchConfigRequest } from "./launch-configs.mjs";
 import { displayLine } from "../../client/display-text.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
-import { canAddressRemote, unaddressableSentence } from "../../client/remote-address.mjs";
-import { retainedSpawnDetails } from "../../client/launch-prompt-outcome.mjs";
 import { harnessFlag, HARNESSES } from "../../client/harness-names.mjs";
 import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed } from "../renderer/deployment-header.mjs";
 import { createRemoteIdentityStore } from "./remote-identity.mjs";
 import { DESKTOP_TERMS } from "../renderer/desktop-terms.mjs";
+import { validWorkspaceId } from "../renderer/workspace-id.mjs";
+import { MAX_WINDOW_VIEWS } from "../window-activity.mjs";
+import { START_UNCONFIRMED } from "../renderer/start-unconfirmed.mjs";
+import { startInstance, verifiedLocalHome as localHomeIn } from "../../client/session-start.mjs";
 import { rosterRows, livenessInput, livenessAnswers, panelInstances, pendingEntry, failedEntry, observedEntry } from "../../client/deployment-panel.mjs";
-import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes } from "../../client/panel-views.mjs";
+import { deployments, viewFor, deploymentFor, surfaceDeployment, viewForgeContext, deploymentRows, isServed, teamMembersFor, machineScope, panelData, cliReadsRemotes, rosterWorkspaceKeys } from "../../client/panel-views.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -126,6 +131,11 @@ const EXIT_ON_STDIN_CLOSE = args.includes("--exit-on-stdin-close");
 const remoteIdentities = createRemoteIdentityStore({ file: typeof flag("remote-identity") === "string" ? flag("remote-identity") : null });
 let rosterAnswered = false;  // a roster answer arrived under the current CLI (remembered-only groups then leave)
 let rosterFailure = null;    // the roster read's failure while no answer has arrived
+/* The views the open windows show (#1124), as main last posted them (POST /api/windows): each window's view id, or
+   null for a window showing the switcher. null until main has posted: the roster read is then unfiltered. */
+let windowViews = null;
+let keptReadAt = new Map();  // the read time of each remote group a filtered answer kept (remote-roster.mjs `keptReadTimes`)
+let rosterAnsweredAt = null; // the time of the last roster answer
 /* ── Workspace views (#482) ──
    The deployments this server serves and the views over them are the shared home's
    (packages/client/panel-views.mjs): what the switcher lists, a view's panel, and which deployment a
@@ -133,7 +143,7 @@ let rosterFailure = null;    // the roster read's failure while no answer has ar
    built here from its own variables (the registry, the snapshot, the remote roster's last answer, the
    remembered remote identities, the kernel record), and reads it without changing it. */
 const held = () => ({
-  ctxs, snapshot, remoteGroups, remembered: remoteIdentities, rosterAnswered, rosterFailure, cli: cliState,
+  ctxs, snapshot, remoteGroups, remembered: remoteIdentities, rosterAnswered, rosterFailure, keptReadAt, cli: cliState,
   observing, remoteCollecting: remoteRead !== null, home: homedir(), at: new Date().toISOString(),
 });
 
@@ -519,6 +529,8 @@ const capabilityShowCache = createCapabilityShowCache();
 // when that key moves, at admission, or on refresh:true.
 const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCatalog, maxAge: BACKGROUND_MAX_AGE,
   observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
+// The Desktop's one lifecycle boundary: its plans, its kept answers and its one apply at a time are this backend's.
+const lifecycleRequest = createLifecycleBoundary({ terms: DESKTOP_TERMS });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
 const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({
@@ -625,16 +637,28 @@ function revalidateCatalog(wsId) {
  * (packages/client/remote-roster.mjs `remotePanelEntries`), made at the time of this merge. */
 function mergeRemotePanels(byWs) {
   for (const id of byWs.keys()) if (id.startsWith("remote:")) byWs.delete(id);
-  for (const [id, panel] of remote.remotePanelEntries(remoteGroups, new Date().toISOString())) byWs.set(id, panel);
+  for (const [id, panel] of remote.remotePanelEntries(remoteGroups, new Date().toISOString(), keptReadAt)) byWs.set(id, panel);
   return byWs;
 }
 /** One outcome of the roster read into what this process holds. What it becomes is the shared home's
  * (remote-roster.mjs `remoteRosterState`); the groups of an answer go to the remembered identities. */
 function takeRosterOutcome(outcome) {
-  const next = remote.remoteRosterState({ remoteGroups, rosterAnswered, rosterFailure }, outcome, new Date().toISOString());
+  const at = new Date().toISOString();
+  const next = remote.remoteRosterState({ remoteGroups, rosterAnswered, rosterFailure }, outcome, at);
   ({ remoteGroups, rosterAnswered, rosterFailure } = next);
+  keptReadAt = remote.keptReadTimes(keptReadAt, next, rosterAnsweredAt);
+  if (next.reported) rosterAnsweredAt = at;
   if (next.reported) remoteIdentities.observe(next.reported);
   mergeRemotePanels(snapshot.byWs);
+}
+/** What one roster read asks for (#1124): with a CLI that lists `roster-workspace-key`, the keys of the
+ * workspaces the open windows show, read now from the window set main last posted and what is held
+ * (panel-views.mjs `rosterWorkspaceKeys`), and how a held group's key is known for the merge
+ * (remote-roster.mjs `lastKnownKey`); null for the unfiltered read. */
+function rosterAsk(probe) {
+  if (!probe.features?.includes("roster-workspace-key")) return null;
+  const keys = rosterWorkspaceKeys(held(), windowViews, DESKTOP_TERMS);
+  return keys?.length ? { keys, keyOf: (group) => remote.lastKnownKey(group, remoteIdentities) } : null;
 }
 /* OATSWEB_REMOTEREAD_BEGIN — the remote roster read, one at a time and joined, extracted by tests */
 /** The roster read: one at a time, and a caller that asks while one runs joins it: the promise resolves once
@@ -647,12 +671,22 @@ function refreshRemoteSnapshot() {
   })().finally(() => { remoteRead = null; });
   return remoteRead;
 }
+/** A roster read that begins after this call (#1131: the read after a forget). A read in flight, whoever started
+ * it (the loop, a Retry), began before the call: it is let finish, then one more runs, which a caller arriving
+ * meanwhile shares. The refresh loop cannot promise this: its run joins a Retry's read in flight. */
+let remoteReadAfter = null;
+function refreshRemoteSnapshotAfter() {
+  if (!remoteRead) return refreshRemoteSnapshot();
+  remoteReadAfter ||= remoteRead.catch(() => {}).then(() => { remoteReadAfter = null; return refreshRemoteSnapshot(); });
+  return remoteReadAfter;
+}
 async function readRemoteRoster(probe) {
   if (!cliReadsRemotes(probe)) { takeRosterOutcome({ gated: true }); return; }
   try {
-    const envelope = await adapter.cliRemoteRoster(probe.bin);
+    const asked = rosterAsk(probe); // the open windows' workspaces at this read, or null: unfiltered
+    const envelope = await (asked ? adapter.cliRemoteRoster(probe.bin, { workspaceKeys: asked.keys }) : adapter.cliRemoteRoster(probe.bin));
     if (cliState !== probe) return;
-    takeRosterOutcome({ envelope });
+    takeRosterOutcome(asked ? { envelope, asked } : { envelope });
   } catch (e) {
     if (cliState !== probe) return;
     takeRosterOutcome({ thrown: e.message });
@@ -678,6 +712,9 @@ const refreshLoop = createRefreshLoop({ run: observeAll, focusedMs: REFRESH_FOCU
 const remoteLoop = createRefreshLoop({ run: () => refreshRemoteSnapshot(), focusedMs: 10_000, blurredMs: REFRESH_BLURRED_MS });
 /* A workspace's own machines (#517): Where to run, the Setup tab's Machines, Add a machine. */
 const machines = createMachines({ adapter, cli: () => cliState });
+/* Forget a remote instance its host no longer lists (#1131): one `server forget` per pressed row at a time, and only
+ * for a row the held roster shows gone (#1170). */
+const serverForget = createServerForget({ adapter, cli: () => cliState, held: () => remoteGroups });
 /** Observe now (or right after the cycle in flight); `live` makes the kernel observe the remotes afresh. */
 function refreshSnapshot(options = {}) { return refreshLoop.request(options); }
 /** A mutation this backend performed for a workspace: what inspect reported may have changed, and the
@@ -730,19 +767,9 @@ function resolveInstanceOr(name, wsId, home, server) {
    stay inside that deployment's canonical directory. No layout is named.
    Returns the canonical home, or null (a remote row has no local home). */
 function verifiedLocalHome(inst) {
-  if (!inst?.home || typeof inst.home !== "string" || inst.server) return null;
-  let real;
-  try { real = realpathSync(inst.home); } catch { return null; }
-  if (basename(real) !== String(inst.instance) || basename(dirname(real)) !== "instances") return null;
-  for (const w of deployments(held())) {
-    if (w.remote) continue;
-    const reported = snapshot.byWs.get(w.id)?.instances || [];
-    if (!reported.some((i) => !i.server && i.instance === inst.instance && i.home === inst.home)) continue;
-    let scope;
-    try { scope = realpathSync(w.id); } catch { continue; }
-    if (real.startsWith(scope.endsWith(sep) ? scope : scope + sep)) return real;
-  }
-  return null;
+  // The rule is the shared home's (session-start.mjs verifiedLocalHome); this server gives it the deployments
+  // it holds, with the rows each one's kernel reported, and the file system's realpath.
+  return localHomeIn(inst, deployments(held()).map((w) => ({ id: w.id, remote: !!w.remote, instances: snapshot.byWs.get(w.id)?.instances || [] })), realpathSync);
 }
 /* OATSWEB_VERIFIEDLOCALHOME_END */
 
@@ -1329,6 +1356,21 @@ const server = createServer(async (req, res) => {
         return send(res, e.code === "E_BUSY" || e.code === "E_FEATURE" ? 409 : 400, { error: e.message, code: e.code || "E_BAD_ARGS" });
       }
     }
+    if (req.method === "POST" && path === "/api/server-forget") {
+      // #1131: forget the saved route of a remote row its host no longer lists (server/server-forget.mjs). The
+      // body is that row's { server, instance }; the argv is composed there, never taken from the request.
+      // After any command that ran, whatever it answered, the remote roster is read again: this route is the one
+      // owner of that read, and the renderer issues none. refreshRemoteSnapshotAfter() runs a read now, or one
+      // right after the read already in flight, whoever started it (that one began before the command). The
+      // answer does not wait for it: the forget is a local file removal, and a read waits on the slowest server.
+      // The row leaves /api/panel when the read lands; nothing here edits it.
+      if (url.search) return send(res, 400, forgetNotRun("E_BAD_ARGS"));
+      let body;
+      try { body = await readStrictBody(req, 4096); } catch { return send(res, 400, forgetNotRun("E_BAD_ARGS")); }
+      const { http, ran, answer } = await serverForget.forget(body);
+      if (ran) { try { void refreshRemoteSnapshotAfter().catch(() => {}); } catch { /* a re-read must not erase the outcome */ } }
+      return send(res, http, answer);
+    }
     if (req.method === "GET" && path === "/api/cli") {
       return send(res, 200, servedCliStatus());
     }
@@ -1341,6 +1383,24 @@ const server = createServer(async (req, res) => {
       if (typeof body.focused !== "boolean" || Object.keys(body).length !== 1) return send(res, 400, { error: "body needs { focused: boolean }", code: "E_BAD_ARGS" });
       refreshLoop.setFocused(body.focused); remoteLoop.setFocused(body.focused);
       return send(res, 200, { focused: refreshLoop.focused() });
+    }
+    if (req.method === "POST" && path === "/api/windows") {
+      // The views the open windows show, from the Electron main process (main.mjs, window-activity.mjs
+      // `createViewsNotifier`), posted whole whenever they change and whenever main learns this server (#1124).
+      // POST, so the Host/Origin guards above cover it; it runs no command. The roster read asks for these
+      // windows' workspaces; a window showing a workspace the last set did not ask for gets a read now, whatever
+      // that set was: a set says what the next read asks for, never what the last read covered.
+      let body;
+      try { body = await readStrictBody(req); } catch { return send(res, 400, { error: "body needs { views: [view id | null] }", code: "E_BAD_ARGS" }); }
+      const views = body?.views;
+      if (Object.keys(body ?? {}).length !== 1 || !Array.isArray(views) || views.length > MAX_WINDOW_VIEWS || !views.every((v) => v === null || validWorkspaceId(v)))
+        return send(res, 400, { error: "body needs { views: [view id | null] }", code: "E_BAD_ARGS" });
+      const terms = DESKTOP_TERMS, before = rosterWorkspaceKeys(held(), windowViews, terms);
+      windowViews = [...views];
+      const after = rosterWorkspaceKeys(held(), windowViews, terms);
+      // Only for a CLI that filters: without the word every read covers every machine already, as before.
+      if (cliState.features?.includes("roster-workspace-key") && (after === null ? before !== null : after.some((k) => !before?.includes(k)))) void remoteLoop.request();
+      return send(res, 200, { views: windowViews.length });
     }
     if (req.method === "POST" && path === "/api/remote-roster/refresh") {
       // A remote window's Retry (#1117): the read the background loop runs, now, or the one already in flight.
@@ -1407,30 +1467,22 @@ const server = createServer(async (req, res) => {
       if (!cliState.ok) return send(res, 503, { error: `${hm[1]} requires a compatible installed oats CLI`, code: "cli-unavailable" });
       /* OATSWEB_START_BEGIN — resolved instance start, exercised without launching a harness. */
       if (hm[1] === "start" || hm[1] === "restart") {
-        if (!cliState.features?.includes("session-start")) return send(res, 409, { error: "Starting an existing instance requires an updated OATS CLI", code: "unsupported-start-option" });
-        if (inst.server) {
-          if (!canAddressRemote(inst)) return send(res, 409, { error: unaddressableSentence(inst), code: "E_SNAPSHOT_UNKNOWN" });
-          locator.requireRemoteSupport(cliState, "session-start");
-        } else if (!verifiedLocalHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
+        // The start rule is the shared home's (packages/client/session-start.mjs): the gate's seven rules, the
+        // home check, then the CLI call in its own session with its wait. The renderer decides through the same
+        // gate and never sends a start it has refused; this reads the row again and checks the home, so it may.
         const body = await readBody(req);
-        const restart = hm[1] === "restart";
-        if (restart && !cliState.features?.includes("session-restart")) return send(res, 409, { error: "Update OATS to restart an existing instance", code: "unsupported-start-option" });
-        if ([body.launchConfig, body.harness, body.yolo].some(v => v !== undefined)) {
-          if (!cliState.features?.includes("launch-config")) return send(res, 409, { error: "Update OATS to change the launch configuration", code: "unsupported-start-option" });
-          if (inst.server) locator.requireRemoteSupport(cliState, "launch-config");
-        }
-        if (restart && inst.server) locator.requireRemoteSupport(cliState, "session-restart");
-        const env = await adapter.cliStart(cliState.bin, { home: inst.home, model: body.model,
-          launchConfig: body.launchConfig, harness: body.harness, harnessFlag: harnessFlag(cliState), yolo: body.yolo, restart,
-          workspaceDir: inst.server ? ctxs[0] ?? homedir() : dirname(inst.agentsRoot), server: inst.server });
-        observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot();
-        if (env.ok) return send(res, 200, env.result);
-        // A start that stopped at a launch prompt answers E_SPAWN_INCOMPLETE with the retained outcome in its
-        // details, as a spawn does: it travels as `incomplete`, decoded, when it names the instance this route
-        // resolved (not the home: the kernel reports its real path). Anything else answers as before.
-        const kept = env.error.code === "E_SPAWN_INCOMPLETE" ? retainedSpawnDetails(env.error.details) : null;
-        return send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code,
-          ...(kept?.launchPrompts && kept.instance === inst.instance ? { incomplete: kept } : {}) });
+        const started = await startInstance(cliState, inst, { model: body.model, launchConfig: body.launchConfig, harness: body.harness, yolo: body.yolo },
+          { restart: hm[1] === "restart", localCwd: ctxs[0] ?? homedir(), verifyHome: verifiedLocalHome, start: adapter.cliStart, terms: DESKTOP_TERMS });
+        if (started.ok || started.ran) { observeMutation(url.searchParams.get("ws")); void refreshRemoteSnapshot(); }
+        if (started.ok) return send(res, 200, started.result);
+        // The wait for the start ended and the start goes on (cli-adapter.mjs cliStart): the Desktop's own sentence.
+        if (started.code === "E_START_UNCONFIRMED") return send(res, 409, { error: START_UNCONFIRMED.message, code: START_UNCONFIRMED.code });
+        // A refusal before the CLI ran answers the rule's sentence. After it ran: the kernel's message, through the
+        // display filter (`detail`), else the rule's sentence for the code. A start that stopped at a launch prompt
+        // carries its retained outcome as `incomplete`, decoded, when it names the instance this route resolved
+        // (not the home: the kernel reports its real path).
+        return send(res, started.code === "E_BAD_ARGS" ? 400 : 409, { error: (started.ran ? started.detail ?? started.sentence : started.sentence) ?? "", code: started.code,
+          ...(started.incomplete ? { incomplete: started.incomplete } : {}) });
       }
       /* OATSWEB_START_END */
     }

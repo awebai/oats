@@ -9,8 +9,8 @@ or workspace membership alone does not make a package official.
 
 | package | release | capabilities | package souls |
 |---|---|---|---|
-| `oats.framework` | `oats-framework/v1.10.0` (this repository) | `oats.core`, `oats.setup`, `oats.support`, `oats.knowledge-theory` | `knowledge-theory-expert` |
-| `oats.okf` | `v5.1.0` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
+| `oats.framework` | `oats-framework/v1.10.1` (this repository) | `oats.core`, `oats.setup`, `oats.support`, `oats.knowledge-theory` | `knowledge-theory-expert` |
+| `oats.okf` | `v5.2.0` | `oats.okf` (knowledge), `oats.okf-harvest`, `oats.okf-maintenance` | `knowledge-harvester`, `knowledge-maintainer` |
 | `oats.aweb` | `v1.27.3` | `oats.aweb` (messaging) | |
 | `oats.engineering` | `v1.10.0` | `oats.engineering-expert`, `oats.developer`, `oats.code-review`, `oats.maintainer` | `code-reviewer` |
 | `oats.authoring` | `v1.0.3` | `oats.authoring` | |
@@ -29,7 +29,7 @@ no lock and adds nothing to an existing workspace.
 ## Find and use packages
 
 - A workspace pins an official package by **bare version** in its
-  `packages:` map (`oats.okf: v5.1.0`); `oats sync` resolves it through the
+  `packages:` map (`oats.okf: v5.2.0`); `oats sync` resolves it through the
   catalog to an exact commit, fetches it, verifies its integrity and locks it.
   A package outside the catalog is written `git:<repo>@<ref>`. Pinning does
   not join a team or adopt the publisher's workspace. See

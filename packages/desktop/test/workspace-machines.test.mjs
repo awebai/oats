@@ -39,13 +39,22 @@ test('lists this workspace\'s machines (name, host, folder, OATS version, reacha
     '/api/server-check': async body => { await gate; return { id: body.id, check: { reachable: true, version: '0.39.0', error: null } }; },
   });
   await settle();
-  assert.equal(u.q('.setup-box-head h3').textContent, 'Machines');
+  assert.equal(u.q('.setup-box-head h4').textContent, 'Machines');
+  // A solid card (Setup's This computer zone says it is not shared): no scope chip, Add at the end of its head.
+  assert.ok(u.ui.element.classList.contains('setup-box') && !u.ui.element.classList.contains('setup-local'));
+  assert.equal(u.q('.setup-scope'), null);
+  assert.deepEqual([...u.q('.setup-box-head').children].map(c => c.className), ['', 'setup-box-lead', 'machines-add']);
   assert.deepEqual(u.calls.map(c => c.path), [`/api/servers?ws=${encodeURIComponent(WS)}`, `/api/server-check?ws=${encodeURIComponent(WS)}`]);
   assert.deepEqual(u.cells('altair-aweb'), ['altair-aweb', 'altair', '/home/j/altair-aweb', '', 'checking…']);
   assert.deepEqual(u.cells('vega-aweb'), ['vega-aweb', 'vega', '/home/j/vega-aweb', '', 'not reachable'], 'a held check is shown, not re-run');
   assert.equal(u.row('vega-aweb').querySelector('.machine-state').title, 'ssh to vega failed: timeout');
+  assert.equal(u.row('vega-aweb').querySelector('.machine-state').dataset.reachable, 'false', 'the warn chip');
+  // Narrow rows hide the ssh host, folder and version: the name's title keeps them.
+  assert.equal(u.row('vega-aweb').querySelector('.machine-cell.name').title, 'vega-aweb · vega · vega · /home/j/vega-aweb');
   released(); await settle();
   assert.deepEqual(u.cells('altair-aweb'), ['altair-aweb', 'altair', '/home/j/altair-aweb', 'oats 0.39.0', 'reachable']);
+  assert.ok(u.row('altair-aweb').querySelector('.machine-state[data-reachable=true] svg'), 'reachable: a check and a muted word');
+  assert.equal(u.row('altair-aweb').querySelector('.machine-cell.name').title, 'altair-aweb · altair · altair · /home/j/altair-aweb · oats 0.39.0');
   u.ui.refresh(); await settle();
   assert.equal(u.calls.filter(c => c.path.startsWith('/api/server-check')).length, 1, 'once per machine per run');
 });

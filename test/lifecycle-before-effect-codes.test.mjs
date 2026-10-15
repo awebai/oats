@@ -26,7 +26,7 @@ import { tableAfter } from "./helpers/docs-table.mjs";
 const DOC = fileURLToPath(new URL("../docs/desktop-cli-api.md", import.meta.url));
 const VERBS = ["instance stop", "retire"];
 /** The Desktop's module that turns a lifecycle command's answer into "refused" or "failed". */
-const DESKTOP_MODULE = "packages/desktop/server/instance-lifecycle.mjs";
+const DESKTOP_MODULE = "packages/client/instance-lifecycle.mjs";
 
 /** The docs table → { <verb>: [code, in the table's order] }, the codes marked `yes` for the verb. A
  *  row is a code in backticks and, for each verb, `yes` or an empty cell: anything else fails. */

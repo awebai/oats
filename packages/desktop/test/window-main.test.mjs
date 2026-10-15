@@ -3,7 +3,7 @@
 // channels (claim in place, open, New Window), restore at launch, titles, and closing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -28,9 +28,14 @@ const FakeWindow = fakeWindowClass(RENDERER);
 FakeWindow.onClose = (quitting) => { main.quitStarted = quitting; };
 let main;
 
+/** Every directory tempDir() made, removed when the file has ended. */
+const made = [];
+function tempDir() { const dir = mkdtempSync(join(tmpdir(), 'oats-win-')); made.push(dir); return dir; }
+test.after(() => { for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+
 function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats', '/d/tsm'], displays = [{ workArea: { x: 0, y: 25, width: 1440, height: 875 } }] } = {}) {
   FakeWindow.all = [];
-  const handlers = new Map(), file = join(mkdtempSync(join(tmpdir(), 'oats-win-')), 'windows.json');
+  const handlers = new Map(), file = join(tempDir(), 'windows.json');
   const context = {
     ipcMain: { handle: (name, fn) => handlers.set(name, fn) }, app: { getPath: () => '/memory' }, join, HERE: '/memory',
     BrowserWindow: Object.assign(FakeWindow, { fromWebContents: (wc) => FakeWindow.all.find((w) => w.webContents === wc) }),
@@ -38,7 +43,10 @@ function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats',
     advertisedBefore: new Set(), quitStarted: false, console, Menu: {}, shell: {},
     createWindowSet, restorePlan, resolveView, clampBounds, windowTitle, trustedForgeFrame, validWorkspaceId, workspaceHash, trustedRendererUrl,
     terminalBroker: { register() {} }, suggestionCalls: { forget() {} }, lastPickChoices: new Map(), workspaceDirs: dirs,
+    // main's post of the window set to the backend (#1124), recorded: the views the windows show at each call.
+    noteWindowViews: () => noted.push(main.windows.entries().map(([, key]) => key)),
   };
+  const noted = [];
   context.advertisedNow = () => context.allowedWs;
   // The server's answer to main's re-read of /api/panel: `reread`, else what it served before.
   context.panelWorkspaces = async () => { context.rereads = (context.rereads ?? 0) + 1; if (reread) { context.servedList = reread; context.allowedWs = new Set(reread.map((w) => w.id)); } return context.servedList; };
@@ -50,7 +58,7 @@ function boot({ records = [], served = SERVED, reread = null, dirs = ['/d/oats',
   const plain = (value) => JSON.parse(JSON.stringify(value));
   return { main, handlers, event, file, claim: async (win, id, options) => plain(await handlers.get('window:claim-workspace')(event(win), id, options)),
     open: async (win, id) => plain(await handlers.get('window:open-workspace')(event(win), id)),
-    choices: async (win, e = event(win)) => plain(await handlers.get('window:choices')(e)), rereads: () => context.rereads ?? 0 };
+    choices: async (win, e = event(win)) => plain(await handlers.get('window:choices')(e)), rereads: () => context.rereads ?? 0, noted };
 }
 const record = (workspace, x = 50) => ({ workspace, bounds: { x, y: 60, width: 900, height: 700 }, maximized: false });
 
@@ -162,6 +170,22 @@ test('a window that leaves its workspace (claim null) keeps its record, untitled
   assert.equal(win.title, 'OATS Desktop'); assert.equal(b.main.windows.windowOf(A), null);
   win.close();
   assert.deepEqual(b.main.windowRecords.records().map((r) => r.workspace), [A], 'not the window\'s any more: kept');
+});
+
+test('the window set follows the windows (#1124): opening, rebinding and closing a window each tell main to post the views shown', async () => {
+  const b = boot({ records: [record(A)] });
+  b.main.restoreWindows();
+  const win = FakeWindow.all[0];
+  assert.deepEqual(b.noted.at(-1), [A], 'restored');
+  let calls = b.noted.length;
+  assert.deepEqual(await b.claim(win, B), { ok: true, workspace: B });
+  assert.ok(b.noted.length > calls); assert.deepEqual(b.noted.at(-1), [B], 'rebound in place');
+  calls = b.noted.length;
+  assert.deepEqual(await b.open(win, A), { ok: true, opened: true });
+  assert.ok(b.noted.length > calls); assert.deepEqual([...b.noted.at(-1)].sort(), [A, B].sort(), 'opened');
+  calls = b.noted.length;
+  win.close();
+  assert.ok(b.noted.length > calls); assert.deepEqual(b.noted.at(-1), [A], 'closed');
 });
 
 test('closing removes a window from the registry; its record goes only if its workspace is served and the app is not quitting', () => {

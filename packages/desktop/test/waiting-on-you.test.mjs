@@ -86,7 +86,7 @@ test('the message rule never throws, whatever the value (no length-throwing help
 const WITHHELD_NOTES = ['See https://github.com/awebai/oats/pull/552', 'Which token: A or B?', 'api key: rotate now?',
   'open https://private.example/secret', 'password: hunter2', 'api_key=abc123'];
 test('an unsafe message (a URL, a token assignment) is withheld by the validator: the marker, still a valid note', () => {
-  assert.equal(EVENTS_WITHHELD, '[Detail withheld]');
+  assert.equal(EVENTS_WITHHELD, '[withheld]');
   for (const note of WITHHELD_NOTES) assert.equal(waitingMessage(note), EVENTS_WITHHELD, note);
   assert.equal(eventsDetail('Which token: A or B?'), EVENTS_WITHHELD, 'the same marker as an event detail');
 });
@@ -101,10 +101,10 @@ test('the sidebar\'s claim never carries the withheld marker: a withheld note re
   assert.equal(waitingOnYouData(claim({ message: EVENTS_WITHHELD })).message, null);
   assert.equal(waitingOnYouData(claim({ message: 'Allow Bash(rm -rf build)?' })).message, 'Allow Bash(rm -rf build)?', 'a safe note is kept');
 });
-test('the withheld marker is one literal: the contract exports it, the claim module only imports it', () => {
+test('the withheld marker is one literal: display-text.mjs exports it, the contracts and the claim module only import it', () => {
   const source = name => readFileSync(new URL(`../../client/${name}`, import.meta.url), 'utf8');
-  assert.equal(source('instance-events-contract.mjs').split(EVENTS_WITHHELD).length - 1, 1);
-  assert.equal(source('waiting-on-you.mjs').includes(EVENTS_WITHHELD), false);
+  assert.equal(source('display-text.mjs').split(`'${EVENTS_WITHHELD}'`).length - 1, 1);
+  for (const name of ['instance-events-contract.mjs', 'readiness-contract.mjs', 'waiting-on-you.mjs']) assert.equal(source(name).includes(EVENTS_WITHHELD), false, name);
 });
 
 test('reasons map to fixed words; an unknown or null reason reads "Needs input" and the raw value is never returned', () => {
@@ -151,7 +151,7 @@ test('waitingSentence (unavailable rows) names the message or label and an absol
   const sameDay = Date.parse(since) + 60000, at = waitingClock(since, sameDay);
   assert.equal(waitingSentence(waitingOnYouData(claim()), [], sameDay), ` · Needs input: Allow Bash(rm -rf build)? since ${at}`);
   assert.equal(waitingSentence(waitingOnYouData(claim({ message: null, reason: 'question' })), [], sameDay), ` · Needs input: Asked you a question since ${at}`);
-  // A withheld note reads as the reason in words, never "[Detail withheld]" (#584 finding 12).
+  // A withheld note reads as the reason in words, never "[withheld]" (#584 finding 12).
   for (const [note, reason, label] of [['See https://github.com/awebai/oats/pull/552', 'attention', 'Asked for your attention'],
     ['Which token: A or B?', 'question', 'Asked you a question'], ['api key: rotate now?', 'approval', 'Needs input']]) {
     assert.equal(waitingSentence(waitingOnYouData(claim({ message: note, reason })), [], sameDay), ` · Needs input: ${label} since ${at}`, note);

@@ -25,7 +25,7 @@ import { createDeploymentScopeLine } from '../deployment-scope-line.mjs';
 export const automationsCSS = `
 .automations { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; background:var(--bg); color:var(--fg); container-type:inline-size; }
 .automations[hidden], .automations [hidden] { display:none !important; }
-.auto-header { flex:none; display:flex; align-items:center; gap:12px; height:48px; padding:0 16px; box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); }
+.auto-header { flex:none; display:flex; align-items:center; gap:12px; height:48px; padding:0 calc(16px + var(--main-trail-inset, 0px)) 0 calc(16px + var(--main-lead-inset, 0px)); box-sizing:border-box; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-header h2 { display:flex; align-items:baseline; gap:8px; margin:0; font-size:14px; font-weight:700; }
 .automations > .auto-scope { flex:none; padding:6px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
 .auto-count { color:var(--muted); font:10.5px var(--mono,monospace); font-weight:400; }

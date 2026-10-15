@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createInstanceEventsView } from '../renderer/instance-events-view.mjs';
 import { eventsData, hookReceipt, EVENT_TITLES } from '../renderer/instance-events-data.mjs';
+import { EVENTS_WITHHELD } from '../../client/instance-events-contract.mjs';
 import { cli, target, data, event } from './helpers/instance-events-fixture.mjs';
 import { MESSY, MESSY_LINE } from './helpers/detail-line.mjs';
 
@@ -66,8 +67,8 @@ test('malformed worktree-added facts drop alone; unsafe text is withheld', () =>
   assert.deepEqual(out.events[0].data, {});
   assert.deepEqual(again, out);
   const [secret] = both([added({ branch: 'token: PRIVATE', hooks: [{ capability: 'ghp_ABCDEFGHIJKLMNOPQRSTUV', ok: true, log: null }] })]);
-  assert.equal(secret.events[0].data.branch, '[Detail withheld]');
-  assert.equal(secret.events[0].data.hooks[0].capability, '[Detail withheld]');
+  assert.equal(secret.events[0].data.branch, EVENTS_WITHHELD);
+  assert.equal(secret.events[0].data.hooks[0].capability, EVENTS_WITHHELD);
   assert.doesNotMatch(JSON.stringify(secret), /PRIVATE|ghp_/);
 });
 

@@ -633,7 +633,8 @@ test("recovery copies only staged objects the clone lacks: one batch check, no p
   assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
   const recoveryRepo = join(JSON.parse(retired.stdout).workRecovery.path, "repo");
   const launches = readFileSync(log, "utf8").split("\n").filter(Boolean);
-  const perRow = launches.filter((l) => / cat-file blob | hash-object -w --stdin$/.test(l));
+  // The copier names the object's type to hash-object (`-t blob`): it copies trees the same way (#1038).
+  const perRow = launches.filter((l) => / cat-file blob | hash-object -t blob -w --stdin$/.test(l));
   assert.equal(perRow.length, 2, `expected one cat-file + one hash-object for the single staged-only blob, saw:\n${perRow.join("\n")}`);
   assert.equal(launches.filter((l) => l.includes("cat-file --batch-check")).length, 2, "one existence check before the copy and one proof after it");
   assert.equal(execFileSync("git", ["-C", recoveryRepo, "diff", "--cached", "--name-only"], { encoding: "utf8" }).trim(), "staged-only.txt");

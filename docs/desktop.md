@@ -17,6 +17,11 @@ Download the installer for your platform from the
 | macOS x64 (Intel) | DMG + ZIP | ad-hoc signed — see below |
 | Linux x64 | AppImage + DEB | requires `tmux` |
 
+On Linux the installers need glibc 2.34 or later (for example Ubuntu 22.04,
+Debian 12, RHEL 9 or later). That is what their files ask of the system, read
+from each build, which fails if a file needs more; it is not a list of systems
+the app was tested on.
+
 Windows and Linux arm64 are not supported.
 
 Verify downloads against the release's `SHA256SUMS.txt`. GitHub
@@ -219,6 +224,29 @@ more than about a minute is not yet supported from the Desktop; use the CLI on
 the server. Every dropdown in the app has the
 same themed look, and its open list follows the light or dark theme.
 
+## Stopping and retiring
+
+The Desktop runs one stop or retire at a time for its own requests. Another
+program using OATS at the same time, such as the `oats` command or the
+terminal client, is held off by OATS itself: from OATS 0.52.0, a stop and a
+retire of one instance refuse each other before doing anything. A start does
+not yet see a retire in progress.
+
+If the Desktop's backend restarts while a confirmation is open, its plan is
+gone: Stop or Retire then answers that the plan expired, and Review again
+reads a new one.
+
+A stop, retire or start runs in a process of its own, so closing the Desktop
+does not interrupt it. If a stop or retire takes longer than ten minutes, the
+dialog stops waiting and says the result is not confirmed; it keeps running,
+and Check again reads its result. If a start or restart takes longer than 60
+seconds, the Start dialog stops waiting and says the start is not confirmed;
+the start keeps running, and the roster shows its result.
+
+With an OATS older than 0.52.0, after an interrupted stop the instance can be
+started and then cannot be stopped while `.oats-stop-pending.json` exists in
+its home.
+
 ## One workspace, several machines
 
 The switcher lists each workspace once, however many deployments it has: the
@@ -325,10 +353,17 @@ join** says who else may join it. Both are read from the workspace's committed
 `souls:`; a team nobody may join yet says so. The address (the team on the
 messaging provider) and the members running in it follow.
 
-The **Setup** tab's List view starts with the workspace's **host**, the
-repository that holds `oats-workspace.yaml`, and marks every repository the
-workspace trusts for souls and capabilities as a **Member**. The host is a
-member too. A legend under the title explains both badges.
+The **Setup** tab's List view is one column. Under the workspace's name, one
+line counts its members (and those that need attention), its packages and the
+state of the lock. The next line says where the workspace is declared. An
+**Overview** says that the workspace's **host**, the repository that holds
+`oats-workspace.yaml`, defines the workspace: its member repositories and its
+packages. **For developers** (folded) explains how a repository becomes a
+member and what each member state means. Then **Shared through Git** lists
+what the workspace declares (Members, with the host first and tagged
+**Host**, Packages and Defaults). **This computer** lists what is not shared:
+this deployment's settings, lock, CLI and instances, the member clones, and
+the machines that run the workspace.
 
 ## A workspace's machines
 
@@ -348,6 +383,18 @@ aweb connect` to join that machine to the workspace's team. Each step shows as
 a row with what OATS reported, and a step that needs you says what to run
 where, with a copy button. **Check again** re-runs both. The Desktop never asks
 for a password or key, and never runs anything over ssh itself.
+
+**Which machines the Desktop reads.** One roster read serves every window. With
+an OATS CLI that lists the `roster-workspace-key` feature, it reads only the
+machines of the workspaces your windows show: those registered for one of
+them, those whose workspace is not known yet, and those known only from a
+saved route. A machine registered for a workspace no window shows is not
+contacted, so a machine that is switched off no longer slows every window's
+roster. Opening a window on another workspace reads its machines at once. Until
+it does, that workspace's machines are shown as they were last read, marked
+stale, and the switcher still lists them, not counted live. The read covers every machine again while a window
+shows the switcher, and on the first read after the Desktop starts. With an
+older CLI, every registered machine is read, as before.
 
 ## Instances on servers
 
@@ -371,7 +418,9 @@ what a part of the panel needs, that part names the server and says which OATS t
 than showing nothing. A row that can't be opened says why on the row:
 Herdr no longer supported, gone from <server>, not reachable on <server>, or <server> not reached.
 For an instance a server no longer lists, the reason names the command that removes it from this
-computer (`oats server forget <server> --instance <name>`).
+computer (`oats server forget <server> --instance <name>`), and the row offers **Forget…**, in its
+actions menu and in the context panel, which runs that command for that row after a confirmation.
+Only this computer's saved route goes; nothing changes on the server, and the roster is read again.
 
 ## Remote terminals
 
@@ -467,8 +516,9 @@ unknown or unreported harness shows "?". Sources and licences are in
   Do not expose it: it can type into your agent terminals.
 - The app never imports framework code from a checkout and accepts no
   framework-root environment override; deployments are read with an
-  app-owned read-only reader. All lifecycle mutations go through the
-  installed CLI via `execFile` with an absolute binary — never a shell.
+  app-owned read-only reader. Lifecycle actions run the installed `oats` CLI
+  by its absolute path, never through a shell: reads with `execFile`, and a
+  stop, retire or start as a process in its own session.
 - Task text for spawns travels via an owner-only (0600) tempfile, never
   argv. A local start or restart launches only in the server-verified
   instance home. A provider operation on an instance (its harvest included)
@@ -484,6 +534,7 @@ unknown or unreported harness shows "?". Sources and licences are in
 | Symptom | Cause / fix |
 | --- | --- |
 | "Compatible oats CLI required" card | No CLI, or a version outside the range the card itself states. Copy the card's install command, or **Choose oats…** to point at the right binary; **Retry** re-probes. Spawn is disabled until a compatible CLI is verified. |
+| "This Desktop is older than the installed oats CLI" card | The CLI found is a released version above the range this Desktop works with, usually because the CLI was updated first. Install OATS Desktop of the version the card names; the card offers no npm command, since installing the CLI this Desktop pins would downgrade it. Reads and terminals keep working meanwhile; **Choose oats…** points at another, compatible CLI and **Retry** re-probes. |
 | Spawn disabled, no card | The probe hasn't settled yet (transient, resolves in ms). If it persists, the backend is unreachable — restart the app. |
 | Terminals fail to open ("could not attach") | tmux missing, or no live session for that instance. Install tmux (`tmux -V`); check `tmux -L oats ls` (the OATS tmux server, where instances run) and `tmux ls` (your default server, where an instance started by an earlier kernel may still be). |
 | Can't select/copy text in a terminal tab | A plain drag selects, and copying is a separate step: ⌘C / Edit › Copy (macOS), Ctrl+Shift+C (Linux/Windows) or right-click › Copy ([Copy from a terminal](#copy-from-a-terminal)). A drag selects only what is on screen: wheel up first for older output. In `oats session attach` in your own terminal, hold **Option** (iTerm2, Ghostty, Terminal.app) or **Shift** while dragging. |
@@ -502,12 +553,15 @@ Developer docs live in [`packages/desktop/README.md`](../packages/desktop/README
 certificate auto-discovery disabled) and
 `npm run dist:smoke` verifies the packed artifact. Build/release CI uses the
 marked build-verify mode on every leg (inventory + strict codesign
-verification + node-pty ABI + a headless run of the bundled backend, of its
-liveness collector and of every module main imports, from `app.asar` and the
-`client/` directory beside it, no GUI launch). The Linux leg then runs the
+verification on macOS + on Linux the glibc floor, every ELF file of the DEB
+and the AppImage read against the version the Install section states, held in
+`packages/desktop/scripts/linux-floor.json` + node-pty ABI + a headless run of
+the bundled backend, of its liveness collector and of every module main
+imports, from `app.asar` and the `client/` directory beside it, no GUI
+launch). The Linux leg then runs the
 smoke once more with its launch phase, under a virtual display; no macOS leg
 launches the window. A local interactive run may also exercise the launch
 phase. The headless run starts the backend as the app does, checks that it
 answers and that it exits when its stdin closes, and runs the collector once;
 it does not exercise the GUI or, on Linux, the AppImage's launcher and
-runtime.
+runtime (the glibc floor runs the runtime only to unpack the AppImage).

@@ -84,7 +84,7 @@ test('readiness-contract.mjs withholds exactly the texts the expression before w
     const read = readinessData({ ...answer, notes }, target);
     assert.ok(read, 'the readiness answer is read');
     notes.forEach((s, i) => {
-      const was = READINESS_UNSAFE_BEFORE.test(s) ? '[Detail withheld]' : s;
+      const was = READINESS_UNSAFE_BEFORE.test(s) ? DETAIL_WITHHELD : s;
       if (read.notes[i] !== was) differ('a readiness text', s, wheres[i], was, read.notes[i]);
     });
     notes.length = wheres.length = 0;

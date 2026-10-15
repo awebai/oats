@@ -1,4 +1,5 @@
-// The user's key file, tui.json: which keys do what, and whether the screen is drawn in ASCII.
+// The user's key file, tui.json: which keys do what, whether the screen is drawn in ASCII, and the
+// key that leaves an agent's terminal.
 // Read once at start and never written. A file that is wrong in any way is refused whole, each
 // problem as one line that says what to change: the TUI resolves no conflict and guesses nothing
 // (there is no "last wins"), because a key that silently does something else is worse than a
@@ -16,7 +17,14 @@ export const CONFIG_LIMIT = 64 * 1024;
 
 const TOO_LARGE = `it is larger than ${CONFIG_LIMIT / 1024} KiB`;
 const NOT_AN_OBJECT = 'it is not one JSON object, like {"keys": {"quit": ["q"]}}';
-const SETTINGS = "the settings are keys and ascii";
+const SETTINGS = "the settings are keys, ascii and open";
+/** The key that leaves an agent's terminal when tui.json names none: the kernel's suggested key. */
+export const DETACH_KEY = "C-\\";
+/** A detach key as tui.json may hold it: 1 to 16 printable ASCII characters. Its grammar is the
+ *  kernel's, never checked here: a key the kernel refuses is said when an agent is opened. */
+const DETACH_KEY_TEXT = /^[\x20-\x7e]{1,16}$/;
+/** An action id this program had and has no more, with what it is called now. */
+const RENAMED = Object.freeze({ "open-workspace": "open" });
 const KEY_IDS = "key ids look like q, ctrl+c, shift+tab, f5, space";
 /** A name from the file is echoed only when it is this: it cannot move a cursor or fill a screen. */
 const PLAIN_NAME = /^[\x21-\x7e]{1,40}$/;
@@ -43,7 +51,8 @@ export function configPath(env, home) {
 }
 
 /** What tui.json says, checked: `value` is the file already parsed, `defaults` the action table.
- *  Pure. Answers `{ ok: true, actions, ascii }` or `{ ok: false, problems }`.
+ *  Pure. Answers `{ ok: true, actions, ascii, detachKey }` or `{ ok: false, problems }`:
+ *  `detachKey` is `open.detachKey`, or DETACH_KEY when the file names none.
  *
  *  `actions` is a frozen table shaped exactly like `defaults` (same order, ids and labels, frozen
  *  rows with frozen `keys`) in which the list of each action the file names REPLACES that action's
@@ -60,6 +69,7 @@ export function effectiveConfig(value, defaults = ACTIONS) {
   for (const [setting, given] of Object.entries(value)) {
     if (setting === "keys") { if (!isObject(given)) return { ok: false, problems: ['keys must be an object, like {"quit": ["q"]}'] }; }
     else if (setting === "ascii") { if (typeof given !== "boolean") return { ok: false, problems: ["ascii must be true or false"] }; }
+    else if (setting === "open") { const refused = openProblem(given); if (refused) return { ok: false, problems: [refused] }; }
     else return { ok: false, problems: [`${plain(setting) ? `unknown setting ${setting}` : "a setting whose name cannot be shown is unknown"}; ${SETTINGS}`] };
   }
 
@@ -80,7 +90,9 @@ export function effectiveConfig(value, defaults = ACTIONS) {
   // where the file gives it. (Two of them clashing is a defect of the table, said the same way.)
   for (const action of defaults) if (!named.has(action.id)) for (const key of action.keys) claim(key, action.id);
   for (const [id, list] of lists) {
-    if (!ids.has(id)) {
+    if (!ids.has(id) && Object.hasOwn(RENAMED, id) && ids.has(RENAMED[id])) {
+      problems.push(`${id} is called ${RENAMED[id]} now; rename it`);
+    } else if (!ids.has(id)) {
       problems.push(`${plain(id) ? `unknown action ${id}` : "an action id that cannot be shown is unknown"}; the actions are ${[...ids].filter(plain).join(", ")}`);
     } else if (!Array.isArray(list) || !list.every((key) => typeof key === "string")) {
       problems.push(`${say(id)} must be a list of key ids, like ["q", "ctrl+c"]`);
@@ -97,7 +109,24 @@ export function effectiveConfig(value, defaults = ACTIONS) {
 
   const actions = Object.freeze(defaults.map((action) => Object.freeze({ ...action, keys: Object.freeze([...(named.get(action.id) ?? action.keys)]) })));
   try { bindings(actions); } catch { return { ok: false, problems: ["a key is given to two actions; a key does one thing"] }; }
-  return { ok: true, actions, ascii: value.ascii === true };
+  return { ok: true, actions, ascii: value.ascii === true, detachKey: value.open?.detachKey ?? DETACH_KEY };
+}
+
+/** What is wrong with the `open` setting, or null. It holds one member, `detachKey`: a string of 1
+ *  to 16 printable ASCII characters, handed to `oats session attach --detach-key` as it is. Its
+ *  grammar is the kernel's. Two things that are not grammar are refused here: a value that begins
+ *  with `-`, which the kernel would read as another flag and refuse in that flag's words (no key of
+ *  its grammar begins with one), and a value the display filter would change, which the footer and
+ *  the help would draw as another key. */
+function openProblem(given) {
+  if (!isObject(given)) return 'open must be an object, like {"detachKey": "F12"}';
+  for (const [member, key] of Object.entries(given)) {
+    if (member !== "detachKey") return `${plain(member) ? `unknown member ${member} of open` : "a member of open whose name cannot be shown is unknown"}; open has detachKey`;
+    if (typeof key !== "string" || !DETACH_KEY_TEXT.test(key)) return 'open.detachKey must be 1 to 16 printable ASCII characters, like "F12"';
+    if (key.startsWith("-")) return "open.detachKey cannot begin with -";
+    if (displayLine(key) !== key) return "open.detachKey is a key the help cannot name; give a key whose characters can be shown";
+  }
+  return null;
 }
 
 /** The file system as loadConfig needs it. `stat` follows symbolic links and answers null for a
@@ -126,9 +155,10 @@ const NODE_IO = Object.freeze({
   },
 });
 
-/** Read tui.json, once. Answers `{ ok: true, actions, ascii, path }`, or `{ ok: false, lines }`:
- *  the complete lines to print (no trailing newline), after which the TUI must not start.
- *  No file is the defaults: `actions` is ACTIONS itself and `ascii` is false.
+/** Read tui.json, once. Answers `{ ok: true, actions, ascii, detachKey, path }`, or
+ *  `{ ok: false, lines }`: the complete lines to print (no trailing newline), after which the TUI
+ *  must not start. No file is the defaults: `actions` is ACTIONS itself, `ascii` is false and
+ *  `detachKey` is DETACH_KEY.
  *
  *  `io` is the file system (node:fs when omitted): `io.stat(path)` answers `{ file, size }` after
  *  following symbolic links, or null when the path does not exist, and throws for anything else;
@@ -141,7 +171,7 @@ export function loadConfig({ env = process.env, home = homedir(), io = NODE_IO }
   const refused = (problems) => ({ ok: false, lines: listed(problems).map((problem) => `oats: \`oats tui\` cannot use ${PLAIN_PATH.test(path) ? path : "its configuration file"}: ${problem} (E_TUI_CONFIG)`) });
   let found, text, value;
   try { found = io.stat(path); } catch (error) { return refused([unreadable(error)]); }
-  if (found === null) return { ok: true, actions: ACTIONS, ascii: false, path };
+  if (found === null) return { ok: true, actions: ACTIONS, ascii: false, detachKey: DETACH_KEY, path };
   if (found.file !== true) return refused(["it is not a regular file"]);
   if (!(typeof found.size === "number" && found.size <= CONFIG_LIMIT)) return refused([TOO_LARGE]); // read only what is known to fit
   try { text = io.read(path); } catch (error) { return refused([error?.code === "EFBIG" ? TOO_LARGE : unreadable(error)]); }

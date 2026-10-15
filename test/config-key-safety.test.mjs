@@ -6,12 +6,17 @@
 // every validator) while still answering property reads.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { capabilityManifest, parseYamlFlat, parseYamlNested, withConfigFile } from "../lib/core.mjs";
 
-function temp() { return mkdtempSync(join(tmpdir(), "oats-keysafe-test-")); }
+/** A new directory of the test, removed when the test has ended. */
+function temp(t) {
+  const dir = mkdtempSync(join(tmpdir(), "oats-keysafe-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
 
 test("__proto__ is refused by every YAML reader and pollutes nothing", () => {
   const documents = [
@@ -63,8 +68,8 @@ test("ordinary config parses unchanged (control)", () => {
   assert.deepEqual(parseYamlFlat("type: developers\nruntime: pi\n"), { type: "developers", runtime: "pi" });
 });
 
-test("an inherited-name capability id is not acquired just because Object.prototype has it", () => {
-  const repo = temp();
+test("an inherited-name capability id is not acquired just because Object.prototype has it", (t) => {
+  const repo = temp(t);
   // `constructor` and `toString` both satisfy the capability-id grammar, so the
   // manifest maps must report them as NOT acquired rather than hand back
   // Object.prototype.constructor as if it were a manifest.

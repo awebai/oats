@@ -79,19 +79,19 @@ and the rules its tests pin.
 | `souls/` | this repository's own souls (a workspace member) |
 | `docs/` | the reference pages, schemas, design records and release notes |
 | `packages/` | the pi adapter, the Desktop, the terminal client (`tui/`), the readers both clients share (`client/`), the turn-record package and experiments |
-| `scripts/` | the test runner (`run-tests.mjs`) and its reporter of unasserted warnings, the session-inheritance check (`test-session-inheritance.mjs`), validators, packaging checks, the release lane and the assembly of release-notes entries |
+| `scripts/` | the test runner (`run-tests.mjs`), its reporter of unasserted warnings and the preload that gives each test file a temporary directory of its own, the session-inheritance check (`test-session-inheritance.mjs`), validators, packaging checks, the release lane and the assembly of release-notes entries |
 | `test/` | the kernel and CLI suites, with their fixtures |
 
 ## Kernel modules
 
 | module | owns |
 |---|---|
-| `remote.mjs` | repo refs, reading Git remotes, content digests; `redactUrl` owns [reference display construction and withholding](workspaces.md#repository-references-in-diagnostics). Selected original refused references first use the contract's bounded plain-value rule; other values supply only validated scheme/SCP, host, supported port and path components, or are withheld whole. Raw host/path fragments inherit plain eligibility only from the original selected source, never from the fragment alone; nonplain originals cannot use that exception. Plain-reference recognition is not a secret detector: credential-like text within the permitted alphabet stays visible. Display recognition shares the parser's character rules without calling its error path, and never changes admission or transport. Explicit pinned-source context retains only a constructed reference plus a validated 40-hex commit, remains idempotent, and has no plain fallback; the default context does not infer pins. Each rejection boundary explicitly names its rejected-input fields; the seven selected argument fields use the same bounded plain-value predicate through the renderer, including spaces and colons and without trimming or decoding, never a global field-name rule. Rejected-input messages quote the rendered fields through a formatter at that boundary, so rejected words cannot replace identical words in the fixed reason. Valid operational values are untouched. Refusal context owns the explanation once; forwarding preserves it. `scrubGitLine` delegates the linked whole-Git-line disclosure rule to the renderer before control/length formatting: only proven unchanged original operation refs plus an original line without `@` permit disclosure; all other lines become the fixed notice, with no substring recovery. Construction tests audit raw Git error-text access and quoting routes; generated invariants cover selected diagnostic routes |
+| `remote.mjs` | repo refs, reading Git remotes, content digests; `displayRepoRef` and `displayDiagnosticText` select reference-value and kernel-prose contexts for one private renderer, which owns [reference display construction and withholding](workspaces.md#repository-references-in-diagnostics). Selected original refused references first use the contract's bounded plain-value rule; other values supply only validated scheme/SCP, host, supported port and path components, or are withheld whole. Raw host/path fragments inherit plain eligibility only from the original selected source, never from the fragment alone; nonplain originals cannot use that exception. Plain-reference recognition is not a secret detector: credential-like text within the permitted alphabet stays visible. Display recognition shares the parser's character rules without calling its error path, and never changes admission or transport. Explicit pinned-source context retains only a constructed reference plus a validated 40-hex commit, remains idempotent, and has no plain fallback; the default context does not infer pins. Each rejection boundary explicitly names its rejected-input fields; the seven selected argument fields use the same bounded plain-value predicate through the renderer, including spaces and colons and without trimming or decoding, never a global field-name rule. Rejected-input messages quote the rendered fields through a formatter at that boundary, so rejected words cannot replace identical words in the fixed reason. Valid operational values are untouched. Refusal context owns the explanation once; forwarding preserves it. `scrubGitLine` delegates the linked whole-Git-line disclosure rule to the renderer before control/length formatting: only proven unchanged original operation refs plus an original line without `@` permit disclosure; all other lines become the fixed notice, with no substring recovery. Construction tests audit raw Git error-text access and quoting routes; generated invariants cover selected diagnostic routes |
 | `local-inputs.mjs` | the local configuration a command read, for `observation.localRevision` |
 | `workspace.mjs` | workspace, membership and soul files; discovery |
 | `resolve.mjs` | a soul's resolution: capabilities, slots, provenance |
 | `packages.mjs` | `packages:`, the catalog, `oats sync`, `oats-lock.json` |
-| `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit |
+| `capability-show.mjs` | `oats capabilities show`: one catalog row's inject and skill files, read at its commit. Its text rules (`decodeText`, `skillDocDescription`, the limits) are also the rules of `inspect --soul --skills` (`instance-inspect.mjs` `soulSkills`), which reads a soul copy's own skills locally |
 | `materialize.mjs` | copying modules into a home and composing it |
 | `core.mjs` | spawn, retire, sessions, hooks, launch recipes, instance metadata. A home's record (`instance.json`) is read with `readHomeRecord`, which never throws: a record, an absent one, or one that is there and cannot be read, with the reason. Code that walks other homes (the listing, a retire's lineage repair) uses it, so that one home's record decides only for that home; `identifiedHomeRecord` is the one refusal (`E_UNIDENTIFIED_INSTANCE_HOME`) a lifecycle verb makes when it has resolved its home: `resolveRetireHome`, `startInstanceSession`, and `resolveTarget` in `instance-lifecycle.mjs` for the stop and retire plans. A plan reads its own home's record with `targetRecord` (the same refusal) and any other home's with `otherRecord` (absent or unreadable: nobody's parent or child) |
 | `instruction-composition.mjs` | the generated `AGENTS.md`; `renderInstructionParts` is the span-reporting renderer (`renderInstructionText` is its text) |
@@ -112,6 +112,7 @@ and the rules its tests pin.
 | `worktree.mjs` | `oats worktree add\|remove`: an instance's extra trees (`.work-<purpose>`), their records (`.oats/trees/`), argument checks before any write, and the rollback of an interrupted add |
 | `errors.mjs` | `oatsError`, and the door of the lifecycle verbs: `isKernelCode` (the shape of a kernel code, `^E_[A-Z0-9_]+$`, never a list of codes), `kernelCode`, `asKernelError` and `errorCause`. An answer of `oats retire`, `oats instance stop`, `oats session` and `oats worktree` carries a kernel code, or one of the two names every command answers as they are (`OWN_NAME_FAILURES`: `unsafe-config-key`, `unsafe-config-value`), and no other: `isAnswerCode` is what the door and its wrappers keep, `isKernelCode` stays the test of the shape. An error of the system's or of Node's, a refusal written as a plain `Error` without a code, and a defect (`isDefect`: a `TypeError` and its like without a code, or a thrown value that is no `Error`), is wrapped at the boundary (`bin/oats.mjs` `lifecycleFail`; in a retire, `core.mjs` `retireClaimed`, which also says what the retire had done by then) and its own code goes to `details.cause` (a defect's name does; a plain `Error` without a code has no cause, and is answered with the general code and its message alone, which is what an ordinary refusal of `tmux`, `git` or the kernel itself must read as). New code that answers an error tests the shape with these, never `e.code \|\| "E_…"`: a system error has a `code` too. Whoever ends an error's way up prints the stack of a defect with `reportDefect`: the door, and any code that turns a caught error into a row of results (a stop's `results[]`, a retire's `childrenStopped[]`), after which nobody else can. Two more rules of the lifecycle verbs live here. **`lifecycleBusy(holder, said, remedy, details)` is the only way `E_LIFECYCLE_BUSY` is made** (`test/lifecycle-busy-holder.test.mjs` scans `lib/` and `bin/` for any other): it sets `details.holder` (`BUSY_HOLDERS`: `"running"` only where the kernel established that the other command is alive, `"unknown"`, `"none"`) and refuses to build an `"unknown"` or `"none"` answer without the step that ends it. **`BEFORE_EFFECT_CODES` lists, per verb, the codes that verb answers only before any effect**; `afterFirstEffect` turns a listed code raised after a verb's first effect into a defect (`E_LIFECYCLE_FAILED`, `cause.name: "LateRefusal"`), and is called at the one place of each verb that knows how far it got (`core.mjs` `retireFailure`, from `at.phase`; `instance-lifecycle.mjs` `applyStop`, from whether a target's stop began). A code may join the list only when every place that raises it in that verb is before the first effect; a place found after it gets a code of its own, never the net |
 | `claim.mjs` | the claim: one file naming, by pid and start time, the process doing something that happens once at a time; taken over when its holder is verifiably gone, never when that cannot be read. Synchronous. Held by `oats worktree add\|remove` per purpose (`worktree.mjs`), and per home by `oats retire` and `oats instance stop --apply` (`core.mjs` `claimHomeFor`: the one way a verb takes a home's lifecycle claim; the record names the holder's verb, `action`, from the instant the file exists, through the `facts` option of `acquireClaim`). A verb that only reads the home's claim (`oats worktree add`; a stop plan's `retiring` and `stopPending`) uses `homeClaimHolder` or `refuseBesideRetire`. The refusals of every pair (arriving verb, holder's verb) are built in one place, `core.mjs` `lifecycleClaimRefusals`; the pair table of `docs/desktop-cli-api.md` is walked by `test/lifecycle-pair-table.test.mjs`. A new verb that must not run beside a retire takes the claim through `claimHomeFor`, joins `CLAIM_VERBS` and adds its row and column there. Its loop has one rule: every pass that does not take the claim falls through one check of its time and one pause, so no state of the path makes it spin. Each caller words the refusals (`busy`, `unreadableClaim`, `cannotTakeOver`, `heldAgain`, `ownStartUnreadable`), and is handed with each what the acquisition's takeovers ended before it (`ended`): it writes "nothing else was done" then, and the answer is `E_LIFECYCLE_FAILED`, what was ended first (`errors.mjs` `nothingAfter`, `afterEndedSteps`; `lifecycleBusy` takes `ended`). No message is rewritten after it was made. A claim is read back as whatever is in its file, which others than its writer can write, so no text of it enters an answer: a refusal names the holder through `shownHolder` (its pid, time and start, each only in the shape the kernel writes) and `core.mjs` `claimAction` (one of `CLAIM_VERBS`, the list `claimHomeFor` accepts). A claim that could not be WRITTEN is marked at the write that failed (`claimWrite`: the claim's directory, its private file, its link, and the same of a takeover's own claim) for the system's code as it was thrown there, one of `CLAIM_UNWRITABLE_CODES`; the mark travels on the refusal (`unwritableCode`), and an answer made after a takeover ended something carries none. One caller reads it, `claimHomeFor` with the option `READ_CLAIM_WHEN_UNWRITABLE`, which a stop apply passes and nobody else: it then reads the claim where it would have taken it (`claimUnheld`: nobody, or the refusal the taking would have given, from the same builder) and answers a holding without a claim, whose `look()` makes that read again. No caller tells that failure from another by an answer's code, words or `details.cause`: a defect and a claim that could not be removed are `E_LIFECYCLE_FAILED` too |
+| `write-through-private-file.mjs` | the one writer of a file written through a private file beside it and renamed over it (`writeThroughPrivateFile`): a failed write or rename removes the private file and throws that failure's error (#1076). The caller gives the private name, the bytes and the mode. A writer that needs more (an exclusive link, an exact mode, a failed removal reported, a sync) keeps its own code |
 | `worktree-hooks.mjs` | the `worktree` event's runner (cwd the tree, detached process group, log under `.oats/logs/`, fixed timeout, interrupt handling), process identity by pid and start time, and the credential-free `origin` URL. Two questions, two functions: `processStart` says whose a pid is (a zombie still holds its pid and start, which is what proves a recorded process group), `processLiveness` says whether the `oats` command a record names can still act (a zombie cannot: it is gone). Ask `processLiveness` only about an `oats` command's own process, never about a hook's or a harness's pid. `runPs` is the one way the kernel calls `ps` where an identity is read: the program, the fixed environment and how the answer is classified. `isStartToken` says the shape of a start token, once, beside its writer: it decides what of a record may be shown (`claim.mjs` `shownHolder`, `unknownGroupNote`), never whether a process lives |
 | `system-tools.mjs` | `systemTool`: a program the kernel runs from the system directories (`SYSTEM_TOOL_DIRS`), never from the caller's `PATH`. `ps` runs on the same directories: `worktree-hooks.mjs`'s `PS_ENV` takes its `PATH` from them |
 | `tmux-server-scope.mjs` | whether the OATS tmux server starts in a systemd scope of its own: the creator's cgroup judged (Linux, inside a `.service`, unified hierarchy), the scope's name and the warning when it cannot |
@@ -128,7 +129,7 @@ and the rules its tests pin.
 | `harness-trust.mjs` | read-only native trust coverage and operator remedy for launches; the table of the variable that moves each harness's folder (`HARNESS_FOLDER_VAR`) and the one reader of a launch configuration's (`launchConfigFolder`), used by the trust code, `pi-bridge.mjs` and `core.mjs`: it reads only files and imports none of them. What a launch's pane will have for those variables, `PATH` and `HOME` is `launchEnvironment` in `core.mjs`, the one answer every check of a launch reads ([execution-targets.md](execution-targets.md#the-checks-read-the-pane)); it carries the names the launch removes (`removedLaunchEnv`: declared by its capabilities, not in their payload), which `launchEffectiveEnv` leaves out and the window command (`paneCommand`) unsets ([capabilities.md](capabilities.md#a-declared-name-is-the-providers)) |
 | `harness-trust-write.mjs` | explicit operator plan/apply, cooperating locks, durable deployment audit and no-rollback outcomes |
 | `harness-trust-json.mjs`, `harness-trust-toml.mjs` | bounded native parsers and byte-preserving edits of one trust leaf |
-| `pi-bridge.mjs` | the pi bridge (`@awebai/oats-pi`) in every pi folder a launch of a deployment uses: the folder list (the default, the process's own `PI_CODING_AGENT_DIR`, each pi launch configuration's, by real path), the bridge read in each, `oats doctor`'s skew warnings and the plan `oats update` runs ([upgrading](upgrading.md)). Reads only: `bin/oats.mjs` runs the steps |
+| `pi-bridge.mjs` | the pi bridge (`@awebai/oats-pi`) in every pi folder a launch of a deployment uses: the folder list (the default, the process's own `PI_CODING_AGENT_DIR`, each pi launch configuration's, by real path), the bridge read in each, `oats doctor`'s skew warnings, and the plan `oats update` runs with its line that the Desktop goes first ([upgrading](upgrading.md)). Reads only: `bin/oats.mjs` runs the steps |
 
 The schedule registry stores explicit concurrency caps, leaving the schedule
 cap absent for its effective default of five. `readRegistry()` is a pure,
@@ -191,6 +192,30 @@ reconciliation outside current placement or mutate attempts and locks.
 The kernel is runtime-neutral: nothing in `lib/` depends on a harness or on
 a provider. Provider behaviour lives in capabilities; the kernel supplies
 their contracts ([layers](layers.md)).
+
+### Remote diagnostic display
+
+`lib/remote.mjs` exposes explicit display entry points for direct module callers:
+
+- `displayRepoRef(value, { pinned = false, rejectedValue = false } = {})`
+  renders selected reference values, including nested keys and values. For a
+  pinned source, `pinned: true` splits the complete `<ref>@<commit>` value;
+  `pinned: { ref, commit }` supplies its original components. Both forms
+  require a recognised reference and a 40-hex commit, with no plain fallback.
+- `displayDiagnosticText(value, source = null, { fragment = false, refusal = false, substitute = true, rejectedValue = false } = {})`
+  renders kernel-authored diagnostic prose using its selected original source
+  values, including fragments and refusal explanations.
+- `scrubGitLine(line, url = null)` handles Git-authored lines through the
+  [whole-line disclosure rule](workspaces.md#repository-references-in-diagnostics)
+  before control and length formatting.
+
+All three delegate to the existing private `renderRemoteDisplay`; construction
+and withholding policy live there. Each public entry fixes its context and
+extracts only its named options, so an extra option cannot select Git-line
+handling through either of the other entry points. These exports are for
+internal/direct-module callers: `lib/remote.mjs` is not in the package export
+map. Call sites choose the entry matching the origin of the value or prose;
+there is no implicit-context `redactUrl` export or compatibility shim.
 
 ### The remote read path
 
@@ -418,7 +443,7 @@ scaling by call count.
 
 | command | what it checks |
 |---|---|
-| `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs`, which also fails the run when an `oats: warning:` line is left in a test file's output |
+| `npm test` | every suite under `test/` (`node --test`), through `scripts/run-tests.mjs`, which also fails the run when an `oats: warning:` line is left in a test file's output, or a test file leaves something in its temporary directory |
 | `npm run test:session` | the suites that have followed a variable of the session that runs them, with every such variable set to a value that cannot work (`scripts/test-session-inheritance.mjs`) |
 | `npm run check` | syntax of every shipped file |
 | `npm run check:pi` | the pi adapter's TypeScript |
@@ -446,6 +471,65 @@ worker wrote and what a child wrote that has the worker's stderr or stdout as
 its own; a line a child wrote into a pipe the test reads is the test's, and
 does not count. `test/unasserted-warnings.test.mjs` pins the rule with nested
 runs.
+
+**A test file leaves nothing behind.** Where a test makes a directory, it
+registers the removal there (`t.after`, or a list the file empties when it has
+ended), so a test that fails or times out removes it too; and a fixture is
+ended, not only removed (`v2Deployment({ t })`, below). A file whose setup is
+shared by its tests does that setup in a `test.before` hook, not at its top
+level: a file that throws while it loads runs no hook, `test.after` included,
+so a step that failed would leave what the steps before it made
+(test/tui-acts.test.mjs). On a development host
+the leftovers of runs that passed once used up the inodes of the temporary
+file system, and every test that makes a directory then failed with "no
+space", whatever the change under test (awebai/oats#1025). The root run holds
+the rule:
+
+- `scripts/run-tests.mjs` makes one directory for the run, and each test
+  file's process is preloaded with `scripts/test-file-tmpdir.mjs`, which gives
+  the file a directory of its own inside it: as `TMPDIR`, and as
+  `TMUX_TMPDIR`, which is tmux's default place. A tmux client that runs with
+  no `TMUX_TMPDIR` of a fixture makes its socket directory there, where the
+  run sees it, instead of reaching the host's default server. `TMUX` is not
+  changed: a client that names no server (no `-L` or `-S`) and inherits
+  `TMUX`, as in a run from a session inside tmux, still uses that session's
+  server and makes nothing the run sees. The run names its directory to the
+  preload in `OATS_TEST_RUN_DIR`, and the preload takes that variable out of
+  the file's environment before any code of the file runs. No test sees it,
+  nor any process a test starts.
+- When the run has ended it reads each file's directory. If one is not empty
+  the run fails, even if every test passed, and names each file and what it
+  left.
+- One name is not counted, by its exact name: `node-compile-cache`. Node makes
+  it under the temporary directory when a tool a test starts asks for a
+  compile cache (npm does), so under the root run it is made in the file's
+  own directory and goes with the run's. It is Node's, not something the file
+  left. A developer's shared cache, the one in the platform's temporary
+  directory, is neither used nor removed by a root run; a file run alone uses
+  it as before, and no test deletes it. The run's processes do not inherit
+  `NODE_COMPILE_CACHE` either: with a developer's set, no process of the run
+  writes into that cache.
+- The run's directory is removed when the run has ended, whatever was left in
+  it. A run that is killed leaves that one directory: `ot-*` under the
+  temporary directory, or under `/tmp` when that path is longer than 20
+  characters.
+- A file's directory, `<parent>/ot-XXXXXX/<n>`, takes from a socket's path
+  what `/tmp` alone did not. ssh binds a control socket at
+  `<OATS_HOME_DIR>/ssh/<40 hex>` plus a 17-byte suffix, in 104 bytes: 86 for
+  the path. A fixture whose `OATS_HOME_DIR` holds it keeps it short: a
+  5-character prefix and `<base>/h` (`o-up-`) come to 85 bytes when the
+  run's parent resolves to at most 12 characters, as `/tmp` does on Linux
+  and on macOS (`/private/tmp`), with up to 999 files. Longer, the kernel
+  warns that the path is too long and runs ssh without connection reuse,
+  which fails the run as any unasserted warning does: run the suite with a
+  `TMPDIR` of `/tmp` then.
+- The run sees what is made under the file's temporary directory: by the
+  file's process, by a process it starts with that environment, and by the
+  fixture helpers (`fixtureBase` and `privateTmuxTmpdir`, below), in a
+  process the test started with `inheritedEnv()` too. It does not see what a
+  process makes when a test built its environment without `TMPDIR`.
+
+`test/left-behind.test.mjs` pins the rule with nested runs.
 
 Desktop's standalone tests (`cd packages/desktop && npm ci && npm test`) must
 load with only Desktop dependencies installed. The release builds Desktop that
@@ -509,6 +593,31 @@ which fails with `ENOTEMPTY` (awebai/oats#451). So:
   it runs there.
 
 Never paper over such a race with a retry around the cleanup.
+
+A process that a test kills can leave such a writer too. Killing a process
+that starts processes of its own ends that one alone: a child it had just
+started goes on by itself and writes where it was told to after its parent has
+gone, and it has not run a line yet, so it has announced itself nowhere. The
+Desktop server's tests are the case: the server runs the CLI, and a fake CLI
+writes its log in the test's directory. Such a test starts the process with
+`startGroup` and closes it with `closeGroup`
+(`test/helpers/process-group.mjs`):
+
+- `startGroup` starts it as `spawn` does, as the leader of a process group of
+  its own, which holds whatever it starts.
+- `closeGroup` kills that one process and waits until its group, that process
+  among it, is empty. The bound, 30 s, covers the whole close from its start:
+  a group that outlives it fails the test and names every process that is
+  left, the killed one too if it still runs. Only then does the test remove
+  what they worked in.
+- A group of its own is not in the terminal's foreground group, so an
+  interrupt of the test's process does not reach it. The helper passes it on:
+  on `SIGINT`, `SIGTERM` or `SIGHUP` it kills every group that process
+  started, whole, and then the signal ends the process as it would have. A
+  test process killed with `SIGKILL` passes nothing on: what it started stays,
+  as any child of a process killed that way does.
+
+`test/process-group.test.mjs` pins the three.
 
 A test never reaches the operator's tmux. The kernel creates sessions on the
 server named `oats` (`tmux -L oats`), which tmux resolves under `TMUX_TMPDIR`,
@@ -599,7 +708,12 @@ inherits it (awebai/oats#816):
 - **A short base.** `fixtureBase(prefix)` makes the fixture directory under
   the platform's temporary directory, or under `/tmp` when that is longer than
   20 characters (macOS's `/private/var/folders/…/T/` is about 49), as its
-  realpath, taken once.
+  realpath, taken once. Under the root run the temporary directory is the
+  test file's own (above), and is used whatever its length, so that nothing a
+  fixture makes is outside what the run reads; the run keeps it short. The
+  helper knows it by what the runner makes (`ot-XXXXXX/<n>`, with the file
+  `<n>.file` beside it) and by no variable, so a process a test starts with
+  `inheritedEnv()` uses it too.
 - **Names and paths sized from the base.** `nameOfLength(base, n)` (a file
   name or branch segment) and `pathOfLength(base, n)` (an absolute path under
   the base, `n` characters in all) are capped below NAME_MAX and PATH_MAX of
@@ -718,4 +832,10 @@ inherits it (awebai/oats#816):
   still removes its base (awebai/oats#830). `fx.cleanup` does its work once,
   and later calls return quietly, so an explicit `fx.cleanup()` or a test's own
   `t.after(fx.cleanup)` can stay beside it. A fixture that fails while it is
-  built removes its base itself.
+  built removes its base itself. Removing the base is not ending the fixture:
+  only `fx.cleanup` stops the fixture's tmux server, checks for leftover
+  processes and removes the fixture's private `TMUX_TMPDIR`
+  (`privateTmuxTmpdir()`), which is made beside the base and never inside it.
+  So a fixture that was made and never ended leaves that directory, and the
+  root run fails on it (awebai/oats#1025). A file that collects its fixtures
+  ends each of them in the hook that used to remove their bases.

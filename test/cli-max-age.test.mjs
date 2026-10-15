@@ -12,13 +12,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import YAML from "yaml";
 import { buildNorthwind, moveMember } from "./fixtures/northwind/build.mjs";
+import { privateTmuxTmpdir, removeTmuxTmpdir } from "./helpers/host-fixture.mjs";
 import { inertHarnessPath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const READS = "status, workspace status, souls, capabilities, capabilities show, inspect --soul|--home, spawn --preview, trigger poll, and the read forms of teams and soul teams";
 const refusedBy = (form) => `--max-age is not accepted by \`oats ${form}\`: only the read verbs reuse observations (${READS})`;
 
-let base, fx, dep, env, home;
+let base, fx, dep, env, home, tmuxTmpdir;
 const cache = () => join(base, "cache");
 const observed = () => join(cache(), ".observed");
 function oats(args, { cwd = dep } = {}) {
@@ -35,6 +36,9 @@ const heads = ({ observedAt, reused }) => ({ observedAt, reused });
 
 test.before(async () => {
   base = mkdtempSync(join(tmpdir(), "oats-max-age-"));
+  // The CLI asks tmux for its sessions (status, spawn): in a directory of this file, never at tmux's
+  // default place, where a host's live deployment has its server.
+  tmuxTmpdir = privateTmuxTmpdir();
   if (/[\s@]/.test(base)) throw new Error(`tmpdir ${base} contains whitespace or @`);
   fx = await buildNorthwind(join(base, "fx"));
   // Team model 3: these tests edit this deployment's local teams, which the workspace must allow.
@@ -49,11 +53,11 @@ test.before(async () => {
   mkdirSync(join(dep, "agents"), { recursive: true });
   writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
   env = { ...process.env, PATH: inertHarnessPath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "", OATS_INSTANCE: "", OATS_INSTANCE_HOME: "",
-    OATS_REMOTE_CACHE: cache(), HOME: join(base, "home"), OATS_PACKAGE_CATALOG: catalogFile, OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}` };
+    OATS_REMOTE_CACHE: cache(), HOME: join(base, "home"), OATS_PACKAGE_CATALOG: catalogFile, OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, TMUX_TMPDIR: tmuxTmpdir };
   json(oats(["sync", "--json"]));
   home = json(oats(["spawn", "release-manager", "--purpose", "rc", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--json"])).result.home;
 });
-test.after(() => { if (base) rmSync(base, { recursive: true, force: true }); });
+test.after(() => { try { if (tmuxTmpdir) removeTmuxTmpdir(tmuxTmpdir); } finally { if (base) rmSync(base, { recursive: true, force: true }); } });
 const catalogFile = () => env.OATS_PACKAGE_CATALOG;
 
 test("the read verbs take --max-age and add observation { observedAt, reused }; without the flag the key is absent", { timeout: 300_000 }, () => {

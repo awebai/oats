@@ -131,10 +131,14 @@ async function startServer(t, { dir, path, pathSource, pathError, oatsBin }) {
   mkdirSync(join(deployment, "agents"), { recursive: true });
   writeFileSync(join(deployment, "oats-local.yaml"), "workspace: fixture\n");
   const port = await freePort();
+  // The server asks tmux for the panes it shows, and asks the default server when a home records no
+  // socket: here, in a directory of the test, removed once the server has exited, never at tmux's
+  // default place, where the host has its own server.
+  const tmuxTmpdir = realpathSync(mkdtempSync(join(tmpdir(), "oats-tmux-")));
   const proc = spawn(process.execPath, [SERVER, "start", "--port", String(port), "--dir", deployment, "--oats-bin", oatsBin,
     "--path-source", pathSource, ...(pathError ? ["--path-error", pathError] : [])], {
     detached: true, stdio: ["ignore", "ignore", "pipe"],
-    env: { ...process.env, PATH: path, SHELL: "/bin/false", FAKE_DEPLOYMENT: deployment,
+    env: { ...process.env, PATH: path, SHELL: "/bin/false", FAKE_DEPLOYMENT: deployment, TMUX_TMPDIR: tmuxTmpdir,
       OATS_DESKTOP_OATS_BIN: undefined, OATS_INSTANCE_HOME: undefined, OATS_INSTANCE: undefined, OATS_DEPLOYMENT: undefined },
   });
   let stderr = ""; proc.stderr.on("data", (d) => { stderr += d; });
@@ -142,6 +146,7 @@ async function startServer(t, { dir, path, pathSource, pathError, oatsBin }) {
     const exited = proc.exitCode !== null || proc.signalCode !== null ? Promise.resolve() : once(proc, "exit");
     try { process.kill(-proc.pid, "SIGTERM"); } catch { /* already stopped */ }
     await exited;
+    rmSync(tmuxTmpdir, { recursive: true, force: true });
   });
   const base = `http://127.0.0.1:${port}`;
   const until = async (probe, what) => {

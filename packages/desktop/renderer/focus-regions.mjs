@@ -1,16 +1,18 @@
 // oats desktop — keyboard regions (spec F, Part 4): F6 / Shift+F6 move focus between the
 // window's regions, in order: sidebar nav → instance roster → main → instance panel → back.
 //
-// A region that is hidden (the sidebar while hidden or in focus mode, the panel when there is
-// nothing to show) is skipped. Focus lands on the region's current item, never on <body>:
+// A region that is hidden (the sidebar while hidden or in focus mode, the panel while closed or when
+// there is nothing to show) is skipped. Focus lands on the region's current item, never on <body>:
 //   nav     the current view's nav item (aria-current), else the first one
 //   roster  the roster's tab stop (the selected row), else the filter
 //   main    the active tab's content (a terminal's input) through the shell's hook, else the
 //           stage's first control
-//   panel   its selected tab; collapsed, its rail's pressed button. A collapsed panel stays in
-//           the cycle: inside a terminal Tab belongs to the program, so F6 is the only way there.
-// The tab strip and the split controls count as main; the workspace switcher and the sidebar
-// footer as nav (they are reached with Tab from the nav item).
+//   panel   its selected tab (or the first control of a stage's content). A closed panel is out
+//           of the cycle (Spec B): from a terminal, panel.toggle's chord opens it.
+// The tab strip, the split controls and Show sidebar / Show instance panel count as main; the
+// workspace switcher and the sidebar footer as nav (they are reached with Tab from the nav item).
+
+import { revealInScrollport } from "./reveal-in-scrollport.mjs";
 
 export const REGIONS = Object.freeze(["nav", "roster", "main", "panel"]);
 
@@ -74,8 +76,7 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     if (name === "panel") {
       const panel = byId("context-panel");
       const tab = [...(panel?.querySelectorAll('[role="tab"][aria-selected="true"]') || [])].find(focusable);
-      const rail = [...(panel?.querySelectorAll('.context-panel-rail [aria-pressed="true"]') || [])].find(focusable);
-      return tab || rail || firstTabbable(panel);
+      return tab || firstTabbable(panel);
     }
     if (name === "main") {
       if (tabLayerVisible()) return null; // the shell's hook owns tab content
@@ -98,11 +99,15 @@ export function createFocusRegions({ doc, focusMainContent = () => false, tabLay
     }
     const item = currentItem(name);
     if (!item) return false;
-    item.focus({ preventScroll: false });
+    // A roster row is revealed inside its list only (the list shows no scrollbar); elsewhere the
+    // focus scroll brings the item into view.
+    const list = name === "roster" ? item.closest(".ctx-list") : null;
+    item.focus({ preventScroll: !!list });
+    if (list) revealInScrollport(list, item.closest(".ctx-tree-row") || item);
     return doc.activeElement === item;
   }
 
-  /** The region holding focus now, or null (body, a dialog, the sidebar-restore edge…). */
+  /** The region holding focus now, or null (body, a dialog…). */
   function regionOfFocus() {
     const active = doc.activeElement;
     if (!active || active === doc.body) return null;

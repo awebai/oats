@@ -42,6 +42,16 @@ export function takePickerFocusReturn(doc) {
   return opener;
 }
 
+/** A dialog outside the picker family joins the same handoff while it may be replaced: a picker or dialog
+ * that opens over it (through takePickerFocusReturn) takes its opener and dismisses it without returning
+ * focus. The returned release leaves the handoff, unless a later holder has taken it. */
+export function joinPickerFocusReturn(doc, { opener, dismiss }) {
+  if (!pickerDocuments.has(doc)) pickerDocuments.set(doc, { current: null, handoff: null });
+  const coordinator = pickerDocuments.get(doc), lifetime = { opener, dismiss };
+  coordinator.current = lifetime;
+  return () => { if (coordinator.current === lifetime) coordinator.current = null; };
+}
+
 /**
  * @param {object} spec
  * @param {string} spec.placeholder     input placeholder text
@@ -52,11 +62,15 @@ export function takePickerFocusReturn(doc) {
  *        reopened must not paint (generation-guarded here).
  * @param {(data: any, query: string) => Array<{label: string, detail?: string,
  *          dot?: boolean|null, run?: Function, depth?: number, under?: string,
- *          group?: {key: string, label: string}, context?: boolean}>} spec.computeRows
+ *          showUnder?: boolean, group?: {key: string, label: string},
+ *          context?: boolean, initial?: boolean}>} spec.computeRows
  *        query → result rows, already scored/sorted/sliced by the caller.
  *        Optional tree shape (the palette's instances): consecutive rows sharing
  *        a group.key sit in one role=group named by group.label; depth indents
- *        (visual only); `under` is visually hidden text read with the option;
+ *        (visual only); `under` is visually hidden text read with the option
+ *        (with `showUnder` a flat row also shows it, quietly, aria-hidden so it is
+ *        read once); the first selectable `initial` row is the active row a
+ *        render starts on (else the first selectable row);
  *        a `context` row is shown dimmed with aria-disabled="true" and is never
  *        active, so the arrows, the cycle chord and pointer hover skip it.
  *        Async run callbacks must return their promise to carry the original
@@ -249,6 +263,12 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
           const under = doc.createElement("span");
           under.className = "sr-only"; under.textContent = `, ${it.under}`;
           row.querySelector(".pdetail").append(under); // read as one phrase with the detail
+          if (it.showUnder) {
+            // Seen, not read twice: the visually hidden phrase above is the one read.
+            const shown = doc.createElement("span");
+            shown.className = "punder"; shown.setAttribute("aria-hidden", "true"); shown.textContent = it.under;
+            row.querySelector(".plabel").after(shown);
+          }
         }
         // A match's ancestor, shown for its place in the tree: never active or run.
         if (it.context) { row.classList.add("context"); row.setAttribute("aria-disabled", "true"); }
@@ -280,7 +300,8 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
     const update = () => {
       if (!owns()) return;
       items = computeRows(data, input.value);
-      active = Math.max(0, items.findIndex((it) => !it.context));
+      const initial = items.findIndex((it) => it.initial && !it.context);
+      active = initial >= 0 ? initial : Math.max(0, items.findIndex((it) => !it.context));
       render();
     };
 

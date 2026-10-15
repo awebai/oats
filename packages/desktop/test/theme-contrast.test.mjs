@@ -26,6 +26,7 @@ import { instanceActionTarget } from '../renderer/instance-action-target.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { target as forgeTarget, pr as forgePr } from './helpers/forge-fixture.mjs';
 import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
+import { createForgetDialog } from '../renderer/forget-dialog.mjs';
 import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
 import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
 import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture, stopReceipt, retireReceipt } from './helpers/lifecycle-fixture.mjs';
@@ -530,7 +531,9 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     disabledSouls: ['campaign-writer'], lock: { path: `${dir}/oats-lock.json`, lockfileVersion: 3 },
     defaults: { slots: { knowledge: { name: 'oats.okf', from: 'package' }, messaging: 'none', tasks: null }, capabilities: [{ name: 'house-style', from: 'here', off: false }],
       byTeam: Object.fromEntries((status.workspace.teams || []).map(label => [label, { capabilities: [{ name: 'deploy', from: 'package', off: false }, { name: 'house-style', from: null, off: true }] }])) } };
-  renderSetup(doc.querySelector('.sources'), { status: facts, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' }, openExternal() {} });
+  // The list view also with a package not locked yet (the lock out of date, the Sync cell) and a newer catalog version.
+  const listed = { ...facts, unsynced: ['x.pkg'], packages: facts.packages.map((p, i) => i ? p : { ...p, latest: { version: '9.9.9', ref: null } }) };
+  renderSetup(doc.querySelector('.sources'), { status: listed, instances: [{ agent: 'a', running: true }], souls: [{ team: 'marketing' }], cli: { version: '0.26.0' }, openExternal() {} });
   // The Workspace's Teams tab (0.29 box; first tab since 2026-09-28), beside Setup.
   doc.querySelector('.sources').append(teamsBox(doc, { status: facts, souls: [{ team: 'marketing' }] }));
   renderSetup(doc.querySelector('.graph'), { status: { ...facts, unsynced: ['x.pkg'] }, view: 'graph', selected: unconfirmed.key, openExternal() {} });
@@ -558,18 +561,33 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.capability-section-title', '.oats-view', 'fg', 'bg'], ['.capability-section-lead', '.oats-view', 'muted', 'bg'],
     // A repository group's heading (the Souls tab's, group-heading.mjs): the name --fg, its qualifier --muted.
     ['.catalog-group .souls-group-name', '.oats-view', 'fg', 'bg'], ['.catalog-group .souls-group-note', '.oats-view', 'muted', 'bg'],
-    // Workspace v4 Setup (W1/W2) — replaces the old setup-card/node/sources inventory.
-    ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-lede-where', '.oats-view', 'muted', 'bg'],
-    ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
-    ['.setup-box .setup-scope', '.setup-box .setup-scope', 'muted', 'tag-bg'],
-    ['.setup-name', '.setup-box', 'fg', 'surface'], ['.setup-version', '.setup-box', 'muted', 'surface'],
-    ['.setup-state:not(.warn)', '.setup-state:not(.warn)', 'muted', 'tag-bg'], ['.setup-state.warn', '.setup-state.warn', 'warn', 'attn-bg'],
+    // Workspace v4 Setup (W1/W2), the 2026-10-14 redesign: the lede and its summary on the page, the overview card
+    // (the drawing's boxes on --surface-2), Shared through Git's boxes, the This computer zone (--surface-2).
+    ['.setup-lede h2', '.oats-view', 'fg', 'bg'], ['.setup-summary', '.oats-view', 'muted', 'bg'],
+    ['.setup-summary b:not(.warn)', '.oats-view', 'fg', 'bg'], ['.setup-summary b.warn', '.oats-view', 'warn', 'bg'],
+    ['.setup-lede-where', '.oats-view', 'muted', 'bg'], ['.setup-lede-where span.mono', '.oats-view', 'fg', 'bg'],
+    ['.setup-lede-where button.setup-file', '.oats-view', 'accent', 'bg'],
+    ['.setup-explain h3', '.setup-explain', 'fg', 'surface'], ['.setup-explain-ov', '.setup-explain', 'fg', 'surface'],
+    ['.setup-explain-dev > summary', '.setup-explain', 'muted', 'surface'], ['.setup-explain-body > p', '.setup-explain', 'fg', 'surface'],
+    ['.setup-hs-role', '.setup-hs-repo', 'muted', 'surface-2'], ['.setup-hs-name', '.setup-hs-repo', 'fg', 'surface-2'],
+    ['.setup-hs-line', '.setup-hs-repo', 'muted', 'surface-2'], ['.setup-hs-line span', '.setup-hs-repo', 'fg', 'surface-2'],
+    ['.setup-hs-links', '.setup-explain', 'muted', 'surface'], ['.setup-hs-arrow .shell-icon', '.setup-explain', 'accent', 'surface'],
+    ['.setup-explain-states .setup-state.warn', '.setup-explain-states .setup-state.warn', 'warn', 'attn-bg'], ['.setup-explain-states dd', '.setup-explain', 'muted', 'surface'],
+    ['.setup-sec-title', '.oats-view', 'fg', 'bg'], ['.setup-sec-lead', '.oats-view', 'muted', 'bg'],
+    ['.setup-box-head h4', '.setup-box', 'fg', 'surface'], ['.setup-box-head h3', '.setup-box', 'fg', 'surface'], ['.setup-box-lead', '.setup-box', 'muted', 'surface'],
+    ['.setup-name-text', '.setup-box', 'fg', 'surface'], ['.setup-version', '.setup-box', 'muted', 'surface'],
+    ['.setup-row .setup-state:not(.warn)', '.setup-box', 'muted', 'surface'], ['.setup-row .setup-state:not(.warn) .shell-icon', '.setup-box', 'ok', 'surface'],
+    ['.setup-row .setup-state.warn', '.setup-row .setup-state.warn', 'warn', 'attn-bg'],
+    ['.setup-sub', '.setup-box', 'muted', 'surface'], ['.setup-sub h5', '.setup-box', 'fg', 'surface'],
     ['.setup-cell:not(.muted)', '.setup-box', 'fg', 'surface'], ['.setup-cell.muted', '.setup-box', 'muted', 'surface'],
+    ['.setup-end:not(.newer):not(.warn)', '.setup-box', 'muted', 'surface'], ['.setup-end.newer', '.setup-box', 'fg', 'surface'], ['.setup-end.warn', '.setup-box', 'warn', 'surface'],
     ['.setup-link-act', '.setup-box', 'accent', 'surface'],
     ['.setup-team-label', '.setup-team-label', 'fg', 'tag-bg'], ['.setup-team-meta', '.setup-box', 'muted', 'surface'], ['.setup-team-note', '.setup-box', 'muted', 'surface'],
-    ['.setup-kv dt', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd', '.setup-local', 'fg', 'surface-2'],
-    ['.setup-lede-where button.setup-file', '.oats-view', 'accent', 'bg'], ['.setup-local-sub', '.setup-local', 'muted', 'surface-2'],
-    ['.setup-kv dd.muted', '.setup-local', 'muted', 'surface-2'], ['.setup-kv dd.warn', '.setup-local', 'warn', 'surface-2'],
+    ['.setup-zone .setup-sec-title', '.setup-zone', 'fg', 'surface-2'], ['.setup-zone .setup-sec-lead', '.setup-zone', 'muted', 'surface-2'],
+    ['.setup-fact dt', '.setup-zone', 'muted', 'surface-2'], ['.setup-fact dd.mono', '.setup-zone', 'fg', 'surface-2'],
+    ['.setup-fact dd.prim:not(.warn)', '.setup-zone', 'fg', 'surface-2'], ['.setup-fact dd.warn', '.setup-zone', 'warn', 'surface-2'],
+    ['.setup-here-clones > h4', '.setup-zone', 'fg', 'surface-2'], ['.setup-clone dt', '.setup-zone', 'muted', 'surface-2'],
+    ['.setup-clone dd:not(.warn):not(.muted)', '.setup-zone', 'fg', 'surface-2'], ['.setup-clone dd.warn', '.setup-zone', 'warn', 'surface-2'], ['.setup-clone dd.muted', '.setup-zone', 'muted', 'surface-2'],
     ['.setup-def dt', '.setup-box', 'muted', 'surface'], ['.setup-def dd.muted', '.setup-box', 'muted', 'surface'],
     ['.setup-def-cap:not(.off) .setup-def-name', '.setup-box', 'fg', 'surface'], ['.setup-def-from', '.setup-box', 'muted', 'surface'],
     ['.setup-team-adds', '.setup-box', 'muted', 'surface'], ['.setup-def-cap.off .setup-def-name', '.setup-box', 'muted', 'surface'],
@@ -583,10 +601,8 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
     ['.setup-hand-title', '.setup-panel', 'fg', 'surface'], ['.setup-hand-sub', '.setup-panel', 'muted', 'surface'], ['.setup-hand-mark.warn', '.setup-panel', 'warn', 'surface'],
     ['.setup-panel p:not(.muted):not(.warn)', '.setup-panel', 'fg', 'surface'], ['.setup-panel p.warn', '.setup-panel', 'warn', 'surface'], ['.setup-panel p.muted', '.setup-panel', 'muted', 'surface'],
     ['.setup-detail', '.setup-detail', 'fg', 'surface-2'],
-    // Spec A: the list view's legend under the lede, and each member's roles (Host names its file, Member on every row).
-    ['.setup-legend', '.oats-view', 'muted', 'bg'], ['.setup-legend .setup-badge.host', '.setup-legend .setup-badge.host', 'accent', 'sel'],
+    // The host's row carries Host and its file (a link on --sel when the file has a web address).
     ['.setup-row .setup-badge.host', '.setup-row .setup-badge.host', 'accent', 'sel'], ['.setup-row .setup-badge.host button.setup-file', '.setup-row .setup-badge.host', 'accent', 'sel'],
-    ['.setup-row .setup-badge.member', '.setup-row .setup-badge.member', 'muted', 'tag-bg'],
     ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
     ['.ws-sync-lead.error', '.ws-sync-dialog', 'danger', 'surface'], ['.ws-sync-lead:not(.error)', '.ws-sync-dialog', 'fg', 'surface'],
     ['.ws-sync-details', '.ws-sync-dialog', 'muted', 'surface'], ['.ws-sync-detail', '.ws-sync-detail', 'muted', 'surface-2'],
@@ -776,6 +792,43 @@ for (const [name] of palettes) test(`${name}: actual Stop/Retire confirmations m
   check('result', [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-review', '.lifecycle-review', 'fg', 'surface'], ['.lifecycle-close', '.lifecycle-close', 'fg', ['surface', 'sel']]]);
 });
 
+// #1131: the Forget confirmation is the lifecycle dialog's classes in new places (a muted basis line, a confirm
+// with no danger fill), and its context-panel button is the panel's primary action beside the remedy note.
+for (const [name] of palettes) test(`${name}: the Forget confirmation and the context panel's Forget… meet computed AA without text opacity`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><aside id="context-panel"></aside></body></html>`), doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), lifecycleCSS, contextPanelCSS]) {
+    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
+  }
+  const gate = Promise.withResolvers();
+  const dialog = createForgetDialog({ doc, request: () => gate.promise });
+  const panel = createContextPanel({ document: doc, root: doc.getElementById('context-panel'), lifecycle: { forget: () => {} } });
+  t.after(() => { gate.resolve(null); dialog.dispose(); panel.dispose(); dom.window.close(); });
+  const root = dom.window.getComputedStyle(doc.documentElement), settle = () => new Promise(resolve => setImmediate(resolve));
+  const tokenOf = (value, what) => { const m = /^var\(--([\w-]+)\)$/.exec(value); assert.ok(m, `${what} is a token: ${value}`); return m[1]; };
+  const ratio = (fg, bg) => contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim()));
+  const check = (phase, rows) => {
+    for (let [selector, surfaceSelector, fg, bg, min = TEXT_CONTRAST] of rows) {
+      const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector); assert.ok(el && surface, `${phase}: ${selector}`);
+      assert.equal(tokenOf(min === TEXT_CONTRAST ? dom.window.getComputedStyle(el).color : dom.window.getComputedStyle(el).borderTopColor, selector), fg, `${phase}: ${selector}`);
+      const painted = tokenOf(dom.window.getComputedStyle(surface).background || dom.window.getComputedStyle(surface).backgroundColor, surfaceSelector);
+      assert.ok([].concat(bg).includes(painted), `${phase}: ${surfaceSelector} on --${painted}`); bg = painted;
+      assert.ok(min === TEXT_CONTRAST ? pairs.some(([f, b]) => f === fg && b === bg) : GRAPHIC_PAIRS.some(([f, b]) => f === fg && b === bg), `${phase}: --${fg} on --${bg} is in the inventory`);
+      assert.ok(ratio(fg, bg) >= min, `${name} ${phase} ${selector}: ${ratio(fg, bg).toFixed(2)}`);
+      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1', `${phase}: ${selector} has no opacity`);
+    }
+  };
+  const gone = { instance: 'dev-a', agent: 'dev', home: '/srv/team/agents/dev/instances/dev-a', server: 'build', repoName: 'Build box',
+    running: null, addressable: false, savedRoute: true, missingRemotely: true, work: null };
+  dialog.open(gone);
+  check('forget review', [['.lifecycle-dialog h2', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog > p:not(.lifecycle-note)', '.lifecycle-dialog', 'fg', 'surface'],
+    ['.lifecycle-dialog > .lifecycle-note', '.lifecycle-dialog', 'muted', 'surface'], ['.lifecycle-close', '.lifecycle-close', 'fg', ['surface', 'sel']],
+    ['.lifecycle-confirm', '.lifecycle-confirm', 'primary-fg', 'primary-bg']]);
+  doc.querySelector('.lifecycle-confirm').click(); await settle();
+  check('forget running', [['.lifecycle-status', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog .spinner', '.lifecycle-dialog', 'accent', 'surface', GRAPHIC_CONTRAST]]);
+  panel.setContext({ workspace: 'A', instance: gone, key: gone.home });
+  check('context panel', [['[data-context-work-note]', '#context-panel', 'muted', 'surface'], ['[data-context-forget] button', '[data-context-forget] button', 'primary-fg', 'primary-bg']]);
+});
+
 for (const [name] of palettes) test(`${name}: actual readiness checks, provider problems, warnings and policy use computed AA surfaces`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`), doc = dom.window.document;
   for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -882,7 +935,7 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
   }
 });
 
-for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reasons, workspace metadata, explicit Open toast and the Needs input pill meet computed AA`, async t => {
+for (const [name] of palettes) test(`${name}: Show sidebar / Show instance panel, disabled menu reasons, workspace metadata, explicit Open toast and the Needs input pill meet computed AA`, async t => {
   const dom = new JSDOM(readFileSync(new URL('index.html', renderer), 'utf8'), { pretendToBeVisual: true }), doc = dom.window.document;
   doc.documentElement.dataset.theme = name;
   for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), identityCSS, contextPanelCSS, notificationCSS, rosterPrCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
@@ -909,8 +962,10 @@ for (const [name] of palettes) test(`${name}: frame10 rail, disabled menu reason
   t.after(() => { panel.dispose(); notifications.dispose(); dom.window.close(); });
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.context-panel-rail-tab[aria-pressed=true]', '.context-panel-rail-tab[aria-pressed=true]', 'accent', 'sel'],
-    ['.context-panel-rail-tab[aria-pressed=false]', '#context-panel', 'muted', 'surface'],
+    // Spec B: the reopen controls at rest sit on the main area's top bar: the tab strip (--bg) or a stage
+    // header (--surface, the sidebar's paint here). Hovered or focused they are --fg on --surface-2 / --sel.
+    ['#show-sidebar', '#tabstrip', 'muted', 'bg'], ['#show-panel', '#tabstrip', 'muted', 'bg'],
+    ['#show-panel', '#sidebar', 'muted', 'surface'],
     ['.context-panel-tab-count', '#context-panel', 'muted', 'surface'], // W6: the Developer tab's thread count
     ['.ctx-instance-menu small', '.ctx-instance-menu button:disabled', 'muted', 'surface-2'],
     ['.ws-option-meta', '.ws-option', 'muted', 'sel'],
@@ -1023,6 +1078,8 @@ for (const [name] of palettes) test(`${name}: F7 inspector cards, teams, compact
     ['#context-panel .context-panel-shared-tag', '#context-panel .context-panel-shared-tag', 'muted', 'tag-bg'],
     // #675: a remote row's "work and build not reported" line, muted on the panel.
     ['#context-panel .context-panel-work-note', '#context-panel', 'muted', 'surface'],
+    // #855: why a blocked row offers no lifecycle action, muted in the footer's place for its controls.
+    ['#context-panel .context-panel-footer-note', '#context-panel .context-panel-footer', 'muted', 'surface'],
   ];
   checks.push(['.git-status-details > summary', '#context-panel', 'muted', 'surface']);
   for (const [selector, painted, fg, bg] of checks) {
@@ -1647,6 +1704,21 @@ for (const [name] of palettes) test(`${name}: the soul page's Instructions secti
     ['.soul-part[data-source^=capability] .soul-part-flag', '.cap-contents-reader', 'warn', 'bg'],
     ['.soul-part[data-source^=work-mode] .cap-reader-line', '.cap-contents-reader', 'muted', 'bg'],
   ]);
+  // #1144: the Skills group (the shared skill item, "more files", a selected file) and a cut skill file's head; then its note in place.
+  section.update({ ...soul('# T\n'), skills: [{ name: 'oats-pr-review', path: 'skills/oats-pr-review', description: 'Reviews. More.', filesTruncated: true,
+    files: [{ path: 'skills/oats-pr-review/SKILL.md', bytes: 300000, text: '# R\n', binary: false, truncated: true }] }] });
+  doc.querySelector('[data-skill] > .cap-node').click();
+  doc.querySelector('[data-path="file:skills/oats-pr-review/SKILL.md"] > .cap-node').click();
+  check([
+    ['[data-skill] > .cap-node .cap-node-name', '.cap-contents', 'fg', 'surface'],
+    ['[data-skill] > .cap-node .cap-node-desc', '.cap-contents', 'muted', 'surface'],
+    ['.cap-more', '.cap-contents', 'muted', 'surface'],
+    ['[aria-selected=true] .cap-node-name.mono', '[aria-selected=true] > .cap-node', 'fg', 'sel'],
+    ['.cap-reader-path', '.cap-reader-head', 'fg', 'bg'],
+    ['.cap-reader-flag', '.cap-reader-head', 'warn', 'bg'],
+  ]);
+  section.update({ ...soul('# T\n'), skills: [] });
+  check([['[role=tree] .cap-contents-group-label', '.cap-contents', 'muted', 'surface'], ['[role=tree] .cap-contents-note', '.cap-contents', 'muted', 'surface']]);
   section.dispose(); dom.window.close();
 });
 
@@ -1686,10 +1758,13 @@ for (const [name] of palettes) test(`${name}: Add a machine and the Machines box
     ['.machine-step-code', '.machine-phase', 'muted', 'surface-2'], ['.machine-command code', '.machine-command code', 'fg', 'surface'],
     ['.machine-status', '.machine-dialog', 'muted', 'surface'], ['.machine-copy', '.machine-copy', 'fg', 'surface'],
     ['.machine-primary', '.machine-primary', 'primary-fg', 'primary-bg'], ['.machine-cancel', '.machine-cancel', 'fg', 'surface'],
-    ['[data-machine="up"] .machine-cell.name', '.setup-machines', 'fg', 'surface-2'], ['[data-machine="up"] .machine-cell.muted', '.setup-machines', 'muted', 'surface-2'],
-    ['[data-machine="up"] .machine-state', '[data-machine="up"] .machine-state', 'muted', 'tag-bg'],
+    // The Machines box: a solid --surface card (in Setup's This computer zone), Setup's members grammar.
+    ['.setup-machines .setup-box-head h4', '.setup-machines', 'fg', 'surface'], ['.setup-machines .setup-box-lead', '.setup-machines', 'muted', 'surface'],
+    ['[data-machine="up"] .machine-cell.name', '.setup-machines', 'fg', 'surface'], ['[data-machine="up"] .machine-cell.ssh', '.setup-machines', 'fg', 'surface'],
+    ['[data-machine="up"] .machine-cell.folder', '.setup-machines', 'muted', 'surface'], ['[data-machine="up"] .machine-cell.version', '.setup-machines', 'muted', 'surface'],
+    ['[data-machine="up"] .machine-state', '.setup-machines', 'muted', 'surface'], ['[data-machine="up"] .machine-state .shell-icon', '.setup-machines', 'ok', 'surface'],
     ['[data-machine="down"] .machine-state', '[data-machine="down"] .machine-state', 'warn', 'attn-bg'],
-    ['[data-machine="up"] .machine-check', '.setup-machines', 'accent', 'surface-2'], ['.machines-add', '.setup-machines', 'accent', 'surface-2'],
+    ['[data-machine="up"] .machine-check', '.setup-machines', 'accent', 'surface'], ['.machines-add', '.setup-machines', 'accent', 'surface'],
     ['.machine-confirm p', '.machine-confirm', 'fg', 'surface-2'], ['.machine-confirm-cancel', '.machine-confirm-cancel', 'fg', 'surface'],
     ['.machine-confirm-remove', '.machine-confirm-remove', 'primary-fg', 'danger'],
   ]) {
@@ -1844,4 +1919,64 @@ for (const [name] of palettes) test(`${name}: a capability trigger source's quot
   }
   // The quote's side rule is not what tells a quote apart (the lead-in and the typeface do): it carries no text.
   assert.match(/\.source-quote-text \{([^}]*)\}/.exec(capabilityQuoteCSS)[1], /font:12px\/1\.5 var\(--mono,monospace\)/);
+});
+
+// The shortcuts editor (Spec A PR 2): search, sticky group headings, labels, keycaps, quiet markers,
+// warnings, the unbound chord and the empty line, on the surfaces they are painted on. A row's
+// hover paints --surface-2 under its text, so row text is held to both. Every pair is also in the
+// inventory, which is what holds the derived "This computer" palettes to it.
+for (const [name] of palettes) test(`${name}: the shortcuts editor's search, headings, rows, keycaps and markers meet computed AA`, async t => {
+  const { registerAction, setBinding, resetAllBindings } = await import("../renderer/keybindings.mjs");
+  const { createKeybindingsEditor } = await import("../renderer/keybindings-editor.mjs");
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
+    const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
+  }
+  resetAllBindings();
+  const offs = [
+    registerAction({ id: "sidebar.toggle", label: "Sidebar", context: "global", run: () => {} }),
+    registerAction({ id: "app.focusMode", label: "Focus mode", context: "global", run: () => {} }),
+    registerAction({ id: "x.bare", label: "Bare", context: "global", defaultChord: "B", run: () => {} }),
+  ];
+  const editor = createKeybindingsEditor({ doc, isMac: false });
+  t.after(() => { editor.close(); offs.forEach(off => off()); resetAllBindings(); dom.window.close(); });
+  setBinding("sidebar.toggle", "Ctrl+Alt+B"); // the changed marker
+  editor.open();
+  const nomatch = () => { const s = doc.querySelector(".kb-search"); s.value = "zzz"; s.dispatchEvent(new dom.window.Event("input")); };
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  const value = token => root.getPropertyValue(`--${token}`).trim();
+  const row = ["surface", "surface-2"];
+  const checks = [
+    [".kb-title", "fg", ".kb-editor", ["surface"]],
+    [".kb-search", "fg", ".kb-search-field", ["bg"]],
+    [".kb-hint", "muted", ".kb-editor", ["surface"]],
+    [".kb-context", "muted", ".kb-context", ["surface"]],
+    [".kb-label", "fg", ".kb-editor", row],
+    [".kb-mark-terminal", "muted", ".kb-editor", row],
+    [".kb-mark-changed", "muted", ".kb-editor", row],
+    [".kb-keys kbd", "fg", ".kb-keys kbd", ["bg"]],
+    [".kb-chord.kb-unbound", "faint", ".kb-editor", row],
+    [".kb-conflict", "warn", ".kb-editor", row],
+  ];
+  for (const [selector, fg, painted, surfaces] of checks) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${surfaces[0]})`, painted);
+    for (const bg of surfaces) {
+      assert.ok(pairs.some(([f, b]) => f === fg && b === bg), `${fg} on ${bg} is in the inventory`);
+      assert.ok(contrast(opaqueChannels(value(fg)), opaqueChannels(value(bg))) >= 4.5, `${selector}: ${fg} on ${bg}`);
+    }
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, "1", selector);
+  }
+  // The row hover and the sticky heading are painted with tokens, never by compositing.
+  const shell = readFileSync(new URL("shell.css", renderer), "utf8");
+  assert.match(shell, /\.kb-row:hover \{ background: var\(--surface-2\); \}/);
+  assert.match(shell, /\.kb-search::placeholder \{ color: var\(--faint\); \}/);
+  assert.ok(contrast(opaqueChannels(value("faint")), opaqueChannels(value("bg"))) >= 4.5, "the placeholder on the search");
+  nomatch();
+  const none = doc.querySelector(".kb-nomatch");
+  assert.equal(none.hidden, false);
+  assert.equal(dom.window.getComputedStyle(none).color, "var(--muted)");
+  assert.ok(contrast(opaqueChannels(value("muted")), opaqueChannels(value("surface"))) >= 4.5);
 });

@@ -75,9 +75,20 @@ symlink enters as `symlink:<target>`; empty directories and a top-level `.git/` 
   those whose own deadlines have not expired. A later call can retry.
 - Failures: `E_REMOTE_UNREADABLE { url, key, reason }`, `reason` ∈ `auth`, `not-found`, `network`,
   `timeout`, `unknown`. Nothing half-succeeds.
-- Reference-bearing diagnostics use `redactUrl`, including parser refusals, package and
-  workspace validation errors, and quoted Git text; the [display rule](../workspaces.md#repository-references-in-diagnostics)
-  removes user information without changing the reference used for transport.
+- Reference-bearing diagnostics choose an explicit entry point:
+  `displayRepoRef(value, { pinned = false, rejectedValue = false } = {})` for
+  selected reference values, `displayDiagnosticText(value, source = null,
+  { fragment = false, refusal = false, substitute = true, rejectedValue = false } = {})`
+  for kernel-authored prose, and `scrubGitLine(line, url = null)` for Git's
+  lines. One private renderer owns the [display rule](../workspaces.md#repository-references-in-diagnostics).
+  The entries extract only their named options and fix their own contexts;
+  reference or kernel-prose options cannot select Git-line handling.
+  `displayRepoRef` accepts `pinned: true` for a whole `<ref>@<commit>` source
+  or `pinned: { ref, commit }` for its original components; both strictly
+  validate reference and commit without a plain-value fallback. Display
+  changes no admission, transport, operational value or error shape. These
+  are internal/direct-module entry points, not package export-map entries;
+  there is no implicit `redactUrl` export or shim.
 
 ---
 

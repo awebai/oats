@@ -35,7 +35,11 @@ function rollbackError(message, unconfirmed) {
     return true;
   };
 }
-function temp() { return mkdtempSync(join(tmpdir(), "oats-cap-test-")); }
+/** Every directory temp() made. Each is removed when the file has ended: also one whose test has no
+ *  removal of its own, or failed before it. */
+const temps = [];
+function temp() { const dir = mkdtempSync(join(tmpdir(), "oats-cap-test-")); temps.push(dir); return dir; }
+test.after(() => { for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 
 /** A fake `aw` at <bin>/aw that the shipped oats.aweb hook can run. The hook reads `aw version` under a
@@ -3202,10 +3206,15 @@ test("with the knowledge layer active, ONE block owns the protocol (reviewer-foc
     "assigned soul-maintenance work is distinguished from promotion of learnings");
 });
 
-test("checkpoint briefing and package skills give an independent harvester the proposal, not completion custody", t => {
+test("capability instructions and package skills give an independent harvester the proposal, not completion custody", t => {
   const f = okfFixture(t);
   write(join(f.home, "notes/lesson.md"), "A durable source observation.\n");
-  assert.match(readFileSync(join(f.home, "TASK.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
+  assert.doesNotMatch(readFileSync(join(f.home, "TASK.md"), "utf8"), /harvest|propos|okf-propose/i);
+  const instructions = readFileSync(join(f.home, "AGENTS.md"), "utf8");
+  assert.match(instructions, /IMPORTANT/);
+  assert.match(instructions, /\*\*okf-propose\*\* skill is \*\*compulsory\*\*/);
+  assert.deepEqual(f.cli(["okf", "status", "--json"], f.as(f.source)), { harvest: "on", reason: "default" });
+  assert.match(readFileSync(join(f.home, ".agents/skills/okf-propose/SKILL.md"), "utf8"), /oats spawn oats\.okf\/knowledge-harvester --task-file <proposal> --relation unrelated/);
   const file = f.proposal(), run = f.propose({ file });
   assert.equal(lstatSync(join(run.home, "work")).isSymbolicLink(), false);
   assert.ok(readFileSync(join(run.home, "TASK.md"), "utf8").includes(readFileSync(file, "utf8").trim()));
@@ -3739,11 +3748,13 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   writeFileSync(join(out, "block-cleanup"), "the remote refuses");
   const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const home = join(root, "dev", "instances", "dev-self");
+  let completion; // the detached completion child: ended below whatever the test's outcome, before the fixture is
   try {
     await fx.spawn("dev", { instance: "dev-self", harness: "pi" });
     // Long delay: the detached child must not race the assertions below; the
     // completion under test is driven synchronously with delaySec 0.
     const r = retireInstance(root, "dev-self", { tmuxSession: "oats-test-nosuch", self: true, selfKillDelaySec: 600 });
+    completion = r.completionPid;
     assert.equal(r.deferred, true);
     assert.equal(r.selfKillScheduled, undefined, "no kill is promised: the completion's quiesce is what ends the window");
     assert.equal(r.resultPath, deferredRetireResultPath(home));
@@ -3790,7 +3801,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     assert.equal(existsSync(r.resultPath), false, "failed outcome cleared");
     assert.equal(existsSync(r.logPath), false, "completion log cleared");
     assert.equal(listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev").retireFailures, undefined, "status is clean");
-  } finally { process.env.PATH = oldPath; }
+  } finally { process.env.PATH = oldPath; if (completion !== undefined) await killAndReap(completion); }
 });
 
 test("self-retire completes without a later operator command: the detached child retires the instance and records success", async (t) => {
@@ -3812,9 +3823,11 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   const oldPath = process.env.PATH; process.env.PATH = fakeHarnesses(base);
   const oldInst = process.env.OATS_INSTANCE; process.env.OATS_INSTANCE = "dev-self";
   const home = join(root, "dev", "instances", "dev-self");
+  let completion; // the detached completion child: ended below whatever the test's outcome, before the fixture is
   try {
     await fx.spawn("dev", { instance: "dev-self", harness: "pi" });
     const r = retireInstance(root, "dev-self", { tmuxSession: "oats-test-nosuch", self: true, selfKillDelaySec: 0 });
+    completion = r.completionPid;
     assert.equal(r.deferred, true);
     assert.equal(existsSync(r.pendingMarker), true, "the promise is on disk once a completion process exists");
     // Success leaves nothing beside the home; the last thing the child does
@@ -3830,7 +3843,10 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     assert.deepEqual(leftovers, [], "success leaves no file beside the home");
     assert.equal(existsSync(join(root, "dev", "instances", ".oats-retirement", "recovery")), false, "and preserved nothing, since the caller changed no home bytes");
     assert.equal(listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev").retireFailures, undefined, "a success is not a failure to surface");
-  } finally { process.env.PATH = oldPath; if (oldInst === undefined) delete process.env.OATS_INSTANCE; else process.env.OATS_INSTANCE = oldInst; }
+  } finally {
+    process.env.PATH = oldPath; if (oldInst === undefined) delete process.env.OATS_INSTANCE; else process.env.OATS_INSTANCE = oldInst;
+    if (completion !== undefined) await killAndReap(completion);
+  }
 });
 
 for (const [harness, selectorKind] of [["pi", "absolute"], ["pi", "tilde"], ["pi", "home"], ["pi", "relative"], ["claude", "absolute"]]) test(`${harness} missing-package remedy preserves ${selectorKind} resource directory, selected executable and shell quoting without installing during preflight`, async (t) => {

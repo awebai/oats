@@ -24,7 +24,7 @@ export const CLI = { ok: true, bin: '/oats', features: ['workspace-identity'], r
 /** The server's variables that `held` reads (and the handler's other free names), real by default. */
 export function viewDeps(state = {}) {
   return { ctxs: [], snapshot: { byWs: new Map() }, remoteGroups: [], remote, cliState: CLI, observing: new Set(), remoteRead: null,
-    remoteIdentities: createRemoteIdentityStore({ file: null }), rosterAnswered: true, rosterFailure: null, homedir: () => '/Users/juan', basename,
+    remoteIdentities: createRemoteIdentityStore({ file: null }), rosterAnswered: true, rosterFailure: null, keptReadAt: new Map(), homedir: () => '/Users/juan', basename,
     DESKTOP_TERMS, ...state };
 }
 /** The twelve functions bound as the server calls them: `held()` first, the Desktop's terms where a function takes terms. */

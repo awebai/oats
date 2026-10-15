@@ -42,6 +42,17 @@ instance has the same parent name): Stop uses `plan.ambiguous`, Retire uses
 
 ## Confirmation references, resource bounds and retry
 
+The boundary is the shared home's (`packages/client/instance-lifecycle.mjs`,
+`createLifecycleBoundary`): a client makes its own with its own terms, and the
+Desktop's backend makes one, in `server/oats-web.mjs`, with `DESKTOP_TERMS`.
+Two boundaries share nothing. Every bound below, and the one apply slot, holds
+for one client's own requests; between clients, or a client and `oats` run by
+hand, the kernel's answers hold (from 0.52.0 a stop and a retire of one home
+refuse each other before any effect; a start, `worktree add` and status do not
+see a retire in flight, #866). A backend that is replaced (workspace added:
+`server-host.mjs` `replace`) starts with an empty boundary, so an open
+confirmation's apply answers `E_PLAN_EXPIRED`.
+
 Four distinct plan flights may run concurrently; equal reads coalesce. Each
 confirmation gets a **different opaque planRef after that shared read**. A plan
 reference binds exact workspace/scope/target, CLI contract, operation, options
@@ -74,8 +85,32 @@ oats retire NAME --plan-revision REV --idempotency-key KEY \
   --home HOME --dir SCOPE [--discard-worktree] --json
 ```
 
-Applies have a600-second/4 MiB bound; proxy610 seconds. At most32 settled or
-uncertain results are kept for30 minutes, without expiring an in-flight action.
+A plan read is a read: it runs in the backend's process group and its deadline
+(30 s, 45 s routed) ends it. An apply is a change, and its deadline ends only
+the wait (#889): the CLI runs in a session of its own (`detached`; the shared
+home's `execFileInSession`, since `execFile` drops the option), with no
+timeout and a 4 MiB output bound, so neither a deadline nor a signal to the
+client's group (a Ctrl-C, a hang-up) ends it. The boundary waits
+`APPLY_WAIT_MS` (600 s; the proxy, 610 s) and then answers `unknown` with
+`running: { target, operation, since }` (`since` from the wall clock), keeping
+the apply in flight: its reference, its key and its place as the one apply.
+Check again on that reference is answered at once, never a second wait; the
+late answer, whenever it comes, is kept like any other and repeated. Another
+apply meanwhile is refused `E_LIFECYCLE_BUSY` with the same `running`, and no
+`details`, so the kernel's busy holder is never read of it; the dialog words
+it with `applyRunningSentence`. A CLI that never answers holds the Desktop's
+applies until the backend restarts. A start runs in a session of its own too
+(`cliStart`), with no deadline: `cliStart` waits `START_WAIT_MS` (60 s) for its
+answer and then answers the code `E_START_UNCONFIRMED`, with no words. The
+start route words it in the Desktop's own sentence
+(`renderer/start-unconfirmed.mjs`: "OATS didn't confirm the start. It may still
+be running: check the roster before you start it again."), shown under no
+speaker. The start goes on, its output is still read, and an answer after the
+wait is not kept (the roster shows the result, and a failed start reads the row
+again). The quit path sends these children no
+signal (`backend-quit-children.test.mjs`); `test/client-own-session.test.mjs`
+holds the own session with real processes. At most 32 settled or
+uncertain results are kept for 30 minutes, without expiring an in-flight action.
 This is a bounded process-local transaction record, not a persistent journal.
 A repeated cached result is marked `repeated`; it does not rewrite the kernel's
 `replayed` fact. Replay of a recorded Retire result never resolves a newly
@@ -310,7 +345,11 @@ from whether the plan observed `work/` (`facts.work.observed`):
     busy (an apply slot or the plan cap) carries no kernel message and keeps
     the fixed sentence.
 - `E_PLAN_STALE` displays the validated producer's fresh plan and a new reference;
-  the operator must explicitly confirm again. It never auto-applies.
+  the operator must explicitly confirm again. It never auto-applies. It means
+  "nothing happened" only in that shape: an `E_PLAN_STALE` without a plan that
+  reads for this target (a kernel before 0.52.0 could answer one after a
+  guarded retire's hooks had run, #895) is an unknown outcome. It is read by
+  its own branch, never by `BEFORE_EFFECT_CODES`, which does not list it.
 - Preservation/cleanup failure may follow earlier effects. Render retained/partial
   or unknown state honestly; never automatically add discard/force flags.
 - An inspection refusal of Retire (`E_WORK_INSPECTION_FAILED`) is reported as
@@ -372,7 +411,7 @@ from whether the plan observed `work/` (`facts.work.observed`):
   boundary, admission and main for the codes they raise and holds each to the
   table (main's frame code to its sentence in `renderer/lifecycle-frame.mjs`).
   It changes no status: `refused` and `unknown` are decided by
-  `BEFORE_EFFECT_CODES` (exported by `server/instance-lifecycle.mjs`, so that
+  `BEFORE_EFFECT_CODES` (exported by `packages/client/instance-lifecycle.mjs`, so that
   the kernel's tests can hold it inside the kernel's own list of codes
   answered only before any effect). "Before any effect" and the headlines'
   "Nothing was done." are about the instance: its sessions and its home. A
@@ -440,6 +479,16 @@ the read that drew it, so a kept link stays usable (and keeps focus) until then.
 One phase decides which controls exist (`lifecycle-dialog.mjs`); a control
 with no use in a phase is not rendered, and one that cannot act yet carries
 its reason in the visible status line (`aria-describedby`).
+
+What the dialog says, and which acts it may offer, is the shared home's
+(`packages/client/lifecycle-confirmation.mjs`): `planView` and `outcomeView`
+give every sentence as data, and `createLifecycleConfirmation` holds the
+client's half of the transaction (the reference, the latest-intent token, the
+closed set of states and the acts each offers). The dialog draws it, and words
+only its own furniture: its button labels, "Details", the age line, the PR row,
+"You can close this window" and the two next steps a view names by a code
+(`check-roster`, `retire-with-force`). The phases below are its drawing states,
+derived from the confirmation's (`reading`, `review`, `applying`, `settled`).
 
 | Phase | Title | Body | Footer |
 |---|---|---|---|

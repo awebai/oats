@@ -245,16 +245,17 @@ test('W1 Setup list: members with handshake and contribution, packages with orig
   assert.equal(u.doc.querySelector('#workspace-tab-sources .workspace-attn').hidden, true);
   const ws = statusOf('workspace-status').workspace;
   assert.equal(u.doc.querySelector('.setup-lede h2').textContent, ws.name);
-  assert.match(u.doc.querySelector('.setup-lede-where').textContent, new RegExp(`'s workspace file @ ${ws.commit.slice(0, 7)}$`), 'the declaration and its commit');
+  assert.match(u.doc.querySelector('.setup-lede-where').textContent, new RegExp(`'s workspace file at ${ws.commit.slice(0, 7)}\\.$`), 'the declaration and its commit');
   assert.doesNotMatch(u.doc.querySelector('.setup').textContent, /oats-workspace\.yaml|oats-membership\.yaml|oats-lock\.json/, 'a kernel without desktop facts reports no file names, so none is shown (desktop-facts-setup.test.mjs covers the reported ones)');
-  assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'This computer'], 'Teams has its own tab (human, 2026-09-28)');
+  assert.deepEqual([...u.doc.querySelectorAll('[data-zone=shared] .setup-box')].map(el => el.dataset.box), ['Members', 'Packages'], 'Teams has its own tab (human, 2026-09-28)');
+  assert.equal(u.doc.querySelector('[data-zone=here] .setup-sec-title').textContent, 'This computer');
   const repos = [...u.doc.querySelectorAll('[data-box=Members] [data-member]')];
   assert.equal(repos.length, 5);
   assert.ok(repos.every(row => row.querySelector('.setup-state').textContent === 'confirmed' && row.querySelector('.setup-state svg')));
   assert.equal(u.doc.querySelectorAll('[data-box=Packages] [data-package]').length, 3);
-  const local = Object.fromEntries([...u.doc.querySelectorAll('.setup-kv')].map(r => [r.querySelector('dt').textContent, r.querySelector('dd').textContent]));
+  const local = Object.fromEntries([...u.doc.querySelectorAll('[data-zone=here] .setup-fact')].map(r => [r.querySelector('dt').textContent, r.querySelector('dd').textContent]));
   assert.equal(local.Folder, dir); assert.equal(local.Settings, 'oats-local.yaml'); assert.equal(local.Lock, 'current');
-  assert.doesNotMatch(u.doc.querySelector('.setup-cols').textContent, /\b[0-9a-f]{7,40}\b/, 'no commits in the lists');
+  for (const zone of u.doc.querySelectorAll('[data-zone]')) assert.doesNotMatch(zone.textContent, /\b[0-9a-f]{7,40}\b/, 'no commits in the lists');
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
   assert.deepEqual(u.syncCalls(), [{ action: 'read' }], 'Setup renders the observation only (the one read is the tab bar\'s catalog count)');
   // An unconfirmed member (kernel row from a later sync) keeps its status; "Why?" opens its membership in the graph.
@@ -263,7 +264,7 @@ test('W1 Setup list: members with handshake and contribution, packages with orig
   const host = u.doc.createElement('div'); let picked = null;
   renderSetup(host, { status, onSelect: key => { picked = key; } });
   const marketing = host.querySelector('[data-box=Members] [data-member$="marketing.git"]');
-  assert.equal(marketing.querySelector('.setup-state').textContent, '○no backlink');
+  assert.equal(marketing.querySelector('.setup-state').textContent, 'no backlink');
   assert.ok(marketing.querySelector('.setup-state').classList.contains('warn'));
   marketing.querySelector('button.setup-link-act').click();
   assert.match(picked, /marketing\.git$/);
@@ -490,7 +491,7 @@ test('Teams tab (team-model-2): first, before Souls; the Teams page from oats te
   assert.equal(u.doc.querySelector('#workspace-tab-teams .workspace-sr-only').textContent, ' — 3 items need attention', 'the three shared teams with no provider id yet');
   await u.tab('sources');
   assert.equal(u.doc.querySelector('.computer-teams'), null);
-  assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-local')].map(el => el.dataset.box), ['Members', 'Packages', 'This computer']);
+  assert.deepEqual([...u.doc.querySelectorAll('.setup-box, .setup-zone')].map(el => el.dataset.box || el.dataset.zone), ['Members', 'Packages', 'here']);
   await u.tab('teams');
   assert.equal(u.doc.querySelector('.workspace-discovery .computer-teams'), card, 'the same card: a half-typed form survives');
   assert.equal(u.calls.filter(c => c.path.startsWith('/api/workspace-teams')).length, 1, 'not re-read by switching tabs');

@@ -10,8 +10,9 @@
 // Selection is an identity (the shared `instanceId`), never an index, so it survives every read;
 // the rows it moves among are the model's, in drawn order.
 import { ACTIONS, bindings } from "./actions.mjs";
-import { collapseKey, displayLine, instanceId, pendingEntry } from "./client.mjs";
-import { disclosure, roster, switcher } from "./model.mjs";
+import { collapseKey, displayLine, instanceActs, instanceId, pendingEntry } from "./client.mjs";
+import { DETACH_KEY } from "./config.mjs";
+import { BUTTON_ORDER, actDecision, disclosure, openDecision, preflightLine, returnedLine, roster, switcher } from "./model.mjs";
 import { windowOf } from "./views/scroll.mjs";
 
 /** The longest filter, in UTF-16 units. */
@@ -33,8 +34,21 @@ const NO_FILTER = Object.freeze({ editing: false, query: "" });
  *  on purpose (see `scrolledList`); the switcher has its own.
  *  `selected`, `top`, `detailTop` are the open view's; `places` keeps them for
  *  the views left behind, and `collapsed` holds every view's keys (each carries its `open`).
- *  `back`: the view under the help. `offered`: the deployments of `~/Agents` not served. */
-export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false }) {
+ *  `back`: the view under the help. `offered`: the deployments of `~/Agents` not served.
+ *  `opening`: the agent whose terminal is being opened, or null: `{ id, phase, name, machine,
+ *  routed }`, `phase` "preflight" while another machine is asked whether its session is there and
+ *  "lent" while the kernel's viewer has the terminal; `name`, `machine` and `routed` are the row's
+ *  as it was when Enter was pressed, for the line after. `outcome`: that line (the model's
+ *  `{ said, under }`), shown above the panes until the next key bound to an action, or null.
+ *  `detachKey`: tui.json's `open.detachKey`, the key that leaves an agent's terminal.
+ *  `act`: the confirmation open in the act view (see `actOpened`), or null; `acted` counts the
+ *  confirmations opened in this run, so an answer for one that was closed is told apart.
+ *  `starting`: id -> `{ verb, since }` of this run's starts and restarts whose child is still
+ *  alive, whether or not the TUI still waits for its answer (the loop says when one is spawned and
+ *  when it closes): no act opens on such a row.
+ *  The roster is made from none of `opening`, `outcome`, `act`, `acted` and `starting`
+ *  (lib/model.mjs MADE_FROM). */
+export function initialState({ deployment = null, cli, home, entry = null, actions = ACTIONS, ascii = false, detachKey = DETACH_KEY }) {
   return Object.freeze({
     view: deployment === null ? "switcher" : "instances", back: deployment === null ? "switcher" : "instances",
     ctxs: Object.freeze(deployment === null ? [] : [deployment]), open: deployment,
@@ -44,7 +58,7 @@ export function initialState({ deployment = null, cli, home, entry = null, actio
     selected: null, collapsed: new Set(), filter: NO_FILTER, focus: "list", top: 0, loose: false, detailTop: 0, places: new Map(), unread: new Map(),
     switcher: Object.freeze({ editing: false, query: "", selected: null, top: 0, loose: false, line: null, refused: null }),
     offered: Object.freeze({ offered: Object.freeze([]), limited: false }),
-    helpTop: 0, actions, ascii,
+    helpTop: 0, actions, ascii, detachKey, opening: null, outcome: null, act: null, acted: 0, starting: new Map(),
   });
 }
 
@@ -116,7 +130,9 @@ function settled(state, taken) {
   const now = roster(taken);
   if (taken.open !== null && now.gone) {
     const places = new Map(taken.places); places.delete(taken.open);
-    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher" }), "gone"), effect: { offer: true } };
+    // A confirmation open over that view is closed with it: what it sent goes on.
+    const dismiss = taken.act !== null ? { dismiss: taken.act.n } : {};
+    return { state: toSwitcher(next(taken, { open: null, places, selected: null, top: 0, loose: false, detailTop: 0, focus: "list", filter: NO_FILTER, back: "switcher", act: null }), "gone"), effect: { offer: true, ...dismiss } };
   }
   const before = roster(state);
   const unknown = new Set([...taken.unread.values()].flatMap((ids) => [...ids]));
@@ -262,7 +278,7 @@ function switched(state, action, page) {
       const top = windowOf({ top: key === s.keys[0] ? 0 : key === s.keys.at(-1) ? count : drawn, count, height, keep: at }).top;
       return { state: put({ selected: key, top, loose: false }), effect: null };
     }
-    case "open-workspace": {
+    case "open": {
       const item = s.items.find((each) => each.key !== undefined && each.key === s.selected);
       if (!item) return stay;
       if (item.path !== undefined) return { state: put({ refused: null }), effect: { admit: item.path } };
@@ -281,11 +297,152 @@ function switched(state, action, page) {
  *  (one outcome of the roster read), `{ collecting }`, `{ offered: { offered, limited } }` (the
  *  deployments of `~/Agents` not served), `{ admitted: <deployment>, at }` and `{ refused: <path> }`
  *  (what a picked folder turned out to be).
+ *  Opening an agent gives three more: `{ prepared: { id, error? } }` (the preflight of another
+ *  machine's agent ended: `error` is what the shared prepareRemoteTerm threw), `{ given: true }`
+ *  (the loop gave the preflight up itself: a suspend) and `{ returned: { id, status, stderr } }`
+ *  (the viewer closed: its exit status as Node reports it, and the stderr it kept).
  *  An effect is something only the loop can do: "quit", "suspend", "redraw", or an object with
- *  any of `refresh: { live }` (read now), `offer: true` (list `~/Agents` again) and
- *  `admit: <path>` (ask whether a picked folder is a deployment); or null. */
+ *  any of `refresh: { live }` (read now), `offer: true` (list `~/Agents` again),
+ *  `admit: <path>` (ask whether a picked folder is a deployment), `open: <decision>` (open the
+ *  agent's terminal: the model's openDecision, with its target), `lend: <id>` (the preflight is
+ *  over: start the viewer it prepared) and `abandon: true` (give the preflight up); or null.
+ *  The line after an open stands until the next key that is bound to an action: a key bound to
+ *  nothing (a stray detach key is no key at all) leaves it. */
 export function reduce(state, event, keymap = bindings(state.actions)) {
+  if (state.outcome !== null && typeof event.key === "string" && keymap.has(event.key)) state = next(state, { outcome: null });
+  return reduced(state, event, keymap);
+}
+
+/** The preflight of another machine's agent ended. Given up meanwhile (Esc, a suspend, a second
+ *  open): dropped. Failed: the line that says so, unless it is the person's own giving up. Else
+ *  the viewer is started, unless the row it is for has gone from the roster since. */
+function prepared(state, { id, error }) {
+  const opening = state.opening;
+  if (opening === null || opening.id !== id || opening.phase !== "preflight") return { state, effect: null };
+  if (error !== undefined) return { state: next(state, { opening: null, outcome: preflightLine(opening, error) }), effect: null };
+  if (!roster(state).instances.some((row) => instanceId(row) === id)) return { state: next(state, { opening: null }), effect: null };
+  return { state: next(state, { opening: Object.freeze({ ...opening, phase: "lent" }) }), effect: { lend: id } };
+}
+
+/** The viewer closed: the line that says what happened, and the instances read again at once
+ *  (an exit status says nothing of the agent but that it was left by the key). */
+function returned(state, { id, status, stderr }) {
+  const opening = state.opening;
+  if (opening === null || opening.id !== id) return { state, effect: null };
+  return { state: next(state, { opening: null, outcome: returnedLine(opening, status, stderr) }), effect: { refresh: { live: true } } };
+}
+
+/** Enter in the list of instances: the selected agent's terminal, or the line that says why not.
+ *  Nothing while an open is under way. */
+function openAgent(state, r, at) {
+  if (state.opening !== null || at < 0) return { state, effect: null };
+  const row = r.items[at].row, decision = openDecision(state, row, instanceActs(row));
+  if (!decision.open) return { state: next(state, { outcome: decision.said }), effect: null };
+  const opening = Object.freeze({ id: decision.id, phase: decision.routed ? "preflight" : "lent", name: decision.name, machine: decision.machine, routed: decision.routed });
+  return { state: next(state, { opening, outcome: null }), effect: { open: decision } };
+}
+
+/** The keys of the act view that are not the action table's: the focus moves with these and with
+ *  no printable key, so nothing typed or pasted as text reaches a button. */
+const FOCUS_KEYS = Object.freeze({ left: -1, "shift+tab": -1, right: 1, tab: 1 });
+
+/** An act key in the list of instances: the confirmation it opens, or the line that says why not
+ *  (lib/model.mjs actDecision, over the row's instanceActs answer read now). A stop or a retire
+ *  asks the loop for the shared confirmation (`act`), which reads the plan; a start or a restart
+ *  opens the TUI's own confirmation, and nothing is asked of the loop until it is pressed. The
+ *  focus starts on the first button, Cancel. Nothing while an open is under way. */
+function actOn(state, r, at, verb) {
+  if (state.opening !== null || at < 0) return { state, effect: null };
+  const row = r.items[at].row, decision = actDecision(state, row, instanceActs(row), verb);
+  if (!decision.open) return { state: next(state, { outcome: decision.said }), effect: null };
+  const n = state.acted + 1;
+  const base = { n, kind: decision.kind, verb, id: decision.id, name: decision.name, machine: decision.machine, home: decision.home, focus: "close", movedIn: null, top: 0 };
+  const act = decision.kind === "start"
+    ? Object.freeze({ ...base, phase: "review", offers: Object.freeze(["close", "apply"]), answer: null })
+    : Object.freeze({ ...base, phase: "reading", offers: Object.freeze(["close"]), outcome: null, notice: null, running: null, view: null, plan: null });
+  return { state: next(state, { view: "act", back: "instances", act, acted: n, outcome: null }), effect: decision.kind === "start" ? null : { act: { n, verb, id: decision.id, row, label: decision.label } } };
+}
+
+/** The confirmation closed by the person (Esc, or its Cancel or Close pressed): the view goes, and
+ *  the loop is told; a plan read, an apply or a start it sent goes on. */
+const actClosed = (state) => ({ state: next(state, { view: "instances", back: "instances", act: null }), effect: { dismiss: state.act.n } });
+
+/** A key in the act view. Left/Right and Tab/Shift+Tab move the focus among the buttons, Enter
+ *  presses the one that has it, Esc closes, Space sets the plan's choice, the movement keys scroll
+ *  the content; quit, suspend and redraw keep their actions; every other key does nothing.
+ *  A press of the act's own button in the same read of input as the move that put the focus on
+ *  it is ignored (`read`): a paste, with bracketed paste unsupported, cannot both move and press. */
+function inAct(state, event, action) {
+  const a = state.act, stay = { state, effect: null };
+  if (action === "quit" || action === "suspend" || action === "redraw") return { state, effect: action };
+  if (event.key === "escape" || action === "close") return actClosed(state);
+  const put = (changes) => next(state, { act: Object.freeze({ ...a, ...changes }) });
+  if (Object.hasOwn(FOCUS_KEYS, event.key)) {
+    const at = Math.max(0, a.offers.indexOf(a.focus)), to = Math.min(Math.max(0, at + FOCUS_KEYS[event.key]), a.offers.length - 1);
+    const focus = a.offers[to];
+    return focus === a.focus ? stay : { state: put({ focus, movedIn: focus === "apply" ? event.read ?? null : null }), effect: null };
+  }
+  if (event.key === "enter") {
+    if (a.focus === "apply" && event.read !== undefined && a.movedIn === event.read) return stay;
+    if (a.focus === "close") return actClosed(state);
+    if (a.kind === "start") {
+      if (a.focus !== "apply" || a.phase !== "review") return stay;
+      const row = roster(state).instances.find((each) => instanceId(each) === a.id) ?? null;
+      return { state: put({ phase: "starting", offers: Object.freeze(["close"]), focus: "close", movedIn: null }), effect: { start: { n: a.n, verb: a.verb, id: a.id, row } } };
+    }
+    const call = { apply: "apply", refresh: "refresh", "check-again": "checkAgain" }[a.focus];
+    return call ? { state, effect: { call: { n: a.n, method: call } } } : stay;
+  }
+  if (event.key === "space" || event.text === " ") {
+    const choice = a.kind === "lifecycle" && (a.phase === "review" || a.phase === "reading") ? a.plan?.choices.find((each) => each.offered) : null;
+    return choice ? { state, effect: { call: { n: a.n, method: "setChoice", args: [choice.id, !choice.value] } } } : stay;
+  }
+  if (MOVES.includes(action)) {
+    const count = event.extent ?? 0, height = event.room ?? 1;
+    const from = windowOf({ top: a.top, count, height }).top;
+    return { state: put({ top: windowOf({ top: moved(action, from, count, height), count, height }).top }), effect: null };
+  }
+  return stay;
+}
+
+/** What the loop says of the confirmation and of a start (`{ acted }`):
+ *    { n, confirmation: { phase, outcome, offers, notice, running, view } }  the shared
+ *        confirmation's state() and view() after each step it told (stop, retire);
+ *    { n, answer }        a start's or restart's answer (the shared startInstance's): shown when its
+ *        confirmation is still open, and the rows are read again (live) whatever it was;
+ *    { spawned: { id, verb }, at }  a start's child began (`at`: ms since the epoch);
+ *    { closed: id }       that child closed: the row takes acts again, and is read again (live).
+ *  An answer for a confirmation that was closed (another `n`) changes nothing on screen. When the
+ *  buttons change, the focus goes back to the first. */
+function acted(state, event) {
+  const a = state.act, mine = a !== null && event.n === a.n;
+  if (event.spawned !== undefined) return { state: next(state, { starting: new Map(state.starting).set(event.spawned.id, Object.freeze({ verb: event.spawned.verb, since: event.at ?? null })) }), effect: null };
+  if (event.closed !== undefined) {
+    if (!state.starting.has(event.closed)) return { state, effect: { refresh: { live: true } } };
+    const starting = new Map(state.starting); starting.delete(event.closed);
+    return { state: next(state, { starting }), effect: { refresh: { live: true } } };
+  }
+  if (event.answer !== undefined) {
+    const shown = mine && a.kind === "start" ? next(state, { act: Object.freeze({ ...a, phase: "settled", offers: Object.freeze(["close"]), focus: "close", movedIn: null, answer: event.answer }) }) : state;
+    return { state: shown, effect: { refresh: { live: true } } };
+  }
+  if (event.confirmation !== undefined && mine && a.kind === "lifecycle") {
+    const c = event.confirmation, view = c.view ?? null;
+    const plan = view && typeof view.question === "string" ? view : view?.kind === "reading" && view.kept ? a.plan : null;
+    const offers = Object.freeze(BUTTON_ORDER.filter((offer) => (c.offers ?? []).includes(offer)));
+    const same = offers.length === a.offers.length && offers.every((offer, i) => offer === a.offers[i]);
+    return { state: next(state, { act: Object.freeze({ ...a, phase: c.phase, outcome: c.outcome ?? null, notice: c.notice ?? null, running: c.running ?? null, view, plan, offers,
+      ...(same ? {} : { focus: offers[0] ?? "close", movedIn: null }) }) }), effect: null };
+  }
+  return { state, effect: null };
+}
+
+function reduced(state, event, keymap) {
   const stay = { state, effect: null };
+  if (event.acted !== undefined) return acted(state, event.acted);
+  if (event.prepared !== undefined) return prepared(state, event.prepared);
+  if (event.given !== undefined) return state.opening?.phase === "preflight" ? { state: next(state, { opening: null }), effect: null } : stay;
+  if (event.returned !== undefined) return returned(state, event.returned);
   if (event.entry !== undefined) return took(state, event);
   if (event.roster !== undefined) return heard(state, event.roster);
   if (event.collecting !== undefined) return { state: event.collecting === state.collecting ? state : next(state, { collecting: event.collecting === true }), effect: null };
@@ -298,6 +455,7 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
   if (typeof event.key !== "string") return stay;
   const action = keymap.get(event.key);
   if (field) return edited(state, field, event, action);
+  if (state.view === "act" && state.act !== null) return inAct(state, event, action);
   const page = Math.max(1, Number.isInteger(event.page) ? event.page : 1);
   // A pane that scrolls on its own (the help, the detail) moves from where it is DRAWN: the top
   // the state holds may lie past the end since the terminal grew, and the view shows it corrected.
@@ -323,7 +481,8 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
   if (state.view === "switcher") return switched(state, action, page);
 
   if (action === "close") {
-    // In this order: a kept filter, the detail.
+    // In this order: an open under way (another machine is asked first), a kept filter, the detail.
+    if (state.opening?.phase === "preflight") return { state: next(state, { opening: null }), effect: { abandon: true } };
     if (state.filter.query !== "") return { state: queried(state, ""), effect: null };
     return state.focus === "detail" ? { state: next(state, { focus: "list" }), effect: null } : stay;
   }
@@ -331,6 +490,8 @@ export function reduce(state, event, keymap = bindings(state.actions)) {
   const at = indexOf(r, state.selected);
   switch (action) {
     case "filter": return { state: next(state, { focus: "list", filter: Object.freeze({ ...state.filter, editing: true }) }), effect: null };
+    case "open": return openAgent(state, r, at);
+    case "stop": case "retire": case "start": case "restart": return actOn(state, r, at, action);
     case "detail": return at < 0 ? stay : { state: next(state, { focus: state.focus === "detail" ? "list" : "detail" }), effect: null };
     case "up": case "down": case "top": case "bottom": case "page-up": case "page-down": {
       if (state.focus === "detail") return { state: next(state, { detailTop: scrolled(state.detailTop) }), effect: null };

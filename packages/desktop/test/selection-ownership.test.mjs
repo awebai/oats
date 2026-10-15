@@ -2,6 +2,7 @@
 // close/workspace functions and terminal lifecycle. Only IPC, xterm and module
 // loading are synthetic. No Electron, processes, sockets or operator sessions.
 import test from "node:test";
+import { createInstanceRecency, recencyIdFromTerminalKey } from "../renderer/instance-recency.mjs";
 import { viewContext } from "./helpers/view-context.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -14,6 +15,7 @@ import { createTermLifecycle } from "../renderer/term-lifecycle.mjs";
 import { opened, confirmed, ready } from './helpers/terminal-wire.mjs';
 import { terminalHandle, terminalSameHandle, terminalFailure, terminalMessage } from '../../client/terminal-contract.mjs';
 import { wireTerminalAttachments } from '../renderer/terminal-attachments.mjs';
+import { createSyncGate } from '../renderer/terminal-sync.mjs';
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab, tabNameTailStart } from "../renderer/tab-a11y.mjs";
@@ -33,12 +35,12 @@ import { runtimeState, unsupportedSession } from "../../client/instance-presenta
 import { canAddressRemote, rowReason } from "../../client/remote-address.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
-import { revealInStrip } from "../renderer/reveal-in-scrollport.mjs";
+import { revealInStrip, revealInScrollport } from "../renderer/reveal-in-scrollport.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
-  "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
+  "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "revealActiveRosterRow", "closeTab", "tabStrips", "revealActiveTabs", "observeTabStrips",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
   "visibleTabEntries", "switchTab", "cycleTab", "gotoTab", "restoreWorkspaceTabs", "showTerminalContext",
   "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow", "showInRoster", "syncTabNeedsInput",
@@ -68,6 +70,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
     rosterState: null, rosterStale: false, contextDeploymentNote: null, ...viewContext(), rosterSignaturePainted: null, // initContextRoster builds the real controller; tests mark it ready before rendering rows
     rosterTip: { bind() {}, hide() {}, sync() {} }, rosterTipFacts: () => ({}), rosterPrs: { get: () => null, refresh() {} }, spawnJobs: { rows: () => [], announce: () => false, observe() {}, settling: () => false, check() {} },
+    // The palette's last-focus record (Spec C), inert here: the shell code under test writes to it.
+    instanceRecency: createInstanceRecency({ storage: null }), recencyIdFromTerminalKey,
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
@@ -79,7 +83,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Panel behavior is covered with the real presenter in split-empty-shell.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
-    updateSplitControls() {}, revealInStrip, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
+    updateSplitControls() {}, revealInStrip, revealInScrollport, tabStripResize: null /* spec F: the shipped active-tab reveal runs too */, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
     ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, unsupportedSession, canAddressRemote, rowReason, createRuntimeBadge, rosterKeyAction, moveTarget,
     api: () => { const gate = deferred(); requests.push(gate); return gate.promise; },
     prepareOwnedOpen: opts => prepareOwnedOpen({ ...opts, load() {
@@ -319,7 +323,7 @@ test("mutation: readiness must consult current focus ownership, not pane visibil
   }
   await run();
   const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision, terminalHandle, terminalSameHandle, terminalFailure,
-    terminalMessage, wireTerminalAttachments, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT });
+    terminalMessage, wireTerminalAttachments, createSyncGate, RECONNECT_DELAYS_MS, RECONNECT_RETRIED, NO_ANSWER_RETRIES, LOST_LINK_EXIT });
   await assert.rejects(run(terminal), /readiness must not steal focus/);
 });
 

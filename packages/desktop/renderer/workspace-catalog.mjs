@@ -103,15 +103,18 @@ const list = value => Array.isArray(value) ? value : [];
 const text = value => typeof value === 'string' && value ? value : null;
 const short = value => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) ? value.slice(0, 7) : value;
 /** A member's handshake state in plain words (docs/workspaces.md): the chip
- * label, and why its souls are not available while it is not confirmed.
+ * label, why its souls are not available while it is not confirmed, and what
+ * the state means (Setup's "For developers" explainer, beside the same chip).
  * An unknown kernel status is shown verbatim, never guessed. */
 const MEMBER_STATES = {
   confirmed: { label: 'confirmed', ok: true },
-  'not-listed': { label: 'not listed', why: "isn't listed by the workspace" },
-  'no-backlink': { label: 'no backlink', why: "hasn't joined the workspace" },
-  'backlink-elsewhere': { label: 'points elsewhere', why: 'says it belongs to a different workspace' },
-  'cannot-read': { label: "can't read", why: "can't be read with your access" },
+  'not-listed': { label: 'not listed', why: "isn't listed by the workspace", meaning: "the host's link is missing" },
+  'no-backlink': { label: 'no backlink', why: "hasn't joined the workspace", meaning: "the repo's link is missing" },
+  'backlink-elsewhere': { label: 'points elsewhere', why: 'says it belongs to a different workspace', meaning: 'names another workspace' },
+  'cannot-read': { label: "can't read", why: "can't be read with your access", meaning: "your Git access can't check" },
 };
+/** The kernel's member states that need attention, in the order the explainer says them. */
+export const MEMBER_PROBLEMS = Object.freeze(Object.keys(MEMBER_STATES).filter(status => !MEMBER_STATES[status].ok));
 export function memberState(member) {
   const status = text(member?.status) || 'unconfirmed';
   return { status, ok: false, why: 'is not confirmed', label: status, ...MEMBER_STATES[status] };

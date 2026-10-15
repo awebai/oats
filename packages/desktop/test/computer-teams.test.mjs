@@ -227,6 +227,7 @@ test('Setup has no Teams box: teams live on the Workspace Teams tab (workspace-v
   assert.deepEqual([...host.querySelectorAll('[data-box]')].map(b => b.dataset.box).filter(b => /Teams/.test(b)), []);
   const box = teamsBox(doc, { status });
   assert.equal(box.dataset.box, 'Teams'); assert.deepEqual([...box.querySelectorAll('[data-team]')].map(r => r.dataset.team), ['global']);
+  assert.equal(box.querySelector('.setup-scope'), null, 'box() draws no scope chip for any caller');
 });
 
 test("the default team's problem (default: true) is blocking: said as such, with the kernel's words and fix, and another default offered (DERIVED: engineering the default)", async t => {
