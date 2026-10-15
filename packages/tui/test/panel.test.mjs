@@ -367,6 +367,20 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
+  test("a new-window that does not name its window as asked: the open refuses (E_PANEL_OPEN); a window it names at all is killed at once, not left until end()", async () => {
+    const world = makeWorld({ window: { print: "@{n}\n" } }), { panel, closed, heard } = panelOf(world);
+    await assert.rejects(panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { code: "E_PANEL_OPEN", message: "tmux did not name the window it opened" });
+    await waitFor("the window killed", () => world.control().includes("kill-window -t @1"));
+    await waitFor("its end heard", () => heard().includes("%unlinked-window-close @1\n"));
+    world.plan({ window: { print: "no id here\n" } });
+    await assert.rejects(panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { code: "E_PANEL_OPEN" });
+    assert.equal(count(world.control(), "kill-window"), 1, "nothing named: nothing killed");
+    world.plan({});
+    assert.deepEqual(await panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { id: "@3" });
+    assert.deepEqual(closed, [], "a window that was never the viewer is no viewer's end");
+    panel.end();
+  });
+
   test("%exit: the control client ended, the open viewer is closed with no status, and the next open starts a new server", async () => {
     const { world, panel, closed, id } = await opened({ window: { status: "0\n" } });
     world.inject("exit");

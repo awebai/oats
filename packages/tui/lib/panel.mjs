@@ -53,10 +53,12 @@
 // before the TUI lets go of the FIFO; a keeper that still woke would find its server gone, and do
 // nothing.
 //
-// WHAT STARTS A PROCESS: the FIFO's `mkfifo` (once a run), the start of the server (the control
-// client, spawned) and the making of a window (execFile), each with argv and no shell, and nothing
-// else. A frame never does: every capture, key, resize and close goes through the control client,
-// as a command of constant text and tmux's own ids.
+// WHAT STARTS A PROCESS, each with argv and no shell: the FIFO's `mkfifo` and `tmux -V` (once a
+// run), the start of the server (the control client, spawned), the making of a window, the
+// `kill-server` calls (before a new server, after a failed start, and end()'s), and the sweep's
+// `list-sessions` (at most one for each run directory it looks at that holds a socket). A frame
+// never does: every capture, key, resize and close goes through the control client, as a command
+// of constant text and tmux's own ids.
 //
 // THE ARGV OF A COMMAND IS NOT TEXT TO TMUX, BUT FOR ONE RULE. Verified with tmux 3.7c: new-window
 // passes its command's arguments to the program as they are (no format is expanded in them or in
@@ -84,7 +86,9 @@ export const MAX_TERMINALS = 4;
 /** The most of a viewer's stderr that is kept, in bytes: the last ones. */
 export const STDERR_KEPT = 4096;
 /** The frame tick, in milliseconds: a capture follows the output that asked for it by one tick, so
- *  a burst of output is drawn once, and there are at most 60 captures a second. */
+ *  a burst of output is drawn once. The tick is not what bounds the rate: a fresh capture (open,
+ *  resize, refresh, showing again) skips it, and what bounds them all is that at most one capture
+ *  is in flight. */
 export const FRAME_MS = 16;
 /** The pane's command around the viewer, a CONSTANT: run the viewer (`"$0" "$@"`: its argv, which
  *  follows this script as arguments and is never part of it), its stderr to the file named by E,
@@ -601,7 +605,13 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
             "/bin/sh", "-c", VIEW_SCRIPT, ...argv.map(tmuxArgument)]);
         } catch (error) { throw refusal("E_PANEL_OPEN", "the panel could not open a window", { detail: detail(error) }); }
         const ids = /^(@\d+) (%\d+)\s*$/.exec(answer.stdout);
-        if (!ids) throw refusal("E_PANEL_OPEN", "tmux did not name the window it opened");
+        if (!ids) {
+          // A window was made, but not named as asked: one it names at all is killed now, not left
+          // until end(). One it does not name stays until end()'s kill-server.
+          const window = /(?:^|\s)(@\d+)(?=\s|$)/.exec(answer.stdout);
+          if (window) ask(`kill-window -t ${window[1]}`);
+          throw refusal("E_PANEL_OPEN", "tmux did not name the window it opened");
+        }
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
         const v = { id: ids[1], pane: ids[2], ...size, files: made, asked: false, over: false };
         mine.files = null; // the viewer's now: finish() removes them

@@ -4,7 +4,8 @@
 //                 command a control client was sent ({ pid, control })
 //   plan.json     what to do (optional): { version, newSession: { fail }, start: { failAt, hold },
 //                 startDelayMs, holdCapture, screen: [lines], cursor,
-//                 window: { status, stderr, closeAtOnce }, killPaneSilent }
+//                 window: { status, stderr, closeAtOnce, print }, killPaneSilent }
+//                 (window.print: what new-window prints instead of `@n %n`, `{n}` its number)
 //   state.json    the window counter, shared by the invocations of one test
 //   inject.txt    lines the test appends for the control client: `emit <line>` prints the line,
 //                 `release` answers the captures held, `exit` prints %exit and exits, `die` exits
@@ -86,7 +87,7 @@ async function commandMode() {
         inject(`emit ${line}`);
         for (let waited = 0; !emitted().includes(line) && waited < 3000; waited += 5) sleepSync(5);
       }
-      process.stdout.write(`@${n} %${n}\n`);
+      process.stdout.write(step.print === undefined ? `@${n} %${n}\n` : step.print.replaceAll("{n}", String(n)));
     } else if (name === "kill-server") {
       inject("exit");
     } else if (name === "list-sessions") {
@@ -159,6 +160,8 @@ async function controlMode() {
     out(`%begin ${t} ${n} 1\n${lines.map((l) => `${l}\n`).join("")}%end ${t} ${n} 1\n`);
     const killed = /^kill-pane -t %(\d+)$/.exec(line);
     if (killed && !current().killPaneSilent) out(`%unlinked-window-close @${killed[1]}\n`);
+    const killedWindow = /^kill-window -t @(\d+)$/.exec(line);
+    if (killedWindow) out(`%unlinked-window-close @${killedWindow[1]}\n`);
   }
   let rest = "";
   process.stdin.on("data", (chunk) => {
