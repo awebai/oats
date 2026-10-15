@@ -56,7 +56,7 @@ Host wake broker: installed (<manager> unit, aw <version>) | not needed (<why>) 
 | Choice | Its check |
 |---|---|
 | approved | the approved route's **Success** list below, then the nonce exchange |
-| development | the home's readiness has neither `channel-dev-confirmation` (the last start recorded the confirmation `completed`) nor `claude-channels-unavailable`; then the nonce exchange |
+| development | the key is written (no `claude-channel-mode-default` from oats.aweb 1.28.0), and the home's readiness has neither `channel-dev-confirmation` (the last start recorded the confirmation `completed`) nor `claude-channels-unavailable`; then the nonce exchange |
 | session | Choice 2's **Check** |
 | broker installed | Choice 2's **Check** |
 | not needed, no Claude seats | nothing to check; revisit when the host gains such a home |
@@ -73,7 +73,10 @@ Pick one for the host's Claude seats:
 | **session** | `delivery: session` | When Claude should be woken like Codex, by the broker typing into its terminal. It uses no plugin and shows no prompt, and it needs [Choice 2](#choice-2-the-host-wake-broker). `claudeChannelMode` is then unused. |
 
 For approved or development, write `claudeChannelMode`. A missing key is not
-a choice: it is how hosts end up in development mode by accident.
+a choice: it is how hosts end up in development mode by accident. From
+oats.aweb 1.28.0, readiness warns `claude-channel-mode-default` on such a
+home (only on a home, because the soul-scope check cannot see the harness),
+so `/oats-onboarding` card 8 is where it shows.
 
 ### Claude channel delivery (approved route)
 
@@ -282,7 +285,38 @@ installed by the operator (`/oats-automations`, “One host timer, no
 daemon”). An agent hands over the steps below and checks the result
 afterwards. It never runs them itself.
 
-### Before installing
+### Install with the command (oats.aweb 1.28.0 and later)
+
+From the deployment directory, in the operator's own shell:
+1. `oats aweb wake install --plan` prints the unit and what it would do. It
+   changes nothing.
+2. `oats aweb wake install` resolves `aw`, `oats`, `node` and `tmux` from
+   that shell. It writes the per-user unit `ai.aweb.wake` (systemd `--user`
+   or a LaunchAgent) with the PATH and `AW_WAKE_OATS_BIN` above, starts it,
+   and prints `PASS wake broker <version> (<manager> unit <path>)` once the
+   daemon runs at that `aw`'s version.
+3. `oats aweb wake status` reports the unit, the daemon, and this
+   deployment's homes that need the broker, each registered or not.
+
+Rerunning `install` re-renders the unit and restarts the daemon: that is the
+restart after an aw upgrade. `oats aweb wake uninstall` removes only the unit
+`install` wrote.
+
+Its refusals and warnings are listed in `/oats-aweb` §7. The one an
+existing host meets is **`E_WAKE_UNIT_CONFLICT`**: a unit `install` did not
+write already runs the broker, for example a hand-written unit from the
+fallback below. `install` never takes it over. To move to the command,
+retire the old unit with the steps the message prints, then rerun `install`:
+- Linux: `systemctl --user disable --now <unit>`, then remove the file;
+- macOS: `launchctl bootout gui/<uid>/<label>`, then remove the file.
+
+On macOS, run it from the Mac's desktop login (see the launchd fallback).
+
+### Fallback: a hand-written unit
+
+For a provider older than 1.28.0, or an operator who keeps a unit of their own.
+
+#### Before installing
 
 ```bash
 command -v aw oats node tmux   # in the operator's terminal: the absolute paths for the unit
@@ -305,10 +339,8 @@ grep -rlE 'ai\.aweb\.wake|<string>wake</string>' ~/Library/LaunchAgents        #
   compare it with the unit below (its PATH especially), then use the restart
   and check steps. Replacing it is the operator's decision, made explicitly:
   stop and remove the old unit first.
-- **Paths.** Prefer stable ones. A version manager's per-version directory
-  changes when Node or aw is upgraded, and the unit then points at a path
-  that is gone. If you use one, edit the unit after each upgrade (see “After
-  an aw upgrade”).
+- **Paths.** Prefer stable ones: a version manager's per-version directory
+  is gone after an upgrade (see “After an aw upgrade”).
 
 In the units below:
 - `<AW>`, `<OATS>` and `<HOME>` are the absolute paths of `aw`, of `oats` and
@@ -318,7 +350,7 @@ In the units below:
 - `<FALLBACK>` is `/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
   the host timer's list.
 
-### Linux (systemd --user)
+#### Linux (systemd --user)
 
 Write `~/.config/systemd/user/ai.aweb.wake.service`:
 
@@ -350,7 +382,7 @@ loginctl show-user "$USER" -p Linger   # Linger=no: the service stops when the u
 On a host where nobody stays logged in, enable linger:
 `sudo loginctl enable-linger <user>`. That needs an admin.
 
-### macOS (launchd)
+#### macOS (launchd)
 
 Write `~/Library/LaunchAgents/ai.aweb.wake.plist`. launchd does not expand
 `~`, so every path in it is absolute, the log path included.
@@ -391,8 +423,9 @@ automatic login for that user, the macOS counterpart of linger.
 ### After an aw upgrade
 
 A running daemon keeps the code it started with until it restarts. Restart it
-after every aw upgrade, and also after `oats`, Node or tmux moves (edit the
-unit's paths first):
+after every aw upgrade, and also after `oats`, Node or tmux moves. With the
+command, rerun `oats aweb wake install`: it re-renders the paths and restarts.
+With a hand-written unit, edit its paths first, then:
 
 ```bash
 systemctl --user restart ai.aweb.wake.service           # Linux; after editing the unit: daemon-reload first
@@ -416,6 +449,11 @@ aw version
 aw wake status --json              # daemon_running, daemon_version_state, daemon_version, instances
 oats readiness --home <abs home> --json   # for each home that needs the broker
 ```
+
+From oats.aweb 1.28.0, `oats readiness --soul <soul>` (onboarding card 6)
+reports the same daemon problems before a spawn that will use `delivery:
+session` or join a team, and `oats aweb wake status` lists every home that
+needs the broker.
 
 1. `aw wake status --json` shows `daemon_running: true`,
    `daemon_version_state: "reported"`, and a `daemon_version` equal to what
