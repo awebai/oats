@@ -6,7 +6,9 @@ import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as nodeExecFile, execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
 import os from "node:os";
+import { PassThrough } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, SESSION, STDERR_KEPT, VIEW_SCRIPT, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
@@ -553,4 +555,25 @@ test("a callback that throws does not break the panel: it is thrown again outsid
     process.removeListener("uncaughtException", listener);
     for (const other of before) process.on("uncaughtException", other);
   }
+});
+
+// Last and alone, so that nothing else keeps the event loop alive: a start that fails with a
+// control client whose `close` never comes still settles. The wait for what the client said is
+// bounded by a timer that holds the loop (an unref'd one let the loop empty with the await
+// pending: main's CI, "Promise resolution is still pending but the event loop has already resolved").
+test("a failed start whose control client never closes still rejects, within the wait's bound: the open never hangs", async () => {
+  const world = makeWorld();
+  const spawned = [];
+  const neverCloses = () => {
+    const child = Object.assign(new EventEmitter(), { pid: 999999, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: () => true, unref: () => {} });
+    spawned.push(child);
+    setImmediate(() => child.stdout.write("%begin 1 1 0\nfake: the server did not start\n%error 1 1 0\n"));
+    return child;
+  };
+  const { panel } = panelOf(world, { spawn: neverCloses });
+  const started = Date.now();
+  await assert.rejects(panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { code: "E_PANEL_START", detail: "fake: the server did not start" });
+  assert.equal(spawned.length, 1);
+  assert.ok(Date.now() - started < 5000, "bounded by the wait, not by the close");
+  panel.end();
 });
