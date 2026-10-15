@@ -555,7 +555,9 @@ export function createPanel({ dir, capture, onScreen = () => {}, onActivity = ()
    *  `%end` or `%error` line that repeats its `%begin`'s time, number and flags EXACTLY (tmux
    *  prints the same time and number on both lines of a block). No pane's text is ever in a block
    *  (THE CAPTURE); the exact end is kept all the same. Outside a block a line is a notification
-   *  (tmux never prints one inside a block; `%output` carries a pane's text escaped, one line). The FIRST blocks, one per command of
+   *  (`%output` carries a pane's text escaped, one line). tmux prints notifications outside blocks,
+   *  but for the `%pause` or `%continue` that a `refresh-client -A` writes while it runs, which is
+   *  inside that command's block and is all its block may hold (`flow`). The FIRST blocks, one per command of
    *  the start list, answer the start itself; every later one answers the oldest command waiting. */
   function heard(s, line) {
     if (s.block) {
