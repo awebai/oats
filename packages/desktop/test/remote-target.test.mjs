@@ -225,11 +225,16 @@ test("preflightFailure keeps what the kernel said only where the table has no se
   for (const error of others) assert.deepEqual(preflightFailure(error, SERVER), { code: "E_TERM_OPEN_FAILED", sentence: GENERAL, said: null }, String(error));
 });
 
-test("a refusal is thrown with the properties it always had: what it said is kept beside the error, not on it", async () => {
+test("a refusal is thrown with the properties it always had: what it said is kept under the module's own symbol, not enumerable", async () => {
   for (const answered of [{ code: "E_HOST_SAYS_NO", message: "the host refused this", details: { fix: "ask its owner" } }, JSON.parse(captured("unknown-server")).error, {}]) {
     const error = await thrownBy(refusing(answered));
     assert.deepEqual(Object.keys(error), ["code"]);
-    assert.deepEqual(Reflect.ownKeys(error).sort(), ["code", "message", "stack"]);
+    assert.deepEqual(Reflect.ownKeys(error).filter(key => typeof key === "string").sort(), ["code", "message", "stack"]);
+    // The kept refusal (session-attach.mjs, #1242): one symbol, not registered and not enumerable, so no name reaches it.
+    const symbols = Object.getOwnPropertySymbols(error);
+    assert.equal(symbols.length, 1);
+    assert.equal(Symbol.keyFor(symbols[0]), undefined);
+    assert.equal(Object.getOwnPropertyDescriptor(error, symbols[0]).enumerable, false);
     for (const key of ["said", "fix", "details", "kernel"]) assert.equal(key in error, false, key);
     assert.equal(Object.getPrototypeOf(error), Error.prototype);
   }
