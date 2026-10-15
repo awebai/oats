@@ -38,8 +38,8 @@ function registerAll(t) {
 
 test("the shipped table: each changed default resolves per platform", () => {
   const table = {
-    "app.palette": ["Mod+K", "Ctrl+Shift+P"],
-    "app.quickOpenSouls": ["Mod+P", "Mod+P"],
+    "app.palette": ["Mod+K", "Ctrl+Shift+K"],
+    "app.quickOpenSouls": ["Mod+P", "Ctrl+Shift+P"],
     "app.chooseSoul": ["Mod+N", "Ctrl+Shift+N"],
     "tabs.close": ["Mod+W", "Ctrl+Shift+W"],
     "tabs.next": ["Ctrl+Tab", "Ctrl+Tab"], "tabs.prev": ["Ctrl+Shift+Tab", "Ctrl+Shift+Tab"],
@@ -60,7 +60,9 @@ test("the shipped table: each changed default resolves per platform", () => {
     assert.equal(defaultBinding(id, false), other, `${id} on Linux/Windows`);
   }
   // Shown as each platform reads it (the shortcuts editor and the hints use getBinding + formatChord).
-  assert.equal(formatChord(getBinding("app.palette", false), false), "Ctrl+Shift+P");
+  assert.equal(formatChord(getBinding("app.palette", false), false), "Ctrl+Shift+K");
+  assert.equal(formatChord(getBinding("app.quickOpenSouls", false), false), "Ctrl+Shift+P");
+  assert.equal(formatChord(getBinding("app.quickOpenSouls", true), true), "⌘P");
   assert.equal(formatChord(getBinding("tabs.nextPage", false), false), "Ctrl+PgDn");
   assert.equal(formatChord(getBinding("tabs.goto3", true), true), "⌥⌘3");
   assert.equal(formatChord(getBinding("focus.leaveTerminal", false), false), "Ctrl+Shift+F6");
@@ -77,7 +79,7 @@ test("nothing binds Super/Meta on Linux/Windows: Mod is Ctrl there", () => {
 
 test("the terminal allowlist is exactly the actions that must work in a terminal", () => {
   assert.deepEqual([...TERMINAL_ALLOWLIST].sort(), [
-    "app.chooseSoul", "app.palette", "app.shortcuts", "app.themePicker", "focus.leaveTerminal",
+    "app.chooseSoul", "app.palette", "app.quickOpenSouls", "app.shortcuts", "app.themePicker", "focus.leaveTerminal",
     "panel.toggle", "sidebar.focusFilter", "sidebar.toggle",
     "split.close", "split.horizontal", "split.vertical",
     "stage.automations", "stage.hierarchy", "stage.spawn",
@@ -96,7 +98,8 @@ test("Linux/Windows inside a terminal: the allowlisted chords fire from real (sh
   registerAll(t);
   const inTerm = { isMac: false, insideTerminal: true };
   for (const [event, id] of [
-    [linux("P", { shiftKey: true }), "app.palette"], [linux("N", { shiftKey: true }), "app.chooseSoul"],
+    [linux("K", { shiftKey: true }), "app.palette"], [linux("P", { shiftKey: true }), "app.quickOpenSouls"],
+    [linux("N", { shiftKey: true }), "app.chooseSoul"],
     [linux("W", { shiftKey: true }), "tabs.close"], [linux("Tab"), "tabs.next"], [linux("Tab", { shiftKey: true }), "tabs.prev"],
     [linux("E", { shiftKey: true }), "split.vertical"], [linux("O", { shiftKey: true }), "split.horizontal"],
     [linux("W", { shiftKey: true, altKey: true }), "split.close"],
@@ -135,11 +138,11 @@ test("Linux/Windows inside a terminal: Ctrl+W/K/\\/P/B, F6, Alt+digit and Ctrl+P
   assert.equal(matchEvent(linux("PageDown"), out), "tabs.nextPage");
   // Ctrl+Shift+\ (the shifted "|") is not claimed on Linux either.
   assert.equal(matchEvent(linux("|", { shiftKey: true }), inTerm), null);
-  // Actions that are not allowlisted never fire inside, even on their own chord: Quick Open
-  // (Ctrl+P, shell history), Open file (Ctrl+O, a view's registration default), go to tab, F6, Ctrl+PgDn.
+  // Actions that are not allowlisted never fire inside, even on their own chord: Open file
+  // (Ctrl+O, a view's registration default), go to tab, F6, Ctrl+PgDn.
   t.after(registerAction({ id: "app.openFile", label: "Open file", context: "global", defaultChord: "Mod+O", run: () => {} }));
   for (const [event, id] of [
-    [linux("p"), "app.quickOpenSouls"], [linux("o"), "app.openFile"], [ev("1", { altKey: true }), "tabs.goto1"],
+    [linux("o"), "app.openFile"], [ev("1", { altKey: true }), "tabs.goto1"],
     [ev("F6"), "focus.nextRegion"], [linux("PageDown"), "tabs.nextPage"],
   ]) {
     assert.equal(matchEvent(event, inTerm), null, id);
@@ -160,6 +163,7 @@ test("Linux/Windows outside a terminal: the old plain chords no longer run the c
   registerAll(t);
   const out = { isMac: false, insideTerminal: false };
   assert.equal(matchEvent(linux("k"), out), null, "Ctrl+K was the palette");
+  assert.equal(matchEvent(linux("p"), out), null, "Ctrl+P was Quick Open");
   assert.equal(matchEvent(linux("w"), out), null, "Ctrl+W was close tab");
   assert.equal(matchEvent(linux("\\"), out), null, "Ctrl+\\ was split right");
   assert.equal(matchEvent(linux("n"), out), null, "Ctrl+N was spawn instance");
@@ -172,7 +176,7 @@ test("macOS inside a terminal: ⌘ chords fire (they never reach the pty), plus 
   const inTerm = { isMac: true, insideTerminal: true };
   for (const [event, id] of [
     [ev("b", { metaKey: true }), "sidebar.toggle"], [ev("i", { metaKey: true }), "panel.toggle"], [ev("f", { metaKey: true }), "sidebar.focusFilter"],
-    [ev("k", { metaKey: true }), "app.palette"], [ev("w", { metaKey: true }), "tabs.close"],
+    [ev("k", { metaKey: true }), "app.palette"], [ev("p", { metaKey: true }), "app.quickOpenSouls"], [ev("w", { metaKey: true }), "tabs.close"],
     [ev("|", { metaKey: true, shiftKey: true }), "split.horizontal"], [ev("\\", { metaKey: true }), "split.vertical"],
     [ev("3", { metaKey: true, altKey: true }), "tabs.goto3"], [ev("Tab", { ctrlKey: true }), "tabs.next"],
     [ev("F6", { metaKey: true, shiftKey: true }), "focus.leaveTerminal"], [ev("3", { metaKey: true }), "stage.automations"],
@@ -282,6 +286,19 @@ test("theme picker: no other default shares either chord", t => {
   setBinding("app.shortcuts", "Ctrl+Shift+Space");
   assert.equal(getBinding("app.shortcuts", false), "Ctrl+Shift+Space");
   assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.shortcuts", "app.themePicker"]]);
+});
+
+// #1217: the palette took Ctrl+Shift+K and Quick Open Ctrl+Shift+P. A stored binding on either chord
+// is kept, and the shortcuts editor's warning names the clash (the release note promises it).
+test("palette and Quick Open chords: a stored binding on either is kept and named as a clash", t => {
+  registerAll(t);
+  assert.deepEqual(keymapConflicts(false), [], "the defaults clash with nothing");
+  setBinding("sidebar.toggle", "Ctrl+Shift+K");
+  assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.palette", "sidebar.toggle"]]);
+  resetAllBindings();
+  setBinding("app.palette", "Ctrl+Shift+P"); // the palette's chord until #1217, set by hand
+  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+P");
+  assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.palette", "app.quickOpenSouls"]]);
 });
 
 // #672: Ctrl+Shift+C copies the terminal's selection on Linux/Windows. The terminal's key path is the

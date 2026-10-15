@@ -90,6 +90,8 @@ ${tabBarCSS('.workspace-tabs')}
 .workspace-discovery[data-tab=capabilities] { --ws-pad-top:16px; padding:var(--ws-pad-top) 28px 20px; }
 .workspace-discovery[data-tab=capabilities] > * { max-width:1000px; margin-inline:auto; }
 .workspace-discovery[data-tab=sources] { --ws-pad-top:20px; padding:var(--ws-pad-top) 24px 20px; }
+/* Setup's list view reads as one centred column; the graph keeps the tab's width. */
+.workspace-discovery[data-tab=sources]:has(.setup[data-view=list]) > * { max-width:1080px; margin-inline:auto; }
 /* Teams reads as one centred column: the teams card is a list, not a dashboard. */
 .workspace-discovery[data-tab=teams] { --ws-pad-top:20px; padding:var(--ws-pad-top) 24px 20px; }
 .workspace-discovery[data-tab=teams] > * { max-width:760px; margin-inline:auto; }
@@ -184,7 +186,7 @@ function catalogSkeleton(doc, rows = 6) {
 }
 
 /** `onCatalog`: the catalog changed (a read settled, the subject was reset): a page rendered from it refreshes in place. */
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null, onTeamMember = () => {}, rosterState = () => 'ready' }) {
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, onOpenCapability = null, onCatalog = null, onTeamMember = () => {}, onOpenTeam = null, rosterState = () => 'ready' }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, deployment = null, instances = [], tab = 'souls';
@@ -200,11 +202,17 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   // The pinned toolbar / Teams head and its edge (sticky-top.mjs); the Souls bar sits outside its scroller.
   const stickyTop = trackStickyTop(panel), soulsEdge = trackScrolledEdge(soulsPanel);
   function teamsCard() {
-    if (!teamModelOf(cliStatus()?.features) || !workspace?.id || workspace.remote || workspace.server) return null;
+    if (!teamModelOf(cliStatus()?.features) || !workspace?.id || workspace.remote || workspace.server) {
+      // Another workspace generation without a Teams page: the old one goes (and a team page open on it closes).
+      if (computerTeams && computerTeamsGen !== workspaceGeneration()) { computerTeams.dispose(); computerTeams = null; computerTeamsGen = null; }
+      return null;
+    }
     const gen = workspaceGeneration();
     if (computerTeams && computerTeamsGen === gen) return computerTeams.element;
     computerTeams?.dispose(); computerTeamsGen = gen; teamProblems = 0;
     computerTeams = createComputerTeams(doc, { readMembers: () => apiJson(ctx, `/api/team-members${wsQuery()}`), onMember: (action, member) => onTeamMember(action, member),
+      // A card opens its team's page (views/spawn.mjs mode "team"), which this page then paints (showTeam).
+      onOpenTeam: typeof onOpenTeam === 'function' ? label => onOpenTeam(label) : null,
       onDocument: teams => { teamProblems = list(teams?.problems).length; updateCounts(); }, request: async body => {
       return teamsAnswer(await postJson(ctx, `/api/workspace-teams${wsQuery()}`, body), 'teams', 'The teams on this computer could not be read.');
     } });
@@ -510,6 +518,9 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   updateCounts(); setTab('souls');
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
+    /** A team's page, painted by the Teams page into `host` (computer-teams.mjs showTeam): false when there is no such team. */
+    openTeam: (host, label, options) => !!teamsCard() && computerTeams.showTeam(host, label, options),
+    closeTeam() { computerTeams?.hideTeam(); },
     /** What the capability table renders with (observed facts only), for pages that reuse it. */
     context: () => ({ status: observed(), instances, souls, composition: soulsComposition(cliStatus()), root: workspace?.id, remote: !!(workspace?.remote || workspace?.server), rosterState: rosterState(), catalog: catalog?.capabilities ?? null,
       // The catalog's loading state for pages rendered from it (item 7): its state, observation and the last failure's text.

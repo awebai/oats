@@ -23,12 +23,42 @@ join, and its default, in the workspace's `souls:`. So:
 
 ## The Teams board
 
-`renderer/computer-teams.mjs`. Two sections of cards, shared teams then local ones, each with the
-default team's card first (otherwise the document's order), then the workspace's `souls:` as committed.
-A card reads, top to bottom: the label and its default pill, the description, any problem that blocks
-spawning, the team's audience, the address (the provider team id, the quietest line; "no provider id
-yet" in the warn colour), the team's warnings, why Remove is off, then its members. The right column
-holds the member count and the actions; under a 640px container they move below the main column.
+`renderer/computer-teams.mjs`. One centred column, at most 1120px wide: the page head (the title, its
+one line, and **Add a local team** where local teams are allowed), then three sections 40px apart, each
+with a sentence-case heading and one muted line:
+
+- **Shared teams**: "Declared in oats-workspace.yaml and shared through Git, so every computer that runs
+  the workspace has them."
+- **Local teams**: "Only on this computer, in its oats-local.yaml. Not shared." Where local teams are
+  closed and none is left, the section holds one dashed paragraph, not a card: "No local teams:
+  oats-workspace.yaml does not allow local teams (localTeams: true)." Where they are allowed and there
+  is none, an empty card offers **Add a local team**. The add form opens in this section.
+- **Which teams each soul may join** (team model 3, not in the standalone view): "And its default:
+  souls: in oats-workspace.yaml (a PR to the workspace file)."
+
+The page's own problems (those no card holds) come before the sections, failures first. Each section
+puts the default team's card first, then keeps the document's order. A local team's card has a dashed
+frame, a shared one a solid frame.
+
+**A card**, top to bottom:
+
+1. **The header.** The label. For the default team, a **Default team** tag and where the default comes
+   from: "set by the workspace" or "set on this deployment" (team model 3), "on this computer" before
+   it. Then the description, muted. The actions (Make default, Remove) sit on the right of the label row;
+   under a 760px container they wrap below the description.
+2. **Any problem that blocks spawning** (the kernel's `default: true`, or a failure), as an alert with
+   the danger edge.
+3. **The facts**, a `dl` of labelled rows. Team model 3: **Default for** and **May join** (the audience,
+   below), then **Address**. Before it: **Address**, then **Who may join** (`whoMayJoin`, bold; "No soul
+   yet" muted). The address is the provider team id in the mono face, or "no provider id yet" in the warn
+   colour.
+4. **The team's warnings**, each a tinted box: the message in bold, then the kernel's fix verbatim on its
+   own line (said once when the message already holds it).
+5. **Why Remove is off** (`teamInUse`), a muted line.
+6. **The confirmation** of Make default, or the row's error: a refusal, one sentence and then the
+   kernel's code under Details.
+7. **The summary foot**: your instances on the team, and "Open team ›" on the right. The cue is
+   `aria-hidden`: the label's button carries the action.
 
 **The audience** (team model 3) is two labelled rows, each shown only when it has entries:
 
@@ -49,17 +79,100 @@ broader key already implies is never repeated (`lfx-ai-engineering/ai-reviewer` 
 same team as `lfx-ai-engineering/*`). A pattern lists as `except` the more specific keys under it that
 fall outside, as in "all souls of p except x". Where `"*"` sets a default, no soul falls back to the
 `defaultTeam`, and its row says so quietly. Before team model 3 the function answers null, and the
-card keeps the team model 2 "Address … Who may join …" line from `whoMayJoin`.
+card keeps the team model 2 **Address** and **Who may join** rows, from `whoMayJoin`.
 This is a second reading of the kernel's resolution in the renderer. `test/desktop-team-audience-kernel.test.mjs`
 (at the repository root) pins it to the kernel: for each fixture it resolves every concrete soul with
 `soulTeams` and checks each team's audience against it. A change to resolution in `lib/teams.mjs` must
 keep that test green, or change `teamAudience` with it.
 
-A card lists its members (below) under a "Members · N" head. Within a deployment group the rows
-share their columns (a subgrid), so the state words line up.
+**The foot's words** (`memberSummaryParts`, joined into one string by `memberSummary`): "N of your
+instances", then ", M on other machines" when some run on another machine, then ", <machine>[,
+<machine>] not reached" in the warn colour for the team's machine groups whose last read failed (each
+machine once). With no members it reads "None of your instances". The foot is empty until the members are
+known, and for a team with no provider id; a board without `onOpenTeam` leaves an empty foot out.
 
-The souls section's right column reads "default lfx-ai-team · may also join lfx-all", or "may join
-any shared team".
+**How a card opens.** With `onOpenTeam`, the label is a `button.ct-open` inside the card's `h4`, named by
+the label and described as "Opens the team's page with your instances on it". Its `::after` covers the
+card (the card is `position: relative`), so a click anywhere on the card opens the page. The card's other
+controls (the actions, the confirmation, the row error, links) sit above it. A card is therefore one Tab
+stop, and the focus ring is the shell's own, on that button. Hover frames the card in `--tree-line` and
+underlines the label.
+
+**The type steps** (shared with the Setup tab): screen title 24/700, section heading 18/650, card title
+17/700, primary facts 14/600, body 13, secondary 12 in `--muted`, tags 11.5/600. Contrast comes from size,
+weight and `--muted`, never a new colour; mono is for paths, ids, addresses and patterns only, 1px above
+the sans step it stands in for.
+
+**The souls table** (team model 3) is a real table in a card, one row per `souls:` key in document order:
+**Souls** (the pattern in mono, its folder up to the last `/` muted; `*` reads "* every soul"), **Default
+team** (a tag, or a muted "none") and **May also join** (the other teams as tags, without the default;
+`any` is "any shared team"; else a muted "none"). Under a 760px container each row stacks: the pattern on
+its own line, then the two cells. Its explicit table roles keep the semantics through that. An empty
+`souls:` says so in a card.
+
+## A team's page
+
+A card opens its team's page through `onOpenTeam(label)`, an option of `createComputerTeams` that
+`renderer/workspace-discovery.mjs` wires to `openTeam` in `renderer/views/spawn.mjs`. spawn.mjs shows it
+as the Workspace page mode `"team"`, beside the soul and capability pages: the page's bar replaces the
+Workspace header and tabs, and `s.teamOpen = { label, scrollTop }` keeps the board's scroll offset, which
+hiding the board drops. The Teams controller paints it: `showTeam(host, label, { onBack, onGone })` puts
+the shared `pageBar` (Back, named "Back to Teams"; Workspace / Teams / the label) and the page's content
+in the host, and answers false when the document has no such team. Opening focuses Back, and claims the
+selection intent (`nextSelectionIntent`) as any explicit choice does, so an older handoff still waiting (a
+shell footer import, a preselect) cannot replace the page once it lands.
+
+The page, top to bottom:
+
+- **The team's card**: the board card's header, problems, facts, warnings, why Remove is off, actions
+  and confirmation flows, with the label as the page's `h2` at 24px. It has no foot and opens nothing.
+  The Workspace header is hidden with its scope line, so in a view of two or more deployments the card
+  says which one its actions edit under the label ("On This Mac · ~/Agents/oats"), from its own
+  `createDeploymentScopeLine`, which lives as long as the page.
+- **Your instances on this team**, a section headed as the board's are, with the line "On this computer
+  and the machines you added to this workspace. Instances other people run on <label> are not listed
+  here." That is what `/api/team-members` answers: the view's deployments only ([Team
+  members](#team-members)).
+  - **The counts**: N instances, R running, then S stopped and A need(s) attention (in the warn colour)
+    when they are not zero, and "on M machine(s)" on the right. R counts the members that are running and
+    can be opened, A those whose state is `warn` (`stateKind`), S the rest; this computer is one machine,
+    each server another. For the default team a muted note follows: "Every instance joins its default
+    team, so all of your instances are here."
+  - **One card per machine group** (`memberGroups`, this computer's first): a `role="group"` named by its
+    machine (with its short path where two groups share a machine), under a head band with the machine,
+    the deployment's short path (the full path as its title) and "N instances, R running". A group not
+    reached reads "not reached" in the warn colour, with the error as the head's title.
+  - **A table per card** (`role="table"`, named "Your instances on <label> on <machine>"). The cards sit
+    in one grid (`.ct-mcards`, the only place the columns are set); each card, its table and its rows
+    are subgrids of it, so every name on the page sizes the same columns and they line up from machine
+    to machine. The columns: **Instance** (the soul's
+    mark, titled with the full agent, and the name button; a leading `<soul>-` is muted so the rest
+    stands out), **Soul** (`soulShort`, the full agent as title), **State** (a pill), **Created**
+    (`ageText(createdAt)`, the exact timestamp as title; empty when the route sends none) and a visually
+    hidden **Terminal**.
+  - **Names come first.** From a 760px container up, a name's cell is as wide as the name and the Soul
+    column gives way. The name is cut only past `--ct-name-room`: the page's width less everything else
+    on its row (paddings, borders, the mark, the other columns at their least; below 900px State keeps
+    96px). Real instance names (lowercase slugs up to 50 characters) stay whole from a 760px container
+    up, and a name is never cut while its row has room; one made only of wide letters may be cut, whole
+    in its title. Created hides under a 1000px container and
+    Soul under 900px to make room. Under 760px Instance, State and Terminal remain, and a name too long
+    for its cell is cut with an ellipsis, whole in its title.
+- **The empty states**, each a dashed paragraph: "This team has no provider id yet, so no instance can be
+  on it.", or "None of your instances is on <label>." Until the members are known, the section shows its
+  heading and nothing else.
+
+**Repaint.** The page follows the pages' rule, not the board's redraw barrier. At each render and each
+roster poll it computes a signature: the team's document entry with its problems, audience and why Remove
+is off, the default, the card's own state (a mutation in flight, its confirmation, its row error), and its
+members and machine groups. It repaints only when that changes, and puts focus back by `data-focus-key`
+(a member's controls are keyed by its deployment and instance name), else on Back. The Created ages are
+updated in place at each poll, without a repaint.
+
+**Closing.** Back and Esc (not from a text field) return to the board at its scroll offset and focus that
+card's `.ct-open`. A tab change closes the page. A team that leaves the document closes it: removed (here,
+from its own page once the document answers, or elsewhere), or the workspace changed or switched. There is
+no card to return to then, so the Teams tab takes the focus when the page held it.
 
 ## Routes
 
@@ -152,27 +265,32 @@ The shape is the lead's (0.30 D2 review):
 - **`notReached`**: every group of the view whose last read failed and that holds no rows,
   last-known or current. Before the first roster answer there are no groups, so nothing is named.
 
-**On the board** (`renderer/computer-teams.mjs`, read on mount and at each roster poll):
-- A team card with a provider id lists its members, grouped by deployment and labelled by machine
-  (`deploymentLabel`): this Mac's deployments first, then the others; within a group by instance
-  name, then home. An unmapped team shows no list.
-- Deployment headings are sentence-case meta text with a count ("This Mac · ~/Agents/oats · 3",
-  "altair · ~/Agents/tsm · not reached"), each a `role="group"` labelled by its heading.
-- A member row is its state dot, its name (the roster's font), its soul mark and its state in words.
-  The **name** is a text button that shows the member's roster row ("Show <instance> in the roster").
-  A quiet **Terminal** button ("Open <instance> terminal on <machine>") is there only when the member
-  is running and addressable. Otherwise the state word says why, as the roster's short label ("gone
-  from X", "not reachable on X", "X not reached") or `stopped`/`unknown`, with the full reason as its
-  title and description. The list holds no disabled buttons.
-- Both go to the member's deployment (its id answers the view that holds it), wait for the row by
-  server and home (`handOff` in `views/spawn.mjs`, shared with the remote spawn), then open it or
+**On a team's page** (`renderer/computer-teams.mjs`, read on mount and at each roster poll; the layout is
+in [A team's page](#a-teams-page)):
+- A team with a provider id lists its members, grouped by deployment and named by machine
+  (`memberGroups`): this computer's deployments first, then the others by label; within a group by
+  instance name, then home. An unmapped team lists none.
+- The **name** is a text button that shows the member's roster row ("Show <instance> in the roster").
+  **Terminal** ("Open <instance> terminal on <machine>", "this computer" for a local member) is there
+  only when the member is running and addressable. The list holds no disabled buttons.
+- The **state** is a pill whose word carries it, never its colour: "Running" (running and addressable),
+  "Stopped", or, in the attention tint, the roster's short label verbatim ("gone from X", "not reachable
+  on X", "X not reached"), else `unknown` or `gone`. A member that can't be opened has the full reason
+  (`openBlocked`) as the pill's title and description.
+- Both buttons go to the member's deployment (its id answers the view that holds it), wait for the row
+  by server and home (`handOff` in `views/spawn.mjs`, shared with the remote spawn), then open it or
   select and focus it (`ctx.showInRoster`).
-- A remote deployment whose last read failed keeps its last-known members, heads itself "<label> ·
-  not reached" and carries the error as its title; its members read `unknown`.
+- A remote deployment whose last read failed keeps its last-known members. Its machine card reads "not
+  reached", in the warn colour, and carries the error as its head's title; its members' state says why
+  (the roster's label, else `unknown`).
+
+**On the board**, each card's foot sums these members up ([The Teams board](#the-teams-board)), and:
 - `notReached` is said under the page head: "Not reached: <label>, …. Their members aren't shown until
   they answer." That status line follows every answer, even while the cards wait under the redraw
-  barrier (an open form, a pending confirmation, or focus inside the page).
-- The card's summary is "N members" or "N members · M on other machines", and nothing for none.
+  barrier.
+- A roster poll redraws the board only when who is in a team, or their state, changed, and never under
+  the redraw barrier: an open form, a pending confirmation, a change in flight, or focus inside the
+  board. The barrier is the board's alone: an open team page follows its own repaint rule.
 
 **Where to run** (the spawn dialog, at the form's top level just above Relationship), in a view with
 one deployment: "This computer", then each registered server (`/api/servers`). With a CLI that has

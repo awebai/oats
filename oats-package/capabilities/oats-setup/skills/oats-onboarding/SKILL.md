@@ -331,7 +331,7 @@ receipt repair.
 
 Set this up only after cards 1–8 succeed, and only when the intake authorizes harvested
 knowledge reviewed and merged by an agent. It needs kernel ≥ 0.49.0 (the public
-instance-event lookup after a source retires) and `oats.okf` 5.1.0. The contract is
+instance-event lookup after a source retires) and `oats.okf` 5.2.0. The contract is
 `docs/knowledge.md` ("Knowledge operations") and `docs/schedules.md`
 ("Triggers", "Workspace triggers and schedules") in the installed kernel, and
 okf's own README at the pinned tag; read them, and okf's own
@@ -339,7 +339,7 @@ okf's own README at the pinned tag; read them, and okf's own
 
 ### 1. Pin the package
 
-`packages: { oats.okf: v5.1.0 }` in the workspace file, then `oats sync`
+`packages: { oats.okf: v5.2.0 }` in the workspace file, then `oats sync`
 (`/oats-package-pins`). One pin brings, versioned and locked together:
 
 - the three capabilities: `oats.okf` (every working soul's knowledge slot),
@@ -437,13 +437,17 @@ Since oats.okf 5.0 there is no harvest setting on the host or at spawn.
 with `E_REMOVED`.
 
 - **How it works:** a working soul whose knowledge slot is `oats.okf`
-  proposes knowledge at checkpoints. It spawns a `knowledge-harvester`, which
-  turns one proposal into one pull request on the knowledge base. The review
-  trigger (section 3) has the maintainer review and merge it.
+  reads the compulsory `okf-propose` skill from its IMPORTANT inject and
+  checks `oats okf status`. At a finished task or PR hand-over, eligible claims
+  become at most one proposal, subject to the skill's memory/concurrency gates;
+  most checkpoints propose nothing. The harvester opens owned-node PRs for
+  the review trigger (section 3). The duty does not depend on a task briefing;
+  only new spawns get it after the 5.2.0 pin and sync.
 - **The one switch is the soul's own opt-out:** `knowledge: { harvest: off }`
-  in its `soul.yaml`. Its instances are then never told to propose, and the
-  harvester refuses a proposal that names one of them. It is the only harvest
-  control enforced in code. It is per soul, and it covers that soul's own
+  in its `soul.yaml`. Its instances get the shared conditional instructions
+  but no duty; `oats okf status` reports `off` from the spawn-written policy.
+  The harvester independently refuses a proposal naming that soul: the only
+  harvest control enforced in code. It is per soul, and it covers that soul's own
   proposals, not what its instances tell other seats. Whether a deployment
   allows opt-outs is that deployment's policy. Opt out a soul whose work is
   reading third-party correspondence: the harvest exclusions, personal data
