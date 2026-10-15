@@ -79,6 +79,7 @@ import {
   fallbackTabForContext, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
+import { retiredTabs, tabShowsRow, otherIncarnation, terminalOrigin } from "./retired-tabs.mjs";
 import { notePanel, panelDeployments, deploymentHeading } from "./view-deployments.mjs";
 import { rosterSections, rowStale, splitByDeployment } from "../../client/roster-sections.mjs";
 import { DESKTOP_TERMS } from "./desktop-terms.mjs";
@@ -230,7 +231,7 @@ const spawnFollow = createSpawnFollow({
     const target = instanceActionTarget(workspace, row, { requireBirth: true });
     if (!target) return false;
     const key = terminalKey(workspace, target);
-    const tabOf = () => { for (const [id, t] of tabs) if (t.kind === "terminal" && t.key === key) return id; return null; };
+    const tabOf = () => { for (const [id, t] of tabs) if (t.kind === "terminal" && t.key === key && !otherIncarnation(t.origin?.incarnation, target.incarnation)) return id; return null; };
     const before = tabOf();
     await openTerminalTab(target, { quiet: true, expected: target, valid });
     const after = tabOf();
@@ -425,6 +426,10 @@ let contextRosterEl = null;
 let contextFilter = "";
 let contextInstances = [];
 let contextWorkspace = "";
+// #1237: the dispatch order of every /api/panel read (the roster's and an open's), and the newest roster answer the
+// retired-tab rule ran on ({ read, workspace, panel }): an open whose own read is older than it checks it before its tab.
+let panelReads = 0;
+let judgedAnswer = null;
 // The roster's loading state (desktop/loading-states): the controller owns the
 // pending skeleton, "Refreshing…", the stale line and Retry; shell owns the
 // latest-intent tokens (contextRosterGen / owns()) and calls it only for a
@@ -590,7 +595,7 @@ async function refreshContextRoster({ user = false } = {}) {
   if (windowState() === "choosing") return refreshChooserChoices(); // no workspace: nothing to read
   // A Retry restarts the bounded wait for an answer.
   if (user) rosterPendingWatch.reset();
-  const myGen = ++contextRosterGen;
+  const myGen = ++contextRosterGen, read = ++panelReads, connection = connectionGeneration;
   const commitWorkspaceLabel = workspaceLabel.begin();
   const ws = currentWorkspace();
   // A stale dispatch selection (persisted, not among the served choices) is
@@ -693,7 +698,7 @@ async function refreshContextRoster({ user = false } = {}) {
     ? deploymentUnavailableText(panel.deployment, DESKTOP_TERMS) : null;
   const signature = rosterSignature(contextInstances, {
     workspace: resolvedWs, error: failure, deploymentNote: contextDeploymentNote, deployments: contextDeployments,
-    activeKey: tabs.get(activeTab)?.key ?? null, connection: connectionGeneration,
+    activeKey: tabs.get(activeTab)?.key ?? null, activeIncarnation: tabs.get(activeTab)?.origin?.incarnation ?? null, connection: connectionGeneration,
   });
   // A panel that reports an error is the kernel's failed read, not an observed
   // roster: with instances beside it (a remote server the kernel could not
@@ -727,6 +732,9 @@ async function refreshContextRoster({ user = false } = {}) {
     rosterState.succeed({ observedAt: typeof panel.observedAt === "string" ? panel.observedAt : null, empty: !contextInstances.length });
   }
   rosterStale = reportedFailure;
+  // #1237: a retired instance's tabs close on this observed answer of the shown workspace, on this connection (a
+  // stale or pending answer proves nothing). First, so nothing below repaints or re-binds a closing tab.
+  if (!reportedFailure && connection === connectionGeneration) closeRetiredTabs(panel, read);
   // Background spawns: a created instance the roster now reports becomes its real row; outcomes held
   // for this workspace are posted. Only an observed roster counts (never a failed read's last rows).
   if (!reportedFailure && !panel.workspace?.remote) spawnJobs.observe(resolvedWs, contextInstances);
@@ -737,6 +745,18 @@ async function refreshContextRoster({ user = false } = {}) {
     renderContextRoster(contextInstances);
   }
   if (reportedFailure) rosterState?.fail(failure);
+}
+
+/** #1237: close every terminal tab this owned roster answer shows retired (retired-tabs.mjs: the one evidence rule),
+ * in every group, through closeTab's own teardown. A background close: it cancels no pending open, its group's
+ * successor takes over, and focus moves there only when it was in the closed tab (its trigger or its pane). */
+function closeRetiredTabs(panel, read) {
+  judgedAnswer = { read, workspace: panel.workspace?.id ?? null, panel };
+  for (const id of retiredTabs(tabs, panel)) {
+    const t = tabs.get(id), at = document.activeElement;
+    const focused = !!at && at !== document.body && (t.triggerEl.contains(at) || t.paneEl.contains(at));
+    closeTab(id, focused, { explicit: false, background: true });
+  }
 }
 
 /** Spec D's row mark: a shape plus text, never colour alone. "Needs input" on a waiting row (its reason and
@@ -854,8 +874,8 @@ function renderContextRoster(instances) {
         const rowWrap = document.createElement("div");
         rowWrap.className = "ctx-tree-row";
         rowWrap.style.setProperty("--depth", String(i.depth || 0));
-        const activeKey = tabs.get(activeTab)?.key;
-        const isActive = activeKey === terminalKey(ws, i);
+        // The active terminal tab shows this row: its key and incarnation (#1237: a respawn under the same home is another row).
+        const isActive = tabShowsRow(tabs.get(activeTab), ws, i);
         // Collapse and focus state key by IDENTITY, not bare name: two
         // same-named instances from different agents roots collapse and
         // focus independently (review 46f3fdc).
@@ -1406,7 +1426,7 @@ function refreshPanelInstance(instances, workspace) {
   syncTabNeedsInput(instances, workspace); // also on a poll whose roster signature is unchanged (no repaint)
   const tab = tabs.get(activeTab);
   if (!tabLayerVisible || tab?.kind !== "terminal" || tab.workspace !== workspace) return;
-  const matches = instances.filter(instance => terminalKey(workspace, instance) === tab.key);
+  const matches = instances.filter(instance => tabShowsRow(tab, workspace, instance));
   // Preserve identity, but do not present a retained Running observation as
   // current when the latest roster cannot identify the selected home uniquely.
   if (matches.length === 1) tab.instanceRef = matches[0];
@@ -1427,7 +1447,7 @@ function syncTabNeedsInput(instances, workspace) {
   for (const tab of tabs.values()) {
     if (tab.kind !== "terminal" || tab.workspace !== workspace) continue;
     const trigger = tab.triggerEl;
-    const rows = instances.filter((i) => terminalKey(workspace, i) === tab.key);
+    const rows = instances.filter((i) => tabShowsRow(tab, workspace, i));
     const row = rows.length === 1 ? rows[0] : null;
     const claim = row ? waitingClaim(row, { stale: rosterStale || rowStale(row, contextDeployments) }) : null;
     const drawn = tab.needsInputDrawn ??= { mark: trigger.querySelector(":scope > .tab-dot"), label: trigger.getAttribute("aria-label"), title: trigger.title };
@@ -1615,9 +1635,10 @@ function onTabKeydown(e, id) {
   if (selectTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null, term = null }) {
+function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, origin = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null, term = null }) {
   if (key) {
-    for (const [tid, t] of tabs) if (t.key === key) {
+    // A terminal tab is one incarnation (#1237): another incarnation's tab under the same key is not this one.
+    for (const [tid, t] of tabs) if (t.key === key && !otherIncarnation(t.origin?.incarnation, origin?.incarnation)) {
       if (instanceRef && (!intent || intent())) t.instanceRef = instanceRef;
       if (intent) selectTab(tid, { intent, focusContent: focusOnActivate });
       else activateTab(tid);
@@ -1644,7 +1665,7 @@ function addTab({ decor = null, title, key, kind = "artifact", workspace = curre
     isApplyingFocus: () => tabOpenIntents.isApplyingFocus(),
     select: () => selectTab(id),
   });
-  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, confirmClose, onShow, focusContent, term });
+  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, origin, onClose, confirmClose, onShow, focusContent, term });
   if (intent) selectTab(id, { intent, focusContent: focusOnActivate });
   else activateTab(id);
   return { id, paneEl };
@@ -1748,7 +1769,7 @@ function revealActiveRosterRow(tab) {
   if (tab?.kind !== "terminal" || !listEl) return;
   const ws = contextWorkspace || currentWorkspace();
   if (tab.workspace !== ws) return;
-  const instance = contextInstances.find(i => terminalKey(ws, i) === tab.key);
+  const instance = contextInstances.find(i => tabShowsRow(tab, ws, i));
   const rows = new Map([...listEl.querySelectorAll(".ctx-inst")].map(r => [r.dataset.treeInstance, r]));
   const selected = instance ? rows.get(instanceId(instance)) : null;
   for (const r of rows.values()) {
@@ -1772,14 +1793,16 @@ function revealActiveRosterRow(tab) {
   if (target) revealInScrollport(listEl, target.closest(".ctx-tree-row") || target);
 }
 
-function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false, passive = false } = {}) {
+function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false, passive = false, background = false } = {}) {
   // All public close paths supersede foreground work, even for inactive tabs.
   // Internal replacement (brain open) is part of its enclosing open intent.
   if (explicit) tabOpenIntents.invalidate();
   const t = tabs.get(id);
   if (!t) return;
   if (t.confirmClose && !confirmed) {
-    t.closeIntent = { owns: tabOpenIntents.begin(), restoreFocus };
+    // A background close (#1237: a retired instance's tab) cancels nothing pending — its ticket only watches —
+    // and never takes over a close already in flight; a user's close takes over a background one.
+    if (!background || !t.closeFlight) t.closeIntent = { owns: background ? tabOpenIntents.watch() : tabOpenIntents.begin(), restoreFocus, background };
     if (t.closeFlight) return t.closeFlight;
     let work;
     try { work = t.confirmClose(); } catch { return; }
@@ -1787,7 +1810,14 @@ function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false
       if (tabs.get(id) !== t || t.closeFlight !== flight) return;
       const latest = t.closeIntent.owns();
       if (result?.terminalApi === 2 && result.ok && result.status === 'closed') {
-        closeTab(id, t.closeIntent.restoreFocus && latest, { explicit: false, confirmed: true, passive: !latest });
+        if (!t.closeIntent.background) closeTab(id, t.closeIntent.restoreFocus && latest, { explicit: false, confirmed: true, passive: !latest });
+        else {
+          // Focus follows only when it was in this tab and is not elsewhere now (its xterm went with the teardown):
+          // background work never takes it from where the operator is. Passive: a covered layer stays covered.
+          const at = document.activeElement;
+          const stayed = !at || at === document.body || t.triggerEl.contains(at) || t.paneEl.contains(at);
+          closeTab(id, t.closeIntent.restoreFocus && stayed, { explicit: false, confirmed: true, passive: true });
+        }
       }
       // Pending/failure retains the exact tab, its literal state and key.
     }, () => { /* failure does not repaint, navigate, focus or remove the tab */ })
@@ -1929,7 +1959,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
 }
 
 // ── integrated terminal tab (the shell's own flagship view) ──────────────
-const pendingTerms = new Set(); // keys with a tab CREATION in flight (post-resolution — dedup for concurrent opens of one resolved identity)
+const pendingTerms = new Set(); // [key, incarnation] with a tab CREATION in flight (post-resolution — dedup for concurrent opens of one resolved identity)
 /** ref: either a bare instance name (views, palette — resolved only when
  * unambiguous) or { instance, home?, agentsRoot? } (sidebar rows — exact).
  * opts.quiet (post-spawn auto-open): failures report via console.warn
@@ -1974,6 +2004,7 @@ async function openTerminalTabFlow(ref, notify, options = {}) {
     split = planned.split; return true;
   };
   let panel;
+  const read = ++panelReads;
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   } catch (e) {
@@ -1999,22 +2030,24 @@ async function openTerminalTabFlow(ref, notify, options = {}) {
   // Every jump path through here is user-initiated (palette, roster row,
   // quick-open, post-spawn open) — activating an existing tab focuses its
   // terminal input so the user can type into tmux immediately.
-  for (const [tid, t] of tabs) if (t.key === key) {
+  // Only a tab of this incarnation (#1237): a respawn under the same home opens its own tab.
+  for (const [tid, t] of tabs) if (t.key === key && !otherIncarnation(t.origin?.incarnation, inst.createdAt)) {
     if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');
     t.instanceRef = inst;
     split = fillEmptyGroup(split, tid);
     selectTab(tid, { intent: owns, focusContent: true }); return;
   }
-  if (pendingTerms.has(key)) return; // an open for this key is already in flight
-  pendingTerms.add(key);
+  const pending = JSON.stringify([key, terminalOrigin(inst).incarnation]); // one incarnation's creation
+  if (pendingTerms.has(pending)) return; // an open for this key is already in flight
+  pendingTerms.add(pending);
   try {
-    await openTerminalTabInner(inst, ws, key, owns, notify, commitDestination);
+    await openTerminalTabInner(inst, ws, key, owns, notify, commitDestination, read);
   } finally {
-    pendingTerms.delete(key);
+    pendingTerms.delete(pending);
   }
 }
 
-async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert(msg), commitDestination = () => true) {
+async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert(msg), commitDestination = () => true, read = 0) {
   // inst is the RESOLVED roster instance (openTerminalTab resolves + keys
   // before dedup; review 7d740f9). Re-check ownership here — whenKeyFree
   // may have waited across a workspace switch.
@@ -2022,6 +2055,12 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const name = inst.instance;
   if (!canAddressRemote(inst)) return notify(rowReasonLine(rowReason(inst)));
   if (!inst.running || (!inst.server && !inst.tmux?.session)) return notify(runtimeErrorLine(inst) || `"${name}" has no live terminal session`);
+  const origin = terminalOrigin(inst);
+  // #1237: a roster answer read after this open's own (and judged while it waited) that shows this incarnation
+  // retired wins — no tab opens for a row the roster no longer has.
+  const judged = judgedAnswer;
+  if (judged && judged.read > read && judged.workspace === ws
+    && retiredTabs([[0, { kind: "terminal", workspace: ws, key, origin }]], judged.panel).length) return notify(`unknown instance "${name}"`);
 
   if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');
   const wrap = document.createElement("div");
@@ -2092,6 +2131,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     kind: "terminal",
     workspace: ws,
     instanceRef: inst,
+    origin, // the incarnation, deployment and server it opened (#1237: retired-tabs.mjs)
     intent: owns,
     // Keep the pane/key while cleanup is pending or unconfirmed. Theme hooks
     // belong to the retained view and are removed only on confirmed disposal.

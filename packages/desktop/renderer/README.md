@@ -1660,6 +1660,44 @@ workspace bus. Standalone brain views without that context still follow the bus.
 Open requests share a latest-selection token plus the workspace generation, so a
 slow earlier open cannot steal selection or land after an A → B → A switch.
 
+### A terminal tab is one incarnation; a retired instance's tabs close (#1237)
+
+A terminal tab's key (`terminalKey`: workspace + home) names a home, not an
+instance: a home can be retired and spawned again under the same name. So the tab
+also records, once at open, the row's `createdAt` (the kernel's incarnation of a
+home), its deployment tag and its server (`terminalOrigin` in `retired-tabs.mjs`,
+`tab.origin`). Every place that ties a tab to a row goes through `tabShowsRow`
+(the key, and not `otherIncarnation`): the active-row highlight, Needs input,
+the panel rebinding, the row reveal, and the dedup of `addTab`, the open flow
+(`pendingTerms` holds `[key, incarnation]`) and the followed spawn. A null
+`createdAt` on either side matches by key alone. `wsActiveTerminal` still
+remembers a key; it is a restoration fallback only.
+
+`retiredTabs(tabs, panel)` is the one rule that decides a tab's instance is
+retired, and its header lists the panel facts that prove each case: (R) the same
+home with another incarnation, (G) a remote row `missingRemotely`, (A) absent
+from a successful, current read of the tab's recorded deployment (its
+`deployments[]` entry reachable, not stale, of the tab's kind, and no kept
+`error` or `serverUnreached` row for it). Anything it cannot prove keeps the tab.
+`refreshContextRoster` runs it (`closeRetiredTabs`) on an owned answer of the
+shown workspace, on the connection it was read on, only when that answer is not
+a failed, kept or pending read, and before the panel binding and the paint. A
+hidden workspace's tabs are judged when its own answer lands.
+
+The close is `closeTab(id, focused, { explicit: false, background: true })`: the
+viewer's own teardown (`confirmClose`), with a `watch()` ticket instead of
+`begin()`, so it cancels no pending open, and passive, so a covered tab layer stays
+covered. It never takes over a user's close already in flight. Focus moves to the
+group's successor's trigger only when it was in the closed tab when the answer
+landed and has not gone elsewhere during the teardown. An open whose own
+`/api/panel` read is older than the last judged answer (`panelReads` numbers
+every read in dispatch order) checks that answer before it makes its tab, so no
+tab opens for an incarnation the roster already shows retired. The PTY ending is
+never evidence (Stop ends it too); the viewer's `detach-on-destroy on`
+(`tmux-target.mjs`) makes sure a dying source ends the tab instead of moving it
+to another session. Tests: `retired-tabs.test.mjs` (the rule, over the server's
+own panels) and `retired-tabs-shell.test.mjs` (the shipped shell close).
+
 ## Supporting read-only files
 
 **File: open read-only…** in the command palette, or **Mod+O**, opens a browser
