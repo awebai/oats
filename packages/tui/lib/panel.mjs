@@ -33,10 +33,23 @@
 // and ONE of the displayed is SHOWN, or none: the one typed to. Each tab's window has its own
 // size: an open makes its window at the size it gives, and a resize is one `resize-window` per
 // window it names, or every window (never the global `window-size`, above); the panel never sizes
-// a window the caller did not name. The control client hears `%output` for every pane of its
-// session, so the output of a tab not displayed is heard too: it captures nothing, and only marks
-// that tab (`onActivity`), once in each spell it is not displayed (displayed and then not again, it
-// may be marked again). A `%layout-change` is no output (every resize makes one for each window).
+// a window the caller did not name. A `%layout-change` is no output (every resize makes one for
+// each window).
+//
+// THE OUTPUT OF A TAB NOT DRAWN. A tab not displayed is heard until it prints: its first
+// `%output` in a spell not displayed marks it (`onActivity`, once in each spell: displayed and then
+// not again, it may be marked again) and PAUSES its pane for this client (`refresh-client -A
+// '%<pane>:pause'`, tmux 3.2: control.c control_pause_pane), so tmux sends none of its output, nor
+// keeps it for this client, until the tab is displayed again. Every displayed tab is paused too
+// while the panel is hidden, and is never marked. A tab displayed again is CONTINUED
+// (`:continue`, control_continue_pane) BEFORE its capture: tmux starts its output afresh from where
+// the pane is then, so nothing written meanwhile is replayed, and the capture is the pane's screen
+// as it is. A paused pane is still read (server-client.c server_client_check_pane_buffer: a paused
+// pane never stops the reading): its screen stays current and its viewer never waits. `pause`
+// rather than `off`: from tmux 3.4 on, a pane every control client has turned off is no longer
+// read (that same function disables its read event), so its viewer stalls and its screen goes
+// stale. tmux prints `%pause` and `%continue` lines for them, which say nothing the panel needs. A
+// hidden tab costs its first chunk of output in each spell; a quiet one costs nothing.
 // Each display takes a PLACE (at most MAX_SHOWN), and a tab displayed `instead` of another takes
 // that one's place; an open holds its place from the call on (the tab that was in it is no longer
 // displayed then), and when its window exists its tab takes that place and is shown, whatever was
@@ -542,7 +555,9 @@ export function createPanel({ dir, capture, onScreen = () => {}, onActivity = ()
    *  `%end` or `%error` line that repeats its `%begin`'s time, number and flags EXACTLY (tmux
    *  prints the same time and number on both lines of a block). No pane's text is ever in a block
    *  (THE CAPTURE); the exact end is kept all the same. Outside a block a line is a notification
-   *  (tmux never prints one inside a block; `%output` carries a pane's text escaped, one line). The FIRST blocks, one per command of
+   *  (`%output` carries a pane's text escaped, one line). tmux prints notifications outside blocks,
+   *  but for the `%pause` or `%continue` that a `refresh-client -A` writes while it runs, which is
+   *  inside that command's block and is all its block may hold (`flow`). The FIRST blocks, one per command of
    *  the start list, answer the start itself; every later one answers the oldest command waiting. */
   function heard(s, line) {
     if (s.block) {
@@ -762,15 +777,25 @@ export function createPanel({ dir, capture, onScreen = () => {}, onActivity = ()
    *  caller asked. */
   function stale(v) { soil(v); arm(); }
   /** A pane printed: a displayed tab's screen is stale; a tab not displayed is marked, once in this
-   *  spell not displayed, and nothing is captured for it (THE TABS). Any other pane's output (the
+   *  spell not displayed, and paused (THE OUTPUT OF A TAB NOT DRAWN), and nothing is captured for
+   *  it. What it printed before tmux took the pause in is nothing more. Any other pane's output (the
    *  keeper's, an open under way, a viewer being closed) is nobody's. */
   function output(pane) {
     for (const v of tabs.values()) {
       if (v.pane !== pane) continue;
       if (v.place !== null) return stale(v);
-      if (!v.marked && !v.over && !ended) { v.marked = true; tell(() => onActivity({ id: v.id })); }
+      if (!v.marked && !v.over && !ended) { v.marked = true; flow(v, false); tell(() => onActivity({ id: v.id })); }
       return;
     }
+  }
+  /** Tab `v`'s pane paused or continued for this client (THE OUTPUT OF A TAB NOT DRAWN), when it is
+   *  not so already. A tab whose viewer is over is left alone: its pane is going. */
+  function flow(v, on) {
+    if (v.over || v.off === !on) return;
+    v.off = !on;
+    // tmux prints `%pause %<pane>` (or `%continue`) while it runs the command, so inside its block.
+    const said = `%${on ? "continue" : "pause"} ${v.pane}`;
+    ask(`refresh-client -A '${v.pane}:${on ? "continue" : "pause"}'`, (lines) => lines.length === 0 || (lines.length === 1 && lines[0] === said));
   }
   /** A capture of tab `v` now (or right after the one in flight), whatever the tick. A tick armed
    *  then is folded in: every stale displayed tab waits for its capture too. */
@@ -908,6 +933,8 @@ export function createPanel({ dir, capture, onScreen = () => {}, onActivity = ()
    *  it, in which its output may mark it again. The place itself is the caller's to keep or free. */
   function detach(v) {
     v.place = null;
+    // Heard again until it prints (a displayed tab is paused while the panel is hidden).
+    flow(v, true);
     v.marked = false;
     v.dirty = false;
     v.due = false;
@@ -947,6 +974,9 @@ export function createPanel({ dir, capture, onScreen = () => {}, onActivity = ()
     place.v = v;
     v.place = place;
     v.marked = false;
+    // Continued before anything captures it (show and resize capture after this); paused while
+    // the panel is hidden.
+    flow(v, visible);
   }
   /** An open no longer holds its place: a place it held empty is freed (a tab a show() put there
    *  meanwhile keeps it). */
@@ -1014,7 +1044,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onActivity = ()
           throw refusal("E_PANEL_OPEN", "tmux did not name the window it opened");
         }
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
-        const v = { id: ids[1], pane: ids[2], ...start, files: made, asked: false, over: false, status: null, waiting: null, reaping: null, marked: false, place: null, dirty: false, due: false, dueAt: 0 };
+        const v = { id: ids[1], pane: ids[2], ...start, files: made, asked: false, over: false, status: null, waiting: null, reaping: null, marked: false, place: null, dirty: false, due: false, dueAt: 0, off: false };
         mine.files = null; // the viewer's now: finish() removes them
         // Heard dead with no status yet: opened as any other, and waiting for the line with it.
         const pending = diedSeen.get(v.id) === PENDING;
@@ -1152,6 +1182,9 @@ export function createPanel({ dir, capture, onScreen = () => {}, onActivity = ()
   function setVisible(on) {
     if (ended) return;
     visible = on === true;
+    // Hidden, no displayed tab is drawn: each is paused until the panel shows again, and continued
+    // before its capture.
+    for (const v of displayedTabs()) flow(v, visible);
     if (!visible) stopFrames();
     else freshAll();
   }
