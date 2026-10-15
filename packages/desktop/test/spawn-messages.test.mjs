@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnProblem, catalogProblem } from '../../client/spawn-messages.mjs';
+import { spawnText } from '../renderer/spawn-words.mjs';
 import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { spawnApplyReason } from '../../client/spawn-apply-contract.mjs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
@@ -23,19 +24,19 @@ test('every contract code has a plain sentence, for reading defaults and for spa
   assert.ok(PREVIEW.length > 25 && APPLY.length > 15, 'the tables were found');
   for (const code of [...PREVIEW, ...APPLY]) for (const stage of ['preview', 'spawn']) {
     const problem = spawnProblem({ code, message: 'technical text' }, stage);
-    plain(problem.text, code); assert.equal(problem.code, code); assert.equal(problem.detail, `${code} · technical text`);
+    plain(spawnText(problem, stage), code); assert.equal(problem.code, code); assert.equal(problem.detail, `${code} · technical text`);
   }
 });
 
 test('kernel refusals keep their own text only behind Details; unknown codes still read plainly', () => {
   const clone = spawnProblem({ code: 'E_CLONE_MISSING', message: 'soul x … `git clone /r /d` …' });
-  plain(clone.text); assert.match(clone.detail, /git clone \/r \/d/);
+  plain(spawnText(clone)); assert.match(clone.detail, /git clone \/r \/d/);
   for (const stage of ['preview', 'spawn']) {
     const odd = spawnProblem({ code: 'E_SOMETHING_NEW', message: 'raw' }, stage);
-    plain(odd.text); assert.equal(odd.detail, 'E_SOMETHING_NEW · raw');
+    plain(spawnText(odd, stage)); assert.equal(odd.detail, 'E_SOMETHING_NEW · raw');
   }
   assert.equal(spawnProblem(undefined).code, 'E_CLI_FAILED'); assert.equal(spawnProblem({ code: 'E_BUSY' }).detail, 'E_BUSY');
-  assert.notEqual(spawnProblem({ code: 'E_CLI_TIMEOUT' }, 'preview').text, spawnProblem({ code: 'E_CLI_TIMEOUT' }, 'spawn').text,
+  assert.notEqual(spawnText(spawnProblem({ code: 'E_CLI_TIMEOUT' }, 'preview'), 'preview'), spawnText(spawnProblem({ code: 'E_CLI_TIMEOUT' }, 'spawn'), 'spawn'),
     'a timed-out spawn may have created the instance; a timed-out read did not');
 });
 
@@ -50,13 +51,14 @@ test('a kernel code the Desktop has no sentence for reads as the general one, it
   assert.deepEqual(read.error, { code: CODE, message: SAID });
   const reason = previewFailure(read.error.code, null, read.error.message).reason;
   assert.deepEqual(reason, { code: CODE, message: SAID });
-  assert.deepEqual(spawnProblem(reason, 'preview'), { text: 'OATS couldn’t work out this soul’s defaults. Try again, or see Details.', fact: 'OATS couldn’t work out this soul’s defaults.', next: 'details', code: CODE, detail: `${CODE} · ${SAID}` });
+  assert.deepEqual(spawnProblem(reason, 'preview'), { fact: 'OATS couldn’t work out this soul’s defaults.', next: 'details', code: CODE, detail: `${CODE} · ${SAID}` });
+  assert.equal(spawnText(spawnProblem(reason, 'preview'), 'preview'), 'OATS couldn’t work out this soul’s defaults. Try again, or see Details.');
   // A message that cannot travel leaves no code of the tables to fall back on: the general failure.
   assert.equal(previewFailure(CODE, null, `${SAID} ${'x'.repeat(2048)}`).reason.code, 'E_CLI_FAILED');
   // A press: no kernel text travels, and the code is in no table.
   const pressed = spawnApplyReason(CODE);
   assert.equal(pressed.code, 'E_CLI_FAILED');
-  assert.equal(spawnProblem(pressed, 'spawn').text, 'OATS couldn’t complete the spawn. Try again, or see Details.');
+  assert.equal(spawnText(spawnProblem(pressed, 'spawn'), 'spawn'), 'OATS couldn’t complete the spawn. Try again, or see Details.');
 });
 
 test('the soul chooser explains a catalog problem without codes', () => {
@@ -67,13 +69,13 @@ test('the soul chooser explains a catalog problem without codes', () => {
 
 test('there is no package approval: no sentence mentions it; integrity names the lock', () => {
   for (const code of [...PREVIEW, ...APPLY]) for (const stage of ['preview', 'spawn']) {
-    assert.doesNotMatch(spawnProblem({ code, message: 'x' }, stage).text, /approv/i, code);
+    assert.doesNotMatch(spawnText(spawnProblem({ code, message: 'x' }, stage), stage), /approv/i, code);
   }
-  assert.equal(spawnProblem({ code: 'E_PACKAGE_INTEGRITY', message: 'x' }).text, 'A package this soul uses no longer matches the lock. Run Sync in the Workspace view.');
+  assert.equal(spawnText(spawnProblem({ code: 'E_PACKAGE_INTEGRITY', message: 'x' })), 'A package this soul uses no longer matches the lock. Run Sync in the Workspace view.');
 });
 
 test('an invalid instance name says every rule, including the 64-character cap (#159)', () => {
-  const text = spawnProblem({ code: 'E_INSTANCE_NAME_INVALID', message: 'instance names are at most 64 characters; "a…" is 65 — pass a shorter --name' }).text;
+  const text = spawnText(spawnProblem({ code: 'E_INSTANCE_NAME_INVALID', message: 'instance names are at most 64 characters; "a…" is 65 — pass a shorter --name' }));
   assert.match(text, /at most 64 characters/); assert.match(text, /lowercase/); assert.match(text, /soul/);
 });
 
@@ -98,26 +100,28 @@ test('an unmatched launch preference: the long sentence is read at the preview w
   plain(OPENS, UNMATCHED); plain(PRESSED, UNMATCHED);
   // As the dialog opens: the reason carries the kernel's message and its fix.
   const opens = spawnProblem({ code: UNMATCHED, message: SAID, fix: REMEDY }, 'preview');
-  assert.deepEqual(opens, { text: OPENS, fact: LEAD, next: 'change-options', code: UNMATCHED, detail: UNMATCHED, kernel: { message: SAID, fix: REMEDY } });
+  assert.deepEqual(opens, { fact: LEAD, next: 'change-options', code: UNMATCHED, detail: UNMATCHED, kernel: { message: SAID, fix: REMEDY } });
+  assert.equal(spawnText(opens, 'preview'), OPENS, 'the Desktop names its controls after the shared lead');
   // The parts are the strings as they came: nothing trimmed, joined or taken out.
   const raw = spawnProblem({ code: UNMATCHED, message: `  ${SAID}\n${REMEDY}  `, fix: ` ${REMEDY} ` }, 'preview');
   assert.deepEqual(raw.kernel, { message: `  ${SAID}\n${REMEDY}  `, fix: ` ${REMEDY} ` });
   assert.equal(raw.detail, UNMATCHED, 'no kernel text in detail: no consumer of it may show one without its speaker');
   // A press: the table's sentence travelled, no fix; the shorter sentence, and Details as for any code.
   const pressed = spawnProblem(spawnApplyReason(UNMATCHED), 'spawn');
-  assert.deepEqual(pressed, { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${TABLE}` });
+  assert.deepEqual(pressed, { fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${TABLE}` });
+  assert.equal(spawnText(pressed, 'spawn'), PRESSED);
   // "(Details)" never points at Details that hold no kernel text: at the preview without a fix, the shorter one.
-  assert.deepEqual(spawnProblem(previewFailure(UNMATCHED).reason, 'preview'), { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${TABLE}` });
-  assert.deepEqual(spawnProblem({ code: UNMATCHED, message: SAID }, 'preview'), { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${SAID}` });
-  assert.deepEqual(spawnProblem({ code: UNMATCHED }, 'preview'), { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: UNMATCHED });
+  assert.deepEqual(spawnProblem(previewFailure(UNMATCHED).reason, 'preview'), { fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${TABLE}` });
+  assert.deepEqual(spawnProblem({ code: UNMATCHED, message: SAID }, 'preview'), { fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${SAID}` });
+  assert.deepEqual(spawnProblem({ code: UNMATCHED }, 'preview'), { fact: PRESSED, next: null, code: UNMATCHED, detail: UNMATCHED });
   // The stage's sentence at a press, whatever the reason carries.
-  assert.equal(spawnProblem({ code: UNMATCHED, message: SAID, fix: REMEDY }, 'spawn').text, PRESSED);
+  assert.equal(spawnText(spawnProblem({ code: UNMATCHED, message: SAID, fix: REMEDY }, 'spawn'), 'spawn'), PRESSED);
 });
 
 test('an unmatched launch preference: a reader stays tolerant of a fix that is not a usable string', () => {
   for (const fix of [undefined, null, '', '   ', 7, true, [REMEDY], { fix: REMEDY }]) {
     const problem = spawnProblem({ code: UNMATCHED, message: SAID, fix }, 'preview');
-    assert.deepEqual(problem, { text: PRESSED, fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${SAID}` }, JSON.stringify(fix) ?? 'undefined');
+    assert.deepEqual(problem, { fact: PRESSED, next: null, code: UNMATCHED, detail: `${UNMATCHED} · ${SAID}` }, JSON.stringify(fix) ?? 'undefined');
   }
   // A message that is not a string, beside a fix: the fix is still the kernel's, and it is the part there is.
   assert.deepEqual(spawnProblem({ code: UNMATCHED, message: 7, fix: REMEDY }, 'preview').kernel, { message: '', fix: REMEDY });

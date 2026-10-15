@@ -43,18 +43,19 @@ import { retainedSpawnMessage, differedLines, DIFFERED_IN_ACTIVITY, flagIgnoredN
 import { spawnApplyReason } from '../../client/spawn-apply-contract.mjs';
 import { createSpawnTransaction, RECOVER_POLL_MS, FOLLOW_MARGIN_MS, RECOVER_WITHIN_MS } from '../../client/spawn-transaction.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
+import { spawnText, outcomeText } from './spawn-words.mjs';
 import { rememberSpawnDeployment } from './spawn-deployment-field.mjs';
 
 /** How long a created instance may take to appear in the roster before the row goes and the
  * notification says so (the dialog's former wait: 20 reads 700 ms apart). */
 export const SPAWN_VISIBLE_WITHIN_MS = 14000;
-export const DRIFT_TEXT = 'These values changed since you last looked. Reopen spawn to check them.';
+export const DRIFT_TEXT = outcomeText('drifted');
 export const SPAWN_STORAGE_KEY = 'oats.spawnJobs.v1';
 /** The transaction's own (packages/client/spawn-transaction.mjs): a pending job reads `result` every
  * RECOVER_POLL_MS until its deadline, the broker's CLI deadline (applyWithinMs) plus FOLLOW_MARGIN_MS from
  * the press; a stored job without a deadline (kept by an older Desktop) follows RECOVER_WITHIN_MS. */
 export { RECOVER_POLL_MS, FOLLOW_MARGIN_MS, RECOVER_WITHIN_MS };
-const PENDING_TEXT = 'The spawn is still running. Check result again in a moment; nothing else was started.';
+const PENDING_TEXT = outcomeText('pending-expired');
 const FLIGHT = ['spawning', 'checking'];
 
 /** Where the roster will place the real row: the relation the kernel records (instance-tree.mjs
@@ -155,7 +156,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
   function unknown(job, reason = spawnApplyReason('E_OUTCOME_UNKNOWN'), message = null) {
     job.state = 'unknown'; changed();
     const problem = spawnProblem(reason, 'spawn');
-    say(job, message || problem.text, details(problem));
+    say(job, message || spawnText(problem, 'spawn'), details(problem));
   }
   /** Created (complete, partial or incomplete): the row stays "Spawning…" until the roster reports it. */
   function created(job, view) {
@@ -166,7 +167,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     if (view.status === 'partial') {
       // Created; only its wake schedule failed. A launched one is still awaited running, to be followed to (Spec E).
       job.wantRunning = view.receipt?.launched === true; job.quiet = true;
-      say(job, view.reason?.message || `Created ${job.instance}.`, { buttons: [{ label: 'View schedules', ariaLabel: `View schedules for ${job.instance}`, activate: async () => viewSchedules() }] });
+      say(job, outcomeText('created', view, job.instance), { buttons: [{ label: 'View schedules', ariaLabel: `View schedules for ${job.instance}`, activate: async () => viewSchedules() }] });
     } else if (view.status === 'incomplete') {
       job.wantRunning = false;
       // A notice is plain text and cannot attribute a quote: with `differed` it says where the two texts
@@ -176,18 +177,18 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
         details(said ? { ...problem, detail: `${problem.detail} · ${said.detail}` } : problem));
     } else if (!view.receipt.launched) {
       job.wantRunning = false;
-      say(job, `Created ${job.instance} — not launched. Open its session from the roster.`);
+      say(job, outcomeText('created', view, job.instance));
     } else { job.wantRunning = true; deliver(job); } // "<name> spawned" waits for the roster to show it running with a session
     changed();
   }
   /** A refusal before anything was applied, or one the kernel reports: the kernel's reason, and that nothing was created. */
-  function refuseWith(job, problem) { refuse(job, /Nothing was created/.test(problem.text) ? problem.text : `${problem.text} Nothing was created.`, problem); }
+  function refuseWith(job, problem) { const text = spawnText(problem, 'spawn'); refuse(job, /Nothing was created/.test(text) ? text : `${text} Nothing was created.`, problem); }
   /** #802: a rolled-back spawn whose cleanup is owed. Its outcome is not a creation; the home is quarantined,
    * and the roster's own row (Spawn didn't finish) offers Retire, which completes it. No Check result: a
    * re-apply of the same key cannot finish it. The pending row goes once the notice is out. */
   function owed(job, problem) {
     job.state = 'done'; changed();
-    job.notice = { message: problem.text, options: details(problem), sticky: false, posted: false, handle: null };
+    job.notice = { message: spawnText(problem), options: details(problem), sticky: false, posted: false, handle: null };
     deliver(job);
   }
   /** An outcome of the transaction, as this store reports it. */
@@ -200,8 +201,8 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
     if (kind === 'cleanup-owed') return owed(job, cleanupOwedProblem(reason, job.instance));
     // E_INTENT_EXPIRED once submitted: the record is gone (a backend restart): not proof of anything.
     if (kind === 'unknown') return unknown(job, reason);
-    if (kind === 'rolled-back') { const problem = rolledBackProblem(reason, job.instance); return refuse(job, problem.text, problem); }
-    if (kind === 'never-submitted') return refuse(job, 'That spawn was never submitted. Reopen spawn to spawn with these values.');
+    if (kind === 'rolled-back') { const problem = rolledBackProblem(reason, job.instance); return refuse(job, spawnText(problem), problem); }
+    if (kind === 'never-submitted') return refuse(job, outcomeText('never-submitted'));
     // Drifted at prepare (the operator's decision is not the prepared one), or E_DECISION_STALE at apply.
     if (kind === 'drifted') return reason ? refuse(job, DRIFT_TEXT, spawnProblem(reason, 'spawn')) : refuse(job, DRIFT_TEXT);
     refuseWith(job, spawnProblem(reason, 'spawn'));
@@ -281,7 +282,7 @@ export function createSpawnJobs({ post, notify, notifySpawned = () => {}, reopen
             changed();
           } else if (now() - job.createdAt >= visibleWithinMs) {
             job.state = 'done';
-            if (job.wantRunning && !job.quiet) job.notice = { message: `Created ${job.instance} — not yet visible as a running session. Open it from the roster when it appears.`, options: {}, posted: false };
+            if (job.wantRunning && !job.quiet) job.notice = { message: outcomeText('not-yet-visible', null, job.instance), options: {}, posted: false };
             else if (!job.notice || job.notice.posted) { forget(job); continue; }
             changed();
           }

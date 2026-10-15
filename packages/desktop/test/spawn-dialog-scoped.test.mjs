@@ -9,6 +9,7 @@ import { JSDOM } from 'jsdom';
 import { createSpawnDialog, spawnDialogCSS, composePreviewModules, soulOriginText, worksInText, moduleSourceText } from '../renderer/spawn-dialog.mjs';
 import { identityCSS } from '../renderer/identity-marks.mjs';
 import { spawnProblem } from '../../client/spawn-messages.mjs';
+import { spawnText } from '../renderer/spawn-words.mjs';
 import { cli as CLI, kernel, ROOT, target, view, deferred } from './helpers/spawn-preview-fixture.mjs';
 
 const themeCSS = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8');
@@ -198,7 +199,7 @@ test('a kernel refusal replaces the facts with the footer\'s plain sentence; a n
   const refusal = kernel('preview-clone-missing');
   const u = mount(t, { layout: 'scoped', previews: () => ({ spawnPreviewViewApi: 1, status: 'unavailable', target, data: null, reason: { code: refusal.error.code, message: refusal.error.message } }) });
   await settle(12);
-  const said = spawnProblem({ code: refusal.error.code, message: refusal.error.message }, 'preview').text;
+  const said = spawnText(spawnProblem({ code: refusal.error.code, message: refusal.error.message }, 'preview'), 'preview');
   assert.equal(u.text('.spawn-preview-failure'), said); assert.equal(u.text('.fstatus'), said, 'the same sentence as the footer');
   assert.equal(u.q('.fstatus').classList.contains('ok'), false, 'a refusal is never "ready"');
   assert.equal(u.style(u.q('.spawn-preview-failure')).color, 'var(--warn)');
@@ -296,7 +297,7 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: the scoped d
   // Put every element on screen: the facts and a module section (with a reason tag), then a failure sentence beside them.
   const sections = composePreviewModules(u.doc, v2('preview').result.modules.map(m => ({ name: m.name, layer: m.layer, from: m.from, composedFrom: 'workspace' })));
   u.q('.spawn-preview-core').hidden = false; u.q('.spawn-preview-core').append(...sections.core); u.q('.spawn-preview-caps').hidden = false; u.q('.spawn-preview-caps').append(...sections.caps);
-  const failure = u.doc.createElement('p'); failure.className = 'spawn-preview-failure'; failure.textContent = spawnProblem({ code: failing.error.code, message: failing.error.message }).text; u.q('.spawn-preview-body').append(failure);
+  const failure = u.doc.createElement('p'); failure.className = 'spawn-preview-failure'; failure.textContent = spawnText(spawnProblem({ code: failing.error.code, message: failing.error.message })); u.q('.spawn-preview-body').append(failure);
   const prompts = u.doc.createElement('dl'); prompts.className = 'spawn-preview-prompts'; prompts.innerHTML = '<dt>Launch prompts</dt><dd>None.</dd>'; u.q('.spawn-preview-body').append(prompts);
   const root = u.dom.window.getComputedStyle(u.doc.documentElement);
   for (const [selector, surfaceSelector, fg, bg] of [

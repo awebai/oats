@@ -621,8 +621,12 @@ come from every view holding a remote deployment (`serverFacts`, since
 `/api/team-members` is view-scoped). A chosen group's relation rows are that
 group's deployment only (`serverRows`).
 
-Problems read as one plain sentence about what happened and what to do
-(`packages/client/spawn-messages.mjs`, keyed by the contract's stable code). The code and the
+Problems read as one plain sentence about what happened and what to do, keyed
+by the contract's stable code: the shared home says what happened (`fact`) and
+names the act that follows as a `next` code (`packages/client/spawn-messages.mjs`,
+`SPAWN_NEXT`), and `spawn-words.mjs` composes the Desktop's sentence from them
+with its own words for that act, which name its controls (`spawnText`, and
+`outcomeText` for the store's and the dialog's outcome notices). The code and the
 technical or kernel text — paths, hashes, the `git clone` remedy — stay
 behind a **Details** toggle and in `data-code`; no decision depends on wording.
 For an unmatched launch preference (`E_LAUNCH_PREFERENCE_UNMATCHED`) Details

@@ -547,7 +547,7 @@ operator's attention still does:
 | `partial` | The kernel's words (the wake was not saved, or its outcome is unknown) with **View schedules**. A launched one is then followed like `complete` (taken to it when no guard holds; no **New**, no second notice). |
 | `incomplete` | "<name> was created but didn't finish starting. Open it from the instance list instead of spawning again." |
 | Created, not launched | "Created <name> — not launched. Open its session from the roster." |
-| Refused or failed (nothing was created) | The row goes, and a sticky notification gives the reason (the `spawnProblem` text, Details behind a disclosure) with **Reopen spawn** ("Reopen spawn for <name>"), which reopens the dialog for that soul with the whole draft restored. Only `E_DECISION_STALE`, or a prepared decision that differs from the one the operator saw, reads "These values changed since you last looked. Reopen spawn to check them."; `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`, `E_INSTANCE_NAME_TAKEN` and every other refusal keep their own words. |
+| Refused or failed (nothing was created) | The row goes, and a sticky notification gives the reason (the `spawnProblem` fact in the Desktop's words, `renderer/spawn-words.mjs` `spawnText`; Details behind a disclosure) with **Reopen spawn** ("Reopen spawn for <name>"), which reopens the dialog for that soul with the whole draft restored. Only `E_DECISION_STALE`, or a prepared decision that differs from the one the operator saw, reads "These values changed since you last looked. Reopen spawn to check them."; `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`, `E_INSTANCE_NAME_TAKEN` and every other refusal keep their own words. |
 | `pending` | The CLI is still running (a long spawn, above). The row stays **Spawning…** (or **Setting up worktree…** once the roster reports the home) and the job reads `result` every 2 s until the outcome settles. Past the job's deadline (the CLI deadline plus 30 s, from the press) it reads **Outcome unknown**, as below. |
 | Rolled back (`worktree-event`) | `E_INTERRUPTED`: "The spawn of <name> was interrupted while its worktree was being set up, and was rolled back. Nothing was created." `E_REQUIRED_HOOK_FAILED` / `E_HOOK_ENVIRONMENT_CONTRACT`: "A capability couldn't set up the worktree for <name>, so the spawn was rolled back. Nothing was created." Both as a failure (the row goes; sticky, **Reopen spawn**), with the kernel's message under Details. |
 | Cleanup owed (the same codes with `unconfirmed`) | "The spawn of <name> was stopped, but its cleanup didn't finish. Retire <name> from the roster to complete it.", the kernel's message under Details. The pending row goes: the roster's own row (**Spawn didn't finish**) offers Retire, which completes it. No Check result. |
@@ -719,8 +719,8 @@ OATS 0.52 refuses a spawn, and its preview, with `E_LAUNCH_CONFIG_AMBIGUOUS`
 when the harness the spawn resolves to has more than one launch configuration
 on this machine, none is `default: true`, and the spawn names none.
 
-- **The sentence** is the dialog's, at both stages (`spawn-messages.mjs`, the
-  shared table): "This machine has more than one launch configuration for this
+- **The sentence** is the dialog's, at both stages (the shared fact in
+  `spawn-messages.mjs`, then the Desktop's words in `renderer/spawn-words.mjs`): "This machine has more than one launch configuration for this
   soul's harness, and none is the default. Choose one under Launch
   configuration in Developer settings." The kernel's message, which ends with
   its command-line fix, stays in Details with the code.
@@ -775,7 +775,8 @@ key that names no soul the workspace offers, the soul has no entry of its
 own, and the spawn names no launch. The kernel sends a `message` and a `fix`,
 each at most 1,024 characters.
 
-- **As the dialog opens, the sentence is the Desktop's** (`spawn-messages.mjs`),
+- **As the dialog opens, the sentence is the Desktop's** (the shared lead in
+  `spawn-messages.mjs`, then the Desktop's words in `renderer/spawn-words.mjs`),
   as the status and in the preview's place: "This machine's launch preferences
   name a soul this workspace doesn't offer, so OATS won't choose a launch for
   this soul. To spawn now, pick a harness above, or a launch configuration in

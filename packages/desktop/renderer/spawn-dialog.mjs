@@ -28,6 +28,7 @@ import { previewSupported, previewChoices, previewData, previewTarget, previewFa
 import { spawnApplySupported, spawnPrepareInput, spawnApplyReason, ROLLED_BACK_CODES } from '../../client/spawn-apply-contract.mjs';
 import { createSpawnTransaction } from '../../client/spawn-transaction.mjs';
 import { spawnProblem, rolledBackProblem, cleanupOwedProblem } from '../../client/spawn-messages.mjs';
+import { spawnText, outcomeText } from './spawn-words.mjs';
 import { kernelLines } from '../../client/kernel-lines.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
 import { RECOVER_POLL_MS } from './spawn-jobs.mjs';
@@ -1083,7 +1084,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const nameRefusal = shown?.failure && shown.key === choiceKey(draftChoice.value) && ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'].includes(shown.failure.code) ? shown.failure : null;
     nameResult.classList.toggle('err', !!(draftChoice.error && draftChoice.field === 'name' || nameRefusal));
     if (draftChoice.error && draftChoice.field === 'name') nameResult.textContent = draftChoice.error;
-    else if (nameRefusal) nameResult.textContent = spawnProblem(nameRefusal).text;
+    else if (nameRefusal) nameResult.textContent = spawnText(spawnProblem(nameRefusal));
     else if (!local()) nameResult.textContent = `Named by ${remoteTarget()} when it spawns.`;
     else {
       nameResult.replaceChildren();
@@ -1165,7 +1166,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (answer.data) return { kind: 'data', data: answer.data, key: answer.key };
       // A name refusal is already said next to the Name field.
       if (NAME_REFUSALS.includes(answer.failure.code)) return { kind: 'empty', text: 'No preview until the name is accepted.' };
-      return { kind: 'failure', text: spawnProblem(answer.failure, 'preview').text };
+      return { kind: 'failure', text: spawnText(spawnProblem(answer.failure, 'preview'), 'preview') };
     };
     if (shown && shown.key === key && !readDue()) return said(shown);
     // A failure for the choices on screen stays while its retry reads; otherwise the last settled facts.
@@ -1307,7 +1308,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     }
     detailsToggle.hidden = !problem;
   }
-  const showProblem = (reason, stage) => { const problem = spawnProblem(reason, stage); setStatus(problem.text, true, problem); return problem; };
+  // The problem as the dialog said it: the shared answer with the Desktop's sentence (spawn-words.mjs) as `text`.
+  const showProblem = (reason, stage) => { const problem = spawnProblem(reason, stage), text = spawnText(problem, stage); setStatus(text, true, problem); return { ...problem, text }; };
   const NAME_REFUSALS = ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'];
 
   // ── background preview (latest intent wins)
@@ -1378,7 +1380,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (press) phase = 'idle';
     if (press && next.data && press.key === key && joinBound(next.data)) { render(); void run(); return; }
     if (next.data) {
-      if (phase === 'drifted') setStatus('These values changed since you last looked. Check them and press Spawn again.');
+      if (phase === 'drifted') setStatus(outcomeText('drifted', null, '', 'dialog'));
       else if (notice) setStatus(notice.text, true, notice);
       else if (press && press.key !== key) setStatus('Changed: press Spawn again');
       else setStatus('Preview ready', false, null, true);
@@ -1464,16 +1466,16 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       if (kind === 'drifted' && !reason) {
         // The confirmation is re-read by the server; only what is on screen is applied.
         phase = 'drifted'; shown = settled = { key: shown?.key, value: shown?.value, data: view.preview }; render();
-        setStatus('These values changed since you last looked. Check them and press Spawn again.'); return;
+        setStatus(outcomeText('drifted', null, '', 'dialog')); return;
       }
-      if (kind === 'never-submitted' && recovering) { intent = null; submitted = false; phase = 'idle'; setStatus('That spawn was never submitted. Press Spawn to spawn with the values shown.'); schedule(0); return; }
+      if (kind === 'never-submitted' && recovering) { intent = null; submitted = false; phase = 'idle'; setStatus(outcomeText('never-submitted', null, '', 'dialog')); schedule(0); return; }
       // Past the deadline and still pending: the outcome is unknown, with Check result (as the store does).
       if (kind === 'pending-expired') { phase = 'unknown'; showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn'); return; }
       const named = intent?.preview?.instance ?? shown?.data?.instance ?? '';
       if (kind === 'created') {
         phase = view.status;
         if (['complete', 'partial'].includes(phase)) {
-          setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
+          setStatus(outcomeText('created', view, view.receipt.instance, 'dialog'), phase === 'partial');
           if (!delivered) {
             delivered = true; deploymentField?.remember();
             // The spawn worked while Claude Code ignored the channel option (the receipt's `flagIgnored`): a
@@ -1492,7 +1494,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         // #802: rolled back, its cleanup owed: retiring the quarantined home completes it; a re-apply cannot.
         intent = null; submitted = false; phase = 'idle';
         const problem = cleanupOwedProblem(reason, named);
-        notice = problem; setStatus(problem.text, true, problem);
+        notice = { ...problem, text: spawnText(problem) }; setStatus(notice.text, true, notice);
       } else if (kind === 'unknown') {
         // Unknown, with Check result: E_OUTCOME_UNKNOWN's words, or E_INTENT_EXPIRED's own once the press was
         // submitted (the record is gone, which proves nothing: never "Nothing was created").
@@ -1500,13 +1502,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       } else if (ROLLED_BACK_CODES.includes(reason?.code)) {
         // #802: the kernel rolled the spawn back: nothing was created.
         intent = null; submitted = false; phase = 'idle';
-        notice = rolledBackProblem(reason, named);
-        setStatus(notice.text, true, notice); schedule(0);
+        const problem = rolledBackProblem(reason, named);
+        notice = { ...problem, text: spawnText(problem) }; setStatus(notice.text, true, notice); schedule(0);
       } else {
         // Refused, stale or drifted after the press: nothing was created. Read the current values again.
         intent = null; submitted = false; phase = 'idle';
-        const problem = spawnProblem(reason, 'spawn');
-        notice = /Nothing was created/.test(problem.text) ? problem : { ...problem, text: `${problem.text} Nothing was created.` };
+        const problem = spawnProblem(reason, 'spawn'), text = spawnText(problem, 'spawn');
+        notice = { ...problem, text: /Nothing was created/.test(text) ? text : `${text} Nothing was created.` };
         setStatus(notice.text, true, notice); schedule(0);
       }
     } catch (error) {

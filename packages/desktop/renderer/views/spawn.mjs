@@ -20,6 +20,7 @@ import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { SPAWN_DIALOG_KEYS, SPAWN_JUMPS, registerSpawnDialogKeys, ariaKeyShortcuts } from "../spawn-dialog-keys.mjs";
 import { pendingPlacement } from "../spawn-jobs.mjs";
 import { spawnProblem, catalogProblem } from "../../../client/spawn-messages.mjs";
+import { spawnText } from "../spawn-words.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import { shownLaunch, launchHarnessName } from "../../../client/launch-view.mjs";
 import { harnessOf } from "../../../client/harness-names.mjs";
@@ -1530,7 +1531,7 @@ export async function doSpawn(s, fields) {
     const problem = spawnProblem({ code: e?.code, message }, "spawn");
     // The host decides a remote spawn (its souls, its workspace), so its refusal is said in OATS's own words;
     // this computer's own transport failures (E_CLI_*, cli-*) keep their plain sentence.
-    if (message && typeof e?.code === "string" && !/^(E_CLI_|cli-)/.test(e.code)) problem.text = `Couldn’t spawn on ${fields.server}: ${message}`;
-    fields.status(problem.text, true, problem);
+    const text = message && typeof e?.code === "string" && !/^(E_CLI_|cli-)/.test(e.code) ? `Couldn’t spawn on ${fields.server}: ${message}` : spawnText(problem, "spawn");
+    fields.status(text, true, problem);
   }
 }
