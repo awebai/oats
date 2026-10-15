@@ -12,7 +12,10 @@
 //                 paneGone: the pane is gone when a capture runs, which fails, and then its
 //                 window's end is said; captureFile: "missing" (save-buffer writes no file) or
 //                 "huge" (more than the panel reads); answers: the lines a command's block that
-//                 succeeds holds, by the command's name, as a faulty tmux would print)
+//                 succeeds holds, by the command's name, as a faulty tmux would print;
+//                 window.closeAtOnce: the viewer ends before new-window answers, heard as its
+//                 pane dead with window.status, as tmux's subscription says it; a test makes a
+//                 viewer end later by emitting that line itself)
 //   state.json    the window counter, shared by the invocations of one test
 //   inject.txt    lines the test appends for the control client: `emit <line>` prints the line,
 //                 `release` answers the captures held, `exit` prints %exit and exits, `die` exits
@@ -100,9 +103,8 @@ async function commandMode() {
       note({ window: n, e, files, target: seen["-t"], format: seen["-F"], command: args.slice(i) });
       const step = plan.window ?? {};
       if (step.stderr !== undefined && e.E) writeFileSync(e.E, step.stderr);
-      if (step.status !== undefined && e.S) writeFileSync(e.S, step.status);
       if (step.closeAtOnce) {
-        const line = `%unlinked-window-close @${n}`;
+        const line = `%subscription-changed oats-tui-dead $0 @${n} ${n} %${n} : 1 ${step.status ?? ""}`;
         inject(`emit ${line}`);
         for (let waited = 0; !emitted().includes(line) && waited < 3000; waited += 5) sleepSync(5);
       }

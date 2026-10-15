@@ -267,7 +267,8 @@ fit; the detail shows them whole.
   columns.
 - **A terminal also closes by itself** when its viewer ends: the agent's
   window ended, its session went away, or the link to its machine dropped.
-  The instances are then read again at once, and one line above the panes
+  It closes within a second of that (tmux tells `oats tui` of a viewer's
+  end once a second). The instances are then read again at once, and one line above the panes
   says what happened: that it could not be opened, that the connection to
   its machine ended, or that the viewer ended without saying why. What the
   viewer printed on its error output stands under that line in quotation
@@ -643,10 +644,14 @@ with the Desktop (`packages/client/`).
     <run directory>/tmux kill-server`. The next run's sweep leaves that
     directory alone while its socket answers.
 
-  Each open is a window of the server, closed with `kill-pane`, which hangs up the viewer's
-  terminal so the viewer removes its own session on the agents' server. The
-  viewer's error output and exit status go to two files of the run's
-  directory (0600), read back when it ends and deleted. What the terminal
+  Each open is a window of the server, whose process is the viewer itself,
+  with no shell between them. It is closed with `kill-pane`, which hangs up
+  the viewer's terminal: the viewer gets SIGHUP at once and removes its own
+  session on the agents' server. The viewer's error output goes to a file
+  of the run's directory (0600), read back when it ends and deleted. Its
+  exit status is the one tmux keeps for a pane whose process ended
+  (`remain-on-exit`), which the server reports to `oats tui` within a
+  second; `oats tui` then closes that pane. What the terminal
   shows is captured into `capture` in that directory, which the server
   writes and `oats tui` reads back, so nothing an agent prints passes
   through the stream on which `oats tui` reads the server's answers. An

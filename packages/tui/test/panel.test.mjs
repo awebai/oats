@@ -6,7 +6,9 @@ import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as nodeExecFile, execFileSync, spawn } from "node:child_process";
 import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
 import os from "node:os";
+import { PassThrough } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
@@ -89,6 +91,9 @@ function panelOf(world, more = {}) {
   return { panel, timers, screens, closed, captured, heard: () => heard.join("") };
 }
 const VIEWER = [process.execPath, "/opt/oats/bin/oats.mjs", "session", "attach", "--home", "/home/agent"];
+/** What tmux's subscription prints for the pane of window `id` once it is dead (the fake's pane
+ *  and window share their number): `status` empty when a signal ended it. */
+const dead = (id, status = "") => `%subscription-changed oats-tui-dead $0 ${id} ${id.slice(1)} %${id.slice(1)} : 1 ${status}`;
 /** A panel with one viewer open and its first (fresh) capture drawn: everything settled. */
 async function opened(plan = {}, more = {}) {
   const world = makeWorld(plan), made = panelOf(world, more);
@@ -110,7 +115,7 @@ describe("the panel", { concurrency: 8 }, () => {
     const calls = world.invocations();
     const shape = (call) => (call.flags.includes("-V") ? "version" : call.commands.map((command) => command[0]).join(","));
     assert.deepEqual(calls.map(shape), ["version",
-      "new-session,set-option,set-option,set-option,set-option,set-option,set-option,unbind-key,unbind-key,unbind-key,unbind-key",
+      "new-session,set-option,set-option,set-option,set-option,set-option,set-option,set-option,refresh-client,unbind-key,unbind-key,unbind-key,unbind-key",
       "set-option,new-window"]);
     assert.ok(calls[1].flags.includes("-C"), "the server is started by the control client itself");
     // Every call: -u, no configuration, the run's own socket; never TMUX or TMUX_PANE.
@@ -126,7 +131,8 @@ describe("the panel", { concurrency: 8 }, () => {
       ["new-session", "-s", SESSION, "-x", "80", "-y", "24", "/bin/sh", "-c", KEEPER_SCRIPT, "oats-tui-keeper", alive],
       ["set-option", "-s", "exit-unattached", "on"],
       ["set-option", "-s", "escape-time", "0"], ["set-option", "-g", "status", "off"], ["set-option", "-g", "prefix", "None"], ["set-option", "-g", "prefix2", "None"],
-      ["set-option", "-gw", "remain-on-exit", "off"],
+      ["set-option", "-gw", "remain-on-exit", "on"], ["set-option", "-gwq", "remain-on-exit-format", ""],
+      ["refresh-client", "-B", "oats-tui-dead:%*:#{pane_dead} #{pane_dead_status}"],
       ["unbind-key", "-a"], ["unbind-key", "-a", "-T", "root"], ["unbind-key", "-a", "-T", "copy-mode"], ["unbind-key", "-a", "-T", "copy-mode-vi"]]);
     assert.deepEqual(calls[1].commands, startCommands({ alive }));
     // No global window-size: tmux 3.3a to 3.5a crash in the next new-window when it is manual (CI's
@@ -146,15 +152,15 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("owner.json marks the run directory (0600, its tool, the TUI's pid, the time), and the viewer's two files exist, 0600 and empty, before its window is made", async () => {
+  test("owner.json marks the run directory (0600, its tool, the TUI's pid, the time), and the viewer's stderr file exists, 0600 and empty, before its window is made", async () => {
     const { world, panel } = await opened();
     const owner = path.join(world.run, "owner.json");
     assert.deepEqual(JSON.parse(readFileSync(owner, "utf8")), { tool: "oats-tui", pid: 4242, started: "2026-10-15T00:00:00.000Z" });
     assert.equal(statSync(owner).mode & 0o777, 0o600);
     assert.equal(statSync(world.run).mode & 0o777, 0o700, "the directory is the caller's, as it made it");
     const [window] = world.windows();
-    assert.deepEqual(window.e, { E: path.join(world.run, "1.view.err"), S: path.join(world.run, "1.view.status") });
-    assert.deepEqual(window.files, { E: { mode: 0o600, size: 0 }, S: { mode: 0o600, size: 0 } });
+    assert.deepEqual(window.e, { E: path.join(world.run, "1.view.err") });
+    assert.deepEqual(window.files, { E: { mode: 0o600, size: 0 } });
     panel.end();
   });
 
@@ -166,7 +172,8 @@ describe("the panel", { concurrency: 8 }, () => {
     const [window] = world.windows();
     // As tmux splits its arguments (the fake does it the same way), the command is ours, whole.
     assert.deepEqual(window.command, ["/bin/sh", "-c", VIEW_SCRIPT, ...argv]);
-    assert.equal(VIEW_SCRIPT, '"$0" "$@" 2>"$E"; echo $? >"$S"');
+    // exec: the viewer is the pane's own process, so the pane's hang-up reaches it at once.
+    assert.equal(VIEW_SCRIPT, 'exec "$0" "$@" 2>"$E"');
     assert.equal(window.target, `${SESSION}:`);
     assert.equal(window.format, "#{window_id} #{pane_id}");
     const call = world.invocations().find((c) => c.commands.some((command) => command[0] === "new-window"));
@@ -389,12 +396,13 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("a viewer that ends by itself: onClosed with the status its file holds and the last 4096 bytes of its stderr, then both files removed", async () => {
+  test("a viewer that ends by itself: its pane heard dead with its status (the subscription), onClosed with that status and the last 4096 bytes of its stderr, its file removed, and the dead pane killed", async () => {
     // 5097 bytes: the last 4096 begin inside the first "é", whose second byte is dropped.
     const head = "x".repeat(1000), tail = `${"é".repeat(STDERR_KEPT / 2)}z`;
-    const { world, panel, closed, id } = await opened({ window: { status: "3\n", stderr: head + "y" + tail } });
-    world.emit(`%unlinked-window-close ${id}`);
+    const { world, panel, closed, id } = await opened({ window: { stderr: head + "y" + tail } });
+    world.emit(dead(id, 3));
     await waitFor("the end", () => closed.length === 1);
+    await waitFor("the dead pane killed", () => world.control().includes("kill-pane -t %1"));
     assert.deepEqual(Object.keys(closed[0]).sort(), ["asked", "id", "status", "stderr"]);
     assert.equal(closed[0].id, id);
     assert.equal(closed[0].status, 3);
@@ -437,7 +445,7 @@ describe("the panel", { concurrency: 8 }, () => {
   test("a viewer that exits at once: its window's end heard before new-window answered; open resolves first, then onClosed", async () => {
     // new-window's answer is held back until well after the control client said the window ended.
     const execFile = (file, args, options, callback) => nodeExecFile(file, args, options, (...answer) => (args.includes("new-window") ? setTimeout(() => callback(...answer), 100) : callback(...answer)));
-    const world = makeWorld({ window: { status: "7\n", stderr: "gone at once", closeAtOnce: true } }), { panel, closed } = panelOf(world, { execFile });
+    const world = makeWorld({ window: { status: 7, stderr: "gone at once", closeAtOnce: true } }), { panel, closed } = panelOf(world, { execFile });
     const order = [];
     const answer = await panel.open({ argv: VIEWER, cols: 50, rows: 10 }).then((value) => { order.push(["open", closed.length]); return value; });
     assert.deepEqual(answer, { id: "@1" });
@@ -446,6 +454,34 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.deepEqual(closed[0], { id: "@1", status: 7, stderr: "gone at once", asked: false });
     assert.equal(panel.current, null);
     assert.equal(count(world.control(), "capture-pane"), 0);
+    await waitFor("the dead pane killed", () => world.control().includes("kill-pane -t %1"));
+    panel.end();
+  });
+
+  test("the dead-pane subscription: a signal's end has no status; a live pane, the keeper's dead pane, a pane no viewer has and a line not of that shape change nothing; a viewer being closed that is heard dead is over once", async () => {
+    const { world, panel, closed, id, heard } = await opened();
+    for (const line of [
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 0 ",
+      "%subscription-changed oats-tui-dead $0 @0 0 %0 : 1 0",
+      "%subscription-changed oats-tui-dead $0 @9 9 %9 : 1 1",
+      "%subscription-changed another $0 @1 1 %1 : 1 1",
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1 more",
+      "%subscription-changed oats-tui-dead $0 @1 1 %1 : 1 1234",
+    ]) world.emit(line);
+    await waitFor("the panel to hear them", () => heard().includes(": 1 1234\n"));
+    assert.deepEqual([closed, panel.current, world.control().filter((line) => line.startsWith("kill-pane"))], [[], id, []]);
+    world.emit(dead(id));
+    await waitFor("the end", () => closed.length === 1);
+    assert.deepEqual(closed[0], { id, status: null, stderr: "", asked: false }, "a signal ended it: no status");
+    const second = await panel.open({ argv: VIEWER, cols: 50, rows: 10 });
+    world.plan({ killPaneSilent: true });
+    panel.close();
+    world.emit(dead(second.id, 0));
+    await waitFor("the closing one over", () => closed.length === 2);
+    assert.deepEqual(closed[1], { id: second.id, status: 0, stderr: "", asked: true });
+    world.emit(`%unlinked-window-close ${second.id}`);
+    await waitFor("the panel to hear its window's end", () => heard().includes(`%unlinked-window-close ${second.id}\n`));
+    assert.equal(closed.length, 2, "over once");
     panel.end();
   });
 
@@ -464,7 +500,7 @@ describe("the panel", { concurrency: 8 }, () => {
   });
 
   test("%exit: the control client ended, the open viewer is closed with no status, and the next open starts a new server", async () => {
-    const { world, panel, closed, id } = await opened({ window: { status: "0\n" } });
+    const { world, panel, closed, id } = await opened();
     world.inject("exit");
     await waitFor("the end", () => closed.length === 1);
     assert.deepEqual(closed[0], { id, status: null, stderr: "", asked: false });
@@ -543,7 +579,7 @@ describe("the panel", { concurrency: 8 }, () => {
     assert.ok(existsSync(path.join(world.run, "capture")));
     panel.end();
     assert.equal(world.invocations().at(-1).commands[0][0], "kill-server");
-    assert.deepEqual(readdirSync(world.run), [], "the socket, the capture's file, owner.json, the FIFO and both view files");
+    assert.deepEqual(readdirSync(world.run), [], "the socket, the capture's file, owner.json, the FIFO and the view file");
     assert.ok(existsSync(world.run), "the directory is the reader's to remove");
     await waitFor("the control client gone", () => !isFake(control));
     const calls = world.invocations().length;
@@ -710,4 +746,25 @@ test("the keeper with a BusyBox-like ps that refuses -p: /proc gives the parent 
 
 test("the keeper with a ps that names its parent, and no /proc to read first (macOS): the server is killed", { skip: HAS_PROC ? "/proc is read first here" : false }, async () => {
   assert.equal(await keeperRun(keeperPath(`#!/bin/sh\nexec ${execFileSync("/bin/sh", ["-c", "command -v ps"], { encoding: "utf8" }).trim()} "$@"\n`)), "killed");
+});
+
+// Last and alone, so that nothing else keeps the event loop alive: a start that fails with a
+// control client whose `close` never comes still settles. The wait for what the client said is
+// bounded by a timer that holds the loop (an unref'd one let the loop empty with the await
+// pending: main's CI, "Promise resolution is still pending but the event loop has already resolved").
+test("a failed start whose control client never closes still rejects, within the wait's bound: the open never hangs", async () => {
+  const world = makeWorld();
+  const spawned = [];
+  const neverCloses = () => {
+    const child = Object.assign(new EventEmitter(), { pid: 999999, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: () => true, unref: () => {} });
+    spawned.push(child);
+    setImmediate(() => child.stdout.write("%begin 1 1 0\nfake: the server did not start\n%error 1 1 0\n"));
+    return child;
+  };
+  const { panel } = panelOf(world, { spawn: neverCloses });
+  const started = Date.now();
+  await assert.rejects(panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { code: "E_PANEL_START", detail: "fake: the server did not start" });
+  assert.equal(spawned.length, 1);
+  assert.ok(Date.now() - started < 5000, "bounded by the wait, not by the close");
+  panel.end();
 });
