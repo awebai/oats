@@ -302,11 +302,11 @@ Rerunning `install` re-renders the unit and restarts the daemon: that is the
 restart after an aw upgrade. `oats aweb wake uninstall` removes only the unit
 `install` wrote.
 
-Its refusals and warnings are listed in `/oats-aweb` §7. The one an
-existing host meets is **`E_WAKE_UNIT_CONFLICT`**: a unit `install` did not
-write already runs the broker, for example a hand-written unit from the
-fallback below. `install` never takes it over. To move to the command,
-retire the old unit with the steps the message prints, then rerun `install`:
+Refusals and warnings: `/oats-aweb` §7. A host that followed the hand-written
+unit below (oats.setup 2.6.0) gets **`E_WAKE_UNIT_CONFLICT`** on its first
+`install`: that unit has no install marker, even at the `ai.aweb.wake` path,
+and `install` never takes it over. To move to the command, retire the old
+unit with the steps the message prints, then rerun `install`:
 - Linux: `systemctl --user disable --now <unit>`, then remove the file;
 - macOS: `launchctl bootout gui/<uid>/<label>`, then remove the file.
 
