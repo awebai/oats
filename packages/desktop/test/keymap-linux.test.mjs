@@ -288,6 +288,19 @@ test("theme picker: no other default shares either chord", t => {
   assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.shortcuts", "app.themePicker"]]);
 });
 
+// #1217: the palette took Ctrl+Shift+K and Quick Open Ctrl+Shift+P. A stored binding on either chord
+// is kept, and the shortcuts editor's warning names the clash (the release note promises it).
+test("palette and Quick Open chords: a stored binding on either is kept and named as a clash", t => {
+  registerAll(t);
+  assert.deepEqual(keymapConflicts(false), [], "the defaults clash with nothing");
+  setBinding("sidebar.toggle", "Ctrl+Shift+K");
+  assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.palette", "sidebar.toggle"]]);
+  resetAllBindings();
+  setBinding("app.palette", "Ctrl+Shift+P"); // the palette's chord until #1217, set by hand
+  assert.equal(getBinding("app.palette", false), "Ctrl+Shift+P");
+  assert.deepEqual(keymapConflicts(false).map(c => c.actions.map(a => a.id).sort()), [["app.palette", "app.quickOpenSouls"]]);
+});
+
 // #672: Ctrl+Shift+C copies the terminal's selection on Linux/Windows. The terminal's key path is the
 // shell's: terminal-tab.mjs's custom key handler runs terminalKeyDecision with the shell's interceptKey,
 // and a handled key writes only the decision's byte. Ctrl+C stays the program's interrupt.

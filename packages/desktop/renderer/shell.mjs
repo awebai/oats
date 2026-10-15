@@ -2069,11 +2069,11 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
       && tabOpenIntents.ownsFocus(made.id),
     focusInput: () => tabOpenIntents.applyFocus(() => term.focus()),
     fit: () => fitTerminal(term, fit),
-    // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.next/
-    // prev/close, split.*, focus.leaveTerminal) must be intercepted BEFORE xterm
-    // writes to the pty — its handler consumes e.g. Ctrl+Shift+P or ⌘⇧F6 and
-    // stops propagation, so the bubble-phase window listener
-    // never sees it. matchEvent applies the allowlist (insideTerminal);
+    // Terminal-allowlisted shortcuts (engine policy: TERMINAL_ALLOWLIST, e.g.
+    // app.palette, tabs.next/prev/close, split.*, focus.leaveTerminal) must be
+    // intercepted BEFORE xterm writes to the pty — its handler consumes e.g.
+    // Ctrl+Shift+K or ⌘⇧F6 and stops propagation, so the bubble-phase window
+    // listener never sees it. matchEvent applies the allowlist (insideTerminal);
     // the action runs once on keydown, and every phase of a matched chord
     // is claimed so no control byte leaks to the attached program.
     interceptKey: (ev) => {
@@ -2214,7 +2214,7 @@ const palette = createPalette({
   ],
 });
 
-// ── Quick Open for souls (Mod+P): find a soul, open its spawn dialog ──
+// ── Quick Open for souls (⌘P / Ctrl+Shift+P): find a soul, open its spawn dialog ──
 // Selection hands off to Workspace (preselectSpawn — consumed by the view's
 // next roster paint): the spawn dialog scoped to that soul, exactly as its
 // card's Spawn opens it. A soul that can't be spawned here (attached only,

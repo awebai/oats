@@ -118,7 +118,9 @@ Changed after 0.56.0 on Linux/Windows: the palette is Ctrl+Shift+K (was
 Ctrl+Shift+P), and Quick Open is Ctrl+Shift+P (was Ctrl+P) and now works from
 a terminal. Ctrl+Shift+P, which opened the palette since 0.30.3, opens Quick
 Open. A binding you set yourself is kept as it is; when it is a chord a
-default now takes, the shortcuts editor shows the clash.
+default now takes, the shortcuts editor shows the clash. A Quick Open binding
+you set yourself now fires from a terminal too, so a plain Ctrl+letter there
+takes that key from the program.
 
 Changed in 0.56.0 on Linux/Windows: the sidebar (was Ctrl+B) is
 Ctrl+Shift+B, the instance panel (was Ctrl+I) Ctrl+Shift+I, and filter
@@ -303,8 +305,9 @@ control.
 
 ## Quick Open and the spawn dialog
 
-- **⌘P / Ctrl+Shift+P** finds a soul, from a terminal too; picking it opens the spawn dialog scoped to that
-  soul, exactly as its card's Spawn does (the Workspace stage behind it). A soul
+- **⌘P / Ctrl+Shift+P** finds a soul, from a terminal too; picking it opens
+  the spawn dialog scoped to that soul, exactly as its card's Spawn does (the
+  Workspace stage behind it). A soul
   that can't be spawned here (attached only, refused, no verified CLI) opens
   its soul page instead, which says why. Focus lands in Name.
 - Dismissing the dialog (Cancel, Esc, ×, the backdrop) returns to where the

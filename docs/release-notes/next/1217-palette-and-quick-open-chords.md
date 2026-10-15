@@ -10,5 +10,8 @@
   moves down its rows and ArrowUp moves up. xterm sends nothing for either
   chord, so plain Ctrl+K and Ctrl+P still reach the program. A shortcut you
   set yourself is kept; when it is one of these two chords, the shortcuts
-  editor shows the clash. macOS is unchanged (⌘K, ⌘P). See
+  editor shows the clash. A Quick Open shortcut you set yourself now works
+  from a terminal too: if it is a plain Ctrl+letter, such as Ctrl+P, the
+  program no longer gets that key, so choose a Ctrl+Shift chord. macOS is
+  unchanged (⌘K, ⌘P). See
   [Desktop keyboard](../../packages/desktop/docs/desktop-keyboard.md).
