@@ -646,7 +646,12 @@ with the Desktop (`packages/client/`).
   Each open is a window of the server, closed with `kill-pane`, which hangs up the viewer's
   terminal so the viewer removes its own session on the agents' server. The
   viewer's error output and exit status go to two files of the run's
-  directory (0600), read back when it ends and deleted. The server is ended
+  directory (0600), read back when it ends and deleted. What the terminal
+  shows is captured into `capture` in that directory, which the server
+  writes and `oats tui` reads back, so nothing an agent prints passes
+  through the stream on which `oats tui` reads the server's answers. An
+  answer the server would never give ends that stream, and the open
+  terminal closes with it. The server is ended
   on every way out a process can handle. At its start a run also removes
   what a run that is gone left (below), and nothing else: it signals
   nothing.
@@ -675,10 +680,11 @@ with the Desktop (`packages/client/`).
   says so, and the change goes on.
 - It runs no other command that changes a deployment or a registration, and
   it writes no other file but the private server's: its socket `tmux`, the
-  keeper's FIFO `alive`, and `owner.json` (`{ "tool": "oats-tui", "pid": …,
-  "started": … }`), which lets a later run tell a directory a run that is
-  gone left. A run that ends normally removes all three. A later run removes
-  such a directory, these three files included, when its `pid` is not alive
+  keeper's FIFO `alive`, `capture` (the open terminal's screen, which the
+  server writes there for `oats tui` to read), and `owner.json` (`{ "tool":
+  "oats-tui", "pid": …, "started": … }`), which lets a later run tell a
+  directory a run that is gone left. A run that ends normally removes all
+  four. A later run removes such a directory, these four files included, when its `pid` is not alive
   and its socket answers no tmux; it looks only at directories named `oats-tui-*` in the
   system's temporary directory, yours, of mode 0700, holding that file.
 
@@ -788,7 +794,7 @@ server is ended by its keeper as soon as `oats tui` is gone, so the viewer's
 terminal hangs up and the viewer removes its own session. A stopped `oats tui`
 (`Ctrl+Z`, SIGSTOP) still holds the keeper's FIFO, so its server is left
 alone. The next run removes the directory that is left, with its `tmux`,
-`alive` and `owner.json`.
+`alive`, `capture` and `owner.json`.
 
 ## What it never does
 

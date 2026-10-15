@@ -53,6 +53,23 @@
 // before the TUI lets go of the FIFO; a keeper that still woke would find its server gone, and do
 // nothing.
 //
+// THE CAPTURE, OUT OF BAND. No pane's text ever enters the control client's stream. A capture is
+// four commands, each its own line and so its own block: `capture-pane -e -N -b <buffer>` into the
+// one paste buffer CAPTURE_BUFFER, `save-buffer` of it to `<run dir>/capture`, `delete-buffer`,
+// and the cursor's `display`. They are four lines, not one list, because a command of a list that
+// fails ends the list there: a pane gone between the send and the run would leave the buffer, and
+// the blocks out of step with the commands waiting. The file is read only after its save's block
+// has ended (tmux has written and closed it by then), by `fs.whole`, bounded (CAPTURE_MAX); a file
+// missing, too large or not a regular file is a failed capture: no frame, and the next change
+// tries again. The path is a word of a control line (controlWord), not an argv: in single quotes,
+// with `#` doubled, since save-buffer expands formats in it (a `#(…)` would run a command). So
+// every block that succeeds says nothing but tmux's own words, and only the cursor's says
+// anything: a block that holds anything else ends the control client (`ask`'s `says`). That is
+// now a fault of tmux, or a stream out of step, never an agent's doing. The file is the run's,
+// 0700 directory and all; end() and the sweep remove it. Verified with tmux 3.4 and 3.7c: the file
+// is what `capture-pane -p` prints, each line ending in "\n", and a path holding a space, `'`,
+// `"`, `$HOME`, `#(…)`, `#{…}`, `~`, `;` or `\` lands where it says and runs nothing.
+//
 // WHAT STARTS A PROCESS, each with argv and no shell: the FIFO's `mkfifo` and `tmux -V` (once a
 // run), the start of the server (the control client, spawned), the making of a window, the
 // `kill-server` calls (before a new server, after a failed start, and end()'s), and the sweep's
@@ -68,13 +85,13 @@
 // such an argument as `x\;`, which tmux reads back as `x;` (cmd-parse.y, the same since 3.0).
 // Every argument that is not a constant of this file goes through it.
 //
-// THE END OF A RUN. A normal end calls end(): `kill-server`, then the socket, owner.json, the FIFO
-// and the view files are removed (the run directory is the loop's to remove, after this). On a
+// THE END OF A RUN. A normal end calls end(): `kill-server`, then the socket, the capture's file,
+// owner.json, the FIFO and the view files are removed (the run directory is the loop's to remove, after this). On a
 // crash or a `kill -9` of the TUI nothing here runs, and nothing needs to: the FIFO loses its
 // writer, the keeper kills the server (THE KEEPER), and the control client, whose server is gone,
 // exits; the viewers' panes hang up, so each viewer gets SIGHUP and runs its own clean-up. What is
-// left is the run directory with its socket, owner.json and FIFO, which the next run's sweep
-// removes.
+// left is the run directory with its socket, owner.json, FIFO and capture's file, which the next
+// run's sweep removes.
 import { execFile as nodeExecFile, execFileSync as nodeExecFileSync, spawn as nodeSpawn } from "node:child_process";
 import { closeSync, constants as FS, fstatSync, lstatSync, openSync, readSync, readdirSync, rmdirSync, unlinkSync, writeSync } from "node:fs";
 import { tmpdir as osTmpdir } from "node:os";
@@ -136,6 +153,17 @@ export const startCommands = ({ alive }) => [
 const DETAIL_KEPT = 400;
 /** The names this module makes in the run directory, and the pattern of a view file. */
 const SOCKET_NAME = "tmux", OWNER_NAME = "owner.json", OWNER_TOOL = "oats-tui", ALIVE_NAME = "alive";
+/** The capture's file in the run directory, and the one paste buffer it passes through (see THE
+ *  CAPTURE). */
+const CAPTURE_NAME = "capture", CAPTURE_BUFFER = "oats-tui-capture";
+/** The most bytes a capture's file may hold: a larger one is a failed capture. A pane of 500 by
+ *  200 cells with a change of style at every cell fits. */
+const CAPTURE_MAX = 8 * 1024 * 1024;
+/** What a command of the control client answers when it succeeds (see THE CAPTURE): nothing, or
+ *  for the cursor's `display`, its one line. */
+const SAYS_NOTHING = (lines) => lines.length === 0;
+const CURSOR_LINE = /^(\d+) (\d+) ([01])$/;
+const SAYS_CURSOR = (lines) => lines.length === 1 && CURSOR_LINE.test(lines[0]);
 const VIEW_FILE = /^[1-9][0-9]*\.view\.(err|status)$/;
 /** The oldest tmux this module knows to have every command it uses (`refresh-client -f`). */
 const MIN_TMUX = Object.freeze([3, 2]);
@@ -160,6 +188,14 @@ const quietly = (act) => { try { return act(); } catch { return undefined; } };
 const refusal = (code, message, facts = {}) => Object.assign(new Error(message), { code, ...facts });
 /** An argument tmux will hand on as it is (see the head of this file): a trailing `;` escaped. */
 export const tmuxArgument = (text) => (text.endsWith(";") ? `${text.slice(0, -1)}\\;` : text);
+/** A path as one word of a command line the control client sends (see THE CAPTURE): in single
+ *  quotes, so tmux's parser takes every character as it is, with `'` written as `'"'"'`, and with
+ *  `#` doubled, since save-buffer expands formats in its path (`##` is a `#`). A path holding a
+ *  control character (a newline would end the line) cannot be one: -> null. */
+export function controlWord(text) {
+  if (typeof text !== "string" || /[\x00-\x1f\x7f]/.test(text)) return null;
+  return `'${text.replaceAll("#", "##").replaceAll("'", `'"'"'`)}'`;
+}
 /** The environment of every tmux call: the one given, without TMUX and TMUX_PANE. */
 function tmuxEnvironment(env) {
   const { TMUX: _client, TMUX_PANE: _pane, ...rest } = env ?? {};
@@ -182,7 +218,9 @@ function tooOld(answer) {
  *  `make(path)` makes an empty file for one writer (0600, refused if it is there); `write(path,
  *  text)` makes one and writes `text`; `head(path, max)` and `tail(path, max)` read at most `max`
  *  bytes from its start or its end, as text (a tail that begins inside a UTF-8 character drops the
- *  bytes of that character); `lstat`, `list` (names in a directory), `unlink`, `rmdir`. */
+ *  bytes of that character); `whole(path, max)` reads a regular file of at most `max` bytes, as
+ *  text, and answers null for a larger one or one that is not a regular file (a link is not
+ *  followed); `lstat`, `list` (names in a directory), `unlink`, `rmdir`. */
 export const PANEL_FS = Object.freeze({
   make: (path) => closeSync(openSync(path, "wx", 0o600)),
   write: (path, text) => {
@@ -201,6 +239,17 @@ export const PANEL_FS = Object.freeze({
   release: (fd) => closeSync(fd),
   head: (path, max) => readPart(path, max, false),
   tail: (path, max) => readPart(path, max, true),
+  whole: (path, max) => {
+    const fd = openSync(path, FS.O_RDONLY | FS.O_NOFOLLOW);
+    try {
+      const stat = fstatSync(fd);
+      if (!stat.isFile() || stat.size > max) return null;
+      const buffer = Buffer.alloc(stat.size);
+      let got = 0, n;
+      while (got < buffer.length && (n = readSync(fd, buffer, got, buffer.length - got, got)) > 0) got += n;
+      return buffer.subarray(0, got).toString("utf8");
+    } finally { quietly(() => closeSync(fd)); }
+  },
   lstat: (path) => lstatSync(path),
   list: (path) => readdirSync(path),
   unlink: (path) => unlinkSync(path),
@@ -227,7 +276,7 @@ function readPart(file, max, fromEnd) {
  *                 the same path every time (the caller makes it once and remembers it). This
  *                 module never makes it and never removes it.
  *    capture(text, { cols, rows })  REQUIRED: the caller's cell builder, handed what
- *                 `capture-pane -p -e -N` printed (its lines joined by "\n") and the pane's size;
+ *                 `capture-pane -e -N` captured (its lines joined by "\n") and the pane's size;
  *                 what it answers is handed on as `screen`.
  *    onScreen({ id, screen, cursor: { x, y, visible } })  a capture of the open viewer.
  *    onClosed({ id, status, stderr, asked })  a viewer ended: `status` the integer its status
@@ -279,6 +328,8 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   /** The run directory and the socket in it, once known; whether owner.json was written, tmux's
    *  version checked, and a server ever started in this run. */
   let runDir = null, socket = null, ownerWritten = false, checked = false, everStarted = false;
+  /** The capture's file, and that path as a word of a control line (see THE CAPTURE). */
+  let capturePath = null, captureWord = null;
   /** The write end of `<run dir>/alive`, held for the run once made (see THE KEEPER), or null. */
   let aliveFd = null;
   /** The server now: { child, replies (the FIFO of commands waiting for their block), block (the
@@ -323,23 +374,24 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
 
   /** Ask the server one command through the control client: -> Promise<{ ok, lines }>, never
    *  rejected. `ok` is false for an `%error` block, and for every command still waiting when the
-   *  server goes away. `command` is constant text with tmux's ids and numbers in it: never a
-   *  newline, never the caller's text. */
-  function ask(command) {
+   *  server goes away. `command` is constant text with tmux's ids and numbers in it, and the
+   *  capture's path as controlWord writes it: never a newline, never the caller's text. `says`:
+   *  what its block may hold when it succeeds (SAYS_NOTHING unless named); a block that holds
+   *  anything else ends the control client (see THE CAPTURE). */
+  function ask(command, says = SAYS_NOTHING) {
     const s = server;
     if (s === null || s.gone) return Promise.resolve({ ok: false, lines: [] });
     return new Promise((resolve) => {
-      s.replies.push(resolve);
+      s.replies.push({ resolve, says });
       try { s.child.stdin.write(`${command}\n`); } catch { lost(s); }
     });
   }
 
   /** One line the control client printed. Inside a block every line is the block's, until the
-   *  `%end` or `%error` line that repeats its `%begin`'s time, number and flags EXACTLY: a pane's
-   *  text is printed as it is inside a capture's block, and a line of it that looks like an end
-   *  must not end the block (tmux prints the same time and number on both lines of a block; a
-   *  pane would have to guess the second and the server's command number). Outside a block a line is
-   *  a notification (tmux never prints one inside a block). The FIRST blocks, one per command of
+   *  `%end` or `%error` line that repeats its `%begin`'s time, number and flags EXACTLY (tmux
+   *  prints the same time and number on both lines of a block). No pane's text is ever in a block
+   *  (THE CAPTURE); the exact end is kept all the same. Outside a block a line is a notification
+   *  (tmux never prints one inside a block; `%output` carries a pane's text escaped, one line). The FIRST blocks, one per command of
    *  the start list, answer the start itself; every later one answers the oldest command waiting. */
   function heard(s, line) {
     if (s.block) {
@@ -350,7 +402,12 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         // start is answered at once.
         if (start && !ok) s.startError = lines.join("\n").slice(0, DETAIL_KEPT);
         if (start) return ok && s.startLeft > 0 ? undefined : attached(s, ok);
-        return void s.replies.shift()?.({ ok, lines });
+        const waiting = s.replies.shift();
+        // Fail closed: no pane's text is ever in a block (THE CAPTURE), so a block that answers a
+        // command with words that command does not say is tmux's fault, or a stream out of step.
+        // The control client is ended, and nothing more it prints is read.
+        if (waiting && ok && !waiting.says(lines)) { waiting.resolve({ ok: false, lines: [] }); return void lost(s); }
+        return void waiting?.resolve({ ok, lines });
       }
       return void s.block.lines.push(line);
     }
@@ -381,7 +438,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     if (s.gone) return;
     s.gone = true;
     if (server === s) server = null;
-    for (const resolve of s.replies.splice(0)) resolve({ ok: false, lines: [] });
+    for (const { resolve } of s.replies.splice(0)) resolve({ ok: false, lines: [] });
     if (s.onAttach) attached(s, false);
     // stderr is left to end with the process: a start that failed reads what tmux said on it.
     for (const stream of [s.child.stdin, s.child.stdout]) quietly(() => stream?.destroy());
@@ -443,7 +500,10 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
         if (runDir === null) {
           try { runDir = dir(); } catch (error) { throw refusal("E_PANEL_START", "the panel has no private directory", { detail: detail(error) }); }
           socket = join(runDir, SOCKET_NAME);
+          capturePath = join(runDir, CAPTURE_NAME);
+          captureWord = controlWord(capturePath);
         }
+        if (captureWord === null) throw refusal("E_PANEL_START", "the panel's private directory cannot be named to tmux: its path holds a control character");
         if (!ownerWritten) {
           try { fs.write(join(runDir, OWNER_NAME), `${JSON.stringify({ tool: OWNER_TOOL, pid, started: clock() })}\n`); } catch (error) { throw refusal("E_PANEL_START", "the panel could not mark its directory", { detail: detail(error) }); }
           ownerWritten = true;
@@ -523,22 +583,32 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   }
   /** A capture whose promise nobody awaits: it never rejects. */
   const startCapture = () => { captureNow().catch(() => { capturing = false; }); };
-  /** One capture: the pane's cells and its cursor, asked through the control client in one go.
-   *  At most one in flight; what was marked stale meanwhile arms the next tick after it. */
+  /** One capture: the pane's cells into the capture's file, and its cursor, asked through the
+   *  control client in one go (see THE CAPTURE). At most one in flight; what was marked stale
+   *  meanwhile arms the next tick after it. A capture that fails (the pane gone, the file missing,
+   *  too large or not a file) draws nothing, and the next change tries again. */
   async function captureNow() {
     const v = viewer;
     if (!showing() || capturing) return;
     capturing = true;
     dirty = false;
-    const [screen, cursor] = await Promise.all([ask(`capture-pane -p -e -N -t ${v.pane}`), ask(`display -p -t ${v.pane} '#{cursor_x} #{cursor_y} #{cursor_flag}'`)]);
+    const [taken, saved, , cursor] = await Promise.all([
+      ask(`capture-pane -e -N -b ${CAPTURE_BUFFER} -t ${v.pane}`),
+      ask(`save-buffer -b ${CAPTURE_BUFFER} ${captureWord}`),
+      ask(`delete-buffer -b ${CAPTURE_BUFFER}`),
+      ask(`display -p -t ${v.pane} '#{cursor_x} #{cursor_y} #{cursor_flag}'`, SAYS_CURSOR),
+    ]);
     capturing = false;
     if (ended || viewer !== v || v.over) return;
     // Hidden or paused while it was in flight: not drawn; the capture that showing again asks for is.
     if (!showing()) { dirty = true; return; }
-    if (screen.ok && cursor.ok) {
-      const at = /^(\d+) (\d+) ([01])$/.exec(cursor.lines[0] ?? "");
-      const where = at ? { x: Number(at[1]), y: Number(at[2]), visible: at[3] === "1" } : { x: 0, y: 0, visible: false };
-      tell(() => onScreen({ id: v.id, screen: capture(screen.lines.join("\n"), { cols: v.cols, rows: v.rows }), cursor: where }));
+    const held = taken.ok && saved.ok && cursor.ok ? quietly(() => fs.whole(capturePath, CAPTURE_MAX)) : null;
+    if (typeof held === "string") {
+      const at = CURSOR_LINE.exec(cursor.lines[0]);
+      const where = { x: Number(at[1]), y: Number(at[2]), visible: at[3] === "1" };
+      // The file holds each line with its "\n"; the cell builder takes them joined by "\n".
+      const text = held.endsWith("\n") ? held.slice(0, -1) : held;
+      tell(() => onScreen({ id: v.id, screen: capture(text, { cols: v.cols, rows: v.rows }), cursor: where }));
     }
     if (dirty) arm();
   }
@@ -724,7 +794,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     server = null;
     if (s) {
       s.gone = true;
-      for (const resolve of s.replies.splice(0)) resolve({ ok: false, lines: [] });
+      for (const { resolve } of s.replies.splice(0)) resolve({ ok: false, lines: [] });
       if (s.onAttach) attached(s, false);
       quietly(() => s.child.stdin?.end());
       for (const stream of [s.child.stdin, s.child.stdout, s.child.stderr]) quietly(() => stream?.destroy());
@@ -739,6 +809,7 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     for (const under of openings) forget(under.files);
     if (runDir !== null) {
       quietly(() => fs.unlink(socket));
+      quietly(() => fs.unlink(capturePath));
       if (ownerWritten) quietly(() => fs.unlink(join(runDir, OWNER_NAME)));
       // After kill-server: the keeper this wakes meets no server (see THE KEEPER).
       if (aliveFd !== null) { quietly(() => fs.release(aliveFd)); aliveFd = null; quietly(() => fs.unlink(join(runDir, ALIVE_NAME))); }
@@ -764,8 +835,9 @@ const SWEEP_FS = PANEL_FS;
  *    its socket refuses (`tmux -S <it> list-sessions` exits nonzero; no socket file counts as
  *      refusing; a socket that answers, a call that times out or cannot run, an entry `tmux` that
  *      is not a socket, all leave the directory alone).
- *  Then it removes the socket, owner.json, the FIFO `alive` (when it is one) and the panel's view
- *  files (`<n>.view.err`, `<n>.view.status`, by that exact pattern only), and rmdirs the directory.
+ *  Then it removes the socket, owner.json, the FIFO `alive` (when it is one), the capture's file
+ *  `capture` (when it is a regular file) and the panel's view files (`<n>.view.err`,
+ *  `<n>.view.status`, by that exact pattern only), and rmdirs the directory.
  *  It NEVER sends `kill-server` or a signal (signal 0 only asks), and never looks at a socket
  *  outside such a directory, the user's default server, or the kernel's. At most `max` candidates
  *  (SWEEP_MAX) are looked at in one run, each tmux call with a short time limit: a candidate is a
@@ -791,6 +863,7 @@ export function sweep({ tmpdir = osTmpdir(), uid = process.getuid?.(), pid = pro
           if (VIEW_FILE.test(entry) && quietly(() => fs.lstat(join(at, entry)).isFile())) quietly(() => fs.unlink(join(at, entry)));
         }
         if (quietly(() => fs.lstat(join(at, ALIVE_NAME)).isFIFO())) quietly(() => fs.unlink(join(at, ALIVE_NAME)));
+        if (quietly(() => fs.lstat(join(at, CAPTURE_NAME)).isFile())) quietly(() => fs.unlink(join(at, CAPTURE_NAME)));
         quietly(() => fs.unlink(join(at, OWNER_NAME)));
         quietly(() => fs.rmdir(at));
         removed.push(at);

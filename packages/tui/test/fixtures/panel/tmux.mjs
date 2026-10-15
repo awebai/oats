@@ -3,9 +3,16 @@
 //   calls.jsonl   one JSON line per invocation ({ pid, pgid, argv, env, commands }) and per
 //                 command a control client was sent ({ pid, control })
 //   plan.json     what to do (optional): { version, newSession: { fail }, start: { failAt, hold },
-//                 startDelayMs, holdCapture, screen: [lines], cursor,
+//                 startDelayMs, holdCapture, screen: [lines], cursor, paneGone, captureFile,
+//                 answers: { <command>: [lines] },
 //                 window: { status, stderr, closeAtOnce, print }, killPaneSilent }
-//                 (window.print: what new-window prints instead of `@n %n`, `{n}` its number)
+//                 (window.print: what new-window prints instead of `@n %n`, `{n}` its number;
+//                 screen: the pane's lines, where `{end}` and `{begin}` are the exact end and
+//                 begin of the capture's own block, as a pane that guessed them would print;
+//                 paneGone: the pane is gone when a capture runs, which fails, and then its
+//                 window's end is said; captureFile: "missing" (save-buffer writes no file) or
+//                 "huge" (more than the panel reads); answers: the lines a command's block that
+//                 succeeds holds, by the command's name, as a faulty tmux would print)
 //   state.json    the window counter, shared by the invocations of one test
 //   inject.txt    lines the test appends for the control client: `emit <line>` prints the line,
 //                 `release` answers the captures held, `exit` prints %exit and exits, `die` exits
@@ -13,7 +20,7 @@
 // It reads its arguments as tmux does in the one way that matters here: an argument that ends in
 // `;` ends a command (a trailing `\;` is an escaped `;`), so a test can see that a hostile argument
 // reaches new-window's command intact. It never runs a real tmux.
-import { appendFileSync, closeSync, constants, existsSync, fstatSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, constants, existsSync, fstatSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 
@@ -26,6 +33,18 @@ const note = (record) => appendFileSync(join(home, "calls.jsonl"), `${JSON.strin
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 function pgid() {
   try { const stat = readFileSync("/proc/self/stat", "utf8"); return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[2]); } catch { return null; }
+}
+
+/** A word of a control line as tmux reads it: single and double quotes, then `##` as a `#` (the
+ *  format expansion save-buffer applies to its path). */
+function unquote(word) {
+  let text = "", quote = null;
+  for (const ch of word) {
+    if (quote) { if (ch === quote) quote = null; else text += ch; }
+    else if (ch === "'" || ch === '"') quote = ch;
+    else text += ch;
+  }
+  return text.replaceAll("##", "#");
 }
 
 // The client's own flags, as tmux takes them before the command.
@@ -116,6 +135,7 @@ async function controlMode() {
   const now = () => Math.floor(Date.now() / 1000);
   const out = (text) => process.stdout.write(text);
   let number = 0, captures = 0, attached = false;
+  const buffers = new Map();
   const held = [], early = [];
   // As tmux 3.7c: the client's own command list (the start: new-session, then the options) is
   // answered first, one block per command with flags 0, and a command that came on stdin before
@@ -153,11 +173,31 @@ async function controlMode() {
   }
   function answer(line) {
     const n = ++number, t = now();
-    let lines = [];
-    const step = current();
-    if (line.startsWith("capture-pane")) lines = step.screen ?? [`screen ${++captures}`, "%end 1 2 1", "last"];
-    else if (line.startsWith("display")) lines = [step.cursor ?? "3 4 1"];
-    out(`%begin ${t} ${n} 1\n${lines.map((l) => `${l}\n`).join("")}%end ${t} ${n} 1\n`);
+    let lines = [], failed = null;
+    const step = current(), name = line.split(" ", 1)[0];
+    if (name === "capture-pane") {
+      const screen = (step.screen ?? [`screen ${++captures}`, "%end 1 2 1", "last"]).map((l) => l.replaceAll("{end}", `%end ${t} ${n} 1`).replaceAll("{begin}", `%begin ${t} ${n} 1`));
+      const into = / -b (\S+) /.exec(line)?.[1];
+      if (step.paneGone) failed = `can't find pane: ${/-t (%\d+)/.exec(line)?.[1]}`;
+      else if (into) buffers.set(into, screen);
+      else lines = screen;
+    } else if (name === "save-buffer") {
+      const [, into, word] = /^save-buffer -b (\S+) (.*)$/.exec(line) ?? [];
+      const path = unquote(word ?? "");
+      if (!buffers.has(into)) failed = `no buffer ${into}`;
+      else if (step.captureFile === "missing") rmSync(path, { force: true });
+      else writeFileSync(path, step.captureFile === "huge" ? "x".repeat(8 * 1024 * 1024 + 1) : buffers.get(into).map((l) => `${l}\n`).join(""));
+    } else if (name === "delete-buffer") {
+      const into = /-b (\S+)/.exec(line)?.[1];
+      if (!buffers.delete(into)) failed = `unknown buffer: ${into}`;
+    } else if (name === "display") {
+      if (step.paneGone) failed = `can't find pane: ${/-t (%\d+)/.exec(line)?.[1]}`;
+      else lines = [step.cursor ?? "3 4 1"];
+    }
+    if (step.answers?.[name]) lines = step.answers[name];
+    if (failed) out(`%begin ${t} ${n} 1\n${failed}\n%error ${t} ${n} 1\n`);
+    else out(`%begin ${t} ${n} 1\n${lines.map((l) => `${l}\n`).join("")}%end ${t} ${n} 1\n`);
+    if (name === "display" && step.paneGone) out(`%unlinked-window-close @${/-t %(\d+)/.exec(line)?.[1]}\n`);
     const killed = /^kill-pane -t %(\d+)$/.exec(line);
     if (killed && !current().killPaneSilent) out(`%unlinked-window-close @${killed[1]}\n`);
     const killedWindow = /^kill-window -t @(\d+)$/.exec(line);

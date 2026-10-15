@@ -9,7 +9,7 @@ import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSyn
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
+import { FRAME_MS, KEEPER_SCRIPT, MAX_TERMINALS, PANEL_FS, SESSION, STDERR_KEPT, VIEW_SCRIPT, controlWord, createPanel, startCommands, sweep, tmuxArgument } from "../lib/panel.mjs";
 
 const FAKE = fileURLToPath(new URL("./fixtures/panel/tmux.mjs", import.meta.url));
 const ROOT = realpathSync(mkdtempSync(path.join(os.tmpdir(), "panel-test-")));
@@ -226,11 +226,93 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("a capture: capture-pane -p -e -N and the cursor through the control client, its lines handed to the caller's capture with the size; a pane line that looks like %end does not end the block", async () => {
+  test("a capture, out of band: capture-pane -e -N into the one buffer, save-buffer to <run dir>/capture, delete-buffer, and the cursor, four lines of the control client; the file's lines handed to the caller's capture with the size", async () => {
     const { world, panel, screens, captured, id } = await opened();
-    assert.deepEqual(world.control(), ["resize-window -t @1 -x 50 -y 10", "capture-pane -p -e -N -t %1", "display -p -t %1 '#{cursor_x} #{cursor_y} #{cursor_flag}'"]);
+    const file = path.join(world.run, "capture");
+    assert.deepEqual(world.control(), ["resize-window -t @1 -x 50 -y 10", "capture-pane -e -N -b oats-tui-capture -t %1", `save-buffer -b oats-tui-capture '${file}'`, "delete-buffer -b oats-tui-capture", "display -p -t %1 '#{cursor_x} #{cursor_y} #{cursor_flag}'"]);
     assert.deepEqual(captured, [{ text: "screen 1\n%end 1 2 1\nlast", size: { cols: 50, rows: 10 } }]);
     assert.deepEqual(screens, [{ id, screen: { built: "screen 1\n%end 1 2 1\nlast", size: { cols: 50, rows: 10 } }, cursor: { x: 3, y: 4, visible: true } }]);
+    assert.equal(readFileSync(file, "utf8"), "screen 1\n%end 1 2 1\nlast\n", "the file as tmux writes it: each line with its newline");
+    panel.end();
+  });
+
+  test("a pane that prints its capture's own block end and begin, %exit and its window's end, each exact: no freeze, no close, its lines drawn as they are, and the next frame right", async () => {
+    const forged = ["{end}", "{begin}", "%exit", "%window-close @1", "%unlinked-window-close @1", "after"];
+    const { world, panel, timers, screens, captured, closed, id } = await opened({ screen: forged });
+    const first = captured[0].text.split("\n");
+    assert.match(first[0], /^%end \d+ \d+ 1$/);
+    assert.match(first[1], /^%begin \d+ \d+ 1$/);
+    assert.deepEqual(first.slice(2), forged.slice(2));
+    world.plan({ screen: ["the next frame"] });
+    world.emit("%output %1 more");
+    await waitFor("the tick", () => timers.count === 1);
+    timers.fire();
+    await waitFor("the next frame", () => screens.length === 2);
+    assert.equal(captured[1].text, "the next frame");
+    assert.deepEqual([closed, panel.current], [[], id]);
+    panel.end();
+  });
+
+  test("a pane gone between the send and the run: one failed capture (no frame, the buffer's commands fail as tmux's own words), then the viewer's close handled as usual, the control client kept", async () => {
+    const { world, panel, timers, screens, closed, id } = await opened();
+    world.plan({ paneGone: true });
+    world.emit("%output %1 last words");
+    await waitFor("the tick", () => timers.count === 1);
+    timers.fire();
+    await waitFor("the close", () => closed.length === 1);
+    assert.deepEqual(closed[0], { id, status: null, stderr: "", asked: false });
+    assert.equal(screens.length, 1, "no frame of the failed capture");
+    world.plan({});
+    assert.deepEqual(await panel.open({ argv: VIEWER, cols: 50, rows: 10 }), { id: "@2" });
+    assert.equal(world.invocations().filter((call) => call.flags.includes("-C")).length, 1, "the same control client");
+    panel.end();
+  });
+
+  test("a capture's file missing or larger than the panel reads: no frame and no throw; the next change draws", async () => {
+    const { world, panel, timers, screens, heard } = await opened();
+    const blocks = () => (heard().match(/^%(end|error) /gm) ?? []).length;
+    for (const captureFile of ["missing", "huge"]) {
+      world.plan({ captureFile });
+      const before = blocks();
+      world.emit(`%output %1 ${captureFile}`);
+      await waitFor("the tick", () => timers.count === 1);
+      timers.fire();
+      await waitFor("the capture's four blocks", () => blocks() === before + 4);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(screens.length, 1, captureFile);
+    }
+    world.plan({});
+    world.emit("%output %1 again");
+    await waitFor("the tick", () => timers.count === 1);
+    timers.fire();
+    await waitFor("the frame", () => screens.length === 2);
+    panel.end();
+  });
+
+  test("fail closed: a block that answers with words its command does not say ends the control client; the viewer is closed with no status, and the next open starts a new server", async () => {
+    for (const command of ["save-buffer", "resize-window"]) {
+      const { world, panel, timers, closed, id } = await opened();
+      world.plan({ answers: { [command]: ["words tmux never says here"] } });
+      if (command === "resize-window") panel.resize(60, 12);
+      else { world.emit("%output %1 x"); await waitFor("the tick", () => timers.count === 1); timers.fire(); }
+      await waitFor("the close", () => closed.length === 1);
+      assert.deepEqual(closed[0], { id, status: null, stderr: "", asked: false }, command);
+      assert.equal(panel.current, null);
+      world.plan({});
+      await panel.open({ argv: VIEWER, cols: 50, rows: 10 });
+      assert.equal(world.invocations().filter((call) => call.flags.includes("-C")).length, 2, `${command}: a new control client`);
+      panel.end();
+    }
+  });
+
+  test("controlWord: a path as one word of a control line, in single quotes, `'` as '\"'\"', every # doubled; a control character makes it no word; a run directory whose path holds one is refused at the start (E_PANEL_START), with no tmux run", async () => {
+    assert.equal(controlWord("/tmp/oats-tui-x/capture"), "'/tmp/oats-tui-x/capture'");
+    assert.equal(controlWord(`/a b'c"d$HOME#(touch x)#{pane_id}~;\\`), `'/a b'"'"'c"d$HOME##(touch x)##{pane_id}~;\\'`);
+    for (const bad of ["/a\nb", "/a\rb", "/a\u001bb", "/a\u007fb", "/a\u0000b"]) assert.equal(controlWord(bad), null, JSON.stringify(bad));
+    const world = makeWorld();
+    const { panel } = panelOf(world, { dir: () => path.join(world.dir, "line\nbreak") });
+    await assert.rejects(panel.open({ argv: VIEWER }), { code: "E_PANEL_START", message: /control character/ });
+    assert.deepEqual(world.invocations(), []);
     panel.end();
   });
 
@@ -268,7 +350,7 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.resize(72, 20);
     await waitFor("the capture", () => screens.length === 2);
     const lines = world.control();
-    assert.ok(lines.indexOf("resize-window -t @1 -x 72 -y 20") < lines.lastIndexOf("capture-pane -p -e -N -t %1"));
+    assert.ok(lines.indexOf("resize-window -t @1 -x 72 -y 20") < lines.lastIndexOf("capture-pane -e -N -b oats-tui-capture -t %1"));
     assert.deepEqual(captured[1].size, { cols: 72, rows: 20 });
     panel.resize("x", -1);
     await waitFor("the next capture", () => screens.length === 3);
@@ -458,9 +540,10 @@ describe("the panel", { concurrency: 8 }, () => {
     const { world, panel, closed } = await opened();
     const control = world.invocations().find((call) => call.flags.includes("-C")).pid;
     assert.ok(existsSync(world.socket) && lstatSync(world.socket).isSocket());
+    assert.ok(existsSync(path.join(world.run, "capture")));
     panel.end();
     assert.equal(world.invocations().at(-1).commands[0][0], "kill-server");
-    assert.deepEqual(readdirSync(world.run), [], "the socket, owner.json, the FIFO and both view files");
+    assert.deepEqual(readdirSync(world.run), [], "the socket, the capture's file, owner.json, the FIFO and both view files");
     assert.ok(existsSync(world.run), "the directory is the reader's to remove");
     await waitFor("the control client gone", () => !isFake(control));
     const calls = world.invocations().length;
@@ -495,11 +578,11 @@ describe("the panel", { concurrency: 8 }, () => {
     return at;
   }
 
-  test("the sweep removes what a dead run left (socket, owner.json, the FIFO, view files, then the directory), and nothing else: never a live pid, a socket that answers, another tool's or user's directory, a wrong mode, a link, or a directory with no owner.json", async () => {
+  test("the sweep removes what a dead run left (socket, owner.json, the FIFO, the capture's file, view files, then the directory), and nothing else: never a live pid, a socket that answers, another tool's or user's directory, a wrong mode, a link, or a directory with no owner.json", async () => {
     const world = makeWorld(), tmp = path.join(world.dir, "tmp");
     mkdirSync(tmp);
     const dead = await deadPid();
-    const removedDirs = [runDir(tmp, "oats-tui-dead01", { pid: dead }), runDir(tmp, "oats-tui-nosock", { pid: dead, socket: false })];
+    const removedDirs = [runDir(tmp, "oats-tui-dead01", { pid: dead, extra: ["capture"] }), runDir(tmp, "oats-tui-nosock", { pid: dead, socket: false })];
     const withChange = runDir(tmp, "oats-tui-change", { pid: dead, fifo: false, extra: ["1.out", "1.err", "10.view.err.bak", "alive"] });
     const kept = {
       live: runDir(tmp, "oats-tui-live01", { pid: process.pid }),
