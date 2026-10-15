@@ -55,7 +55,7 @@ import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } fro
 import { createMachines } from "./machines.mjs";
 import { createServerForget, forgetNotRun } from "./server-forget.mjs";
 import { machinesGated } from "../../client/machine-contract.mjs";
-import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
+import { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
 import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
 import { createInspectCache } from "../../client/inspect-cache.mjs";
@@ -519,7 +519,7 @@ let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances,
 const BACKGROUND_MAX_AGE = 60;
 // The collector's entry is in the shared home too, beside app.asar in the package.
 const LIVENESS = join(HERE, "..", "..", "client", "liveness-main.mjs");
-const soulCatalog = createSoulCatalog();
+const soulCatalog = createSoulCatalog({ terms: DESKTOP_TERMS });
 const capabilityCatalog = createCapabilityCatalog();
 const inspectCache = createInspectCache();
 // What a capability ships, per (deployment, row, commit[, file]): content at one commit never moves.

@@ -8,7 +8,7 @@
 import { cliWorkspace } from '../../client/workspace-cli.mjs';
 import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
 import { capabilitiesData, observationData } from '../../client/deployment-data.mjs';
-import { soulCatalogKey } from './soul-catalog.mjs';
+import { soulCatalogKey } from '../../client/soul-catalog.mjs';
 import { createKeyedCatalog } from '../../client/keyed-catalog.mjs';
 
 export const CAPABILITY_CATALOG_RETRY_MS = 60_000;

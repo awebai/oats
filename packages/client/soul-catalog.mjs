@@ -6,18 +6,23 @@
  *
  * On a cold cycle the server starts this read alongside status/workspace status
  * (`prefetch`) and binds it to the key that cycle's workspace status produces
- * (`settle`); the holding rules are keyed-catalog.mjs's. */
-import { cliWorkspace } from '../../client/workspace-cli.mjs';
-import { DESKTOP_TERMS } from '../renderer/desktop-terms.mjs';
-import { soulsData, observationData } from '../../client/deployment-data.mjs';
-import { createKeyedCatalog } from '../../client/keyed-catalog.mjs';
+ * (`settle`); the holding rules are keyed-catalog.mjs's.
+ *
+ * A client makes its own catalog and owns it: nothing is held at module level, so two catalogs
+ * share no flight, no held entry and no cycle. It takes the client's terms (client-terms.mjs),
+ * which the default kernel read words its refusals with, and an optional `exec` that read
+ * runs the CLI through (cli-adapter.mjs `runJson`'s `io.exec`). */
+import { cliWorkspace } from './workspace-cli.mjs';
+import { requireTerms } from './client-terms.mjs';
+import { soulsData, observationData } from './deployment-data.mjs';
+import { createKeyedCatalog } from './keyed-catalog.mjs';
 
 export const SOUL_CATALOG_RETRY_MS = 60_000;
 
 /** The state a souls catalog was read under: the CLI, the workspace and member commits and the
  * externals — everything `workspace status` reports that moves the list. What it cannot see
  * (local configuration edited outside Desktop: teams, launch preferences) is bounded by the held
- * result's TTL (keyed-catalog HELD_TTL_MS); the Desktop names no deployment file to find out. */
+ * result's TTL (keyed-catalog HELD_TTL_MS); the client names no deployment file to find out. */
 export function soulCatalogKey(cli, workspaceStatus) {
   const ws = workspaceStatus || {};
   return JSON.stringify([cli?.bin ?? null, cli?.version ?? null, ws.workspace?.key ?? null, ws.workspace?.commit ?? null,
@@ -25,7 +30,8 @@ export function soulCatalogKey(cli, workspaceStatus) {
     (ws.external || []).map(e => [e.source ?? null, e.soul ?? null])]);
 }
 
-export function createSoulCatalog({ invoke = (cli, options) => cliWorkspace(cli, options, DESKTOP_TERMS), now = () => Date.now() } = {}) {
+export function createSoulCatalog({ terms, exec, invoke = (cli, options) => exec ? cliWorkspace(cli, options, terms, { exec }) : cliWorkspace(cli, options, terms), now = () => Date.now() } = {}) {
+  requireTerms(terms, 'createSoulCatalog');
   async function read(deployment, cli, options) {
     try {
       // `maxAge` only reaches argv when the kernel declares observe-max-age (the adapter's call).
