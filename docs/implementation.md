@@ -121,6 +121,7 @@ and the rules its tests pin.
 | `capability-contract.mjs`, `provider-binding.mjs` | manifest validation (launch environment, hooks, `retirement`) as problems and warnings (`manifestContract`: an unknown, non-required hook event is a warning every reader reports), the hook environment rules, the readiness wire |
 | `retire-output.mjs` | the lines `oats retire` prints for preserved work, one function for the local and the remote path |
 | `retained-after-retire.mjs` | what retires left behind (recovery copies, retained worktrees) as `oats doctor` information lines: read-only, Git through `instance-git.mjs`'s helper-free reads |
+| `read-ahead.mjs`, `read-ahead-worker.mjs` | read-ahead for the tree digests (`fingerprintTrees`): while a digest reads a tree on the calling thread, a planner thread walks it in the digest's order and a few reader threads read the next files into the page cache, within a window of bytes and files ahead of the digest. The digest still reads and hashes every byte itself, so no value or error depends on it; one that cannot start or falls behind costs speed only |
 | `servers.mjs` | routing commands to a registered server |
 | `launch-prompt-evidence.mjs` | private bounded storage of exact unmatched, stable-screen completed or flag-ignored notice frames, original-home identity checks and receipt-last publication; no terminal operations or public raw text |
 | `launch-prompt-completion.mjs` | the 21 question markers that block after the development-channel Enter; reporting only, never an input matcher |
