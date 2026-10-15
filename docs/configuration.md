@@ -87,9 +87,14 @@ Loading development channels” prompt through the **approved route**: the
 development prompt. Claude admits the plugin when a root-owned machine
 managed-settings file lists it. The route does not depend on the Claude
 version and needs no OATS mechanism beyond these settings. The operator's
-ordered procedure is the `oats.setup` host step “Claude channel delivery
-(approved route)” in `/oats-workspace-config`, which `/oats-onboarding` card 4
-calls; the provider's side is `/oats-aweb` §4.
+ordered procedure is the `oats.setup` skill `/oats-host-delivery`, whose
+Choice 1 is this route and whose Choice 2 is the host wake broker;
+`/oats-onboarding` card 4 makes both choices and card 8 checks them. The provider's side is
+`/oats-aweb` §4.
+
+An unset `claudeChannelMode` is development mode, so a host that never makes
+the choice runs every Claude home with the development prompt. Set the key
+explicitly, to `approved` or, as a recorded fallback, `development`.
 
 **The managed-settings file** is a host change made by a human admin with
 sudo. OATS never writes it.
@@ -127,7 +132,11 @@ settings:
 ```
 
 With channel delivery, pi uses its `@awebai/pi` extension and Codex always
-uses the host broker.
+uses the host broker. The broker (`aw wake run`, one per host user) also wakes
+every joined team and every `delivery: session` home. Without it, joined teams
+are poll-only. It runs as a per-user launchd or systemd service that the
+operator installs, with `AW_WAKE_OATS_BIN` and a `PATH` that reaches `oats` and
+`node`. That procedure is Choice 2 of `/oats-host-delivery`.
 
 **The plugin.** `aweb-channel` must be installed from the marketplace named
 `awebai-marketplace` (GitHub `awebai/claude-plugins`) and enabled, in the

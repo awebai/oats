@@ -5,10 +5,10 @@ description: >-
   workspace, members, packages, souls, capabilities, teams, instances and
   automations are, how they relate and why; "where does X come from", "why is
   X here", "why can't I see / spawn / join Y", "who is this agent acting as",
-  "what runs on this machine". Explains the model and names the command that
+  "what runs on this machine", "why didn't my agent wake". Explains the model and names the command that
   answers each question. To change something, continue with
-  `/oats-workspace-config`, `/oats-teams`, `/oats-package-pins` or
-  `/oats-automations`.
+  `/oats-workspace-config`, `/oats-host-delivery`, `/oats-teams`,
+  `/oats-package-pins` or `/oats-automations`.
   Part of the setup and config of an OATS workspace (oats.setup); day-to-day
   operation inside an instance is oats.core.
 ---
@@ -147,7 +147,15 @@ workspace, host-owned settings such as paths and custody, clones, launch
 configurations, souls disabled here, its `host.name`, its local `teams` and
 `defaultTeam` (only with `localTeams: true`) and `triggers.disabled` /
 `schedules.disabled`), `oats-lock.json` (written by `oats sync`), `agents/`
-(the instance homes) and the host timer. None of it is in Git.
+(the instance homes) and the host timer. None of it is in Git. Two more host
+facts decide whether messages wake the agents at all:
+- **Claude's managed settings** admit the aweb channel plugin, so that
+  Claude homes start without a development prompt (`claudeChannelMode`).
+- **The host wake broker** is aw's daemon, run as a per-user service. It
+  wakes Codex homes, `delivery: session` homes and every joined team.
+
+Nothing defaults either one safely. `/oats-host-delivery` teaches both, and
+onboarding makes both choices.
 
 ## Where does X come from, why is X here, why can't I Y
 
@@ -168,6 +176,7 @@ configurations, souls disabled here, its `host.name`, its local `teams` and
 | What runs automatically, and where? | `oats trigger list`, `oats schedule list` | local and workspace automations; for a workspace one, whether it runs here or why not |
 | Would this trigger work on this host? | `oats trigger test <id>` | `gh` credentials, repo permissions, the soul resolving, the teams declared, what would fire |
 | What is configured on this machine? | `oats doctor` | this deployment's local file and lock |
+| Will mail wake the agents on this machine? | `aw wake status --json`, `oats readiness --home <abs home> --json` | the broker running at the `aw version` version; no `wake-daemon-*`, `joined-team-poll-only` or `channel-dev-confirmation` the operator did not choose (`/oats-host-delivery`) |
 
 Use `--json` when you parse; read `oats help` for any flag not shown here.
 

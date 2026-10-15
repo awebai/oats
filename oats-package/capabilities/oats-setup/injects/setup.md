@@ -12,7 +12,9 @@ member), workspace automations (`oats-triggers/`, `oats-schedules/`). *Host*
 facts belong to one machine: its `oats-local.yaml` (settings, clones, launch
 configurations, disabled souls, its host name, and, only when the workspace
 says `localTeams: true`, its own `teams` and `defaultTeam`), `oats-lock.json`
-(written by `oats sync` only) and its clones.
+(written by `oats sync` only), its clones, and two host facts outside OATS's
+files: Claude's managed settings and the host wake broker's service
+(`/oats-host-delivery`).
 
 **Keep the work proportional.** Explicit user decisions supersede workflow
 defaults immediately; apply them to the current plan and review without asking
@@ -39,6 +41,7 @@ before calling it done; report uncertainty rather than an unobserved result.
 **Load the skill for the task:**
 - `/oats-setup-model`: first, to explain the setup: what each piece is, why, and which command answers "where does X come from".
 - `/oats-onboarding`: realizing a workspace on a machine, first spawn.
+- `/oats-host-delivery`: how messages reach the agents on a host: Claude channel delivery (approved route or a stated fallback) and the host wake broker service. Every host with messaging seats makes both choices.
 - `/oats-package-pins`: adding, bumping or removing a package; the lock.
 - `/oats-workspace-config`: any field of the shared files, where a fact belongs, an `E_*` refusal.
 - `/oats-teams`: the teams (shared and local), the default, which teams each soul may join (`souls:` in the workspace file; `oats teams`, `oats soul teams`), joining and leaving.
