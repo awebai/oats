@@ -654,7 +654,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       const harness = facts$.querySelector('[data-fact="harness"]');
       const place = fact => harness ? harness.before(fact) : facts$.append(fact);
       if (typeof agent.repoName === 'string' && agent.repoName) place(pageFact('repo', agent.repoName, 'mono'));
-      const work = workText(agent.work); if (work) facts$.append(pageFact('branch', work, 'muted'));
+      if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', workText(agent.work), 'muted'));
       // Kernel #217: the soul's file. Without a web address (a non-GitHub repo) its path shows instead.
       if (facts && typeof agent.file?.path === 'string' && agent.file.path && !(typeof agent.file.url === 'string' && /^https:\/\//.test(agent.file.url))) facts$.append(pageFact('file', agent.file.path, 'mono'));
       const card = pageCard(doc, 'Instances', { count: rosterState === 'ready' || rosterState === 'empty' ? homes.length : null }); card.card.classList.add('inspector-instances');
