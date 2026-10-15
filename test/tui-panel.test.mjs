@@ -465,10 +465,11 @@ test("a viewer whose terminal hangs up before its process has exited keeps its e
   const panel = createPanel({ dir: () => dir, env, capture: captureRows, onClosed: (event) => closed.push(event) });
   t.after(() => { panel.end(); rmSync(dir, { recursive: true, force: true }); });
   // The process closes its terminal's files (the hang-up), ignores the SIGHUP tmux's closing of the
-  // pane then sends it, and exits 3 two seconds later: tmux marks the pane dead at the hang-up and
-  // has its status only once it reaps the process. A viewer that exits does the same in a moment.
-  await panel.open({ argv: ["/bin/sh", "-c", 'trap "" HUP; exec 0<&- 1>&- 2>&-; sleep 2; exit 3'], cols: 80, rows: 20 });
-  await waitUntil(() => closed.length === 1, "the viewer's end", 10000);
+  // pane then sends it, and exits 3 four seconds later, past the panel's DEAD_WAIT_MS: tmux marks
+  // the pane dead at the hang-up and has its status only once it reaps the process. A viewer that
+  // exits does the same in a moment.
+  await panel.open({ argv: ["/bin/sh", "-c", 'trap "" HUP; exec 0<&- 1>&- 2>&-; sleep 4; exit 3'], cols: 80, rows: 20 });
+  await waitUntil(() => closed.length === 1, "the viewer's end", 12000);
   assert.equal(closed[0].status, 3, `the status it exited with: ${JSON.stringify(closed[0])}`);
 });
 

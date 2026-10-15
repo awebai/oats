@@ -421,8 +421,8 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("a pane heard dead with no status and no signal that nothing follows (a signal's end on tmux 3.2) is over with no status after DEAD_WAIT_MS", async () => {
-    const { world, panel, closed, id, heard, timers } = await opened();
+  test("on tmux 3.2 (no pane_dead_signal), a pane heard dead with no status and no signal that nothing follows (a signal's end there) is over with no status after DEAD_WAIT_MS", async () => {
+    const { world, panel, closed, id, heard, timers } = await opened({ version: "tmux 3.2" });
     world.emit(dead(id));
     await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
     world.emit(dead(id));
@@ -448,8 +448,24 @@ describe("the panel", { concurrency: 8 }, () => {
     panel.end();
   });
 
-  test("end() while a viewer waits for its status: the wait is put away, and nothing more is said", async () => {
-    const { world, panel, closed, id, heard, timers } = await opened();
+  test("on tmux 3.3 and later a pane heard dead with no status and no signal waits for its status however long it takes: no time limit", async () => {
+    for (const version of ["tmux 3.3", "tmux 3.4", "tmux 3.7c", "tmux next-3.8"]) {
+      const { world, panel, closed, id, heard, timers } = await opened({ version });
+      world.emit(dead(id));
+      await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
+      assert.equal(timers.delays().includes(DEAD_WAIT_MS), false, `${version}: no wait armed`);
+      timers.fire();
+      await sleep(100);
+      assert.deepEqual([closed, panel.current, count(world.control(), "kill-pane")], [[], id, 0], `${version}: still open`);
+      world.emit(dead(id, 3));
+      await waitFor("the end", () => closed.length === 1);
+      assert.deepEqual(closed[0], { id, status: 3, stderr: "", asked: false }, version);
+      panel.end();
+    }
+  });
+
+  test("end() while a viewer waits for its status on tmux 3.2: the wait is put away, and nothing more is said", async () => {
+    const { world, panel, closed, id, heard, timers } = await opened({ version: "tmux 3.2" });
     world.emit(dead(id));
     await waitFor("the panel to hear it", () => heard().includes(`${dead(id)}\n`));
     assert.equal(timers.delays().includes(DEAD_WAIT_MS), true);

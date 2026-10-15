@@ -268,8 +268,8 @@ fit; the detail shows them whole.
 - **A terminal also closes by itself** when its viewer ends: the agent's
   window ended, its session went away, or the link to its machine dropped.
   It closes within a second of that (tmux tells `oats tui` of a viewer's
-  end once a second), or two when tmux took a moment more to have the
-  viewer's exit status. The instances are then read again at once, and one line above the panes
+  end once a second), or a second more when tmux took a moment more to
+  have the viewer's exit status. The instances are then read again at once, and one line above the panes
   says what happened: that it could not be opened, that the connection to
   its machine ended, or that the viewer ended without saying why. What the
   viewer printed on its error output stands under that line in quotation
@@ -646,9 +646,10 @@ with the Desktop (`packages/client/`).
   to `oats tui` within a second; `oats tui` then closes that pane. tmux can
   report a pane ended before it has that status (3.4 does, when the
   viewer's terminal hangs up a moment before its process is reaped):
-  `oats tui` then waits for the status, which follows at the next report.
-  On tmux 3.2, which never says which signal ended a pane, a pane reported
-  so for 2.5 seconds is taken as ended by a signal. The server is ended
+  `oats tui` then waits for the status, which follows at the next report,
+  however long that takes. Only on tmux 3.2, which never says which signal
+  ended a pane, is a pane reported so for 2.5 seconds taken as ended by a
+  signal. The server is ended
   on every way out a process can handle. At its start a run also removes
   what a run that is gone left (below), and nothing else: it signals
   nothing.

@@ -77,9 +77,10 @@
 // process's files closed as it exits) and takes the status only when it reaps the process, a
 // moment later (server_destroy_pane, then server_child_exited; 3.2 to 3.4 at least, and CI on 3.4
 // heard the dead pane between the two). That line, `1  `, is not the end: the line with the status
-// follows at the next check, and the panel waits for it. tmux 3.2 has no `pane_dead_signal`, so
-// there a signal's end reads `1  ` for good: a viewer heard so is over without a status once
-// DEAD_WAIT_MS have passed with no other line. A pane-died hook cannot do it: tmux sends no
+// follows at the next check, and the panel waits for it, for as long as it takes. tmux 3.2 has no
+// `pane_dead_signal` (3.3 added it), so there a signal's end reads `1  ` for good: on tmux 3.2
+// alone a viewer heard so is over without a status once DEAD_WAIT_MS have passed with no other
+// line. A pane-died hook cannot do it: tmux sends no
 // notification for a command a hook runs. A pane the panel kills (close(), an open given up) is
 // gone at once, with no status. Verified with tmux 3.4 and 3.7c; read in 3.2's source (control.c,
 // format.c, server-fn.c), the same.
@@ -122,9 +123,12 @@ export const VIEW_SCRIPT = 'exec "$0" "$@" 2>"$E"';
  *  tmux does not have yet (or, on tmux 3.2, a signal's), `0  ` for a live one. */
 const DEAD_SUBSCRIPTION = "oats-tui-dead";
 const DEAD_LINE = /^%subscription-changed oats-tui-dead \$\d+ (@\d+) \d+ %\d+ : ([01]) (\d{0,3}) ([A-Z0-9]{0,12})$/;
-/** How long a viewer heard dead with no status and no signal (`1  `) waits for the line that has
- *  one, in milliseconds: two checks of the subscription past the one that heard it. */
+/** On tmux 3.2 (no `pane_dead_signal`), how long a viewer heard dead with no status and no signal
+ *  (`1  `) waits for the line that has one, in milliseconds: two checks of the subscription past
+ *  the one that heard it. On a later tmux it waits for that line however long it takes. */
 export const DEAD_WAIT_MS = 2500;
+/** The first tmux whose `pane_dead_signal` says which signal ended a pane. */
+const DEAD_SIGNAL_TMUX = Object.freeze([3, 3]);
 /** What a dead line with no status and no signal says of a viewer: its status is still to come. */
 const PENDING = Symbol("pending");
 /** The one session of the private server, and its keeper window's command. */
@@ -198,13 +202,13 @@ function tmuxEnvironment(env) {
 const cells = (n, fallback) => (Number.isInteger(n) && n > 0 ? Math.min(n, 10_000) : fallback);
 /** Bytes as tmux's `send-keys -H` takes them: two hex digits each, separated by spaces. */
 const hex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(" ");
-/** Whether a `tmux -V` answer names a version older than MIN_TMUX. A name without a version
- *  (a build from the repository says `master` or `next-…`) is taken as new enough. */
-function tooOld(answer) {
+/** Whether a `tmux -V` answer names a version older than `[major, minor]`. A name without a
+ *  version (a build from the repository says `master` or `next-…`) is taken as new enough. */
+function older(answer, [least, leastMinor]) {
   const found = /(\d+)\.(\d+)/.exec(String(answer));
   if (!found) return false;
   const [major, minor] = [Number(found[1]), Number(found[2])];
-  return major < MIN_TMUX[0] || (major === MIN_TMUX[0] && minor < MIN_TMUX[1]);
+  return major < least || (major === least && minor < leastMinor);
 }
 
 /** What this module does to the file system, each replaceable by a test.
@@ -310,6 +314,8 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
   /** The run directory and the socket in it, once known; whether owner.json was written, tmux's
    *  version checked, and a server ever started in this run. */
   let runDir = null, socket = null, ownerWritten = false, checked = false, everStarted = false;
+  /** Whether this tmux says which signal ended a pane (DEAD_SIGNAL_TMUX), known once checked. */
+  let signals = true;
   /** The write end of `<run dir>/alive`, held for the run once made (see THE KEEPER), or null. */
   let aliveFd = null;
   /** The server now: { child, replies (the FIFO of commands waiting for their block), block (the
@@ -489,7 +495,8 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
           try { answer = await call(["-V"]); } catch (error) {
             throw error?.code === "ENOENT" ? refusal("E_PANEL_TMUX", "tmux is not installed") : refusal("E_PANEL_TMUX", "tmux did not say its version", { detail: detail(error) });
           }
-          if (tooOld(answer.stdout)) throw refusal("E_PANEL_TMUX", "the panel needs tmux 3.2 or later", { detail: answer.stdout.trim().slice(0, 80) });
+          if (older(answer.stdout, MIN_TMUX)) throw refusal("E_PANEL_TMUX", "the panel needs tmux 3.2 or later", { detail: answer.stdout.trim().slice(0, 80) });
+          signals = !older(answer.stdout, DEAD_SIGNAL_TMUX);
           checked = true;
         }
         if (ended) throw refusal("E_PANEL_ENDED", "the panel has ended");
@@ -598,10 +605,11 @@ export function createPanel({ dir, capture, onScreen = () => {}, onClosed = () =
     if (v) { v.status = status; ask(`kill-pane -t ${v.pane}`); return finish(v, {}); }
     if (openings.size > 0 && !(status === PENDING && diedSeen.has(id))) diedSeen.set(id, status);
   }
-  /** A viewer heard dead with no status: over without one after DEAD_WAIT_MS, unless the line with
-   *  its status has come by then (tmux 3.2 says a signal's end no other way). Armed once. */
+  /** A viewer heard dead with no status: it stays open until the line with its status or its
+   *  signal, a close, or its server's end. On tmux 3.2, which says a signal's end no other way, it
+   *  is over without a status after DEAD_WAIT_MS unless that line has come by then. Armed once. */
   function waitStatus(v) {
-    if (v.over || v.waiting !== null) return;
+    if (signals || v.over || v.waiting !== null) return;
     v.waiting = timers.setTimeout(() => {
       v.waiting = null;
       if (ended || v.over) return;
