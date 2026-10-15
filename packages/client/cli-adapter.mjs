@@ -500,11 +500,13 @@ export function launchChoiceArgv({ launchConfig, harness, model, yolo, harnessFl
 
 /** `execFile`'s shape, return and errors, for a child in a session of its own (`detached`: a new session and
  * process group). `execFile` drops `detached`, so this is the `exec` a kernel caller of this home uses for a
- * stop or retire apply and a start. Like `execFile` it collects stdout and stderr (`encoding`, default utf8),
- * ends the child with `killSignal` (SIGTERM) when `timeout` (0: none) passes or an output passes `maxBuffer`,
- * and calls back once the child's streams close: `(null, stdout, stderr)` on a clean exit; else an Error with
- * `code` (the exit status, or a system code), `killed` and `signal`, or the overflow's own error, whose `code`
- * is ERR_CHILD_PROCESS_STDIO_MAXBUFFER. stdin is a pipe, as `execFile`'s, that nobody writes. */
+ * stop or retire apply, a start and a spawn apply. Like `execFile` it collects stdout and stderr (`encoding`,
+ * default utf8), ends the child with `killSignal` (SIGTERM) when `timeout` (0: none) passes or an output passes
+ * `maxBuffer`, and calls back once the child's streams close: `(null, stdout, stderr)` on a clean exit; else an
+ * Error with `code` (the exit status, or a system code), `killed` and `signal`, or the overflow's own error,
+ * whose `code` is ERR_CHILD_PROCESS_STDIO_MAXBUFFER. A child its `timeout` killed is never a clean exit, even
+ * when it then exits 0: the Error has `killed: true`, and stdout and stderr are still passed (execFile's kill
+ * destroys them first). stdin is a pipe, as `execFile`'s, that nobody writes. */
 export function execFileInSession(bin, argv, options = {}, callback = () => {}) {
   const { cwd, env, encoding = "utf8", timeout = 0, maxBuffer = 1024 * 1024, killSignal = "SIGTERM" } = options;
   const child = spawn(bin, argv, { cwd, env, shell: false, detached: true, windowsHide: true });
@@ -515,7 +517,7 @@ export function execFileInSession(bin, argv, options = {}, callback = () => {}) 
   function exit(code = null, signal = null) {
     if (exited) return; exited = true; clearTimeout(timer);
     const stdout = text("stdout"), stderr = text("stderr");
-    if (!ex && code === 0 && signal === null) { callback(null, stdout, stderr); return; }
+    if (!ex && !killed && code === 0 && signal === null) { callback(null, stdout, stderr); return; }
     const cmd = [bin, ...argv].join(" ");
     if (!ex) ex = Object.assign(new Error(`Command failed: ${cmd}\n${stderr}`), { code, killed: child.killed || killed, signal });
     ex.cmd = cmd; callback(ex, stdout, stderr);
@@ -643,7 +645,7 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   if (!validMaxAge(maxAge)) bad('Invalid observation age');
   // --instructions (feature soul-composed-instructions) composes a soul's AGENTS.md: inspect --soul only; a CLI that
   // does not advertise it gets the flagless argv. Routed with --server, the caller asks only for a host whose roster
-  // row names the feature (packages/desktop: server/capabilities.mjs, renderer/composed-gate.mjs): a host without it refuses the flag.
+  // row names the feature (inspect-boundary.mjs, composed-gate.mjs): a host without it refuses the flag.
   if (instructions && (action !== 'inspect' || !soul || home)) bad('Composed instructions belong to a soul inspection');
   const composed = instructions && Array.isArray(features) && features.includes('soul-composed-instructions') ? ['--instructions'] : [];
   // --skills (feature soul-skills) adds the soul's own skills (souls[0].skills): inspect --soul only, gated the same

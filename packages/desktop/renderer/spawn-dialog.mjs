@@ -34,7 +34,7 @@ import { RECOVER_POLL_MS, FOLLOW_MARGIN_MS } from './spawn-jobs.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
-import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from './launch-view.mjs';
+import { shownLaunch, launchHarnessName, launchModelText, launchFromText, preferenceText, declaredDiffers } from '../../client/launch-view.mjs';
 import { createSpawnDeploymentField, spawnDeployments } from './spawn-deployment-field.mjs';
 import { openAddMachineDialog } from './add-machine-dialog.mjs';
 import { followBackfill, BACKFILL_POLL_MS } from '../../client/machine-contract.mjs';

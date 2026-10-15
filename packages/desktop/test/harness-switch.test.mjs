@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { acceptProbe } from '../../client/cli-locator.mjs';
 import { harnessList, harnessOf, harnessFlag, harnessKey } from '../../client/harness-names.mjs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
 import { previewData } from '../../client/spawn-preview-contract.mjs';
 import { spawnCreationReceipt } from '../../client/spawn-apply-contract.mjs';
 import { deploymentStatusData } from '../../client/deployment-data.mjs';
@@ -43,7 +43,7 @@ test('the probe: feature harness lists harnesses (no runtimes alias); a released
 
 const replay = async (name, choices, useCli = cli) => {
   const envelope = h(name); let seen;
-  const read = createSpawnPreviewBoundary({ invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_b, argv, _o, callback) => {
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_b, argv, _o, callback) => {
     seen = argv; callback(envelope.ok ? null : { code: 1 }, JSON.stringify(envelope)); } }) });
   const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli: structuredClone(useCli), agents: [{ name: 'release-manager', agentsRoot: ROOT, work: 'worktree' }], instances: [] });
   const response = await read({ action: 'preview', selector: target.selector, choices }, context);

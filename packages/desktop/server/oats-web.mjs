@@ -9,7 +9,7 @@
  *   GET  /api/panel                 roster JSON (instances, task, tmux state; local Git unobserved)
  *   GET  /api/agents                available agents (souls) per workspace root
  *                                   (both: an explicit ?ws= not served → 404 E_WORKSPACE_NOT_SERVED)
- *   POST /api/spawn?ws=<id>         { action: prepare|apply|result, … } → preview-bound spawn (server/spawn-apply.mjs);
+ *   POST /api/spawn?ws=<id>         { action: prepare|apply|result, … } → preview-bound spawn (packages/client/spawn-apply.mjs);
  *                                   { agent, agentsRoot, serverId, … } → execution-server spawn only
  *                                   (mutations require the installed `oats` CLI; see cliUnavailable)
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
@@ -55,21 +55,21 @@ import { createDeploymentObserver, mapBounded, MAX_DEPLOYMENT_OBSERVATIONS } fro
 import { createMachines } from "./machines.mjs";
 import { createServerForget, forgetNotRun } from "./server-forget.mjs";
 import { machinesGated } from "../../client/machine-contract.mjs";
-import { createSoulCatalog, soulCatalogKey } from "./soul-catalog.mjs";
+import { createSoulCatalog, soulCatalogKey } from "../../client/soul-catalog.mjs";
 import { createCapabilityCatalog, capabilityCatalogKey } from "./capability-catalog.mjs";
 import { capabilityShowRequest, createCapabilityShowCache } from "./capability-show.mjs";
-import { createInspectCache } from "./inspect-cache.mjs";
+import { createInspectCache } from "../../client/inspect-cache.mjs";
 import { createRefreshLoop, REFRESH_FOCUSED_MS, REFRESH_BLURRED_MS } from "../../client/refresh-loop.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
 import { createLifecycleBoundary } from "../../client/instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../../client/readiness-contract.mjs';
-import { spawnPreviewCachedRequest, spawnPreviewCache } from './spawn-preview.mjs';
+import { createSpawnPreview } from '../../client/spawn-preview.mjs';
 import { teamsRequest, soulTeamsRequest, teamsFailure } from './teams.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../../client/instance-events-contract.mjs';
-import { spawnApplyRequest } from './spawn-apply.mjs';
+import { createSpawnApplyBoundary } from '../../client/spawn-apply.mjs';
 import { spawnApplyFailure } from '../../client/spawn-apply-contract.mjs';
 import { previewFailure } from '../../client/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
@@ -77,7 +77,7 @@ import { createReviewPaste } from "./review-paste.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { displayLine } from "../../client/display-text.mjs";
 import { automationsRequest, automationsFailure } from "./automations.mjs";
-import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
+import { soulRows } from "../../client/soul-rows.mjs";
 import { harnessFlag, HARNESSES } from "../../client/harness-names.mjs";
 import { probeChanged } from "../../client/cli-probe-contract.mjs";
 import { workspaceNotServed } from "../renderer/deployment-header.mjs";
@@ -155,39 +155,12 @@ function agentsData(wsId) {
   const ws = deploymentFor(held(), wsId, DESKTOP_TERMS);
   if (ws?.remote) return { workspace: { id: ws.id, name: ws.name, server: ws.server }, agents: remote.remoteAgents(ws.group), observedAt: null, refreshing: false };
   const deployment = ws ? snapshot.byWs.get(ws.id)?.deployment : null;
-  const agents = [];
-  let catalog = null;
+  let agents = [], catalog = null;
   if (deployment?.status === "observed") {
-    const root = deployment.root, context = dirname(root);
-    const memberNames = new Map((deployment.workspaceStatus?.members || []).map((m) => [m.key, m.name]));
-    const roster = new Map(deployment.souls.map((soul) => [soul.name, soul]));
     catalog = { reason: deployment.catalog?.reason ?? null, ambiguous: deployment.catalog?.ambiguous ?? [] };
-    for (const soul of deployment.catalog?.souls || []) {
-      const color = normalizeSoulColor(roster.get(soul.name)?.color);
-      agents.push({
-        name: soul.name, description: soul.description || "", kind: "persistent", work: soul.work,
-        ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}), ...(Array.isArray(soul.labels) ? { labels: [...soul.labels] } : {}),
-        // desktop-facts: whether a spawn here would refuse (problem), and the soul.yaml (path, url).
-        ...(typeof soul.spawnable === "boolean" ? { spawnable: soul.spawnable, problem: soul.problem ?? null } : {}),
-        ...(Object.hasOwn(soul, "file") ? { file: soul.file } : {}),
-        // Team model v2 (0.30): the soul's teams here (the default first) and its default, as the kernel resolved them.
-        ...(Array.isArray(soul.teams) ? { teams: soul.teams.map((t) => ({ ...t })) } : {}),
-        ...(Object.hasOwn(soul, "defaultTeam") ? { defaultTeam: soul.defaultTeam && { ...soul.defaultTeam } } : {}),
-        // Launch preferences (0.30): the soul's declared and effective harness + model, and where it came from.
-        ...(soul.launch ? { launch: structuredClone(soul.launch) } : {}),
-        // Its composed capabilities (souls-capabilities; null = it did not resolve), for Capabilities' "Used by".
-        ...(Object.hasOwn(soul, "capabilities") ? { capabilities: soul.capabilities && soul.capabilities.map((c) => ({ ...c })) } : {}),
-        // The kernel's soul key (`oats soul teams <key>`): the qualified name for a package soul, the bare name otherwise.
-        ...(typeof soul.key === "string" ? { key: soul.key } : {}),
-        ...(soul.kind === "package" ? { package: soul.package, version: soul.version, qualifiedName: soul.qualifiedName } : {}),
-        origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
-        soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },
-        agentsRoot: root, workspace: context,
-        repoName: memberNames.get(soul.repoKey) || (soul.kind === "external" ? "external" : soul.kind === "package" ? `package ${soul.package}` : soul.repoKey || ""),
-      });
-    }
+    // One row per soul of the held catalog, sorted by name (packages/client/soul-rows.mjs).
+    agents = soulRows(deployment, deployment.catalog?.souls);
   }
-  agents.sort((a, b) => a.name.localeCompare(b.name));
   // The souls read's own stamps (it runs apart from the roster reads): when the kernel observed
   // the remotes for this catalog, and whether a re-read is in flight. Both live on the snapshot
   // entry so this projection needs nothing but the snapshot.
@@ -304,7 +277,7 @@ function spawnErrorPayload(e) {
 /* OATSWEB_SPAWNERR_END */
 
 /** Execution-server spawn only (`--server`). A local spawn is always the
- * preview-bound prepare → apply of server/spawn-apply.mjs. */
+ * preview-bound prepare → apply of packages/client/spawn-apply.mjs. */
 async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, harness, backend, model, yolo, launchConfig, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
@@ -451,7 +424,7 @@ async function reprobeCli(chosen) {
   cliState = { ...r, probedAt: Date.now() };
   rosterAnswered = false; rosterFailure = null; // the roster belongs to the accepted CLI
   // Everything held was read with the previous CLI.
-  inspectCache.clear(); capabilityCatalog.forgetAll(); capabilityShowCache.clear(); admitted.clear(); spawnPreviewCache.invalidate();
+  inspectCache.clear(); capabilityCatalog.forgetAll(); capabilityShowCache.clear(); admitted.clear(); spawnPreview.cache.invalidate();
   void refreshSnapshot({ live: true }); // the deployment observation belongs to the accepted CLI
   void refreshRemoteSnapshot();
   return cliState;
@@ -519,7 +492,7 @@ let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances,
 const BACKGROUND_MAX_AGE = 60;
 // The collector's entry is in the shared home too, beside app.asar in the package.
 const LIVENESS = join(HERE, "..", "..", "client", "liveness-main.mjs");
-const soulCatalog = createSoulCatalog();
+const soulCatalog = createSoulCatalog({ terms: DESKTOP_TERMS });
 const capabilityCatalog = createCapabilityCatalog();
 const inspectCache = createInspectCache();
 // What a capability ships, per (deployment, row, commit[, file]): content at one commit never moves.
@@ -531,6 +504,10 @@ const workspaceSyncRequest = createWorkspaceSyncBoundary({ catalog: capabilityCa
   observed: (id) => { const d = snapshot.byWs.get(id)?.deployment; return d?.status === "observed" ? d.workspaceStatus : null; } });
 // The Desktop's one lifecycle boundary: its plans, its kept answers and its one apply at a time are this backend's.
 const lifecycleRequest = createLifecycleBoundary({ terms: DESKTOP_TERMS });
+// The Desktop's one spawn preview (its two-slot budget and its settled answers) and its one apply broker,
+// whose prepare reads through that preview's cache: both are this backend's.
+const spawnPreview = createSpawnPreview();
+const spawnApplyRequest = createSpawnApplyBoundary({ read: spawnPreview.prepareRead });
 const admitted = new Set();  // deployments with at least one successful observation under the current CLI
 const observing = new Set(); // deployments whose observation is in flight right now (/api/panel refreshing)
 const deploymentObserver = createDeploymentObserver({
@@ -724,7 +701,7 @@ function observeMutation(wsId) {
   const scope = deployments(held()).find((w) => w.id === wsId)?.scope;
   if (scope) inspectCache.invalidate(scope);
   // The dialog's held spawn previews are keyed by workspace id, not scope.
-  if (wsId) spawnPreviewCache.invalidate(wsId);
+  if (wsId) spawnPreview.cache.invalidate(wsId);
   return refreshSnapshot({ live: true });
 }
 /* OATSWEB_FINDINST_BEGIN — workspace-scoped instance lookup, extracted by tests */
@@ -1084,7 +1061,7 @@ const server = createServer(async (req, res) => {
           workspace, cli: cliState, localCwd: ctxs[0] ?? homedir(),
           agents: workspace ? agentsData(workspace.id).agents : [],
           instances: workspace ? deploymentRows(held(), workspace) : [],
-        }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreviewCache.invalidate(workspace.id); }); // the default launch a preview reports
+        }).finally(() => { if (workspace && ['set', 'remove'].includes(request?.action)) spawnPreview.cache.invalidate(workspace.id); }); // the default launch a preview reports
         return send(res, 200, result);
       } catch (e) {
         const { status, body } = spawnErrorPayload(e);
@@ -1148,8 +1125,8 @@ const server = createServer(async (req, res) => {
           return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
             instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
         };
-        // Settled answers are reused for a short window (server/spawn-preview.mjs); prepare never reads them.
-        return send(res, 200, await spawnPreviewCachedRequest(request, getContext));
+        // Settled answers are reused for a short window (packages/client/spawn-preview.mjs); prepare never reads them.
+        return send(res, 200, await spawnPreview.read(request, getContext));
       } catch { return send(res, 400, previewFailure('E_BAD_ARGS')); }
     }
     if (path === '/api/workspace-readiness' && req.method === 'POST') {
@@ -1177,7 +1154,7 @@ const server = createServer(async (req, res) => {
         if (['add', 'remove', 'default', 'clear-default'].includes(request.action)) {
           const { scope, id } = getContext().workspace || {};
           if (scope) inspectCache.invalidate(scope);
-          if (id) spawnPreviewCache.invalidate(id); // a spawn preview reports the soul's teams
+          if (id) spawnPreview.cache.invalidate(id); // a spawn preview reports the soul's teams
         }
         return send(res, 200, result);
       } catch { return send(res, 400, teamsFailure('E_BAD_ARGS')); }
@@ -1269,7 +1246,7 @@ const server = createServer(async (req, res) => {
           instances: workspace ? deploymentRows(held(), workspace) : [],
           cache: inspectCache, maxAge: BACKGROUND_MAX_AGE,
           catalogKey: observed?.status === "observed" ? capabilityCatalogKey(cliState, observed.workspaceStatus) : null,
-        }).finally(() => { if (workspace && request?.action === "run") spawnPreviewCache.invalidate(workspace.id); }); // an operation can change what a spawn preview reads
+        }).finally(() => { if (workspace && request?.action === "run") spawnPreview.cache.invalidate(workspace.id); }); // an operation can change what a spawn preview reads
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
@@ -1433,9 +1410,9 @@ const server = createServer(async (req, res) => {
         // A spawn in the air changes what a preview answers (the next instance number, the roster): held
         // previews go when it starts, and again when it ends (observeMutation), so a preview read meanwhile
         // never refills them with the pre-spawn answer (the cache's flight clock).
-        if (body.action === 'apply') { try { spawnPreviewCache.invalidate(url.searchParams.get('ws')); } catch { /* never blocks the apply */ } }
+        if (body.action === 'apply') { try { spawnPreview.cache.invalidate(url.searchParams.get('ws')); } catch { /* never blocks the apply */ } }
         // An apply that answered `pending` keeps its CLI running in the broker: refresh again when it settles.
-        const refresh = () => { try { spawnPreviewCache.invalidate(url.searchParams.get('ws')); observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } };
+        const refresh = () => { try { spawnPreview.cache.invalidate(url.searchParams.get('ws')); observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } };
         const result = await spawnApplyRequest(body, getContext, { settled: refresh });
         if (body.action === 'apply') { try { observeMutation(url.searchParams.get('ws')); } catch { /* a refresh must not erase a spawn receipt */ } }
         return send(res, 200, result);

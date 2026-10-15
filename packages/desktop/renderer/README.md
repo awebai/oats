@@ -629,7 +629,9 @@ hold the code and then the kernel's message and fix, each on its own line
 under "OATS says:" (`packages/client/kernel-lines.mjs` `kernelLines`, one
 `span.spawn-problem-line` each). A soul's launch problem (the soul page and
 panel, `soul-inspector.mjs` `launchProblem`) is drawn by the same function for
-every code: the Desktop's line (`p.launch-problem-own`), then one
+every code, from the parts the shared home gives (`packages/client/soul-facts.mjs`
+`soulFacts`, which also gives the harness card's rows and notes, the work line
+and the spawn refusal): the Desktop's line (`p.launch-problem-own`), then one
 `p.launch-problem-said` per kernel line, and the code behind Details.
 
 Model suggestions are advisory (`/api/models`), custom entries stay valid, and
@@ -930,7 +932,7 @@ offsets; `update(soul)` repaints its tree or reader only when what they show
 changed. The tree's focus key is `instructions:own`.
 
 **The composed AGENTS.md (spec D, B2; routed, spec R part RD).** The gate is
-`composed-gate.mjs` (DOM-free, shared with the server). On the soul page of a
+`packages/client/composed-gate.mjs` (the shared home's, read by the page and the server). On the soul page of a
 local soul, when the CLI's probe advertises `soul-composed-instructions`
 (`composedSupported`), the inspect request carries `instructions: true`
 (`composedWanted` in `soul-inspector.mjs`; never the sidebar). On a routed
@@ -977,7 +979,7 @@ adds `skills: true` (soul page only) when `skillsSupported` (local) or
 `routedSkillsSupported` (routed) holds; the server validates it like
 `instructions`, keys the cache on it and, routed, keeps it only when the held
 roster row's host reports it (`hostReportsSkills`; the shared host half is
-`hostAdvertises` in `composed-gate.mjs`); the adapter appends `--skills` after
+`hostAdvertises` in `packages/client/composed-gate.mjs`); the adapter appends `--skills` after
 `--instructions` only when the probe's features list it. `skillsOf(soul)`
 decodes `souls[0].skills`: `undefined` (key absent), `null` (can't be listed),
 `false` (any contract break, one bad skill or file included: never a partial

@@ -30,22 +30,18 @@ import { createSoulTeamsHere, soulTeamsHereCSS } from './soul-teams-here.mjs';
 import { teamsAnswer } from './computer-teams.mjs';
 import { relayedFailure, serverLabel } from '../../client/remote-address.mjs';
 import { ageText } from './age-text.mjs';
-import { pageBar, pageCard, pageSection, isCoreCapability, compositionEntries, coreEntries, coreNote, whyElement, renderSoulCore, desktopFacts } from './capability-page.mjs';
+import { pageBar, pageCard, pageSection, isCoreCapability, compositionEntries, coreEntries, coreNote, whyElement, renderSoulCore } from './capability-page.mjs';
 import { layerLabel } from './workspace-catalog.mjs';
-import { shownLaunch, launchHarnessName, launchModelText, launchFromText, launchAtText, declaredText, preferenceText, declaredDiffers } from './launch-view.mjs';
+import { launchHarnessName, launchModelText, launchFromText, declaredText } from '../../client/launch-view.mjs';
+import { soulFacts, desktopFacts, workText, cantSpawnLine } from '../../client/soul-facts.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from './loading.mjs';
 import { createDeploymentScopeLine } from './deployment-scope-line.mjs';
 import { createSoulInstructions } from './soul-instructions.mjs';
-import { composedSupported, routedComposedSupported, skillsSupported, routedSkillsSupported } from './composed-gate.mjs';
+import { composedSupported, routedComposedSupported, skillsSupported, routedSkillsSupported } from '../../client/composed-gate.mjs';
 import { warningsOf } from '../../client/capability-warnings-contract.mjs';
 import { createWarningsList, WARNINGS_COPY } from './capability-warnings.mjs';
-import { kernelLines } from '../../client/kernel-lines.mjs';
 import { DESKTOP_TERMS } from './desktop-terms.mjs';
 
-
-const HARNESS_NAMES = { pi: 'Pi', claude: 'Claude Code', codex: 'Codex' };
-const harnessName = value => HARNESS_NAMES[value] || value;
-const WORK_TEXT = { worktree: 'works in its own worktree', checkout: 'works in the repo checkout', attached: 'attaches to an owning instance' };
 const record = v => !!v && typeof v === 'object' && !Array.isArray(v);
 /** Why a stale inspector's mutations wait (the sidebar roster's rule, instance-tree-view.mjs ROSTER_STALE_TITLE). */
 export const INSPECTION_STALE_TITLE = 'Unavailable: inspection is not current';
@@ -208,11 +204,6 @@ ${soulTeamsHereCSS}
  .soul-inspector { width:100%; max-width:none; overflow:visible; border-left:0; border-top:1px solid var(--border); }
 }
 `;
-
-/** What a launch problem of a soul's report means, in the Desktop's words: the report is the launch a spawn
- * that names none would get, and each problem is what the kernel reports of that spawn: why it would be
- * refused, in the report's own message and fix. */
-export const LAUNCH_REFUSED_HERE = 'A spawn of this soul with no launch chosen would be refused here.';
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
@@ -513,19 +504,18 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     else if (soul) {
       renderSoulTeams(inspected);
       section('Harness');
-      const launch = soulLaunch(inspected);
-      if (launch) {
+      // The harness card's rows, notes and problem are the shared home's (packages/client/soul-facts.mjs).
+      const said = soulFacts(selection?.agent, inspected, cliStatus(), DESKTOP_TERMS);
+      if (said.launch) {
         // 0.30 launch preferences: what a spawn here runs, where that choice came from, and where to change it.
-        const box = card([['Harness', launchHarnessName(launch.effective.harness)], ['Model', launchModelText(launch.effective)],
-          ...(launch.effective.launchConfig ? [['Launch configuration', launch.effective.launchConfig]] : []), ['Chosen by', launchFromText(launch.from)],
-          ...(declaredDiffers(launch) ? [['The soul prefers', preferenceText(launch.declared)]] : [])]);
+        const box = card(said.rows);
         box.classList.add('inspector-launch');
-        const at = launchAtText(launch.at); if (at) box.append(node('p', at, 'launch-at'));
-        if (launch.problem) box.append(launchProblem(launch.problem));
+        for (const at of said.notes) box.append(node('p', at, 'launch-at'));
+        if (said.problem) box.append(launchProblem(said.problem));
       }
       // The harness it declares by default (a kernel before 0.30), and the model within it (if any).
-      else if (typeof harnessOf(soul) === 'string' && harnessOf(soul)) card([['Default harness', harnessName(harnessOf(soul))], ...(typeof soul.model === 'string' && soul.model ? [['Default model', soul.model]] : [])]);
-      else content.append(node('p', 'No default harness: you choose one when you launch it.', 'muted'));
+      else if (said.rows.length) card(said.rows);
+      else for (const note of said.notes) content.append(node('p', note, 'muted'));
       renderCapabilities(inspected);
     } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
     // Operations run on a live home: a soul shows none (human, F7); an instance lists what it can run.
@@ -660,11 +650,11 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
       // Identity: what it does, then where it works (the harness joins once inspected).
       if (agent.description) facts$.before(node('p', agent.description, 'inspector-lede'));
       // Kernel #217: a soul a spawn here would refuse says why, beside the disabled Spawn.
-      if (refusal) { const note = node('p', `Can't spawn here · ${refusal}`, 'inspector-refusal'); note.setAttribute('role', 'note'); facts$.before(note); }
+      if (refusal) { const note = node('p', cantSpawnLine(refusal), 'inspector-refusal'); note.setAttribute('role', 'note'); facts$.before(note); }
       const harness = facts$.querySelector('[data-fact="harness"]');
       const place = fact => harness ? harness.before(fact) : facts$.append(fact);
       if (typeof agent.repoName === 'string' && agent.repoName) place(pageFact('repo', agent.repoName, 'mono'));
-      if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', WORK_TEXT[agent.work] || `works in ${agent.work}`, 'muted'));
+      if (typeof agent.work === 'string' && agent.work) facts$.append(pageFact('branch', workText(agent.work), 'muted'));
       // Kernel #217: the soul's file. Without a web address (a non-GitHub repo) its path shows instead.
       if (facts && typeof agent.file?.path === 'string' && agent.file.path && !(typeof agent.file.url === 'string' && /^https:\/\//.test(agent.file.url))) facts$.append(pageFact('file', agent.file.path, 'mono'));
       const card = pageCard(doc, 'Instances', { count: rosterState === 'ready' || rosterState === 'empty' ? homes.length : null }); card.card.classList.add('inspector-instances');
@@ -705,16 +695,13 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
     if (state === 'failed' || state === 'stale') { const none = node('span', undefined, 'inspector-instances-unknown'); none.dataset.rosterState = state; none.setAttribute('aria-hidden', 'true'); return none; }
     return node('p', copy, cls);
   }
-  /** The soul's launch (0.30): `inspect --soul`'s own, else its roster row's; null without the feature. */
-  function soulLaunch(inspected) { return shownLaunch(inspected.launch ?? selection?.agent?.launch, cliStatus()); }
-  /** A launch problem of the soul's report: the Desktop's own line, then the kernel's message and fix, each a
-   * line of its own under the kernel's name and through the display filter (packages/client/kernel-lines.mjs),
-   * and the code behind Details. One rule for every problem, keyed on no code: the kernel computes the
-   * report for a spawn that names no launch and sets a problem only where it would refuse that spawn. */
-  function launchProblem(p) {
+  /** A launch problem of the soul's report, from its parts (soul-facts.mjs launchProblemParts): the Desktop's own
+   * line, then the kernel's message and fix, each a line of its own under the kernel's name, and the code behind
+   * Details. */
+  function launchProblem({ lead, lines, code }) {
     const box = node('div', undefined, 'launch-problem'); box.setAttribute('role', 'note');
-    box.append(node('p', LAUNCH_REFUSED_HERE, 'launch-problem-own'), ...kernelLines(p.message, p.fix, DESKTOP_TERMS).map(line => node('p', line, 'launch-problem-said')));
-    const more = node('details'); more.append(node('summary', 'Details'), node('p', p.code, 'muted')); box.append(more);
+    box.append(node('p', lead, 'launch-problem-own'), ...lines.map(line => node('p', line, 'launch-problem-said')));
+    const more = node('details'); more.append(node('summary', 'Details'), node('p', code, 'muted')); box.append(more);
     return box;
   }
   function pageFact(icon, value, cls) {
@@ -726,7 +713,7 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
   // teams and knowledge beside. Only reported facts: what the kernel does not
   // say (which default a capability came from) is said as not reported.
   function renderSoulPage(inspected, soul) {
-    const harness = harnessOf(soul), launch = soulLaunch(inspected);
+    const harness = harnessOf(soul), said = soulFacts(selection?.agent, inspected, cliStatus(), DESKTOP_TERMS), launch = said.launch;
     if (launch) {
       // 0.30 launch preferences: the effective harness and model with where that came from; below the
       // facts, the soul's own preference when this computer runs something else, where to change it,
@@ -736,14 +723,14 @@ export function createSoulInspector(container, { ctx, presentation, openSoul = n
         node('span', [launchModelText(e), e.launchConfig ? `launch configuration ${e.launchConfig}` : null, launchFromText(launch.from)].filter(Boolean).join(' · '), 'muted'));
       const work = facts$.querySelector('[data-fact="branch"]'); if (work) work.before(fact); else facts$.append(fact);
       const notes = node('div', undefined, 'launch-notes'); notes.dataset.launchNotes = '';
-      const differs = declaredText(launch), at = launchAtText(launch.at);
+      const differs = declaredText(launch);
       if (differs) notes.append(node('p', differs, 'launch-declared'));
-      if (at) notes.append(node('p', at, 'launch-at'));
-      if (launch.problem) notes.append(launchProblem(launch.problem));
+      for (const at of said.notes) notes.append(node('p', at, 'launch-at'));
+      if (said.problem) notes.append(launchProblem(said.problem));
       if (notes.childElementCount) facts$.after(notes);
     } else if (typeof harness === 'string' && harness) {
       const fact = node('span', undefined, 'page-fact'); fact.dataset.fact = 'harness';
-      fact.append(createRuntimeBadge(doc, harness), node('span', harnessName(harness), 'strong'));
+      fact.append(createRuntimeBadge(doc, harness), node('span', launchHarnessName(harness), 'strong'));
       if (typeof soul.model === 'string' && soul.model) fact.append(node('span', `${soul.model} by default`, 'muted'));
       const work = facts$.querySelector('[data-fact="branch"]'); if (work) work.before(fact); else facts$.append(fact);
     }

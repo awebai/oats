@@ -19,6 +19,7 @@ import { originText } from '../../client/inspect-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { readingFrom, remoteReason } from '../../client/remote-address.mjs';
 import { createWarningsList, capabilityWarningsCSS, WARNINGS_COPY } from './capability-warnings.mjs';
+import { declaredIn } from '../../client/launch-view.mjs';
 export const readinessCSS = `
 ${capabilityWarningsCSS}
 .readiness-view { color:var(--fg); min-width:0; margin:18px 0; font-size:12px; line-height:1.5; }
@@ -63,16 +64,6 @@ ${capabilityWarningsCSS}
 .readiness-view .readiness-warnings .cap-warnings-more { margin:8px 0 0; }
 `;
 const label = v => v[0].toUpperCase() + v.slice(1);
-/** A kernel `at` in words: `[<repoKey>:]<file>#/<json pointer>` → "oats-workspace.yaml ›
- * teams › engineering, in <repoKey>"; a file with no repo is this computer's; `package:<id>:` is
- * that package's. Pointer segments are unescaped (`~1` is `/`, `~0` is `~`). Unrecognised: as sent. */
-export function declaredIn(at) {
-  const m = /^(?:(.+):)?([^:#/][^:#]*)#\/(.+)$/.exec(at);
-  if (!m) return at;
-  const where = `${m[2]} › ${m[3].split('/').map(p => p.replace(/~1/g, '/').replace(/~0/g, '~')).join(' › ')}`;
-  const pkg = /^package:(.+)$/.exec(m[1] ?? '');
-  return pkg ? `${where}, in the ${pkg[1]} package` : m[1] ? `${where}, in ${m[1]}` : `${where}, on this computer`;
-}
 const PROVIDER_SAYS = {
   ready: 'The provider says: ready.', 'needs-configuration': 'The provider says: needs configuration.',
   'authorization-required': 'Sign in needed: the provider is set up but is not signed in.', unavailable: 'The provider says: unavailable right now.',

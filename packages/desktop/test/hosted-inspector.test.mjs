@@ -21,7 +21,7 @@ import { inspectData, inspectFacts } from '../../client/inspect-contract.mjs';
 import { soulInspection, homeInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { createDataState, skeletonBlock, skeleton, captureFocusState } from '../renderer/loading.mjs';
-import { desktopFacts } from '../renderer/capability-page.mjs';
+import { desktopFacts } from '../../client/soul-facts.mjs';
 import { buildState } from '../renderer/soul-inspector.mjs';
 import { createDeploymentScopeLine } from '../renderer/deployment-scope-line.mjs';
 

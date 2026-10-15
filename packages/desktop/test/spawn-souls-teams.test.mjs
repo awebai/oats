@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { JSDOM } from "jsdom";
 import * as remote from "../../client/remote-roster.mjs";
-import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
+import { soulRows } from "../../client/soul-rows.mjs";
 import { soulsData, deploymentStatusData } from "../../client/deployment-data.mjs";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -21,13 +21,13 @@ const CLI_OK = { ok: true, bin: "/seed/oats", version: "0.18.0", source: "path",
 function agentRows() {
   const source = readFileSync(new URL("../server/oats-web.mjs", import.meta.url), "utf8");
   const start = source.indexOf("function agentsData("), end = source.indexOf("/* ── Model catalog", start);
-  const agentsData = new Function("deploymentFor", "deployments", "snapshot", "remote", "dirname", "resolve", "normalizeSoulColor",
+  const agentsData = new Function("deploymentFor", "deployments", "snapshot", "remote", "dirname", "resolve", "soulRows",
     `const held = () => null, DESKTOP_TERMS = null; ${source.slice(start, end)}; return agentsData;`);
   const roster = deploymentStatusData(v2("status"), DEPLOYMENT), catalog = soulsData(v2("souls"));
   const snapshot = { byWs: new Map([[DEPLOYMENT, { deployment: { status: "observed", root: roster.root, souls: roster.agents.map(({ instances: _i, ...s }) => s),
     catalog: { souls: catalog.souls, ambiguous: [], reason: null } } }]]) };
   const ws = { id: DEPLOYMENT, name: "northwind", roots: [roster.root] };
-  return agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)().agents;
+  return agentsData(() => ws, () => [ws], snapshot, remote, dirname, resolve, soulRows)().agents;
 }
 
 async function mountGrid(t, agents) {

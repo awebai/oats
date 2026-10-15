@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cliSpawnPreview } from '../../client/spawn-preview-cli.mjs';
-import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
+import { createSpawnPreviewBoundary, createSpawnPreviewFlights } from '../../client/spawn-preview.mjs';
 import { previewData, INSTANCE_NAME_MAX } from '../../client/spawn-preview-contract.mjs';
 import { cli, kernel, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 import { harnessOf } from '../../client/harness-names.mjs';
@@ -45,7 +45,7 @@ for (const [name, [soul, choices]] of Object.entries(cases)) test(`kernel previe
   const envelope = kernel(name), selector = { soul, agentsRoot: ROOT }, target = { workspace: 'northwind', context: DEPLOYMENT, selector };
   const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli, agents: [{ name: soul, agentsRoot: ROOT, work: souls[soul] }], instances: [] });
   let calls = 0, seen;
-  const read = createSpawnPreviewBoundary({ invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_bin, argv, _options, callback) => {
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_bin, argv, _options, callback) => {
     calls++; seen = argv; callback(envelope.ok ? null : { code: 1 }, JSON.stringify(envelope));
   } }) });
   const response = await read({ action: 'preview', selector, choices }, context);
@@ -102,7 +102,7 @@ test('the Desktop caps instance names where the kernel does (#159): 64 reaches t
   const selector = { soul: 'release-manager', agentsRoot: ROOT };
   const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli, agents: [{ name: 'release-manager', agentsRoot: ROOT, work: 'worktree' }], instances: [] });
   let calls = 0;
-  const read = createSpawnPreviewBoundary({ invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_b, _a, _o, callback) => { calls++; callback({ code: 1 }, JSON.stringify(kernel('preview-name-too-long'))); } }) });
+  const read = createSpawnPreviewBoundary({ flights: createSpawnPreviewFlights(), invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_b, _a, _o, callback) => { calls++; callback({ code: 1 }, JSON.stringify(kernel('preview-name-too-long'))); } }) });
   const refused = await read({ action: 'preview', selector, choices: { name: tooLong } }, context);
   assert.equal(calls, 0, 'a name the kernel must refuse is never sent'); assert.equal(refused.reason.code, 'E_BAD_ARGS');
   await read({ action: 'preview', selector, choices: { name: 'a'.repeat(INSTANCE_NAME_MAX) } }, context);

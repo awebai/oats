@@ -5,7 +5,7 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import { execFile as nodeExecFile, execFileSync, spawn } from "node:child_process";
-import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import os from "node:os";
 import { PassThrough } from "node:stream";
@@ -48,7 +48,9 @@ function makeWorld(plan = {}) {
   chmodSync(tmux, 0o755);
   const world = {
     dir, fake, run, tmux, socket: path.join(run, "tmux"),
-    plan(next) { writeFileSync(path.join(fake, "plan.json"), JSON.stringify(next)); },
+    // Written whole, then renamed into place: the fake reads plan.json at every command, and a
+    // read between the truncation and the write of a plain rewrite fails to parse and ends it.
+    plan(next) { writeFileSync(path.join(fake, "plan.json.new"), JSON.stringify(next)); renameSync(path.join(fake, "plan.json.new"), path.join(fake, "plan.json")); },
     // Whole lines only: the last one may be in the middle of being written by the fake.
     calls() { const log = path.join(fake, "calls.jsonl"); return existsSync(log) ? readFileSync(log, "utf8").split("\n").slice(0, -1).filter(Boolean).map((line) => JSON.parse(line)) : []; },
     invocations() { return world.calls().filter((call) => call.argv); },

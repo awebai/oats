@@ -2,8 +2,7 @@
  * started is conservative dispatch evidence, NOT a creation/rollback receipt.
  * The broker must qualify a success receipt before exposing it or handing off. */
 import { retainedSpawnDetails } from './launch-prompt-outcome.mjs';
-import { execFile } from 'node:child_process';
-import { parseEnvelope, writeTaskFile } from './cli-adapter.mjs';
+import { parseEnvelope, writeTaskFile, execFileInSession } from './cli-adapter.mjs';
 import { absolute, record, previewTarget, choiceArgv } from './spawn-preview-contract.mjs';
 import { spawnDecision } from './spawn-decision.mjs';
 import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spawnReference, spawnApplyReason, spawnApplyDeadline,
@@ -37,7 +36,12 @@ function refusal(doc, cli) {
   return { started: true, envelope: { schemaVersion: 1, ok: false, error: { ...error, ...(details ? { details } : {}) } } };
 }
 /** `io.exec` is a client's own `execFile` (the rule is at cli-adapter.mjs `runJson`). Its return is used here:
- * the child of a spawn this call owns is ended through it at the deadline. */
+ * the child of a spawn this call owns is ended through it at the deadline.
+ * A spawn is a change: it runs in a session of its own (`detached: true`, whatever exec is given; this home's
+ * default for it is `execFileInSession`), so a hang-up or a Ctrl-C to the client's process group does not reach
+ * it while its worktree hooks run. Its deadline still ends it: SIGTERM (then SIGKILL) on a worktree-event kernel,
+ * and execFileInSession's own kill of an older kernel's (armed for a positive `timeout`), each signalling the
+ * child alone; the kernel rolls a spawn it was interrupted in back. */
 export async function cliSpawnApply(cli, options = {}, io = {}) {
   // Repeat the complete positive mode fence here, before even creating inputs.
   if (!spawnApplySupported(cli)) return failure('E_APPLY_UNAVAILABLE');
@@ -65,17 +69,18 @@ export async function cliSpawnApply(cli, options = {}, io = {}) {
     // too, so even a re-entrant injected dependency cannot downgrade the mode.
     if (!spawnApplySupported(cli)) return failure('E_APPLY_UNAVAILABLE');
     if (!spawnApplyChoicesSupported(cli, choices, !!input.wake)) return failure('E_UNSUPPORTED_OPTION');
-    // worktree-event: the deadline is ours, not execFile's. execFile's own timeout destroys the child's
+    // worktree-event: the deadline is ours, not the exec's. execFile's own timeout destroys the child's
     // output before it signals it, which would lose the envelope a kernel prints after our SIGTERM
     // (E_INTERRUPTED, once its rollback is done). So: SIGTERM at the deadline with the output still read,
-    // and SIGKILL only if the CLI is still running SIGTERM_GRACE_MS later. Older kernels keep execFile's.
+    // and SIGKILL only if the CLI is still running SIGTERM_GRACE_MS later. Older kernels keep the exec's
+    // own `timeout` (execFileInSession arms its kill, SIGTERM, for a positive one): E_CLI_TIMEOUT.
     const own = worktreeEvent(cli), timer = io.timer ?? ((fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); });
     const limit = io.timeoutMs ?? timeout, grace = io.graceMs ?? SIGTERM_GRACE_MS;
     return await new Promise(resolve => {
       let expired = false, settled = false, cancelDeadline = () => {}, cancelGrace = () => {};
       try {
         started = true;
-        const child = (io.exec ?? execFile)(cli.bin, argv, { cwd: target.context, env, shell: false, encoding: 'utf8', ...(own ? {} : { timeout: limit }), maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+        const child = (io.exec ?? execFileInSession)(cli.bin, argv, { cwd: target.context, env, shell: false, encoding: 'utf8', detached: true, ...(own ? {} : { timeout: limit }), maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
           settled = true; cancelDeadline(); cancelGrace();
           if (err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' || typeof stdout === 'string' && Buffer.byteLength(stdout) > 4 * 1024 * 1024) return resolve(failure('E_CLI_OUTPUT_LIMIT', true));
           if (err?.killed && !own) return resolve(failure('E_CLI_TIMEOUT', true));

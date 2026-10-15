@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInspectCache, inspectKey, INSPECT_CACHE_LIMIT } from '../server/inspect-cache.mjs';
+import { createInspectCache, inspectKey, INSPECT_CACHE_LIMIT } from '../../client/inspect-cache.mjs';
 import { capabilityRequest } from '../server/capabilities.mjs';
 
 const ok = (result = {}) => ({ schemaVersion: 1, ok: true, result });
@@ -253,8 +253,8 @@ test('observeMutation (server) invalidates the inspections held under the worksp
   const deployments = () => [{ id: '/local', scope: '/local' }, { id: 'remote:g', scope: '/remote/member', remote: true, server: 'hetzner' }];
   const previews = [];
   // The server passes what it holds to the shared `deployments`; this double reads none of it.
-  const observeMutation = new Function('deployments', 'held', 'inspectCache', 'spawnPreviewCache', 'refreshSnapshot', `${source.slice(start, end)}\nreturn observeMutation;`)(
-    deployments, () => null, { invalidate: scope => invalidated.push(scope) }, { invalidate: id => previews.push(id) }, options => { refreshed.push(options); return Promise.resolve(); });
+  const observeMutation = new Function('deployments', 'held', 'inspectCache', 'spawnPreview', 'refreshSnapshot', `${source.slice(start, end)}\nreturn observeMutation;`)(
+    deployments, () => null, { invalidate: scope => invalidated.push(scope) }, { cache: { invalidate: id => previews.push(id) } }, options => { refreshed.push(options); return Promise.resolve(); });
   await observeMutation('/local'); await observeMutation('remote:g'); await observeMutation('unknown');
   assert.deepEqual(invalidated, ['/local', '/remote/member'], 'by scope: the key inspections are stored under');
   assert.deepEqual(previews, ['/local', 'remote:g', 'unknown'], 'the held spawn previews go by workspace ID: the key they are stored under');

@@ -10,6 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { prepareRemoteTerm, sessionAttachArgv, detachKeySupported, hostDetachKeySupported, preflightFailure, remoteTargetKey, DETACH_KEY_FEATURE } from "../packages/client/session-attach.mjs";
 import { attachExit } from "../packages/client/attach-exit.mjs";
 
@@ -144,6 +145,26 @@ test("a caller's own exec, with no run: the inspect goes through it, and a refus
   const { signal } = new AbortController();
   await prepareRemoteTerm(KEYED, THERE, { exec: execDouble(0, PRESENT, seen), signal });
   assert.equal(seen[3].options.signal, signal);
+});
+
+test("a kept refusal travels on the error itself, and the module keeps no state (#1242)", async () => {
+  const refusal = { code: "E_HOST_SAYS_NO", message: "the host refused this", details: { fix: "ask the host" } };
+  const error = await prepareRemoteTerm(KEYED, THERE, { exec: execDouble(1, JSON.stringify({ schemaVersion: 1, ok: false, error: refusal }), []) }).catch((thrown) => thrown);
+  // The error has the enumerable properties it always had: its code, and nothing of what was kept.
+  assert.deepEqual(Object.keys(error), ["code"]);
+  assert.equal(JSON.stringify(error), JSON.stringify({ code: refusal.code }));
+  const said = preflightFailure(error, "Build box").said;
+  assert.deepEqual(said, { code: refusal.code, message: refusal.message, fix: "ask the host" });
+  // Each answer is a copy: changing one changes nothing the next one reads.
+  said.code = "E_CHANGED";
+  assert.equal(preflightFailure(error, "Build box").said.code, refusal.code);
+  // A copy of the error, or one made by hand with its code and message, carries nothing of the kernel's.
+  for (const other of [{ ...error }, Object.assign(new Error(error.message), { code: error.code }), Object.create(error)]) {
+    assert.equal(preflightFailure(other, "Build box").said, null);
+  }
+  // No top-level Map, Set, WeakMap, WeakSet or counter in the module.
+  const source = readFileSync(new URL("../packages/client/session-attach.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /^(?:let|var)\s|^(?:export\s+)?const\s+[\w$]+\s*=\s*new\s+(?:Map|Set|WeakMap|WeakSet)\b/m);
 });
 
 test("a caller that passes run owns the whole run: its exec is not used", async () => {
