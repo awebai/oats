@@ -2,6 +2,7 @@ import { harnessOf } from "./harness-names.mjs";
 import { unsupportedSession, unsupportedSessionOrigin, hasRuntimeError } from "./instance-presentation.mjs";
 import { madeByKernel } from "./kernel-made.mjs";
 import { waitingOnYouData } from "./waiting-on-you.mjs";
+import { retireData } from "./retire-state.mjs";
 import { readIdentity } from "./workspace-views.mjs";
 /** Projection of the installed CLI's remote roster. Never reads remote paths locally. */
 export function remoteWorkspace(group) {
@@ -43,7 +44,7 @@ export function remotePanel(group, at) {
   // A row's soul subtitle: its own group's soul list only, a string as the host reported it, never synthesized.
   const described = name => { const soul = (group.souls || []).find((a) => a?.name === name); return typeof soul?.description === "string" ? soul.description : null; };
   // A Herdr-recorded row is unsupported whatever the host's probe said: it cannot open or start.
-  const instances = (group.instances || []).map(({ runtime: _released, runtimeErrorOrigin: _sent, ...i }) => {
+  const instances = (group.instances || []).map(({ runtime: _released, runtimeErrorOrigin: _sent, retire: sentRetire, ...i }) => {
     const unsupported = unsupportedSession(i);
     const origin = unsupported ? unsupportedSessionOrigin(i) : group.probe.ok || (group.probe.error?.message && madeByKernel(group.probe.error)) ? "kernel" : "roster-read";
     const row = {
@@ -58,6 +59,8 @@ export function remotePanel(group, at) {
       tmux: i.tmux || null, git: i.git || null, task: i.task || "", next: i.next || "",
       // Needs input: only a remote kernel with the feature reports it — validated, never synthesized when absent.
       ...(Object.hasOwn(i, "waitingOnYou") ? { waitingOnYou: waitingOnYouData(i.waitingOnYou) } : {}),
+      // #1247: the host's retire state, relayed unchanged when it is in the contract (retire-state.mjs), else absent.
+      ...(retireData(sentRetire) ? { retire: retireData(sentRetire) } : {}),
       ...(unsupported ? { running: null, runtimeState: "unsupported", runtimeError: unsupported } : {}),
     };
     return hasRuntimeError(row) && origin ? { ...row, runtimeErrorOrigin: origin } : row;

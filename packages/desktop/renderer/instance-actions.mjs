@@ -57,7 +57,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
   trigger.dataset.treeInstance = key; trigger.dataset.treeControl = "actions";
   trigger.setAttribute("aria-label", `Actions for ${instance.instance}${instance.server ? ` on ${instance.server}` : ""}`);
   trigger.setAttribute("aria-haspopup", "menu"); trigger.setAttribute("aria-expanded", "false");
-  const menu = doc.createElement("div"); menu.className = "ctx-instance-menu";
+  const menu = doc.createElement("div"); menu.className = "ctx-instance-menu"; menu.tabIndex = -1;
   menu.setAttribute("popover", "auto"); menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", `Actions for ${instance.instance}`);
   menu.dataset.instanceMenu = key;
@@ -75,8 +75,11 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
       item.title = reason;
       item.autofocus = false;
     }
-    const first = items.find(item => !item.disabled); if (first) first.autofocus = true;
+    const first = defaultItem(); if (first) first.autofocus = true;
   };
+  // The act the menu opens on: the first enabled one that is not secondary (#1247: a retiring row's Retire stays
+  // listed and reachable, never the default). With none, focus lands on the menu itself and the arrows reach it.
+  const defaultItem = () => items.find(item => !item.disabled && item.dataset.secondary !== 'true');
   const offer = instanceActs(instance);
   // A remote row the kernel does not report addressable has no actions here; the trigger says why. The one
   // exception is the Desktop's own: a row its host no longer lists offers Forget… (forget-dialog.mjs).
@@ -101,7 +104,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
   const open = (action) => {
     if (blocked() || !visible(trigger) || !owns()) return;
     menu.showPopover(); position();
-    (items.find((item) => item.dataset.action === action && !item.disabled) || items.find(item => !item.disabled))?.focus();
+    (items.find((item) => item.dataset.action === action && !item.disabled) || defaultItem() || menu).focus();
   };
   menu.openActionMenu = open;
   // Native popovers provide top-layer placement and outside-click dismissal.
@@ -126,7 +129,9 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
   });
   trigger.addEventListener("keydown", (event) => {
     if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-    event.preventDefault(); event.stopPropagation(); open(event.key === "ArrowUp" ? "retire" : undefined);
+    // ArrowUp opens on the last act (Retire), unless it is secondary: then as ArrowDown does.
+    const last = items.at(-1);
+    event.preventDefault(); event.stopPropagation(); open(event.key === "ArrowUp" && last?.dataset.secondary !== 'true' ? "retire" : undefined);
   });
   menu.addEventListener('focusin', () => { if (menu.isConnected) onFocusChange(); });
   menu.addEventListener('focusout', () => doc.defaultView.queueMicrotask(() => { if (menu.isConnected) onFocusChange(); }));
@@ -164,14 +169,17 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, openForg
     }
   }
   // The caller's own items go in front only on a row that offers everything a home normally does: a blocked
-  // row has no menu, and a limited one (#802: a home a spawn or a retire left half cleaned) offers Retire alone.
+  // row has no menu, and a limited one (#802: a home a spawn or a retire left half cleaned; #1247: one being
+  // retired, its Retire secondary) offers Retire alone.
   // An act listed with a reason (Start on a row whose session backend is gone) stays visible, disabled, with it.
   const descriptors = forgets ? [{ action: 'forget', label: LABELS.forget }] : [...(offer.blocked || offer.limited ? [] : extra),
-    ...offer.acts.map(({ verb, reason }) => ({ action: verb, label: LABELS[verb], ...(reason ? { reason: reasonLine(reason) ?? '', unavailable: true } : {}) }))];
+    ...offer.acts.map(({ verb, reason, secondary }) => ({ action: verb, label: LABELS[verb], ...(reason ? { reason: reasonLine(reason) ?? '', unavailable: true } : {}),
+      ...(secondary ? { secondary: true } : {}) }))];
   for (const descriptor of descriptors) {
-    const { action, label, reason, actionId } = descriptor;
+    const { action, label, reason, actionId, secondary } = descriptor;
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
     item.setAttribute("role", "menuitem"); item.dataset.action = action;
+    if (secondary) item.dataset.secondary = 'true';
     const glyph = doc.createElement('span'); glyph.className = 'ctx-menu-icon'; glyph.setAttribute('aria-hidden', 'true');
     if (Object.hasOwn(MENU_ICONS, action)) glyph.append(iconElement(doc, MENU_ICONS[action], { size: 15 }));
     if (action === 'stop') item.classList.add('ctx-menu-lifecycle'); // separator before the lifecycle group

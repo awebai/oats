@@ -2,7 +2,7 @@ process.env.TZ = "UTC";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ACTIONS, bindings, keyLabel } from "../lib/actions.mjs";
-import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
+import { DETACH_KEY_FEATURE, DETAIL_WITHHELD, INSTANCE_VARIABLES, TERMS, cliReadsRemotes, createSoulCatalog, sessionAttachArgv, cliRecord, deploymentState, heldHome, identityMemory, observeIdentities, observedEntry, panelData, panelInstances, primaryDeployment, remoteRosterState, rosterRows } from "../lib/client.mjs";
 import { effectiveConfig } from "../lib/config.mjs";
 import { NO_TERMINAL, USAGE, main, noDeployment, noKernel, parseArgs } from "../lib/main.mjs";
 import { shown, textOf as textShown } from "../lib/term/text.mjs";
@@ -40,6 +40,13 @@ function fakeReader(log, options) {
     /** A served deployment's answer of a cycle, as lib/read.mjs gives it: every answer under a
      *  number of its own, as every cycle has. */
     answer(entry, id = DEPLOYMENT) { options.onEntry({ id, entry, number: ++number }); },
+    /** The number of the last cycle begun, as lib/read.mjs `begun` answers: each answer and each
+     *  `cycle()` begins one. */
+    begun() { return number; },
+    /** A cycle begun now, answered later (`read`): its number. */
+    cycle() { return ++number; },
+    /** An answer made from the kernel's (`read: true`), of a cycle begun earlier or now. */
+    read(entry, at = ++number, id = DEPLOYMENT) { options.onEntry({ id, entry, number: at, read: true }); },
     /** A roster read begun, as lib/read.mjs says it. */
     collecting() { options.onRoster({ collecting: true }); },
     /** One outcome of the roster read, over what the loop holds of the other machines now. */
@@ -1512,6 +1519,86 @@ test("the Souls view shown before the workspace was read waits for its first rea
   r.stdin.type("r"); await settle();
   assert.equal(r.soulReads.length, 2, "and none beside it");
   assert.equal(readerDid(r).filter(([what]) => what === "request").length, 0, "r in the Souls view asks no read of the workspace");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+// ── This run's retires in flight (#1247): the loop's one tracker, its marks and what lets a row go ──
+
+/** The word of a retiring row, as the shared home gives it, and whether the screen shows one now. */
+const RETIRING = heldHome({ instance: "any", retireInFlight: true }).state;
+const retiringShown = (r) => screenOf(r).includes(RETIRING);
+/** The retire confirmation of the selected row, opened and closed again (what it sent would go on):
+ *  what the loop handed it. */
+async function retireOpened(r) {
+  r.stdin.type("D");
+  const made = r.confirmations.at(-1);
+  assert.equal(made.options.operation, "retire");
+  r.stdin.type("\x1b"); r.tick(50); r.timers.fire(); await settle();
+  return made.options;
+}
+
+test("a retire this run sends reads Retiring… from its send, before any read is asked for; a refusal or a changed plan lets the row go at once", async () => {
+  const r = await acting();
+  const { retires, target } = await retireOpened(r);
+  assert.ok(retires, "the run's tracker is handed to the confirmation");
+  assert.equal(target.instance, "acme-expert-tui");
+  assert.equal(retiringShown(r), false);
+  const requests = () => readerDid(r).filter(([what]) => what === "request").length, asked = requests();
+  for (const kind of ["refused", "stale"]) {
+    const own = retires.begin(target);
+    assert.equal(retiringShown(r), true, `${kind}: from the send`);
+    assert.equal(requests(), asked, `${kind}: no read was needed for it`);
+    own.settle(kind);
+    assert.equal(retiringShown(r), false, `${kind}: let go at once, the row as it was read`);
+  }
+  assert.equal((await retireOpened(r)).retires, retires, "one tracker for the whole run");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("an answered retire of this machine's row is let go only by a read of its deployment begun after the answer: not one begun before, not a failed one, not the roster", async () => {
+  const r = await acting();
+  const { retires, target } = await retireOpened(r);
+  const own = retires.begin(target);
+  const running = r.reader.cycle(); // a cycle begun while the retire runs
+  own.settle("complete");
+  assert.equal(retiringShown(r), true, "answered: still held until a read says what it left");
+  r.reader.read(ENTRY, running);
+  assert.equal(retiringShown(r), true, "a read begun before the answer");
+  r.reader.answer(failed(ENTRY, { code: "E_DEPLOYMENT_BUSY", message: "busy" }));
+  assert.equal(retiringShown(r), true, "a read that failed, whatever entry it kept");
+  r.reader.cycle();
+  r.reader.collecting();
+  r.reader.roster({ envelope: rosterAnswer([garnet()]) });
+  assert.equal(retiringShown(r), true, "a roster outcome covers no row of this machine");
+  r.reader.read(ENTRY);
+  assert.equal(retiringShown(r), false, "read after the answer: the row as the kernel reports it");
+  r.stdin.type("q");
+  assert.equal(await r.status, 0);
+});
+
+test("an answered retire of another machine's row is let go only by a roster read begun after the answer that reached that machine: not this machine's reads, not one begun before, not one that failed", async () => {
+  const r = await elsewhere({ confirm: reviewing() });
+  const { retires, target } = await retireOpened(r);
+  assert.deepEqual([target.instance, target.server], ["dev-far", "garnet"]);
+  const own = retires.begin(target);
+  assert.equal(retiringShown(r), true, "from the send");
+  r.reader.cycle();
+  r.reader.collecting(); // a roster read begun while the retire runs
+  own.settle("partial");
+  r.reader.roster({ envelope: rosterAnswer([garnet()]) });
+  assert.equal(retiringShown(r), true, "a roster read begun before the answer");
+  r.reader.read(HOME_ENTRY);
+  assert.equal(retiringShown(r), true, "this machine's read covers no row of another");
+  r.reader.cycle();
+  r.reader.collecting();
+  r.reader.roster({ thrown: "the read timed out" });
+  assert.equal(retiringShown(r), true, "a roster read that failed reached no machine");
+  r.reader.cycle();
+  r.reader.collecting();
+  r.reader.roster({ envelope: rosterAnswer([garnet()]) });
+  assert.equal(retiringShown(r), false, "read after the answer, garnet reached: the row as garnet reports it");
   r.stdin.type("q");
   assert.equal(await r.status, 0);
 });

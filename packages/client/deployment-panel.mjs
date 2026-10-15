@@ -13,6 +13,7 @@
 import { dirname } from 'node:path';
 import { livenessOrigin } from './liveness.mjs';
 import { knownOrigin, hasRuntimeError, byRuntimeState } from './instance-presentation.mjs';
+import { retireData } from './retire-state.mjs';
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -98,6 +99,8 @@ export function panelInstance(i) {
     ...(i.modelFrom !== undefined ? { modelFrom: i.modelFrom } : {}),
     ...(i.identityAddress !== undefined ? { identityAddress: i.identityAddress } : {}),
     ...(i.retirePending ? { retirePending: true } : {}),
+    // #1247: the retire's state, validated again here (retire-state.mjs): a value out of the contract is absent.
+    ...(retireData(i.retire) ? { retire: retireData(i.retire) } : {}),
     ...(i.rollbackIncomplete ? { rollbackIncomplete: true } : {}),
     // #802: a spawn setting up its worktree (deployment-data.mjs keeps it as true only).
     ...(i.spawnInProgress === true ? { spawnInProgress: true } : {}),

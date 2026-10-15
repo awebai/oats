@@ -442,13 +442,47 @@ The roster says what a home is when it is not an ordinary instance, in text
   card's status is "Spawning (setting up worktree)". The kernel refuses its
   retire anyway (`E_LIFECYCLE_BUSY`).
 - `rollbackIncomplete`: **Spawn didn't finish**, muted "Retire it to clean up".
-- `retirePending`: **Retire didn't finish**, muted "Retire it again to
-  complete".
+- A retire in progress (#1247): the kernel's `retire` with state `running` or
+  `unknown` (its holder's liveness can't be read), an older kernel's bare
+  `retirePending`, or a retire this window applied and has not read the roster
+  after: **Retiring…**, no muted line, never a failure.
+- `retire` state `failed` (a self-retire's completion recorded an error):
+  **Retire failed**, muted "Retire it again to finish". The kernel's recorded
+  message (with its code), or its code alone when it recorded no message, is
+  said after "OATS says:" through the display
+  filter (the row's description, the hover card's status, the instance panel's
+  action note, the overview's popover).
+- `retire` state `interrupted` (a scheduled completion is gone with no
+  outcome): **Retire didn't finish**, muted "Retire it again to complete".
 
-The two quarantined states offer **Retire instance…** only: no Start, Stop or
-split. The kernel's retire completes both, through the ordinary plan → apply
-dialog. A row never shows `spawnInProgress` and `rollbackIncomplete` together;
-if both arrive, `rollbackIncomplete` wins.
+These states offer **Retire instance…** only: no Start, Stop, Restart, split or
+terminal. The kernel's retire completes the quarantined ones, through the
+ordinary plan → apply dialog. While a retire runs, Retire is *secondary*
+(`instanceActs`): it stays in the row's actions menu, enabled, behind its
+confirmation (the kernel refuses a second one while the first runs), but it is
+never the menu's first focus (the menu opens on itself; the arrows reach it)
+and the instance panel draws no Retire button, its action note saying "<name>
+is being retired." instead. A row never shows `spawnInProgress` and
+`rollbackIncomplete` together; if both arrive, `rollbackIncomplete` wins, and a
+live spawn wins over a retire. The kernel's `retire` is read again where the
+row is projected (`retire-state.mjs`): a value out of the contract is absent.
+
+The window's own retires in flight are held in the renderer
+(`packages/client/retire-in-flight.mjs`, one tracker per window in `shell.mjs`).
+The dialog begins one before the apply is sent and settles it with the answer,
+also after the dialog closed. Each apply is held on its own: a second Retire
+of the same row (offered while one runs) that the kernel refuses lets go of
+that apply only, never of the first. A refusal (or a stale plan) lets its apply
+go at once; any other answer keeps the row Retiring… until an observed roster
+read begun after the answer lands (`refreshContextRoster`'s read generation is
+the mark). That read must cover the row: the row's deployment (the dialog's
+target `workspace`) is one the read observed live (`deploymentState`), so a
+read of another workspace, or one whose deployment of the row is stale, not
+reached or not observed, releases nothing. A failed read, or one served while a
+newer observation is still running (`refreshing`), releases nothing either. Every surface draws rows through
+`shownRows`, so the roster, the instance panel, the hover card and the overview
+(through `ctx.retiringRows` and `ctx.subscribeRetires`) agree, and a change of
+the held set repaints them without a read. An open terminal tab is left alone.
 
 The retire plan of a `rollbackIncomplete` row says "Branches and pull requests
 are not changed, except a branch an interrupted spawn left with no work, which

@@ -8,6 +8,7 @@ import { teamRow, teamRowsOf, defaultTeamOf, TEAM_ID } from './team-rows.mjs';
 import { launchOf, REPORT_FROM } from './launch-contract.mjs';
 import { readIdentity } from './workspace-views.mjs';
 import { waitingOnYouData } from './waiting-on-you.mjs';
+import { retireData } from './retire-state.mjs';
 const text = value => typeof value === 'string' && value.length <= 8192 && !value.includes('\0');
 const absolute = value => text(value) && isAbsolute(value) && resolve(value) === value;
 const own = (value, key) => Object.hasOwn(value, key);
@@ -209,6 +210,9 @@ export function deploymentStatusData(document, deployment) {
       if (own(instance, 'tmux')) row.tmux = instance.tmux === null ? null : fields(instance.tmux, ['session', 'window', 'socket']);
       if (own(instance, 'sessionTarget')) row.sessionTarget = sessionTarget(instance.sessionTarget);
       if (own(instance, 'retirePending')) row.retirePending = true;
+      // #1247 (feature status-retire-state): the retire that runs, or failed, or was interrupted. Validated, never
+      // check()ed: a value out of the contract is dropped and the row reads as if it had none.
+      if (own(instance, 'retire')) { const retire = retireData(instance.retire); if (retire) row.retire = retire; }
       if (own(instance, 'rollbackIncomplete')) row.rollbackIncomplete = true;
       // #802 (feature worktree-event): a spawn running its worktree hooks, verifiably alive. Boolean true only;
       // any other value is dropped, never checked: the row stays an ordinary one.

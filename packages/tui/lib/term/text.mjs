@@ -47,6 +47,10 @@ export function shown(value) {
   return line === null ? EMPTY : line === DETAIL_WITHHELD ? WITHHELD : make(line);
 }
 
+/** The ellipsis in words the TUI or the shared home wrote ("Retiring…", "Setting up worktree…", "Starting …"): in ASCII
+ *  three full stops, as the cut mark is. Only for their own words: text from anywhere else is shown as it came. */
+export const ownEllipsis = (string, ascii) => (ascii ? string.replaceAll("\u2026", "...") : string);
+
 /** The cut mark, the screen's own (term/screen.mjs): one cell, or three in ASCII. */
 const cutMark = (ascii) => (ascii ? "..." : "\u2026");
 const widthOf = (graphemes) => graphemes.reduce((sum, g) => sum + g.width, 0);

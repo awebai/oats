@@ -227,9 +227,8 @@ a spawn may run for a long time: its roster row reads **Setting up worktree…**
 until the worktree is ready, and offers no actions meanwhile. If the spawn was
 interrupted or a capability couldn't set up the worktree, the spawn was rolled
 back, and the notification says that nothing was created. A home whose spawn
-didn't finish its cleanup reads **Spawn didn't finish**, and one whose retire
-didn't finish reads **Retire didn't finish**; both offer only **Retire
-instance…**, which completes them. A server spawn whose worktree hooks take
+didn't finish its cleanup reads **Spawn didn't finish**, and offers only
+**Retire instance…**, which completes it. A server spawn whose worktree hooks take
 more than about a minute is not yet supported from the Desktop; use the CLI on
 the server. Every dropdown in the app has the
 same themed look, and its open list follows the light or dark theme.
@@ -256,6 +255,34 @@ the start keeps running, and the roster shows its result.
 With an OATS older than 0.52.0, after an interrupted stop the instance can be
 started and then cannot be stopped while `.oats-stop-pending.json` exists in
 its home.
+
+**A retire in progress reads Retiring…, never as a failure.** An instance's
+roster row reads **Retiring…** while:
+
+- OATS reports its retire running, or cannot tell whether the process
+  holding the retire still runs;
+- its OATS does not report a retire's state yet (no `retire` on the row)
+  and the instance has a retire pending;
+- the Desktop's own retire of it was sent and the roster has not been read
+  since its answer came. A retire that OATS refused, or whose plan had
+  changed, runs nothing, and the row reads as the roster says at once.
+
+A retiring row offers no Start, Stop, Restart or Open, and no inline
+button. **Retire instance…** stays in the row's menu, after its usual
+confirmation: OATS refuses a second retire while one runs, and when the
+holder can't be read it may be the only way on.
+
+When the retire has ended without finishing, the row says so and offers only
+**Retire instance…**, which finishes it:
+
+- **Retire failed**: a self-retire's completion recorded an error. Its
+  reason is OATS's own message, with its code, shown through the same
+  display filter as every other text from OATS (control characters and
+  line breaks never reach the screen, a long message is cut, a message that
+  looks like a secret is withheld). With a code and no message, the reason
+  is OATS's code, shown the same way.
+- **Retire didn't finish**: a scheduled completion is gone and left no
+  outcome.
 
 ## One workspace, several machines
 

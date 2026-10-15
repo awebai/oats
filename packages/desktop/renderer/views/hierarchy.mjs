@@ -48,7 +48,7 @@ import { ROSTER_POLL_FOCUSED_MS, rosterPollDue } from "../roster-cadence.mjs";
 import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts } from "../../../client/instance-presentation.mjs";
 import { serverLabel } from "../../../client/remote-address.mjs";
-import { unsupportedLine, speakerParts, keptFailureLine } from "../speaker-line.mjs";
+import { unsupportedLine, speakerParts, keptFailureLine, heldLine, heldStatus } from "../speaker-line.mjs";
 import { keptFailure } from "../../../client/deployment-facts.mjs";
 import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId, heldHome } from "../../../client/instance-tree.mjs";
@@ -483,6 +483,9 @@ export function mount(el, ctx) {
   // subject's deadline (#461), so neither waits for the old read to settle.
   const offConnections = s.ctx.subscribeConnections?.(() => { if (s.alive) void refresh(s); });
   if (typeof offConnections === 'function') s.disposers.push(offConnections);
+  // #1247: a retire of this window began, was refused or was read after: the rows read again from the held set.
+  const offRetires = s.ctx.subscribeRetires?.(() => retiresChanged(s));
+  if (typeof offRetires === 'function') s.disposers.push(offRetires);
   // Another surface opens a deployment's tab (the switcher's "Not matched" entries): already remembered,
   // so a view not on screen yet reads it when its panel lands; the shown view switches now.
   s.disposers.push(onDeploymentTabRequest(({ view, tab }) => {
@@ -612,7 +615,7 @@ function resetObservation(s) {
   closePop(s); s.sel = null; s.fitted = false; s.nodeOffsets.clear(); s.nodeIds?.clear();
   s.drag?.node.classList.remove('dragging'); s.drag = null; s.dragConsumedClick = null; s.pan = null;
   s.canvas.classList.remove('panning'); s.pending = null; s.signature = null; s.bounds = null;
-  s.panel = { instances: [] }; s.loading = false; s.dataGen = null; s.dataWorkspace = null; s.stale = true; s.readsServers = false;
+  s.panel = { instances: [] }; s.observed = null; s.retiresLater = false; s.loading = false; s.dataGen = null; s.dataWorkspace = null; s.stale = true; s.readsServers = false;
   // A new subject: the controller forgets its data; the summary stays blank
   // until the pending pill (150ms) or the first reply. Never counts of nothing.
   s.load?.reset();
@@ -621,7 +624,20 @@ function resetObservation(s) {
 }
 /** What a paint depends on: the observation, and (#482) the view's deployments, which head its sections. */
 const viewSignature = (panel) => `${activeSignature(panel)}\n${JSON.stringify(panel.deployments || [])}`;
-function acceptObservation(s, panel, gen) {
+/** The observation as the canvas draws it and offers acts on it (#1247): the shell's own retires in flight
+ * held as retiring (ctx.retiringRows), as the roster draws them. */
+const shownPanel = (s, panel) => typeof s.ctx.retiringRows === 'function' ? { ...panel, instances: s.ctx.retiringRows(panel.instances) } : panel;
+/** The held set changed: the observation on screen is drawn again through it, after a gesture when one runs. */
+function retiresChanged(s) {
+  if (!s.observed || !dataCurrent(s)) return;
+  if (s.drag || s.pan) { s.retiresLater = true; return; }
+  const panel = shownPanel(s, s.observed), signature = viewSignature(panel);
+  s.panel = panel;
+  if (signature !== s.signature) { s.signature = signature; render(s); } else updatePop(s);
+}
+function acceptObservation(s, observed, gen) {
+  const panel = shownPanel(s, observed);
+  s.observed = observed;
   const signature = viewSignature(panel);
   const ids = new Set(panel.instances.map(instanceId));
   for (const key of s.nodeOffsets.keys()) if (!ids.has(key)) s.nodeOffsets.delete(key);
@@ -642,8 +658,8 @@ function acceptObservation(s, panel, gen) {
   else { if (!s.fitted) fit(s); updatePop(s); }
 }
 function applyPending(s) {
-  const pending = s.pending; s.pending = null;
-  if (!pending || !s.alive || pending.gen !== workspaceGeneration() || pending.request !== s.request) return;
+  const pending = s.pending, later = s.retiresLater; s.pending = null; s.retiresLater = false;
+  if (!pending || !s.alive || pending.gen !== workspaceGeneration() || pending.request !== s.request) { if (later && s.alive) retiresChanged(s); return; }
   acceptObservation(s, pending.panel, pending.gen);
 }
 
@@ -1045,7 +1061,7 @@ function rowActs(i) {
 
 function invokeInstance(s, id, action) {
   const i = selectedInstance(s, id);
-  // #802: a held home (spawning, or left half cleaned) starts, restarts and opens nothing.
+  // #802: a held home (spawning, being retired, or left half cleaned) starts, restarts and opens nothing.
   if (!rowActionsCurrent(s, i) || !visibleOwner(s) || !canAddressInstance(i) || heldHome(i)) return;
   // The keyboard and double-click paths act exactly when the popover's buttons would (updatePop).
   const acts = rowActs(i);
@@ -1320,7 +1336,7 @@ function updatePop(s) {
   const identity = pop.querySelector('.pidentity'); identity.hidden = !activeTargetLabel(i, s.panel.instances);
   setText(identity, `Host: ${i.server || (i.remote ? 'not reported' : 'local')} · Root: ${i.agentsRoot || 'not reported'} · Home: ${i.home || 'not reported'}`);
   const held = heldHome(i);
-  setText(pop.querySelector('.pstate'), `Reported state: ${held?.status ?? runtimeState(i)}${s.stale || rowStale(i, s.panel.deployments) ? ' (last observation)' : ''}`);
+  setText(pop.querySelector('.pstate'), `Reported state: ${heldStatus(held) ?? runtimeState(i)}${s.stale || rowStale(i, s.panel.deployments) ? ' (last observation)' : ''}`);
   setText(pop.querySelector('.rt'), i.harness || 'Harness not reported');
   setText(pop.querySelector('.pbranch'), i.branch ? `Reported branch: ${i.branch}` : 'Branch not reported');
   // Which acts are enabled is the shared table's (rowActs); a current roster, a well-formed address and the shell's
@@ -1330,8 +1346,8 @@ function updatePop(s) {
   setText(terminal, i.running === false ? 'Start…' : 'Terminal');
   terminal.disabled = !allowed || (i.running === false ? !acts.start || !s.ctx.startInstance : !acts.open || !s.ctx.openTerminal);
   // A Herdr row's reason is said with who made it (speaker-line.mjs).
-  terminal.title = unsupportedLine(i) || held?.sentence(i.instance) || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal');
-  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || !acts.restart; restart.title = unsupportedLine(i) || held?.sentence(i.instance) || ''; }
+  terminal.title = unsupportedLine(i) || heldLine(held) || (terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal');
+  const restart = pop.querySelector('.prestart'); if (restart) { restart.disabled = !allowed || !acts.restart; restart.title = unsupportedLine(i) || heldLine(held) || ''; }
   s.activity?.sync();
   positionPop(s);
 }

@@ -5,7 +5,7 @@
 import { prText } from './roster-pr.mjs';
 import { createRuntimeBadge, harnessName } from './identity-marks.mjs';
 import { runtimeState } from '../../client/instance-presentation.mjs';
-import { runtimeErrorLine } from './speaker-line.mjs';
+import { runtimeErrorLine, heldStatus } from './speaker-line.mjs';
 import { instanceRepoLabel, heldHome } from '../../client/instance-tree.mjs';
 import { waitingClaim, waitingLabel, waitedText, waitingClock, waitingBelowText } from '../../client/waiting-on-you.mjs';
 
@@ -30,10 +30,11 @@ export const rosterTipCSS = `
 export function rosterTipFacts(instance, why = '', pr = null, { below = [], now = Date.now(), stale = false } = {}) {
   const text = v => typeof v === 'string' && v ? v : null;
   const state = runtimeState(instance), claim = waitingClaim(instance, { stale });
-  // #802: a home the kernel holds says so ("Spawning (setting up worktree)", "Spawn didn't finish"…); the home
-  // of a spawn still in flight (the roster draws it as its pending row) is spawning, whatever else its row reports.
+  // #802: a home the kernel holds says so ("Spawning (setting up worktree)", "Spawn didn't finish", "Retiring…"…);
+  // the home of a spawn still in flight (the roster draws it as its pending row) is spawning, whatever else its row
+  // reports. A failed retire's recorded message follows its status, after the kernel's words (#1247).
   const hold = heldHome(instance);
-  const held = instance.pendingSpawn && hold?.kind !== 'spawning' ? 'Spawning' : hold?.status ?? null;
+  const held = instance.pendingSpawn && hold?.kind !== 'spawning' ? 'Spawning' : heldStatus(hold);
   return {
     name: instance.instance,
     rows: [

@@ -8,9 +8,9 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createSoulCatalog, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
-import { ACT_WORDS, actContext, actCwd, localDeployments, model, roster } from "./model.mjs";
+import { ACT_WORDS, actContext, actCwd, localDeployments, model, reachedMachines, roster } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
 import { CHANGE_FILES, admitDeployment, createReader, findDeployment, leaveInstance, offeredDeployments, probeKernel, realpath, tellable } from "./read.mjs";
 import { initialState, reduce } from "./store.mjs";
@@ -124,6 +124,30 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   let dir = null;
   const runDir = () => (dir ??= effects.runDir());
 
+  // THIS RUN'S RETIRES IN FLIGHT (#1247, packages/client retire-in-flight.mjs): a row whose retire
+  // this run sent reads Retiring… from the send, before any read says so, until its answer is in
+  // and a read begun after that answer covers the row; a refused or stale answer lets it go at once.
+  // The mark is the reader's count of cycles begun (lib/read.mjs `begun`), never the clock: the
+  // live read a settled answer asks for begins in the same millisecond. The store holds the ids.
+  const retires = createRetiresInFlight({ mark: () => reader.begun(), onChange: () => heard({ retiring: retires.ids() }) });
+  /** The cycle that began the roster read in flight: lib/read.mjs says `collecting` as it begins one. */
+  let rosterBegun = 0;
+  /** A served deployment's entry: taken, then, when it is a read the store took (its cycle is the
+   *  newest of that deployment), it covers that deployment's rows of this machine. A failed read
+   *  covers nothing, whatever entry it kept. */
+  function entered(event) {
+    heard(event);
+    if (event.read === true && state.numbers.get(event.id) === event.number) retires.landed(event.number, (t) => !t.server && t.workspace === event.id);
+  }
+  /** An event of the roster read: taken, then an outcome covers the rows of each machine it reached
+   *  (a read that failed marks every machine not reached, and covers none). */
+  function rostered(event) {
+    if (event.collecting === true) rosterBegun = reader.begun();
+    heard(event);
+    if (event.roster === undefined || ended) return;
+    const reached = reachedMachines(state, clock());
+    if (reached.size) retires.landed(rosterBegun, (t) => !!t.server && reached.has(t.workspace));
+  }
   // What the reader reads for, it asks of the state at that moment: the served deployments, the
   // entry a failed read keeps, and the roster and the memory the next outcome is made from.
   const reader = effects.createReader({
@@ -131,7 +155,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     getServed: () => state.ctxs,
     getEntry: (id) => state.entries.get(id) ?? null,
     getRoster: () => ({ remote: state.remote, memory: state.memory, notes: state.notes }),
-    onEntry: heard, onRoster: heard,
+    onEntry: entered, onRoster: rostered,
     files: { ...CHANGE_FILES, dir: runDir },
   });
   // THE OPEN TERMINAL (docs/tui.md, "Open an agent's terminal"): one at a time, in the panel.
@@ -244,7 +268,8 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const contextOf = (id) => actContext(state, id, clock());
   /** Open the shared confirmation of a stop or a retire the store decided on (`{ n, verb, row,
    *  label }`). Every step it tells goes to the store as `{ acted }`; an answer that settles asks
-   *  for a live read of the rows (onSettled), and nothing else after an apply does. */
+   *  for a live read of the rows (onSettled), and nothing else after an apply does. A retire's
+   *  apply is held in `retires` from its send, whether or not the confirmation is still open. */
   function openConfirmation({ n, verb, row, label }) {
     dismiss(confirmation?.n);
     const id = row.deployment?.id, name = row.instance;
@@ -255,7 +280,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
     mine.made = effects.createLifecycleConfirmation({
       request: (body) => { if (body?.action === "apply") applying = { verb, name }; return boundary(body, () => contextOf(id)); },
       target, operation: verb, terms: TERMS, label, leftover: heldHome(row)?.kind === "spawn-incomplete",
-      onChange: tell, onSettled: () => refresh({ live: true }),
+      onChange: tell, onSettled: () => refresh({ live: true }), retires,
     });
     tell();
   }
