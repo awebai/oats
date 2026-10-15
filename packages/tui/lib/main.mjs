@@ -9,7 +9,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { bindings } from "./actions.mjs";
-import { TERMS, cliSpawnApply, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
+import { TERMS, createLifecycleBoundary, createLifecycleConfirmation, createRetiresInFlight, createSoulCatalog, createSpawnApplyBoundary, createSpawnPreview, createSpawnTransaction, displayLine, heldHome, pendingEntry, prepareRemoteTerm, sessionAttachArgv, soulCatalogKey, startInstance } from "./client.mjs";
 import { loadConfig } from "./config.mjs";
 import { ACT_WORDS, actContext, actCwd, localDeployments, model, outcomeOf, reachedMachines, roster, spawnContext } from "./model.mjs";
 import { createPanel, sweep } from "./panel.mjs";
@@ -76,17 +76,17 @@ function errorLines(error) {
  *  runs that are gone left of theirs (lib/panel.mjs). `createSoulCatalog` is the shared home's
  *  catalog of a workspace's souls, replaceable so a test can count its reads; the three spawn
  *  factories are the shared home's preview, apply boundary and transaction, replaceable so a test
- *  can answer them, and `cliSpawnApply` the shared apply's own transport, which the boundary is
- *  given wrapped (createRunTimers). */
+ *  can answer them. */
 const EFFECTS = Object.freeze({ loadConfig, findDeployment, probeKernel, createReader, offeredDeployments, admitDeployment, prepareRemoteTerm, createPanel, sweep,
   runDir: CHANGE_FILES.dir, removeDir: CHANGE_FILES.remove, realpath, tellable, startInstance, createLifecycleConfirmation, createLifecycleBoundary, createSoulCatalog,
-  createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction, cliSpawnApply });
+  createSpawnPreview, createSpawnApplyBoundary, createSpawnTransaction });
 
-/** The timers a run lends the shared spawn: the apply's deadline and its grace (cliSpawnApply's
- *  `timer`), the boundary's wait for an answer and the transaction's polls (`sleep`). They are
- *  the run's: `end()`, as the run ends, clears every one still armed, so a TUI that has gone
- *  neither signals a spawn it let go nor is kept alive by one (Spec 6-spawn, Settled 4).
- *  `timer(fn, ms)` returns its cancel, as the shared home's timers do. */
+/** The timers a run lends the shared spawn: the apply's deadline and its grace (the boundary's
+ *  `applyTimer`), the boundary's wait for an answer (`timer`) and the transaction's polls
+ *  (`sleep`). They are the run's: `end()`, as the run ends, clears every one still armed, so a
+ *  TUI that has gone neither signals a spawn it let go nor is kept alive by one: the spawn
+ *  finishes, or the kernel's own limits bound it (Spec 6-spawn, Settled 4). `timer(fn, ms)`
+ *  returns its cancel, as the shared home's timers do. */
 export function createRunTimers({ setTimer, clearTimer }) {
   const armed = new Set();
   let over = false;
@@ -270,7 +270,7 @@ export async function main({ argv, stdin, stdout, stderr, env, proc = process, n
   const spawnApply = effects.createSpawnApplyBoundary({ read: preview.prepareRead, exec: (bin, argv, { detached, ...options }, callback) => (detached
     ? reader.changeExec(bin, argv, { ...options, label: spawnLabel }, callback)
     : reader.exec(bin, argv, options, callback)),
-  timer: spawnTimers.timer, invoke: (cli, options, io) => effects.cliSpawnApply(cli, options, { ...(io ?? {}), timer: spawnTimers.timer }) });
+  timer: spawnTimers.timer, applyTimer: spawnTimers.timer });
   /** As the Desktop's (server/oats-web.mjs): a spawn in the air changes what a preview answers, so
    *  held previews go when it is applied, and again when a pending apply settles, with a read. */
   const forgetPreviews = (id) => { try { preview.cache.invalidate(id); } catch { /* never blocks a spawn */ } };

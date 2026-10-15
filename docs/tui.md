@@ -636,8 +636,9 @@ the TUI adds only what to do next, naming its keys or an `oats` command:
 | its cleanup is owed | the line says so and names the retire |
 | refused, rolled back, never submitted, or changed since you looked | the preview again, read anew, with the line in it: change the choices or press `Enter` again |
 
-**Quitting with a spawn under way** lets it go: it runs to its end, and
-the line after leaving says so and names `oats status` to see it.
+**Quitting with a spawn under way** lets it go: the spawn finishes, or the
+kernel's own limits bound it; `oats tui` neither waits for it nor ends it.
+The line after leaving says so and names `oats status` to see it.
 
 ## Keys
 

@@ -40,7 +40,6 @@ export { soulFacts, spawnRefusal } from "../../client/soul-facts.mjs";
 export { createSpawnPreview } from "../../client/spawn-preview.mjs";
 export { defaultSpawnChoices } from "../../client/spawn-preview-contract.mjs";
 export { createSpawnApplyBoundary } from "../../client/spawn-apply.mjs";
-export { cliSpawnApply } from "../../client/spawn-apply-cli.mjs";
 export { createSpawnTransaction } from "../../client/spawn-transaction.mjs";
 export { spawnProblem, outcomeWords, SPAWN_NEXT } from "../../client/spawn-messages.mjs";
 export { previewFacts } from "../../client/spawn-preview-facts.mjs";
