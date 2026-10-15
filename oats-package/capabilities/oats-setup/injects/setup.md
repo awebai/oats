@@ -42,6 +42,7 @@ before calling it done; report uncertainty rather than an unobserved result.
 - `/oats-setup-model`: first, to explain the setup: what each piece is, why, and which command answers "where does X come from".
 - `/oats-onboarding`: realizing a workspace on a machine, first spawn.
 - `/oats-host-delivery`: how messages reach the agents on a host: Claude channel delivery (approved route or a stated fallback) and the host wake broker service. Every host with messaging seats makes both choices.
+- `/oats-git-setup`: Git and GitHub for the person who runs OATS on a machine: `git` and `gh`, one SSH key for authentication and signing, a verified identity, the DCO sign-off hook, and the check that proves them. Onboarding needs it before the first Git read.
 - `/oats-package-pins`: adding, bumping or removing a package; the lock.
 - `/oats-workspace-config`: any field of the shared files, where a fact belongs, an `E_*` refusal.
 - `/oats-teams`: the teams (shared and local), the default, which teams each soul may join (`souls:` in the workspace file; `oats teams`, `oats soul teams`), joining and leaving.

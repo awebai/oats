@@ -49,6 +49,7 @@ which, what every soul gets by default.
 | exact package commits and integrity | `oats-lock.json` | this machine, written by `oats sync` only |
 | Claude's channel admission for aweb channel delivery (`channelsEnabled`, `allowedChannelPlugins`) | Claude's managed-settings file, outside `oats-local.yaml`: `/etc/claude-code/managed-settings.json` (Linux), `/Library/Application Support/ClaudeCode/managed-settings.json` (macOS) | this machine, owned by the OS admin (root, sudo); OATS never writes it. See `/oats-host-delivery` |
 | the host wake broker's service (`aw wake run`) | a per-user unit: `~/.config/systemd/user/ai.aweb.wake.service` (Linux), `~/Library/LaunchAgents/ai.aweb.wake.plist` (macOS) | this machine, the user who runs the instances; the operator installs it. See `/oats-host-delivery` |
+| the Git identity, SSH key, commit signing, global hooks and `gh` login that agents commit with | the person's own `~/.gitconfig`, `~/.ssh/`, `~/.config/git/hooks/` and gh's login, outside OATS's files | this machine, the user who runs the instances; the person sets them up with `/oats-git-setup` |
 | a fact about one spawn (a retained seat, a team to join now) | `oats spawn … --provider <cap> key=value` | one instance |
 
 Never put an absolute path, an account or a host name in a shared file (the

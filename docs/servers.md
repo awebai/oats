@@ -157,7 +157,9 @@ itself; the hint is about where Git ran, not a probe of the keychain.
   The machine's operator makes that choice.
 - **When to set it up.** At onboarding (`/oats-onboarding` card 4), on a Mac
   that another machine will drive (`oats server add`), or that runs Git from
-  background jobs.
+  background jobs. The person's whole Git and GitHub setup, including the
+  system `osxkeychain` helper a Git without `HOME` falls back to, is
+  oats.setup's `/oats-git-setup`.
 - **Verify** from a session without a terminal: `ssh <host> git ls-remote
   <workspace remote> HEAD`, or `oats server check <id>` from the driving
   machine.
