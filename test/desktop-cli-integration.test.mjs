@@ -166,7 +166,7 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
     assert.equal(s.ok, true, JSON.stringify(s));
     assert.equal(s.version, "0.26.0");
     assert.equal(s.source, "env");
-    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.26.0 <0.57.0" });
+    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.26.0 <0.58.0" });
     // The recovery command is DERIVED from this app's own version, so it names
     // the lockstep-published kernel and always lands inside the band above —
     // never a hand-pinned version that rots below a feature floor.
@@ -213,8 +213,8 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
 // release published, so it degraded to observation-only in the field while
 // every unit test passed. Accept the band from its floor to its last minor,
 // and reject a 0.25 kernel at the floor and the next minor at the exclusive ceiling.
-test("desktop server: 0.26.0 through 0.56.x CLIs are ACCEPTED; 0.25.9 is REJECTED at the floor and 0.57.0 at the ceiling", async (t) => {
-  for (const version of ["0.26.0", "0.26.4", "0.27.0", "0.28.0", "0.29.0", "0.30.0", "0.31.0", "0.32.0", "0.33.0", "0.34.0", "0.35.0", "0.36.0", "0.37.0", "0.38.0", "0.39.0", "0.40.0", "0.41.0", "0.42.0", "0.43.0", "0.44.0", "0.45.0", "0.46.0", "0.47.0", "0.48.0", "0.49.0", "0.50.0", "0.51.0", "0.52.0", "0.53.0", "0.54.0", "0.55.0", "0.56.0"]) {
+test("desktop server: 0.26.0 through 0.57.x CLIs are ACCEPTED; 0.25.9 is REJECTED at the floor and 0.58.0 at the ceiling", async (t) => {
+  for (const version of ["0.26.0", "0.26.4", "0.27.0", "0.28.0", "0.29.0", "0.30.0", "0.31.0", "0.32.0", "0.33.0", "0.34.0", "0.35.0", "0.36.0", "0.37.0", "0.38.0", "0.39.0", "0.40.0", "0.41.0", "0.42.0", "0.43.0", "0.44.0", "0.45.0", "0.46.0", "0.47.0", "0.48.0", "0.49.0", "0.50.0", "0.51.0", "0.52.0", "0.53.0", "0.54.0", "0.55.0", "0.56.0", "0.57.0"]) {
     const okDir = tempDir(t, "oats-cli-compatible-");
     const compatible = fakeCli(okDir, { version });
     const a = await startServer({ OATS_DESKTOP_OATS_BIN: compatible.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
@@ -227,7 +227,7 @@ test("desktop server: 0.26.0 through 0.56.x CLIs are ACCEPTED; 0.25.9 is REJECTE
     } finally { a.proc.kill(); }
   }
 
-  for (const [version, why] of [["0.25.9", "0.25.9 is below the floor"], ["0.57.0", "0.57.0 is past the exclusive ceiling"]]) {
+  for (const [version, why] of [["0.25.9", "0.25.9 is below the floor"], ["0.58.0", "0.58.0 is past the exclusive ceiling"]]) {
     const badDir = tempDir(t, "oats-cli-outside-");
     const outside = fakeCli(badDir, { version });
     const b = await startServer({ OATS_DESKTOP_OATS_BIN: outside.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
@@ -236,9 +236,9 @@ test("desktop server: 0.26.0 through 0.56.x CLIs are ACCEPTED; 0.25.9 is REJECTE
       assert.equal(s.ok, false, `${why} and must not become the mutation binary`);
       const tried = s.tried.find((t) => t.path === outside.real);
       assert.ok(tried, "the rejected candidate is in diagnostics");
-      assert.match(tried.reason, /outside >=0\.26\.0 <0\.57\.0/);
+      assert.match(tried.reason, /outside >=0\.26\.0 <0\.58\.0/);
       assert.equal(tried.version, version);
-      assert.equal(tried.above, version === "0.57.0" ? true : undefined, "refused only for being above the band: the card says the Desktop is the older");
+      assert.equal(tried.above, version === "0.58.0" ? true : undefined, "refused only for being above the band: the card says the Desktop is the older");
     } finally { b.proc.kill(); }
   }
 });
