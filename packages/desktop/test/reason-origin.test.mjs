@@ -96,8 +96,16 @@ function reasonsOf(row) {
 /** The sentences the shared home writes for a row: the only ones a reason without an `origin` may carry. */
 function ownSentences(row) {
   const label = serverLabel(row), held = heldHome(row);
-  return [HERDR_STAND_IN, `${label} was not reached.`, unaddressableSentence(row), `${row.instance}: status unknown`, ...(held ? [held.sentence(row.instance)] : [])];
+  // A held home's reason (#1247 `said`) is its sentence, or for a failed retire with only a code this home's
+  // sentence naming it: both this home's words, so neither has an origin.
+  return [HERDR_STAND_IN, `${label} was not reached.`, unaddressableSentence(row), `${row.instance}: status unknown`,
+    ...(held ? [held.sentence(row.instance), ...(held.said.origin === undefined ? [held.said.sentence] : [])] : [])];
 }
+
+// #1247: the kernel's retire states whose reason is this home's own words (a failed retire's message is the one
+// that is not: its own test below).
+const RETIRE = (state, extra = {}) => ({ retire: { state, since: AT, self: true, ...extra } });
+const OWN_RETIRES = [RETIRE('running'), RETIRE('unknown'), RETIRE('interrupted'), RETIRE('failed'), RETIRE('failed', { code: 'E_RETIRE_HOOK' }), { retireInFlight: true }];
 
 /** The contract, for one row. `settled`: the row is as the shared home left it (its mark is the shared home's). */
 function holds(row, settled, counts) {
@@ -142,7 +150,7 @@ test('over generated rows, a reason without an origin never carries the row\'s t
   for (const row of settled.filter((_, n) => n % 7 === 0)) {
     const { runtimeErrorOrigin: _mark, ...bare } = row;
     for (const mark of MARKS) { counts.rows++; holds({ ...bare, ...marked(mark) }, false, counts); }
-    for (const hold of [{ spawnInProgress: true }, { rollbackIncomplete: true }, { retirePending: true }]) { counts.rows++; holds({ ...row, ...hold }, true, counts); }
+    for (const hold of [{ spawnInProgress: true }, { rollbackIncomplete: true }, { retirePending: true }, ...OWN_RETIRES]) { counts.rows++; holds({ ...row, ...hold }, true, counts); }
   }
   // Every kind of reason was reached, so the loop held something.
   for (const [kind, n] of Object.entries(counts)) assert.ok(n > 100, `${kind}: ${n}`);
@@ -202,4 +210,20 @@ test('"unattributed" is only ever written by rowReason, on a reason: never read 
   // It names nobody.
   assert.equal(originLead('unattributed', DESKTOP_TERMS), null); assert.equal(knownOrigin('unattributed'), false);
   assert.equal(speakerLine('unattributed', 'no session'), 'no session');
+});
+
+test('#1247: a failed retire\'s recorded message is the held reason\'s sentence, marked the kernel\'s, and the Desktop shows it filtered after its words', () => {
+  const row = (message, code) => ({ instance: 'dev-a', home: '/w/agents/dev/instances/dev-a', agentsRoot: '/w/agents', running: false, ...RETIRE('failed', { message, ...(code ? { code } : {}) }) });
+  for (const text of [...TEXTS, 'x'.repeat(5000)]) for (const code of [undefined, 'E_RETIRE_HOOK']) {
+    const at = JSON.stringify([text.slice(0, 40), code]), reason = instanceActs(row(text, code)).limited;
+    if (displayLine(text) === null) { assert.equal(Object.hasOwn(reason, 'origin'), false, `a message with nothing to show: the row's own words, ${at}`); continue; }
+    assert.equal(reason.origin, 'kernel', at);
+    assert.equal(reason.sentence, code ? `${text} (${code})` : text, at);
+    const shown = reasonLine(reason);
+    assert.equal(shown, speakerLine('kernel', reason.sentence), at);
+    assert.doesNotMatch(shown, CONTROL, at);
+    assert.ok(shown.length <= 'OATS says: '.length + 2048, `one bounded display line: ${at}`);
+    if (displayLine(reason.sentence) === DETAIL_WITHHELD) assert.equal(shown, DETAIL_WITHHELD, `withheld whole and alone: ${at}`);
+    else assert.ok(shown.startsWith('OATS says: '), at);
+  }
 });

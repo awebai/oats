@@ -60,6 +60,15 @@ const written = (sentence) => (typeof sentence === 'string' && sentence ? senten
  * has nothing to show. Null for no reason. */
 export const rowReasonLine = (reason) => (reason ? reasonLine(reason) ?? reason.label : null);
 
+/** What holds a home (packages/client/instance-tree.mjs `heldHome`), said as its reason says it (`said`, the
+ * sentence instance-acts.mjs gives the held reason): a failed retire's recorded message after the kernel's
+ * words (#1247), else the shared home's own sentence. Null for no hold. */
+export const heldLine = (held) => (held ? reasonLine(held.said) : null);
+
+/** A held home's Status (the hover card's, the canvas's): its status, and beside it the kernel's own words
+ * when the reason carries them (a failed retire's message), so they are shown where its state is. */
+export const heldStatus = (held) => (held ? [held.status, held.said?.origin === undefined ? null : reasonLine(held.said)].filter(Boolean).join(' · ') : null);
+
 /** A row's own `runtimeError` with its speaker, or null for a row without one. */
 export const runtimeErrorLine = (row) => speakerLine(runtimeErrorSpeaker(row), row?.runtimeError);
 

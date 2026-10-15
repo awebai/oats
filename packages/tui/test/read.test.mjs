@@ -420,9 +420,13 @@ test("the kernel's error envelope becomes the shared failedEntry over the entry 
   const good = answering(world, [kernelRow("dev-one")], [{ running: true, runtimeState: "running" }]);
   world.plan(good);
   const { reader, entries, spawned, store } = reading(t, world);
+  assert.equal(reader.begun(), 0, "no cycle begun yet");
   await reader.request();
   const observed = entries[0].entry;
   assert.equal(observed.deployment.status, "observed");
+  // A read that answered says so, and the cycle it began under is the last begun: lib/main.mjs lets a
+  // retire it holds go for such a read only (#1247). Each failure below carries no such mark (deepEqual).
+  assert.deepEqual([entries[0].read, entries[0].number, reader.begun()], [true, 1, 1]);
   const collectors = () => [spawned.filter((call) => call.args[0] === world.collector).length, world.calls("collector", "start").length];
   assert.deepEqual(collectors(), [1, 1]);
 
@@ -442,6 +446,7 @@ test("the kernel's error envelope becomes the shared failedEntry over the entry 
   const refused = { code: "E_LOCK_HELD", message: "another oats command holds the lock", origin: "kernel" };
   assert.deepEqual(entries[2], { id: world.deployment, entry: failedEntry(held, refused, at(3)), number: 3 });
   assert.deepEqual(entries[2].entry, { deployment: { status: "unavailable", reason: refused }, instances: [], generatedAt: at(3) });
+  assert.equal(reader.begun(), 3, "every cycle counts as begun, whatever it read");
 
   // With no observation to keep, an unreadable remote is unavailable too. And a kernel that prints no envelope.
   world.plan({ ...good, workspace: kernelError("E_REMOTE_UNREADABLE", "could not read the workspace remote") });

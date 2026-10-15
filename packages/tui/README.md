@@ -78,7 +78,12 @@ Rules the tests pin (`test/tui-boundary.test.mjs` reads the files):
   `instanceActs`, a stop or a retire is the shared confirmation over the
   run's one lifecycle boundary, a start or a restart is `startInstance`, and
   no lifecycle sentence is written in this package where the shared home
-  has one.
+  has one. A retire this run sent is held by the shared retires-in-flight
+  tracker, one per run (`lib/main.mjs`): its row reads Retiring… from the
+  send until a read begun after its answer covers the row (a cycle's
+  entry marked `read` for this machine's rows, numbered against
+  `lib/read.mjs` `begun()`; a roster outcome that reached the row's
+  machine for another's), and at once again after a refusal.
 - The screen takes safe text only. Text the TUI did not write goes through
   `shown()`; `lit()` is for the TUI's own words and refuses anything the
   display filter would change, a run of spaces included, so a row is spans

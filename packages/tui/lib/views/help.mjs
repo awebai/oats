@@ -141,7 +141,7 @@ export function helpRows(actions, ascii, cols = 100, detachKey = null) {
       [marks.stopped, "stopped"],
       [marks.shell, "stopped, with a shell left in its terminal"],
       [marks.unknown, "state unknown"],
-      [marks.held, "held by a spawn or a retire that is not finished"],
+      [marks.held, "held by a spawn or a retire: under way (Retiring…), failed or not finished"],
       [`${marks.open} ${marks.closed}`, "has instances below it: shown, folded away"],
       [marks.waiting, "needs input"],
       [`${marks.waiting}N`, "N instances folded away below it need input"],

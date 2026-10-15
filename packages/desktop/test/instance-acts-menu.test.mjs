@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { instanceActions } from "../renderer/instance-actions.mjs";
 import { instanceActs } from "../../client/instance-acts.mjs";
-import { ROWS, probeAll } from "./helpers/instance-menu-probe.mjs";
+import { ROWS, probeAll, probeMenu } from "./helpers/instance-menu-probe.mjs";
 
 const before = JSON.parse(readFileSync(new URL("./fixtures/instance-menu/before-instance-acts.json", import.meta.url), "utf8"));
 const after = await probeAll(instanceActions);
@@ -139,3 +139,19 @@ for (const name of SENTENCE_CHANGED) {
     assertCannotOpen(after[name], name);
   });
 }
+
+// #1247: a home being retired (a bare `retirePending`, an older kernel's; the kernel's running or unknown `retire`; this
+// window's own retire in flight) offers Retire alone, as a retire that didn't finish does, but secondary: the same menu,
+// opened the same ways, its Retire acting the same, and only never the menu's default (no autofocus).
+test("a retiring row: the retire-incomplete menu of the capture, but Retire is not its default", async () => {
+  const { retire: _interrupted, ...base } = ROWS["held: retire incomplete"];
+  const was = before.rows["held: retire incomplete"];
+  for (const row of [{ ...base, retirePending: true }, { ...base, retire: { state: "running", since: "2026-10-15T00:00:00Z", self: false } },
+    { ...base, retire: { state: "unknown", since: "2026-10-15T00:00:00Z", self: true } }, { ...base, retireInFlight: true }]) {
+    const at = JSON.stringify(row);
+    assert.deepEqual(instanceActs(row).acts, [{ verb: "retire", enabled: true, reason: null, secondary: true }], at);
+    const now = await probeMenu(instanceActions, row);
+    assert.deepEqual(now.items.map((item) => [item.action, item.disabled, item.autofocus]), [["retire", false, false]], at);
+    assert.deepEqual({ ...now, items: now.items.map((item) => ({ ...item, autofocus: true })) }, was, `${at}: nothing else differs`);
+  }
+});

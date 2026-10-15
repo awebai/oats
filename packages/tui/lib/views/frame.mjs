@@ -200,9 +200,10 @@ function countSpans(counts, cols) {
  *  go to the one open on the selected row; while another machine is asked first, the key that
  *  gives the open up stands in its place. With a terminal open, `zoom` and `close-terminal` follow
  *  it; then the acts whose key opens a confirmation for the selected row now (the model's
- *  `actable`). While the terminal has the focus the TUI reads no key but the back key, and the
- *  footer names that alone (tui.json's `open.detachKey`, text from outside). In a confirmation the
- *  buttons are on the screen, and the footer says how to work them: the close key with the close
+ *  `actable`, which leaves out a secondary act: Retire while a retire runs). While the terminal
+ *  has the focus the TUI reads no key but the back key, and the footer names that alone
+ *  (tui.json's `open.detachKey`, text from outside). In a confirmation the buttons are on the
+ *  screen, and the footer says how to work them: the close key with the close
  *  button's label, the keys that move, Enter, and `quit`. The switcher has a filter of its own,
  *  drawn as the list's. A key's label is the user's (views/help.mjs keyText); everything is placed
  *  by cells. */

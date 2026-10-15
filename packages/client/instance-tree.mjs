@@ -5,6 +5,7 @@
 import { waitingClaim } from './waiting-on-you.mjs';
 import { byRuntimeState } from './instance-presentation.mjs';
 import { retireData } from './retire-state.mjs';
+import { displayLine } from './display-text.mjs';
 
 export function collapseKey(workspace, instance) {
   return `${workspace || ""}\u0000${instance}`;
@@ -253,7 +254,8 @@ export function heldHome(instance) {
     : instance.spawnInProgress === true ? "spawning" : retireKind(instance);
   if (!kind) return null;
   const held = HELD_HOMES[kind], retire = kind === "retire-failed" ? retireData(instance.retire) : null;
-  const said = retire?.message ? { sentence: retire.code ? `${retire.message} (${retire.code})` : retire.message, origin: "kernel" }
+  // A message the display filter reduces to nothing says nothing: the row's own words stand.
+  const said = retire?.message && displayLine(retire.message) !== null ? { sentence: retire.code ? `${retire.message} (${retire.code})` : retire.message, origin: "kernel" }
     : retire?.code ? { sentence: `The retire of ${instance.instance} failed (${retire.code}). Retire it again to finish.` }
       : { sentence: held.sentence(instance.instance) };
   return { kind, ...held, said };

@@ -32,6 +32,7 @@ import { deploymentUnavailableText } from '../../client/deployment-facts.mjs';
 import { panelErrorCause } from '../../client/deployment-contract.mjs';
 import { staleWorkspaceSelection } from '../renderer/views/common.mjs';
 import { createWorkspaceTabMemory } from '../renderer/workspace-tab-memory.mjs';
+import { createRetiresInFlight, retiringRows } from '../../client/retire-in-flight.mjs';
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), 'utf8');
 const source = read('shell.mjs');
@@ -141,7 +142,7 @@ test('rosterSignature: identical instances and facts agree; any painted fact cha
 });
 
 /* ── the shipped shell: initContextRoster + refreshContextRoster + renderContextRoster (+ restoreWorkspaceTabs) ── */
-function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace = 'A' } = {}) {
+function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace = 'A', inFlight = false } = {}) {
   const { dom, doc, rosterEl } = rosterDom(t);
   mountShellIcons(doc);
   const c = clock(), requests = [], listeners = [], adds = [];
@@ -172,7 +173,12 @@ function shell(t, { addResult = { ok: true, workspace: { id: 'A' } }, workspace 
   };
   context.splitOpenState = () => ({ split: null, activeId: context.activeTab, tabs: context.tabs, workspace: context.workspace, visible: false });
   context.ownsInstanceTarget = target => context.contextInstances.filter(r => sameInstanceActionTarget(target, r, context.workspace)).length === 1;
-  const s = runInNewContext(`${['initContextRoster', 'rosterOverdue', 'failRosterUnserved', 'reAddRosterWorkspace', 'refreshContextRoster', 'renderContextRoster', 'restoreWorkspaceTabs'].map(fn).join('\n')}
+  // #1247: the shipped tracker wiring (shownRows, retiresChanged) with the shared home's tracker, marked by the
+  // shipped read generation, when the suite is about this window's retires in flight.
+  if (inFlight) Object.assign(context, { retiringRows, retireListeners: new Set(),
+    retires: createRetiresInFlight({ mark: () => context.contextRosterGen, onChange: () => context.retiresChanged() }) });
+  const s = runInNewContext(`${['initContextRoster', 'rosterOverdue', 'failRosterUnserved', 'reAddRosterWorkspace', 'refreshContextRoster', 'renderContextRoster', 'restoreWorkspaceTabs',
+    ...(inFlight ? ['shownRows', 'retiresChanged'] : [])].map(fn).join('\n')}
     ({ initContextRoster, refreshContextRoster, renderContextRoster, restoreWorkspaceTabs });`, withShellWindowGlobals(context));
   // #sidebar is not in index.html's roster section alone; initContextRoster listens on it.
   if (!doc.getElementById('sidebar')) { const aside = doc.createElement('aside'); aside.id = 'sidebar'; aside.append(rosterEl); doc.body.append(aside); }
@@ -856,4 +862,43 @@ test('an empty deployment\'s observed answer, as the server sends it, settles to
   assert.equal(s.list().getAttribute('aria-busy'), null); assert.doesNotMatch(s.text(), /Reading the deployment/);
   s.refreshContextRoster(); await s.reply(1, panelOf('A', roster));
   assert.equal(s.rows().length, 3, 'refresh still works');
+});
+
+/* ── #1247: this window's own retire reads Retiring… until the roster was read after its answer ── */
+test('this window\'s retire reads Retiring… from its send, before any read; a refusal lets it go at once; only an observed read begun after the answer releases it', async t => {
+  const s = shell(t, { inFlight: true }), c = s.context;
+  await s.reply(0, panelOf('A', roster));
+  const button = name => [...s.list().querySelectorAll('.ctx-inst')].find(b => b.querySelector('.ctx-name')?.textContent === name);
+  const reads = name => button(name).querySelector('.ctx-meta').textContent;
+  const menu = name => [...button(name).closest('.ctx-tree-row').querySelectorAll('[role=menuitem]')].map(item => item.dataset.action);
+  const target = { workspace: 'A', instance: 'alpha', agent: 'dev', agentsRoot: '/synthetic/agents', home: '/synthetic/alpha', server: null };
+  const ordinary = reads('alpha');
+  assert.notEqual(ordinary, 'Retiring…');
+  // The apply starts: Retiring… at once, with no read; Retire stays the menu's only act, secondary.
+  let own = c.retires.begin(target);
+  assert.equal(reads('alpha'), 'Retiring…'); assert.equal(s.requests.length, 1, 'no read was needed');
+  assert.equal(button('alpha').getAttribute('aria-disabled'), 'true'); assert.deepEqual(menu('alpha'), ['retire']);
+  for (const other of ['beta', 'gamma']) assert.notEqual(reads(other), 'Retiring…', `${other}: as the roster says`);
+  // Refused (or stale): it ran nothing, so the row reads again as the roster says, at once.
+  own.settle('refused');
+  assert.equal(reads('alpha'), ordinary); assert.equal(s.requests.length, 1);
+  // Again; a poll begins before the answer and lands after it: it cannot say what the retire left.
+  own = c.retires.begin(target);
+  s.refreshContextRoster();
+  own.settle('complete');
+  assert.equal(reads('alpha'), 'Retiring…', 'answered, not yet read after');
+  await s.reply(1, panelOf('A', roster));
+  assert.equal(reads('alpha'), 'Retiring…', 'a read begun before the answer releases nothing');
+  // Begun after the answer: a failed read, and one served while a newer observation runs, release nothing either.
+  s.refreshContextRoster(); await s.fail(2, Object.assign(new Error('bridge down'), { code: 'E_BRIDGE' }));
+  assert.equal(reads('alpha'), 'Retiring…', 'a failed read releases nothing');
+  s.refreshContextRoster(); await s.reply(3, panelOf('A', roster, { refreshing: true }));
+  assert.equal(reads('alpha'), 'Retiring…', 'nor one whose rows may predate the answer');
+  assert.equal(c.retires.ids().size, 1);
+  // An observed read begun after the answer: the roster says what the retire left (here: the home is gone).
+  s.refreshContextRoster(); await s.reply(4, panelOf('A', roster.filter(r => r.instance !== 'alpha')));
+  assert.equal(c.retires.ids().size, 0); assert.equal(button('alpha'), undefined);
+  // Once let go, a row the roster still reports reads as it says.
+  s.refreshContextRoster(); await s.reply(5, panelOf('A', roster));
+  assert.equal(reads('alpha'), ordinary);
 });

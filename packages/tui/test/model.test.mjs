@@ -16,7 +16,7 @@ import { MORE_FOLDERS, OFFERED_SECTION, ROSTER_FAILED, SENTENCE_INDENT, WORD_MAX
 import { initialState, reduce } from "../lib/store.mjs";
 import { shown, shownLines, textOf } from "../lib/term/text.mjs";
 import { windowOf } from "../lib/views/scroll.mjs";
-import { CLI, DEPLOYMENT, NOW, failed, instanceRow, observed, press, rosterOf, stateOf, took } from "./helpers.mjs";
+import { CLI, DEPLOYMENT, NOW, draw, failed, instanceRow, observed, press, rosterOf, stateOf, took } from "./helpers.mjs";
 
 const AT = new Date(NOW).toISOString();
 const OBSERVED_AT = "2026-10-11T10:00:00.000Z";
@@ -419,14 +419,18 @@ test("a row's mark is the shared word for its state, and its word is its harness
   assert.equal(after(detailOf(state, "idle"), "state").label, "harness", "no reason, no line under the state");
 });
 
+/** A kernel's `retire` (feature status-retire-state, #1247) as the row carries it. */
+const RETIRE_SINCE = "2026-10-15T00:00:00Z";
+const retireOf = (state, more = {}) => ({ state, since: RETIRE_SINCE, self: true, ...more });
 const HELD = [
   instanceRow("dev", "spawning", { ...STOPPED, spawnInProgress: true }),
   instanceRow("dev", "half-spawned", { ...STOPPED, rollbackIncomplete: true }),
-  instanceRow("dev", "half-retired", { ...STOPPED, retirePending: true }),
+  instanceRow("dev", "half-retired", { ...STOPPED, retirePending: true, retire: retireOf("interrupted") }),
+  // A kernel before status-retire-state: a retire pending and no `retire` reads as one in progress.
   instanceRow("dev", "held-running", { retirePending: true }),
 ];
 
-test("a held home of each of the three kinds carries the held mark, the shared home's word for its state, and in the detail the sentence the shared acts give", () => {
+test("a held home of each of the four kinds carries the held mark, the shared home's word for its state, and in the detail the sentence the shared acts give", () => {
   const state = stateOf(observed(HELD));
   const kinds = [];
   for (const name of HELD.map((row) => row.instance)) {
@@ -437,7 +441,7 @@ test("a held home of each of the three kinds carries the held mark, the shared h
     assert.deepEqual(fact(detailOf(state, name), "held"), { label: "held", value: sentence, form: "wrap" }, name);
     assert.equal(sentence.includes(name), true, "the shared sentence names the instance");
   }
-  assert.deepEqual(new Set(kinds).size, 3, "three kinds of held home");
+  assert.deepEqual(kinds, ["spawning", "spawn-incomplete", "retire-incomplete", "retiring"], "four kinds of held home: an interrupted retire didn't finish, an older kernel's pending one is in progress");
   assert.equal(listRow(state, "held-running").word, heldHome(panelRow(state, "held-running").row).state, "held wins over the harness of a running row");
   // A home that is not held has no such line.
   assert.equal(fact(detailOf(stateOf(observed(TREE)), "lead"), "held"), null);
@@ -449,6 +453,142 @@ test("a held home's detail says the held state on its state line, the same word 
     assert.equal(fact(detailOf(state, name), "state").value, heldHome(panelRow(state, name).row).state, name);
     assert.equal(fact(detailOf(state, name), "state").value, listRow(state, name).word, name);
   }
+});
+
+// --- A retire in progress (#1247) --------------------------------------------------------
+
+/** A row for each retire the kernel reports, and an older kernel's pending one (no `retire`). */
+const KERNEL_MESSAGE = "the worktree could not be removed";
+const RETIRES = [
+  instanceRow("dev", "r-running", { retire: retireOf("running", { self: false }) }),
+  instanceRow("dev", "r-unknown", { ...STOPPED, retire: retireOf("unknown") }),
+  instanceRow("dev", "r-pending", { ...STOPPED, retirePending: true }),
+  instanceRow("dev", "r-failed", { ...STOPPED, retirePending: true, retire: retireOf("failed", { code: "E_RETIRE_COMPLETION", message: KERNEL_MESSAGE }) }),
+  instanceRow("dev", "r-failed-code", { ...STOPPED, retire: retireOf("failed", { code: "E_RETIRE_COMPLETION" }) }),
+  instanceRow("dev", "r-interrupted", { ...STOPPED, retirePending: true, retire: retireOf("interrupted") }),
+];
+const RETIRE_KINDS = Object.freeze({ "r-running": "retiring", "r-unknown": "retiring", "r-pending": "retiring", "r-failed": "retire-failed", "r-failed-code": "retire-failed", "r-interrupted": "retire-incomplete" });
+
+test("each retire the kernel reports reads as the shared home words it: one word while it runs, can't be told or is an older kernel's pending one, never a failure's; a failed one and an unfinished one each their own", () => {
+  const state = stateOf(observed(RETIRES));
+  for (const [name, kind] of Object.entries(RETIRE_KINDS)) {
+    const { row } = panelRow(state, name), held = heldHome(row), drawn = listRow(state, name);
+    assert.equal(held.kind, kind, name);
+    assert.deepEqual([drawn.mark, drawn.word], ["held", held.state], `${name}: the held mark and the held word, not the harness`);
+    assert.equal(fact(detailOf(state, name), "state").value, held.state, `${name}: the detail's state line says the same`);
+  }
+  const word = (name) => listRow(state, name).word;
+  assert.deepEqual(new Set(["r-running", "r-unknown", "r-pending"].map(word)).size, 1, "one word for a retire in progress");
+  assert.equal(heldHome(panelRow(state, "r-running").row).hint, undefined, "and no hint: nothing is asked of anyone");
+  assert.equal(new Set(["r-running", "r-failed", "r-interrupted"].map(word)).size, 3, "in progress, failed and unfinished read apart");
+  assert.equal(word("r-failed"), word("r-failed-code"));
+});
+
+test("the detail's held line: the shared home's sentence for a retire in progress or unfinished; for a failed one the kernel's own words after its lead, through the display filter, or the home's sentence naming the code", () => {
+  const state = stateOf(observed(RETIRES));
+  for (const name of ["r-running", "r-unknown", "r-pending", "r-failed-code", "r-interrupted"]) {
+    const reason = instanceActs(panelRow(state, name).row).limited;
+    assert.equal(reason.origin, undefined, `${name}: a sentence of the shared home's`);
+    assert.deepEqual(fact(detailOf(state, name), "held"), { label: "held", value: reason.sentence, form: "wrap" }, name);
+    assert.equal(reason.sentence.includes(name), true, `${name}: it names the instance`);
+  }
+  assert.equal(fact(detailOf(state, "r-failed-code"), "held").value.includes("E_RETIRE_COMPLETION"), true, "a code with no message is named");
+  const reason = instanceActs(panelRow(state, "r-failed").row).limited;
+  assert.deepEqual([reason.code, reason.origin, reason.sentence], ["held", "kernel", `${KERNEL_MESSAGE} (E_RETIRE_COMPLETION)`], "premise: the kernel's message and code");
+  const said = `${originLead("kernel", TERMS)} ${reason.sentence}`;
+  assert.deepEqual(fact(detailOf(state, "r-failed"), "held"), { label: "held", value: said, form: "wrap" });
+  // The same reason, said the same way, on the line of a key that opens nothing.
+  for (const key of ["S", "X", "enter"]) assert.deepEqual(press(on(state, "r-failed"), [key]).state.outcome, { said: [], under: [said] }, key);
+});
+
+test("a failed retire's message from the kernel reaches the screen only through the display filter: a control character withholds it whole, a C1 or bidi control is replaced, a long one is cut; its lead is never why", () => {
+  const sentence = (message) => `${message} (E_RETIRE_COMPLETION)`;
+  for (const message of ["wipe \x1b[2J now", "bell\x07", "safe\u202Eevil", "a\u009B31mb", "token: ghp_abcdefghijklmnopqrstuvwxyz0123456789", "x".repeat(5000)]) {
+    const label = JSON.stringify(message.slice(0, 20));
+    const state = stateOf(observed([instanceRow("dev", "r-failed", { ...STOPPED, retire: retireOf("failed", { code: "E_RETIRE_COMPLETION", message }) })]));
+    assert.equal(panelRow(state, "r-failed").row.retire.message, message, `${label}: premise, the row carries it as the kernel sent it`);
+    const held = fact(detailOf(state, "r-failed"), "held"), line = displayLine(sentence(message));
+    if (line === DETAIL_WITHHELD) {
+      assert.equal(textOf(shown(held.value)), DETAIL_WITHHELD, `${label}: withheld whole, the lead with it`);
+      assert.equal(held.value.includes(originLead("kernel", TERMS)), false, label);
+    } else {
+      assert.equal(held.value, `${originLead("kernel", TERMS)} ${line}`, label);
+      const drawn = textOf(shown(held.value));
+      assert.equal(message.length < 1000 ? drawn === held.value : held.value.startsWith(drawn), true, `${label}: the view shows it as it is, past the filter's bound cut at the end`);
+      assert.doesNotMatch(held.value, /[\x00-\x1f\x7f-\x9f\u202a-\u202e]/, label);
+      assert.equal(held.value.length < message.length + 40, true, label);
+    }
+    const d = draw(on(state, "r-failed"), { cols: 120, rows: 40 });
+    d.cells.forEach((row) => row.forEach((cell) => assert.doesNotMatch(cell.text, /[\x00-\x1f\x7f-\x9f]/, label)));
+  }
+  assert.equal(displayLine(sentence("x".repeat(5000))).length < 5000, true, "premise: the long one is cut by the filter");
+});
+
+test("which retire a row is: the kernel's facts in the shared order, and a `retire` out of the contract is absent", () => {
+  const rows = [
+    // A live spawn wins over a retire (the kernel refuses to retire it), and a spawn left half way over both.
+    instanceRow("dev", "p-spawning", { ...STOPPED, spawnInProgress: true, retire: retireOf("running") }),
+    instanceRow("dev", "p-half-spawned", { ...STOPPED, rollbackIncomplete: true, spawnInProgress: true, retire: retireOf("failed", { message: "m" }) }),
+    // The kernel's `retire` wins over its `retirePending`.
+    instanceRow("dev", "p-interrupted", { ...STOPPED, retirePending: true, retire: retireOf("interrupted") }),
+    // Out of the contract: dropped whole, and the row reads as if it had none.
+    instanceRow("dev", "m-state", { ...STOPPED, retire: retireOf("done") }),
+    instanceRow("dev", "m-since", { ...STOPPED, retire: { state: "failed", since: 7, self: true } }),
+    instanceRow("dev", "m-code", { ...STOPPED, retirePending: true, retire: retireOf("failed", { code: "not-a-code", message: "m" }) }),
+    instanceRow("dev", "m-list", { ...STOPPED, retire: [retireOf("running")] }),
+  ];
+  const state = stateOf(observed(rows));
+  const kind = (name) => heldHome(panelRow(state, name).row)?.kind ?? null;
+  assert.deepEqual(rows.map((row) => [row.instance, kind(row.instance)]), [
+    ["p-spawning", "spawning"], ["p-half-spawned", "spawn-incomplete"], ["p-interrupted", "retire-incomplete"],
+    ["m-state", null], ["m-since", null], ["m-code", "retiring"], ["m-list", null],
+  ]);
+  for (const name of ["m-state", "m-since", "m-code", "m-list"]) assert.equal(Object.hasOwn(panelRow(state, name).row, "retire"), false, `${name}: no retire on the row`);
+  for (const name of ["m-state", "m-since", "m-list"]) assert.deepEqual([listRow(state, name).mark, listRow(state, name).word, fact(detailOf(state, name), "held")], ["stopped", "stopped", null], `${name}: an ordinary row`);
+});
+
+test("a retiring row offers Retire alone and out of the way: its key opens the confirmation, the footer does not name it, and Enter, stop, start and restart open nothing and say why", () => {
+  const state = stateOf(observed(RETIRES));
+  for (const name of ["r-running", "r-unknown", "r-pending"]) {
+    const selected = on(state, name), acts = instanceActs(panelRow(state, name).row);
+    assert.deepEqual(acts.acts.map((act) => [act.verb, act.enabled, act.secondary]), [["retire", true, true]], `${name}: premise, Retire secondary`);
+    assert.deepEqual([view(selected).actable, view(selected).openable], [[], false], `${name}: the footer names no act, and Enter opens nothing`);
+    const opened = press(selected, ["D"]);
+    assert.deepEqual([opened.state.view, opened.state.act.verb, opened.effects.map((effect) => effect.act?.verb)], ["act", "retire", ["retire"]], `${name}: D opens the confirmation`);
+    for (const key of ["X", "S", "R", "enter"]) {
+      const { state: after, effects } = press(selected, [key]);
+      assert.deepEqual([after.view, after.act, after.terminal, effects], ["instances", null, null, []], `${name} ${key}: nothing opens`);
+      assert.deepEqual(after.outcome, { said: [], under: [acts.limited.sentence] }, `${name} ${key}: the held sentence says why`);
+    }
+    const footer = draw(selected, { cols: 140, rows: 40 }).lines.at(-1);
+    assert.equal(/\bD retire\b/.test(footer) || /Enter open/.test(footer), false, `${name}: ${footer}`);
+  }
+  // A failed or unfinished retire names Retire: it is the way on.
+  for (const name of ["r-failed", "r-failed-code", "r-interrupted"]) {
+    assert.deepEqual(view(on(state, name)).actable, ["retire"], name);
+    assert.match(draw(on(state, name), { cols: 140, rows: 40 }).lines.at(-1), /\bD retire\b/, name);
+  }
+});
+
+test("a retire this run sent reads as retiring from the store's `retiring`, over whatever the row says; let go, the row reads as it is read, and nothing moves", () => {
+  const rows = [instanceRow("dev", "lead"), instanceRow("dev", "half", { ...STOPPED, rollbackIncomplete: true }), instanceRow("dev", "r-failed", { ...STOPPED, retire: retireOf("failed", { message: KERNEL_MESSAGE }) })];
+  const state = on(stateOf(observed(rows)), "half"), ids = rows.map((row) => panelRow(state, row.instance).id);
+  const before = Object.fromEntries(rows.map((row) => [row.instance, listRow(state, row.instance).word]));
+  const step = reduce(state, { retiring: new Set(ids) }), held = step.state;
+  assert.equal(step.effect, null);
+  for (const row of rows) {
+    const { row: drawn } = panelRow(held, row.instance);
+    assert.deepEqual([heldHome(drawn).kind, listRow(held, row.instance).word, listRow(held, row.instance).mark], ["retiring", heldHome(drawn).state, "held"], row.instance);
+    assert.deepEqual(instanceActs(drawn).acts.map((act) => [act.verb, act.secondary]), [["retire", true]], `${row.instance}: Retire, secondary`);
+  }
+  assert.equal(fact(detailOf(held, "r-failed"), "held").value, instanceActs(panelRow(held, "r-failed").row).limited.sentence, "the home's own sentence, not the old failure");
+  assert.deepEqual([held.selected, roster(held).rows.map((item) => item.id)], [state.selected, roster(state).rows.map((item) => item.id)], "the same rows in the same order, the selection where it was");
+  assert.equal(panelOf(held, AT).instances.some((row) => Object.hasOwn(row, "retireInFlight")), false, "the shared panel is as read: only the list's rows are marked");
+  // Only the rows named, and let go as the store is told.
+  const one = reduce(state, { retiring: new Set([ids[0]]) }).state;
+  assert.deepEqual(rows.map((row) => listRow(one, row.instance).word), [listRow(held, "lead").word, before.half, before["r-failed"]]);
+  const back = reduce(held, { retiring: new Set() }).state;
+  assert.deepEqual(Object.fromEntries(rows.map((row) => [row.instance, listRow(back, row.instance).word])), before);
 });
 
 // --- Waiting ----------------------------------------------------------------------------

@@ -10,7 +10,7 @@ import { reasonLine } from '../renderer/speaker-line.mjs';
 import * as hierarchy from '../renderer/views/hierarchy.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { instanceActs, openAct } from '../../client/instance-acts.mjs';
-import { ROWS as MENU_ROWS } from './helpers/instance-menu-probe.mjs';
+import { ROWS as MENU_ROWS, RETIRE_INTERRUPTED } from './helpers/instance-menu-probe.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const HERDR = 'E_HERDR_REMOVED: Herdr is no longer supported by OATS (removed in 0.31.0); tmux is the only session backend.';
@@ -25,7 +25,7 @@ const ROWS = {
   'state unknown': [local('unknown', { running: null }), [['stop', true], ['retire', true]]],
   'held: spawning': [local('spawning', { running: false, spawnInProgress: true }), []],
   'held: spawn incomplete': [local('rollback', { running: false, rollbackIncomplete: true }), [['retire', true]]],
-  'held: retire incomplete': [local('retiring', { running: true, retirePending: true }), [['retire', true]]],
+  'held: retire incomplete': [local('interrupted', { running: true, retire: RETIRE_INTERRUPTED }), [['retire', true]]],
   'unsupported session (Herdr)': [local('herdr', { running: null, runtimeState: 'unsupported', runtimeError: HERDR }), [['start', false], ['stop', true], ['retire', true]]],
   'server not reached': [remote('unreached', { serverUnreached: true, running: null, addressable: true, savedRoute: true, missingRemotely: false,
     runtimeError: 'ssh: connect to host timed out' }), [['stop', true], ['retire', true]]],
@@ -145,8 +145,53 @@ test('#855: a blocked row says why in the action row, once: a remote row not rep
   }
 });
 
+// #1247: the rows a retire holds, kept out of ROWS: a retiring row's Retire is secondary (listed in the menu, no
+// control here) and its action row says why; a failed retire's reason may carry the kernel's words.
+const SINCE = '2026-10-15T00:00:00Z';
+const RETIRING = {
+  'an older kernel\'s retirePending': local('retiring', { running: true, retirePending: true }),
+  'the kernel\'s retire, running': local('retiring', { running: true, retire: { state: 'running', since: SINCE, self: false } }),
+  'the kernel\'s retire, unknown': local('retiring', { running: null, retire: { state: 'unknown', since: SINCE, self: true } }),
+  'this window\'s retire in flight': local('retiring', { running: true, retireInFlight: true }),
+};
+const failed = (extra = {}) => local('failed', { running: false, retire: { state: 'failed', since: SINCE, self: true, ...extra } });
+
+test('#1247: a retiring row: no Retire control in the panel (the menu lists it, enabled), and the action row says why', t => {
+  const u = panelFixture(t), line = () => u.document.querySelector('[data-context-actions-note]');
+  for (const [name, row] of Object.entries(RETIRING)) {
+    const { limited, acts } = instanceActs(row);
+    assert.deepEqual(acts, [{ verb: 'retire', enabled: true, reason: null, secondary: true }], name);
+    assert.deepEqual(u.offer(row), [], `${name}: no control, not a disabled one`);
+    for (const op of VERBS) assert.equal(u.control(op).hidden, true, `${name}: ${op}`);
+    assert.deepEqual(menuOffer(row).offer, [['retire', true]], `${name}: the menu keeps Retire`);
+    assert.equal(line().hidden, false, name); assert.equal(line().textContent, 'retiring is being retired.', name);
+    assert.equal(line().textContent, reasonLine(limited), name);
+  }
+});
+
+test('#1247: a failed retire keeps its Retire in the panel; the kernel\'s message is said in the action row after its words, filtered', t => {
+  const u = panelFixture(t), line = () => u.document.querySelector('[data-context-actions-note]');
+  for (const row of [failed({ code: 'E_RETIRE_HOOK', message: 'the pre-retire hook exited 1' }), failed({ code: 'E_RETIRE_HOOK' }), failed()]) {
+    assert.deepEqual(u.offer(row), [['retire', true]], JSON.stringify(row.retire));
+    assert.deepEqual(menuOffer(row).offer, [['retire', true]]);
+    assert.equal(u.control('retire').classList.contains('danger'), true, 'the inline Retire, as for a retire that didn\'t finish');
+  }
+  u.offer(failed({ code: 'E_RETIRE_HOOK', message: 'the pre-retire hook exited 1' }));
+  assert.equal(line().hidden, false); assert.equal(line().textContent, 'OATS says: the pre-retire hook exited 1 (E_RETIRE_HOOK)');
+  // A control character: withheld whole, alone. Over-long: one display line, cut.
+  u.offer(failed({ message: 'wipe \x1b[2J the screen' }));
+  assert.equal(line().textContent, '[withheld]');
+  u.offer(failed({ message: `${'x'.repeat(5000)} end` }));
+  assert.ok(line().textContent.startsWith('OATS says: xxx')); assert.ok(line().textContent.length < 2100, 'bounded');
+  assert.doesNotMatch(line().textContent, / end$/);
+  // The shared home's own sentence (no message): nothing more is said beside the control.
+  for (const row of [failed({ code: 'E_RETIRE_HOOK' }), failed(), local('interrupted', { running: true, retire: RETIRE_INTERRUPTED })]) {
+    u.offer(row); assert.equal(line().hidden, true, JSON.stringify(row.retire)); assert.equal(line().textContent, '');
+  }
+});
+
 /* ── the overview popover: Restart with… and Terminal/Start… ── */
-async function canvas(t, rows) {
+async function canvas(t, rows, extra = {}) {
   const dom = new JSDOM('<body><main id="host"></main></body>', { url: 'http://localhost' });
   const doc = dom.window.document, host = doc.querySelector('main');
   const old = { window: globalThis.window, document: globalThis.document, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -156,7 +201,7 @@ async function canvas(t, rows) {
   const opened = [], started = [], restarted = [];
   const read = () => ({ instances: rows, workspace: { id: '/team' }, workspaces: [{ id: '/team', name: 'Team' }], generatedAt: 'observation-time' });
   const dispose = hierarchy.mount(host, { hasWorkspaceSwitcher: true, api: read, openTerminal: ref => opened.push(ref.instance),
-    startInstance: ref => started.push(ref.instance), restartInstance: ref => restarted.push(ref.instance), openView() {} });
+    startInstance: ref => started.push(ref.instance), restartInstance: ref => restarted.push(ref.instance), openView() {}, ...extra });
   t.after(() => { dispose(); setWorkspace(old.ws); globalThis.window = old.window; globalThis.document = old.document; globalThis.setInterval = old.setInterval; dom.window.close(); });
   await tick();
   host.querySelector('.hier-canvas').getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 800 });
@@ -183,4 +228,31 @@ test('#855: the overview popover enables Restart with… and Terminal/Start… e
   }
   // The rows the spec names, read off the canvas: only the running row opens and restarts, only the stopped one starts.
   assert.deepEqual(u.opened, ['running']); assert.deepEqual(u.started, ['stopped']); assert.deepEqual(u.restarted, []);
+});
+
+test('#1247: the overview reads a held retire as the roster does; the shell\'s own retire in flight is drawn at once, and let go', async t => {
+  const holds = new Set(), listeners = new Set();
+  const told = () => { for (const fn of listeners) fn(); };
+  const rows = [local('busy', { running: true }), local('older', { running: true, retirePending: true }),
+    failed({ code: 'E_RETIRE_HOOK', message: 'the pre-retire hook exited 1' })];
+  const u = await canvas(t, rows, { retiringRows: list => list.map(row => holds.has(row.instance) ? { ...row, retireInFlight: true } : row),
+    subscribeRetires: fn => { listeners.add(fn); return () => listeners.delete(fn); } });
+  const label = name => u.node(name).getAttribute('aria-label'), state = () => u.host.querySelector('.pstate').textContent;
+  const inert = name => {
+    u.mouse(u.node(name), 'click');
+    assert.equal(u.host.querySelector('.pterm').disabled, true, `${name}: Terminal`); assert.equal(u.host.querySelector('.prestart').disabled, true, `${name}: Restart with…`);
+    u.mouse(u.node(name), 'dblclick');
+  };
+  assert.match(label('older'), /^older, Retiring…/);
+  assert.match(u.node('older').querySelector('.hmeta').textContent, /Retiring…$/);
+  inert('older'); assert.equal(state(), 'Reported state: Retiring…');
+  inert('failed'); assert.equal(state(), 'Reported state: Retire failed · OATS says: the pre-retire hook exited 1 (E_RETIRE_HOOK)');
+  assert.match(label('busy'), /^busy, running/);
+  // The shell begins a retire of busy: drawn at once, without a read; then let go: as the observation says.
+  holds.add('busy'); told();
+  assert.match(label('busy'), /^busy, Retiring…/);
+  inert('busy'); assert.equal(state(), 'Reported state: Retiring…');
+  holds.delete('busy'); told();
+  assert.match(label('busy'), /^busy, running/);
+  assert.deepEqual([u.opened, u.started, u.restarted], [[], [], []], 'a held home opens, starts and restarts nothing');
 });
